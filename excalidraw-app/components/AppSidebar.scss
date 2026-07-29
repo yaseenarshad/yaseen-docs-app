@@ -162,14 +162,11 @@
 .diagram-browser__item {
   align-items: center;
   background: transparent;
-  border: 0;
   border-radius: 9px;
   color: var(--text-primary-color);
-  cursor: pointer;
   display: flex;
-  gap: 10px;
-  padding: 8px;
-  text-align: left;
+  min-width: 0;
+  position: relative;
   width: 100%;
 }
 
@@ -179,6 +176,87 @@
 
 .diagram-browser__item--active {
   background: var(--color-primary-light);
+}
+
+.diagram-browser__open {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex: 1;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 4px 8px 8px;
+  text-align: left;
+}
+
+.diagram-browser__options {
+  align-items: center;
+  display: flex;
+  padding-right: 4px;
+  position: relative;
+}
+
+.diagram-browser__more {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-secondary-color);
+  cursor: pointer;
+  display: flex;
+  font-size: 18px;
+  height: 30px;
+  justify-content: center;
+  opacity: 0;
+  width: 30px;
+}
+
+.diagram-browser__item:hover .diagram-browser__more,
+.diagram-browser__more[aria-expanded="true"],
+.diagram-browser__more:focus-visible {
+  opacity: 1;
+}
+
+.diagram-browser__more:hover {
+  background: var(--button-hover-bg);
+  color: var(--text-primary-color);
+}
+
+.diagram-browser__menu {
+  background: var(--island-bg-color);
+  border: 1px solid var(--default-border-color);
+  border-radius: 8px;
+  box-shadow: var(--shadow-island);
+  padding: 4px;
+  position: absolute;
+  right: 0;
+  top: 32px;
+  width: 140px;
+  z-index: 5;
+}
+
+.diagram-browser__menu button {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--color-danger);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.diagram-browser__menu button:hover {
+  background: var(--button-hover-bg);
+}
+
+.diagram-browser__menu button:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .diagram-browser__thumbnail {

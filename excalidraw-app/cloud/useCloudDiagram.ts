@@ -36,6 +36,7 @@ export const useCloudDiagram = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const ensureDefault = useMutation(api.diagrams.ensureDefault);
   const createDiagram = useMutation(api.diagrams.create);
+  const removeDiagram = useMutation(api.diagrams.remove);
   const renameDiagram = useMutation(api.diagrams.rename);
   const saveDiagram = useMutation(api.diagrams.save);
   const setSharing = useMutation(api.diagrams.setSharing);
@@ -230,6 +231,52 @@ export const useCloudDiagram = () => {
     setRoute({ kind: "owner", slug: result.slug });
   }, [createDiagram, flushSave]);
 
+  const deleteDiagram = useCallback(
+    async (slug: string) => {
+      const diagram = diagrams?.find((candidate) => candidate.slug === slug);
+      if (!diagram) {
+        return;
+      }
+      const isActive = route.kind === "owner" && route.slug === slug;
+      if (isActive) {
+        await flushSave();
+      }
+      const fallback = diagrams?.find((candidate) => candidate.slug !== slug);
+      const { assetDeleteToken } = await removeDiagram({
+        diagramId: diagram._id,
+      });
+      if (assetDeleteToken) {
+        try {
+          const response = await fetch("/api/assets", {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${assetDeleteToken}`,
+            },
+          });
+          if (!response.ok) {
+            throw new Error("Image cleanup failed");
+          }
+        } catch {
+          setErrorMessage(
+            "The diagram was deleted, but some stored images could not be cleaned up.",
+          );
+        }
+      }
+      if (!isActive) {
+        return;
+      }
+      if (fallback) {
+        window.history.replaceState({}, "", `/d/${fallback.slug}`);
+        setRoute({ kind: "owner", slug: fallback.slug });
+      } else {
+        window.history.replaceState({}, "", "/");
+        setRoute({ kind: "home" });
+      }
+      setSaveStatus("loading");
+    },
+    [diagrams, flushSave, removeDiagram, route],
+  );
+
   const renameOpenedDiagram = useCallback(
     async (title: string) => {
       if (!openedDiagram || openedDiagram.access !== "owner") {
@@ -310,6 +357,7 @@ export const useCloudDiagram = () => {
       isDiagramListLoading: diagrams === undefined,
       openDiagram,
       createNewDiagram,
+      deleteDiagram,
       renameOpenedDiagram,
       assets: assets ?? [],
       queueAssets,
@@ -323,6 +371,7 @@ export const useCloudDiagram = () => {
       flushSave,
       assets,
       createNewDiagram,
+      deleteDiagram,
       openedDiagram,
       openDiagram,
       queueAssets,

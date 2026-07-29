@@ -8,9 +8,11 @@
  * @module
  */
 
+import type * as account from "../account.js";
 import type * as assets from "../assets.js";
 import type * as auth from "../auth.js";
 import type * as diagrams from "../diagrams.js";
+import type * as fixedAccounts from "../fixedAccounts.js";
 import type * as http from "../http.js";
 
 import type {
@@ -20,9 +22,11 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  account: typeof account;
   assets: typeof assets;
   auth: typeof auth;
   diagrams: typeof diagrams;
+  fixedAccounts: typeof fixedAccounts;
   http: typeof http;
 }>;
 

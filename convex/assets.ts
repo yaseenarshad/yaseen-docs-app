@@ -183,6 +183,32 @@ export const validateUploadGrant = internalMutation({
   },
 });
 
+export const consumeDeleteGrant = internalMutation({
+  args: {
+    token: v.string(),
+  },
+  returns: v.union(
+    v.null(),
+    v.object({
+      objectKeys: v.array(v.string()),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const grant = await ctx.db
+      .query("assetDeleteGrants")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .unique();
+    if (!grant) {
+      return null;
+    }
+    await ctx.db.delete("assetDeleteGrants", grant._id);
+    if (grant.expiresAt < Date.now()) {
+      return null;
+    }
+    return { objectKeys: grant.objectKeys };
+  },
+});
+
 export const registerUpload = mutation({
   args: {
     token: v.string(),

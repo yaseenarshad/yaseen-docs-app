@@ -33,6 +33,22 @@ const getGrant = async (request: Request, env: Env) => {
   };
 };
 
+const getDeleteGrant = async (request: Request, env: Env) => {
+  const authorization = request.headers.get("Authorization");
+  if (!authorization?.startsWith("Bearer ")) {
+    return null;
+  }
+  const response = await fetch(`${env.CONVEX_SITE_URL}/asset-delete-grant`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: authorization.slice("Bearer ".length) }),
+  });
+  if (!response.ok) {
+    return null;
+  }
+  return (await response.json()) as { objectKeys: string[] };
+};
+
 const uploadAsset = async (request: Request, env: Env) => {
   const grant = await getGrant(request, env);
   if (!grant) {
@@ -83,11 +99,27 @@ const serveAsset = async (request: Request, env: Env, objectKey: string) => {
   });
 };
 
+const deleteAssets = async (request: Request, env: Env) => {
+  const grant = await getDeleteGrant(request, env);
+  if (!grant) {
+    return json({ error: "Invalid or expired delete grant" }, { status: 403 });
+  }
+  for (let index = 0; index < grant.objectKeys.length; index += 1000) {
+    await env.DIAGRAM_ASSETS.delete(
+      grant.objectKeys.slice(index, index + 1000),
+    );
+  }
+  return json({ deleted: grant.objectKeys.length });
+};
+
 const worker: ExportedHandler<Env> = {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === "/api/assets" && request.method === "POST") {
       return await uploadAsset(request, env);
+    }
+    if (url.pathname === "/api/assets" && request.method === "DELETE") {
+      return await deleteAssets(request, env);
     }
     if (
       url.pathname.startsWith("/api/assets/") &&

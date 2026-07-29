@@ -288,6 +288,77 @@ export const rename = mutation({
   },
 });
 
+export const remove = mutation({
+  args: {
+    diagramId: v.id("diagrams"),
+  },
+  returns: v.object({
+    assetDeleteToken: v.union(v.string(), v.null()),
+  }),
+  handler: async (ctx, args) => {
+    const ownerId = await requireUserId(ctx);
+    const diagram = await ctx.db.get("diagrams", args.diagramId);
+    if (!diagram || diagram.ownerId !== ownerId) {
+      throw new Error("Diagram not found");
+    }
+
+    const [content, snapshots, assets, uploadGrants] = await Promise.all([
+      ctx.db
+        .query("diagramContents")
+        .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
+        .unique(),
+      ctx.db
+        .query("diagramSnapshots")
+        .withIndex("by_diagramId_and_version", (q) =>
+          q.eq("diagramId", diagram._id),
+        )
+        .take(1000),
+      ctx.db
+        .query("diagramAssets")
+        .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
+        .take(2000),
+      ctx.db
+        .query("assetUploadGrants")
+        .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
+        .take(1000),
+    ]);
+
+    const objectKeys = assets.flatMap((asset) =>
+      asset.objectKey ? [asset.objectKey] : [],
+    );
+    const assetDeleteToken = objectKeys.length > 0 ? makeShareToken() : null;
+    if (assetDeleteToken) {
+      const now = Date.now();
+      await ctx.db.insert("assetDeleteGrants", {
+        token: assetDeleteToken,
+        ownerId,
+        objectKeys,
+        createdAt: now,
+        expiresAt: now + 10 * 60 * 1000,
+      });
+    }
+
+    if (content) {
+      await ctx.db.delete("diagramContents", content._id);
+    }
+    for (const snapshot of snapshots) {
+      await ctx.db.delete("diagramSnapshots", snapshot._id);
+    }
+    for (const asset of assets) {
+      if (asset.storageId) {
+        await ctx.storage.delete(asset.storageId);
+      }
+      await ctx.db.delete("diagramAssets", asset._id);
+    }
+    for (const grant of uploadGrants) {
+      await ctx.db.delete("assetUploadGrants", grant._id);
+    }
+    await ctx.db.delete("diagrams", diagram._id);
+
+    return { assetDeleteToken };
+  },
+});
+
 export const setSharing = mutation({
   args: {
     diagramId: v.id("diagrams"),

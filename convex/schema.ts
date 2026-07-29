@@ -60,4 +60,11 @@ export default defineSchema({
   })
     .index("by_token", ["token"])
     .index("by_diagramId", ["diagramId"]),
+  assetDeleteGrants: defineTable({
+    token: v.string(),
+    ownerId: v.id("users"),
+    objectKeys: v.array(v.string()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  }).index("by_token", ["token"]),
 });

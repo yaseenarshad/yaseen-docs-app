@@ -138,6 +138,7 @@ import { useHandleAppTheme } from "./useHandleAppTheme";
 import { getPreferredLanguage } from "./app-language/language-detector";
 import { useAppLangCode } from "./app-language/language-state";
 import { CloudStatus } from "./cloud/CloudStatus";
+import { CloudAccount } from "./cloud/CloudAccount";
 import { useCloudDiagram } from "./cloud/useCloudDiagram";
 import DebugCanvas, {
   debugRenderer,
@@ -1075,6 +1076,7 @@ const ExcalidrawWrapper = () => {
                 canShare={cloud.openedDiagram?.access === "owner"}
                 onShare={cloud.enableSharing}
               />
+              <CloudAccount />
               {!isMobile && collabAPI && !isCollabDisabled && (
                 <>
                   {excalidrawAPI?.getEditorInterface().formFactor ===
@@ -1188,6 +1190,7 @@ const ExcalidrawWrapper = () => {
           activeSlug={cloud.route.kind === "owner" ? cloud.route.slug : null}
           isLoading={cloud.isDiagramListLoading}
           onCreate={cloud.createNewDiagram}
+          onDelete={cloud.deleteDiagram}
           onOpen={cloud.openDiagram}
         />
 

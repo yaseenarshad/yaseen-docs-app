@@ -18,6 +18,15 @@ type DiagramSummary = {
   updatedAt: number;
 };
 
+type DiagramBrowserProps = {
+  diagrams: DiagramSummary[];
+  activeSlug: string | null;
+  isLoading: boolean;
+  onCreate: () => Promise<void>;
+  onDelete: (slug: string) => Promise<void>;
+  onOpen: (slug: string) => Promise<void>;
+};
+
 type SidebarPromoCopyProps = {
   text: string;
 };
@@ -75,22 +84,18 @@ const SidebarPromoCopy = (props: SidebarPromoCopyProps) => {
   );
 };
 
-export const AppSidebar = ({
+export const DiagramBrowser = ({
   diagrams,
   activeSlug,
   isLoading,
   onCreate,
+  onDelete,
   onOpen,
-}: {
-  diagrams: DiagramSummary[];
-  activeSlug: string | null;
-  isLoading: boolean;
-  onCreate: () => Promise<void>;
-  onOpen: (slug: string) => Promise<void>;
-}) => {
-  const { theme, openSidebar } = useUIAppState();
+}: DiagramBrowserProps) => {
   const [search, setSearch] = useState("");
   const [isCreating, setIsCreating] = useState(false);
+  const [openMenuSlug, setOpenMenuSlug] = useState<string | null>(null);
+  const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
   const filteredDiagrams = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     if (!query) {
@@ -100,6 +105,132 @@ export const AppSidebar = ({
       diagram.title.toLocaleLowerCase().includes(query),
     );
   }, [diagrams, search]);
+
+  return (
+    <div className="diagram-browser">
+      <div className="diagram-browser__heading">
+        <div>
+          <strong>Your diagrams</strong>
+          <span>Saved automatically</span>
+        </div>
+        <button
+          type="button"
+          disabled={isCreating}
+          onClick={async () => {
+            setIsCreating(true);
+            try {
+              await onCreate();
+            } finally {
+              setIsCreating(false);
+            }
+          }}
+        >
+          {isCreating ? "Creating…" : "+ New"}
+        </button>
+      </div>
+      <input
+        className="diagram-browser__search"
+        type="search"
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="Search diagrams"
+        aria-label="Search diagrams"
+      />
+      <div className="diagram-browser__list">
+        {isLoading ? (
+          <div className="diagram-browser__empty">Loading diagrams…</div>
+        ) : filteredDiagrams.length === 0 ? (
+          <div className="diagram-browser__empty">
+            {search ? "No matching diagrams" : "No diagrams yet"}
+          </div>
+        ) : (
+          filteredDiagrams.map((diagram) => (
+            <div
+              key={diagram.slug}
+              className={
+                diagram.slug === activeSlug
+                  ? "diagram-browser__item diagram-browser__item--active"
+                  : "diagram-browser__item"
+              }
+            >
+              <button
+                type="button"
+                className="diagram-browser__open"
+                onClick={() => void onOpen(diagram.slug)}
+              >
+                <span className="diagram-browser__thumbnail">{file}</span>
+                <span className="diagram-browser__details">
+                  <strong>{diagram.title}</strong>
+                  <span>
+                    {new Intl.DateTimeFormat(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    }).format(diagram.updatedAt)}
+                  </span>
+                </span>
+              </button>
+              <div className="diagram-browser__options">
+                <button
+                  type="button"
+                  className="diagram-browser__more"
+                  aria-label={`More options for ${diagram.title}`}
+                  aria-expanded={openMenuSlug === diagram.slug}
+                  onClick={() =>
+                    setOpenMenuSlug((current) =>
+                      current === diagram.slug ? null : diagram.slug,
+                    )
+                  }
+                >
+                  ⋯
+                </button>
+                {openMenuSlug === diagram.slug && (
+                  <div className="diagram-browser__menu">
+                    <button
+                      type="button"
+                      disabled={deletingSlug === diagram.slug}
+                      onClick={async () => {
+                        if (
+                          !window.confirm(
+                            `Delete “${diagram.title}”? This cannot be undone.`,
+                          )
+                        ) {
+                          return;
+                        }
+                        setDeletingSlug(diagram.slug);
+                        try {
+                          await onDelete(diagram.slug);
+                          setOpenMenuSlug(null);
+                        } finally {
+                          setDeletingSlug(null);
+                        }
+                      }}
+                    >
+                      {deletingSlug === diagram.slug
+                        ? "Deleting…"
+                        : "Delete diagram"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
+
+export const AppSidebar = ({
+  diagrams,
+  activeSlug,
+  isLoading,
+  onCreate,
+  onDelete,
+  onOpen,
+}: DiagramBrowserProps) => {
+  const { theme, openSidebar } = useUIAppState();
 
   return (
     <>
@@ -136,71 +267,14 @@ export const AppSidebar = ({
           </Sidebar.TabTrigger>
         </DefaultSidebar.TabTriggers>
         <Sidebar.Tab tab="diagrams">
-          <div className="diagram-browser">
-            <div className="diagram-browser__heading">
-              <div>
-                <strong>Your diagrams</strong>
-                <span>Saved automatically</span>
-              </div>
-              <button
-                type="button"
-                disabled={isCreating}
-                onClick={async () => {
-                  setIsCreating(true);
-                  try {
-                    await onCreate();
-                  } finally {
-                    setIsCreating(false);
-                  }
-                }}
-              >
-                {isCreating ? "Creating…" : "+ New"}
-              </button>
-            </div>
-            <input
-              className="diagram-browser__search"
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search diagrams"
-              aria-label="Search diagrams"
-            />
-            <div className="diagram-browser__list">
-              {isLoading ? (
-                <div className="diagram-browser__empty">Loading diagrams…</div>
-              ) : filteredDiagrams.length === 0 ? (
-                <div className="diagram-browser__empty">
-                  {search ? "No matching diagrams" : "No diagrams yet"}
-                </div>
-              ) : (
-                filteredDiagrams.map((diagram) => (
-                  <button
-                    key={diagram.slug}
-                    type="button"
-                    className={
-                      diagram.slug === activeSlug
-                        ? "diagram-browser__item diagram-browser__item--active"
-                        : "diagram-browser__item"
-                    }
-                    onClick={() => void onOpen(diagram.slug)}
-                  >
-                    <span className="diagram-browser__thumbnail">{file}</span>
-                    <span className="diagram-browser__details">
-                      <strong>{diagram.title}</strong>
-                      <span>
-                        {new Intl.DateTimeFormat(undefined, {
-                          month: "short",
-                          day: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit",
-                        }).format(diagram.updatedAt)}
-                      </span>
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
+          <DiagramBrowser
+            diagrams={diagrams}
+            activeSlug={activeSlug}
+            isLoading={isLoading}
+            onCreate={onCreate}
+            onDelete={onDelete}
+            onOpen={onOpen}
+          />
         </Sidebar.Tab>
         <Sidebar.Tab tab="comments">
           <div className="app-sidebar-promo-container">

@@ -26,4 +26,22 @@ http.route({
   }),
 });
 
+http.route({
+  path: "/asset-delete-grant",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const body = (await request.json()) as { token?: unknown };
+    if (typeof body.token !== "string") {
+      return Response.json({ error: "Invalid grant" }, { status: 400 });
+    }
+    const grant = await ctx.runMutation(internal.assets.consumeDeleteGrant, {
+      token: body.token,
+    });
+    if (!grant) {
+      return Response.json({ error: "Grant expired" }, { status: 403 });
+    }
+    return Response.json(grant);
+  }),
+});
+
 export default http;
