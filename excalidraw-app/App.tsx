@@ -1070,6 +1070,8 @@ const ExcalidrawWrapper = () => {
                 title={cloud.openedDiagram?.diagram.title ?? "Cloud diagram"}
                 status={cloud.saveStatus}
                 errorMessage={cloud.errorMessage}
+                canRename={cloud.openedDiagram?.access === "owner"}
+                onRename={cloud.renameOpenedDiagram}
                 canShare={cloud.openedDiagram?.access === "owner"}
                 onShare={cloud.enableSharing}
               />
@@ -1181,7 +1183,13 @@ const ExcalidrawWrapper = () => {
           }}
         />
 
-        <AppSidebar />
+        <AppSidebar
+          diagrams={cloud.diagrams}
+          activeSlug={cloud.route.kind === "owner" ? cloud.route.slug : null}
+          isLoading={cloud.isDiagramListLoading}
+          onCreate={cloud.createNewDiagram}
+          onOpen={cloud.openDiagram}
+        />
 
         {errorMessage && (
           <ErrorDialog onClose={() => setErrorMessage("")}>

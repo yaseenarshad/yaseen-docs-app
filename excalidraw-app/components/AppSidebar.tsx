@@ -1,12 +1,22 @@
+import { useMemo, useState } from "react";
+
 import { DefaultSidebar, Sidebar, THEME } from "@excalidraw/excalidraw";
 import {
+  file,
   messageCircleIcon,
   presentationIcon,
+  sidebarRightIcon,
 } from "@excalidraw/excalidraw/components/icons";
 import { LinkButton } from "@excalidraw/excalidraw/components/LinkButton";
 import { useUIAppState } from "@excalidraw/excalidraw/context/ui-appState";
 
 import "./AppSidebar.scss";
+
+type DiagramSummary = {
+  slug: string;
+  title: string;
+  updatedAt: number;
+};
 
 type SidebarPromoCopyProps = {
   text: string;
@@ -65,67 +75,176 @@ const SidebarPromoCopy = (props: SidebarPromoCopyProps) => {
   );
 };
 
-export const AppSidebar = () => {
+export const AppSidebar = ({
+  diagrams,
+  activeSlug,
+  isLoading,
+  onCreate,
+  onOpen,
+}: {
+  diagrams: DiagramSummary[];
+  activeSlug: string | null;
+  isLoading: boolean;
+  onCreate: () => Promise<void>;
+  onOpen: (slug: string) => Promise<void>;
+}) => {
   const { theme, openSidebar } = useUIAppState();
+  const [search, setSearch] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
+  const filteredDiagrams = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase();
+    if (!query) {
+      return diagrams;
+    }
+    return diagrams.filter((diagram) =>
+      diagram.title.toLocaleLowerCase().includes(query),
+    );
+  }, [diagrams, search]);
 
   return (
-    <DefaultSidebar>
-      <DefaultSidebar.TabTriggers>
-        <Sidebar.TabTrigger
-          tab="comments"
-          style={{ opacity: openSidebar?.tab === "comments" ? 1 : 0.4 }}
-        >
-          {messageCircleIcon}
-        </Sidebar.TabTrigger>
-        <Sidebar.TabTrigger
-          tab="presentation"
-          style={{ opacity: openSidebar?.tab === "presentation" ? 1 : 0.4 }}
-        >
-          {presentationIcon}
-        </Sidebar.TabTrigger>
-      </DefaultSidebar.TabTriggers>
-      <Sidebar.Tab tab="comments">
-        <div className="app-sidebar-promo-container">
-          <div
-            className="app-sidebar-promo-image"
-            style={{
-              ["--image-source" as any]: `url(/sidebar-comments-promo-${
-                theme === THEME.DARK ? "dark" : "light"
-              }.jpg)`,
-              opacity: 0.9,
-            }}
-          />
-          <SidebarPromoCopy text="Make comments with Excalidraw+" />
-          <LinkButton
-            href={`${
-              import.meta.env.VITE_APP_PLUS_LP
-            }/plus?utm_source=excalidraw&utm_medium=app&utm_content=comments_promo#excalidraw-redirect`}
+    <>
+      <DefaultSidebar.Trigger
+        tab="diagrams"
+        icon={sidebarRightIcon}
+        title="Diagrams, library, and search"
+      />
+      <DefaultSidebar>
+        <DefaultSidebar.TabTriggers>
+          <Sidebar.TabTrigger
+            tab="diagrams"
+            aria-label="Diagrams"
+            title="Diagrams"
+            style={{ opacity: openSidebar?.tab === "diagrams" ? 1 : 0.4 }}
           >
-            Sign up now
-          </LinkButton>
-        </div>
-      </Sidebar.Tab>
-      <Sidebar.Tab tab="presentation" className="px-3">
-        <div className="app-sidebar-promo-container">
-          <div
-            className="app-sidebar-promo-image"
-            style={{
-              ["--image-source" as any]: `url(/sidebar-presentation-promo-${
-                theme === THEME.DARK ? "dark" : "light"
-              }.jpg)`,
-              opacity: 0.7,
-            }}
-          />
-          <SidebarPromoCopy text="Create presentation with Excalidraw+" />
-          <LinkButton
-            href={`${
-              import.meta.env.VITE_APP_PLUS_LP
-            }/plus?utm_source=excalidraw&utm_medium=app&utm_content=presentations_promo#excalidraw-redirect`}
+            {file}
+          </Sidebar.TabTrigger>
+          <Sidebar.TabTrigger
+            tab="comments"
+            aria-label="Comments"
+            title="Comments"
+            style={{ opacity: openSidebar?.tab === "comments" ? 1 : 0.4 }}
           >
-            Sign up now
-          </LinkButton>
-        </div>
-      </Sidebar.Tab>
-    </DefaultSidebar>
+            {messageCircleIcon}
+          </Sidebar.TabTrigger>
+          <Sidebar.TabTrigger
+            tab="presentation"
+            aria-label="Presentation"
+            title="Presentation"
+            style={{ opacity: openSidebar?.tab === "presentation" ? 1 : 0.4 }}
+          >
+            {presentationIcon}
+          </Sidebar.TabTrigger>
+        </DefaultSidebar.TabTriggers>
+        <Sidebar.Tab tab="diagrams">
+          <div className="diagram-browser">
+            <div className="diagram-browser__heading">
+              <div>
+                <strong>Your diagrams</strong>
+                <span>Saved automatically</span>
+              </div>
+              <button
+                type="button"
+                disabled={isCreating}
+                onClick={async () => {
+                  setIsCreating(true);
+                  try {
+                    await onCreate();
+                  } finally {
+                    setIsCreating(false);
+                  }
+                }}
+              >
+                {isCreating ? "Creating…" : "+ New"}
+              </button>
+            </div>
+            <input
+              className="diagram-browser__search"
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search diagrams"
+              aria-label="Search diagrams"
+            />
+            <div className="diagram-browser__list">
+              {isLoading ? (
+                <div className="diagram-browser__empty">Loading diagrams…</div>
+              ) : filteredDiagrams.length === 0 ? (
+                <div className="diagram-browser__empty">
+                  {search ? "No matching diagrams" : "No diagrams yet"}
+                </div>
+              ) : (
+                filteredDiagrams.map((diagram) => (
+                  <button
+                    key={diagram.slug}
+                    type="button"
+                    className={
+                      diagram.slug === activeSlug
+                        ? "diagram-browser__item diagram-browser__item--active"
+                        : "diagram-browser__item"
+                    }
+                    onClick={() => void onOpen(diagram.slug)}
+                  >
+                    <span className="diagram-browser__thumbnail">{file}</span>
+                    <span className="diagram-browser__details">
+                      <strong>{diagram.title}</strong>
+                      <span>
+                        {new Intl.DateTimeFormat(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        }).format(diagram.updatedAt)}
+                      </span>
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </Sidebar.Tab>
+        <Sidebar.Tab tab="comments">
+          <div className="app-sidebar-promo-container">
+            <div
+              className="app-sidebar-promo-image"
+              style={{
+                ["--image-source" as any]: `url(/sidebar-comments-promo-${
+                  theme === THEME.DARK ? "dark" : "light"
+                }.jpg)`,
+                opacity: 0.9,
+              }}
+            />
+            <SidebarPromoCopy text="Make comments with Excalidraw+" />
+            <LinkButton
+              href={`${
+                import.meta.env.VITE_APP_PLUS_LP
+              }/plus?utm_source=excalidraw&utm_medium=app&utm_content=comments_promo#excalidraw-redirect`}
+            >
+              Sign up now
+            </LinkButton>
+          </div>
+        </Sidebar.Tab>
+        <Sidebar.Tab tab="presentation" className="px-3">
+          <div className="app-sidebar-promo-container">
+            <div
+              className="app-sidebar-promo-image"
+              style={{
+                ["--image-source" as any]: `url(/sidebar-presentation-promo-${
+                  theme === THEME.DARK ? "dark" : "light"
+                }.jpg)`,
+                opacity: 0.7,
+              }}
+            />
+            <SidebarPromoCopy text="Create presentation with Excalidraw+" />
+            <LinkButton
+              href={`${
+                import.meta.env.VITE_APP_PLUS_LP
+              }/plus?utm_source=excalidraw&utm_medium=app&utm_content=presentations_promo#excalidraw-redirect`}
+            >
+              Sign up now
+            </LinkButton>
+          </div>
+        </Sidebar.Tab>
+      </DefaultSidebar>
+    </>
   );
 };

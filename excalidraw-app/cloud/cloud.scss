@@ -51,11 +51,37 @@
   max-width: 190px;
 }
 
-.cloud-status__identity strong {
+.cloud-status__title {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: text;
   font-size: 12px;
+  font-weight: 700;
   overflow: hidden;
+  padding: 0;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.cloud-status__title:disabled {
+  cursor: default;
+}
+
+.cloud-status__title-input {
+  background: var(--input-bg-color);
+  border: 1px solid #6965db;
+  border-radius: 4px;
+  color: var(--text-primary-color);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  margin: -2px 0;
+  max-width: 180px;
+  outline: none;
+  padding: 1px 4px;
+  width: 180px;
 }
 
 .cloud-status__state {

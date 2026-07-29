@@ -90,3 +90,135 @@
     }
   }
 }
+.diagram-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  padding: 12px;
+}
+
+.diagram-browser__heading {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.diagram-browser__heading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.diagram-browser__heading strong {
+  font-size: 15px;
+}
+
+.diagram-browser__heading span {
+  color: var(--text-secondary-color);
+  font-size: 11px;
+}
+
+.diagram-browser__heading button {
+  background: #6965db;
+  border: 0;
+  border-radius: 8px;
+  color: white;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 10px;
+}
+
+.diagram-browser__heading button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.diagram-browser__search {
+  background: var(--input-bg-color);
+  border: 1px solid var(--default-border-color);
+  border-radius: 8px;
+  color: var(--text-primary-color);
+  font: inherit;
+  padding: 9px 10px;
+  width: 100%;
+}
+
+.diagram-browser__search:focus {
+  border-color: #6965db;
+  outline: none;
+}
+
+.diagram-browser__list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.diagram-browser__item {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  color: var(--text-primary-color);
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  padding: 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.diagram-browser__item:hover {
+  background: var(--button-hover-bg);
+}
+
+.diagram-browser__item--active {
+  background: var(--color-primary-light);
+}
+
+.diagram-browser__thumbnail {
+  align-items: center;
+  background: var(--island-bg-color);
+  border: 1px solid var(--default-border-color);
+  border-radius: 7px;
+  display: flex;
+  flex: 0 0 36px;
+  height: 36px;
+  justify-content: center;
+}
+
+.diagram-browser__thumbnail svg {
+  height: 18px;
+  width: 18px;
+}
+
+.diagram-browser__details {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.diagram-browser__details strong {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagram-browser__details span {
+  color: var(--text-secondary-color);
+  font-size: 10px;
+}
+
+.diagram-browser__empty {
+  color: var(--text-secondary-color);
+  font-size: 12px;
+  padding: 28px 8px;
+  text-align: center;
+}

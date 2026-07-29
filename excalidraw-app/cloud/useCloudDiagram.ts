@@ -35,6 +35,8 @@ export const useCloudDiagram = () => {
   const [saveStatus, setSaveStatus] = useState<CloudSaveStatus>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const ensureDefault = useMutation(api.diagrams.ensureDefault);
+  const createDiagram = useMutation(api.diagrams.create);
+  const renameDiagram = useMutation(api.diagrams.rename);
   const saveDiagram = useMutation(api.diagrams.save);
   const setSharing = useMutation(api.diagrams.setSharing);
   const createAssetUploadGrant = useMutation(api.assets.createUploadGrant);
@@ -49,6 +51,7 @@ export const useCloudDiagram = () => {
     api.diagrams.openMine,
     route.kind === "owner" ? { slug: route.slug } : "skip",
   );
+  const diagrams = useQuery(api.diagrams.listMine, {});
   const sharedDiagram = useQuery(
     api.diagrams.openShared,
     route.kind === "shared" ? { shareToken: route.shareToken } : "skip",
@@ -204,6 +207,42 @@ export const useCloudDiagram = () => {
     return `${window.location.origin}/s/${result.shareToken}`;
   }, [openedDiagram, setSharing]);
 
+  const openDiagram = useCallback(
+    async (slug: string) => {
+      if (route.kind === "owner" && route.slug === slug) {
+        return;
+      }
+      await flushSave();
+      setSaveStatus("loading");
+      setErrorMessage(null);
+      window.history.pushState({}, "", `/d/${slug}`);
+      setRoute({ kind: "owner", slug });
+    },
+    [flushSave, route],
+  );
+
+  const createNewDiagram = useCallback(async () => {
+    await flushSave();
+    const result = await createDiagram({ title: "Untitled diagram" });
+    setSaveStatus("loading");
+    setErrorMessage(null);
+    window.history.pushState({}, "", `/d/${result.slug}`);
+    setRoute({ kind: "owner", slug: result.slug });
+  }, [createDiagram, flushSave]);
+
+  const renameOpenedDiagram = useCallback(
+    async (title: string) => {
+      if (!openedDiagram || openedDiagram.access !== "owner") {
+        return;
+      }
+      await renameDiagram({
+        diagramId: openedDiagram.diagram._id,
+        title,
+      });
+    },
+    [openedDiagram, renameDiagram],
+  );
+
   const queueAssets = useCallback(
     (files: BinaryFiles) => {
       if (!openedDiagram || openedDiagram.access !== "owner") {
@@ -267,6 +306,11 @@ export const useCloudDiagram = () => {
       queueSave,
       flushSave,
       enableSharing,
+      diagrams: diagrams ?? [],
+      isDiagramListLoading: diagrams === undefined,
+      openDiagram,
+      createNewDiagram,
+      renameOpenedDiagram,
       assets: assets ?? [],
       queueAssets,
       isViewer: openedDiagram?.access === "viewer",
@@ -274,12 +318,16 @@ export const useCloudDiagram = () => {
     }),
     [
       enableSharing,
+      diagrams,
       errorMessage,
       flushSave,
       assets,
+      createNewDiagram,
       openedDiagram,
+      openDiagram,
       queueAssets,
       queueSave,
+      renameOpenedDiagram,
       route,
       saveStatus,
     ],
