@@ -45,6 +45,7 @@ export const useCloudDiagram = () => {
   const versionRef = useRef(0);
   const saveTimerRef = useRef<number | null>(null);
   const pendingSceneRef = useRef<string | null>(null);
+  const latestServerSceneRef = useRef<string | null>(null);
   const uploadedFileIdsRef = useRef(new Set<string>());
   const uploadingFileIdsRef = useRef(new Set<string>());
 
@@ -118,6 +119,7 @@ export const useCloudDiagram = () => {
   useEffect(() => {
     if (openedDiagram) {
       versionRef.current = openedDiagram.version;
+      latestServerSceneRef.current = openedDiagram.sceneJson;
       setSaveStatus(openedDiagram.access === "viewer" ? "viewer" : "saved");
       setErrorMessage(null);
     } else if (openedDiagram === null) {
@@ -172,6 +174,11 @@ export const useCloudDiagram = () => {
       if (!openedDiagram || openedDiagram.access !== "owner") {
         return;
       }
+      if (sceneJson === latestServerSceneRef.current) {
+        pendingSceneRef.current = null;
+        setSaveStatus("saved");
+        return;
+      }
       pendingSceneRef.current = sceneJson;
       setSaveStatus("saving");
       if (saveTimerRef.current !== null) {
@@ -184,6 +191,14 @@ export const useCloudDiagram = () => {
     },
     [flushSave, openedDiagram],
   );
+
+  const discardPendingSave = useCallback(() => {
+    pendingSceneRef.current = null;
+    if (saveTimerRef.current !== null) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(
     () => () => {
@@ -351,6 +366,7 @@ export const useCloudDiagram = () => {
       saveStatus,
       errorMessage,
       queueSave,
+      discardPendingSave,
       flushSave,
       enableSharing,
       diagrams: diagrams ?? [],
@@ -376,6 +392,7 @@ export const useCloudDiagram = () => {
       openDiagram,
       queueAssets,
       queueSave,
+      discardPendingSave,
       renameOpenedDiagram,
       route,
       saveStatus,

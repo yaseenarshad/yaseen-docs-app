@@ -11,11 +11,14 @@
 import type * as account from "../account.js";
 import type * as assets from "../assets.js";
 import type * as auth from "../auth.js";
+import type * as diagramHistory from "../diagramHistory.js";
 import type * as diagrams from "../diagrams.js";
 import type * as fixedAccounts from "../fixedAccounts.js";
 import type * as http from "../http.js";
 import type * as programmaticEdits from "../programmaticEdits.js";
 import type * as programmaticScene from "../programmaticScene.js";
+import type * as sceneConflict from "../sceneConflict.js";
+import type * as snapshotPolicy from "../snapshotPolicy.js";
 
 import type {
   ApiFromModules,
@@ -27,11 +30,14 @@ declare const fullApi: ApiFromModules<{
   account: typeof account;
   assets: typeof assets;
   auth: typeof auth;
+  diagramHistory: typeof diagramHistory;
   diagrams: typeof diagrams;
   fixedAccounts: typeof fixedAccounts;
   http: typeof http;
   programmaticEdits: typeof programmaticEdits;
   programmaticScene: typeof programmaticScene;
+  sceneConflict: typeof sceneConflict;
+  snapshotPolicy: typeof snapshotPolicy;
 }>;
 
 /**

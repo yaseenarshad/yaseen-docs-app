@@ -1,0 +1,37 @@
+import { shouldApplyCloudScene, shouldMergeCloudScene } from "./cloudSceneSync";
+
+describe("cloud scene synchronization", () => {
+  it("applies a newer server version for an owner route", () => {
+    expect(
+      shouldApplyCloudScene(
+        { routeKey: "owner:diagram", version: 10 },
+        { routeKey: "owner:diagram", version: 11 },
+      ),
+    ).toBe(true);
+  });
+
+  it("does not reapply the same route and version", () => {
+    expect(
+      shouldApplyCloudScene(
+        { routeKey: "owner:diagram", version: 11 },
+        { routeKey: "owner:diagram", version: 11 },
+      ),
+    ).toBe(false);
+  });
+
+  it("replaces the scene on route changes and merges same-route updates", () => {
+    expect(
+      shouldMergeCloudScene(
+        { routeKey: "owner:first", version: 4 },
+        "owner:first",
+      ),
+    ).toBe(true);
+    expect(
+      shouldMergeCloudScene(
+        { routeKey: "owner:first", version: 4 },
+        "owner:second",
+      ),
+    ).toBe(false);
+    expect(shouldMergeCloudScene(null, "owner:first")).toBe(false);
+  });
+});

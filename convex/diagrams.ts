@@ -2,6 +2,8 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 
 import { mutation, query } from "./_generated/server";
+import { createDiagramSnapshotIfNeeded } from "./diagramHistory";
+import { hasElementVersionRegression } from "./sceneConflict";
 
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -252,10 +254,21 @@ export const save = mutation({
     if (!content) {
       throw new Error("Diagram content is missing");
     }
-    if (content.version !== args.expectedVersion) {
+    if (
+      content.version !== args.expectedVersion ||
+      hasElementVersionRegression(content.sceneJson, args.sceneJson)
+    ) {
       return { status: "conflict" as const, version: content.version };
     }
     const now = Date.now();
+    await createDiagramSnapshotIfNeeded(ctx, {
+      diagramId: diagram._id,
+      ownerId,
+      sceneJson: content.sceneJson,
+      version: content.version,
+      now,
+      force: false,
+    });
     const version = content.version + 1;
     await ctx.db.patch("diagramContents", content._id, {
       sceneJson: args.sceneJson,

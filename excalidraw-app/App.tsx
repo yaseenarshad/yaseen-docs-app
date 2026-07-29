@@ -139,6 +139,10 @@ import { getPreferredLanguage } from "./app-language/language-detector";
 import { useAppLangCode } from "./app-language/language-state";
 import { CloudStatus } from "./cloud/CloudStatus";
 import { CloudAccount } from "./cloud/CloudAccount";
+import {
+  shouldApplyCloudScene,
+  shouldMergeCloudScene,
+} from "./cloud/cloudSceneSync";
 import { useCloudDiagram } from "./cloud/useCloudDiagram";
 import DebugCanvas, {
   debugRenderer,
@@ -383,6 +387,7 @@ const ExcalidrawWrapper = () => {
     routeKey: string;
     version: number;
   } | null>(null);
+  const applyingCloudSceneRef = useRef(false);
   const loadingCloudFileIdsRef = useRef(new Set<string>());
 
   const [errorMessage, setErrorMessage] = useState("");
@@ -458,32 +463,58 @@ const ExcalidrawWrapper = () => {
         ? `shared:${cloud.route.shareToken}`
         : "home";
     const previous = loadedCloudSceneRef.current;
-    const shouldApply =
-      previous?.routeKey !== routeKey ||
-      (cloud.isViewer && previous.version !== cloud.openedDiagram.version);
-
-    if (!shouldApply) {
+    const nextAppliedScene = {
+      routeKey,
+      version: cloud.openedDiagram.version,
+    };
+    if (!shouldApplyCloudScene(previous, nextAppliedScene)) {
       return;
     }
 
     try {
       const scene = JSON.parse(cloud.openedDiagram.sceneJson);
+      const appState = excalidrawAPI.getAppState();
+      const remoteElements = restoreElements(scene.elements, null, {
+        repairBindings: true,
+        deleteInvisibleElements: true,
+      });
+      const shouldMerge =
+        cloud.openedDiagram.access === "owner" &&
+        shouldMergeCloudScene(previous, routeKey);
+      const elements = shouldMerge
+        ? reconcileElements(
+            excalidrawAPI.getSceneElementsIncludingDeleted(),
+            remoteElements as RemoteExcalidrawElement[],
+            appState,
+          )
+        : remoteElements;
+      const restoredAppState = {
+        ...restoreAppState(scene.appState, appState),
+        viewModeEnabled: cloud.isViewer,
+      };
+
+      cloud.discardPendingSave();
+      applyingCloudSceneRef.current = true;
+      loadedCloudSceneRef.current = nextAppliedScene;
       excalidrawAPI.updateScene({
-        elements: restoreElements(scene.elements, null, {
-          repairBindings: true,
-          deleteInvisibleElements: true,
-        }),
-        appState: {
-          ...restoreAppState(scene.appState, excalidrawAPI.getAppState()),
-          viewModeEnabled: cloud.isViewer,
-        },
+        elements,
+        appState: restoredAppState,
         captureUpdate: CaptureUpdateAction.NEVER,
       });
-      loadedCloudSceneRef.current = {
-        routeKey,
-        version: cloud.openedDiagram.version,
-      };
+      applyingCloudSceneRef.current = false;
+
+      if (shouldMerge) {
+        cloud.queueSave(
+          serializeAsJSON(
+            elements,
+            restoredAppState,
+            excalidrawAPI.getFiles(),
+            "database",
+          ),
+        );
+      }
     } catch (error) {
+      applyingCloudSceneRef.current = false;
       console.error("Could not restore cloud diagram", error);
       excalidrawAPI.updateScene({
         appState: {
@@ -491,7 +522,7 @@ const ExcalidrawWrapper = () => {
         },
       });
     }
-  }, [cloud.isViewer, cloud.openedDiagram, cloud.route, excalidrawAPI]);
+  }, [cloud, excalidrawAPI]);
 
   useEffect(() => {
     if (!excalidrawAPI || cloud.assets.length === 0) {
@@ -821,7 +852,10 @@ const ExcalidrawWrapper = () => {
       });
     }
 
-    if (cloud.openedDiagram?.access === "owner") {
+    if (
+      cloud.openedDiagram?.access === "owner" &&
+      !applyingCloudSceneRef.current
+    ) {
       cloud.queueAssets(files);
       cloud.queueSave(serializeAsJSON(elements, appState, files, "database"));
     }
