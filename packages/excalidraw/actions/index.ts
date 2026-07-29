@@ -16,6 +16,7 @@ export {
   actionChangeFreedrawMode,
   actionChangeOpacity,
   actionChangeFontSize,
+  actionChangeTextStyle,
   actionChangeFontFamily,
   actionChangeTextAlign,
   actionChangeVerticalAlign,

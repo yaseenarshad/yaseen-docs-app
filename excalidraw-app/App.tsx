@@ -7,6 +7,7 @@ import {
   useEditorInterface,
   ExcalidrawAPIProvider,
   useExcalidrawAPI,
+  getDataURL,
 } from "@excalidraw/excalidraw";
 import { trackEvent } from "@excalidraw/excalidraw/analytics";
 import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
@@ -35,6 +36,7 @@ import {
 import polyfill from "@excalidraw/excalidraw/polyfill";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { loadFromBlob } from "@excalidraw/excalidraw/data/blob";
+import { serializeAsJSON } from "@excalidraw/excalidraw/data/json";
 import { t } from "@excalidraw/excalidraw/i18n";
 
 import {
@@ -70,6 +72,7 @@ import type {
 } from "@excalidraw/element/types";
 import type {
   AppState,
+  BinaryFileData,
   ExcalidrawImperativeAPI,
   BinaryFiles,
   ExcalidrawInitialDataState,
@@ -134,6 +137,8 @@ import CollabError, { collabErrorIndicatorAtom } from "./collab/CollabError";
 import { useHandleAppTheme } from "./useHandleAppTheme";
 import { getPreferredLanguage } from "./app-language/language-detector";
 import { useAppLangCode } from "./app-language/language-state";
+import { CloudStatus } from "./cloud/CloudStatus";
+import { useCloudDiagram } from "./cloud/useCloudDiagram";
 import DebugCanvas, {
   debugRenderer,
   isVisualDebuggerEnabled,
@@ -372,6 +377,12 @@ const initializeScene = async (opts: {
 
 const ExcalidrawWrapper = () => {
   const excalidrawAPI = useExcalidrawAPI();
+  const cloud = useCloudDiagram();
+  const loadedCloudSceneRef = useRef<{
+    routeKey: string;
+    version: number;
+  } | null>(null);
+  const loadingCloudFileIdsRef = useRef(new Set<string>());
 
   const [errorMessage, setErrorMessage] = useState("");
   const isCollabDisabled = isRunningInIframe();
@@ -433,6 +444,100 @@ const ExcalidrawWrapper = () => {
       forceRefresh((prev) => !prev);
     }
   }, [excalidrawAPI]);
+
+  useEffect(() => {
+    if (!excalidrawAPI || !cloud.openedDiagram) {
+      return;
+    }
+
+    const routeKey =
+      cloud.route.kind === "owner"
+        ? `owner:${cloud.route.slug}`
+        : cloud.route.kind === "shared"
+        ? `shared:${cloud.route.shareToken}`
+        : "home";
+    const previous = loadedCloudSceneRef.current;
+    const shouldApply =
+      previous?.routeKey !== routeKey ||
+      (cloud.isViewer && previous.version !== cloud.openedDiagram.version);
+
+    if (!shouldApply) {
+      return;
+    }
+
+    try {
+      const scene = JSON.parse(cloud.openedDiagram.sceneJson);
+      excalidrawAPI.updateScene({
+        elements: restoreElements(scene.elements, null, {
+          repairBindings: true,
+          deleteInvisibleElements: true,
+        }),
+        appState: {
+          ...restoreAppState(scene.appState, excalidrawAPI.getAppState()),
+          viewModeEnabled: cloud.isViewer,
+        },
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+      loadedCloudSceneRef.current = {
+        routeKey,
+        version: cloud.openedDiagram.version,
+      };
+    } catch (error) {
+      console.error("Could not restore cloud diagram", error);
+      excalidrawAPI.updateScene({
+        appState: {
+          errorMessage: "The saved cloud diagram could not be opened.",
+        },
+      });
+    }
+  }, [cloud.isViewer, cloud.openedDiagram, cloud.route, excalidrawAPI]);
+
+  useEffect(() => {
+    if (!excalidrawAPI || cloud.assets.length === 0) {
+      return;
+    }
+    const currentFiles = excalidrawAPI.getFiles();
+    const assetsToLoad = cloud.assets.filter(
+      (asset) =>
+        !currentFiles[asset.fileId as FileId] &&
+        !loadingCloudFileIdsRef.current.has(asset.fileId),
+    );
+    if (assetsToLoad.length === 0) {
+      return;
+    }
+    for (const asset of assetsToLoad) {
+      loadingCloudFileIdsRef.current.add(asset.fileId);
+    }
+    void Promise.all(
+      assetsToLoad.map(async (asset): Promise<BinaryFileData> => {
+        const response = await fetch(asset.url);
+        if (!response.ok) {
+          throw new Error(`Could not load image (${response.status})`);
+        }
+        return {
+          id: asset.fileId as FileId,
+          mimeType: asset.mimeType as BinaryFileData["mimeType"],
+          dataURL: await getDataURL(await response.blob()),
+          created: asset.createdAt,
+          lastRetrieved: Date.now(),
+        };
+      }),
+    )
+      .then((files) => excalidrawAPI.addFiles(files))
+      .catch((error) => {
+        console.error("Could not load cloud images", error);
+        excalidrawAPI.updateScene({
+          appState: {
+            errorMessage: "One or more cloud images could not be loaded.",
+          },
+        });
+      })
+      .finally(() => {
+        for (const asset of assetsToLoad) {
+          loadingCloudFileIdsRef.current.delete(asset.fileId);
+        }
+      });
+  }, [cloud.assets, excalidrawAPI]);
 
   // ---------------------------------------------------------------------------
   // Hoisted loadImages
@@ -715,6 +820,11 @@ const ExcalidrawWrapper = () => {
       });
     }
 
+    if (cloud.openedDiagram?.access === "owner") {
+      cloud.queueAssets(files);
+      cloud.queueSave(serializeAsJSON(elements, appState, files, "database"));
+    }
+
     // Render the debug scene if the debug canvas is available
     if (debugCanvasRef.current && excalidrawAPI) {
       debugRenderer(
@@ -950,29 +1060,40 @@ const ExcalidrawWrapper = () => {
         detectScroll={false}
         handleKeyboardGlobally={true}
         autoFocus={true}
+        viewModeEnabled={cloud.isViewer}
         theme={editorTheme}
         onThemeChange={setAppTheme}
         renderTopRightUI={(isMobile) => {
-          if (isMobile || !collabAPI || isCollabDisabled) {
-            return null;
-          }
-
           return (
             <div className="excalidraw-ui-top-right">
-              {excalidrawAPI?.getEditorInterface().formFactor === "desktop" && (
-                <ExcalidrawPlusPromoBanner
-                  isSignedIn={isExcalidrawPlusSignedUser}
-                />
-              )}
-
-              {collabError.message && <CollabError collabError={collabError} />}
-              <LiveCollaborationTrigger
-                isCollaborating={isCollaborating}
-                onSelect={() =>
-                  setShareDialogState({ isOpen: true, type: "share" })
-                }
-                editorInterface={editorInterface}
+              <CloudStatus
+                title={cloud.openedDiagram?.diagram.title ?? "Cloud diagram"}
+                status={cloud.saveStatus}
+                errorMessage={cloud.errorMessage}
+                canShare={cloud.openedDiagram?.access === "owner"}
+                onShare={cloud.enableSharing}
               />
+              {!isMobile && collabAPI && !isCollabDisabled && (
+                <>
+                  {excalidrawAPI?.getEditorInterface().formFactor ===
+                    "desktop" && (
+                    <ExcalidrawPlusPromoBanner
+                      isSignedIn={isExcalidrawPlusSignedUser}
+                    />
+                  )}
+
+                  {collabError.message && (
+                    <CollabError collabError={collabError} />
+                  )}
+                  <LiveCollaborationTrigger
+                    isCollaborating={isCollaborating}
+                    onSelect={() =>
+                      setShareDialogState({ isOpen: true, type: "share" })
+                    }
+                    editorInterface={editorInterface}
+                  />
+                </>
+              )}
             </div>
           );
         }}

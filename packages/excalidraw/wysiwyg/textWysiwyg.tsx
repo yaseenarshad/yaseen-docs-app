@@ -251,6 +251,12 @@ export const textWysiwyg = ({
     if (`${updatedTextElement.fontSize}px` !== editable.style.fontSize) {
       return true;
     }
+    if (
+      (updatedTextElement.fontWeight ?? "normal") !==
+      (editable.style.fontWeight || "normal")
+    ) {
+      return true;
+    }
     return false;
   };
 
@@ -393,6 +399,8 @@ export const textWysiwyg = ({
         ),
         textAlign,
         verticalAlign,
+        fontWeight: updatedTextElement.fontWeight ?? "normal",
+        textDecoration: updatedTextElement.textDecoration ?? "none",
         color: applyDarkModeFilter(
           updatedTextElement.strokeColor,
           appState.theme === THEME.DARK,

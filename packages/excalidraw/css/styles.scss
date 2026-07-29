@@ -203,6 +203,30 @@ body.excalidraw-cursor-resize * {
       }
     }
 
+    .font-size-custom {
+      align-items: center;
+      display: flex;
+      gap: 0.35rem;
+      margin-top: 0.4rem;
+
+      input {
+        background: var(--input-bg-color);
+        border: 1px solid var(--default-border-color);
+        border-radius: var(--border-radius-md);
+        color: var(--text-primary-color);
+        font: inherit;
+        height: 2rem;
+        min-width: 0;
+        padding: 0 0.45rem;
+        width: 4.5rem;
+      }
+
+      span {
+        color: var(--text-secondary-color);
+        font-size: 0.75rem;
+      }
+    }
+
     fieldset {
       margin: 0;
       padding: 0;

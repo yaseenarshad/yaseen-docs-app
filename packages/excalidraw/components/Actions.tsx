@@ -176,6 +176,7 @@ export const SelectedShapeActions = ({
         <>
           <fieldset>{renderAction("changeFontFamily")}</fieldset>
           {renderAction("changeFontSize")}
+          {renderAction("changeTextStyle")}
           {predicates.textAlign && renderAction("changeTextAlign")}
         </>
       )}
@@ -469,6 +470,7 @@ const CombinedTextProperties = ({
           >
             <div className="selected-shape-actions">
               {predicates.text && renderAction("changeFontSize")}
+              {predicates.text && renderAction("changeTextStyle")}
               {predicates.textAlign && renderAction("changeTextAlign")}
               {predicates.verticalAlign && renderAction("changeVerticalAlign")}
             </div>

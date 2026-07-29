@@ -1,0 +1,92 @@
+.cloud-bootstrap {
+  align-items: center;
+  background: #f8f7ff;
+  color: #34303d;
+  display: flex;
+  flex-direction: column;
+  font-family: system-ui, sans-serif;
+  gap: 14px;
+  height: 100%;
+  justify-content: center;
+}
+
+.cloud-bootstrap--error {
+  color: #b42318;
+}
+
+.cloud-bootstrap button {
+  background: #6965db;
+  border: 0;
+  border-radius: 8px;
+  color: white;
+  cursor: pointer;
+  padding: 8px 14px;
+}
+
+.cloud-bootstrap__spinner {
+  animation: cloud-spin 0.8s linear infinite;
+  border: 3px solid #d7d5f5;
+  border-radius: 50%;
+  border-top-color: #6965db;
+  height: 24px;
+  width: 24px;
+}
+
+.cloud-status {
+  align-items: center;
+  background: var(--island-bg-color);
+  border: 1px solid var(--default-border-color);
+  border-radius: 10px;
+  box-shadow: var(--shadow-island);
+  display: flex;
+  gap: 10px;
+  min-height: 38px;
+  padding: 4px 5px 4px 10px;
+}
+
+.cloud-status__identity {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+  max-width: 190px;
+}
+
+.cloud-status__identity strong {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloud-status__state {
+  color: var(--text-secondary-color);
+  font-size: 10px;
+}
+
+.cloud-status__state--error,
+.cloud-status__state--conflict {
+  color: #e03131;
+}
+
+.cloud-status__share {
+  background: #6965db;
+  border: 0;
+  border-radius: 7px;
+  color: white;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 10px;
+}
+
+@keyframes cloud-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 730px) {
+  .cloud-status__identity {
+    max-width: 110px;
+  }
+}

@@ -895,6 +895,36 @@ export const actionChangeFontSize = register<ExcalidrawTextElement["fontSize"]>(
     },
     PanelComponent: ({ elements, appState, updateData, app, data }) => {
       const { isCompact } = getStylesPanelInfo(app);
+      const fontSize = getFormValue(
+        elements,
+        app,
+        (element) => {
+          if (isTextElement(element)) {
+            return element.fontSize;
+          }
+          const boundTextElement = getBoundTextElement(
+            element,
+            app.scene.getNonDeletedElementsMap(),
+          );
+          return boundTextElement?.fontSize ?? null;
+        },
+        (element) =>
+          isTextElement(element) ||
+          getBoundTextElement(element, app.scene.getNonDeletedElementsMap()) !==
+            null,
+        (hasSelection) =>
+          hasSelection
+            ? null
+            : appState.currentItemFontSize || DEFAULT_FONT_SIZE,
+      );
+      const updateFontSize = (value: number) => {
+        withCaretPositionPreservation(
+          () => updateData(value),
+          isCompact,
+          !!appState.editingTextElement,
+          data?.onPreventClose,
+        );
+      };
 
       return (
         <fieldset>
@@ -928,48 +958,199 @@ export const actionChangeFontSize = register<ExcalidrawTextElement["fontSize"]>(
                   testId: "fontSize-veryLarge",
                 },
               ]}
-              value={getFormValue(
-                elements,
-                app,
-                (element) => {
-                  if (isTextElement(element)) {
-                    return element.fontSize;
-                  }
-                  const boundTextElement = getBoundTextElement(
-                    element,
-                    app.scene.getNonDeletedElementsMap(),
-                  );
-                  if (boundTextElement) {
-                    return boundTextElement.fontSize;
-                  }
-                  return null;
-                },
-                (element) =>
-                  isTextElement(element) ||
-                  getBoundTextElement(
-                    element,
-                    app.scene.getNonDeletedElementsMap(),
-                  ) !== null,
-                (hasSelection) =>
-                  hasSelection
-                    ? null
-                    : appState.currentItemFontSize || DEFAULT_FONT_SIZE,
-              )}
-              onChange={(value) => {
-                withCaretPositionPreservation(
-                  () => updateData(value),
-                  isCompact,
-                  !!appState.editingTextElement,
-                  data?.onPreventClose,
-                );
-              }}
+              value={fontSize}
+              onChange={updateFontSize}
             />
           </div>
+          <ExactFontSizeInput value={fontSize} onChange={updateFontSize} />
         </fieldset>
       );
     },
   },
 );
+
+const ExactFontSizeInput = ({
+  value,
+  onChange,
+}: {
+  value: number | null;
+  onChange: (value: number) => void;
+}) => {
+  const [inputValue, setInputValue] = useState(value?.toString() ?? "");
+
+  useEffect(() => {
+    setInputValue(value?.toString() ?? "");
+  }, [value]);
+
+  const commit = () => {
+    const parsed = Number(inputValue);
+    if (!Number.isFinite(parsed)) {
+      setInputValue(value?.toString() ?? "");
+      return;
+    }
+    const nextValue = Math.min(512, Math.max(1, Math.round(parsed * 10) / 10));
+    setInputValue(nextValue.toString());
+    onChange(nextValue);
+  };
+
+  return (
+    <label className="font-size-custom">
+      <input
+        aria-label="Exact font size"
+        type="number"
+        min="1"
+        max="512"
+        step="0.1"
+        value={inputValue}
+        placeholder="Mixed"
+        onChange={(event) => setInputValue(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === KEYS.ENTER) {
+            event.preventDefault();
+            commit();
+          } else if (event.key === KEYS.ESCAPE) {
+            setInputValue(value?.toString() ?? "");
+          }
+        }}
+      />
+      <span>px</span>
+    </label>
+  );
+};
+
+type TextStyleChange =
+  | { property: "fontWeight"; enabled: boolean }
+  | { property: "textDecoration"; enabled: boolean };
+
+const getTextStyle = (
+  element: ExcalidrawElement,
+  property: TextStyleChange["property"],
+  app: AppClassProperties,
+) => {
+  const textElement = isTextElement(element)
+    ? element
+    : getBoundTextElement(element, app.scene.getNonDeletedElementsMap());
+  if (!textElement) {
+    return false;
+  }
+  return property === "fontWeight"
+    ? textElement.fontWeight === "bold"
+    : textElement.textDecoration === "underline";
+};
+
+export const actionChangeTextStyle = register<TextStyleChange>({
+  name: "changeTextStyle",
+  label: "labels.fontFamily",
+  trackEvent: false,
+  perform: (elements, appState, value, app) => {
+    invariant(value, "actionChangeTextStyle: Expected a style value");
+
+    return {
+      elements: changeProperty(
+        elements,
+        appState,
+        (element) => {
+          if (!isTextElement(element)) {
+            return element;
+          }
+          let nextElement: ExcalidrawTextElement = newElementWith(
+            element,
+            value.property === "fontWeight"
+              ? { fontWeight: value.enabled ? "bold" : "normal" }
+              : {
+                  textDecoration: value.enabled ? "underline" : "none",
+                },
+          );
+          if (value.property === "fontWeight") {
+            redrawTextBoundingBox(
+              nextElement,
+              app.scene.getContainerElement(element),
+              app.scene,
+            );
+            nextElement = offsetElementAfterFontResize(
+              element,
+              nextElement,
+              app.scene,
+            );
+          }
+          return nextElement;
+        },
+        true,
+      ),
+      appState,
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    };
+  },
+  PanelComponent: ({ elements, appState, updateData, app, data }) => {
+    const { isCompact } = getStylesPanelInfo(app);
+    const hasTextTarget = (element: ExcalidrawElement) =>
+      isTextElement(element) ||
+      getBoundTextElement(element, app.scene.getNonDeletedElementsMap()) !==
+        null;
+    const bold = getFormValue(
+      elements,
+      app,
+      (element) => getTextStyle(element, "fontWeight", app),
+      hasTextTarget,
+      false,
+    );
+    const underline = getFormValue(
+      elements,
+      app,
+      (element) => getTextStyle(element, "textDecoration", app),
+      hasTextTarget,
+      false,
+    );
+    const updateStyle = (value: TextStyleChange) => {
+      withCaretPositionPreservation(
+        () => updateData(value),
+        isCompact,
+        !!appState.editingTextElement,
+        data?.onPreventClose,
+      );
+    };
+
+    return (
+      <fieldset>
+        <legend>Text style</legend>
+        <div className="buttonList">
+          <RadioSelection<TextStyleChange>
+            type="button"
+            value={null}
+            options={[
+              {
+                value: { property: "fontWeight", enabled: bold !== true },
+                text: "Bold",
+                icon: <strong aria-hidden="true">B</strong>,
+                active: bold === true,
+                testId: "textStyle-bold",
+              },
+              {
+                value: {
+                  property: "textDecoration",
+                  enabled: underline !== true,
+                },
+                text: "Underline",
+                icon: (
+                  <span
+                    aria-hidden="true"
+                    style={{ textDecoration: "underline" }}
+                  >
+                    U
+                  </span>
+                ),
+                active: underline === true,
+                testId: "textStyle-underline",
+              },
+            ]}
+            onClick={(value) => updateStyle(value)}
+          />
+        </div>
+      </fieldset>
+    );
+  },
+});
 
 export const actionDecreaseFontSize = register({
   name: "decreaseFontSize",
