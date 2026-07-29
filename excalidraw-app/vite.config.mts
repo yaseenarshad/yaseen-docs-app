@@ -8,9 +8,22 @@ import checker from "vite-plugin-checker";
 import { createHtmlPlugin } from "vite-plugin-html";
 import Sitemap from "vite-plugin-sitemap";
 import { woff2BrowserPlugin } from "../scripts/woff2/woff2-vite-plugins";
+
+const PRODUCTION_CONVEX_URL = "https://moonlit-boar-611.convex.cloud";
+
 export default defineConfig(({ mode }) => {
   // To load .env variables
   const envVars = loadEnv(mode, `../`);
+
+  if (
+    mode === "production" &&
+    envVars.VITE_CONVEX_URL !== PRODUCTION_CONVEX_URL
+  ) {
+    throw new Error(
+      `Production builds must use the production Convex deployment (${PRODUCTION_CONVEX_URL}).`,
+    );
+  }
+
   // https://vitejs.dev/config/
   return {
     server: {
