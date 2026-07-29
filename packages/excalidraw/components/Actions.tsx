@@ -2,9 +2,13 @@ import clsx from "clsx";
 import { useRef } from "react";
 import { Popover } from "radix-ui";
 
-import { CLASSES } from "@excalidraw/common";
+import { CLASSES, FONT_FAMILY } from "@excalidraw/common";
 
-import { isArrowElement } from "@excalidraw/element";
+import {
+  isArrowElement,
+  isImageElement,
+  isTextElement,
+} from "@excalidraw/element";
 
 import type {
   ExcalidrawElement,
@@ -151,16 +155,27 @@ export const SelectedShapeActions = ({
     elementsMap,
     app,
   );
+  const isImageSelection =
+    targetElements.length > 0 && targetElements.every(isImageElement);
+  const hasExclusiveTextTarget =
+    !!appState.editingTextElement ||
+    (targetElements.length > 0 && targetElements.every(isTextElement));
 
   return (
     <div className="selected-shape-actions">
-      <div>{predicates.strokeColor && renderAction("changeStrokeColor")}</div>
+      <div>
+        {predicates.strokeColor &&
+          !isImageSelection &&
+          renderAction("changeStrokeColor")}
+      </div>
       {predicates.backgroundColor && (
         <div>{renderAction("changeBackgroundColor")}</div>
       )}
       {predicates.fill && renderAction("changeFillStyle")}
 
-      {predicates.strokeWidth && renderAction("changeStrokeWidth")}
+      {predicates.strokeWidth &&
+        !isImageSelection &&
+        renderAction("changeStrokeWidth")}
 
       {predicates.strokeStyle && <>{renderAction("changeStrokeStyle")}</>}
 
@@ -172,7 +187,7 @@ export const SelectedShapeActions = ({
 
       {predicates.arrowType && <>{renderAction("changeArrowType")}</>}
 
-      {predicates.text && (
+      {predicates.text && !hasExclusiveTextTarget && (
         <>
           <fieldset>{renderAction("changeFontFamily")}</fieldset>
           {renderAction("changeFontSize")}
@@ -209,6 +224,64 @@ export const SelectedShapeActions = ({
         </fieldset>
       )}
     </div>
+  );
+};
+
+export const ContextualPropertiesToolbar = ({
+  appState,
+  elementsMap,
+  renderAction,
+  app,
+}: {
+  appState: UIAppState;
+  elementsMap: NonDeletedElementsMap | NonDeletedSceneElementsMap;
+  renderAction: ActionManager["renderAction"];
+  app: AppClassProperties;
+}) => {
+  const targetElements = getTargetElements(elementsMap, appState);
+  const isTextTarget =
+    !!appState.editingTextElement ||
+    (targetElements.length > 0 && targetElements.every(isTextElement));
+  const isImageTarget =
+    targetElements.length > 0 && targetElements.every(isImageElement);
+
+  if (appState.viewModeEnabled || (!isTextTarget && !isImageTarget)) {
+    return null;
+  }
+  const textTarget =
+    targetElements.find(isTextElement) ?? appState.editingTextElement;
+  const fontFamilyName =
+    Object.entries(FONT_FAMILY).find(
+      ([, value]) => value === textTarget?.fontFamily,
+    )?.[0] ?? "Assistant";
+
+  return (
+    <Island
+      className="contextual-properties-toolbar"
+      padding={1}
+      data-prevent-outside-click
+    >
+      {isTextTarget && (
+        <>
+          <div className="contextual-properties-toolbar__font">
+            <span>{fontFamilyName}</span>
+            {renderAction("changeFontFamily", { contextToolbar: true })}
+          </div>
+          <div className="contextual-properties-toolbar__divider" />
+          {renderAction("changeFontSize", { contextToolbar: true })}
+          <div className="contextual-properties-toolbar__divider" />
+          {renderAction("changeTextStyle", { contextToolbar: true })}
+        </>
+      )}
+      {isImageTarget && (
+        <>
+          <span className="contextual-properties-toolbar__label">Border</span>
+          {renderAction("changeStrokeColor", { contextToolbar: true })}
+          <div className="contextual-properties-toolbar__divider" />
+          {renderAction("changeStrokeWidth", { contextToolbar: true })}
+        </>
+      )}
+    </Island>
   );
 };
 

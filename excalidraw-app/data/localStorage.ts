@@ -2,11 +2,15 @@ import {
   clearAppStateForLocalStorage,
   getDefaultAppState,
 } from "@excalidraw/excalidraw/appState";
+import { DEFAULT_FONT_FAMILY, FONT_FAMILY } from "@excalidraw/common";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type { AppState } from "@excalidraw/excalidraw/types";
 
 import { STORAGE_KEYS } from "../app_constants";
+
+const ASSISTANT_DEFAULT_FONT_MIGRATION_KEY =
+  "yaseen-excalidraw-assistant-default-font-v1";
 
 export const saveUsernameToLocalStorage = (username: string) => {
   try {
@@ -59,11 +63,16 @@ export const importFromLocalStorage = () => {
   let appState = null;
   if (savedState) {
     try {
+      const parsedState = JSON.parse(savedState) as Partial<AppState>;
+      if (!localStorage.getItem(ASSISTANT_DEFAULT_FONT_MIGRATION_KEY)) {
+        if (parsedState.currentItemFontFamily === DEFAULT_FONT_FAMILY) {
+          parsedState.currentItemFontFamily = FONT_FAMILY.Assistant;
+        }
+        localStorage.setItem(ASSISTANT_DEFAULT_FONT_MIGRATION_KEY, "1");
+      }
       appState = {
         ...getDefaultAppState(),
-        ...clearAppStateForLocalStorage(
-          JSON.parse(savedState) as Partial<AppState>,
-        ),
+        ...clearAppStateForLocalStorage(parsedState),
       };
     } catch (error: any) {
       console.error(error);

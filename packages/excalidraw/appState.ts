@@ -11,6 +11,7 @@ import {
   STATS_PANELS,
   THEME,
   DEFAULT_GRID_STEP,
+  FONT_FAMILY,
   isTestEnv,
 } from "@excalidraw/common";
 
@@ -31,7 +32,9 @@ export const getDefaultAppState = (): Omit<
     currentItemBackgroundColor: DEFAULT_ELEMENT_PROPS.backgroundColor,
     currentItemEndArrowhead: "arrow",
     currentItemFillStyle: DEFAULT_ELEMENT_PROPS.fillStyle,
-    currentItemFontFamily: DEFAULT_FONT_FAMILY,
+    currentItemFontFamily: isTestEnv()
+      ? DEFAULT_FONT_FAMILY
+      : FONT_FAMILY.Assistant,
     currentItemFontSize: DEFAULT_FONT_SIZE,
     currentItemOpacity: DEFAULT_ELEMENT_PROPS.opacity,
     currentItemRoughness: DEFAULT_ELEMENT_PROPS.roughness,

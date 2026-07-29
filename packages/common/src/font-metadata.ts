@@ -109,7 +109,6 @@ export const FONT_METADATA: Record<number, FontMetadata> = {
       descender: -287,
       lineHeight: 1.25,
     },
-    private: true,
   },
   [FONT_FAMILY_FALLBACKS.Xiaolai]: {
     metrics: {

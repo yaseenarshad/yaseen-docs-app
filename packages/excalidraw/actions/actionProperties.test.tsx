@@ -3,6 +3,7 @@ import { fireEvent, queryByTestId } from "@testing-library/react";
 import {
   COLOR_PALETTE,
   DEFAULT_ELEMENT_BACKGROUND_PICKS,
+  DEFAULT_ELEMENT_STROKE_PICKS,
   FREEDRAW_STROKE_WIDTH,
   FONT_FAMILY,
   STROKE_WIDTH,
@@ -95,6 +96,32 @@ describe("element locking", () => {
 
       const crossHatchButton = queryByTestId(document.body, `fill-cross-hatch`);
       expect(crossHatchButton).toHaveClass("active");
+    });
+
+    it("should expose and apply image border controls", () => {
+      const image = API.createElement({
+        type: "image",
+        strokeColor: COLOR_PALETTE.transparent,
+        strokeWidth: STROKE_WIDTH.medium,
+      });
+      API.setElements([image]);
+      API.setSelectedElements([image]);
+
+      const borderColor = DEFAULT_ELEMENT_STROKE_PICKS[3];
+      const borderColorButton = queryByTestId(
+        document.body,
+        `color-top-pick-${borderColor}`,
+      );
+      const boldBorderButton = queryByTestId(document.body, "strokeWidth-bold");
+
+      expect(borderColorButton).not.toBe(null);
+      expect(boldBorderButton).not.toBe(null);
+      fireEvent.click(borderColorButton!);
+      fireEvent.click(boldBorderButton!);
+
+      const selectedImage = API.getSelectedElements()[0];
+      expect(selectedImage.strokeColor).toBe(borderColor);
+      expect(selectedImage.strokeWidth).toBe(STROKE_WIDTH.bold);
     });
 
     it("should not show fill style selected element's background is transparent", () => {

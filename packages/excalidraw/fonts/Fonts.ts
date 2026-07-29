@@ -31,6 +31,7 @@ import type { ValueOf } from "@excalidraw/common/utility-types";
 
 import type { Scene } from "@excalidraw/element";
 
+import { AssistantFontFaces } from "./Assistant";
 import { CascadiaFontFaces } from "./Cascadia";
 import { ComicShannsFontFaces } from "./ComicShanns";
 import { EmojiFontFaces } from "./Emoji";
@@ -382,6 +383,7 @@ export class Fonts {
       Fonts.register.call(fonts, family, metadata, ...fontFacesDescriptors);
     };
 
+    init("Assistant", ...AssistantFontFaces);
     init("Cascadia", ...CascadiaFontFaces);
     init("Comic Shanns", ...ComicShannsFontFaces);
     init("Excalifont", ...ExcalifontFontFaces);

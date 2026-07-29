@@ -593,14 +593,65 @@ const renderElementToSvg = (
           g.setAttributeNS(SVG_NS, "clip-path", `url(#${clipPath.id})`);
         }
 
+        const imageNodes = [g];
+        if (element.strokeColor !== "transparent" && element.strokeWidth > 0) {
+          const border = svgRoot.ownerDocument.createElementNS(SVG_NS, "rect");
+          border.setAttribute("x", "0");
+          border.setAttribute("y", "0");
+          border.setAttribute("width", `${element.width}`);
+          border.setAttribute("height", `${element.height}`);
+          border.setAttribute("fill", "none");
+          border.setAttribute(
+            "stroke",
+            applyDarkModeFilter(
+              element.strokeColor,
+              renderConfig.theme === THEME.DARK,
+            ),
+          );
+          border.setAttribute("stroke-width", `${element.strokeWidth}`);
+          border.setAttribute("stroke-opacity", `${opacity}`);
+          border.setAttribute("stroke-linejoin", "round");
+          border.setAttribute(
+            "transform",
+            `translate(${offsetX} ${offsetY}) rotate(${degree} ${cx} ${cy})`,
+          );
+          if (element.strokeStyle === "dashed") {
+            border.setAttribute(
+              "stroke-dasharray",
+              `${element.strokeWidth * 4} ${element.strokeWidth * 3}`,
+            );
+          } else if (element.strokeStyle === "dotted") {
+            border.setAttribute("stroke-linecap", "round");
+            border.setAttribute(
+              "stroke-dasharray",
+              `${element.strokeWidth} ${element.strokeWidth * 3}`,
+            );
+          }
+          if (element.roundness) {
+            const radius = getCornerRadius(
+              Math.min(element.width, element.height),
+              element,
+            );
+            border.setAttribute("rx", `${radius}`);
+            border.setAttribute("ry", `${radius}`);
+          }
+          imageNodes.push(border);
+        }
+
         const clipG = maybeWrapNodesInFrameClipPath(
           element,
           root,
-          [g],
+          imageNodes,
           renderConfig.frameRendering,
           elementsMap,
         );
-        addToRoot(clipG || g, element);
+        if (clipG) {
+          addToRoot(clipG, element);
+        } else {
+          for (const node of imageNodes) {
+            addToRoot(node, element);
+          }
+        }
       }
       break;
     }

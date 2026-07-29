@@ -1,5 +1,6 @@
 import { pointFrom } from "@excalidraw/math";
 
+import clsx from "clsx";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -373,7 +374,7 @@ export const actionChangeStrokeColor = register<
 
     return (
       <>
-        {stylesPanelMode === "full" && (
+        {stylesPanelMode === "full" && !data?.contextToolbar && (
           <h3 aria-hidden="true">{t("labels.stroke")}</h3>
         )}
         <ColorPicker
@@ -603,8 +604,8 @@ export const actionChangeStrokeWidth = register<StrokeWidthKey>({
     };
   },
   PanelComponent: ({ elements, appState, updateData, app, data }) => (
-    <fieldset>
-      <legend>{t("labels.strokeWidth")}</legend>
+    <fieldset className={data?.contextToolbar ? "context-fieldset" : ""}>
+      {!data?.contextToolbar && <legend>{t("labels.strokeWidth")}</legend>}
       <div className="buttonList">
         <RadioSelection<StrokeWidthKey>
           group="stroke-width"
@@ -927,42 +928,48 @@ export const actionChangeFontSize = register<ExcalidrawTextElement["fontSize"]>(
       };
 
       return (
-        <fieldset>
-          <legend>{t("labels.fontSize")}</legend>
-          <div className="buttonList">
-            <RadioSelection
-              group="font-size"
-              options={[
-                {
-                  value: FONT_SIZES.sm,
-                  text: t("labels.small"),
-                  icon: FontSizeSmallIcon,
-                  testId: "fontSize-small",
-                },
-                {
-                  value: FONT_SIZES.md,
-                  text: t("labels.medium"),
-                  icon: FontSizeMediumIcon,
-                  testId: "fontSize-medium",
-                },
-                {
-                  value: FONT_SIZES.lg,
-                  text: t("labels.large"),
-                  icon: FontSizeLargeIcon,
-                  testId: "fontSize-large",
-                },
-                {
-                  value: FONT_SIZES.xl,
-                  text: t("labels.veryLarge"),
-                  icon: FontSizeExtraLargeIcon,
-                  testId: "fontSize-veryLarge",
-                },
-              ]}
-              value={fontSize}
-              onChange={updateFontSize}
-            />
-          </div>
-          <ExactFontSizeInput value={fontSize} onChange={updateFontSize} />
+        <fieldset className={data?.contextToolbar ? "context-fieldset" : ""}>
+          {!data?.contextToolbar && <legend>{t("labels.fontSize")}</legend>}
+          {!data?.contextToolbar && (
+            <div className="buttonList">
+              <RadioSelection
+                group="font-size"
+                options={[
+                  {
+                    value: FONT_SIZES.sm,
+                    text: t("labels.small"),
+                    icon: FontSizeSmallIcon,
+                    testId: "fontSize-small",
+                  },
+                  {
+                    value: FONT_SIZES.md,
+                    text: t("labels.medium"),
+                    icon: FontSizeMediumIcon,
+                    testId: "fontSize-medium",
+                  },
+                  {
+                    value: FONT_SIZES.lg,
+                    text: t("labels.large"),
+                    icon: FontSizeLargeIcon,
+                    testId: "fontSize-large",
+                  },
+                  {
+                    value: FONT_SIZES.xl,
+                    text: t("labels.veryLarge"),
+                    icon: FontSizeExtraLargeIcon,
+                    testId: "fontSize-veryLarge",
+                  },
+                ]}
+                value={fontSize}
+                onChange={updateFontSize}
+              />
+            </div>
+          )}
+          <ExactFontSizeInput
+            value={fontSize}
+            onChange={updateFontSize}
+            compact={data?.contextToolbar}
+          />
         </fieldset>
       );
     },
@@ -972,9 +979,11 @@ export const actionChangeFontSize = register<ExcalidrawTextElement["fontSize"]>(
 const ExactFontSizeInput = ({
   value,
   onChange,
+  compact = false,
 }: {
   value: number | null;
   onChange: (value: number) => void;
+  compact?: boolean;
 }) => {
   const [inputValue, setInputValue] = useState(value?.toString() ?? "");
 
@@ -993,29 +1002,74 @@ const ExactFontSizeInput = ({
     onChange(nextValue);
   };
 
+  const nudge = (amount: number) => {
+    const currentValue = Number(inputValue || value || DEFAULT_FONT_SIZE);
+    const nextValue = Math.min(
+      512,
+      Math.max(1, Math.round((currentValue + amount) * 10) / 10),
+    );
+    setInputValue(nextValue.toString());
+    onChange(nextValue);
+  };
+
   return (
-    <label className="font-size-custom">
-      <input
-        aria-label="Exact font size"
-        type="number"
-        min="1"
-        max="512"
-        step="0.1"
-        value={inputValue}
-        placeholder="Mixed"
-        onChange={(event) => setInputValue(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key === KEYS.ENTER) {
+    <div
+      className={clsx("font-size-custom", {
+        "font-size-custom--compact": compact,
+      })}
+      data-prevent-outside-click
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      {compact && (
+        <button
+          type="button"
+          aria-label="Decrease font size"
+          onPointerDown={(event) => {
             event.preventDefault();
-            commit();
-          } else if (event.key === KEYS.ESCAPE) {
-            setInputValue(value?.toString() ?? "");
-          }
-        }}
-      />
-      <span>px</span>
-    </label>
+            event.stopPropagation();
+          }}
+          onClick={() => nudge(-1)}
+        >
+          −
+        </button>
+      )}
+      <label>
+        <input
+          aria-label="Exact font size"
+          type="number"
+          min="1"
+          max="512"
+          step="0.1"
+          value={inputValue}
+          placeholder="Mixed"
+          onChange={(event) => setInputValue(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === KEYS.ENTER) {
+              event.preventDefault();
+              commit();
+            } else if (event.key === KEYS.ESCAPE) {
+              setInputValue(value?.toString() ?? "");
+            }
+          }}
+        />
+        <span>px</span>
+      </label>
+      {compact && (
+        <button
+          type="button"
+          aria-label="Increase font size"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={() => nudge(1)}
+        >
+          +
+        </button>
+      )}
+    </div>
   );
 };
 
@@ -1111,9 +1165,8 @@ export const actionChangeTextStyle = register<TextStyleChange>({
       );
     };
 
-    return (
-      <fieldset>
-        <legend>Text style</legend>
+    const controls = (
+      <>
         <div className="buttonList">
           <RadioSelection<TextStyleChange>
             type="button"
@@ -1147,6 +1200,14 @@ export const actionChangeTextStyle = register<TextStyleChange>({
             onClick={(value) => updateStyle(value)}
           />
         </div>
+      </>
+    );
+    return data?.contextToolbar ? (
+      <div className="context-fieldset">{controls}</div>
+    ) : (
+      <fieldset>
+        <legend>Text style</legend>
+        {controls}
       </fieldset>
     );
   },
@@ -1410,7 +1471,7 @@ export const actionChangeFontFamily = register<{
 
     return result;
   },
-  PanelComponent: ({ elements, appState, app, updateData }) => {
+  PanelComponent: ({ elements, appState, app, updateData, data }) => {
     const cachedElementsRef = useRef<ElementsMap>(new Map());
     const prevSelectedFontFamilyRef = useRef<number | null>(null);
     // relying on state batching as multiple `FontPicker` handlers could be called in rapid succession and we want to combine them
@@ -1489,14 +1550,14 @@ export const actionChangeFontFamily = register<{
 
     return (
       <>
-        {stylesPanelMode === "full" && (
+        {stylesPanelMode === "full" && !data?.contextToolbar && (
           <legend>{t("labels.fontFamily")}</legend>
         )}
         <FontPicker
           isOpened={appState.openPopup === "fontFamily"}
           selectedFontFamily={selectedFontFamily}
           hoveredFontFamily={appState.currentHoveredFontFamily}
-          compactMode={stylesPanelMode !== "full"}
+          compactMode={data?.contextToolbar || stylesPanelMode !== "full"}
           onSelect={(fontFamily) => {
             withCaretPositionPreservation(
               () => {

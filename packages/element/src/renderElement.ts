@@ -472,6 +472,39 @@ const drawElementOnCanvas = (
         drawImagePlaceholder(element, context, renderConfig.theme);
       }
       context.restore();
+
+      if (element.strokeColor !== "transparent" && element.strokeWidth > 0) {
+        context.save();
+        context.strokeStyle = applyDarkModeFilter(
+          element.strokeColor,
+          renderConfig.theme === THEME.DARK,
+        );
+        context.lineWidth = element.strokeWidth;
+        context.lineJoin = "round";
+        if (element.strokeStyle === "dashed") {
+          context.setLineDash([
+            element.strokeWidth * 4,
+            element.strokeWidth * 3,
+          ]);
+        } else if (element.strokeStyle === "dotted") {
+          context.lineCap = "round";
+          context.setLineDash([element.strokeWidth, element.strokeWidth * 3]);
+        }
+        context.beginPath();
+        if (element.roundness && context.roundRect) {
+          context.roundRect(
+            0,
+            0,
+            element.width,
+            element.height,
+            getCornerRadius(Math.min(element.width, element.height), element),
+          );
+        } else {
+          context.rect(0, 0, element.width, element.height);
+        }
+        context.stroke();
+        context.restore();
+      }
       break;
     }
     default: {

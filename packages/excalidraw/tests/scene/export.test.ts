@@ -11,6 +11,7 @@ import { pointFrom } from "@excalidraw/math";
 
 import type {
   ExcalidrawTextElement,
+  FileId,
   FractionalIndex,
   NonDeleted,
   NonDeletedExcalidrawElement,
@@ -27,6 +28,8 @@ import {
   textFixture,
 } from "../fixtures/elementFixture";
 import { API } from "../helpers/api";
+
+import type { BinaryFiles, DataURL } from "../../types";
 
 describe("exportToSvg", () => {
   const ELEMENT_HEIGHT = 100;
@@ -135,6 +138,42 @@ describe("exportToSvg", () => {
         applyDarkModeFilter(textFixture.strokeColor),
       );
     });
+  });
+
+  it("exports an image border", async () => {
+    const fileId = "border-image" as FileId;
+    const image = {
+      ...API.createElement({
+        type: "image",
+        fileId,
+        status: "saved",
+        width: 120,
+        height: 80,
+      }),
+      strokeColor: "#1971c2",
+      strokeWidth: 4,
+    } as NonDeletedExcalidrawElement;
+    const files: BinaryFiles = {
+      [fileId]: {
+        id: fileId,
+        dataURL:
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAA1JREFUGFdj+P///38ACfsD/QhKzxAAAAAASUVORK5CYII=" as DataURL,
+        mimeType: "image/png",
+        created: 1,
+        lastRetrieved: 1,
+      },
+    };
+
+    const svgElement = await exportUtils.exportToSvg(
+      [image],
+      DEFAULT_OPTIONS,
+      files,
+    );
+
+    const border = svgElement.querySelector('rect[stroke="#1971c2"]');
+    expect(border).not.toBeNull();
+    expect(border).toHaveAttribute("stroke-width", "4");
+    expect(border).toHaveAttribute("fill", "none");
   });
 
   it("with exportPadding", async () => {

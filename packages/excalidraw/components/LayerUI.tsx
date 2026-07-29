@@ -27,7 +27,11 @@ import { useAtom, useAtomValue } from "../editor-jotai";
 import { t } from "../i18n";
 import { getScrollToContentState } from "../scene";
 
-import { SelectedShapeActions, CompactShapeActions } from "./Actions";
+import {
+  SelectedShapeActions,
+  CompactShapeActions,
+  ContextualPropertiesToolbar,
+} from "./Actions";
 import { LoadingMessage } from "./LoadingMessage";
 import { MobileMenu } from "./MobileMenu";
 import { PasteChartDialog } from "./PasteChartDialog";
@@ -611,6 +615,16 @@ const LayerUI = ({
           >
             {renderWelcomeScreen && <tunnels.WelcomeScreenCenterTunnel.Out />}
             {renderFixedSideContainer()}
+            {defaultUIEnabled &&
+              editorInterface.formFactor === "desktop" &&
+              !appState.viewModeEnabled && (
+                <ContextualPropertiesToolbar
+                  appState={appState}
+                  elementsMap={app.scene.getNonDeletedElementsMap()}
+                  renderAction={actionManager.renderAction}
+                  app={app}
+                />
+              )}
             <Footer
               appState={appState}
               actionManager={actionManager}

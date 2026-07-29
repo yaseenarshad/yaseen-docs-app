@@ -18,6 +18,7 @@ export const hasStrokeColor = (type: ElementOrToolType) =>
   type === "arrow" ||
   type === "line" ||
   type === "text" ||
+  type === "image" ||
   type === "embeddable" ||
   type === "autoshape";
 
@@ -30,6 +31,7 @@ export const hasStrokeWidth = (type: ElementOrToolType) =>
   type === "freedraw" ||
   type === "arrow" ||
   type === "line" ||
+  type === "image" ||
   type === "autoshape";
 
 export const hasStrokeStyle = (type: ElementOrToolType) =>
