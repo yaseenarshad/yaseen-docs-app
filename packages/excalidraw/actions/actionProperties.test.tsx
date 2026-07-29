@@ -136,6 +136,61 @@ describe("element locking", () => {
       });
     });
 
+    it("should toggle bullets and change line spacing from the text toolbar", () => {
+      const text = API.createElement({
+        type: "text",
+        text: "First line\nSecond line",
+      });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+
+      fireEvent.click(
+        queryByTestId(document.body, "textStyle-bullets") as HTMLElement,
+      );
+      expect(API.getSelectedElements()[0]).toMatchObject({
+        text: "• First line\n• Second line",
+        originalText: "• First line\n• Second line",
+      });
+
+      const lineHeightInput = queryByTestId(
+        document.body,
+        "text-line-height",
+      ) as HTMLInputElement;
+      fireEvent.change(lineHeightInput, { target: { value: "1.8" } });
+      fireEvent.blur(lineHeightInput);
+      expect(API.getSelectedElements()[0]).toMatchObject({
+        lineHeight: 1.8,
+      });
+
+      fireEvent.click(
+        queryByTestId(document.body, "textStyle-bullets") as HTMLElement,
+      );
+      expect(API.getSelectedElements()[0]).toMatchObject({
+        text: "First line\nSecond line",
+        originalText: "First line\nSecond line",
+      });
+    });
+
+    it("should center selected text from the contextual text toolbar", () => {
+      const text = API.createElement({
+        type: "text",
+        text: "Centered text",
+      });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+
+      const centerButton = queryByTestId(
+        document.body,
+        "align-horizontal-center",
+      );
+      expect(centerButton).not.toBe(null);
+      fireEvent.click(centerButton!);
+
+      expect(API.getSelectedElements()[0]).toMatchObject({
+        textAlign: "center",
+      });
+    });
+
     it("should expose and apply image border controls", () => {
       const image = API.createElement({
         type: "image",

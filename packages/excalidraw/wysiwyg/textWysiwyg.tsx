@@ -637,6 +637,40 @@ export const textWysiwyg = ({
     };
   }
 
+  const handleBulletListEnter = () => {
+    const { selectionStart, selectionEnd, value } = editable;
+    const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
+    const lineEndIndex = value.indexOf("\n", selectionEnd);
+    const lineEnd = lineEndIndex === -1 ? value.length : lineEndIndex;
+    const currentLine = value.slice(lineStart, lineEnd);
+    const bulletMatch = currentLine.match(/^([ \t]*)•[ \t]+(.*)$/);
+
+    if (!bulletMatch) {
+      return false;
+    }
+
+    const [, indentation, content] = bulletMatch;
+    if (
+      !content.trim() &&
+      selectionStart === selectionEnd &&
+      selectionStart === lineEnd
+    ) {
+      editable.value =
+        value.slice(0, lineStart) + indentation + value.slice(lineEnd);
+      const nextCaret = lineStart + indentation.length;
+      editable.setSelectionRange(nextCaret, nextCaret);
+    } else {
+      const nextBullet = `\n${indentation}• `;
+      editable.value =
+        value.slice(0, selectionStart) + nextBullet + value.slice(selectionEnd);
+      const nextCaret = selectionStart + nextBullet.length;
+      editable.setSelectionRange(nextCaret, nextCaret);
+    }
+
+    editable.dispatchEvent(new Event("input"));
+    return true;
+  };
+
   editable.onkeydown = (event) => {
     if (!event.shiftKey && actionZoomIn.keyTest(event)) {
       event.preventDefault();
@@ -691,6 +725,12 @@ export const textWysiwyg = ({
       }
       submittedViaKeyboard = true;
       handleSubmit();
+    } else if (
+      event.key === KEYS.ENTER &&
+      !event.shiftKey &&
+      handleBulletListEnter()
+    ) {
+      event.preventDefault();
     } else if (
       event.key === KEYS.TAB ||
       (event[KEYS.CTRL_OR_CMD] &&
@@ -911,7 +951,8 @@ export const textWysiwyg = ({
     const inShapeActionsMenu =
       (target instanceof HTMLElement || target instanceof SVGElement) &&
       (!!(target as Element).closest(`.${CLASSES.SHAPE_ACTIONS_MENU}`) ||
-        !!(target as Element).closest(".compact-shape-actions-island"));
+        !!(target as Element).closest(".compact-shape-actions-island") ||
+        !!(target as Element).closest(".contextual-properties-toolbar"));
 
     setTimeout(() => {
       // If we interacted within shape actions menu or its popovers/triggers,
@@ -970,7 +1011,9 @@ export const textWysiwyg = ({
         (event.target.closest(
           `.${CLASSES.SHAPE_ACTIONS_MENU}, .${CLASSES.ZOOM_ACTIONS}`,
         ) ||
-          event.target.closest(".compact-shape-actions-island")) &&
+          event.target.closest(
+            ".compact-shape-actions-island, .contextual-properties-toolbar",
+          )) &&
         !isWritableElement(event.target)) ||
       isPropertiesTrigger ||
       isPropertiesContent

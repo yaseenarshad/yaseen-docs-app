@@ -192,6 +192,7 @@ export const SelectedShapeActions = ({
           <fieldset>{renderAction("changeFontFamily")}</fieldset>
           {renderAction("changeFontSize")}
           {renderAction("changeTextStyle")}
+          {renderAction("changeLineHeight")}
           {predicates.textAlign && renderAction("changeTextAlign")}
         </>
       )}
@@ -271,6 +272,10 @@ export const ContextualPropertiesToolbar = ({
           {renderAction("changeFontSize", { contextToolbar: true })}
           <div className="contextual-properties-toolbar__divider" />
           {renderAction("changeTextStyle", { contextToolbar: true })}
+          <div className="contextual-properties-toolbar__divider" />
+          {renderAction("changeTextAlign", { contextToolbar: true })}
+          <div className="contextual-properties-toolbar__divider" />
+          {renderAction("changeLineHeight", { contextToolbar: true })}
         </>
       )}
       {isImageTarget && (
@@ -544,6 +549,7 @@ const CombinedTextProperties = ({
             <div className="selected-shape-actions">
               {predicates.text && renderAction("changeFontSize")}
               {predicates.text && renderAction("changeTextStyle")}
+              {predicates.text && renderAction("changeLineHeight")}
               {predicates.textAlign && renderAction("changeTextAlign")}
               {predicates.verticalAlign && renderAction("changeVerticalAlign")}
             </div>

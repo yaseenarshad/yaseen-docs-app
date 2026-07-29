@@ -39,7 +39,7 @@ import {
   mockBoundingClientRect,
   restoreOriginalGetBoundingClientRect,
 } from "../tests/test-utils";
-import { actionBindText } from "../actions";
+import { actionBindText, actionChangeTextStyle } from "../actions";
 import { actionTextAutoResize } from "../actions/actionTextAutoResize";
 
 const { h } = window;
@@ -566,6 +566,76 @@ describe("textWysiwyg", () => {
       );
       expect((h.elements[0] as ExcalidrawTextElement).textDecoration).toBe(
         "none",
+      );
+    });
+
+    it("should toggle bullets on the selected lines from the text toolbar", () => {
+      fireEvent.input(textarea, {
+        target: { value: "First\nSecond\nThird" },
+      });
+      textarea.selectionStart = 6;
+      textarea.selectionEnd = 12;
+
+      act(() => {
+        h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
+          property: "bulletList",
+          enabled: true,
+        });
+      });
+
+      expect(textarea.value).toBe("First\n• Second\nThird");
+      expect(textarea.selectionStart).toBe(6);
+      expect(textarea.selectionEnd).toBe(14);
+      expect((h.elements[0] as ExcalidrawTextElement).originalText).toBe(
+        "First\n• Second\nThird",
+      );
+
+      act(() => {
+        h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
+          property: "bulletList",
+          enabled: false,
+        });
+      });
+
+      expect(textarea.value).toBe("First\nSecond\nThird");
+      expect((h.elements[0] as ExcalidrawTextElement).originalText).toBe(
+        "First\nSecond\nThird",
+      );
+    });
+
+    it("should continue bullets on Enter and exit after an empty bullet", () => {
+      fireEvent.input(textarea, {
+        target: { value: "• First" },
+      });
+      textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+
+      fireEvent.keyDown(textarea, { key: KEYS.ENTER });
+
+      expect(textarea.value).toBe("• First\n• ");
+      expect(textarea.selectionStart).toBe(10);
+      expect(textarea.selectionEnd).toBe(10);
+      expect((h.elements[0] as ExcalidrawTextElement).originalText).toBe(
+        "• First\n• ",
+      );
+
+      fireEvent.keyDown(textarea, { key: KEYS.ENTER });
+
+      expect(textarea.value).toBe("• First\n");
+      expect(textarea.selectionStart).toBe(8);
+      expect(textarea.selectionEnd).toBe(8);
+    });
+
+    it("should preserve bullet indentation on Enter", () => {
+      fireEvent.input(textarea, {
+        target: { value: "    • Nested item" },
+      });
+      textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+
+      fireEvent.keyDown(textarea, { key: KEYS.ENTER });
+
+      expect(textarea.value).toBe("    • Nested item\n    • ");
+      expect((h.elements[0] as ExcalidrawTextElement).originalText).toBe(
+        "    • Nested item\n    • ",
       );
     });
 

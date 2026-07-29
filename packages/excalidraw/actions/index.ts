@@ -17,6 +17,7 @@ export {
   actionChangeOpacity,
   actionChangeFontSize,
   actionChangeTextStyle,
+  actionChangeLineHeight,
   actionToggleTextBold,
   actionToggleTextUnderline,
   actionChangeFontFamily,

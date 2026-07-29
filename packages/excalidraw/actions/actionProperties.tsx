@@ -1077,7 +1077,97 @@ const ExactFontSizeInput = ({
 
 type TextStyleChange =
   | { property: "fontWeight"; enabled: boolean }
-  | { property: "textDecoration"; enabled: boolean };
+  | { property: "textDecoration"; enabled: boolean }
+  | { property: "bulletList"; enabled: boolean };
+
+const BULLET_PREFIX = "• ";
+
+const getSelectedTextLineRange = (
+  text: string,
+  selectionStart: number,
+  selectionEnd: number,
+) => {
+  const start = Math.max(0, Math.min(selectionStart, text.length));
+  const end = Math.max(start, Math.min(selectionEnd, text.length));
+  const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+  const lineEndSearchStart =
+    end > start && text[end - 1] === "\n" ? end - 1 : end;
+  const nextLineBreak = text.indexOf("\n", lineEndSearchStart);
+
+  return {
+    start,
+    end,
+    lineStart,
+    lineEnd: nextLineBreak === -1 ? text.length : nextLineBreak,
+  };
+};
+
+const isBulletLine = (line: string) =>
+  !line.trim() || /^[ \t]*•[ \t]+/.test(line);
+
+const areSelectedTextLinesBulleted = (
+  text: string,
+  selectionStart = 0,
+  selectionEnd = text.length,
+) => {
+  const { lineStart, lineEnd } = getSelectedTextLineRange(
+    text,
+    selectionStart,
+    selectionEnd,
+  );
+  const lines = text.slice(lineStart, lineEnd).split("\n");
+
+  return lines.some((line) => line.trim()) && lines.every(isBulletLine);
+};
+
+const toggleTextBullets = (
+  text: string,
+  selectionStart = 0,
+  selectionEnd = text.length,
+  enabled = !areSelectedTextLinesBulleted(text, selectionStart, selectionEnd),
+) => {
+  const { start, end, lineStart, lineEnd } = getSelectedTextLineRange(
+    text,
+    selectionStart,
+    selectionEnd,
+  );
+  const lines = text.slice(lineStart, lineEnd).split("\n");
+  const deltas: number[] = [];
+  const transformedLines = lines.map((line) => {
+    if (!line.trim()) {
+      deltas.push(0);
+      return line;
+    }
+
+    const indentation = line.match(/^[ \t]*/)?.[0] ?? "";
+    const content = line.slice(indentation.length);
+    let transformed = line;
+
+    if (enabled && !/^•[ \t]+/.test(content)) {
+      transformed = `${indentation}${BULLET_PREFIX}${content}`;
+    } else if (!enabled && /^•[ \t]+/.test(content)) {
+      transformed = `${indentation}${content.replace(/^•[ \t]+/, "")}`;
+    }
+    deltas.push(transformed.length - line.length);
+    return transformed;
+  });
+
+  const nextText =
+    text.slice(0, lineStart) +
+    transformedLines.join("\n") +
+    text.slice(lineEnd);
+  const firstLineDelta = deltas[0] ?? 0;
+  const totalDelta = deltas.reduce((total, delta) => total + delta, 0);
+  const nextSelectionStart = start + (start > lineStart ? firstLineDelta : 0);
+  const nextSelectionEnd =
+    start === end ? nextSelectionStart : end + totalDelta;
+
+  return {
+    text: nextText,
+    selectionStart: nextSelectionStart,
+    selectionEnd: nextSelectionEnd,
+  };
+};
 
 const getTextStyle = (
   element: ExcalidrawElement,
@@ -1090,9 +1180,24 @@ const getTextStyle = (
   if (!textElement) {
     return false;
   }
-  return property === "fontWeight"
-    ? textElement.fontWeight === "bold"
-    : textElement.textDecoration === "underline";
+  if (property === "fontWeight") {
+    return textElement.fontWeight === "bold";
+  }
+  if (property === "textDecoration") {
+    return textElement.textDecoration === "underline";
+  }
+
+  const editable =
+    app.state.editingTextElement?.id === textElement.id
+      ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
+      : null;
+  return editable
+    ? areSelectedTextLinesBulleted(
+        editable.value,
+        editable.selectionStart,
+        editable.selectionEnd,
+      )
+    : areSelectedTextLinesBulleted(textElement.originalText);
 };
 
 const changeTextStyle = (
@@ -1100,13 +1205,52 @@ const changeTextStyle = (
   appState: AppState,
   value: TextStyleChange,
   app: AppClassProperties,
-) => ({
-  elements: changeProperty(
+) => {
+  const editable =
+    value.property === "bulletList" && appState.editingTextElement
+      ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
+      : null;
+  const editableBullets = editable
+    ? toggleTextBullets(
+        editable.value,
+        editable.selectionStart,
+        editable.selectionEnd,
+        value.enabled,
+      )
+    : null;
+
+  const updatedElements = changeProperty(
     elements,
     appState,
     (element) => {
       if (!isTextElement(element)) {
         return element;
+      }
+      if (value.property === "bulletList") {
+        const bulletChange =
+          editableBullets && element.id === appState.editingTextElement?.id
+            ? editableBullets
+            : toggleTextBullets(
+                element.originalText,
+                0,
+                element.originalText.length,
+                value.enabled,
+              );
+        let nextElement: ExcalidrawTextElement = newElementWith(element, {
+          originalText: bulletChange.text,
+          text: bulletChange.text,
+        });
+        redrawTextBoundingBox(
+          nextElement,
+          app.scene.getContainerElement(element),
+          app.scene,
+        );
+        nextElement = offsetElementAfterFontResize(
+          element,
+          nextElement,
+          app.scene,
+        );
+        return nextElement;
       }
       let nextElement: ExcalidrawTextElement = newElementWith(
         element,
@@ -1131,10 +1275,23 @@ const changeTextStyle = (
       return nextElement;
     },
     true,
-  ),
-  appState,
-  captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-});
+  );
+
+  if (editable && editableBullets) {
+    editable.value = editableBullets.text;
+    editable.setSelectionRange(
+      editableBullets.selectionStart,
+      editableBullets.selectionEnd,
+    );
+    editable.focus();
+  }
+
+  return {
+    elements: updatedElements,
+    appState,
+    captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+  };
+};
 
 const toggleTextStyle = (
   elements: readonly ExcalidrawElement[],
@@ -1200,7 +1357,19 @@ export const actionChangeTextStyle = register<TextStyleChange>({
       hasTextTarget,
       false,
     );
+    const bullets = getFormValue(
+      elements,
+      app,
+      (element) => getTextStyle(element, "bulletList", app),
+      hasTextTarget,
+      false,
+    );
     const updateStyle = (value: TextStyleChange) => {
+      if (value.property === "bulletList") {
+        data?.onPreventClose?.();
+        updateData(value);
+        return;
+      }
       withCaretPositionPreservation(
         () => updateData(value),
         isCompact,
@@ -1240,6 +1409,21 @@ export const actionChangeTextStyle = register<TextStyleChange>({
                 active: underline === true,
                 testId: "textStyle-underline",
               },
+              {
+                value: {
+                  property: "bulletList",
+                  enabled: bullets !== true,
+                },
+                text: "Bulleted list",
+                icon: (
+                  <span aria-hidden="true" className="text-bullets-icon">
+                    <span>•</span>
+                    <span>≡</span>
+                  </span>
+                ),
+                active: bullets === true,
+                testId: "textStyle-bullets",
+              },
             ]}
             onClick={(value) => updateStyle(value)}
           />
@@ -1275,6 +1459,196 @@ export const actionToggleTextUnderline = register({
     toggleTextStyle(elements, appState, "textDecoration", app),
   keyTest: (event, appState, elements, app) =>
     textStyleShortcutTest(event, appState, elements, app, CODES.U),
+});
+
+type ChangeLineHeightData = {
+  lineHeight: number;
+};
+
+const clampLineHeight = (lineHeight: number) =>
+  Math.min(3, Math.max(0.8, Math.round(lineHeight * 20) / 20));
+
+const LineHeightInput = ({
+  value,
+  onChange,
+  compact,
+}: {
+  value: number | null;
+  onChange: (value: number) => void;
+  compact: boolean;
+}) => {
+  const [inputValue, setInputValue] = useState(value?.toString() ?? "");
+
+  useEffect(() => {
+    setInputValue(value?.toString() ?? "");
+  }, [value]);
+
+  const commit = () => {
+    const parsed = Number(inputValue);
+    if (!Number.isFinite(parsed)) {
+      setInputValue(value?.toString() ?? "");
+      return;
+    }
+    const nextValue = clampLineHeight(parsed);
+    setInputValue(nextValue.toString());
+    onChange(nextValue);
+  };
+
+  const nudge = (amount: number) => {
+    const currentValue = Number(inputValue || value || 1.25);
+    const nextValue = clampLineHeight(currentValue + amount);
+    setInputValue(nextValue.toString());
+    onChange(nextValue);
+  };
+
+  return (
+    <div
+      className={clsx("line-height-custom", {
+        "line-height-custom--compact": compact,
+      })}
+      data-prevent-outside-click
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      {compact && (
+        <button
+          type="button"
+          aria-label="Decrease line spacing"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={() => nudge(-0.05)}
+        >
+          −
+        </button>
+      )}
+      <label>
+        <span aria-hidden="true" className="line-height-custom__icon">
+          ↕
+        </span>
+        <input
+          aria-label="Line spacing"
+          data-testid="text-line-height"
+          type="number"
+          min="0.8"
+          max="3"
+          step="0.05"
+          value={inputValue}
+          placeholder="Mixed"
+          onChange={(event) => setInputValue(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === KEYS.ENTER) {
+              event.preventDefault();
+              commit();
+            } else if (event.key === KEYS.ESCAPE) {
+              setInputValue(value?.toString() ?? "");
+            }
+          }}
+        />
+      </label>
+      {compact && (
+        <button
+          type="button"
+          aria-label="Increase line spacing"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={() => nudge(0.05)}
+        >
+          +
+        </button>
+      )}
+    </div>
+  );
+};
+
+export const actionChangeLineHeight = register<ChangeLineHeightData>({
+  name: "changeLineHeight",
+  label: "Line spacing",
+  trackEvent: false,
+  perform: (elements, appState, value, app) => {
+    invariant(value, "actionChangeLineHeight: Expected a line height");
+    const lineHeight = clampLineHeight(value.lineHeight);
+    const updatedElements = changeProperty(
+      elements,
+      appState,
+      (element) => {
+        if (!isTextElement(element)) {
+          return element;
+        }
+        let nextElement: ExcalidrawTextElement = newElementWith(element, {
+          lineHeight: lineHeight as ExcalidrawTextElement["lineHeight"],
+        });
+        redrawTextBoundingBox(
+          nextElement,
+          app.scene.getContainerElement(element),
+          app.scene,
+        );
+        nextElement = offsetElementAfterFontResize(
+          element,
+          nextElement,
+          app.scene,
+        );
+        return nextElement;
+      },
+      true,
+    );
+
+    getSelectedElements(elements, appState, {
+      includeBoundTextElement: true,
+    }).forEach((element) => {
+      if (isTextElement(element)) {
+        updateBoundElements(element, app.scene);
+      }
+    });
+
+    return {
+      elements: updatedElements,
+      appState,
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    };
+  },
+  PanelComponent: ({ elements, appState, updateData, app, data }) => {
+    const { isCompact } = getStylesPanelInfo(app);
+    const lineHeight = getFormValue(
+      elements,
+      app,
+      (element) => {
+        const textElement = isTextElement(element)
+          ? element
+          : getBoundTextElement(element, app.scene.getNonDeletedElementsMap());
+        return textElement?.lineHeight ?? null;
+      },
+      (element) =>
+        isTextElement(element) ||
+        getBoundTextElement(element, app.scene.getNonDeletedElementsMap()) !==
+          null,
+      (hasSelection) =>
+        hasSelection ? null : getLineHeight(appState.currentItemFontFamily),
+    );
+    const updateLineHeight = (nextLineHeight: number) => {
+      withCaretPositionPreservation(
+        () => updateData({ lineHeight: nextLineHeight }),
+        isCompact,
+        !!appState.editingTextElement,
+        data?.onPreventClose,
+      );
+    };
+
+    return (
+      <fieldset className={data?.contextToolbar ? "context-fieldset" : ""}>
+        {!data?.contextToolbar && <legend>Line spacing</legend>}
+        <LineHeightInput
+          value={lineHeight}
+          onChange={updateLineHeight}
+          compact={!!data?.contextToolbar}
+        />
+      </fieldset>
+    );
+  },
 });
 
 export const actionDecreaseFontSize = register({
@@ -1758,8 +2132,8 @@ export const actionChangeTextAlign = register<TextAlign>({
     const { isCompact } = getStylesPanelInfo(app);
 
     return (
-      <fieldset>
-        <legend>{t("labels.textAlign")}</legend>
+      <fieldset className={data?.contextToolbar ? "context-fieldset" : ""}>
+        {!data?.contextToolbar && <legend>{t("labels.textAlign")}</legend>}
         <div className="buttonList">
           <RadioSelection<TextAlign | false>
             group="text-align"
