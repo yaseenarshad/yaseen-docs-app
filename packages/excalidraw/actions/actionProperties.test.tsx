@@ -1,11 +1,13 @@
 import { fireEvent, queryByTestId } from "@testing-library/react";
 
 import {
+  CODES,
   COLOR_PALETTE,
   DEFAULT_ELEMENT_BACKGROUND_PICKS,
   DEFAULT_ELEMENT_STROKE_PICKS,
   FREEDRAW_STROKE_WIDTH,
   FONT_FAMILY,
+  KEYS,
   STROKE_WIDTH,
 } from "@excalidraw/common";
 
@@ -16,7 +18,7 @@ import { render } from "../tests/test-utils";
 
 describe("element locking", () => {
   beforeEach(async () => {
-    await render(<Excalidraw />);
+    await render(<Excalidraw handleKeyboardGlobally={true} />);
   });
 
   describe("properties when tool selected", () => {
@@ -96,6 +98,42 @@ describe("element locking", () => {
 
       const crossHatchButton = queryByTestId(document.body, `fill-cross-hatch`);
       expect(crossHatchButton).toHaveClass("active");
+    });
+
+    it("should toggle bold and underline with keyboard shortcuts", () => {
+      const text = API.createElement({ type: "text" });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+
+      fireEvent.keyDown(document, {
+        code: CODES.B,
+        [KEYS.CTRL_OR_CMD]: true,
+      });
+      expect(API.getSelectedElements()[0]).toMatchObject({
+        fontWeight: "bold",
+      });
+
+      fireEvent.keyDown(document, {
+        code: CODES.U,
+        [KEYS.CTRL_OR_CMD]: true,
+      });
+      expect(API.getSelectedElements()[0]).toMatchObject({
+        fontWeight: "bold",
+        textDecoration: "underline",
+      });
+
+      fireEvent.keyDown(document, {
+        code: CODES.B,
+        [KEYS.CTRL_OR_CMD]: true,
+      });
+      fireEvent.keyDown(document, {
+        code: CODES.U,
+        [KEYS.CTRL_OR_CMD]: true,
+      });
+      expect(API.getSelectedElements()[0]).toMatchObject({
+        fontWeight: "normal",
+        textDecoration: "none",
+      });
     });
 
     it("should expose and apply image border controls", () => {

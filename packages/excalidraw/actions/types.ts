@@ -75,6 +75,8 @@ export type ActionName =
   | "changeOpacity"
   | "changeFontSize"
   | "changeTextStyle"
+  | "toggleTextBold"
+  | "toggleTextUnderline"
   | "undo"
   | "redo"
   | "finalize"

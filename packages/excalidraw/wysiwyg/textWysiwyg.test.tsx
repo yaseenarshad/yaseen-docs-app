@@ -530,6 +530,45 @@ describe("textWysiwyg", () => {
       restoreOriginalGetBoundingClientRect();
     });
 
+    it("should toggle bold and underline with keyboard shortcuts", () => {
+      const primaryModifier = { [KEYS.CTRL_OR_CMD]: true };
+
+      fireEvent.keyDown(textarea, {
+        ...primaryModifier,
+        key: "b",
+        code: CODES.B,
+      });
+      expect((h.elements[0] as ExcalidrawTextElement).fontWeight).toBe("bold");
+      expect(textarea.style.fontWeight).toBe("bold");
+
+      fireEvent.keyDown(textarea, {
+        ...primaryModifier,
+        key: "u",
+        code: CODES.U,
+      });
+      expect((h.elements[0] as ExcalidrawTextElement).textDecoration).toBe(
+        "underline",
+      );
+      expect(textarea.style.textDecoration).toBe("underline");
+
+      fireEvent.keyDown(textarea, {
+        ...primaryModifier,
+        key: "b",
+        code: CODES.B,
+      });
+      fireEvent.keyDown(textarea, {
+        ...primaryModifier,
+        key: "u",
+        code: CODES.U,
+      });
+      expect((h.elements[0] as ExcalidrawTextElement).fontWeight).toBe(
+        "normal",
+      );
+      expect((h.elements[0] as ExcalidrawTextElement).textDecoration).toBe(
+        "none",
+      );
+    });
+
     it("should add a tab at the start of the first line", () => {
       textarea.value = "Line#1\nLine#2";
       // cursor: "|Line#1\nLine#2"

@@ -64,6 +64,8 @@ import {
 import {
   actionDecreaseFontSize,
   actionIncreaseFontSize,
+  actionToggleTextBold,
+  actionToggleTextUnderline,
 } from "../actions/actionProperties";
 import {
   actionResetZoom,
@@ -652,6 +654,28 @@ export const textWysiwyg = ({
       app.actionManager.executeAction(actionDecreaseFontSize);
     } else if (actionIncreaseFontSize.keyTest(event)) {
       app.actionManager.executeAction(actionIncreaseFontSize);
+    } else if (
+      actionToggleTextBold.keyTest(
+        event,
+        app.state,
+        app.scene.getElementsIncludingDeleted(),
+        app,
+      )
+    ) {
+      event.preventDefault();
+      app.actionManager.executeAction(actionToggleTextBold, "keyboard");
+      updateWysiwygStyle();
+    } else if (
+      actionToggleTextUnderline.keyTest(
+        event,
+        app.state,
+        app.scene.getElementsIncludingDeleted(),
+        app,
+      )
+    ) {
+      event.preventDefault();
+      app.actionManager.executeAction(actionToggleTextUnderline, "keyboard");
+      updateWysiwygStyle();
     } else if (event.key === KEYS.ESCAPE) {
       event.preventDefault();
       submittedViaKeyboard = true;

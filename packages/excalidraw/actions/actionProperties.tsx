@@ -15,6 +15,7 @@ import {
   ROUNDNESS,
   STROKE_WIDTH_KEYS,
   VERTICAL_ALIGN,
+  CODES,
   KEYS,
   randomInteger,
   arrayToMap,
@@ -165,6 +166,7 @@ import { getShortcutKey } from "../shortcut";
 
 import { register } from "./register";
 
+import type { Action } from "./types";
 import type { AppClassProperties, AppState, Primitive } from "../types";
 
 const FONT_SIZE_RELATIVE_INCREASE_STEP = 0.1;
@@ -1093,6 +1095,82 @@ const getTextStyle = (
     : textElement.textDecoration === "underline";
 };
 
+const changeTextStyle = (
+  elements: readonly ExcalidrawElement[],
+  appState: AppState,
+  value: TextStyleChange,
+  app: AppClassProperties,
+) => ({
+  elements: changeProperty(
+    elements,
+    appState,
+    (element) => {
+      if (!isTextElement(element)) {
+        return element;
+      }
+      let nextElement: ExcalidrawTextElement = newElementWith(
+        element,
+        value.property === "fontWeight"
+          ? { fontWeight: value.enabled ? "bold" : "normal" }
+          : {
+              textDecoration: value.enabled ? "underline" : "none",
+            },
+      );
+      if (value.property === "fontWeight") {
+        redrawTextBoundingBox(
+          nextElement,
+          app.scene.getContainerElement(element),
+          app.scene,
+        );
+        nextElement = offsetElementAfterFontResize(
+          element,
+          nextElement,
+          app.scene,
+        );
+      }
+      return nextElement;
+    },
+    true,
+  ),
+  appState,
+  captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+});
+
+const toggleTextStyle = (
+  elements: readonly ExcalidrawElement[],
+  appState: AppState,
+  property: TextStyleChange["property"],
+  app: AppClassProperties,
+) => {
+  const targetElements = appState.editingTextElement
+    ? [appState.editingTextElement]
+    : getSelectedElements(elements, appState, {
+        includeBoundTextElement: true,
+      }).filter(isTextElement);
+  const enabled =
+    reduceToCommonValue(targetElements, (element) =>
+      getTextStyle(element, property, app),
+    ) !== true;
+
+  return changeTextStyle(elements, appState, { property, enabled }, app);
+};
+
+const textStyleShortcutTest = (
+  event: Parameters<NonNullable<Action["keyTest"]>>[0],
+  appState: AppState,
+  elements: readonly ExcalidrawElement[],
+  app: AppClassProperties,
+  code: typeof CODES.B | typeof CODES.U,
+) =>
+  event[KEYS.CTRL_OR_CMD] &&
+  !event.altKey &&
+  !event.shiftKey &&
+  event.code === code &&
+  (!!appState.editingTextElement ||
+    getSelectedElements(elements, appState, {
+      includeBoundTextElement: true,
+    }).some(isTextElement));
+
 export const actionChangeTextStyle = register<TextStyleChange>({
   name: "changeTextStyle",
   label: "labels.fontFamily",
@@ -1100,41 +1178,7 @@ export const actionChangeTextStyle = register<TextStyleChange>({
   perform: (elements, appState, value, app) => {
     invariant(value, "actionChangeTextStyle: Expected a style value");
 
-    return {
-      elements: changeProperty(
-        elements,
-        appState,
-        (element) => {
-          if (!isTextElement(element)) {
-            return element;
-          }
-          let nextElement: ExcalidrawTextElement = newElementWith(
-            element,
-            value.property === "fontWeight"
-              ? { fontWeight: value.enabled ? "bold" : "normal" }
-              : {
-                  textDecoration: value.enabled ? "underline" : "none",
-                },
-          );
-          if (value.property === "fontWeight") {
-            redrawTextBoundingBox(
-              nextElement,
-              app.scene.getContainerElement(element),
-              app.scene,
-            );
-            nextElement = offsetElementAfterFontResize(
-              element,
-              nextElement,
-              app.scene,
-            );
-          }
-          return nextElement;
-        },
-        true,
-      ),
-      appState,
-      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-    };
+    return changeTextStyle(elements, appState, value, app);
   },
   PanelComponent: ({ elements, appState, updateData, app, data }) => {
     const { isCompact } = getStylesPanelInfo(app);
@@ -1211,6 +1255,26 @@ export const actionChangeTextStyle = register<TextStyleChange>({
       </fieldset>
     );
   },
+});
+
+export const actionToggleTextBold = register({
+  name: "toggleTextBold",
+  label: "Bold",
+  trackEvent: false,
+  perform: (elements, appState, _, app) =>
+    toggleTextStyle(elements, appState, "fontWeight", app),
+  keyTest: (event, appState, elements, app) =>
+    textStyleShortcutTest(event, appState, elements, app, CODES.B),
+});
+
+export const actionToggleTextUnderline = register({
+  name: "toggleTextUnderline",
+  label: "Underline",
+  trackEvent: false,
+  perform: (elements, appState, _, app) =>
+    toggleTextStyle(elements, appState, "textDecoration", app),
+  keyTest: (event, appState, elements, app) =>
+    textStyleShortcutTest(event, appState, elements, app, CODES.U),
 });
 
 export const actionDecreaseFontSize = register({
