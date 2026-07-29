@@ -14,6 +14,8 @@ import type * as auth from "../auth.js";
 import type * as diagrams from "../diagrams.js";
 import type * as fixedAccounts from "../fixedAccounts.js";
 import type * as http from "../http.js";
+import type * as programmaticEdits from "../programmaticEdits.js";
+import type * as programmaticScene from "../programmaticScene.js";
 
 import type {
   ApiFromModules,
@@ -28,6 +30,8 @@ declare const fullApi: ApiFromModules<{
   diagrams: typeof diagrams;
   fixedAccounts: typeof fixedAccounts;
   http: typeof http;
+  programmaticEdits: typeof programmaticEdits;
+  programmaticScene: typeof programmaticScene;
 }>;
 
 /**
