@@ -329,6 +329,33 @@ describe("Sidebar", () => {
   });
 
   describe("Sidebar.tab", () => {
+    it("allows tab content to shrink into a scrollable viewport", async () => {
+      const { container } = await render(
+        <Excalidraw>
+          <Sidebar name="custom" docked>
+            <Sidebar.Tabs>
+              <Sidebar.Tab tab="library">
+                <div style={{ height: 2000 }}>Tall content</div>
+              </Sidebar.Tab>
+            </Sidebar.Tabs>
+          </Sidebar>
+        </Excalidraw>,
+      );
+
+      await withExcalidrawDimensions({ width: 1920, height: 500 }, async () => {
+        expect(await toggleSidebar({ name: "custom", tab: "library" })).toBe(
+          true,
+        );
+        const tabs = container.querySelector<HTMLElement>(".sidebar-tabs-root");
+        const panel = container.querySelector<HTMLElement>(
+          "[role=tabpanel][data-testid=library]",
+        );
+
+        expect(Number.parseFloat(getComputedStyle(tabs!).minHeight)).toBe(0);
+        expect(Number.parseFloat(getComputedStyle(panel!).minHeight)).toBe(0);
+      });
+    });
+
     it("should toggle sidebars tabs correctly", async () => {
       const { container } = await render(
         <Excalidraw>

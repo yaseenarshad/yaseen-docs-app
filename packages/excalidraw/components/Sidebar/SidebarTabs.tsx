@@ -5,9 +5,11 @@ import { useExcalidrawSetAppState } from "../App";
 
 export const SidebarTabs = ({
   children,
+  style,
   ...rest
 }: {
   children: React.ReactNode;
+  style?: React.CSSProperties;
 } & Omit<React.RefAttributes<HTMLDivElement>, "onSelect">) => {
   const appState = useUIAppState();
   const setAppState = useExcalidrawSetAppState();
@@ -28,6 +30,7 @@ export const SidebarTabs = ({
           openSidebar: { ...state.openSidebar, name, tab },
         }))
       }
+      style={{ ...style, minHeight: 0 }}
       {...rest}
     >
       {children}
