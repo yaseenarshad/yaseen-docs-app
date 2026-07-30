@@ -1,4 +1,6 @@
-import { getScrollToContentState } from "@excalidraw/excalidraw/scene";
+import { zoomToFitBounds } from "@excalidraw/excalidraw";
+import { getNormalizedZoom } from "@excalidraw/excalidraw/scene";
+import { getCommonBounds, getNonDeletedElements } from "@excalidraw/element";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type { AppState } from "@excalidraw/excalidraw/types";
@@ -50,6 +52,16 @@ export const resolveCloudViewport = <RestoredAppState extends CloudViewport>(
     return preserveCloudViewport(restoredAppState, localAppState, true);
   }
 
+  const visibleElements = getNonDeletedElements(elements);
+  if (visibleElements.length === 0) {
+    return {
+      ...restoredAppState,
+      scrollX: 0,
+      scrollY: 0,
+      zoom: { value: getNormalizedZoom(1) },
+    };
+  }
+
   const openingAppState = {
     ...localAppState,
     ...restoredAppState,
@@ -58,9 +70,16 @@ export const resolveCloudViewport = <RestoredAppState extends CloudViewport>(
     offsetLeft: localAppState.offsetLeft,
     offsetTop: localAppState.offsetTop,
   };
+  const fittedAppState = zoomToFitBounds({
+    bounds: getCommonBounds(visibleElements),
+    appState: openingAppState,
+    fit: "scale-down",
+  }).appState;
 
   return {
     ...restoredAppState,
-    ...getScrollToContentState(elements, openingAppState),
+    scrollX: fittedAppState.scrollX,
+    scrollY: fittedAppState.scrollY,
+    zoom: fittedAppState.zoom,
   };
 };

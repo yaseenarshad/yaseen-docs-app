@@ -75,7 +75,7 @@ describe("cloud scene synchronization", () => {
     });
   });
 
-  it("recenters fresh route content using the restored zoom and live viewport", () => {
+  it("fits fresh route content using the live viewport without zooming past 100%", () => {
     const localAppState = {
       ...getDefaultAppState(),
       width: 900,
@@ -112,13 +112,49 @@ describe("cloud scene synchronization", () => {
       false,
     );
 
-    expect(resolved.zoom).toEqual(restoredAppState.zoom);
-    expect(resolved.scrollX).toBeCloseTo(900 / 2 / 1.5 - 1_100);
-    expect(resolved.scrollY).toBeCloseTo(600 / 2 / 1.5 - 550);
+    expect(resolved.zoom.value).toBe(1);
+    expect(resolved.scrollX).toBeCloseTo(900 / 2 - 1_100);
+    expect(resolved.scrollY).toBeCloseTo(600 / 2 - 550);
     expect(resolved.viewModeEnabled).toBe(true);
   });
 
-  it("opens an empty fresh route at the origin without changing its zoom", () => {
+  it("zooms out until every item fits on a fresh route", () => {
+    const localAppState = {
+      ...getDefaultAppState(),
+      width: 900,
+      height: 600,
+      offsetLeft: 0,
+      offsetTop: 0,
+    };
+    const restoredAppState = {
+      ...localAppState,
+      scrollX: -10_000,
+      scrollY: 8_000,
+      zoom: { value: 1.5 as const },
+    };
+    const elements = [
+      newElement({
+        type: "rectangle",
+        x: 1_000,
+        y: 500,
+        width: 1_800,
+        height: 1_200,
+      }),
+    ];
+
+    const resolved = resolveCloudViewport(
+      restoredAppState,
+      localAppState,
+      elements,
+      false,
+    );
+
+    expect(resolved.zoom.value).toBeCloseTo(0.5);
+    expect(resolved.scrollX).toBeCloseTo(900 / 2 / 0.5 - 1_900);
+    expect(resolved.scrollY).toBeCloseTo(600 / 2 / 0.5 - 1_100);
+  });
+
+  it("opens an empty fresh route at the origin and default zoom", () => {
     const localAppState = {
       ...getDefaultAppState(),
       width: 900,
@@ -138,7 +174,7 @@ describe("cloud scene synchronization", () => {
     ).toMatchObject({
       scrollX: 0,
       scrollY: 0,
-      zoom: restoredAppState.zoom,
+      zoom: { value: 1 },
     });
   });
 

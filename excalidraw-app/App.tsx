@@ -584,8 +584,18 @@ const ExcalidrawWrapper = () => {
         elements,
         shouldPreserveViewport,
       );
+      const appliedSceneJson = serializeAsJSON(
+        elements,
+        restoredAppState,
+        excalidrawAPI.getFiles(),
+        "database",
+      );
 
-      cloud.discardPendingSave();
+      if (shouldPreserveViewport) {
+        cloud.discardPendingSave();
+      } else {
+        cloud.acceptSceneWithoutSave(appliedSceneJson);
+      }
       applyingCloudSceneRef.current = true;
       loadedCloudSceneRef.current = nextAppliedScene;
       excalidrawAPI.updateScene({
@@ -596,14 +606,7 @@ const ExcalidrawWrapper = () => {
       applyingCloudSceneRef.current = false;
 
       if (shouldMerge) {
-        cloud.queueSave(
-          serializeAsJSON(
-            elements,
-            restoredAppState,
-            excalidrawAPI.getFiles(),
-            "database",
-          ),
-        );
+        cloud.queueSave(appliedSceneJson);
       }
     } catch (error) {
       applyingCloudSceneRef.current = false;

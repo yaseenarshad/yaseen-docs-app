@@ -19,6 +19,10 @@ import {
   getCloudRouteIdentity,
   isCurrentRouteCompletion,
 } from "./cloudRouteLifecycle";
+import {
+  acceptCloudSceneWithoutSave,
+  shouldQueueCloudSceneSave,
+} from "./cloudSaveBaseline";
 
 import {
   BOARD_SORT_STORAGE_KEY,
@@ -79,7 +83,7 @@ export const useCloudBoard = () => {
     route: CloudRouteGeneration;
     sceneJson: string;
   } | null>(null);
-  const latestServerSceneRef = useRef<string | null>(null);
+  const acceptedSceneRef = useRef<string | null>(null);
   const uploadedFileIdsRef = useRef(new Set<string>());
   const uploadingFileIdsRef = useRef(new Set<string>());
   const flushSaveRef = useRef<() => Promise<boolean>>(async () => true);
@@ -133,7 +137,7 @@ export const useCloudBoard = () => {
   useEffect(() => {
     versionRef.current = 0;
     pendingSceneRef.current = null;
-    latestServerSceneRef.current = null;
+    acceptedSceneRef.current = null;
     uploadedFileIdsRef.current = new Set();
     uploadingFileIdsRef.current = new Set();
     if (saveTimerRef.current !== null) {
@@ -212,7 +216,9 @@ export const useCloudBoard = () => {
   useEffect(() => {
     if (openedBoard) {
       versionRef.current = openedBoard.version;
-      latestServerSceneRef.current = openedBoard.sceneJson;
+      acceptedSceneRef.current = acceptCloudSceneWithoutSave(
+        openedBoard.sceneJson,
+      );
       setSaveStatus(openedBoard.access === "viewer" ? "viewer" : "saved");
       setErrorMessage(null);
     } else if (openedBoard === null) {
@@ -281,7 +287,7 @@ export const useCloudBoard = () => {
       if (!openedBoard || openedBoard.access !== "owner") {
         return;
       }
-      if (sceneJson === latestServerSceneRef.current) {
+      if (!shouldQueueCloudSceneSave(acceptedSceneRef.current, sceneJson)) {
         pendingSceneRef.current = null;
         setSaveStatus("saved");
         return;
@@ -310,6 +316,15 @@ export const useCloudBoard = () => {
       saveTimerRef.current = null;
     }
   }, []);
+
+  const acceptSceneWithoutSave = useCallback(
+    (sceneJson: string) => {
+      discardPendingSave();
+      acceptedSceneRef.current = acceptCloudSceneWithoutSave(sceneJson);
+      setSaveStatus(openedBoard?.access === "viewer" ? "viewer" : "saved");
+    },
+    [discardPendingSave, openedBoard?.access],
+  );
 
   useEffect(
     () => () => {
@@ -556,6 +571,7 @@ export const useCloudBoard = () => {
       errorMessage,
       queueSave,
       discardPendingSave,
+      acceptSceneWithoutSave,
       flushSave,
       enableSharing,
       boards,
@@ -610,6 +626,7 @@ export const useCloudBoard = () => {
       queueAssets,
       queueSave,
       discardPendingSave,
+      acceptSceneWithoutSave,
       renameOpenedBoard,
       route,
       saveStatus,
