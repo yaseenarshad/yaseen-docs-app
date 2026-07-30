@@ -17,7 +17,7 @@ import {
 import { Excalidraw } from "../index";
 import { API } from "../tests/helpers/api";
 import { Keyboard, UI } from "../tests/helpers/ui";
-import { render } from "../tests/test-utils";
+import { render, togglePopover } from "../tests/test-utils";
 
 import { actionChangeFontFamily } from "./actionProperties";
 
@@ -382,6 +382,69 @@ describe("element locking", () => {
       ).toBeNull();
     });
 
+    it.each(["rectangle", "line", "arrow", "freedraw"] as const)(
+      "should retain generic stroke picks for a selected %s",
+      (type) => {
+        const element = API.createElement({ type });
+        API.setElements([element]);
+        API.setSelectedElements([element]);
+
+        expect(
+          queryByTestId(
+            document.body,
+            `color-top-pick-${DEFAULT_ELEMENT_STROKE_PICKS[4]}`,
+          ),
+        ).not.toBeNull();
+        expect(
+          queryByTestId(document.body, `color-top-pick-${COLOR_PALETTE.white}`),
+        ).toBeNull();
+      },
+    );
+
+    it("should keep yellow and orange in the expanded text palette", () => {
+      const text = API.createElement({ type: "text", text: "Expanded" });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+
+      expect(
+        queryByTestId(
+          document.body,
+          `color-top-pick-${COLOR_PALETTE.yellow[DEFAULT_ELEMENT_STROKE_COLOR_INDEX]}`,
+        ),
+      ).toBeNull();
+
+      togglePopover("Stroke");
+      expect(queryByTestId(document.body, "color-yellow")).not.toBeNull();
+      expect(queryByTestId(document.body, "color-orange")).not.toBeNull();
+    });
+
+    it("should apply, undo, and redo a white text quick pick", async () => {
+      const text = UI.createElement("text");
+      await UI.editText(text, "Undo white");
+      API.setSelectedElements([text.get() as any]);
+
+      fireEvent.click(
+        queryByTestId(
+          document.body,
+          `color-top-pick-${COLOR_PALETTE.white}`,
+        ) as HTMLElement,
+      );
+      await act(async () => {});
+      expect(API.getSelectedElement().strokeColor).toBe(COLOR_PALETTE.white);
+
+      Keyboard.undo();
+      await act(async () => {});
+      expect(window.h.app.scene.getElement(text.id)?.strokeColor).toBe(
+        COLOR_PALETTE.black,
+      );
+
+      Keyboard.redo();
+      await act(async () => {});
+      expect(window.h.app.scene.getElement(text.id)?.strokeColor).toBe(
+        COLOR_PALETTE.white,
+      );
+    });
+
     it("should keep the native panel for mixed text and shape selections", () => {
       const text = API.createElement({ type: "text", text: "Mixed" });
       const rectangle = API.createElement({ type: "rectangle" });
@@ -419,6 +482,9 @@ describe("element locking", () => {
       ).toBeNull();
       expect(
         document.querySelector(".contextual-properties-toolbar"),
+      ).not.toBeNull();
+      expect(
+        queryByTestId(document.body, `color-top-pick-${COLOR_PALETTE.white}`),
       ).not.toBeNull();
     });
 
