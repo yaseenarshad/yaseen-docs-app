@@ -140,6 +140,7 @@ import { useAppLangCode } from "./app-language/language-state";
 import { CloudStatus } from "./cloud/CloudStatus";
 import { CloudAccount } from "./cloud/CloudAccount";
 import {
+  preserveCloudViewport,
   shouldApplyCloudScene,
   shouldMergeCloudScene,
 } from "./cloud/cloudSceneSync";
@@ -488,10 +489,14 @@ const ExcalidrawWrapper = () => {
             appState,
           )
         : remoteElements;
-      const restoredAppState = {
-        ...restoreAppState(scene.appState, appState),
-        viewModeEnabled: cloud.isViewer,
-      };
+      const restoredAppState = preserveCloudViewport(
+        {
+          ...restoreAppState(scene.appState, appState),
+          viewModeEnabled: cloud.isViewer,
+        },
+        appState,
+        shouldMerge,
+      );
 
       cloud.discardPendingSave();
       applyingCloudSceneRef.current = true;

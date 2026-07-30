@@ -1,4 +1,8 @@
-import { shouldApplyCloudScene, shouldMergeCloudScene } from "./cloudSceneSync";
+import {
+  preserveCloudViewport,
+  shouldApplyCloudScene,
+  shouldMergeCloudScene,
+} from "./cloudSceneSync";
 
 describe("cloud scene synchronization", () => {
   it("applies a newer server version for an owner route", () => {
@@ -33,5 +37,26 @@ describe("cloud scene synchronization", () => {
       ),
     ).toBe(false);
     expect(shouldMergeCloudScene(null, "owner:first")).toBe(false);
+  });
+
+  it("preserves the local viewport when merging a same-route cloud update", () => {
+    const restoredAppState = {
+      scrollX: 0,
+      scrollY: 0,
+      zoom: { value: 1 as const },
+      viewModeEnabled: false,
+    };
+    const localAppState = {
+      scrollX: -420,
+      scrollY: 180,
+      zoom: { value: 1.6 as const },
+    };
+
+    expect(
+      preserveCloudViewport(restoredAppState, localAppState, true),
+    ).toEqual({
+      ...restoredAppState,
+      ...localAppState,
+    });
   });
 });
