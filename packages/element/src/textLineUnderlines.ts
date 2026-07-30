@@ -32,9 +32,7 @@ export const normalizeLineUnderlines = (
     return undefined;
   }
 
-  const normalized = value
-    .slice(0, lineCount)
-    .map((entry) => entry === true);
+  const normalized = value.slice(0, lineCount).map((entry) => entry === true);
 
   while (normalized.length && !normalized[normalized.length - 1]) {
     normalized.pop();
@@ -129,10 +127,7 @@ export const remapLineUnderlinesForTextEdit = (
   lineUnderlines: readonly boolean[] | undefined,
 ) => {
   if (!lineUnderlines?.some(Boolean) || previousText === nextText) {
-    return normalizeLineUnderlines(
-      lineUnderlines,
-      nextText.split("\n").length,
-    );
+    return normalizeLineUnderlines(lineUnderlines, nextText.split("\n").length);
   }
 
   const edit = getEditWindow(previousText, nextText);

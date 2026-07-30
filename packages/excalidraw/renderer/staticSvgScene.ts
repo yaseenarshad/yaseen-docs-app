@@ -723,13 +723,15 @@ const renderElementToSvg = (
               font: getFontString(element),
               maxWidth,
               lineUnderlines: element.lineUnderlines,
-              wholeElementUnderlined:
-                element.textDecoration === "underline",
+              wholeElementUnderlined: element.textDecoration === "underline",
             })
-          : element.text.replace(/\r\n?/g, "\n").split("\n").map((text) => ({
-              text,
-              underlined: element.textDecoration === "underline",
-            }));
+          : element.text
+              .replace(/\r\n?/g, "\n")
+              .split("\n")
+              .map((text) => ({
+                text,
+                underlined: element.textDecoration === "underline",
+              }));
         const lineHeightPx = getLineHeightInPx(
           element.fontSize,
           element.lineHeight,

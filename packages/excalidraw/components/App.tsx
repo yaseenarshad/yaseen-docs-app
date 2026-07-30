@@ -6225,64 +6225,67 @@ class App extends React.Component<AppProps, AppState> {
       ),
       onSubmit: withBatchedUpdates(
         ({ viaKeyboard, nextOriginalText, nextLineUnderlines }) => {
-        this.textWysiwygSubmitHandler = null;
+          this.textWysiwygSubmitHandler = null;
 
-        const isDeleted = !nextOriginalText.trim();
-        updateElement(nextOriginalText, isDeleted, nextLineUnderlines);
+          const isDeleted = !nextOriginalText.trim();
+          updateElement(nextOriginalText, isDeleted, nextLineUnderlines);
 
-        // keyboard-submit keeps focus on the edited object. For bound text, keep
-        // the container selected even if the text becomes empty and is deleted.
-        // The autoshape tool stays active through the editing session and never
-        // selects anything — don't fight the finalize action's selection reset.
-        const elementIdToSelect =
-          viaKeyboard &&
-          !this.isToolLocked() &&
-          this.state.activeTool.type !== "autoshape"
-            ? element.containerId || (!isDeleted ? element.id : null)
-            : null;
+          // keyboard-submit keeps focus on the edited object. For bound text, keep
+          // the container selected even if the text becomes empty and is deleted.
+          // The autoshape tool stays active through the editing session and never
+          // selects anything — don't fight the finalize action's selection reset.
+          const elementIdToSelect =
+            viaKeyboard &&
+            !this.isToolLocked() &&
+            this.state.activeTool.type !== "autoshape"
+              ? element.containerId || (!isDeleted ? element.id : null)
+              : null;
 
-        if (elementIdToSelect) {
-          // needed to ensure state is updated before "finalize" action
-          // that's invoked on keyboard-submit as well
-          // TODO either move this into finalize as well, or handle all state
-          // updates in one place, skipping finalize action
+          if (elementIdToSelect) {
+            // needed to ensure state is updated before "finalize" action
+            // that's invoked on keyboard-submit as well
+            // TODO either move this into finalize as well, or handle all state
+            // updates in one place, skipping finalize action
+            flushSync(() => {
+              this.setState((prevState) => ({
+                selectedElementIds: makeNextSelectedElementIds(
+                  {
+                    ...prevState.selectedElementIds,
+                    [elementIdToSelect]: true,
+                  },
+                  prevState,
+                ),
+              }));
+            });
+          }
+
+          if (isDeleted) {
+            fixBindingsAfterDeletion(this.scene.getNonDeletedElements(), [
+              element,
+            ]);
+          }
+
+          if (!isDeleted || isExistingElement) {
+            this.store.scheduleCapture();
+          }
+
           flushSync(() => {
-            this.setState((prevState) => ({
-              selectedElementIds: makeNextSelectedElementIds(
-                {
-                  ...prevState.selectedElementIds,
-                  [elementIdToSelect]: true,
-                },
-                prevState,
-              ),
-            }));
+            this.setState({
+              newElement: null,
+              editingTextElement: null,
+            });
           });
-        }
 
-        if (isDeleted) {
-          fixBindingsAfterDeletion(this.scene.getNonDeletedElements(), [
-            element,
-          ]);
-        }
+          // tools that survive the submit (locked, or autoshape's
+          // double-click-to-type flow) need their cursor back
+          if (
+            this.isToolLocked() ||
+            this.state.activeTool.type === "autoshape"
+          ) {
+            this.cursor.applyForTool();
+          }
 
-        if (!isDeleted || isExistingElement) {
-          this.store.scheduleCapture();
-        }
-
-        flushSync(() => {
-          this.setState({
-            newElement: null,
-            editingTextElement: null,
-          });
-        });
-
-        // tools that survive the submit (locked, or autoshape's
-        // double-click-to-type flow) need their cursor back
-        if (this.isToolLocked() || this.state.activeTool.type === "autoshape") {
-          this.cursor.applyForTool();
-        }
-
-        this.focusContainer();
+          this.focusContainer();
         },
       ),
       element,

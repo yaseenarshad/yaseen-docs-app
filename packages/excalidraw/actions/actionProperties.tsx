@@ -1200,8 +1200,7 @@ const getTextStyle = (
           lineUnderlines: textElement.lineUnderlines,
           selectionStart: editable.selectionStart,
           selectionEnd: editable.selectionEnd,
-          wholeElementUnderlined:
-            textElement.textDecoration === "underline",
+          wholeElementUnderlined: textElement.textDecoration === "underline",
         })
       : textElement.textDecoration === "underline";
   }
@@ -1232,11 +1231,11 @@ const changeTextStyle = (
   const editableBullets = editable
     ? value.property === "bulletList"
       ? toggleTextBullets(
-        editable.value,
-        editable.selectionStart,
-        editable.selectionEnd,
-        value.enabled,
-      )
+          editable.value,
+          editable.selectionStart,
+          editable.selectionEnd,
+          value.enabled,
+        )
       : null
     : null;
   const editableSelection = editable
@@ -1290,8 +1289,7 @@ const changeTextStyle = (
                 lineUnderlines: element.lineUnderlines,
                 selectionStart: editable.selectionStart,
                 selectionEnd: editable.selectionEnd,
-                wholeElementUnderlined:
-                  element.textDecoration === "underline",
+                wholeElementUnderlined: element.textDecoration === "underline",
                 enabled: value.enabled,
               }),
             },
@@ -1308,10 +1306,9 @@ const changeTextStyle = (
           true,
         );
       }
-      let nextElement: ExcalidrawTextElement = newElementWith(
-        element,
-        { fontWeight: value.enabled ? "bold" : "normal" },
-      );
+      let nextElement: ExcalidrawTextElement = newElementWith(element, {
+        fontWeight: value.enabled ? "bold" : "normal",
+      });
       if (value.property === "fontWeight") {
         redrawTextBoundingBox(
           nextElement,

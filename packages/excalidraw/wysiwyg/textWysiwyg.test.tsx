@@ -546,9 +546,9 @@ describe("textWysiwyg", () => {
         key: "u",
         code: CODES.U,
       });
-      expect(
-        (h.elements[0] as ExcalidrawTextElement).lineUnderlines,
-      ).toEqual([true]);
+      expect((h.elements[0] as ExcalidrawTextElement).lineUnderlines).toEqual([
+        true,
+      ]);
       expect((h.elements[0] as ExcalidrawTextElement).textDecoration).toBe(
         "none",
       );
@@ -610,9 +610,9 @@ describe("textWysiwyg", () => {
         code: CODES.U,
       });
 
-      expect(
-        (h.elements[0] as ExcalidrawTextElement).lineUnderlines,
-      ).toEqual([true]);
+      expect((h.elements[0] as ExcalidrawTextElement).lineUnderlines).toEqual([
+        true,
+      ]);
       expect(
         document.querySelectorAll(".excalidraw-wysiwyg-line-underline"),
       ).toHaveLength(1);
@@ -628,17 +628,18 @@ describe("textWysiwyg", () => {
         key: "u",
         code: CODES.U,
       });
-      expect(
-        (h.elements[0] as ExcalidrawTextElement).lineUnderlines,
-      ).toEqual([true]);
+      expect((h.elements[0] as ExcalidrawTextElement).lineUnderlines).toEqual([
+        true,
+      ]);
 
       fireEvent.input(textarea, {
         target: { value: "Intro\nTitle\nBody" },
       });
 
-      expect(
-        (h.elements[0] as ExcalidrawTextElement).lineUnderlines,
-      ).toEqual([true, true]);
+      expect((h.elements[0] as ExcalidrawTextElement).lineUnderlines).toEqual([
+        true,
+        true,
+      ]);
     });
 
     it("should toggle bullets on the selected lines from the text toolbar", () => {
