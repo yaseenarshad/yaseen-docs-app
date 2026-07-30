@@ -83,7 +83,7 @@ const baseProps = {
   canSaveSelection: true,
   onSaveSelection: vi.fn(),
   onImportJson: vi.fn(),
-  onInsert: vi.fn(),
+  onInsert: vi.fn().mockResolvedValue(undefined),
   onRename: vi.fn().mockResolvedValue(undefined),
   onDelete: vi.fn().mockResolvedValue(undefined),
 };
@@ -93,11 +93,11 @@ describe("SavedComponentsInventory", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders a searchable, accessible component inventory", () => {
+  it("renders a searchable, accessible component inventory", async () => {
     const onQueryChange = vi.fn();
     const onSaveSelection = vi.fn();
     const onImportJson = vi.fn();
-    const onInsert = vi.fn();
+    const onInsert = vi.fn().mockResolvedValue(undefined);
 
     render(
       <SavedComponentsInventory
@@ -129,7 +129,7 @@ describe("SavedComponentsInventory", () => {
     expect(onQueryChange).toHaveBeenCalledWith("pricing");
     expect(onSaveSelection).toHaveBeenCalledTimes(1);
     expect(onImportJson).toHaveBeenCalledTimes(1);
-    expect(onInsert).toHaveBeenCalledWith(component);
+    await waitFor(() => expect(onInsert).toHaveBeenCalledWith(component));
   });
 
   it("disables Save selection when the canvas has no selection", () => {

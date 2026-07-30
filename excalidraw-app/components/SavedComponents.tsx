@@ -24,6 +24,7 @@ import "./SavedComponents.scss";
 
 import {
   captureSavedComponentSelection,
+  insertSavedComponent,
   parseImportedComponentJson,
   serializeSavedComponent,
 } from "./SavedComponentsData";
@@ -58,7 +59,7 @@ type SavedComponentsInventoryProps = {
   onLoadMore: () => void;
   onSaveSelection: () => void;
   onImportJson: () => void;
-  onInsert: (component: SavedComponentSummary) => void;
+  onInsert: (component: SavedComponentSummary) => Promise<void>;
   onRename: (component: SavedComponentSummary, name: string) => Promise<void>;
   onDelete: (component: SavedComponentSummary) => Promise<void>;
 };
@@ -306,7 +307,14 @@ export const SavedComponentsInventory = ({
                   type="button"
                   className="saved-components__insert"
                   aria-label={`Insert ${component.name}`}
-                  onClick={() => onInsert(component)}
+                  onClick={() => {
+                    void runAction({
+                      component,
+                      label: `${component.name} inserted`,
+                      retryLabel: "insert",
+                      action: () => onInsert(component),
+                    });
+                  }}
                 >
                   <SavedComponentPreview component={component} />
                   <span title={component.name}>{component.name}</span>
@@ -537,10 +545,8 @@ export const SavedComponentCreationDialog = ({
 
 export const SavedComponents = ({
   excalidrawAPI,
-  onInsert,
 }: {
   excalidrawAPI: ExcalidrawImperativeAPI;
-  onInsert: (component: SavedComponentSummary) => void;
 }) => {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const appState = useUIAppState();
@@ -624,7 +630,12 @@ export const SavedComponents = ({
             error: null,
           })
         }
-        onInsert={onInsert}
+        onInsert={async (component) => {
+          insertSavedComponent(excalidrawAPI, component.elementsJson);
+          excalidrawAPI.setToast({
+            message: `${component.name} inserted`,
+          });
+        }}
         onRename={async (component, name) => {
           await renameComponent({
             componentId: component._id as Id<"savedComponents">,

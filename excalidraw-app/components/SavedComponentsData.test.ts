@@ -4,6 +4,7 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 import {
   captureSavedComponentSelection,
+  insertSavedComponent,
   parseImportedComponentJson,
   serializeSavedComponent,
 } from "./SavedComponentsData";
@@ -176,5 +177,25 @@ describe("saved component data", () => {
     expect(excalidrawAPI.getAppState().selectedElementIds).toEqual({
       frame: true,
     });
+  });
+
+  it("validates before delegating atomic insertion to Excalidraw", () => {
+    const insertElements = vi.fn();
+    const excalidrawAPI = {
+      insertElements,
+    } as unknown as ExcalidrawImperativeAPI;
+    const source = JSON.stringify({
+      type: "growprofit/saved-component",
+      schemaVersion: 1,
+      elements: [rectangle()],
+    });
+
+    const inserted = insertSavedComponent(excalidrawAPI, source);
+    expect(insertElements).toHaveBeenCalledWith(inserted);
+
+    expect(() => insertSavedComponent(excalidrawAPI, "{")).toThrow(
+      "Paste valid JSON",
+    );
+    expect(insertElements).toHaveBeenCalledTimes(1);
   });
 });

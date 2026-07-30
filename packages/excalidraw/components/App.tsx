@@ -774,6 +774,7 @@ class App extends React.Component<AppProps, AppState> {
       updateLibrary: this.library.updateLibrary,
       addFiles: this.addFiles,
       insertImages: this.insertImages,
+      insertElements: this.insertElements,
       resetScene: this.resetScene,
       resetFiles: this.resetFiles,
       getSceneElementsIncludingDeleted: this.getSceneElementsIncludingDeleted,
@@ -2707,6 +2708,28 @@ class App extends React.Component<AppProps, AppState> {
       position: "center",
       files: null,
     });
+  };
+
+  public insertElements = (elements: readonly ExcalidrawElement[]) => {
+    const {
+      left = 0,
+      right = 0,
+      top = 0,
+      bottom = 0,
+    } = this.viewport.getOffsets();
+    const usableWidth = Math.max(1, this.state.width - left - right);
+    const usableHeight = Math.max(1, this.state.height - top - bottom);
+
+    this.addElementsFromPasteOrLibrary({
+      elements,
+      files: null,
+      position: {
+        clientX: this.state.offsetLeft + left + usableWidth / 2,
+        clientY: this.state.offsetTop + top + usableHeight / 2,
+      },
+      preserveFrameChildrenOrder: true,
+    });
+    this.focusContainer();
   };
 
   public onExportImage = async (

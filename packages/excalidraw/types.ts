@@ -1261,6 +1261,11 @@ export interface ExcalidrawImperativeAPI {
   setToast: InstanceType<typeof App>["setToast"];
   addFiles: (data: BinaryFileData[]) => void;
   insertImages: InstanceType<typeof App>["insertImages"];
+  /**
+   * Inserts a fresh copy of the supplied elements at the center of the
+   * currently usable viewport, preserving their internal relationships.
+   */
+  insertElements: InstanceType<typeof App>["insertElements"];
   id: string;
   setActiveTool: InstanceType<typeof App>["setActiveTool"];
   setCursor: InstanceType<typeof App>["cursor"]["set"];

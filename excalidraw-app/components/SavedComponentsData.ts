@@ -207,3 +207,12 @@ export const captureSavedComponentSelection = (
   serializeSavedComponent(selectedElements);
   return selectedElements;
 };
+
+export const insertSavedComponent = (
+  excalidrawAPI: ExcalidrawImperativeAPI,
+  elementsJson: string,
+) => {
+  const elements = parseImportedComponentJson(elementsJson);
+  excalidrawAPI.insertElements(elements);
+  return elements;
+};
