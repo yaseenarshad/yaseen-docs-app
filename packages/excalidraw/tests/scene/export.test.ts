@@ -140,6 +140,29 @@ describe("exportToSvg", () => {
     });
   });
 
+  it("underlines only decorated logical text lines", async () => {
+    const lineStyledText = {
+      ...API.createElement({
+        type: "text",
+        text: "Title\nSubtitle",
+        width: 100,
+        height: 50,
+      }),
+      lineUnderlines: [true],
+    } as NonDeleted<ExcalidrawTextElement>;
+
+    const svg = await exportUtils.exportToSvg(
+      [lineStyledText],
+      DEFAULT_OPTIONS,
+      null,
+    );
+    const textNodes = Array.from(svg.querySelectorAll("text"));
+
+    expect(textNodes).toHaveLength(2);
+    expect(textNodes[0].getAttribute("text-decoration")).toBe("underline");
+    expect(textNodes[1].hasAttribute("text-decoration")).toBe(false);
+  });
+
   it("exports an image border", async () => {
     const fileId = "border-image" as FileId;
     const image = {
@@ -279,6 +302,33 @@ describe("exportToSvg", () => {
 });
 
 describe("exportToCanvas", () => {
+  it("draws one underline rule for one decorated logical text line", async () => {
+    const lineStyledText = {
+      ...API.createElement({
+        type: "text",
+        text: "Title\nSubtitle",
+        width: 100,
+        height: 50,
+      }),
+      lineUnderlines: [true],
+    } as NonDeleted<ExcalidrawTextElement>;
+
+    const canvas = await exportToCanvas({
+      elements: [lineStyledText],
+      files: null,
+      appState: { exportBackground: false },
+    });
+    const events = (canvas.getContext("2d") as any).__getEvents();
+    const underlineRules = events.filter(
+      (event: any) =>
+        event.type === "fillRect" &&
+        event.props.width > 0 &&
+        event.props.height > 0,
+    );
+
+    expect(underlineRules).toHaveLength(1);
+  });
+
   it("does not paint over elements beneath a labeled arrow's label (#11591)", async () => {
     const rectangle = API.createElement({
       type: "rectangle",

@@ -1,9 +1,11 @@
 import {
+  getUnderlinedVisualLines,
   getSelectedLogicalLineRange,
   normalizeLineUnderlines,
   remapLineUnderlinesForTextEdit,
   toggleSelectedLineUnderlines,
 } from "../src/textLineUnderlines";
+import type { FontString } from "../src/types";
 
 describe("text line underlines", () => {
   it("targets the caret line and excludes a line touched only by the end boundary", () => {
@@ -98,4 +100,24 @@ describe("remapLineUnderlinesForTextEdit", () => {
       ),
     ).toEqual([true, true]);
   });
+});
+
+it("marks every wrapped fragment of an underlined logical line", () => {
+  const lines = getUnderlinedVisualLines({
+    originalText: "A long title that wraps\nSubtitle",
+    font: "20px Assistant" as FontString,
+    maxWidth: 90,
+    lineUnderlines: [true],
+    wholeElementUnderlined: false,
+  });
+
+  expect(lines.length).toBeGreaterThan(2);
+  const titleLines = lines.filter((line) => line.logicalLine === 0);
+  expect(titleLines.length).toBeGreaterThan(1);
+  expect(titleLines.every((line) => line.underlined)).toBe(true);
+  expect(
+    lines
+      .filter((line) => line.logicalLine === 1)
+      .every((line) => !line.underlined),
+  ).toBe(true);
 });

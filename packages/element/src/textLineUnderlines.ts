@@ -1,3 +1,7 @@
+import { getWrappedTextLines } from "./textWrapping";
+
+import type { FontString } from "./types";
+
 const getLineCount = (text: string) => text.split("\n").length;
 
 export const getLogicalLineIndexAtOffset = (text: string, offset: number) => {
@@ -159,3 +163,27 @@ export const remapLineUnderlinesForTextEdit = (
 
   return normalizeLineUnderlines(next, nextText.split("\n").length);
 };
+
+export const getUnderlinedVisualLines = (args: {
+  originalText: string;
+  font: FontString;
+  maxWidth: number;
+  lineUnderlines: readonly boolean[] | undefined;
+  wholeElementUnderlined: boolean;
+}) =>
+  getWrappedTextLines(args.originalText, args.font, args.maxWidth).map(
+    (line) => {
+      const logicalLine = getLogicalLineIndexAtOffset(
+        args.originalText,
+        line.start,
+      );
+
+      return {
+        ...line,
+        logicalLine,
+        underlined:
+          args.wholeElementUnderlined ||
+          args.lineUnderlines?.[logicalLine] === true,
+      };
+    },
+  );

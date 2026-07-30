@@ -5,6 +5,7 @@ import {
   THEME,
   DARK_THEME_FILTER,
   getFontFamilyString,
+  getFontString,
   isRTL,
   isTestEnv,
   getVerticalOffset,
@@ -19,7 +20,12 @@ import {
   getEmbedLink,
 } from "@excalidraw/element";
 import { LinearElementEditor } from "@excalidraw/element";
-import { getBoundTextElement, getContainerElement } from "@excalidraw/element";
+import {
+  getBoundTextElement,
+  getBoundTextMaxWidth,
+  getContainerElement,
+  getUnderlinedVisualLines,
+} from "@excalidraw/element";
 import { getLineHeightInPx } from "@excalidraw/element";
 import {
   isArrowElement,
@@ -705,7 +711,25 @@ const renderElementToSvg = (
             offsetY || 0
           }) rotate(${degree} ${cx} ${cy})`,
         );
-        const lines = element.text.replace(/\r\n?/g, "\n").split("\n");
+        const container = getContainerElement(element, elementsMap);
+        const maxWidth = container
+          ? getBoundTextMaxWidth(container, element)
+          : element.autoResize
+          ? Infinity
+          : element.width;
+        const lines = element.lineUnderlines
+          ? getUnderlinedVisualLines({
+              originalText: element.originalText,
+              font: getFontString(element),
+              maxWidth,
+              lineUnderlines: element.lineUnderlines,
+              wholeElementUnderlined:
+                element.textDecoration === "underline",
+            })
+          : element.text.replace(/\r\n?/g, "\n").split("\n").map((text) => ({
+              text,
+              underlined: element.textDecoration === "underline",
+            }));
         const lineHeightPx = getLineHeightInPx(
           element.fontSize,
           element.lineHeight,
@@ -730,7 +754,7 @@ const renderElementToSvg = (
             : "start";
         for (let i = 0; i < lines.length; i++) {
           const text = svgRoot.ownerDocument.createElementNS(SVG_NS, "text");
-          text.textContent = lines[i];
+          text.textContent = lines[i].text;
           text.setAttribute("x", `${horizontalOffset}`);
           text.setAttribute("y", `${i * lineHeightPx + verticalOffset}`);
           text.setAttribute("font-family", getFontFamilyString(element));
@@ -738,7 +762,7 @@ const renderElementToSvg = (
           if (element.fontWeight === "bold") {
             text.setAttribute("font-weight", "bold");
           }
-          if (element.textDecoration === "underline") {
+          if (lines[i].underlined) {
             text.setAttribute("text-decoration", "underline");
           }
           text.setAttribute(

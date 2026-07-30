@@ -53,6 +53,7 @@ import {
   getBoundTextMaxWidth,
 } from "./textElement";
 import { getLineHeightInPx } from "./textMeasurements";
+import { getUnderlinedVisualLines } from "./textLineUnderlines";
 import {
   isTextElement,
   isLinearElement,
@@ -251,7 +252,7 @@ const generateElementCanvas = (
 
   const rc = rough.canvas(canvas);
 
-  drawElementOnCanvas(element, rc, context, renderConfig);
+  drawElementOnCanvas(element, rc, context, renderConfig, elementsMap);
 
   context.restore();
 
@@ -320,6 +321,7 @@ const drawElementOnCanvas = (
   rc: RoughCanvas,
   context: CanvasRenderingContext2D,
   renderConfig: StaticCanvasRenderConfig,
+  elementsMap: ElementsMap,
 ) => {
   switch (element.type) {
     case "rectangle":
@@ -525,8 +527,25 @@ const drawElementOnCanvas = (
         );
         context.textAlign = element.textAlign as CanvasTextAlign;
 
-        // Canvas does not support multiline text by default
-        const lines = element.text.replace(/\r\n?/g, "\n").split("\n");
+        const container = getContainerElement(element, elementsMap);
+        const maxWidth = container
+          ? getBoundTextMaxWidth(container, element)
+          : element.autoResize
+          ? Infinity
+          : element.width;
+        const lines = element.lineUnderlines
+          ? getUnderlinedVisualLines({
+              originalText: element.originalText,
+              font: getFontString(element),
+              maxWidth,
+              lineUnderlines: element.lineUnderlines,
+              wholeElementUnderlined:
+                element.textDecoration === "underline",
+            })
+          : element.text.replace(/\r\n?/g, "\n").split("\n").map((text) => ({
+              text,
+              underlined: element.textDecoration === "underline",
+            }));
 
         const horizontalOffset =
           element.textAlign === "center"
@@ -548,9 +567,9 @@ const drawElementOnCanvas = (
 
         for (let index = 0; index < lines.length; index++) {
           const baseline = index * lineHeightPx + verticalOffset;
-          context.fillText(lines[index], horizontalOffset, baseline);
-          if (element.textDecoration === "underline" && lines[index]) {
-            const lineWidth = context.measureText(lines[index]).width;
+          context.fillText(lines[index].text, horizontalOffset, baseline);
+          if (lines[index].underlined && lines[index].text) {
+            const lineWidth = context.measureText(lines[index].text).width;
             const underlineX =
               element.textAlign === "center"
                 ? horizontalOffset - lineWidth / 2
@@ -834,7 +853,7 @@ export const renderElement = (
         context.translate(cx, cy);
         context.rotate(element.angle);
         context.translate(-shiftX, -shiftY);
-        drawElementOnCanvas(element, rc, context, renderConfig);
+        drawElementOnCanvas(element, rc, context, renderConfig, elementsMap);
         context.restore();
       } else {
         const elementWithCanvas = generateElementWithCanvas(
@@ -932,7 +951,7 @@ export const renderElement = (
           context.clip("evenodd");
           context.rotate(element.angle);
           context.translate(-shiftX, -shiftY);
-          drawElementOnCanvas(element, rc, context, renderConfig);
+          drawElementOnCanvas(element, rc, context, renderConfig, elementsMap);
           context.restore();
         } else {
           context.rotate(element.angle);
@@ -943,7 +962,7 @@ export const renderElement = (
           }
 
           context.translate(-shiftX, -shiftY);
-          drawElementOnCanvas(element, rc, context, renderConfig);
+          drawElementOnCanvas(element, rc, context, renderConfig, elementsMap);
         }
 
         context.restore();
