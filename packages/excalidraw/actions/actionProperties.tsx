@@ -4,10 +4,14 @@ import clsx from "clsx";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  COLOR_PALETTE,
   DEFAULT_ELEMENT_BACKGROUND_COLOR_PALETTE,
+  DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX,
   DEFAULT_ELEMENT_BACKGROUND_PICKS,
   DEFAULT_ELEMENT_STROKE_COLOR_PALETTE,
+  DEFAULT_ELEMENT_STROKE_COLOR_INDEX,
   DEFAULT_ELEMENT_STROKE_PICKS,
+  DEFAULT_TEXT_STROKE_PICKS,
   ARROW_TYPE,
   DEFAULT_FONT_FAMILY,
   DEFAULT_FONT_SIZE,
@@ -29,6 +33,7 @@ import {
   invariant,
   FONT_SIZES,
   type StrokeWidthKey,
+  type ColorPickerColor,
 } from "@excalidraw/common";
 
 import {
@@ -59,6 +64,7 @@ import {
   isArrowElement,
   isBoundToContainer,
   isElbowArrow,
+  isFrameLikeElement,
   isLinearElement,
   isLineElement,
   isTextElement,
@@ -377,6 +383,9 @@ export const actionChangeStrokeColor = register<
   },
   PanelComponent: ({ elements, appState, updateData, app, data }) => {
     const { stylesPanelMode } = getStylesPanelInfo(app);
+    const targetElements = getTargetElements(elements, appState);
+    const hasExclusiveTextTarget =
+      targetElements.length > 0 && targetElements.every(isTextElement);
 
     return (
       <>
@@ -384,7 +393,11 @@ export const actionChangeStrokeColor = register<
           <h3 aria-hidden="true">{t("labels.stroke")}</h3>
         )}
         <ColorPicker
-          topPicks={DEFAULT_ELEMENT_STROKE_PICKS}
+          topPicks={
+            hasExclusiveTextTarget
+              ? DEFAULT_TEXT_STROKE_PICKS
+              : DEFAULT_ELEMENT_STROKE_PICKS
+          }
           palette={DEFAULT_ELEMENT_STROKE_COLOR_PALETTE}
           type="elementStroke"
           label={t("labels.stroke")}
@@ -403,6 +416,80 @@ export const actionChangeStrokeColor = register<
         />
       </>
     );
+  },
+});
+
+const getSemanticColorProperty = (element: ExcalidrawElement) => {
+  if (
+    element.type === "rectangle" ||
+    element.type === "ellipse" ||
+    element.type === "diamond" ||
+    isFrameLikeElement(element)
+  ) {
+    return "backgroundColor" as const;
+  }
+
+  if (
+    element.type === "text" ||
+    element.type === "line" ||
+    element.type === "arrow" ||
+    element.type === "freedraw"
+  ) {
+    return "strokeColor" as const;
+  }
+
+  return null;
+};
+
+export const actionApplySelectedSemanticColor = register<{
+  colorName: ColorPickerColor;
+}>({
+  name: "applySelectedSemanticColor",
+  label: "labels.stroke",
+  trackEvent: false,
+  perform: (elements, appState, value) => {
+    if (!value) {
+      return false;
+    }
+
+    let supportedElementCount = 0;
+    const paletteValue = COLOR_PALETTE[value.colorName];
+    const updatedElements = changeProperty(elements, appState, (element) => {
+      const property = getSemanticColorProperty(element);
+      if (!property) {
+        return element;
+      }
+
+      supportedElementCount++;
+      const color = Array.isArray(paletteValue)
+        ? paletteValue[
+            property === "backgroundColor"
+              ? DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX
+              : DEFAULT_ELEMENT_STROKE_COLOR_INDEX
+          ]
+        : paletteValue;
+
+      return newElementWith(element, { [property]: color });
+    });
+
+    if (!supportedElementCount) {
+      return {
+        appState: {
+          ...appState,
+          toast: {
+            message:
+              "The selected elements do not support direct color shortcuts.",
+            duration: 3000,
+          },
+        },
+        captureUpdate: CaptureUpdateAction.EVENTUALLY,
+      };
+    }
+
+    return {
+      elements: updatedElements,
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    };
   },
 });
 
@@ -809,8 +896,28 @@ export const actionChangeLinearStrokeWidth = register<number>({
     );
 
     return (
-      <fieldset>
+      <fieldset
+        className="linear-stroke-width-fieldset"
+        data-prevent-outside-click
+        onPointerDown={(event) => event.stopPropagation()}
+      >
         <legend>{t("labels.strokeWidth")}</legend>
+        <Range
+          ariaLabel={t("labels.strokeWidth")}
+          className="linear-stroke-width-range"
+          label={null}
+          value={value ?? appState.currentItemLinearStrokeWidth}
+          hasCommonValue={value !== null}
+          onChange={(nextValue) => updateData(nextValue)}
+          min={LINEAR_STROKE_WIDTH.min}
+          max={LINEAR_STROKE_WIDTH.max}
+          step={LINEAR_STROKE_WIDTH.step}
+          minLabel={LINEAR_STROKE_WIDTH.min}
+          maxLabel={LINEAR_STROKE_WIDTH.max}
+          preventCanvasInteraction
+          showValueBubble={false}
+          testId="linear-stroke-width-slider"
+        />
         <LinearStrokeWidthInput
           value={value}
           onChange={(nextValue) => updateData(nextValue)}

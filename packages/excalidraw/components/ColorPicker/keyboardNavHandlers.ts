@@ -9,8 +9,8 @@ import type {
 import type { ValueOf } from "@excalidraw/common/utility-types";
 
 import {
-  colorPickerHotkeyBindings,
   getColorNameAndShadeFromColor,
+  getPaletteColorForSemanticHotkey,
 } from "./colorPickerUtils";
 
 import type { ActiveColorPickerSectionAtomType } from "./colorPickerUtils";
@@ -91,14 +91,13 @@ const hotkeyHandler = ({
     }
   }
 
-  if (colorPickerHotkeyBindings.includes(e.key)) {
-    const index = colorPickerHotkeyBindings.indexOf(e.key);
-    const paletteKey = Object.keys(palette)[index] as keyof ColorPalette;
-    const paletteValue = palette[paletteKey];
-    const r = Array.isArray(paletteValue)
-      ? paletteValue[activeShade]
-      : paletteValue;
-    onChange(r);
+  const semanticColor = getPaletteColorForSemanticHotkey({
+    key: e.key,
+    palette,
+    activeShade,
+  });
+  if (semanticColor) {
+    onChange(semanticColor);
     setActiveColorPickerSection("baseColors");
     return true;
   }

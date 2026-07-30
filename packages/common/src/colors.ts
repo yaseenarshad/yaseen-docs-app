@@ -193,6 +193,15 @@ export const DEFAULT_ELEMENT_STROKE_PICKS = [
   COLOR_PALETTE.yellow[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
 ] as ColorTuple;
 
+// ORDER matters for positioning in the text quick picker
+export const DEFAULT_TEXT_STROKE_PICKS = [
+  COLOR_PALETTE.black,
+  COLOR_PALETTE.white,
+  COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.green[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+  COLOR_PALETTE.blue[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+] as ColorTuple;
+
 // ORDER matters for positioning in quick picker
 export const DEFAULT_ELEMENT_BACKGROUND_PICKS = [
   COLOR_PALETTE.transparent,

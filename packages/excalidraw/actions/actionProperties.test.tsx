@@ -4,17 +4,21 @@ import {
   CODES,
   COLOR_PALETTE,
   DEFAULT_ELEMENT_BACKGROUND_PICKS,
+  DEFAULT_ELEMENT_STROKE_COLOR_INDEX,
   DEFAULT_ELEMENT_STROKE_PICKS,
+  DEFAULT_TEXT_STROKE_PICKS,
   FREEDRAW_STROKE_WIDTH,
   FONT_FAMILY,
   KEYS,
+  LINEAR_STROKE_WIDTH,
   STROKE_WIDTH,
+  THEME,
 } from "@excalidraw/common";
 
 import { Excalidraw } from "../index";
 import { API } from "../tests/helpers/api";
 import { Keyboard, UI } from "../tests/helpers/ui";
-import { render } from "../tests/test-utils";
+import { render, togglePopover } from "../tests/test-utils";
 
 import { actionChangeFontFamily } from "./actionProperties";
 
@@ -105,6 +109,66 @@ describe("element locking", () => {
       expect(window.h.state.currentItemLinearStrokeWidth).toBe(2.5);
       expect(API.createElement({ type: "line" }).strokeWidth).toBe(2.5);
     });
+
+    it("should synchronize the line-width slider before drawing without leaking shortcuts", () => {
+      UI.clickTool("line");
+
+      const slider = queryByTestId(
+        document.body,
+        "linear-stroke-width-slider",
+      ) as HTMLInputElement;
+      expect(slider).not.toBeNull();
+      expect(slider).toHaveAttribute("aria-label", "Stroke width");
+      expect(slider).toHaveAttribute("min", LINEAR_STROKE_WIDTH.min.toString());
+      expect(slider).toHaveAttribute("max", LINEAR_STROKE_WIDTH.max.toString());
+      expect(slider).toHaveAttribute(
+        "step",
+        LINEAR_STROKE_WIDTH.step.toString(),
+      );
+      expect(slider.value).toBe("2");
+
+      const control = slider.closest("fieldset");
+      expect(control).not.toBeNull();
+      expect(control).toHaveTextContent("0.5");
+      expect(control).toHaveTextContent("50");
+      expect(control?.querySelector(".value-bubble")).toBeNull();
+
+      fireEvent.change(slider, { target: { value: "7.5" } });
+
+      expect(window.h.state.currentItemLinearStrokeWidth).toBe(7.5);
+      expect(
+        (
+          queryByTestId(
+            document.body,
+            "linear-stroke-width-input",
+          ) as HTMLInputElement
+        ).value,
+      ).toBe("7.5");
+      expect(API.createElement({ type: "arrow" }).strokeWidth).toBe(7.5);
+
+      fireEvent.keyDown(slider, { key: "r", code: CODES.R });
+      expect(window.h.state.activeTool.type).toBe("line");
+    });
+
+    it.each([0.5, 1.5, 3, 7.5, 20, 50])(
+      "should apply the representative %s px slider value before drawing",
+      (strokeWidth) => {
+        UI.clickTool("arrow");
+
+        const slider = queryByTestId(
+          document.body,
+          "linear-stroke-width-slider",
+        ) as HTMLInputElement;
+        fireEvent.change(slider, {
+          target: { value: strokeWidth.toString() },
+        });
+
+        expect(window.h.state.currentItemLinearStrokeWidth).toBe(strokeWidth);
+        expect(API.createElement({ type: "arrow" }).strokeWidth).toBe(
+          strokeWidth,
+        );
+      },
+    );
   });
 
   describe("properties when elements selected", () => {
@@ -269,6 +333,179 @@ describe("element locking", () => {
       });
     });
 
+    it("should use the text stroke quick picks for exclusive text selections", () => {
+      const firstText = API.createElement({ type: "text", text: "First" });
+      const secondText = API.createElement({ type: "text", text: "Second" });
+      API.setElements([firstText, secondText]);
+      API.setSelectedElements([firstText, secondText]);
+
+      const toolbar = document.querySelector(
+        ".contextual-properties-toolbar",
+      ) as HTMLElement;
+      const renderedPicks = Array.from(
+        toolbar.querySelectorAll<HTMLElement>(
+          '[data-testid^="color-top-pick-"]',
+        ),
+      ).map((element) =>
+        element.dataset.testid?.replace("color-top-pick-", ""),
+      );
+
+      expect(renderedPicks).toEqual(DEFAULT_TEXT_STROKE_PICKS);
+      expect(renderedPicks).toEqual([
+        COLOR_PALETTE.black,
+        COLOR_PALETTE.white,
+        COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+        COLOR_PALETTE.green[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+        COLOR_PALETTE.blue[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+      ]);
+    });
+
+    it("should use the text stroke quick picks when editing bound text", () => {
+      const [container, text] = API.createTextContainer();
+      API.setElements([container, text]);
+      if (text.type !== "text") {
+        throw new Error("Expected bound text element");
+      }
+      API.setAppState({ editingTextElement: text });
+
+      DEFAULT_TEXT_STROKE_PICKS.forEach((color) => {
+        expect(
+          queryByTestId(document.body, `color-top-pick-${color}`),
+        ).not.toBeNull();
+      });
+    });
+
+    it("should distinguish the white text swatch accessibly in both themes", () => {
+      const text = API.createElement({
+        type: "text",
+        text: "White",
+        strokeColor: COLOR_PALETTE.white,
+      });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+
+      const whiteSwatch = queryByTestId(
+        document.body,
+        `color-top-pick-${COLOR_PALETTE.white}`,
+      );
+      expect(whiteSwatch).toHaveClass("is-canonical-white", "has-outline");
+      expect(whiteSwatch).toHaveAccessibleName("White");
+      expect(whiteSwatch).toHaveAttribute("aria-pressed", "true");
+
+      API.setAppState({ theme: THEME.DARK });
+      expect(whiteSwatch).toHaveClass("is-canonical-white", "has-outline");
+
+      const rectangle = API.createElement({
+        type: "rectangle",
+        backgroundColor: COLOR_PALETTE.transparent,
+      });
+      API.setElements([rectangle]);
+      API.setSelectedElements([rectangle]);
+      const transparentSwatch = queryByTestId(
+        document.body,
+        `color-top-pick-${COLOR_PALETTE.transparent}`,
+      );
+      expect(transparentSwatch).toHaveClass("is-transparent");
+      expect(transparentSwatch).not.toHaveClass("is-canonical-white");
+      expect(transparentSwatch).toHaveAccessibleName("Transparent");
+    });
+
+    it("should retain generic stroke picks for bound containers and mixed selections", () => {
+      const [container, boundText] = API.createTextContainer();
+      const freeText = API.createElement({ type: "text", text: "Mixed" });
+      API.setElements([container, boundText, freeText]);
+      API.setSelectedElements([container]);
+
+      expect(
+        queryByTestId(
+          document.body,
+          `color-top-pick-${DEFAULT_ELEMENT_STROKE_PICKS[4]}`,
+        ),
+      ).not.toBeNull();
+      expect(
+        queryByTestId(document.body, `color-top-pick-${COLOR_PALETTE.white}`),
+      ).toBeNull();
+
+      API.setSelectedElements([boundText, freeText]);
+      expect(
+        queryByTestId(document.body, `color-top-pick-${COLOR_PALETTE.white}`),
+      ).not.toBeNull();
+
+      API.setSelectedElements([container, freeText]);
+      expect(
+        queryByTestId(
+          document.body,
+          `color-top-pick-${DEFAULT_ELEMENT_STROKE_PICKS[4]}`,
+        ),
+      ).not.toBeNull();
+      expect(
+        queryByTestId(document.body, `color-top-pick-${COLOR_PALETTE.white}`),
+      ).toBeNull();
+    });
+
+    it.each(["rectangle", "line", "arrow", "freedraw"] as const)(
+      "should retain generic stroke picks for a selected %s",
+      (type) => {
+        const element = API.createElement({ type });
+        API.setElements([element]);
+        API.setSelectedElements([element]);
+
+        expect(
+          queryByTestId(
+            document.body,
+            `color-top-pick-${DEFAULT_ELEMENT_STROKE_PICKS[4]}`,
+          ),
+        ).not.toBeNull();
+        expect(
+          queryByTestId(document.body, `color-top-pick-${COLOR_PALETTE.white}`),
+        ).toBeNull();
+      },
+    );
+
+    it("should keep yellow and orange in the expanded text palette", () => {
+      const text = API.createElement({ type: "text", text: "Expanded" });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+
+      expect(
+        queryByTestId(
+          document.body,
+          `color-top-pick-${COLOR_PALETTE.yellow[DEFAULT_ELEMENT_STROKE_COLOR_INDEX]}`,
+        ),
+      ).toBeNull();
+
+      togglePopover("Stroke");
+      expect(queryByTestId(document.body, "color-yellow")).not.toBeNull();
+      expect(queryByTestId(document.body, "color-orange")).not.toBeNull();
+    });
+
+    it("should apply, undo, and redo a white text quick pick", async () => {
+      const text = UI.createElement("text");
+      await UI.editText(text, "Undo white");
+      API.setSelectedElements([text.get() as any]);
+
+      fireEvent.click(
+        queryByTestId(
+          document.body,
+          `color-top-pick-${COLOR_PALETTE.white}`,
+        ) as HTMLElement,
+      );
+      await act(async () => {});
+      expect(API.getSelectedElement().strokeColor).toBe(COLOR_PALETTE.white);
+
+      Keyboard.undo();
+      await act(async () => {});
+      expect(window.h.app.scene.getElement(text.id)?.strokeColor).toBe(
+        COLOR_PALETTE.black,
+      );
+
+      Keyboard.redo();
+      await act(async () => {});
+      expect(window.h.app.scene.getElement(text.id)?.strokeColor).toBe(
+        COLOR_PALETTE.white,
+      );
+    });
+
     it("should keep the native panel for mixed text and shape selections", () => {
       const text = API.createElement({ type: "text", text: "Mixed" });
       const rectangle = API.createElement({ type: "rectangle" });
@@ -306,6 +543,9 @@ describe("element locking", () => {
       ).toBeNull();
       expect(
         document.querySelector(".contextual-properties-toolbar"),
+      ).not.toBeNull();
+      expect(
+        queryByTestId(document.body, `color-top-pick-${COLOR_PALETTE.white}`),
       ).not.toBeNull();
     });
 
@@ -495,6 +735,37 @@ describe("element locking", () => {
       ).toEqual([50, 50]);
     });
 
+    it("should render a neutral mixed slider and apply its first value to all linears", () => {
+      const line = API.createElement({ type: "line", strokeWidth: 0.5 });
+      const arrow = API.createElement({ type: "arrow", strokeWidth: 20 });
+      API.setElements([line, arrow]);
+      API.setSelectedElements([line, arrow]);
+
+      const slider = queryByTestId(
+        document.body,
+        "linear-stroke-width-slider",
+      ) as HTMLInputElement;
+      expect(slider).not.toBeNull();
+      expect(slider.style.getPropertyValue("--color-slider-track")).toBe(
+        "var(--button-bg)",
+      );
+
+      fireEvent.change(slider, { target: { value: "3.5" } });
+
+      expect(
+        API.getSelectedElements().map((element) => element.strokeWidth),
+      ).toEqual([3.5, 3.5]);
+      expect(slider.value).toBe("3.5");
+      expect(
+        (
+          queryByTestId(
+            document.body,
+            "linear-stroke-width-input",
+          ) as HTMLInputElement
+        ).value,
+      ).toBe("3.5");
+    });
+
     it("should step, cancel, and undo exact linear stroke-width edits", () => {
       const line = UI.createElement("line", {
         x: 10,
@@ -527,6 +798,19 @@ describe("element locking", () => {
       expect(window.h.app.scene.getElement(line.id)?.strokeWidth).toBe(2);
       Keyboard.redo();
       expect(window.h.app.scene.getElement(line.id)?.strokeWidth).toBe(2.5);
+
+      fireEvent.change(
+        queryByTestId(
+          document.body,
+          "linear-stroke-width-slider",
+        ) as HTMLInputElement,
+        { target: { value: "7.5" } },
+      );
+      expect(window.h.app.scene.getElement(line.id)?.strokeWidth).toBe(7.5);
+      Keyboard.undo();
+      expect(window.h.app.scene.getElement(line.id)?.strokeWidth).toBe(2.5);
+      Keyboard.redo();
+      expect(window.h.app.scene.getElement(line.id)?.strokeWidth).toBe(7.5);
     });
 
     it("should preserve bound text when changing an arrow width", () => {
@@ -561,6 +845,20 @@ describe("element locking", () => {
         queryByTestId(document.body, "linear-stroke-width-input"),
       ).toBeNull();
       expect(queryByTestId(document.body, "strokeWidth-thin")).not.toBeNull();
+    });
+
+    it("should hide the editable linear-width control in view mode", () => {
+      const line = API.createElement({ type: "line" });
+      API.setElements([line]);
+      API.setSelectedElements([line]);
+      API.setAppState({ viewModeEnabled: true });
+
+      expect(
+        queryByTestId(document.body, "linear-stroke-width-slider"),
+      ).toBeNull();
+      expect(
+        queryByTestId(document.body, "linear-stroke-width-input"),
+      ).toBeNull();
     });
 
     it("should use the exact linear default only for new lines and arrows", () => {
@@ -655,6 +953,14 @@ describe("text properties on compact layouts", () => {
         return nextInput;
       });
       expect(input.value).toBe("3.5");
+      const slider = queryByTestId(
+        document.body,
+        "linear-stroke-width-slider",
+      ) as HTMLInputElement;
+      expect(slider).not.toBeNull();
+      expect(slider.value).toBe("3.5");
+      expect(slider.closest("fieldset")).toHaveTextContent("0.5");
+      expect(slider.closest("fieldset")).toHaveTextContent("50");
       expect(queryByTestId(document.body, "strokeWidth-thin")).toBeNull();
     },
   );

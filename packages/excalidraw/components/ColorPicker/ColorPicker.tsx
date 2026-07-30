@@ -245,6 +245,7 @@ const ColorPickerTrigger = ({
       type="button"
       className={clsx("color-picker__button active-color properties-trigger", {
         "is-transparent": !color || color === "transparent",
+        "is-canonical-white": color === COLOR_PALETTE.white,
         "has-outline":
           !color || !isColorDark(color, COLOR_OUTLINE_CONTRAST_THRESHOLD),
         "compact-sizing": isCompactMode,

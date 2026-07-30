@@ -69,6 +69,7 @@ import {
   getFontString,
   getNearestScrollableContainer,
   isInputLike,
+  isInteractive,
   isToolIcon,
   isWritableElement,
   sceneCoordsToViewportCoords,
@@ -96,6 +97,8 @@ import {
   MINIMUM_ARROW_SIZE,
   DOUBLE_TAP_POSITION_THRESHOLD,
   BIND_MODE_TIMEOUT,
+  CANVAS_SEARCH_TAB,
+  DEFAULT_SIDEBAR,
   invariant,
   getFeatureFlag,
   createUserAgentDescriptor,
@@ -322,6 +325,7 @@ import {
   actionToggleZenMode,
   actionUnbindText,
   actionBindText,
+  actionApplySelectedSemanticColor,
   actionUngroup,
   actionLink,
   actionToggleElementLock,
@@ -458,6 +462,7 @@ import { MagicIcon, copyIcon, fullscreenIcon } from "./icons";
 import { AppStateObserver, type OnStateChange } from "./AppStateObserver";
 
 import { findShapeByKey, TOGGLE_TOOLS } from "./Tools";
+import { getSemanticColorNameForHotkey } from "./ColorPicker/colorPickerUtils";
 
 import UnlockPopup from "./UnlockPopup";
 
@@ -769,6 +774,7 @@ class App extends React.Component<AppProps, AppState> {
       updateLibrary: this.library.updateLibrary,
       addFiles: this.addFiles,
       insertImages: this.insertImages,
+      insertElements: this.insertElements,
       resetScene: this.resetScene,
       resetFiles: this.resetFiles,
       getSceneElementsIncludingDeleted: this.getSceneElementsIncludingDeleted,
@@ -2702,6 +2708,28 @@ class App extends React.Component<AppProps, AppState> {
       position: "center",
       files: null,
     });
+  };
+
+  public insertElements = (elements: readonly ExcalidrawElement[]) => {
+    const {
+      left = 0,
+      right = 0,
+      top = 0,
+      bottom = 0,
+    } = this.viewport.getOffsets();
+    const usableWidth = Math.max(1, this.state.width - left - right);
+    const usableHeight = Math.max(1, this.state.height - top - bottom);
+
+    this.addElementsFromPasteOrLibrary({
+      elements,
+      files: null,
+      position: {
+        clientX: this.state.offsetLeft + left + usableWidth / 2,
+        clientY: this.state.offsetTop + top + usableHeight / 2,
+      },
+      preserveFrameChildrenOrder: true,
+    });
+    this.focusContainer();
   };
 
   public onExportImage = async (
@@ -5325,6 +5353,106 @@ class App extends React.Component<AppProps, AppState> {
     },
   );
 
+  private startTextEditingFromHotkey = () => {
+    const viewportOffsets = this.viewport.getOffsets({ padding: 0 });
+    const left = viewportOffsets.left ?? 0;
+    const right = viewportOffsets.right ?? 0;
+    const top = viewportOffsets.top ?? 0;
+    const bottom = viewportOffsets.bottom ?? 0;
+    const clientX =
+      this.lastPointerMoveEvent?.clientX ??
+      this.state.offsetLeft + left + (this.state.width - left - right) / 2;
+    const clientY =
+      this.lastPointerMoveEvent?.clientY ??
+      this.state.offsetTop + top + (this.state.height - top - bottom) / 2;
+    const { x: sceneX, y: sceneY } = viewportCoordsToSceneCoords(
+      { clientX, clientY },
+      this.state,
+    );
+
+    flushSync(() => {
+      this.setState((prevState) => ({
+        activeTool: updateActiveTool(prevState, {
+          type: prevState.activeTool.locked
+            ? "text"
+            : prevState.preferredSelectionTool.type,
+        }),
+        selectedElementIds: makeNextSelectedElementIds({}, prevState),
+        selectedGroupIds: {},
+        editingGroupId: null,
+        activeEmbeddable: null,
+      }));
+    });
+
+    this.startTextEditing({
+      sceneX,
+      sceneY,
+      insertAtParentCenter: false,
+      container: null,
+      forceNewText: true,
+      addToFrame: false,
+    });
+  };
+
+  private maybeApplySelectedSemanticColor = (
+    event: React.KeyboardEvent | KeyboardEvent,
+  ) => {
+    const colorName = getSemanticColorNameForHotkey(event.key);
+    const isContentEditable =
+      event.target instanceof HTMLElement &&
+      (event.target.isContentEditable ||
+        event.target.closest("[contenteditable]") !== null);
+    if (
+      !colorName ||
+      event.ctrlKey ||
+      event.altKey ||
+      event.metaKey ||
+      isInteractive(event.target) ||
+      isContentEditable
+    ) {
+      return false;
+    }
+
+    const container = this.excalidrawContainerRef.current;
+    const activeElement = document.activeElement;
+    const canvasOwnsKeyboard =
+      activeElement === document.body ||
+      (!!activeElement && !!container?.contains(activeElement));
+    const isSearchOpen =
+      this.state.openSidebar?.name === DEFAULT_SIDEBAR.name &&
+      this.state.openSidebar.tab === CANVAS_SEARCH_TAB;
+    if (
+      !canvasOwnsKeyboard ||
+      this.props.viewModeEnabled === true ||
+      this.state.viewModeEnabled ||
+      this.state.editingTextElement ||
+      this.state.openDialog ||
+      this.state.openPopup ||
+      isSearchOpen ||
+      this.state.newElement ||
+      this.state.selectionElement ||
+      this.state.selectedElementsAreBeingDragged ||
+      this.state.isResizing ||
+      this.state.isRotating
+    ) {
+      return false;
+    }
+
+    const selectedElements = this.scene.getSelectedElements(this.state);
+    if (!selectedElements.length) {
+      return false;
+    }
+
+    this.actionManager.executeAction(
+      actionApplySelectedSemanticColor,
+      "keyboard",
+      { colorName },
+    );
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+  };
+
   // Input handling
   private onKeyDown = withBatchedUpdates(
     (event: React.KeyboardEvent | KeyboardEvent) => {
@@ -5491,6 +5619,10 @@ class App extends React.Component<AppProps, AppState> {
         return;
       }
 
+      if (this.maybeApplySelectedSemanticColor(event)) {
+        return;
+      }
+
       // Handle Alt key for bind mode
       if (event.key === KEYS.ALT) {
         if (getFeatureFlag("COMPLEX_BINDINGS")) {
@@ -5525,6 +5657,19 @@ class App extends React.Component<AppProps, AppState> {
         !this.state.selectionElement &&
         !this.state.selectedElementsAreBeingDragged
       ) {
+        if (
+          event.key.toLowerCase() === KEYS.T &&
+          !event.shiftKey &&
+          !this.state.viewModeEnabled &&
+          !this.state.editingTextElement &&
+          !this.state.openDialog
+        ) {
+          this.startTextEditingFromHotkey();
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+
         const shape = findShapeByKey(event.key, this, event.shiftKey);
 
         if (this.state.viewModeEnabled && !oneOf(shape, ["laser", "hand"])) {
@@ -6703,6 +6848,8 @@ class App extends React.Component<AppProps, AppState> {
     autoEdit = true,
     initialCaretSceneCoords,
     arrowEndpoint,
+    forceNewText = false,
+    addToFrame = true,
   }: {
     /** X position to insert text at */
     sceneX: number;
@@ -6718,6 +6865,10 @@ class App extends React.Component<AppProps, AppState> {
      * dictates the text's position and alignment, overriding (sceneX, sceneY)
      */
     arrowEndpoint?: ArrowEndpoint | null;
+    /** bypass selected/hit text adoption and always create a new text element */
+    forceNewText?: boolean;
+    /** whether a newly-created text element should join a frame under it */
+    addToFrame?: boolean;
   }) => {
     let shouldBindToContainer = false;
 
@@ -6763,10 +6914,11 @@ class App extends React.Component<AppProps, AppState> {
     // otherwise adopt a currently selected text (wherever it sits on canvas)
     // or one that happens to lie around the anchor — even a container-bound
     // one — and bind the arrow to that instead.
-    const existingTextElement = arrowEndpointBinding
-      ? null
-      : this.getSelectedTextElement(container) ||
-        this.getTextElementAtPosition(sceneX, sceneY);
+    const existingTextElement =
+      arrowEndpointBinding || forceNewText
+        ? null
+        : this.getSelectedTextElement(container) ||
+          this.getTextElementAtPosition(sceneX, sceneY);
 
     const fontFamily =
       existingTextElement?.fontFamily || this.state.currentItemFontFamily;
@@ -6833,10 +6985,12 @@ class App extends React.Component<AppProps, AppState> {
           y: sceneY,
         };
 
-    const topLayerFrame = this.getTopLayerFrameAtSceneCoords({
-      x: newTextElementPosition.x,
-      y: newTextElementPosition.y,
-    });
+    const topLayerFrame = addToFrame
+      ? this.getTopLayerFrameAtSceneCoords({
+          x: newTextElementPosition.x,
+          y: newTextElementPosition.y,
+        })
+      : null;
 
     // container has higher priority. Only add to frame if container is in the same frame.
     const frameId =

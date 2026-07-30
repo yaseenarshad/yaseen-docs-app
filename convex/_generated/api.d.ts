@@ -30,6 +30,8 @@ import type * as programmaticBoardEdits from "../programmaticBoardEdits.js";
 import type * as programmaticEditPersistence from "../programmaticEditPersistence.js";
 import type * as programmaticEdits from "../programmaticEdits.js";
 import type * as programmaticScene from "../programmaticScene.js";
+import type * as savedComponentModel from "../savedComponentModel.js";
+import type * as savedComponents from "../savedComponents.js";
 import type * as sceneConflict from "../sceneConflict.js";
 import type * as snapshotPolicy from "../snapshotPolicy.js";
 import type * as snapshotRetention from "../snapshotRetention.js";
@@ -63,6 +65,8 @@ declare const fullApi: ApiFromModules<{
   programmaticEditPersistence: typeof programmaticEditPersistence;
   programmaticEdits: typeof programmaticEdits;
   programmaticScene: typeof programmaticScene;
+  savedComponentModel: typeof savedComponentModel;
+  savedComponents: typeof savedComponents;
   sceneConflict: typeof sceneConflict;
   snapshotPolicy: typeof snapshotPolicy;
   snapshotRetention: typeof snapshotRetention;

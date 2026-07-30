@@ -3,6 +3,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 import { mediaKindValidator, mediaProviderValidator } from "./mediaTypes";
+import { savedComponentFields } from "./savedComponentModel";
 
 const mediaFields = {
   itemKey: v.string(),
@@ -126,4 +127,11 @@ export default defineSchema({
   })
     .index("by_ownerId_and_itemKey", ["ownerId", "itemKey"])
     .index("by_ownerId_and_updatedAt", ["ownerId", "updatedAt"]),
+  savedComponents: defineTable(savedComponentFields)
+    .index("by_ownerId_and_updatedAt", ["ownerId", "updatedAt"])
+    .index("by_ownerId_and_normalizedName", ["ownerId", "normalizedName"])
+    .searchIndex("search_normalizedName", {
+      searchField: "normalizedName",
+      filterFields: ["ownerId"],
+    }),
 });

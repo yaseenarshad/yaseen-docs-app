@@ -6,11 +6,16 @@ export type RangeProps = {
   label: React.ReactNode;
   value: number;
   onChange: (value: number) => void;
+  ariaLabel?: string;
+  className?: string;
   min?: number;
   max?: number;
   step?: number;
   minLabel?: React.ReactNode;
+  maxLabel?: React.ReactNode;
   hasCommonValue?: boolean;
+  preventCanvasInteraction?: boolean;
+  showValueBubble?: boolean;
   testId?: string;
 };
 
@@ -18,18 +23,23 @@ export const Range = ({
   label,
   value,
   onChange,
+  ariaLabel,
+  className,
   min = 0,
   max = 100,
   step = 10,
   minLabel = min,
+  maxLabel,
   hasCommonValue = true,
+  preventCanvasInteraction = false,
+  showValueBubble = true,
   testId,
 }: RangeProps) => {
   const rangeRef = React.useRef<HTMLInputElement>(null);
   const valueRef = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (rangeRef.current && valueRef.current) {
+    if (rangeRef.current) {
       const rangeElement = rangeRef.current;
       const valueElement = valueRef.current;
       const inputWidth = rangeElement.offsetWidth;
@@ -42,16 +52,28 @@ export const Range = ({
       const progress = ((value - min) / (max - min || 1)) * 100;
       const position =
         (progress / 100) * (inputWidth - thumbWidth) + thumbWidth / 2;
-      valueElement.style.left = `${position}px`;
+      if (valueElement) {
+        valueElement.style.left = `${position}px`;
+      }
       rangeElement.style.background = `linear-gradient(to right, var(--color-slider-track) 0%, var(--color-slider-track) ${progress}%, var(--button-bg) ${progress}%, var(--button-bg) 100%)`;
     }
   }, [max, min, value]);
 
   return (
-    <label className="control-label">
+    <label
+      className={`control-label${className ? ` ${className}` : ""}`}
+      onPointerDown={
+        preventCanvasInteraction
+          ? (event) => {
+              event.stopPropagation();
+            }
+          : undefined
+      }
+    >
       {label}
       <div className="range-wrapper">
         <input
+          aria-label={ariaLabel}
           style={{
             ["--color-slider-track" as string]: hasCommonValue
               ? undefined
@@ -65,14 +87,24 @@ export const Range = ({
           onChange={(event) => {
             onChange(+event.target.value);
           }}
+          onKeyDown={
+            preventCanvasInteraction
+              ? (event) => {
+                  event.stopPropagation();
+                }
+              : undefined
+          }
           value={value}
           className="range-input"
           data-testid={testId}
         />
-        <div className="value-bubble" ref={valueRef}>
-          {value !== min ? value : null}
-        </div>
+        {showValueBubble && (
+          <div className="value-bubble" ref={valueRef}>
+            {value !== min ? value : null}
+          </div>
+        )}
         <div className="zero-label">{minLabel}</div>
+        {maxLabel !== undefined && <div className="max-label">{maxLabel}</div>}
       </div>
     </label>
   );
