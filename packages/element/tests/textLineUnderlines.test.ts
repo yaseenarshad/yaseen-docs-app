@@ -1,6 +1,7 @@
 import {
   getSelectedLogicalLineRange,
   normalizeLineUnderlines,
+  remapLineUnderlinesForTextEdit,
   toggleSelectedLineUnderlines,
 } from "../src/textLineUnderlines";
 
@@ -59,5 +60,42 @@ describe("text line underlines", () => {
     ).toEqual([true]);
     expect(normalizeLineUnderlines([false, false], 2)).toBeUndefined();
     expect(normalizeLineUnderlines("invalid", 2)).toBeUndefined();
+  });
+});
+
+describe("remapLineUnderlinesForTextEdit", () => {
+  it("preserves decoration for character edits", () => {
+    expect(
+      remapLineUnderlinesForTextEdit(
+        "Title\nSubtitle",
+        "New Title\nSubtitle",
+        [true],
+      ),
+    ).toEqual([true]);
+  });
+
+  it("inherits decoration when an underlined line is split", () => {
+    expect(
+      remapLineUnderlinesForTextEdit("Title", "Ti\ntle", [true]),
+    ).toEqual([true, true]);
+  });
+
+  it("keeps a merged line underlined when either source line was underlined", () => {
+    expect(
+      remapLineUnderlinesForTextEdit("Title\nSubtitle", "TitleSubtitle", [
+        false,
+        true,
+      ]),
+    ).toEqual([true]);
+  });
+
+  it("shifts unaffected lines after multiline insertion", () => {
+    expect(
+      remapLineUnderlinesForTextEdit(
+        "Title\nBody",
+        "Intro\nTitle\nBody",
+        [true, false],
+      ),
+    ).toEqual([true, true]);
   });
 });

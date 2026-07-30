@@ -94,3 +94,68 @@ export const toggleSelectedLineUnderlines = (args: {
 
   return normalizeLineUnderlines(next, lineCount);
 };
+
+const getEditWindow = (previousText: string, nextText: string) => {
+  let start = 0;
+  while (
+    start < previousText.length &&
+    start < nextText.length &&
+    previousText[start] === nextText[start]
+  ) {
+    start++;
+  }
+
+  let previousEnd = previousText.length;
+  let nextEnd = nextText.length;
+  while (
+    previousEnd > start &&
+    nextEnd > start &&
+    previousText[previousEnd - 1] === nextText[nextEnd - 1]
+  ) {
+    previousEnd--;
+    nextEnd--;
+  }
+
+  return { start, previousEnd, nextEnd };
+};
+
+export const remapLineUnderlinesForTextEdit = (
+  previousText: string,
+  nextText: string,
+  lineUnderlines: readonly boolean[] | undefined,
+) => {
+  if (!lineUnderlines?.some(Boolean) || previousText === nextText) {
+    return normalizeLineUnderlines(
+      lineUnderlines,
+      nextText.split("\n").length,
+    );
+  }
+
+  const edit = getEditWindow(previousText, nextText);
+  const previousStartLine = getLogicalLineIndexAtOffset(
+    previousText,
+    edit.start,
+  );
+  const previousEndLine = getLogicalLineIndexAtOffset(
+    previousText,
+    edit.previousEnd,
+  );
+  const nextStartLine = getLogicalLineIndexAtOffset(nextText, edit.start);
+  const nextEndLine = getLogicalLineIndexAtOffset(nextText, edit.nextEnd);
+  const previousAffected = Array.from(
+    { length: previousEndLine - previousStartLine + 1 },
+    (_, offset) => lineUnderlines[previousStartLine + offset] === true,
+  );
+  const nextAffectedCount = nextEndLine - nextStartLine + 1;
+  const inherited =
+    nextAffectedCount < previousAffected.length
+      ? previousAffected.some(Boolean)
+      : previousAffected[0] === true;
+  const next = [
+    ...lineUnderlines.slice(0, previousStartLine),
+    ...Array<boolean>(nextAffectedCount).fill(inherited),
+    ...lineUnderlines.slice(previousEndLine + 1),
+  ];
+
+  return normalizeLineUnderlines(next, nextText.split("\n").length);
+};
