@@ -90,6 +90,7 @@ export * from "./Scene";
 export * from "./selection";
 export * from "./shape";
 export * from "./showSelectedShapeActions";
+export * from "./smartShape";
 export * from "./sizeHelpers";
 export * from "./sortElements";
 export * from "./store";
