@@ -1337,6 +1337,10 @@ export type Offsets = Partial<{
   left: number;
 }>;
 
+export type InsertImagesOptions = {
+  viewportSizing?: import("./data/viewportInsertion").ViewportInsertionRequest;
+};
+
 /**
  * Value of the `data-viewport-ui` attribute, marking a DOM node as a UI
  * surface that occludes the canvas. Such nodes are measured by

@@ -357,6 +357,7 @@ import {
 } from "../clipboard";
 
 import { exportCanvas, loadFromBlob } from "../data";
+import { resolveViewportInsertion } from "../data/viewportInsertion";
 import Library, { distributeLibraryItemsOnSquareGrid } from "../data/library";
 import { restoreAppState, restoreElements } from "../data/restore";
 import { getCenter, getDistance } from "../gesture";
@@ -492,6 +493,7 @@ import type {
   ElementsPendingErasure,
   ExcalidrawImperativeAPIEventMap,
   GenerateDiagramToCode,
+  InsertImagesOptions,
   NullableGridSize,
   UIConfig,
 } from "../types";
@@ -12547,6 +12549,7 @@ class App extends React.Component<AppProps, AppState> {
   private initializeImage = async (
     placeholderImageElement: ExcalidrawImageElement,
     imageFile: File,
+    options?: InsertImagesOptions,
   ) => {
     // at this point this should be guaranteed image file, but we do this check
     // to satisfy TS down the line
@@ -12650,10 +12653,16 @@ class App extends React.Component<AppProps, AppState> {
               fileId,
             );
 
-            const naturalDimensions = this.getImageNaturalDimensions(
-              initializedImageElement,
-              imageHTML,
-            );
+            const naturalDimensions = options?.viewportSizing
+              ? this.getViewportInsertionDimensions(
+                  initializedImageElement,
+                  imageHTML,
+                  options.viewportSizing,
+                )
+              : this.getImageNaturalDimensions(
+                  initializedImageElement,
+                  imageHTML,
+                );
 
             // no need to create a new instance anymore, just assign the natural dimensions
             Object.assign(initializedImageElement, naturalDimensions);
@@ -12751,6 +12760,29 @@ class App extends React.Component<AppProps, AppState> {
       y,
       width,
       height,
+      crop: null,
+    };
+  };
+
+  private getViewportInsertionDimensions = (
+    imageElement: ExcalidrawImageElement,
+    imageHTML: HTMLImageElement,
+    request: NonNullable<InsertImagesOptions["viewportSizing"]>,
+  ) => {
+    const resolved = resolveViewportInsertion({
+      naturalWidth: imageHTML.naturalWidth,
+      naturalHeight: imageHTML.naturalHeight,
+      zoom: this.state.zoom.value,
+      viewport: { width: this.state.width, height: this.state.height },
+      offsets: this.viewport.getOffsets(),
+      request,
+    });
+
+    return {
+      x: imageElement.x + imageElement.width / 2 - resolved.width / 2,
+      y: imageElement.y + imageElement.height / 2 - resolved.height / 2,
+      width: resolved.width,
+      height: resolved.height,
       crop: null,
     };
   };
@@ -12883,12 +12915,32 @@ class App extends React.Component<AppProps, AppState> {
     imageFiles: File[],
     sceneX?: number,
     sceneY?: number,
+    options?: InsertImagesOptions,
   ) => {
     if (sceneX === undefined || sceneY === undefined) {
+      const offsets = options?.viewportSizing
+        ? this.viewport.getOffsets()
+        : undefined;
       const center = viewportCoordsToSceneCoords(
         {
-          clientX: this.state.width / 2 + this.state.offsetLeft,
-          clientY: this.state.height / 2 + this.state.offsetTop,
+          clientX:
+            this.state.offsetLeft +
+            (offsets
+              ? (offsets.left ?? 0) +
+                (this.state.width -
+                  (offsets.left ?? 0) -
+                  (offsets.right ?? 0)) /
+                  2
+              : this.state.width / 2),
+          clientY:
+            this.state.offsetTop +
+            (offsets
+              ? (offsets.top ?? 0) +
+                (this.state.height -
+                  (offsets.top ?? 0) -
+                  (offsets.bottom ?? 0)) /
+                  2
+              : this.state.height / 2),
         },
         this.state,
       );
@@ -12912,6 +12964,7 @@ class App extends React.Component<AppProps, AppState> {
           return await this.initializeImage(
             placeholder,
             await normalizeFile(imageFiles[i]),
+            options,
           );
         } catch (error: any) {
           this.setState({

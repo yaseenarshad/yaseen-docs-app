@@ -4,8 +4,10 @@ import type { FileId } from "@excalidraw/element/types";
 
 import * as blobModule from "../data/blob";
 import * as filesystemModule from "../data/filesystem";
+import { IMAGE_STUDIO_INSERTION } from "../data/viewportInsertion";
 import { Excalidraw } from "../index";
 import { createPasteEvent } from "../clipboard";
+import { getNormalizedZoom } from "../scene";
 
 import { API } from "./helpers/api";
 import { mockMultipleHTMLImageElements } from "./helpers/mocks";
@@ -160,6 +162,39 @@ describe("image insertion", () => {
       scrollY: h.state.scrollY,
       zoom: h.state.zoom,
     }).toEqual(before);
+  });
+
+  it("sizes opted-in images consistently in screen space", async () => {
+    await setupImageTest([DEER_IMAGE_DIMENSIONS]);
+    h.state.width = 1600;
+    h.state.zoom = { value: getNormalizedZoom(0.25) };
+
+    let inserted: Awaited<ReturnType<typeof h.app.insertImages>> = [];
+    await act(async () => {
+      inserted = await h.app.insertImages(
+        [await API.loadFile("./fixtures/deer.png")],
+        undefined,
+        undefined,
+        { viewportSizing: IMAGE_STUDIO_INSERTION },
+      );
+    });
+
+    expect(
+      Math.max(inserted[0].width, inserted[0].height) * h.state.zoom.value,
+    ).toBeCloseTo(320);
+  });
+
+  it("keeps legacy intrinsic sizing when viewport sizing is omitted", async () => {
+    await setupImageTest([DEER_IMAGE_DIMENSIONS]);
+
+    let inserted: Awaited<ReturnType<typeof h.app.insertImages>> = [];
+    await act(async () => {
+      inserted = await h.app.insertImages([
+        await API.loadFile("./fixtures/deer.png"),
+      ]);
+    });
+
+    expect(inserted[0]).toMatchObject(DEER_IMAGE_DIMENSIONS);
   });
 
   it("passes host-configured max image dimensions to the resize helper", async () => {

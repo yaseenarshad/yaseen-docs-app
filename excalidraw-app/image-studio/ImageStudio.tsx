@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "convex/react";
 import { useMemo, useState } from "react";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import { IMAGE_STUDIO_INSERTION } from "@excalidraw/excalidraw/data/viewportInsertion";
 
 import { api } from "../../convex/_generated/api";
 
@@ -136,7 +137,9 @@ export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
         insertShape(excalidrawAPI, shape);
       } else {
         const file = await importImageStudioFile(item);
-        await excalidrawAPI.insertImages([file]);
+        await excalidrawAPI.insertImages([file], undefined, undefined, {
+          viewportSizing: IMAGE_STUDIO_INSERTION,
+        });
       }
       await recordRecent({ item });
     } catch (cause) {
