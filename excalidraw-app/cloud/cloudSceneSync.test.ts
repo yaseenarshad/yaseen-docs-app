@@ -1,7 +1,12 @@
+import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
+import { getNormalizedZoom } from "@excalidraw/excalidraw/scene";
+import { newElement } from "@excalidraw/element";
+
 import {
+  isSameCloudRoute,
   preserveCloudViewport,
+  resolveCloudViewport,
   shouldApplyCloudScene,
-  shouldMergeCloudScene,
 } from "./cloudSceneSync";
 
 describe("cloud scene synchronization", () => {
@@ -23,20 +28,30 @@ describe("cloud scene synchronization", () => {
     ).toBe(false);
   });
 
-  it("replaces the scene on route changes and merges same-route updates", () => {
+  it("distinguishes a route change from a same-route update", () => {
     expect(
-      shouldMergeCloudScene(
-        { routeKey: "owner:first", version: 4 },
-        "owner:first",
+      isSameCloudRoute({ routeKey: "owner:first", version: 4 }, "owner:first"),
+    ).toBe(true);
+    expect(
+      isSameCloudRoute({ routeKey: "owner:first", version: 4 }, "owner:second"),
+    ).toBe(false);
+    expect(isSameCloudRoute(null, "owner:first")).toBe(false);
+  });
+
+  it("identifies same-route owner and shared refreshes independently of access", () => {
+    expect(
+      isSameCloudRoute({ routeKey: "owner:first", version: 4 }, "owner:first"),
+    ).toBe(true);
+    expect(
+      isSameCloudRoute(
+        { routeKey: "shared:token", version: 4 },
+        "shared:token",
       ),
     ).toBe(true);
     expect(
-      shouldMergeCloudScene(
-        { routeKey: "owner:first", version: 4 },
-        "owner:second",
-      ),
+      isSameCloudRoute({ routeKey: "owner:first", version: 4 }, "owner:second"),
     ).toBe(false);
-    expect(shouldMergeCloudScene(null, "owner:first")).toBe(false);
+    expect(isSameCloudRoute(null, "shared:token")).toBe(false);
   });
 
   it("preserves the local viewport when merging a same-route cloud update", () => {
@@ -57,6 +72,112 @@ describe("cloud scene synchronization", () => {
     ).toEqual({
       ...restoredAppState,
       ...localAppState,
+    });
+  });
+
+  it("recenters fresh route content using the restored zoom and live viewport", () => {
+    const localAppState = {
+      ...getDefaultAppState(),
+      width: 900,
+      height: 600,
+      offsetLeft: 80,
+      offsetTop: 40,
+      scrollX: 700,
+      scrollY: -300,
+      zoom: { value: getNormalizedZoom(0.8) },
+    };
+    const restoredAppState = {
+      ...localAppState,
+      width: 120,
+      height: 80,
+      scrollX: -10_000,
+      scrollY: 8_000,
+      zoom: { value: 1.5 as const },
+      viewModeEnabled: true,
+    };
+    const elements = [
+      newElement({
+        type: "rectangle",
+        x: 1_000,
+        y: 500,
+        width: 200,
+        height: 100,
+      }),
+    ];
+
+    const resolved = resolveCloudViewport(
+      restoredAppState,
+      localAppState,
+      elements,
+      false,
+    );
+
+    expect(resolved.zoom).toEqual(restoredAppState.zoom);
+    expect(resolved.scrollX).toBeCloseTo(900 / 2 / 1.5 - 1_100);
+    expect(resolved.scrollY).toBeCloseTo(600 / 2 / 1.5 - 550);
+    expect(resolved.viewModeEnabled).toBe(true);
+  });
+
+  it("opens an empty fresh route at the origin without changing its zoom", () => {
+    const localAppState = {
+      ...getDefaultAppState(),
+      width: 900,
+      height: 600,
+      offsetLeft: 0,
+      offsetTop: 0,
+    };
+    const restoredAppState = {
+      ...localAppState,
+      scrollX: -10_000,
+      scrollY: 8_000,
+      zoom: { value: 1.5 as const },
+    };
+
+    expect(
+      resolveCloudViewport(restoredAppState, localAppState, [], false),
+    ).toMatchObject({
+      scrollX: 0,
+      scrollY: 0,
+      zoom: restoredAppState.zoom,
+    });
+  });
+
+  it("preserves a live viewport on same-route owner or shared updates", () => {
+    const localAppState = {
+      ...getDefaultAppState(),
+      width: 900,
+      height: 600,
+      offsetLeft: 0,
+      offsetTop: 0,
+      scrollX: -420,
+      scrollY: 180,
+      zoom: { value: getNormalizedZoom(1.6) },
+    };
+    const restoredAppState = {
+      ...localAppState,
+      scrollX: 0,
+      scrollY: 0,
+      zoom: { value: 1 as const },
+    };
+    const farAwayElement = newElement({
+      type: "rectangle",
+      x: 10_000,
+      y: 10_000,
+      width: 200,
+      height: 100,
+    });
+
+    expect(
+      resolveCloudViewport(
+        restoredAppState,
+        localAppState,
+        [farAwayElement],
+        true,
+      ),
+    ).toMatchObject({
+      scrollX: localAppState.scrollX,
+      scrollY: localAppState.scrollY,
+      zoom: localAppState.zoom,
     });
   });
 });

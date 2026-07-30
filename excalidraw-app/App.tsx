@@ -150,9 +150,9 @@ import { CloudAccount } from "./cloud/CloudAccount";
 import { CloudShareDialog } from "./cloud/CloudShareDialog";
 import { getCloudDocumentTitle } from "./cloud/cloudDocumentTitle";
 import {
-  preserveCloudViewport,
+  isSameCloudRoute,
+  resolveCloudViewport,
   shouldApplyCloudScene,
-  shouldMergeCloudScene,
 } from "./cloud/cloudSceneSync";
 import {
   cloudRouteOwnsScene,
@@ -565,9 +565,9 @@ const ExcalidrawWrapper = () => {
         repairBindings: true,
         deleteInvisibleElements: true,
       });
+      const shouldPreserveViewport = isSameCloudRoute(previous, routeKey);
       const shouldMerge =
-        cloud.openedBoard.access === "owner" &&
-        shouldMergeCloudScene(previous, routeKey);
+        cloud.openedBoard.access === "owner" && shouldPreserveViewport;
       const elements = shouldMerge
         ? reconcileElements(
             excalidrawAPI.getSceneElementsIncludingDeleted(),
@@ -575,13 +575,14 @@ const ExcalidrawWrapper = () => {
             appState,
           )
         : remoteElements;
-      const restoredAppState = preserveCloudViewport(
+      const restoredAppState = resolveCloudViewport(
         {
           ...restoreAppState(scene.appState, appState),
           viewModeEnabled: cloud.isViewer,
         },
         appState,
-        shouldMerge,
+        elements,
+        shouldPreserveViewport,
       );
 
       cloud.discardPendingSave();
