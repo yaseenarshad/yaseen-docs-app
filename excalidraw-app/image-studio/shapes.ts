@@ -1,19 +1,22 @@
 import { pointFrom } from "@excalidraw/math";
 
-import type { ExcalidrawElementSkeleton } from "@excalidraw/element";
+import {
+  SMART_SHAPE_DEFINITIONS,
+  createSmartShapeMetadata,
+  generateSmartShapePoints,
+} from "@excalidraw/element";
+
+import type {
+  ExcalidrawElementSkeleton,
+  SmartShapeDefinition,
+} from "@excalidraw/element";
 
 import type { LocalPoint } from "@excalidraw/math";
 
 export type ShapeCatalogItem = {
   id: string;
   title: string;
-  preview:
-    | "rectangle"
-    | "ellipse"
-    | "diamond"
-    | "triangle"
-    | "star"
-    | "hexagon";
+  preview: string;
   create: (x: number, y: number) => ExcalidrawElementSkeleton[];
 };
 
@@ -126,6 +129,43 @@ export const SHAPE_CATALOG: ShapeCatalogItem[] = [
         [61, 52],
         [80, 0],
       ]),
+  },
+  ...SMART_SHAPE_DEFINITIONS.map(
+    (smartShape): ShapeCatalogItem => ({
+      id: `smart:${smartShape.id}`,
+      title: smartShape.title,
+      preview: `smart:${smartShape.id}`,
+      create: (x, y) => createSmartShapeSkeleton(smartShape, x, y),
+    }),
+  ),
+];
+
+const createSmartShapeSkeleton = (
+  smartShape: SmartShapeDefinition,
+  x: number,
+  y: number,
+): ExcalidrawElementSkeleton[] => [
+  {
+    type: "line",
+    x: x - smartShape.width / 2,
+    y: y - smartShape.height / 2,
+    width: smartShape.width,
+    height: smartShape.height,
+    points: generateSmartShapePoints(
+      smartShape.id,
+      smartShape.width,
+      smartShape.height,
+      smartShape.defaults,
+    ),
+    strokeColor: "#1b1b1f",
+    backgroundColor: smartShape.closed ? "#1b1b1f" : "transparent",
+    fillStyle: "solid",
+    strokeWidth: 2,
+    roughness: 1,
+    roundness: smartShape.roundness,
+    customData: {
+      yasinSmartShape: createSmartShapeMetadata(smartShape.id),
+    },
   },
 ];
 

@@ -3,6 +3,11 @@ import { useMemo, useState } from "react";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { IMAGE_STUDIO_INSERTION } from "@excalidraw/excalidraw/data/viewportInsertion";
+import {
+  generateSmartShapePoints,
+  getSmartShapeDefinition,
+  isSmartShapeId,
+} from "@excalidraw/element";
 
 import { api } from "../../convex/_generated/api";
 
@@ -46,6 +51,32 @@ const restorePreview = (item: StoredMediaItem): ImageStudioItem => ({
 });
 
 const ShapePreview = ({ kind }: { kind: string }) => {
+  if (kind.startsWith("smart:")) {
+    const id = kind.slice("smart:".length);
+    if (isSmartShapeId(id)) {
+      const definition = getSmartShapeDefinition(id)!;
+      const previewPoints = generateSmartShapePoints(
+        id,
+        100,
+        100,
+        definition.defaults,
+      )
+        .map(([x, y]) => `${x},${y}`)
+        .join(" ");
+      return definition.closed ? (
+        <polygon points={previewPoints} />
+      ) : (
+        <polyline
+          points={previewPoints}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      );
+    }
+  }
   const points =
     kind === "triangle"
       ? "50,10 90,88 10,88"

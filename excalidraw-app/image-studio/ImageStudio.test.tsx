@@ -74,4 +74,49 @@ describe("ImageStudio", () => {
     expect(screen.getByRole("button", { name: "Add Triangle" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Add Star" })).toBeVisible();
   });
+
+  it("inserts Smart Shapes and records global recent and favorite state", async () => {
+    const libraryMutation = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(useQuery).mockReset();
+    vi.mocked(useQuery).mockReturnValueOnce([]).mockReturnValueOnce([]);
+    vi.mocked(useMutation).mockReset();
+    vi.mocked(useMutation).mockReturnValue(libraryMutation as never);
+    const updateScene = vi.fn();
+    const excalidrawAPI = {
+      getAppState: () => ({
+        width: 1000,
+        height: 800,
+        zoom: { value: 1 },
+        scrollX: 0,
+        scrollY: 0,
+      }),
+      getSceneElementsIncludingDeleted: () => [],
+      updateScene,
+    } as never;
+
+    render(<ImageStudio excalidrawAPI={excalidrawAPI} canInsert={true} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Shapes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add Arrow right" }));
+
+    await waitFor(() => {
+      expect(updateScene).toHaveBeenCalledTimes(1);
+      expect(libraryMutation).toHaveBeenCalledWith({
+        item: expect.objectContaining({
+          itemKey: "shape:smart:arrow-right",
+        }),
+      });
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Add Arrow right to favorites",
+      }),
+    );
+    expect(libraryMutation).toHaveBeenCalledWith({
+      item: expect.objectContaining({
+        itemKey: "shape:smart:arrow-right",
+      }),
+    });
+  });
 });
