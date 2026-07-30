@@ -17,6 +17,7 @@ dist
 firebase
 logs
 node_modules
+.worktrees/
 npm-debug.log*
 package-lock.json
 yarn-debug.log*
