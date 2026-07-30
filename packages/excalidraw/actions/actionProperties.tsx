@@ -30,9 +30,11 @@ import {
 } from "@excalidraw/common";
 
 import {
+  areSelectedLinesUnderlined,
   canBecomePolygon,
   getNonDeletedElements,
   isNonDeletedElement,
+  toggleSelectedLineUnderlines,
 } from "@excalidraw/element";
 
 import {
@@ -1174,8 +1176,12 @@ const getTextStyle = (
   property: TextStyleChange["property"],
   app: AppClassProperties,
 ) => {
-  const textElement = isTextElement(element)
-    ? element
+  const currentElement =
+    app.state.editingTextElement?.id === element.id
+      ? app.scene.getElement(element.id) ?? element
+      : element;
+  const textElement = isTextElement(currentElement)
+    ? currentElement
     : getBoundTextElement(element, app.scene.getNonDeletedElementsMap());
   if (!textElement) {
     return false;
@@ -1184,7 +1190,20 @@ const getTextStyle = (
     return textElement.fontWeight === "bold";
   }
   if (property === "textDecoration") {
-    return textElement.textDecoration === "underline";
+    const editable =
+      app.state.editingTextElement?.id === textElement.id
+        ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
+        : null;
+    return editable
+      ? areSelectedLinesUnderlined({
+          text: editable.value,
+          lineUnderlines: textElement.lineUnderlines,
+          selectionStart: editable.selectionStart,
+          selectionEnd: editable.selectionEnd,
+          wholeElementUnderlined:
+            textElement.textDecoration === "underline",
+        })
+      : textElement.textDecoration === "underline";
   }
 
   const editable =
@@ -1207,16 +1226,24 @@ const changeTextStyle = (
   app: AppClassProperties,
 ) => {
   const editable =
-    value.property === "bulletList" && appState.editingTextElement
+    value.property !== "fontWeight" && appState.editingTextElement
       ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
       : null;
   const editableBullets = editable
-    ? toggleTextBullets(
+    ? value.property === "bulletList"
+      ? toggleTextBullets(
         editable.value,
         editable.selectionStart,
         editable.selectionEnd,
         value.enabled,
       )
+      : null
+    : null;
+  const editableSelection = editable
+    ? {
+        start: editable.selectionStart,
+        end: editable.selectionEnd,
+      }
     : null;
 
   const updatedElements = changeProperty(
@@ -1252,13 +1279,38 @@ const changeTextStyle = (
         );
         return nextElement;
       }
+      if (value.property === "textDecoration") {
+        if (editable && element.id === appState.editingTextElement?.id) {
+          return newElementWith(
+            element,
+            {
+              textDecoration: "none",
+              lineUnderlines: toggleSelectedLineUnderlines({
+                text: editable.value,
+                lineUnderlines: element.lineUnderlines,
+                selectionStart: editable.selectionStart,
+                selectionEnd: editable.selectionEnd,
+                wholeElementUnderlined:
+                  element.textDecoration === "underline",
+                enabled: value.enabled,
+              }),
+            },
+            true,
+          );
+        }
+
+        return newElementWith(
+          element,
+          {
+            textDecoration: value.enabled ? "underline" : "none",
+            lineUnderlines: undefined,
+          },
+          true,
+        );
+      }
       let nextElement: ExcalidrawTextElement = newElementWith(
         element,
-        value.property === "fontWeight"
-          ? { fontWeight: value.enabled ? "bold" : "normal" }
-          : {
-              textDecoration: value.enabled ? "underline" : "none",
-            },
+        { fontWeight: value.enabled ? "bold" : "normal" },
       );
       if (value.property === "fontWeight") {
         redrawTextBoundingBox(
@@ -1284,6 +1336,23 @@ const changeTextStyle = (
       editableBullets.selectionEnd,
     );
     editable.focus();
+  } else if (
+    editable &&
+    editableSelection &&
+    value.property === "textDecoration"
+  ) {
+    editable.setSelectionRange(editableSelection.start, editableSelection.end);
+    editable.focus();
+    queueMicrotask(() => {
+      if (editable.isConnected) {
+        editable.setSelectionRange(
+          editableSelection.start,
+          editableSelection.end,
+        );
+        editable.focus();
+      }
+    });
+    restoreCaretPosition(editableSelection);
   }
 
   return {

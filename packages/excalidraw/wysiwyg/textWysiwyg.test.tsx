@@ -546,10 +546,12 @@ describe("textWysiwyg", () => {
         key: "u",
         code: CODES.U,
       });
+      expect(
+        (h.elements[0] as ExcalidrawTextElement).lineUnderlines,
+      ).toEqual([true]);
       expect((h.elements[0] as ExcalidrawTextElement).textDecoration).toBe(
-        "underline",
+        "none",
       );
-      expect(textarea.style.textDecoration).toBe("underline");
 
       fireEvent.keyDown(textarea, {
         ...primaryModifier,
@@ -567,6 +569,33 @@ describe("textWysiwyg", () => {
       expect((h.elements[0] as ExcalidrawTextElement).textDecoration).toBe(
         "none",
       );
+      expect(
+        (h.elements[0] as ExcalidrawTextElement).lineUnderlines,
+      ).toBeUndefined();
+    });
+
+    it("toggles underline for only the logical lines selected in the editor", async () => {
+      fireEvent.input(textarea, {
+        target: { value: "Title\nSubtitle" },
+      });
+      textarea.setSelectionRange(0, 5);
+      expect(textarea.selectionStart).toBe(0);
+      expect(textarea.selectionEnd).toBe(5);
+
+      act(() => {
+        h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
+          property: "textDecoration",
+          enabled: true,
+        });
+      });
+      await Promise.resolve();
+
+      expect(h.elements[0]).toMatchObject({
+        textDecoration: "none",
+        lineUnderlines: [true],
+      });
+      expect(textarea.selectionStart).toBe(0);
+      expect(textarea.selectionEnd).toBe(5);
     });
 
     it("should toggle bullets on the selected lines from the text toolbar", () => {

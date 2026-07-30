@@ -1046,12 +1046,15 @@ export const textWysiwyg = ({
 
   // handle updates of textElement properties of editing element
   const unbindUpdate = app.scene.onUpdate(() => {
+    const selectionStart = editable.selectionStart;
+    const selectionEnd = editable.selectionEnd;
     updateWysiwygStyle();
     const isPopupOpened = !!document.activeElement?.closest(
       ".properties-content",
     );
     if (!isPopupOpened) {
       editable.focus();
+      editable.setSelectionRange(selectionStart, selectionEnd);
     }
   });
 
