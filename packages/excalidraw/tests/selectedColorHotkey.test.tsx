@@ -2,12 +2,15 @@ import React from "react";
 
 import {
   COLOR_PALETTE,
+  CANVAS_SEARCH_TAB,
+  DEFAULT_SIDEBAR,
   DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX,
   DEFAULT_ELEMENT_STROKE_COLOR_INDEX,
   KEYS,
 } from "@excalidraw/common";
 
 import { Excalidraw } from "../index";
+import { SEMANTIC_COLOR_HOTKEYS } from "../components/ColorPicker/colorPickerUtils";
 
 import { API } from "./helpers/api";
 import { Keyboard, UI } from "./helpers/ui";
@@ -79,7 +82,34 @@ describe("selected-element semantic color hotkeys", () => {
 
     Keyboard.keyPress(KEYS.A);
     expect(h.state.activeTool.type).toBe("arrow");
+
+    Keyboard.keyPress(KEYS.D);
+    expect(h.state.activeTool.type).toBe("diamond");
   });
+
+  it.each(Object.entries(SEMANTIC_COLOR_HOTKEYS))(
+    "applies the approved selected-text %s = %s shortcut",
+    (colorName, hotkey) => {
+      const text = API.createElement({
+        type: "text",
+        text: colorName,
+        strokeColor: "#123456",
+      });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+      const paletteValue =
+        COLOR_PALETTE[colorName as keyof typeof COLOR_PALETTE];
+      const expectedColor =
+        typeof paletteValue === "string"
+          ? paletteValue
+          : paletteValue[DEFAULT_ELEMENT_STROKE_COLOR_INDEX];
+
+      Keyboard.keyPress(hotkey.toUpperCase());
+
+      expect(h.app.scene.getElement(text.id)?.strokeColor).toBe(expectedColor);
+      expect(h.state.activeTool.type).toBe("selection");
+    },
+  );
 
   it("suppresses selected-color routing in guarded contexts", () => {
     const rectangle = API.createElement({
@@ -107,6 +137,74 @@ describe("selected-element semantic color hotkeys", () => {
     expect(h.app.scene.getElement(rectangle.id)?.backgroundColor).toBe(
       COLOR_PALETTE.transparent,
     );
+  });
+
+  it("suppresses routing during text editing, search, and active transforms", () => {
+    const text = API.createElement({
+      type: "text",
+      text: "Editing",
+      strokeColor: COLOR_PALETTE.black,
+    });
+    API.setElements([text]);
+    API.setSelectedElements([text]);
+
+    API.setAppState({ editingTextElement: text });
+    Keyboard.keyPress(KEYS.R);
+    expect(h.app.scene.getElement(text.id)?.strokeColor).toBe(
+      COLOR_PALETTE.black,
+    );
+
+    API.setAppState({
+      editingTextElement: null,
+      openSidebar: { name: DEFAULT_SIDEBAR.name, tab: CANVAS_SEARCH_TAB },
+    });
+    Keyboard.keyPress(KEYS.R);
+    expect(h.app.scene.getElement(text.id)?.strokeColor).toBe(
+      COLOR_PALETTE.black,
+    );
+
+    API.setAppState({
+      openSidebar: null,
+      selectedElementsAreBeingDragged: true,
+    });
+    Keyboard.keyPress(KEYS.R);
+    expect(h.app.scene.getElement(text.id)?.strokeColor).toBe(
+      COLOR_PALETTE.black,
+    );
+
+    API.setAppState({
+      selectedElementsAreBeingDragged: false,
+      isResizing: true,
+    });
+    Keyboard.keyPress(KEYS.R);
+    expect(h.app.scene.getElement(text.id)?.strokeColor).toBe(
+      COLOR_PALETTE.black,
+    );
+
+    API.setAppState({ isResizing: false, isRotating: true });
+    Keyboard.keyPress(KEYS.R);
+    expect(h.app.scene.getElement(text.id)?.strokeColor).toBe(
+      COLOR_PALETTE.black,
+    );
+  });
+
+  it("requires canvas keyboard ownership", () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      backgroundColor: COLOR_PALETTE.transparent,
+    });
+    API.setElements([rectangle]);
+    API.setSelectedElements([rectangle]);
+    const externalButton = document.createElement("button");
+    document.body.appendChild(externalButton);
+    externalButton.focus();
+
+    fireEvent.keyDown(document, { key: KEYS.R });
+
+    expect(h.app.scene.getElement(rectangle.id)?.backgroundColor).toBe(
+      COLOR_PALETTE.transparent,
+    );
+    externalButton.remove();
   });
 
   it("ignores modified keys and writable targets", () => {
@@ -209,6 +307,62 @@ describe("selected-element semantic color hotkeys", () => {
     });
   });
 
+  it("applies transparent to each target's primary property", () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      strokeColor: "#123456",
+      backgroundColor: "#abcdef",
+    });
+    const text = API.createElement({
+      type: "text",
+      text: "Transparent",
+      strokeColor: "#123456",
+      backgroundColor: "#abcdef",
+    });
+    API.setElements([rectangle, text]);
+    API.setSelectedElements([rectangle, text]);
+
+    Keyboard.keyPress(KEYS.T);
+
+    expect(h.app.scene.getElement(rectangle.id)).toMatchObject({
+      strokeColor: "#123456",
+      backgroundColor: COLOR_PALETTE.transparent,
+    });
+    expect(h.app.scene.getElement(text.id)).toMatchObject({
+      strokeColor: COLOR_PALETTE.transparent,
+      backgroundColor: "#abcdef",
+    });
+  });
+
+  it("preserves groups and frame relationships", () => {
+    const frame = API.createElement({
+      type: "frame",
+      backgroundColor: COLOR_PALETTE.transparent,
+      groupIds: ["group-1"],
+    });
+    const child = API.createElement({
+      type: "rectangle",
+      frameId: frame.id,
+      groupIds: ["group-1"],
+      backgroundColor: "#abcdef",
+    });
+    API.setElements([frame, child]);
+    API.setSelectedElements([frame]);
+
+    Keyboard.keyPress(KEYS.P);
+
+    expect(h.app.scene.getElement(frame.id)).toMatchObject({
+      backgroundColor:
+        COLOR_PALETTE.pink[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+      groupIds: ["group-1"],
+    });
+    expect(h.app.scene.getElement(child.id)).toMatchObject({
+      frameId: frame.id,
+      groupIds: ["group-1"],
+      backgroundColor: "#abcdef",
+    });
+  });
+
   it("updates supported elements while skipping images and embeds", () => {
     const rectangle = API.createElement({
       type: "rectangle",
@@ -292,5 +446,27 @@ describe("selected-element semantic color hotkeys", () => {
     expect(h.app.scene.getElement(text.id)?.strokeColor).toBe(
       COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
     );
+  });
+
+  it("keeps unrelated selected-element commands available", () => {
+    const first = API.createElement({ type: "rectangle", x: 0 });
+    const second = API.createElement({ type: "ellipse", x: 20 });
+    API.setElements([first, second]);
+    API.setSelectedElements([first, second]);
+
+    Keyboard.withModifierKeys({ ctrl: true }, () => {
+      Keyboard.keyPress(KEYS.G);
+    });
+    expect(h.app.scene.getElement(first.id)?.groupIds).toHaveLength(1);
+    expect(h.app.scene.getElement(second.id)?.groupIds).toEqual(
+      h.app.scene.getElement(first.id)?.groupIds,
+    );
+
+    const xBefore = h.app.scene.getElement(first.id)!.x;
+    Keyboard.keyPress(KEYS.ARROW_RIGHT);
+    expect(h.app.scene.getElement(first.id)!.x).toBeGreaterThan(xBefore);
+
+    Keyboard.keyPress(KEYS.ESCAPE);
+    expect(h.state.selectedElementIds).toEqual({});
   });
 });
