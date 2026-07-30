@@ -5,17 +5,28 @@ import {
 } from "convex/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { Dialog } from "@excalidraw/excalidraw/components/Dialog";
+import { useUIAppState } from "@excalidraw/excalidraw/context/ui-appState";
 import {
   useLibraryCache,
   useLibraryItemSvg,
 } from "@excalidraw/excalidraw/hooks/useLibraryItemSvg";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
-import type { LibraryItem } from "@excalidraw/excalidraw/types";
+import type {
+  ExcalidrawImperativeAPI,
+  LibraryItem,
+} from "@excalidraw/excalidraw/types";
 
 import { api } from "../../convex/_generated/api";
 
 import "./SavedComponents.scss";
+
+import {
+  captureSavedComponentSelection,
+  parseImportedComponentJson,
+  serializeSavedComponent,
+} from "./SavedComponentsData";
 
 import type { Id } from "../../convex/_generated/dataModel";
 
@@ -41,10 +52,12 @@ type SavedComponentsInventoryProps = {
   queryError: string | null;
   canLoadMore: boolean;
   isLoadingMore: boolean;
+  canSaveSelection: boolean;
   onQueryChange: (query: string) => void;
   onRetryQuery: () => void;
   onLoadMore: () => void;
-  onAdd: () => void;
+  onSaveSelection: () => void;
+  onImportJson: () => void;
   onInsert: (component: SavedComponentSummary) => void;
   onRename: (component: SavedComponentSummary, name: string) => Promise<void>;
   onDelete: (component: SavedComponentSummary) => Promise<void>;
@@ -71,22 +84,40 @@ const parsePreviewElements = (
   }
 };
 
-const SavedComponentPreview = ({
-  component,
+const SavedComponentElementsPreview = ({
+  id,
+  name,
+  elements,
 }: {
-  component: SavedComponentSummary;
+  id: string | null;
+  name: string;
+  elements: LibraryItem["elements"] | undefined;
 }) => {
   const ref = useRef<HTMLDivElement | null>(null);
   const { svgCache } = useLibraryCache();
-  const elements = useMemo(() => parsePreviewElements(component), [component]);
-  useLibraryItemSvg(component._id, elements, svgCache, ref);
+  useLibraryItemSvg(id, elements, svgCache, ref);
 
   return (
     <div
       ref={ref}
       className="saved-components__preview"
-      aria-label={`Preview of ${component.name}`}
+      aria-label={`Preview of ${name}`}
       role="img"
+    />
+  );
+};
+
+const SavedComponentPreview = ({
+  component,
+}: {
+  component: SavedComponentSummary;
+}) => {
+  const elements = useMemo(() => parsePreviewElements(component), [component]);
+  return (
+    <SavedComponentElementsPreview
+      id={component._id}
+      name={component.name}
+      elements={elements}
     />
   );
 };
@@ -99,10 +130,12 @@ export const SavedComponentsInventory = ({
   queryError,
   canLoadMore,
   isLoadingMore,
+  canSaveSelection,
   onQueryChange,
   onRetryQuery,
   onLoadMore,
-  onAdd,
+  onSaveSelection,
+  onImportJson,
   onInsert,
   onRename,
   onDelete,
@@ -209,10 +242,18 @@ export const SavedComponentsInventory = ({
             {components.length === 1 ? "" : "s"}
           </span>
         </div>
-        <button type="button" onClick={onAdd}>
-          Add
-          <span className="visually-hidden"> component</span>
-        </button>
+        <div className="saved-components__create-actions">
+          <button
+            type="button"
+            onClick={onSaveSelection}
+            disabled={!canSaveSelection}
+          >
+            Save selection
+          </button>
+          <button type="button" onClick={onImportJson}>
+            Import JSON
+          </button>
+        </div>
       </header>
 
       <input
@@ -346,18 +387,170 @@ export const SavedComponentsInventory = ({
   );
 };
 
+export type CreationDialogState =
+  | {
+      mode: "selection";
+      elements: readonly ExcalidrawElement[] | undefined;
+      error: string | null;
+    }
+  | {
+      mode: "import";
+      elements: readonly ExcalidrawElement[] | undefined;
+      error: string | null;
+      source: string;
+    };
+
+export const SavedComponentCreationDialog = ({
+  state,
+  onStateChange,
+  onClose,
+  onCreate,
+}: {
+  state: CreationDialogState;
+  onStateChange: (state: CreationDialogState) => void;
+  onClose: () => void;
+  onCreate: (
+    name: string,
+    elements: readonly ExcalidrawElement[],
+  ) => Promise<void>;
+}) => {
+  const [name, setName] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const previewElements = state.elements?.filter(
+    (element) => !element.isDeleted,
+  ) as LibraryItem["elements"] | undefined;
+
+  const updateImportSource = (source: string) => {
+    if (state.mode !== "import") {
+      return;
+    }
+    if (!source.trim()) {
+      onStateChange({
+        mode: "import",
+        source,
+        elements: undefined,
+        error: null,
+      });
+      return;
+    }
+    try {
+      onStateChange({
+        mode: "import",
+        source,
+        elements: parseImportedComponentJson(source),
+        error: null,
+      });
+    } catch (error) {
+      onStateChange({
+        mode: "import",
+        source,
+        elements: undefined,
+        error: getErrorMessage(error, "This JSON cannot be imported"),
+      });
+    }
+  };
+
+  return (
+    <Dialog
+      title={
+        state.mode === "selection"
+          ? "Save selection as a component"
+          : "Import component JSON"
+      }
+      size="small"
+      onCloseRequest={onClose}
+      closeOnClickOutside={false}
+    >
+      <form
+        className="saved-components-dialog"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!state.elements || !name.trim()) {
+            return;
+          }
+          setIsSaving(true);
+          setSaveError(null);
+          void onCreate(name, state.elements)
+            .then(onClose)
+            .catch((error) => {
+              setSaveError(
+                getErrorMessage(error, "The component could not be saved"),
+              );
+            })
+            .finally(() => setIsSaving(false));
+        }}
+      >
+        {state.mode === "import" && (
+          <label>
+            Component JSON
+            <textarea
+              aria-label="Component JSON"
+              value={state.source}
+              placeholder="Paste Excalidraw clipboard, scene, Library, or component JSON"
+              onChange={(event) => updateImportSource(event.target.value)}
+              rows={9}
+            />
+          </label>
+        )}
+
+        {(state.error || saveError) && (
+          <div className="saved-components-dialog__error" role="alert">
+            {state.error ?? saveError}
+          </div>
+        )}
+
+        {previewElements && (
+          <SavedComponentElementsPreview
+            id={null}
+            name={name.trim() || "new component"}
+            elements={previewElements}
+          />
+        )}
+
+        <label>
+          Name
+          <input
+            value={name}
+            maxLength={120}
+            required
+            aria-label="Component name"
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+
+        <div className="saved-components-dialog__actions">
+          <button type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!state.elements || !name.trim() || isSaving}
+          >
+            {isSaving ? "Saving…" : "Save component"}
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  );
+};
+
 export const SavedComponents = ({
-  onAdd,
+  excalidrawAPI,
   onInsert,
 }: {
-  onAdd: () => void;
+  excalidrawAPI: ExcalidrawImperativeAPI;
   onInsert: (component: SavedComponentSummary) => void;
 }) => {
   const { isAuthenticated, isLoading } = useConvexAuth();
+  const appState = useUIAppState();
   const [query, setQuery] = useState("");
   const [retryAttempt, setRetryAttempt] = useState(0);
+  const [creationDialog, setCreationDialog] =
+    useState<CreationDialogState | null>(null);
   const renameComponent = useMutation(api.savedComponents.rename);
   const deleteComponent = useMutation(api.savedComponents.remove);
+  const createComponent = useMutation(api.savedComponents.create);
   const pagination = usePaginatedQuery_experimental({
     query: api.savedComponents.search,
     args: isAuthenticated
@@ -368,47 +561,99 @@ export const SavedComponents = ({
   const components = (pagination.data ?? []) as SavedComponentSummary[];
 
   return (
-    <SavedComponentsInventory
-      authState={
-        isLoading ? "loading" : isAuthenticated ? "authenticated" : "signed-out"
-      }
-      components={components}
-      query={query}
-      queryStatus={
-        pagination.status === "pending"
-          ? "loading"
-          : pagination.status === "error"
-          ? "error"
-          : "success"
-      }
-      queryError={
-        pagination.status === "error"
-          ? getErrorMessage(pagination.error, "Components could not be loaded.")
-          : null
-      }
-      canLoadMore={pagination.canLoadMore}
-      isLoadingMore={
-        pagination.status === "pending" && pagination.data !== undefined
-      }
-      onQueryChange={(nextQuery) => {
-        setRetryAttempt(0);
-        setQuery(nextQuery);
-      }}
-      onRetryQuery={() => setRetryAttempt((attempt) => attempt + 1)}
-      onLoadMore={() => pagination.loadMore(PAGE_SIZE)}
-      onAdd={onAdd}
-      onInsert={onInsert}
-      onRename={async (component, name) => {
-        await renameComponent({
-          componentId: component._id as Id<"savedComponents">,
-          name,
-        });
-      }}
-      onDelete={async (component) => {
-        await deleteComponent({
-          componentId: component._id as Id<"savedComponents">,
-        });
-      }}
-    />
+    <>
+      <SavedComponentsInventory
+        authState={
+          isLoading
+            ? "loading"
+            : isAuthenticated
+            ? "authenticated"
+            : "signed-out"
+        }
+        components={components}
+        query={query}
+        queryStatus={
+          pagination.status === "pending"
+            ? "loading"
+            : pagination.status === "error"
+            ? "error"
+            : "success"
+        }
+        queryError={
+          pagination.status === "error"
+            ? getErrorMessage(
+                pagination.error,
+                "Components could not be loaded.",
+              )
+            : null
+        }
+        canLoadMore={pagination.canLoadMore}
+        isLoadingMore={
+          pagination.status === "pending" && pagination.data !== undefined
+        }
+        canSaveSelection={Object.keys(appState.selectedElementIds).length > 0}
+        onQueryChange={(nextQuery) => {
+          setRetryAttempt(0);
+          setQuery(nextQuery);
+        }}
+        onRetryQuery={() => setRetryAttempt((attempt) => attempt + 1)}
+        onLoadMore={() => pagination.loadMore(PAGE_SIZE)}
+        onSaveSelection={() => {
+          try {
+            setCreationDialog({
+              mode: "selection",
+              elements: captureSavedComponentSelection(excalidrawAPI),
+              error: null,
+            });
+          } catch (error) {
+            setCreationDialog({
+              mode: "selection",
+              elements: undefined,
+              error: getErrorMessage(
+                error,
+                "The selection cannot be saved as a component",
+              ),
+            });
+          }
+        }}
+        onImportJson={() =>
+          setCreationDialog({
+            mode: "import",
+            source: "",
+            elements: undefined,
+            error: null,
+          })
+        }
+        onInsert={onInsert}
+        onRename={async (component, name) => {
+          await renameComponent({
+            componentId: component._id as Id<"savedComponents">,
+            name,
+          });
+        }}
+        onDelete={async (component) => {
+          await deleteComponent({
+            componentId: component._id as Id<"savedComponents">,
+          });
+        }}
+      />
+      {creationDialog && (
+        <SavedComponentCreationDialog
+          state={creationDialog}
+          onStateChange={setCreationDialog}
+          onClose={() => setCreationDialog(null)}
+          onCreate={async (name, elements) => {
+            const serialized = serializeSavedComponent(elements);
+            await createComponent({
+              name,
+              ...serialized,
+            });
+            excalidrawAPI.setToast({
+              message: `${name.trim()} saved to Components`,
+            });
+          }}
+        />
+      )}
+    </>
   );
 };

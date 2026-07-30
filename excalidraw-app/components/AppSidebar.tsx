@@ -735,7 +735,12 @@ export const AppSidebar = ({
           <BoardBrowser {...boardBrowserProps} />
         </Sidebar.Tab>
         <Sidebar.Tab tab="components">
-          <SavedComponents onAdd={() => undefined} onInsert={() => undefined} />
+          {excalidrawAPI && (
+            <SavedComponents
+              excalidrawAPI={excalidrawAPI}
+              onInsert={() => undefined}
+            />
+          )}
         </Sidebar.Tab>
         <Sidebar.Tab tab="image-studio">
           {excalidrawAPI && (

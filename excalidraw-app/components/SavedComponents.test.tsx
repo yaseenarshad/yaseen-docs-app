@@ -1,9 +1,31 @@
+import { newElement } from "@excalidraw/element";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { vi } from "vitest";
 
-import { SavedComponentsInventory } from "./SavedComponents";
+import {
+  SavedComponentCreationDialog,
+  SavedComponentsInventory,
+} from "./SavedComponents";
 
-import type { SavedComponentSummary } from "./SavedComponents";
+import type {
+  CreationDialogState,
+  SavedComponentSummary,
+} from "./SavedComponents";
+
+vi.mock("@excalidraw/excalidraw/components/Dialog", () => ({
+  Dialog: ({
+    title,
+    children,
+  }: {
+    title: string;
+    children: React.ReactNode;
+  }) => (
+    <div role="dialog" aria-label={title}>
+      {children}
+    </div>
+  ),
+}));
 
 vi.mock("@excalidraw/excalidraw/hooks/useLibraryItemSvg", () => ({
   useLibraryCache: () => ({
@@ -58,7 +80,9 @@ const baseProps = {
   onQueryChange: vi.fn(),
   onRetryQuery: vi.fn(),
   onLoadMore: vi.fn(),
-  onAdd: vi.fn(),
+  canSaveSelection: true,
+  onSaveSelection: vi.fn(),
+  onImportJson: vi.fn(),
   onInsert: vi.fn(),
   onRename: vi.fn().mockResolvedValue(undefined),
   onDelete: vi.fn().mockResolvedValue(undefined),
@@ -71,14 +95,16 @@ describe("SavedComponentsInventory", () => {
 
   it("renders a searchable, accessible component inventory", () => {
     const onQueryChange = vi.fn();
-    const onAdd = vi.fn();
+    const onSaveSelection = vi.fn();
+    const onImportJson = vi.fn();
     const onInsert = vi.fn();
 
     render(
       <SavedComponentsInventory
         {...baseProps}
         onQueryChange={onQueryChange}
-        onAdd={onAdd}
+        onSaveSelection={onSaveSelection}
+        onImportJson={onImportJson}
         onInsert={onInsert}
       />,
     );
@@ -94,14 +120,27 @@ describe("SavedComponentsInventory", () => {
       screen.getByRole("searchbox", { name: "Search components" }),
       { target: { value: "pricing" } },
     );
-    fireEvent.click(screen.getByRole("button", { name: "Add component" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save selection" }));
+    fireEvent.click(screen.getByRole("button", { name: "Import JSON" }));
     fireEvent.click(
       screen.getByRole("button", { name: "Insert Pricing card" }),
     );
 
     expect(onQueryChange).toHaveBeenCalledWith("pricing");
-    expect(onAdd).toHaveBeenCalledTimes(1);
+    expect(onSaveSelection).toHaveBeenCalledTimes(1);
+    expect(onImportJson).toHaveBeenCalledTimes(1);
     expect(onInsert).toHaveBeenCalledWith(component);
+  });
+
+  it("disables Save selection when the canvas has no selection", () => {
+    render(
+      <SavedComponentsInventory {...baseProps} canSaveSelection={false} />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Save selection" }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Import JSON" })).toBeEnabled();
   });
 
   it("exposes auth, loading, empty, no-results, and retryable query states", () => {
@@ -219,5 +258,93 @@ describe("SavedComponentsInventory", () => {
     expect(
       screen.getByRole("button", { name: "Insert Pricing card" }),
     ).toBeVisible();
+  });
+
+  it("requires a name and saves the captured selection from its preview dialog", async () => {
+    const onCreate = vi.fn().mockResolvedValue(undefined);
+    const onClose = vi.fn();
+    const element = newElement({
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 60,
+    });
+
+    render(
+      <SavedComponentCreationDialog
+        state={{
+          mode: "selection",
+          elements: [element],
+          error: null,
+        }}
+        onStateChange={vi.fn()}
+        onClose={onClose}
+        onCreate={onCreate}
+      />,
+    );
+
+    expect(
+      screen.getByRole("dialog", {
+        name: "Save selection as a component",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Save component" }),
+    ).toBeDisabled();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Component name" }), {
+      target: { value: "Pricing CTA" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save component" }));
+
+    await waitFor(() =>
+      expect(onCreate).toHaveBeenCalledWith("Pricing CTA", [element]),
+    );
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves invalid imported JSON for correction and previews valid JSON", () => {
+    const ImportHarness = () => {
+      const [state, setState] = useState<CreationDialogState>({
+        mode: "import" as const,
+        source: "",
+        elements: undefined,
+        error: null,
+      });
+      return (
+        <SavedComponentCreationDialog
+          state={state}
+          onStateChange={setState}
+          onClose={vi.fn()}
+          onCreate={vi.fn()}
+        />
+      );
+    };
+    render(<ImportHarness />);
+    const source = screen.getByRole("textbox", { name: "Component JSON" });
+
+    fireEvent.change(source, { target: { value: "not-json" } });
+    expect(source).toHaveValue("not-json");
+    expect(screen.getByRole("alert")).toHaveTextContent("Paste valid JSON");
+
+    fireEvent.change(source, {
+      target: {
+        value: JSON.stringify({
+          type: "excalidraw/clipboard",
+          elements: [
+            newElement({
+              type: "rectangle",
+              x: 0,
+              y: 0,
+              width: 100,
+              height: 60,
+            }),
+          ],
+        }),
+      },
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Preview of new component")).toBeVisible();
   });
 });
