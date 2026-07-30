@@ -10,6 +10,7 @@ export { actionDuplicateSelection } from "./actionDuplicateSelection";
 export {
   actionChangeStrokeColor,
   actionChangeBackgroundColor,
+  actionApplySelectedSemanticColor,
   actionChangeStrokeWidth,
   actionChangeLinearStrokeWidth,
   actionChangeFillStyle,

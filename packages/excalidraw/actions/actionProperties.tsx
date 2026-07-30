@@ -4,9 +4,12 @@ import clsx from "clsx";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  COLOR_PALETTE,
   DEFAULT_ELEMENT_BACKGROUND_COLOR_PALETTE,
+  DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX,
   DEFAULT_ELEMENT_BACKGROUND_PICKS,
   DEFAULT_ELEMENT_STROKE_COLOR_PALETTE,
+  DEFAULT_ELEMENT_STROKE_COLOR_INDEX,
   DEFAULT_ELEMENT_STROKE_PICKS,
   DEFAULT_TEXT_STROKE_PICKS,
   ARROW_TYPE,
@@ -30,6 +33,7 @@ import {
   invariant,
   FONT_SIZES,
   type StrokeWidthKey,
+  type ColorPickerColor,
 } from "@excalidraw/common";
 
 import {
@@ -60,6 +64,7 @@ import {
   isArrowElement,
   isBoundToContainer,
   isElbowArrow,
+  isFrameLikeElement,
   isLinearElement,
   isLineElement,
   isTextElement,
@@ -411,6 +416,80 @@ export const actionChangeStrokeColor = register<
         />
       </>
     );
+  },
+});
+
+const getSemanticColorProperty = (element: ExcalidrawElement) => {
+  if (
+    element.type === "rectangle" ||
+    element.type === "ellipse" ||
+    element.type === "diamond" ||
+    isFrameLikeElement(element)
+  ) {
+    return "backgroundColor" as const;
+  }
+
+  if (
+    element.type === "text" ||
+    element.type === "line" ||
+    element.type === "arrow" ||
+    element.type === "freedraw"
+  ) {
+    return "strokeColor" as const;
+  }
+
+  return null;
+};
+
+export const actionApplySelectedSemanticColor = register<{
+  colorName: ColorPickerColor;
+}>({
+  name: "applySelectedSemanticColor",
+  label: "labels.stroke",
+  trackEvent: false,
+  perform: (elements, appState, value) => {
+    if (!value) {
+      return false;
+    }
+
+    let supportedElementCount = 0;
+    const paletteValue = COLOR_PALETTE[value.colorName];
+    const updatedElements = changeProperty(elements, appState, (element) => {
+      const property = getSemanticColorProperty(element);
+      if (!property) {
+        return element;
+      }
+
+      supportedElementCount++;
+      const color = Array.isArray(paletteValue)
+        ? paletteValue[
+            property === "backgroundColor"
+              ? DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX
+              : DEFAULT_ELEMENT_STROKE_COLOR_INDEX
+          ]
+        : paletteValue;
+
+      return newElementWith(element, { [property]: color });
+    });
+
+    if (!supportedElementCount) {
+      return {
+        appState: {
+          ...appState,
+          toast: {
+            message:
+              "The selected elements do not support direct color shortcuts.",
+            duration: 3000,
+          },
+        },
+        captureUpdate: CaptureUpdateAction.EVENTUALLY,
+      };
+    }
+
+    return {
+      elements: updatedElements,
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    };
   },
 });
 

@@ -78,7 +78,6 @@ describe("direct T text entry", () => {
       frameId: frame.id,
     });
     API.setElements([frame, existingText]);
-    API.setSelectedElements([existingText]);
     mouse.moveTo(100, 100);
 
     Keyboard.keyPress(KEYS.T);

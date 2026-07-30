@@ -69,6 +69,7 @@ import {
   getFontString,
   getNearestScrollableContainer,
   isInputLike,
+  isInteractive,
   isToolIcon,
   isWritableElement,
   sceneCoordsToViewportCoords,
@@ -96,6 +97,8 @@ import {
   MINIMUM_ARROW_SIZE,
   DOUBLE_TAP_POSITION_THRESHOLD,
   BIND_MODE_TIMEOUT,
+  CANVAS_SEARCH_TAB,
+  DEFAULT_SIDEBAR,
   invariant,
   getFeatureFlag,
   createUserAgentDescriptor,
@@ -322,6 +325,7 @@ import {
   actionToggleZenMode,
   actionUnbindText,
   actionBindText,
+  actionApplySelectedSemanticColor,
   actionUngroup,
   actionLink,
   actionToggleElementLock,
@@ -458,6 +462,7 @@ import { MagicIcon, copyIcon, fullscreenIcon } from "./icons";
 import { AppStateObserver, type OnStateChange } from "./AppStateObserver";
 
 import { findShapeByKey, TOGGLE_TOOLS } from "./Tools";
+import { getSemanticColorNameForHotkey } from "./ColorPicker/colorPickerUtils";
 
 import UnlockPopup from "./UnlockPopup";
 
@@ -5366,6 +5371,65 @@ class App extends React.Component<AppProps, AppState> {
     });
   };
 
+  private maybeApplySelectedSemanticColor = (
+    event: React.KeyboardEvent | KeyboardEvent,
+  ) => {
+    const colorName = getSemanticColorNameForHotkey(event.key);
+    const isContentEditable =
+      event.target instanceof HTMLElement &&
+      (event.target.isContentEditable ||
+        event.target.closest("[contenteditable]") !== null);
+    if (
+      !colorName ||
+      event.ctrlKey ||
+      event.altKey ||
+      event.metaKey ||
+      isInteractive(event.target) ||
+      isContentEditable
+    ) {
+      return false;
+    }
+
+    const container = this.excalidrawContainerRef.current;
+    const activeElement = document.activeElement;
+    const canvasOwnsKeyboard =
+      activeElement === document.body ||
+      (!!activeElement && !!container?.contains(activeElement));
+    const isSearchOpen =
+      this.state.openSidebar?.name === DEFAULT_SIDEBAR.name &&
+      this.state.openSidebar.tab === CANVAS_SEARCH_TAB;
+    if (
+      !canvasOwnsKeyboard ||
+      this.props.viewModeEnabled === true ||
+      this.state.viewModeEnabled ||
+      this.state.editingTextElement ||
+      this.state.openDialog ||
+      this.state.openPopup ||
+      isSearchOpen ||
+      this.state.newElement ||
+      this.state.selectionElement ||
+      this.state.selectedElementsAreBeingDragged ||
+      this.state.isResizing ||
+      this.state.isRotating
+    ) {
+      return false;
+    }
+
+    const selectedElements = this.scene.getSelectedElements(this.state);
+    if (!selectedElements.length) {
+      return false;
+    }
+
+    this.actionManager.executeAction(
+      actionApplySelectedSemanticColor,
+      "keyboard",
+      { colorName },
+    );
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+  };
+
   // Input handling
   private onKeyDown = withBatchedUpdates(
     (event: React.KeyboardEvent | KeyboardEvent) => {
@@ -5529,6 +5593,10 @@ class App extends React.Component<AppProps, AppState> {
       }
 
       if (this.state.openDialog?.name === "elementLinkSelector") {
+        return;
+      }
+
+      if (this.maybeApplySelectedSemanticColor(event)) {
         return;
       }
 
