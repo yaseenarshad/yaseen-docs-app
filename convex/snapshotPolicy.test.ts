@@ -4,6 +4,28 @@ import {
 } from "./snapshotPolicy";
 
 describe("shouldCreateDiagramSnapshot", () => {
+  it("waits five minutes between periodic recovery checkpoints", () => {
+    const fiveMinutes = 5 * 60 * 1000;
+
+    expect(SNAPSHOT_INTERVAL_MS).toBe(fiveMinutes);
+    expect(
+      shouldCreateDiagramSnapshot({
+        currentVersion: 12,
+        force: false,
+        lastSnapshotAt: 100_000,
+        now: 100_000 + fiveMinutes - 1,
+      }),
+    ).toBe(false);
+    expect(
+      shouldCreateDiagramSnapshot({
+        currentVersion: 13,
+        force: false,
+        lastSnapshotAt: 100_000,
+        now: 100_000 + fiveMinutes,
+      }),
+    ).toBe(true);
+  });
+
   it("does not snapshot an empty initial scene", () => {
     expect(
       shouldCreateDiagramSnapshot({
