@@ -10,8 +10,8 @@ import {
 import { Excalidraw } from "../index";
 
 import { API } from "./helpers/api";
-import { Keyboard } from "./helpers/ui";
-import { fireEvent, render, togglePopover } from "./test-utils";
+import { Keyboard, UI } from "./helpers/ui";
+import { act, fireEvent, render, togglePopover } from "./test-utils";
 
 const h = window.h;
 
@@ -145,5 +145,152 @@ describe("selected-element semantic color hotkeys", () => {
     );
     input.remove();
     editable.remove();
+  });
+
+  it("applies the type-aware primary property across a mixed selection", () => {
+    const shapeTypes = ["rectangle", "ellipse", "diamond", "frame"] as const;
+    const strokeTypes = ["text", "line", "arrow", "freedraw"] as const;
+    const shapes = shapeTypes.map((type) =>
+      API.createElement({
+        type,
+        strokeColor: "#123456",
+        backgroundColor: COLOR_PALETTE.transparent,
+      }),
+    );
+    const strokeTargets = strokeTypes.map((type) =>
+      API.createElement({
+        type,
+        strokeColor: COLOR_PALETTE.black,
+        backgroundColor: "#abcdef",
+      }),
+    );
+    const elements = [...shapes, ...strokeTargets];
+    API.setElements(elements);
+    API.setSelectedElements(elements);
+
+    Keyboard.keyPress(KEYS.R);
+
+    shapes.forEach((element) => {
+      expect(h.app.scene.getElement(element.id)).toMatchObject({
+        strokeColor: "#123456",
+        backgroundColor:
+          COLOR_PALETTE.red[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+      });
+    });
+    strokeTargets.forEach((element) => {
+      expect(h.app.scene.getElement(element.id)).toMatchObject({
+        strokeColor: COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+        backgroundColor: "#abcdef",
+      });
+    });
+    expect(h.elements.map((element) => element.id)).toEqual(
+      elements.map((element) => element.id),
+    );
+    expect(Object.keys(h.state.selectedElementIds)).toEqual(
+      elements.map((element) => element.id),
+    );
+  });
+
+  it("changes a selected container without recoloring its bound text", () => {
+    const [container, text] = API.createTextContainer();
+    API.setElements([container, text]);
+    API.setSelectedElements([container]);
+
+    Keyboard.keyPress("u");
+
+    expect(h.app.scene.getElement(container.id)).toMatchObject({
+      backgroundColor:
+        COLOR_PALETTE.blue[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+      boundElements: container.boundElements,
+    });
+    expect(h.app.scene.getElement(text.id)).toMatchObject({
+      strokeColor: text.strokeColor,
+      containerId: container.id,
+    });
+  });
+
+  it("updates supported elements while skipping images and embeds", () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      backgroundColor: COLOR_PALETTE.transparent,
+    });
+    const image = API.createElement({ type: "image" });
+    const iframe = API.createElement({ type: "iframe" });
+    const embeddable = API.createElement({ type: "embeddable" });
+    API.setElements([rectangle, image, iframe, embeddable]);
+    API.setSelectedElements([rectangle, image, iframe, embeddable]);
+
+    Keyboard.keyPress(KEYS.G);
+
+    expect(h.app.scene.getElement(rectangle.id)?.backgroundColor).toBe(
+      COLOR_PALETTE.green[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+    );
+    [image, iframe, embeddable].forEach((element) => {
+      expect(h.app.scene.getElement(element.id)).toMatchObject(element);
+    });
+  });
+
+  it("consumes unsupported-only semantic keys and provides feedback", () => {
+    const image = API.createElement({ type: "image" });
+    const iframe = API.createElement({ type: "iframe" });
+    API.setElements([image, iframe]);
+    API.setSelectedElements([image, iframe]);
+    const before = h.elements;
+
+    Keyboard.keyPress(KEYS.R);
+
+    expect(h.elements).toBe(before);
+    expect(h.state.activeTool.type).toBe("selection");
+    expect(h.state.toast?.message).toBe(
+      "The selected elements do not support direct color shortcuts.",
+    );
+  });
+
+  it("applies a mixed color change as one undoable operation", async () => {
+    const rectangle = UI.createElement("rectangle");
+    const text = UI.createElement("text", { position: 100 });
+    await UI.editText(text, "History");
+    act(() => {
+      h.app.setActiveTool({ type: "selection" });
+    });
+    API.setSelectedElements([rectangle.get() as any, text.get() as any]);
+    const selectedIds = h.state.selectedElementIds;
+    expect(h.app.scene.getSelectedElements(h.state)).toHaveLength(2);
+    expect(h.state).toMatchObject({
+      newElement: null,
+      selectionElement: null,
+      selectedElementsAreBeingDragged: false,
+      isResizing: false,
+      isRotating: false,
+    });
+
+    Keyboard.keyPress(KEYS.R);
+    await act(async () => {});
+
+    expect(h.app.scene.getElement(rectangle.id)?.backgroundColor).toBe(
+      COLOR_PALETTE.red[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+    );
+    expect(h.app.scene.getElement(text.id)?.strokeColor).toBe(
+      COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+    );
+    expect(h.state.selectedElementIds).toEqual(selectedIds);
+
+    Keyboard.undo();
+    await act(async () => {});
+    expect(h.app.scene.getElement(rectangle.id)?.backgroundColor).toBe(
+      COLOR_PALETTE.transparent,
+    );
+    expect(h.app.scene.getElement(text.id)?.strokeColor).toBe(
+      COLOR_PALETTE.black,
+    );
+
+    Keyboard.redo();
+    await act(async () => {});
+    expect(h.app.scene.getElement(rectangle.id)?.backgroundColor).toBe(
+      COLOR_PALETTE.red[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+    );
+    expect(h.app.scene.getElement(text.id)?.strokeColor).toBe(
+      COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+    );
   });
 });
