@@ -9,8 +9,8 @@ import { t } from "../../i18n";
 import HotkeyLabel from "./HotkeyLabel";
 import {
   activeColorPickerSectionAtom,
-  colorPickerHotkeyBindings,
   getColorNameAndShadeFromColor,
+  getSemanticColorHotkey,
 } from "./colorPickerUtils";
 
 import type { TranslationKeys } from "../../i18n";
@@ -48,11 +48,14 @@ const PickerColorList = ({
 
   return (
     <div className="color-picker-content--default">
-      {Object.entries(palette).map(([key, value], index) => {
+      {Object.entries(palette).map(([key, value]) => {
         const color =
           (Array.isArray(value) ? value[activeShade] : value) || "transparent";
 
-        const keybinding = colorPickerHotkeyBindings[index];
+        const keybinding = getSemanticColorHotkey({
+          colorName: key,
+          colorValue: value,
+        });
         const label = t(
           `colors.${key.replace(/\d+/, "")}` as unknown as TranslationKeys,
           null,
@@ -75,16 +78,18 @@ const PickerColorList = ({
               onChange(color);
               setActiveColorPickerSection("baseColors");
             }}
-            title={`${label}${
-              color.startsWith("#") ? ` ${color}` : ""
-            } — ${keybinding}`}
-            aria-label={`${label} — ${keybinding}`}
+            title={`${label}${color.startsWith("#") ? ` ${color}` : ""}${
+              keybinding ? ` — ${keybinding}` : ""
+            }`}
+            aria-label={`${label}${keybinding ? ` — ${keybinding}` : ""}`}
             style={color ? { "--swatch-color": color } : undefined}
             data-testid={`color-${key}`}
             key={key}
           >
             <div className="color-picker__button-outline" />
-            {showHotKey && <HotkeyLabel color={color} keyLabel={keybinding} />}
+            {showHotKey && keybinding && (
+              <HotkeyLabel color={color} keyLabel={keybinding} />
+            )}
           </button>
         );
       })}
