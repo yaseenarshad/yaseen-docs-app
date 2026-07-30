@@ -1,5 +1,11 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { vi } from "vitest";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, vi } from "vitest";
 
 import { useMutation, useQuery } from "convex/react";
 
@@ -11,11 +17,13 @@ vi.mock("convex/react", () => ({
 }));
 
 describe("ImageStudio", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   beforeEach(() => {
-    vi.mocked(useQuery).mockReturnValueOnce([]).mockReturnValueOnce([]);
-    vi.mocked(useMutation)
-      .mockReturnValueOnce(vi.fn() as never)
-      .mockReturnValueOnce(vi.fn() as never);
+    vi.mocked(useQuery).mockReturnValue([]);
+    vi.mocked(useMutation).mockReturnValue(vi.fn() as never);
   });
 
   it("shows Pixabay and Iconify results in one search grid", async () => {
@@ -67,12 +75,317 @@ describe("ImageStudio", () => {
     });
   });
 
+  it("reruns the last submitted query when the source changes", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        results: [],
+        cursor: null,
+        warnings: [],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ImageStudio excalidrawAPI={{} as never} canInsert={true} />);
+
+    const searchbox = screen.getByRole("searchbox", {
+      name: "Search graphics, icons, and logos",
+    });
+    fireEvent.change(searchbox, { target: { value: "cats" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Search" }).at(-1)!);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(searchbox, { target: { value: "unsent dogs" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Search source" }), {
+      target: { value: "pixabay" },
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(
+      screen.getAllByRole("option").map(({ textContent }) => textContent),
+    ).toEqual(["All", "Iconify", "Pixabay"]);
+    expect(String(fetchMock.mock.calls[0][0])).toContain("q=cats&source=all");
+    expect(String(fetchMock.mock.calls[1][0])).toContain(
+      "q=cats&source=pixabay",
+    );
+  });
+
+  it("loads finite cursor pages automatically and deduplicates item keys", async () => {
+    let intersect:
+      | ((entries: Array<{ isIntersecting: boolean }>) => void)
+      | null = null;
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(
+          callback: (entries: Array<{ isIntersecting: boolean }>) => void,
+        ) {
+          intersect = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const repeated = {
+      itemKey: "iconify:tabler:one",
+      provider: "iconify",
+      providerId: "tabler:one",
+      kind: "icon",
+      title: "One",
+      previewUrl: "/one",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          results: [repeated],
+          cursor: "2",
+          warnings: [],
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          results: [
+            repeated,
+            {
+              ...repeated,
+              itemKey: "iconify:tabler:two",
+              providerId: "tabler:two",
+              title: "Two",
+            },
+          ],
+          cursor: null,
+          warnings: [],
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ImageStudio excalidrawAPI={{} as never} canInsert={true} />);
+    fireEvent.change(
+      screen.getByRole("searchbox", {
+        name: "Search graphics, icons, and logos",
+      }),
+      { target: { value: "icons" } },
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: "Search" }).at(-1)!);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Add One" })).toBeVisible(),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Load more" }),
+    ).not.toBeInTheDocument();
+
+    await act(async () => {
+      intersect?.([{ isIntersecting: true }]);
+      intersect?.([{ isIntersecting: true }]);
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Add Two" })).toBeVisible(),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.getAllByRole("button", { name: "Add One" })).toHaveLength(1);
+    expect(String(fetchMock.mock.calls[1][0])).toContain("cursor=2&source=all");
+  });
+
+  it("ignores a stale response after the source changes", async () => {
+    let resolveStale: ((response: Response) => void) | null = null;
+    const staleResponse = new Promise<Response>((resolve) => {
+      resolveStale = resolve;
+    });
+    const fetchMock = vi
+      .fn()
+      .mockReturnValueOnce(staleResponse)
+      .mockResolvedValueOnce(
+        Response.json({
+          results: [
+            {
+              itemKey: "iconify:tabler:new",
+              provider: "iconify",
+              providerId: "tabler:new",
+              kind: "icon",
+              title: "New result",
+              previewUrl: "/new",
+            },
+          ],
+          cursor: null,
+          warnings: [],
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ImageStudio excalidrawAPI={{} as never} canInsert={true} />);
+    fireEvent.change(
+      screen.getByRole("searchbox", {
+        name: "Search graphics, icons, and logos",
+      }),
+      { target: { value: "icons" } },
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: "Search" }).at(-1)!);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Search source" }), {
+      target: { value: "iconify" },
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Add New result" }),
+      ).toBeVisible(),
+    );
+
+    await act(async () => {
+      resolveStale?.(
+        Response.json({
+          results: [
+            {
+              itemKey: "pixabay:old",
+              provider: "pixabay",
+              providerId: "old",
+              kind: "illustration",
+              title: "Old result",
+              previewUrl: "/old",
+            },
+          ],
+          cursor: null,
+          warnings: [],
+        }),
+      );
+      await staleResponse;
+    });
+
+    expect(
+      screen.queryByRole("button", { name: "Add Old result" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers an explicit retry when an automatic page request fails", async () => {
+    let intersect:
+      | ((entries: Array<{ isIntersecting: boolean }>) => void)
+      | null = null;
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(
+          callback: (entries: Array<{ isIntersecting: boolean }>) => void,
+        ) {
+          intersect = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const first = {
+      itemKey: "iconify:tabler:first",
+      provider: "iconify",
+      providerId: "tabler:first",
+      kind: "icon",
+      title: "First",
+      previewUrl: "/first",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          Response.json({
+            results: [first],
+            cursor: "2",
+            warnings: [],
+          }),
+        )
+        .mockRejectedValueOnce(new Error("Page request failed"))
+        .mockResolvedValueOnce(
+          Response.json({
+            results: [
+              {
+                ...first,
+                itemKey: "iconify:tabler:recovered",
+                providerId: "tabler:recovered",
+                title: "Recovered",
+              },
+            ],
+            cursor: null,
+            warnings: [],
+          }),
+        ),
+    );
+
+    render(<ImageStudio excalidrawAPI={{} as never} canInsert={true} />);
+    fireEvent.change(
+      screen.getByRole("searchbox", {
+        name: "Search graphics, icons, and logos",
+      }),
+      { target: { value: "icons" } },
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: "Search" }).at(-1)!);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Add First" })).toBeVisible(),
+    );
+
+    await act(async () => {
+      intersect?.([{ isIntersecting: true }]);
+    });
+    const retry = await screen.findByRole("button", {
+      name: "Retry loading results",
+    });
+    fireEvent.click(retry);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Add Recovered" }),
+      ).toBeVisible(),
+    );
+  });
+
   it("keeps shapes in a separate catalog", () => {
     render(<ImageStudio excalidrawAPI={{} as never} canInsert={true} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Shapes" }));
     expect(screen.getByRole("button", { name: "Add Triangle" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Add Star" })).toBeVisible();
+  });
+
+  it("filters Shapes locally using all metadata tokens", () => {
+    render(<ImageStudio excalidrawAPI={{} as never} canInsert={true} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Shapes" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search shapes" }), {
+      target: { value: "filled left" },
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Add Arrow left" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Add Arrow right" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search shapes" }), {
+      target: { value: "missing shape" },
+    });
+    expect(screen.getByText("No shapes match your search.")).toBeVisible();
+  });
+
+  it("fits Smart Shape thumbnails to native geometry bounds", () => {
+    render(<ImageStudio excalidrawAPI={{} as never} canInsert={true} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Shapes" }));
+
+    const arrowPreview = screen
+      .getByRole("button", { name: "Add Arrow right" })
+      .querySelector("svg");
+    expect(arrowPreview).toHaveAttribute("viewBox", "-16 -41 232 132");
+    expect(arrowPreview?.querySelector("polygon")).toHaveClass(
+      "image-studio__shape-path--closed",
+    );
+
+    const bracePreview = screen
+      .getByRole("button", { name: "Add Curly brace left" })
+      .querySelector("svg");
+    expect(bracePreview).toHaveAttribute("viewBox", "-76 -16 92 232");
+    expect(bracePreview?.querySelector("polyline")).toHaveClass(
+      "image-studio__shape-path--open",
+    );
   });
 
   it("inserts Smart Shapes and records global recent and favorite state", async () => {
@@ -117,6 +430,119 @@ describe("ImageStudio", () => {
       item: expect.objectContaining({
         itemKey: "shape:smart:arrow-right",
       }),
+    });
+  });
+
+  it("normalizes a recent item before explicitly adding it to favorites", () => {
+    const addFavorite = vi.fn();
+    const removeFavorite = vi.fn();
+    const recordRecent = vi.fn();
+    vi.mocked(useQuery).mockReset();
+    const recent = [
+      {
+        itemKey: "pixabay:123",
+        provider: "pixabay",
+        providerId: "123",
+        kind: "photo",
+        title: "Recently inserted",
+        previewUrl: "/photo",
+        updatedAt: 123456,
+      },
+    ];
+    let queryCall = 0;
+    vi.mocked(useQuery).mockImplementation(() =>
+      queryCall++ % 2 === 0 ? [] : recent,
+    );
+    vi.mocked(useMutation).mockReset();
+    let mutationCall = 0;
+    vi.mocked(useMutation).mockImplementation(() => {
+      const position = mutationCall++ % 3;
+      return position === 0
+        ? (addFavorite as never)
+        : position === 1
+        ? (removeFavorite as never)
+        : (recordRecent as never);
+    });
+
+    render(<ImageStudio excalidrawAPI={{} as never} canInsert={true} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Recent" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Add Recently inserted to favorites",
+      }),
+    );
+
+    expect(addFavorite).toHaveBeenCalledWith({
+      item: {
+        itemKey: "pixabay:123",
+        provider: "pixabay",
+        providerId: "123",
+        kind: "photo",
+        title: "Recently inserted",
+        previewUrl: "/photo",
+      },
+    });
+    expect(removeFavorite).not.toHaveBeenCalled();
+  });
+
+  it("uses a Favorites-only removal menu and omits the tab count", () => {
+    const addFavorite = vi.fn();
+    const removeFavorite = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(useQuery).mockReset();
+    const favorites = [
+      {
+        itemKey: "iconify:tabler:users",
+        provider: "iconify",
+        providerId: "tabler:users",
+        kind: "icon",
+        title: "Users",
+        previewUrl: "/icon",
+        updatedAt: 123456,
+      },
+    ];
+    let queryCall = 0;
+    vi.mocked(useQuery).mockImplementation(() =>
+      queryCall++ % 2 === 0 ? favorites : [],
+    );
+    vi.mocked(useMutation).mockReset();
+    let mutationCall = 0;
+    vi.mocked(useMutation).mockImplementation(() => {
+      const position = mutationCall++ % 3;
+      return position === 0
+        ? (addFavorite as never)
+        : position === 1
+        ? (removeFavorite as never)
+        : (vi.fn() as never);
+    });
+
+    render(<ImageStudio excalidrawAPI={{} as never} canInsert={true} />);
+
+    expect(screen.getByRole("button", { name: "Favorites" })).toHaveTextContent(
+      "Favorites",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Favorites" }));
+
+    expect(
+      screen.queryByRole("button", {
+        name: "Remove Users from favorites",
+      }),
+    ).not.toBeInTheDocument();
+
+    const trigger = screen.getByRole("button", {
+      name: "More options for Users",
+    });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "Enter", code: "Enter" });
+
+    return waitFor(() => {
+      fireEvent.click(
+        screen.getByRole("menuitem", { name: "Remove from favorites" }),
+      );
+      expect(removeFavorite).toHaveBeenCalledWith({
+        itemKey: "iconify:tabler:users",
+      });
+      expect(addFavorite).not.toHaveBeenCalled();
     });
   });
 });

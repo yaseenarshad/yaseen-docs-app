@@ -384,19 +384,23 @@ function CommandPaletteInner({
       commandsFromActions = [
         ...elementsCommands,
         ...editorCommands,
-        {
-          label: getActionLabel(actionClearCanvas),
-          icon: getActionIcon(actionClearCanvas),
-          shortcut: getShortcutFromShortcutName(
-            actionClearCanvas.name as ShortcutName,
-          ),
-          category: DEFAULT_CATEGORIES.editor,
-          keywords: ["delete", "destroy"],
-          viewMode: false,
-          perform: () => {
-            editorJotaiStore.set(activeConfirmDialogAtom, "clearCanvas");
-          },
-        },
+        ...(appProps.UIOptions.canvasActions.clearCanvas
+          ? [
+              {
+                label: getActionLabel(actionClearCanvas),
+                icon: getActionIcon(actionClearCanvas),
+                shortcut: getShortcutFromShortcutName(
+                  actionClearCanvas.name as ShortcutName,
+                ),
+                category: DEFAULT_CATEGORIES.editor,
+                keywords: ["delete", "destroy"],
+                viewMode: false,
+                perform: () => {
+                  editorJotaiStore.set(activeConfirmDialogAtom, "clearCanvas");
+                },
+              },
+            ]
+          : []),
         {
           label: t("buttons.exportImage"),
           category: DEFAULT_CATEGORIES.export,

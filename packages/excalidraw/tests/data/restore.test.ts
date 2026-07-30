@@ -84,6 +84,26 @@ describe("restoreElements", () => {
     expect(restored).toMatchObject({ lineUnderlines: [true] });
   });
 
+  it.each([0.5, 1.5, 3, 7.5, 20, 50])(
+    "round-trips an exact linear stroke width of %s through scene JSON",
+    (strokeWidth) => {
+      const line = API.createElement({
+        type: "line",
+        strokeWidth,
+      });
+      const serialized = serializeAsJSON(
+        [line],
+        getDefaultAppState(),
+        {},
+        "local",
+      );
+      const parsed = JSON.parse(serialized);
+      const [restored] = restore.restoreElements(parsed.elements, null);
+
+      expect(restored).toMatchObject({ type: "line", strokeWidth });
+    },
+  );
+
   it("when imported data state is null it should return an empty array of elements", () => {
     const restoredElements = restore.restoreElements(null, null);
     expect(restoredElements.length).toBe(0);
@@ -854,6 +874,29 @@ describe("restoreAppState", () => {
 
     expect(restoredAppState.currentItemStrokeWidthKey).toBe("bold");
   });
+
+  it.each([
+    [undefined, 2],
+    [Number.NaN, 2],
+    [0, 0.5],
+    [100, 50],
+    [7.56, 7.6],
+  ])(
+    "should normalize restored linear stroke width %s to %s",
+    (value, expected) => {
+      const stubImportedAppState = {
+        ...getDefaultAppState(),
+        currentItemLinearStrokeWidth: value,
+      } as any;
+
+      const restoredAppState = restore.restoreAppState(
+        stubImportedAppState,
+        null,
+      );
+
+      expect(restoredAppState.currentItemLinearStrokeWidth).toBe(expected);
+    },
+  );
 
   it("should restore with current app state when imported data state is undefined", () => {
     const stubImportedAppState = {

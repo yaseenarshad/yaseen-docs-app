@@ -1,4 +1,5 @@
 import path from "path";
+
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import svgrPlugin from "vite-plugin-svgr";
@@ -7,9 +8,30 @@ import { VitePWA } from "vite-plugin-pwa";
 import checker from "vite-plugin-checker";
 import { createHtmlPlugin } from "vite-plugin-html";
 import Sitemap from "vite-plugin-sitemap";
+
 import { woff2BrowserPlugin } from "../scripts/woff2/woff2-vite-plugins";
 
 const PRODUCTION_CONVEX_URL = "https://moonlit-boar-611.convex.cloud";
+
+const externalBackgroundRemovalWasmPlugin = () => ({
+  name: "external-background-removal-wasm",
+  generateBundle(
+    _options: unknown,
+    bundle: Record<string, { type: string; fileName: string }>,
+  ) {
+    for (const [key, output] of Object.entries(bundle)) {
+      if (
+        output.type === "asset" &&
+        output.fileName.includes("ort-wasm-simd-threaded.jsep")
+      ) {
+        // Transformers/ORT statically references its packaged fallback, so
+        // Rollup emits a 21 MB duplicate even though the worker configures the
+        // checksum-pinned R2 runtime before the first session is created.
+        delete bundle[key];
+      }
+    }
+  },
+});
 
 export default defineConfig(({ mode }) => {
   // To load .env variables
@@ -153,6 +175,7 @@ export default defineConfig(({ mode }) => {
         generateRobotsTxt: false,
       }),
       woff2BrowserPlugin(),
+      externalBackgroundRemovalWasmPlugin(),
       react(),
       checker({
         typescript: true,

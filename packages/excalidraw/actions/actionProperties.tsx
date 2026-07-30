@@ -23,6 +23,8 @@ import {
   getLineHeight,
   isTransparent,
   getStrokeWidthByKey,
+  LINEAR_STROKE_WIDTH,
+  normalizeLinearStrokeWidth,
   reduceToCommonValue,
   invariant,
   FONT_SIZES,
@@ -646,6 +648,176 @@ export const actionChangeStrokeWidth = register<StrokeWidthKey>({
       </div>
     </fieldset>
   ),
+});
+
+const LinearStrokeWidthInput = ({
+  value,
+  onChange,
+}: {
+  value: number | null;
+  onChange: (value: number) => void;
+}) => {
+  const [inputValue, setInputValue] = useState(value?.toString() ?? "");
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    setInputValue(value?.toString() ?? "");
+  }, [value]);
+
+  const commit = () => {
+    if (cancelledRef.current) {
+      cancelledRef.current = false;
+      return;
+    }
+
+    if (!inputValue.trim()) {
+      setInputValue(value?.toString() ?? "");
+      return;
+    }
+
+    const parsed = Number(inputValue);
+    if (!Number.isFinite(parsed)) {
+      setInputValue(value?.toString() ?? "");
+      return;
+    }
+
+    const nextValue = normalizeLinearStrokeWidth(parsed);
+    setInputValue(nextValue.toString());
+    if (nextValue !== value) {
+      onChange(nextValue);
+    }
+  };
+
+  const nudge = (amount: number) => {
+    const parsed = inputValue.trim() ? Number(inputValue) : Number.NaN;
+    const currentValue = Number.isFinite(parsed)
+      ? parsed
+      : value ?? LINEAR_STROKE_WIDTH.default;
+    const nextValue = normalizeLinearStrokeWidth(currentValue + amount);
+    setInputValue(nextValue.toString());
+    if (nextValue !== value) {
+      onChange(nextValue);
+    }
+  };
+
+  return (
+    <div
+      className="linear-stroke-width-custom"
+      data-prevent-outside-click
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <button
+        type="button"
+        aria-label="Decrease stroke width"
+        disabled={value !== null && value <= LINEAR_STROKE_WIDTH.min}
+        onPointerDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onClick={() => nudge(-LINEAR_STROKE_WIDTH.step)}
+      >
+        −
+      </button>
+      <label>
+        <input
+          aria-label="Exact stroke width"
+          data-testid="linear-stroke-width-input"
+          type="number"
+          inputMode="decimal"
+          min={LINEAR_STROKE_WIDTH.min}
+          max={LINEAR_STROKE_WIDTH.max}
+          step={LINEAR_STROKE_WIDTH.step}
+          value={inputValue}
+          placeholder="Mixed"
+          onChange={(event) => setInputValue(event.target.value)}
+          onBlur={commit}
+          onWheel={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === KEYS.ENTER) {
+              event.preventDefault();
+              commit();
+            } else if (event.key === KEYS.ESCAPE) {
+              event.preventDefault();
+              cancelledRef.current = true;
+              setInputValue(value?.toString() ?? "");
+              event.currentTarget.blur();
+            }
+          }}
+        />
+        <span>px</span>
+      </label>
+      <button
+        type="button"
+        aria-label="Increase stroke width"
+        disabled={value !== null && value >= LINEAR_STROKE_WIDTH.max}
+        onPointerDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onClick={() => nudge(LINEAR_STROKE_WIDTH.step)}
+      >
+        +
+      </button>
+    </div>
+  );
+};
+
+export const actionChangeLinearStrokeWidth = register<number>({
+  name: "changeLinearStrokeWidth",
+  label: "labels.strokeWidth",
+  trackEvent: false,
+  perform: (elements, appState, value) => {
+    invariant(
+      value !== undefined,
+      "actionChangeLinearStrokeWidth: value must be defined",
+    );
+
+    const selectedElements = getSelectedElements(elements, appState);
+    if (
+      selectedElements.length > 0 &&
+      !selectedElements.every(isLinearElement)
+    ) {
+      return false;
+    }
+
+    const strokeWidth = normalizeLinearStrokeWidth(value);
+    return {
+      elements: changeProperty(elements, appState, (element) =>
+        isLinearElement(element)
+          ? newElementWith(element, { strokeWidth })
+          : element,
+      ),
+      appState: {
+        ...appState,
+        currentItemLinearStrokeWidth: strokeWidth,
+      },
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    };
+  },
+  PanelComponent: ({ elements, appState, updateData, app }) => {
+    const value = getFormValue(
+      elements,
+      app,
+      (element) => element.strokeWidth,
+      isLinearElement,
+      (hasSelection) =>
+        hasSelection ? null : appState.currentItemLinearStrokeWidth,
+    );
+
+    return (
+      <fieldset>
+        <legend>{t("labels.strokeWidth")}</legend>
+        <LinearStrokeWidthInput
+          value={value}
+          onChange={(nextValue) => updateData(nextValue)}
+        />
+      </fieldset>
+    );
+  },
 });
 
 export const actionChangeSloppiness = register<ExcalidrawElement["roughness"]>({

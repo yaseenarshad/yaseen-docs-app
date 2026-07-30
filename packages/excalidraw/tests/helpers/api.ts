@@ -24,7 +24,11 @@ import {
   newTextElement,
 } from "@excalidraw/element";
 
-import { isUsingAdaptiveRadius, getSelectedElements } from "@excalidraw/element";
+import {
+  isLinearElementType,
+  isUsingAdaptiveRadius,
+  getSelectedElements,
+} from "@excalidraw/element";
 import { selectGroupsForSelectedElements } from "@excalidraw/element";
 
 import { FONT_SIZES } from "@excalidraw/common";
@@ -272,7 +276,9 @@ export class API {
       fillStyle: rest.fillStyle ?? appState.currentItemFillStyle,
       strokeWidth:
         rest.strokeWidth ??
-        getStrokeWidthByKey(type, appState.currentItemStrokeWidthKey),
+        (isLinearElementType(type)
+          ? appState.currentItemLinearStrokeWidth
+          : getStrokeWidthByKey(type, appState.currentItemStrokeWidthKey)),
       strokeStyle: rest.strokeStyle ?? appState.currentItemStrokeStyle,
       roundness: (
         rest.roundness === undefined

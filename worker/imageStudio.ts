@@ -1,6 +1,7 @@
 import type {
   ImageStudioItem,
   ImageStudioSearchResponse,
+  ImageStudioSearchSource,
 } from "../image-studio/types";
 
 export type ImageStudioEnv = {
@@ -26,6 +27,19 @@ type IconifyCollection = {
   category?: string;
   palette?: boolean;
   license?: { title?: string; url?: string; spdx?: string };
+};
+
+type IconifySearchPayload = {
+  icons?: string[];
+  collections?: Record<string, IconifyCollection>;
+  total?: number;
+  start?: number;
+  limit?: number;
+};
+
+type ProviderSearchResult = {
+  items: ImageStudioItem[];
+  hasMore: boolean;
 };
 
 const SEARCH_LIMIT = 18;
@@ -322,7 +336,7 @@ const fetchPixabaySearch = async (
   const urls = buildPixabaySearchUrls(query, page, env.PIXABAY_API_KEY);
   const payloads = await Promise.all(
     urls.map((url) =>
-      cachedJsonFetch<{ hits?: PixabayHit[] }>(
+      cachedJsonFetch<{ hits?: PixabayHit[]; totalHits?: number }>(
         `https://image-studio-cache.invalid/pixabay/search/${encodeURIComponent(
           query,
         )}/${page}/${url.searchParams.get("image_type")}`,
@@ -341,6 +355,12 @@ const fetchPixabaySearch = async (
         seen.add(hit.id);
         return true;
       }),
+    hasMore: payloads.some(
+      ({ hits, totalHits }) =>
+        page * 20 <
+        (numberValue(totalHits) ??
+          (hits?.length === 20 ? page * 20 + 1 : page * 20)),
+    ),
   };
 };
 
@@ -348,6 +368,77 @@ const parseCursor = (cursor: string | null) => {
   const page = Number(cursor);
   return Number.isInteger(page) && page > 0 ? page : 1;
 };
+
+const searchIconify = async (
+  query: string,
+  page: number,
+  source: ImageStudioSearchSource,
+): Promise<ProviderSearchResult> => {
+  const start = (page - 1) * ICONIFY_FETCH_LIMIT;
+  const iconifyUrl = new URL(`${ICONIFY_API}/search`);
+  iconifyUrl.searchParams.set("query", query);
+  iconifyUrl.searchParams.set("limit", String(ICONIFY_FETCH_LIMIT));
+  iconifyUrl.searchParams.set("start", String(start));
+  const payload = await fetchJson<IconifySearchPayload>(iconifyUrl.toString());
+  const items = curateIconifyResults(
+    normalizeIconifyResults(payload),
+    query,
+    source === "iconify" ? SEARCH_LIMIT : ICONIFY_RESULT_LIMIT,
+  );
+  const fetchedCount = payload.icons?.length ?? 0;
+  const total = numberValue(payload.total);
+  return {
+    items,
+    hasMore:
+      total !== undefined
+        ? start + fetchedCount < total
+        : fetchedCount === ICONIFY_FETCH_LIMIT,
+  };
+};
+
+const searchPixabay = async (
+  query: string,
+  page: number,
+  source: ImageStudioSearchSource,
+  env: ImageStudioEnv,
+): Promise<ProviderSearchResult> => {
+  const payload = await fetchPixabaySearch(query, page, env);
+  return {
+    items: normalizePixabayResults(payload).slice(
+      0,
+      source === "pixabay" ? SEARCH_LIMIT : PIXABAY_RESULT_LIMIT,
+    ),
+    hasMore: payload.hasMore,
+  };
+};
+
+type SearchProvider = Exclude<ImageStudioSearchSource, "all">;
+
+const PROVIDER_SEARCHERS: Record<
+  SearchProvider,
+  (
+    query: string,
+    page: number,
+    source: ImageStudioSearchSource,
+    env: ImageStudioEnv,
+  ) => Promise<ProviderSearchResult>
+> = {
+  iconify: (query, page, source) => searchIconify(query, page, source),
+  pixabay: searchPixabay,
+};
+
+const providerWarning = (
+  provider: SearchProvider,
+  env: ImageStudioEnv,
+): ImageStudioSearchResponse["warnings"][number] => ({
+  provider,
+  message:
+    provider === "iconify"
+      ? "Icons are temporarily unavailable."
+      : env.PIXABAY_API_KEY
+      ? "Pixabay graphics are temporarily unavailable."
+      : "Pixabay graphics need an API key.",
+});
 
 const searchUncached = async (
   request: Request,
@@ -358,51 +449,40 @@ const searchUncached = async (
   if (query.length < 2) {
     return json({ error: "Enter at least two characters" }, { status: 400 });
   }
+  const source = url.searchParams.get("source") ?? "all";
+  if (source !== "all" && source !== "iconify" && source !== "pixabay") {
+    return json({ error: "Unknown search source" }, { status: 400 });
+  }
   const page = parseCursor(url.searchParams.get("cursor"));
-  const iconifyUrl = new URL(`${ICONIFY_API}/search`);
-  iconifyUrl.searchParams.set("query", query);
-  iconifyUrl.searchParams.set("limit", String(ICONIFY_FETCH_LIMIT));
-  iconifyUrl.searchParams.set("start", String((page - 1) * 18));
-
-  const [iconify, pixabay] = await Promise.allSettled([
-    fetchJson<{
-      icons?: string[];
-      collections?: Record<string, IconifyCollection>;
-    }>(iconifyUrl.toString()),
-    fetchPixabaySearch(query, page, env),
-  ]);
-
+  const providers: SearchProvider[] =
+    source === "all" ? ["iconify", "pixabay"] : [source];
+  const settled = await Promise.allSettled(
+    providers.map((provider) =>
+      PROVIDER_SEARCHERS[provider](query, page, source, env),
+    ),
+  );
   const warnings: ImageStudioSearchResponse["warnings"] = [];
-  if (iconify.status === "rejected") {
-    warnings.push({
-      provider: "iconify",
-      message: "Icons are temporarily unavailable.",
-    });
-  }
-  if (pixabay.status === "rejected") {
-    warnings.push({
-      provider: "pixabay",
-      message: env.PIXABAY_API_KEY
-        ? "Pixabay graphics are temporarily unavailable."
-        : "Pixabay graphics need an API key.",
-    });
-  }
-  const iconifyResults =
-    iconify.status === "fulfilled"
-      ? curateIconifyResults(
-          normalizeIconifyResults(iconify.value),
-          query,
-          ICONIFY_RESULT_LIMIT,
-        )
-      : [];
-  const pixabayResults =
-    pixabay.status === "fulfilled"
-      ? normalizePixabayResults(pixabay.value).slice(0, PIXABAY_RESULT_LIMIT)
-      : [];
-  const results = interleaveResults(iconifyResults, pixabayResults);
+  const resultsByProvider = new Map<SearchProvider, ProviderSearchResult>();
+  settled.forEach((result, index) => {
+    const provider = providers[index];
+    if (result.status === "fulfilled") {
+      resultsByProvider.set(provider, result.value);
+    } else {
+      warnings.push(providerWarning(provider, env));
+    }
+  });
+  const iconifyResults = resultsByProvider.get("iconify")?.items ?? [];
+  const pixabayResults = resultsByProvider.get("pixabay")?.items ?? [];
+  const results =
+    source === "all"
+      ? interleaveResults(iconifyResults, pixabayResults)
+      : resultsByProvider.get(source)?.items ?? [];
+  const hasMore = [...resultsByProvider.values()].some(
+    (result) => result.hasMore,
+  );
   return json({
     results,
-    cursor: results.length > 0 ? String(page + 1) : null,
+    cursor: hasMore ? String(page + 1) : null,
     warnings,
   } as ImageStudioSearchResponse);
 };

@@ -11,6 +11,7 @@ export {
   actionChangeStrokeColor,
   actionChangeBackgroundColor,
   actionChangeStrokeWidth,
+  actionChangeLinearStrokeWidth,
   actionChangeFillStyle,
   actionChangeSloppiness,
   actionChangeFreedrawMode,

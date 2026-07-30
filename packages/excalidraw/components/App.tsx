@@ -5774,6 +5774,7 @@ class App extends React.Component<AppProps, AppState> {
       }
 
       if (
+        this.props.UIOptions.canvasActions.clearCanvas &&
         event[KEYS.CTRL_OR_CMD] &&
         (event.key === KEYS.BACKSPACE || event.key === KEYS.DELETE)
       ) {
@@ -10401,6 +10402,10 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   private getCurrentItemStrokeWidth(elementType: ExcalidrawElement["type"]) {
+    if (isLinearElementType(elementType)) {
+      return this.state.currentItemLinearStrokeWidth;
+    }
+
     return getStrokeWidthByKey(
       elementType,
       this.state.currentItemStrokeWidthKey,

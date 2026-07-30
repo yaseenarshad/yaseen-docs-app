@@ -1,4 +1,4 @@
-import { getStrokeWidthByKey, THEME } from "@excalidraw/common";
+import { THEME } from "@excalidraw/common";
 import { clamp, pointFrom } from "@excalidraw/math";
 
 import type { LaserPointerOptions } from "@excalidraw/laser-pointer";
@@ -29,10 +29,7 @@ export class DrawShapeTrail implements Trail {
       size: 1,
       sizeMapping: () => {
         const size = clamp(
-          getStrokeWidthByKey(
-            "line",
-            this.app.state.currentItemStrokeWidthKey,
-          ) *
+          this.app.state.currentItemLinearStrokeWidth *
             0.65 *
             this.app.state.zoom.value,
           1.25,

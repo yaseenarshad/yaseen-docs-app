@@ -36,6 +36,7 @@ import type {
   BindMode,
   ExcalidrawTextElement,
   StrokeVariability,
+  InitializedExcalidrawImageElement,
 } from "@excalidraw/element/types";
 
 import type {
@@ -143,6 +144,25 @@ export type BinaryFileData = {
 export type BinaryFileMetadata = Omit<BinaryFileData, "dataURL">;
 
 export type BinaryFiles = Record<ExcalidrawElement["id"], BinaryFileData>;
+
+export type ImageBackgroundRemovalStage =
+  | "downloading"
+  | "preparing"
+  | "processing"
+  | "finishing";
+
+export type ImageBackgroundRemovalProgress = {
+  stage: ImageBackgroundRemovalStage;
+  message: string;
+  progress?: number;
+};
+
+export type ImageBackgroundRemovalRequest = {
+  element: NonDeleted<InitializedExcalidrawImageElement>;
+  file: BinaryFileData;
+  signal: AbortSignal;
+  onProgress: (progress: ImageBackgroundRemovalProgress) => void;
+};
 
 export type ToolType =
   | "selection"
@@ -417,6 +437,7 @@ export interface AppState {
   currentItemStrokeColor: string;
   currentItemBackgroundColor: string;
   currentItemFillStyle: ExcalidrawElement["fillStyle"];
+  currentItemLinearStrokeWidth: number;
   currentItemStrokeWidthKey: StrokeWidthKey;
   currentItemStrokeStyle: ExcalidrawElement["strokeStyle"];
   currentItemRoughness: number;
@@ -759,6 +780,14 @@ export interface ExcalidrawProps {
     appState: AppState,
     files: BinaryFiles,
   ) => void;
+  /**
+   * Optional host-owned image background removal. The editor owns the
+   * selection-scoped controls and progress UI; the host owns processing and
+   * the history-recorded file swap.
+   */
+  onImageBackgroundRemoval?: (
+    request: ImageBackgroundRemovalRequest,
+  ) => Promise<void>;
   onThemeChange?: (theme: Theme | "system") => void;
   /**
    * note: only subscribes if the props.onIncrement is defined on initial render

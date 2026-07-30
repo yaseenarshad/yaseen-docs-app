@@ -1,4 +1,5 @@
 export type ImageStudioProvider = "pixabay" | "iconify" | "shape";
+export type ImageStudioSearchSource = "all" | "pixabay" | "iconify";
 export type ImageStudioItemKind =
   | "photo"
   | "illustration"

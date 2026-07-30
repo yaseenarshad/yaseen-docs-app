@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { PropsWithChildren } from "react";
+
 import { afterEach, vi } from "vitest";
 
 import { CloudShareDialog } from "./CloudShareDialog";
+
+import type { PropsWithChildren } from "react";
 
 vi.mock("@excalidraw/excalidraw/components/Dialog", () => ({
   Dialog: ({ children, title }: PropsWithChildren<{ title: string }>) => (

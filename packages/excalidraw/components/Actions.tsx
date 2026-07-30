@@ -1,13 +1,20 @@
 import clsx from "clsx";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Popover } from "radix-ui";
 
-import { CLASSES, FONT_FAMILY } from "@excalidraw/common";
+import {
+  CLASSES,
+  FONT_FAMILY,
+  deriveStylesPanelMode,
+} from "@excalidraw/common";
 
 import {
   getSmartShapeMetadata,
   isArrowElement,
   isImageElement,
+  isInitializedImageElement,
+  isLinearElement,
+  isNonDeletedElement,
   isTextElement,
 } from "@excalidraw/element";
 
@@ -51,6 +58,7 @@ import { getShapeActionPredicates } from "./shapeActionPredicates";
 import type { ShapeActionPredicates } from "./shapeActionPredicates";
 import type { AppClassProperties, UIAppState, AppState } from "../types";
 import type { ActionManager } from "../actions/manager";
+import type { ImageBackgroundRemovalProgress } from "../types";
 
 // re-exported for consumers outside the styles panel (e.g. CommandPalette)
 export {
@@ -63,6 +71,175 @@ const PROPERTIES_CLASSES = clsx([
   CLASSES.SHAPE_ACTIONS_THEME_SCOPE,
   "properties-content",
 ]);
+
+const isUnboundTextElement = (element: ExcalidrawElement) =>
+  isTextElement(element) && !element.containerId;
+
+const hasExclusiveLinearStrokeTarget = (
+  appState: UIAppState,
+  targetElements: readonly ExcalidrawElement[],
+) => {
+  if (targetElements.length === 0) {
+    return (
+      appState.activeTool.type === "line" ||
+      appState.activeTool.type === "arrow"
+    );
+  }
+
+  const linearIds = new Set(
+    targetElements.filter(isLinearElement).map((element) => element.id),
+  );
+
+  return (
+    linearIds.size > 0 &&
+    targetElements.every(
+      (element) =>
+        isLinearElement(element) ||
+        (isTextElement(element) &&
+          !!element.containerId &&
+          linearIds.has(element.containerId)),
+    )
+  );
+};
+
+export const ImageBackgroundRemovalAction = ({
+  app,
+  targetElements,
+  compact = false,
+}: {
+  app: AppClassProperties;
+  targetElements: readonly ExcalidrawElement[];
+  compact?: boolean;
+}) => {
+  const controllerRef = useRef<AbortController | null>(null);
+  const [progress, setProgress] =
+    useState<ImageBackgroundRemovalProgress | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const element =
+    targetElements.length === 1 &&
+    isInitializedImageElement(targetElements[0]) &&
+    isNonDeletedElement(targetElements[0]) &&
+    !targetElements[0].locked
+      ? targetElements[0]
+      : null;
+  const file = element ? app.files[element.fileId] : null;
+  const supported =
+    file?.mimeType === "image/jpeg" ||
+    file?.mimeType === "image/png" ||
+    file?.mimeType === "image/webp";
+  const cachedImage = element
+    ? app.imageCache.get(element.fileId)?.image
+    : null;
+  const resolvedImage =
+    typeof HTMLImageElement !== "undefined" &&
+    cachedImage instanceof HTMLImageElement
+      ? cachedImage
+      : null;
+  const oversized =
+    !!resolvedImage &&
+    resolvedImage.naturalWidth * resolvedImage.naturalHeight > 10_000_000;
+  const sourceKey = element
+    ? `${element.id}:${element.fileId}:${element.version}`
+    : "none";
+
+  useEffect(
+    () => () => {
+      controllerRef.current?.abort();
+      controllerRef.current = null;
+    },
+    [sourceKey],
+  );
+
+  const handler = app.props.onImageBackgroundRemoval;
+  if (!handler || !element || !file || !supported) {
+    return null;
+  }
+
+  const running = !!progress;
+  const label = running
+    ? progress.message
+    : error
+    ? "Retry background removal"
+    : "Remove background";
+
+  return (
+    <div
+      className={clsx("image-background-removal", {
+        "image-background-removal--compact": compact,
+      })}
+    >
+      <button
+        type="button"
+        className="image-background-removal__button"
+        disabled={running || oversized}
+        aria-busy={running}
+        title={
+          oversized ? "Images must be 10 megapixels or smaller." : undefined
+        }
+        onClick={async () => {
+          const controller = new AbortController();
+          controllerRef.current = controller;
+          setError(null);
+          setProgress({
+            stage: "preparing",
+            message: "Preparing local model…",
+          });
+          try {
+            await handler({
+              element,
+              file,
+              signal: controller.signal,
+              onProgress: setProgress,
+            });
+            setProgress(null);
+          } catch (caught) {
+            setProgress(null);
+            if (
+              !(caught instanceof DOMException && caught.name === "AbortError")
+            ) {
+              setError(
+                caught instanceof Error
+                  ? caught.message
+                  : "Local background removal failed. Your image was not changed.",
+              );
+            }
+          } finally {
+            if (controllerRef.current === controller) {
+              controllerRef.current = null;
+            }
+          }
+        }}
+      >
+        {label}
+        {running && progress.progress !== undefined
+          ? ` ${Math.round(progress.progress * 100)}%`
+          : ""}
+      </button>
+      {oversized && (
+        <span className="image-background-removal__message" role="status">
+          Images must be 10 megapixels or smaller.
+        </span>
+      )}
+      {error && (
+        <span
+          className="image-background-removal__message"
+          role="alert"
+          aria-live="polite"
+        >
+          {error}
+        </span>
+      )}
+      {running && (
+        <span
+          className="image-background-removal__sr-status"
+          aria-live="polite"
+        >
+          {label}
+        </span>
+      )}
+    </div>
+  );
+};
 
 /**
  * The "arrange" (z-order) fieldset, identical across every styles-panel layout.
@@ -158,9 +335,14 @@ export const SelectedShapeActions = ({
   );
   const isImageSelection =
     targetElements.length > 0 && targetElements.every(isImageElement);
+  const isExclusiveLinearStrokeTarget = hasExclusiveLinearStrokeTarget(
+    appState,
+    targetElements,
+  );
   const hasExclusiveTextTarget =
-    !!appState.editingTextElement ||
-    (targetElements.length > 0 && targetElements.every(isTextElement));
+    (!!appState.editingTextElement &&
+      !appState.editingTextElement.containerId) ||
+    (targetElements.length > 0 && targetElements.every(isUnboundTextElement));
   const hasSmartShape =
     targetElements.length === 1 &&
     !targetElements[0].locked &&
@@ -180,7 +362,11 @@ export const SelectedShapeActions = ({
 
       {predicates.strokeWidth &&
         !isImageSelection &&
-        renderAction("changeStrokeWidth")}
+        renderAction(
+          isExclusiveLinearStrokeTarget
+            ? "changeLinearStrokeWidth"
+            : "changeStrokeWidth",
+        )}
 
       {predicates.strokeStyle && <>{renderAction("changeStrokeStyle")}</>}
 
@@ -246,9 +432,14 @@ export const ContextualPropertiesToolbar = ({
   app: AppClassProperties;
 }) => {
   const targetElements = getTargetElements(elementsMap, appState);
+  const hasFullStylesPanel =
+    deriveStylesPanelMode(app.editorInterface) === "full";
   const isTextTarget =
-    !!appState.editingTextElement ||
-    (targetElements.length > 0 && targetElements.every(isTextElement));
+    hasFullStylesPanel &&
+    ((!!appState.editingTextElement &&
+      !appState.editingTextElement.containerId) ||
+      (targetElements.length > 0 &&
+        targetElements.every(isUnboundTextElement)));
   const isImageTarget =
     targetElements.length > 0 && targetElements.every(isImageElement);
 
@@ -270,6 +461,11 @@ export const ContextualPropertiesToolbar = ({
     >
       {isTextTarget && (
         <>
+          <span className="contextual-properties-toolbar__label">
+            Text color
+          </span>
+          {renderAction("changeStrokeColor", { contextToolbar: true })}
+          <div className="contextual-properties-toolbar__divider" />
           <div className="contextual-properties-toolbar__font">
             <span>{fontFamilyName}</span>
             {renderAction("changeFontFamily", { contextToolbar: true })}
@@ -290,6 +486,11 @@ export const ContextualPropertiesToolbar = ({
           {renderAction("changeStrokeColor", { contextToolbar: true })}
           <div className="contextual-properties-toolbar__divider" />
           {renderAction("changeStrokeWidth", { contextToolbar: true })}
+          <div className="contextual-properties-toolbar__divider" />
+          <ImageBackgroundRemovalAction
+            app={app}
+            targetElements={targetElements}
+          />
         </>
       )}
     </Island>
@@ -303,6 +504,9 @@ const CombinedShapeProperties = ({
   predicates,
   container,
   hasSmartShape,
+  isExclusiveLinearStrokeTarget,
+  app,
+  targetElements,
 }: {
   appState: UIAppState;
   renderAction: ActionManager["renderAction"];
@@ -310,6 +514,9 @@ const CombinedShapeProperties = ({
   predicates: ShapeActionPredicates;
   container: HTMLDivElement | null;
   hasSmartShape: boolean;
+  isExclusiveLinearStrokeTarget: boolean;
+  app: AppClassProperties;
+  targetElements: readonly ExcalidrawElement[];
 }) => {
   const shouldShowCombinedProperties =
     predicates.hasSelection ||
@@ -364,7 +571,12 @@ const CombinedShapeProperties = ({
           >
             <div className="selected-shape-actions">
               {predicates.fill && renderAction("changeFillStyle")}
-              {predicates.strokeWidth && renderAction("changeStrokeWidth")}
+              {predicates.strokeWidth &&
+                renderAction(
+                  isExclusiveLinearStrokeTarget
+                    ? "changeLinearStrokeWidth"
+                    : "changeStrokeWidth",
+                )}
               {
                 /* in compact UI the freedraw pressure setting is rendered as a
                   standalone cycle button in the compact actions list; we render
@@ -379,6 +591,11 @@ const CombinedShapeProperties = ({
               {predicates.roundness && renderAction("changeRoundness")}
               {predicates.opacity && renderAction("changeOpacity")}
               {hasSmartShape && renderAction("changeSmartShape")}
+              <ImageBackgroundRemovalAction
+                app={app}
+                targetElements={targetElements}
+                compact
+              />
             </div>
           </PropertiesPopover>
         )}
@@ -710,6 +927,10 @@ export const CompactShapeActions = ({
     targetElements.length === 1 &&
     !targetElements[0].locked &&
     !!getSmartShapeMetadata(targetElements[0]);
+  const isExclusiveLinearStrokeTarget = hasExclusiveLinearStrokeTarget(
+    appState,
+    targetElements,
+  );
 
   return (
     <div className="compact-shape-actions">
@@ -741,6 +962,9 @@ export const CompactShapeActions = ({
         predicates={predicates}
         container={container}
         hasSmartShape={hasSmartShape}
+        isExclusiveLinearStrokeTarget={isExclusiveLinearStrokeTarget}
+        app={app}
+        targetElements={targetElements}
       />
 
       <CombinedArrowProperties
@@ -830,6 +1054,10 @@ export const MobileShapeActions = ({
     targetElements.length === 1 &&
     !targetElements[0].locked &&
     !!getSmartShapeMetadata(targetElements[0]);
+  const isExclusiveLinearStrokeTarget = hasExclusiveLinearStrokeTarget(
+    appState,
+    targetElements,
+  );
   const mobileActionsRef = useRef<HTMLDivElement>(null);
 
   const ACTIONS_WIDTH =
@@ -891,6 +1119,9 @@ export const MobileShapeActions = ({
           predicates={predicates}
           container={container}
           hasSmartShape={hasSmartShape}
+          isExclusiveLinearStrokeTarget={isExclusiveLinearStrokeTarget}
+          app={app}
+          targetElements={targetElements}
         />
         {/* Combined Arrow Properties */}
         <CombinedArrowProperties

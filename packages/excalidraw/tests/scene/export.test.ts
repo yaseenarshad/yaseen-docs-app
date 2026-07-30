@@ -199,6 +199,23 @@ describe("exportToSvg", () => {
     expect(border).toHaveAttribute("fill", "none");
   });
 
+  it("exports an exact decimal line stroke width", async () => {
+    const line = API.createElement({
+      type: "line",
+      strokeWidth: 7.5,
+      width: 120,
+      height: 40,
+    });
+
+    const svgElement = await exportUtils.exportToSvg(
+      [line],
+      DEFAULT_OPTIONS,
+      null,
+    );
+
+    expect(svgElement.querySelector('path[stroke-width="7.5"]')).not.toBeNull();
+  });
+
   it("with exportPadding", async () => {
     const svgElement = await exportUtils.exportToSvg(
       ELEMENTS,
