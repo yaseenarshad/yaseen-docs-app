@@ -1,6 +1,8 @@
 import clsx from "clsx";
 import { useEffect, useRef } from "react";
 
+import { COLOR_PALETTE } from "@excalidraw/common";
+
 import type { ColorPaletteCustom } from "@excalidraw/common";
 
 import { useAtom } from "../../editor-jotai";
@@ -72,6 +74,7 @@ const PickerColorList = ({
               {
                 active: colorObj?.colorName === key,
                 "is-transparent": color === "transparent" || !color,
+                "is-canonical-white": color === COLOR_PALETTE.white,
               },
             )}
             onClick={() => {

@@ -11,6 +11,7 @@ import {
   FONT_FAMILY,
   KEYS,
   STROKE_WIDTH,
+  THEME,
 } from "@excalidraw/common";
 
 import { Excalidraw } from "../index";
@@ -311,6 +312,41 @@ describe("element locking", () => {
           queryByTestId(document.body, `color-top-pick-${color}`),
         ).not.toBeNull();
       });
+    });
+
+    it("should distinguish the white text swatch accessibly in both themes", () => {
+      const text = API.createElement({
+        type: "text",
+        text: "White",
+        strokeColor: COLOR_PALETTE.white,
+      });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+
+      const whiteSwatch = queryByTestId(
+        document.body,
+        `color-top-pick-${COLOR_PALETTE.white}`,
+      );
+      expect(whiteSwatch).toHaveClass("is-canonical-white", "has-outline");
+      expect(whiteSwatch).toHaveAccessibleName("White");
+      expect(whiteSwatch).toHaveAttribute("aria-pressed", "true");
+
+      API.setAppState({ theme: THEME.DARK });
+      expect(whiteSwatch).toHaveClass("is-canonical-white", "has-outline");
+
+      const rectangle = API.createElement({
+        type: "rectangle",
+        backgroundColor: COLOR_PALETTE.transparent,
+      });
+      API.setElements([rectangle]);
+      API.setSelectedElements([rectangle]);
+      const transparentSwatch = queryByTestId(
+        document.body,
+        `color-top-pick-${COLOR_PALETTE.transparent}`,
+      );
+      expect(transparentSwatch).toHaveClass("is-transparent");
+      expect(transparentSwatch).not.toHaveClass("is-canonical-white");
+      expect(transparentSwatch).toHaveAccessibleName("Transparent");
     });
 
     it("should retain generic stroke picks for bound containers and mixed selections", () => {
