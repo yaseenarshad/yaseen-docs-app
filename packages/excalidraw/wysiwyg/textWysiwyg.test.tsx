@@ -598,6 +598,49 @@ describe("textWysiwyg", () => {
       expect(textarea.selectionEnd).toBe(5);
     });
 
+    it("toggles only the selected line with the underline shortcut", () => {
+      fireEvent.input(textarea, {
+        target: { value: "Title\nSubtitle" },
+      });
+      textarea.setSelectionRange(0, 5);
+
+      fireEvent.keyDown(textarea, {
+        [KEYS.CTRL_OR_CMD]: true,
+        key: "u",
+        code: CODES.U,
+      });
+
+      expect(
+        (h.elements[0] as ExcalidrawTextElement).lineUnderlines,
+      ).toEqual([true]);
+      expect(
+        document.querySelectorAll(".excalidraw-wysiwyg-line-underline"),
+      ).toHaveLength(1);
+    });
+
+    it("shifts line underline state when a newline is inserted above it", () => {
+      fireEvent.input(textarea, {
+        target: { value: "Title\nBody" },
+      });
+      textarea.setSelectionRange(0, 5);
+      fireEvent.keyDown(textarea, {
+        [KEYS.CTRL_OR_CMD]: true,
+        key: "u",
+        code: CODES.U,
+      });
+      expect(
+        (h.elements[0] as ExcalidrawTextElement).lineUnderlines,
+      ).toEqual([true]);
+
+      fireEvent.input(textarea, {
+        target: { value: "Intro\nTitle\nBody" },
+      });
+
+      expect(
+        (h.elements[0] as ExcalidrawTextElement).lineUnderlines,
+      ).toEqual([true, true]);
+    });
+
     it("should toggle bullets on the selected lines from the text toolbar", () => {
       fireEvent.input(textarea, {
         target: { value: "First\nSecond\nThird" },

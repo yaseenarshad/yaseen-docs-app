@@ -10,6 +10,7 @@ import {
   isTestEnv,
   MIME_TYPES,
   applyDarkModeFilter,
+  getVerticalOffset,
   isRTL,
 } from "@excalidraw/common";
 import { pointFrom, pointRotateRads, type Radians } from "@excalidraw/math";
@@ -37,6 +38,10 @@ import {
 import { getTextWidth } from "@excalidraw/element";
 import { getLineHeightInPx } from "@excalidraw/element";
 import { getLineWidth } from "@excalidraw/element";
+import {
+  getLogicalLineIndexAtOffset,
+  remapLineUnderlinesForTextEdit,
+} from "@excalidraw/element";
 import { normalizeText } from "@excalidraw/element";
 import { wrapText } from "@excalidraw/element";
 import { getWrappedTextLines } from "@excalidraw/element";
@@ -215,8 +220,15 @@ export const textWysiwyg = ({
    * Note: `text`, which can be wrapped and therefore different from `originalText`,
    *       is derived from `originalText`
    */
-  onChange?: (nextOriginalText: string) => void;
-  onSubmit: (data: { viaKeyboard: boolean; nextOriginalText: string }) => void;
+  onChange?: (data: {
+    nextOriginalText: string;
+    nextLineUnderlines: readonly boolean[] | undefined;
+  }) => void;
+  onSubmit: (data: {
+    viaKeyboard: boolean;
+    nextOriginalText: string;
+    nextLineUnderlines: readonly boolean[] | undefined;
+  }) => void;
   getViewportCoords: (x: number, y: number) => [number, number];
   element: ExcalidrawTextElement;
   canvas: HTMLCanvasElement;
@@ -379,10 +391,31 @@ export const textWysiwyg = ({
 
       const font = getFontString(updatedTextElement);
       const angle = getTextElementAngle(updatedTextElement, container);
+      const lineHeightPx = getLineHeightInPx(
+        updatedTextElement.fontSize,
+        updatedTextElement.lineHeight,
+      );
+      const verticalOffset = getVerticalOffset(
+        updatedTextElement.fontFamily,
+        updatedTextElement.fontSize,
+        lineHeightPx,
+      );
 
       // Make sure text editor height doesn't go beyond viewport
       const editorMaxHeight =
         (appState.height - viewportY) / appState.zoom.value;
+      const transform = getTransform(
+        width,
+        height,
+        angle,
+        appState,
+        maxWidth,
+        editorMaxHeight,
+      );
+      const color = applyDarkModeFilter(
+        updatedTextElement.strokeColor,
+        appState.theme === THEME.DARK,
+      );
       Object.assign(editable.style, {
         font,
         // must be defined *after* font ¯\_(ツ)_/¯
@@ -391,33 +424,72 @@ export const textWysiwyg = ({
         height: `${height}px`,
         left: `${viewportX}px`,
         top: `${viewportY}px`,
-        transform: getTransform(
-          width,
-          height,
-          angle,
-          appState,
-          maxWidth,
-          editorMaxHeight,
-        ),
+        transform,
         textAlign,
         verticalAlign,
         fontWeight: updatedTextElement.fontWeight ?? "normal",
         textDecoration: updatedTextElement.textDecoration ?? "none",
-        color: applyDarkModeFilter(
-          updatedTextElement.strokeColor,
-          appState.theme === THEME.DARK,
-        ),
+        color,
         opacity: updatedTextElement.opacity / 100,
         maxHeight: `${editorMaxHeight}px`,
       });
+      Object.assign(underlineOverlay.style, {
+        width: `${width}px`,
+        height: `${height}px`,
+        left: `${viewportX}px`,
+        top: `${viewportY}px`,
+        transform,
+        opacity: updatedTextElement.opacity / 100,
+        maxHeight: `${editorMaxHeight}px`,
+      });
+      underlineOverlay.replaceChildren();
+
+      const visualLines = getWrappedTextLines(
+        editable.value,
+        font,
+        whiteSpace === "pre-wrap" ? width : Infinity,
+      );
+      for (const [index, line] of visualLines.entries()) {
+        const logicalLine = getLogicalLineIndexAtOffset(
+          editable.value,
+          line.start,
+        );
+        const underlined =
+          updatedTextElement.textDecoration === "underline" ||
+          updatedTextElement.lineUnderlines?.[logicalLine] === true;
+
+        if (!underlined || !line.text) {
+          continue;
+        }
+
+        const lineWidth = getLineWidth(line.text, font);
+        const left =
+          textAlign === "center"
+            ? (width - lineWidth) / 2
+            : textAlign === "right"
+            ? width - lineWidth
+            : 0;
+        const rule = document.createElement("span");
+        rule.className = "excalidraw-wysiwyg-line-underline";
+        Object.assign(rule.style, {
+          position: "absolute",
+          left: `${left}px`,
+          top: `${
+            index * lineHeightPx +
+            verticalOffset +
+            Math.max(1, updatedTextElement.fontSize * 0.08)
+          }px`,
+          width: `${lineWidth}px`,
+          height: `${Math.max(1, updatedTextElement.fontSize / 16)}px`,
+          background: color,
+        });
+        underlineOverlay.appendChild(rule);
+      }
       currentTextLayout = {
         angle: angle as Radians,
         font,
         height: updatedTextElement.height,
-        lineHeightPx: getLineHeightInPx(
-          updatedTextElement.fontSize,
-          updatedTextElement.lineHeight,
-        ),
+        lineHeightPx,
         textAlign,
         width: updatedTextElement.width,
         x: coordX,
@@ -435,6 +507,16 @@ export const textWysiwyg = ({
   };
 
   const editable = document.createElement("textarea");
+  const underlineOverlay = document.createElement("div");
+
+  underlineOverlay.className = "excalidraw-wysiwyg-underlines";
+  Object.assign(underlineOverlay.style, {
+    position: "absolute",
+    pointerEvents: "none",
+    background: "transparent",
+    overflow: "hidden",
+    zIndex: "var(--zIndex-wysiwyg)",
+  });
 
   editable.dir = "auto";
   editable.tabIndex = 0;
@@ -471,6 +553,7 @@ export const textWysiwyg = ({
     boxSizing: "content-box",
   });
   editable.value = element.originalText;
+  let previousEditableValue = editable.value;
   updateWysiwygStyle();
 
   const getCaretIndexFromInitialSceneCoords = () => {
@@ -633,7 +716,19 @@ export const textWysiwyg = ({
         editable.selectionStart = selectionStart;
         editable.selectionEnd = selectionStart;
       }
-      onChange(editable.value);
+      const currentElement = app.scene.getElement(
+        element.id,
+      ) as ExcalidrawTextElement | null;
+      const nextLineUnderlines = remapLineUnderlinesForTextEdit(
+        previousEditableValue,
+        editable.value,
+        currentElement?.lineUnderlines,
+      );
+      previousEditableValue = editable.value;
+      onChange({
+        nextOriginalText: editable.value,
+        nextLineUnderlines,
+      });
     };
   }
 
@@ -908,6 +1003,7 @@ export const textWysiwyg = ({
     onSubmit({
       viaKeyboard: submittedViaKeyboard,
       nextOriginalText: editable.value,
+      nextLineUnderlines: updateElement.lineUnderlines,
     });
   };
 
@@ -931,6 +1027,7 @@ export const textWysiwyg = ({
     unsubOnChange();
     unbindOnScroll();
 
+    underlineOverlay.remove();
     editable.remove();
   };
 
@@ -1093,9 +1190,11 @@ export const textWysiwyg = ({
     window.addEventListener("pointerdown", onPointerDown, { capture: true });
   });
   window.addEventListener("beforeunload", handleSubmit);
-  excalidrawContainer
-    ?.querySelector(".excalidraw-textEditorContainer")!
-    .appendChild(editable);
+  const editorContainer = excalidrawContainer?.querySelector(
+    ".excalidraw-textEditorContainer",
+  );
+  editorContainer?.appendChild(underlineOverlay);
+  editorContainer?.appendChild(editable);
 
   return handleSubmit;
 };

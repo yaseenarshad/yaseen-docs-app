@@ -6173,13 +6173,18 @@ class App extends React.Component<AppProps, AppState> {
   ) {
     const elementsMap = this.scene.getElementsMapIncludingDeleted();
 
-    const updateElement = (nextOriginalText: string, isDeleted: boolean) => {
+    const updateElement = (
+      nextOriginalText: string,
+      isDeleted: boolean,
+      nextLineUnderlines?: readonly boolean[],
+    ) => {
       this.scene.replaceAllElements([
         // Not sure why we include deleted elements as well hence using deleted elements map
         ...this.scene.getElementsIncludingDeleted().map((_element) => {
           if (_element.id === element.id && isTextElement(_element)) {
             return newElementWith(_element, {
               originalText: nextOriginalText,
+              lineUnderlines: nextLineUnderlines,
               isDeleted: isDeleted ?? _element.isDeleted,
               // returns (wrapped) text and new dimensions
               ...refreshTextDimensions(
@@ -6210,17 +6215,20 @@ class App extends React.Component<AppProps, AppState> {
           viewportY - this.state.offsetTop,
         ];
       },
-      onChange: withBatchedUpdates((nextOriginalText) => {
-        updateElement(nextOriginalText, false);
-        if (isNonDeletedElement(element)) {
-          updateBoundElements(element, this.scene);
-        }
-      }),
-      onSubmit: withBatchedUpdates(({ viaKeyboard, nextOriginalText }) => {
+      onChange: withBatchedUpdates(
+        ({ nextOriginalText, nextLineUnderlines }) => {
+          updateElement(nextOriginalText, false, nextLineUnderlines);
+          if (isNonDeletedElement(element)) {
+            updateBoundElements(element, this.scene);
+          }
+        },
+      ),
+      onSubmit: withBatchedUpdates(
+        ({ viaKeyboard, nextOriginalText, nextLineUnderlines }) => {
         this.textWysiwygSubmitHandler = null;
 
         const isDeleted = !nextOriginalText.trim();
-        updateElement(nextOriginalText, isDeleted);
+        updateElement(nextOriginalText, isDeleted, nextLineUnderlines);
 
         // keyboard-submit keeps focus on the edited object. For bound text, keep
         // the container selected even if the text becomes empty and is deleted.
@@ -6275,7 +6283,8 @@ class App extends React.Component<AppProps, AppState> {
         }
 
         this.focusContainer();
-      }),
+        },
+      ),
       element,
       excalidrawContainer: this.excalidrawContainerRef.current,
       app: this,
@@ -6291,7 +6300,7 @@ class App extends React.Component<AppProps, AppState> {
 
     // do an initial update to re-initialize element position since we were
     // modifying element's x/y for sake of editor (case: syncing to remote)
-    updateElement(element.originalText, false);
+    updateElement(element.originalText, false, element.lineUnderlines);
   }
 
   private deselectElements() {
