@@ -5,6 +5,7 @@ import {
   remapLineUnderlinesForTextEdit,
   toggleSelectedLineUnderlines,
 } from "../src/textLineUnderlines";
+
 import type { FontString } from "../src/types";
 
 describe("text line underlines", () => {

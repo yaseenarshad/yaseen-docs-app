@@ -1,7 +1,11 @@
+import { handleImageStudioRequest } from "./imageStudio";
+
 interface Env {
   ASSETS: Fetcher;
   DIAGRAM_ASSETS: R2Bucket;
   CONVEX_SITE_URL: string;
+  OPENVERSE_CLIENT_ID?: string;
+  OPENVERSE_CLIENT_SECRET?: string;
 }
 
 const json = (body: unknown, init?: ResponseInit) =>
@@ -115,6 +119,9 @@ const deleteAssets = async (request: Request, env: Env) => {
 const worker: ExportedHandler<Env> = {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname.startsWith("/api/image-studio/")) {
+      return await handleImageStudioRequest(request, env);
+    }
     if (url.pathname === "/api/assets" && request.method === "POST") {
       return await uploadAsset(request, env);
     }

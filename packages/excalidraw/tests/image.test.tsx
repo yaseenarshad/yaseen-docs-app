@@ -10,7 +10,7 @@ import { createPasteEvent } from "../clipboard";
 import { API } from "./helpers/api";
 import { mockMultipleHTMLImageElements } from "./helpers/mocks";
 import { UI } from "./helpers/ui";
-import { GlobalTestState, render, waitFor } from "./test-utils";
+import { act, GlobalTestState, render, waitFor } from "./test-utils";
 import {
   DEER_IMAGE_DIMENSIONS,
   SMILEY_IMAGE_DIMENSIONS,
@@ -134,6 +134,32 @@ describe("image insertion", () => {
     UI.clickTool("image");
 
     await assert();
+  });
+
+  it("inserts and selects images through the imperative API without moving the viewport", async () => {
+    await setupImageTest([DEER_IMAGE_DIMENSIONS]);
+    const before = {
+      scrollX: h.state.scrollX,
+      scrollY: h.state.scrollY,
+      zoom: h.state.zoom,
+    };
+
+    let inserted: Awaited<ReturnType<typeof h.app.insertImages>> = [];
+    await act(async () => {
+      inserted = await h.app.insertImages([
+        await API.loadFile("./fixtures/deer.png"),
+      ]);
+    });
+
+    expect(inserted).toHaveLength(1);
+    await waitFor(() => {
+      expect(h.state.selectedElementIds[inserted[0].id]).toBe(true);
+    });
+    expect({
+      scrollX: h.state.scrollX,
+      scrollY: h.state.scrollY,
+      zoom: h.state.zoom,
+    }).toEqual(before);
   });
 
   it("passes host-configured max image dimensions to the resize helper", async () => {

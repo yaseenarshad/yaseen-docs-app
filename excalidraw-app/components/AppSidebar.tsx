@@ -3,12 +3,17 @@ import { useMemo, useState } from "react";
 import { DefaultSidebar, Sidebar, THEME } from "@excalidraw/excalidraw";
 import {
   file,
+  ImageIcon,
   messageCircleIcon,
   presentationIcon,
   sidebarRightIcon,
 } from "@excalidraw/excalidraw/components/icons";
 import { LinkButton } from "@excalidraw/excalidraw/components/LinkButton";
 import { useUIAppState } from "@excalidraw/excalidraw/context/ui-appState";
+
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+
+import { ImageStudio } from "../image-studio/ImageStudio";
 
 import "./AppSidebar.scss";
 
@@ -25,6 +30,11 @@ type DiagramBrowserProps = {
   onCreate: () => Promise<void>;
   onDelete: (slug: string) => Promise<void>;
   onOpen: (slug: string) => Promise<void>;
+};
+
+type AppSidebarProps = DiagramBrowserProps & {
+  excalidrawAPI: ExcalidrawImperativeAPI | null;
+  canInsertMedia: boolean;
 };
 
 type SidebarPromoCopyProps = {
@@ -229,7 +239,9 @@ export const AppSidebar = ({
   onCreate,
   onDelete,
   onOpen,
-}: DiagramBrowserProps) => {
+  excalidrawAPI,
+  canInsertMedia,
+}: AppSidebarProps) => {
   const { theme, openSidebar } = useUIAppState();
 
   return (
@@ -248,6 +260,14 @@ export const AppSidebar = ({
             style={{ opacity: openSidebar?.tab === "diagrams" ? 1 : 0.4 }}
           >
             {file}
+          </Sidebar.TabTrigger>
+          <Sidebar.TabTrigger
+            tab="image-studio"
+            aria-label="Image Studio"
+            title="Image Studio"
+            style={{ opacity: openSidebar?.tab === "image-studio" ? 1 : 0.4 }}
+          >
+            {ImageIcon}
           </Sidebar.TabTrigger>
           <Sidebar.TabTrigger
             tab="comments"
@@ -275,6 +295,14 @@ export const AppSidebar = ({
             onDelete={onDelete}
             onOpen={onOpen}
           />
+        </Sidebar.Tab>
+        <Sidebar.Tab tab="image-studio">
+          {excalidrawAPI && (
+            <ImageStudio
+              excalidrawAPI={excalidrawAPI}
+              canInsert={canInsertMedia}
+            />
+          )}
         </Sidebar.Tab>
         <Sidebar.Tab tab="comments">
           <div className="app-sidebar-promo-container">

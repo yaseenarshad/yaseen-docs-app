@@ -1231,6 +1231,11 @@ const ExcalidrawWrapper = () => {
           onCreate={cloud.createNewDiagram}
           onDelete={cloud.deleteDiagram}
           onOpen={cloud.openDiagram}
+          excalidrawAPI={excalidrawAPI}
+          canInsertMedia={
+            cloud.route.kind === "owner" &&
+            cloud.openedDiagram?.access === "owner"
+          }
         />
 
         {errorMessage && (

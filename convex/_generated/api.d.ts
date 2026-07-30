@@ -16,6 +16,8 @@ import type * as diagramHistory from "../diagramHistory.js";
 import type * as diagrams from "../diagrams.js";
 import type * as fixedAccounts from "../fixedAccounts.js";
 import type * as http from "../http.js";
+import type * as mediaLibrary from "../mediaLibrary.js";
+import type * as mediaTypes from "../mediaTypes.js";
 import type * as programmaticEdits from "../programmaticEdits.js";
 import type * as programmaticScene from "../programmaticScene.js";
 import type * as sceneConflict from "../sceneConflict.js";
@@ -37,6 +39,8 @@ declare const fullApi: ApiFromModules<{
   diagrams: typeof diagrams;
   fixedAccounts: typeof fixedAccounts;
   http: typeof http;
+  mediaLibrary: typeof mediaLibrary;
+  mediaTypes: typeof mediaTypes;
   programmaticEdits: typeof programmaticEdits;
   programmaticScene: typeof programmaticScene;
   sceneConflict: typeof sceneConflict;

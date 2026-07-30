@@ -763,6 +763,7 @@ class App extends React.Component<AppProps, AppState> {
       mutateElement: this.mutateElement,
       updateLibrary: this.library.updateLibrary,
       addFiles: this.addFiles,
+      insertImages: this.insertImages,
       resetScene: this.resetScene,
       getSceneElementsIncludingDeleted: this.getSceneElementsIncludingDeleted,
       getSceneElementsMapIncludingDeleted:
@@ -12878,11 +12879,22 @@ class App extends React.Component<AppProps, AppState> {
     }
   };
 
-  private insertImages = async (
+  public insertImages = async (
     imageFiles: File[],
-    sceneX: number,
-    sceneY: number,
+    sceneX?: number,
+    sceneY?: number,
   ) => {
+    if (sceneX === undefined || sceneY === undefined) {
+      const center = viewportCoordsToSceneCoords(
+        {
+          clientX: this.state.width / 2 + this.state.offsetLeft,
+          clientY: this.state.height / 2 + this.state.offsetTop,
+        },
+        this.state,
+      );
+      sceneX = center.x;
+      sceneY = center.y;
+    }
     const gridPadding = 50 / this.state.zoom.value;
     // Create, position, and insert placeholders
     const placeholders = positionElementsOnGrid(
@@ -12940,6 +12952,7 @@ class App extends React.Component<AppProps, AppState> {
       // actionFinalize after all state values have been updated
       this.actionManager.executeAction(actionFinalize);
     });
+    return positioned;
   };
 
   private handleAppOnDrop = async (event: React.DragEvent<HTMLDivElement>) => {
