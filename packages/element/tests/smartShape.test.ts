@@ -4,7 +4,10 @@ import {
   SMART_SHAPE_DEFINITIONS,
   createSmartShapeMetadata,
   generateSmartShapePoints,
+  getSmartShapeHandles,
   getSmartShapeMetadata,
+  hitTestSmartShapeHandle,
+  updateSmartShapeFromHandle,
   updateSmartShapeParameter,
 } from "../src/smartShape";
 import type { ExcalidrawLinearElement } from "../src/types";
@@ -56,8 +59,13 @@ describe("Smart Shapes", () => {
       shaftRatio: 0.8,
       headLengthRatio: 0.4,
     });
-    expect(thin[0][1]).toBeGreaterThan(thick[0][1]);
-    expect(thin[3]).toEqual(thick[3]);
+    expect(-Math.min(...thin.map(([, y]) => y))).toBeGreaterThan(
+      -Math.min(...thick.map(([, y]) => y)),
+    );
+    expect(thin[3][0]).toBe(thick[3][0]);
+    expect(thin[3][1] - Math.min(...thin.map(([, y]) => y))).toBe(
+      thick[3][1] - Math.min(...thick.map(([, y]) => y)),
+    );
   });
 
   it("guards metadata and regenerates points on parameter updates", () => {
@@ -80,5 +88,40 @@ describe("Smart Shapes", () => {
     expect(getSmartShapeMetadata(updated)?.parameters.shaftRatio).toBe(0.25);
     expect(updated.points).not.toEqual(element.points);
     expect(getSmartShapeMetadata({ customData: {} } as never)).toBeNull();
+  });
+
+  it("exposes zoom-aware handles and adjusts from rotated scene points", () => {
+    const metadata = createSmartShapeMetadata("arrow-right");
+    const arrow = {
+      type: "line",
+      x: 100,
+      y: 200,
+      width: 200,
+      height: 100,
+      angle: Math.PI / 2,
+      locked: false,
+      customData: { yasinSmartShape: metadata },
+      points: generateSmartShapePoints(
+        "arrow-right",
+        200,
+        100,
+        metadata.parameters,
+      ),
+    } as unknown as ExcalidrawLinearElement;
+    const handles = getSmartShapeHandles(arrow);
+
+    expect(handles.map(({ name }) => name)).toEqual(["shaft", "head"]);
+    expect(
+      hitTestSmartShapeHandle(arrow, handles[0].scenePoint, { value: 2 }),
+    ).toBe("shaft");
+
+    const adjusted = updateSmartShapeFromHandle(
+      arrow,
+      "head",
+      handles[1].scenePoint,
+    );
+    expect(getSmartShapeMetadata(adjusted)?.parameters.headLengthRatio).toBe(
+      0.4,
+    );
   });
 });

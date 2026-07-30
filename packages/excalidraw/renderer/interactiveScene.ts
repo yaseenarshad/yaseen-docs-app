@@ -45,6 +45,7 @@ import {
   getActiveTextElement,
   getElementsInGroup,
   getSelectedGroupIds,
+  getSmartShapeMetadata,
   isSelectedViaGroup,
   selectGroupsFromGivenElements,
 } from "@excalidraw/element";
@@ -99,6 +100,7 @@ import {
   getNormalizedCanvasDimensions,
   strokeRectWithRotation_simple,
 } from "./helpers";
+import { renderSmartShapeHandles } from "./smartShapeHandles";
 
 import type {
   AppState,
@@ -1955,6 +1957,14 @@ const _renderInteractiveScene = ({
           transformHandles,
           selectedElements[0].angle,
         );
+        if (
+          isLinearElement(selectedElements[0]) &&
+          !selectedElements[0].locked &&
+          !appState.isRotating &&
+          getSmartShapeMetadata(selectedElements[0])
+        ) {
+          renderSmartShapeHandles(context, selectedElements[0], appState.zoom);
+        }
       }
 
       if (appState.croppingElementId && !appState.isCropping) {

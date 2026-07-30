@@ -1121,6 +1121,10 @@ export type PointerDownState = Readonly<{
   // original element frozen snapshots so we can access the original
   // element attribute values at time of pointerdown
   originalElements: Map<string, NonDeleted<ExcalidrawElement>>;
+  smartShape: {
+    handle: import("@excalidraw/element").SmartShapeHandleName | null;
+    elementId: string | null;
+  };
   resize: {
     // Handle when resizing, might change during the pointer interaction
     handleType: MaybeTransformHandleType;

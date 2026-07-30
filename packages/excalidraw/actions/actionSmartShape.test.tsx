@@ -48,6 +48,8 @@ describe("actionChangeSmartShape", () => {
 
     const updated = h.elements[0];
     expect(getSmartShapeMetadata(updated)?.parameters.shaftRatio).toBe(0.25);
-    expect(updated.type === "line" && updated.points[0][1]).toBe(37.5);
+    expect(
+      updated.type === "line" && Math.min(...updated.points.map(([, y]) => y)),
+    ).toBe(-37.5);
   });
 });

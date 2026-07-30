@@ -1,9 +1,9 @@
-import { pointFrom } from "@excalidraw/math";
+import { pointDistance, pointFrom, pointRotateRads } from "@excalidraw/math";
 
 import { newElementWith } from "./mutateElement";
 
 import type { ExcalidrawElement, ExcalidrawLinearElement } from "./types";
-import type { LocalPoint } from "@excalidraw/math";
+import type { GlobalPoint, LocalPoint, Radians } from "@excalidraw/math";
 
 export const SMART_SHAPE_IDS = [
   "arrow-right",
@@ -56,6 +56,11 @@ export type SmartShapeDefinition = {
   roundness: ExcalidrawElement["roundness"];
   defaults: Record<string, number>;
   handles: readonly SmartShapeHandleName[];
+};
+
+export type SmartShapeHandle = {
+  name: SmartShapeHandleName;
+  scenePoint: GlobalPoint;
 };
 
 const definition = (
@@ -345,14 +350,13 @@ export const generateSmartShapePoints = (
   height: number,
   parameters: Record<string, number>,
 ): LocalPoint[] => {
+  let generated: LocalPoint[];
   if (id.startsWith("arrow-")) {
-    return arrowPoints(id, width, height, parameters);
-  }
-  if (id.startsWith("chevron-")) {
-    return chevronPoints(id, width, height, parameters);
-  }
-  if (id.startsWith("brace-")) {
-    return scaleTemplate(
+    generated = arrowPoints(id, width, height, parameters);
+  } else if (id.startsWith("chevron-")) {
+    generated = chevronPoints(id, width, height, parameters);
+  } else if (id.startsWith("brace-")) {
+    generated = scaleTemplate(
       [
         [1, 0],
         [0.5, 0],
@@ -366,9 +370,8 @@ export const generateSmartShapePoints = (
       height,
       id === "brace-right",
     );
-  }
-  if (id.startsWith("bracket-")) {
-    return scaleTemplate(
+  } else if (id.startsWith("bracket-")) {
+    generated = scaleTemplate(
       [
         [1, 0],
         [0, 0],
@@ -379,9 +382,8 @@ export const generateSmartShapePoints = (
       height,
       id === "bracket-right",
     );
-  }
-  if (id.startsWith("parenthesis-")) {
-    return scaleTemplate(
+  } else if (id.startsWith("parenthesis-")) {
+    generated = scaleTemplate(
       [
         [1, 0],
         [0, 0.5],
@@ -391,20 +393,25 @@ export const generateSmartShapePoints = (
       height,
       id === "parenthesis-right",
     );
+  } else {
+    const bodyBottom = height * 0.76;
+    const anchor = clamp(parameters.tailPositionRatio ?? 0.7, 0.2, 0.8) * width;
+    const halfTail = width * 0.09;
+    generated = points([
+      [0, 0],
+      [width, 0],
+      [width, bodyBottom],
+      [anchor + halfTail, bodyBottom],
+      [anchor, height],
+      [anchor - halfTail, bodyBottom],
+      [0, bodyBottom],
+      [0, 0],
+    ]);
   }
-  const bodyBottom = height * 0.76;
-  const anchor = clamp(parameters.tailPositionRatio ?? 0.7, 0.2, 0.8) * width;
-  const halfTail = width * 0.09;
-  return points([
-    [0, 0],
-    [width, 0],
-    [width, bodyBottom],
-    [anchor + halfTail, bodyBottom],
-    [anchor, height],
-    [anchor - halfTail, bodyBottom],
-    [0, bodyBottom],
-    [0, 0],
-  ]);
+  const [originX, originY] = generated[0];
+  return generated.map(([x, y]) =>
+    pointFrom<LocalPoint>(x - originX, y - originY),
+  );
 };
 
 export const updateSmartShapeParameter = (
@@ -417,16 +424,160 @@ export const updateSmartShapeParameter = (
     return element;
   }
   const parameters = { ...metadata.parameters, [parameter]: value };
+  const nextPoints = generateSmartShapePoints(
+    metadata.id,
+    element.width,
+    element.height,
+    parameters,
+  );
+  const oldMinX = Math.min(...element.points.map(([x]) => x));
+  const oldMinY = Math.min(...element.points.map(([, y]) => y));
+  const nextMinX = Math.min(...nextPoints.map(([x]) => x));
+  const nextMinY = Math.min(...nextPoints.map(([, y]) => y));
   return newElementWith(element, {
+    x: element.x + oldMinX - nextMinX,
+    y: element.y + oldMinY - nextMinY,
     customData: {
       ...element.customData,
       yasinSmartShape: { ...metadata, parameters },
     },
-    points: generateSmartShapePoints(
-      metadata.id,
-      element.width,
-      element.height,
-      parameters,
-    ),
+    points: nextPoints,
   });
+};
+
+const midpoint = (a: LocalPoint, b: LocalPoint) =>
+  pointFrom<LocalPoint>((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+
+export const getSmartShapeHandles = (
+  element: ExcalidrawLinearElement,
+): SmartShapeHandle[] => {
+  const metadata = getSmartShapeMetadata(element);
+  const definition = metadata
+    ? getSmartShapeDefinition(metadata.id)
+    : undefined;
+  if (!metadata || !definition || element.locked) {
+    return [];
+  }
+  const generated = generateSmartShapePoints(
+    metadata.id,
+    element.width,
+    element.height,
+    metadata.parameters,
+  );
+  const localHandles: Array<{
+    name: SmartShapeHandleName;
+    point: LocalPoint;
+  }> = [];
+
+  if (definition.kind === "filled-arrow") {
+    localHandles.push(
+      { name: "shaft", point: midpoint(generated[0], generated[1]) },
+      { name: "head", point: midpoint(generated[2], generated[4]) },
+    );
+  } else if (definition.kind === "chevron") {
+    localHandles.push({ name: "thickness", point: generated[1] });
+  } else if (definition.kind === "callout") {
+    localHandles.push({ name: "tail", point: generated[4] });
+  }
+
+  const minX = Math.min(...generated.map(([x]) => x));
+  const maxX = Math.max(...generated.map(([x]) => x));
+  const minY = Math.min(...generated.map(([, y]) => y));
+  const maxY = Math.max(...generated.map(([, y]) => y));
+  const center = pointFrom<GlobalPoint>(
+    element.x + (minX + maxX) / 2,
+    element.y + (minY + maxY) / 2,
+  );
+  return localHandles.map(({ name, point }) => ({
+    name,
+    scenePoint: pointRotateRads(
+      pointFrom<GlobalPoint>(element.x + point[0], element.y + point[1]),
+      center,
+      element.angle,
+    ),
+  }));
+};
+
+export const hitTestSmartShapeHandle = (
+  element: ExcalidrawLinearElement,
+  scenePoint: GlobalPoint,
+  zoom: { value: number },
+): SmartShapeHandleName | null =>
+  getSmartShapeHandles(element).find(
+    ({ scenePoint: handlePoint }) =>
+      pointDistance(handlePoint, scenePoint) <= 9 / zoom.value,
+  )?.name ?? null;
+
+export const updateSmartShapeFromHandle = (
+  element: ExcalidrawLinearElement,
+  handle: SmartShapeHandleName,
+  scenePoint: GlobalPoint,
+) => {
+  const metadata = getSmartShapeMetadata(element);
+  if (!metadata) {
+    return element;
+  }
+  const generated = generateSmartShapePoints(
+    metadata.id,
+    element.width,
+    element.height,
+    metadata.parameters,
+  );
+  const minX = Math.min(...generated.map(([x]) => x));
+  const maxX = Math.max(...generated.map(([x]) => x));
+  const minY = Math.min(...generated.map(([, y]) => y));
+  const maxY = Math.max(...generated.map(([, y]) => y));
+  const center = pointFrom<GlobalPoint>(
+    element.x + (minX + maxX) / 2,
+    element.y + (minY + maxY) / 2,
+  );
+  const unrotated = pointRotateRads(
+    scenePoint,
+    center,
+    -element.angle as Radians,
+  );
+  const localX = unrotated[0] - element.x;
+  const localY = unrotated[1] - element.y;
+  const shapeX = localX - minX;
+  const shapeY = localY - minY;
+  const horizontal =
+    metadata.id.endsWith("-right") || metadata.id.endsWith("-left");
+
+  if (handle === "shaft") {
+    const ratio = horizontal
+      ? (Math.abs(shapeY - element.height / 2) * 2) / element.height
+      : (Math.abs(shapeX - element.width / 2) * 2) / element.width;
+    return updateSmartShapeParameter(
+      element,
+      "shaftRatio",
+      clamp(ratio, 0.1, 0.9),
+    );
+  }
+  if (handle === "head") {
+    const ratio = metadata.id.endsWith("-right")
+      ? (element.width - shapeX) / element.width
+      : metadata.id.endsWith("-left")
+      ? shapeX / element.width
+      : metadata.id.endsWith("-up")
+      ? shapeY / element.height
+      : (element.height - shapeY) / element.height;
+    return updateSmartShapeParameter(
+      element,
+      "headLengthRatio",
+      clamp(ratio, 0.15, 0.75),
+    );
+  }
+  if (handle === "thickness") {
+    const ratio = horizontal ? shapeX / element.width : shapeY / element.height;
+    return updateSmartShapeParameter(
+      element,
+      "thicknessRatio",
+      clamp(Math.abs(ratio), 0.12, 0.46),
+    );
+  }
+  return updateSmartShapeParameter(
+    element,
+    "tailPositionRatio",
+    clamp(shapeX / element.width, 0.2, 0.8),
+  );
 };

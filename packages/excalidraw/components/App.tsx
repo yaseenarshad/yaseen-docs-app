@@ -258,6 +258,9 @@ import {
   isEligibleFrameChildType,
   getBindingStrategyForDraggingBindingElementEndpoints,
   isNonDeletedElement,
+  getSmartShapeMetadata,
+  hitTestSmartShapeHandle,
+  updateSmartShapeFromHandle,
 } from "@excalidraw/element";
 
 import type { GlobalPoint, LocalPoint, Radians } from "@excalidraw/math";
@@ -7998,6 +8001,20 @@ class App extends React.Component<AppProps, AppState> {
       !isOverScrollBar &&
       !this.state.selectedLinearElement?.isEditing
     ) {
+      if (
+        !this.state.viewModeEnabled &&
+        isLinearElement(selectedElements[0]) &&
+        !selectedElements[0].locked &&
+        hitTestSmartShapeHandle(
+          selectedElements[0],
+          pointFrom<GlobalPoint>(scenePointer.x, scenePointer.y),
+          this.state.zoom,
+        )
+      ) {
+        this.cursor.set(CURSOR_TYPE.POINTER);
+        return;
+      }
+
       // for linear elements, we'd like to prioritize point dragging over edge resizing
       // therefore, we update and check hovered point index first
       if (this.state.selectedLinearElement) {
@@ -9188,6 +9205,10 @@ class App extends React.Component<AppProps, AppState> {
           acc.set(element.id, deepCopyElement(element));
           return acc;
         }, new Map() as PointerDownState["originalElements"]),
+      smartShape: {
+        handle: null,
+        elementId: null,
+      },
       resize: {
         handleType: false,
         isResizing: false,
@@ -9287,6 +9308,31 @@ class App extends React.Component<AppProps, AppState> {
       const elements = this.scene.getNonDeletedElements();
       const elementsMap = this.scene.getNonDeletedElementsMap();
       const selectedElements = this.scene.getSelectedElements(this.state);
+
+      if (
+        selectedElements.length === 1 &&
+        isLinearElement(selectedElements[0]) &&
+        !selectedElements[0].locked &&
+        !this.state.viewModeEnabled &&
+        getSmartShapeMetadata(selectedElements[0])
+      ) {
+        const handle = hitTestSmartShapeHandle(
+          selectedElements[0],
+          pointFrom<GlobalPoint>(
+            pointerDownState.origin.x,
+            pointerDownState.origin.y,
+          ),
+          this.state.zoom,
+        );
+        if (handle) {
+          pointerDownState.smartShape.handle = handle;
+          pointerDownState.smartShape.elementId = selectedElements[0].id;
+          pointerDownState.hit.element = selectedElements[0];
+          pointerDownState.hit.allHitElements = [selectedElements[0]];
+          this.setState({ resizingElement: selectedElements[0] });
+          return false;
+        }
+      }
 
       if (
         selectedElements.length === 1 &&
@@ -10532,6 +10578,16 @@ class App extends React.Component<AppProps, AppState> {
         return;
       }
       const pointerCoords = viewportCoordsToSceneCoords(event, this.state);
+
+      if (
+        pointerDownState.smartShape.handle &&
+        pointerDownState.smartShape.elementId
+      ) {
+        pointerDownState.lastCoords.x = pointerCoords.x;
+        pointerDownState.lastCoords.y = pointerCoords.y;
+        this.maybeHandleSmartShapeAdjustment(pointerDownState, pointerCoords);
+        return;
+      }
 
       if (this.state.activeLockedId) {
         this.setState({
@@ -13642,6 +13698,38 @@ class App extends React.Component<AppProps, AppState> {
       return true;
     }
     return false;
+  };
+
+  private maybeHandleSmartShapeAdjustment = (
+    pointerDownState: PointerDownState,
+    pointerCoords: { x: number; y: number },
+  ) => {
+    const { handle, elementId } = pointerDownState.smartShape;
+    if (!handle || !elementId) {
+      return false;
+    }
+    const original = pointerDownState.originalElements.get(elementId);
+    const current = this.scene.getElement(elementId);
+    if (
+      !original ||
+      !current ||
+      !isNonDeletedElement(current) ||
+      !isLinearElement(original) ||
+      !isLinearElement(current)
+    ) {
+      return false;
+    }
+    const updated = updateSmartShapeFromHandle(
+      original,
+      handle,
+      pointFrom<GlobalPoint>(pointerCoords.x, pointerCoords.y),
+    );
+    this.scene.mutateElement(current, {
+      points: updated.points,
+      customData: updated.customData,
+    });
+    this.setState({ resizingElement: current });
+    return true;
   };
 
   private getContextMenuItems = (
