@@ -12,40 +12,27 @@
 
 ## File Structure
 
-- Create `packages/element/src/textLineUnderlines.ts`: pure underline-state,
-  selection, edit-remapping, and visual-line helpers.
-- Create `packages/element/tests/textLineUnderlines.test.ts`: focused pure-helper
-  regression coverage.
+- Create `packages/element/src/textLineUnderlines.ts`: pure underline-state, selection, edit-remapping, and visual-line helpers.
+- Create `packages/element/tests/textLineUnderlines.test.ts`: focused pure-helper regression coverage.
 - Modify `packages/element/src/index.ts`: export the new helper module.
 - Modify `packages/element/src/types.ts`: add optional line underline state.
-- Modify `packages/element/src/newElement.ts`: initialize and preserve normalized
-  line underline state.
-- Modify `packages/excalidraw/data/restore.ts`: normalize imported underline
-  state.
-- Modify `packages/excalidraw/tests/data/restore.test.ts`: cover valid and
-  malformed imported state.
-- Modify `packages/excalidraw/actions/actionProperties.tsx`: route the existing
-  underline action to selected logical lines during editing.
-- Modify `packages/excalidraw/actions/actionProperties.test.tsx`: retain its
-  existing coverage of unchanged whole-element behavior.
-- Modify `packages/excalidraw/components/App.tsx`: persist remapped line state
-  while text changes.
-- Modify `packages/excalidraw/wysiwyg/textWysiwyg.tsx`: remap state on input,
-  preserve selections, and render the editing overlay.
-- Modify `packages/excalidraw/wysiwyg/textWysiwyg.test.tsx`: cover keyboard,
-  input remapping, and overlay feedback.
-- Modify `packages/element/src/renderElement.ts`: draw underlines only for
-  decorated visual lines on canvas.
-- Modify `packages/excalidraw/renderer/staticSvgScene.ts`: decorate only the
-  intended SVG text nodes.
-- Modify `packages/excalidraw/tests/scene/export.test.ts`: cover canvas/PNG and
-  SVG line decoration.
-- Modify `packages/excalidraw/tests/data/reconcile.test.ts`: prove a newer
-  synchronized element retains line metadata.
+- Modify `packages/element/src/newElement.ts`: initialize and preserve normalized line underline state.
+- Modify `packages/excalidraw/data/restore.ts`: normalize imported underline state.
+- Modify `packages/excalidraw/tests/data/restore.test.ts`: cover valid and malformed imported state.
+- Modify `packages/excalidraw/actions/actionProperties.tsx`: route the existing underline action to selected logical lines during editing.
+- Modify `packages/excalidraw/actions/actionProperties.test.tsx`: retain its existing coverage of unchanged whole-element behavior.
+- Modify `packages/excalidraw/components/App.tsx`: persist remapped line state while text changes.
+- Modify `packages/excalidraw/wysiwyg/textWysiwyg.tsx`: remap state on input, preserve selections, and render the editing overlay.
+- Modify `packages/excalidraw/wysiwyg/textWysiwyg.test.tsx`: cover keyboard, input remapping, and overlay feedback.
+- Modify `packages/element/src/renderElement.ts`: draw underlines only for decorated visual lines on canvas.
+- Modify `packages/excalidraw/renderer/staticSvgScene.ts`: decorate only the intended SVG text nodes.
+- Modify `packages/excalidraw/tests/scene/export.test.ts`: cover canvas/PNG and SVG line decoration.
+- Modify `packages/excalidraw/tests/data/reconcile.test.ts`: prove a newer synchronized element retains line metadata.
 
 ### Task 1: Pure selection, normalization, and toggle behavior
 
 **Files:**
+
 - Create: `packages/element/src/textLineUnderlines.ts`
 - Create: `packages/element/tests/textLineUnderlines.test.ts`
 - Modify: `packages/element/src/index.ts`
@@ -111,9 +98,9 @@ describe("text line underlines", () => {
   });
 
   it("normalizes malformed, excess, and trailing false entries", () => {
-    expect(
-      normalizeLineUnderlines([true, "yes", false, true], 3),
-    ).toEqual([true]);
+    expect(normalizeLineUnderlines([true, "yes", false, true], 3)).toEqual([
+      true,
+    ]);
     expect(normalizeLineUnderlines([false, false], 2)).toBeUndefined();
     expect(normalizeLineUnderlines("invalid", 2)).toBeUndefined();
   });
@@ -149,8 +136,7 @@ export const getSelectedLogicalLineRange = (
 ) => {
   const start = Math.max(0, Math.min(selectionStart, text.length));
   const end = Math.max(start, Math.min(selectionEnd, text.length));
-  const adjustedEnd =
-    end > start && text[end - 1] === "\n" ? end - 1 : end;
+  const adjustedEnd = end > start && text[end - 1] === "\n" ? end - 1 : end;
 
   return {
     start: getLogicalLineIndexAtOffset(text, start),
@@ -165,9 +151,7 @@ export const normalizeLineUnderlines = (
   if (!Array.isArray(value) || lineCount <= 0) {
     return undefined;
   }
-  const normalized = value
-    .slice(0, lineCount)
-    .map((entry) => entry === true);
+  const normalized = value.slice(0, lineCount).map((entry) => entry === true);
   while (normalized.length && !normalized[normalized.length - 1]) {
     normalized.pop();
   }
@@ -255,30 +239,29 @@ git commit -m "Add logical line underline helpers"
 ### Task 2: Preserve line underline state through text edits
 
 **Files:**
+
 - Modify: `packages/element/src/textLineUnderlines.ts`
 - Modify: `packages/element/tests/textLineUnderlines.test.ts`
 
 - [ ] **Step 1: Add failing edit-remapping tests**
 
-Extend the Task 1 import to include
-`remapLineUnderlinesForTextEdit`, then append:
+Extend the Task 1 import to include `remapLineUnderlinesForTextEdit`, then append:
 
 ```ts
 describe("remapLineUnderlinesForTextEdit", () => {
   it("preserves decoration for character edits", () => {
     expect(
-      remapLineUnderlinesForTextEdit(
-        "Title\nSubtitle",
-        "New Title\nSubtitle",
-        [true],
-      ),
+      remapLineUnderlinesForTextEdit("Title\nSubtitle", "New Title\nSubtitle", [
+        true,
+      ]),
     ).toEqual([true]);
   });
 
   it("inherits decoration when an underlined line is split", () => {
-    expect(
-      remapLineUnderlinesForTextEdit("Title", "Ti\ntle", [true]),
-    ).toEqual([true, true]);
+    expect(remapLineUnderlinesForTextEdit("Title", "Ti\ntle", [true])).toEqual([
+      true,
+      true,
+    ]);
   });
 
   it("keeps a merged line underlined when either source line was underlined", () => {
@@ -292,11 +275,10 @@ describe("remapLineUnderlinesForTextEdit", () => {
 
   it("shifts unaffected lines after multiline insertion", () => {
     expect(
-      remapLineUnderlinesForTextEdit(
-        "Title\nBody",
-        "Intro\nTitle\nBody",
-        [true, false],
-      ),
+      remapLineUnderlinesForTextEdit("Title\nBody", "Intro\nTitle\nBody", [
+        true,
+        false,
+      ]),
     ).toEqual([true, true]);
   });
 });
@@ -346,10 +328,7 @@ export const remapLineUnderlinesForTextEdit = (
   lineUnderlines: readonly boolean[] | undefined,
 ) => {
   if (!lineUnderlines?.some(Boolean) || previousText === nextText) {
-    return normalizeLineUnderlines(
-      lineUnderlines,
-      nextText.split("\n").length,
-    );
+    return normalizeLineUnderlines(lineUnderlines, nextText.split("\n").length);
   }
 
   const edit = getEditWindow(previousText, nextText);
@@ -402,6 +381,7 @@ git commit -m "Preserve line underlines through text edits"
 ### Task 3: Add the optional field to creation and restore paths
 
 **Files:**
+
 - Modify: `packages/element/src/types.ts`
 - Modify: `packages/element/src/newElement.ts`
 - Modify: `packages/excalidraw/data/restore.ts`
@@ -410,8 +390,7 @@ git commit -m "Preserve line underlines through text edits"
 
 - [ ] **Step 1: Add failing restore normalization coverage**
 
-In `packages/excalidraw/tests/data/restore.test.ts`, add a test using the
-existing `restoreElements()` test helpers:
+In `packages/excalidraw/tests/data/restore.test.ts`, add a test using the existing `restoreElements()` test helpers:
 
 ```ts
 it("normalizes imported text line underlines", () => {
@@ -455,9 +434,7 @@ it("round-trips text line underlines through scene JSON", () => {
 });
 ```
 
-Import `serializeAsJSON` from `../../data/json`. Reuse the existing
-`getDefaultAppState` import and call `restore.restoreElements` if the test file
-keeps the current namespace import.
+Import `serializeAsJSON` from `../../data/json`. Reuse the existing `getDefaultAppState` import and call `restore.restoreElements` if the test file keeps the current namespace import.
 
 - [ ] **Step 2: Run the restore test and verify RED**
 
@@ -477,8 +454,7 @@ Add to `ExcalidrawTextElement` in `packages/element/src/types.ts`:
 lineUnderlines?: readonly boolean[];
 ```
 
-Add to the `newTextElement()` options in
-`packages/element/src/newElement.ts`:
+Add to the `newTextElement()` options in `packages/element/src/newElement.ts`:
 
 ```ts
 lineUnderlines?: ExcalidrawTextElement["lineUnderlines"];
@@ -495,8 +471,7 @@ lineUnderlines: normalizeLineUnderlines(
 
 Import `normalizeLineUnderlines` from `./textLineUnderlines`.
 
-In the text case of `restoreElement()` in
-`packages/excalidraw/data/restore.ts`, derive `originalText` once and include:
+In the text case of `restoreElement()` in `packages/excalidraw/data/restore.ts`, derive `originalText` once and include:
 
 ```ts
 const originalText = element.originalText || text;
@@ -532,8 +507,7 @@ Expected: both files pass.
 
 - [ ] **Step 5: Add and run a cloud reconciliation regression test**
 
-In `packages/excalidraw/tests/data/reconcile.test.ts`, import `API` from
-`../helpers/api` and add:
+In `packages/excalidraw/tests/data/reconcile.test.ts`, import `API` from `../helpers/api` and add:
 
 ```ts
 it("keeps line underline metadata from the newer remote text element", () => {
@@ -548,12 +522,14 @@ it("keeps line underline metadata from the newer remote text element", () => {
       versionNonce: randomInteger(),
     },
   ]);
-  const [remote] = syncInvalidIndices([{
-    ...local,
-    version: 2,
-    versionNonce: randomInteger(),
-    lineUnderlines: [true],
-  }]);
+  const [remote] = syncInvalidIndices([
+    {
+      ...local,
+      version: 2,
+      versionNonce: randomInteger(),
+      lineUnderlines: [true],
+    },
+  ]);
 
   const [reconciled] = reconcileElements(
     [local],
@@ -575,8 +551,7 @@ Run:
 yarn test:app packages/excalidraw/tests/data/reconcile.test.ts --watch=false
 ```
 
-Expected: PASS once the field is part of the element type and the newer remote
-element wins reconciliation.
+Expected: PASS once the field is part of the element type and the newer remote element wins reconciliation.
 
 - [ ] **Step 6: Run TypeScript before committing**
 
@@ -598,13 +573,13 @@ git commit -m "Persist line underline metadata"
 ### Task 4: Make the existing underline action selection-aware
 
 **Files:**
+
 - Modify: `packages/excalidraw/actions/actionProperties.tsx`
 - Modify: `packages/excalidraw/wysiwyg/textWysiwyg.test.tsx`
 
 - [ ] **Step 1: Add failing toolbar behavior tests**
 
-Add beside the existing editing-mode bold/underline shortcut test in
-`textWysiwyg.test.tsx`:
+Add beside the existing editing-mode bold/underline shortcut test in `textWysiwyg.test.tsx`:
 
 ```ts
 it("toggles underline for only the logical lines selected in the editor", () => {
@@ -637,13 +612,11 @@ Run:
 yarn test:app packages/excalidraw/wysiwyg/textWysiwyg.test.tsx --watch=false
 ```
 
-Expected: the editing test fails because underline still changes the entire
-element.
+Expected: the editing test fails because underline still changes the entire element.
 
 - [ ] **Step 3: Branch underline state and mutation by editing mode**
 
-In `getTextStyle()`, when `property === "textDecoration"` and the matching text
-element is currently being edited, query `.excalidraw-wysiwyg` and return:
+In `getTextStyle()`, when `property === "textDecoration"` and the matching text element is currently being edited, query `.excalidraw-wysiwyg` and return:
 
 ```ts
 return editable
@@ -652,14 +625,12 @@ return editable
       lineUnderlines: textElement.lineUnderlines,
       selectionStart: editable.selectionStart,
       selectionEnd: editable.selectionEnd,
-      wholeElementUnderlined:
-        textElement.textDecoration === "underline",
+      wholeElementUnderlined: textElement.textDecoration === "underline",
     })
   : textElement.textDecoration === "underline";
 ```
 
-In `changeTextStyle()`, resolve the textarea for underline as well as bullets.
-For the editing text element and `textDecoration`, return:
+In `changeTextStyle()`, resolve the textarea for underline as well as bullets. For the editing text element and `textDecoration`, return:
 
 ```ts
 const lineUnderlines = toggleSelectedLineUnderlines({
@@ -677,18 +648,15 @@ return newElementWith(element, {
 });
 ```
 
-For non-editing whole-element toggles, preserve the existing assignment and
-also set:
+For non-editing whole-element toggles, preserve the existing assignment and also set:
 
 ```ts
 lineUnderlines: undefined,
 ```
 
-Import `areSelectedLinesUnderlined` and
-`toggleSelectedLineUnderlines` from `@excalidraw/element`.
+Import `areSelectedLinesUnderlined` and `toggleSelectedLineUnderlines` from `@excalidraw/element`.
 
-Keep `withCaretPositionPreservation()` around toolbar updates so clicking the
-control does not collapse the selection.
+Keep `withCaretPositionPreservation()` around toolbar updates so clicking the control does not collapse the selection.
 
 - [ ] **Step 4: Run action and existing WYSIWYG shortcut tests**
 
@@ -698,9 +666,7 @@ Run:
 yarn test:app packages/excalidraw/actions/actionProperties.test.tsx packages/excalidraw/wysiwyg/textWysiwyg.test.tsx --watch=false
 ```
 
-Expected: both files pass. Update the existing editing-mode shortcut assertion
-to expect `lineUnderlines: [true]` and `textDecoration: "none"`; keep the
-existing outside-editing whole-element assertion unchanged.
+Expected: both files pass. Update the existing editing-mode shortcut assertion to expect `lineUnderlines: [true]` and `textDecoration: "none"`; keep the existing outside-editing whole-element assertion unchanged.
 
 - [ ] **Step 5: Commit selection-aware actions**
 
@@ -712,6 +678,7 @@ git commit -m "Toggle underline on selected text lines"
 ### Task 5: Remap state during WYSIWYG input and show immediate feedback
 
 **Files:**
+
 - Modify: `packages/excalidraw/components/App.tsx`
 - Modify: `packages/excalidraw/wysiwyg/textWysiwyg.tsx`
 - Modify: `packages/excalidraw/wysiwyg/textWysiwyg.test.tsx`
@@ -795,8 +762,7 @@ After assigning `editable.value`, initialize:
 let previousEditableValue = editable.value;
 ```
 
-In `editable.oninput`, before calling `onChange`, read the current element and
-calculate:
+In `editable.oninput`, before calling `onChange`, read the current element and calculate:
 
 ```ts
 const currentElement = app.scene.getElement(
@@ -813,8 +779,7 @@ onChange(editable.value, nextLineUnderlines);
 
 Import `remapLineUnderlinesForTextEdit` from `@excalidraw/element`.
 
-In `App.handleTextWysiwyg()`, change `updateElement()` to accept
-`nextLineUnderlines` and include it in `newElementWith()`:
+In `App.handleTextWysiwyg()`, change `updateElement()` to accept `nextLineUnderlines` and include it in `newElementWith()`:
 
 ```ts
 const updateElement = (
@@ -843,11 +808,7 @@ const updateElement = (
 };
 ```
 
-The `onChange` callback passes both values. Initial and submit calls pass the
-current element's `lineUnderlines` so submitting text does not erase metadata.
-In `handleSubmit()`, read the latest element and include its
-`lineUnderlines` in the `onSubmit()` payload; destructure and forward that
-field in `App.handleTextWysiwyg()`.
+The `onChange` callback passes both values. Initial and submit calls pass the current element's `lineUnderlines` so submitting text does not erase metadata. In `handleSubmit()`, read the latest element and include its `lineUnderlines` in the `onSubmit()` payload; destructure and forward that field in `App.handleTextWysiwyg()`.
 
 - [ ] **Step 4: Add and update the textarea underline overlay**
 
@@ -865,9 +826,7 @@ Object.assign(underlineOverlay.style, {
 });
 ```
 
-Extend `currentTextLayout` with `verticalOffset` and `maxWidth`. In
-`updateWysiwygStyle()`, mirror the textarea's `left`, `top`, `width`, `height`,
-and `transform` onto the overlay, clear its children, and obtain visual lines:
+Extend `currentTextLayout` with `verticalOffset` and `maxWidth`. In `updateWysiwygStyle()`, mirror the textarea's `left`, `top`, `width`, `height`, and `transform` onto the overlay, clear its children, and obtain visual lines:
 
 ```ts
 const visualLines = getWrappedTextLines(
@@ -931,8 +890,7 @@ Remove it in `cleanup()`:
 underlineOverlay.remove();
 ```
 
-Because scene updates already call `updateWysiwygStyle()`, keyboard and toolbar
-actions refresh the overlay immediately.
+Because scene updates already call `updateWysiwygStyle()`, keyboard and toolbar actions refresh the overlay immediately.
 
 - [ ] **Step 5: Run WYSIWYG and action tests**
 
@@ -954,6 +912,7 @@ git commit -m "Show line underlines while editing text"
 ### Task 6: Render and export decorated logical lines
 
 **Files:**
+
 - Modify: `packages/element/src/textLineUnderlines.ts`
 - Modify: `packages/element/tests/textLineUnderlines.test.ts`
 - Modify: `packages/element/src/renderElement.ts`
@@ -1000,8 +959,7 @@ Expected: FAIL because `getUnderlinedVisualLines` does not exist.
 
 - [ ] **Step 3: Add the shared visual-line helper**
 
-In `textLineUnderlines.ts`, import `getWrappedTextLines` from
-`./textWrapping` and `FontString` from `./types`, then add:
+In `textLineUnderlines.ts`, import `getWrappedTextLines` from `./textWrapping` and `FontString` from `./types`, then add:
 
 ```ts
 export const getUnderlinedVisualLines = (args: {
@@ -1030,8 +988,7 @@ export const getUnderlinedVisualLines = (args: {
 
 - [ ] **Step 4: Use the shared mapping in canvas rendering**
 
-In the text branch of `packages/element/src/renderElement.ts`, compute the
-wrapping width with the same rule used by text refresh:
+In the text branch of `packages/element/src/renderElement.ts`, compute the wrapping width with the same rule used by text refresh:
 
 ```ts
 const container = getContainerElement(element, elementsMap);
@@ -1049,8 +1006,7 @@ const lines = getUnderlinedVisualLines({
 });
 ```
 
-Render `lines[index].text` instead of the previous string split. Replace the
-whole-element decoration condition with `lines[index].underlined`.
+Render `lines[index].text` instead of the previous string split. Replace the whole-element decoration condition with `lines[index].underlined`.
 
 - [ ] **Step 5: Use the mapping in SVG rendering and add failing export tests**
 
@@ -1103,8 +1059,7 @@ yarn test:app packages/excalidraw/tests/scene/export.test.ts --watch=false
 
 Expected: FAIL because canvas and SVG still ignore line metadata.
 
-Update `staticSvgScene.ts` to build the same `lines` collection, set
-`text.textContent = lines[i].text`, and set the attribute only when:
+Update `staticSvgScene.ts` to build the same `lines` collection, set `text.textContent = lines[i].text`, and set the attribute only when:
 
 ```ts
 if (lines[i].underlined) {
@@ -1132,6 +1087,7 @@ git commit -m "Render underlines on decorated text lines"
 ### Task 7: Full verification, production deployment, and cleanup
 
 **Files:**
+
 - Verify all modified files from Tasks 1–6.
 
 - [ ] **Step 1: Run focused regression tests**
@@ -1167,8 +1123,7 @@ Expected: every command exits 0.
 yarn build
 ```
 
-Expected: Vite completes with exit 0. Existing bundle-size and third-party
-module-directive warnings are acceptable; new errors are not.
+Expected: Vite completes with exit 0. Existing bundle-size and third-party module-directive warnings are acceptable; new errors are not.
 
 - [ ] **Step 4: Run a local browser acceptance check**
 
@@ -1190,11 +1145,8 @@ git push origin main
 npx --yes wrangler deploy
 ```
 
-Expected: `origin/main` advances to the verified commit and Wrangler reports a
-new production version for `draw.yasinarshad.com`.
+Expected: `origin/main` advances to the verified commit and Wrangler reports a new production version for `draw.yasinarshad.com`.
 
 - [ ] **Step 6: Verify the deployed bundle**
 
-Open a temporary production diagram, repeat the `TITLE`/`Subtitle` selection
-test, wait for the save state to return to `Saved`, reload, and confirm the
-underline remains. Delete the temporary diagram afterward.
+Open a temporary production diagram, repeat the `TITLE`/`Subtitle` selection test, wait for the save state to return to `Saved`, reload, and confirm the underline remains. Delete the temporary diagram afterward.
