@@ -144,7 +144,8 @@ export type ActionName =
   | "cropEditor"
   | "wrapSelectionInFrame"
   | "toggleShapeSwitch"
-  | "togglePolygon";
+  | "togglePolygon"
+  | "changeSmartShape";
 
 export type PanelComponentProps = {
   elements: readonly ExcalidrawElement[];

@@ -5,6 +5,7 @@ import { Popover } from "radix-ui";
 import { CLASSES, FONT_FAMILY } from "@excalidraw/common";
 
 import {
+  getSmartShapeMetadata,
   isArrowElement,
   isImageElement,
   isTextElement,
@@ -160,6 +161,10 @@ export const SelectedShapeActions = ({
   const hasExclusiveTextTarget =
     !!appState.editingTextElement ||
     (targetElements.length > 0 && targetElements.every(isTextElement));
+  const hasSmartShape =
+    targetElements.length === 1 &&
+    !targetElements[0].locked &&
+    !!getSmartShapeMetadata(targetElements[0]);
 
   return (
     <div className="selected-shape-actions">
@@ -201,6 +206,7 @@ export const SelectedShapeActions = ({
       {predicates.arrowheads && <>{renderAction("changeArrowhead")}</>}
 
       {predicates.opacity && renderAction("changeOpacity")}
+      {hasSmartShape && renderAction("changeSmartShape")}
 
       {predicates.layers && <LayersFieldset renderAction={renderAction} />}
 
@@ -296,12 +302,14 @@ const CombinedShapeProperties = ({
   setAppState,
   predicates,
   container,
+  hasSmartShape,
 }: {
   appState: UIAppState;
   renderAction: ActionManager["renderAction"];
   setAppState: React.Component<any, AppState>["setState"];
   predicates: ShapeActionPredicates;
   container: HTMLDivElement | null;
+  hasSmartShape: boolean;
 }) => {
   const shouldShowCombinedProperties =
     predicates.hasSelection ||
@@ -370,6 +378,7 @@ const CombinedShapeProperties = ({
               {predicates.sloppiness && <>{renderAction("changeSloppiness")}</>}
               {predicates.roundness && renderAction("changeRoundness")}
               {predicates.opacity && renderAction("changeOpacity")}
+              {hasSmartShape && renderAction("changeSmartShape")}
             </div>
           </PropertiesPopover>
         )}
@@ -697,6 +706,10 @@ export const CompactShapeActions = ({
     app,
   );
   const { container } = useExcalidrawContainer();
+  const hasSmartShape =
+    targetElements.length === 1 &&
+    !targetElements[0].locked &&
+    !!getSmartShapeMetadata(targetElements[0]);
 
   return (
     <div className="compact-shape-actions">
@@ -727,6 +740,7 @@ export const CompactShapeActions = ({
         setAppState={setAppState}
         predicates={predicates}
         container={container}
+        hasSmartShape={hasSmartShape}
       />
 
       <CombinedArrowProperties
@@ -812,6 +826,10 @@ export const MobileShapeActions = ({
     app,
   );
   const { container } = useExcalidrawContainer();
+  const hasSmartShape =
+    targetElements.length === 1 &&
+    !targetElements[0].locked &&
+    !!getSmartShapeMetadata(targetElements[0]);
   const mobileActionsRef = useRef<HTMLDivElement>(null);
 
   const ACTIONS_WIDTH =
@@ -872,6 +890,7 @@ export const MobileShapeActions = ({
           setAppState={setAppState}
           predicates={predicates}
           container={container}
+          hasSmartShape={hasSmartShape}
         />
         {/* Combined Arrow Properties */}
         <CombinedArrowProperties
