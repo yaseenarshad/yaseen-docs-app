@@ -33,7 +33,9 @@ export default defineSchema({
     sceneJson: v.string(),
     version: v.number(),
     createdAt: v.number(),
-  }).index("by_diagramId_and_version", ["diagramId", "version"]),
+  })
+    .index("by_diagramId_and_version", ["diagramId", "version"])
+    .index("by_diagramId_and_createdAt", ["diagramId", "createdAt"]),
   diagramAssets: defineTable({
     diagramId: v.id("diagrams"),
     fileId: v.string(),

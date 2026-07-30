@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 
+import { internal } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import { createDiagramSnapshotIfNeeded } from "./diagramHistory";
 import { hasElementVersionRegression } from "./sceneConflict";
@@ -315,17 +316,11 @@ export const remove = mutation({
       throw new Error("Diagram not found");
     }
 
-    const [content, snapshots, assets, uploadGrants] = await Promise.all([
+    const [content, assets, uploadGrants] = await Promise.all([
       ctx.db
         .query("diagramContents")
         .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
         .unique(),
-      ctx.db
-        .query("diagramSnapshots")
-        .withIndex("by_diagramId_and_version", (q) =>
-          q.eq("diagramId", diagram._id),
-        )
-        .take(1000),
       ctx.db
         .query("diagramAssets")
         .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
@@ -354,9 +349,6 @@ export const remove = mutation({
     if (content) {
       await ctx.db.delete("diagramContents", content._id);
     }
-    for (const snapshot of snapshots) {
-      await ctx.db.delete("diagramSnapshots", snapshot._id);
-    }
     for (const asset of assets) {
       if (asset.storageId) {
         await ctx.storage.delete(asset.storageId);
@@ -367,6 +359,13 @@ export const remove = mutation({
       await ctx.db.delete("assetUploadGrants", grant._id);
     }
     await ctx.db.delete("diagrams", diagram._id);
+    await ctx.scheduler.runAfter(
+      0,
+      internal.snapshotRetention.deleteDiagramSnapshots,
+      {
+        diagramId: diagram._id,
+      },
+    );
 
     return { assetDeleteToken };
   },
