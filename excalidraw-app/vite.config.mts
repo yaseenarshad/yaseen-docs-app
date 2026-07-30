@@ -262,15 +262,32 @@ export default defineConfig(({ mode }) => {
           maximumFileSizeToCacheInBytes: 2.3 * 1024 ** 2, // 2.3MB
         },
         manifest: {
-          short_name: "Excalidraw",
-          name: "Excalidraw",
+          short_name: "Yaseen",
+          name: "Yaseen Whiteboard",
           description:
-            "Excalidraw is a whiteboard tool that lets you easily sketch diagrams that have a hand-drawn feel to them.",
+            "Yaseen Whiteboard is a fast, hand-drawn canvas for visual thinking.",
           icons: [
             {
               src: "android-chrome-192x192.png",
               sizes: "192x192",
               type: "image/png",
+            },
+            {
+              src: "android-chrome-512x512.png",
+              sizes: "512x512",
+              type: "image/png",
+            },
+            {
+              src: "maskable_icon_x192.png",
+              sizes: "192x192",
+              type: "image/png",
+              purpose: "maskable",
+            },
+            {
+              src: "maskable_icon_x512.png",
+              sizes: "512x512",
+              type: "image/png",
+              purpose: "maskable",
             },
             {
               src: "apple-touch-icon.png",

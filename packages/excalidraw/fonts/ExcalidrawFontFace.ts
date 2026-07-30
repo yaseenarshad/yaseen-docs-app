@@ -7,6 +7,7 @@ type DataURL = string;
 export class ExcalidrawFontFace {
   public readonly urls: URL[] | DataURL[];
   public readonly fontFace: FontFace;
+  public readonly descriptors: FontFaceDescriptors;
 
   private static readonly ASSETS_FALLBACK_URL = `https://esm.sh/${
     import.meta.env.PKG_NAME
@@ -16,17 +17,18 @@ export class ExcalidrawFontFace {
 
   constructor(family: string, uri: string, descriptors?: FontFaceDescriptors) {
     this.urls = ExcalidrawFontFace.createUrls(uri);
+    this.descriptors = {
+      display: "swap",
+      style: "normal",
+      weight: "400",
+      ...descriptors,
+    };
 
     const sources = this.urls
       .map((url) => `url(${url}) ${ExcalidrawFontFace.getFormat(url)}`)
       .join(", ");
 
-    this.fontFace = new FontFace(family, sources, {
-      display: "swap",
-      style: "normal",
-      weight: "400",
-      ...descriptors,
-    });
+    this.fontFace = new FontFace(family, sources, this.descriptors);
   }
 
   /**
@@ -44,10 +46,23 @@ export class ExcalidrawFontFace {
       (char) => char.codePointAt(0)!,
     );
 
-    return this.getContent(codepoints).then(
-      (content) =>
-        `@font-face { font-family: ${this.fontFace.family}; src: url(${content}); }`,
-    );
+    return this.getContent(codepoints).then((content) => {
+      const descriptors = [
+        `font-family: ${JSON.stringify(this.fontFace.family)}`,
+        `src: url(${content})`,
+        `font-style: ${this.descriptors.style}`,
+        `font-weight: ${this.descriptors.weight}`,
+        `font-display: ${this.descriptors.display}`,
+      ];
+      if (this.descriptors.stretch) {
+        descriptors.push(`font-stretch: ${this.descriptors.stretch}`);
+      }
+      if (this.descriptors.unicodeRange) {
+        descriptors.push(`unicode-range: ${this.descriptors.unicodeRange}`);
+      }
+
+      return `@font-face { ${descriptors.join("; ")}; }`;
+    });
   }
 
   /**
@@ -115,7 +130,7 @@ export class ExcalidrawFontFace {
     // using \u{h} or \u{hhhhh} to match any number of hex digits,
     // otherwise we would get an "Invalid Unicode escape" error
     // e.g. U+0-1007F -> \u{0}-\u{1007F}
-    const unicodeRangeRegex = this.fontFace.unicodeRange
+    const unicodeRangeRegex = (this.descriptors.unicodeRange ?? "U+0-10FFFF")
       .split(/,\s*/)
       .map((range) => {
         const [start, end] = range.replace("U+", "").split("-");

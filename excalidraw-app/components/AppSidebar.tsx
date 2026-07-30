@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DefaultSidebar, Sidebar, THEME } from "@excalidraw/excalidraw";
 import {
@@ -17,22 +17,48 @@ import { ImageStudio } from "../image-studio/ImageStudio";
 
 import "./AppSidebar.scss";
 
-type DiagramSummary = {
+import type { MouseEvent as ReactMouseEvent } from "react";
+
+import type { BoardSort } from "../cloud/boardOrganizer";
+
+type BoardSummary = {
+  _id: string;
   slug: string;
   title: string;
+  folderId?: string;
+  createdAt: number;
   updatedAt: number;
 };
 
-type DiagramBrowserProps = {
-  diagrams: DiagramSummary[];
+type BoardFolderSummary = {
+  _id: string;
+  name: string;
+};
+
+type BoardBrowserProps = {
+  boards: BoardSummary[];
+  folders: BoardFolderSummary[];
   activeSlug: string | null;
   isLoading: boolean;
+  isLoadingMore: boolean;
+  isFolderListLoading: boolean;
+  canLoadMore: boolean;
+  errorMessage: string | null;
+  search: string;
+  sort: BoardSort;
+  onSearchChange: (query: string) => void;
+  onSortChange: (sort: BoardSort) => void;
+  onLoadMore: () => void;
   onCreate: () => Promise<void>;
+  onCreateFolder: (name: string) => Promise<void>;
+  onRenameFolder: (folderId: string, name: string) => Promise<void>;
+  onDeleteFolder: (folderId: string) => Promise<void>;
+  onMove: (boardId: string, folderId: string | null) => Promise<void>;
   onDelete: (slug: string) => Promise<void>;
   onOpen: (slug: string) => Promise<void>;
 };
 
-type AppSidebarProps = DiagramBrowserProps & {
+type AppSidebarProps = BoardBrowserProps & {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
   canInsertMedia: boolean;
 };
@@ -94,138 +120,551 @@ const SidebarPromoCopy = (props: SidebarPromoCopyProps) => {
   );
 };
 
-export const DiagramBrowser = ({
-  diagrams,
+const shouldUseSaveSafeBoardNavigation = (
+  event: ReactMouseEvent<HTMLAnchorElement>,
+) => {
+  const nativeEvent = event.nativeEvent as MouseEvent & {
+    pointerType?: string;
+    sourceCapabilities?: { firesTouchEvents?: boolean };
+  };
+  if (
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.detail === 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey ||
+    (nativeEvent.pointerType !== undefined &&
+      nativeEvent.pointerType !== "mouse") ||
+    nativeEvent.sourceCapabilities?.firesTouchEvents
+  ) {
+    return false;
+  }
+  const destination = new URL(event.currentTarget.href);
+  return (
+    destination.origin === window.location.origin &&
+    !event.currentTarget.target &&
+    !event.currentTarget.hasAttribute("download")
+  );
+};
+
+export const BoardBrowser = ({
+  boards,
+  folders,
   activeSlug,
   isLoading,
+  isLoadingMore,
+  isFolderListLoading,
+  canLoadMore,
+  errorMessage,
+  search,
+  sort,
+  onSearchChange,
+  onSortChange,
+  onLoadMore,
   onCreate,
+  onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder,
+  onMove,
   onDelete,
   onOpen,
-}: DiagramBrowserProps) => {
-  const [search, setSearch] = useState("");
+}: BoardBrowserProps) => {
   const [isCreating, setIsCreating] = useState(false);
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [openMenuSlug, setOpenMenuSlug] = useState<string | null>(null);
+  const [openFolderMenuId, setOpenFolderMenuId] = useState<string | null>(null);
   const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
-  const filteredDiagrams = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase();
-    if (!query) {
-      return diagrams;
+  const [pendingMoveBoardId, setPendingMoveBoardId] = useState<string | null>(
+    null,
+  );
+  const [moveDestination, setMoveDestination] = useState("");
+  const [liveMessage, setLiveMessage] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [dragTargetKey, setDragTargetKey] = useState<string | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const moveHandleRefs = useRef(new Map<string, HTMLButtonElement>());
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(
+        window.localStorage.getItem("yaseen-whiteboard-expanded-folders") ??
+          "{}",
+      ) as Record<string, boolean>;
+    } catch {
+      return {};
     }
-    return diagrams.filter((diagram) =>
-      diagram.title.toLocaleLowerCase().includes(query),
-    );
-  }, [diagrams, search]);
+  });
+  const groups = useMemo(() => {
+    const next = new Map<string, BoardSummary[]>();
+    next.set("unfiled", []);
+    for (const folder of folders) {
+      next.set(folder._id, []);
+    }
+    for (const board of boards) {
+      const key =
+        board.folderId && next.has(board.folderId) ? board.folderId : "unfiled";
+      next.get(key)!.push(board);
+    }
+    return next;
+  }, [boards, folders]);
 
-  return (
-    <div className="diagram-browser">
-      <div className="diagram-browser__heading">
-        <div>
-          <strong>Your diagrams</strong>
-          <span>Saved automatically</span>
-        </div>
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || !canLoadMore || isLoadingMore) {
+      return;
+    }
+    if (typeof IntersectionObserver === "undefined") {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          onLoadMore();
+        }
+      },
+      { rootMargin: "240px 0px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [canLoadMore, isLoadingMore, onLoadMore]);
+
+  useEffect(() => {
+    const cancelMove = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      setOpenMenuSlug(null);
+      setOpenFolderMenuId(null);
+      setDragTargetKey(null);
+      setLiveMessage("Move cancelled");
+    };
+    window.addEventListener("keydown", cancelMove);
+    return () => window.removeEventListener("keydown", cancelMove);
+  }, []);
+
+  const setFolderExpanded = (key: string) => {
+    setExpanded((current) => {
+      const next = { ...current, [key]: current[key] === false };
+      window.localStorage.setItem(
+        "yaseen-whiteboard-expanded-folders",
+        JSON.stringify(next),
+      );
+      return next;
+    });
+  };
+
+  const moveBoard = async (board: BoardSummary, folderId: string | null) => {
+    if (pendingMoveBoardId) {
+      return;
+    }
+    setPendingMoveBoardId(board._id);
+    setActionError(null);
+    try {
+      await onMove(board._id, folderId);
+      const destination =
+        folderId === null
+          ? "Unfiled"
+          : folders.find((folder) => folder._id === folderId)?.name ?? "folder";
+      setLiveMessage(`${board.title} moved to ${destination}`);
+      setOpenMenuSlug(null);
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "The board could not be moved.",
+      );
+    } finally {
+      setPendingMoveBoardId(null);
+      window.requestAnimationFrame(() =>
+        moveHandleRefs.current.get(board._id)?.focus(),
+      );
+    }
+  };
+
+  const renderBoard = (board: BoardSummary) => {
+    const isPending = pendingMoveBoardId === board._id;
+    const dateKind = sort.startsWith("created") ? "Created" : "Modified";
+    const formattedDate = new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(sort.startsWith("created") ? board.createdAt : board.updatedAt);
+    return (
+      <div
+        key={board._id}
+        className={
+          board.slug === activeSlug
+            ? "board-browser__item board-browser__item--active"
+            : "board-browser__item"
+        }
+        aria-busy={isPending}
+      >
         <button
+          ref={(node) => {
+            if (node) {
+              moveHandleRefs.current.set(board._id, node);
+            } else {
+              moveHandleRefs.current.delete(board._id);
+            }
+          }}
           type="button"
-          disabled={isCreating}
-          onClick={async () => {
-            setIsCreating(true);
-            try {
-              await onCreate();
-            } finally {
-              setIsCreating(false);
+          draggable={!pendingMoveBoardId}
+          className="board-browser__move"
+          aria-label={`Move ${board.title}`}
+          title="Drag or press Enter to move"
+          onDragStart={(event) => {
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData(
+              "application/x-yaseen-board-id",
+              board._id,
+            );
+            setLiveMessage(`Moving ${board.title}`);
+          }}
+          onDragEnd={() => {
+            setDragTargetKey(null);
+            setLiveMessage("Move cancelled");
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setOpenMenuSlug(board.slug);
+              setMoveDestination(board.folderId ?? "");
             }
           }}
         >
-          {isCreating ? "Creating…" : "+ New"}
+          ⠿
         </button>
-      </div>
-      <input
-        className="diagram-browser__search"
-        type="search"
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-        placeholder="Search diagrams"
-        aria-label="Search diagrams"
-      />
-      <div className="diagram-browser__list">
-        {isLoading ? (
-          <div className="diagram-browser__empty">Loading diagrams…</div>
-        ) : filteredDiagrams.length === 0 ? (
-          <div className="diagram-browser__empty">
-            {search ? "No matching diagrams" : "No diagrams yet"}
-          </div>
-        ) : (
-          filteredDiagrams.map((diagram) => (
-            <div
-              key={diagram.slug}
-              className={
-                diagram.slug === activeSlug
-                  ? "diagram-browser__item diagram-browser__item--active"
-                  : "diagram-browser__item"
-              }
-            >
+        <a
+          className="board-browser__open"
+          href={`/b/${encodeURIComponent(board.slug)}`}
+          aria-label={`Open ${board.title}`}
+          onClick={(event) => {
+            if (!shouldUseSaveSafeBoardNavigation(event)) {
+              return;
+            }
+            event.preventDefault();
+            void onOpen(board.slug);
+          }}
+        >
+          <span className="board-browser__thumbnail">{file}</span>
+          <span className="board-browser__details">
+            <strong title={board.title}>{board.title}</strong>
+            <span>
+              {dateKind} {formattedDate}
+            </span>
+          </span>
+        </a>
+        <div className="board-browser__options">
+          <button
+            type="button"
+            className="board-browser__more"
+            aria-label={`More options for ${board.title}`}
+            aria-expanded={openMenuSlug === board.slug}
+            onClick={() => {
+              setOpenMenuSlug((current) =>
+                current === board.slug ? null : board.slug,
+              );
+              setMoveDestination(board.folderId ?? "");
+            }}
+          >
+            ⋯
+          </button>
+          {openMenuSlug === board.slug && (
+            <div className="board-browser__menu">
+              <label>
+                Move to folder…
+                <select
+                  aria-label={`Move ${board.title} to folder`}
+                  value={moveDestination}
+                  disabled={Boolean(pendingMoveBoardId)}
+                  onChange={(event) => setMoveDestination(event.target.value)}
+                >
+                  <option value="">Unfiled</option>
+                  {folders.map((folder) => (
+                    <option key={folder._id} value={folder._id}>
+                      {folder.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <button
                 type="button"
-                className="diagram-browser__open"
-                onClick={() => void onOpen(diagram.slug)}
+                disabled={Boolean(pendingMoveBoardId)}
+                onClick={() => void moveBoard(board, moveDestination || null)}
               >
-                <span className="diagram-browser__thumbnail">{file}</span>
-                <span className="diagram-browser__details">
-                  <strong>{diagram.title}</strong>
-                  <span>
-                    {new Intl.DateTimeFormat(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    }).format(diagram.updatedAt)}
-                  </span>
-                </span>
+                {isPending ? "Moving…" : "Move board"}
               </button>
-              <div className="diagram-browser__options">
-                <button
-                  type="button"
-                  className="diagram-browser__more"
-                  aria-label={`More options for ${diagram.title}`}
-                  aria-expanded={openMenuSlug === diagram.slug}
-                  onClick={() =>
-                    setOpenMenuSlug((current) =>
-                      current === diagram.slug ? null : diagram.slug,
+              <button
+                type="button"
+                disabled={deletingSlug === board.slug}
+                onClick={async () => {
+                  if (
+                    !window.confirm(
+                      `Delete “${board.title}”? This cannot be undone.`,
                     )
+                  ) {
+                    return;
                   }
-                >
-                  ⋯
-                </button>
-                {openMenuSlug === diagram.slug && (
-                  <div className="diagram-browser__menu">
-                    <button
-                      type="button"
-                      disabled={deletingSlug === diagram.slug}
-                      onClick={async () => {
-                        if (
-                          !window.confirm(
-                            `Delete “${diagram.title}”? This cannot be undone.`,
-                          )
-                        ) {
-                          return;
-                        }
-                        setDeletingSlug(diagram.slug);
-                        try {
-                          await onDelete(diagram.slug);
-                          setOpenMenuSlug(null);
-                        } finally {
-                          setDeletingSlug(null);
-                        }
-                      }}
-                    >
-                      {deletingSlug === diagram.slug
-                        ? "Deleting…"
-                        : "Delete diagram"}
-                    </button>
-                  </div>
-                )}
-              </div>
+                  setDeletingSlug(board.slug);
+                  try {
+                    await onDelete(board.slug);
+                    setOpenMenuSlug(null);
+                  } finally {
+                    setDeletingSlug(null);
+                  }
+                }}
+              >
+                {deletingSlug === board.slug ? "Deleting…" : "Delete board"}
+              </button>
             </div>
-          ))
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderFolder = (folder: BoardFolderSummary | null, key: string) => {
+    const name = folder?.name ?? "Unfiled";
+    const children = groups.get(key) ?? [];
+    const isExpanded = expanded[key] !== false;
+    return (
+      <section
+        className={
+          dragTargetKey === key
+            ? "board-browser__folder board-browser__folder--drop-target"
+            : "board-browser__folder"
+        }
+        key={key}
+        onDragEnter={(event) => {
+          if (
+            event.dataTransfer.types.includes("application/x-yaseen-board-id")
+          ) {
+            setDragTargetKey(key);
+          }
+        }}
+        onDragLeave={(event) => {
+          if (
+            !event.currentTarget.contains(event.relatedTarget as Node | null)
+          ) {
+            setDragTargetKey((current) => (current === key ? null : current));
+          }
+        }}
+        onDragOver={(event) => {
+          if (
+            event.dataTransfer.types.includes("application/x-yaseen-board-id")
+          ) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+          }
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDragTargetKey(null);
+          const boardId = event.dataTransfer.getData(
+            "application/x-yaseen-board-id",
+          );
+          const board = boards.find((candidate) => candidate._id === boardId);
+          if (board) {
+            void moveBoard(board, folder?._id ?? null);
+          }
+        }}
+      >
+        <div className="board-browser__folder-row">
+          <button
+            type="button"
+            className="board-browser__folder-toggle"
+            aria-expanded={isExpanded}
+            onClick={() => setFolderExpanded(key)}
+          >
+            <span aria-hidden="true">{isExpanded ? "⌄" : "›"}</span>
+            <strong title={name}>{name}</strong>
+            <span>{children.length}</span>
+          </button>
+          {folder && (
+            <div className="board-browser__options">
+              <button
+                type="button"
+                className="board-browser__more"
+                aria-label={`Folder options for ${name}`}
+                aria-expanded={openFolderMenuId === folder._id}
+                onClick={() =>
+                  setOpenFolderMenuId((current) =>
+                    current === folder._id ? null : folder._id,
+                  )
+                }
+              >
+                ⋯
+              </button>
+              {openFolderMenuId === folder._id && (
+                <div className="board-browser__menu">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const nextName = window.prompt(
+                        "Rename folder",
+                        folder.name,
+                      );
+                      if (!nextName) {
+                        return;
+                      }
+                      try {
+                        await onRenameFolder(folder._id, nextName);
+                        setOpenFolderMenuId(null);
+                      } catch (error) {
+                        setActionError(
+                          error instanceof Error
+                            ? error.message
+                            : "The folder could not be renamed.",
+                        );
+                      }
+                    }}
+                  >
+                    Rename folder
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await onDeleteFolder(folder._id);
+                        setOpenFolderMenuId(null);
+                      } catch (error) {
+                        setActionError(
+                          error instanceof Error
+                            ? error.message
+                            : "The folder could not be deleted.",
+                        );
+                      }
+                    }}
+                  >
+                    Delete folder
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        {isExpanded && (
+          <div className="board-browser__folder-boards">
+            {children.map(renderBoard)}
+          </div>
+        )}
+      </section>
+    );
+  };
+
+  return (
+    <div className="board-browser">
+      <div className="board-browser__heading">
+        <div>
+          <strong>Your boards</strong>
+          <span>Saved automatically</span>
+        </div>
+        <div className="board-browser__create-actions">
+          <button
+            type="button"
+            disabled={isCreatingFolder}
+            onClick={async () => {
+              const name = window.prompt("New folder name");
+              if (!name) {
+                return;
+              }
+              setIsCreatingFolder(true);
+              setActionError(null);
+              try {
+                await onCreateFolder(name);
+              } catch (error) {
+                setActionError(
+                  error instanceof Error
+                    ? error.message
+                    : "The folder could not be created.",
+                );
+              } finally {
+                setIsCreatingFolder(false);
+              }
+            }}
+          >
+            {isCreatingFolder ? "Creating…" : "New folder"}
+          </button>
+          <button
+            type="button"
+            disabled={isCreating}
+            onClick={async () => {
+              setIsCreating(true);
+              try {
+                await onCreate();
+              } finally {
+                setIsCreating(false);
+              }
+            }}
+          >
+            {isCreating ? "Creating…" : "+ New board"}
+          </button>
+        </div>
+      </div>
+      <div className="board-browser__filters">
+        <input
+          className="board-browser__search"
+          type="search"
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Search all boards"
+          aria-label="Search all boards"
+        />
+        <select
+          className="board-browser__sort"
+          aria-label="Sort boards"
+          value={sort}
+          onChange={(event) => onSortChange(event.target.value as BoardSort)}
+        >
+          <option value="modified-desc">Modified: newest</option>
+          <option value="modified-asc">Modified: oldest</option>
+          <option value="created-desc">Created: newest</option>
+          <option value="created-asc">Created: oldest</option>
+          <option value="name-asc">Name: A–Z</option>
+          <option value="name-desc">Name: Z–A</option>
+        </select>
+      </div>
+      {(actionError || errorMessage) && (
+        <div className="board-browser__error" role="alert">
+          {actionError || errorMessage}
+          {errorMessage && (
+            <button type="button" onClick={onLoadMore}>
+              Retry
+            </button>
+          )}
+        </div>
+      )}
+      <div className="visually-hidden" aria-live="polite">
+        {liveMessage}
+      </div>
+      <div className="board-browser__list">
+        {isLoading ? (
+          <div className="board-browser__empty">Loading boards…</div>
+        ) : boards.length === 0 && !search ? (
+          <>
+            {renderFolder(null, "unfiled")}
+            {folders.map((folder) => renderFolder(folder, folder._id))}
+            <div className="board-browser__empty">No boards yet</div>
+          </>
+        ) : (
+          <>
+            {search && boards.length === 0 && (
+              <div className="board-browser__empty">No matching boards</div>
+            )}
+            {renderFolder(null, "unfiled")}
+            {folders.map((folder) => renderFolder(folder, folder._id))}
+          </>
+        )}
+        {isFolderListLoading && (
+          <div className="board-browser__empty">Loading folders…</div>
+        )}
+        <div ref={sentinelRef} className="board-browser__sentinel" />
+        {isLoadingMore && (
+          <div className="board-browser__loading-more">
+            Loading more boards…
+          </div>
         )}
       </div>
     </div>
@@ -233,31 +672,26 @@ export const DiagramBrowser = ({
 };
 
 export const AppSidebar = ({
-  diagrams,
-  activeSlug,
-  isLoading,
-  onCreate,
-  onDelete,
-  onOpen,
   excalidrawAPI,
   canInsertMedia,
+  ...boardBrowserProps
 }: AppSidebarProps) => {
   const { theme, openSidebar } = useUIAppState();
 
   return (
     <>
       <DefaultSidebar.Trigger
-        tab="diagrams"
+        tab="boards"
         icon={sidebarRightIcon}
-        title="Diagrams, library, and search"
+        title="Boards, library, and search"
       />
       <DefaultSidebar>
         <DefaultSidebar.TabTriggers>
           <Sidebar.TabTrigger
-            tab="diagrams"
-            aria-label="Diagrams"
-            title="Diagrams"
-            style={{ opacity: openSidebar?.tab === "diagrams" ? 1 : 0.4 }}
+            tab="boards"
+            aria-label="Boards"
+            title="Boards"
+            style={{ opacity: openSidebar?.tab === "boards" ? 1 : 0.4 }}
           >
             {file}
           </Sidebar.TabTrigger>
@@ -286,15 +720,8 @@ export const AppSidebar = ({
             {presentationIcon}
           </Sidebar.TabTrigger>
         </DefaultSidebar.TabTriggers>
-        <Sidebar.Tab tab="diagrams">
-          <DiagramBrowser
-            diagrams={diagrams}
-            activeSlug={activeSlug}
-            isLoading={isLoading}
-            onCreate={onCreate}
-            onDelete={onDelete}
-            onOpen={onOpen}
-          />
+        <Sidebar.Tab tab="boards">
+          <BoardBrowser {...boardBrowserProps} />
         </Sidebar.Tab>
         <Sidebar.Tab tab="image-studio">
           {excalidrawAPI && (

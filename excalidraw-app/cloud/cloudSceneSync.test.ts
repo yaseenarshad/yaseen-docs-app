@@ -8,8 +8,8 @@ describe("cloud scene synchronization", () => {
   it("applies a newer server version for an owner route", () => {
     expect(
       shouldApplyCloudScene(
-        { routeKey: "owner:diagram", version: 10 },
-        { routeKey: "owner:diagram", version: 11 },
+        { routeKey: "owner:board", version: 10 },
+        { routeKey: "owner:board", version: 11 },
       ),
     ).toBe(true);
   });
@@ -17,8 +17,8 @@ describe("cloud scene synchronization", () => {
   it("does not reapply the same route and version", () => {
     expect(
       shouldApplyCloudScene(
-        { routeKey: "owner:diagram", version: 11 },
-        { routeKey: "owner:diagram", version: 11 },
+        { routeKey: "owner:board", version: 11 },
+        { routeKey: "owner:board", version: 11 },
       ),
     ).toBe(false);
   });

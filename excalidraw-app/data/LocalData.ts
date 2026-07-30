@@ -112,7 +112,7 @@ const isQuotaExceededError = (error: any) => {
   return error instanceof DOMException && error.name === "QuotaExceededError";
 };
 
-type SavingLockTypes = "collaboration";
+type SavingLockTypes = "cloud" | "collaboration";
 
 export class LocalData {
   private static _save = debounce(
@@ -148,6 +148,10 @@ export class LocalData {
 
   static flushSave = () => {
     this._save.flush();
+  };
+
+  static cancelSave = () => {
+    this._save.cancel();
   };
 
   private static locker = new Locker<SavingLockTypes>();

@@ -1,0 +1,465 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
+
+import { internal } from "./_generated/api";
+import { createDiagramSnapshotIfNeeded } from "./diagramHistory";
+import { hasElementVersionRegression } from "./sceneConflict";
+
+import type { Id } from "./_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+import type { PaginationOptions } from "convex/server";
+
+const MAX_SCENE_BYTES = 900_000;
+const EMPTY_SCENE_JSON = JSON.stringify({
+  elements: [],
+  appState: {},
+  files: {},
+});
+
+export const DEFAULT_BOARD_TITLE = "Untitled board";
+export const BOARD_SORTS = [
+  "name-asc",
+  "name-desc",
+  "created-desc",
+  "created-asc",
+  "modified-desc",
+  "modified-asc",
+] as const;
+export type BoardSort = typeof BOARD_SORTS[number];
+
+export const normalizeBoardTitle = (title: string) =>
+  title.trim().toLocaleLowerCase("en-US");
+
+export const requireUserId = async (ctx: QueryCtx | MutationCtx) => {
+  const userId = await getAuthUserId(ctx);
+  if (!userId) {
+    throw new Error("Authentication required");
+  }
+  return userId;
+};
+
+const makeSlug = () => crypto.randomUUID().replaceAll("-", "").slice(0, 20);
+
+const makeShareToken = () =>
+  `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll("-", "");
+
+const assertSceneSize = (sceneJson: string, entityName: string) => {
+  const bytes = new TextEncoder().encode(sceneJson).byteLength;
+  if (bytes > MAX_SCENE_BYTES) {
+    throw new Error(
+      `This ${entityName.toLowerCase()} is too large to save as one scene. Remove embedded data or split the ${entityName.toLowerCase()}.`,
+    );
+  }
+};
+
+const getUniqueSlug = async (ctx: MutationCtx, entityName: string) => {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const slug = makeSlug();
+    const existing = await ctx.db
+      .query("diagrams")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .unique();
+    if (!existing) {
+      return slug;
+    }
+  }
+  throw new Error(
+    `Could not generate a unique ${entityName.toLowerCase()} URL`,
+  );
+};
+
+const createRecord = async (
+  ctx: MutationCtx,
+  ownerId: Id<"users">,
+  title: string,
+  entityName: string,
+) => {
+  const now = Date.now();
+  const slug = await getUniqueSlug(ctx, entityName);
+  const diagramId = await ctx.db.insert("diagrams", {
+    ownerId,
+    slug,
+    title,
+    normalizedTitle: normalizeBoardTitle(title),
+    visibility: "private",
+    shareEnabled: false,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await ctx.db.insert("diagramContents", {
+    diagramId,
+    sceneJson: EMPTY_SCENE_JSON,
+    version: 0,
+    updatedAt: now,
+  });
+  return { diagramId, slug };
+};
+
+export const toBoardSummary = (diagram: {
+  _id: Id<"diagrams">;
+  slug: string;
+  title: string;
+  visibility: "private" | "unlisted" | "public";
+  shareEnabled: boolean;
+  folderId?: Id<"boardFolders">;
+  createdAt: number;
+  updatedAt: number;
+}) => ({
+  _id: diagram._id,
+  slug: diagram.slug,
+  title: diagram.title,
+  visibility: diagram.visibility,
+  shareEnabled: diagram.shareEnabled,
+  ...(diagram.folderId ? { folderId: diagram.folderId } : {}),
+  createdAt: diagram.createdAt,
+  updatedAt: diagram.updatedAt,
+});
+
+export const ensureDefaultRecord = async (
+  ctx: MutationCtx,
+  entityName: string,
+) => {
+  const ownerId = await requireUserId(ctx);
+  const existing = await ctx.db
+    .query("diagrams")
+    .withIndex("by_ownerId_and_updatedAt", (q) => q.eq("ownerId", ownerId))
+    .order("desc")
+    .take(1);
+  if (existing[0]) {
+    return { diagramId: existing[0]._id, slug: existing[0].slug };
+  }
+  return await createRecord(ctx, ownerId, DEFAULT_BOARD_TITLE, entityName);
+};
+
+export const createBoardRecord = async (
+  ctx: MutationCtx,
+  title: string,
+  entityName: string,
+) => {
+  const ownerId = await requireUserId(ctx);
+  const normalizedTitle = title.trim() || DEFAULT_BOARD_TITLE;
+  return await createRecord(
+    ctx,
+    ownerId,
+    normalizedTitle.slice(0, 120),
+    entityName,
+  );
+};
+
+export const listOwnedBoardRecords = async (ctx: QueryCtx) => {
+  const ownerId = await requireUserId(ctx);
+  const diagrams = await ctx.db
+    .query("diagrams")
+    .withIndex("by_ownerId_and_updatedAt", (q) => q.eq("ownerId", ownerId))
+    .order("desc")
+    .take(100);
+  return diagrams.map(toBoardSummary);
+};
+
+export const paginateOwnedBoardRecords = async (
+  ctx: QueryCtx,
+  paginationOpts: PaginationOptions,
+  sort: BoardSort,
+  searchQuery: string,
+) => {
+  const ownerId = await requireUserId(ctx);
+  const normalizedQuery = normalizeBoardTitle(searchQuery);
+  if (normalizedQuery) {
+    const result = await ctx.db
+      .query("diagrams")
+      .withSearchIndex("search_normalizedTitle", (q) =>
+        q.search("normalizedTitle", normalizedQuery).eq("ownerId", ownerId),
+      )
+      .paginate(paginationOpts);
+    const page = result.page.map(toBoardSummary);
+    page.sort(getBoardSummaryComparator(sort));
+    return { ...result, page };
+  }
+
+  const result =
+    sort === "name-asc" || sort === "name-desc"
+      ? await ctx.db
+          .query("diagrams")
+          .withIndex("by_ownerId_and_normalizedTitle", (q) =>
+            q.eq("ownerId", ownerId),
+          )
+          .order(sort === "name-asc" ? "asc" : "desc")
+          .paginate(paginationOpts)
+      : sort === "created-asc" || sort === "created-desc"
+      ? await ctx.db
+          .query("diagrams")
+          .withIndex("by_ownerId_and_createdAt", (q) =>
+            q.eq("ownerId", ownerId),
+          )
+          .order(sort === "created-asc" ? "asc" : "desc")
+          .paginate(paginationOpts)
+      : await ctx.db
+          .query("diagrams")
+          .withIndex("by_ownerId_and_updatedAt", (q) =>
+            q.eq("ownerId", ownerId),
+          )
+          .order(sort === "modified-asc" ? "asc" : "desc")
+          .paginate(paginationOpts);
+  return {
+    ...result,
+    page: result.page.map(toBoardSummary),
+  };
+};
+
+const getBoardSummaryComparator =
+  (sort: BoardSort) =>
+  (
+    left: ReturnType<typeof toBoardSummary>,
+    right: ReturnType<typeof toBoardSummary>,
+  ) => {
+    const direction =
+      sort === "name-desc" ||
+      sort === "created-desc" ||
+      sort === "modified-desc"
+        ? -1
+        : 1;
+    const value =
+      sort === "name-asc" || sort === "name-desc"
+        ? normalizeBoardTitle(left.title).localeCompare(
+            normalizeBoardTitle(right.title),
+          )
+        : sort === "created-asc" || sort === "created-desc"
+        ? left.createdAt - right.createdAt
+        : left.updatedAt - right.updatedAt;
+    return value === 0
+      ? left._id.localeCompare(right._id) * direction
+      : value * direction;
+  };
+
+export const openOwnedBoardRecord = async (ctx: QueryCtx, slug: string) => {
+  const ownerId = await requireUserId(ctx);
+  const diagram = await ctx.db
+    .query("diagrams")
+    .withIndex("by_slug", (q) => q.eq("slug", slug))
+    .unique();
+  if (!diagram || diagram.ownerId !== ownerId) {
+    return null;
+  }
+  const content = await ctx.db
+    .query("diagramContents")
+    .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
+    .unique();
+  if (!content) {
+    throw new Error("Board content is missing");
+  }
+  return {
+    board: toBoardSummary(diagram),
+    sceneJson: content.sceneJson,
+    version: content.version,
+    access: "owner" as const,
+  };
+};
+
+export const openSharedBoardRecord = async (
+  ctx: QueryCtx,
+  shareToken: string,
+) => {
+  const diagram = await ctx.db
+    .query("diagrams")
+    .withIndex("by_shareToken", (q) => q.eq("shareToken", shareToken))
+    .unique();
+  if (!diagram || !diagram.shareEnabled) {
+    return null;
+  }
+  const content = await ctx.db
+    .query("diagramContents")
+    .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
+    .unique();
+  if (!content) {
+    throw new Error("Board content is missing");
+  }
+  return {
+    board: toBoardSummary(diagram),
+    sceneJson: content.sceneJson,
+    version: content.version,
+    access: "viewer" as const,
+  };
+};
+
+export const saveBoardRecord = async (
+  ctx: MutationCtx,
+  args: {
+    boardId: Id<"diagrams">;
+    expectedVersion: number;
+    sceneJson: string;
+  },
+  entityName: string,
+) => {
+  const ownerId = await requireUserId(ctx);
+  const diagram = await ctx.db.get("diagrams", args.boardId);
+  if (!diagram || diagram.ownerId !== ownerId) {
+    throw new Error(`${entityName} not found`);
+  }
+  assertSceneSize(args.sceneJson, entityName);
+  const content = await ctx.db
+    .query("diagramContents")
+    .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
+    .unique();
+  if (!content) {
+    throw new Error(`${entityName} content is missing`);
+  }
+  if (
+    content.version !== args.expectedVersion ||
+    hasElementVersionRegression(content.sceneJson, args.sceneJson)
+  ) {
+    return { status: "conflict" as const, version: content.version };
+  }
+  const now = Date.now();
+  await createDiagramSnapshotIfNeeded(ctx, {
+    diagramId: diagram._id,
+    ownerId,
+    sceneJson: content.sceneJson,
+    version: content.version,
+    now,
+    force: false,
+  });
+  const version = content.version + 1;
+  await ctx.db.patch("diagramContents", content._id, {
+    sceneJson: args.sceneJson,
+    version,
+    updatedAt: now,
+  });
+  await ctx.db.patch("diagrams", diagram._id, { updatedAt: now });
+  return { status: "saved" as const, version, updatedAt: now };
+};
+
+export const renameBoardRecord = async (
+  ctx: MutationCtx,
+  boardId: Id<"diagrams">,
+  title: string,
+  entityName: string,
+) => {
+  const ownerId = await requireUserId(ctx);
+  const diagram = await ctx.db.get("diagrams", boardId);
+  if (!diagram || diagram.ownerId !== ownerId) {
+    throw new Error(`${entityName} not found`);
+  }
+  const normalizedTitle = title.trim() || DEFAULT_BOARD_TITLE;
+  await ctx.db.patch("diagrams", diagram._id, {
+    title: normalizedTitle.slice(0, 120),
+    normalizedTitle: normalizeBoardTitle(normalizedTitle.slice(0, 120)),
+    updatedAt: Date.now(),
+  });
+};
+
+export const moveBoardToFolderRecord = async (
+  ctx: MutationCtx,
+  boardId: Id<"diagrams">,
+  folderId: Id<"boardFolders"> | null,
+) => {
+  const ownerId = await requireUserId(ctx);
+  const board = await ctx.db.get("diagrams", boardId);
+  if (!board || board.ownerId !== ownerId) {
+    throw new Error("Board not found");
+  }
+  if (folderId) {
+    const folder = await ctx.db.get("boardFolders", folderId);
+    if (!folder || folder.ownerId !== ownerId) {
+      throw new Error("Folder not found");
+    }
+  }
+  if ((board.folderId ?? null) === folderId) {
+    return;
+  }
+  await ctx.db.patch("diagrams", board._id, {
+    folderId: folderId ?? undefined,
+  });
+};
+
+export const removeBoardRecord = async (
+  ctx: MutationCtx,
+  boardId: Id<"diagrams">,
+  entityName: string,
+) => {
+  const ownerId = await requireUserId(ctx);
+  const diagram = await ctx.db.get("diagrams", boardId);
+  if (!diagram || diagram.ownerId !== ownerId) {
+    throw new Error(`${entityName} not found`);
+  }
+
+  const [content, assets, uploadGrants] = await Promise.all([
+    ctx.db
+      .query("diagramContents")
+      .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
+      .unique(),
+    ctx.db
+      .query("diagramAssets")
+      .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
+      .take(2000),
+    ctx.db
+      .query("assetUploadGrants")
+      .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
+      .take(1000),
+  ]);
+
+  const objectKeys = assets.flatMap((asset) =>
+    asset.objectKey ? [asset.objectKey] : [],
+  );
+  const assetDeleteToken = objectKeys.length > 0 ? makeShareToken() : null;
+  if (assetDeleteToken) {
+    const now = Date.now();
+    await ctx.db.insert("assetDeleteGrants", {
+      token: assetDeleteToken,
+      ownerId,
+      objectKeys,
+      createdAt: now,
+      expiresAt: now + 10 * 60 * 1000,
+    });
+  }
+
+  if (content) {
+    await ctx.db.delete("diagramContents", content._id);
+  }
+  for (const asset of assets) {
+    if (asset.storageId) {
+      await ctx.storage.delete(asset.storageId);
+    }
+    await ctx.db.delete("diagramAssets", asset._id);
+  }
+  for (const grant of uploadGrants) {
+    await ctx.db.delete("assetUploadGrants", grant._id);
+  }
+  await ctx.db.delete("diagrams", diagram._id);
+  await ctx.scheduler.runAfter(
+    0,
+    internal.snapshotRetention.deleteDiagramSnapshots,
+    {
+      diagramId: diagram._id,
+    },
+  );
+
+  return { assetDeleteToken };
+};
+
+export const setBoardSharingRecord = async (
+  ctx: MutationCtx,
+  boardId: Id<"diagrams">,
+  enabled: boolean,
+  entityName: string,
+) => {
+  const ownerId = await requireUserId(ctx);
+  const diagram = await ctx.db.get("diagrams", boardId);
+  if (!diagram || diagram.ownerId !== ownerId) {
+    throw new Error(`${entityName} not found`);
+  }
+  if (!enabled) {
+    await ctx.db.patch("diagrams", diagram._id, {
+      shareEnabled: false,
+      visibility: "private",
+      updatedAt: Date.now(),
+    });
+    return { enabled: false, shareToken: null };
+  }
+  const shareToken = diagram.shareToken ?? makeShareToken();
+  await ctx.db.patch("diagrams", diagram._id, {
+    shareEnabled: true,
+    shareToken,
+    visibility: "unlisted",
+    updatedAt: Date.now(),
+  });
+  return { enabled: true, shareToken };
+};

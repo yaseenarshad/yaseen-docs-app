@@ -34,7 +34,13 @@ import {
   isDevEnv,
 } from "@excalidraw/common";
 import polyfill from "@excalidraw/excalidraw/polyfill";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { loadFromBlob } from "@excalidraw/excalidraw/data/blob";
 import { serializeAsJSON } from "@excalidraw/excalidraw/data/json";
 import { t } from "@excalidraw/excalidraw/i18n";
@@ -142,12 +148,18 @@ import { useAppLangCode } from "./app-language/language-state";
 import { CloudStatus } from "./cloud/CloudStatus";
 import { CloudAccount } from "./cloud/CloudAccount";
 import { CloudShareDialog } from "./cloud/CloudShareDialog";
+import { getCloudDocumentTitle } from "./cloud/cloudDocumentTitle";
 import {
   preserveCloudViewport,
   shouldApplyCloudScene,
   shouldMergeCloudScene,
 } from "./cloud/cloudSceneSync";
-import { useCloudDiagram } from "./cloud/useCloudDiagram";
+import {
+  cloudRouteOwnsScene,
+  selectInitialLocalElements,
+  shouldRunLocalSceneSync,
+} from "./cloud/cloudSceneOwnership";
+import { useCloudBoard } from "./cloud/useCloudBoard";
 import DebugCanvas, {
   debugRenderer,
   isVisualDebuggerEnabled,
@@ -228,6 +240,7 @@ const shareableLinkConfirmDialog = {
 const initializeScene = async (opts: {
   collabAPI: CollabAPI | null;
   excalidrawAPI: ExcalidrawImperativeAPI;
+  routeOwnsScene: boolean;
 }): Promise<
   { scene: ExcalidrawInitialDataState | null } & (
     | { isExternalScene: true; id: string; key: string }
@@ -251,15 +264,22 @@ const initializeScene = async (opts: {
   > & {
     scrollToContent?: boolean;
   } = {
-    elements: restoreElements(localDataState?.elements, null, {
-      repairBindings: true,
-      deleteInvisibleElements: true,
-    }),
+    elements: restoreElements(
+      selectInitialLocalElements(localDataState?.elements, opts.routeOwnsScene),
+      null,
+      {
+        repairBindings: true,
+        deleteInvisibleElements: true,
+      },
+    ),
     appState: restoreAppState(localDataState?.appState, null),
   };
 
-  let roomLinkData = getCollaborationLinkData(window.location.href);
-  const isExternalScene = !!(id || jsonBackendMatch || roomLinkData);
+  let roomLinkData = opts.routeOwnsScene
+    ? null
+    : getCollaborationLinkData(window.location.href);
+  const isExternalScene =
+    !opts.routeOwnsScene && !!(id || jsonBackendMatch || roomLinkData);
   if (isExternalScene) {
     if (
       // don't prompt if scene is empty
@@ -312,7 +332,7 @@ const initializeScene = async (opts: {
       roomLinkData = null;
       window.history.replaceState({}, APP_NAME, window.location.origin);
     }
-  } else if (externalUrlMatch) {
+  } else if (!opts.routeOwnsScene && externalUrlMatch) {
     window.history.replaceState({}, APP_NAME, window.location.origin);
 
     const url = externalUrlMatch[1];
@@ -400,11 +420,27 @@ const ExcalidrawWrapper = () => {
     },
     [excalidrawAPI],
   );
-  const cloud = useCloudDiagram();
+  const cloud = useCloudBoard();
+  useLayoutEffect(() => {
+    document.title = getCloudDocumentTitle(
+      cloud.route,
+      cloud.openedBoard?.access === "owner"
+        ? cloud.openedBoard.board
+        : undefined,
+    );
+  }, [cloud.openedBoard, cloud.route]);
+  const routeOwnsScene = cloudRouteOwnsScene(cloud.route);
+  const activeCloudRouteKey =
+    cloud.route.kind === "owner"
+      ? `owner:${cloud.route.slug}`
+      : cloud.route.kind === "shared"
+      ? `shared:${cloud.route.shareToken}`
+      : null;
   const loadedCloudSceneRef = useRef<{
     routeKey: string;
     version: number;
   } | null>(null);
+  const visibleCloudRouteRef = useRef<string | null>(null);
   const applyingCloudSceneRef = useRef(false);
   const loadingCloudFileIdsRef = useRef(new Set<string>());
 
@@ -457,6 +493,16 @@ const ExcalidrawWrapper = () => {
   const [cloudShareUrl, setCloudShareUrl] = useState<string | null>(null);
 
   useEffect(() => {
+    if (routeOwnsScene) {
+      LocalData.cancelSave();
+      LocalData.pauseSave("cloud");
+    } else {
+      LocalData.resumeSave("cloud");
+    }
+    return () => LocalData.resumeSave("cloud");
+  }, [routeOwnsScene]);
+
+  useEffect(() => {
     if (isDevEnv()) {
       const debugState = loadSavedDebugState();
 
@@ -472,34 +518,55 @@ const ExcalidrawWrapper = () => {
   }, [excalidrawAPI]);
 
   useEffect(() => {
-    if (!excalidrawAPI || !cloud.openedDiagram) {
+    if (
+      !excalidrawAPI ||
+      !activeCloudRouteKey ||
+      visibleCloudRouteRef.current === activeCloudRouteKey
+    ) {
+      return;
+    }
+    cloud.discardPendingSave();
+    applyingCloudSceneRef.current = true;
+    excalidrawAPI.updateScene({
+      elements: [],
+      appState: {
+        viewModeEnabled: cloud.route.kind === "shared",
+      },
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+    excalidrawAPI.resetFiles();
+    loadingCloudFileIdsRef.current = new Set();
+    applyingCloudSceneRef.current = false;
+    visibleCloudRouteRef.current = activeCloudRouteKey;
+  }, [activeCloudRouteKey, cloud, cloud.route.kind, excalidrawAPI]);
+
+  useEffect(() => {
+    if (!excalidrawAPI || !cloud.openedBoard) {
       return;
     }
 
-    const routeKey =
-      cloud.route.kind === "owner"
-        ? `owner:${cloud.route.slug}`
-        : cloud.route.kind === "shared"
-        ? `shared:${cloud.route.shareToken}`
-        : "home";
+    const routeKey = activeCloudRouteKey;
+    if (!routeKey) {
+      return;
+    }
     const previous = loadedCloudSceneRef.current;
     const nextAppliedScene = {
       routeKey,
-      version: cloud.openedDiagram.version,
+      version: cloud.openedBoard.version,
     };
     if (!shouldApplyCloudScene(previous, nextAppliedScene)) {
       return;
     }
 
     try {
-      const scene = JSON.parse(cloud.openedDiagram.sceneJson);
+      const scene = JSON.parse(cloud.openedBoard.sceneJson);
       const appState = excalidrawAPI.getAppState();
       const remoteElements = restoreElements(scene.elements, null, {
         repairBindings: true,
         deleteInvisibleElements: true,
       });
       const shouldMerge =
-        cloud.openedDiagram.access === "owner" &&
+        cloud.openedBoard.access === "owner" &&
         shouldMergeCloudScene(previous, routeKey);
       const elements = shouldMerge
         ? reconcileElements(
@@ -539,30 +606,32 @@ const ExcalidrawWrapper = () => {
       }
     } catch (error) {
       applyingCloudSceneRef.current = false;
-      console.error("Could not restore cloud diagram", error);
+      console.error("Could not restore cloud board", error);
       excalidrawAPI.updateScene({
         appState: {
-          errorMessage: "The saved cloud diagram could not be opened.",
+          errorMessage: "The saved cloud board could not be opened.",
         },
       });
     }
-  }, [cloud, excalidrawAPI]);
+  }, [activeCloudRouteKey, cloud, excalidrawAPI]);
 
   useEffect(() => {
-    if (!excalidrawAPI || cloud.assets.length === 0) {
+    const requestedRouteKey = activeCloudRouteKey;
+    if (!excalidrawAPI || !requestedRouteKey || cloud.assets.length === 0) {
       return;
     }
+    const loadingFileIds = loadingCloudFileIdsRef.current;
     const currentFiles = excalidrawAPI.getFiles();
     const assetsToLoad = cloud.assets.filter(
       (asset) =>
         !currentFiles[asset.fileId as FileId] &&
-        !loadingCloudFileIdsRef.current.has(asset.fileId),
+        !loadingFileIds.has(asset.fileId),
     );
     if (assetsToLoad.length === 0) {
       return;
     }
     for (const asset of assetsToLoad) {
-      loadingCloudFileIdsRef.current.add(asset.fileId);
+      loadingFileIds.add(asset.fileId);
     }
     void Promise.all(
       assetsToLoad.map(async (asset): Promise<BinaryFileData> => {
@@ -579,8 +648,15 @@ const ExcalidrawWrapper = () => {
         };
       }),
     )
-      .then((files) => excalidrawAPI.addFiles(files))
+      .then((files) => {
+        if (visibleCloudRouteRef.current === requestedRouteKey) {
+          excalidrawAPI.addFiles(files);
+        }
+      })
       .catch((error) => {
+        if (visibleCloudRouteRef.current !== requestedRouteKey) {
+          return;
+        }
         console.error("Could not load cloud images", error);
         excalidrawAPI.updateScene({
           appState: {
@@ -590,10 +666,10 @@ const ExcalidrawWrapper = () => {
       })
       .finally(() => {
         for (const asset of assetsToLoad) {
-          loadingCloudFileIdsRef.current.delete(asset.fileId);
+          loadingFileIds.delete(asset.fileId);
         }
       });
-  }, [cloud.assets, excalidrawAPI]);
+  }, [activeCloudRouteKey, cloud.assets, excalidrawAPI]);
 
   // ---------------------------------------------------------------------------
   // Hoisted loadImages
@@ -685,8 +761,14 @@ const ExcalidrawWrapper = () => {
       return;
     }
 
-    initializeScene({ collabAPI, excalidrawAPI }).then(async (data) => {
-      loadImages(data, /* isInitialLoad */ true);
+    initializeScene({
+      collabAPI,
+      excalidrawAPI,
+      routeOwnsScene,
+    }).then(async (data) => {
+      if (!routeOwnsScene) {
+        loadImages(data, /* isInitialLoad */ true);
+      }
       initialStatePromiseRef.current.promise.resolve(data.scene);
     });
 
@@ -694,6 +776,9 @@ const ExcalidrawWrapper = () => {
       event.preventDefault();
       const libraryUrlTokens = parseLibraryTokensFromUrl();
       if (!libraryUrlTokens) {
+        if (routeOwnsScene) {
+          return;
+        }
         if (
           collabAPI?.isCollaborating() &&
           !isCollaborationLink(window.location.href)
@@ -702,7 +787,11 @@ const ExcalidrawWrapper = () => {
         }
         excalidrawAPI.updateScene({ appState: { isLoading: true } });
 
-        initializeScene({ collabAPI, excalidrawAPI }).then((data) => {
+        initializeScene({
+          collabAPI,
+          excalidrawAPI,
+          routeOwnsScene,
+        }).then((data) => {
           loadImages(data);
           if (data.scene) {
             excalidrawAPI.updateScene({
@@ -725,15 +814,22 @@ const ExcalidrawWrapper = () => {
         !document.hidden &&
         ((collabAPI && !collabAPI.isCollaborating()) || isCollabDisabled)
       ) {
+        const localSceneSyncEnabled = shouldRunLocalSceneSync({
+          routeOwnsScene,
+          documentHidden: document.hidden,
+          collaborationActive: Boolean(collabAPI?.isCollaborating()),
+        });
         // don't sync if local state is newer or identical to browser state
         if (isBrowserStorageStateNewer(STORAGE_KEYS.VERSION_DATA_STATE)) {
           const localDataState = importFromLocalStorage();
           const username = importUsernameFromLocalStorage();
           setLangCode(getPreferredLanguage());
-          excalidrawAPI.updateScene({
-            ...localDataState,
-            captureUpdate: CaptureUpdateAction.NEVER,
-          });
+          if (localSceneSyncEnabled) {
+            excalidrawAPI.updateScene({
+              ...localDataState,
+              captureUpdate: CaptureUpdateAction.NEVER,
+            });
+          }
           LibraryIndexedDBAdapter.load().then((data) => {
             if (data) {
               excalidrawAPI.updateLibrary({
@@ -744,7 +840,10 @@ const ExcalidrawWrapper = () => {
           collabAPI?.setUsername(username || "");
         }
 
-        if (isBrowserStorageStateNewer(STORAGE_KEYS.VERSION_FILES)) {
+        if (
+          localSceneSyncEnabled &&
+          isBrowserStorageStateNewer(STORAGE_KEYS.VERSION_FILES)
+        ) {
           const elements = excalidrawAPI.getSceneElementsIncludingDeleted();
           const currFiles = excalidrawAPI.getFiles();
           const fileIds =
@@ -777,11 +876,13 @@ const ExcalidrawWrapper = () => {
     }, SYNC_BROWSER_TABS_TIMEOUT);
 
     const onUnload = () => {
-      LocalData.flushSave();
+      if (!routeOwnsScene) {
+        LocalData.flushSave();
+      }
     };
 
     const visibilityChange = (event: FocusEvent | Event) => {
-      if (event.type === EVENT.BLUR || document.hidden) {
+      if (!routeOwnsScene && (event.type === EVENT.BLUR || document.hidden)) {
         LocalData.flushSave();
       }
       if (
@@ -808,14 +909,24 @@ const ExcalidrawWrapper = () => {
         false,
       );
     };
-  }, [isCollabDisabled, collabAPI, excalidrawAPI, setLangCode, loadImages]);
+  }, [
+    isCollabDisabled,
+    collabAPI,
+    excalidrawAPI,
+    setLangCode,
+    loadImages,
+    routeOwnsScene,
+  ]);
 
   useEffect(() => {
     const unloadHandler = (event: BeforeUnloadEvent) => {
-      LocalData.flushSave();
+      if (!routeOwnsScene) {
+        LocalData.flushSave();
+      }
 
       if (
         excalidrawAPI &&
+        !routeOwnsScene &&
         LocalData.fileStorage.shouldPreventUnload(
           excalidrawAPI.getSceneElements(),
         )
@@ -833,7 +944,7 @@ const ExcalidrawWrapper = () => {
     return () => {
       window.removeEventListener(EVENT.BEFORE_UNLOAD, unloadHandler);
     };
-  }, [excalidrawAPI]);
+  }, [excalidrawAPI, routeOwnsScene]);
 
   const onChange = (
     elements: readonly OrderedExcalidrawElement[],
@@ -846,7 +957,7 @@ const ExcalidrawWrapper = () => {
 
     // this check is redundant, but since this is a hot path, it's best
     // not to evaludate the nested expression every time
-    if (!LocalData.isSavePaused()) {
+    if (!routeOwnsScene && !LocalData.isSavePaused()) {
       LocalData.save(elements, appState, files, () => {
         if (excalidrawAPI) {
           let didChange = false;
@@ -877,7 +988,7 @@ const ExcalidrawWrapper = () => {
     }
 
     if (
-      cloud.openedDiagram?.access === "owner" &&
+      cloud.openedBoard?.access === "owner" &&
       !applyingCloudSceneRef.current
     ) {
       cloud.queueAssets(files);
@@ -1127,11 +1238,11 @@ const ExcalidrawWrapper = () => {
         renderTopLeftUI={() => (
           <div className="cloud-header-identity">
             <CloudStatus
-              title={cloud.openedDiagram?.diagram.title ?? "Cloud diagram"}
+              title={cloud.openedBoard?.board.title ?? "Cloud board"}
               status={cloud.saveStatus}
               errorMessage={cloud.errorMessage}
-              canRename={cloud.openedDiagram?.access === "owner"}
-              onRename={cloud.renameOpenedDiagram}
+              canRename={cloud.openedBoard?.access === "owner"}
+              onRename={cloud.renameOpenedBoard}
             />
             <CloudAccount />
           </div>
@@ -1147,7 +1258,7 @@ const ExcalidrawWrapper = () => {
                   <LiveCollaborationTrigger
                     isCollaborating={isCollaborating}
                     onSelect={() => {
-                      if (cloud.openedDiagram?.access === "owner") {
+                      if (cloud.openedBoard?.access === "owner") {
                         setIsCloudShareOpen(true);
                       } else {
                         setShareDialogState({ isOpen: true, type: "share" });
@@ -1245,7 +1356,7 @@ const ExcalidrawWrapper = () => {
         />
         {isCloudShareOpen && (
           <CloudShareDialog
-            title={cloud.openedDiagram?.diagram.title ?? "Cloud diagram"}
+            title={cloud.openedBoard?.board.title ?? "Cloud board"}
             initialUrl={cloudShareUrl}
             onClose={() => setIsCloudShareOpen(false)}
             onCreateLink={async () => {
@@ -1257,16 +1368,30 @@ const ExcalidrawWrapper = () => {
         )}
 
         <AppSidebar
-          diagrams={cloud.diagrams}
+          boards={cloud.boards}
+          folders={cloud.folders}
           activeSlug={cloud.route.kind === "owner" ? cloud.route.slug : null}
-          isLoading={cloud.isDiagramListLoading}
-          onCreate={cloud.createNewDiagram}
-          onDelete={cloud.deleteDiagram}
-          onOpen={cloud.openDiagram}
+          isLoading={cloud.isBoardListLoading}
+          isLoadingMore={cloud.isBoardListLoadingMore}
+          isFolderListLoading={cloud.isFolderListLoading}
+          canLoadMore={cloud.canLoadMoreBoards}
+          errorMessage={cloud.boardListError}
+          search={cloud.boardSearch}
+          sort={cloud.boardSort}
+          onSearchChange={cloud.setBoardSearch}
+          onSortChange={cloud.setBoardSort}
+          onLoadMore={cloud.loadMoreBoards}
+          onCreate={cloud.createNewBoard}
+          onCreateFolder={cloud.createFolder}
+          onRenameFolder={cloud.renameFolder}
+          onDeleteFolder={cloud.deleteFolder}
+          onMove={cloud.moveBoardToFolder}
+          onDelete={cloud.deleteBoard}
+          onOpen={cloud.openBoard}
           excalidrawAPI={excalidrawAPI}
           canInsertMedia={
             cloud.route.kind === "owner" &&
-            cloud.openedDiagram?.access === "owner"
+            cloud.openedBoard?.access === "owner"
           }
         />
 

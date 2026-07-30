@@ -22,7 +22,7 @@ describe("CloudShareDialog", () => {
   it("creates and copies the existing view-only link", async () => {
     const onCreateLink = vi
       .fn()
-      .mockResolvedValue("https://draw.yasinarshad.com/s/token");
+      .mockResolvedValue("https://draw.yaseenarshad.com/s/token");
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
 
@@ -34,13 +34,16 @@ describe("CloudShareDialog", () => {
       />,
     );
 
+    expect(
+      screen.getByText("Anyone with this link can view this board."),
+    ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Create link" }));
-    await screen.findByDisplayValue("https://draw.yasinarshad.com/s/token");
+    await screen.findByDisplayValue("https://draw.yaseenarshad.com/s/token");
     fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
 
     await waitFor(() =>
       expect(writeText).toHaveBeenCalledWith(
-        "https://draw.yasinarshad.com/s/token",
+        "https://draw.yaseenarshad.com/s/token",
       ),
     );
     expect(screen.getByText("Link copied")).toBeVisible();
@@ -54,7 +57,7 @@ describe("CloudShareDialog", () => {
     render(
       <CloudShareDialog
         title="Roadmap"
-        initialUrl="https://draw.yasinarshad.com/s/token"
+        initialUrl="https://draw.yaseenarshad.com/s/token"
         onClose={vi.fn()}
         onCreateLink={vi.fn()}
       />,

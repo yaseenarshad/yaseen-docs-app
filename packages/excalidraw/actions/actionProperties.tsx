@@ -19,7 +19,7 @@ import {
   KEYS,
   randomInteger,
   arrayToMap,
-  getFontFamilyString,
+  getFontString,
   getLineHeight,
   isTransparent,
   getStrokeWidthByKey,
@@ -2042,22 +2042,18 @@ export const actionChangeFontFamily = register<{
         ExcalidrawTextElement,
         ExcalidrawElement | null
       >();
-      let uniqueChars = new Set<string>();
-      let skipFontFaceCheck = false;
+      const fontLoadRequests = new Map<
+        string,
+        {
+          characters: Set<string>;
+          weight: "400" | "700";
+        }
+      >();
 
       const fontsCache = Array.from(Fonts.loadedFontsCache.values());
       const fontFamily = Object.entries(FONT_FAMILY).find(
         ([_, value]) => value === nextFontFamily,
       )?.[0];
-
-      // skip `document.font.check` check on hover, if at least one font family has loaded as it's super slow (could result in slightly different bbox, which is fine)
-      if (
-        currentHoveredFontFamily &&
-        fontFamily &&
-        fontsCache.some((sig) => sig.startsWith(fontFamily))
-      ) {
-        skipFontFaceCheck = true;
-      }
 
       // following causes re-render so make sure we changed the family
       // otherwise it could cause unexpected issues, such as preventing opening the popover when in wysiwyg
@@ -2089,12 +2085,19 @@ export const actionChangeFontFamily = register<{
                 app.scene.mutateElement(container, { ...cachedContainer });
               }
 
-              if (!skipFontFaceCheck) {
-                uniqueChars = new Set([
-                  ...uniqueChars,
-                  ...Array.from(newElement.originalText),
-                ]);
+              const fontString = getFontString({
+                fontFamily: nextFontFamily,
+                fontSize: 10,
+                fontWeight: newElement.fontWeight,
+              });
+              const request = fontLoadRequests.get(fontString) ?? {
+                characters: new Set<string>(),
+                weight: newElement.fontWeight === "bold" ? "700" : "400",
+              };
+              for (const character of newElement.originalText) {
+                request.characters.add(character);
               }
+              fontLoadRequests.set(fontString, request);
 
               elementContainerMapping.set(newElement, container);
 
@@ -2107,21 +2110,43 @@ export const actionChangeFontFamily = register<{
         ),
       });
 
-      // size is irrelevant, but necessary
-      const fontString = `10px ${getFontFamilyString({
-        fontFamily: nextFontFamily,
-      })}`;
-      const chars = Array.from(uniqueChars.values()).join();
+      const requests = Array.from(
+        fontLoadRequests,
+        ([font, { characters, weight }]) => ({
+          font,
+          text: Array.from(characters).join(""),
+          weight,
+        }),
+      );
+      // Hover previews run frequently, so skip the expensive FontFaceSet check
+      // only when the exact authored weight has already been processed.
+      const skipFontFaceCheck =
+        Boolean(currentHoveredFontFamily && fontFamily) &&
+        requests.every(({ weight }) =>
+          fontsCache.some((signature) =>
+            signature.startsWith(`${fontFamily}-normal-${weight}-`),
+          ),
+        );
+      const missingRequests = skipFontFaceCheck
+        ? []
+        : requests.filter(
+            ({ font, text }) => !window.document.fonts.check(font, text),
+          );
 
-      if (skipFontFaceCheck || window.document.fonts.check(fontString, chars)) {
+      if (missingRequests.length === 0) {
         // we either skip the check (have at least one font face loaded) or do the check and find out all the font faces have loaded
         for (const [element, container] of elementContainerMapping) {
           // trigger synchronous redraw
           redrawTextBoundingBox(element, container, app.scene);
         }
       } else {
-        // otherwise try to load all font faces for the given chars and redraw elements once our font faces loaded
-        window.document.fonts.load(fontString, chars).then((fontFaces) => {
+        // Otherwise load every required authored weight and redraw only after
+        // all requested faces resolve.
+        Promise.all(
+          missingRequests.map(({ font, text }) =>
+            window.document.fonts.load(font, text),
+          ),
+        ).then((loadedFontFaces) => {
           for (const [element, container] of elementContainerMapping) {
             // use latest element state to ensure we don't have closure over an old instance in order to avoid possible race conditions (i.e. font faces load out-of-order while rapidly switching fonts)
             const latestElement = app.scene.getElement(element.id);
@@ -2140,7 +2165,7 @@ export const actionChangeFontFamily = register<{
           }
 
           // trigger update once we've mutated all the elements, which also updates our cache
-          app.fonts.onLoaded(fontFaces);
+          app.fonts.onLoaded(loadedFontFaces.flat());
         });
       }
     }

@@ -31,6 +31,21 @@ describe("actionStyles", () => {
     await act(async () => {});
   });
 
+  it("creates representative manual tools with Architect roughness", () => {
+    for (const [index, tool] of (
+      ["rectangle", "ellipse", "diamond", "line", "arrow"] as const
+    ).entries()) {
+      UI.clickTool(tool);
+      mouse.down(10 + index * 30, 10);
+      mouse.up(20, 20);
+      mouse.reset();
+    }
+
+    expect(h.elements.map((element) => element.roughness)).toEqual([
+      0, 0, 0, 0, 0,
+    ]);
+  });
+
   it("should copy & paste styles via keyboard", async () => {
     UI.clickTool("rectangle");
     mouse.down(10, 10);

@@ -1,20 +1,17 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 
-import { internal } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
-import { createDiagramSnapshotIfNeeded } from "./diagramHistory";
-import { hasElementVersionRegression } from "./sceneConflict";
-
-import type { Id } from "./_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
-
-const MAX_SCENE_BYTES = 900_000;
-const EMPTY_SCENE_JSON = JSON.stringify({
-  elements: [],
-  appState: {},
-  files: {},
-});
+import {
+  createBoardRecord,
+  ensureDefaultRecord,
+  listOwnedBoardRecords,
+  openOwnedBoardRecord,
+  openSharedBoardRecord,
+  removeBoardRecord,
+  renameBoardRecord,
+  saveBoardRecord,
+  setBoardSharingRecord,
+} from "./boardPersistence";
 
 const diagramSummaryValidator = v.object({
   _id: v.id("diagrams"),
@@ -26,6 +23,7 @@ const diagramSummaryValidator = v.object({
     v.literal("public"),
   ),
   shareEnabled: v.boolean(),
+  folderId: v.optional(v.id("boardFolders")),
   createdAt: v.number(),
   updatedAt: v.number(),
 });
@@ -37,190 +35,54 @@ const openedDiagramValidator = v.object({
   access: v.union(v.literal("owner"), v.literal("viewer")),
 });
 
-const requireUserId = async (ctx: QueryCtx | MutationCtx) => {
-  const userId = await getAuthUserId(ctx);
-  if (!userId) {
-    throw new Error("Authentication required");
-  }
-  return userId;
-};
-
-const makeSlug = () => crypto.randomUUID().replaceAll("-", "").slice(0, 20);
-
-const makeShareToken = () =>
-  `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll("-", "");
-
-const assertSceneSize = (sceneJson: string) => {
-  const bytes = new TextEncoder().encode(sceneJson).byteLength;
-  if (bytes > MAX_SCENE_BYTES) {
-    throw new Error(
-      "This diagram is too large to save as one scene. Remove embedded data or split the diagram.",
-    );
-  }
-};
-
-const getUniqueSlug = async (ctx: MutationCtx) => {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const slug = makeSlug();
-    const existing = await ctx.db
-      .query("diagrams")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
-      .unique();
-    if (!existing) {
-      return slug;
-    }
-  }
-  throw new Error("Could not generate a unique diagram URL");
-};
-
-const createDiagram = async (
-  ctx: MutationCtx,
-  ownerId: Id<"users">,
-  title: string,
-) => {
-  const now = Date.now();
-  const slug = await getUniqueSlug(ctx);
-  const diagramId = await ctx.db.insert("diagrams", {
-    ownerId,
-    slug,
-    title,
-    visibility: "private",
-    shareEnabled: false,
-    createdAt: now,
-    updatedAt: now,
-  });
-  await ctx.db.insert("diagramContents", {
-    diagramId,
-    sceneJson: EMPTY_SCENE_JSON,
-    version: 0,
-    updatedAt: now,
-  });
-  return { diagramId, slug };
-};
-
-const toSummary = (diagram: {
-  _id: Id<"diagrams">;
-  slug: string;
-  title: string;
-  visibility: "private" | "unlisted" | "public";
-  shareEnabled: boolean;
-  createdAt: number;
-  updatedAt: number;
-}) => ({
-  _id: diagram._id,
-  slug: diagram.slug,
-  title: diagram.title,
-  visibility: diagram.visibility,
-  shareEnabled: diagram.shareEnabled,
-  createdAt: diagram.createdAt,
-  updatedAt: diagram.updatedAt,
-});
-
 export const ensureDefault = mutation({
   args: {},
   returns: v.object({
     diagramId: v.id("diagrams"),
     slug: v.string(),
   }),
-  handler: async (ctx) => {
-    const ownerId = await requireUserId(ctx);
-    const existing = await ctx.db
-      .query("diagrams")
-      .withIndex("by_ownerId_and_updatedAt", (q) => q.eq("ownerId", ownerId))
-      .order("desc")
-      .take(1);
-    if (existing[0]) {
-      return { diagramId: existing[0]._id, slug: existing[0].slug };
-    }
-    return await createDiagram(ctx, ownerId, "Untitled diagram");
-  },
+  handler: async (ctx) => await ensureDefaultRecord(ctx, "Diagram"),
 });
 
 export const create = mutation({
-  args: {
-    title: v.string(),
-  },
+  args: { title: v.string() },
   returns: v.object({
     diagramId: v.id("diagrams"),
     slug: v.string(),
   }),
-  handler: async (ctx, args) => {
-    const ownerId = await requireUserId(ctx);
-    const title = args.title.trim() || "Untitled diagram";
-    return await createDiagram(ctx, ownerId, title.slice(0, 120));
-  },
+  handler: async (ctx, args) =>
+    await createBoardRecord(ctx, args.title, "Diagram"),
 });
 
 export const listMine = query({
   args: {},
   returns: v.array(diagramSummaryValidator),
-  handler: async (ctx) => {
-    const ownerId = await requireUserId(ctx);
-    const diagrams = await ctx.db
-      .query("diagrams")
-      .withIndex("by_ownerId_and_updatedAt", (q) => q.eq("ownerId", ownerId))
-      .order("desc")
-      .take(100);
-    return diagrams.map(toSummary);
-  },
+  handler: async (ctx) => await listOwnedBoardRecords(ctx),
 });
 
 export const openMine = query({
-  args: {
-    slug: v.string(),
-  },
+  args: { slug: v.string() },
   returns: v.union(v.null(), openedDiagramValidator),
   handler: async (ctx, args) => {
-    const ownerId = await requireUserId(ctx);
-    const diagram = await ctx.db
-      .query("diagrams")
-      .withIndex("by_slug", (q) => q.eq("slug", args.slug))
-      .unique();
-    if (!diagram || diagram.ownerId !== ownerId) {
+    const opened = await openOwnedBoardRecord(ctx, args.slug);
+    if (!opened) {
       return null;
     }
-    const content = await ctx.db
-      .query("diagramContents")
-      .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
-      .unique();
-    if (!content) {
-      throw new Error("Diagram content is missing");
-    }
-    return {
-      diagram: toSummary(diagram),
-      sceneJson: content.sceneJson,
-      version: content.version,
-      access: "owner" as const,
-    };
+    const { board, ...content } = opened;
+    return { ...content, diagram: board };
   },
 });
 
 export const openShared = query({
-  args: {
-    shareToken: v.string(),
-  },
+  args: { shareToken: v.string() },
   returns: v.union(v.null(), openedDiagramValidator),
   handler: async (ctx, args) => {
-    const diagram = await ctx.db
-      .query("diagrams")
-      .withIndex("by_shareToken", (q) => q.eq("shareToken", args.shareToken))
-      .unique();
-    if (!diagram || !diagram.shareEnabled) {
+    const opened = await openSharedBoardRecord(ctx, args.shareToken);
+    if (!opened) {
       return null;
     }
-    const content = await ctx.db
-      .query("diagramContents")
-      .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
-      .unique();
-    if (!content) {
-      throw new Error("Diagram content is missing");
-    }
-    return {
-      diagram: toSummary(diagram),
-      sceneJson: content.sceneJson,
-      version: content.version,
-      access: "viewer" as const,
-    };
+    const { board, ...content } = opened;
+    return { ...content, diagram: board };
   },
 });
 
@@ -241,44 +103,16 @@ export const save = mutation({
       version: v.number(),
     }),
   ),
-  handler: async (ctx, args) => {
-    const ownerId = await requireUserId(ctx);
-    const diagram = await ctx.db.get("diagrams", args.diagramId);
-    if (!diagram || diagram.ownerId !== ownerId) {
-      throw new Error("Diagram not found");
-    }
-    assertSceneSize(args.sceneJson);
-    const content = await ctx.db
-      .query("diagramContents")
-      .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
-      .unique();
-    if (!content) {
-      throw new Error("Diagram content is missing");
-    }
-    if (
-      content.version !== args.expectedVersion ||
-      hasElementVersionRegression(content.sceneJson, args.sceneJson)
-    ) {
-      return { status: "conflict" as const, version: content.version };
-    }
-    const now = Date.now();
-    await createDiagramSnapshotIfNeeded(ctx, {
-      diagramId: diagram._id,
-      ownerId,
-      sceneJson: content.sceneJson,
-      version: content.version,
-      now,
-      force: false,
-    });
-    const version = content.version + 1;
-    await ctx.db.patch("diagramContents", content._id, {
-      sceneJson: args.sceneJson,
-      version,
-      updatedAt: now,
-    });
-    await ctx.db.patch("diagrams", diagram._id, { updatedAt: now });
-    return { status: "saved" as const, version, updatedAt: now };
-  },
+  handler: async (ctx, args) =>
+    await saveBoardRecord(
+      ctx,
+      {
+        boardId: args.diagramId,
+        expectedVersion: args.expectedVersion,
+        sceneJson: args.sceneJson,
+      },
+      "Diagram",
+    ),
 });
 
 export const rename = mutation({
@@ -288,87 +122,18 @@ export const rename = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const ownerId = await requireUserId(ctx);
-    const diagram = await ctx.db.get("diagrams", args.diagramId);
-    if (!diagram || diagram.ownerId !== ownerId) {
-      throw new Error("Diagram not found");
-    }
-    const title = args.title.trim() || "Untitled diagram";
-    await ctx.db.patch("diagrams", diagram._id, {
-      title: title.slice(0, 120),
-      updatedAt: Date.now(),
-    });
+    await renameBoardRecord(ctx, args.diagramId, args.title, "Diagram");
     return null;
   },
 });
 
 export const remove = mutation({
-  args: {
-    diagramId: v.id("diagrams"),
-  },
+  args: { diagramId: v.id("diagrams") },
   returns: v.object({
     assetDeleteToken: v.union(v.string(), v.null()),
   }),
-  handler: async (ctx, args) => {
-    const ownerId = await requireUserId(ctx);
-    const diagram = await ctx.db.get("diagrams", args.diagramId);
-    if (!diagram || diagram.ownerId !== ownerId) {
-      throw new Error("Diagram not found");
-    }
-
-    const [content, assets, uploadGrants] = await Promise.all([
-      ctx.db
-        .query("diagramContents")
-        .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
-        .unique(),
-      ctx.db
-        .query("diagramAssets")
-        .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
-        .take(2000),
-      ctx.db
-        .query("assetUploadGrants")
-        .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
-        .take(1000),
-    ]);
-
-    const objectKeys = assets.flatMap((asset) =>
-      asset.objectKey ? [asset.objectKey] : [],
-    );
-    const assetDeleteToken = objectKeys.length > 0 ? makeShareToken() : null;
-    if (assetDeleteToken) {
-      const now = Date.now();
-      await ctx.db.insert("assetDeleteGrants", {
-        token: assetDeleteToken,
-        ownerId,
-        objectKeys,
-        createdAt: now,
-        expiresAt: now + 10 * 60 * 1000,
-      });
-    }
-
-    if (content) {
-      await ctx.db.delete("diagramContents", content._id);
-    }
-    for (const asset of assets) {
-      if (asset.storageId) {
-        await ctx.storage.delete(asset.storageId);
-      }
-      await ctx.db.delete("diagramAssets", asset._id);
-    }
-    for (const grant of uploadGrants) {
-      await ctx.db.delete("assetUploadGrants", grant._id);
-    }
-    await ctx.db.delete("diagrams", diagram._id);
-    await ctx.scheduler.runAfter(
-      0,
-      internal.snapshotRetention.deleteDiagramSnapshots,
-      {
-        diagramId: diagram._id,
-      },
-    );
-
-    return { assetDeleteToken };
-  },
+  handler: async (ctx, args) =>
+    await removeBoardRecord(ctx, args.diagramId, "Diagram"),
 });
 
 export const setSharing = mutation({
@@ -380,27 +145,6 @@ export const setSharing = mutation({
     enabled: v.boolean(),
     shareToken: v.union(v.string(), v.null()),
   }),
-  handler: async (ctx, args) => {
-    const ownerId = await requireUserId(ctx);
-    const diagram = await ctx.db.get("diagrams", args.diagramId);
-    if (!diagram || diagram.ownerId !== ownerId) {
-      throw new Error("Diagram not found");
-    }
-    if (!args.enabled) {
-      await ctx.db.patch("diagrams", diagram._id, {
-        shareEnabled: false,
-        visibility: "private",
-        updatedAt: Date.now(),
-      });
-      return { enabled: false, shareToken: null };
-    }
-    const shareToken = diagram.shareToken ?? makeShareToken();
-    await ctx.db.patch("diagrams", diagram._id, {
-      shareEnabled: true,
-      shareToken,
-      visibility: "unlisted",
-      updatedAt: Date.now(),
-    });
-    return { enabled: true, shareToken };
-  },
+  handler: async (ctx, args) =>
+    await setBoardSharingRecord(ctx, args.diagramId, args.enabled, "Diagram"),
 });

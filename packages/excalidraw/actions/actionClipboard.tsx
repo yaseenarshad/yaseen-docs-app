@@ -18,6 +18,7 @@ import { exportCanvas, prepareElementsForExport } from "../data/index";
 import { t } from "../i18n";
 
 import { actionDeleteSelected } from "./actionDeleteSelected";
+import { getClipboardPngExportOptions } from "./clipboardPngExport";
 import { register } from "./register";
 
 export const actionCopy = register<ClipboardEvent | null>({
@@ -212,11 +213,18 @@ export const actionCopyAsPng = register({
       true,
     );
     try {
-      await exportCanvas("clipboard", exportedElements, appState, app.files, {
-        ...appState,
-        exportingFrame,
-        name: app.getName(),
-      });
+      await exportCanvas(
+        "clipboard",
+        exportedElements,
+        appState,
+        app.files,
+        getClipboardPngExportOptions({
+          appState,
+          exportingFrame,
+          hasSelection: selectedElements.length > 0,
+          name: app.getName(),
+        }),
+      );
       return {
         appState: {
           ...appState,

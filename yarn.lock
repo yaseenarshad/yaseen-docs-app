@@ -1166,6 +1166,23 @@
     path-to-regexp "^6.3.0"
     server-only "^0.0.1"
 
+"@convex-dev/migrations@0.3.6":
+  version "0.3.6"
+  resolved "https://registry.yarnpkg.com/@convex-dev/migrations/-/migrations-0.3.6.tgz#dd9a10d232f09cad85f90028cedd3db19da14135"
+  integrity sha512-cURYG4uy323MDi55QWNF5HAGemS4QspSgJ4uP+gGPAJdBLBbk2KFO7toFlKhacc1NinJQiG6+D/YEFyFyBS1/A==
+
+"@edge-runtime/primitives@6.0.0":
+  version "6.0.0"
+  resolved "https://registry.yarnpkg.com/@edge-runtime/primitives/-/primitives-6.0.0.tgz#7ca59111605d72b6789b55e6d9c264afb656a5b1"
+  integrity sha512-FqoxaBT+prPBHBwE1WXS1ocnu/VLTQyZ6NMUBAdbP7N2hsFTTxMC/jMu2D/8GAlMQfxeuppcPuCUk/HO3fpIvA==
+
+"@edge-runtime/vm@5.0.0":
+  version "5.0.0"
+  resolved "https://registry.yarnpkg.com/@edge-runtime/vm/-/vm-5.0.0.tgz#0db56607125248bb58d53470a4388c738e4f9bf4"
+  integrity sha512-NKBGBSIKUG584qrS1tyxVpX/AKJKQw5HgjYEnPLC0QsTw79JrGn+qUr8CXFb955Iy7GUdiiUv1rJ6JBGvaKb6w==
+  dependencies:
+    "@edge-runtime/primitives" "6.0.0"
+
 "@emnapi/runtime@^1.7.0":
   version "1.11.3"
   resolved "https://registry.yarnpkg.com/@emnapi/runtime/-/runtime-1.11.3.tgz#84257ae3b0531eb2aec1ffa23d70700da007ba95"
@@ -4619,11 +4636,6 @@ ansi-regex@^5.0.1:
   resolved "https://registry.yarnpkg.com/ansi-regex/-/ansi-regex-5.0.1.tgz#082cb2c89c9fe8659a311a53bd6a4dc5301db304"
   integrity sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ==
 
-ansi-regex@^6.2.2:
-  version "6.2.2"
-  resolved "https://registry.yarnpkg.com/ansi-regex/-/ansi-regex-6.2.2.tgz#60216eea464d864597ce2832000738a0589650c1"
-  integrity sha512-Bq3SmSpyFHaWjPk8If9yc6svM8c56dB5BAtW4Qbw5jHTwwXXcTLoRMkpDJp6VL0XzlWaCHTXrkFURMYmD0sLqg==
-
 ansi-styles@^3.2.1:
   version "3.2.1"
   resolved "https://registry.yarnpkg.com/ansi-styles/-/ansi-styles-3.2.1.tgz#41fbb20243e50b12be0f04b8dedbf07520ce841d"
@@ -5373,6 +5385,16 @@ convert-source-map@^2.0.0:
   version "2.0.0"
   resolved "https://registry.yarnpkg.com/convert-source-map/-/convert-source-map-2.0.0.tgz#4b560f649fc4e918dd0ab75cf4961e8bc882d82a"
   integrity sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==
+
+convex-helpers@0.1.120:
+  version "0.1.120"
+  resolved "https://registry.yarnpkg.com/convex-helpers/-/convex-helpers-0.1.120.tgz#e8f6088a0164172d116b3786f087aa772c0ce6f9"
+  integrity sha512-FPqtmN/10uoxmmhVq0ViNi08AnmHKT/eU1R8+ohmPZoHfg8noZEZCltApY/ASDdhq92o0kLZETggzBvMfHJDLQ==
+
+convex-test@0.0.54:
+  version "0.0.54"
+  resolved "https://registry.yarnpkg.com/convex-test/-/convex-test-0.0.54.tgz#f544477ae55e196af3deb82e0a7d890a00a848e1"
+  integrity sha512-C0v2SQcuxrELAJRNzE6fQ686XDPor7UFoC22jcoJXeCRqhLo8ZIMZ4jyUHoo1UdAL2enCb0AbiprCVpLDN8u9Q==
 
 convex@1.42.3:
   version "1.42.3"
@@ -10245,19 +10267,12 @@ stringify-object@^3.3.0:
   dependencies:
     ansi-regex "^5.0.1"
 
-strip-ansi@^6.0.0, strip-ansi@^6.0.1:
+strip-ansi@6.0.1, strip-ansi@^6.0.0, strip-ansi@^6.0.1, strip-ansi@^7.0.1:
   version "6.0.1"
   resolved "https://registry.yarnpkg.com/strip-ansi/-/strip-ansi-6.0.1.tgz#9e26c63d30f53443e9489495b2105d37b67a85d9"
   integrity sha512-Y38VPSHcqkFrCpFnQ9vuSXmquuv5oXOKpGeT6aGrr3o3Gc9AlVa6JBfUSOCnbxGGZF+/0ooI7KrPuUSztUdU5A==
   dependencies:
     ansi-regex "^5.0.1"
-
-strip-ansi@^7.0.1:
-  version "7.2.0"
-  resolved "https://registry.yarnpkg.com/strip-ansi/-/strip-ansi-7.2.0.tgz#d22a269522836a627af8d04b5c3fd2c7fa3e32e3"
-  integrity sha512-yDPMNjp4WyfYBkHnjIRLfca1i6KMyGCtsVgoKe/z1+6vukgaENdgGBZt+ZmKPc4gavvEZ5OgHfHdrazhgNyG7w==
-  dependencies:
-    ansi-regex "^6.2.2"
 
 strip-bom@^3.0.0:
   version "3.0.0"

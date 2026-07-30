@@ -29,6 +29,8 @@ export default defineSchema({
     ownerId: v.id("users"),
     slug: v.string(),
     title: v.string(),
+    normalizedTitle: v.optional(v.string()),
+    folderId: v.optional(v.id("boardFolders")),
     visibility: v.union(
       v.literal("private"),
       v.literal("unlisted"),
@@ -40,8 +42,22 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_ownerId_and_updatedAt", ["ownerId", "updatedAt"])
+    .index("by_ownerId_and_createdAt", ["ownerId", "createdAt"])
+    .index("by_ownerId_and_normalizedTitle", ["ownerId", "normalizedTitle"])
+    .index("by_ownerId_and_folderId", ["ownerId", "folderId"])
     .index("by_slug", ["slug"])
-    .index("by_shareToken", ["shareToken"]),
+    .index("by_shareToken", ["shareToken"])
+    .searchIndex("search_normalizedTitle", {
+      searchField: "normalizedTitle",
+      filterFields: ["ownerId"],
+    }),
+  boardFolders: defineTable({
+    ownerId: v.id("users"),
+    name: v.string(),
+    normalizedName: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_ownerId_and_normalizedName", ["ownerId", "normalizedName"]),
   diagramContents: defineTable({
     diagramId: v.id("diagrams"),
     sceneJson: v.string(),

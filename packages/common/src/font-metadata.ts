@@ -100,7 +100,6 @@ export const FONT_METADATA: Record<number, FontMetadata> = {
       descender: -434,
       lineHeight: 1.15,
     },
-    private: true,
   },
   [FONT_FAMILY.Assistant]: {
     metrics: {
@@ -108,6 +107,38 @@ export const FONT_METADATA: Record<number, FontMetadata> = {
       ascender: 1021,
       descender: -287,
       lineHeight: 1.25,
+    },
+  },
+  [FONT_FAMILY.Inter]: {
+    metrics: {
+      unitsPerEm: 2048,
+      ascender: 1984,
+      descender: -494,
+      lineHeight: 1.21,
+    },
+  },
+  [FONT_FAMILY.Roboto]: {
+    metrics: {
+      unitsPerEm: 2048,
+      ascender: 1900,
+      descender: -500,
+      lineHeight: 1.2,
+    },
+  },
+  [FONT_FAMILY["Liberation Serif"]]: {
+    metrics: {
+      unitsPerEm: 2048,
+      ascender: 1825,
+      descender: -443,
+      lineHeight: 1.15,
+    },
+  },
+  [FONT_FAMILY["IBM Plex Mono"]]: {
+    metrics: {
+      unitsPerEm: 1000,
+      ascender: 1025,
+      descender: -275,
+      lineHeight: 1.3,
     },
   },
   [FONT_FAMILY_FALLBACKS.Xiaolai]: {

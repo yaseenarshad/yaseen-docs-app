@@ -138,6 +138,10 @@ export const FONT_FAMILY = {
   "Comic Shanns": 8,
   "Liberation Sans": 9,
   Assistant: 10,
+  Inter: 11,
+  Roboto: 12,
+  "Liberation Serif": 13,
+  "IBM Plex Mono": 14,
 };
 
 // Segoe UI Emoji fails to properly fallback for some glyphs: ∞, ∫, ≠
@@ -162,6 +166,7 @@ export function getGenericFontFamilyFallback(
   switch (fontFamily) {
     case FONT_FAMILY.Cascadia:
     case FONT_FAMILY["Comic Shanns"]:
+    case FONT_FAMILY["IBM Plex Mono"]:
       return MONOSPACE_GENERIC_FONT;
 
     default:

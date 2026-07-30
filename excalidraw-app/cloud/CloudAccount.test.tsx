@@ -15,7 +15,7 @@ describe("CloudLoginGate", () => {
     fireEvent.change(screen.getByLabelText("Password"), {
       target: { value: "password-from-the-user" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Open diagrams" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open boards" }));
 
     await waitFor(() => {
       expect(onAuthenticate).toHaveBeenCalledWith({

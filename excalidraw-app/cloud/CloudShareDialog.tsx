@@ -65,7 +65,7 @@ export const CloudShareDialog = ({
   return (
     <Dialog size="small" title={`Share “${title}”`} onCloseRequest={onClose}>
       <div className="cloud-share-dialog">
-        <p>Anyone with this link can view this diagram.</p>
+        <p>Anyone with this link can view this board.</p>
         {state.url ? (
           <div className="cloud-share-dialog__link">
             <input

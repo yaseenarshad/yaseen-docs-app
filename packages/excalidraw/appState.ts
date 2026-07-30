@@ -13,6 +13,7 @@ import {
   DEFAULT_GRID_STEP,
   FONT_FAMILY,
   LINEAR_STROKE_WIDTH,
+  ROUGHNESS,
   isTestEnv,
 } from "@excalidraw/common";
 
@@ -38,7 +39,7 @@ export const getDefaultAppState = (): Omit<
       : FONT_FAMILY.Assistant,
     currentItemFontSize: DEFAULT_FONT_SIZE,
     currentItemOpacity: DEFAULT_ELEMENT_PROPS.opacity,
-    currentItemRoughness: DEFAULT_ELEMENT_PROPS.roughness,
+    currentItemRoughness: ROUGHNESS.architect,
     currentItemStrokeVariability: "constant",
     currentItemStartArrowhead: null,
     currentItemStrokeColor: DEFAULT_ELEMENT_PROPS.strokeColor,

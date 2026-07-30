@@ -164,6 +164,23 @@ describe("restoreElements", () => {
     });
   });
 
+  it("keeps the legacy Artist fallback and explicit authored roughness", () => {
+    const missingRoughness = API.createElement({
+      type: "rectangle",
+    }) as any;
+    delete missingRoughness.roughness;
+    const explicitCartoonist = API.createElement({
+      type: "ellipse",
+      roughness: 2,
+    });
+
+    const restored = restore.restoreElements(
+      [missingRoughness, explicitCartoonist],
+      null,
+    );
+    expect(restored.map((element) => element.roughness)).toEqual([1, 2]);
+  });
+
   it("should not delete empty text element when opts.deleteInvisibleElements is not defined", () => {
     const textElement = API.createElement({
       type: "text",

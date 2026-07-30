@@ -267,7 +267,7 @@ const json = (body: unknown, init: ResponseInit = {}) =>
 
 const fetchJson = async <T>(url: string) => {
   const response = await fetch(url, {
-    headers: { "User-Agent": "draw.yasinarshad.com Image Studio" },
+    headers: { "User-Agent": "draw.yaseenarshad.com Image Studio" },
   });
   if (!response.ok) {
     throw new Error(`Provider returned ${response.status}`);

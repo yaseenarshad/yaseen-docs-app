@@ -63,24 +63,38 @@ vi.mock("socket.io-client", () => {
   };
 });
 
-vi.mock("../cloud/useCloudDiagram", () => {
+vi.mock("../cloud/useCloudBoard", () => {
   const noop = () => {};
   return {
-    useCloudDiagram: () => ({
+    useCloudBoard: () => ({
       route: { kind: "home" },
-      openedDiagram: undefined,
+      openedBoard: undefined,
       saveStatus: "saved",
       errorMessage: null,
       queueSave: noop,
       discardPendingSave: noop,
       flushSave: async () => {},
       enableSharing: async () => "",
-      diagrams: [],
-      isDiagramListLoading: false,
-      openDiagram: noop,
-      createNewDiagram: async () => {},
-      deleteDiagram: async () => {},
-      renameOpenedDiagram: async () => {},
+      boards: [],
+      folders: [],
+      isBoardListLoading: false,
+      isBoardListLoadingMore: false,
+      isFolderListLoading: false,
+      canLoadMoreBoards: false,
+      boardListError: null,
+      boardSearch: "",
+      setBoardSearch: noop,
+      boardSort: "modified-desc",
+      setBoardSort: noop,
+      loadMoreBoards: noop,
+      openBoard: noop,
+      createNewBoard: async () => {},
+      createFolder: async () => {},
+      renameFolder: async () => {},
+      deleteFolder: async () => {},
+      moveBoardToFolder: async () => {},
+      deleteBoard: async () => {},
+      renameOpenedBoard: async () => {},
       assets: [],
       queueAssets: noop,
       isViewer: false,

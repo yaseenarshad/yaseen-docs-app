@@ -28,8 +28,8 @@ export const CloudLoginGate = ({
   return (
     <main className="cloud-login">
       <section className="cloud-login__card">
-        <span className="cloud-account__eyebrow">DRAW.YASINARSHAD.COM</span>
-        <h1>Sign in to your diagrams</h1>
+        <span className="cloud-account__eyebrow">DRAW.YASEENARSHAD.COM</span>
+        <h1>Sign in to your boards</h1>
         <p>Enter your username and password.</p>
         <form
           onSubmit={(event) => {
@@ -80,7 +80,7 @@ export const CloudLoginGate = ({
           </label>
           {error && <div className="cloud-account__error">{error}</div>}
           <button type="submit" disabled={isWorking}>
-            {isWorking ? "Opening…" : "Open diagrams"}
+            {isWorking ? "Opening…" : "Open boards"}
           </button>
         </form>
       </section>
@@ -116,7 +116,7 @@ export const CloudProfile = ({
       {isOpen && (
         <div className="cloud-account__menu">
           <strong>{displayName}</strong>
-          <span>Your diagrams follow this profile.</span>
+          <span>Your boards follow this profile.</span>
           <button
             type="button"
             onClick={() => {

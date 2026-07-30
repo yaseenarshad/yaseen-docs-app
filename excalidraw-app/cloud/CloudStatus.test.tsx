@@ -4,7 +4,7 @@ import { vi } from "vitest";
 import { CloudStatus } from "./CloudStatus";
 
 describe("CloudStatus", () => {
-  it("renames an owned diagram from the title control", async () => {
+  it("renames an owned Board from the title control", async () => {
     const onRename = vi.fn().mockResolvedValue(undefined);
 
     render(
@@ -18,19 +18,19 @@ describe("CloudStatus", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Original title" }));
-    const input = screen.getByRole("textbox", { name: "Diagram title" });
-    fireEvent.change(input, { target: { value: "Renamed diagram" } });
+    const input = screen.getByRole("textbox", { name: "Board title" });
+    fireEvent.change(input, { target: { value: "Renamed board" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => {
-      expect(onRename).toHaveBeenCalledWith("Renamed diagram");
+      expect(onRename).toHaveBeenCalledWith("Renamed board");
     });
   });
 
   it("does not expose title editing to viewers", () => {
     render(
       <CloudStatus
-        title="Shared diagram"
+        title="Shared board"
         status="viewer"
         errorMessage={null}
         canRename={false}
@@ -38,9 +38,7 @@ describe("CloudStatus", () => {
       />,
     );
 
-    expect(
-      screen.getByRole("button", { name: "Shared diagram" }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Shared board" })).toBeDisabled();
   });
 
   it("renders title and save state without a separate share action", () => {

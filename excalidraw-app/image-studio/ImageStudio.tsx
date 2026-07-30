@@ -393,7 +393,7 @@ export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
 
       {!canInsert && (
         <div className="image-studio__notice">
-          Open one of your diagrams to add visuals.
+          Open one of your boards to add visuals.
         </div>
       )}
       {warnings.length > 0 && view === "search" && (
@@ -504,9 +504,9 @@ export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
           {view === "search"
             ? "Search once, then add anything from the mixed results."
             : view === "favorites"
-            ? "Star an item and it will stay available in every diagram."
+            ? "Star an item and it will stay available in every board."
             : view === "recent"
-            ? "Items you add will appear here across every diagram."
+            ? "Items you add will appear here across every board."
             : shapeQuery
             ? "No shapes match your search."
             : "No items found."}

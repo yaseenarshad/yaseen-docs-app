@@ -770,6 +770,7 @@ class App extends React.Component<AppProps, AppState> {
       addFiles: this.addFiles,
       insertImages: this.insertImages,
       resetScene: this.resetScene,
+      resetFiles: this.resetFiles,
       getSceneElementsIncludingDeleted: this.getSceneElementsIncludingDeleted,
       getSceneElementsMapIncludingDeleted:
         this.getSceneElementsMapIncludingDeleted,
@@ -3666,6 +3667,12 @@ class App extends React.Component<AppProps, AppState> {
       }
     });
   }
+
+  public resetFiles = () => {
+    this.clearImageShapeCache();
+    this.files = {};
+    this.imageCache.clear();
+  };
 
   public async componentDidMount() {
     this.unmounted = false;

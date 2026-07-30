@@ -1240,6 +1240,7 @@ export interface ExcalidrawImperativeAPI {
   mutateElement: InstanceType<typeof App>["mutateElement"];
   updateLibrary: InstanceType<typeof Library>["updateLibrary"];
   resetScene: InstanceType<typeof App>["resetScene"];
+  resetFiles: InstanceType<typeof App>["resetFiles"];
   getSceneElementsIncludingDeleted: InstanceType<
     typeof App
   >["getSceneElementsIncludingDeleted"];

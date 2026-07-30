@@ -1,4 +1,4 @@
-import { fireEvent, queryByTestId, waitFor } from "@testing-library/react";
+import { act, fireEvent, queryByTestId, waitFor } from "@testing-library/react";
 
 import {
   CODES,
@@ -15,6 +15,8 @@ import { Excalidraw } from "../index";
 import { API } from "../tests/helpers/api";
 import { Keyboard, UI } from "../tests/helpers/ui";
 import { render } from "../tests/test-utils";
+
+import { actionChangeFontFamily } from "./actionProperties";
 
 describe("element locking", () => {
   beforeEach(async () => {
@@ -152,6 +154,36 @@ describe("element locking", () => {
       expect(API.getSelectedElements()[0]).toMatchObject({
         fontWeight: "normal",
         textDecoration: "none",
+      });
+    });
+
+    it("loads the real Bold face when changing a bold text family", async () => {
+      const text = {
+        ...API.createElement({ type: "text", text: "Bold family" }),
+        fontWeight: "bold" as const,
+      };
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+
+      vi.spyOn(document.fonts, "check").mockReturnValue(false);
+      const load = vi.spyOn(document.fonts, "load").mockResolvedValue([]);
+
+      act(() => {
+        window.h.app.actionManager.executeAction(actionChangeFontFamily, "ui", {
+          currentItemFontFamily: FONT_FAMILY.Inter,
+          currentHoveredFontFamily: null,
+        });
+      });
+
+      await waitFor(() => {
+        expect(load).toHaveBeenCalledWith(
+          expect.stringContaining("bold 10px Inter"),
+          "Bold famiy",
+        );
+      });
+      expect(API.getSelectedElements()[0]).toMatchObject({
+        fontFamily: FONT_FAMILY.Inter,
+        fontWeight: "bold",
       });
     });
 

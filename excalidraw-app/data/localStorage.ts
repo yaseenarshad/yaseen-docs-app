@@ -11,6 +11,8 @@ import { STORAGE_KEYS } from "../app_constants";
 
 const ASSISTANT_DEFAULT_FONT_MIGRATION_KEY =
   "yaseen-excalidraw-assistant-default-font-v1";
+const ARCHITECT_DEFAULT_ROUGHNESS_MIGRATION_KEY =
+  "yaseen-whiteboard-architect-default-roughness-v1";
 
 export const saveUsernameToLocalStorage = (username: string) => {
   try {
@@ -41,10 +43,17 @@ export const importUsernameFromLocalStorage = (): string | null => {
 export const importFromLocalStorage = () => {
   let savedElements = null;
   let savedState = null;
+  let shouldMigrateRoughness = false;
 
   try {
     savedElements = localStorage.getItem(STORAGE_KEYS.LOCAL_STORAGE_ELEMENTS);
     savedState = localStorage.getItem(STORAGE_KEYS.LOCAL_STORAGE_APP_STATE);
+    shouldMigrateRoughness = !localStorage.getItem(
+      ARCHITECT_DEFAULT_ROUGHNESS_MIGRATION_KEY,
+    );
+    if (shouldMigrateRoughness) {
+      localStorage.setItem(ARCHITECT_DEFAULT_ROUGHNESS_MIGRATION_KEY, "1");
+    }
   } catch (error: any) {
     // Unable to access localStorage
     console.error(error);
@@ -64,6 +73,20 @@ export const importFromLocalStorage = () => {
   if (savedState) {
     try {
       const parsedState = JSON.parse(savedState) as Partial<AppState>;
+      if (
+        parsedState.currentItemRoughness !== 0 &&
+        parsedState.currentItemRoughness !== 1 &&
+        parsedState.currentItemRoughness !== 2
+      ) {
+        delete parsedState.currentItemRoughness;
+      }
+      if (
+        shouldMigrateRoughness &&
+        (parsedState.currentItemRoughness === undefined ||
+          parsedState.currentItemRoughness === 1)
+      ) {
+        parsedState.currentItemRoughness = 0;
+      }
       if (!localStorage.getItem(ASSISTANT_DEFAULT_FONT_MIGRATION_KEY)) {
         if (parsedState.currentItemFontFamily === DEFAULT_FONT_FAMILY) {
           parsedState.currentItemFontFamily = FONT_FAMILY.Assistant;

@@ -178,33 +178,30 @@ export const FontPickerList = React.memo(
     );
 
     const hoveredFont = useMemo(() => {
-      let font;
-
       if (hoveredFontFamily) {
-        font = filteredFonts.find((font) => font.value === hoveredFontFamily);
-      } else if (selectedFontFamily) {
-        font = filteredFonts.find((font) => font.value === selectedFontFamily);
+        return filteredFonts.find((font) => font.value === hoveredFontFamily);
       }
 
-      if (!font && searchTerm) {
-        if (filteredFonts[0]?.value) {
-          // hover first element on search
-          onHover(filteredFonts[0].value);
-        } else {
-          // re-render cache on no results
-          onLeave();
-        }
+      if (selectedFontFamily) {
+        return filteredFonts.find((font) => font.value === selectedFontFamily);
       }
 
-      return font;
-    }, [
-      hoveredFontFamily,
-      selectedFontFamily,
-      searchTerm,
-      filteredFonts,
-      onHover,
-      onLeave,
-    ]);
+      return undefined;
+    }, [hoveredFontFamily, selectedFontFamily, filteredFonts]);
+
+    useEffect(() => {
+      if (hoveredFont || !searchTerm) {
+        return;
+      }
+
+      if (filteredFonts[0]?.value) {
+        // Hover the first result after search filtering has committed. Doing
+        // this in an effect avoids updating the parent while rendering.
+        onHover(filteredFonts[0].value);
+      } else {
+        onLeave();
+      }
+    }, [filteredFonts, hoveredFont, onHover, onLeave, searchTerm]);
 
     // Create a wrapped onSelect function that preserves caret position
     const wrappedOnSelect = useCallback(

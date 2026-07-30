@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { CloudSaveStatus } from "./useCloudDiagram";
+import type { CloudSaveStatus } from "./useCloudBoard";
 
 const statusLabels: Record<CloudSaveStatus, string> = {
   loading: "Opening…",
@@ -42,7 +42,7 @@ export const CloudStatus = ({
   }, [isEditingTitle]);
 
   const finishTitleEdit = async () => {
-    const nextTitle = draftTitle.trim() || "Untitled diagram";
+    const nextTitle = draftTitle.trim() || "Untitled board";
     setDraftTitle(nextTitle);
     setIsEditingTitle(false);
     if (nextTitle !== title) {
@@ -57,7 +57,7 @@ export const CloudStatus = ({
           <input
             ref={titleInputRef}
             className="cloud-status__title-input"
-            aria-label="Diagram title"
+            aria-label="Board title"
             value={draftTitle}
             maxLength={120}
             onChange={(event) => setDraftTitle(event.target.value)}
@@ -78,7 +78,7 @@ export const CloudStatus = ({
             className="cloud-status__title"
             type="button"
             disabled={!canRename}
-            title={canRename ? "Rename diagram" : title}
+            title={canRename ? "Rename board" : title}
             onClick={() => setIsEditingTitle(true)}
           >
             {title}

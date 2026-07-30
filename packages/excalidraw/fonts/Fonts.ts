@@ -38,9 +38,13 @@ import { EmojiFontFaces } from "./Emoji";
 import { ExcalidrawFontFace } from "./ExcalidrawFontFace";
 import { ExcalifontFontFaces } from "./Excalifont";
 import { HelveticaFontFaces } from "./Helvetica";
+import { IBMPlexMonoFontFaces } from "./IBMPlexMono";
+import { InterFontFaces } from "./Inter";
 import { LiberationFontFaces } from "./Liberation";
+import { LiberationSerifFontFaces } from "./LiberationSerif";
 import { LilitaFontFaces } from "./Lilita";
 import { NunitoFontFaces } from "./Nunito";
+import { RobotoFontFaces } from "./Roboto";
 import { VirgilFontFaces } from "./Virgil";
 import { XiaolaiFontFaces } from "./Xiaolai";
 
@@ -150,12 +154,7 @@ export class Fonts {
    * Load font faces for a given scene and trigger scene update.
    */
   public loadSceneFonts = async (): Promise<FontFace[]> => {
-    const sceneFamilies = this.getSceneFamilies();
-    const charsPerFamily = Fonts.getCharsPerFamily(
-      this.scene.getNonDeletedElements(),
-    );
-
-    return Fonts.loadFontFaces(sceneFamilies, charsPerFamily);
+    return Fonts.loadFontFaces(this.scene.getNonDeletedElements());
   };
 
   /**
@@ -164,10 +163,7 @@ export class Fonts {
   public static loadElementsFonts = async (
     elements: readonly ExcalidrawElement[],
   ): Promise<FontFace[]> => {
-    const fontFamilies = Fonts.getUniqueFamilies(elements);
-    const charsPerFamily = Fonts.getCharsPerFamily(elements);
-
-    return Fonts.loadFontFaces(fontFamilies, charsPerFamily);
+    return Fonts.loadFontFaces(elements);
   };
 
   /**
@@ -211,9 +207,8 @@ export class Fonts {
   }
 
   private static async loadFontFaces(
-    fontFamilies: Array<ExcalidrawTextElement["fontFamily"]>,
-    charsPerFamily: Record<number, Set<string>>,
-  ) {
+    elements: readonly ExcalidrawElement[],
+  ): Promise<FontFace[]> {
     // add all registered font faces into the `document.fonts` (if not added already)
     for (const { fontFaces, metadata } of Fonts.registered.values()) {
       // skip registering font faces for local fonts (i.e. Helvetica)
@@ -229,26 +224,22 @@ export class Fonts {
     }
 
     // loading 10 font faces at a time, in a controlled manner
-    const iterator = Fonts.fontFacesLoader(fontFamilies, charsPerFamily);
+    const iterator = Fonts.fontFacesLoader(Fonts.getFontLoadRequests(elements));
     const concurrency = 10;
     const fontFaces = await new PromisePool(iterator, concurrency).all();
     return fontFaces.flat().filter(Boolean);
   }
 
   private static *fontFacesLoader(
-    fontFamilies: Array<ExcalidrawTextElement["fontFamily"]>,
-    charsPerFamily: Record<number, Set<string>>,
+    requests: Array<{
+      font: string;
+      fontFamily: ExcalidrawTextElement["fontFamily"];
+      text: string;
+    }>,
   ): Generator<Promise<void | readonly [number, FontFace[]]>> {
-    for (const [index, fontFamily] of fontFamilies.entries()) {
-      const font = getFontString({
-        fontFamily,
-        fontSize: FONT_SIZES.sm,
-      });
-
+    for (const [index, { font, fontFamily, text }] of requests.entries()) {
       // WARN: without "text" param it does not have to mean that all font faces are loaded as it could be just one irrelevant font face!
       // instead, we are always checking chars used in the family, so that no required font faces remain unloaded
-      const text = Fonts.getCharacters(charsPerFamily, fontFamily);
-
       if (!window.document.fonts.check(font, text)) {
         yield promiseTry(async () => {
           try {
@@ -391,6 +382,10 @@ export class Fonts {
     init("Helvetica", ...HelveticaFontFaces);
     // used for server-side pdf & png export instead of helvetica (technically does not need metrics, but kept in for consistency)
     init("Liberation Sans", ...LiberationFontFaces);
+    init("Inter", ...InterFontFaces);
+    init("Roboto", ...RobotoFontFaces);
+    init("Liberation Serif", ...LiberationSerifFontFaces);
+    init("IBM Plex Mono", ...IBMPlexMonoFontFaces);
     init("Lilita One", ...LilitaFontFaces);
     init("Nunito", ...NunitoFontFaces);
     init("Virgil", ...VirgilFontFaces);
@@ -444,6 +439,50 @@ export class Fonts {
     }
 
     return charsPerFamily;
+  }
+
+  private static getFontLoadRequests(
+    elements: readonly ExcalidrawElement[],
+  ): Array<{
+    font: string;
+    fontFamily: ExcalidrawTextElement["fontFamily"];
+    text: string;
+  }> {
+    const requests = new Map<
+      string,
+      {
+        characters: Set<string>;
+        fontFamily: ExcalidrawTextElement["fontFamily"];
+      }
+    >();
+
+    for (const element of elements) {
+      if (!isTextElement(element)) {
+        continue;
+      }
+
+      const font = getFontString({
+        fontFamily: element.fontFamily,
+        fontSize: FONT_SIZES.sm,
+        fontWeight: element.fontWeight,
+      });
+      const request = requests.get(font) ?? {
+        characters: new Set<string>(),
+        fontFamily: element.fontFamily,
+      };
+
+      for (const character of element.originalText) {
+        request.characters.add(character);
+      }
+
+      requests.set(font, request);
+    }
+
+    return Array.from(requests, ([font, { characters, fontFamily }]) => ({
+      font,
+      fontFamily,
+      text: Array.from(characters).join(""),
+    }));
   }
 
   /**

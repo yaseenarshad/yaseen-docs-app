@@ -29,6 +29,8 @@ import {
 } from "../fixtures/elementFixture";
 import { API } from "../helpers/api";
 
+import { getDefaultAppState } from "../../appState";
+
 import type { BinaryFiles, DataURL } from "../../types";
 
 describe("exportToSvg", () => {
@@ -257,6 +259,33 @@ describe("exportToSvg", () => {
     );
   });
 
+  it("embeds real Regular and Bold descriptors for a professional font", async () => {
+    const boldText = {
+      ...API.createElement({
+        type: "text",
+        text: "I/l/1 O/0 — Professional 700",
+        fontFamily: FONT_FAMILY.Inter,
+      }),
+      fontWeight: "bold" as const,
+    };
+
+    const svgElement = await exportUtils.exportToSvg(
+      [boldText],
+      DEFAULT_OPTIONS,
+      null,
+    );
+    const embeddedCss =
+      svgElement.querySelector("style.style-fonts")?.textContent ?? "";
+
+    expect(embeddedCss).toContain('font-family: "Inter"');
+    expect(embeddedCss).toContain("font-weight: 400");
+    expect(embeddedCss).toContain("font-weight: 700");
+    expect(svgElement.querySelector("text")).toHaveAttribute(
+      "font-weight",
+      "bold",
+    );
+  });
+
   it("with exportEmbedScene", async () => {
     const svgElement = await exportUtils.exportToSvg(
       ELEMENTS,
@@ -319,6 +348,97 @@ describe("exportToSvg", () => {
 });
 
 describe("exportToCanvas", () => {
+  it("renders a selection at tight transparent bounds and preserves export scale", async () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      width: 120,
+      height: 80,
+      strokeColor: "transparent",
+      strokeWidth: 0,
+      backgroundColor: "#e03131",
+      fillStyle: "solid",
+      roughness: 0,
+    });
+    const appState = {
+      ...getDefaultAppState(),
+      exportScale: 2,
+      height: 0,
+      offsetLeft: 0,
+      offsetTop: 0,
+      width: 0,
+    };
+
+    const canvas = await exportUtils.exportToCanvas(
+      [rectangle],
+      appState,
+      {},
+      {
+        exportBackground: false,
+        exportPadding: 0,
+        viewBackgroundColor: "#ffffff",
+        exportingFrame: null,
+      },
+      undefined,
+      async () => {},
+    );
+
+    expect(canvas.width).toBe(240);
+    expect(canvas.height).toBe(160);
+
+    const backgroundPaint = (canvas.getContext("2d") as any)
+      .__getEvents()
+      .find(
+        (event: any) =>
+          event.type === "fillRect" &&
+          event.props.x === 0 &&
+          event.props.y === 0 &&
+          event.props.width === canvas.width &&
+          event.props.height === canvas.height,
+      );
+    expect(backgroundPaint).toBeUndefined();
+  });
+
+  it("retains the shared padding and background behavior outside selection copy", async () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      width: 120,
+      height: 80,
+      strokeColor: "transparent",
+      strokeWidth: 0,
+      backgroundColor: "#e03131",
+      fillStyle: "solid",
+      roughness: 0,
+    });
+    const appState = {
+      ...getDefaultAppState(),
+      height: 0,
+      offsetLeft: 0,
+      offsetTop: 0,
+      width: 0,
+    };
+
+    const canvas = await exportUtils.exportToCanvas(
+      [rectangle],
+      appState,
+      {},
+      {
+        exportBackground: true,
+        viewBackgroundColor: "#ffffff",
+        exportingFrame: null,
+      },
+      undefined,
+      async () => {},
+    );
+
+    expect(canvas.width).toBe(140);
+    expect(canvas.height).toBe(100);
+    expect(
+      (canvas.getContext("2d") as any)
+        .__getEvents()
+        .some((event: any) => event.type === "fillRect"),
+    ).toBe(true);
+  });
+
   it("draws one underline rule for one decorated logical text line", async () => {
     const lineStyledText = {
       ...API.createElement({

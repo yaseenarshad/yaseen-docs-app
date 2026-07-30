@@ -3,6 +3,8 @@ import {
   backgroundRemovalAssetManifest,
   handleBackgroundRemovalAssetRequest,
 } from "./backgroundRemovalAssets";
+import { getCanonicalRedirectResponse } from "./canonicalRedirect";
+import { getLegacyServiceWorkerResponse } from "./legacyServiceWorker";
 
 interface Env {
   ASSETS: Fetcher;
@@ -122,6 +124,14 @@ const deleteAssets = async (request: Request, env: Env) => {
 const worker: ExportedHandler<Env> = {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
+    const legacyServiceWorkerResponse = getLegacyServiceWorkerResponse(url);
+    if (legacyServiceWorkerResponse) {
+      return legacyServiceWorkerResponse;
+    }
+    const canonicalRedirectResponse = getCanonicalRedirectResponse(url);
+    if (canonicalRedirectResponse) {
+      return canonicalRedirectResponse;
+    }
     if (url.pathname.startsWith(backgroundRemovalAssetManifest.assetRoute)) {
       return await handleBackgroundRemovalAssetRequest(request, env);
     }
