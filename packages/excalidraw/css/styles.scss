@@ -260,10 +260,42 @@ body.excalidraw-cursor-resize * {
       }
     }
 
+    .linear-stroke-width-fieldset {
+      .linear-stroke-width-range {
+        margin-bottom: 0;
+
+        .range-wrapper {
+          padding-bottom: 16px;
+          padding-top: 4px;
+        }
+
+        .range-input {
+          display: block;
+          margin: 0;
+        }
+
+        .zero-label,
+        .max-label {
+          bottom: 2px;
+          line-height: 12px;
+        }
+
+        .zero-label {
+          left: 0;
+        }
+
+        .max-label {
+          right: 0;
+        }
+      }
+    }
+
     .linear-stroke-width-custom {
       align-items: center;
       display: flex;
       gap: 0.35rem;
+      justify-content: center;
+      margin-top: 4px;
 
       > button {
         align-items: center;

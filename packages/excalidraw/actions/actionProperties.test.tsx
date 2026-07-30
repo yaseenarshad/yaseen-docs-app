@@ -10,6 +10,7 @@ import {
   FREEDRAW_STROKE_WIDTH,
   FONT_FAMILY,
   KEYS,
+  LINEAR_STROKE_WIDTH,
   STROKE_WIDTH,
   THEME,
 } from "@excalidraw/common";
@@ -108,6 +109,66 @@ describe("element locking", () => {
       expect(window.h.state.currentItemLinearStrokeWidth).toBe(2.5);
       expect(API.createElement({ type: "line" }).strokeWidth).toBe(2.5);
     });
+
+    it("should synchronize the line-width slider before drawing without leaking shortcuts", () => {
+      UI.clickTool("line");
+
+      const slider = queryByTestId(
+        document.body,
+        "linear-stroke-width-slider",
+      ) as HTMLInputElement;
+      expect(slider).not.toBeNull();
+      expect(slider).toHaveAttribute("aria-label", "Stroke width");
+      expect(slider).toHaveAttribute("min", LINEAR_STROKE_WIDTH.min.toString());
+      expect(slider).toHaveAttribute("max", LINEAR_STROKE_WIDTH.max.toString());
+      expect(slider).toHaveAttribute(
+        "step",
+        LINEAR_STROKE_WIDTH.step.toString(),
+      );
+      expect(slider.value).toBe("2");
+
+      const control = slider.closest("fieldset");
+      expect(control).not.toBeNull();
+      expect(control).toHaveTextContent("0.5");
+      expect(control).toHaveTextContent("50");
+      expect(control?.querySelector(".value-bubble")).toBeNull();
+
+      fireEvent.change(slider, { target: { value: "7.5" } });
+
+      expect(window.h.state.currentItemLinearStrokeWidth).toBe(7.5);
+      expect(
+        (
+          queryByTestId(
+            document.body,
+            "linear-stroke-width-input",
+          ) as HTMLInputElement
+        ).value,
+      ).toBe("7.5");
+      expect(API.createElement({ type: "arrow" }).strokeWidth).toBe(7.5);
+
+      fireEvent.keyDown(slider, { key: "r", code: CODES.R });
+      expect(window.h.state.activeTool.type).toBe("line");
+    });
+
+    it.each([0.5, 1.5, 3, 7.5, 20, 50])(
+      "should apply the representative %s px slider value before drawing",
+      (strokeWidth) => {
+        UI.clickTool("arrow");
+
+        const slider = queryByTestId(
+          document.body,
+          "linear-stroke-width-slider",
+        ) as HTMLInputElement;
+        fireEvent.change(slider, {
+          target: { value: strokeWidth.toString() },
+        });
+
+        expect(window.h.state.currentItemLinearStrokeWidth).toBe(strokeWidth);
+        expect(API.createElement({ type: "arrow" }).strokeWidth).toBe(
+          strokeWidth,
+        );
+      },
+    );
   });
 
   describe("properties when elements selected", () => {
@@ -674,6 +735,37 @@ describe("element locking", () => {
       ).toEqual([50, 50]);
     });
 
+    it("should render a neutral mixed slider and apply its first value to all linears", () => {
+      const line = API.createElement({ type: "line", strokeWidth: 0.5 });
+      const arrow = API.createElement({ type: "arrow", strokeWidth: 20 });
+      API.setElements([line, arrow]);
+      API.setSelectedElements([line, arrow]);
+
+      const slider = queryByTestId(
+        document.body,
+        "linear-stroke-width-slider",
+      ) as HTMLInputElement;
+      expect(slider).not.toBeNull();
+      expect(slider.style.getPropertyValue("--color-slider-track")).toBe(
+        "var(--button-bg)",
+      );
+
+      fireEvent.change(slider, { target: { value: "3.5" } });
+
+      expect(
+        API.getSelectedElements().map((element) => element.strokeWidth),
+      ).toEqual([3.5, 3.5]);
+      expect(slider.value).toBe("3.5");
+      expect(
+        (
+          queryByTestId(
+            document.body,
+            "linear-stroke-width-input",
+          ) as HTMLInputElement
+        ).value,
+      ).toBe("3.5");
+    });
+
     it("should step, cancel, and undo exact linear stroke-width edits", () => {
       const line = UI.createElement("line", {
         x: 10,
@@ -706,6 +798,19 @@ describe("element locking", () => {
       expect(window.h.app.scene.getElement(line.id)?.strokeWidth).toBe(2);
       Keyboard.redo();
       expect(window.h.app.scene.getElement(line.id)?.strokeWidth).toBe(2.5);
+
+      fireEvent.change(
+        queryByTestId(
+          document.body,
+          "linear-stroke-width-slider",
+        ) as HTMLInputElement,
+        { target: { value: "7.5" } },
+      );
+      expect(window.h.app.scene.getElement(line.id)?.strokeWidth).toBe(7.5);
+      Keyboard.undo();
+      expect(window.h.app.scene.getElement(line.id)?.strokeWidth).toBe(2.5);
+      Keyboard.redo();
+      expect(window.h.app.scene.getElement(line.id)?.strokeWidth).toBe(7.5);
     });
 
     it("should preserve bound text when changing an arrow width", () => {
@@ -740,6 +845,20 @@ describe("element locking", () => {
         queryByTestId(document.body, "linear-stroke-width-input"),
       ).toBeNull();
       expect(queryByTestId(document.body, "strokeWidth-thin")).not.toBeNull();
+    });
+
+    it("should hide the editable linear-width control in view mode", () => {
+      const line = API.createElement({ type: "line" });
+      API.setElements([line]);
+      API.setSelectedElements([line]);
+      API.setAppState({ viewModeEnabled: true });
+
+      expect(
+        queryByTestId(document.body, "linear-stroke-width-slider"),
+      ).toBeNull();
+      expect(
+        queryByTestId(document.body, "linear-stroke-width-input"),
+      ).toBeNull();
     });
 
     it("should use the exact linear default only for new lines and arrows", () => {
@@ -834,6 +953,14 @@ describe("text properties on compact layouts", () => {
         return nextInput;
       });
       expect(input.value).toBe("3.5");
+      const slider = queryByTestId(
+        document.body,
+        "linear-stroke-width-slider",
+      ) as HTMLInputElement;
+      expect(slider).not.toBeNull();
+      expect(slider.value).toBe("3.5");
+      expect(slider.closest("fieldset")).toHaveTextContent("0.5");
+      expect(slider.closest("fieldset")).toHaveTextContent("50");
       expect(queryByTestId(document.body, "strokeWidth-thin")).toBeNull();
     },
   );

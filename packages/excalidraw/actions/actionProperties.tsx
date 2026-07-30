@@ -896,8 +896,28 @@ export const actionChangeLinearStrokeWidth = register<number>({
     );
 
     return (
-      <fieldset>
+      <fieldset
+        className="linear-stroke-width-fieldset"
+        data-prevent-outside-click
+        onPointerDown={(event) => event.stopPropagation()}
+      >
         <legend>{t("labels.strokeWidth")}</legend>
+        <Range
+          ariaLabel={t("labels.strokeWidth")}
+          className="linear-stroke-width-range"
+          label={null}
+          value={value ?? appState.currentItemLinearStrokeWidth}
+          hasCommonValue={value !== null}
+          onChange={(nextValue) => updateData(nextValue)}
+          min={LINEAR_STROKE_WIDTH.min}
+          max={LINEAR_STROKE_WIDTH.max}
+          step={LINEAR_STROKE_WIDTH.step}
+          minLabel={LINEAR_STROKE_WIDTH.min}
+          maxLabel={LINEAR_STROKE_WIDTH.max}
+          preventCanvasInteraction
+          showValueBubble={false}
+          testId="linear-stroke-width-slider"
+        />
         <LinearStrokeWidthInput
           value={value}
           onChange={(nextValue) => updateData(nextValue)}
