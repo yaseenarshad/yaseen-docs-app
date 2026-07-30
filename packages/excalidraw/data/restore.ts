@@ -29,6 +29,7 @@ import {
   normalizeArrowhead,
   isPointInElement,
   isValidPolygon,
+  normalizeLineUnderlines,
   projectFixedPointOntoDiagonal,
   isNonDeletedElement,
 } from "@excalidraw/element";
@@ -520,6 +521,11 @@ export const restoreElement = (
         fontFamily = getFontFamilyByName(_fontFamily);
       }
       const text = (typeof element.text === "string" && element.text) || "";
+      const originalText = element.originalText || text;
+      const lineUnderlines = normalizeLineUnderlines(
+        (element as { lineUnderlines?: unknown }).lineUnderlines,
+        originalText.split("\n").length,
+      );
 
       // line-height might not be specified either when creating elements
       // programmatically, or when importing old diagrams.
@@ -541,10 +547,14 @@ export const restoreElement = (
         textAlign: element.textAlign || DEFAULT_TEXT_ALIGN,
         verticalAlign: element.verticalAlign || DEFAULT_VERTICAL_ALIGN,
         containerId: element.containerId ?? null,
-        originalText: element.originalText || text,
+        originalText,
         autoResize: element.autoResize ?? true,
         lineHeight,
+        lineUnderlines,
       });
+      if (!lineUnderlines) {
+        delete (element as { lineUnderlines?: unknown }).lineUnderlines;
+      }
 
       // if empty text, mark as deleted. We keep in array
       // for data integrity purposes (collab etc.)

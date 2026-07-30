@@ -239,6 +239,7 @@ export type ExcalidrawTextElement = _ExcalidrawElementBase &
     fontFamily: FontFamilyValues;
     fontWeight?: "normal" | "bold";
     textDecoration?: "none" | "underline";
+    lineUnderlines?: readonly boolean[];
     text: string;
     textAlign: TextAlign;
     verticalAlign: VerticalAlign;

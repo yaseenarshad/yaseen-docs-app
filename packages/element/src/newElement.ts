@@ -24,6 +24,7 @@ import {
 import { newElementWith } from "./mutateElement";
 import { getBoundTextMaxWidth } from "./textElement";
 import { normalizeText, measureText } from "./textMeasurements";
+import { normalizeLineUnderlines } from "./textLineUnderlines";
 import { wrapText } from "./textWrapping";
 
 import { isLineElement } from "./typeChecks";
@@ -267,6 +268,7 @@ export const newTextElement = (
     containerId?: ExcalidrawTextContainer["id"] | null;
     lineHeight?: ExcalidrawTextElement["lineHeight"];
     autoResize?: ExcalidrawTextElement["autoResize"];
+    lineUnderlines?: ExcalidrawTextElement["lineUnderlines"];
   } & ElementConstructorOpts,
 ): NonDeleted<ExcalidrawTextElement> => {
   const fontFamily = opts.fontFamily || DEFAULT_FONT_FAMILY;
@@ -280,6 +282,10 @@ export const newTextElement = (
   );
   const textAlign = opts.textAlign || DEFAULT_TEXT_ALIGN;
   const verticalAlign = opts.verticalAlign || DEFAULT_VERTICAL_ALIGN;
+  const lineUnderlines = normalizeLineUnderlines(
+    opts.lineUnderlines,
+    (opts.originalText ?? text).split("\n").length,
+  );
   const offsets = getTextElementPositionOffsets(
     { textAlign, verticalAlign },
     metrics,
@@ -300,6 +306,7 @@ export const newTextElement = (
     originalText: opts.originalText ?? text,
     autoResize: opts.autoResize ?? true,
     lineHeight,
+    ...(lineUnderlines ? { lineUnderlines } : {}),
   };
 
   const textElement: NonDeleted<ExcalidrawTextElement> = newElementWith(

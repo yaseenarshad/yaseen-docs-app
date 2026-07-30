@@ -20,6 +20,7 @@ import type { NormalizedZoomValue } from "@excalidraw/excalidraw/types";
 import { API } from "../helpers/api";
 import * as restore from "../../data/restore";
 import { getDefaultAppState } from "../../appState";
+import { serializeAsJSON } from "../../data/json";
 
 import type { ImportedDataState } from "../../data/types";
 
@@ -41,6 +42,46 @@ describe("restoreElements", () => {
 
     const restoredElements = restore.restoreElements(elements, null);
     expect(restoredElements.length).toBe(elements.length);
+  });
+
+  it("normalizes imported text line underlines", () => {
+    const [restored] = restore.restoreElements(
+      [
+        {
+          ...API.createElement({
+            type: "text",
+            text: "Title\nSubtitle",
+          }),
+          lineUnderlines: [true, "invalid", true],
+        } as any,
+      ],
+      null,
+    );
+
+    expect(restored).toMatchObject({
+      type: "text",
+      lineUnderlines: [true],
+    });
+  });
+
+  it("round-trips text line underlines through scene JSON", () => {
+    const element = {
+      ...API.createElement({
+        type: "text",
+        text: "Title\nSubtitle",
+      }),
+      lineUnderlines: [true],
+    } as any;
+    const serialized = serializeAsJSON(
+      [element],
+      getDefaultAppState(),
+      {},
+      "local",
+    );
+    const parsed = JSON.parse(serialized);
+    const [restored] = restore.restoreElements(parsed.elements, null);
+
+    expect(restored).toMatchObject({ lineUnderlines: [true] });
   });
 
   it("when imported data state is null it should return an empty array of elements", () => {

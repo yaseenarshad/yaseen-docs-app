@@ -8,6 +8,7 @@ import type {
 } from "@excalidraw/element/types";
 
 import { reconcileElements } from "../../data/reconcile";
+import { API } from "../helpers/api";
 
 import type { RemoteExcalidrawElement } from "../../data/reconcile";
 
@@ -137,6 +138,37 @@ const test = <U extends `${string}:${"L" | "R"}`>(
 };
 
 describe("elements reconciliation", () => {
+  it("keeps line underline metadata from the newer remote text element", () => {
+    const local = {
+      ...API.createElement({
+        type: "text",
+        id: "styledText",
+        text: "Title\nSubtitle",
+      }),
+      index: "a0",
+      version: 1,
+      versionNonce: randomInteger(),
+    } as OrderedExcalidrawElement;
+    const remote = {
+      ...local,
+      version: 2,
+      versionNonce: randomInteger(),
+      lineUnderlines: [true],
+    };
+
+    const [reconciled] = reconcileElements(
+      [local],
+      [remote as unknown as RemoteExcalidrawElement],
+      {} as AppState,
+    );
+
+    expect(reconciled).toMatchObject({
+      id: "styledText",
+      version: 2,
+      lineUnderlines: [true],
+    });
+  });
+
   it("reconcileElements()", () => {
     // -------------------------------------------------------------------------
     //
