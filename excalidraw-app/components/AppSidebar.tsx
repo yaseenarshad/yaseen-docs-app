@@ -4,6 +4,7 @@ import { DefaultSidebar, Sidebar, THEME } from "@excalidraw/excalidraw";
 import {
   file,
   ImageIcon,
+  LibraryIcon,
   messageCircleIcon,
   presentationIcon,
   sidebarRightIcon,
@@ -16,6 +17,8 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { ImageStudio } from "../image-studio/ImageStudio";
 
 import "./AppSidebar.scss";
+
+import { SavedComponents } from "./SavedComponents";
 
 import type { MouseEvent as ReactMouseEvent } from "react";
 
@@ -696,6 +699,14 @@ export const AppSidebar = ({
             {file}
           </Sidebar.TabTrigger>
           <Sidebar.TabTrigger
+            tab="components"
+            aria-label="Components"
+            title="Components"
+            style={{ opacity: openSidebar?.tab === "components" ? 1 : 0.4 }}
+          >
+            {LibraryIcon}
+          </Sidebar.TabTrigger>
+          <Sidebar.TabTrigger
             tab="image-studio"
             aria-label="Image Studio"
             title="Image Studio"
@@ -722,6 +733,9 @@ export const AppSidebar = ({
         </DefaultSidebar.TabTriggers>
         <Sidebar.Tab tab="boards">
           <BoardBrowser {...boardBrowserProps} />
+        </Sidebar.Tab>
+        <Sidebar.Tab tab="components">
+          <SavedComponents onAdd={() => undefined} onInsert={() => undefined} />
         </Sidebar.Tab>
         <Sidebar.Tab tab="image-studio">
           {excalidrawAPI && (
