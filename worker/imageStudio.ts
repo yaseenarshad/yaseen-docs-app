@@ -4,73 +4,124 @@ import type {
 } from "../image-studio/types";
 
 export type ImageStudioEnv = {
-  OPENVERSE_CLIENT_ID?: string;
-  OPENVERSE_CLIENT_SECRET?: string;
+  PIXABAY_API_KEY?: string;
 };
 
-const ALLOWED_OPENVERSE_LICENSES = new Set(["cc0", "pdm", "by", "by-sa"]);
-const SEARCH_LIMIT = 36;
+type PixabayHit = {
+  id?: number;
+  type?: string;
+  pageURL?: string;
+  tags?: string;
+  previewURL?: string;
+  webformatURL?: string;
+  largeImageURL?: string;
+  vectorURL?: string;
+  user?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+};
+
+type IconifyCollection = {
+  name?: string;
+  category?: string;
+  palette?: boolean;
+  license?: { title?: string; url?: string; spdx?: string };
+};
+
+const SEARCH_LIMIT = 18;
+const ICONIFY_FETCH_LIMIT = 64;
+const ICONIFY_RESULT_LIMIT = 14;
+const PIXABAY_RESULT_LIMIT = 5;
 const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
-const OPENVERSE_API = "https://api.openverse.org/v1";
+const CACHE_SECONDS = 24 * 60 * 60;
+const PIXABAY_API = "https://pixabay.com/api/";
 const ICONIFY_API = "https://api.iconify.design";
+
+const COLOR_COLLECTION_PRIORITY = [
+  "fluent-emoji-flat",
+  "noto",
+  "openmoji",
+  "twemoji",
+  "fluent-color",
+  "streamline-color",
+  "streamline-ultimate-color",
+  "icon-park",
+  "icon-park-twotone",
+];
+
+const LOW_PRIORITY_COLLECTIONS = [
+  "material-symbols",
+  "material-icons",
+  "mdi",
+  "ic",
+  "fa",
+  "fa6-solid",
+  "fa6-regular",
+];
 
 const stringValue = (value: unknown) =>
   typeof value === "string" && value.trim() ? value.trim() : undefined;
 const numberValue = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
-export const normalizeOpenverseResults = (payload: {
-  results?: Array<Record<string, unknown>>;
+const titleFromTags = (tags?: string) => {
+  const firstTag = tags
+    ?.split(",")
+    .map((tag) => tag.trim())
+    .find(Boolean);
+  return firstTag
+    ? firstTag.replace(/\b\w/g, (character) => character.toUpperCase())
+    : "Pixabay graphic";
+};
+
+export const normalizePixabayResults = (payload: {
+  hits?: PixabayHit[];
 }): ImageStudioItem[] =>
-  (payload.results ?? []).flatMap((raw) => {
-    const id = stringValue(raw.id);
-    const license = stringValue(raw.license)?.toLowerCase();
-    if (!id || !license || !ALLOWED_OPENVERSE_LICENSES.has(license)) {
+  (payload.hits ?? []).flatMap((raw) => {
+    const id = numberValue(raw.id);
+    const preview = stringValue(raw.previewURL);
+    const type = stringValue(raw.type)?.toLowerCase();
+    if (
+      id === undefined ||
+      !preview ||
+      (!type?.startsWith("vector") && !type?.startsWith("illustration"))
+    ) {
       return [];
     }
-    const version = stringValue(raw.license_version);
-    const title = stringValue(raw.title) ?? "Untitled image";
-    const creator = stringValue(raw.creator);
+    const providerId = String(id);
     return [
       {
-        itemKey: `openverse:${id}`,
-        provider: "openverse",
-        providerId: id,
-        kind: raw.category === "illustration" ? "illustration" : "photo",
-        title,
-        previewUrl: `/api/image-studio/preview/openverse/${encodeURIComponent(
-          id,
-        )}`,
-        creator,
-        creatorUrl: stringValue(raw.creator_url),
-        collectionName: stringValue(raw.source) ?? "Openverse",
-        sourceUrl: stringValue(raw.foreign_landing_url),
-        licenseName:
-          license === "pdm"
-            ? "Public Domain Mark"
-            : license === "cc0"
-            ? "CC0"
-            : `CC ${license.toUpperCase()}${version ? ` ${version}` : ""}`,
-        licenseUrl: stringValue(raw.license_url),
-        attribution:
-          stringValue(raw.attribution) ??
-          `${title}${creator ? ` by ${creator}` : ""}`,
-        width: numberValue(raw.width),
-        height: numberValue(raw.height),
+        itemKey: `pixabay:${providerId}`,
+        provider: "pixabay",
+        providerId,
+        kind: "illustration",
+        title: titleFromTags(raw.tags),
+        previewUrl: `/api/image-studio/preview/pixabay/${providerId}`,
+        creator: stringValue(raw.user),
+        collectionName: "Pixabay",
+        sourceUrl: stringValue(raw.pageURL),
+        licenseName: "Pixabay Content License",
+        licenseUrl: "https://pixabay.com/service/license-summary/",
+        attribution: `Graphic from Pixabay${raw.user ? ` by ${raw.user}` : ""}`,
+        width: numberValue(raw.imageWidth),
+        height: numberValue(raw.imageHeight),
       } as ImageStudioItem,
     ];
   });
 
+const iconKind = (
+  prefix: string,
+  collection: IconifyCollection | undefined,
+) => {
+  const isLogo =
+    prefix === "simple-icons" ||
+    /brand|logo|social/i.test(collection?.category ?? "");
+  return isLogo ? ("logo" as const) : ("icon" as const);
+};
+
 export const normalizeIconifyResults = (payload: {
   icons?: string[];
-  collections?: Record<
-    string,
-    {
-      name?: string;
-      category?: string;
-      license?: { title?: string; url?: string; spdx?: string };
-    }
-  >;
+  collections?: Record<string, IconifyCollection>;
 }): ImageStudioItem[] =>
   (payload.icons ?? []).flatMap((providerId) => {
     const separator = providerId.indexOf(":");
@@ -80,15 +131,13 @@ export const normalizeIconifyResults = (payload: {
     const prefix = providerId.slice(0, separator);
     const iconName = providerId.slice(separator + 1);
     const collection = payload.collections?.[prefix];
-    const isLogo =
-      prefix === "simple-icons" ||
-      /brand|logo|social/i.test(collection?.category ?? "");
+    const kind = iconKind(prefix, collection);
     return [
       {
         itemKey: `iconify:${providerId}`,
         provider: "iconify",
         providerId,
-        kind: isLogo ? "logo" : "icon",
+        kind,
         title: iconName.replaceAll("-", " "),
         previewUrl: `/api/image-studio/preview/iconify/${encodeURIComponent(
           providerId,
@@ -100,23 +149,94 @@ export const normalizeIconifyResults = (payload: {
           collection?.license?.spdx ??
           "Open source",
         licenseUrl: collection?.license?.url,
-        trademarkNotice: isLogo,
+        trademarkNotice: kind === "logo",
       } as ImageStudioItem,
     ];
   });
 
+const iconPriority = (item: ImageStudioItem, query: string) => {
+  const prefix = item.providerId.split(":")[0];
+  const colorIndex = COLOR_COLLECTION_PRIORITY.indexOf(prefix);
+  if (colorIndex >= 0) {
+    return colorIndex;
+  }
+  if (item.kind === "logo") {
+    const logoQuery =
+      /\b(logo|brand)\b/i.test(query) ||
+      item.title.toLowerCase().includes(query.toLowerCase());
+    return logoQuery ? 20 : 80;
+  }
+  const lowPriorityIndex = LOW_PRIORITY_COLLECTIONS.indexOf(prefix);
+  return lowPriorityIndex >= 0 ? 100 + lowPriorityIndex : 40;
+};
+
+const canonicalIconName = (title: string) =>
+  title
+    .toLowerCase()
+    .replace(
+      /\b(outline|outlined|fill|filled|solid|line|regular|round|sharp|color|colour|two tone|twotone)\b/g,
+      "",
+    )
+    .replace(/\b(16|20|24|28|32|48)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+export const curateIconifyResults = (
+  items: ImageStudioItem[],
+  query: string,
+  limit = ICONIFY_RESULT_LIMIT,
+) => {
+  const collectionCounts = new Map<string, number>();
+  const exactNames = new Set<string>();
+  return [...items]
+    .sort(
+      (left, right) =>
+        iconPriority(left, query) - iconPriority(right, query) ||
+        left.title.localeCompare(right.title),
+    )
+    .filter((item) => {
+      const collection = item.providerId.split(":")[0];
+      const count = collectionCounts.get(collection) ?? 0;
+      if (count >= 2) {
+        return false;
+      }
+      const canonical = canonicalIconName(item.title);
+      const dedupeKey =
+        COLOR_COLLECTION_PRIORITY.includes(collection) && canonical
+          ? `${collection}:${canonical}`
+          : canonical;
+      if (dedupeKey && exactNames.has(dedupeKey)) {
+        return false;
+      }
+      collectionCounts.set(collection, count + 1);
+      if (dedupeKey) {
+        exactNames.add(dedupeKey);
+      }
+      return true;
+    })
+    .slice(0, limit);
+};
+
 export const interleaveResults = (
-  left: ImageStudioItem[],
-  right: ImageStudioItem[],
+  iconify: ImageStudioItem[],
+  pixabay: ImageStudioItem[],
 ) => {
   const results: ImageStudioItem[] = [];
-  const length = Math.max(left.length, right.length);
-  for (let index = 0; index < length; index++) {
-    if (left[index]) {
-      results.push(left[index]);
+  let iconIndex = 0;
+  let pixabayIndex = 0;
+  while (
+    results.length < SEARCH_LIMIT &&
+    (iconIndex < iconify.length || pixabayIndex < pixabay.length)
+  ) {
+    for (
+      let offset = 0;
+      offset < 3 && iconIndex < iconify.length && results.length < SEARCH_LIMIT;
+      offset++
+    ) {
+      results.push(iconify[iconIndex++]);
     }
-    if (right[index]) {
-      results.push(right[index]);
+    if (pixabayIndex < pixabay.length && results.length < SEARCH_LIMIT) {
+      results.push(pixabay[pixabayIndex++]);
     }
   }
   return results;
@@ -126,7 +246,7 @@ const json = (body: unknown, init: ResponseInit = {}) =>
   Response.json(body, {
     ...init,
     headers: {
-      "Cache-Control": "public, max-age=60, s-maxage=300",
+      "Cache-Control": "no-store",
       ...init.headers,
     },
   });
@@ -141,94 +261,195 @@ const fetchJson = async <T>(url: string) => {
   return (await response.json()) as T;
 };
 
-const parseCursor = (cursor: string | null) => {
-  if (!cursor) {
-    return { openversePage: 1, iconifyStart: 0 };
+const getCache = () =>
+  typeof caches === "undefined" ? undefined : caches.default;
+
+const cachedJsonFetch = async <T>(
+  cacheKey: string,
+  sourceUrl: string,
+): Promise<T> => {
+  const cache = getCache();
+  const request = new Request(cacheKey);
+  const cached = await cache?.match(request);
+  if (cached) {
+    return (await cached.json()) as T;
   }
-  const [openversePage, iconifyStart] = cursor.split(":").map(Number);
+  const payload = await fetchJson<T>(sourceUrl);
+  await cache?.put(
+    request,
+    Response.json(payload, {
+      headers: { "Cache-Control": `public, max-age=${CACHE_SECONDS}` },
+    }),
+  );
+  return payload;
+};
+
+const pixabaySearchUrl = (
+  query: string,
+  page: number,
+  imageType: "vector" | "illustration",
+  key: string,
+) => {
+  const url = new URL(PIXABAY_API);
+  url.searchParams.set("key", key);
+  url.searchParams.set("q", query);
+  url.searchParams.set("page", String(page));
+  url.searchParams.set("per_page", "20");
+  url.searchParams.set("image_type", imageType);
+  url.searchParams.set("colors", "transparent");
+  url.searchParams.set("safesearch", "true");
+  url.searchParams.set("order", "popular");
+  return url;
+};
+
+export const buildPixabaySearchUrls = (
+  query: string,
+  page: number,
+  key: string,
+) => [
+  pixabaySearchUrl(query, page, "vector", key),
+  pixabaySearchUrl(query, page, "illustration", key),
+];
+
+const fetchPixabaySearch = async (
+  query: string,
+  page: number,
+  env: ImageStudioEnv,
+) => {
+  if (!env.PIXABAY_API_KEY) {
+    throw new Error("Pixabay is not configured");
+  }
+  const urls = buildPixabaySearchUrls(query, page, env.PIXABAY_API_KEY);
+  const payloads = await Promise.all(
+    urls.map((url) =>
+      cachedJsonFetch<{ hits?: PixabayHit[] }>(
+        `https://image-studio-cache.invalid/pixabay/search/${encodeURIComponent(
+          query,
+        )}/${page}/${url.searchParams.get("image_type")}`,
+        url.toString(),
+      ),
+    ),
+  );
+  const seen = new Set<number>();
   return {
-    openversePage:
-      Number.isInteger(openversePage) && openversePage > 0 ? openversePage : 1,
-    iconifyStart:
-      Number.isInteger(iconifyStart) && iconifyStart >= 0 ? iconifyStart : 0,
+    hits: payloads
+      .flatMap(({ hits }) => hits ?? [])
+      .filter((hit) => {
+        if (hit.id === undefined || seen.has(hit.id)) {
+          return false;
+        }
+        seen.add(hit.id);
+        return true;
+      }),
   };
 };
 
-const search = async (request: Request): Promise<Response> => {
+const parseCursor = (cursor: string | null) => {
+  const page = Number(cursor);
+  return Number.isInteger(page) && page > 0 ? page : 1;
+};
+
+const searchUncached = async (
+  request: Request,
+  env: ImageStudioEnv,
+): Promise<Response> => {
   const url = new URL(request.url);
   const query = (url.searchParams.get("q") ?? "").trim().slice(0, 120);
   if (query.length < 2) {
     return json({ error: "Enter at least two characters" }, { status: 400 });
   }
-  const cursor = parseCursor(url.searchParams.get("cursor"));
-  const perProvider = SEARCH_LIMIT / 2;
-  const openverseUrl = new URL(`${OPENVERSE_API}/images/`);
-  openverseUrl.searchParams.set("q", query);
-  openverseUrl.searchParams.set("page_size", String(perProvider));
-  openverseUrl.searchParams.set("page", String(cursor.openversePage));
-  openverseUrl.searchParams.set("license", "cc0,pdm,by,by-sa");
+  const page = parseCursor(url.searchParams.get("cursor"));
   const iconifyUrl = new URL(`${ICONIFY_API}/search`);
   iconifyUrl.searchParams.set("query", query);
-  iconifyUrl.searchParams.set("limit", String(perProvider));
-  iconifyUrl.searchParams.set("start", String(cursor.iconifyStart));
+  iconifyUrl.searchParams.set("limit", String(ICONIFY_FETCH_LIMIT));
+  iconifyUrl.searchParams.set("start", String((page - 1) * 18));
 
-  const [openverse, iconify] = await Promise.allSettled([
-    fetchJson<{ results?: Array<Record<string, unknown>> }>(
-      openverseUrl.toString(),
-    ),
+  const [iconify, pixabay] = await Promise.allSettled([
     fetchJson<{
       icons?: string[];
-      collections?: Parameters<
-        typeof normalizeIconifyResults
-      >[0]["collections"];
-      total?: number;
+      collections?: Record<string, IconifyCollection>;
     }>(iconifyUrl.toString()),
+    fetchPixabaySearch(query, page, env),
   ]);
 
   const warnings: ImageStudioSearchResponse["warnings"] = [];
-  if (openverse.status === "rejected") {
-    warnings.push({
-      provider: "openverse",
-      message: "Photos are temporarily unavailable.",
-    });
-  }
   if (iconify.status === "rejected") {
     warnings.push({
       provider: "iconify",
       message: "Icons are temporarily unavailable.",
     });
   }
-  const openverseResults =
-    openverse.status === "fulfilled"
-      ? normalizeOpenverseResults(openverse.value)
-      : [];
+  if (pixabay.status === "rejected") {
+    warnings.push({
+      provider: "pixabay",
+      message: env.PIXABAY_API_KEY
+        ? "Pixabay graphics are temporarily unavailable."
+        : "Pixabay graphics need an API key.",
+    });
+  }
   const iconifyResults =
     iconify.status === "fulfilled"
-      ? normalizeIconifyResults(iconify.value)
+      ? curateIconifyResults(
+          normalizeIconifyResults(iconify.value),
+          query,
+          ICONIFY_RESULT_LIMIT,
+        )
       : [];
-  const results = interleaveResults(openverseResults, iconifyResults).slice(
-    0,
-    SEARCH_LIMIT,
-  );
+  const pixabayResults =
+    pixabay.status === "fulfilled"
+      ? normalizePixabayResults(pixabay.value).slice(0, PIXABAY_RESULT_LIMIT)
+      : [];
+  const results = interleaveResults(iconifyResults, pixabayResults);
   return json({
     results,
-    cursor:
-      results.length > 0
-        ? `${cursor.openversePage + 1}:${cursor.iconifyStart + perProvider}`
-        : null,
+    cursor: results.length > 0 ? String(page + 1) : null,
     warnings,
   } as ImageStudioSearchResponse);
 };
 
-const getOpenverseRecord = (id: string) =>
-  fetchJson<Record<string, unknown>>(
-    `${OPENVERSE_API}/images/${encodeURIComponent(id)}/`,
+const search = async (request: Request, env: ImageStudioEnv) => {
+  const cache = getCache();
+  if (env.PIXABAY_API_KEY) {
+    const cached = await cache?.match(request);
+    if (cached) {
+      return cached;
+    }
+  }
+  const response = await searchUncached(request, env);
+  if (response.ok && env.PIXABAY_API_KEY) {
+    const cachedResponse = new Response(response.clone().body, response);
+    cachedResponse.headers.set(
+      "Cache-Control",
+      `public, max-age=60, s-maxage=${CACHE_SECONDS}`,
+    );
+    await cache?.put(request, cachedResponse);
+  }
+  return response;
+};
+
+const getPixabayRecord = async (id: string, env: ImageStudioEnv) => {
+  if (!env.PIXABAY_API_KEY || !/^\d+$/.test(id)) {
+    throw new Error("Pixabay is not configured");
+  }
+  const url = new URL(PIXABAY_API);
+  url.searchParams.set("key", env.PIXABAY_API_KEY);
+  url.searchParams.set("id", id);
+  const payload = await cachedJsonFetch<{ hits?: PixabayHit[] }>(
+    `https://image-studio-cache.invalid/pixabay/item/${id}`,
+    url.toString(),
   );
+  const hit = payload.hits?.find((candidate) => String(candidate.id) === id);
+  if (!hit) {
+    throw new Error("Image not found");
+  }
+  return hit;
+};
 
 const getSource = async (
   provider: string,
   providerId: string,
   preview: boolean,
+  env: ImageStudioEnv,
 ) => {
   if (provider === "iconify") {
     if (!/^[a-z0-9-]+:[a-z0-9-]+$/i.test(providerId)) {
@@ -239,12 +460,11 @@ const getSource = async (
       name,
     )}.svg`;
   }
-  if (provider === "openverse" && /^[a-z0-9-]+$/i.test(providerId)) {
-    if (preview) {
-      return `${OPENVERSE_API}/images/${encodeURIComponent(providerId)}/thumb/`;
-    }
-    const record = await getOpenverseRecord(providerId);
-    const source = record.url;
+  if (provider === "pixabay") {
+    const record = await getPixabayRecord(providerId, env);
+    const source = preview
+      ? record.previewURL
+      : record.vectorURL ?? record.largeImageURL ?? record.webformatURL;
     if (typeof source !== "string" || !source.startsWith("https://")) {
       throw new Error("Image source unavailable");
     }
@@ -257,10 +477,23 @@ const proxyImage = async (
   provider: string,
   providerId: string,
   preview: boolean,
+  env: ImageStudioEnv,
 ) => {
+  const cache = getCache();
+  const cacheKey = new Request(
+    `https://image-studio-cache.invalid/image/${provider}/${encodeURIComponent(
+      providerId,
+    )}/${preview ? "preview" : "import"}`,
+  );
+  if (preview) {
+    const cached = await cache?.match(cacheKey);
+    if (cached) {
+      return cached;
+    }
+  }
   let source: string;
   try {
-    source = await getSource(provider, providerId, preview);
+    source = await getSource(provider, providerId, preview, env);
   } catch {
     return json({ error: "Image not found" }, { status: 404 });
   }
@@ -282,33 +515,38 @@ const proxyImage = async (
       { status: 413 },
     );
   }
-  return new Response(response.body, {
+  const proxied = new Response(response.body, {
     headers: {
       "Content-Type": contentType,
       "Cache-Control": preview
-        ? "public, max-age=86400, s-maxage=604800"
+        ? `public, max-age=${CACHE_SECONDS}`
         : "private, no-store",
       ...(contentLength ? { "Content-Length": String(contentLength) } : {}),
     },
   });
+  if (preview) {
+    await cache?.put(cacheKey, proxied.clone());
+  }
+  return proxied;
 };
 
 export const handleImageStudioRequest = async (
   request: Request,
-  _env: ImageStudioEnv,
+  env: ImageStudioEnv,
 ) => {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/api/image-studio/search") {
-    return search(request);
+    return search(request, env);
   }
   const match = url.pathname.match(
-    /^\/api\/image-studio\/(preview|import)\/(openverse|iconify)\/([^/]+)$/,
+    /^\/api\/image-studio\/(preview|import)\/(pixabay|iconify)\/([^/]+)$/,
   );
   if (request.method === "GET" && match) {
     return proxyImage(
       match[2],
       decodeURIComponent(match[3]),
       match[1] === "preview",
+      env,
     );
   }
   return json({ error: "Not found" }, { status: 404 });

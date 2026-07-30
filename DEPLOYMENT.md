@@ -8,10 +8,10 @@ The application is deployed at <https://draw.yasinarshad.com>.
 - A private R2 bucket named `yaseen-excalidraw-assets` stores pasted image bytes.
 - Convex stores authentication, diagram scenes, versions, sharing settings, image metadata, and short-lived R2 upload grants.
 - Scene JSON never contains the base64 image payload. Excalidraw file IDs link scene elements to R2 objects registered in Convex.
-- Image Studio searches reusable Openverse images and open-source Iconify icons through the Worker. Imported files use the same R2-backed diagram asset flow as pasted images.
+- Image Studio searches transparent Pixabay graphics and open-source Iconify graphics through the Worker. Imported files use the same R2-backed diagram asset flow as pasted images.
 - Image Studio Favorites and Recent are account-wide Convex records. Shapes are inserted as editable native Excalidraw elements and do not consume R2 space.
 
-Openverse works without credentials at its anonymous rate limit. Optional `OPENVERSE_CLIENT_ID` and `OPENVERSE_CLIENT_SECRET` Worker secrets can be added later if higher provider limits are needed. Iconify's public search API does not require a key.
+Pixabay requires a server-side `PIXABAY_API_KEY` Cloudflare Worker secret. Pixabay search responses are cached for 24 hours and inserted assets are copied to R2 instead of permanently hotlinked. Iconify's public search API does not require a key.
 
 ## Production services
 

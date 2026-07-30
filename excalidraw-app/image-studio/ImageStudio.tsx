@@ -183,8 +183,8 @@ export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
         >
           <input
             type="search"
-            aria-label="Search photos, icons, and logos"
-            placeholder="Search photos, icons, and logos"
+            aria-label="Search graphics, icons, and logos"
+            placeholder="Search graphics, icons, and logos"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -280,7 +280,7 @@ export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
         </button>
       )}
       <footer className="image-studio__footer">
-        Photos via Openverse · icons via Iconify. Check attribution and
+        Graphics via Pixabay · icons via Iconify. Check source details and
         trademarks before publishing.
       </footer>
     </div>

@@ -18,18 +18,18 @@ describe("ImageStudio", () => {
       .mockReturnValueOnce(vi.fn() as never);
   });
 
-  it("shows Openverse and Iconify results in one search grid", async () => {
+  it("shows Pixabay and Iconify results in one search grid", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
         Response.json({
           results: [
             {
-              itemKey: "openverse:photo",
-              provider: "openverse",
-              providerId: "photo",
-              kind: "photo",
-              title: "Team photo",
+              itemKey: "pixabay:123",
+              provider: "pixabay",
+              providerId: "123",
+              kind: "illustration",
+              title: "Team graphic",
               previewUrl: "/photo",
             },
             {
@@ -51,7 +51,7 @@ describe("ImageStudio", () => {
 
     fireEvent.change(
       screen.getByRole("searchbox", {
-        name: "Search photos, icons, and logos",
+        name: "Search graphics, icons, and logos",
       }),
       { target: { value: "team" } },
     );
@@ -59,7 +59,7 @@ describe("ImageStudio", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "Add Team photo" }),
+        screen.getByRole("button", { name: "Add Team graphic" }),
       ).toBeVisible();
       expect(
         screen.getByRole("button", { name: "Add Users icon" }),

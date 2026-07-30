@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 
 export const mediaProviderValidator = v.union(
-  v.literal("openverse"),
+  v.literal("pixabay"),
   v.literal("iconify"),
   v.literal("shape"),
 );

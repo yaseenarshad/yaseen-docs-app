@@ -4,8 +4,7 @@ interface Env {
   ASSETS: Fetcher;
   DIAGRAM_ASSETS: R2Bucket;
   CONVEX_SITE_URL: string;
-  OPENVERSE_CLIENT_ID?: string;
-  OPENVERSE_CLIENT_SECRET?: string;
+  PIXABAY_API_KEY?: string;
 }
 
 const json = (body: unknown, init?: ResponseInit) =>

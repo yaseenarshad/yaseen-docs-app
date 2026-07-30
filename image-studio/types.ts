@@ -1,4 +1,4 @@
-export type ImageStudioProvider = "openverse" | "iconify" | "shape";
+export type ImageStudioProvider = "pixabay" | "iconify" | "shape";
 export type ImageStudioItemKind =
   | "photo"
   | "illustration"
