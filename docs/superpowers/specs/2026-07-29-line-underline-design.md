@@ -139,7 +139,8 @@ Excalidraw scene JSON is already stored and synchronized.
 - Existing scenes without `lineUnderlines` render exactly as before.
 - Existing scenes using `textDecoration: "underline"` remain fully
   underlined.
-- Existing whole-element keyboard and toolbar tests remain valid.
+- Existing whole-element keyboard and toolbar behavior outside text-editing
+  mode remains valid. Editing-mode tests change to expect line metadata.
 - Older app builds ignore the optional field. They can still read the scene,
   but they will not display partial line underline until they load a build
   containing this feature.
@@ -171,4 +172,3 @@ Add focused tests for:
 - Replacing the textarea with a full rich-text `contenteditable` editor.
 - Adding visible controls beyond the existing Underline button.
 - Changing autosave, snapshot retention, Convex tables, or R2 assets.
-
