@@ -139,6 +139,7 @@ import { getPreferredLanguage } from "./app-language/language-detector";
 import { useAppLangCode } from "./app-language/language-state";
 import { CloudStatus } from "./cloud/CloudStatus";
 import { CloudAccount } from "./cloud/CloudAccount";
+import { CloudShareDialog } from "./cloud/CloudShareDialog";
 import {
   preserveCloudViewport,
   shouldApplyCloudScene,
@@ -155,7 +156,6 @@ import { ExcalidrawPlusIframeExport } from "./ExcalidrawPlusIframeExport";
 
 import "./index.scss";
 
-import { ExcalidrawPlusPromoBanner } from "./components/ExcalidrawPlusPromoBanner";
 import { AppSidebar } from "./components/AppSidebar";
 
 import type { CollabAPI } from "./collab/Collab";
@@ -436,6 +436,8 @@ const ExcalidrawWrapper = () => {
   });
 
   const [, forceRefresh] = useState(false);
+  const [isCloudShareOpen, setIsCloudShareOpen] = useState(false);
+  const [cloudShareUrl, setCloudShareUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (isDevEnv()) {
@@ -1103,36 +1105,35 @@ const ExcalidrawWrapper = () => {
         viewModeEnabled={cloud.isViewer}
         theme={editorTheme}
         onThemeChange={setAppTheme}
+        renderTopLeftUI={() => (
+          <div className="cloud-header-identity">
+            <CloudStatus
+              title={cloud.openedDiagram?.diagram.title ?? "Cloud diagram"}
+              status={cloud.saveStatus}
+              errorMessage={cloud.errorMessage}
+              canRename={cloud.openedDiagram?.access === "owner"}
+              onRename={cloud.renameOpenedDiagram}
+            />
+            <CloudAccount />
+          </div>
+        )}
         renderTopRightUI={(isMobile) => {
           return (
             <div className="excalidraw-ui-top-right">
-              <CloudStatus
-                title={cloud.openedDiagram?.diagram.title ?? "Cloud diagram"}
-                status={cloud.saveStatus}
-                errorMessage={cloud.errorMessage}
-                canRename={cloud.openedDiagram?.access === "owner"}
-                onRename={cloud.renameOpenedDiagram}
-                canShare={cloud.openedDiagram?.access === "owner"}
-                onShare={cloud.enableSharing}
-              />
-              <CloudAccount />
               {!isMobile && collabAPI && !isCollabDisabled && (
                 <>
-                  {excalidrawAPI?.getEditorInterface().formFactor ===
-                    "desktop" && (
-                    <ExcalidrawPlusPromoBanner
-                      isSignedIn={isExcalidrawPlusSignedUser}
-                    />
-                  )}
-
                   {collabError.message && (
                     <CollabError collabError={collabError} />
                   )}
                   <LiveCollaborationTrigger
                     isCollaborating={isCollaborating}
-                    onSelect={() =>
-                      setShareDialogState({ isOpen: true, type: "share" })
-                    }
+                    onSelect={() => {
+                      if (cloud.openedDiagram?.access === "owner") {
+                        setIsCloudShareOpen(true);
+                      } else {
+                        setShareDialogState({ isOpen: true, type: "share" });
+                      }
+                    }}
                     editorInterface={editorInterface}
                   />
                 </>
@@ -1223,6 +1224,18 @@ const ExcalidrawWrapper = () => {
             }
           }}
         />
+        {isCloudShareOpen && (
+          <CloudShareDialog
+            title={cloud.openedDiagram?.diagram.title ?? "Cloud diagram"}
+            initialUrl={cloudShareUrl}
+            onClose={() => setIsCloudShareOpen(false)}
+            onCreateLink={async () => {
+              const url = await cloud.enableSharing();
+              setCloudShareUrl(url);
+              return url;
+            }}
+          />
+        )}
 
         <AppSidebar
           diagrams={cloud.diagrams}

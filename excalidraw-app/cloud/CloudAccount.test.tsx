@@ -39,6 +39,14 @@ describe("CloudLoginGate", () => {
 });
 
 describe("CloudProfile", () => {
+  it("uses an icon-only profile trigger", () => {
+    render(<CloudProfile username="yaseen" onSignOut={vi.fn()} />);
+
+    const trigger = screen.getByRole("button", { name: "Yaseen profile" });
+    expect(trigger).toHaveTextContent(/^Y$/);
+    expect(trigger).not.toHaveTextContent("Yaseen");
+  });
+
   it("shows the active profile and signs out", async () => {
     const onSignOut = vi.fn().mockResolvedValue(undefined);
 

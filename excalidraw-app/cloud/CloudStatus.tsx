@@ -17,18 +17,13 @@ export const CloudStatus = ({
   errorMessage,
   canRename,
   onRename,
-  canShare,
-  onShare,
 }: {
   title: string;
   status: CloudSaveStatus;
   errorMessage: string | null;
   canRename: boolean;
   onRename: (title: string) => Promise<void>;
-  canShare: boolean;
-  onShare: () => Promise<string | null>;
 }) => {
-  const [shareLabel, setShareLabel] = useState("Share");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [draftTitle, setDraftTitle] = useState(title);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -93,29 +88,6 @@ export const CloudStatus = ({
           {statusLabels[status]}
         </span>
       </div>
-      {canShare && (
-        <button
-          className="cloud-status__share"
-          type="button"
-          onClick={async () => {
-            setShareLabel("Creating…");
-            try {
-              const url = await onShare();
-              if (!url) {
-                setShareLabel("Share");
-                return;
-              }
-              await navigator.clipboard.writeText(url);
-              setShareLabel("Link copied");
-              window.setTimeout(() => setShareLabel("Share"), 1800);
-            } catch {
-              setShareLabel("Try again");
-            }
-          }}
-        >
-          {shareLabel}
-        </button>
-      )}
     </div>
   );
 };

@@ -109,10 +109,9 @@ export const CloudProfile = ({
         aria-expanded={isOpen}
         onClick={() => setIsOpen((value) => !value)}
       >
-        <span className="cloud-account__avatar">
+        <span className="cloud-account__avatar" aria-hidden="true">
           {displayName.slice(0, 1).toUpperCase()}
         </span>
-        {displayName}
       </button>
       {isOpen && (
         <div className="cloud-account__menu">

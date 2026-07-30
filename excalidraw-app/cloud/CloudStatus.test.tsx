@@ -14,8 +14,6 @@ describe("CloudStatus", () => {
         errorMessage={null}
         canRename={true}
         onRename={onRename}
-        canShare={false}
-        onShare={vi.fn()}
       />,
     );
 
@@ -37,13 +35,27 @@ describe("CloudStatus", () => {
         errorMessage={null}
         canRename={false}
         onRename={vi.fn()}
-        canShare={false}
-        onShare={vi.fn()}
       />,
     );
 
     expect(
       screen.getByRole("button", { name: "Shared diagram" }),
     ).toBeDisabled();
+  });
+
+  it("renders title and save state without a separate share action", () => {
+    render(
+      <CloudStatus
+        title="Roadmap"
+        status="saved"
+        errorMessage={null}
+        canRename={true}
+        onRename={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Roadmap" })).toBeVisible();
+    expect(screen.getByText("Saved")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
   });
 });

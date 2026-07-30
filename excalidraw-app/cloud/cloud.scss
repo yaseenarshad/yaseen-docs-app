@@ -44,6 +44,18 @@
   padding: 4px 5px 4px 10px;
 }
 
+.cloud-header-identity {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  min-width: 0;
+  order: 2;
+}
+
+.cloud-header-identity .cloud-status {
+  max-width: min(260px, 28vw);
+}
+
 .cloud-status__identity {
   display: flex;
   flex-direction: column;
@@ -94,26 +106,18 @@
   color: #e03131;
 }
 
-.cloud-status__share {
-  background: #6965db;
-  border: 0;
-  border-radius: 7px;
-  color: white;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 7px 10px;
-}
-
 .cloud-account {
   position: relative;
   font-family: var(--ui-font);
 }
 
 .cloud-account__trigger {
-  max-width: 13rem;
-  min-height: 2rem;
-  padding: 0 0.75rem;
+  align-items: center;
+  display: inline-flex;
+  height: 38px;
+  justify-content: center;
+  padding: 0;
+  width: 38px;
   overflow: hidden;
   border: 1px solid var(--color-gray-30);
   border-radius: 0.5rem;
@@ -130,7 +134,7 @@
   display: inline-grid;
   width: 1.35rem;
   height: 1.35rem;
-  margin-right: 0.4rem;
+  margin: 0;
   border-radius: 50%;
   background: var(--color-primary);
   color: white;
@@ -164,6 +168,53 @@
     color: var(--text-primary-color);
     cursor: pointer;
   }
+}
+
+.cloud-share-dialog {
+  display: grid;
+  gap: 1rem;
+  font-family: var(--ui-font);
+
+  p {
+    color: var(--text-secondary-color);
+    margin: 0;
+  }
+}
+
+.cloud-share-dialog__link {
+  display: flex;
+  gap: 0.5rem;
+
+  input {
+    background: var(--input-bg-color);
+    border: 1px solid var(--default-border-color);
+    border-radius: 0.5rem;
+    color: var(--text-primary-color);
+    flex: 1;
+    min-width: 0;
+    padding: 0.65rem 0.75rem;
+  }
+}
+
+.cloud-share-dialog__create,
+.cloud-share-dialog__link button {
+  background: var(--color-primary);
+  border: 0;
+  border-radius: 0.5rem;
+  color: white;
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 2.5rem;
+  padding: 0 1rem;
+}
+
+.cloud-share-dialog__message {
+  color: var(--text-secondary-color);
+  font-size: 0.8125rem;
+}
+
+.cloud-share-dialog__message--error {
+  color: var(--color-danger);
 }
 
 .cloud-login {
