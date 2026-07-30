@@ -1,4 +1,4 @@
-import { fireEvent, queryByTestId } from "@testing-library/react";
+import { fireEvent, queryByTestId, waitFor } from "@testing-library/react";
 
 import {
   CODES,
@@ -13,7 +13,7 @@ import {
 
 import { Excalidraw } from "../index";
 import { API } from "../tests/helpers/api";
-import { UI } from "../tests/helpers/ui";
+import { Keyboard, UI } from "../tests/helpers/ui";
 import { render } from "../tests/test-utils";
 
 describe("element locking", () => {
@@ -83,6 +83,25 @@ describe("element locking", () => {
 
       const centerTextAlign = queryByTestId(document.body, `align-right`);
       expect(centerTextAlign).toBeChecked();
+    });
+
+    it("should configure exact stroke width before drawing a line", () => {
+      UI.clickTool("line");
+
+      const input = queryByTestId(
+        document.body,
+        "linear-stroke-width-input",
+      ) as HTMLInputElement;
+      expect(input.value).toBe("2");
+
+      fireEvent.click(
+        document.querySelector(
+          '[aria-label="Increase stroke width"]',
+        ) as HTMLElement,
+      );
+
+      expect(window.h.state.currentItemLinearStrokeWidth).toBe(2.5);
+      expect(API.createElement({ type: "line" }).strokeWidth).toBe(2.5);
     });
   });
 
@@ -189,6 +208,73 @@ describe("element locking", () => {
       expect(API.getSelectedElements()[0]).toMatchObject({
         textAlign: "center",
       });
+    });
+
+    it("should consolidate exclusive desktop text controls into the contextual toolbar", () => {
+      const text = API.createElement({
+        type: "text",
+        text: "Styled text",
+        strokeColor: "#1b1b1f",
+      });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+
+      const toolbar = document.querySelector(
+        ".contextual-properties-toolbar",
+      ) as HTMLElement;
+      expect(toolbar).not.toBeNull();
+      expect(toolbar).toHaveTextContent("Text color");
+      expect(
+        document.querySelector('[data-viewport-ui-name="stylesPanel"]'),
+      ).toBeNull();
+
+      const color = DEFAULT_ELEMENT_STROKE_PICKS[3];
+      fireEvent.click(
+        queryByTestId(toolbar, `color-top-pick-${color}`) as HTMLElement,
+      );
+      expect(API.getSelectedElements()[0]).toMatchObject({
+        strokeColor: color,
+      });
+    });
+
+    it("should keep the native panel for mixed text and shape selections", () => {
+      const text = API.createElement({ type: "text", text: "Mixed" });
+      const rectangle = API.createElement({ type: "rectangle" });
+      API.setElements([text, rectangle]);
+      API.setSelectedElements([text, rectangle]);
+
+      expect(
+        document.querySelector('[data-viewport-ui-name="stylesPanel"]'),
+      ).not.toBeNull();
+      expect(
+        document.querySelector(".contextual-properties-toolbar"),
+      ).toBeNull();
+    });
+
+    it("should keep the native panel when selecting a bound text container", () => {
+      const [rectangle, text] = API.createTextContainer();
+      API.setElements([rectangle, text]);
+      API.setSelectedElements([rectangle]);
+
+      expect(
+        document.querySelector('[data-viewport-ui-name="stylesPanel"]'),
+      ).not.toBeNull();
+      expect(
+        document.querySelector(".contextual-properties-toolbar"),
+      ).toBeNull();
+    });
+
+    it("should consolidate controls while editing text", () => {
+      const text = API.createElement({ type: "text", text: "Editing" });
+      API.setElements([text]);
+      API.setAppState({ editingTextElement: text });
+
+      expect(
+        document.querySelector('[data-viewport-ui-name="stylesPanel"]'),
+      ).toBeNull();
+      expect(
+        document.querySelector(".contextual-properties-toolbar"),
+      ).not.toBeNull();
     });
 
     it("should expose and apply image border controls", () => {
@@ -329,6 +415,134 @@ describe("element locking", () => {
       ).not.toBeChecked();
     });
 
+    it("should use exact numeric stroke width for exclusive line and arrow selections", () => {
+      const line = API.createElement({
+        type: "line",
+        strokeWidth: 1.5,
+      });
+      const arrow = API.createElement({
+        type: "arrow",
+        strokeWidth: 1.5,
+      });
+      API.setElements([line, arrow]);
+      API.setSelectedElements([line, arrow]);
+
+      const input = queryByTestId(
+        document.body,
+        "linear-stroke-width-input",
+      ) as HTMLInputElement;
+      expect(input).not.toBeNull();
+      expect(input.value).toBe("1.5");
+      expect(queryByTestId(document.body, "strokeWidth-thin")).toBeNull();
+
+      fireEvent.change(input, { target: { value: "7.5" } });
+      fireEvent.keyDown(input, { key: KEYS.ENTER });
+
+      expect(
+        API.getSelectedElements().map((element) => element.strokeWidth),
+      ).toEqual([7.5, 7.5]);
+    });
+
+    it("should show Mixed for differing linear widths and clamp committed values", () => {
+      const line = API.createElement({ type: "line", strokeWidth: 0.5 });
+      const arrow = API.createElement({ type: "arrow", strokeWidth: 20 });
+      API.setElements([line, arrow]);
+      API.setSelectedElements([line, arrow]);
+
+      const input = queryByTestId(
+        document.body,
+        "linear-stroke-width-input",
+      ) as HTMLInputElement;
+      expect(input.value).toBe("");
+      expect(input.placeholder).toBe("Mixed");
+
+      fireEvent.change(input, { target: { value: "100" } });
+      fireEvent.blur(input);
+      expect(
+        API.getSelectedElements().map((element) => element.strokeWidth),
+      ).toEqual([50, 50]);
+    });
+
+    it("should step, cancel, and undo exact linear stroke-width edits", () => {
+      const line = UI.createElement("line", {
+        x: 10,
+        y: 10,
+        width: 100,
+        height: 0,
+      });
+      API.setSelectedElements([line.get() as any]);
+
+      const input = queryByTestId(
+        document.body,
+        "linear-stroke-width-input",
+      ) as HTMLInputElement;
+      fireEvent.change(input, { target: { value: "9.5" } });
+      fireEvent.keyDown(input, { key: KEYS.ESCAPE });
+      expect(API.getSelectedElements()[0].strokeWidth).toBe(2);
+
+      fireEvent.change(input, { target: { value: "" } });
+      fireEvent.blur(input);
+      expect(API.getSelectedElements()[0].strokeWidth).toBe(2);
+
+      fireEvent.click(
+        document.querySelector(
+          '[aria-label="Increase stroke width"]',
+        ) as HTMLElement,
+      );
+      expect(API.getSelectedElements()[0].strokeWidth).toBe(2.5);
+
+      Keyboard.undo();
+      expect(window.h.app.scene.getElement(line.id)?.strokeWidth).toBe(2);
+      Keyboard.redo();
+      expect(window.h.app.scene.getElement(line.id)?.strokeWidth).toBe(2.5);
+    });
+
+    it("should preserve bound text when changing an arrow width", () => {
+      const [arrow, text] = API.createLabeledArrow({
+        label: { text: "Bound" },
+      });
+      API.setElements([arrow, text]);
+      API.setSelectedElements([arrow]);
+
+      const input = queryByTestId(
+        document.body,
+        "linear-stroke-width-input",
+      ) as HTMLInputElement;
+      expect(input).not.toBeNull();
+
+      fireEvent.change(input, { target: { value: "3.5" } });
+      fireEvent.blur(input);
+
+      expect(API.getSelectedElements()[0].strokeWidth).toBe(3.5);
+      expect(window.h.app.scene.getElement(text.id)).toMatchObject({
+        containerId: arrow.id,
+      });
+    });
+
+    it("should keep presets for mixed linear and non-linear selections", () => {
+      const line = API.createElement({ type: "line" });
+      const rectangle = API.createElement({ type: "rectangle" });
+      API.setElements([line, rectangle]);
+      API.setSelectedElements([line, rectangle]);
+
+      expect(
+        queryByTestId(document.body, "linear-stroke-width-input"),
+      ).toBeNull();
+      expect(queryByTestId(document.body, "strokeWidth-thin")).not.toBeNull();
+    });
+
+    it("should use the exact linear default only for new lines and arrows", () => {
+      API.setAppState({ currentItemLinearStrokeWidth: 7.5 } as any);
+
+      const line = API.createElement({ type: "line" });
+      const arrow = API.createElement({ type: "arrow" });
+      const rectangle = API.createElement({ type: "rectangle" });
+
+      expect(line.strokeWidth).toBe(7.5);
+      expect(arrow.strokeWidth).toBe(7.5);
+      expect(rectangle.strokeWidth).toBe(STROKE_WIDTH.medium);
+    });
+
     it("should show properties of different element types when selected", () => {
       const rect = API.createElement({
         type: "rectangle",
@@ -347,4 +561,69 @@ describe("element locking", () => {
       );
     });
   });
+});
+
+describe("text properties on compact layouts", () => {
+  it("keeps text properties in the native panel on tablet", async () => {
+    await render(<Excalidraw UIOptions={{ getFormFactor: () => "tablet" }} />);
+    fireEvent.resize(window);
+    const { h } = window;
+    await waitFor(() =>
+      expect(h.app.editorInterface.formFactor).toBe("tablet"),
+    );
+
+    const text = API.createElement({ type: "text", text: "Compact" });
+    API.setElements([text]);
+    API.setSelectedElements([text]);
+
+    expect(
+      document.querySelector('[data-viewport-ui-name="stylesPanel"]'),
+    ).not.toBeNull();
+    expect(document.querySelector(".contextual-properties-toolbar")).toBeNull();
+  });
+
+  it.each(["tablet", "phone"] as const)(
+    "uses the exact linear-width action on %s",
+    async (formFactor) => {
+      (globalThis as any).ResizeObserver =
+        (globalThis as any).ResizeObserver ||
+        class ResizeObserver {
+          observe() {}
+          unobserve() {}
+          disconnect() {}
+        };
+      await render(
+        <Excalidraw UIOptions={{ getFormFactor: () => formFactor }} />,
+      );
+      fireEvent.resize(window);
+      const { h } = window;
+      await waitFor(() =>
+        expect(h.app.editorInterface.formFactor).toBe(formFactor),
+      );
+
+      const line = API.createElement({ type: "line", strokeWidth: 3.5 });
+      API.setElements([line]);
+      API.setSelectedElements([line]);
+
+      const propertiesTrigger = await waitFor(() => {
+        const trigger = document.querySelector<HTMLElement>(
+          '.compact-shape-actions button[title="Stroke"]',
+        );
+        expect(trigger).not.toBeNull();
+        return trigger!;
+      });
+      fireEvent.click(propertiesTrigger);
+
+      const input = await waitFor(() => {
+        const nextInput = queryByTestId(
+          document.body,
+          "linear-stroke-width-input",
+        ) as HTMLInputElement;
+        expect(nextInput).not.toBeNull();
+        return nextInput;
+      });
+      expect(input.value).toBe("3.5");
+      expect(queryByTestId(document.body, "strokeWidth-thin")).toBeNull();
+    },
+  );
 });

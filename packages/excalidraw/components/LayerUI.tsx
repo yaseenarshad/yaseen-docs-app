@@ -10,11 +10,13 @@ import {
   isShallowEqual,
 } from "@excalidraw/common";
 
-import { mutateElement } from "@excalidraw/element";
-
-import { showSelectedShapeActions } from "@excalidraw/element";
-
-import { ShapeCache } from "@excalidraw/element";
+import {
+  getTargetElements,
+  isTextElement,
+  mutateElement,
+  ShapeCache,
+  showSelectedShapeActions,
+} from "@excalidraw/element";
 
 import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
 
@@ -165,6 +167,15 @@ const LayerUI = ({
   const editorInterface = useEditorInterface();
   const stylesPanelMode = useStylesPanelMode();
   const isCompactStylesPanel = stylesPanelMode === "compact";
+  const styleTargetElements = getTargetElements(elements, appState);
+  const hasExclusiveFullTextTarget =
+    stylesPanelMode === "full" &&
+    ((!!appState.editingTextElement &&
+      !appState.editingTextElement.containerId) ||
+      (styleTargetElements.length > 0 &&
+        styleTargetElements.every(
+          (element) => isTextElement(element) && !element.containerId,
+        )));
   const tunnels = useInitializeTunnels();
 
   const spacing = isCompactStylesPanel
@@ -292,7 +303,9 @@ const LayerUI = ({
 
   const renderFixedSideContainer = () => {
     const shouldRenderSelectedShapeActions =
-      defaultUIEnabled && showSelectedShapeActions(appState, elements);
+      defaultUIEnabled &&
+      !hasExclusiveFullTextTarget &&
+      showSelectedShapeActions(appState, elements);
 
     const shouldShowStats =
       defaultUIEnabled &&

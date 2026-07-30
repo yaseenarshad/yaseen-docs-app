@@ -1,9 +1,10 @@
 import { pointDistance, pointFrom, pointRotateRads } from "@excalidraw/math";
 
+import type { GlobalPoint, LocalPoint, Radians } from "@excalidraw/math";
+
 import { newElementWith } from "./mutateElement";
 
 import type { ExcalidrawElement, ExcalidrawLinearElement } from "./types";
-import type { GlobalPoint, LocalPoint, Radians } from "@excalidraw/math";
 
 export const SMART_SHAPE_IDS = [
   "arrow-right",

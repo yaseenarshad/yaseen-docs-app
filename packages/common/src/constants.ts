@@ -447,6 +447,26 @@ export const getStrokeWidthByKey = (
 
 export const DEFAULT_ELEMENT_STROKE_WIDTH_KEY: StrokeWidthKey = "medium";
 
+export const LINEAR_STROKE_WIDTH = {
+  min: 0.5,
+  max: 50,
+  step: 0.5,
+  default: STROKE_WIDTH.medium,
+} as const;
+
+export const normalizeLinearStrokeWidth = (
+  value: unknown,
+): ExcalidrawElement["strokeWidth"] => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return LINEAR_STROKE_WIDTH.default;
+  }
+
+  return Math.min(
+    LINEAR_STROKE_WIDTH.max,
+    Math.max(LINEAR_STROKE_WIDTH.min, Math.round(value * 10) / 10),
+  );
+};
+
 export const DEFAULT_ELEMENT_PROPS: {
   strokeColor: ExcalidrawElement["strokeColor"];
   backgroundColor: ExcalidrawElement["backgroundColor"];

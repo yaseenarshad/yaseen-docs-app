@@ -10,6 +10,7 @@ import {
   updateSmartShapeFromHandle,
   updateSmartShapeParameter,
 } from "../src/smartShape";
+
 import type { ExcalidrawLinearElement } from "../src/types";
 
 describe("Smart Shapes", () => {

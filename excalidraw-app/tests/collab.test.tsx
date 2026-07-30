@@ -63,6 +63,36 @@ vi.mock("socket.io-client", () => {
   };
 });
 
+vi.mock("../cloud/useCloudDiagram", () => {
+  const noop = () => {};
+  return {
+    useCloudDiagram: () => ({
+      route: { kind: "home" },
+      openedDiagram: undefined,
+      saveStatus: "saved",
+      errorMessage: null,
+      queueSave: noop,
+      discardPendingSave: noop,
+      flushSave: async () => {},
+      enableSharing: async () => "",
+      diagrams: [],
+      isDiagramListLoading: false,
+      openDiagram: noop,
+      createNewDiagram: async () => {},
+      deleteDiagram: async () => {},
+      renameOpenedDiagram: async () => {},
+      assets: [],
+      queueAssets: noop,
+      isViewer: false,
+      isReady: false,
+    }),
+  };
+});
+
+vi.mock("../cloud/CloudAccount", () => ({
+  CloudAccount: () => null,
+}));
+
 /**
  * These test would deserve to be extended by testing collab with (at least) two clients simultanouesly,
  * while having access to both scenes, appstates stores, histories and etc.

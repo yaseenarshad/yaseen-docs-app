@@ -1,6 +1,7 @@
 import { getSmartShapeHandles } from "@excalidraw/element";
 
 import type { ExcalidrawLinearElement } from "@excalidraw/element/types";
+
 import type { Zoom } from "../types";
 
 export const renderSmartShapeHandles = (

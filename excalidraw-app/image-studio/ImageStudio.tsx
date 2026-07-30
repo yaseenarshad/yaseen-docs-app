@@ -1,24 +1,23 @@
 import { useMutation, useQuery } from "convex/react";
-import { useMemo, useState } from "react";
+import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import { IMAGE_STUDIO_INSERTION } from "@excalidraw/excalidraw/data/viewportInsertion";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { IMAGE_STUDIO_INSERTION } from "@excalidraw/excalidraw/data/viewportInsertion";
-import {
-  generateSmartShapePoints,
-  getSmartShapeDefinition,
-  isSmartShapeId,
-} from "@excalidraw/element";
 
 import { api } from "../../convex/_generated/api";
 
 import { importImageStudioFile, searchImageStudio } from "./api";
 import { insertShape } from "./insertShape";
-import { getShape, SHAPE_CATALOG } from "./shapes";
+import { normalizeMediaItem } from "./mediaItem";
+import { filterShapeCatalog, getShape, getSmartShapePreview } from "./shapes";
 
 import "./ImageStudio.scss";
 
 import type {
   ImageStudioItem,
+  ImageStudioSearchSource,
   StoredMediaItem,
 } from "../../image-studio/types";
 
@@ -39,43 +38,44 @@ const shapeItem = (id: string, title: string): ImageStudioItem => ({
   collectionName: "Shapes",
 });
 
-const restorePreview = (item: StoredMediaItem): ImageStudioItem => ({
-  ...item,
-  previewUrl:
-    item.previewUrl ??
-    (item.provider === "shape"
-      ? ""
-      : `/api/image-studio/preview/${item.provider}/${encodeURIComponent(
-          item.providerId,
-        )}`),
-});
+const dedupeItems = (items: ImageStudioItem[]) => [
+  ...new Map(items.map((item) => [item.itemKey, item])).values(),
+];
+
+const restorePreview = (item: StoredMediaItem): ImageStudioItem => {
+  const normalized = normalizeMediaItem(item);
+  return {
+    ...normalized,
+    previewUrl:
+      normalized.previewUrl ??
+      (item.provider === "shape"
+        ? ""
+        : `/api/image-studio/preview/${item.provider}/${encodeURIComponent(
+            item.providerId,
+          )}`),
+  };
+};
 
 const ShapePreview = ({ kind }: { kind: string }) => {
-  if (kind.startsWith("smart:")) {
-    const id = kind.slice("smart:".length);
-    if (isSmartShapeId(id)) {
-      const definition = getSmartShapeDefinition(id)!;
-      const previewPoints = generateSmartShapePoints(
-        id,
-        100,
-        100,
-        definition.defaults,
-      )
-        .map(([x, y]) => `${x},${y}`)
-        .join(" ");
-      return definition.closed ? (
-        <polygon points={previewPoints} />
-      ) : (
-        <polyline
-          points={previewPoints}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      );
-    }
+  const smartShape = getSmartShapePreview(kind);
+  if (smartShape) {
+    return (
+      <svg viewBox={smartShape.viewBox} aria-hidden="true">
+        {smartShape.closed ? (
+          <polygon
+            className="image-studio__shape-path--closed"
+            points={smartShape.points}
+          />
+        ) : (
+          <polyline
+            className="image-studio__shape-path--open"
+            points={smartShape.points}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
+      </svg>
+    );
   }
   const points =
     kind === "triangle"
@@ -84,30 +84,74 @@ const ShapePreview = ({ kind }: { kind: string }) => {
       ? "25,10 75,10 94,50 75,90 25,90 6,50"
       : "50,5 61,36 95,38 68,58 78,91 50,71 22,91 32,58 5,38 39,36";
   if (kind === "rectangle") {
-    return <rect x="10" y="20" width="80" height="60" rx="12" />;
+    return (
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <rect
+          className="image-studio__shape-path--basic"
+          x="10"
+          y="20"
+          width="80"
+          height="60"
+          rx="12"
+        />
+      </svg>
+    );
   }
   if (kind === "ellipse") {
-    return <ellipse cx="50" cy="50" rx="40" ry="34" />;
+    return (
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <ellipse
+          className="image-studio__shape-path--basic"
+          cx="50"
+          cy="50"
+          rx="40"
+          ry="34"
+        />
+      </svg>
+    );
   }
   if (kind === "diamond") {
-    return <polygon points="50,7 93,50 50,93 7,50" />;
+    return (
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <polygon
+          className="image-studio__shape-path--basic"
+          points="50,7 93,50 50,93 7,50"
+        />
+      </svg>
+    );
   }
-  return <polygon points={points} />;
+  return (
+    <svg viewBox="0 0 100 100" aria-hidden="true">
+      <polygon className="image-studio__shape-path--basic" points={points} />
+    </svg>
+  );
 };
 
 export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
   const [view, setView] = useState<StudioView>("search");
   const [query, setQuery] = useState("");
+  const [source, setSource] = useState<ImageStudioSearchSource>("all");
+  const [shapeQuery, setShapeQuery] = useState("");
   const [searchedQuery, setSearchedQuery] = useState("");
   const [results, setResults] = useState<ImageStudioItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [pageError, setPageError] = useState<string | null>(null);
   const [insertingKey, setInsertingKey] = useState<string | null>(null);
+  const [removingFavoriteKey, setRemovingFavoriteKey] = useState<string | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
+  const searchRequestId = useRef(0);
+  const searchRequestInFlight = useRef(false);
+  const searchGridRef = useRef<HTMLDivElement>(null);
+  const searchSentinelRef = useRef<HTMLDivElement>(null);
+  const loadNextPageRef = useRef<() => void>(() => {});
   const favorites = useQuery(api.mediaLibrary.listFavorites, {});
   const recent = useQuery(api.mediaLibrary.listRecent, {});
-  const toggleFavorite = useMutation(api.mediaLibrary.toggleFavorite);
+  const addFavorite = useMutation(api.mediaLibrary.addFavorite);
+  const removeFavorite = useMutation(api.mediaLibrary.removeFavorite);
   const recordRecent = useMutation(api.mediaLibrary.recordRecent);
 
   const favoriteKeys = useMemo(
@@ -115,8 +159,11 @@ export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
     [favorites],
   );
   const shapes = useMemo(
-    () => SHAPE_CATALOG.map(({ id, title }) => shapeItem(id, title)),
-    [],
+    () =>
+      filterShapeCatalog(shapeQuery).map(({ id, title }) =>
+        shapeItem(id, title),
+      ),
+    [shapeQuery],
   );
   const displayedItems =
     view === "shapes"
@@ -127,31 +174,101 @@ export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
       ? (recent ?? []).map(restorePreview)
       : results;
 
-  const runSearch = async (append = false) => {
-    const nextQuery = append ? searchedQuery : query.trim();
+  const runSearch = async ({
+    append = false,
+    nextQuery = append ? searchedQuery : query.trim(),
+    nextSource = source,
+  }: {
+    append?: boolean;
+    nextQuery?: string;
+    nextSource?: ImageStudioSearchSource;
+  } = {}) => {
     if (nextQuery.length < 2) {
       setError("Type at least two characters.");
       return;
     }
+    if (append && searchRequestInFlight.current) {
+      return;
+    }
+    const requestId = append
+      ? searchRequestId.current
+      : ++searchRequestId.current;
+    searchRequestInFlight.current = true;
     setIsSearching(true);
-    setError(null);
+    if (append) {
+      setPageError(null);
+    } else {
+      setError(null);
+      setPageError(null);
+      setResults([]);
+      setCursor(null);
+      setWarnings([]);
+      setSearchedQuery(nextQuery);
+    }
     try {
       const response = await searchImageStudio(
         nextQuery,
+        nextSource,
         append ? cursor : null,
       );
+      if (requestId !== searchRequestId.current) {
+        return;
+      }
       setResults((current) =>
-        append ? [...current, ...response.results] : response.results,
+        dedupeItems(
+          append ? [...current, ...response.results] : response.results,
+        ),
       );
       setCursor(response.cursor);
       setWarnings(response.warnings.map(({ message }) => message));
-      setSearchedQuery(nextQuery);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Image search failed");
+      if (requestId !== searchRequestId.current) {
+        return;
+      }
+      const message =
+        cause instanceof Error ? cause.message : "Image search failed";
+      if (append) {
+        setPageError(message);
+      } else {
+        setError(message);
+      }
     } finally {
-      setIsSearching(false);
+      if (requestId === searchRequestId.current) {
+        searchRequestInFlight.current = false;
+        setIsSearching(false);
+      }
     }
   };
+
+  loadNextPageRef.current = () => {
+    void runSearch({ append: true });
+  };
+
+  useEffect(() => {
+    const sentinel = searchSentinelRef.current;
+    if (
+      view !== "search" ||
+      !cursor ||
+      pageError ||
+      !sentinel ||
+      typeof IntersectionObserver === "undefined"
+    ) {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          loadNextPageRef.current();
+        }
+      },
+      {
+        root: searchGridRef.current,
+        rootMargin: "160px 0px",
+      },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [cursor, pageError, view]);
 
   const addItem = async (item: ImageStudioItem) => {
     if (!canInsert || insertingKey) {
@@ -172,11 +289,28 @@ export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
           viewportSizing: IMAGE_STUDIO_INSERTION,
         });
       }
-      await recordRecent({ item });
+      await recordRecent({ item: normalizeMediaItem(item) });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not add item");
     } finally {
       setInsertingKey(null);
+    }
+  };
+
+  const removeFavoriteItem = async (item: ImageStudioItem) => {
+    if (removingFavoriteKey) {
+      return;
+    }
+    setRemovingFavoriteKey(item.itemKey);
+    setError(null);
+    try {
+      await removeFavorite({ itemKey: item.itemKey });
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not remove favorite",
+      );
+    } finally {
+      setRemovingFavoriteKey(null);
     }
   };
 
@@ -201,7 +335,7 @@ export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
               : tab === "shapes"
               ? "Shapes"
               : tab === "favorites"
-              ? `Favorites${favorites?.length ? ` ${favorites.length}` : ""}`
+              ? "Favorites"
               : "Recent"}
           </button>
         ))}
@@ -212,9 +346,27 @@ export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
           className="image-studio__search"
           onSubmit={(event) => {
             event.preventDefault();
-            void runSearch();
+            void runSearch({});
           }}
         >
+          <select
+            aria-label="Search source"
+            value={source}
+            onChange={(event) => {
+              const nextSource = event.target.value as ImageStudioSearchSource;
+              setSource(nextSource);
+              if (searchedQuery) {
+                void runSearch({
+                  nextQuery: searchedQuery,
+                  nextSource,
+                });
+              }
+            }}
+          >
+            <option value="all">All</option>
+            <option value="iconify">Iconify</option>
+            <option value="pixabay">Pixabay</option>
+          </select>
           <input
             type="search"
             aria-label="Search graphics, icons, and logos"
@@ -227,6 +379,17 @@ export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
           </button>
         </form>
       )}
+      {view === "shapes" && (
+        <div className="image-studio__search">
+          <input
+            type="search"
+            aria-label="Search shapes"
+            placeholder="Search shapes"
+            value={shapeQuery}
+            onChange={(event) => setShapeQuery(event.target.value)}
+          />
+        </div>
+      )}
 
       {!canInsert && (
         <div className="image-studio__notice">
@@ -238,7 +401,7 @@ export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
       )}
       {error && <div className="image-studio__error">{error}</div>}
 
-      <div className="image-studio__grid">
+      <div className="image-studio__grid" ref={searchGridRef}>
         {displayedItems.map((item) => {
           const catalogShape =
             item.provider === "shape" ? getShape(item.providerId) : undefined;
@@ -253,9 +416,7 @@ export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
               >
                 <span className="image-studio__preview">
                   {catalogShape ? (
-                    <svg viewBox="0 0 100 100" aria-hidden="true">
-                      <ShapePreview kind={catalogShape.preview} />
-                    </svg>
+                    <ShapePreview kind={catalogShape.preview} />
                   ) : (
                     <img src={item.previewUrl} alt="" loading="lazy" />
                   )}
@@ -271,25 +432,71 @@ export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
                   </small>
                 </span>
               </button>
-              <button
-                type="button"
-                className={
-                  favoriteKeys.has(item.itemKey)
-                    ? "image-studio__favorite is-active"
-                    : "image-studio__favorite"
-                }
-                aria-label={
-                  favoriteKeys.has(item.itemKey)
-                    ? `Remove ${item.title} from favorites`
-                    : `Add ${item.title} to favorites`
-                }
-                onClick={() => void toggleFavorite({ item })}
-              >
-                {favoriteKeys.has(item.itemKey) ? "★" : "☆"}
-              </button>
+              {view === "favorites" ? (
+                <DropdownMenuPrimitive.Root>
+                  <DropdownMenuPrimitive.Trigger asChild>
+                    <button
+                      type="button"
+                      className="image-studio__favorite-menu-trigger"
+                      aria-label={`More options for ${item.title}`}
+                      disabled={removingFavoriteKey !== null}
+                    >
+                      •••
+                    </button>
+                  </DropdownMenuPrimitive.Trigger>
+                  <DropdownMenuPrimitive.Portal>
+                    <DropdownMenuPrimitive.Content
+                      className="image-studio__favorite-menu"
+                      align="end"
+                      sideOffset={6}
+                    >
+                      <DropdownMenuPrimitive.Item
+                        className="image-studio__favorite-menu-item"
+                        disabled={removingFavoriteKey !== null}
+                        onSelect={() => void removeFavoriteItem(item)}
+                      >
+                        {removingFavoriteKey === item.itemKey
+                          ? "Removing…"
+                          : "Remove from favorites"}
+                      </DropdownMenuPrimitive.Item>
+                    </DropdownMenuPrimitive.Content>
+                  </DropdownMenuPrimitive.Portal>
+                </DropdownMenuPrimitive.Root>
+              ) : (
+                <button
+                  type="button"
+                  className={
+                    favoriteKeys.has(item.itemKey)
+                      ? "image-studio__favorite is-active"
+                      : "image-studio__favorite"
+                  }
+                  aria-label={
+                    favoriteKeys.has(item.itemKey)
+                      ? `Remove ${item.title} from favorites`
+                      : `Add ${item.title} to favorites`
+                  }
+                  disabled={removingFavoriteKey !== null}
+                  onClick={() => {
+                    if (favoriteKeys.has(item.itemKey)) {
+                      void removeFavoriteItem(item);
+                    } else {
+                      void addFavorite({ item: normalizeMediaItem(item) });
+                    }
+                  }}
+                >
+                  {favoriteKeys.has(item.itemKey) ? "★" : "☆"}
+                </button>
+              )}
             </article>
           );
         })}
+        {view === "search" && cursor && results.length > 0 && (
+          <div
+            className="image-studio__search-sentinel"
+            ref={searchSentinelRef}
+            aria-hidden="true"
+          />
+        )}
       </div>
 
       {displayedItems.length === 0 && (
@@ -300,18 +507,25 @@ export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
             ? "Star an item and it will stay available in every diagram."
             : view === "recent"
             ? "Items you add will appear here across every diagram."
+            : shapeQuery
+            ? "No shapes match your search."
             : "No items found."}
         </div>
       )}
-      {view === "search" && cursor && results.length > 0 && (
+      {view === "search" && pageError && cursor && (
         <button
           type="button"
-          className="image-studio__more"
+          className="image-studio__retry"
           disabled={isSearching}
-          onClick={() => void runSearch(true)}
+          onClick={() => void runSearch({ append: true })}
         >
-          {isSearching ? "Loading…" : "Load more"}
+          {isSearching ? "Retrying…" : "Retry loading results"}
         </button>
+      )}
+      {view === "search" && isSearching && results.length > 0 && (
+        <div className="image-studio__loading-more" role="status">
+          Loading more…
+        </div>
       )}
       <footer className="image-studio__footer">
         Graphics via Pixabay · icons via Iconify. Check source details and

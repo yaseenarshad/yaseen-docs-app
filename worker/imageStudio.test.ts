@@ -147,6 +147,69 @@ describe("Image Studio provider normalization", () => {
     ]);
   });
 
+  it("runs only the requested provider and rejects unknown sources", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        icons: ["fluent-color:rocket-24"],
+        collections: { "fluent-color": { name: "Fluent Color" } },
+        total: 1,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await handleImageStudioRequest(
+      new Request(
+        "https://draw.test/api/image-studio/search?q=rocket&source=iconify",
+      ),
+      {},
+    );
+    const body = (await response.json()) as {
+      results: Array<{ provider: string }>;
+      cursor: string | null;
+      warnings: unknown[];
+    };
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(body.results.every(({ provider }) => provider === "iconify")).toBe(
+      true,
+    );
+    expect(body.cursor).toBeNull();
+    expect(body.warnings).toEqual([]);
+
+    const invalid = await handleImageStudioRequest(
+      new Request(
+        "https://draw.test/api/image-studio/search?q=rocket&source=web",
+      ),
+      {},
+    );
+    expect(invalid.status).toBe(400);
+  });
+
+  it("returns a finite next cursor from provider pagination metadata", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json({
+          icons: ["fluent-color:rocket-24"],
+          collections: { "fluent-color": { name: "Fluent Color" } },
+          total: 100,
+          start: 0,
+          limit: 64,
+        }),
+      ),
+    );
+
+    const response = await handleImageStudioRequest(
+      new Request(
+        "https://draw.test/api/image-studio/search?q=rocket&source=iconify",
+      ),
+      {},
+    );
+    const body = (await response.json()) as { cursor: string | null };
+    expect(body.cursor).toBe("2");
+  });
+
   it("serves repeated configured searches from the 24-hour Worker cache", async () => {
     const stored = new Map<string, Response>();
     const cache = {

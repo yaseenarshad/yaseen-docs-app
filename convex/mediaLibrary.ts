@@ -35,7 +35,7 @@ export const listFavorites = query({
   },
 });
 
-export const toggleFavorite = mutation({
+export const addFavorite = mutation({
   args: { item: mediaItemValidator },
   returns: v.boolean(),
   handler: async (ctx, { item }) => {
@@ -47,7 +47,6 @@ export const toggleFavorite = mutation({
       )
       .unique();
     if (existing) {
-      await ctx.db.delete("mediaFavorites", existing._id);
       return false;
     }
     await ctx.db.insert("mediaFavorites", {
@@ -55,6 +54,25 @@ export const toggleFavorite = mutation({
       ...item,
       updatedAt: Date.now(),
     });
+    return true;
+  },
+});
+
+export const removeFavorite = mutation({
+  args: { itemKey: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, { itemKey }) => {
+    const ownerId = await requireUserId(ctx);
+    const existing = await ctx.db
+      .query("mediaFavorites")
+      .withIndex("by_ownerId_and_itemKey", (q) =>
+        q.eq("ownerId", ownerId).eq("itemKey", itemKey),
+      )
+      .unique();
+    if (!existing) {
+      return false;
+    }
+    await ctx.db.delete("mediaFavorites", existing._id);
     return true;
   },
 });

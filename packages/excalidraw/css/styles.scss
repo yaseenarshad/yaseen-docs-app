@@ -260,6 +260,59 @@ body.excalidraw-cursor-resize * {
       }
     }
 
+    .linear-stroke-width-custom {
+      align-items: center;
+      display: flex;
+      gap: 0.35rem;
+
+      > button {
+        align-items: center;
+        background: var(--button-gray-1);
+        border: 1px solid var(--default-border-color);
+        border-radius: var(--border-radius-md);
+        color: var(--text-primary-color);
+        cursor: pointer;
+        display: flex;
+        font-size: 1rem;
+        height: 2rem;
+        justify-content: center;
+        width: 2rem;
+
+        &:hover:not(:disabled) {
+          background: var(--button-gray-2);
+        }
+
+        &:disabled {
+          cursor: default;
+          opacity: 0.5;
+        }
+      }
+
+      > label {
+        align-items: center;
+        display: flex;
+        gap: 0.3rem;
+      }
+
+      input {
+        background: var(--input-bg-color);
+        border: 1px solid var(--default-border-color);
+        border-radius: var(--border-radius-md);
+        color: var(--text-primary-color);
+        font: inherit;
+        height: 2rem;
+        min-width: 0;
+        padding: 0 0.35rem;
+        text-align: center;
+        width: 4rem;
+      }
+
+      span {
+        color: var(--text-secondary-color);
+        font-size: 0.75rem;
+      }
+    }
+
     .text-bullets-icon {
       align-items: center;
       display: inline-flex;

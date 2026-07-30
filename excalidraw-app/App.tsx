@@ -118,6 +118,8 @@ import {
 } from "./data";
 
 import { updateStaleImageStatuses } from "./data/FileManager";
+import { backgroundRemovalClient } from "./background-removal/client";
+import { removeImageBackgroundAndReplace } from "./background-removal/apply";
 import { FileStatusStore } from "./data/fileStatusStore";
 import {
   importFromLocalStorage,
@@ -383,6 +385,21 @@ const initializeScene = async (opts: {
 
 const ExcalidrawWrapper = () => {
   const excalidrawAPI = useExcalidrawAPI();
+  const onImageBackgroundRemoval = useCallback<
+    NonNullable<ExcalidrawProps["onImageBackgroundRemoval"]>
+  >(
+    async (request) => {
+      if (!excalidrawAPI) {
+        throw new Error("The editor is not ready yet.");
+      }
+      await removeImageBackgroundAndReplace({
+        api: excalidrawAPI,
+        request,
+        client: backgroundRemovalClient,
+      });
+    },
+    [excalidrawAPI],
+  );
   const cloud = useCloudDiagram();
   const loadedCloudSceneRef = useRef<{
     routeKey: string;
@@ -1061,12 +1078,14 @@ const ExcalidrawWrapper = () => {
     >
       <Excalidraw
         onChange={onChange}
+        onImageBackgroundRemoval={onImageBackgroundRemoval}
         onExport={onExport}
         initialData={initialStatePromiseRef.current.promise}
         isCollaborating={isCollaborating}
         onPointerUpdate={collabAPI?.onPointerUpdate}
         UIOptions={{
           canvasActions: {
+            clearCanvas: false,
             toggleTheme: true,
             export: {
               onExportToBackend,

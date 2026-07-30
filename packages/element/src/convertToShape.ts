@@ -630,10 +630,7 @@ export const convertToShape = (
           fillStyle: appState.currentItemFillStyle,
           opacity: appState.currentItemOpacity,
           strokeStyle: appState.currentItemStrokeStyle,
-          strokeWidth: getStrokeWidthByKey(
-            recognizedShape.type,
-            appState.currentItemStrokeWidthKey,
-          ),
+          strokeWidth: appState.currentItemLinearStrokeWidth,
         });
 
         const normalized =
@@ -668,10 +665,7 @@ export const convertToShape = (
         fillStyle: appState.currentItemFillStyle,
         opacity: appState.currentItemOpacity,
         strokeStyle: appState.currentItemStrokeStyle,
-        strokeWidth: getStrokeWidthByKey(
-          recognizedShape.type,
-          appState.currentItemStrokeWidthKey,
-        ),
+        strokeWidth: appState.currentItemLinearStrokeWidth,
       });
 
       const normalized =
@@ -708,10 +702,7 @@ export const convertToShape = (
         fillStyle: appState.currentItemFillStyle,
         opacity: appState.currentItemOpacity,
         strokeStyle: appState.currentItemStrokeStyle,
-        strokeWidth: getStrokeWidthByKey(
-          recognizedShape.type,
-          appState.currentItemStrokeWidthKey,
-        ),
+        strokeWidth: appState.currentItemLinearStrokeWidth,
       });
 
       const normalized =
