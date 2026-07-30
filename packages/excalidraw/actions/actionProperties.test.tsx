@@ -4,7 +4,9 @@ import {
   CODES,
   COLOR_PALETTE,
   DEFAULT_ELEMENT_BACKGROUND_PICKS,
+  DEFAULT_ELEMENT_STROKE_COLOR_INDEX,
   DEFAULT_ELEMENT_STROKE_PICKS,
+  DEFAULT_TEXT_STROKE_PICKS,
   FREEDRAW_STROKE_WIDTH,
   FONT_FAMILY,
   KEYS,
@@ -267,6 +269,81 @@ describe("element locking", () => {
       expect(API.getSelectedElements()[0]).toMatchObject({
         strokeColor: color,
       });
+    });
+
+    it("should use the text stroke quick picks for exclusive text selections", () => {
+      const firstText = API.createElement({ type: "text", text: "First" });
+      const secondText = API.createElement({ type: "text", text: "Second" });
+      API.setElements([firstText, secondText]);
+      API.setSelectedElements([firstText, secondText]);
+
+      const toolbar = document.querySelector(
+        ".contextual-properties-toolbar",
+      ) as HTMLElement;
+      const renderedPicks = Array.from(
+        toolbar.querySelectorAll<HTMLElement>(
+          '[data-testid^="color-top-pick-"]',
+        ),
+      ).map((element) =>
+        element.dataset.testid?.replace("color-top-pick-", ""),
+      );
+
+      expect(renderedPicks).toEqual(DEFAULT_TEXT_STROKE_PICKS);
+      expect(renderedPicks).toEqual([
+        COLOR_PALETTE.black,
+        COLOR_PALETTE.white,
+        COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+        COLOR_PALETTE.green[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+        COLOR_PALETTE.blue[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+      ]);
+    });
+
+    it("should use the text stroke quick picks when editing bound text", () => {
+      const [container, text] = API.createTextContainer();
+      API.setElements([container, text]);
+      if (text.type !== "text") {
+        throw new Error("Expected bound text element");
+      }
+      API.setAppState({ editingTextElement: text });
+
+      DEFAULT_TEXT_STROKE_PICKS.forEach((color) => {
+        expect(
+          queryByTestId(document.body, `color-top-pick-${color}`),
+        ).not.toBeNull();
+      });
+    });
+
+    it("should retain generic stroke picks for bound containers and mixed selections", () => {
+      const [container, boundText] = API.createTextContainer();
+      const freeText = API.createElement({ type: "text", text: "Mixed" });
+      API.setElements([container, boundText, freeText]);
+      API.setSelectedElements([container]);
+
+      expect(
+        queryByTestId(
+          document.body,
+          `color-top-pick-${DEFAULT_ELEMENT_STROKE_PICKS[4]}`,
+        ),
+      ).not.toBeNull();
+      expect(
+        queryByTestId(document.body, `color-top-pick-${COLOR_PALETTE.white}`),
+      ).toBeNull();
+
+      API.setSelectedElements([boundText, freeText]);
+      expect(
+        queryByTestId(document.body, `color-top-pick-${COLOR_PALETTE.white}`),
+      ).not.toBeNull();
+
+      API.setSelectedElements([container, freeText]);
+      expect(
+        queryByTestId(
+          document.body,
+          `color-top-pick-${DEFAULT_ELEMENT_STROKE_PICKS[4]}`,
+        ),
+      ).not.toBeNull();
+      expect(
+        queryByTestId(document.body, `color-top-pick-${COLOR_PALETTE.white}`),
+      ).toBeNull();
     });
 
     it("should keep the native panel for mixed text and shape selections", () => {

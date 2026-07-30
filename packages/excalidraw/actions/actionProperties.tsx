@@ -8,6 +8,7 @@ import {
   DEFAULT_ELEMENT_BACKGROUND_PICKS,
   DEFAULT_ELEMENT_STROKE_COLOR_PALETTE,
   DEFAULT_ELEMENT_STROKE_PICKS,
+  DEFAULT_TEXT_STROKE_PICKS,
   ARROW_TYPE,
   DEFAULT_FONT_FAMILY,
   DEFAULT_FONT_SIZE,
@@ -377,6 +378,9 @@ export const actionChangeStrokeColor = register<
   },
   PanelComponent: ({ elements, appState, updateData, app, data }) => {
     const { stylesPanelMode } = getStylesPanelInfo(app);
+    const targetElements = getTargetElements(elements, appState);
+    const hasExclusiveTextTarget =
+      targetElements.length > 0 && targetElements.every(isTextElement);
 
     return (
       <>
@@ -384,7 +388,11 @@ export const actionChangeStrokeColor = register<
           <h3 aria-hidden="true">{t("labels.stroke")}</h3>
         )}
         <ColorPicker
-          topPicks={DEFAULT_ELEMENT_STROKE_PICKS}
+          topPicks={
+            hasExclusiveTextTarget
+              ? DEFAULT_TEXT_STROKE_PICKS
+              : DEFAULT_ELEMENT_STROKE_PICKS
+          }
           palette={DEFAULT_ELEMENT_STROKE_COLOR_PALETTE}
           type="elementStroke"
           label={t("labels.stroke")}
