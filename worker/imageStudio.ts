@@ -85,6 +85,7 @@ type PixabayCursor = {
   nextType: PixabayImageType;
   vectorExhausted: boolean;
   illustrationExhausted: boolean;
+  seenIds: string[];
 };
 
 type SearchCursor = {
@@ -482,9 +483,12 @@ const searchPixabay = async (
   limit: number,
   env: ImageStudioEnv,
 ): Promise<ProviderSearchResult<"pixabay">> => {
-  const cursor = { ...currentCursor };
+  const cursor = {
+    ...currentCursor,
+    seenIds: [...currentCursor.seenIds],
+  };
   const items: ImageStudioItem[] = [];
-  const itemKeys = new Set<string>();
+  const seenIds = new Set(cursor.seenIds);
   const maxRequests = Math.ceil(limit / PIXABAY_PAGE_SIZE) + 2;
   let requests = 0;
   while (items.length + PIXABAY_PAGE_SIZE <= limit && requests < maxRequests) {
@@ -504,13 +508,14 @@ const searchPixabay = async (
     cursor[exhaustedKey] = !payload.hasMore;
     cursor.nextType = oppositePixabayType(imageType);
     for (const item of normalizePixabayResults(payload)) {
-      if (!itemKeys.has(item.itemKey)) {
-        itemKeys.add(item.itemKey);
+      if (!seenIds.has(item.providerId)) {
+        seenIds.add(item.providerId);
         items.push(item);
       }
     }
     requests++;
   }
+  cursor.seenIds = [...seenIds];
   return {
     items,
     cursor,
@@ -541,6 +546,7 @@ const initialCursor = (
     nextType: "vector",
     vectorExhausted: false,
     illustrationExhausted: false,
+    seenIds: [],
   },
 });
 
@@ -590,10 +596,18 @@ const decodeCursor = (
       (cursor.pixabay?.nextType !== "vector" &&
         cursor.pixabay?.nextType !== "illustration") ||
       !validBoolean(cursor.pixabay?.vectorExhausted) ||
-      !validBoolean(cursor.pixabay?.illustrationExhausted)
+      !validBoolean(cursor.pixabay?.illustrationExhausted) ||
+      (cursor.pixabay?.seenIds !== undefined &&
+        (!Array.isArray(cursor.pixabay.seenIds) ||
+          cursor.pixabay.seenIds.length > 1000 ||
+          !cursor.pixabay.seenIds.every(
+            (candidate) =>
+              typeof candidate === "string" && /^\d+$/.test(candidate),
+          )))
     ) {
       throw new Error("Invalid search cursor");
     }
+    cursor.pixabay.seenIds ??= [];
     return cursor;
   } catch {
     throw new Error("Invalid search cursor");

@@ -434,6 +434,89 @@ describe("Image Studio provider normalization", () => {
     );
   });
 
+  it("does not repeat Pixabay assets shared by vector and illustration streams", async () => {
+    const vectors = Array.from({ length: 5 }, (_, index) => ({
+      id: 100 + index,
+      type: "vector/svg",
+      tags: `vector rocket ${index + 1}`,
+      previewURL: `https://example.com/vector-${index + 1}.png`,
+    }));
+    const illustrations = [
+      {
+        ...vectors[0],
+        type: "illustration",
+        tags: "duplicate illustrated rocket",
+      },
+      ...Array.from({ length: 4 }, (_, index) => ({
+        id: 200 + index,
+        type: "illustration",
+        tags: `illustrated rocket ${index + 1}`,
+        previewURL: `https://example.com/illustration-${index + 1}.png`,
+      })),
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = new URL(String(input));
+        if (url.hostname === "api.iconify.design") {
+          return Response.json({
+            icons: Array.from(
+              { length: 40 },
+              (_, index) => `lucide:rocket-${index + 1}`,
+            ).slice(
+              Number(url.searchParams.get("start") ?? 0),
+              Number(url.searchParams.get("start") ?? 0) +
+                Number(url.searchParams.get("limit") ?? 40),
+            ),
+            collections: { lucide: { name: "Lucide" } },
+            total: 40,
+            start: Number(url.searchParams.get("start") ?? 0),
+            limit: Number(url.searchParams.get("limit") ?? 40),
+          });
+        }
+        const items =
+          url.searchParams.get("image_type") === "vector"
+            ? vectors
+            : illustrations;
+        const page = Number(url.searchParams.get("page") ?? 1);
+        const perPage = Number(url.searchParams.get("per_page") ?? 4);
+        const start = (page - 1) * perPage;
+        return Response.json({
+          hits: items.slice(start, start + perPage),
+          totalHits: items.length,
+        });
+      }),
+    );
+
+    const pixabayKeys: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const url = new URL("https://draw.test/api/image-studio/search");
+      url.searchParams.set("q", "rocket");
+      url.searchParams.set("source", "all");
+      if (cursor) {
+        url.searchParams.set("cursor", cursor);
+      }
+      const body = (await (
+        await handleImageStudioRequest(new Request(url), {
+          PIXABAY_API_KEY: "secret",
+        })
+      ).json()) as {
+        results: Array<{ itemKey: string; provider: string }>;
+        cursor: string | null;
+      };
+      pixabayKeys.push(
+        ...body.results
+          .filter(({ provider }) => provider === "pixabay")
+          .map(({ itemKey }) => itemKey),
+      );
+      cursor = body.cursor;
+    } while (cursor);
+
+    expect(pixabayKeys).toHaveLength(9);
+    expect(new Set(pixabayKeys).size).toBe(9);
+  });
+
   it("retries a failed provider from its unchanged position on the next cursor", async () => {
     const icons = Array.from(
       { length: 20 },
