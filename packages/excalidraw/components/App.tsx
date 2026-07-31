@@ -6636,8 +6636,12 @@ class App extends React.Component<AppProps, AppState> {
     x: number,
     y: number,
   ): NonDeleted<ExcalidrawTextElement> | null {
+    // Selection and dragging use the glyph-hugging box, while entering the
+    // text editor must preserve the canonical layout hit area so wrapped and
+    // indented lines remain easy to reopen.
     const element = this.getElementAtPosition(x, y, {
       includeBoundTextElement: true,
+      useFreeTextInteractionBounds: false,
     });
     if (element && isTextElement(element) && !element.isDeleted) {
       return element;
@@ -6705,6 +6709,7 @@ class App extends React.Component<AppProps, AppState> {
       | {
           includeBoundTextElement?: boolean;
           includeLockedElements?: boolean;
+          useFreeTextInteractionBounds?: boolean;
         }
       | {
           allHitElements: NonDeleted<ExcalidrawElement>[];
@@ -6722,6 +6727,8 @@ class App extends React.Component<AppProps, AppState> {
         includeBoundTextElement: opts?.includeBoundTextElement,
         includeLockedElements: opts?.includeLockedElements,
         insideHitPolicy: opts?.insideHitPolicy,
+        useFreeTextInteractionBounds:
+          opts?.useFreeTextInteractionBounds ?? true,
       });
     }
 
@@ -6750,6 +6757,10 @@ class App extends React.Component<AppProps, AppState> {
           : null,
         insideHitPolicy:
           opts?.insideHitPolicy === "outline" ? undefined : "selection",
+        useFreeTextInteractionBounds:
+          opts && "useFreeTextInteractionBounds" in opts
+            ? opts.useFreeTextInteractionBounds
+            : true,
       })
         ? elementWithHighestZIndex
         : allHitElements[allHitElements.length - 2];
@@ -6769,6 +6780,7 @@ class App extends React.Component<AppProps, AppState> {
       includeBoundTextElement?: boolean;
       includeLockedElements?: boolean;
       insideHitPolicy?: "selection" | "outline";
+      useFreeTextInteractionBounds?: boolean;
     },
   ): NonDeleted<ExcalidrawElement>[] {
     const iframeLikes: Ordered<NonDeleted<ExcalidrawIframeLikeElement>>[] = [];
@@ -6787,7 +6799,16 @@ class App extends React.Component<AppProps, AppState> {
                   !(isTextElement(element) && element.containerId)),
             )
     )
-      .filter((el) => this.hitElement(x, y, el, true, opts?.insideHitPolicy))
+      .filter((el) =>
+        this.hitElement(
+          x,
+          y,
+          el,
+          true,
+          opts?.insideHitPolicy,
+          opts?.useFreeTextInteractionBounds,
+        ),
+      )
       .filter((element) => {
         // hitting a frame's element from outside the frame is not considered a hit
         const containingFrame = getContainingFrame(element, elementsMap);
@@ -6839,11 +6860,13 @@ class App extends React.Component<AppProps, AppState> {
     element: NonDeletedExcalidrawElement,
     considerBoundingBox = true,
     insideHitPolicy: "selection" | "outline" = "selection",
+    useFreeTextInteractionBounds = true,
   ) {
     // if the element is selected, then hit test is done against its bounding box
     if (
       considerBoundingBox &&
       this.state.selectedElementIds[element.id] &&
+      !(useFreeTextInteractionBounds && isTextElement(element)) &&
       hasBoundingBox([element], this.state, this.editorInterface)
     ) {
       // if hitting the bounding box, return early
@@ -6889,6 +6912,7 @@ class App extends React.Component<AppProps, AppState> {
         : null,
       insideHitPolicy:
         insideHitPolicy === "selection" ? "selection" : undefined,
+      useFreeTextInteractionBounds,
     });
   }
 

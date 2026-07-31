@@ -174,6 +174,7 @@ export type HitTestArgs = {
   frameNameBound?: FrameNameBounds | null;
   overrideShouldTestInside?: boolean;
   insideHitPolicy?: "selection";
+  useFreeTextInteractionBounds?: boolean;
 };
 
 let cachedPoint: GlobalPoint | null = null;
@@ -182,6 +183,7 @@ let cachedThreshold: number = Infinity;
 let cachedHit: boolean = false;
 let cachedOverrideShouldTestInside = false;
 let cachedInsideHitPolicy: HitTestArgs["insideHitPolicy"] = undefined;
+let cachedUseFreeTextInteractionBounds = true;
 let cachedInsideHitPolicyDependency: WeakRef<ExcalidrawElement> | null = null;
 let cachedFrameNameBound: FrameNameBounds | null = null;
 
@@ -205,6 +207,7 @@ export const hitElementItself = ({
   frameNameBound = null,
   overrideShouldTestInside = false,
   insideHitPolicy,
+  useFreeTextInteractionBounds = true,
 }: HitTestArgs) => {
   const insideHitPolicyDependency =
     insideHitPolicy === "selection"
@@ -222,6 +225,7 @@ export const hitElementItself = ({
     (cachedHit ? cachedThreshold <= threshold : cachedThreshold >= threshold) &&
     overrideShouldTestInside === cachedOverrideShouldTestInside &&
     insideHitPolicy === cachedInsideHitPolicy &&
+    useFreeTextInteractionBounds === cachedUseFreeTextInteractionBounds &&
     ((!insideHitPolicyDependency && !cachedDependency) ||
       (!!insideHitPolicyDependency &&
         !!cachedDependency &&
@@ -254,9 +258,10 @@ export const hitElementItself = ({
       )
     : false;
 
-  const freeTextHit = isTextElement(element)
-    ? isPointInFreeTextInteractionBounds(element, point, threshold)
-    : null;
+  const freeTextHit =
+    useFreeTextInteractionBounds && isTextElement(element)
+      ? isPointInFreeTextInteractionBounds(element, point, threshold)
+      : null;
 
   // Hit test against the extended, rotated interaction box first.
   const hitBounds =
@@ -298,6 +303,7 @@ export const hitElementItself = ({
   cachedThreshold = threshold;
   cachedOverrideShouldTestInside = overrideShouldTestInside;
   cachedInsideHitPolicy = insideHitPolicy;
+  cachedUseFreeTextInteractionBounds = useFreeTextInteractionBounds;
   cachedInsideHitPolicyDependency = insideHitPolicyDependency
     ? new WeakRef(insideHitPolicyDependency)
     : null;
