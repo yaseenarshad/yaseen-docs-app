@@ -313,12 +313,12 @@ describe("direct T text entry", () => {
     expect(h.elements.filter((element) => !element.isDeleted)).toHaveLength(1);
   });
 
-  it("keeps the numeric 8 shortcut as pointer-based Text-tool activation", () => {
+  it("does not reserve numeric 8 for Text-tool activation", () => {
     mouse.moveTo(120, 160);
 
     Keyboard.keyPress(KEYS["8"]);
 
-    expect(h.state.activeTool.type).toBe("text");
+    expect(h.state.activeTool.type).toBe("selection");
     expect(h.state.editingTextElement).toBe(null);
     expect(h.elements.filter((element) => !element.isDeleted)).toHaveLength(0);
   });

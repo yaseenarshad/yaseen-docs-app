@@ -73,11 +73,11 @@ describe("cursor hint", () => {
     expect(getCursorHint()).not.toBeNull();
   });
 
-  it("shows hint when picking a tool via numeric shortcut", () => {
+  it("does not reserve numeric keys for tool switching", () => {
     pressKey("6");
 
-    expect(h.state.activeTool.type).toBe("line");
-    expect(getCursorHint()).not.toBeNull();
+    expect(h.state.activeTool.type).toBe("selection");
+    expect(getCursorHint()).toBeNull();
   });
 
   it("hides hint immediately on pointerdown", () => {
@@ -153,20 +153,14 @@ describe("cursor hint", () => {
       expect(getCursorHint()).not.toBeNull();
     });
 
-    it("numeric shortcuts bypass cooldown", () => {
+    it("numeric keys do not bypass cooldown without a selection", () => {
       pressKey(KEYS.A);
       dismissHint();
       pressKey("v");
 
       pressKey("6");
-      expect(h.state.activeTool.type).toBe("line");
-      expect(getCursorHint()).not.toBeNull();
-      dismissHint();
-
-      pressKey("v");
-      pressKey("5");
-      expect(h.state.activeTool.type).toBe("arrow");
-      expect(getCursorHint()).not.toBeNull();
+      expect(h.state.activeTool.type).toBe("selection");
+      expect(getCursorHint()).toBeNull();
     });
 
     it("letter shortcut to another tool is also suppressed during cooldown", () => {

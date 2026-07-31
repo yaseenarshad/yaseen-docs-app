@@ -35,7 +35,11 @@ describe("actionStyles", () => {
     for (const [index, tool] of (
       ["rectangle", "ellipse", "diamond", "line", "arrow"] as const
     ).entries()) {
-      UI.clickTool(tool);
+      if (tool === "diamond") {
+        act(() => h.app.setActiveTool({ type: "diamond" }));
+      } else {
+        UI.clickTool(tool);
+      }
       mouse.down(10 + index * 30, 10);
       mouse.up(20, 20);
       mouse.reset();
