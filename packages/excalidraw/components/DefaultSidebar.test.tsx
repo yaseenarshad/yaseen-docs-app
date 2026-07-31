@@ -24,18 +24,38 @@ describe("DefaultSidebar", () => {
       async () => {
         expect(h.state.defaultSidebarDockedPreference).toBe(false);
 
-        const { dockButton } = await assertSidebarDockButton(true);
+        const { dockButton, sidebar } = await assertSidebarDockButton(true);
+        expect(sidebar).not.toHaveAttribute("data-viewport-ui");
 
         fireEvent.click(dockButton);
         await waitFor(() => {
           expect(h.state.defaultSidebarDockedPreference).toBe(true);
           expect(dockButton).toHaveClass("selected");
+          expect(sidebar).toHaveAttribute("data-viewport-ui", "side");
+          expect(sidebar).toHaveAttribute("data-viewport-ui-name", "sidebar");
         });
 
         fireEvent.click(dockButton);
         await waitFor(() => {
           expect(h.state.defaultSidebarDockedPreference).toBe(false);
           expect(dockButton).not.toHaveClass("selected");
+          expect(sidebar).not.toHaveAttribute("data-viewport-ui");
+        });
+      },
+    );
+  });
+
+  it("stays open through desktop canvas interaction until explicitly closed", async () => {
+    await assertExcalidrawWithSidebar(
+      <DefaultSidebar />,
+      DEFAULT_SIDEBAR.name,
+      async () => {
+        expect(h.state.openSidebar?.name).toBe(DEFAULT_SIDEBAR.name);
+
+        fireEvent.pointerDown(document.body);
+
+        await waitFor(() => {
+          expect(h.state.openSidebar?.name).toBe(DEFAULT_SIDEBAR.name);
         });
       },
     );

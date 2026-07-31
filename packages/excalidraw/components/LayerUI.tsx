@@ -585,7 +585,10 @@ const LayerUI = ({
               appState.openSidebar &&
               isSidebarDocked &&
               editorInterface.canFitSidebar
-                ? { width: `calc(100% - var(--right-sidebar-width))` }
+                ? {
+                    width: `calc(100% - var(--right-sidebar-width))`,
+                    insetInlineStart: "var(--right-sidebar-width)",
+                  }
                 : {}
             }
           >

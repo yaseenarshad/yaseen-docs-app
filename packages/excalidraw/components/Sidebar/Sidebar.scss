@@ -7,7 +7,8 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    right: 0;
+    left: 0;
+    right: auto;
     z-index: var(--zIndex-ui-library);
     margin: 0;
     padding: 0;
@@ -18,15 +19,15 @@
 
     pointer-events: var(--ui-pointerEvents);
 
-    overflow: hidden;
+    overflow: visible;
     border-radius: 0;
     width: calc(var(--right-sidebar-width) - var(--space-factor) * 2);
 
-    border-left: 1px solid var(--sidebar-border-color);
+    border-right: 1px solid var(--sidebar-border-color);
 
     :root[dir="rtl"] & {
-      left: 0;
-      right: auto;
+      left: auto;
+      right: 0;
     }
 
     &--docked {
@@ -34,8 +35,37 @@
     }
 
     :root[dir="rtl"] & {
-      border-right: 1px solid var(--sidebar-border-color);
-      border-left: 0;
+      border-left: 1px solid var(--sidebar-border-color);
+      border-right: 0;
+    }
+
+    > .sidebar__close,
+    > .sidebar-tabs-root > .sidebar__close {
+      @include outlineButtonStyles;
+      --button-bg: var(--island-bg-color);
+      background: var(--island-bg-color);
+      border: 1px solid var(--sidebar-border-color) !important;
+      border-radius: 999px;
+      box-shadow: var(--shadow-island);
+      height: 2.5rem;
+      left: calc(100% - 1.35rem);
+      padding: 0;
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 2.5rem;
+      z-index: calc(var(--zIndex-ui-library) + 1);
+
+      svg {
+        height: var(--lg-icon-size);
+        width: var(--lg-icon-size);
+      }
+
+      :root[dir="rtl"] & {
+        left: auto;
+        right: calc(100% - 1.35rem);
+        transform: translateY(-50%) scaleX(-1);
+      }
     }
   }
 
@@ -100,6 +130,7 @@
     flex-direction: column;
     flex: 1 1 auto;
     padding: 1rem 0;
+    overflow: hidden;
 
     [role="tabpanel"] {
       flex: 1;

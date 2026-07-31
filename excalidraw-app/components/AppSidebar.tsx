@@ -9,7 +9,10 @@ import {
 } from "@excalidraw/excalidraw/components/icons";
 import { useUIAppState } from "@excalidraw/excalidraw/context/ui-appState";
 
-import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import type {
+  ExcalidrawImperativeAPI,
+  SidebarTabName,
+} from "@excalidraw/excalidraw/types";
 
 import { ImageStudio } from "../image-studio/ImageStudio";
 
@@ -620,6 +623,41 @@ const APP_SIDEBAR_LAUNCHERS = [
   { tab: "image-studio", label: "Image Studio", icon: ImageIcon },
 ] as const;
 
+const LAST_APP_SIDEBAR_TAB_STORAGE_KEY =
+  "yaseen-whiteboard-last-sidebar-section";
+
+const APP_SIDEBAR_TABS = new Set<SidebarTabName>([
+  "boards",
+  "components",
+  "image-studio",
+  "library",
+  "search",
+]);
+
+const getRememberedSidebarTab = (): SidebarTabName => {
+  try {
+    const rememberedTab = window.localStorage.getItem(
+      LAST_APP_SIDEBAR_TAB_STORAGE_KEY,
+    );
+    return rememberedTab && APP_SIDEBAR_TABS.has(rememberedTab)
+      ? rememberedTab
+      : "boards";
+  } catch {
+    return "boards";
+  }
+};
+
+const rememberSidebarTab = (tab: SidebarTabName | undefined) => {
+  if (!tab || !APP_SIDEBAR_TABS.has(tab)) {
+    return;
+  }
+  try {
+    window.localStorage.setItem(LAST_APP_SIDEBAR_TAB_STORAGE_KEY, tab);
+  } catch {
+    // Storage may be unavailable in privacy-restricted contexts.
+  }
+};
+
 export const AppSidebarLaunchers = ({
   excalidrawAPI,
 }: {
@@ -629,7 +667,7 @@ export const AppSidebarLaunchers = ({
   const activeTab =
     openSidebar?.name === "default" ? openSidebar.tab ?? "boards" : null;
 
-  const open = (tab: typeof APP_SIDEBAR_LAUNCHERS[number]["tab"]) => {
+  const open = (tab: SidebarTabName) => {
     excalidrawAPI?.toggleSidebar({
       name: "default",
       tab,
@@ -662,13 +700,7 @@ export const AppSidebarLaunchers = ({
         aria-pressed={openSidebar?.name === "default"}
         title="Boards, Components, and Image Studio"
         disabled={!excalidrawAPI}
-        onClick={() =>
-          open(
-            APP_SIDEBAR_LAUNCHERS.some((launcher) => launcher.tab === activeTab)
-              ? (activeTab as typeof APP_SIDEBAR_LAUNCHERS[number]["tab"])
-              : "boards",
-          )
-        }
+        onClick={() => open(activeTab ?? getRememberedSidebarTab())}
       >
         {sidebarRightIcon}
       </button>
@@ -682,6 +714,15 @@ export const AppSidebar = ({
   ...boardBrowserProps
 }: AppSidebarProps) => {
   const { openSidebar } = useUIAppState();
+  const didInitializeSidebarRef = useRef(false);
+
+  useEffect(() => {
+    if (!excalidrawAPI || didInitializeSidebarRef.current) {
+      return;
+    }
+    didInitializeSidebarRef.current = true;
+    excalidrawAPI.toggleSidebar({ name: null, force: false });
+  }, [excalidrawAPI]);
 
   return (
     <>
@@ -691,7 +732,13 @@ export const AppSidebar = ({
         title="Boards, library, and search"
         className="app-sidebar-generic-trigger"
       />
-      <DefaultSidebar>
+      <DefaultSidebar
+        onStateChange={(state) => {
+          if (state?.name === "default") {
+            rememberSidebarTab(state.tab);
+          }
+        }}
+      >
         <DefaultSidebar.TabTriggers>
           <Sidebar.TabTrigger
             tab="boards"

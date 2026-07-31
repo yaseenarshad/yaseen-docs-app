@@ -577,7 +577,7 @@ export class AppViewport {
       }
       if (opts.reserve.sidebar) {
         reserveSurface("sidebar", {
-          side: isRTL ? "left" : "right",
+          side: isRTL ? "right" : "left",
           offset: RIGHT_SIDEBAR_WIDTH,
         });
       }

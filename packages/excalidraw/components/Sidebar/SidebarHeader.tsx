@@ -5,7 +5,7 @@ import { t } from "../../i18n";
 import { useEditorInterface } from "../App";
 import { Button } from "../Button";
 import { Tooltip } from "../Tooltip";
-import { CloseIcon, PinIcon } from "../icons";
+import { PinIcon, chevronLeftIcon } from "../icons";
 
 import { SidebarPropsContext } from "./common";
 
@@ -24,35 +24,37 @@ export const SidebarHeader = ({
   );
 
   return (
-    <div
-      className={clsx("sidebar__header", className)}
-      data-testid="sidebar-header"
-    >
-      {children}
-      <div className="sidebar__header__buttons">
-        {renderDockButton && (
-          <Tooltip label={t("labels.sidebarLock")}>
-            <Button
-              onSelect={() => props.onDock?.(!props.docked)}
-              selected={!!props.docked}
-              className="sidebar__dock"
-              data-testid="sidebar-dock"
-              aria-label={t("labels.sidebarLock")}
-            >
-              {PinIcon}
-            </Button>
-          </Tooltip>
-        )}
-        <Button
-          data-testid="sidebar-close"
-          className="sidebar__close"
-          onSelect={props.onCloseRequest}
-          aria-label={t("buttons.close")}
-        >
-          {CloseIcon}
-        </Button>
+    <>
+      <div
+        className={clsx("sidebar__header", className)}
+        data-testid="sidebar-header"
+      >
+        {children}
+        <div className="sidebar__header__buttons">
+          {renderDockButton && (
+            <Tooltip label={t("labels.sidebarLock")}>
+              <Button
+                onSelect={() => props.onDock?.(!props.docked)}
+                selected={!!props.docked}
+                className="sidebar__dock"
+                data-testid="sidebar-dock"
+                aria-label={t("labels.sidebarLock")}
+              >
+                {PinIcon}
+              </Button>
+            </Tooltip>
+          )}
+        </div>
       </div>
-    </div>
+      <Button
+        data-testid="sidebar-close"
+        className="sidebar__close"
+        onSelect={props.onCloseRequest}
+        aria-label={t("buttons.close")}
+      >
+        {chevronLeftIcon}
+      </Button>
+    </>
   );
 };
 

@@ -31,6 +31,10 @@ const organizerProps = {
 };
 
 describe("AppSidebarLaunchers", () => {
+  beforeEach(() => {
+    window.localStorage.removeItem("yaseen-whiteboard-last-sidebar-section");
+  });
+
   it("opens and switches the approved panels without active-click toggling", () => {
     const toggleSidebar = vi.fn();
     render(
@@ -67,6 +71,78 @@ describe("AppSidebarLaunchers", () => {
       [{ name: "default", tab: "components", force: true }],
       [{ name: "default", tab: "image-studio", force: true }],
     ]);
+  });
+
+  it("reopens the last valid section from the compact launcher", () => {
+    const toggleSidebar = vi.fn();
+    window.localStorage.setItem(
+      "yaseen-whiteboard-last-sidebar-section",
+      "library",
+    );
+
+    render(
+      <UIAppStateContext.Provider
+        value={
+          {
+            openSidebar: null,
+          } as never
+        }
+      >
+        <AppSidebarLaunchers
+          excalidrawAPI={
+            {
+              toggleSidebar,
+            } as unknown as ExcalidrawImperativeAPI
+          }
+        />
+      </UIAppStateContext.Provider>,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open workspace panel" }),
+    );
+
+    expect(toggleSidebar).toHaveBeenCalledWith({
+      name: "default",
+      tab: "library",
+      force: true,
+    });
+  });
+
+  it("falls back to Boards when stored section data is stale", () => {
+    const toggleSidebar = vi.fn();
+    window.localStorage.setItem(
+      "yaseen-whiteboard-last-sidebar-section",
+      "comments",
+    );
+
+    render(
+      <UIAppStateContext.Provider
+        value={
+          {
+            openSidebar: null,
+          } as never
+        }
+      >
+        <AppSidebarLaunchers
+          excalidrawAPI={
+            {
+              toggleSidebar,
+            } as unknown as ExcalidrawImperativeAPI
+          }
+        />
+      </UIAppStateContext.Provider>,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open workspace panel" }),
+    );
+
+    expect(toggleSidebar).toHaveBeenCalledWith({
+      name: "default",
+      tab: "boards",
+      force: true,
+    });
   });
 });
 

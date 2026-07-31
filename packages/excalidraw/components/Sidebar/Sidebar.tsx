@@ -117,11 +117,23 @@ export const SidebarInner = forwardRef(
           if ((event.target as Element).closest(".sidebar-trigger")) {
             return;
           }
+          // The app workspace panel is an explicit tool surface. Keep it open
+          // through canvas and board interaction until the user invokes its
+          // visible close control.
+          if (name === "default" && editorInterface.formFactor !== "phone") {
+            return;
+          }
           if (!docked || !editorInterface.canFitSidebar) {
             closeLibrary();
           }
         },
-        [closeLibrary, docked, editorInterface.canFitSidebar],
+        [
+          closeLibrary,
+          docked,
+          editorInterface.canFitSidebar,
+          editorInterface.formFactor,
+          name,
+        ],
       ),
     );
 
@@ -151,10 +163,18 @@ export const SidebarInner = forwardRef(
         // on mobile the sidebar shouldn't push the viewport around even
         // when opened (it's treated as a temporary overlay)
         data-viewport-ui={
-          editorInterface.formFactor !== "phone" ? "side" : undefined
+          editorInterface.formFactor !== "phone" &&
+          docked &&
+          editorInterface.canFitSidebar
+            ? "side"
+            : undefined
         }
         data-viewport-ui-name={
-          editorInterface.formFactor !== "phone" ? "sidebar" : undefined
+          editorInterface.formFactor !== "phone" &&
+          docked &&
+          editorInterface.canFitSidebar
+            ? "sidebar"
+            : undefined
         }
         ref={islandRef}
       >
