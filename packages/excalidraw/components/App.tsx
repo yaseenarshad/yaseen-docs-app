@@ -6666,6 +6666,7 @@ class App extends React.Component<AppProps, AppState> {
         }
     ) & {
       preferSelected?: boolean;
+      insideHitPolicy?: "selection" | "outline";
     },
   ): NonDeleted<ExcalidrawElement> | null {
     let allHitElements: NonDeleted<ExcalidrawElement>[] = [];
@@ -6675,6 +6676,7 @@ class App extends React.Component<AppProps, AppState> {
       allHitElements = this.getElementsAtPosition(x, y, {
         includeBoundTextElement: opts?.includeBoundTextElement,
         includeLockedElements: opts?.includeLockedElements,
+        insideHitPolicy: opts?.insideHitPolicy,
       });
     }
 
@@ -6701,7 +6703,8 @@ class App extends React.Component<AppProps, AppState> {
         frameNameBound: isFrameLikeElement(elementWithHighestZIndex)
           ? this.frameNameBoundsCache.get(elementWithHighestZIndex)
           : null,
-        insideHitPolicy: "selection",
+        insideHitPolicy:
+          opts?.insideHitPolicy === "outline" ? undefined : "selection",
       })
         ? elementWithHighestZIndex
         : allHitElements[allHitElements.length - 2];
@@ -6720,6 +6723,7 @@ class App extends React.Component<AppProps, AppState> {
     opts?: {
       includeBoundTextElement?: boolean;
       includeLockedElements?: boolean;
+      insideHitPolicy?: "selection" | "outline";
     },
   ): NonDeleted<ExcalidrawElement>[] {
     const iframeLikes: Ordered<NonDeleted<ExcalidrawIframeLikeElement>>[] = [];
@@ -6738,7 +6742,7 @@ class App extends React.Component<AppProps, AppState> {
                   !(isTextElement(element) && element.containerId)),
             )
     )
-      .filter((el) => this.hitElement(x, y, el))
+      .filter((el) => this.hitElement(x, y, el, true, opts?.insideHitPolicy))
       .filter((element) => {
         // hitting a frame's element from outside the frame is not considered a hit
         const containingFrame = getContainingFrame(element, elementsMap);
@@ -6789,6 +6793,7 @@ class App extends React.Component<AppProps, AppState> {
     y: number,
     element: NonDeletedExcalidrawElement,
     considerBoundingBox = true,
+    insideHitPolicy: "selection" | "outline" = "selection",
   ) {
     // if the element is selected, then hit test is done against its bounding box
     if (
@@ -6837,7 +6842,8 @@ class App extends React.Component<AppProps, AppState> {
       frameNameBound: isFrameLikeElement(element)
         ? this.frameNameBoundsCache.get(element)
         : null,
-      insideHitPolicy: "selection",
+      insideHitPolicy:
+        insideHitPolicy === "selection" ? "selection" : undefined,
     });
   }
 

@@ -876,6 +876,7 @@ describe("multiple selection", () => {
       x: 140,
       y: 40,
       size: 80,
+      activateTool: false,
     });
     const ellipse = UI.createElement("ellipse", {
       x: 40,

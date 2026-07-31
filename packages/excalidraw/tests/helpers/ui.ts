@@ -492,6 +492,7 @@ export class UI {
       height: initialHeight = initialWidth,
       angle = 0,
       points: initialPoints,
+      activateTool = true,
     }: {
       position?: number;
       x?: number;
@@ -501,6 +502,8 @@ export class UI {
       height?: number;
       angle?: number;
       points?: T extends "line" | "arrow" | "freedraw" ? LocalPoint[] : never;
+      /** Use the API for tools intentionally hidden from the toolbar. */
+      activateTool?: boolean;
     } = {},
   ): Element<T> & {
     /** Returns the actual, current element from the elements array, instead
@@ -514,7 +517,11 @@ export class UI {
       pointFrom(width, height),
     ];
 
-    UI.clickTool(type);
+    if (activateTool) {
+      UI.clickTool(type);
+    } else {
+      act(() => h.app.setActiveTool({ type }));
+    }
 
     if (type === "text") {
       const clickY = h.state.gridModeEnabled

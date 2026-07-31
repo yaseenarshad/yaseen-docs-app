@@ -111,6 +111,9 @@ export class AppArrowText {
     // that element rather than bind the endpoint hidden behind it.
     const hitElement = this.app.getElementAtPosition(x, y, {
       includeLockedElements: true,
+      // Endpoint labels are a specialized affordance, not a selection
+      // gesture. A transparent shape interior must not hide an endpoint.
+      insideHitPolicy: "outline",
     });
 
     if (
