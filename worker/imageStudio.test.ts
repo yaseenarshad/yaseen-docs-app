@@ -644,6 +644,14 @@ describe("Image Studio provider normalization", () => {
     const request = new Request(
       "https://draw.test/api/image-studio/search?q=rocket",
     );
+    stored.set(
+      request.url,
+      Response.json({
+        results: [{ itemKey: "stale-pre-cursor-version" }],
+        cursor: null,
+        warnings: [],
+      }),
+    );
 
     const first = await handleImageStudioRequest(request, {
       PIXABAY_API_KEY: "secret",
@@ -654,8 +662,14 @@ describe("Image Studio provider normalization", () => {
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
+    await expect(first.clone().json()).resolves.not.toMatchObject({
+      results: [{ itemKey: "stale-pre-cursor-version" }],
+    });
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(cache.put).toHaveBeenCalled();
+    expect(
+      new URL(cache.match.mock.calls[0][0].url).searchParams.get("_iscv"),
+    ).toBe("2");
   });
 
   it("rejects arbitrary import providers and malformed Pixabay IDs", async () => {

@@ -44,6 +44,7 @@ const ICONIFY_COLOR_BATCH_LIMIT = 6;
 const PIXABAY_PAGE_SIZE = 4;
 const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
 const CACHE_SECONDS = 24 * 60 * 60;
+const SEARCH_CACHE_VERSION = "2";
 const PIXABAY_API = "https://pixabay.com/api/";
 const ICONIFY_API = "https://api.iconify.design";
 
@@ -768,8 +769,11 @@ const searchUncached = async (
 
 const search = async (request: Request, env: ImageStudioEnv) => {
   const cache = getCache();
+  const cacheUrl = new URL(request.url);
+  cacheUrl.searchParams.set("_iscv", SEARCH_CACHE_VERSION);
+  const cacheKey = new Request(cacheUrl, request);
   if (env.PIXABAY_API_KEY) {
-    const cached = await cache?.match(request);
+    const cached = await cache?.match(cacheKey);
     if (cached) {
       return cached;
     }
@@ -781,7 +785,7 @@ const search = async (request: Request, env: ImageStudioEnv) => {
       "Cache-Control",
       `public, max-age=60, s-maxage=${CACHE_SECONDS}`,
     );
-    await cache?.put(request, cachedResponse);
+    await cache?.put(cacheKey, cachedResponse);
   }
   return response;
 };
