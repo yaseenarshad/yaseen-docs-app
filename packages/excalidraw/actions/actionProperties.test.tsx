@@ -352,6 +352,40 @@ describe("element locking", () => {
       ]);
     });
 
+    it("applies mixed whole-element strikethrough to every selected text", () => {
+      const first = API.createElement({ type: "text", text: "First" });
+      const second = {
+        ...API.createElement({ type: "text", text: "Second" }),
+        strikethrough: true,
+      };
+      API.setElements([first, second]);
+      API.setSelectedElements([first, second]);
+
+      fireEvent.click(queryByTestId(document.body, "textStyle-strikethrough")!);
+      expect(API.getSelectedElements()).toEqual([
+        expect.objectContaining({ strikethrough: true }),
+        expect.objectContaining({ strikethrough: true }),
+      ]);
+
+      fireEvent.click(queryByTestId(document.body, "textStyle-strikethrough")!);
+      expect(API.getSelectedElements()).toEqual([
+        expect.objectContaining({ strikethrough: false }),
+        expect.objectContaining({ strikethrough: false }),
+      ]);
+    });
+
+    it("applies whole-element strikethrough through a selected bound container", () => {
+      const [container, text] = API.createTextContainer();
+      API.setElements([container, text]);
+      API.setSelectedElements([container]);
+
+      fireEvent.click(queryByTestId(document.body, "textStyle-strikethrough")!);
+
+      expect(window.h.app.scene.getElement(text.id)).toMatchObject({
+        strikethrough: true,
+      });
+    });
+
     it("loads the real Bold face when changing a bold text family", async () => {
       const text = {
         ...API.createElement({ type: "text", text: "Bold family" }),
