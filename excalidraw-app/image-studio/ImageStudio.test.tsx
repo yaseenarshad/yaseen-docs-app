@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import {
   act,
   fireEvent,
@@ -10,6 +12,11 @@ import { afterEach, vi } from "vitest";
 import { useMutation, useQuery } from "convex/react";
 
 import { ImageStudio } from "./ImageStudio";
+
+const imageStudioStyles = readFileSync(
+  "excalidraw-app/image-studio/ImageStudio.scss",
+  "utf8",
+);
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
@@ -24,6 +31,26 @@ describe("ImageStudio", () => {
   beforeEach(() => {
     vi.mocked(useQuery).mockReturnValue([]);
     vi.mocked(useMutation).mockReturnValue(vi.fn() as never);
+  });
+
+  it("reserves non-shrinking implicit rows and an isolated sentinel row", () => {
+    const gridRule = imageStudioStyles.match(
+      /\.image-studio__grid\s*\{([^}]*)\}/,
+    )?.[1];
+    const sentinelRule = imageStudioStyles.match(
+      /\.image-studio__search-sentinel\s*\{([^}]*)\}/,
+    )?.[1];
+    const cardRule = imageStudioStyles.match(
+      /\.image-studio__card\s*\{([^}]*)\}/,
+    )?.[1];
+
+    expect(gridRule).toMatch(/align-content:\s*start/);
+    expect(gridRule).toMatch(/grid-auto-rows:\s*max-content/);
+    expect(sentinelRule).toMatch(/align-self:\s*start/);
+    expect(sentinelRule).toMatch(/grid-column:\s*1\s*\/\s*-1/);
+    expect(sentinelRule).toMatch(/min-height:\s*1px/);
+    expect(sentinelRule).toMatch(/overflow-anchor:\s*none/);
+    expect(cardRule).toMatch(/overflow-anchor:\s*auto/);
   });
 
   it("switches to Search, preserves its query, and focuses it on a host request", async () => {
@@ -182,13 +209,30 @@ describe("ImageStudio", () => {
               title: "Two",
             },
           ],
+          cursor: "3",
+          warnings: [],
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          results: [
+            repeated,
+            {
+              ...repeated,
+              itemKey: "iconify:tabler:three",
+              providerId: "tabler:three",
+              title: "Three",
+            },
+          ],
           cursor: null,
           warnings: [],
         }),
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<ImageStudio excalidrawAPI={{} as never} canInsert={true} />);
+    const { container } = render(
+      <ImageStudio excalidrawAPI={{} as never} canInsert={true} />,
+    );
     fireEvent.change(
       screen.getByRole("searchbox", {
         name: "Search graphics, icons, and logos",
@@ -203,6 +247,8 @@ describe("ImageStudio", () => {
     expect(
       screen.queryByRole("button", { name: "Load more" }),
     ).not.toBeInTheDocument();
+    const grid = container.querySelector<HTMLElement>(".image-studio__grid")!;
+    grid.scrollTop = 88;
 
     await act(async () => {
       intersect?.([{ isIntersecting: true }]);
@@ -213,9 +259,109 @@ describe("ImageStudio", () => {
       expect(screen.getByRole("button", { name: "Add Two" })).toBeVisible(),
     );
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(screen.getAllByRole("button", { name: "Add One" })).toHaveLength(1);
+    expect(grid.scrollTop).toBe(88);
     expect(String(fetchMock.mock.calls[1][0])).toContain("cursor=2&source=all");
+
+    await act(async () => {
+      intersect?.([{ isIntersecting: true }]);
+      intersect?.([{ isIntersecting: true }]);
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Add Three" })).toBeVisible(),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(screen.getAllByRole("button", { name: "Add One" })).toHaveLength(1);
+    expect(grid.scrollTop).toBe(88);
+    expect(String(fetchMock.mock.calls[2][0])).toContain("cursor=3&source=all");
   });
+
+  it.each(["2", "1"])(
+    "stops automatic pagination when a response cursor returns %s instead of advancing",
+    async (responseCursor) => {
+      let intersect:
+        | ((entries: Array<{ isIntersecting: boolean }>) => void)
+        | null = null;
+      vi.stubGlobal(
+        "IntersectionObserver",
+        class {
+          constructor(
+            callback: (entries: Array<{ isIntersecting: boolean }>) => void,
+          ) {
+            intersect = callback;
+          }
+          observe() {}
+          disconnect() {}
+        },
+      );
+      const first = {
+        itemKey: "iconify:tabler:first",
+        provider: "iconify",
+        providerId: "tabler:first",
+        kind: "icon",
+        title: "First",
+        previewUrl: "/first",
+      };
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(
+          Response.json({
+            results: [first],
+            cursor: "2",
+            warnings: [],
+          }),
+        )
+        .mockResolvedValueOnce(
+          Response.json({
+            results: [
+              {
+                ...first,
+                itemKey: "iconify:tabler:second",
+                providerId: "tabler:second",
+                title: "Second",
+              },
+            ],
+            cursor: responseCursor,
+            warnings: [],
+          }),
+        );
+      vi.stubGlobal("fetch", fetchMock);
+
+      render(<ImageStudio excalidrawAPI={{} as never} canInsert={true} />);
+      fireEvent.change(
+        screen.getByRole("searchbox", {
+          name: "Search graphics, icons, and logos",
+        }),
+        { target: { value: "icons" } },
+      );
+      fireEvent.click(
+        screen.getAllByRole("button", { name: "Search" }).at(-1)!,
+      );
+
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Add First" })).toBeVisible(),
+      );
+      await act(async () => {
+        intersect?.([{ isIntersecting: true }]);
+      });
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Add Second" }),
+        ).toBeVisible(),
+      );
+      expect(
+        await screen.findByText(
+          "Loading stopped because the next results page did not advance.",
+        ),
+      ).toBeVisible();
+
+      await act(async () => {
+        intersect?.([{ isIntersecting: true }]);
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it("ignores a stale response after the source changes", async () => {
     let resolveStale: ((response: Response) => void) | null = null;
@@ -311,33 +457,31 @@ describe("ImageStudio", () => {
       title: "First",
       previewUrl: "/first",
     };
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce(
-          Response.json({
-            results: [first],
-            cursor: "2",
-            warnings: [],
-          }),
-        )
-        .mockRejectedValueOnce(new Error("Page request failed"))
-        .mockResolvedValueOnce(
-          Response.json({
-            results: [
-              {
-                ...first,
-                itemKey: "iconify:tabler:recovered",
-                providerId: "tabler:recovered",
-                title: "Recovered",
-              },
-            ],
-            cursor: null,
-            warnings: [],
-          }),
-        ),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          results: [first],
+          cursor: "2",
+          warnings: [],
+        }),
+      )
+      .mockRejectedValueOnce(new Error("Page request failed"))
+      .mockResolvedValueOnce(
+        Response.json({
+          results: [
+            {
+              ...first,
+              itemKey: "iconify:tabler:recovered",
+              providerId: "tabler:recovered",
+              title: "Recovered",
+            },
+          ],
+          cursor: null,
+          warnings: [],
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
 
     render(<ImageStudio excalidrawAPI={{} as never} canInsert={true} />);
     fireEvent.change(
@@ -364,6 +508,13 @@ describe("ImageStudio", () => {
         screen.getByRole("button", { name: "Add Recovered" }),
       ).toBeVisible(),
     );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(screen.getAllByRole("button", { name: "Add First" })).toHaveLength(
+      1,
+    );
+    expect(
+      screen.getAllByRole("button", { name: "Add Recovered" }),
+    ).toHaveLength(1);
   });
 
   it("keeps shapes in a separate catalog", () => {

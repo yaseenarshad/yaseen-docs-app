@@ -43,6 +43,18 @@ const dedupeItems = (items: ImageStudioItem[]) => [
   ...new Map(items.map((item) => [item.itemKey, item])).values(),
 ];
 
+const hasAdvancedCursor = (current: string, next: string | null) => {
+  if (next === null) {
+    return true;
+  }
+  const currentPage = Number(current);
+  const nextPage = Number(next);
+  if (Number.isSafeInteger(currentPage) && Number.isSafeInteger(nextPage)) {
+    return nextPage > currentPage;
+  }
+  return next !== current;
+};
+
 const restorePreview = (item: StoredMediaItem): ImageStudioItem => {
   const normalized = normalizeMediaItem(item);
   return {
@@ -150,6 +162,7 @@ export const ImageStudio = ({
   const [error, setError] = useState<string | null>(null);
   const searchRequestId = useRef(0);
   const searchRequestInFlight = useRef(false);
+  const requestedCursors = useRef(new Set<string>());
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchGridRef = useRef<HTMLDivElement>(null);
   const searchSentinelRef = useRef<HTMLDivElement>(null);
@@ -194,10 +207,12 @@ export const ImageStudio = ({
 
   const runSearch = async ({
     append = false,
+    retry = false,
     nextQuery = append ? searchedQuery : query.trim(),
     nextSource = source,
   }: {
     append?: boolean;
+    retry?: boolean;
     nextQuery?: string;
     nextSource?: ImageStudioSearchSource;
   } = {}) => {
@@ -205,7 +220,13 @@ export const ImageStudio = ({
       setError("Type at least two characters.");
       return;
     }
-    if (append && searchRequestInFlight.current) {
+    const requestedCursor = append ? cursor : null;
+    if (
+      append &&
+      (!requestedCursor ||
+        searchRequestInFlight.current ||
+        (!retry && requestedCursors.current.has(requestedCursor)))
+    ) {
       return;
     }
     const requestId = append
@@ -214,8 +235,10 @@ export const ImageStudio = ({
     searchRequestInFlight.current = true;
     setIsSearching(true);
     if (append) {
+      requestedCursors.current.add(requestedCursor!);
       setPageError(null);
     } else {
+      requestedCursors.current.clear();
       setError(null);
       setPageError(null);
       setResults([]);
@@ -227,7 +250,7 @@ export const ImageStudio = ({
       const response = await searchImageStudio(
         nextQuery,
         nextSource,
-        append ? cursor : null,
+        requestedCursor,
       );
       if (requestId !== searchRequestId.current) {
         return;
@@ -237,6 +260,16 @@ export const ImageStudio = ({
           append ? [...current, ...response.results] : response.results,
         ),
       );
+      if (
+        append &&
+        requestedCursor &&
+        !hasAdvancedCursor(requestedCursor, response.cursor)
+      ) {
+        setPageError(
+          "Loading stopped because the next results page did not advance.",
+        );
+        return;
+      }
       setCursor(response.cursor);
       setWarnings(response.warnings.map(({ message }) => message));
     } catch (cause) {
@@ -268,6 +301,8 @@ export const ImageStudio = ({
       view !== "search" ||
       !cursor ||
       pageError ||
+      isSearching ||
+      requestedCursors.current.has(cursor) ||
       !sentinel ||
       typeof IntersectionObserver === "undefined"
     ) {
@@ -286,7 +321,7 @@ export const ImageStudio = ({
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [cursor, pageError, view]);
+  }, [cursor, isSearching, pageError, view]);
 
   const addItem = async (item: ImageStudioItem) => {
     if (!canInsert || insertingKey) {
@@ -532,14 +567,19 @@ export const ImageStudio = ({
         </div>
       )}
       {view === "search" && pageError && cursor && (
-        <button
-          type="button"
-          className="image-studio__retry"
-          disabled={isSearching}
-          onClick={() => void runSearch({ append: true })}
-        >
-          {isSearching ? "Retrying…" : "Retry loading results"}
-        </button>
+        <>
+          <div className="image-studio__error" role="alert">
+            {pageError}
+          </div>
+          <button
+            type="button"
+            className="image-studio__retry"
+            disabled={isSearching}
+            onClick={() => void runSearch({ append: true, retry: true })}
+          >
+            {isSearching ? "Retrying…" : "Retry loading results"}
+          </button>
+        </>
       )}
       {view === "search" && isSearching && results.length > 0 && (
         <div className="image-studio__loading-more" role="status">
