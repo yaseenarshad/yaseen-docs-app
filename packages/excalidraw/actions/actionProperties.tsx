@@ -66,6 +66,7 @@ import {
   isElbowArrow,
   isFrameLikeElement,
   hasVectorStrokeWidth,
+  isImageElement,
   isLinearElement,
   isLineElement,
   isTextElement,
@@ -358,6 +359,24 @@ export const actionChangeStrokeColor = register<
   label: "labels.stroke",
   trackEvent: false,
   perform: (elements, appState, value) => {
+    const selectedElements = getSelectedElements(elements, appState);
+    const shouldPreserveImageBorderColor =
+      value?.currentItemStrokeColor !== undefined &&
+      isTransparent(value.currentItemStrokeColor) &&
+      selectedElements.length > 0 &&
+      selectedElements.every(isImageElement);
+    const selectedVisibleImageBorderColors = new Set(
+      shouldPreserveImageBorderColor
+        ? selectedElements
+            .map((element) => element.strokeColor)
+            .filter((color) => !isTransparent(color))
+        : [],
+    );
+    const imageBorderColorToRemember =
+      selectedVisibleImageBorderColors.size === 1
+        ? [...selectedVisibleImageBorderColors][0]
+        : appState.currentItemStrokeColor;
+
     return {
       ...(value?.currentItemStrokeColor && {
         elements: changeProperty(
@@ -376,6 +395,9 @@ export const actionChangeStrokeColor = register<
       appState: {
         ...appState,
         ...value,
+        ...(shouldPreserveImageBorderColor
+          ? { currentItemStrokeColor: imageBorderColorToRemember }
+          : null),
       },
       captureUpdate: !!value?.currentItemStrokeColor
         ? CaptureUpdateAction.IMMEDIATELY
@@ -846,15 +868,34 @@ export const actionChangeVectorStrokeWidth = register<number>({
     }
 
     const strokeWidth = normalizeVectorStrokeWidth(value);
+    const shouldActivateImageBorder = selectedElements.some(
+      (element) =>
+        isImageElement(element) && isTransparent(element.strokeColor),
+    );
+    const visibleImageStrokeColor = isTransparent(
+      appState.currentItemStrokeColor,
+    )
+      ? COLOR_PALETTE.black
+      : appState.currentItemStrokeColor;
     return {
-      elements: changeProperty(elements, appState, (element) =>
-        hasVectorStrokeWidth(element.type)
-          ? newElementWith(element, { strokeWidth })
-          : element,
-      ),
+      elements: changeProperty(elements, appState, (element) => {
+        if (!hasVectorStrokeWidth(element.type)) {
+          return element;
+        }
+
+        return newElementWith(element, {
+          strokeWidth,
+          ...(isImageElement(element) && isTransparent(element.strokeColor)
+            ? { strokeColor: visibleImageStrokeColor }
+            : null),
+        });
+      }),
       appState: {
         ...appState,
         currentItemVectorStrokeWidth: strokeWidth,
+        ...(shouldActivateImageBorder
+          ? { currentItemStrokeColor: visibleImageStrokeColor }
+          : null),
       },
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     };

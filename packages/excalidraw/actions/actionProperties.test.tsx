@@ -678,6 +678,182 @@ describe("element locking", () => {
       expect(selectedImage.strokeWidth).toBe(24);
     });
 
+    it.each(VECTOR_STROKE_WIDTH.presets)(
+      "should make a transparent image border visible from the %spx preset",
+      (preset) => {
+        API.setAppState({
+          currentItemStrokeColor: COLOR_PALETTE.transparent,
+        });
+        const image = API.createElement({
+          type: "image",
+          strokeWidth: VECTOR_STROKE_WIDTH.default,
+        });
+        API.setElements([image]);
+        API.setSelectedElements([image]);
+
+        const borderWidthButton = queryByTestId(
+          document.body,
+          `vector-stroke-width-preset-${preset}`,
+        );
+
+        expect(borderWidthButton).not.toBeNull();
+        fireEvent.click(borderWidthButton!);
+
+        expect(API.getSelectedElement()).toMatchObject({
+          strokeColor: COLOR_PALETTE.black,
+          strokeWidth: preset,
+        });
+        expect(window.h.state.currentItemStrokeColor).toBe(COLOR_PALETTE.black);
+      },
+    );
+
+    it("should make a transparent image border visible from an exact width", () => {
+      API.setAppState({
+        currentItemStrokeColor: COLOR_PALETTE.transparent,
+      });
+      const image = API.createElement({ type: "image" });
+      API.setElements([image]);
+      API.setSelectedElements([image]);
+
+      const exactWidthInput = queryByTestId(
+        document.body,
+        "linear-stroke-width-input",
+      );
+      expect(exactWidthInput).not.toBeNull();
+
+      fireEvent.change(exactWidthInput!, { target: { value: "17.5" } });
+      fireEvent.blur(exactWidthInput!);
+
+      expect(API.getSelectedElement()).toMatchObject({
+        strokeColor: COLOR_PALETTE.black,
+        strokeWidth: 17.5,
+      });
+    });
+
+    it("should make a transparent image border visible from the width slider", () => {
+      API.setAppState({
+        currentItemStrokeColor: COLOR_PALETTE.transparent,
+      });
+      const image = API.createElement({ type: "image" });
+      API.setElements([image]);
+      API.setSelectedElements([image]);
+
+      const widthSlider = queryByTestId(
+        document.body,
+        "linear-stroke-width-slider",
+      );
+      expect(widthSlider).not.toBeNull();
+
+      fireEvent.change(widthSlider!, { target: { value: "12.5" } });
+
+      expect(API.getSelectedElement()).toMatchObject({
+        strokeColor: COLOR_PALETTE.black,
+        strokeWidth: 12.5,
+      });
+    });
+
+    it("should activate only transparent borders in a multi-image selection", () => {
+      API.setAppState({
+        currentItemStrokeColor: COLOR_PALETTE.transparent,
+      });
+      const transparentImage = API.createElement({ type: "image" });
+      const existingBorderColor = DEFAULT_ELEMENT_STROKE_PICKS[1];
+      const coloredImage = {
+        ...API.createElement({ type: "image" }),
+        strokeColor: existingBorderColor,
+      };
+      API.setElements([transparentImage, coloredImage]);
+      API.setSelectedElements([transparentImage, coloredImage]);
+
+      const mediumBorderButton = queryByTestId(
+        document.body,
+        "vector-stroke-width-preset-8",
+      );
+      expect(mediumBorderButton).not.toBeNull();
+      fireEvent.click(mediumBorderButton!);
+
+      expect(API.getSelectedElements()).toEqual([
+        expect.objectContaining({
+          strokeColor: COLOR_PALETTE.black,
+          strokeWidth: 8,
+        }),
+        expect.objectContaining({
+          strokeColor: existingBorderColor,
+          strokeWidth: 8,
+        }),
+      ]);
+    });
+
+    it("should restore the last visible image border color from a width preset", () => {
+      const image = API.createElement({ type: "image" });
+      API.setElements([image]);
+      API.setSelectedElements([image]);
+
+      const borderColor = DEFAULT_ELEMENT_STROKE_PICKS[3];
+      const borderColorButton = queryByTestId(
+        document.body,
+        `color-top-pick-${borderColor}`,
+      );
+      const mediumBorderButton = queryByTestId(
+        document.body,
+        "vector-stroke-width-preset-8",
+      );
+
+      expect(borderColorButton).not.toBeNull();
+      expect(mediumBorderButton).not.toBeNull();
+
+      fireEvent.click(borderColorButton!);
+      togglePopover("Stroke");
+      const transparentButton = queryByTestId(
+        document.body,
+        "color-transparent",
+      );
+      expect(transparentButton).not.toBeNull();
+      fireEvent.click(transparentButton!);
+      expect(API.getSelectedElement()?.strokeColor).toBe(
+        COLOR_PALETTE.transparent,
+      );
+
+      fireEvent.click(mediumBorderButton!);
+
+      expect(API.getSelectedElement()).toMatchObject({
+        strokeColor: borderColor,
+        strokeWidth: 8,
+      });
+      expect(window.h.state.currentItemStrokeColor).toBe(borderColor);
+    });
+
+    it("should remember an existing image border color when removing it", () => {
+      API.setAppState({ currentItemStrokeColor: COLOR_PALETTE.black });
+      const existingBorderColor = DEFAULT_ELEMENT_STROKE_PICKS[1];
+      const image = {
+        ...API.createElement({ type: "image" }),
+        strokeColor: existingBorderColor,
+      };
+      API.setElements([image]);
+      API.setSelectedElements([image]);
+
+      togglePopover("Stroke");
+      const transparentButton = queryByTestId(
+        document.body,
+        "color-transparent",
+      );
+      expect(transparentButton).not.toBeNull();
+      fireEvent.click(transparentButton!);
+
+      const mediumBorderButton = queryByTestId(
+        document.body,
+        "vector-stroke-width-preset-8",
+      );
+      expect(mediumBorderButton).not.toBeNull();
+      fireEvent.click(mediumBorderButton!);
+
+      expect(API.getSelectedElement()).toMatchObject({
+        strokeColor: existingBorderColor,
+        strokeWidth: 8,
+      });
+    });
+
     it("should move image edges and opacity into the secondary helper", () => {
       const image = API.createElement({
         type: "image",
