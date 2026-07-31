@@ -1362,6 +1362,26 @@ describe("element locking", () => {
       expect(queryByTestId(document.body, "font-family-code")).toBeNull();
       expect(queryByTestId(document.body, "strokeWidth-medium")).toBeNull();
     });
+
+    it("should not expose object alignment controls in the contextual toolbar", () => {
+      const first = API.createElement({ type: "rectangle", x: 0, y: 0 });
+      const second = API.createElement({
+        type: "text",
+        x: 100,
+        y: 100,
+        text: "Mixed target",
+      });
+      API.setElements([first, second]);
+      API.setSelectedElements([first, second]);
+
+      expect(
+        document.querySelector(".contextual-properties-toolbar"),
+      ).not.toBeNull();
+      expect(document.querySelector('[aria-label="Align left"]')).toBeNull();
+      expect(
+        document.querySelector('[aria-label="Distribute horizontally"]'),
+      ).toBeNull();
+    });
   });
 });
 
@@ -1439,4 +1459,38 @@ describe("text properties on compact layouts", () => {
       expect(queryByTestId(document.body, "strokeWidth-thin")).toBeNull();
     },
   );
+
+  it("does not expose object alignment in compact actions", async () => {
+    (globalThis as any).ResizeObserver =
+      (globalThis as any).ResizeObserver ||
+      class ResizeObserver {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      };
+    await render(<Excalidraw UIOptions={{ getFormFactor: () => "tablet" }} />);
+    fireEvent.resize(window);
+    await waitFor(() =>
+      expect(window.h.app.editorInterface.formFactor).toBe("tablet"),
+    );
+
+    const first = API.createElement({ type: "rectangle", x: 0, y: 0 });
+    const second = API.createElement({ type: "rectangle", x: 100, y: 100 });
+    API.setElements([first, second]);
+    API.setSelectedElements([first, second]);
+
+    const actionsTrigger = await waitFor(() => {
+      const trigger = document.querySelector<HTMLElement>(
+        '.compact-shape-actions button[title="Actions"]',
+      );
+      expect(trigger).not.toBeNull();
+      return trigger!;
+    });
+    fireEvent.click(actionsTrigger);
+
+    expect(document.querySelector('[aria-label="Align left"]')).toBeNull();
+    expect(
+      document.querySelector('[aria-label="Distribute horizontally"]'),
+    ).toBeNull();
+  });
 });
