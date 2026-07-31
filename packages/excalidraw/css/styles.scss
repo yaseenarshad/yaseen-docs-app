@@ -797,12 +797,15 @@ body.excalidraw-cursor-resize * {
   .contextual-properties-toolbar__popover {
     max-height: min(32rem, calc(100vh - 8rem));
     max-width: min(28rem, calc(100vw - 2rem));
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
 
     .contextual-properties-toolbar__secondary-properties {
       align-items: flex-end;
       display: flex;
+      flex-wrap: wrap;
       gap: 0.75rem;
+      max-width: 100%;
 
       fieldset {
         border: 0;
@@ -828,6 +831,24 @@ body.excalidraw-cursor-resize * {
       .control-label {
         margin: 0;
         min-width: 9rem;
+      }
+
+      &__opacity {
+        flex: 1 0 100%;
+        min-width: 0;
+        width: 100%;
+
+        .control-label {
+          display: block;
+          min-width: 0;
+          width: 100%;
+        }
+
+        .range-wrapper {
+          box-sizing: border-box;
+          padding-inline: 0.75rem;
+          width: 100%;
+        }
       }
     }
 

@@ -81,14 +81,17 @@ describe("element locking", () => {
       expect(hachureFillButton).toBe(null);
     });
 
-    it("should show horizontal text align for text tool", () => {
+    it("should show Center as the no-selection text alignment", () => {
       UI.clickTool("text");
 
       API.setAppState({
         currentItemTextAlign: "right",
       });
 
-      const centerTextAlign = queryByTestId(document.body, `align-right`);
+      const centerTextAlign = queryByTestId(
+        document.body,
+        `align-horizontal-center`,
+      );
       expect(centerTextAlign).toBeChecked();
     });
 
@@ -416,7 +419,7 @@ describe("element locking", () => {
       });
     });
 
-    it("should toggle bullets and change line spacing from the text toolbar", () => {
+    it("should cycle list modes and change line spacing from the text toolbar", () => {
       const text = API.createElement({
         type: "text",
         text: "First line\nSecond line",
@@ -446,9 +449,31 @@ describe("element locking", () => {
         queryByTestId(document.body, "textStyle-bullets") as HTMLElement,
       );
       expect(API.getSelectedElements()[0]).toMatchObject({
+        text: "1. First line\n2. Second line",
+        originalText: "1. First line\n2. Second line",
+      });
+
+      fireEvent.click(
+        queryByTestId(document.body, "textStyle-bullets") as HTMLElement,
+      );
+      expect(API.getSelectedElements()[0]).toMatchObject({
         text: "First line\nSecond line",
         originalText: "First line\nSecond line",
       });
+    });
+
+    it("normalizes mixed multi-text list modes to bullets", () => {
+      const bullet = API.createElement({ type: "text", text: "• First" });
+      const numbered = API.createElement({ type: "text", text: "1. Second" });
+      API.setElements([bullet, numbered]);
+      API.setSelectedElements([bullet, numbered]);
+
+      fireEvent.click(queryByTestId(document.body, "textStyle-bullets")!);
+
+      expect(API.getSelectedElements()).toEqual([
+        expect.objectContaining({ originalText: "• First" }),
+        expect.objectContaining({ originalText: "• Second" }),
+      ]);
     });
 
     it("should center selected text from the contextual text toolbar", () => {
@@ -469,6 +494,12 @@ describe("element locking", () => {
       expect(API.getSelectedElements()[0]).toMatchObject({
         textAlign: "center",
       });
+
+      fireEvent.click(queryByTestId(document.body, "align-right")!);
+      expect(API.getSelectedElements()[0]).toMatchObject({
+        textAlign: "right",
+      });
+      expect(window.h.state.currentItemTextAlign).toBe("center");
     });
 
     it("should consolidate exclusive desktop text controls into the contextual toolbar", () => {
@@ -1251,9 +1282,26 @@ describe("element locking", () => {
       expect(dashed).not.toBeNull();
       expect(artist).not.toBeNull();
       expect(opacity).not.toBeNull();
+      const opacitySection = opacity.closest(
+        ".contextual-properties-toolbar__secondary-properties__opacity",
+      );
+      expect(opacitySection).not.toBeNull();
+      expect(opacitySection?.querySelector(".zero-label")).toHaveTextContent(
+        "0",
+      );
+      expect(opacitySection?.querySelector(".max-label")).toHaveTextContent(
+        "100",
+      );
+      expect(opacitySection?.querySelector(".value-bubble")).toHaveTextContent(
+        "100",
+      );
 
       fireEvent.click(dashed!);
       fireEvent.click(artist!);
+      fireEvent.change(opacity, { target: { value: "0" } });
+      expect(opacitySection?.querySelector(".value-bubble")).toHaveTextContent(
+        "0",
+      );
       fireEvent.change(opacity, { target: { value: "60" } });
 
       expect(API.getSelectedElement()).toMatchObject({
@@ -1685,6 +1733,26 @@ describe("element locking", () => {
       expect(queryByTestId(document.body, "font-family-code")).toBeNull();
       expect(queryByTestId(document.body, "strokeWidth-medium")).toBeNull();
     });
+
+    it("should not expose object alignment controls in the contextual toolbar", () => {
+      const first = API.createElement({ type: "rectangle", x: 0, y: 0 });
+      const second = API.createElement({
+        type: "text",
+        x: 100,
+        y: 100,
+        text: "Mixed target",
+      });
+      API.setElements([first, second]);
+      API.setSelectedElements([first, second]);
+
+      expect(
+        document.querySelector(".contextual-properties-toolbar"),
+      ).not.toBeNull();
+      expect(document.querySelector('[aria-label="Align left"]')).toBeNull();
+      expect(
+        document.querySelector('[aria-label="Distribute horizontally"]'),
+      ).toBeNull();
+    });
   });
 });
 
@@ -1762,4 +1830,38 @@ describe("text properties on compact layouts", () => {
       expect(queryByTestId(document.body, "strokeWidth-thin")).toBeNull();
     },
   );
+
+  it("does not expose object alignment in compact actions", async () => {
+    (globalThis as any).ResizeObserver =
+      (globalThis as any).ResizeObserver ||
+      class ResizeObserver {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      };
+    await render(<Excalidraw UIOptions={{ getFormFactor: () => "tablet" }} />);
+    fireEvent.resize(window);
+    await waitFor(() =>
+      expect(window.h.app.editorInterface.formFactor).toBe("tablet"),
+    );
+
+    const first = API.createElement({ type: "rectangle", x: 0, y: 0 });
+    const second = API.createElement({ type: "rectangle", x: 100, y: 100 });
+    API.setElements([first, second]);
+    API.setSelectedElements([first, second]);
+
+    const actionsTrigger = await waitFor(() => {
+      const trigger = document.querySelector<HTMLElement>(
+        '.compact-shape-actions button[title="Actions"]',
+      );
+      expect(trigger).not.toBeNull();
+      return trigger!;
+    });
+    fireEvent.click(actionsTrigger);
+
+    expect(document.querySelector('[aria-label="Align left"]')).toBeNull();
+    expect(
+      document.querySelector('[aria-label="Distribute horizontally"]'),
+    ).toBeNull();
+  });
 });

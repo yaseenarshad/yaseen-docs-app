@@ -125,6 +125,21 @@ describe("general paste behavior", () => {
 });
 
 describe("paste text as single lines", () => {
+  it("centers pasted free text on the paste coordinate", async () => {
+    mouse.moveTo(100, 100);
+    pasteWithCtrlCmdV("Centered paste");
+
+    await waitFor(() => {
+      expect(h.elements).toHaveLength(1);
+      expect(h.elements[0]).toMatchObject({
+        type: "text",
+        textAlign: "center",
+        containerId: null,
+      });
+      expect(h.elements[0].x + h.elements[0].width / 2).toBeCloseTo(100);
+    });
+  });
+
   it("should create an element for each line when copying with Ctrl/Cmd+V", async () => {
     const text = "sajgfakfn\naaksfnknas\nakefnkasf";
     pasteWithCtrlCmdV(text);

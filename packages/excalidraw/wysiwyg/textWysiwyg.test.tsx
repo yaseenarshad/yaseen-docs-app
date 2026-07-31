@@ -1,4 +1,4 @@
-import { queryByText } from "@testing-library/react";
+import { queryByText, waitFor } from "@testing-library/react";
 
 import { pointFrom } from "@excalidraw/math";
 import {
@@ -724,8 +724,8 @@ describe("textWysiwyg", () => {
 
       act(() => {
         h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
-          property: "bulletList",
-          enabled: true,
+          property: "listMode",
+          mode: "bullet",
         });
       });
 
@@ -738,8 +738,8 @@ describe("textWysiwyg", () => {
 
       act(() => {
         h.app.actionManager.executeAction(actionChangeTextStyle, "ui", {
-          property: "bulletList",
-          enabled: false,
+          property: "listMode",
+          mode: "plain",
         });
       });
 
@@ -779,9 +779,60 @@ describe("textWysiwyg", () => {
 
       fireEvent.keyDown(textarea, { key: KEYS.ENTER });
 
-      expect(textarea.value).toBe("    • Nested item\n    • ");
+      expect(textarea.value).toBe("    • Nested item\n    ○ ");
       expect((h.elements[0] as ExcalidrawTextElement).originalText).toBe(
-        "    • Nested item\n    • ",
+        "    • Nested item\n    ○ ",
+      );
+    });
+
+    it("continues and automatically renumbers numbered lists", () => {
+      fireEvent.input(textarea, {
+        target: { value: "1. First\n2. Second" },
+      });
+      textarea.selectionStart = textarea.selectionEnd = 8;
+
+      fireEvent.keyDown(textarea, { key: KEYS.ENTER });
+
+      expect(textarea.value).toBe("1. First\n2. \n3. Second");
+      expect(textarea.selectionStart).toBe(12);
+
+      fireEvent.input(textarea, {
+        target: { value: "1. First\n9. Changed\n8. Second" },
+        inputType: "insertText",
+      });
+      expect(textarea.value).toBe("1. First\n2. Changed\n3. Second");
+    });
+
+    it("indents and outdents list items with Tab", () => {
+      fireEvent.input(textarea, {
+        target: { value: "1. First\n2. Second" },
+      });
+      textarea.setSelectionRange(9, textarea.value.length);
+
+      fireEvent.keyDown(textarea, { key: KEYS.TAB });
+      expect(textarea.value).toBe("1. First\n    ○ Second");
+
+      fireEvent.keyDown(textarea, { key: KEYS.TAB, shiftKey: true });
+      expect(textarea.value).toBe("1. First\n2. Second");
+    });
+
+    it("inherits the receiving list mode when pasting multiple lines", async () => {
+      fireEvent.input(textarea, { target: { value: "1. " } });
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      document.elementFromPoint = () => textarea;
+
+      fireEvent.paste(textarea, {
+        clipboardData: {
+          items: [{ kind: "string", type: "text/plain" }],
+          getData: () => "Alpha\nBeta",
+        },
+      });
+
+      await waitFor(() => {
+        expect(textarea.value).toBe("1. Alpha\n2. Beta");
+      });
+      expect((h.elements[0] as ExcalidrawTextElement).originalText).toBe(
+        "1. Alpha\n2. Beta",
       );
     });
 

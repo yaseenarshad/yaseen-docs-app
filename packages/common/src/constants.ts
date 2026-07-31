@@ -217,7 +217,10 @@ export const FRAME_STYLE = {
 export const MIN_FONT_SIZE = 1;
 export const DEFAULT_FONT_SIZE = 20;
 export const DEFAULT_FONT_FAMILY: FontFamilyValues = FONT_FAMILY.Excalifont;
+// Legacy/missing scene text must continue to restore as left-aligned.
 export const DEFAULT_TEXT_ALIGN = "left";
+// Human-created free text always starts centered, independently of scene restore.
+export const DEFAULT_NEW_TEXT_ALIGN = "center";
 export const DEFAULT_VERTICAL_ALIGN = "top";
 export const DEFAULT_VERSION = "{version}";
 export const DEFAULT_TRANSFORM_HANDLE_SPACING = 2;

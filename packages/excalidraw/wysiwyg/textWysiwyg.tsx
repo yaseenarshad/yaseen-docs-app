@@ -77,8 +77,16 @@ import {
   actionZoomOut,
 } from "../actions/actionCanvas";
 
-import type { ParsedDataTranferList } from "../clipboard";
+import {
+  continueTextListItem,
+  formatPastedTextForList,
+  getTextListMode,
+  indentTextList,
+  normalizeTextLists,
+  parseTextListLine,
+} from "../textList";
 
+import type { ParsedDataTranferList } from "../clipboard";
 import type App from "../components/App";
 import type { AppState } from "../types";
 
@@ -671,6 +679,53 @@ export const textWysiwyg = ({
       // in the same tick (FF requires that)
       const mimeTypes = parseDataTransferEventMimeTypes(event);
 
+      const pasteSelectionStart = editable.selectionStart;
+      const pasteSelectionEnd = editable.selectionEnd;
+      const pasteLineStart =
+        editable.value.lastIndexOf("\n", pasteSelectionStart - 1) + 1;
+      const pasteLineEndIndex = editable.value.indexOf(
+        "\n",
+        pasteSelectionStart,
+      );
+      const pasteLineEnd =
+        pasteLineEndIndex === -1 ? editable.value.length : pasteLineEndIndex;
+      const pasteLine = parseTextListLine(
+        editable.value.slice(pasteLineStart, pasteLineEnd),
+      );
+      const pasteListMode = getTextListMode(
+        editable.value,
+        pasteLineStart,
+        pasteLineEnd,
+      );
+      const isListPaste =
+        pasteLine.markerKind !== "none" &&
+        (pasteListMode === "bullet" || pasteListMode === "numbered");
+
+      if (isListPaste) {
+        event.preventDefault();
+      }
+
+      const insertPastedText = (pastedText: string) => {
+        if (!isListPaste) {
+          return false;
+        }
+        const formattedLines = formatPastedTextForList(
+          pastedText,
+          pasteListMode,
+          pasteLine.depth,
+        ).split("\n");
+        const firstLine = parseTextListLine(formattedLines[0] ?? "").content;
+        const insertion = [firstLine, ...formattedLines.slice(1)].join("\n");
+        editable.value =
+          editable.value.slice(0, pasteSelectionStart) +
+          insertion +
+          editable.value.slice(pasteSelectionEnd);
+        const nextCaret = pasteSelectionStart + insertion.length;
+        editable.setSelectionRange(nextCaret, nextCaret);
+        editable.dispatchEvent(new Event("input"));
+        return true;
+      };
+
       let dataList: ParsedDataTranferList | null = null;
 
       // when copy/pasting excalidraw elements, only paste the text content
@@ -694,6 +749,9 @@ export const textWysiwyg = ({
           if (parsed.elements) {
             const text = getTextFromElements(parsed.elements);
             if (text) {
+              if (insertPastedText(text)) {
+                return;
+              }
               const { selectionStart, selectionEnd, value } = editable;
 
               editable.value =
@@ -724,6 +782,9 @@ export const textWysiwyg = ({
       }
       const text = normalizeText(textItem.value);
       if (!text) {
+        return;
+      }
+      if (insertPastedText(text)) {
         return;
       }
       const container = getContainerElement(
@@ -759,6 +820,18 @@ export const textWysiwyg = ({
         // normalization (otherwise it'll end up at the end of the text)
         editable.selectionStart = selectionStart;
         editable.selectionEnd = selectionStart;
+      }
+      const normalizedList = normalizeTextLists(
+        editable.value,
+        editable.selectionStart,
+        editable.selectionEnd,
+      );
+      if (editable.value !== normalizedList.text) {
+        editable.value = normalizedList.text;
+        editable.setSelectionRange(
+          normalizedList.selectionStart,
+          normalizedList.selectionEnd,
+        );
       }
       const currentElement = app.scene.getElement(
         element.id,
@@ -820,35 +893,15 @@ export const textWysiwyg = ({
     };
   }
 
-  const handleBulletListEnter = () => {
+  const handleTextListEnter = () => {
     const { selectionStart, selectionEnd, value } = editable;
-    const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
-    const lineEndIndex = value.indexOf("\n", selectionEnd);
-    const lineEnd = lineEndIndex === -1 ? value.length : lineEndIndex;
-    const currentLine = value.slice(lineStart, lineEnd);
-    const bulletMatch = currentLine.match(/^([ \t]*)•[ \t]+(.*)$/);
-
-    if (!bulletMatch) {
+    const change = continueTextListItem(value, selectionStart, selectionEnd);
+    if (!change) {
       return false;
     }
 
-    const [, indentation, content] = bulletMatch;
-    if (
-      !content.trim() &&
-      selectionStart === selectionEnd &&
-      selectionStart === lineEnd
-    ) {
-      editable.value =
-        value.slice(0, lineStart) + indentation + value.slice(lineEnd);
-      const nextCaret = lineStart + indentation.length;
-      editable.setSelectionRange(nextCaret, nextCaret);
-    } else {
-      const nextBullet = `\n${indentation}• `;
-      editable.value =
-        value.slice(0, selectionStart) + nextBullet + value.slice(selectionEnd);
-      const nextCaret = selectionStart + nextBullet.length;
-      editable.setSelectionRange(nextCaret, nextCaret);
-    }
+    editable.value = change.text;
+    editable.setSelectionRange(change.selectionStart, change.selectionEnd);
 
     pendingNewLineStyle = "plain";
     editable.dispatchEvent(new Event("input"));
@@ -926,7 +979,9 @@ export const textWysiwyg = ({
     } else if (
       event.key === KEYS.ENTER &&
       !event.shiftKey &&
-      handleBulletListEnter()
+      !event.isComposing &&
+      event.keyCode !== 229 &&
+      handleTextListEnter()
     ) {
       event.preventDefault();
     } else if (
@@ -938,7 +993,24 @@ export const textWysiwyg = ({
       event.preventDefault();
       if (event.isComposing) {
         return;
-      } else if (event.shiftKey || event.code === CODES.BRACKET_LEFT) {
+      }
+      const direction =
+        event.shiftKey || event.code === CODES.BRACKET_LEFT ? -1 : 1;
+      const listMode = getTextListMode(
+        editable.value,
+        editable.selectionStart,
+        editable.selectionEnd,
+      );
+      if (listMode !== "plain") {
+        const change = indentTextList(
+          editable.value,
+          editable.selectionStart,
+          editable.selectionEnd,
+          direction,
+        );
+        editable.value = change.text;
+        editable.setSelectionRange(change.selectionStart, change.selectionEnd);
+      } else if (direction === -1) {
         outdent();
       } else {
         indent();

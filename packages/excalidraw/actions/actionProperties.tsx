@@ -16,6 +16,7 @@ import {
   ARROW_TYPE,
   DEFAULT_FONT_FAMILY,
   DEFAULT_FONT_SIZE,
+  DEFAULT_NEW_TEXT_ALIGN,
   FONT_FAMILY,
   ROUNDNESS,
   STROKE_WIDTH_KEYS,
@@ -112,6 +113,11 @@ import type { CaptureUpdateActionType } from "@excalidraw/element";
 
 import { trackEvent } from "../analytics";
 import { getTextBackgroundRadiusForFontSize } from "../textCreation";
+import {
+  getTextListMode,
+  setTextListMode,
+  type TextListMode,
+} from "../textList";
 import { RadioSelection } from "../components/RadioSelection";
 import { IconButton } from "../components/IconButton";
 import { ColorPicker } from "../components/ColorPicker/ColorPicker";
@@ -1226,7 +1232,7 @@ export const actionChangeOpacity = register<ExcalidrawElement["opacity"]>({
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     };
   },
-  PanelComponent: ({ elements, appState, app, updateData }) => {
+  PanelComponent: ({ elements, appState, app, updateData, data }) => {
     const opacity = getFormValue(
       elements,
       app,
@@ -1244,6 +1250,10 @@ export const actionChangeOpacity = register<ExcalidrawElement["opacity"]>({
         min={0}
         max={100}
         step={10}
+        minLabel={data?.contextToolbar ? 0 : undefined}
+        maxLabel={data?.contextToolbar ? 100 : undefined}
+        preventCanvasInteraction={!!data?.contextToolbar}
+        showMinValueInBubble={!!data?.contextToolbar}
         testId="opacity"
       />
     );
@@ -1450,96 +1460,15 @@ type TextStyleChange =
   | { property: "fontWeight"; enabled: boolean }
   | { property: "textDecoration"; enabled: boolean }
   | { property: "strikethrough"; enabled: boolean }
-  | { property: "bulletList"; enabled: boolean };
+  | {
+      property: "listMode";
+      mode: Exclude<TextListMode, "mixed">;
+    };
 
-const BULLET_PREFIX = "• ";
-
-const getSelectedTextLineRange = (
-  text: string,
-  selectionStart: number,
-  selectionEnd: number,
-) => {
-  const start = Math.max(0, Math.min(selectionStart, text.length));
-  const end = Math.max(start, Math.min(selectionEnd, text.length));
-  const lineStart = text.lastIndexOf("\n", start - 1) + 1;
-  const lineEndSearchStart =
-    end > start && text[end - 1] === "\n" ? end - 1 : end;
-  const nextLineBreak = text.indexOf("\n", lineEndSearchStart);
-
-  return {
-    start,
-    end,
-    lineStart,
-    lineEnd: nextLineBreak === -1 ? text.length : nextLineBreak,
-  };
-};
-
-const isBulletLine = (line: string) =>
-  !line.trim() || /^[ \t]*•[ \t]+/.test(line);
-
-const areSelectedTextLinesBulleted = (
-  text: string,
-  selectionStart = 0,
-  selectionEnd = text.length,
-) => {
-  const { lineStart, lineEnd } = getSelectedTextLineRange(
-    text,
-    selectionStart,
-    selectionEnd,
-  );
-  const lines = text.slice(lineStart, lineEnd).split("\n");
-
-  return lines.some((line) => line.trim()) && lines.every(isBulletLine);
-};
-
-const toggleTextBullets = (
-  text: string,
-  selectionStart = 0,
-  selectionEnd = text.length,
-  enabled = !areSelectedTextLinesBulleted(text, selectionStart, selectionEnd),
-) => {
-  const { start, end, lineStart, lineEnd } = getSelectedTextLineRange(
-    text,
-    selectionStart,
-    selectionEnd,
-  );
-  const lines = text.slice(lineStart, lineEnd).split("\n");
-  const deltas: number[] = [];
-  const transformedLines = lines.map((line) => {
-    if (!line.trim()) {
-      deltas.push(0);
-      return line;
-    }
-
-    const indentation = line.match(/^[ \t]*/)?.[0] ?? "";
-    const content = line.slice(indentation.length);
-    let transformed = line;
-
-    if (enabled && !/^•[ \t]+/.test(content)) {
-      transformed = `${indentation}${BULLET_PREFIX}${content}`;
-    } else if (!enabled && /^•[ \t]+/.test(content)) {
-      transformed = `${indentation}${content.replace(/^•[ \t]+/, "")}`;
-    }
-    deltas.push(transformed.length - line.length);
-    return transformed;
-  });
-
-  const nextText =
-    text.slice(0, lineStart) +
-    transformedLines.join("\n") +
-    text.slice(lineEnd);
-  const firstLineDelta = deltas[0] ?? 0;
-  const totalDelta = deltas.reduce((total, delta) => total + delta, 0);
-  const nextSelectionStart = start + (start > lineStart ? firstLineDelta : 0);
-  const nextSelectionEnd =
-    start === end ? nextSelectionStart : end + totalDelta;
-
-  return {
-    text: nextText,
-    selectionStart: nextSelectionStart,
-    selectionEnd: nextSelectionEnd,
-  };
-};
+type BooleanTextStyleProperty = Exclude<
+  TextStyleChange["property"],
+  "listMode"
+>;
 
 const getTextStyle = (
   element: ExcalidrawElement,
@@ -1595,12 +1524,12 @@ const getTextStyle = (
   }
 
   return editable
-    ? areSelectedTextLinesBulleted(
+    ? getTextListMode(
         editable.value,
         editable.selectionStart,
         editable.selectionEnd,
       )
-    : areSelectedTextLinesBulleted(textElement.originalText);
+    : getTextListMode(textElement.originalText);
 };
 
 const changeTextStyle = (
@@ -1612,13 +1541,13 @@ const changeTextStyle = (
   const editable = appState.editingTextElement
     ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
     : null;
-  const editableBullets = editable
-    ? value.property === "bulletList"
-      ? toggleTextBullets(
+  const editableList = editable
+    ? value.property === "listMode"
+      ? setTextListMode(
           editable.value,
           editable.selectionStart,
           editable.selectionEnd,
-          value.enabled,
+          value.mode,
         )
       : null
     : null;
@@ -1636,19 +1565,19 @@ const changeTextStyle = (
       if (!isTextElement(element)) {
         return element;
       }
-      if (value.property === "bulletList") {
-        const bulletChange =
-          editableBullets && element.id === appState.editingTextElement?.id
-            ? editableBullets
-            : toggleTextBullets(
+      if (value.property === "listMode") {
+        const listChange =
+          editableList && element.id === appState.editingTextElement?.id
+            ? editableList
+            : setTextListMode(
                 element.originalText,
                 0,
                 element.originalText.length,
-                value.enabled,
+                value.mode,
               );
         let nextElement: ExcalidrawTextElement = newElementWith(element, {
-          originalText: bulletChange.text,
-          text: bulletChange.text,
+          originalText: listChange.text,
+          text: listChange.text,
         });
         redrawTextBoundingBox(
           nextElement,
@@ -1757,14 +1686,14 @@ const changeTextStyle = (
     true,
   );
 
-  if (editable && editableBullets) {
-    editable.value = editableBullets.text;
+  if (editable && editableList) {
+    editable.value = editableList.text;
     editable.setSelectionRange(
-      editableBullets.selectionStart,
-      editableBullets.selectionEnd,
+      editableList.selectionStart,
+      editableList.selectionEnd,
     );
     editable.focus();
-  } else if (editable && editableSelection && value.property !== "bulletList") {
+  } else if (editable && editableSelection && value.property !== "listMode") {
     editable.setSelectionRange(editableSelection.start, editableSelection.end);
     editable.focus();
     queueMicrotask(() => {
@@ -1789,7 +1718,7 @@ const changeTextStyle = (
 const toggleTextStyle = (
   elements: readonly ExcalidrawElement[],
   appState: AppState,
-  property: TextStyleChange["property"],
+  property: BooleanTextStyleProperty,
   app: AppClassProperties,
 ) => {
   const targetElements = appState.editingTextElement
@@ -1857,15 +1786,21 @@ export const actionChangeTextStyle = register<TextStyleChange>({
       hasTextTarget,
       false,
     );
-    const bullets = getFormValue(
+    const listMode = getFormValue(
       elements,
       app,
-      (element) => getTextStyle(element, "bulletList", app),
+      (element) => getTextStyle(element, "listMode", app),
       hasTextTarget,
       false,
     );
+    const nextListMode =
+      listMode === "bullet"
+        ? "numbered"
+        : listMode === "numbered"
+        ? "plain"
+        : "bullet";
     const updateStyle = (value: TextStyleChange) => {
-      if (value.property === "bulletList") {
+      if (value.property === "listMode") {
         data?.onPreventClose?.();
         updateData(value);
         return;
@@ -1928,17 +1863,22 @@ export const actionChangeTextStyle = register<TextStyleChange>({
               },
               {
                 value: {
-                  property: "bulletList",
-                  enabled: bullets !== true,
+                  property: "listMode",
+                  mode: nextListMode,
                 },
-                text: "Bulleted list",
+                text:
+                  listMode === "bullet"
+                    ? "Bulleted list"
+                    : listMode === "numbered"
+                    ? "Numbered list"
+                    : "List",
                 icon: (
                   <span aria-hidden="true" className="text-bullets-icon">
-                    <span>•</span>
+                    <span>{listMode === "numbered" ? "1." : "•"}</span>
                     <span>≡</span>
                   </span>
                 ),
-                active: bullets === true,
+                active: listMode === "bullet" || listMode === "numbered",
                 testId: "textStyle-bullets",
               },
             ]}
@@ -2674,7 +2614,7 @@ export const actionChangeTextAlign = register<TextAlign>({
       ),
       appState: {
         ...appState,
-        currentItemTextAlign: value,
+        currentItemTextAlign: DEFAULT_NEW_TEXT_ALIGN,
       },
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     };
@@ -2728,8 +2668,7 @@ export const actionChangeTextAlign = register<TextAlign>({
               (element) =>
                 isTextElement(element) ||
                 getBoundTextElement(element, elementsMap) !== null,
-              (hasSelection) =>
-                hasSelection ? null : appState.currentItemTextAlign,
+              (hasSelection) => (hasSelection ? null : DEFAULT_NEW_TEXT_ALIGN),
             )}
             onChange={(value) => {
               withCaretPositionPreservation(

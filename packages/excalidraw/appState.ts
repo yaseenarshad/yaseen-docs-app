@@ -10,10 +10,10 @@ import {
   STATS_PANELS,
   THEME,
   DEFAULT_GRID_STEP,
+  DEFAULT_NEW_TEXT_ALIGN,
   FONT_FAMILY,
   VECTOR_STROKE_WIDTH,
   ROUGHNESS,
-  TEXT_ALIGN,
   isTestEnv,
 } from "@excalidraw/common";
 
@@ -48,7 +48,7 @@ export const getDefaultAppState = (): Omit<
     currentItemStrokeStyle: DEFAULT_ELEMENT_PROPS.strokeStyle,
     currentItemVectorStrokeWidth: VECTOR_STROKE_WIDTH.default,
     currentItemStrokeWidthKey: DEFAULT_ELEMENT_STROKE_WIDTH_KEY,
-    currentItemTextAlign: TEXT_ALIGN.CENTER,
+    currentItemTextAlign: DEFAULT_NEW_TEXT_ALIGN,
     currentHoveredFontFamily: null,
     cursorButton: "up",
     activeEmbeddable: null,

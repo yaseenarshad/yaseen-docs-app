@@ -269,57 +269,6 @@ const LayersFieldset = ({
 );
 
 /**
- * The align + distribute fieldset, identical across every styles-panel layout.
- * Button order is mirrored for RTL so the leftmost button always aligns left.
- */
-const AlignFieldset = ({
-  renderAction,
-  showDistribute,
-}: {
-  renderAction: ActionManager["renderAction"];
-  showDistribute: boolean;
-}) => {
-  const isRTL = document.documentElement.getAttribute("dir") === "rtl";
-
-  return (
-    <fieldset>
-      <legend>{t("labels.align")}</legend>
-      <div className="buttonList">
-        {isRTL ? (
-          <>
-            {renderAction("alignRight")}
-            {renderAction("alignHorizontallyCentered")}
-            {renderAction("alignLeft")}
-          </>
-        ) : (
-          <>
-            {renderAction("alignLeft")}
-            {renderAction("alignHorizontallyCentered")}
-            {renderAction("alignRight")}
-          </>
-        )}
-        {showDistribute && renderAction("distributeHorizontally")}
-        {/* breaks the row ˇˇ */}
-        <div style={{ flexBasis: "100%", height: 0 }} />
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: ".5rem",
-            marginTop: "-0.5rem",
-          }}
-        >
-          {renderAction("alignTop")}
-          {renderAction("alignVerticallyCentered")}
-          {renderAction("alignBottom")}
-          {showDistribute && renderAction("distributeVertically")}
-        </div>
-      </div>
-    </fieldset>
-  );
-};
-
-/**
  * Full styles panel: the wide, always-expanded layout used on desktop when the
  * UI is in "full" mode.
  */
@@ -404,12 +353,6 @@ export const SelectedShapeActions = ({
 
       {predicates.layers && <LayersFieldset renderAction={renderAction} />}
 
-      {predicates.align && (
-        <AlignFieldset
-          renderAction={renderAction}
-          showDistribute={predicates.distribute}
-        />
-      )}
       {predicates.showExtraActions && (
         <fieldset>
           <legend>{t("labels.actions")}</legend>
@@ -694,15 +637,6 @@ export const ContextualPropertiesToolbar = ({
               {renderAction("changeVerticalAlign", { contextToolbar: true })}
             </>
           )}
-          {predicates.align && (
-            <>
-              <ContextualToolbarDivider />
-              <AlignFieldset
-                renderAction={renderAction}
-                showDistribute={predicates.distribute}
-              />
-            </>
-          )}
           <ContextualSecondaryProperties
             renderAction={renderAction}
             showStrokeStyle={targetElements.every((element) =>
@@ -833,8 +767,11 @@ const ContextualSecondaryProperties = ({
             renderAction("changeSloppiness", { contextToolbar: true })}
           {showRoundness &&
             renderAction("changeRoundness", { contextToolbar: true })}
-          {showOpacity &&
-            renderAction("changeOpacity", { contextToolbar: true })}
+          {showOpacity && (
+            <div className="contextual-properties-toolbar__secondary-properties__opacity">
+              {renderAction("changeOpacity", { contextToolbar: true })}
+            </div>
+          )}
         </div>
       </ContextualToolbarPopover>
     </>
@@ -1199,12 +1136,6 @@ const CombinedExtraActions = ({
                 <LayersFieldset renderAction={renderAction} />
               )}
 
-              {predicates.align && (
-                <AlignFieldset
-                  renderAction={renderAction}
-                  showDistribute={predicates.distribute}
-                />
-              )}
               <fieldset>
                 <legend>{t("labels.actions")}</legend>
                 <div className="buttonList">
