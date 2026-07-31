@@ -43,6 +43,7 @@ import {
   isTextElement,
   LinearElementEditor,
   getActiveTextElement,
+  getFreeTextInteractionCoords,
   getElementsInGroup,
   getSelectedGroupIds,
   getSmartShapeMetadata,
@@ -1870,11 +1871,10 @@ const _renderInteractiveScene = ({
         }
 
         if (selectionColors.length) {
-          const [x1, y1, x2, y2, cx, cy] = getElementAbsoluteCoords(
-            element,
-            elementsMap,
-            true,
-          );
+          const [x1, y1, x2, y2, cx, cy] =
+            (isTextElement(element)
+              ? getFreeTextInteractionCoords(element)
+              : null) ?? getElementAbsoluteCoords(element, elementsMap, true);
           selections.push({
             angle: element.angle,
             x1,

@@ -580,6 +580,28 @@ describe("arrow element", () => {
 });
 
 describe("text element", () => {
+  it("does not jump when resizing starts from a glyph-hugging handle", async () => {
+    const text = UI.createElement("text");
+    await UI.editText(text, "hello");
+    const initial = {
+      x: text.x,
+      y: text.y,
+      width: text.width,
+      height: text.height,
+      fontSize: text.fontSize,
+    };
+
+    UI.resize(text, "se", [1, 1]);
+
+    expect(text.x).toBeCloseTo(initial.x);
+    expect(text.y).toBeCloseTo(initial.y);
+    expect(text.width - initial.width).toBeGreaterThan(0);
+    expect(text.height - initial.height).toBeGreaterThan(0);
+    expect(text.width - initial.width).toBeLessThan(3);
+    expect(text.height - initial.height).toBeLessThan(3);
+    expect(text.fontSize - initial.fontSize).toBeLessThan(1);
+  });
+
   it("resizes", async () => {
     const text = UI.createElement("text");
     await UI.editText(text, "hello\nworld");

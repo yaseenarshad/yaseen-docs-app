@@ -14,11 +14,13 @@ import type {
 import type { Bounds } from "@excalidraw/common";
 
 import { getElementAbsoluteCoords } from "./bounds";
+import { getFreeTextInteractionCoords } from "./textElement";
 import {
   isElbowArrow,
   isFrameLikeElement,
   isImageElement,
   isLinearElement,
+  isTextElement,
 } from "./typeChecks";
 
 import type {
@@ -315,7 +317,8 @@ export const getTransformHandles = (
     ? 0
     : DEFAULT_TRANSFORM_HANDLE_SPACING;
   return getTransformHandlesFromCoords(
-    getElementAbsoluteCoords(element, elementsMap, true),
+    (isTextElement(element) ? getFreeTextInteractionCoords(element) : null) ??
+      getElementAbsoluteCoords(element, elementsMap, true),
     element.angle,
     zoom,
     pointerType,

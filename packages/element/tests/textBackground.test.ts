@@ -1,9 +1,118 @@
 import { ROUNDNESS } from "@excalidraw/common";
+import { pointFrom, type GlobalPoint } from "@excalidraw/math";
 import { API } from "@excalidraw/excalidraw/tests/helpers/api";
 
-import { getTextBackgroundGeometry } from "../src/textElement";
+import {
+  getFreeTextInteractionCoords,
+  getFreeTextInteractionGeometry,
+  getTextBackgroundGeometry,
+  isPointInFreeTextInteractionBounds,
+} from "../src/textElement";
 
 describe("native text background geometry", () => {
+  it("adds 0.04em padding around measured glyph interaction bounds", () => {
+    const text = API.createElement({
+      type: "text",
+      width: 120,
+      height: 75,
+      fontSize: 60,
+      backgroundColor: "#111111",
+    });
+    const measuredGlyphs = { x: 8, y: 14, width: 96, height: 42 };
+    const interactionGeometry = getFreeTextInteractionGeometry(
+      text,
+      measuredGlyphs,
+    )!;
+
+    expect(interactionGeometry.x).toBeCloseTo(5.6);
+    expect(interactionGeometry.y).toBeCloseTo(11.6);
+    expect(interactionGeometry.width).toBeCloseTo(100.8);
+    expect(interactionGeometry.height).toBeCloseTo(46.8);
+    expect(interactionGeometry).not.toEqual({
+      x: 0,
+      y: 0,
+      width: text.width,
+      height: text.height,
+    });
+  });
+
+  it("uses glyph-hugging interaction bounds for transparent free text", () => {
+    const text = API.createElement({
+      type: "text",
+      width: 120,
+      height: 75,
+      fontSize: 60,
+      backgroundColor: "transparent",
+    });
+    const measuredGlyphs = { x: 8, y: 14, width: 96, height: 42 };
+
+    expect(getFreeTextInteractionGeometry(text, measuredGlyphs)).toEqual({
+      x: 5.6,
+      y: 11.6,
+      width: 100.8,
+      height: 46.8,
+    });
+  });
+
+  it("positions the glyph-hugging interaction box in scene coordinates", () => {
+    const text = API.createElement({
+      type: "text",
+      x: 100,
+      y: 200,
+      width: 120,
+      height: 75,
+      fontSize: 60,
+      backgroundColor: "#111111",
+    });
+    const measuredGlyphs = { x: 8, y: 14, width: 96, height: 42 };
+    const coords = getFreeTextInteractionCoords(text, measuredGlyphs)!;
+    expect(coords[0]).toBeCloseTo(text.x + 5.6);
+    expect(coords[1]).toBeCloseTo(text.y + 11.6);
+    expect(coords[2]).toBeCloseTo(text.x + 106.4);
+    expect(coords[3]).toBeCloseTo(text.y + 58.4);
+    expect(coords[4]).toBeCloseTo(text.x + 56);
+    expect(coords[5]).toBeCloseTo(text.y + 35);
+  });
+
+  it("hit-tests only the glyph-hugging free-text interaction box", () => {
+    const text = API.createElement({
+      type: "text",
+      x: 100,
+      y: 200,
+      width: 120,
+      height: 75,
+      fontSize: 60,
+      backgroundColor: "transparent",
+    });
+    const measuredGlyphs = { x: 8, y: 14, width: 96, height: 42 };
+    expect(
+      isPointInFreeTextInteractionBounds(
+        text,
+        pointFrom<GlobalPoint>(156, 235),
+        0,
+        measuredGlyphs,
+      ),
+    ).toBe(true);
+    expect(
+      isPointInFreeTextInteractionBounds(
+        text,
+        pointFrom<GlobalPoint>(156, 270),
+        0,
+        measuredGlyphs,
+      ),
+    ).toBe(false);
+  });
+
+  it("preserves existing interaction geometry for shape-bound text", () => {
+    const text = API.createElement({
+      type: "text",
+      containerId: "container",
+      backgroundColor: "transparent",
+    });
+
+    expect(getFreeTextInteractionGeometry(text)).toBeNull();
+  });
+
   it("adds scale-aware symmetric padding and uses it for the radius", () => {
     const text = {
       ...API.createElement({

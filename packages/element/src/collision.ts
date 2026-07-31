@@ -53,7 +53,10 @@ import {
   deconstructRectanguloidElement,
 } from "./utils";
 
-import { getBoundTextElement } from "./textElement";
+import {
+  getBoundTextElement,
+  isPointInFreeTextInteractionBounds,
+} from "./textElement";
 
 import { LinearElementEditor } from "./linearElementEditor";
 
@@ -251,14 +254,19 @@ export const hitElementItself = ({
       )
     : false;
 
-  // Hit test against the extended, rotated bounding box of the element first
-  const bounds = getElementBounds(element, elementsMap, true);
-  const hitBounds = isPointInRotatedBounds(
-    point,
-    bounds,
-    element.angle,
-    threshold,
-  );
+  const freeTextHit = isTextElement(element)
+    ? isPointInFreeTextInteractionBounds(element, point, threshold)
+    : null;
+
+  // Hit test against the extended, rotated interaction box first.
+  const hitBounds =
+    freeTextHit ??
+    isPointInRotatedBounds(
+      point,
+      getElementBounds(element, elementsMap, true),
+      element.angle,
+      threshold,
+    );
 
   // PERF: Bail out early if the point is not even in the
   // rotated bounding box or not hitting the frame name (saves 99%)
@@ -267,18 +275,20 @@ export const hitElementItself = ({
   }
 
   // Do the precise (and relatively costly) hit test
-  const hitElement = (
-    insideHitPolicy === "selection"
-      ? shouldTestInsideForSelection(element, elementsMap)
-      : overrideShouldTestInside
-      ? true
-      : shouldTestInside(element)
-  )
-    ? // Since `inShape` tests STRICTLY againt the insides of a shape
-      // we would need `onShape` as well to include the "borders"
-      isPointInElement(point, element, elementsMap) ||
-      isPointOnElementOutline(point, element, elementsMap, threshold)
-    : isPointOnElementOutline(point, element, elementsMap, threshold);
+  const hitElement =
+    freeTextHit ??
+    ((
+      insideHitPolicy === "selection"
+        ? shouldTestInsideForSelection(element, elementsMap)
+        : overrideShouldTestInside
+        ? true
+        : shouldTestInside(element)
+    )
+      ? // Since `inShape` tests STRICTLY againt the insides of a shape
+        // we would need `onShape` as well to include the "borders"
+        isPointInElement(point, element, elementsMap) ||
+        isPointOnElementOutline(point, element, elementsMap, threshold)
+      : isPointOnElementOutline(point, element, elementsMap, threshold));
 
   const result = hitElement || hitFrameName;
 

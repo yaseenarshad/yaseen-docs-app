@@ -14,7 +14,13 @@ import {
   invariant,
 } from "@excalidraw/common";
 
-import { pointFrom, pointRotateRads, type Radians } from "@excalidraw/math";
+import {
+  isPointWithinBounds,
+  pointFrom,
+  pointRotateRads,
+  type GlobalPoint,
+  type Radians,
+} from "@excalidraw/math";
 
 import type { ExtractSetType } from "@excalidraw/common/utility-types";
 
@@ -58,6 +64,7 @@ type TextVisualBounds = {
 };
 
 const TEXT_BACKGROUND_RADIUS_BASE_FONT_SIZE = 130;
+const TEXT_INTERACTION_PADDING_RATIO = 0.04;
 
 export const getScaledTextRoundness = (
   element: ExcalidrawTextElement,
@@ -202,6 +209,97 @@ const getTextVisualBounds = (
     width: right - left,
     height: bottom - top,
   };
+};
+
+export const getFreeTextInteractionGeometry = (
+  element: ExcalidrawTextElement,
+  measuredVisualBounds?: TextVisualBounds,
+): TextVisualBounds | null => {
+  if (element.containerId !== null) {
+    return null;
+  }
+
+  const visualBounds = measuredVisualBounds ?? getTextVisualBounds(element);
+  if (!visualBounds) {
+    return {
+      x: 0,
+      y: 0,
+      width: element.width,
+      height: element.height,
+    };
+  }
+
+  const padding = element.fontSize * TEXT_INTERACTION_PADDING_RATIO;
+
+  return {
+    x: visualBounds.x - padding,
+    y: visualBounds.y - padding,
+    width: visualBounds.width + padding * 2,
+    height: visualBounds.height + padding * 2,
+  };
+};
+
+export const getFreeTextInteractionCoords = (
+  element: ExcalidrawTextElement,
+  measuredVisualBounds?: TextVisualBounds,
+): [number, number, number, number, number, number] | null => {
+  const visualBounds = getFreeTextInteractionGeometry(
+    element,
+    measuredVisualBounds,
+  );
+  if (!visualBounds) {
+    return null;
+  }
+
+  const elementCenter = pointFrom(
+    element.x + element.width / 2,
+    element.y + element.height / 2,
+  );
+  const visualCenter = pointRotateRads(
+    pointFrom(
+      element.x + visualBounds.x + visualBounds.width / 2,
+      element.y + visualBounds.y + visualBounds.height / 2,
+    ),
+    elementCenter,
+    element.angle,
+  );
+
+  return [
+    visualCenter[0] - visualBounds.width / 2,
+    visualCenter[1] - visualBounds.height / 2,
+    visualCenter[0] + visualBounds.width / 2,
+    visualCenter[1] + visualBounds.height / 2,
+    visualCenter[0],
+    visualCenter[1],
+  ];
+};
+
+export const isPointInFreeTextInteractionBounds = (
+  element: ExcalidrawTextElement,
+  point: GlobalPoint,
+  threshold = 0,
+  measuredVisualBounds?: TextVisualBounds,
+): boolean | null => {
+  const coords = getFreeTextInteractionCoords(element, measuredVisualBounds);
+  if (!coords) {
+    return null;
+  }
+
+  const [x1, y1, x2, y2, cx, cy] = coords;
+  const adjustedPoint =
+    element.angle === 0
+      ? point
+      : pointRotateRads(
+          point,
+          pointFrom<GlobalPoint>(cx, cy),
+          -element.angle as Radians,
+        );
+
+  return isPointWithinBounds(
+    pointFrom<GlobalPoint>(x1 - threshold, y1 - threshold),
+    adjustedPoint,
+    pointFrom<GlobalPoint>(x2 + threshold, y2 + threshold),
+  );
 };
 
 export const getTextBackgroundGeometry = (
