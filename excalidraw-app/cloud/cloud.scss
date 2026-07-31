@@ -57,6 +57,7 @@
   background: transparent;
   border: 0;
   border-bottom: 2px solid var(--color-primary);
+  box-sizing: border-box;
   color: inherit;
   cursor: text;
   font-size: 12px;
@@ -77,6 +78,7 @@
   background: transparent;
   border: 0;
   border-bottom: 2px solid var(--color-primary);
+  box-sizing: border-box;
   color: var(--text-primary-color);
   font: inherit;
   font-size: 12px;
