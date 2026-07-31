@@ -81,14 +81,17 @@ describe("element locking", () => {
       expect(hachureFillButton).toBe(null);
     });
 
-    it("should show horizontal text align for text tool", () => {
+    it("should show Center as the no-selection text alignment", () => {
       UI.clickTool("text");
 
       API.setAppState({
         currentItemTextAlign: "right",
       });
 
-      const centerTextAlign = queryByTestId(document.body, `align-right`);
+      const centerTextAlign = queryByTestId(
+        document.body,
+        `align-horizontal-center`,
+      );
       expect(centerTextAlign).toBeChecked();
     });
 
@@ -399,6 +402,12 @@ describe("element locking", () => {
       expect(API.getSelectedElements()[0]).toMatchObject({
         textAlign: "center",
       });
+
+      fireEvent.click(queryByTestId(document.body, "align-right")!);
+      expect(API.getSelectedElements()[0]).toMatchObject({
+        textAlign: "right",
+      });
+      expect(window.h.state.currentItemTextAlign).toBe("center");
     });
 
     it("should consolidate exclusive desktop text controls into the contextual toolbar", () => {

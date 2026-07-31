@@ -15,6 +15,7 @@ import {
   ARROW_TYPE,
   DEFAULT_FONT_FAMILY,
   DEFAULT_FONT_SIZE,
+  DEFAULT_NEW_TEXT_ALIGN,
   FONT_FAMILY,
   ROUNDNESS,
   STROKE_WIDTH_KEYS,
@@ -2551,7 +2552,7 @@ export const actionChangeTextAlign = register<TextAlign>({
       ),
       appState: {
         ...appState,
-        currentItemTextAlign: value,
+        currentItemTextAlign: DEFAULT_NEW_TEXT_ALIGN,
       },
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     };
@@ -2605,8 +2606,7 @@ export const actionChangeTextAlign = register<TextAlign>({
               (element) =>
                 isTextElement(element) ||
                 getBoundTextElement(element, elementsMap) !== null,
-              (hasSelection) =>
-                hasSelection ? null : appState.currentItemTextAlign,
+              (hasSelection) => (hasSelection ? null : DEFAULT_NEW_TEXT_ALIGN),
             )}
             onChange={(value) => {
               withCaretPositionPreservation(

@@ -87,7 +87,7 @@ describe("direct T text entry", () => {
     expect(h.state.currentItemFontSize).toBe(28);
   });
 
-  it("honors a later explicit alignment choice for new free text", async () => {
+  it("centers new free text despite a stale alignment preference", async () => {
     API.setAppState({ currentItemTextAlign: "right" });
     mouse.moveTo(300, 240);
 
@@ -96,10 +96,23 @@ describe("direct T text entry", () => {
     await getTextEditor();
     expect(h.state.editingTextElement).toMatchObject({
       type: "text",
-      textAlign: "right",
+      textAlign: "center",
       containerId: null,
     });
     expect(h.state.currentItemTextAlign).toBe("right");
+  });
+
+  it("centers blank-canvas double-click text", async () => {
+    API.setAppState({ currentItemTextAlign: "left" });
+
+    mouse.doubleClickAt(260, 180);
+
+    await getTextEditor();
+    expect(h.state.editingTextElement).toMatchObject({
+      type: "text",
+      textAlign: "center",
+      containerId: null,
+    });
   });
 
   it("keeps container-bound text on the persistent size path", async () => {

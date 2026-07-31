@@ -4,8 +4,8 @@ import {
 } from "@excalidraw/excalidraw/appState";
 import {
   DEFAULT_FONT_FAMILY,
+  DEFAULT_NEW_TEXT_ALIGN,
   FONT_FAMILY,
-  TEXT_ALIGN,
 } from "@excalidraw/common";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
@@ -17,8 +17,6 @@ const ASSISTANT_DEFAULT_FONT_MIGRATION_KEY =
   "yaseen-excalidraw-assistant-default-font-v1";
 const ARCHITECT_DEFAULT_ROUGHNESS_MIGRATION_KEY =
   "yaseen-whiteboard-architect-default-roughness-v1";
-const CENTER_TEXT_ALIGN_MIGRATION_KEY =
-  "yaseen-whiteboard-center-text-align-v1";
 
 export const saveUsernameToLocalStorage = (username: string) => {
   try {
@@ -50,7 +48,6 @@ export const importFromLocalStorage = () => {
   let savedElements = null;
   let savedState = null;
   let shouldMigrateRoughness = false;
-  let shouldMigrateTextAlign = false;
 
   try {
     savedElements = localStorage.getItem(STORAGE_KEYS.LOCAL_STORAGE_ELEMENTS);
@@ -60,12 +57,6 @@ export const importFromLocalStorage = () => {
     );
     if (shouldMigrateRoughness) {
       localStorage.setItem(ARCHITECT_DEFAULT_ROUGHNESS_MIGRATION_KEY, "1");
-    }
-    shouldMigrateTextAlign = !localStorage.getItem(
-      CENTER_TEXT_ALIGN_MIGRATION_KEY,
-    );
-    if (shouldMigrateTextAlign) {
-      localStorage.setItem(CENTER_TEXT_ALIGN_MIGRATION_KEY, "1");
     }
   } catch (error: any) {
     // Unable to access localStorage
@@ -102,26 +93,13 @@ export const importFromLocalStorage = () => {
       ) {
         delete parsedState.currentItemRoughness;
       }
-      if (
-        parsedState.currentItemTextAlign !== TEXT_ALIGN.LEFT &&
-        parsedState.currentItemTextAlign !== TEXT_ALIGN.CENTER &&
-        parsedState.currentItemTextAlign !== TEXT_ALIGN.RIGHT
-      ) {
-        delete parsedState.currentItemTextAlign;
-      }
+      parsedState.currentItemTextAlign = DEFAULT_NEW_TEXT_ALIGN;
       if (
         shouldMigrateRoughness &&
         (parsedState.currentItemRoughness === undefined ||
           parsedState.currentItemRoughness === 1)
       ) {
         parsedState.currentItemRoughness = 0;
-      }
-      if (
-        shouldMigrateTextAlign &&
-        (parsedState.currentItemTextAlign === undefined ||
-          parsedState.currentItemTextAlign === TEXT_ALIGN.LEFT)
-      ) {
-        parsedState.currentItemTextAlign = TEXT_ALIGN.CENTER;
       }
       if (!localStorage.getItem(ASSISTANT_DEFAULT_FONT_MIGRATION_KEY)) {
         if (parsedState.currentItemFontFamily === DEFAULT_FONT_FAMILY) {

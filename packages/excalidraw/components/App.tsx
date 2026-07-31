@@ -56,7 +56,7 @@ import {
   TOOL_TYPE,
   supportsResizeObserver,
   DEFAULT_COLLISION_THRESHOLD,
-  DEFAULT_TEXT_ALIGN,
+  DEFAULT_NEW_TEXT_ALIGN,
   ARROW_TYPE,
   DEFAULT_REDUCED_GLOBAL_ALPHA,
   isLocalLink,
@@ -4923,7 +4923,7 @@ class App extends React.Component<AppProps, AppState> {
       text,
       fontSize: this.state.currentItemFontSize,
       fontFamily: this.state.currentItemFontFamily,
-      textAlign: DEFAULT_TEXT_ALIGN,
+      textAlign: DEFAULT_NEW_TEXT_ALIGN,
       verticalAlign: DEFAULT_VERTICAL_ALIGN,
       locked: false,
     };
@@ -4959,12 +4959,11 @@ class App extends React.Component<AppProps, AppState> {
             ? measureText(text, fontString, lineHeight)
             : metrics;
 
-          const startX = x - metrics.width / 2;
           const startY = currentY - metrics.height / 2;
 
           const element = newTextElement({
             ...textElementProps,
-            x: startX,
+            x,
             y: startY,
             text,
             originalText,
@@ -7092,7 +7091,7 @@ class App extends React.Component<AppProps, AppState> {
         fontFamily,
         textAlign:
           arrowEndpointBinding?.textAlign ??
-          (parentCenterPosition ? "center" : this.state.currentItemTextAlign),
+          (parentCenterPosition ? "center" : DEFAULT_NEW_TEXT_ALIGN),
         verticalAlign:
           arrowEndpointBinding?.verticalAlign ??
           (parentCenterPosition

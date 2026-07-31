@@ -112,7 +112,7 @@ describe("Center text alignment migration", () => {
     expect(getDefaultAppState().currentItemTextAlign).toBe("center");
   });
 
-  it("migrates the legacy Left default exactly once", () => {
+  it("normalizes a stale Left preference on every import", () => {
     localStorage.setItem(
       STORAGE_KEYS.LOCAL_STORAGE_APP_STATE,
       JSON.stringify({ currentItemTextAlign: "left" }),
@@ -126,11 +126,11 @@ describe("Center text alignment migration", () => {
       JSON.stringify({ currentItemTextAlign: "left" }),
     );
     expect(importFromLocalStorage().appState?.currentItemTextAlign).toBe(
-      "left",
+      "center",
     );
   });
 
-  it("marks a clean browser migrated so a later Left choice persists", () => {
+  it("normalizes a stale Left preference after a clean import", () => {
     expect(importFromLocalStorage().appState).toBeNull();
 
     localStorage.setItem(
@@ -138,22 +138,30 @@ describe("Center text alignment migration", () => {
       JSON.stringify({ currentItemTextAlign: "left" }),
     );
     expect(importFromLocalStorage().appState?.currentItemTextAlign).toBe(
-      "left",
+      "center",
     );
   });
 
-  it.each(["center", "right"] as const)(
-    "preserves an explicit saved %s alignment",
-    (textAlign) => {
-      localStorage.setItem(
-        STORAGE_KEYS.LOCAL_STORAGE_APP_STATE,
-        JSON.stringify({ currentItemTextAlign: textAlign }),
-      );
-      expect(importFromLocalStorage().appState?.currentItemTextAlign).toBe(
-        textAlign,
-      );
-    },
-  );
+  it("preserves an explicit saved Center alignment", () => {
+    localStorage.setItem(
+      STORAGE_KEYS.LOCAL_STORAGE_APP_STATE,
+      JSON.stringify({ currentItemTextAlign: "center" }),
+    );
+    expect(importFromLocalStorage().appState?.currentItemTextAlign).toBe(
+      "center",
+    );
+  });
+
+  it("normalizes stale Right even after the legacy migration marker", () => {
+    localStorage.setItem("yaseen-whiteboard-center-text-align-v1", "1");
+    localStorage.setItem(
+      STORAGE_KEYS.LOCAL_STORAGE_APP_STATE,
+      JSON.stringify({ currentItemTextAlign: "right" }),
+    );
+    expect(importFromLocalStorage().appState?.currentItemTextAlign).toBe(
+      "center",
+    );
+  });
 
   it("falls back from malformed alignment without changing saved elements", () => {
     localStorage.setItem(
