@@ -206,6 +206,27 @@ describe("element locking", () => {
       }
     });
 
+    it("should keep freedraw pressure inside the secondary helper", () => {
+      API.setAppState({ currentItemStrokeVariability: "constant" });
+      UI.clickTool("freedraw");
+
+      expect(
+        document.querySelector(
+          '.contextual-properties-toolbar label[title="Variable"] input',
+        ),
+      ).toBeNull();
+
+      togglePopover("More properties");
+
+      const variablePressure = document.querySelector<HTMLInputElement>(
+        '.contextual-properties-toolbar__popover label[title="Variable"] input',
+      );
+      expect(variablePressure).not.toBeNull();
+
+      fireEvent.click(variablePressure!);
+      expect(window.h.state.currentItemStrokeVariability).toBe("variable");
+    });
+
     it.each(["rectangle", "ellipse", "diamond"] as const)(
       "should carry the shared exact width into the %s tool",
       (tool) => {

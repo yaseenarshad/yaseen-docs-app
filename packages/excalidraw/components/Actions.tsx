@@ -581,12 +581,6 @@ export const ContextualPropertiesToolbar = ({
               {renderAction("changeStrokeWidth", { contextToolbar: true })}
             </>
           )}
-          {predicates.freedrawMode && (
-            <>
-              <ContextualToolbarDivider />
-              {renderAction("changeFreedrawMode", { contextToolbar: true })}
-            </>
-          )}
           {predicates.arrowType && (
             <>
               <ContextualToolbarDivider />
@@ -624,6 +618,7 @@ export const ContextualPropertiesToolbar = ({
           )}
           <ContextualSecondaryProperties
             renderAction={renderAction}
+            showFreedrawMode={predicates.freedrawMode}
             showStrokeStyle={predicates.strokeStyle}
             showSloppiness={predicates.sloppiness}
             showRoundness={predicates.roundness}
@@ -788,18 +783,26 @@ export const ContextualToolbarPopover = ({
 
 const ContextualSecondaryProperties = ({
   renderAction,
+  showFreedrawMode = false,
   showStrokeStyle = false,
   showSloppiness = false,
   showRoundness = false,
   showOpacity = false,
 }: {
   renderAction: ActionManager["renderAction"];
+  showFreedrawMode?: boolean;
   showStrokeStyle?: boolean;
   showSloppiness?: boolean;
   showRoundness?: boolean;
   showOpacity?: boolean;
 }) => {
-  if (!showStrokeStyle && !showSloppiness && !showRoundness && !showOpacity) {
+  if (
+    !showFreedrawMode &&
+    !showStrokeStyle &&
+    !showSloppiness &&
+    !showRoundness &&
+    !showOpacity
+  ) {
     return null;
   }
 
@@ -811,6 +814,8 @@ const ContextualSecondaryProperties = ({
         icon={DotsHorizontalIcon}
       >
         <div className="contextual-properties-toolbar__secondary-properties">
+          {showFreedrawMode &&
+            renderAction("changeFreedrawMode", { contextToolbar: true })}
           {showStrokeStyle &&
             renderAction("changeStrokeStyle", { contextToolbar: true })}
           {showSloppiness &&

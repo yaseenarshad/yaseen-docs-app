@@ -7,7 +7,7 @@ import { Excalidraw } from "../index";
 
 import { API } from "./helpers/api";
 import { UI } from "./helpers/ui";
-import { act, fireEvent, render, screen } from "./test-utils";
+import { act, fireEvent, render, screen, togglePopover } from "./test-utils";
 
 const { h } = window;
 
@@ -39,6 +39,7 @@ describe("freedraw mode action", () => {
     const element = UI.createElement("freedraw", { x: 0, y: 0 });
     API.setSelectedElements([element.get()] as NonDeletedExcalidrawElement[]);
 
+    togglePopover("More properties");
     fireEvent.click(screen.getByTitle("Variable"));
     expect(
       (h.elements[0] as ExcalidrawFreeDrawElement).strokeOptions?.variability,
