@@ -166,6 +166,8 @@ export const useCloudBoard = () => {
     if (previewTimerRef.current !== null) {
       window.clearTimeout(previewTimerRef.current);
       previewTimerRef.current = null;
+      document.documentElement.dataset.boardPreviewDebug =
+        "cancelled-by-route-change";
     }
     setSaveStatus("loading");
     setErrorMessage(null);
@@ -267,6 +269,7 @@ export const useCloudBoard = () => {
       const requestId = ++previewRequestRef.current;
       if (previewTimerRef.current !== null) {
         window.clearTimeout(previewTimerRef.current);
+        document.documentElement.dataset.boardPreviewDebug = `replaced-by-schedule:${request.sourceVersion}`;
       }
       const now = Date.now();
       const lastStartedAt =
@@ -438,6 +441,9 @@ export const useCloudBoard = () => {
       }
       if (previewTimerRef.current !== null) {
         window.clearTimeout(previewTimerRef.current);
+        document.documentElement.dataset.boardPreviewDebug = `cancelled-by-queue:${
+          previewScene ? "with-preview" : "without-preview"
+        }`;
       }
       previewRequestRef.current += 1;
       saveTimerRef.current = window.setTimeout(() => {
@@ -472,6 +478,8 @@ export const useCloudBoard = () => {
       }
       if (previewTimerRef.current !== null) {
         window.clearTimeout(previewTimerRef.current);
+        document.documentElement.dataset.boardPreviewDebug =
+          "cancelled-by-unmount";
       }
       previewRequestRef.current += 1;
     },
