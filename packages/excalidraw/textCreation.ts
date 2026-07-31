@@ -31,3 +31,30 @@ export const getTextBackgroundRadiusForFontSize = (fontSize: number) => {
 
 export const getResponsiveTextBackgroundRadius = (zoom: number) =>
   getTextBackgroundRadiusForFontSize(getResponsiveTextFontSize(zoom));
+
+export const scaleTextBackgroundRadiusForFontSize = (
+  radius: number,
+  previousFontSize: number,
+  nextFontSize: number,
+) => {
+  const safePreviousFontSize =
+    Number.isFinite(previousFontSize) && previousFontSize > 0
+      ? previousFontSize
+      : RESPONSIVE_TEXT_BASE_SIZE;
+  const safeNextFontSize =
+    Number.isFinite(nextFontSize) && nextFontSize > 0
+      ? nextFontSize
+      : safePreviousFontSize;
+  const safeRadius =
+    Number.isFinite(radius) && radius >= 0
+      ? radius
+      : getTextBackgroundRadiusForFontSize(safePreviousFontSize);
+
+  return Math.min(
+    CORNER_RADIUS.max,
+    Math.max(
+      CORNER_RADIUS.min,
+      Math.round((safeRadius * safeNextFontSize) / safePreviousFontSize),
+    ),
+  );
+};

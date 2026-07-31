@@ -16,6 +16,11 @@ import {
   THEME,
 } from "@excalidraw/common";
 
+import type {
+  ExcalidrawTextElement,
+  NonDeleted,
+} from "@excalidraw/element/types";
+
 import { Excalidraw } from "../index";
 import { API } from "../tests/helpers/api";
 import { Keyboard, UI } from "../tests/helpers/ui";
@@ -1096,6 +1101,77 @@ describe("element locking", () => {
       expect(API.getSelectedElement()).toMatchObject({
         backgroundColor,
         roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 48 },
+      });
+    });
+
+    it("should keep free-text background rounding proportional to font size", () => {
+      const text = {
+        ...API.createElement({
+          type: "text",
+          text: "Dynamic rounding",
+          backgroundColor: DEFAULT_ELEMENT_BACKGROUND_PICKS[1],
+          fontSize: 130,
+        }),
+        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 32 },
+      } as NonDeleted<ExcalidrawTextElement>;
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+
+      const fontSizeInput = document.querySelector<HTMLInputElement>(
+        '[aria-label="Exact font size"]',
+      )!;
+
+      fireEvent.change(fontSizeInput, { target: { value: "260" } });
+      fireEvent.blur(fontSizeInput);
+      expect(API.getSelectedElement()).toMatchObject({
+        fontSize: 260,
+        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 64 },
+      });
+
+      fireEvent.change(fontSizeInput, { target: { value: "65" } });
+      fireEvent.blur(fontSizeInput);
+      expect(API.getSelectedElement()).toMatchObject({
+        fontSize: 65,
+        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+      });
+    });
+
+    it("should clear selected text colors with Cmd-or-Ctrl+backslash", () => {
+      const text = {
+        ...API.createElement({
+          type: "text",
+          text: "Clear colors only",
+          strokeColor: "#ff0000",
+          backgroundColor: "#ffff00",
+          fontSize: 65,
+        }),
+        fontWeight: "bold",
+        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+      } as NonDeleted<ExcalidrawTextElement>;
+      const rectangle = API.createElement({
+        type: "rectangle",
+        strokeColor: "#00ff00",
+        backgroundColor: "#0000ff",
+      });
+      API.setElements([text, rectangle]);
+      API.setSelectedElements([text, rectangle]);
+
+      fireEvent.keyDown(document, {
+        key: "\\",
+        code: "Backslash",
+        [KEYS.CTRL_OR_CMD]: true,
+      });
+
+      expect(window.h.app.scene.getElement(text.id)).toMatchObject({
+        strokeColor: COLOR_PALETTE.black,
+        backgroundColor: COLOR_PALETTE.transparent,
+        roundness: null,
+        fontSize: 65,
+        fontWeight: "bold",
+      });
+      expect(window.h.app.scene.getElement(rectangle.id)).toMatchObject({
+        strokeColor: "#00ff00",
+        backgroundColor: "#0000ff",
       });
     });
 

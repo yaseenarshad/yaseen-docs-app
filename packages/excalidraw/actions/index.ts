@@ -11,6 +11,7 @@ export {
   actionChangeStrokeColor,
   actionChangeBackgroundColor,
   actionApplySelectedSemanticColor,
+  actionClearSelectedTextFormatting,
   actionChangeStrokeWidth,
   actionChangeVectorStrokeWidth,
   actionChangeLinearStrokeWidth,

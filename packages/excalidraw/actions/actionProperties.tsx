@@ -112,7 +112,10 @@ import type { ElementUpdate, Scene } from "@excalidraw/element";
 import type { CaptureUpdateActionType } from "@excalidraw/element";
 
 import { trackEvent } from "../analytics";
-import { getTextBackgroundRadiusForFontSize } from "../textCreation";
+import {
+  getTextBackgroundRadiusForFontSize,
+  scaleTextBackgroundRadiusForFontSize,
+} from "../textCreation";
 import {
   getTextListMode,
   setTextListMode,
@@ -318,6 +321,19 @@ export const changeFontSize = (
 
         let newElement: ExcalidrawTextElement = newElementWith(oldElement, {
           fontSize: newFontSize,
+          roundness:
+            oldElement.containerId === null &&
+            oldElement.roundness?.type === ROUNDNESS.ADAPTIVE_RADIUS
+              ? {
+                  ...oldElement.roundness,
+                  value: scaleTextBackgroundRadiusForFontSize(
+                    oldElement.roundness.value ??
+                      getTextBackgroundRadiusForFontSize(oldElement.fontSize),
+                    oldElement.fontSize,
+                    newFontSize,
+                  ),
+                }
+              : oldElement.roundness,
         });
         redrawTextBoundingBox(
           newElement,
@@ -552,6 +568,42 @@ export const actionApplySelectedSemanticColor = register<{
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     };
   },
+});
+
+export const actionClearSelectedTextFormatting = register({
+  name: "clearSelectedTextFormatting",
+  label: "Clear selected text colors",
+  trackEvent: false,
+  perform: (elements, appState) => {
+    const updatedElements = changeProperty(
+      elements,
+      appState,
+      (element) =>
+        isTextElement(element)
+          ? newElementWith(element, {
+              strokeColor: COLOR_PALETTE.black,
+              backgroundColor: COLOR_PALETTE.transparent,
+              roundness: null,
+            })
+          : element,
+      true,
+    );
+
+    return {
+      elements: updatedElements,
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    };
+  },
+  keyPriority: 100,
+  keyTest: (event, appState, elements) =>
+    event[KEYS.CTRL_OR_CMD] &&
+    !event.altKey &&
+    !event.shiftKey &&
+    event.key === "\\" &&
+    (isTextElement(appState.editingTextElement) ||
+      getSelectedElements(elements, appState, {
+        includeBoundTextElement: true,
+      }).some(isTextElement)),
 });
 
 export const actionChangeBackgroundColor = register<

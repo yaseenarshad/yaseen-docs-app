@@ -2,6 +2,7 @@ import {
   getResponsiveTextBackgroundRadius,
   getResponsiveTextFontSize,
   getTextBackgroundRadiusForFontSize,
+  scaleTextBackgroundRadiusForFontSize,
 } from "../textCreation";
 
 describe("getResponsiveTextFontSize", () => {
@@ -52,5 +53,13 @@ describe("responsive text-background radius", () => {
     expect(getTextBackgroundRadiusForFontSize(130)).toBe(32);
     expect(getTextBackgroundRadiusForFontSize(440)).toBe(100);
     expect(getTextBackgroundRadiusForFontSize(Number.NaN)).toBe(32);
+  });
+
+  it("keeps custom text-background rounding proportional as font px changes", () => {
+    expect(scaleTextBackgroundRadiusForFontSize(32, 130, 260)).toBe(64);
+    expect(scaleTextBackgroundRadiusForFontSize(64, 260, 65)).toBe(16);
+    expect(scaleTextBackgroundRadiusForFontSize(48, 130, 65)).toBe(24);
+    expect(scaleTextBackgroundRadiusForFontSize(84, 341, 682)).toBe(100);
+    expect(scaleTextBackgroundRadiusForFontSize(0, 130, 260)).toBe(0);
   });
 });
