@@ -37,11 +37,11 @@ import {
 } from "@excalidraw/common";
 
 import {
-  areSelectedLinesUnderlined,
+  areSelectedLinesStyled,
   canBecomePolygon,
   getNonDeletedElements,
   isNonDeletedElement,
-  toggleSelectedLineUnderlines,
+  toggleSelectedLineStyles,
 } from "@excalidraw/element";
 
 import {
@@ -1414,6 +1414,7 @@ const ExactFontSizeInput = ({
 type TextStyleChange =
   | { property: "fontWeight"; enabled: boolean }
   | { property: "textDecoration"; enabled: boolean }
+  | { property: "strikethrough"; enabled: boolean }
   | { property: "bulletList"; enabled: boolean };
 
 const BULLET_PREFIX = "• ";
@@ -1520,29 +1521,44 @@ const getTextStyle = (
   if (!textElement) {
     return false;
   }
-  if (property === "fontWeight") {
-    return textElement.fontWeight === "bold";
-  }
-  if (property === "textDecoration") {
-    const editable =
-      app.state.editingTextElement?.id === textElement.id
-        ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
-        : null;
-    return editable
-      ? areSelectedLinesUnderlined({
-          text: editable.value,
-          lineUnderlines: textElement.lineUnderlines,
-          selectionStart: editable.selectionStart,
-          selectionEnd: editable.selectionEnd,
-          wholeElementUnderlined: textElement.textDecoration === "underline",
-        })
-      : textElement.textDecoration === "underline";
-  }
-
   const editable =
     app.state.editingTextElement?.id === textElement.id
       ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
       : null;
+  if (property === "fontWeight") {
+    return editable
+      ? areSelectedLinesStyled({
+          text: editable.value,
+          lineStyles: textElement.lineBolds,
+          selectionStart: editable.selectionStart,
+          selectionEnd: editable.selectionEnd,
+          wholeElementStyled: textElement.fontWeight === "bold",
+        })
+      : textElement.fontWeight === "bold";
+  }
+  if (property === "textDecoration") {
+    return editable
+      ? areSelectedLinesStyled({
+          text: editable.value,
+          lineStyles: textElement.lineUnderlines,
+          selectionStart: editable.selectionStart,
+          selectionEnd: editable.selectionEnd,
+          wholeElementStyled: textElement.textDecoration === "underline",
+        })
+      : textElement.textDecoration === "underline";
+  }
+  if (property === "strikethrough") {
+    return editable
+      ? areSelectedLinesStyled({
+          text: editable.value,
+          lineStyles: textElement.lineStrikethroughs,
+          selectionStart: editable.selectionStart,
+          selectionEnd: editable.selectionEnd,
+          wholeElementStyled: textElement.strikethrough === true,
+        })
+      : textElement.strikethrough === true;
+  }
+
   return editable
     ? areSelectedTextLinesBulleted(
         editable.value,
@@ -1558,10 +1574,9 @@ const changeTextStyle = (
   value: TextStyleChange,
   app: AppClassProperties,
 ) => {
-  const editable =
-    value.property !== "fontWeight" && appState.editingTextElement
-      ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
-      : null;
+  const editable = appState.editingTextElement
+    ? document.querySelector<HTMLTextAreaElement>(".excalidraw-wysiwyg")
+    : null;
   const editableBullets = editable
     ? value.property === "bulletList"
       ? toggleTextBullets(
@@ -1618,12 +1633,12 @@ const changeTextStyle = (
             element,
             {
               textDecoration: "none",
-              lineUnderlines: toggleSelectedLineUnderlines({
+              lineUnderlines: toggleSelectedLineStyles({
                 text: editable.value,
-                lineUnderlines: element.lineUnderlines,
+                lineStyles: element.lineUnderlines,
                 selectionStart: editable.selectionStart,
                 selectionEnd: editable.selectionEnd,
-                wholeElementUnderlined: element.textDecoration === "underline",
+                wholeElementStyled: element.textDecoration === "underline",
                 enabled: value.enabled,
               }),
             },
@@ -1640,10 +1655,32 @@ const changeTextStyle = (
           true,
         );
       }
-      let nextElement: ExcalidrawTextElement = newElementWith(element, {
-        fontWeight: value.enabled ? "bold" : "normal",
-      });
       if (value.property === "fontWeight") {
+        let nextElement: ExcalidrawTextElement =
+          editable && element.id === appState.editingTextElement?.id
+            ? newElementWith(
+                element,
+                {
+                  fontWeight: "normal",
+                  lineBolds: toggleSelectedLineStyles({
+                    text: editable.value,
+                    lineStyles: element.lineBolds,
+                    selectionStart: editable.selectionStart,
+                    selectionEnd: editable.selectionEnd,
+                    wholeElementStyled: element.fontWeight === "bold",
+                    enabled: value.enabled,
+                  }),
+                },
+                true,
+              )
+            : newElementWith(
+                element,
+                {
+                  fontWeight: value.enabled ? "bold" : "normal",
+                  lineBolds: undefined,
+                },
+                true,
+              );
         redrawTextBoundingBox(
           nextElement,
           app.scene.getContainerElement(element),
@@ -1654,8 +1691,33 @@ const changeTextStyle = (
           nextElement,
           app.scene,
         );
+        return nextElement;
       }
-      return nextElement;
+      if (editable && element.id === appState.editingTextElement?.id) {
+        return newElementWith(
+          element,
+          {
+            strikethrough: false,
+            lineStrikethroughs: toggleSelectedLineStyles({
+              text: editable.value,
+              lineStyles: element.lineStrikethroughs,
+              selectionStart: editable.selectionStart,
+              selectionEnd: editable.selectionEnd,
+              wholeElementStyled: element.strikethrough === true,
+              enabled: value.enabled,
+            }),
+          },
+          true,
+        );
+      }
+      return newElementWith(
+        element,
+        {
+          strikethrough: value.enabled,
+          lineStrikethroughs: undefined,
+        },
+        true,
+      );
     },
     true,
   );
@@ -1667,11 +1729,7 @@ const changeTextStyle = (
       editableBullets.selectionEnd,
     );
     editable.focus();
-  } else if (
-    editable &&
-    editableSelection &&
-    value.property === "textDecoration"
-  ) {
+  } else if (editable && editableSelection && value.property !== "bulletList") {
     editable.setSelectionRange(editableSelection.start, editableSelection.end);
     editable.focus();
     queueMicrotask(() => {
@@ -1717,11 +1775,11 @@ const textStyleShortcutTest = (
   appState: AppState,
   elements: readonly ExcalidrawElement[],
   app: AppClassProperties,
-  code: typeof CODES.B | typeof CODES.U,
+  code: typeof CODES.B | typeof CODES.U | typeof CODES.X,
 ) =>
   event[KEYS.CTRL_OR_CMD] &&
   !event.altKey &&
-  !event.shiftKey &&
+  event.shiftKey === (code === CODES.X) &&
   event.code === code &&
   (!!appState.editingTextElement ||
     getSelectedElements(elements, appState, {
@@ -1754,6 +1812,13 @@ export const actionChangeTextStyle = register<TextStyleChange>({
       elements,
       app,
       (element) => getTextStyle(element, "textDecoration", app),
+      hasTextTarget,
+      false,
+    );
+    const strikethrough = getFormValue(
+      elements,
+      app,
+      (element) => getTextStyle(element, "strikethrough", app),
       hasTextTarget,
       false,
     );
@@ -1811,6 +1876,23 @@ export const actionChangeTextStyle = register<TextStyleChange>({
               },
               {
                 value: {
+                  property: "strikethrough",
+                  enabled: strikethrough !== true,
+                },
+                text: "Strikethrough",
+                icon: (
+                  <span
+                    aria-hidden="true"
+                    style={{ textDecoration: "line-through" }}
+                  >
+                    S
+                  </span>
+                ),
+                active: strikethrough === true,
+                testId: "textStyle-strikethrough",
+              },
+              {
+                value: {
                   property: "bulletList",
                   enabled: bullets !== true,
                 },
@@ -1859,6 +1941,16 @@ export const actionToggleTextUnderline = register({
     toggleTextStyle(elements, appState, "textDecoration", app),
   keyTest: (event, appState, elements, app) =>
     textStyleShortcutTest(event, appState, elements, app, CODES.U),
+});
+
+export const actionToggleTextStrikethrough = register({
+  name: "toggleTextStrikethrough",
+  label: "Strikethrough",
+  trackEvent: false,
+  perform: (elements, appState, _, app) =>
+    toggleTextStyle(elements, appState, "strikethrough", app),
+  keyTest: (event, appState, elements, app) =>
+    textStyleShortcutTest(event, appState, elements, app, CODES.X),
 });
 
 type ChangeLineHeightData = {

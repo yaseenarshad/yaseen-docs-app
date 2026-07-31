@@ -71,6 +71,7 @@ import {
   actionDecreaseFontSize,
   actionIncreaseFontSize,
   actionToggleTextBold,
+  actionToggleTextStrikethrough,
   actionToggleTextUnderline,
 } from "../actions/actionProperties";
 import {
@@ -565,6 +566,7 @@ export const textWysiwyg = ({
   });
   editable.value = element.originalText;
   let previousEditableValue = editable.value;
+  let pendingNewLineStyle: "inherit" | "plain" | null = null;
   updateWysiwygStyle();
 
   const getCaretIndexFromInitialSceneCoords = () => {
@@ -732,9 +734,11 @@ export const textWysiwyg = ({
       ) as ExcalidrawTextElement | null;
       const inputType = (event as InputEvent).inputType;
       const newLineStyle =
-        inputType === "insertLineBreak" || inputType === "insertParagraph"
+        pendingNewLineStyle ??
+        (inputType === "insertLineBreak" || inputType === "insertParagraph"
           ? "plain"
-          : "inherit";
+          : "inherit");
+      pendingNewLineStyle = null;
       const nextLineBolds = remapLineStylesForTextEdit(
         previousEditableValue,
         editable.value,
@@ -815,6 +819,7 @@ export const textWysiwyg = ({
       editable.setSelectionRange(nextCaret, nextCaret);
     }
 
+    pendingNewLineStyle = "plain";
     editable.dispatchEvent(new Event("input"));
     return true;
   };
@@ -846,6 +851,20 @@ export const textWysiwyg = ({
     ) {
       event.preventDefault();
       app.actionManager.executeAction(actionToggleTextBold, "keyboard");
+      updateWysiwygStyle();
+    } else if (
+      actionToggleTextStrikethrough.keyTest(
+        event,
+        app.state,
+        app.scene.getElementsIncludingDeleted(),
+        app,
+      )
+    ) {
+      event.preventDefault();
+      app.actionManager.executeAction(
+        actionToggleTextStrikethrough,
+        "keyboard",
+      );
       updateWysiwygStyle();
     } else if (
       actionToggleTextUnderline.keyTest(

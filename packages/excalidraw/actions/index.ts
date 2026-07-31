@@ -22,6 +22,7 @@ export {
   actionChangeTextStyle,
   actionChangeLineHeight,
   actionToggleTextBold,
+  actionToggleTextStrikethrough,
   actionToggleTextUnderline,
   actionChangeFontFamily,
   actionChangeTextAlign,
