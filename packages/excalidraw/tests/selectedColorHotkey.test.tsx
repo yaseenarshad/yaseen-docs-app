@@ -8,6 +8,7 @@ import {
   DEFAULT_ELEMENT_STROKE_COLOR_INDEX,
   KEYS,
 } from "@excalidraw/common";
+import { newElementWith } from "@excalidraw/element";
 
 import { Excalidraw } from "../index";
 import { SEMANTIC_COLOR_HOTKEYS } from "../components/ColorPicker/colorPickerUtils";
@@ -107,6 +108,53 @@ describe("selected-element semantic color hotkeys", () => {
       Keyboard.keyPress(hotkey.toUpperCase());
 
       expect(h.app.scene.getElement(text.id)?.strokeColor).toBe(expectedColor);
+      expect(h.state.activeTool.type).toBe("selection");
+    },
+  );
+
+  it.each(Object.entries(SEMANTIC_COLOR_HOTKEYS))(
+    "applies the approved selected-image outline %s = %s shortcut",
+    (colorName, hotkey) => {
+      const image = API.createElement({
+        type: "image",
+        strokeColor: "#123456",
+        strokeWidth: 0,
+        strokeStyle: "dashed",
+        x: 40,
+        y: 50,
+        width: 160,
+        height: 90,
+        angle: 0.25,
+        opacity: 35,
+        scale: [-1, 1],
+        groupIds: ["image-group"],
+      });
+      API.setElements([image]);
+      API.setSelectedElements([image]);
+      const paletteValue =
+        COLOR_PALETTE[colorName as keyof typeof COLOR_PALETTE];
+      const expectedColor =
+        typeof paletteValue === "string"
+          ? paletteValue
+          : paletteValue[DEFAULT_ELEMENT_STROKE_COLOR_INDEX];
+
+      Keyboard.keyPress(hotkey.toUpperCase());
+
+      expect(h.app.scene.getElement(image.id)).toMatchObject({
+        strokeColor: expectedColor,
+        strokeWidth: 0,
+        strokeStyle: "dashed",
+        x: 40,
+        y: 50,
+        width: 160,
+        height: 90,
+        angle: 0.25,
+        opacity: 35,
+        scale: [-1, 1],
+        groupIds: ["image-group"],
+      });
+      expect(h.state.selectedElementIds).toEqual({ [image.id]: true });
+      expect(h.state.toast).toBe(null);
       expect(h.state.activeTool.type).toBe("selection");
     },
   );
@@ -363,7 +411,7 @@ describe("selected-element semantic color hotkeys", () => {
     });
   });
 
-  it("updates supported elements while skipping images and embeds", () => {
+  it("updates images and supported elements while skipping embeds", () => {
     const rectangle = API.createElement({
       type: "rectangle",
       backgroundColor: COLOR_PALETTE.transparent,
@@ -379,16 +427,19 @@ describe("selected-element semantic color hotkeys", () => {
     expect(h.app.scene.getElement(rectangle.id)?.backgroundColor).toBe(
       COLOR_PALETTE.green[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
     );
-    [image, iframe, embeddable].forEach((element) => {
+    expect(h.app.scene.getElement(image.id)?.strokeColor).toBe(
+      COLOR_PALETTE.green[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+    );
+    [iframe, embeddable].forEach((element) => {
       expect(h.app.scene.getElement(element.id)).toMatchObject(element);
     });
   });
 
   it("consumes unsupported-only semantic keys and provides feedback", () => {
-    const image = API.createElement({ type: "image" });
     const iframe = API.createElement({ type: "iframe" });
-    API.setElements([image, iframe]);
-    API.setSelectedElements([image, iframe]);
+    const embeddable = API.createElement({ type: "embeddable" });
+    API.setElements([iframe, embeddable]);
+    API.setSelectedElements([iframe, embeddable]);
     const before = h.elements;
 
     Keyboard.keyPress(KEYS.R);
@@ -401,15 +452,29 @@ describe("selected-element semantic color hotkeys", () => {
   });
 
   it("applies a mixed color change as one undoable operation", async () => {
+    const imageTemplate = API.createElement({
+      type: "image",
+      x: 200,
+      strokeWidth: 6.5,
+      fileId: "history-image",
+      status: "saved",
+    });
+    act(() => {
+      h.app.insertElements([
+        newElementWith(imageTemplate, { strokeColor: "#123456" }),
+      ]);
+    });
+    await act(async () => {});
+    const image = h.elements.find((element) => element.type === "image")!;
     const rectangle = UI.createElement("rectangle");
     const text = UI.createElement("text", { position: 100 });
     await UI.editText(text, "History");
     act(() => {
       h.app.setActiveTool({ type: "selection" });
     });
-    API.setSelectedElements([rectangle.get() as any, text.get() as any]);
+    API.setSelectedElements([rectangle.get() as any, text.get() as any, image]);
     const selectedIds = h.state.selectedElementIds;
-    expect(h.app.scene.getSelectedElements(h.state)).toHaveLength(2);
+    expect(h.app.scene.getSelectedElements(h.state)).toHaveLength(3);
     expect(h.state).toMatchObject({
       newElement: null,
       selectionElement: null,
@@ -417,6 +482,10 @@ describe("selected-element semantic color hotkeys", () => {
       isResizing: false,
       isRotating: false,
     });
+    expect(h.app.scene.getElement(image.id)?.strokeColor).toBe("#123456");
+    expect(
+      API.getSnapshot().find((element) => element.id === image.id)?.strokeColor,
+    ).toBe("#123456");
 
     Keyboard.keyPress(KEYS.R);
     await act(async () => {});
@@ -427,6 +496,10 @@ describe("selected-element semantic color hotkeys", () => {
     expect(h.app.scene.getElement(text.id)?.strokeColor).toBe(
       COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
     );
+    expect(h.app.scene.getElement(image.id)).toMatchObject({
+      strokeColor: COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+      strokeWidth: 6.5,
+    });
     expect(h.state.selectedElementIds).toEqual(selectedIds);
 
     Keyboard.undo();
@@ -437,6 +510,10 @@ describe("selected-element semantic color hotkeys", () => {
     expect(h.app.scene.getElement(text.id)?.strokeColor).toBe(
       COLOR_PALETTE.black,
     );
+    expect(h.app.scene.getElement(image.id)).toMatchObject({
+      strokeColor: "#123456",
+      strokeWidth: 6.5,
+    });
 
     Keyboard.redo();
     await act(async () => {});
@@ -446,6 +523,10 @@ describe("selected-element semantic color hotkeys", () => {
     expect(h.app.scene.getElement(text.id)?.strokeColor).toBe(
       COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
     );
+    expect(h.app.scene.getElement(image.id)).toMatchObject({
+      strokeColor: COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+      strokeWidth: 6.5,
+    });
   });
 
   it("keeps unrelated selected-element commands available", () => {

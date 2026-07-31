@@ -433,7 +433,8 @@ const getSemanticColorProperty = (element: ExcalidrawElement) => {
     element.type === "text" ||
     element.type === "line" ||
     element.type === "arrow" ||
-    element.type === "freedraw"
+    element.type === "freedraw" ||
+    element.type === "image"
   ) {
     return "strokeColor" as const;
   }
