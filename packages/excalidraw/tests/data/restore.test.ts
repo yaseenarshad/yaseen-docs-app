@@ -44,7 +44,7 @@ describe("restoreElements", () => {
     expect(restoredElements.length).toBe(elements.length);
   });
 
-  it("normalizes imported text line underlines", () => {
+  it("normalizes imported logical-line text styles", () => {
     const [restored] = restore.restoreElements(
       [
         {
@@ -53,6 +53,9 @@ describe("restoreElements", () => {
             text: "Title\nSubtitle",
           }),
           lineUnderlines: [true, "invalid", true],
+          lineBolds: [false, true, true],
+          lineStrikethroughs: [true, false, true],
+          strikethrough: true,
         } as any,
       ],
       null,
@@ -61,16 +64,22 @@ describe("restoreElements", () => {
     expect(restored).toMatchObject({
       type: "text",
       lineUnderlines: [true],
+      lineBolds: [false, true],
+      lineStrikethroughs: [true],
+      strikethrough: true,
     });
   });
 
-  it("round-trips text line underlines through scene JSON", () => {
+  it("round-trips logical-line text styles through scene JSON", () => {
     const element = {
       ...API.createElement({
         type: "text",
         text: "Title\nSubtitle",
       }),
       lineUnderlines: [true],
+      lineBolds: [false, true],
+      lineStrikethroughs: [true],
+      strikethrough: true,
     } as any;
     const serialized = serializeAsJSON(
       [element],
@@ -81,7 +90,12 @@ describe("restoreElements", () => {
     const parsed = JSON.parse(serialized);
     const [restored] = restore.restoreElements(parsed.elements, null);
 
-    expect(restored).toMatchObject({ lineUnderlines: [true] });
+    expect(restored).toMatchObject({
+      lineUnderlines: [true],
+      lineBolds: [false, true],
+      lineStrikethroughs: [true],
+      strikethrough: true,
+    });
   });
 
   it.each([0.5, 1.5, 3, 7.5, 20, 50, 100, 140])(

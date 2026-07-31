@@ -53,7 +53,7 @@ import {
   getBoundTextMaxWidth,
 } from "./textElement";
 import { getLineHeightInPx } from "./textMeasurements";
-import { getUnderlinedVisualLines } from "./textLineUnderlines";
+import { getStyledVisualLines } from "./textLineUnderlines";
 import {
   isTextElement,
   isLinearElement,
@@ -533,21 +533,25 @@ const drawElementOnCanvas = (
           : element.autoResize
           ? Infinity
           : element.width;
-        const lines = element.lineUnderlines
-          ? getUnderlinedVisualLines({
-              originalText: element.originalText,
-              font: getFontString(element),
-              maxWidth,
-              lineUnderlines: element.lineUnderlines,
-              wholeElementUnderlined: element.textDecoration === "underline",
-            })
-          : element.text
-              .replace(/\r\n?/g, "\n")
-              .split("\n")
-              .map((text) => ({
-                text,
-                underlined: element.textDecoration === "underline",
-              }));
+        const hasPerLineStyles =
+          !!element.lineBolds?.some(Boolean) ||
+          !!element.lineUnderlines?.some(Boolean) ||
+          !!element.lineStrikethroughs?.some(Boolean);
+        const lines = getStyledVisualLines({
+          originalText: hasPerLineStyles ? element.originalText : element.text,
+          regularFont: getFontString({
+            ...element,
+            fontWeight: "normal",
+          }),
+          boldFont: getFontString({ ...element, fontWeight: "bold" }),
+          maxWidth: hasPerLineStyles ? maxWidth : Infinity,
+          lineBolds: element.lineBolds,
+          lineUnderlines: element.lineUnderlines,
+          lineStrikethroughs: element.lineStrikethroughs,
+          wholeElementBold: element.fontWeight === "bold",
+          wholeElementUnderlined: element.textDecoration === "underline",
+          wholeElementStrikethrough: element.strikethrough === true,
+        });
 
         const horizontalOffset =
           element.textAlign === "center"
@@ -569,21 +573,32 @@ const drawElementOnCanvas = (
 
         for (let index = 0; index < lines.length; index++) {
           const baseline = index * lineHeightPx + verticalOffset;
+          context.font = lines[index].font;
           context.fillText(lines[index].text, horizontalOffset, baseline);
-          if (lines[index].underlined && lines[index].text) {
-            const lineWidth = context.measureText(lines[index].text).width;
+          if (lines[index].text) {
+            const lineWidth = lines[index].width;
             const underlineX =
               element.textAlign === "center"
                 ? horizontalOffset - lineWidth / 2
                 : element.textAlign === "right"
                 ? horizontalOffset - lineWidth
                 : horizontalOffset;
-            context.fillRect(
-              underlineX,
-              baseline + Math.max(1, element.fontSize * 0.08),
-              lineWidth,
-              Math.max(1, element.fontSize / 16),
-            );
+            if (lines[index].underlined) {
+              context.fillRect(
+                underlineX,
+                baseline + Math.max(1, element.fontSize * 0.08),
+                lineWidth,
+                Math.max(1, element.fontSize / 16),
+              );
+            }
+            if (lines[index].strikethrough) {
+              context.fillRect(
+                underlineX,
+                baseline - element.fontSize * 0.3,
+                lineWidth,
+                Math.max(1, element.fontSize / 16),
+              );
+            }
           }
         }
         context.restore();

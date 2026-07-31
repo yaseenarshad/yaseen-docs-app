@@ -1,8 +1,13 @@
 import {
+  areSelectedLinesStyled,
+  getStyledVisualLines,
   getUnderlinedVisualLines,
   getSelectedLogicalLineRange,
+  normalizeLineStyles,
   normalizeLineUnderlines,
+  remapLineStylesForTextEdit,
   remapLineUnderlinesForTextEdit,
+  toggleSelectedLineStyles,
   toggleSelectedLineUnderlines,
 } from "../src/textLineUnderlines";
 
@@ -66,6 +71,45 @@ describe("text line underlines", () => {
   });
 });
 
+describe("generic logical-line styles", () => {
+  it("normalizes and toggles an independent boolean line style", () => {
+    expect(normalizeLineStyles([true, "invalid", false, true], 3)).toEqual([
+      true,
+    ]);
+
+    const enabled = toggleSelectedLineStyles({
+      text: "Title\nSubtitle\nBody",
+      lineStyles: undefined,
+      selectionStart: 0,
+      selectionEnd: 14,
+      wholeElementStyled: false,
+    });
+
+    expect(enabled).toEqual([true, true]);
+    expect(
+      areSelectedLinesStyled({
+        text: "Title\nSubtitle\nBody",
+        lineStyles: enabled,
+        selectionStart: 0,
+        selectionEnd: 14,
+        wholeElementStyled: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("materializes a whole-element style before disabling one line", () => {
+    expect(
+      toggleSelectedLineStyles({
+        text: "Title\nSubtitle",
+        lineStyles: undefined,
+        selectionStart: 0,
+        selectionEnd: 5,
+        wholeElementStyled: true,
+      }),
+    ).toEqual([false, true]);
+  });
+});
+
 describe("remapLineUnderlinesForTextEdit", () => {
   it("preserves decoration for character edits", () => {
     expect(
@@ -101,6 +145,45 @@ describe("remapLineUnderlinesForTextEdit", () => {
   });
 });
 
+describe("remapLineStylesForTextEdit", () => {
+  it("starts the new right line plain when Enter splits a styled line", () => {
+    expect(
+      remapLineStylesForTextEdit("Title", "Ti\ntle", [true], {
+        newLineStyle: "plain",
+      }),
+    ).toEqual([true]);
+    expect(
+      remapLineStylesForTextEdit("Title", "Title\n", [true], {
+        newLineStyle: "plain",
+      }),
+    ).toEqual([true]);
+  });
+
+  it("lets manually styled blank lines retain their style as text is typed", () => {
+    expect(
+      remapLineStylesForTextEdit("Title\n", "Title\nIdea", [false, true]),
+    ).toEqual([false, true]);
+  });
+
+  it("preserves a style on merge when either source line had it", () => {
+    expect(
+      remapLineStylesForTextEdit("Title\nSubtitle", "TitleSubtitle", [
+        false,
+        true,
+      ]),
+    ).toEqual([true]);
+  });
+
+  it("inherits the receiving line style for multiline paste", () => {
+    expect(
+      remapLineStylesForTextEdit("Title\nBody", "Intro\nTitle\nBody", [
+        true,
+        false,
+      ]),
+    ).toEqual([true, true]);
+  });
+});
+
 it("marks every wrapped fragment of an underlined logical line", () => {
   const lines = getUnderlinedVisualLines({
     originalText: "A long title that wraps\nSubtitle",
@@ -119,4 +202,57 @@ it("marks every wrapped fragment of an underlined logical line", () => {
       .filter((line) => line.logicalLine === 1)
       .every((line) => !line.underlined),
   ).toBe(true);
+});
+
+it("resolves every visual line font and combined logical-line styles", () => {
+  const lines = getStyledVisualLines({
+    originalText: "Title\nSubtitle",
+    regularFont: "20px Assistant" as FontString,
+    boldFont: "bold 20px Assistant" as FontString,
+    maxWidth: Infinity,
+    lineBolds: [true],
+    lineUnderlines: [false, true],
+    lineStrikethroughs: [true, true],
+    wholeElementBold: false,
+    wholeElementUnderlined: false,
+    wholeElementStrikethrough: false,
+  });
+
+  expect(lines).toMatchObject([
+    {
+      text: "Title",
+      logicalLine: 0,
+      bold: true,
+      underlined: false,
+      strikethrough: true,
+      font: "bold 20px Assistant",
+    },
+    {
+      text: "Subtitle",
+      logicalLine: 1,
+      bold: false,
+      underlined: true,
+      strikethrough: true,
+      font: "20px Assistant",
+    },
+  ]);
+  expect(lines.every((line) => line.width >= 0)).toBe(true);
+});
+
+it("preserves the text metrics width for an empty caret line", () => {
+  const [line] = getStyledVisualLines({
+    originalText: "",
+    regularFont: "20px Assistant" as FontString,
+    boldFont: "bold 20px Assistant" as FontString,
+    maxWidth: Infinity,
+    lineBolds: undefined,
+    lineUnderlines: undefined,
+    lineStrikethroughs: undefined,
+    wholeElementBold: false,
+    wholeElementUnderlined: false,
+    wholeElementStrikethrough: false,
+  });
+
+  expect(line.text).toBe("");
+  expect(line.width).toBeGreaterThan(0);
 });

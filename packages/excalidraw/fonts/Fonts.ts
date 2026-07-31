@@ -461,21 +461,30 @@ export class Fonts {
         continue;
       }
 
-      const font = getFontString({
-        fontFamily: element.fontFamily,
-        fontSize: FONT_SIZES.sm,
-        fontWeight: element.fontWeight,
-      });
-      const request = requests.get(font) ?? {
-        characters: new Set<string>(),
-        fontFamily: element.fontFamily,
-      };
+      const weights: Array<ExcalidrawTextElement["fontWeight"]> =
+        element.fontWeight === "bold"
+          ? ["bold"]
+          : element.lineBolds?.some(Boolean)
+          ? ["normal", "bold"]
+          : ["normal"];
 
-      for (const character of element.originalText) {
-        request.characters.add(character);
+      for (const fontWeight of weights) {
+        const font = getFontString({
+          fontFamily: element.fontFamily,
+          fontSize: FONT_SIZES.sm,
+          fontWeight,
+        });
+        const request = requests.get(font) ?? {
+          characters: new Set<string>(),
+          fontFamily: element.fontFamily,
+        };
+
+        for (const character of element.originalText) {
+          request.characters.add(character);
+        }
+
+        requests.set(font, request);
       }
-
-      requests.set(font, request);
     }
 
     return Array.from(requests, ([font, { characters, fontFamily }]) => ({
