@@ -166,8 +166,6 @@ export const useCloudBoard = () => {
     if (previewTimerRef.current !== null) {
       window.clearTimeout(previewTimerRef.current);
       previewTimerRef.current = null;
-      document.documentElement.dataset.boardPreviewDebug =
-        "cancelled-by-route-change";
     }
     setSaveStatus("loading");
     setErrorMessage(null);
@@ -265,27 +263,22 @@ export const useCloudBoard = () => {
       sourceVersion: number;
       scene: BoardPreviewScene;
     }) => {
-      document.documentElement.dataset.boardPreviewDebug = `scheduled:${request.sourceVersion}`;
       const requestId = ++previewRequestRef.current;
       if (previewTimerRef.current !== null) {
         window.clearTimeout(previewTimerRef.current);
-        document.documentElement.dataset.boardPreviewDebug = `replaced-by-schedule:${request.sourceVersion}`;
       }
       const now = Date.now();
       const lastStartedAt =
         lastPreviewStartedAtRef.current.get(request.boardId) ?? null;
       previewTimerRef.current = window.setTimeout(() => {
         previewTimerRef.current = null;
-        document.documentElement.dataset.boardPreviewDebug = `timer:${request.sourceVersion}`;
         const isCurrent = () =>
           previewRequestRef.current === requestId &&
           isCurrentRouteCompletion(request.route, currentRouteRef.current);
         if (!isCurrent()) {
-          document.documentElement.dataset.boardPreviewDebug = `cancelled-before-image:${request.sourceVersion}`;
           return;
         }
         lastPreviewStartedAtRef.current.set(request.boardId, Date.now());
-        document.documentElement.dataset.boardPreviewDebug = `creating-image:${request.sourceVersion}`;
         void publishBoardPreview(
           {
             boardId: request.boardId,
@@ -294,18 +287,12 @@ export const useCloudBoard = () => {
             isCurrent,
           },
           {
-            createImage: async (scene) => {
-              const image = await createBoardPreviewImage(scene);
-              document.documentElement.dataset.boardPreviewDebug = `image-created:${request.sourceVersion}`;
-              return image;
-            },
-            createUploadGrant: async (args) => {
-              document.documentElement.dataset.boardPreviewDebug = `creating-grant:${request.sourceVersion}`;
-              return await createPreviewUploadGrant({
+            createImage: createBoardPreviewImage,
+            createUploadGrant: async (args) =>
+              await createPreviewUploadGrant({
                 ...args,
                 boardId: args.boardId as Id<"diagrams">,
-              });
-            },
+              }),
             upload: async (token: string, preview: BoardPreviewImage) => {
               const response = await fetch("/api/assets", {
                 method: "POST",
@@ -324,10 +311,7 @@ export const useCloudBoard = () => {
               }
               return { etag: body.etag };
             },
-            registerUpload: async (args) => {
-              document.documentElement.dataset.boardPreviewDebug = `registering:${request.sourceVersion}`;
-              return await registerPreviewUpload(args);
-            },
+            registerUpload: registerPreviewUpload,
             recordEmpty: async (args) =>
               await recordEmptyPreview({
                 boardId: args.boardId as Id<"diagrams">,
@@ -345,18 +329,11 @@ export const useCloudBoard = () => {
             onCleanupError: (error) =>
               console.warn("Could not clean up an old Board preview", error),
           },
-        )
-          .then(() => {
-            document.documentElement.dataset.boardPreviewDebug = `complete:${request.sourceVersion}`;
-          })
-          .catch((error) => {
-            document.documentElement.dataset.boardPreviewDebug = `error:${
-              error instanceof Error ? error.message : "unknown"
-            }`;
-            if (isCurrent()) {
-              console.warn("Could not generate the saved Board preview", error);
-            }
-          });
+        ).catch((error) => {
+          if (isCurrent()) {
+            console.warn("Could not generate the saved Board preview", error);
+          }
+        });
       }, getBoardPreviewDelay(now, lastStartedAt));
     },
     [createPreviewUploadGrant, recordEmptyPreview, registerPreviewUpload],
@@ -439,13 +416,6 @@ export const useCloudBoard = () => {
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
       }
-      if (previewTimerRef.current !== null) {
-        window.clearTimeout(previewTimerRef.current);
-        document.documentElement.dataset.boardPreviewDebug = `cancelled-by-queue:${
-          previewScene ? "with-preview" : "without-preview"
-        }`;
-      }
-      previewRequestRef.current += 1;
       saveTimerRef.current = window.setTimeout(() => {
         saveTimerRef.current = null;
         void flushSave();
@@ -478,8 +448,6 @@ export const useCloudBoard = () => {
       }
       if (previewTimerRef.current !== null) {
         window.clearTimeout(previewTimerRef.current);
-        document.documentElement.dataset.boardPreviewDebug =
-          "cancelled-by-unmount";
       }
       previewRequestRef.current += 1;
     },
