@@ -66,13 +66,24 @@ export const validateUploadGrant = internalMutation({
       .query("assetUploadGrants")
       .withIndex("by_token", (q) => q.eq("token", args.token))
       .unique();
-    if (!grant || grant.expiresAt < Date.now()) {
+    if (grant && grant.expiresAt >= Date.now()) {
+      return {
+        objectKey: grant.objectKey,
+        mimeType: grant.mimeType,
+        size: grant.size,
+      };
+    }
+    const componentGrant = await ctx.db
+      .query("savedComponentUploadGrants")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .unique();
+    if (!componentGrant || componentGrant.expiresAt < Date.now()) {
       return null;
     }
     return {
-      objectKey: grant.objectKey,
-      mimeType: grant.mimeType,
-      size: grant.size,
+      objectKey: componentGrant.objectKey,
+      mimeType: componentGrant.mimeType,
+      size: componentGrant.size,
     };
   },
 });

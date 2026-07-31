@@ -276,6 +276,7 @@ describe("SavedComponentsInventory", () => {
         state={{
           mode: "selection",
           elements: [element],
+          files: {},
           error: null,
         }}
         onStateChange={vi.fn()}
@@ -299,7 +300,7 @@ describe("SavedComponentsInventory", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save component" }));
 
     await waitFor(() =>
-      expect(onCreate).toHaveBeenCalledWith("Pricing CTA", [element]),
+      expect(onCreate).toHaveBeenCalledWith("Pricing CTA", [element], {}),
     );
     expect(onClose).toHaveBeenCalledTimes(1);
   });

@@ -141,9 +141,49 @@ export default defineSchema({
     .index("by_ownerId_and_updatedAt", ["ownerId", "updatedAt"]),
   savedComponents: defineTable(savedComponentFields)
     .index("by_ownerId_and_updatedAt", ["ownerId", "updatedAt"])
+    .index("by_ownerId_and_status_and_updatedAt", [
+      "ownerId",
+      "status",
+      "updatedAt",
+    ])
     .index("by_ownerId_and_normalizedName", ["ownerId", "normalizedName"])
+    .index("by_previewUploadToken", ["previewUploadToken"])
     .searchIndex("search_normalizedName", {
       searchField: "normalizedName",
-      filterFields: ["ownerId"],
+      filterFields: ["ownerId", "status"],
     }),
+  savedComponentAssets: defineTable({
+    componentId: v.id("savedComponents"),
+    fileId: v.string(),
+    objectKey: v.string(),
+    mimeType: v.string(),
+    size: v.number(),
+    etag: v.string(),
+    uploadToken: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_componentId", ["componentId"])
+    .index("by_componentId_and_fileId", ["componentId", "fileId"])
+    .index("by_uploadToken", ["uploadToken"]),
+  savedComponentUploadGrants: defineTable({
+    token: v.string(),
+    componentId: v.id("savedComponents"),
+    ownerId: v.id("users"),
+    purpose: v.union(
+      v.literal("componentAsset"),
+      v.literal("componentPreview"),
+    ),
+    fileId: v.optional(v.string()),
+    objectKey: v.string(),
+    mimeType: v.string(),
+    size: v.number(),
+    previewWidth: v.optional(v.number()),
+    previewHeight: v.optional(v.number()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_componentId", ["componentId"])
+    .index("by_ownerId_and_createdAt", ["ownerId", "createdAt"]),
 });

@@ -8,7 +8,11 @@ import { restoreElements } from "@excalidraw/excalidraw/data/restore";
 import { getSelectedElements } from "@excalidraw/excalidraw/scene";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
-import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import type {
+  BinaryFileData,
+  BinaryFiles,
+  ExcalidrawImperativeAPI,
+} from "@excalidraw/excalidraw/types";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -23,6 +27,7 @@ const isRecord = (value: unknown): value is JsonRecord =>
 
 const assertSupportedElements = (
   elements: readonly ExcalidrawElement[],
+  { allowImages = false }: { allowImages?: boolean } = {},
 ): void => {
   if (elements.length === 0) {
     throw new Error("A component must contain at least one element");
@@ -44,7 +49,8 @@ const assertSupportedElements = (
     if (
       (UNSUPPORTED_SAVED_COMPONENT_ELEMENT_TYPES as readonly string[]).includes(
         element.type,
-      )
+      ) &&
+      !(allowImages && element.type === "image")
     ) {
       throw new Error(
         `Saved components do not support ${element.type} elements yet`,
@@ -91,7 +97,7 @@ const assertPayloadSize = (elementsJson: string) => {
 export const serializeSavedComponent = (
   elements: readonly ExcalidrawElement[],
 ): SerializedSavedComponent => {
-  assertSupportedElements(elements);
+  assertSupportedElements(elements, { allowImages: true });
   const elementsJson = JSON.stringify({
     type: "growprofit/saved-component",
     schemaVersion: SAVED_COMPONENT_SCHEMA_VERSION,
@@ -169,8 +175,9 @@ const getImportedElements = (payload: unknown): unknown[] => {
   throw new Error("Unsupported component JSON envelope");
 };
 
-export const parseImportedComponentJson = (
+const parseComponentJson = (
   source: string,
+  { allowImages }: { allowImages: boolean },
 ): readonly ExcalidrawElement[] => {
   let payload: unknown;
   try {
@@ -180,16 +187,21 @@ export const parseImportedComponentJson = (
   }
 
   const importedElements = getImportedElements(payload);
-  assertSupportedElements(importedElements as ExcalidrawElement[]);
+  assertSupportedElements(importedElements as ExcalidrawElement[], {
+    allowImages,
+  });
   const restored = restoreElements(
     importedElements as ExcalidrawElement[],
     null,
     { repairBindings: true },
   ).filter((element) => !element.isDeleted);
-  assertSupportedElements(restored);
+  assertSupportedElements(restored, { allowImages });
   serializeSavedComponent(restored);
   return restored;
 };
+
+export const parseImportedComponentJson = (source: string) =>
+  parseComponentJson(source, { allowImages: false });
 
 export const captureSavedComponentSelection = (
   excalidrawAPI: ExcalidrawImperativeAPI,
@@ -203,16 +215,48 @@ export const captureSavedComponentSelection = (
       includeElementsInFrames: true,
     },
   ).map(deepCopyElement);
-  assertSupportedElements(selectedElements);
+  assertSupportedElements(selectedElements, { allowImages: true });
   serializeSavedComponent(selectedElements);
   return selectedElements;
+};
+
+export const captureSavedComponentSelectionWithFiles = (
+  excalidrawAPI: ExcalidrawImperativeAPI,
+): { elements: readonly ExcalidrawElement[]; files: BinaryFiles } => {
+  const elements = captureSavedComponentSelection(excalidrawAPI);
+  const sceneFiles = excalidrawAPI.getFiles();
+  const files: BinaryFiles = {};
+  for (const element of elements) {
+    if (element.type !== "image" || !element.fileId) {
+      continue;
+    }
+    const file = sceneFiles[element.fileId];
+    if (!file) {
+      throw new Error(`Image data is missing for file ${element.fileId}`);
+    }
+    files[element.fileId] = file;
+  }
+  return { elements, files };
 };
 
 export const insertSavedComponent = (
   excalidrawAPI: ExcalidrawImperativeAPI,
   elementsJson: string,
+  files: BinaryFileData[] = [],
 ) => {
-  const elements = parseImportedComponentJson(elementsJson);
+  const elements = parseComponentJson(elementsJson, { allowImages: true });
+  const filesById = new Map(files.map((file) => [file.id, file]));
+  for (const element of elements) {
+    if (
+      element.type === "image" &&
+      (!element.fileId || !filesById.has(element.fileId))
+    ) {
+      throw new Error("Saved component image data is incomplete");
+    }
+  }
+  if (files.length > 0) {
+    excalidrawAPI.addFiles(files);
+  }
   excalidrawAPI.insertElements(elements);
   return elements;
 };

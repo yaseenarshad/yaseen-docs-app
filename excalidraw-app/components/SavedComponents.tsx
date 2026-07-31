@@ -1,5 +1,6 @@
 import {
   useConvexAuth,
+  useConvex,
   useMutation,
   usePaginatedQuery_experimental,
 } from "convex/react";
@@ -14,6 +15,7 @@ import {
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type {
+  BinaryFiles,
   ExcalidrawImperativeAPI,
   LibraryItem,
 } from "@excalidraw/excalidraw/types";
@@ -23,11 +25,16 @@ import { api } from "../../convex/_generated/api";
 import "./SavedComponents.scss";
 
 import {
-  captureSavedComponentSelection,
+  captureSavedComponentSelectionWithFiles,
   insertSavedComponent,
   parseImportedComponentJson,
-  serializeSavedComponent,
 } from "./SavedComponentsData";
+import {
+  cleanupComponentAssets,
+  insertRemoteSavedComponent,
+  saveSavedComponent,
+} from "./SavedComponentsAssets";
+import { createSavedComponentPreview } from "./SavedComponentPreview";
 
 import type { Id } from "../../convex/_generated/dataModel";
 
@@ -41,6 +48,13 @@ export type SavedComponentSummary = {
   elementsJson: string;
   elementCount: number;
   schemaVersion: number;
+  preview?: {
+    mimeType: string;
+    size: number;
+    width: number;
+    height: number;
+    url: string;
+  };
   createdAt: number;
   updatedAt: number;
 };
@@ -114,6 +128,17 @@ const SavedComponentPreview = ({
   component: SavedComponentSummary;
 }) => {
   const elements = useMemo(() => parsePreviewElements(component), [component]);
+  if (component.preview) {
+    return (
+      <div
+        className="saved-components__preview"
+        aria-label={`Preview of ${component.name}`}
+        role="img"
+      >
+        <img src={component.preview.url} alt="" loading="lazy" />
+      </div>
+    );
+  }
   return (
     <SavedComponentElementsPreview
       id={component._id}
@@ -399,6 +424,7 @@ export type CreationDialogState =
   | {
       mode: "selection";
       elements: readonly ExcalidrawElement[] | undefined;
+      files: BinaryFiles;
       error: string | null;
     }
   | {
@@ -420,6 +446,7 @@ export const SavedComponentCreationDialog = ({
   onCreate: (
     name: string,
     elements: readonly ExcalidrawElement[],
+    files?: BinaryFiles,
   ) => Promise<void>;
 }) => {
   const [name, setName] = useState("");
@@ -479,7 +506,11 @@ export const SavedComponentCreationDialog = ({
           }
           setIsSaving(true);
           setSaveError(null);
-          void onCreate(name, state.elements)
+          void onCreate(
+            name,
+            state.elements,
+            state.mode === "selection" ? state.files : undefined,
+          )
             .then(onClose)
             .catch((error) => {
               setSaveError(
@@ -549,6 +580,7 @@ export const SavedComponents = ({
   excalidrawAPI: ExcalidrawImperativeAPI;
 }) => {
   const { isAuthenticated, isLoading } = useConvexAuth();
+  const convex = useConvex();
   const appState = useUIAppState();
   const [query, setQuery] = useState("");
   const [retryAttempt, setRetryAttempt] = useState(0);
@@ -557,6 +589,39 @@ export const SavedComponents = ({
   const renameComponent = useMutation(api.savedComponents.rename);
   const deleteComponent = useMutation(api.savedComponents.remove);
   const createComponent = useMutation(api.savedComponents.create);
+  const createDraft = useMutation(api.savedComponents.createDraft);
+  const createAssetUploadGrant = useMutation(
+    api.savedComponents.createAssetUploadGrant,
+  );
+  const createPreviewUploadGrant = useMutation(
+    api.savedComponents.createPreviewUploadGrant,
+  );
+  const registerAssetUpload = useMutation(
+    api.savedComponents.registerAssetUpload,
+  );
+  const registerPreviewUpload = useMutation(
+    api.savedComponents.registerPreviewUpload,
+  );
+  const finalizeDraft = useMutation(api.savedComponents.finalizeDraft);
+  const cleanupAbandonedDrafts = useMutation(
+    api.savedComponents.cleanupAbandonedDrafts,
+  );
+  const pendingDeleteTokensRef = useRef(new Map<string, string>());
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+    void cleanupAbandonedDrafts({})
+      .then(async ({ assetDeleteToken }) => {
+        if (assetDeleteToken) {
+          await cleanupComponentAssets(assetDeleteToken);
+        }
+      })
+      .catch((error) => {
+        console.warn("Could not clean up abandoned component images", error);
+      });
+  }, [cleanupAbandonedDrafts, isAuthenticated]);
   const pagination = usePaginatedQuery_experimental({
     query: api.savedComponents.search,
     args: isAuthenticated
@@ -606,15 +671,19 @@ export const SavedComponents = ({
         onLoadMore={() => pagination.loadMore(PAGE_SIZE)}
         onSaveSelection={() => {
           try {
+            const captured =
+              captureSavedComponentSelectionWithFiles(excalidrawAPI);
             setCreationDialog({
               mode: "selection",
-              elements: captureSavedComponentSelection(excalidrawAPI),
+              elements: captured.elements,
+              files: captured.files,
               error: null,
             });
           } catch (error) {
             setCreationDialog({
               mode: "selection",
               elements: undefined,
+              files: {},
               error: getErrorMessage(
                 error,
                 "The selection cannot be saved as a component",
@@ -631,7 +700,16 @@ export const SavedComponents = ({
           })
         }
         onInsert={async (component) => {
-          insertSavedComponent(excalidrawAPI, component.elementsJson);
+          if (component.preview) {
+            await insertRemoteSavedComponent(component._id, excalidrawAPI, {
+              getManifest: async ({ componentId }) =>
+                await convex.query(api.savedComponents.getAssetManifest, {
+                  componentId: componentId as Id<"savedComponents">,
+                }),
+            });
+          } else {
+            insertSavedComponent(excalidrawAPI, component.elementsJson);
+          }
           excalidrawAPI.setToast({
             message: `${component.name} inserted`,
           });
@@ -643,9 +721,20 @@ export const SavedComponents = ({
           });
         }}
         onDelete={async (component) => {
-          await deleteComponent({
-            componentId: component._id as Id<"savedComponents">,
-          });
+          let cleanupToken = pendingDeleteTokensRef.current.get(component._id);
+          if (!cleanupToken) {
+            const result = await deleteComponent({
+              componentId: component._id as Id<"savedComponents">,
+            });
+            cleanupToken = result.assetDeleteToken ?? undefined;
+            if (cleanupToken) {
+              pendingDeleteTokensRef.current.set(component._id, cleanupToken);
+            }
+          }
+          if (cleanupToken) {
+            await cleanupComponentAssets(cleanupToken);
+            pendingDeleteTokensRef.current.delete(component._id);
+          }
         }}
       />
       {creationDialog && (
@@ -653,12 +742,42 @@ export const SavedComponents = ({
           state={creationDialog}
           onStateChange={setCreationDialog}
           onClose={() => setCreationDialog(null)}
-          onCreate={async (name, elements) => {
-            const serialized = serializeSavedComponent(elements);
-            await createComponent({
-              name,
-              ...serialized,
-            });
+          onCreate={async (name, elements, files = {}) => {
+            await saveSavedComponent(
+              { name, elements, files },
+              {
+                createLegacy: createComponent,
+                createDraft,
+                createAssetUploadGrant: (args) =>
+                  createAssetUploadGrant({
+                    ...args,
+                    componentId: args.componentId as Id<"savedComponents">,
+                    mimeType: args.mimeType,
+                  }),
+                createPreviewUploadGrant: (args) =>
+                  createPreviewUploadGrant({
+                    ...args,
+                    componentId: args.componentId as Id<"savedComponents">,
+                  }),
+                registerAssetUpload,
+                registerPreviewUpload,
+                finalizeDraft: ({ componentId }) =>
+                  finalizeDraft({
+                    componentId: componentId as Id<"savedComponents">,
+                  }),
+                removeDraft: ({ componentId }) =>
+                  deleteComponent({
+                    componentId: componentId as Id<"savedComponents">,
+                  }),
+                cleanupAssets: cleanupComponentAssets,
+                createPreview: (previewElements, previewFiles) =>
+                  createSavedComponentPreview({
+                    elements: previewElements as never,
+                    appState: excalidrawAPI.getAppState(),
+                    files: previewFiles,
+                  }),
+              },
+            );
             excalidrawAPI.setToast({
               message: `${name.trim()} saved to Components`,
             });
