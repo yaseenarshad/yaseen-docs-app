@@ -936,17 +936,43 @@ export const AppSidebarLaunchers = ({
       const secondaryPrimaryModifier =
         KEYS.CTRL_OR_CMD === "metaKey" ? event.ctrlKey : event.metaKey;
       const target = event.target;
+
+      if (
+        !tab ||
+        !event[KEYS.CTRL_OR_CMD] ||
+        secondaryPrimaryModifier ||
+        event.shiftKey ||
+        event.altKey ||
+        event.repeat ||
+        event.isComposing ||
+        event.keyCode === 229
+      ) {
+        return;
+      }
+
       const isEditableTarget =
         isWritableElement(target) ||
         target instanceof HTMLSelectElement ||
         (target instanceof HTMLElement &&
           (target.isContentEditable ||
             target.closest("[contenteditable='true']") !== null));
-      const isActivePanelToggle = tab !== null && activeTab === tab;
-      const isEditableTargetWithinActivePanel =
+      const isActivePanelToggle = activeTab === tab;
+      const isTargetWithinActivePanel =
         isActivePanelToggle &&
         target instanceof HTMLElement &&
         target.closest(".default-sidebar") !== null;
+
+      if (isTargetWithinActivePanel) {
+        event.preventDefault();
+        event.stopPropagation();
+        excalidrawAPI.toggleSidebar({
+          name: "default",
+          tab,
+          force: false,
+        });
+        return;
+      }
+
       const appState = excalidrawAPI.getAppState();
       const hasNativeSelection = Boolean(
         window.getSelection() && !window.getSelection()?.isCollapsed,
@@ -966,15 +992,7 @@ export const AppSidebarLaunchers = ({
       );
 
       if (
-        !tab ||
-        !event[KEYS.CTRL_OR_CMD] ||
-        secondaryPrimaryModifier ||
-        event.shiftKey ||
-        event.altKey ||
-        event.repeat ||
-        event.isComposing ||
-        event.keyCode === 229 ||
-        (isEditableTarget && !isEditableTargetWithinActivePanel) ||
+        isEditableTarget ||
         hasNativeSelection ||
         appState.editingTextElement ||
         appState.openDialog ||

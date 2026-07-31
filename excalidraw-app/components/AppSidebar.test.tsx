@@ -247,6 +247,7 @@ describe("AppSidebarLaunchers", () => {
       const appState = {
         ...getDefaultAppState(),
         openSidebar: { name: "default", tab },
+        selectedElementIds: { selectedElement: true },
       };
       render(
         <UIAppStateContext.Provider value={appState as never}>
