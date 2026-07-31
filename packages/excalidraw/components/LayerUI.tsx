@@ -2,7 +2,6 @@ import clsx from "clsx";
 import React from "react";
 
 import {
-  CLASSES,
   DEFAULT_SIDEBAR,
   TOOL_TYPE,
   arrayToMap,
@@ -11,8 +10,6 @@ import {
 } from "@excalidraw/common";
 
 import {
-  getTargetElements,
-  isTextElement,
   mutateElement,
   ShapeCache,
   showSelectedShapeActions,
@@ -29,11 +26,7 @@ import { useAtom, useAtomValue } from "../editor-jotai";
 import { t } from "../i18n";
 import { getScrollToContentState } from "../scene";
 
-import {
-  SelectedShapeActions,
-  CompactShapeActions,
-  ContextualPropertiesToolbar,
-} from "./Actions";
+import { CompactShapeActions, ContextualPropertiesToolbar } from "./Actions";
 import { LoadingMessage } from "./LoadingMessage";
 import { MobileMenu } from "./MobileMenu";
 import { PasteChartDialog } from "./PasteChartDialog";
@@ -167,15 +160,6 @@ const LayerUI = ({
   const editorInterface = useEditorInterface();
   const stylesPanelMode = useStylesPanelMode();
   const isCompactStylesPanel = stylesPanelMode === "compact";
-  const styleTargetElements = getTargetElements(elements, appState);
-  const hasExclusiveFullTextTarget =
-    stylesPanelMode === "full" &&
-    ((!!appState.editingTextElement &&
-      !appState.editingTextElement.containerId) ||
-      (styleTargetElements.length > 0 &&
-        styleTargetElements.every(
-          (element) => isTextElement(element) && !element.containerId,
-        )));
   const tunnels = useInitializeTunnels();
 
   const spacing = isCompactStylesPanel
@@ -249,7 +233,7 @@ const LayerUI = ({
     </div>
   );
 
-  const renderSelectedShapeActions = () => {
+  const renderCompactShapeActions = () => {
     return (
       <Section
         heading="selectedShapeActions"
@@ -257,46 +241,25 @@ const LayerUI = ({
           "transition-left": appState.zenModeEnabled,
         })}
       >
-        {isCompactStylesPanel ? (
-          <Island
-            className={clsx("compact-shape-actions-island")}
-            padding={0}
-            data-viewport-ui="side"
-            data-viewport-ui-name="stylesPanel"
-            style={{
-              // we want to make sure this doesn't overflow so subtracting the
-              // approximate height of hamburgerMenu + footer
-              maxHeight: `${appState.height - 166}px`,
-            }}
-          >
-            <CompactShapeActions
-              appState={appState}
-              elementsMap={app.scene.getNonDeletedElementsMap()}
-              renderAction={actionManager.renderAction}
-              app={app}
-              setAppState={setAppState}
-            />
-          </Island>
-        ) : (
-          <Island
-            className={CLASSES.SHAPE_ACTIONS_MENU}
-            padding={2}
-            style={{
-              // we want to make sure this doesn't overflow so subtracting the
-              // approximate height of hamburgerMenu + footer
-              maxHeight: `${appState.height - 166}px`,
-            }}
-            data-viewport-ui="side"
-            data-viewport-ui-name="stylesPanel"
-          >
-            <SelectedShapeActions
-              appState={appState}
-              elementsMap={app.scene.getNonDeletedElementsMap()}
-              renderAction={actionManager.renderAction}
-              app={app}
-            />
-          </Island>
-        )}
+        <Island
+          className={clsx("compact-shape-actions-island")}
+          padding={0}
+          data-viewport-ui="side"
+          data-viewport-ui-name="stylesPanel"
+          style={{
+            // we want to make sure this doesn't overflow so subtracting the
+            // approximate height of hamburgerMenu + footer
+            maxHeight: `${appState.height - 166}px`,
+          }}
+        >
+          <CompactShapeActions
+            appState={appState}
+            elementsMap={app.scene.getNonDeletedElementsMap()}
+            renderAction={actionManager.renderAction}
+            app={app}
+            setAppState={setAppState}
+          />
+        </Island>
       </Section>
     );
   };
@@ -304,7 +267,7 @@ const LayerUI = ({
   const renderFixedSideContainer = () => {
     const shouldRenderSelectedShapeActions =
       defaultUIEnabled &&
-      !hasExclusiveFullTextTarget &&
+      isCompactStylesPanel &&
       showSelectedShapeActions(appState, elements);
 
     const shouldShowStats =
@@ -330,7 +293,7 @@ const LayerUI = ({
                 })}
               >
                 {shouldRenderSelectedShapeActions &&
-                  renderSelectedShapeActions()}
+                  renderCompactShapeActions()}
               </div>
             )}
             {/* in compact UI the pen mode button lives outside the toolbar, as

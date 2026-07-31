@@ -554,7 +554,7 @@ export const actionChangeBackgroundColor = register<
 
     return (
       <>
-        {stylesPanelMode === "full" && (
+        {stylesPanelMode === "full" && !data?.contextToolbar && (
           <h3 aria-hidden="true">{t("labels.background")}</h3>
         )}
         <ColorPicker
@@ -887,7 +887,7 @@ export const actionChangeVectorStrokeWidth = register<number>({
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     };
   },
-  PanelComponent: ({ elements, appState, updateData, app }) => {
+  PanelComponent: ({ elements, appState, updateData, app, data }) => {
     const value = getFormValue(
       elements,
       app,
@@ -899,14 +899,18 @@ export const actionChangeVectorStrokeWidth = register<number>({
 
     return (
       <fieldset
-        className="linear-stroke-width-fieldset"
+        className={clsx("linear-stroke-width-fieldset", {
+          "linear-stroke-width-fieldset--contextual": data?.contextToolbar,
+        })}
         data-prevent-outside-click
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <legend>{t("labels.strokeWidth")}</legend>
+        {!data?.contextToolbar && <legend>{t("labels.strokeWidth")}</legend>}
         <Range
           ariaLabel={t("labels.strokeWidth")}
-          className="linear-stroke-width-range"
+          className={clsx("linear-stroke-width-range", {
+            "linear-stroke-width-range--contextual": data?.contextToolbar,
+          })}
           label={null}
           value={value ?? appState.currentItemVectorStrokeWidth}
           hasCommonValue={value !== null}

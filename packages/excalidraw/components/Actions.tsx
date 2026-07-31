@@ -10,6 +10,7 @@ import {
 
 import {
   getSmartShapeMetadata,
+  hasStrokeColor,
   hasVectorStrokeWidth,
   isArrowElement,
   isImageElement,
@@ -27,7 +28,15 @@ import type {
 import { actionToggleZenMode } from "../actions";
 
 import { t } from "../i18n";
-import { getTargetElements } from "../scene";
+import {
+  canChangeRoundness,
+  canHaveArrowheads,
+  getTargetElements,
+  hasBackground,
+  hasFreedrawMode,
+  hasStrokeStyle,
+  hasStrokeWidth,
+} from "../scene";
 
 import { getFormValue } from "../actions/actionProperties";
 
@@ -435,21 +444,61 @@ export const ContextualPropertiesToolbar = ({
     deriveStylesPanelMode(app.editorInterface) === "full";
   const isTextTarget =
     hasFullStylesPanel &&
-    ((!!appState.editingTextElement &&
-      !appState.editingTextElement.containerId) ||
+    (appState.activeTool.type === "text" ||
+      (!!appState.editingTextElement &&
+        !appState.editingTextElement.containerId) ||
       (targetElements.length > 0 &&
         targetElements.every(isUnboundTextElement)));
   const isImageTarget =
     targetElements.length > 0 && targetElements.every(isImageElement);
+  const isExclusiveVectorStrokeTarget = hasExclusiveVectorStrokeTarget(
+    appState,
+    targetElements,
+  );
+  const isSupportedVectorTool = hasVectorStrokeWidth(appState.activeTool.type);
+  const isSupportedVectorSelection =
+    isExclusiveVectorStrokeTarget ||
+    (targetElements.length > 0 &&
+      targetElements.every((element) => element.type === "freedraw"));
+  const isVectorPropertiesTarget =
+    hasFullStylesPanel &&
+    !isTextTarget &&
+    !isImageTarget &&
+    (isSupportedVectorTool ||
+      appState.activeTool.type === "freedraw" ||
+      isSupportedVectorSelection);
+  const isGeneralSelectionTarget =
+    hasFullStylesPanel &&
+    targetElements.length > 0 &&
+    !isTextTarget &&
+    !isImageTarget &&
+    !isVectorPropertiesTarget;
+  const predicates = getShapeActionPredicates(
+    appState,
+    targetElements,
+    elementsMap,
+    app,
+  );
+  const hasSmartShape =
+    targetElements.length === 1 &&
+    !targetElements[0].locked &&
+    !!getSmartShapeMetadata(targetElements[0]);
 
-  if (appState.viewModeEnabled || (!isTextTarget && !isImageTarget)) {
+  if (
+    appState.viewModeEnabled ||
+    (!isTextTarget &&
+      !isImageTarget &&
+      !isVectorPropertiesTarget &&
+      !isGeneralSelectionTarget)
+  ) {
     return null;
   }
   const textTarget =
     targetElements.find(isTextElement) ?? appState.editingTextElement;
   const fontFamilyName =
     Object.entries(FONT_FAMILY).find(
-      ([, value]) => value === textTarget?.fontFamily,
+      ([, value]) =>
+        value === (textTarget?.fontFamily ?? appState.currentItemFontFamily),
     )?.[0] ?? "Assistant";
 
   return (
@@ -489,10 +538,119 @@ export const ContextualPropertiesToolbar = ({
           <ContextualToolbarDivider />
           {renderAction("changeStrokeWidth", { contextToolbar: true })}
           <ContextualToolbarDivider />
+          <ContextualToolbarPopover
+            label="More image properties"
+            icon={adjustmentsIcon}
+          >
+            <div className="selected-shape-actions">
+              {predicates.roundness && renderAction("changeRoundness")}
+              {predicates.opacity && renderAction("changeOpacity")}
+            </div>
+          </ContextualToolbarPopover>
+          <ContextualToolbarDivider />
           <ImageBackgroundRemovalAction
             app={app}
             targetElements={targetElements}
           />
+        </>
+      )}
+      {isVectorPropertiesTarget && (
+        <>
+          {predicates.strokeColor &&
+            renderAction("changeStrokeColor", { contextToolbar: true })}
+          {predicates.backgroundColor && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeBackgroundColor", {
+                contextToolbar: true,
+              })}
+            </>
+          )}
+          {predicates.strokeWidth && isExclusiveVectorStrokeTarget && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeVectorStrokeWidth", {
+                contextToolbar: true,
+              })}
+            </>
+          )}
+          <ContextualToolbarDivider />
+          <ContextualToolbarPopover
+            label="More shape properties"
+            icon={adjustmentsIcon}
+          >
+            <div className="selected-shape-actions">
+              {predicates.fill && renderAction("changeFillStyle")}
+              {predicates.strokeWidth &&
+                !isExclusiveVectorStrokeTarget &&
+                renderAction("changeStrokeWidth")}
+              {predicates.freedrawMode && renderAction("changeFreedrawMode")}
+              {predicates.strokeStyle && renderAction("changeStrokeStyle")}
+              {predicates.sloppiness && renderAction("changeSloppiness")}
+              {predicates.roundness && renderAction("changeRoundness")}
+              {predicates.arrowType && renderAction("changeArrowType")}
+              {predicates.arrowheads && renderAction("changeArrowhead")}
+              {predicates.opacity && renderAction("changeOpacity")}
+              {hasSmartShape && renderAction("changeSmartShape")}
+            </div>
+          </ContextualToolbarPopover>
+        </>
+      )}
+      {isGeneralSelectionTarget && (
+        <>
+          {targetElements.every((element) => hasStrokeColor(element.type)) &&
+            renderAction("changeStrokeColor", { contextToolbar: true })}
+          {targetElements.every((element) => hasBackground(element.type)) && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeBackgroundColor", {
+                contextToolbar: true,
+              })}
+            </>
+          )}
+          <ContextualToolbarDivider />
+          <ContextualToolbarPopover
+            label="Common selection properties"
+            icon={adjustmentsIcon}
+          >
+            <div className="selected-shape-actions">
+              {targetElements.every((element) => hasBackground(element.type)) &&
+                predicates.fill &&
+                renderAction("changeFillStyle")}
+              {targetElements.every((element) =>
+                hasStrokeWidth(element.type),
+              ) &&
+                renderAction(
+                  isExclusiveVectorStrokeTarget
+                    ? "changeVectorStrokeWidth"
+                    : "changeStrokeWidth",
+                )}
+              {targetElements.every((element) =>
+                hasStrokeStyle(element.type),
+              ) && renderAction("changeStrokeStyle")}
+              {targetElements.every((element) =>
+                hasFreedrawMode(element.type),
+              ) && renderAction("changeFreedrawMode")}
+              {targetElements.every((element) =>
+                canChangeRoundness(element.type),
+              ) && renderAction("changeRoundness")}
+              {targetElements.every((element) =>
+                canHaveArrowheads(element.type),
+              ) && (
+                <>
+                  {renderAction("changeArrowType")}
+                  {renderAction("changeArrowhead")}
+                </>
+              )}
+              {predicates.opacity && renderAction("changeOpacity")}
+              {predicates.align && (
+                <AlignFieldset
+                  renderAction={renderAction}
+                  showDistribute={predicates.distribute}
+                />
+              )}
+            </div>
+          </ContextualToolbarPopover>
         </>
       )}
     </Island>

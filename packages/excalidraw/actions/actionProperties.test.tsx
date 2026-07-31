@@ -10,6 +10,7 @@ import {
   FREEDRAW_STROKE_WIDTH,
   FONT_FAMILY,
   KEYS,
+  ROUNDNESS,
   VECTOR_STROKE_WIDTH,
   STROKE_WIDTH,
   THEME,
@@ -21,6 +22,14 @@ import { Keyboard, UI } from "../tests/helpers/ui";
 import { render, togglePopover } from "../tests/test-utils";
 
 import { actionChangeFontFamily } from "./actionProperties";
+
+const openContextualProperties = (label: string) => {
+  const trigger = document.querySelector<HTMLElement>(
+    `.contextual-properties-toolbar [aria-label="${label}"]`,
+  );
+  expect(trigger).not.toBeNull();
+  togglePopover(label);
+};
 
 describe("element locking", () => {
   beforeEach(async () => {
@@ -58,6 +67,7 @@ describe("element locking", () => {
         currentItemBackgroundColor: color,
         currentItemFillStyle: "hachure",
       });
+      openContextualProperties("More shape properties");
       const hachureFillButton = queryByTestId(document.body, `fill-hachure`);
 
       expect(hachureFillButton).toHaveClass("active");
@@ -129,6 +139,10 @@ describe("element locking", () => {
 
       const control = slider.closest("fieldset");
       expect(control).not.toBeNull();
+      expect(control).toHaveClass("linear-stroke-width-fieldset--contextual");
+      expect(
+        document.querySelector('[data-viewport-ui-name="stylesPanel"]'),
+      ).toBeNull();
       expect(control).toHaveTextContent("0.5");
       expect(control).toHaveTextContent("50");
       expect(control?.querySelector(".value-bubble")).toBeNull();
@@ -213,6 +227,7 @@ describe("element locking", () => {
       API.setElements([rect]);
       API.setSelectedElements([rect]);
 
+      openContextualProperties("More shape properties");
       const crossHatchButton = queryByTestId(document.body, `fill-cross-hatch`);
       expect(crossHatchButton).toHaveClass("active");
     });
@@ -538,7 +553,7 @@ describe("element locking", () => {
       );
     });
 
-    it("should keep the native panel for mixed text and shape selections", () => {
+    it("should use only common contextual properties for mixed selections", () => {
       const text = API.createElement({ type: "text", text: "Mixed" });
       const rectangle = API.createElement({ type: "rectangle" });
       API.setElements([text, rectangle]);
@@ -546,23 +561,29 @@ describe("element locking", () => {
 
       expect(
         document.querySelector('[data-viewport-ui-name="stylesPanel"]'),
-      ).not.toBeNull();
+      ).toBeNull();
       expect(
         document.querySelector(".contextual-properties-toolbar"),
-      ).toBeNull();
+      ).not.toBeNull();
+      expect(queryByTestId(document.body, "font-family-code")).toBeNull();
+      openContextualProperties("Common selection properties");
+      expect(queryByTestId(document.body, "strokeWidth-thin")).toBeNull();
     });
 
-    it("should keep the native panel when selecting a bound text container", () => {
+    it("should resolve a bound text container through the contextual toolbar", () => {
       const [rectangle, text] = API.createTextContainer();
       API.setElements([rectangle, text]);
       API.setSelectedElements([rectangle]);
 
       expect(
         document.querySelector('[data-viewport-ui-name="stylesPanel"]'),
-      ).not.toBeNull();
+      ).toBeNull();
       expect(
         document.querySelector(".contextual-properties-toolbar"),
-      ).toBeNull();
+      ).not.toBeNull();
+      expect(
+        queryByTestId(document.body, "linear-stroke-width-input"),
+      ).not.toBeNull();
     });
 
     it("should consolidate controls while editing text", () => {
@@ -607,6 +628,35 @@ describe("element locking", () => {
       expect(selectedImage.strokeWidth).toBe(STROKE_WIDTH.bold);
     });
 
+    it("should expose image edges and opacity in the contextual helper", () => {
+      const image = API.createElement({
+        type: "image",
+        roundness: null,
+        opacity: 100,
+      });
+      API.setElements([image]);
+      API.setSelectedElements([image]);
+
+      openContextualProperties("More image properties");
+      const roundEdges = document.querySelector<HTMLInputElement>(
+        '.contextual-properties-toolbar__popover label[title="Round"] input',
+      );
+      const opacity = queryByTestId(
+        document.body,
+        "opacity",
+      ) as HTMLInputElement;
+      expect(roundEdges).not.toBeNull();
+      expect(opacity).not.toBeNull();
+
+      fireEvent.click(roundEdges!);
+      fireEvent.change(opacity, { target: { value: "40" } });
+
+      expect(API.getSelectedElement()).toMatchObject({
+        opacity: 40,
+        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS },
+      });
+    });
+
     it("should not show fill style selected element's background is transparent", () => {
       const rect = API.createElement({
         type: "rectangle",
@@ -616,6 +666,7 @@ describe("element locking", () => {
       API.setElements([rect]);
       API.setSelectedElements([rect]);
 
+      openContextualProperties("More shape properties");
       const crossHatchButton = queryByTestId(document.body, `fill-cross-hatch`);
       expect(crossHatchButton).toBe(null);
     });
@@ -652,6 +703,7 @@ describe("element locking", () => {
       API.setElements([rect, freedraw]);
       API.setSelectedElements([rect, freedraw]);
 
+      openContextualProperties("Common selection properties");
       expect(queryByTestId(document.body, `strokeWidth-medium`)).toBeChecked();
     });
 
@@ -667,6 +719,7 @@ describe("element locking", () => {
       API.setElements([rect, freedraw]);
       API.setSelectedElements([rect, freedraw]);
 
+      openContextualProperties("Common selection properties");
       const boldStrokeWidthButton = queryByTestId(
         document.body,
         `strokeWidth-bold`,
@@ -930,6 +983,7 @@ describe("element locking", () => {
       expect(
         queryByTestId(document.body, "linear-stroke-width-input"),
       ).toBeNull();
+      openContextualProperties("Common selection properties");
       expect(queryByTestId(document.body, "strokeWidth-thin")).not.toBeNull();
     });
 
@@ -943,6 +997,13 @@ describe("element locking", () => {
         expect(
           queryByTestId(document.body, "linear-stroke-width-input"),
         ).toBeNull();
+        if (type !== "image") {
+          openContextualProperties(
+            type === "freedraw"
+              ? "More shape properties"
+              : "Common selection properties",
+          );
+        }
         expect(queryByTestId(document.body, "strokeWidth-thin")).not.toBeNull();
       },
     );
@@ -1009,7 +1070,7 @@ describe("element locking", () => {
       expect(freedraw.strokeWidth).toBe(FREEDRAW_STROKE_WIDTH.medium);
     });
 
-    it("should show properties of different element types when selected", () => {
+    it("should omit properties invalid for part of a mixed selection", () => {
       const rect = API.createElement({
         type: "rectangle",
         strokeWidth: STROKE_WIDTH.medium,
@@ -1021,10 +1082,12 @@ describe("element locking", () => {
       API.setElements([rect, text]);
       API.setSelectedElements([rect, text]);
 
-      expect(queryByTestId(document.body, `strokeWidth-medium`)).toBeChecked();
-      expect(queryByTestId(document.body, `font-family-code`)).toHaveClass(
-        "active",
-      );
+      expect(
+        document.querySelector(".contextual-properties-toolbar"),
+      ).not.toBeNull();
+      expect(queryByTestId(document.body, "font-family-code")).toBeNull();
+      openContextualProperties("Common selection properties");
+      expect(queryByTestId(document.body, "strokeWidth-medium")).toBeNull();
     });
   });
 });
