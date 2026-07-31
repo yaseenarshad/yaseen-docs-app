@@ -41,6 +41,18 @@ body.excalidraw-cursor-resize * {
     Roboto, Helvetica, Arial, sans-serif;
   font-family: var(--ui-font);
 
+  .excalidraw-wysiwyg-visual-selection::selection {
+    background: transparent;
+  }
+
+  .excalidraw-wysiwyg-selection {
+    background: color-mix(in srgb, var(--color-selection) 35%, transparent);
+  }
+
+  .excalidraw-wysiwyg-caret {
+    animation: excalidraw-wysiwyg-caret-blink 1s steps(1) infinite;
+  }
+
   position: relative;
   overflow: hidden;
   color: var(--text-primary-color);
@@ -1467,6 +1479,12 @@ body.excalidraw-cursor-resize * {
   .link-button {
     display: flex;
     text-decoration: none !important;
+  }
+}
+
+@keyframes excalidraw-wysiwyg-caret-blink {
+  50% {
+    opacity: 0;
   }
 }
 

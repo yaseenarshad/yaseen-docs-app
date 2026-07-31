@@ -2,6 +2,7 @@ import {
   areSelectedLinesStyled,
   getStyledVisualLineStart,
   getStyledVisualLines,
+  getStyledVisualSelectionGeometry,
   getUnderlinedVisualLines,
   getSelectedLogicalLineRange,
   normalizeLineStyles,
@@ -290,6 +291,56 @@ it("keeps one measured block width for a list item's first and continuation line
       isListItem: true,
     },
   ]);
+});
+
+it("maps selections and carets through a wrapped list's hanging indent", () => {
+  const lines = getStyledVisualLines({
+    originalText: "• A abcdefg",
+    regularFont: "10px Assistant" as FontString,
+    boldFont: "bold 10px Assistant" as FontString,
+    maxWidth: 100,
+    lineBolds: undefined,
+    lineUnderlines: undefined,
+    lineStrikethroughs: undefined,
+    wholeElementBold: false,
+    wholeElementUnderlined: false,
+    wholeElementStrikethrough: false,
+  });
+  const continuation = lines[1];
+  const selection = getStyledVisualSelectionGeometry({
+    lines,
+    containerWidth: 100,
+    textAlign: "left",
+    lineHeightPx: 10,
+    selectionStart: continuation.start,
+    selectionEnd: continuation.end,
+  });
+  const caret = getStyledVisualSelectionGeometry({
+    lines,
+    containerWidth: 100,
+    textAlign: "left",
+    lineHeightPx: 10,
+    selectionStart: continuation.start,
+    selectionEnd: continuation.start,
+  });
+
+  expect(selection.rectangles).toEqual([
+    {
+      lineIndex: 1,
+      left: 20,
+      top: 10,
+      width: 70,
+      height: 10,
+    },
+  ]);
+  expect(selection.caret).toBeNull();
+  expect(caret.rectangles).toEqual([]);
+  expect(caret.caret).toEqual({
+    lineIndex: 1,
+    left: 20,
+    top: 10,
+    height: 10,
+  });
 });
 
 it("preserves independent visual line widths for wrapped plain text", () => {
