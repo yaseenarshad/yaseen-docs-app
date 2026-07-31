@@ -7,7 +7,7 @@ import "@excalidraw/utils/test-utils";
 import { render } from "@excalidraw/excalidraw/tests/test-utils";
 
 import * as distance from "../src/distance";
-import { hitElementItself } from "../src/collision";
+import { hitElementItself, shouldTestInside } from "../src/collision";
 
 describe("check rotated elements can be hit:", () => {
   beforeEach(async () => {
@@ -214,6 +214,112 @@ describe("hitElementItself cache", () => {
         threshold: 10,
         elementsMap,
         overrideShouldTestInside: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps default/global collision outline-only and cache-separated from selection", () => {
+    const element = API.createElement({
+      type: "rectangle",
+      id: "global-outline-only",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      backgroundColor: "transparent",
+      strokeColor: "#1b1b1f",
+    });
+    const elementsMap = arrayToMap([element]);
+    const point = pointFrom<GlobalPoint>(50, 50);
+
+    expect(shouldTestInside(element)).toBe(false);
+    expect(
+      hitElementItself({
+        point,
+        element,
+        threshold: 10,
+        elementsMap,
+      }),
+    ).toBe(false);
+
+    expect(
+      hitElementItself({
+        point,
+        element,
+        threshold: 10,
+        elementsMap,
+        insideHitPolicy: "selection",
+      }),
+    ).toBe(true);
+
+    expect(
+      hitElementItself({
+        point,
+        element,
+        threshold: 10,
+        elementsMap,
+      }),
+    ).toBe(false);
+
+    expect(
+      hitElementItself({
+        point: pointFrom<GlobalPoint>(0, 50),
+        element,
+        threshold: 1,
+        elementsMap,
+      }),
+    ).toBe(true);
+  });
+
+  it("invalidates selection-policy cache when bound text visibility changes", () => {
+    const container = API.createElement({
+      type: "rectangle",
+      id: "container",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      backgroundColor: "transparent",
+      strokeColor: "transparent",
+      boundElements: [{ id: "label", type: "text" }],
+    });
+    const hiddenLabel = API.createElement({
+      type: "text",
+      id: "label",
+      x: 25,
+      y: 40,
+      width: 50,
+      height: 20,
+      text: "Label",
+      containerId: container.id,
+      strokeColor: "transparent",
+    });
+    const point = pointFrom<GlobalPoint>(50, 50);
+
+    expect(
+      hitElementItself({
+        point,
+        element: container,
+        threshold: 10,
+        elementsMap: arrayToMap([container, hiddenLabel]),
+        insideHitPolicy: "selection",
+      }),
+    ).toBe(false);
+
+    const visibleLabel = {
+      ...hiddenLabel,
+      strokeColor: "#1b1b1f",
+      version: hiddenLabel.version + 1,
+      versionNonce: hiddenLabel.versionNonce + 1,
+    };
+
+    expect(
+      hitElementItself({
+        point,
+        element: container,
+        threshold: 10,
+        elementsMap: arrayToMap([container, visibleLabel]),
+        insideHitPolicy: "selection",
       }),
     ).toBe(true);
   });

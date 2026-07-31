@@ -101,6 +101,68 @@ export const shouldTestInside = (element: ExcalidrawElement) => {
   return isDraggableFromInside || isImageElement(element);
 };
 
+const hasVisibleSelectionSurface = (
+  element: ExcalidrawElement,
+  elementsMap: ElementsMap,
+) => {
+  const boundText = getBoundTextElement(element, elementsMap);
+  const hasVisibleBoundText =
+    !!boundText &&
+    boundText.opacity > 0 &&
+    !isTransparent(boundText.strokeColor) &&
+    boundText.text.trim().length > 0;
+  const hasVisibleFill =
+    hasBackground(element.type) &&
+    element.opacity > 0 &&
+    !isTransparent(element.backgroundColor);
+  const hasVisibleStroke =
+    element.opacity > 0 &&
+    element.strokeWidth > 0 &&
+    !isTransparent(element.strokeColor);
+
+  return hasVisibleFill || hasVisibleStroke || hasVisibleBoundText;
+};
+
+export const isElementCompletelyInvisibleForSelection = (
+  element: ExcalidrawElement,
+  elementsMap: ElementsMap,
+) => {
+  const isVisibilityControlledVector =
+    element.type === "rectangle" ||
+    element.type === "ellipse" ||
+    element.type === "diamond" ||
+    element.type === "line" ||
+    element.type === "arrow" ||
+    element.type === "freedraw";
+
+  return (
+    isVisibilityControlledVector &&
+    !hasVisibleSelectionSurface(element, elementsMap)
+  );
+};
+
+export const shouldTestInsideForSelection = (
+  element: ExcalidrawElement,
+  elementsMap: ElementsMap,
+) => {
+  if (isFrameLikeElement(element)) {
+    return false;
+  }
+
+  const isClosedSelectionShape =
+    element.type === "rectangle" ||
+    element.type === "ellipse" ||
+    element.type === "diamond" ||
+    ((element.type === "line" || element.type === "freedraw") &&
+      isPathALoop(element.points));
+
+  if (!isClosedSelectionShape) {
+    return shouldTestInside(element);
+  }
+
+  return hasVisibleSelectionSurface(element, elementsMap);
+};
+
 export type HitTestArgs = {
   point: GlobalPoint;
   element: ExcalidrawElement;
@@ -108,6 +170,7 @@ export type HitTestArgs = {
   elementsMap: ElementsMap;
   frameNameBound?: FrameNameBounds | null;
   overrideShouldTestInside?: boolean;
+  insideHitPolicy?: "selection";
 };
 
 let cachedPoint: GlobalPoint | null = null;
@@ -115,6 +178,8 @@ let cachedElement: WeakRef<ExcalidrawElement> | null = null;
 let cachedThreshold: number = Infinity;
 let cachedHit: boolean = false;
 let cachedOverrideShouldTestInside = false;
+let cachedInsideHitPolicy: HitTestArgs["insideHitPolicy"] = undefined;
+let cachedInsideHitPolicyDependency: WeakRef<ExcalidrawElement> | null = null;
 let cachedFrameNameBound: FrameNameBounds | null = null;
 
 const frameNameBoundsEqual = (
@@ -136,7 +201,14 @@ export const hitElementItself = ({
   elementsMap,
   frameNameBound = null,
   overrideShouldTestInside = false,
+  insideHitPolicy,
 }: HitTestArgs) => {
+  const insideHitPolicyDependency =
+    insideHitPolicy === "selection"
+      ? getBoundTextElement(element, elementsMap)
+      : null;
+  const cachedDependency = cachedInsideHitPolicyDependency?.deref();
+
   // Return cached result if the same point and element version is tested again.
   // A cached hit stays valid for any larger threshold, while a cached miss
   // stays valid only for a threshold no larger than the cached one (a larger
@@ -146,6 +218,14 @@ export const hitElementItself = ({
     pointsEqual(point, cachedPoint) &&
     (cachedHit ? cachedThreshold <= threshold : cachedThreshold >= threshold) &&
     overrideShouldTestInside === cachedOverrideShouldTestInside &&
+    insideHitPolicy === cachedInsideHitPolicy &&
+    ((!insideHitPolicyDependency && !cachedDependency) ||
+      (!!insideHitPolicyDependency &&
+        !!cachedDependency &&
+        insideHitPolicyDependency.id === cachedDependency.id &&
+        insideHitPolicyDependency.version === cachedDependency.version &&
+        insideHitPolicyDependency.versionNonce ===
+          cachedDependency.versionNonce)) &&
     frameNameBoundsEqual(frameNameBound, cachedFrameNameBound)
   ) {
     const derefElement = cachedElement?.deref();
@@ -188,7 +268,11 @@ export const hitElementItself = ({
 
   // Do the precise (and relatively costly) hit test
   const hitElement = (
-    overrideShouldTestInside ? true : shouldTestInside(element)
+    insideHitPolicy === "selection"
+      ? shouldTestInsideForSelection(element, elementsMap)
+      : overrideShouldTestInside
+      ? true
+      : shouldTestInside(element)
   )
     ? // Since `inShape` tests STRICTLY againt the insides of a shape
       // we would need `onShape` as well to include the "borders"
@@ -203,6 +287,10 @@ export const hitElementItself = ({
   cachedElement = new WeakRef(element);
   cachedThreshold = threshold;
   cachedOverrideShouldTestInside = overrideShouldTestInside;
+  cachedInsideHitPolicy = insideHitPolicy;
+  cachedInsideHitPolicyDependency = insideHitPolicyDependency
+    ? new WeakRef(insideHitPolicyDependency)
+    : null;
   cachedFrameNameBound = frameNameBound;
   cachedHit = result;
 

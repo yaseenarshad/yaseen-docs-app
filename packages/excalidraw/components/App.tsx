@@ -236,6 +236,7 @@ import {
   CaptureUpdateAction,
   type ElementUpdate,
   hitElementBoundingBox,
+  isElementCompletelyInvisibleForSelection,
   isLineElement,
   isSimpleArrow,
   StoreDelta,
@@ -6653,6 +6654,7 @@ class App extends React.Component<AppProps, AppState> {
         frameNameBound: isFrameLikeElement(elementWithHighestZIndex)
           ? this.frameNameBoundsCache.get(elementWithHighestZIndex)
           : null,
+        insideHitPolicy: "selection",
       })
         ? elementWithHighestZIndex
         : allHitElements[allHitElements.length - 2];
@@ -6761,6 +6763,15 @@ class App extends React.Component<AppProps, AppState> {
       }
     }
 
+    if (
+      isElementCompletelyInvisibleForSelection(
+        element,
+        this.scene.getNonDeletedElementsMap(),
+      )
+    ) {
+      return false;
+    }
+
     // take bound text element into consideration for hit collision as well
     const hitBoundTextOfElement = hitElementBoundText(
       pointFrom(x, y),
@@ -6779,6 +6790,7 @@ class App extends React.Component<AppProps, AppState> {
       frameNameBound: isFrameLikeElement(element)
         ? this.frameNameBoundsCache.get(element)
         : null,
+      insideHitPolicy: "selection",
     });
   }
 
@@ -12551,6 +12563,10 @@ class App extends React.Component<AppProps, AppState> {
               frameNameBound: isFrameLikeElement(hitElement)
                 ? this.frameNameBoundsCache.get(hitElement)
                 : null,
+              // This pointer-up selection cleanup must use the same interior
+              // policy as pointer-down or a valid interior hit would be
+              // mistaken for selected-bounding-box-only and deselected.
+              insideHitPolicy: "selection",
             },
             elementsMap,
           )) ||

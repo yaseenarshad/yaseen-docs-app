@@ -422,12 +422,23 @@ describe("box-selection overlap mode", () => {
       backgroundColor: "transparent",
       fillStyle: "solid",
     });
+    const selection = API.createElement({
+      type: "rectangle",
+      x: 25,
+      y: 25,
+      width: 50,
+      height: 50,
+    });
 
-    API.setElements([rect1]);
-
-    boxSelect(25, 25, 75, 75);
-
-    assertSelectedElements([]);
+    expect(
+      getElementsWithinSelection(
+        [rect1],
+        selection,
+        arrayToMap([rect1, selection]),
+        false,
+        "overlap",
+      ),
+    ).toEqual([]);
   });
 
   it("should select a transparent rectangle when the selection box crosses its outline", () => {
@@ -440,12 +451,23 @@ describe("box-selection overlap mode", () => {
       backgroundColor: "transparent",
       fillStyle: "solid",
     });
+    const selection = API.createElement({
+      type: "rectangle",
+      x: 25,
+      y: 25,
+      width: 100,
+      height: 50,
+    });
 
-    API.setElements([rect1]);
-
-    boxSelect(25, 25, 125, 75);
-
-    assertSelectedElements([rect1.id]);
+    expect(
+      getElementsWithinSelection(
+        [rect1],
+        selection,
+        arrayToMap([rect1, selection]),
+        false,
+        "overlap",
+      ),
+    ).toEqual([rect1]);
   });
 
   it("should not select a rotated transparent rectangle when the selection box stays inside it", () => {
@@ -459,12 +481,23 @@ describe("box-selection overlap mode", () => {
       backgroundColor: "transparent",
       fillStyle: "solid",
     });
+    const selection = API.createElement({
+      type: "rectangle",
+      x: 40,
+      y: 40,
+      width: 20,
+      height: 20,
+    });
 
-    API.setElements([rect1]);
-
-    boxSelect(40, 40, 60, 60);
-
-    assertSelectedElements([]);
+    expect(
+      getElementsWithinSelection(
+        [rect1],
+        selection,
+        arrayToMap([rect1, selection]),
+        false,
+        "overlap",
+      ),
+    ).toEqual([]);
   });
 
   it("should select a rotated rounded rectangle when the selection box contains its outline but not its bounds", () => {
@@ -751,12 +784,23 @@ describe("box-selection overlap mode", () => {
       backgroundColor: "transparent",
       fillStyle: "solid",
     });
+    const selection = API.createElement({
+      type: "rectangle",
+      x: 60,
+      y: 20,
+      width: 30,
+      height: 40,
+    });
 
-    API.setElements([frame, rect1]);
-
-    boxSelect(60, 20, 90, 60);
-
-    assertSelectedElements([]);
+    expect(
+      getElementsWithinSelection(
+        [frame, rect1],
+        selection,
+        arrayToMap([frame, rect1, selection]),
+        false,
+        "overlap",
+      ),
+    ).toEqual([]);
   });
 
   it("should not select a framed element when selection only overlaps its clipped-out outline", () => {
