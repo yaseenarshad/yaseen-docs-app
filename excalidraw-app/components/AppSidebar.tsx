@@ -981,19 +981,20 @@ export const AppSidebarLaunchers = ({
 
       event.preventDefault();
       event.stopPropagation();
+      const shouldOpen = activeTab !== tab;
       excalidrawAPI.toggleSidebar({
         name: "default",
         tab,
-        force: true,
+        force: shouldOpen,
       });
-      if (tab === "image-studio") {
+      if (tab === "image-studio" && shouldOpen) {
         onRequestImageStudioSearch?.();
       }
     };
 
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [excalidrawAPI, onRequestImageStudioSearch]);
+  }, [activeTab, excalidrawAPI, onRequestImageStudioSearch]);
 
   return (
     <nav className="app-sidebar-launchers" aria-label="Workspace panels">

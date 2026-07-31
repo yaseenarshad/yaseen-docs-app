@@ -192,6 +192,82 @@ describe("AppSidebarLaunchers", () => {
   );
 
   it.each([
+    ["b", "boards"],
+    ["c", "components"],
+    ["f", "image-studio"],
+  ] as const)(
+    "closes %s when its guarded primary-modifier shortcut is pressed again",
+    (key, tab) => {
+      const toggleSidebar = vi.fn();
+      const onRequestImageStudioSearch = vi.fn();
+      const appState = {
+        ...getDefaultAppState(),
+        openSidebar: { name: "default", tab },
+      };
+      render(
+        <UIAppStateContext.Provider value={appState as never}>
+          <AppSidebarLaunchers
+            excalidrawAPI={
+              {
+                getAppState: () => appState,
+                toggleSidebar,
+              } as unknown as ExcalidrawImperativeAPI
+            }
+            onRequestImageStudioSearch={onRequestImageStudioSearch}
+          />
+        </UIAppStateContext.Provider>,
+      );
+
+      const event = new KeyboardEvent("keydown", {
+        key,
+        [KEYS.CTRL_OR_CMD]: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      document.dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(toggleSidebar).toHaveBeenCalledWith({
+        name: "default",
+        tab,
+        force: false,
+      });
+      expect(onRequestImageStudioSearch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("switches directly from one active panel to another shortcut target", () => {
+    const toggleSidebar = vi.fn();
+    const appState = {
+      ...getDefaultAppState(),
+      openSidebar: { name: "default", tab: "components" as const },
+    };
+    render(
+      <UIAppStateContext.Provider value={appState as never}>
+        <AppSidebarLaunchers
+          excalidrawAPI={
+            {
+              getAppState: () => appState,
+              toggleSidebar,
+            } as unknown as ExcalidrawImperativeAPI
+          }
+        />
+      </UIAppStateContext.Provider>,
+    );
+
+    fireEvent.keyDown(document, {
+      key: "b",
+      [KEYS.CTRL_OR_CMD]: true,
+    });
+
+    expect(toggleSidebar).toHaveBeenCalledWith({
+      name: "default",
+      tab: "boards",
+      force: true,
+    });
+  });
+
+  it.each([
     ["selected elements", { selectedElementIds: { selected: true } }],
     ["text editing", { editingTextElement: { id: "text" } }],
     ["an active gesture", { cursorButton: "down" }],
