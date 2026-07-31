@@ -419,7 +419,7 @@ describe("element locking", () => {
       });
     });
 
-    it("should toggle bullets and change line spacing from the text toolbar", () => {
+    it("should cycle list modes and change line spacing from the text toolbar", () => {
       const text = API.createElement({
         type: "text",
         text: "First line\nSecond line",
@@ -449,9 +449,31 @@ describe("element locking", () => {
         queryByTestId(document.body, "textStyle-bullets") as HTMLElement,
       );
       expect(API.getSelectedElements()[0]).toMatchObject({
+        text: "1. First line\n2. Second line",
+        originalText: "1. First line\n2. Second line",
+      });
+
+      fireEvent.click(
+        queryByTestId(document.body, "textStyle-bullets") as HTMLElement,
+      );
+      expect(API.getSelectedElements()[0]).toMatchObject({
         text: "First line\nSecond line",
         originalText: "First line\nSecond line",
       });
+    });
+
+    it("normalizes mixed multi-text list modes to bullets", () => {
+      const bullet = API.createElement({ type: "text", text: "• First" });
+      const numbered = API.createElement({ type: "text", text: "1. Second" });
+      API.setElements([bullet, numbered]);
+      API.setSelectedElements([bullet, numbered]);
+
+      fireEvent.click(queryByTestId(document.body, "textStyle-bullets")!);
+
+      expect(API.getSelectedElements()).toEqual([
+        expect.objectContaining({ originalText: "• First" }),
+        expect.objectContaining({ originalText: "• Second" }),
+      ]);
     });
 
     it("should center selected text from the contextual text toolbar", () => {

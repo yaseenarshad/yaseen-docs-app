@@ -7,6 +7,8 @@ import {
   indentTextList,
   parseTextListLine,
   renumberTextLists,
+  normalizeTextLists,
+  setTextListMode,
 } from "./textList";
 
 describe("text list engine", () => {
@@ -57,10 +59,33 @@ describe("text list engine", () => {
     expect(cycleTextList("One\nTwo", 0, 4).text).toBe("• One\nTwo");
   });
 
+  it("sets every selected target to one explicit mode", () => {
+    const numbered = setTextListMode("• One\nTwo", 0, 9, "numbered");
+    expect(numbered).toMatchObject({
+      text: "1. One\n2. Two",
+      mode: "numbered",
+      selectionStart: 0,
+      selectionEnd: 13,
+    });
+
+    expect(
+      setTextListMode(numbered.text, 0, numbered.text.length, "plain").text,
+    ).toBe("One\nTwo");
+  });
+
   it("renumbers roots while preserving nested children and block restarts", () => {
     expect(
       renumberTextLists("8. First\n    • Child\n42. Second\n\n9. Separate"),
     ).toBe("1. First\n    ○ Child\n2. Second\n\n1. Separate");
+  });
+
+  it("renumbers after edits while preserving the caret", () => {
+    expect(normalizeTextLists("1. First\n8. Second", 18, 18)).toMatchObject({
+      text: "1. First\n2. Second",
+      selectionStart: 18,
+      selectionEnd: 18,
+      mode: "numbered",
+    });
   });
 
   it("restores caret and selection offsets after marker-length changes", () => {

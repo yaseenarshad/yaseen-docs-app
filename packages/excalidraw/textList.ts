@@ -255,18 +255,12 @@ const mapOffset = (
   return offset + previousDelta + nextLocalOffset - localOffset;
 };
 
-export const cycleTextList = (
+export const setTextListMode = (
   text: string,
   selectionStart = 0,
   selectionEnd = text.length,
+  mode: Exclude<TextListMode, "mixed">,
 ): TextListTransform => {
-  const currentMode = getTextListMode(text, selectionStart, selectionEnd);
-  const mode =
-    currentMode === "bullet"
-      ? "numbered"
-      : currentMode === "numbered"
-      ? "plain"
-      : "bullet";
   const { records, first, last, start, end } = getSelectedLineIndices(
     text,
     selectionStart,
@@ -282,6 +276,41 @@ export const cycleTextList = (
     selectionStart: mapOffset(records, nextLines, start),
     selectionEnd: mapOffset(records, nextLines, end),
     mode,
+  };
+};
+
+export const cycleTextList = (
+  text: string,
+  selectionStart = 0,
+  selectionEnd = text.length,
+): TextListTransform => {
+  const currentMode = getTextListMode(text, selectionStart, selectionEnd);
+  const mode =
+    currentMode === "bullet"
+      ? "numbered"
+      : currentMode === "numbered"
+      ? "plain"
+      : "bullet";
+
+  return setTextListMode(text, selectionStart, selectionEnd, mode);
+};
+
+export const normalizeTextLists = (
+  text: string,
+  selectionStart: number,
+  selectionEnd: number,
+): TextListTransform => {
+  const records = getLineRecords(text);
+  const nextLines = records.map(({ raw }) => raw);
+  normalizeNumberedLines(nextLines);
+  const nextText = nextLines.join("\n");
+  const resolvedMode = getTextListMode(nextText);
+
+  return {
+    text: nextText,
+    selectionStart: mapOffset(records, nextLines, selectionStart),
+    selectionEnd: mapOffset(records, nextLines, selectionEnd),
+    mode: resolvedMode === "mixed" ? "plain" : resolvedMode,
   };
 };
 
