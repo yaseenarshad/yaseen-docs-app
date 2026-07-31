@@ -166,7 +166,7 @@ describe("exportToSvg", () => {
     });
   });
 
-  it("underlines only decorated logical text lines", async () => {
+  it("exports combined logical-line text styles", async () => {
     const lineStyledText = {
       ...API.createElement({
         type: "text",
@@ -174,7 +174,9 @@ describe("exportToSvg", () => {
         width: 100,
         height: 50,
       }),
-      lineUnderlines: [true],
+      lineBolds: [true],
+      lineUnderlines: [true, true],
+      lineStrikethroughs: [true],
     } as NonDeleted<ExcalidrawTextElement>;
 
     const svg = await exportUtils.exportToSvg(
@@ -185,8 +187,12 @@ describe("exportToSvg", () => {
     const textNodes = Array.from(svg.querySelectorAll("text"));
 
     expect(textNodes).toHaveLength(2);
-    expect(textNodes[0].getAttribute("text-decoration")).toBe("underline");
-    expect(textNodes[1].hasAttribute("text-decoration")).toBe(false);
+    expect(textNodes[0].getAttribute("font-weight")).toBe("bold");
+    expect(textNodes[0].getAttribute("text-decoration")).toBe(
+      "underline line-through",
+    );
+    expect(textNodes[1].hasAttribute("font-weight")).toBe(false);
+    expect(textNodes[1].getAttribute("text-decoration")).toBe("underline");
   });
 
   it("exports an image border", async () => {
@@ -529,7 +535,7 @@ describe("exportToCanvas", () => {
     ).toBe(true);
   });
 
-  it("draws one underline rule for one decorated logical text line", async () => {
+  it("draws independent underline and strike rules for styled lines", async () => {
     const lineStyledText = {
       ...API.createElement({
         type: "text",
@@ -537,7 +543,9 @@ describe("exportToCanvas", () => {
         width: 100,
         height: 50,
       }),
-      lineUnderlines: [true],
+      lineBolds: [true],
+      lineUnderlines: [true, true],
+      lineStrikethroughs: [true],
     } as NonDeleted<ExcalidrawTextElement>;
 
     const canvas = await exportToCanvas({
@@ -553,7 +561,7 @@ describe("exportToCanvas", () => {
         event.props.height > 0,
     );
 
-    expect(underlineRules).toHaveLength(1);
+    expect(underlineRules).toHaveLength(3);
   });
 
   it("does not paint over elements beneath a labeled arrow's label (#11591)", async () => {

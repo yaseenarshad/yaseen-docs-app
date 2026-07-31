@@ -5,7 +5,6 @@ import {
   DEFAULT_FONT_SIZE,
   TEXT_ALIGN,
   VERTICAL_ALIGN,
-  getFontString,
   isTransparent,
   isProdEnv,
   invariant,
@@ -21,9 +20,8 @@ import {
 } from "./containerCache";
 import { LinearElementEditor } from "./linearElementEditor";
 
-import { measureText } from "./textMeasurements";
-import { wrapText } from "./textWrapping";
 import { getCornerRadius } from "./utils";
+import { getTextElementStyledLayout } from "./textLineUnderlines";
 import {
   isBoundToContainer,
   isArrowElement,
@@ -90,24 +88,18 @@ export const redrawTextBoundingBox = (
       : textElement.angle) as Radians,
   };
 
-  boundTextUpdates.text = textElement.text;
+  maxWidth = container
+    ? getBoundTextMaxWidth(container, textElement)
+    : textElement.autoResize
+    ? Infinity
+    : textElement.width;
+  const styledLayout = getTextElementStyledLayout(textElement, maxWidth);
+  boundTextUpdates.text = styledLayout.text;
 
-  if (container || !textElement.autoResize) {
-    maxWidth = container
-      ? getBoundTextMaxWidth(container, textElement)
-      : textElement.width;
-    boundTextUpdates.text = wrapText(
-      textElement.originalText,
-      getFontString(textElement),
-      maxWidth,
-    );
-  }
-
-  const metrics = measureText(
-    boundTextUpdates.text,
-    getFontString(textElement),
-    textElement.lineHeight,
-  );
+  const metrics = {
+    width: styledLayout.width,
+    height: styledLayout.height,
+  };
 
   // Note: only update width for unwrapped text and bound texts (which always have autoResize set to true)
   if (textElement.autoResize) {
@@ -187,19 +179,11 @@ export const handleBindTextResize = (
       (transformHandleType !== "n" && transformHandleType !== "s")
     ) {
       if (text) {
-        text = wrapText(
-          textElement.originalText,
-          getFontString(textElement),
-          maxWidth,
-        );
+        const styledLayout = getTextElementStyledLayout(textElement, maxWidth);
+        text = styledLayout.text;
+        nextHeight = styledLayout.height;
+        nextWidth = styledLayout.width;
       }
-      const metrics = measureText(
-        text,
-        getFontString(textElement),
-        textElement.lineHeight,
-      );
-      nextHeight = metrics.height;
-      nextWidth = metrics.width;
     }
     // increase height in case text element height exceeds
     if (nextHeight > maxHeight) {

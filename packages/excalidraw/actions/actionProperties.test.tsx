@@ -280,7 +280,7 @@ describe("element locking", () => {
       expect(crossHatchButton).toHaveClass("active");
     });
 
-    it("should toggle bold and underline with keyboard shortcuts", () => {
+    it("should toggle bold, underline, and strikethrough with keyboard shortcuts", () => {
       const text = API.createElement({ type: "text" });
       API.setElements([text]);
       API.setSelectedElements([text]);
@@ -303,6 +303,17 @@ describe("element locking", () => {
       });
 
       fireEvent.keyDown(document, {
+        code: CODES.X,
+        [KEYS.CTRL_OR_CMD]: true,
+        shiftKey: true,
+      });
+      expect(API.getSelectedElements()[0]).toMatchObject({
+        fontWeight: "bold",
+        textDecoration: "underline",
+        strikethrough: true,
+      });
+
+      fireEvent.keyDown(document, {
         code: CODES.B,
         [KEYS.CTRL_OR_CMD]: true,
       });
@@ -310,9 +321,68 @@ describe("element locking", () => {
         code: CODES.U,
         [KEYS.CTRL_OR_CMD]: true,
       });
+      fireEvent.keyDown(document, {
+        code: CODES.X,
+        [KEYS.CTRL_OR_CMD]: true,
+        shiftKey: true,
+      });
       expect(API.getSelectedElements()[0]).toMatchObject({
         fontWeight: "normal",
         textDecoration: "none",
+        strikethrough: false,
+      });
+    });
+
+    it("orders the text style controls as bold, underline, strike, bullets", () => {
+      const text = API.createElement({ type: "text" });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+
+      const bold = queryByTestId(document.body, "textStyle-bold")!;
+      const buttonList = bold.closest(".buttonList")!;
+      const testIds = Array.from(
+        buttonList.querySelectorAll<HTMLElement>("[data-testid]"),
+      ).map((element) => element.dataset.testid);
+
+      expect(testIds).toEqual([
+        "textStyle-bold",
+        "textStyle-underline",
+        "textStyle-strikethrough",
+        "textStyle-bullets",
+      ]);
+    });
+
+    it("applies mixed whole-element strikethrough to every selected text", () => {
+      const first = API.createElement({ type: "text", text: "First" });
+      const second = {
+        ...API.createElement({ type: "text", text: "Second" }),
+        strikethrough: true,
+      };
+      API.setElements([first, second]);
+      API.setSelectedElements([first, second]);
+
+      fireEvent.click(queryByTestId(document.body, "textStyle-strikethrough")!);
+      expect(API.getSelectedElements()).toEqual([
+        expect.objectContaining({ strikethrough: true }),
+        expect.objectContaining({ strikethrough: true }),
+      ]);
+
+      fireEvent.click(queryByTestId(document.body, "textStyle-strikethrough")!);
+      expect(API.getSelectedElements()).toEqual([
+        expect.objectContaining({ strikethrough: false }),
+        expect.objectContaining({ strikethrough: false }),
+      ]);
+    });
+
+    it("applies whole-element strikethrough through a selected bound container", () => {
+      const [container, text] = API.createTextContainer();
+      API.setElements([container, text]);
+      API.setSelectedElements([container]);
+
+      fireEvent.click(queryByTestId(document.body, "textStyle-strikethrough")!);
+
+      expect(window.h.app.scene.getElement(text.id)).toMatchObject({
+        strikethrough: true,
       });
     });
 

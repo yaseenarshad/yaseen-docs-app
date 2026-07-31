@@ -525,10 +525,23 @@ export const restoreElement = (
       }
       const text = (typeof element.text === "string" && element.text) || "";
       const originalText = element.originalText || text;
+      const logicalLineCount = originalText.split("\n").length;
+      const lineBolds = normalizeLineUnderlines(
+        (element as { lineBolds?: unknown }).lineBolds,
+        logicalLineCount,
+      );
       const lineUnderlines = normalizeLineUnderlines(
         (element as { lineUnderlines?: unknown }).lineUnderlines,
-        originalText.split("\n").length,
+        logicalLineCount,
       );
+      const lineStrikethroughs = normalizeLineUnderlines(
+        (element as { lineStrikethroughs?: unknown }).lineStrikethroughs,
+        logicalLineCount,
+      );
+      const strikethrough =
+        (element as { strikethrough?: unknown }).strikethrough === true
+          ? true
+          : undefined;
 
       // line-height might not be specified either when creating elements
       // programmatically, or when importing old diagrams.
@@ -553,10 +566,22 @@ export const restoreElement = (
         originalText,
         autoResize: element.autoResize ?? true,
         lineHeight,
+        lineBolds,
         lineUnderlines,
+        lineStrikethroughs,
+        strikethrough,
       });
+      if (!lineBolds) {
+        delete (element as { lineBolds?: unknown }).lineBolds;
+      }
       if (!lineUnderlines) {
         delete (element as { lineUnderlines?: unknown }).lineUnderlines;
+      }
+      if (!lineStrikethroughs) {
+        delete (element as { lineStrikethroughs?: unknown }).lineStrikethroughs;
+      }
+      if (!strikethrough) {
+        delete (element as { strikethrough?: unknown }).strikethrough;
       }
 
       // if empty text, mark as deleted. We keep in array

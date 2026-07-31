@@ -6387,7 +6387,14 @@ class App extends React.Component<AppProps, AppState> {
     const updateElement = (
       nextOriginalText: string,
       isDeleted: boolean,
-      nextLineUnderlines?: readonly boolean[],
+      nextStyles: {
+        fontWeight: ExcalidrawTextElement["fontWeight"];
+        textDecoration: ExcalidrawTextElement["textDecoration"];
+        strikethrough: ExcalidrawTextElement["strikethrough"];
+        lineBolds: ExcalidrawTextElement["lineBolds"];
+        lineUnderlines: ExcalidrawTextElement["lineUnderlines"];
+        lineStrikethroughs: ExcalidrawTextElement["lineStrikethroughs"];
+      },
     ) => {
       this.scene.replaceAllElements([
         // Not sure why we include deleted elements as well hence using deleted elements map
@@ -6395,7 +6402,7 @@ class App extends React.Component<AppProps, AppState> {
           if (_element.id === element.id && isTextElement(_element)) {
             return newElementWith(_element, {
               originalText: nextOriginalText,
-              lineUnderlines: nextLineUnderlines,
+              ...nextStyles,
               isDeleted: isDeleted ?? _element.isDeleted,
               // returns (wrapped) text and new dimensions
               ...refreshTextDimensions(
@@ -6427,19 +6434,50 @@ class App extends React.Component<AppProps, AppState> {
         ];
       },
       onChange: withBatchedUpdates(
-        ({ nextOriginalText, nextLineUnderlines }) => {
-          updateElement(nextOriginalText, false, nextLineUnderlines);
+        ({
+          nextOriginalText,
+          nextFontWeight,
+          nextTextDecoration,
+          nextStrikethrough,
+          nextLineBolds,
+          nextLineUnderlines,
+          nextLineStrikethroughs,
+        }) => {
+          updateElement(nextOriginalText, false, {
+            fontWeight: nextFontWeight,
+            textDecoration: nextTextDecoration,
+            strikethrough: nextStrikethrough,
+            lineBolds: nextLineBolds,
+            lineUnderlines: nextLineUnderlines,
+            lineStrikethroughs: nextLineStrikethroughs,
+          });
           if (isNonDeletedElement(element)) {
             updateBoundElements(element, this.scene);
           }
         },
       ),
       onSubmit: withBatchedUpdates(
-        ({ viaKeyboard, nextOriginalText, nextLineUnderlines }) => {
+        ({
+          viaKeyboard,
+          nextOriginalText,
+          nextFontWeight,
+          nextTextDecoration,
+          nextStrikethrough,
+          nextLineBolds,
+          nextLineUnderlines,
+          nextLineStrikethroughs,
+        }) => {
           this.textWysiwygSubmitHandler = null;
 
           const isDeleted = !nextOriginalText.trim();
-          updateElement(nextOriginalText, isDeleted, nextLineUnderlines);
+          updateElement(nextOriginalText, isDeleted, {
+            fontWeight: nextFontWeight,
+            textDecoration: nextTextDecoration,
+            strikethrough: nextStrikethrough,
+            lineBolds: nextLineBolds,
+            lineUnderlines: nextLineUnderlines,
+            lineStrikethroughs: nextLineStrikethroughs,
+          });
 
           // keyboard-submit keeps focus on the edited object. For bound text, keep
           // the container selected even if the text becomes empty and is deleted.
@@ -6514,7 +6552,14 @@ class App extends React.Component<AppProps, AppState> {
 
     // do an initial update to re-initialize element position since we were
     // modifying element's x/y for sake of editor (case: syncing to remote)
-    updateElement(element.originalText, false, element.lineUnderlines);
+    updateElement(element.originalText, false, {
+      fontWeight: element.fontWeight,
+      textDecoration: element.textDecoration,
+      strikethrough: element.strikethrough,
+      lineBolds: element.lineBolds,
+      lineUnderlines: element.lineUnderlines,
+      lineStrikethroughs: element.lineStrikethroughs,
+    });
   }
 
   private deselectElements() {
