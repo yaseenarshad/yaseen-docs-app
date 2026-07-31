@@ -201,13 +201,15 @@ describe("restoreElements", () => {
   it("should restore text element correctly with unknown font family, null text and undefined alignment", () => {
     const textElement: any = API.createElement({
       type: "text",
-      textAlign: undefined,
+      textAlign: "left",
       verticalAlign: undefined,
       id: "id-text01",
     });
 
     textElement.text = null;
     textElement.font = "10 unknown";
+    delete textElement.textAlign;
+    delete textElement.verticalAlign;
 
     expect(textElement.isDeleted).toBe(false);
     const restoredText = restore.restoreElements([textElement], null, {

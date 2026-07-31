@@ -51,11 +51,12 @@ describe("direct T text entry", () => {
     expect(editor).toBe(document.activeElement);
     expect(text).toMatchObject({
       type: "text",
-      x: 160,
       fontSize: 51,
       strokeColor: "#e03131",
+      textAlign: "center",
       containerId: null,
     });
+    expect(text!.x + text!.width / 2).toBeCloseTo(160);
     expect(text!.y + text!.height / 2).toBeCloseTo(140);
     expect(h.state.selectedElementIds).toEqual({});
     expect(h.state.currentItemFontSize).toBe(28);
@@ -74,9 +75,25 @@ describe("direct T text entry", () => {
     expect(h.state.editingTextElement).toMatchObject({
       type: "text",
       fontSize: 51,
+      textAlign: "center",
       containerId: null,
     });
     expect(h.state.currentItemFontSize).toBe(28);
+  });
+
+  it("honors a later explicit alignment choice for new free text", async () => {
+    API.setAppState({ currentItemTextAlign: "right" });
+    mouse.moveTo(300, 240);
+
+    Keyboard.keyPress(KEYS.T);
+
+    await getTextEditor();
+    expect(h.state.editingTextElement).toMatchObject({
+      type: "text",
+      textAlign: "right",
+      containerId: null,
+    });
+    expect(h.state.currentItemTextAlign).toBe("right");
   });
 
   it("keeps container-bound text on the persistent size path", async () => {
@@ -161,7 +178,7 @@ describe("direct T text entry", () => {
     await getTextEditor();
     const text = h.state.editingTextElement!;
 
-    expect(text.x).toBeCloseTo(600);
+    expect(text.x + text.width / 2).toBeCloseTo(600);
     expect(text.y + text.height / 2).toBeCloseTo(320);
   });
 
@@ -275,7 +292,7 @@ describe("direct T text entry", () => {
 
     await getTextEditor();
     const text = h.state.editingTextElement!;
-    expect(text.x).toBeCloseTo(120);
+    expect(text.x + text.width / 2).toBeCloseTo(120);
     expect(text.y + text.height / 2).toBeCloseTo(160);
   });
 

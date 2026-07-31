@@ -5,7 +5,6 @@ import {
   DEFAULT_FONT_FAMILY,
   DEFAULT_FONT_SIZE,
   DEFAULT_ELEMENT_STROKE_WIDTH_KEY,
-  DEFAULT_TEXT_ALIGN,
   DEFAULT_GRID_SIZE,
   EXPORT_SCALES,
   STATS_PANELS,
@@ -14,6 +13,7 @@ import {
   FONT_FAMILY,
   LINEAR_STROKE_WIDTH,
   ROUGHNESS,
+  TEXT_ALIGN,
   isTestEnv,
 } from "@excalidraw/common";
 
@@ -48,7 +48,7 @@ export const getDefaultAppState = (): Omit<
     currentItemStrokeStyle: DEFAULT_ELEMENT_PROPS.strokeStyle,
     currentItemLinearStrokeWidth: LINEAR_STROKE_WIDTH.default,
     currentItemStrokeWidthKey: DEFAULT_ELEMENT_STROKE_WIDTH_KEY,
-    currentItemTextAlign: DEFAULT_TEXT_ALIGN,
+    currentItemTextAlign: TEXT_ALIGN.CENTER,
     currentHoveredFontFamily: null,
     cursorButton: "up",
     activeEmbeddable: null,

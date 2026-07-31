@@ -102,3 +102,77 @@ describe("Architect default roughness migration", () => {
     ]);
   });
 });
+
+describe("Center text alignment migration", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("uses Center for clean browser app state", () => {
+    expect(getDefaultAppState().currentItemTextAlign).toBe("center");
+  });
+
+  it("migrates the legacy Left default exactly once", () => {
+    localStorage.setItem(
+      STORAGE_KEYS.LOCAL_STORAGE_APP_STATE,
+      JSON.stringify({ currentItemTextAlign: "left" }),
+    );
+    expect(importFromLocalStorage().appState?.currentItemTextAlign).toBe(
+      "center",
+    );
+
+    localStorage.setItem(
+      STORAGE_KEYS.LOCAL_STORAGE_APP_STATE,
+      JSON.stringify({ currentItemTextAlign: "left" }),
+    );
+    expect(importFromLocalStorage().appState?.currentItemTextAlign).toBe(
+      "left",
+    );
+  });
+
+  it("marks a clean browser migrated so a later Left choice persists", () => {
+    expect(importFromLocalStorage().appState).toBeNull();
+
+    localStorage.setItem(
+      STORAGE_KEYS.LOCAL_STORAGE_APP_STATE,
+      JSON.stringify({ currentItemTextAlign: "left" }),
+    );
+    expect(importFromLocalStorage().appState?.currentItemTextAlign).toBe(
+      "left",
+    );
+  });
+
+  it.each(["center", "right"] as const)(
+    "preserves an explicit saved %s alignment",
+    (textAlign) => {
+      localStorage.setItem(
+        STORAGE_KEYS.LOCAL_STORAGE_APP_STATE,
+        JSON.stringify({ currentItemTextAlign: textAlign }),
+      );
+      expect(importFromLocalStorage().appState?.currentItemTextAlign).toBe(
+        textAlign,
+      );
+    },
+  );
+
+  it("falls back from malformed alignment without changing saved elements", () => {
+    localStorage.setItem(
+      STORAGE_KEYS.LOCAL_STORAGE_APP_STATE,
+      JSON.stringify({ currentItemTextAlign: "diagonal" }),
+    );
+    localStorage.setItem(
+      STORAGE_KEYS.LOCAL_STORAGE_ELEMENTS,
+      JSON.stringify([
+        { id: "legacy-left", type: "text", textAlign: "left" },
+        { id: "legacy-missing", type: "text" },
+      ]),
+    );
+
+    const imported = importFromLocalStorage();
+    expect(imported.appState?.currentItemTextAlign).toBe("center");
+    expect(imported.elements).toEqual([
+      { id: "legacy-left", type: "text", textAlign: "left" },
+      { id: "legacy-missing", type: "text" },
+    ]);
+  });
+});
