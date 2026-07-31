@@ -454,9 +454,10 @@ export const DEFAULT_ELEMENT_STROKE_WIDTH_KEY: StrokeWidthKey = "medium";
 
 export const VECTOR_STROKE_WIDTH = {
   min: 0.5,
-  max: 50,
+  max: 100,
   step: 0.5,
   default: STROKE_WIDTH.medium,
+  presets: [2, 8, 24],
 } as const;
 
 export const normalizeVectorStrokeWidth = (

@@ -35,12 +35,7 @@ export const hasStrokeWidth = (type: ElementOrToolType) =>
   type === "autoshape";
 
 export const hasVectorStrokeWidth = (type: ElementOrToolType) =>
-  type === "rectangle" ||
-  type === "ellipse" ||
-  type === "diamond" ||
-  type === "arrow" ||
-  type === "line" ||
-  type === "autoshape";
+  hasStrokeWidth(type);
 
 export const hasStrokeStyle = (type: ElementOrToolType) =>
   type === "rectangle" ||

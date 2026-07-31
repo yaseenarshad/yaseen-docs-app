@@ -84,7 +84,7 @@ describe("restoreElements", () => {
     expect(restored).toMatchObject({ lineUnderlines: [true] });
   });
 
-  it.each([0.5, 1.5, 3, 7.5, 20, 50])(
+  it.each([0.5, 1.5, 3, 7.5, 20, 50, 100, 140])(
     "round-trips an exact linear stroke width of %s through scene JSON",
     (strokeWidth) => {
       const line = API.createElement({
@@ -898,7 +898,8 @@ describe("restoreAppState", () => {
     [undefined, 2],
     [Number.NaN, 2],
     [0, 0.5],
-    [100, 50],
+    [100, 100],
+    [140, 100],
     [7.56, 7.6],
   ])(
     "should normalize restored vector stroke width %s to %s",

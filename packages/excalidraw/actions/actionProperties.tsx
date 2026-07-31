@@ -878,6 +878,30 @@ export const actionChangeVectorStrokeWidth = register<number>({
         onPointerDown={(event) => event.stopPropagation()}
       >
         {!data?.contextToolbar && <legend>{t("labels.strokeWidth")}</legend>}
+        <div
+          className="linear-stroke-width-presets"
+          role="group"
+          aria-label="Stroke width presets"
+        >
+          {VECTOR_STROKE_WIDTH.presets.map((preset, index) => (
+            <IconButton
+              key={preset}
+              type="toggle"
+              size="small"
+              checked={value === preset}
+              icon={
+                [
+                  StrokeWidthBaseIcon,
+                  StrokeWidthBoldIcon,
+                  StrokeWidthExtraBoldIcon,
+                ][index]
+              }
+              aria-label={`Set stroke width to ${preset} px`}
+              data-testid={`vector-stroke-width-preset-${preset}`}
+              onSelect={() => updateData(preset)}
+            />
+          ))}
+        </div>
         <Range
           ariaLabel={t("labels.strokeWidth")}
           className={clsx("linear-stroke-width-range", {
@@ -890,20 +914,18 @@ export const actionChangeVectorStrokeWidth = register<number>({
           min={VECTOR_STROKE_WIDTH.min}
           max={VECTOR_STROKE_WIDTH.max}
           step={VECTOR_STROKE_WIDTH.step}
-          minLabel={data?.contextToolbar ? null : VECTOR_STROKE_WIDTH.min}
-          maxLabel={data?.contextToolbar ? undefined : VECTOR_STROKE_WIDTH.max}
+          minLabel={null}
+          maxLabel={null}
           preventCanvasInteraction
           showValueBubble={false}
           testId="linear-stroke-width-slider"
         />
         {data?.contextToolbar ? (
           <div className="linear-stroke-width-contextual-meta">
-            <span>{VECTOR_STROKE_WIDTH.min}</span>
             <LinearStrokeWidthInput
               value={value}
               onChange={(nextValue) => updateData(nextValue)}
             />
-            <span>{VECTOR_STROKE_WIDTH.max}</span>
           </div>
         ) : (
           <LinearStrokeWidthInput

@@ -536,7 +536,7 @@ export const ContextualPropertiesToolbar = ({
           <span className="contextual-properties-toolbar__label">Border</span>
           {renderAction("changeStrokeColor", { contextToolbar: true })}
           <ContextualToolbarDivider />
-          {renderAction("changeStrokeWidth", { contextToolbar: true })}
+          {renderAction("changeVectorStrokeWidth", { contextToolbar: true })}
           <ContextualToolbarDivider />
           <ImageBackgroundRemovalAction
             app={app}

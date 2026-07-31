@@ -56,4 +56,46 @@ describe("CloudStatus", () => {
     expect(screen.getByText("Saved")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
   });
+
+  it("keeps the title and save state in one compact identity group", () => {
+    const { container } = render(
+      <CloudStatus
+        title="A very long Board title that must remain compact"
+        status="saving"
+        errorMessage={null}
+        canRename={true}
+        onRename={vi.fn()}
+      />,
+    );
+
+    const identity = container.querySelector(".cloud-status__identity");
+    expect(identity).not.toBeNull();
+    expect(identity?.children).toHaveLength(2);
+    expect(identity?.children[0]).toHaveClass("cloud-status__title");
+    expect(identity?.children[1]).toHaveClass("cloud-status__state--saving");
+    expect(identity?.children[1]).toHaveTextContent("Saving…");
+  });
+
+  it("cancels a rename without changing the title", () => {
+    const onRename = vi.fn();
+    render(
+      <CloudStatus
+        title="Original title"
+        status="saved"
+        errorMessage={null}
+        canRename={true}
+        onRename={onRename}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Original title" }));
+    const input = screen.getByRole("textbox", { name: "Board title" });
+    fireEvent.change(input, { target: { value: "Discard me" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(
+      screen.getByRole("button", { name: "Original title" }),
+    ).toBeVisible();
+    expect(onRename).not.toHaveBeenCalled();
+  });
 });

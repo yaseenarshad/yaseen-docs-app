@@ -137,19 +137,15 @@ describe("element locking", () => {
       expect(
         document.querySelector('[data-viewport-ui-name="stylesPanel"]'),
       ).toBeNull();
-      expect(control).toHaveTextContent("0.5");
-      expect(control).toHaveTextContent("50");
       expect(control?.querySelector(".value-bubble")).toBeNull();
       const valueRow = control?.querySelector(
         ".linear-stroke-width-contextual-meta",
       );
       expect(valueRow).not.toBeNull();
-      expect(valueRow?.children).toHaveLength(3);
-      expect(valueRow?.children[0]).toHaveTextContent("0.5");
-      expect(valueRow?.children[1]).toContainElement(
+      expect(valueRow?.children).toHaveLength(1);
+      expect(valueRow?.children[0]).toContainElement(
         queryByTestId(document.body, "linear-stroke-width-input"),
       );
-      expect(valueRow?.children[2]).toHaveTextContent("50");
 
       fireEvent.change(slider, { target: { value: "7.5" } });
 
@@ -168,7 +164,7 @@ describe("element locking", () => {
       expect(window.h.state.activeTool.type).toBe("line");
     });
 
-    it.each([0.5, 1.5, 3, 7.5, 20, 50])(
+    it.each([0.5, 1.5, 3, 7.5, 20, 50, 100])(
       "should apply the representative %s px slider value before drawing",
       (strokeWidth) => {
         UI.clickTool("arrow");
@@ -187,6 +183,28 @@ describe("element locking", () => {
         );
       },
     );
+
+    it("should expose the approved thin, medium, and bold presets", () => {
+      UI.clickTool("freedraw");
+
+      const presets = [2, 8, 24] as const;
+      for (const strokeWidth of presets) {
+        const preset = queryByTestId(
+          document.body,
+          `vector-stroke-width-preset-${strokeWidth}`,
+        );
+        expect(preset).not.toBeNull();
+        expect(preset).toHaveAttribute(
+          "aria-label",
+          `Set stroke width to ${strokeWidth} px`,
+        );
+        fireEvent.click(preset!);
+        expect(window.h.state.currentItemVectorStrokeWidth).toBe(strokeWidth);
+        expect(API.createElement({ type: "freedraw" }).strokeWidth).toBe(
+          strokeWidth,
+        );
+      }
+    });
 
     it.each(["rectangle", "ellipse", "diamond"] as const)(
       "should carry the shared exact width into the %s tool",
@@ -624,7 +642,10 @@ describe("element locking", () => {
         document.body,
         `color-top-pick-${borderColor}`,
       );
-      const boldBorderButton = queryByTestId(document.body, "strokeWidth-bold");
+      const boldBorderButton = queryByTestId(
+        document.body,
+        "vector-stroke-width-preset-24",
+      );
 
       expect(borderColorButton).not.toBe(null);
       expect(boldBorderButton).not.toBe(null);
@@ -633,7 +654,7 @@ describe("element locking", () => {
 
       const selectedImage = API.getSelectedElements()[0];
       expect(selectedImage.strokeColor).toBe(borderColor);
-      expect(selectedImage.strokeWidth).toBe(STROKE_WIDTH.bold);
+      expect(selectedImage.strokeWidth).toBe(24);
     });
 
     it("should move image edges and opacity into the secondary helper", () => {
@@ -755,19 +776,24 @@ describe("element locking", () => {
       expect(queryByTestId(document.body, "strokeWidth-thin")).toBeNull();
     });
 
-    it("should highlight common stroke width key across freedraw and non-freedraw elements", () => {
+    it("should expose one exact width across freedraw and non-freedraw elements", () => {
       const rect = API.createElement({
         type: "rectangle",
-        strokeWidth: STROKE_WIDTH.medium,
+        strokeWidth: 8,
       });
       const freedraw = API.createElement({
         type: "freedraw",
-        strokeWidth: FREEDRAW_STROKE_WIDTH.medium,
+        strokeWidth: 8,
       });
       API.setElements([rect, freedraw]);
       API.setSelectedElements([rect, freedraw]);
 
-      expect(queryByTestId(document.body, `strokeWidth-medium`)).toBeChecked();
+      expect(
+        queryByTestId(document.body, "linear-stroke-width-input"),
+      ).toHaveValue(8);
+      expect(
+        queryByTestId(document.body, "vector-stroke-width-preset-8"),
+      ).toHaveAttribute("aria-pressed", "true");
     });
 
     it("should apply stroke width by element type", () => {
@@ -784,7 +810,7 @@ describe("element locking", () => {
 
       const boldStrokeWidthButton = queryByTestId(
         document.body,
-        `strokeWidth-bold`,
+        "vector-stroke-width-preset-24",
       );
       expect(boldStrokeWidthButton).not.toBe(null);
       fireEvent.click(boldStrokeWidthButton!);
@@ -797,8 +823,8 @@ describe("element locking", () => {
         (element) => element.type === "freedraw",
       );
 
-      expect(selectedRect?.strokeWidth).toBe(STROKE_WIDTH.bold);
-      expect(selectedFreedraw?.strokeWidth).toBe(FREEDRAW_STROKE_WIDTH.bold);
+      expect(selectedRect?.strokeWidth).toBe(24);
+      expect(selectedFreedraw?.strokeWidth).toBe(24);
     });
 
     it("should create new elements with stroke width by element type", () => {
@@ -811,7 +837,7 @@ describe("element locking", () => {
       const freedraw = API.createElement({ type: "freedraw" });
 
       expect(rect.strokeWidth).toBe(7.5);
-      expect(freedraw.strokeWidth).toBe(FREEDRAW_STROKE_WIDTH.bold);
+      expect(freedraw.strokeWidth).toBe(7.5);
     });
 
     it("should show Mixed for selected vectors without a common width", () => {
@@ -933,7 +959,7 @@ describe("element locking", () => {
       fireEvent.blur(input);
       expect(
         API.getSelectedElements().map((element) => element.strokeWidth),
-      ).toEqual([50, 50]);
+      ).toEqual([100, 100]);
     });
 
     it("should render a neutral mixed slider and apply its first value to all linears", () => {
@@ -1033,7 +1059,7 @@ describe("element locking", () => {
       });
     });
 
-    it("should keep presets for mixed supported and excluded selections", () => {
+    it("should use the exact shared control for mixed stroke-bearing selections", () => {
       const line = API.createElement({ type: "line" });
       const freedraw = API.createElement({ type: "freedraw" });
       API.setElements([line, freedraw]);
@@ -1041,12 +1067,12 @@ describe("element locking", () => {
 
       expect(
         queryByTestId(document.body, "linear-stroke-width-input"),
-      ).toBeNull();
-      expect(queryByTestId(document.body, "strokeWidth-thin")).not.toBeNull();
+      ).not.toBeNull();
+      expect(queryByTestId(document.body, "strokeWidth-thin")).toBeNull();
     });
 
     it.each(["image", "freedraw", "iframe", "embeddable"] as const)(
-      "should keep the generic width control for excluded %s elements",
+      "should use the exact shared width control for %s elements",
       (type) => {
         const element = API.createElement({ type });
         API.setElements([element]);
@@ -1054,8 +1080,8 @@ describe("element locking", () => {
 
         expect(
           queryByTestId(document.body, "linear-stroke-width-input"),
-        ).toBeNull();
-        expect(queryByTestId(document.body, "strokeWidth-thin")).not.toBeNull();
+        ).not.toBeNull();
+        expect(queryByTestId(document.body, "strokeWidth-thin")).toBeNull();
       },
     );
 
@@ -1118,7 +1144,7 @@ describe("element locking", () => {
       expect(rectangle.strokeWidth).toBe(7.5);
       expect(ellipse.strokeWidth).toBe(7.5);
       expect(diamond.strokeWidth).toBe(7.5);
-      expect(freedraw.strokeWidth).toBe(FREEDRAW_STROKE_WIDTH.medium);
+      expect(freedraw.strokeWidth).toBe(7.5);
     });
 
     it("should omit properties invalid for part of a mixed selection", () => {
@@ -1208,8 +1234,11 @@ describe("text properties on compact layouts", () => {
       ) as HTMLInputElement;
       expect(slider).not.toBeNull();
       expect(slider.value).toBe("3.5");
-      expect(slider.closest("fieldset")).toHaveTextContent("0.5");
-      expect(slider.closest("fieldset")).toHaveTextContent("50");
+      expect(
+        slider
+          .closest("fieldset")
+          ?.querySelectorAll(".linear-stroke-width-contextual-meta > span"),
+      ).toHaveLength(0);
       expect(queryByTestId(document.body, "strokeWidth-thin")).toBeNull();
     },
   );

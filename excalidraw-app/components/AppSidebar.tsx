@@ -1046,62 +1046,54 @@ export const AppSidebar = ({
   }, [excalidrawAPI]);
 
   return (
-    <>
-      <DefaultSidebar.Trigger
-        tab="boards"
-        icon={sidebarRightIcon}
-        title="Boards, library, and search"
-        className="app-sidebar-generic-trigger"
-      />
-      <DefaultSidebar
-        onStateChange={(state) => {
-          if (state?.name === "default") {
-            rememberSidebarTab(state.tab);
-          }
-        }}
-      >
-        <DefaultSidebar.TabTriggers>
-          <Sidebar.TabTrigger
-            tab="boards"
-            aria-label="Boards"
-            title="Boards"
-            style={{ opacity: openSidebar?.tab === "boards" ? 1 : 0.4 }}
-          >
-            {file}
-          </Sidebar.TabTrigger>
-          <Sidebar.TabTrigger
-            tab="components"
-            aria-label="Components"
-            title="Components"
-            style={{ opacity: openSidebar?.tab === "components" ? 1 : 0.4 }}
-          >
-            {LibraryIcon}
-          </Sidebar.TabTrigger>
-          <Sidebar.TabTrigger
-            tab="image-studio"
-            aria-label="Image Studio"
-            title="Image Studio"
-            style={{ opacity: openSidebar?.tab === "image-studio" ? 1 : 0.4 }}
-          >
-            {ImageIcon}
-          </Sidebar.TabTrigger>
-        </DefaultSidebar.TabTriggers>
-        <Sidebar.Tab tab="boards">
-          <BoardBrowser {...boardBrowserProps} />
-        </Sidebar.Tab>
-        <Sidebar.Tab tab="components">
-          {excalidrawAPI && <SavedComponents excalidrawAPI={excalidrawAPI} />}
-        </Sidebar.Tab>
-        <Sidebar.Tab tab="image-studio">
-          {excalidrawAPI && (
-            <ImageStudio
-              excalidrawAPI={excalidrawAPI}
-              canInsert={canInsertMedia}
-              searchFocusRequest={imageStudioSearchFocusRequest}
-            />
-          )}
-        </Sidebar.Tab>
-      </DefaultSidebar>
-    </>
+    <DefaultSidebar
+      onStateChange={(state) => {
+        if (state?.name === "default") {
+          rememberSidebarTab(state.tab);
+        }
+      }}
+    >
+      <DefaultSidebar.TabTriggers>
+        <Sidebar.TabTrigger
+          tab="boards"
+          aria-label="Boards"
+          title="Boards"
+          style={{ opacity: openSidebar?.tab === "boards" ? 1 : 0.4 }}
+        >
+          {file}
+        </Sidebar.TabTrigger>
+        <Sidebar.TabTrigger
+          tab="components"
+          aria-label="Components"
+          title="Components"
+          style={{ opacity: openSidebar?.tab === "components" ? 1 : 0.4 }}
+        >
+          {LibraryIcon}
+        </Sidebar.TabTrigger>
+        <Sidebar.TabTrigger
+          tab="image-studio"
+          aria-label="Image Studio"
+          title="Image Studio"
+          style={{ opacity: openSidebar?.tab === "image-studio" ? 1 : 0.4 }}
+        >
+          {ImageIcon}
+        </Sidebar.TabTrigger>
+      </DefaultSidebar.TabTriggers>
+      <Sidebar.Tab tab="boards">
+        <BoardBrowser {...boardBrowserProps} />
+      </Sidebar.Tab>
+      <Sidebar.Tab tab="components">
+        {excalidrawAPI && <SavedComponents excalidrawAPI={excalidrawAPI} />}
+      </Sidebar.Tab>
+      <Sidebar.Tab tab="image-studio">
+        {excalidrawAPI && (
+          <ImageStudio
+            excalidrawAPI={excalidrawAPI}
+            canInsert={canInsertMedia}
+            searchFocusRequest={imageStudioSearchFocusRequest}
+          />
+        )}
+      </Sidebar.Tab>
+    </DefaultSidebar>
   );
 };
