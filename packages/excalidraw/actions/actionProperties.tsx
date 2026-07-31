@@ -111,6 +111,7 @@ import type { ElementUpdate, Scene } from "@excalidraw/element";
 import type { CaptureUpdateActionType } from "@excalidraw/element";
 
 import { trackEvent } from "../analytics";
+import { getTextBackgroundRadiusForFontSize } from "../textCreation";
 import { RadioSelection } from "../components/RadioSelection";
 import { IconButton } from "../components/IconButton";
 import { ColorPicker } from "../components/ColorPicker/ColorPicker";
@@ -508,7 +509,20 @@ export const actionApplySelectedSemanticColor = register<{
           ]
         : paletteValue;
 
-      return newElementWith(element, { [property]: color });
+      return newElementWith(element, {
+        [property]: color,
+        ...(property === "backgroundColor" &&
+        isTextElement(element) &&
+        !isTransparent(color) &&
+        !element.roundness
+          ? {
+              roundness: {
+                type: ROUNDNESS.ADAPTIVE_RADIUS,
+                value: getTextBackgroundRadiusForFontSize(element.fontSize),
+              },
+            }
+          : null),
+      });
     });
 
     if (!supportedElementCount) {
@@ -577,6 +591,16 @@ export const actionChangeBackgroundColor = register<
           ? el
           : newElementWith(el, {
               backgroundColor: value.currentItemBackgroundColor,
+              ...(isTextElement(el) &&
+              !isTransparent(value.currentItemBackgroundColor) &&
+              !el.roundness
+                ? {
+                    roundness: {
+                      type: ROUNDNESS.ADAPTIVE_RADIUS,
+                      value: getTextBackgroundRadiusForFontSize(el.fontSize),
+                    },
+                  }
+                : null),
             }),
       );
     }

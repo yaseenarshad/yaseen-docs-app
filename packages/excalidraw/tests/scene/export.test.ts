@@ -9,6 +9,7 @@ import {
 } from "@excalidraw/common";
 
 import { pointFrom } from "@excalidraw/math";
+import { getTextBackgroundGeometry } from "@excalidraw/element";
 
 import type {
   ExcalidrawTextElement,
@@ -136,12 +137,15 @@ describe("exportToSvg", () => {
     const svg = await exportUtils.exportToSvg([text], DEFAULT_OPTIONS, null);
     const group = svg.querySelector(`[data-id="${text.id}"]`);
     const background = group?.querySelector("rect");
+    const geometry = getTextBackgroundGeometry(text)!;
 
     expect(background).not.toBeNull();
     expect(background).toHaveAttribute("fill", "#ff0000");
-    expect(background).toHaveAttribute("width", "100");
-    expect(background).toHaveAttribute("height", "40");
-    expect(background).toHaveAttribute("rx", "20");
+    expect(background).toHaveAttribute("x", `${geometry.x}`);
+    expect(background).toHaveAttribute("y", `${geometry.y}`);
+    expect(background).toHaveAttribute("width", `${geometry.width}`);
+    expect(background).toHaveAttribute("height", `${geometry.height}`);
+    expect(background).toHaveAttribute("rx", `${geometry.radius}`);
     expect(group?.firstElementChild).toBe(background);
   });
 
@@ -410,6 +414,7 @@ describe("exportToCanvas", () => {
         offsetTop: 0,
         width: 0,
       };
+      const geometry = getTextBackgroundGeometry(text)!;
 
       await exportUtils.exportToCanvas(
         [text],
@@ -432,10 +437,10 @@ describe("exportToCanvas", () => {
             .some(
               (event: any) =>
                 event.type === "fillRect" &&
-                event.props.x === 0 &&
-                event.props.y === 0 &&
-                event.props.width === 100 &&
-                event.props.height === 40,
+                event.props.x === geometry.x &&
+                event.props.y === geometry.y &&
+                event.props.width === geometry.width &&
+                event.props.height === geometry.height,
             ),
         ),
       ).toBe(true);

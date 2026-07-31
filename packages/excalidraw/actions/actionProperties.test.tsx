@@ -1024,6 +1024,7 @@ describe("element locking", () => {
         text: "Native background",
         strokeColor: "#123456",
         backgroundColor: COLOR_PALETTE.transparent,
+        fontSize: 130,
         roundness: null,
       });
       API.setElements([text]);
@@ -1048,12 +1049,17 @@ describe("element locking", () => {
       expect(API.getSelectedElement()).toMatchObject({
         strokeColor: "#123456",
         backgroundColor,
+        roundness: {
+          type: ROUNDNESS.ADAPTIVE_RADIUS,
+          value: 32,
+        },
       });
       const slider = queryByTestId(
         document.body,
         "corner-radius-slider",
       ) as HTMLInputElement;
       expect(slider).not.toBeNull();
+      expect(slider).toHaveValue("32");
 
       fireEvent.change(slider, { target: { value: "48" } });
       expect(API.getSelectedElement()).toMatchObject({

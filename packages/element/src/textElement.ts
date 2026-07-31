@@ -5,6 +5,8 @@ import {
   DEFAULT_FONT_SIZE,
   TEXT_ALIGN,
   VERTICAL_ALIGN,
+  getVerticalOffset,
+  isRTL,
   isTransparent,
   isProdEnv,
   invariant,
@@ -43,19 +45,138 @@ import type {
   NonDeleted,
 } from "./types";
 
-export const getTextBackgroundGeometry = (element: ExcalidrawTextElement) => {
-  if (element.containerId !== null || isTransparent(element.backgroundColor)) {
+type TextVisualBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+let textBackgroundMeasurementContext:
+  | CanvasRenderingContext2D
+  | null
+  | undefined;
+
+const getTextBackgroundMeasurementContext = () => {
+  if (textBackgroundMeasurementContext !== undefined) {
+    return textBackgroundMeasurementContext;
+  }
+
+  if (typeof document === "undefined") {
+    textBackgroundMeasurementContext = null;
+    return textBackgroundMeasurementContext;
+  }
+
+  textBackgroundMeasurementContext = document
+    .createElement("canvas")
+    .getContext("2d");
+  return textBackgroundMeasurementContext;
+};
+
+const getTextVisualBounds = (
+  element: ExcalidrawTextElement,
+): TextVisualBounds | null => {
+  const context = getTextBackgroundMeasurementContext();
+  if (!context) {
+    return null;
+  }
+
+  const maxWidth = element.autoResize ? Infinity : element.width;
+  const { lines } = getTextElementStyledLayout(element, maxWidth);
+  const lineHeightPx = element.fontSize * element.lineHeight;
+  const verticalOffset = getVerticalOffset(
+    element.fontFamily,
+    element.fontSize,
+    lineHeightPx,
+  );
+  const horizontalOffset =
+    element.textAlign === "center"
+      ? element.width / 2
+      : element.textAlign === "right"
+      ? element.width
+      : 0;
+
+  context.textAlign = element.textAlign as CanvasTextAlign;
+  context.direction = isRTL(element.text) ? "rtl" : "ltr";
+  let left = Infinity;
+  let top = Infinity;
+  let right = -Infinity;
+  let bottom = -Infinity;
+
+  for (let index = 0; index < lines.length; index++) {
+    context.font = lines[index].font;
+    const metrics = context.measureText(lines[index].text || " ");
+    const baseline = index * lineHeightPx + verticalOffset;
+    const values = [
+      metrics.actualBoundingBoxLeft,
+      metrics.actualBoundingBoxRight,
+      metrics.actualBoundingBoxAscent,
+      metrics.actualBoundingBoxDescent,
+    ];
+
+    if (!values.every((value) => Number.isFinite(value))) {
+      return null;
+    }
+
+    left = Math.min(left, horizontalOffset - metrics.actualBoundingBoxLeft);
+    right = Math.max(right, horizontalOffset + metrics.actualBoundingBoxRight);
+    top = Math.min(top, baseline - metrics.actualBoundingBoxAscent);
+    bottom = Math.max(bottom, baseline + metrics.actualBoundingBoxDescent);
+  }
+
+  if (
+    !Number.isFinite(left) ||
+    !Number.isFinite(top) ||
+    !Number.isFinite(right) ||
+    !Number.isFinite(bottom) ||
+    right <= left ||
+    bottom <= top
+  ) {
     return null;
   }
 
   return {
-    x: 0,
-    y: 0,
-    width: element.width,
-    height: element.height,
-    radius: element.roundness
-      ? getCornerRadius(Math.min(element.width, element.height), element)
-      : 0,
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  };
+};
+
+export const getTextBackgroundGeometry = (
+  element: ExcalidrawTextElement,
+  measuredVisualBounds?: TextVisualBounds,
+) => {
+  if (element.containerId !== null || isTransparent(element.backgroundColor)) {
+    return null;
+  }
+
+  const visualBounds = measuredVisualBounds ??
+    getTextVisualBounds(element) ?? {
+      x: 0,
+      y: 0,
+      width: element.width,
+      height: element.height,
+    };
+  // Slightly wider side padding gives the filled text a compact label shape
+  // instead of a square block. Measuring actual glyph bounds keeps words
+  // without descenders from looking bottom-heavy.
+  const horizontalPadding = element.fontSize * 0.26;
+  const verticalPadding = element.fontSize * 0.23;
+  const roundMetric = (value: number) => Math.round(value * 100) / 100;
+  const x = roundMetric(visualBounds.x - horizontalPadding);
+  const y = roundMetric(visualBounds.y - verticalPadding);
+  const width = roundMetric(visualBounds.width + horizontalPadding * 2);
+  const height = roundMetric(visualBounds.height + verticalPadding * 2);
+
+  return {
+    x,
+    y,
+    width,
+    height,
+    radius: roundMetric(
+      element.roundness ? getCornerRadius(Math.min(width, height), element) : 0,
+    ),
   };
 };
 

@@ -1,3 +1,5 @@
+import { CORNER_RADIUS } from "@excalidraw/common";
+
 const RESPONSIVE_TEXT_BASE_SIZE = 130;
 const RESPONSIVE_TEXT_MIN_SIZE = 32;
 const RESPONSIVE_TEXT_MAX_SIZE = 440;
@@ -14,3 +16,18 @@ export const getResponsiveTextFontSize = (zoom: number) => {
     Math.max(RESPONSIVE_TEXT_MIN_SIZE, fontSize),
   );
 };
+
+export const getTextBackgroundRadiusForFontSize = (fontSize: number) => {
+  const safeFontSize =
+    Number.isFinite(fontSize) && fontSize > 0
+      ? fontSize
+      : RESPONSIVE_TEXT_BASE_SIZE;
+  const radius = Math.round(
+    (CORNER_RADIUS.default * safeFontSize) / RESPONSIVE_TEXT_BASE_SIZE,
+  );
+
+  return Math.min(CORNER_RADIUS.max, Math.max(CORNER_RADIUS.min, radius));
+};
+
+export const getResponsiveTextBackgroundRadius = (zoom: number) =>
+  getTextBackgroundRadiusForFontSize(getResponsiveTextFontSize(zoom));

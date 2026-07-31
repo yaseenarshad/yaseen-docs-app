@@ -1,4 +1,8 @@
-import { getResponsiveTextFontSize } from "../textCreation";
+import {
+  getResponsiveTextBackgroundRadius,
+  getResponsiveTextFontSize,
+  getTextBackgroundRadiusForFontSize,
+} from "../textCreation";
 
 describe("getResponsiveTextFontSize", () => {
   it.each([
@@ -27,4 +31,26 @@ describe("getResponsiveTextFontSize", () => {
       expect(getResponsiveTextFontSize(zoom)).toBe(130);
     },
   );
+});
+
+describe("responsive text-background radius", () => {
+  it.each([
+    [0.1, 100],
+    [0.25, 74],
+    [0.5, 48],
+    [1, 32],
+    [1.5, 18],
+    [2, 13],
+    [3, 8],
+    [4, 8],
+  ])("resolves zoom %s to a %spx default radius", (zoom, expectedRadius) => {
+    expect(getResponsiveTextBackgroundRadius(zoom)).toBe(expectedRadius);
+  });
+
+  it("uses the actual text size and clamps safely", () => {
+    expect(getTextBackgroundRadiusForFontSize(20)).toBe(5);
+    expect(getTextBackgroundRadiusForFontSize(130)).toBe(32);
+    expect(getTextBackgroundRadiusForFontSize(440)).toBe(100);
+    expect(getTextBackgroundRadiusForFontSize(Number.NaN)).toBe(32);
+  });
 });

@@ -7,11 +7,13 @@ import {
   DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX,
   DEFAULT_ELEMENT_STROKE_COLOR_INDEX,
   KEYS,
+  ROUNDNESS,
 } from "@excalidraw/common";
 import { newElementWith } from "@excalidraw/element";
 
 import { Excalidraw } from "../index";
 import { SEMANTIC_COLOR_HOTKEYS } from "../components/ColorPicker/colorPickerUtils";
+import { getTextBackgroundRadiusForFontSize } from "../textCreation";
 
 import { API } from "./helpers/api";
 import { Keyboard, UI } from "./helpers/ui";
@@ -163,10 +165,19 @@ describe("selected-element semantic color hotkeys", () => {
         Keyboard.keyPress(hotkey.toUpperCase());
       });
 
-      expect(h.app.scene.getElement(text.id)).toMatchObject({
+      const updatedText = h.app.scene.getElement(text.id)!;
+      expect(updatedText).toMatchObject({
         strokeColor: "#123456",
         backgroundColor: expectedColor,
       });
+      expect(updatedText.roundness).toEqual(
+        expectedColor === COLOR_PALETTE.transparent
+          ? null
+          : {
+              type: ROUNDNESS.ADAPTIVE_RADIUS,
+              value: getTextBackgroundRadiusForFontSize(text.fontSize),
+            },
+      );
     },
   );
 
