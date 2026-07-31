@@ -7,7 +7,7 @@ import { Excalidraw } from "../index";
 import { getNormalizedZoom } from "../scene";
 
 import { API } from "./helpers/api";
-import { Keyboard, Pointer } from "./helpers/ui";
+import { Keyboard, Pointer, UI } from "./helpers/ui";
 import { getTextEditor, updateTextEditor } from "./queries/dom";
 import {
   act,
@@ -52,12 +52,56 @@ describe("direct T text entry", () => {
     expect(text).toMatchObject({
       type: "text",
       x: 160,
-      fontSize: 28,
+      fontSize: 51,
       strokeColor: "#e03131",
       containerId: null,
     });
     expect(text!.y + text!.height / 2).toBeCloseTo(140);
     expect(h.state.selectedElementIds).toEqual({});
+    expect(h.state.currentItemFontSize).toBe(28);
+  });
+
+  it("uses the same responsive size for toolbar-created free text", async () => {
+    API.setAppState({
+      zoom: { value: getNormalizedZoom(2) },
+      currentItemFontSize: 28,
+    });
+
+    UI.clickTool("text");
+    mouse.clickAt(300, 240);
+
+    await getTextEditor();
+    expect(h.state.editingTextElement).toMatchObject({
+      type: "text",
+      fontSize: 51,
+      containerId: null,
+    });
+    expect(h.state.currentItemFontSize).toBe(28);
+  });
+
+  it("keeps container-bound text on the persistent size path", async () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      x: 400,
+      y: 400,
+      width: 200,
+      height: 100,
+      backgroundColor: "#a5d8ff",
+    });
+    API.setElements([rectangle]);
+    API.setAppState({
+      zoom: { value: getNormalizedZoom(1) },
+      currentItemFontSize: 28,
+    });
+
+    mouse.doubleClickAt(450, 430);
+
+    await getTextEditor();
+    expect(h.state.editingTextElement).toMatchObject({
+      type: "text",
+      fontSize: 28,
+      containerId: rectangle.id,
+    });
   });
 
   it("creates new unbound text instead of editing or joining content under the pointer", async () => {

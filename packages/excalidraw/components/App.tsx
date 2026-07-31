@@ -346,6 +346,7 @@ import {
 } from "../actions/actionFrame";
 import { createRedoAction, createUndoAction } from "../actions/actionHistory";
 import { actionTextAutoResize } from "../actions/actionTextAutoResize";
+import { getResponsiveTextFontSize } from "../textCreation";
 import { actionToggleViewMode } from "../actions/actionToggleViewMode";
 import { ActionManager } from "../actions/manager";
 import { actions } from "../actions/register";
@@ -5391,6 +5392,7 @@ class App extends React.Component<AppProps, AppState> {
       container: null,
       forceNewText: true,
       addToFrame: false,
+      newTextFontSize: getResponsiveTextFontSize(this.state.zoom.value),
     });
   };
 
@@ -6850,6 +6852,7 @@ class App extends React.Component<AppProps, AppState> {
     arrowEndpoint,
     forceNewText = false,
     addToFrame = true,
+    newTextFontSize,
   }: {
     /** X position to insert text at */
     sceneX: number;
@@ -6869,6 +6872,8 @@ class App extends React.Component<AppProps, AppState> {
     forceNewText?: boolean;
     /** whether a newly-created text element should join a frame under it */
     addToFrame?: boolean;
+    /** per-creation size override for a newly-created free-text element */
+    newTextFontSize?: number;
   }) => {
     let shouldBindToContainer = false;
 
@@ -6925,7 +6930,10 @@ class App extends React.Component<AppProps, AppState> {
 
     const lineHeight =
       existingTextElement?.lineHeight || getLineHeight(fontFamily);
-    const fontSize = this.state.currentItemFontSize;
+    const fontSize =
+      !existingTextElement && !shouldBindToContainer && !arrowEndpointBinding
+        ? newTextFontSize ?? this.state.currentItemFontSize
+        : this.state.currentItemFontSize;
 
     if (
       !existingTextElement &&
@@ -10007,6 +10015,9 @@ class App extends React.Component<AppProps, AppState> {
         container,
         autoEdit: false,
         initialCaretSceneCoords: { x: sceneX, y: sceneY },
+        newTextFontSize: container
+          ? undefined
+          : getResponsiveTextFontSize(this.state.zoom.value),
       });
     }
 
