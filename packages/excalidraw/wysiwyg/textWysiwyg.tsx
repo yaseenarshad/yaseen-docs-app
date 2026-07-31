@@ -11,6 +11,7 @@ import {
   MIME_TYPES,
   applyDarkModeFilter,
   isRTL,
+  viewportCoordsToSceneCoords,
 } from "@excalidraw/common";
 import { pointFrom, pointRotateRads, type Radians } from "@excalidraw/math";
 
@@ -39,9 +40,11 @@ import { getLineHeightInPx } from "@excalidraw/element";
 import {
   getStyledVisualLineStart,
   getStyledVisualLines,
+  getStyledVisualSelectionGeometry,
   remapLineStylesForTextEdit,
   remapLineUnderlinesForTextEdit,
 } from "@excalidraw/element";
+
 import { normalizeText } from "@excalidraw/element";
 import { wrapText } from "@excalidraw/element";
 import {
@@ -49,6 +52,8 @@ import {
   isBoundToContainer,
   isTextElement,
 } from "@excalidraw/element";
+
+import type { StyledVisualLine } from "@excalidraw/element";
 
 import type {
   ExcalidrawLinearElement,
@@ -257,6 +262,7 @@ export const textWysiwyg = ({
 }): SubmitHandler => {
   let currentTextLayout: {
     angle: Radians;
+    elementWidth: number;
     font: ReturnType<typeof getFontString>;
     height: number;
     lineHeightPx: number;
@@ -264,6 +270,9 @@ export const textWysiwyg = ({
     width: number;
     x: number;
     y: number;
+    color: string;
+    hasVisualLineOverlay: boolean;
+    visualLines: readonly StyledVisualLine[];
   } | null = null;
 
   const textPropertiesUpdated = (
@@ -473,7 +482,7 @@ export const textWysiwyg = ({
         fontWeight: updatedTextElement.fontWeight ?? "normal",
         textDecoration: wholeTextDecorations.join(" ") || "none",
         color: hasVisualLineOverlay ? "transparent" : color,
-        caretColor: color,
+        caretColor: hasVisualLineOverlay ? "transparent" : color,
         opacity: updatedTextElement.opacity / 100,
         maxHeight: `${editorMaxHeight}px`,
       });
@@ -486,6 +495,24 @@ export const textWysiwyg = ({
         opacity: updatedTextElement.opacity / 100,
         maxHeight: `${editorMaxHeight}px`,
       });
+      editable.classList.toggle(
+        "excalidraw-wysiwyg-visual-selection",
+        hasVisualLineOverlay,
+      );
+      currentTextLayout = {
+        angle: angle as Radians,
+        elementWidth: updatedTextElement.width,
+        font,
+        height: updatedTextElement.height,
+        lineHeightPx,
+        textAlign,
+        width,
+        x: coordX,
+        y: coordY,
+        color,
+        hasVisualLineOverlay,
+        visualLines,
+      };
       underlineOverlay.replaceChildren();
 
       for (const [index, line] of visualLines.entries()) {
@@ -520,19 +547,11 @@ export const textWysiwyg = ({
             .filter(Boolean)
             .join(" "),
           whiteSpace: "pre",
+          zIndex: "1",
         });
         underlineOverlay.appendChild(styledLine);
       }
-      currentTextLayout = {
-        angle: angle as Radians,
-        font,
-        height: updatedTextElement.height,
-        lineHeightPx,
-        textAlign,
-        width: updatedTextElement.width,
-        x: coordX,
-        y: coordY,
-      };
+      renderVisualSelection();
       editable.scrollTop = 0;
       // For some reason updating font attribute doesn't set font family
       // hence updating font family explicitly for test environment
@@ -593,43 +612,81 @@ export const textWysiwyg = ({
   editable.value = element.originalText;
   let previousEditableValue = editable.value;
   let pendingNewLineStyle: "inherit" | "plain" | null = null;
+
+  function renderVisualSelection() {
+    underlineOverlay
+      .querySelectorAll(
+        ".excalidraw-wysiwyg-selection, .excalidraw-wysiwyg-caret",
+      )
+      .forEach((node) => node.remove());
+
+    const layout = currentTextLayout;
+    if (!layout?.hasVisualLineOverlay) {
+      return;
+    }
+
+    const geometry = getStyledVisualSelectionGeometry({
+      lines: layout.visualLines,
+      containerWidth: layout.width,
+      textAlign: layout.textAlign,
+      lineHeightPx: layout.lineHeightPx,
+      selectionStart: editable.selectionStart,
+      selectionEnd: editable.selectionEnd,
+    });
+
+    for (const rectangle of geometry.rectangles) {
+      const selection = document.createElement("span");
+      selection.className = "excalidraw-wysiwyg-selection";
+      Object.assign(selection.style, {
+        position: "absolute",
+        left: `${rectangle.left}px`,
+        top: `${rectangle.top}px`,
+        width: `${rectangle.width}px`,
+        height: `${rectangle.height}px`,
+        zIndex: "0",
+      });
+      underlineOverlay.appendChild(selection);
+    }
+
+    if (geometry.caret) {
+      const caret = document.createElement("span");
+      caret.className = "excalidraw-wysiwyg-caret";
+      Object.assign(caret.style, {
+        position: "absolute",
+        left: `${geometry.caret.left}px`,
+        top: `${geometry.caret.top}px`,
+        width: "1px",
+        height: `${geometry.caret.height}px`,
+        backgroundColor: layout.color,
+        zIndex: "2",
+      });
+      underlineOverlay.appendChild(caret);
+    }
+  }
+
   updateWysiwygStyle();
 
-  const getCaretIndexFromInitialSceneCoords = () => {
-    if (!initialCaretSceneCoords || !currentTextLayout) {
+  const getCaretIndexFromSceneCoords = (sceneCoords: {
+    x: number;
+    y: number;
+  }) => {
+    if (!currentTextLayout) {
       return null;
     }
 
     const layout = currentTextLayout;
     const center = pointFrom(
-      layout.x + layout.width / 2,
+      layout.x + layout.elementWidth / 2,
       layout.y + layout.height / 2,
     );
     const [unrotatedX, unrotatedY] = pointRotateRads(
-      pointFrom(initialCaretSceneCoords.x, initialCaretSceneCoords.y),
+      pointFrom(sceneCoords.x, sceneCoords.y),
       center,
       -layout.angle as Radians,
     );
     const localX = unrotatedX - layout.x;
     const localY = unrotatedY - layout.y;
-    const currentElement =
-      app.scene.getElement<NonDeleted<ExcalidrawTextElement>>(element.id) ??
-      element;
-    const lines = getStyledVisualLines({
-      originalText: editable.value,
-      regularFont: getFontString({
-        ...currentElement,
-        fontWeight: "normal",
-      }),
-      boldFont: getFontString({ ...currentElement, fontWeight: "bold" }),
-      maxWidth: whiteSpace === "pre-wrap" ? layout.width : Infinity,
-      lineBolds: currentElement.lineBolds,
-      lineUnderlines: currentElement.lineUnderlines,
-      lineStrikethroughs: currentElement.lineStrikethroughs,
-      wholeElementBold: currentElement.fontWeight === "bold",
-      wholeElementUnderlined: currentElement.textDecoration === "underline",
-      wholeElementStrikethrough: currentElement.strikethrough === true,
-    });
+    const lines = layout.visualLines;
     const lineIndex = Math.max(
       0,
       Math.min(lines.length - 1, Math.floor(localY / layout.lineHeightPx)),
@@ -658,6 +715,14 @@ export const textWysiwyg = ({
     return line.start + (lineCaretOffset || 0);
   };
 
+  const getCaretIndexFromInitialSceneCoords = () => {
+    if (!initialCaretSceneCoords) {
+      return null;
+    }
+
+    return getCaretIndexFromSceneCoords(initialCaretSceneCoords);
+  };
+
   let pendingInitialSelection = (() => {
     const caretIndex = getCaretIndexFromInitialSceneCoords();
 
@@ -670,6 +735,105 @@ export const textWysiwyg = ({
       end: caretIndex,
     };
   })();
+
+  let visualSelectionAnchor: number | null = null;
+
+  const updateVisualSelectionFromPointer = (event: PointerEvent) => {
+    if (visualSelectionAnchor === null) {
+      return;
+    }
+
+    const sceneCoords = viewportCoordsToSceneCoords(event, app.state);
+    const caretIndex = getCaretIndexFromSceneCoords(sceneCoords);
+    if (caretIndex === null) {
+      return;
+    }
+
+    if (caretIndex < visualSelectionAnchor) {
+      editable.setSelectionRange(caretIndex, visualSelectionAnchor, "backward");
+    } else {
+      editable.setSelectionRange(visualSelectionAnchor, caretIndex, "forward");
+    }
+    renderVisualSelection();
+  };
+
+  const stopVisualSelectionDrag = () => {
+    visualSelectionAnchor = null;
+    window.removeEventListener("pointermove", updateVisualSelectionFromPointer);
+    window.removeEventListener("pointerup", stopVisualSelectionDrag);
+  };
+
+  const handleEditablePointerDown = (event: PointerEvent) => {
+    event.stopPropagation();
+
+    if (
+      (event.button !== POINTER_BUTTON.MAIN &&
+        event.button !== POINTER_BUTTON.TOUCH) ||
+      !currentTextLayout?.hasVisualLineOverlay
+    ) {
+      return;
+    }
+
+    const sceneCoords = viewportCoordsToSceneCoords(event, app.state);
+    const caretIndex = getCaretIndexFromSceneCoords(sceneCoords);
+    if (caretIndex === null) {
+      return;
+    }
+
+    event.preventDefault();
+    editable.focus();
+    stopVisualSelectionDrag();
+
+    if (event.detail >= 3) {
+      const lineStart = editable.value.lastIndexOf("\n", caretIndex - 1) + 1;
+      const nextLineBreak = editable.value.indexOf("\n", caretIndex);
+      const lineEnd =
+        nextLineBreak === -1 ? editable.value.length : nextLineBreak;
+      visualSelectionAnchor = null;
+      editable.setSelectionRange(lineStart, lineEnd, "forward");
+      renderVisualSelection();
+      return;
+    }
+
+    if (event.detail === 2) {
+      const isWordCharacter = (character: string) =>
+        /[\p{L}\p{M}\p{N}_]/u.test(character);
+      let wordStart = caretIndex;
+      let wordEnd = caretIndex;
+
+      while (
+        wordStart > 0 &&
+        isWordCharacter(editable.value.slice(wordStart - 1, wordStart))
+      ) {
+        wordStart--;
+      }
+      while (
+        wordEnd < editable.value.length &&
+        isWordCharacter(editable.value.slice(wordEnd, wordEnd + 1))
+      ) {
+        wordEnd++;
+      }
+
+      visualSelectionAnchor = null;
+      editable.setSelectionRange(wordStart, wordEnd, "forward");
+      renderVisualSelection();
+      return;
+    }
+
+    visualSelectionAnchor = event.shiftKey
+      ? editable.selectionDirection === "backward"
+        ? editable.selectionEnd
+        : editable.selectionStart
+      : caretIndex;
+    editable.setSelectionRange(
+      Math.min(visualSelectionAnchor, caretIndex),
+      Math.max(visualSelectionAnchor, caretIndex),
+      caretIndex < visualSelectionAnchor ? "backward" : "forward",
+    );
+    renderVisualSelection();
+    window.addEventListener("pointermove", updateVisualSelectionFromPointer);
+    window.addEventListener("pointerup", stopVisualSelectionDrag);
+  };
 
   if (onChange) {
     editable.onpaste = async (event) => {
@@ -1190,6 +1354,9 @@ export const textWysiwyg = ({
     editable.onblur = null;
     editable.oninput = null;
     editable.onkeydown = null;
+    editable.removeEventListener("select", renderVisualSelection);
+    editable.removeEventListener("pointerdown", handleEditablePointerDown);
+    stopVisualSelectionDrag();
 
     if (observer) {
       observer.disconnect();
@@ -1360,7 +1527,8 @@ export const textWysiwyg = ({
     window.addEventListener("resize", updateWysiwygStyle);
   }
 
-  editable.onpointerdown = (event) => event.stopPropagation();
+  editable.addEventListener("select", renderVisualSelection);
+  editable.addEventListener("pointerdown", handleEditablePointerDown);
 
   // rAF (+ capture to by doubly sure) so we don't catch te pointerdown that
   // triggered the wysiwyg

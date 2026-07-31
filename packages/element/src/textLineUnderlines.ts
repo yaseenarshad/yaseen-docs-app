@@ -278,6 +278,107 @@ export const getStyledVisualLineStart = (
   return alignedBlockStart + line.horizontalOffset;
 };
 
+export type StyledVisualSelectionRect = {
+  lineIndex: number;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+export type StyledVisualCaretGeometry = {
+  lineIndex: number;
+  left: number;
+  top: number;
+  height: number;
+};
+
+/**
+ * Maps source-text selections to the same per-line geometry used to render
+ * wrapped/styled text. This is required by the WYSIWYG overlay because the
+ * browser textarea does not understand synthetic soft wraps or hanging
+ * indents.
+ */
+export const getStyledVisualSelectionGeometry = (args: {
+  lines: readonly StyledVisualLine[];
+  containerWidth: number;
+  textAlign: TextAlign;
+  lineHeightPx: number;
+  selectionStart: number;
+  selectionEnd: number;
+}) => {
+  const selectionStart = Math.max(
+    0,
+    Math.min(args.selectionStart, args.selectionEnd),
+  );
+  const selectionEnd = Math.max(
+    selectionStart,
+    Math.max(args.selectionStart, args.selectionEnd),
+  );
+  const rectangles: StyledVisualSelectionRect[] = [];
+
+  if (selectionStart !== selectionEnd) {
+    for (const [lineIndex, line] of args.lines.entries()) {
+      const start = Math.max(selectionStart, line.start);
+      const end = Math.min(selectionEnd, line.end);
+
+      if (start >= end) {
+        continue;
+      }
+
+      const localStart = Math.max(0, start - line.start);
+      const localEnd = Math.max(localStart, end - line.start);
+      const prefixWidth = getLineWidth(
+        line.text.slice(0, localStart),
+        line.font,
+      );
+      const selectedWidth = getLineWidth(
+        line.text.slice(localStart, localEnd),
+        line.font,
+      );
+
+      rectangles.push({
+        lineIndex,
+        left:
+          getStyledVisualLineStart(line, args.containerWidth, args.textAlign) +
+          prefixWidth,
+        top: lineIndex * args.lineHeightPx,
+        width: selectedWidth,
+        height: args.lineHeightPx,
+      });
+    }
+  }
+
+  let caret: StyledVisualCaretGeometry | null = null;
+
+  if (selectionStart === selectionEnd && args.lines.length) {
+    let lineIndex = 0;
+    for (let index = 0; index < args.lines.length; index++) {
+      if (args.lines[index].start <= selectionStart) {
+        lineIndex = index;
+      } else {
+        break;
+      }
+    }
+
+    const line = args.lines[lineIndex];
+    const localOffset = Math.max(
+      0,
+      Math.min(selectionStart, line.end) - line.start,
+    );
+    caret = {
+      lineIndex,
+      left:
+        getStyledVisualLineStart(line, args.containerWidth, args.textAlign) +
+        getLineWidth(line.text.slice(0, localOffset), line.font),
+      top: lineIndex * args.lineHeightPx,
+      height: args.lineHeightPx,
+    };
+  }
+
+  return { rectangles, caret };
+};
+
 export const getStyledVisualLines = (args: {
   originalText: string;
   regularFont: FontString;

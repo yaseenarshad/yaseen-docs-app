@@ -17,6 +17,7 @@ import {
   THEME,
   VERTICAL_ALIGN,
   applyDarkModeFilter,
+  sceneCoordsToViewportCoords,
 } from "@excalidraw/common";
 
 import type {
@@ -507,6 +508,145 @@ describe("textWysiwyg", () => {
       expect(editor.selectionEnd).toBe(editor.selectionStart);
     });
 
+    it("keeps the caret and selection highlight aligned with wrapped list continuations", async () => {
+      const originalText = "• Search inventory facts from the connected store";
+      const text = {
+        ...API.createElement({
+          type: "text",
+          text: originalText,
+          width: 120,
+          height: 120,
+          textAlign: "left",
+        }),
+        originalText,
+        autoResize: false,
+      } as ExcalidrawTextElement;
+      API.setElements([text]);
+      const layout = getTextElementStyledLayout(text, text.width);
+      const continuation = layout.lines[1];
+      const lineHeight = getLineHeightInPx(text.fontSize, text.lineHeight);
+      const continuationX = getStyledVisualLineStart(
+        continuation,
+        text.width,
+        text.textAlign,
+      );
+
+      UI.clickTool("selection");
+      mouse.doubleClickAt(text.x + 10, text.y + 10);
+      const editor = await getTextEditor();
+
+      editor.setSelectionRange(continuation.start, continuation.end);
+      fireEvent.select(editor);
+      const continuationSelection = Array.from(
+        document.querySelectorAll<HTMLElement>(".excalidraw-wysiwyg-selection"),
+      ).find((selection) => parseFloat(selection.style.top) === lineHeight);
+
+      expect(editor.classList).toContain("excalidraw-wysiwyg-visual-selection");
+      expect(continuationSelection).toBeDefined();
+      expect(parseFloat(continuationSelection!.style.left)).toBeCloseTo(
+        continuationX,
+      );
+
+      editor.setSelectionRange(continuation.start, continuation.start);
+      fireEvent.select(editor);
+      const caret = document.querySelector<HTMLElement>(
+        ".excalidraw-wysiwyg-caret",
+      );
+
+      expect(caret).not.toBeNull();
+      expect(parseFloat(caret!.style.left)).toBeCloseTo(continuationX);
+      expect(parseFloat(caret!.style.top)).toBe(lineHeight);
+    });
+
+    it("maps a click inside the open editor through hanging-indent geometry", async () => {
+      const originalText = "• Search inventory facts from the connected store";
+      const text = {
+        ...API.createElement({
+          type: "text",
+          text: originalText,
+          width: 120,
+          height: 120,
+          textAlign: "left",
+        }),
+        originalText,
+        autoResize: false,
+      } as ExcalidrawTextElement;
+      API.setElements([text]);
+      const layout = getTextElementStyledLayout(text, text.width);
+      const continuation = layout.lines[1];
+      const lineHeight = getLineHeightInPx(text.fontSize, text.lineHeight);
+      const continuationX = getStyledVisualLineStart(
+        continuation,
+        text.width,
+        text.textAlign,
+      );
+
+      UI.clickTool("selection");
+      mouse.doubleClickAt(text.x + 10, text.y + 10);
+      const editor = await getTextEditor();
+      const pointerDownViewport = sceneCoordsToViewportCoords(
+        {
+          sceneX: text.x + continuationX + 1,
+          sceneY: text.y + lineHeight * 1.5,
+        },
+        h.state,
+      );
+
+      fireEvent.pointerDown(editor, {
+        button: 0,
+        buttons: 1,
+        clientX: pointerDownViewport.x,
+        clientY: pointerDownViewport.y,
+        pointerId: 1,
+      });
+
+      expect(editor.selectionStart).toBeGreaterThanOrEqual(continuation.start);
+      expect(editor.selectionStart).toBeLessThanOrEqual(continuation.start + 1);
+      expect(editor.selectionEnd).toBe(editor.selectionStart);
+
+      const nextContinuation = layout.lines[2];
+      const nextContinuationX = getStyledVisualLineStart(
+        nextContinuation,
+        text.width,
+        text.textAlign,
+      );
+      const followingContinuation = layout.lines[3];
+      const followingContinuationX = getStyledVisualLineStart(
+        followingContinuation,
+        text.width,
+        text.textAlign,
+      );
+      const pointerMoveViewport = sceneCoordsToViewportCoords(
+        {
+          sceneX: text.x + followingContinuationX + 1,
+          sceneY: text.y + lineHeight * 3.5,
+        },
+        h.state,
+      );
+      fireEvent.pointerMove(editor, {
+        buttons: 1,
+        clientX: pointerMoveViewport.x,
+        clientY: pointerMoveViewport.y,
+        pointerId: 1,
+      });
+      expect(editor.selectionStart).toBeGreaterThanOrEqual(continuation.start);
+      expect(editor.selectionEnd).toBeGreaterThanOrEqual(
+        followingContinuation.start,
+      );
+      expect(
+        Array.from(
+          document.querySelectorAll<HTMLElement>(
+            ".excalidraw-wysiwyg-selection",
+          ),
+        ).some(
+          (selection) =>
+            parseFloat(selection.style.top) === lineHeight * 2 &&
+            parseFloat(selection.style.left) === nextContinuationX,
+        ),
+      ).toBe(true);
+      fireEvent.pointerUp(editor, { button: 0, pointerId: 1 });
+    });
+
     it("uses the same hanging-indent overlay for list text bound inside a shape", async () => {
       const originalText = "• Search inventory facts from the connected store";
       const [container, boundText] = API.createTextContainer({
@@ -565,6 +705,10 @@ describe("textWysiwyg", () => {
       mouse.doubleClickAt(text.x + text.width / 2, text.y + text.height / 2);
       const editor = await getTextEditor();
       expect(editor).not.toBe(null);
+      expect(editor.classList).not.toContain(
+        "excalidraw-wysiwyg-visual-selection",
+      );
+      expect(editor.style.caretColor).not.toBe("transparent");
       expect(h.state.editingTextElement?.id).toBe(text.id);
       expect(h.elements.length).toBe(1);
 
