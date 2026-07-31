@@ -29,7 +29,7 @@ export class DrawShapeTrail implements Trail {
       size: 1,
       sizeMapping: () => {
         const size = clamp(
-          this.app.state.currentItemLinearStrokeWidth *
+          this.app.state.currentItemVectorStrokeWidth *
             0.65 *
             this.app.state.zoom.value,
           1.25,

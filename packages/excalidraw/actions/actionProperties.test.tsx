@@ -10,7 +10,7 @@ import {
   FREEDRAW_STROKE_WIDTH,
   FONT_FAMILY,
   KEYS,
-  LINEAR_STROKE_WIDTH,
+  VECTOR_STROKE_WIDTH,
   STROKE_WIDTH,
   THEME,
 } from "@excalidraw/common";
@@ -106,7 +106,7 @@ describe("element locking", () => {
         ) as HTMLElement,
       );
 
-      expect(window.h.state.currentItemLinearStrokeWidth).toBe(2.5);
+      expect(window.h.state.currentItemVectorStrokeWidth).toBe(2.5);
       expect(API.createElement({ type: "line" }).strokeWidth).toBe(2.5);
     });
 
@@ -119,11 +119,11 @@ describe("element locking", () => {
       ) as HTMLInputElement;
       expect(slider).not.toBeNull();
       expect(slider).toHaveAttribute("aria-label", "Stroke width");
-      expect(slider).toHaveAttribute("min", LINEAR_STROKE_WIDTH.min.toString());
-      expect(slider).toHaveAttribute("max", LINEAR_STROKE_WIDTH.max.toString());
+      expect(slider).toHaveAttribute("min", VECTOR_STROKE_WIDTH.min.toString());
+      expect(slider).toHaveAttribute("max", VECTOR_STROKE_WIDTH.max.toString());
       expect(slider).toHaveAttribute(
         "step",
-        LINEAR_STROKE_WIDTH.step.toString(),
+        VECTOR_STROKE_WIDTH.step.toString(),
       );
       expect(slider.value).toBe("2");
 
@@ -135,7 +135,7 @@ describe("element locking", () => {
 
       fireEvent.change(slider, { target: { value: "7.5" } });
 
-      expect(window.h.state.currentItemLinearStrokeWidth).toBe(7.5);
+      expect(window.h.state.currentItemVectorStrokeWidth).toBe(7.5);
       expect(
         (
           queryByTestId(
@@ -163,12 +163,44 @@ describe("element locking", () => {
           target: { value: strokeWidth.toString() },
         });
 
-        expect(window.h.state.currentItemLinearStrokeWidth).toBe(strokeWidth);
+        expect(window.h.state.currentItemVectorStrokeWidth).toBe(strokeWidth);
         expect(API.createElement({ type: "arrow" }).strokeWidth).toBe(
           strokeWidth,
         );
       },
     );
+
+    it.each(["rectangle", "ellipse", "diamond"] as const)(
+      "should carry the shared exact width into the %s tool",
+      (tool) => {
+        API.setAppState({ currentItemVectorStrokeWidth: 7.5 });
+        UI.clickTool(tool);
+
+        const input = queryByTestId(
+          document.body,
+          "linear-stroke-width-input",
+        ) as HTMLInputElement;
+
+        expect(input.value).toBe("7.5");
+        expect(API.createElement({ type: tool }).strokeWidth).toBe(7.5);
+      },
+    );
+
+    it("should expose the shared exact width for the autoshape tool", () => {
+      API.setAppState({ currentItemVectorStrokeWidth: 3.5 });
+      act(() => {
+        window.h.app.setActiveTool({ type: "autoshape" });
+      });
+
+      expect(
+        (
+          queryByTestId(
+            document.body,
+            "linear-stroke-width-input",
+          ) as HTMLInputElement
+        ).value,
+      ).toBe("3.5");
+    });
   });
 
   describe("properties when elements selected", () => {
@@ -588,7 +620,7 @@ describe("element locking", () => {
       expect(crossHatchButton).toBe(null);
     });
 
-    it("should highlight common stroke width of selected elements", () => {
+    it("should show the common exact width of selected vector elements", () => {
       const rect1 = API.createElement({
         type: "rectangle",
         strokeWidth: STROKE_WIDTH.thin,
@@ -600,11 +632,12 @@ describe("element locking", () => {
       API.setElements([rect1, rect2]);
       API.setSelectedElements([rect1, rect2]);
 
-      const thinStrokeWidthButton = queryByTestId(
+      const input = queryByTestId(
         document.body,
-        `strokeWidth-thin`,
-      );
-      expect(thinStrokeWidthButton).toBeChecked();
+        "linear-stroke-width-input",
+      ) as HTMLInputElement;
+      expect(input.value).toBe(STROKE_WIDTH.thin.toString());
+      expect(queryByTestId(document.body, "strokeWidth-thin")).toBeNull();
     });
 
     it("should highlight common stroke width key across freedraw and non-freedraw elements", () => {
@@ -654,16 +687,19 @@ describe("element locking", () => {
     });
 
     it("should create new elements with stroke width by element type", () => {
-      API.setAppState({ currentItemStrokeWidthKey: "bold" });
+      API.setAppState({
+        currentItemStrokeWidthKey: "bold",
+        currentItemVectorStrokeWidth: 7.5,
+      });
 
       const rect = API.createElement({ type: "rectangle" });
       const freedraw = API.createElement({ type: "freedraw" });
 
-      expect(rect.strokeWidth).toBe(STROKE_WIDTH.bold);
+      expect(rect.strokeWidth).toBe(7.5);
       expect(freedraw.strokeWidth).toBe(FREEDRAW_STROKE_WIDTH.bold);
     });
 
-    it("should not highlight any stroke width button if no common style", () => {
+    it("should show Mixed for selected vectors without a common width", () => {
       const rect1 = API.createElement({
         type: "rectangle",
         strokeWidth: STROKE_WIDTH.thin,
@@ -675,29 +711,26 @@ describe("element locking", () => {
       API.setElements([rect1, rect2]);
       API.setSelectedElements([rect1, rect2]);
 
-      expect(queryByTestId(document.body, `strokeWidth-thin`)).not.toBe(null);
-      expect(
-        queryByTestId(document.body, `strokeWidth-thin`),
-      ).not.toBeChecked();
-      expect(
-        queryByTestId(document.body, `strokeWidth-medium`),
-      ).not.toBeChecked();
-      expect(
-        queryByTestId(document.body, `strokeWidth-bold`),
-      ).not.toBeChecked();
+      const input = queryByTestId(
+        document.body,
+        "linear-stroke-width-input",
+      ) as HTMLInputElement;
+      expect(input.value).toBe("");
+      expect(input.placeholder).toBe("Mixed");
+      expect(queryByTestId(document.body, "strokeWidth-thin")).toBeNull();
     });
 
-    it("should use exact numeric stroke width for exclusive line and arrow selections", () => {
+    it("should use exact numeric stroke width across approved vector selections", () => {
       const line = API.createElement({
         type: "line",
         strokeWidth: 1.5,
       });
-      const arrow = API.createElement({
-        type: "arrow",
+      const rectangle = API.createElement({
+        type: "rectangle",
         strokeWidth: 1.5,
       });
-      API.setElements([line, arrow]);
-      API.setSelectedElements([line, arrow]);
+      API.setElements([line, rectangle]);
+      API.setSelectedElements([line, rectangle]);
 
       const input = queryByTestId(
         document.body,
@@ -713,6 +746,59 @@ describe("element locking", () => {
       expect(
         API.getSelectedElements().map((element) => element.strokeWidth),
       ).toEqual([7.5, 7.5]);
+    });
+
+    it("should change only width across the approved vector family", () => {
+      const elements = (
+        ["line", "arrow", "rectangle", "ellipse", "diamond"] as const
+      ).map((type, index) =>
+        API.createElement({
+          type,
+          x: 20 + index * 40,
+          y: 30 + index * 50,
+          width: 100 + index,
+          height: 80 + index,
+          strokeWidth: 1.5,
+          strokeColor: "#e03131",
+          backgroundColor: "#a5d8ff",
+        }),
+      );
+      API.setElements(elements);
+      API.setSelectedElements(elements);
+      const before = elements.map((element) => ({
+        id: element.id,
+        x: element.x,
+        y: element.y,
+        width: element.width,
+        height: element.height,
+        strokeColor: element.strokeColor,
+        backgroundColor: element.backgroundColor,
+        points: "points" in element ? element.points : undefined,
+      }));
+
+      fireEvent.change(
+        queryByTestId(
+          document.body,
+          "linear-stroke-width-slider",
+        ) as HTMLInputElement,
+        { target: { value: "7.5" } },
+      );
+
+      expect(
+        API.getSelectedElements().map((element) => element.strokeWidth),
+      ).toEqual([7.5, 7.5, 7.5, 7.5, 7.5]);
+      expect(
+        API.getSelectedElements().map((element) => ({
+          id: element.id,
+          x: element.x,
+          y: element.y,
+          width: element.width,
+          height: element.height,
+          strokeColor: element.strokeColor,
+          backgroundColor: element.backgroundColor,
+          points: "points" in element ? element.points : undefined,
+        })),
+      ).toEqual(before);
     });
 
     it("should show Mixed for differing linear widths and clamp committed values", () => {
@@ -835,16 +921,60 @@ describe("element locking", () => {
       });
     });
 
-    it("should keep presets for mixed linear and non-linear selections", () => {
+    it("should keep presets for mixed supported and excluded selections", () => {
       const line = API.createElement({ type: "line" });
-      const rectangle = API.createElement({ type: "rectangle" });
-      API.setElements([line, rectangle]);
-      API.setSelectedElements([line, rectangle]);
+      const freedraw = API.createElement({ type: "freedraw" });
+      API.setElements([line, freedraw]);
+      API.setSelectedElements([line, freedraw]);
 
       expect(
         queryByTestId(document.body, "linear-stroke-width-input"),
       ).toBeNull();
       expect(queryByTestId(document.body, "strokeWidth-thin")).not.toBeNull();
+    });
+
+    it.each(["image", "freedraw", "iframe", "embeddable"] as const)(
+      "should keep the generic width control for excluded %s elements",
+      (type) => {
+        const element = API.createElement({ type });
+        API.setElements([element]);
+        API.setSelectedElements([element]);
+
+        expect(
+          queryByTestId(document.body, "linear-stroke-width-input"),
+        ).toBeNull();
+        expect(queryByTestId(document.body, "strokeWidth-thin")).not.toBeNull();
+      },
+    );
+
+    it("should undo and redo an exact rectangle width as one edit", () => {
+      const rectangle = UI.createElement("rectangle", {
+        x: 10,
+        y: 10,
+        width: 100,
+        height: 80,
+      });
+      API.setSelectedElements([rectangle.get() as any]);
+      const undoEntriesBefore = API.getUndoStack().length;
+
+      fireEvent.change(
+        queryByTestId(
+          document.body,
+          "linear-stroke-width-slider",
+        ) as HTMLInputElement,
+        { target: { value: "7.5" } },
+      );
+
+      expect(window.h.app.scene.getElement(rectangle.id)?.strokeWidth).toBe(
+        7.5,
+      );
+      expect(API.getUndoStack()).toHaveLength(undoEntriesBefore + 1);
+      Keyboard.undo();
+      expect(window.h.app.scene.getElement(rectangle.id)?.strokeWidth).toBe(2);
+      Keyboard.redo();
+      expect(window.h.app.scene.getElement(rectangle.id)?.strokeWidth).toBe(
+        7.5,
+      );
     });
 
     it("should hide the editable linear-width control in view mode", () => {
@@ -861,16 +991,22 @@ describe("element locking", () => {
       ).toBeNull();
     });
 
-    it("should use the exact linear default only for new lines and arrows", () => {
-      API.setAppState({ currentItemLinearStrokeWidth: 7.5 } as any);
+    it("should use one exact default for every approved vector type", () => {
+      API.setAppState({ currentItemVectorStrokeWidth: 7.5 });
 
       const line = API.createElement({ type: "line" });
       const arrow = API.createElement({ type: "arrow" });
       const rectangle = API.createElement({ type: "rectangle" });
+      const ellipse = API.createElement({ type: "ellipse" });
+      const diamond = API.createElement({ type: "diamond" });
+      const freedraw = API.createElement({ type: "freedraw" });
 
       expect(line.strokeWidth).toBe(7.5);
       expect(arrow.strokeWidth).toBe(7.5);
-      expect(rectangle.strokeWidth).toBe(STROKE_WIDTH.medium);
+      expect(rectangle.strokeWidth).toBe(7.5);
+      expect(ellipse.strokeWidth).toBe(7.5);
+      expect(diamond.strokeWidth).toBe(7.5);
+      expect(freedraw.strokeWidth).toBe(FREEDRAW_STROKE_WIDTH.medium);
     });
 
     it("should show properties of different element types when selected", () => {

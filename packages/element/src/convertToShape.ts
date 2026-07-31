@@ -9,7 +9,6 @@ import {
 } from "@excalidraw/element/newElement";
 import {
   ELEMENT_PENDING_DRAW_SHAPE_OPACITY,
-  getStrokeWidthByKey,
   ROUNDNESS,
 } from "@excalidraw/common";
 import {
@@ -585,10 +584,7 @@ export const convertToShape = (
         fillStyle: appState.currentItemFillStyle,
         opacity: appState.currentItemOpacity,
         strokeStyle: appState.currentItemStrokeStyle,
-        strokeWidth: getStrokeWidthByKey(
-          recognizedShape.type,
-          appState.currentItemStrokeWidthKey,
-        ),
+        strokeWidth: appState.currentItemVectorStrokeWidth,
       }) as NonDeletedRecognizedShapeElement;
     }
     case "arrow": {
@@ -630,7 +626,7 @@ export const convertToShape = (
           fillStyle: appState.currentItemFillStyle,
           opacity: appState.currentItemOpacity,
           strokeStyle: appState.currentItemStrokeStyle,
-          strokeWidth: appState.currentItemLinearStrokeWidth,
+          strokeWidth: appState.currentItemVectorStrokeWidth,
         });
 
         const normalized =
@@ -665,7 +661,7 @@ export const convertToShape = (
         fillStyle: appState.currentItemFillStyle,
         opacity: appState.currentItemOpacity,
         strokeStyle: appState.currentItemStrokeStyle,
-        strokeWidth: appState.currentItemLinearStrokeWidth,
+        strokeWidth: appState.currentItemVectorStrokeWidth,
       });
 
       const normalized =
@@ -702,7 +698,7 @@ export const convertToShape = (
         fillStyle: appState.currentItemFillStyle,
         opacity: appState.currentItemOpacity,
         strokeStyle: appState.currentItemStrokeStyle,
-        strokeWidth: appState.currentItemLinearStrokeWidth,
+        strokeWidth: appState.currentItemVectorStrokeWidth,
       });
 
       const normalized =

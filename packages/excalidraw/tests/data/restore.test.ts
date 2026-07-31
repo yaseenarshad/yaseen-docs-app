@@ -901,11 +901,11 @@ describe("restoreAppState", () => {
     [100, 50],
     [7.56, 7.6],
   ])(
-    "should normalize restored linear stroke width %s to %s",
+    "should normalize restored vector stroke width %s to %s",
     (value, expected) => {
       const stubImportedAppState = {
         ...getDefaultAppState(),
-        currentItemLinearStrokeWidth: value,
+        currentItemVectorStrokeWidth: value,
       } as any;
 
       const restoredAppState = restore.restoreAppState(
@@ -913,9 +913,22 @@ describe("restoreAppState", () => {
         null,
       );
 
-      expect(restoredAppState.currentItemLinearStrokeWidth).toBe(expected);
+      expect(restoredAppState.currentItemVectorStrokeWidth).toBe(expected);
     },
   );
+
+  it("should migrate the legacy saved linear width into the vector default", () => {
+    const stubLocalAppState = {
+      ...getDefaultAppState(),
+      currentItemLinearStrokeWidth: 7.5,
+    } as any;
+    delete stubLocalAppState.currentItemVectorStrokeWidth;
+
+    const restoredAppState = restore.restoreAppState(null, stubLocalAppState);
+
+    expect(restoredAppState.currentItemVectorStrokeWidth).toBe(7.5);
+    expect(restoredAppState).not.toHaveProperty("currentItemLinearStrokeWidth");
+  });
 
   it("should restore with current app state when imported data state is undefined", () => {
     const stubImportedAppState = {

@@ -262,6 +262,7 @@ import {
   getBindingStrategyForDraggingBindingElementEndpoints,
   isNonDeletedElement,
   getSmartShapeMetadata,
+  hasVectorStrokeWidth,
   hitTestSmartShapeHandle,
   updateSmartShapeFromHandle,
 } from "@excalidraw/element";
@@ -10574,8 +10575,8 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   private getCurrentItemStrokeWidth(elementType: ExcalidrawElement["type"]) {
-    if (isLinearElementType(elementType)) {
-      return this.state.currentItemLinearStrokeWidth;
+    if (hasVectorStrokeWidth(elementType)) {
+      return this.state.currentItemVectorStrokeWidth;
     }
 
     return getStrokeWidthByKey(

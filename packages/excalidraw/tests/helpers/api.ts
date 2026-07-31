@@ -25,7 +25,7 @@ import {
 } from "@excalidraw/element";
 
 import {
-  isLinearElementType,
+  hasVectorStrokeWidth,
   isUsingAdaptiveRadius,
   getSelectedElements,
 } from "@excalidraw/element";
@@ -276,8 +276,8 @@ export class API {
       fillStyle: rest.fillStyle ?? appState.currentItemFillStyle,
       strokeWidth:
         rest.strokeWidth ??
-        (isLinearElementType(type)
-          ? appState.currentItemLinearStrokeWidth
+        (hasVectorStrokeWidth(type)
+          ? appState.currentItemVectorStrokeWidth
           : getStrokeWidthByKey(type, appState.currentItemStrokeWidthKey)),
       strokeStyle: rest.strokeStyle ?? appState.currentItemStrokeStyle,
       roundness: (

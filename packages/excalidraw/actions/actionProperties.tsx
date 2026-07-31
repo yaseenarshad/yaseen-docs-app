@@ -27,8 +27,8 @@ import {
   getLineHeight,
   isTransparent,
   getStrokeWidthByKey,
-  LINEAR_STROKE_WIDTH,
-  normalizeLinearStrokeWidth,
+  VECTOR_STROKE_WIDTH,
+  normalizeVectorStrokeWidth,
   reduceToCommonValue,
   invariant,
   FONT_SIZES,
@@ -65,6 +65,7 @@ import {
   isBoundToContainer,
   isElbowArrow,
   isFrameLikeElement,
+  hasVectorStrokeWidth,
   isLinearElement,
   isLineElement,
   isTextElement,
@@ -769,7 +770,7 @@ const LinearStrokeWidthInput = ({
       return;
     }
 
-    const nextValue = normalizeLinearStrokeWidth(parsed);
+    const nextValue = normalizeVectorStrokeWidth(parsed);
     setInputValue(nextValue.toString());
     if (nextValue !== value) {
       onChange(nextValue);
@@ -780,8 +781,8 @@ const LinearStrokeWidthInput = ({
     const parsed = inputValue.trim() ? Number(inputValue) : Number.NaN;
     const currentValue = Number.isFinite(parsed)
       ? parsed
-      : value ?? LINEAR_STROKE_WIDTH.default;
-    const nextValue = normalizeLinearStrokeWidth(currentValue + amount);
+      : value ?? VECTOR_STROKE_WIDTH.default;
+    const nextValue = normalizeVectorStrokeWidth(currentValue + amount);
     setInputValue(nextValue.toString());
     if (nextValue !== value) {
       onChange(nextValue);
@@ -797,12 +798,12 @@ const LinearStrokeWidthInput = ({
       <button
         type="button"
         aria-label="Decrease stroke width"
-        disabled={value !== null && value <= LINEAR_STROKE_WIDTH.min}
+        disabled={value !== null && value <= VECTOR_STROKE_WIDTH.min}
         onPointerDown={(event) => {
           event.preventDefault();
           event.stopPropagation();
         }}
-        onClick={() => nudge(-LINEAR_STROKE_WIDTH.step)}
+        onClick={() => nudge(-VECTOR_STROKE_WIDTH.step)}
       >
         −
       </button>
@@ -812,9 +813,9 @@ const LinearStrokeWidthInput = ({
           data-testid="linear-stroke-width-input"
           type="number"
           inputMode="decimal"
-          min={LINEAR_STROKE_WIDTH.min}
-          max={LINEAR_STROKE_WIDTH.max}
-          step={LINEAR_STROKE_WIDTH.step}
+          min={VECTOR_STROKE_WIDTH.min}
+          max={VECTOR_STROKE_WIDTH.max}
+          step={VECTOR_STROKE_WIDTH.step}
           value={inputValue}
           placeholder="Mixed"
           onChange={(event) => setInputValue(event.target.value)}
@@ -841,12 +842,12 @@ const LinearStrokeWidthInput = ({
       <button
         type="button"
         aria-label="Increase stroke width"
-        disabled={value !== null && value >= LINEAR_STROKE_WIDTH.max}
+        disabled={value !== null && value >= VECTOR_STROKE_WIDTH.max}
         onPointerDown={(event) => {
           event.preventDefault();
           event.stopPropagation();
         }}
-        onClick={() => nudge(LINEAR_STROKE_WIDTH.step)}
+        onClick={() => nudge(VECTOR_STROKE_WIDTH.step)}
       >
         +
       </button>
@@ -854,34 +855,34 @@ const LinearStrokeWidthInput = ({
   );
 };
 
-export const actionChangeLinearStrokeWidth = register<number>({
-  name: "changeLinearStrokeWidth",
+export const actionChangeVectorStrokeWidth = register<number>({
+  name: "changeVectorStrokeWidth",
   label: "labels.strokeWidth",
   trackEvent: false,
   perform: (elements, appState, value) => {
     invariant(
       value !== undefined,
-      "actionChangeLinearStrokeWidth: value must be defined",
+      "actionChangeVectorStrokeWidth: value must be defined",
     );
 
     const selectedElements = getSelectedElements(elements, appState);
     if (
       selectedElements.length > 0 &&
-      !selectedElements.every(isLinearElement)
+      !selectedElements.every((element) => hasVectorStrokeWidth(element.type))
     ) {
       return false;
     }
 
-    const strokeWidth = normalizeLinearStrokeWidth(value);
+    const strokeWidth = normalizeVectorStrokeWidth(value);
     return {
       elements: changeProperty(elements, appState, (element) =>
-        isLinearElement(element)
+        hasVectorStrokeWidth(element.type)
           ? newElementWith(element, { strokeWidth })
           : element,
       ),
       appState: {
         ...appState,
-        currentItemLinearStrokeWidth: strokeWidth,
+        currentItemVectorStrokeWidth: strokeWidth,
       },
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     };
@@ -891,9 +892,9 @@ export const actionChangeLinearStrokeWidth = register<number>({
       elements,
       app,
       (element) => element.strokeWidth,
-      isLinearElement,
+      (element) => hasVectorStrokeWidth(element.type),
       (hasSelection) =>
-        hasSelection ? null : appState.currentItemLinearStrokeWidth,
+        hasSelection ? null : appState.currentItemVectorStrokeWidth,
     );
 
     return (
@@ -907,14 +908,14 @@ export const actionChangeLinearStrokeWidth = register<number>({
           ariaLabel={t("labels.strokeWidth")}
           className="linear-stroke-width-range"
           label={null}
-          value={value ?? appState.currentItemLinearStrokeWidth}
+          value={value ?? appState.currentItemVectorStrokeWidth}
           hasCommonValue={value !== null}
           onChange={(nextValue) => updateData(nextValue)}
-          min={LINEAR_STROKE_WIDTH.min}
-          max={LINEAR_STROKE_WIDTH.max}
-          step={LINEAR_STROKE_WIDTH.step}
-          minLabel={LINEAR_STROKE_WIDTH.min}
-          maxLabel={LINEAR_STROKE_WIDTH.max}
+          min={VECTOR_STROKE_WIDTH.min}
+          max={VECTOR_STROKE_WIDTH.max}
+          step={VECTOR_STROKE_WIDTH.step}
+          minLabel={VECTOR_STROKE_WIDTH.min}
+          maxLabel={VECTOR_STROKE_WIDTH.max}
           preventCanvasInteraction
           showValueBubble={false}
           testId="linear-stroke-width-slider"
@@ -927,6 +928,9 @@ export const actionChangeLinearStrokeWidth = register<number>({
     );
   },
 });
+
+/** @deprecated Use actionChangeVectorStrokeWidth. */
+export const actionChangeLinearStrokeWidth = actionChangeVectorStrokeWidth;
 
 export const actionChangeSloppiness = register<ExcalidrawElement["roughness"]>({
   name: "changeSloppiness",

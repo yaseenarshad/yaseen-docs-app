@@ -3577,6 +3577,7 @@ describe("history", () => {
         x: 15,
         y: 15,
         angle: 0,
+        textAlign: "left",
       } as const;
 
       beforeEach(() => {

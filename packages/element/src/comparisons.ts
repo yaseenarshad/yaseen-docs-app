@@ -34,6 +34,14 @@ export const hasStrokeWidth = (type: ElementOrToolType) =>
   type === "image" ||
   type === "autoshape";
 
+export const hasVectorStrokeWidth = (type: ElementOrToolType) =>
+  type === "rectangle" ||
+  type === "ellipse" ||
+  type === "diamond" ||
+  type === "arrow" ||
+  type === "line" ||
+  type === "autoshape";
+
 export const hasStrokeStyle = (type: ElementOrToolType) =>
   type === "rectangle" ||
   type === "iframe" ||

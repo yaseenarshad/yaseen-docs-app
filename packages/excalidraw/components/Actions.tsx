@@ -10,10 +10,10 @@ import {
 
 import {
   getSmartShapeMetadata,
+  hasVectorStrokeWidth,
   isArrowElement,
   isImageElement,
   isInitializedImageElement,
-  isLinearElement,
   isNonDeletedElement,
   isTextElement,
 } from "@excalidraw/element";
@@ -75,29 +75,28 @@ const PROPERTIES_CLASSES = clsx([
 const isUnboundTextElement = (element: ExcalidrawElement) =>
   isTextElement(element) && !element.containerId;
 
-const hasExclusiveLinearStrokeTarget = (
+const hasExclusiveVectorStrokeTarget = (
   appState: UIAppState,
   targetElements: readonly ExcalidrawElement[],
 ) => {
   if (targetElements.length === 0) {
-    return (
-      appState.activeTool.type === "line" ||
-      appState.activeTool.type === "arrow"
-    );
+    return hasVectorStrokeWidth(appState.activeTool.type);
   }
 
-  const linearIds = new Set(
-    targetElements.filter(isLinearElement).map((element) => element.id),
+  const vectorIds = new Set(
+    targetElements
+      .filter((element) => hasVectorStrokeWidth(element.type))
+      .map((element) => element.id),
   );
 
   return (
-    linearIds.size > 0 &&
+    vectorIds.size > 0 &&
     targetElements.every(
       (element) =>
-        isLinearElement(element) ||
+        hasVectorStrokeWidth(element.type) ||
         (isTextElement(element) &&
           !!element.containerId &&
-          linearIds.has(element.containerId)),
+          vectorIds.has(element.containerId)),
     )
   );
 };
@@ -335,7 +334,7 @@ export const SelectedShapeActions = ({
   );
   const isImageSelection =
     targetElements.length > 0 && targetElements.every(isImageElement);
-  const isExclusiveLinearStrokeTarget = hasExclusiveLinearStrokeTarget(
+  const isExclusiveVectorStrokeTarget = hasExclusiveVectorStrokeTarget(
     appState,
     targetElements,
   );
@@ -363,8 +362,8 @@ export const SelectedShapeActions = ({
       {predicates.strokeWidth &&
         !isImageSelection &&
         renderAction(
-          isExclusiveLinearStrokeTarget
-            ? "changeLinearStrokeWidth"
+          isExclusiveVectorStrokeTarget
+            ? "changeVectorStrokeWidth"
             : "changeStrokeWidth",
         )}
 
@@ -504,7 +503,7 @@ const CombinedShapeProperties = ({
   predicates,
   container,
   hasSmartShape,
-  isExclusiveLinearStrokeTarget,
+  isExclusiveVectorStrokeTarget,
   app,
   targetElements,
 }: {
@@ -514,7 +513,7 @@ const CombinedShapeProperties = ({
   predicates: ShapeActionPredicates;
   container: HTMLDivElement | null;
   hasSmartShape: boolean;
-  isExclusiveLinearStrokeTarget: boolean;
+  isExclusiveVectorStrokeTarget: boolean;
   app: AppClassProperties;
   targetElements: readonly ExcalidrawElement[];
 }) => {
@@ -573,8 +572,8 @@ const CombinedShapeProperties = ({
               {predicates.fill && renderAction("changeFillStyle")}
               {predicates.strokeWidth &&
                 renderAction(
-                  isExclusiveLinearStrokeTarget
-                    ? "changeLinearStrokeWidth"
+                  isExclusiveVectorStrokeTarget
+                    ? "changeVectorStrokeWidth"
                     : "changeStrokeWidth",
                 )}
               {
@@ -927,7 +926,7 @@ export const CompactShapeActions = ({
     targetElements.length === 1 &&
     !targetElements[0].locked &&
     !!getSmartShapeMetadata(targetElements[0]);
-  const isExclusiveLinearStrokeTarget = hasExclusiveLinearStrokeTarget(
+  const isExclusiveVectorStrokeTarget = hasExclusiveVectorStrokeTarget(
     appState,
     targetElements,
   );
@@ -962,7 +961,7 @@ export const CompactShapeActions = ({
         predicates={predicates}
         container={container}
         hasSmartShape={hasSmartShape}
-        isExclusiveLinearStrokeTarget={isExclusiveLinearStrokeTarget}
+        isExclusiveVectorStrokeTarget={isExclusiveVectorStrokeTarget}
         app={app}
         targetElements={targetElements}
       />
@@ -1054,7 +1053,7 @@ export const MobileShapeActions = ({
     targetElements.length === 1 &&
     !targetElements[0].locked &&
     !!getSmartShapeMetadata(targetElements[0]);
-  const isExclusiveLinearStrokeTarget = hasExclusiveLinearStrokeTarget(
+  const isExclusiveVectorStrokeTarget = hasExclusiveVectorStrokeTarget(
     appState,
     targetElements,
   );
@@ -1119,7 +1118,7 @@ export const MobileShapeActions = ({
           predicates={predicates}
           container={container}
           hasSmartShape={hasSmartShape}
-          isExclusiveLinearStrokeTarget={isExclusiveLinearStrokeTarget}
+          isExclusiveVectorStrokeTarget={isExclusiveVectorStrokeTarget}
           app={app}
           targetElements={targetElements}
         />

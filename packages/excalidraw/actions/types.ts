@@ -67,7 +67,7 @@ export type ActionName =
   | "applySelectedSemanticColor"
   | "changeFillStyle"
   | "changeStrokeWidth"
-  | "changeLinearStrokeWidth"
+  | "changeVectorStrokeWidth"
   | "changeSloppiness"
   | "changeFreedrawMode"
   | "changeStrokeStyle"

@@ -21,7 +21,7 @@ import {
   getLineHeight,
   STROKE_WIDTH,
   STROKE_WIDTH_KEYS,
-  normalizeLinearStrokeWidth,
+  normalizeVectorStrokeWidth,
   type StrokeWidthKey,
 } from "@excalidraw/common";
 import {
@@ -1127,8 +1127,12 @@ export const restoreAppState = (
       getStrokeWidthKey((appState as any).currentItemStrokeWidth) ??
       defaultAppState.currentItemStrokeWidthKey;
   }
-  nextAppState.currentItemLinearStrokeWidth = normalizeLinearStrokeWidth(
-    nextAppState.currentItemLinearStrokeWidth,
+  nextAppState.currentItemVectorStrokeWidth = normalizeVectorStrokeWidth(
+    appState.currentItemVectorStrokeWidth ??
+      localAppState?.currentItemVectorStrokeWidth ??
+      (appState as any).currentItemLinearStrokeWidth ??
+      (localAppState as any)?.currentItemLinearStrokeWidth ??
+      nextAppState.currentItemVectorStrokeWidth,
   );
 
   return {

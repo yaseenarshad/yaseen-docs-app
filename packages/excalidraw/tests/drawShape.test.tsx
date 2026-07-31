@@ -1,6 +1,10 @@
 import { KEYS } from "@excalidraw/common";
 
-import { getTargetElements, isArrowElement } from "@excalidraw/element";
+import {
+  getBoundTextElement,
+  getTargetElements,
+  isArrowElement,
+} from "@excalidraw/element";
 
 import type { ExcalidrawTextElement } from "@excalidraw/element/types";
 
@@ -132,6 +136,28 @@ describe("autoshape tool", () => {
 
     expect(h.elements).toHaveLength(1);
     expect(h.elements[0].type).toBe("ellipse");
+  });
+
+  it.each([
+    {
+      name: "rectangle",
+      points: rectanglePath(100, 100, 200, 120),
+    },
+    {
+      name: "ellipse",
+      points: circlePath(300, 300, 80),
+    },
+    {
+      name: "arrow",
+      points: arrowPath(100, 100, 400, 300),
+    },
+  ])("uses the shared vector width for a recognized $name", ({ points }) => {
+    API.setAppState({ currentItemVectorStrokeWidth: 7.5 });
+
+    sketch(points);
+
+    expect(h.elements).toHaveLength(1);
+    expect(h.elements[0].strokeWidth).toBe(7.5);
   });
 
   it("keeps the autoshape tool active after finalizing a shape", () => {
@@ -663,11 +689,24 @@ describe("autoshape double-click to type", () => {
       width: 20,
       height: 10,
       containerId: rectangle.id,
+      textAlign: "left",
     });
-    API.updateElement(rectangle, {
-      boundElements: [{ type: "text", id: boundText.id }],
-    });
-    API.setElements([rectangle, boundText]);
+    API.setElements([
+      {
+        ...rectangle,
+        boundElements: [{ type: "text", id: boundText.id }],
+      },
+      boundText,
+    ]);
+
+    expect(
+      getBoundTextElement(h.elements[0], h.app.scene.getNonDeletedElementsMap())
+        ?.id,
+    ).toBe(boundText.id);
+    expect(h.app.getTextBindableContainerAtPosition(150, 130)?.id).toBe(
+      rectangle.id,
+    );
+    expect(h.app.getTextElementAtPosition(200, 150)?.id).toBe(boundText.id);
 
     mouse.doubleClickAt(150, 130);
 

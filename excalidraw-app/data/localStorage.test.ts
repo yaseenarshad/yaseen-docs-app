@@ -176,3 +176,35 @@ describe("Center text alignment migration", () => {
     ]);
   });
 });
+
+describe("Vector stroke width migration", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("migrates the former linear width preference into the shared vector preference", () => {
+    localStorage.setItem(
+      STORAGE_KEYS.LOCAL_STORAGE_APP_STATE,
+      JSON.stringify({ currentItemLinearStrokeWidth: 7.5 }),
+    );
+
+    const appState = importFromLocalStorage().appState as any;
+
+    expect(appState.currentItemVectorStrokeWidth).toBe(7.5);
+    expect(appState.currentItemLinearStrokeWidth).toBeUndefined();
+  });
+
+  it("preserves the new vector preference over a stale legacy value", () => {
+    localStorage.setItem(
+      STORAGE_KEYS.LOCAL_STORAGE_APP_STATE,
+      JSON.stringify({
+        currentItemVectorStrokeWidth: 3.5,
+        currentItemLinearStrokeWidth: 20,
+      }),
+    );
+
+    expect(
+      importFromLocalStorage().appState?.currentItemVectorStrokeWidth,
+    ).toBe(3.5);
+  });
+});

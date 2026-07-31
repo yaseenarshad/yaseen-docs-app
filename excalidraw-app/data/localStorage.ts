@@ -87,6 +87,15 @@ export const importFromLocalStorage = () => {
     try {
       const parsedState = JSON.parse(savedState) as Partial<AppState>;
       if (
+        parsedState.currentItemVectorStrokeWidth === undefined &&
+        (parsedState as any).currentItemLinearStrokeWidth !== undefined
+      ) {
+        parsedState.currentItemVectorStrokeWidth = (
+          parsedState as any
+        ).currentItemLinearStrokeWidth;
+      }
+      delete (parsedState as any).currentItemLinearStrokeWidth;
+      if (
         parsedState.currentItemRoughness !== 0 &&
         parsedState.currentItemRoughness !== 1 &&
         parsedState.currentItemRoughness !== 2

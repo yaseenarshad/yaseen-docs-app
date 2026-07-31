@@ -11,7 +11,7 @@ import {
   THEME,
   DEFAULT_GRID_STEP,
   FONT_FAMILY,
-  LINEAR_STROKE_WIDTH,
+  VECTOR_STROKE_WIDTH,
   ROUGHNESS,
   TEXT_ALIGN,
   isTestEnv,
@@ -46,7 +46,7 @@ export const getDefaultAppState = (): Omit<
     currentItemRoundness: isTestEnv() ? "sharp" : "round",
     currentItemArrowType: ARROW_TYPE.round,
     currentItemStrokeStyle: DEFAULT_ELEMENT_PROPS.strokeStyle,
-    currentItemLinearStrokeWidth: LINEAR_STROKE_WIDTH.default,
+    currentItemVectorStrokeWidth: VECTOR_STROKE_WIDTH.default,
     currentItemStrokeWidthKey: DEFAULT_ELEMENT_STROKE_WIDTH_KEY,
     currentItemTextAlign: TEXT_ALIGN.CENTER,
     currentHoveredFontFamily: null,
@@ -185,7 +185,7 @@ const APP_STATE_STORAGE_CONF = (<
   currentItemStartArrowhead: { browser: true, export: false, server: false },
   currentItemStrokeColor: { browser: true, export: false, server: false },
   currentItemStrokeStyle: { browser: true, export: false, server: false },
-  currentItemLinearStrokeWidth: {
+  currentItemVectorStrokeWidth: {
     browser: true,
     export: false,
     server: false,
