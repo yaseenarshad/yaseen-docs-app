@@ -44,16 +44,9 @@
   padding: 4px 5px 4px 10px;
 }
 
-.cloud-header-identity {
-  align-items: center;
-  display: flex;
-  gap: 0.5rem;
-  min-width: 0;
-  order: 2;
-}
-
-.cloud-header-identity .cloud-status {
+.excalidraw-ui-top-right .cloud-status {
   max-width: min(260px, 28vw);
+  min-width: 0;
 }
 
 .cloud-status__identity {
@@ -104,6 +97,16 @@
 .cloud-status__state--error,
 .cloud-status__state--conflict {
   color: #e03131;
+}
+
+@media (max-width: 85rem) {
+  .excalidraw-ui-top-right .cloud-status {
+    max-width: min(180px, 20vw);
+  }
+
+  .cloud-status__identity {
+    max-width: 130px;
+  }
 }
 
 .cloud-account {

@@ -170,7 +170,7 @@ import { ExcalidrawPlusIframeExport } from "./ExcalidrawPlusIframeExport";
 
 import "./index.scss";
 
-import { AppSidebar } from "./components/AppSidebar";
+import { AppSidebar, AppSidebarLaunchers } from "./components/AppSidebar";
 
 import type { CollabAPI } from "./collab/Collab";
 
@@ -1240,20 +1240,21 @@ const ExcalidrawWrapper = () => {
         theme={editorTheme}
         onThemeChange={setAppTheme}
         renderTopLeftUI={() => (
-          <div className="cloud-header-identity">
-            <CloudStatus
-              title={cloud.openedBoard?.board.title ?? "Cloud board"}
-              status={cloud.saveStatus}
-              errorMessage={cloud.errorMessage}
-              canRename={cloud.openedBoard?.access === "owner"}
-              onRename={cloud.renameOpenedBoard}
-            />
-            <CloudAccount />
-          </div>
+          <AppSidebarLaunchers excalidrawAPI={excalidrawAPI} />
         )}
         renderTopRightUI={(isMobile) => {
           return (
             <div className="excalidraw-ui-top-right">
+              {!isMobile && (
+                <CloudStatus
+                  title={cloud.openedBoard?.board.title ?? "Cloud board"}
+                  status={cloud.saveStatus}
+                  errorMessage={cloud.errorMessage}
+                  canRename={cloud.openedBoard?.access === "owner"}
+                  onRename={cloud.renameOpenedBoard}
+                />
+              )}
+              <CloudAccount />
               {!isMobile && collabAPI && !isCollabDisabled && (
                 <>
                   {collabError.message && (

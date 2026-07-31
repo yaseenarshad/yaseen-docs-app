@@ -1,15 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { DefaultSidebar, Sidebar, THEME } from "@excalidraw/excalidraw";
+import { DefaultSidebar, Sidebar } from "@excalidraw/excalidraw";
 import {
   file,
   ImageIcon,
   LibraryIcon,
-  messageCircleIcon,
-  presentationIcon,
   sidebarRightIcon,
 } from "@excalidraw/excalidraw/components/icons";
-import { LinkButton } from "@excalidraw/excalidraw/components/LinkButton";
 import { useUIAppState } from "@excalidraw/excalidraw/context/ui-appState";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
@@ -64,63 +61,6 @@ type BoardBrowserProps = {
 type AppSidebarProps = BoardBrowserProps & {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
   canInsertMedia: boolean;
-};
-
-type SidebarPromoCopyProps = {
-  text: string;
-};
-
-const SidebarPromoCopy = (props: SidebarPromoCopyProps) => {
-  return (
-    <div className="app-sidebar-promo-copy">
-      <div className="app-sidebar-promo-illustration" aria-hidden="true">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 300 250"
-          className="app-sidebar-promo-heart"
-        >
-          <path
-            d="M 145 75
-           C 110 35, 60 55, 65 120
-           C 70 180, 140 190, 215 200
-           C 225 180, 260 110, 235 55
-           C 210 -5, 140 20, 160 105"
-            fill="none"
-            stroke="#D06B64"
-            strokeWidth="16"
-            strokeLinecap="round"
-          />
-        </svg>
-
-        <div className="app-sidebar-promo-trial-note excalifont">
-          14 days of
-          <br />
-          free trial
-        </div>
-        <svg
-          className="app-sidebar-promo-trial-arrow"
-          viewBox="0 0 72 48"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            d="M5 6C23 1 50 8 48 32"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          <path
-            d="M42 26L48 32L54 26"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </div>
-      <div className="app-sidebar-promo-text">{props.text}</div>
-    </div>
-  );
 };
 
 const shouldUseSaveSafeBoardNavigation = (
@@ -674,12 +614,74 @@ export const BoardBrowser = ({
   );
 };
 
+const APP_SIDEBAR_LAUNCHERS = [
+  { tab: "boards", label: "Boards", icon: file },
+  { tab: "components", label: "Components", icon: LibraryIcon },
+  { tab: "image-studio", label: "Image Studio", icon: ImageIcon },
+] as const;
+
+export const AppSidebarLaunchers = ({
+  excalidrawAPI,
+}: {
+  excalidrawAPI: ExcalidrawImperativeAPI | null;
+}) => {
+  const { openSidebar } = useUIAppState();
+  const activeTab =
+    openSidebar?.name === "default" ? openSidebar.tab ?? "boards" : null;
+
+  const open = (tab: typeof APP_SIDEBAR_LAUNCHERS[number]["tab"]) => {
+    excalidrawAPI?.toggleSidebar({
+      name: "default",
+      tab,
+      force: true,
+    });
+  };
+
+  return (
+    <nav className="app-sidebar-launchers" aria-label="Workspace panels">
+      <div className="app-sidebar-launchers__direct">
+        {APP_SIDEBAR_LAUNCHERS.map((launcher) => (
+          <button
+            key={launcher.tab}
+            type="button"
+            className="app-sidebar-launcher"
+            aria-label={launcher.label}
+            aria-pressed={activeTab === launcher.tab}
+            title={launcher.label}
+            disabled={!excalidrawAPI}
+            onClick={() => open(launcher.tab)}
+          >
+            {launcher.icon}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        className="app-sidebar-launcher app-sidebar-launchers__compact"
+        aria-label="Open workspace panel"
+        aria-pressed={openSidebar?.name === "default"}
+        title="Boards, Components, and Image Studio"
+        disabled={!excalidrawAPI}
+        onClick={() =>
+          open(
+            APP_SIDEBAR_LAUNCHERS.some((launcher) => launcher.tab === activeTab)
+              ? (activeTab as typeof APP_SIDEBAR_LAUNCHERS[number]["tab"])
+              : "boards",
+          )
+        }
+      >
+        {sidebarRightIcon}
+      </button>
+    </nav>
+  );
+};
+
 export const AppSidebar = ({
   excalidrawAPI,
   canInsertMedia,
   ...boardBrowserProps
 }: AppSidebarProps) => {
-  const { theme, openSidebar } = useUIAppState();
+  const { openSidebar } = useUIAppState();
 
   return (
     <>
@@ -687,6 +689,7 @@ export const AppSidebar = ({
         tab="boards"
         icon={sidebarRightIcon}
         title="Boards, library, and search"
+        className="app-sidebar-generic-trigger"
       />
       <DefaultSidebar>
         <DefaultSidebar.TabTriggers>
@@ -714,22 +717,6 @@ export const AppSidebar = ({
           >
             {ImageIcon}
           </Sidebar.TabTrigger>
-          <Sidebar.TabTrigger
-            tab="comments"
-            aria-label="Comments"
-            title="Comments"
-            style={{ opacity: openSidebar?.tab === "comments" ? 1 : 0.4 }}
-          >
-            {messageCircleIcon}
-          </Sidebar.TabTrigger>
-          <Sidebar.TabTrigger
-            tab="presentation"
-            aria-label="Presentation"
-            title="Presentation"
-            style={{ opacity: openSidebar?.tab === "presentation" ? 1 : 0.4 }}
-          >
-            {presentationIcon}
-          </Sidebar.TabTrigger>
         </DefaultSidebar.TabTriggers>
         <Sidebar.Tab tab="boards">
           <BoardBrowser {...boardBrowserProps} />
@@ -744,48 +731,6 @@ export const AppSidebar = ({
               canInsert={canInsertMedia}
             />
           )}
-        </Sidebar.Tab>
-        <Sidebar.Tab tab="comments">
-          <div className="app-sidebar-promo-container">
-            <div
-              className="app-sidebar-promo-image"
-              style={{
-                ["--image-source" as any]: `url(/sidebar-comments-promo-${
-                  theme === THEME.DARK ? "dark" : "light"
-                }.jpg)`,
-                opacity: 0.9,
-              }}
-            />
-            <SidebarPromoCopy text="Make comments with Excalidraw+" />
-            <LinkButton
-              href={`${
-                import.meta.env.VITE_APP_PLUS_LP
-              }/plus?utm_source=excalidraw&utm_medium=app&utm_content=comments_promo#excalidraw-redirect`}
-            >
-              Sign up now
-            </LinkButton>
-          </div>
-        </Sidebar.Tab>
-        <Sidebar.Tab tab="presentation" className="px-3">
-          <div className="app-sidebar-promo-container">
-            <div
-              className="app-sidebar-promo-image"
-              style={{
-                ["--image-source" as any]: `url(/sidebar-presentation-promo-${
-                  theme === THEME.DARK ? "dark" : "light"
-                }.jpg)`,
-                opacity: 0.7,
-              }}
-            />
-            <SidebarPromoCopy text="Create presentation with Excalidraw+" />
-            <LinkButton
-              href={`${
-                import.meta.env.VITE_APP_PLUS_LP
-              }/plus?utm_source=excalidraw&utm_medium=app&utm_content=presentations_promo#excalidraw-redirect`}
-            >
-              Sign up now
-            </LinkButton>
-          </div>
         </Sidebar.Tab>
       </DefaultSidebar>
     </>

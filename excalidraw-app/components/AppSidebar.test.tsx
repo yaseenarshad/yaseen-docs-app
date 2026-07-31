@@ -7,7 +7,11 @@ import {
 } from "@testing-library/react";
 import { vi } from "vitest";
 
-import { BoardBrowser } from "./AppSidebar";
+import { UIAppStateContext } from "@excalidraw/excalidraw/context/ui-appState";
+
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+
+import { AppSidebarLaunchers, BoardBrowser } from "./AppSidebar";
 
 const organizerProps = {
   folders: [],
@@ -25,6 +29,46 @@ const organizerProps = {
   onDeleteFolder: vi.fn().mockResolvedValue(undefined),
   onMove: vi.fn().mockResolvedValue(undefined),
 };
+
+describe("AppSidebarLaunchers", () => {
+  it("opens and switches the approved panels without active-click toggling", () => {
+    const toggleSidebar = vi.fn();
+    render(
+      <UIAppStateContext.Provider
+        value={
+          {
+            openSidebar: { name: "default", tab: "boards" },
+          } as never
+        }
+      >
+        <AppSidebarLaunchers
+          excalidrawAPI={
+            {
+              toggleSidebar,
+            } as unknown as ExcalidrawImperativeAPI
+          }
+        />
+      </UIAppStateContext.Provider>,
+    );
+
+    const boards = screen.getByRole("button", { name: "Boards" });
+    const components = screen.getByRole("button", { name: "Components" });
+    const imageStudio = screen.getByRole("button", { name: "Image Studio" });
+    expect(boards).toHaveAttribute("aria-pressed", "true");
+    expect(components).toHaveAttribute("aria-pressed", "false");
+    expect(imageStudio).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(boards);
+    fireEvent.click(components);
+    fireEvent.click(imageStudio);
+
+    expect(toggleSidebar.mock.calls).toEqual([
+      [{ name: "default", tab: "boards", force: true }],
+      [{ name: "default", tab: "components", force: true }],
+      [{ name: "default", tab: "image-studio", force: true }],
+    ]);
+  });
+});
 
 describe("BoardBrowser", () => {
   it("groups Boards under persistent folder rows and exposes global sort/search", () => {
