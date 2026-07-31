@@ -770,6 +770,71 @@ describe("ui={{ enabled: ... }}", () => {
   });
 });
 
+describe("Fit board controls", () => {
+  beforeEach(() => {
+    mockBoundingClientRect();
+  });
+
+  afterEach(() => {
+    restoreOriginalGetBoundingClientRect();
+  });
+
+  it("renders a separate desktop control after Undo/Redo and executes the canonical action", async () => {
+    const element = API.createElement({
+      type: "rectangle",
+      x: 1_000,
+      y: 1_000,
+      width: 2_000,
+      height: 2_000,
+    });
+    await render(<Excalidraw initialData={{ elements: [element] }} />);
+
+    const controls = queryContainer(".history-and-fit-board-actions");
+    const history = controls?.querySelector(".undo-redo-buttons");
+    const fitBoard = controls?.querySelector(
+      "[data-testid='fit-board-button']",
+    );
+
+    expect(history).not.toBe(null);
+    expect(fitBoard).not.toBe(null);
+    expect(history?.nextElementSibling?.contains(fitBoard!)).toBe(true);
+
+    act(() => {
+      h.app.setState({
+        scrollX: -10_000,
+        scrollY: -10_000,
+        zoom: { value: 1 },
+      });
+    });
+    fireEvent.click(fitBoard!);
+
+    expect(h.state.zoom.value).toBeLessThanOrEqual(1);
+    expect(h.state.scrollX).not.toBe(-10_000);
+    expect(h.state.scrollY).not.toBe(-10_000);
+  });
+
+  it("exposes Fit board in the phone menu without taking a toolbar slot", async () => {
+    await render(<Excalidraw UIOptions={{ getFormFactor: () => "phone" }} />);
+    fireEvent.resize(window);
+    await waitFor(() => expect(h.app.editorInterface.formFactor).toBe("phone"));
+
+    expect(queryContainer(".fit-board-footer-island")).toBe(null);
+    fireEvent.click(queryContainer("[data-testid='main-menu-trigger']")!);
+
+    const phoneItem = queryContainer("[data-testid='fit-board-menu-item']");
+    expect(phoneItem).not.toBe(null);
+    fireEvent.click(phoneItem!);
+    expect(h.state.openMenu).toBe(null);
+  });
+
+  it("keeps Fit board available in navigation-enabled view mode", async () => {
+    await render(<Excalidraw viewModeEnabled />);
+
+    expect(queryContainer(".undo-redo-buttons")).toBe(null);
+    expect(queryContainer("[data-testid='fit-board-button']")).not.toBe(null);
+  });
+});
+
 describe("ui={false} with host UI", () => {
   it("renders host outlets and dialogs invoked by host UI", async () => {
     const { container } = await render(

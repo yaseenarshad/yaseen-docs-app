@@ -9,6 +9,7 @@ import {
   actionLoadScene,
   actionSaveToActiveFile,
   actionShortcuts,
+  actionZoomToFit,
   actionToggleArrowBinding,
   actionToggleGridMode,
   actionToggleMidpointSnapping,
@@ -31,6 +32,7 @@ import {
   useExcalidrawElements,
   useAppProps,
   useApp,
+  useEditorInterface,
 } from "../App";
 import { openConfirmModal } from "../OverwriteConfirm/OverwriteConfirmState";
 import Trans from "../Trans";
@@ -59,6 +61,7 @@ import {
   SunIcon,
   TrashIcon,
   usersIcon,
+  zoomAreaIcon,
 } from "../icons";
 
 import "./DefaultItems.scss";
@@ -185,6 +188,32 @@ export const SearchMenu = (opts?: { className?: string }) => {
   );
 };
 SearchMenu.displayName = "SearchMenu";
+
+export const FitBoard = () => {
+  const editorInterface = useEditorInterface();
+  const actionManager = useExcalidrawActionManager();
+  const { t } = useI18n();
+
+  if (
+    editorInterface.formFactor !== "phone" ||
+    !actionManager.isActionEnabled(actionZoomToFit)
+  ) {
+    return null;
+  }
+
+  return (
+    <DropdownMenuItem
+      icon={zoomAreaIcon}
+      data-testid="fit-board-menu-item"
+      onSelect={() => actionManager.executeAction(actionZoomToFit, "ui")}
+      shortcut={getShortcutFromShortcutName("zoomToFit")}
+      aria-label={t("labels.fitBoard")}
+    >
+      {t("labels.fitBoard")}
+    </DropdownMenuItem>
+  );
+};
+FitBoard.displayName = "FitBoard";
 
 export const Help = () => {
   const { t } = useI18n();

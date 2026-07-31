@@ -92,6 +92,31 @@
   }
 }
 
+.history-and-fit-board-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  .fit-board-footer-island {
+    display: flex;
+    background-color: var(--island-bg-color);
+    border-radius: var(--border-radius-lg);
+    box-shadow: 0 0 0 1px var(--color-surface-lowest);
+  }
+
+  .fit-board-button {
+    width: var(--lg-button-size);
+    height: var(--lg-button-size);
+    border-radius: var(--border-radius-lg) !important;
+    background-color: var(--color-surface-low) !important;
+
+    svg {
+      width: var(--lg-icon-size) !important;
+      height: var(--lg-icon-size) !important;
+    }
+  }
+}
+
 .compact-shape-actions {
   display: flex;
   flex-direction: column;

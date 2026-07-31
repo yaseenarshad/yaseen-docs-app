@@ -379,7 +379,7 @@ export const actionZoomToFitSelection = register({
 
 export const actionZoomToFit = register({
   name: "zoomToFit",
-  label: "helpDialog.zoomToFit",
+  label: "labels.fitBoard",
   icon: zoomAreaIcon,
   viewMode: true,
   navigation: true,
