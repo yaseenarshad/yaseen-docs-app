@@ -51,6 +51,8 @@ import {
   isLineElement,
   isTextElement,
   isUsingAdaptiveRadius,
+  normalizeCornerRadius,
+  normalizeElementRoundness,
 } from "@excalidraw/element";
 
 import { syncInvalidIndices } from "@excalidraw/element";
@@ -453,7 +455,7 @@ const restoreElementWithProperties = <
     groupIds: element.groupIds ?? [],
     frameId: element.frameId ?? null,
     roundness: element.roundness
-      ? element.roundness
+      ? normalizeElementRoundness(element.roundness)
       : element.strokeSharpness === "round"
       ? {
           // for old elements that would now use adaptive radius algo,
@@ -1159,6 +1161,14 @@ export const restoreAppState = (
       (localAppState as any)?.currentItemLinearStrokeWidth ??
       nextAppState.currentItemVectorStrokeWidth,
   );
+
+  const currentItemCornerRadius =
+    appState.currentItemCornerRadius ?? localAppState?.currentItemCornerRadius;
+  if (currentItemCornerRadius !== undefined) {
+    nextAppState.currentItemCornerRadius = normalizeCornerRadius(
+      currentItemCornerRadius,
+    );
+  }
 
   return {
     ...nextAppState,

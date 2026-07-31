@@ -151,6 +151,7 @@ import {
   isInitializedImageElement,
   isLinearElement,
   isLinearElementType,
+  canChangeCornerRadius,
   isUsingAdaptiveRadius,
   isIframeElement,
   isIframeLikeElement,
@@ -4913,7 +4914,7 @@ class App extends React.Component<AppProps, AppState> {
       x,
       y,
       strokeColor: this.state.currentItemStrokeColor,
-      backgroundColor: this.state.currentItemBackgroundColor,
+      backgroundColor: COLOR_PALETTE.transparent,
       fillStyle: this.state.currentItemFillStyle,
       strokeWidth: this.getCurrentItemStrokeWidth("text"),
       strokeStyle: this.state.currentItemStrokeStyle,
@@ -7125,7 +7126,7 @@ class App extends React.Component<AppProps, AppState> {
         x: newTextElementPosition.x,
         y: newTextElementPosition.y,
         strokeColor: this.state.currentItemStrokeColor,
-        backgroundColor: this.state.currentItemBackgroundColor,
+        backgroundColor: COLOR_PALETTE.transparent,
         fillStyle: this.state.currentItemFillStyle,
         strokeWidth: this.getCurrentItemStrokeWidth("text"),
         strokeStyle: this.state.currentItemStrokeStyle,
@@ -10345,7 +10346,7 @@ class App extends React.Component<AppProps, AppState> {
       strokeWidth: this.getCurrentItemStrokeWidth("image"),
       strokeStyle: this.state.currentItemStrokeStyle,
       roughness: this.state.currentItemRoughness,
-      roundness: null,
+      roundness: this.getCurrentItemRoundness("image"),
       opacity: this.state.currentItemOpacity,
       locked: false,
       frameId: topLayerFrame ? topLayerFrame.id : null,
@@ -10672,8 +10673,23 @@ class App extends React.Component<AppProps, AppState> {
       | "diamond"
       | "ellipse"
       | "iframe"
-      | "embeddable",
+      | "embeddable"
+      | "image",
   ) {
+    if (
+      this.state.currentItemCornerRadius !== undefined &&
+      canChangeCornerRadius(elementType)
+    ) {
+      return this.state.currentItemCornerRadius > 0
+        ? {
+            type: isUsingAdaptiveRadius(elementType)
+              ? ROUNDNESS.ADAPTIVE_RADIUS
+              : ROUNDNESS.PROPORTIONAL_RADIUS,
+            value: this.state.currentItemCornerRadius,
+          }
+        : null;
+    }
+
     return this.state.currentItemRoundness === "round"
       ? {
           type: isUsingAdaptiveRadius(elementType)

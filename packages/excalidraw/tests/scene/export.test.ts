@@ -5,6 +5,7 @@ import {
   BOUND_TEXT_PADDING,
   FONT_FAMILY,
   FRAME_STYLE,
+  ROUNDNESS,
 } from "@excalidraw/common";
 
 import { pointFrom } from "@excalidraw/math";
@@ -119,6 +120,29 @@ describe("exportToSvg", () => {
       "fill",
       BACKGROUND_COLOR,
     );
+  });
+
+  it("renders a native rounded free-text background before its glyphs", async () => {
+    const text = {
+      ...textFixture,
+      id: "native-text-background",
+      width: 100,
+      height: 40,
+      backgroundColor: "#ff0000",
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 64 },
+      index: "a0" as FractionalIndex,
+    } as NonDeleted<ExcalidrawTextElement>;
+
+    const svg = await exportUtils.exportToSvg([text], DEFAULT_OPTIONS, null);
+    const group = svg.querySelector(`[data-id="${text.id}"]`);
+    const background = group?.querySelector("rect");
+
+    expect(background).not.toBeNull();
+    expect(background).toHaveAttribute("fill", "#ff0000");
+    expect(background).toHaveAttribute("width", "100");
+    expect(background).toHaveAttribute("height", "40");
+    expect(background).toHaveAttribute("rx", "20");
+    expect(group?.firstElementChild).toBe(background);
   });
 
   it("with dark mode", async () => {
@@ -354,6 +378,72 @@ describe("exportToSvg", () => {
 });
 
 describe("exportToCanvas", () => {
+  it("paints a native free-text background into the cached canvas before export", async () => {
+    const createdCanvases: HTMLCanvasElement[] = [];
+    const originalCreateElement = document.createElement.bind(document);
+    const createElementSpy = vi
+      .spyOn(document, "createElement")
+      .mockImplementation(((
+        tagName: string,
+        options?: ElementCreationOptions,
+      ) => {
+        const element = originalCreateElement(tagName, options);
+        if (tagName === "canvas") {
+          createdCanvases.push(element as HTMLCanvasElement);
+        }
+        return element;
+      }) as typeof document.createElement);
+
+    try {
+      const text = API.createElement({
+        type: "text",
+        text: "Canvas background",
+        width: 100,
+        height: 40,
+        backgroundColor: "#ff0000",
+        roundness: null,
+      });
+      const appState = {
+        ...getDefaultAppState(),
+        height: 0,
+        offsetLeft: 0,
+        offsetTop: 0,
+        width: 0,
+      };
+
+      await exportUtils.exportToCanvas(
+        [text],
+        appState,
+        {},
+        {
+          exportBackground: false,
+          exportPadding: 0,
+          viewBackgroundColor: "#ffffff",
+          exportingFrame: null,
+        },
+        undefined,
+        async () => {},
+      );
+
+      expect(
+        createdCanvases.some((canvas) =>
+          (canvas.getContext("2d") as any)
+            .__getEvents()
+            .some(
+              (event: any) =>
+                event.type === "fillRect" &&
+                event.props.x === 0 &&
+                event.props.y === 0 &&
+                event.props.width === 100 &&
+                event.props.height === 40,
+            ),
+        ),
+      ).toBe(true);
+    } finally {
+      createElementSpy.mockRestore();
+    }
+  });
+
   it("renders a selection at tight transparent bounds and preserves export scale", async () => {
     const rectangle = API.createElement({
       type: "rectangle",

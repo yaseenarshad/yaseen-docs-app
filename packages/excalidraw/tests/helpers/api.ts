@@ -280,17 +280,24 @@ export class API {
           ? appState.currentItemVectorStrokeWidth
           : getStrokeWidthByKey(type, appState.currentItemStrokeWidthKey)),
       strokeStyle: rest.strokeStyle ?? appState.currentItemStrokeStyle,
-      roundness: (
-        rest.roundness === undefined
-          ? appState.currentItemRoundness === "round"
-          : rest.roundness
-      )
-        ? {
-            type: isUsingAdaptiveRadius(type)
-                    ? ROUNDNESS.ADAPTIVE_RADIUS
-                    : ROUNDNESS.PROPORTIONAL_RADIUS,
-          }
-        : null,
+      roundness: (() => {
+        const roundness =
+          rest.roundness === undefined
+            ? appState.currentItemRoundness === "round"
+            : rest.roundness;
+
+        return roundness
+          ? {
+              type: isUsingAdaptiveRadius(type)
+                ? ROUNDNESS.ADAPTIVE_RADIUS
+                : ROUNDNESS.PROPORTIONAL_RADIUS,
+              ...(typeof roundness === "object" &&
+              roundness.value !== undefined
+                ? { value: roundness.value }
+                : {}),
+            }
+          : null;
+      })(),
       roughness: rest.roughness ?? appState.currentItemRoughness,
       opacity: rest.opacity ?? appState.currentItemOpacity,
       boundElements: rest.boundElements ?? null,

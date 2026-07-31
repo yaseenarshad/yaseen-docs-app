@@ -9,6 +9,7 @@ import {
   isLinearElement,
   isTextElement,
   hasStrokeColor,
+  canChangeCornerRadiusForElement,
   toolIsArrow,
 } from "@excalidraw/element";
 
@@ -63,7 +64,11 @@ export const canChangeBackgroundColor = (
 ) => {
   return (
     hasBackground(appState.activeTool.type) ||
-    targetElements.some((element) => hasBackground(element.type))
+    targetElements.some(
+      (element) =>
+        hasBackground(element.type) ||
+        (isTextElement(element) && element.containerId === null),
+    )
   );
 };
 
@@ -126,7 +131,13 @@ export const getShapeActionPredicates = (
     freedrawMode: forToolOrSelection(hasFreedrawMode),
     strokeStyle: forToolOrSelection(hasStrokeStyle),
     sloppiness: forToolOrSelection(hasStrokeStyle),
-    roundness: forToolOrSelection(canChangeRoundness),
+    roundness:
+      canChangeRoundness(activeToolType) ||
+      targetElements.some(
+        (element) =>
+          canChangeRoundness(element.type) ||
+          canChangeCornerRadiusForElement(element),
+      ),
     arrowType: forToolOrSelection(toolIsArrow),
     arrowheads: forToolOrSelection(canHaveArrowheads),
 

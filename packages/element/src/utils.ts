@@ -1,4 +1,5 @@
 import {
+  CORNER_RADIUS,
   DEFAULT_ADAPTIVE_RADIUS,
   DEFAULT_PROPORTIONAL_RADIUS,
   invariant,
@@ -491,6 +492,10 @@ export const isPathALoop = (
 };
 
 export const getCornerRadius = (x: number, element: ExcalidrawElement) => {
+  if (element.roundness?.value !== undefined) {
+    return Math.min(normalizeCornerRadius(element.roundness.value), x / 2);
+  }
+
   if (
     element.roundness?.type === ROUNDNESS.PROPORTIONAL_RADIUS ||
     element.roundness?.type === ROUNDNESS.LEGACY
@@ -511,6 +516,39 @@ export const getCornerRadius = (x: number, element: ExcalidrawElement) => {
   }
 
   return 0;
+};
+
+export const normalizeCornerRadius = (value: number) => {
+  if (!Number.isFinite(value)) {
+    return CORNER_RADIUS.default;
+  }
+
+  return Math.min(
+    CORNER_RADIUS.max,
+    Math.max(CORNER_RADIUS.min, Math.round(value / CORNER_RADIUS.step)),
+  );
+};
+
+export const getRequestedCornerRadius = (element: ExcalidrawElement) => {
+  if (!element.roundness) {
+    return CORNER_RADIUS.min;
+  }
+
+  return element.roundness.value === undefined
+    ? CORNER_RADIUS.default
+    : normalizeCornerRadius(element.roundness.value);
+};
+
+export const normalizeElementRoundness = (
+  roundness: ExcalidrawElement["roundness"],
+): ExcalidrawElement["roundness"] => {
+  if (!roundness || roundness.value === undefined) {
+    return roundness;
+  }
+
+  const value = normalizeCornerRadius(roundness.value);
+
+  return value === CORNER_RADIUS.min ? null : { ...roundness, value };
 };
 
 const getDiagonalsForBindableElement = (

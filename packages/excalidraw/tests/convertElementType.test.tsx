@@ -44,6 +44,40 @@ describe("convert element type", () => {
     expect(h.elements[0].roundness?.type).toBe(ROUNDNESS.ADAPTIVE_RADIUS);
   });
 
+  it("preserves the requested corner radius between eligible box shapes", () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 64 },
+    });
+
+    API.setElements([rectangle]);
+    API.setSelectedElements([rectangle]);
+
+    act(() => {
+      convertElementTypes(h.app, {
+        conversionType: "generic",
+        nextType: "diamond",
+      });
+    });
+
+    expect(h.elements[0].roundness).toEqual({
+      type: ROUNDNESS.PROPORTIONAL_RADIUS,
+      value: 64,
+    });
+
+    act(() => {
+      convertElementTypes(h.app, {
+        conversionType: "generic",
+        nextType: "rectangle",
+      });
+    });
+
+    expect(h.elements[0].roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 64,
+    });
+  });
+
   it("never converts a human-created rectangle or ellipse into Diamond", () => {
     const rectangle = API.createElement({ type: "rectangle" });
     API.setElements([rectangle]);

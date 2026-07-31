@@ -24,6 +24,7 @@ import {
   getBoundTextElement,
   getBoundTextMaxWidth,
   getContainerElement,
+  getTextBackgroundGeometry,
   getStyledVisualLines,
 } from "@excalidraw/element";
 import { getLineHeightInPx } from "@excalidraw/element";
@@ -711,6 +712,26 @@ const renderElementToSvg = (
             offsetY || 0
           }) rotate(${degree} ${cx} ${cy})`,
         );
+        const background = getTextBackgroundGeometry(element);
+        if (background) {
+          const rect = svgRoot.ownerDocument.createElementNS(SVG_NS, "rect");
+          rect.setAttribute("x", `${background.x}`);
+          rect.setAttribute("y", `${background.y}`);
+          rect.setAttribute("width", `${background.width}`);
+          rect.setAttribute("height", `${background.height}`);
+          rect.setAttribute(
+            "fill",
+            applyDarkModeFilter(
+              element.backgroundColor,
+              renderConfig.theme === THEME.DARK,
+            ),
+          );
+          if (background.radius > 0) {
+            rect.setAttribute("rx", `${background.radius}`);
+            rect.setAttribute("ry", `${background.radius}`);
+          }
+          node.appendChild(rect);
+        }
         const container = getContainerElement(element, elementsMap);
         const maxWidth = container
           ? getBoundTextMaxWidth(container, element)

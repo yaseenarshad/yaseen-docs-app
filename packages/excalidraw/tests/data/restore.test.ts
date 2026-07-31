@@ -764,6 +764,46 @@ describe("restoreElements", () => {
     });
   });
 
+  it("normalizes explicit continuous corner radius data on restore", () => {
+    const elements = [
+      API.createElement({
+        type: "rectangle",
+        id: "explicit-radius",
+        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 64 },
+      }),
+      API.createElement({
+        type: "rectangle",
+        id: "oversized-radius",
+        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 140 },
+      }),
+      API.createElement({
+        type: "rectangle",
+        id: "zero-radius",
+        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 0 },
+      }),
+      API.createElement({
+        type: "rectangle",
+        id: "legacy-radius",
+        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS },
+      }),
+    ];
+
+    const restoredElements = restore.restoreElements(elements, null);
+
+    expect(restoredElements[0].roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 64,
+    });
+    expect(restoredElements[1].roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 100,
+    });
+    expect(restoredElements[2].roundness).toBeNull();
+    expect(restoredElements[3].roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+    });
+  });
+
   it("bump versions of local duplicate elements when supplied", () => {
     const rectangle = API.createElement({ type: "rectangle" }); // version=1
     const ellipse = API.createElement({ type: "ellipse" });
@@ -929,6 +969,29 @@ describe("restoreAppState", () => {
       );
 
       expect(restoredAppState.currentItemVectorStrokeWidth).toBe(expected);
+    },
+  );
+
+  it.each([
+    [undefined, undefined],
+    [Number.NaN, 32],
+    [-10, 0],
+    [64, 64],
+    [140, 100],
+  ])(
+    "should normalize restored current corner radius %s to %s",
+    (value, expected) => {
+      const stubImportedAppState = {
+        ...getDefaultAppState(),
+        currentItemCornerRadius: value,
+      } as any;
+
+      const restoredAppState = restore.restoreAppState(
+        stubImportedAppState,
+        null,
+      );
+
+      expect(restoredAppState.currentItemCornerRadius).toBe(expected);
     },
   );
 
