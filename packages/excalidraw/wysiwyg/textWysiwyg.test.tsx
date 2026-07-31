@@ -470,6 +470,61 @@ describe("textWysiwyg", () => {
       );
     });
 
+    it("keeps fixed-width wrap geometry stable while panning past the viewport edge", async () => {
+      const originalText =
+        "• Search inventory facts from the connected store without changing wraps";
+      const text = {
+        ...API.createElement({
+          type: "text",
+          text: originalText,
+          x: 100,
+          width: 240,
+          height: 160,
+          textAlign: "left",
+        }),
+        originalText,
+        autoResize: false,
+      } as ExcalidrawTextElement;
+      API.setElements([text]);
+
+      UI.clickTool("selection");
+      mouse.doubleClickAt(text.x + 10, text.y + 10);
+      const editor = await getTextEditor();
+      const initialLeft = editor.style.left;
+      const initialLines = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          ".excalidraw-wysiwyg-styled-line",
+        ),
+      ).map((line) => ({
+        text: line.textContent,
+        left: line.style.left,
+        top: line.style.top,
+      }));
+
+      expect(editor.style.width).toBe(`${text.width}px`);
+      expect(initialLines.length).toBeGreaterThan(1);
+
+      act(() => {
+        h.app.setState({ scrollX: 500 });
+      });
+      await waitFor(() => expect(editor.style.left).not.toBe(initialLeft));
+
+      const pannedLines = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          ".excalidraw-wysiwyg-styled-line",
+        ),
+      ).map((line) => ({
+        text: line.textContent,
+        left: line.style.left,
+        top: line.style.top,
+      }));
+
+      expect(editor.style.width).toBe(`${text.width}px`);
+      expect(pannedLines).toEqual(initialLines);
+      expect(editor.value).toBe(originalText);
+      expect((h.elements[0] as ExcalidrawTextElement).width).toBe(text.width);
+    });
+
     it("maps a continuation-line click from its hanging-indent origin to the source text", async () => {
       const originalText = "• Search inventory facts from the connected store";
       const text = {

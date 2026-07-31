@@ -408,7 +408,9 @@ export const textWysiwyg = ({
 
       if (!container) {
         maxWidth = (appState.width - 8 - viewportX) / appState.zoom.value;
-        width = Math.min(width, maxWidth);
+        if (updatedTextElement.autoResize) {
+          width = Math.min(width, maxWidth);
+        }
       } else {
         width += 0.5;
       }
