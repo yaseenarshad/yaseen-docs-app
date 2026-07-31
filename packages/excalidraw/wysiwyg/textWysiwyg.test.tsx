@@ -544,6 +544,7 @@ describe("textWysiwyg", () => {
 
     it("should toggle line bold, underline, and strikethrough with keyboard shortcuts", () => {
       const primaryModifier = { [KEYS.CTRL_OR_CMD]: true };
+      fireEvent.input(textarea, { target: { value: "Styled" } });
 
       fireEvent.keyDown(textarea, {
         ...primaryModifier,
@@ -581,6 +582,13 @@ describe("textWysiwyg", () => {
       expect((h.elements[0] as ExcalidrawTextElement).strikethrough).toBe(
         false,
       );
+      const styledLine = document.querySelector<HTMLElement>(
+        ".excalidraw-wysiwyg-styled-line",
+      );
+      expect(styledLine).not.toBeNull();
+      expect(styledLine?.style.fontWeight).toBe("bold");
+      expect(styledLine?.style.textDecoration).toContain("underline");
+      expect(styledLine?.style.textDecoration).toContain("line-through");
 
       fireEvent.keyDown(textarea, {
         ...primaryModifier,

@@ -24,9 +24,11 @@ import {
 import { newElementWith } from "./mutateElement";
 import { getBoundTextMaxWidth } from "./textElement";
 import { normalizeText, measureText } from "./textMeasurements";
-import { normalizeLineUnderlines } from "./textLineUnderlines";
-import { wrapText } from "./textWrapping";
-
+import {
+  getStyledTextLayout,
+  getTextElementStyledLayout,
+  normalizeLineUnderlines,
+} from "./textLineUnderlines";
 import { isLineElement } from "./typeChecks";
 
 import type {
@@ -280,11 +282,6 @@ export const newTextElement = (
   const fontSize = opts.fontSize || DEFAULT_FONT_SIZE;
   const lineHeight = opts.lineHeight || getLineHeight(fontFamily);
   const text = normalizeText(opts.text);
-  const metrics = measureText(
-    text,
-    getFontString({ fontFamily, fontSize }),
-    lineHeight,
-  );
   const textAlign = opts.textAlign || DEFAULT_TEXT_ALIGN;
   const verticalAlign = opts.verticalAlign || DEFAULT_VERTICAL_ALIGN;
   const logicalLineCount = (opts.originalText ?? text).split("\n").length;
@@ -297,6 +294,24 @@ export const newTextElement = (
     opts.lineStrikethroughs,
     logicalLineCount,
   );
+  const metrics = getStyledTextLayout({
+    originalText: opts.originalText ?? text,
+    regularFont: getFontString({
+      fontFamily,
+      fontSize,
+      fontWeight: "normal",
+    }),
+    boldFont: getFontString({ fontFamily, fontSize, fontWeight: "bold" }),
+    maxWidth: Infinity,
+    lineBolds,
+    lineUnderlines,
+    lineStrikethroughs,
+    wholeElementBold: opts.fontWeight === "bold",
+    wholeElementUnderlined: opts.textDecoration === "underline",
+    wholeElementStrikethrough: opts.strikethrough === true,
+    fontSize,
+    lineHeight,
+  });
   const offsets = getTextElementPositionOffsets(
     { textAlign, verticalAlign },
     metrics,
@@ -339,17 +354,16 @@ const getAdjustedDimensions = (
   element: ExcalidrawTextElement,
   elementsMap: ElementsMap,
   nextText: string,
+  styledMetrics?: { width: number; height: number },
 ): {
   x: number;
   y: number;
   width: number;
   height: number;
 } => {
-  let { width: nextWidth, height: nextHeight } = measureText(
-    nextText,
-    getFontString(element),
-    element.lineHeight,
-  );
+  let { width: nextWidth, height: nextHeight } =
+    styledMetrics ??
+    measureText(nextText, getFontString(element), element.lineHeight);
 
   // wrapped text
   if (!element.autoResize) {
@@ -365,11 +379,7 @@ const getAdjustedDimensions = (
     !element.containerId &&
     element.autoResize
   ) {
-    const prevMetrics = measureText(
-      element.text,
-      getFontString(element),
-      element.lineHeight,
-    );
+    const prevMetrics = { width: element.width, height: element.height };
     const offsets = getTextElementPositionOffsets(element, {
       width: nextWidth - prevMetrics.width,
       height: nextHeight - prevMetrics.height,
@@ -475,21 +485,22 @@ export const refreshTextDimensions = (
   textElement: ExcalidrawTextElement,
   container: ExcalidrawTextContainer | null,
   elementsMap: ElementsMap,
-  text = textElement.text,
+  text = textElement.originalText,
 ) => {
   if (textElement.isDeleted) {
     return;
   }
-  if (container || !textElement.autoResize) {
-    text = wrapText(
-      text,
-      getFontString(textElement),
-      container
-        ? getBoundTextMaxWidth(container, textElement)
-        : textElement.width,
-    );
-  }
-  const dimensions = getAdjustedDimensions(textElement, elementsMap, text);
+  const maxWidth = container
+    ? getBoundTextMaxWidth(container, textElement)
+    : textElement.autoResize
+    ? Infinity
+    : textElement.width;
+  const styledLayout = getTextElementStyledLayout(textElement, maxWidth, text);
+  text = styledLayout.text;
+  const dimensions = getAdjustedDimensions(textElement, elementsMap, text, {
+    width: styledLayout.width,
+    height: styledLayout.height,
+  });
   return { text, ...dimensions };
 };
 

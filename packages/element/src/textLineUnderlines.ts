@@ -1,6 +1,9 @@
-import { getWrappedTextLines } from "./textWrapping";
+import { getFontString } from "@excalidraw/common";
 
-import type { FontString } from "./types";
+import { getWrappedTextLines } from "./textWrapping";
+import { getLineHeightInPx, getLineWidth } from "./textMeasurements";
+
+import type { ExcalidrawTextElement, FontString } from "./types";
 
 const getLineCount = (text: string) => text.split("\n").length;
 
@@ -230,19 +233,112 @@ export const getUnderlinedVisualLines = (args: {
   lineUnderlines: readonly boolean[] | undefined;
   wholeElementUnderlined: boolean;
 }) =>
-  getWrappedTextLines(args.originalText, args.font, args.maxWidth).map(
-    (line) => {
-      const logicalLine = getLogicalLineIndexAtOffset(
-        args.originalText,
-        line.start,
-      );
+  getStyledVisualLines({
+    originalText: args.originalText,
+    regularFont: args.font,
+    boldFont: args.font,
+    maxWidth: args.maxWidth,
+    lineBolds: undefined,
+    lineUnderlines: args.lineUnderlines,
+    lineStrikethroughs: undefined,
+    wholeElementBold: false,
+    wholeElementUnderlined: args.wholeElementUnderlined,
+    wholeElementStrikethrough: false,
+  });
 
-      return {
+export type StyledVisualLine = {
+  text: string;
+  start: number;
+  end: number;
+  logicalLine: number;
+  bold: boolean;
+  underlined: boolean;
+  strikethrough: boolean;
+  font: FontString;
+  width: number;
+};
+
+export const getStyledVisualLines = (args: {
+  originalText: string;
+  regularFont: FontString;
+  boldFont: FontString;
+  maxWidth: number;
+  lineBolds: readonly boolean[] | undefined;
+  lineUnderlines: readonly boolean[] | undefined;
+  lineStrikethroughs: readonly boolean[] | undefined;
+  wholeElementBold: boolean;
+  wholeElementUnderlined: boolean;
+  wholeElementStrikethrough: boolean;
+}): StyledVisualLine[] => {
+  const lines: StyledVisualLine[] = [];
+  let sourceOffset = 0;
+
+  for (const [logicalLine, originalLine] of args.originalText
+    .split("\n")
+    .entries()) {
+    const bold =
+      args.wholeElementBold || args.lineBolds?.[logicalLine] === true;
+    const underlined =
+      args.wholeElementUnderlined ||
+      args.lineUnderlines?.[logicalLine] === true;
+    const strikethrough =
+      args.wholeElementStrikethrough ||
+      args.lineStrikethroughs?.[logicalLine] === true;
+    const font = bold ? args.boldFont : args.regularFont;
+    const visualLines = getWrappedTextLines(originalLine, font, args.maxWidth);
+
+    for (const line of visualLines) {
+      lines.push({
         ...line,
+        start: sourceOffset + line.start,
+        end: sourceOffset + line.end,
         logicalLine,
-        underlined:
-          args.wholeElementUnderlined ||
-          args.lineUnderlines?.[logicalLine] === true,
-      };
-    },
-  );
+        bold,
+        underlined,
+        strikethrough,
+        font,
+        width: getLineWidth(line.text, font),
+      });
+    }
+
+    sourceOffset += originalLine.length + 1;
+  }
+
+  return lines;
+};
+
+export const getStyledTextLayout = (
+  args: Parameters<typeof getStyledVisualLines>[0] & {
+    fontSize: number;
+    lineHeight: ExcalidrawTextElement["lineHeight"];
+  },
+) => {
+  const lines = getStyledVisualLines(args);
+
+  return {
+    lines,
+    text: lines.map((line) => line.text).join("\n"),
+    width: Math.max(0, ...lines.map((line) => line.width)),
+    height: getLineHeightInPx(args.fontSize, args.lineHeight) * lines.length,
+  };
+};
+
+export const getTextElementStyledLayout = (
+  element: ExcalidrawTextElement,
+  maxWidth: number,
+  originalText = element.originalText,
+) =>
+  getStyledTextLayout({
+    originalText,
+    regularFont: getFontString({ ...element, fontWeight: "normal" }),
+    boldFont: getFontString({ ...element, fontWeight: "bold" }),
+    maxWidth,
+    lineBolds: element.lineBolds,
+    lineUnderlines: element.lineUnderlines,
+    lineStrikethroughs: element.lineStrikethroughs,
+    wholeElementBold: element.fontWeight === "bold",
+    wholeElementUnderlined: element.textDecoration === "underline",
+    wholeElementStrikethrough: element.strikethrough === true,
+    fontSize: element.fontSize,
+    lineHeight: element.lineHeight,
+  });

@@ -83,6 +83,34 @@ describe("professional font registration", () => {
     );
     expect(load).toHaveBeenCalledTimes(2);
   });
+
+  it("requests Regular and Bold faces for mixed logical-line weights", async () => {
+    vi.clearAllMocks();
+    const check = vi.spyOn(document.fonts, "check").mockReturnValue(false);
+    const load = vi.spyOn(document.fonts, "load").mockResolvedValue([]);
+
+    await Fonts.loadElementsFonts([
+      {
+        ...API.createElement({
+          type: "text",
+          fontFamily: FONT_FAMILY.Inter,
+          text: "Title\nBody",
+        }),
+        fontWeight: "normal",
+        lineBolds: [true],
+      },
+    ]);
+
+    expect(check).toHaveBeenCalledWith(
+      expect.stringContaining("bold "),
+      "Title\nBody",
+    );
+    expect(check).toHaveBeenCalledWith(
+      expect.not.stringContaining("bold "),
+      "Title\nBody",
+    );
+    expect(load).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("embedded font CSS", () => {

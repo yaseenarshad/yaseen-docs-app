@@ -24,7 +24,7 @@ import {
   getBoundTextElement,
   getBoundTextMaxWidth,
   getContainerElement,
-  getUnderlinedVisualLines,
+  getStyledVisualLines,
 } from "@excalidraw/element";
 import { getLineHeightInPx } from "@excalidraw/element";
 import {
@@ -717,21 +717,25 @@ const renderElementToSvg = (
           : element.autoResize
           ? Infinity
           : element.width;
-        const lines = element.lineUnderlines
-          ? getUnderlinedVisualLines({
-              originalText: element.originalText,
-              font: getFontString(element),
-              maxWidth,
-              lineUnderlines: element.lineUnderlines,
-              wholeElementUnderlined: element.textDecoration === "underline",
-            })
-          : element.text
-              .replace(/\r\n?/g, "\n")
-              .split("\n")
-              .map((text) => ({
-                text,
-                underlined: element.textDecoration === "underline",
-              }));
+        const hasPerLineStyles =
+          !!element.lineBolds?.some(Boolean) ||
+          !!element.lineUnderlines?.some(Boolean) ||
+          !!element.lineStrikethroughs?.some(Boolean);
+        const lines = getStyledVisualLines({
+          originalText: hasPerLineStyles ? element.originalText : element.text,
+          regularFont: getFontString({
+            ...element,
+            fontWeight: "normal",
+          }),
+          boldFont: getFontString({ ...element, fontWeight: "bold" }),
+          maxWidth: hasPerLineStyles ? maxWidth : Infinity,
+          lineBolds: element.lineBolds,
+          lineUnderlines: element.lineUnderlines,
+          lineStrikethroughs: element.lineStrikethroughs,
+          wholeElementBold: element.fontWeight === "bold",
+          wholeElementUnderlined: element.textDecoration === "underline",
+          wholeElementStrikethrough: element.strikethrough === true,
+        });
         const lineHeightPx = getLineHeightInPx(
           element.fontSize,
           element.lineHeight,
@@ -761,11 +765,15 @@ const renderElementToSvg = (
           text.setAttribute("y", `${i * lineHeightPx + verticalOffset}`);
           text.setAttribute("font-family", getFontFamilyString(element));
           text.setAttribute("font-size", `${element.fontSize}px`);
-          if (element.fontWeight === "bold") {
+          if (lines[i].bold) {
             text.setAttribute("font-weight", "bold");
           }
-          if (lines[i].underlined) {
-            text.setAttribute("text-decoration", "underline");
+          const decorations = [
+            lines[i].underlined ? "underline" : null,
+            lines[i].strikethrough ? "line-through" : null,
+          ].filter(Boolean);
+          if (decorations.length) {
+            text.setAttribute("text-decoration", decorations.join(" "));
           }
           text.setAttribute(
             "fill",

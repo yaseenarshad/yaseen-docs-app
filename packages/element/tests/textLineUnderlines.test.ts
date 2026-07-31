@@ -1,5 +1,6 @@
 import {
   areSelectedLinesStyled,
+  getStyledVisualLines,
   getUnderlinedVisualLines,
   getSelectedLogicalLineRange,
   normalizeLineStyles,
@@ -201,4 +202,39 @@ it("marks every wrapped fragment of an underlined logical line", () => {
       .filter((line) => line.logicalLine === 1)
       .every((line) => !line.underlined),
   ).toBe(true);
+});
+
+it("resolves every visual line font and combined logical-line styles", () => {
+  const lines = getStyledVisualLines({
+    originalText: "Title\nSubtitle",
+    regularFont: "20px Assistant" as FontString,
+    boldFont: "bold 20px Assistant" as FontString,
+    maxWidth: Infinity,
+    lineBolds: [true],
+    lineUnderlines: [false, true],
+    lineStrikethroughs: [true, true],
+    wholeElementBold: false,
+    wholeElementUnderlined: false,
+    wholeElementStrikethrough: false,
+  });
+
+  expect(lines).toMatchObject([
+    {
+      text: "Title",
+      logicalLine: 0,
+      bold: true,
+      underlined: false,
+      strikethrough: true,
+      font: "bold 20px Assistant",
+    },
+    {
+      text: "Subtitle",
+      logicalLine: 1,
+      bold: false,
+      underlined: true,
+      strikethrough: true,
+      font: "20px Assistant",
+    },
+  ]);
+  expect(lines.every((line) => line.width >= 0)).toBe(true);
 });
