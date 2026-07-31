@@ -83,7 +83,6 @@ import { atom } from "../editor-jotai";
 import "./ConvertElementTypePopup.scss";
 import { IconButton } from "./IconButton";
 import {
-  DiamondIcon,
   elbowArrowIcon,
   EllipseIcon,
   LineIcon,
@@ -106,7 +105,7 @@ type ExcalidrawConvertibleElement =
   | ExcalidrawLinearElement;
 
 // indicates order of switching
-const GENERIC_TYPES = ["rectangle", "diamond", "ellipse"] as const;
+const GENERIC_TYPES = ["rectangle", "ellipse"] as const;
 // indicates order of switching
 const LINEAR_TYPES = [
   "line",
@@ -116,7 +115,7 @@ const LINEAR_TYPES = [
 ] as const;
 
 const CONVERTIBLE_GENERIC_TYPES: ReadonlySet<ConvertibleGenericTypes> = new Set(
-  GENERIC_TYPES,
+  ["rectangle", "diamond", "ellipse"],
 );
 
 const CONVERTIBLE_LINEAR_TYPES: ReadonlySet<ConvertibleLinearTypes> = new Set(
@@ -303,7 +302,6 @@ const Panel = ({
       : conversionType === "generic"
       ? [
           ["rectangle", RectangleIcon],
-          ["diamond", DiamondIcon],
           ["ellipse", EllipseIcon],
         ]
       : [];
@@ -445,7 +443,9 @@ export const convertElementTypes = (
     );
 
     const index = sameType
-      ? GENERIC_TYPES.indexOf(convertibleGenericElements[0].type)
+      ? GENERIC_TYPES.findIndex(
+          (type) => type === convertibleGenericElements[0].type,
+        )
       : -1;
 
     nextType =

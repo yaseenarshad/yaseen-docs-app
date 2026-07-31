@@ -147,45 +147,26 @@ export const HelpDialog = ({ onClose }: { onClose?: () => void }) => {
             caption={t("helpDialog.tools")}
           >
             <Shortcut label={t("toolBar.hand")} shortcuts={[KEYS.H]} />
-            <Shortcut
-              label={t("toolBar.selection")}
-              shortcuts={[KEYS.V, KEYS["1"]]}
-            />
-            <Shortcut
-              label={t("toolBar.rectangle")}
-              shortcuts={[KEYS.R, KEYS["2"]]}
-            />
-            <Shortcut
-              label={t("toolBar.diamond")}
-              shortcuts={[KEYS.D, KEYS["3"]]}
-            />
-            <Shortcut
-              label={t("toolBar.ellipse")}
-              shortcuts={[KEYS.O, KEYS["4"]]}
-            />
-            <Shortcut
-              label={t("toolBar.arrow")}
-              shortcuts={[KEYS.A, KEYS["5"]]}
-            />
-            <Shortcut
-              label={t("toolBar.line")}
-              shortcuts={[KEYS.L, KEYS["6"]]}
-            />
+            <Shortcut label={t("toolBar.selection")} shortcuts={[KEYS.V]} />
+            <Shortcut label={t("toolBar.rectangle")} shortcuts={[KEYS.R]} />
+            <Shortcut label={t("toolBar.ellipse")} shortcuts={[KEYS.O]} />
+            <Shortcut label={t("toolBar.arrow")} shortcuts={[KEYS.A]} />
+            <Shortcut label={t("toolBar.line")} shortcuts={[KEYS.D, KEYS.L]} />
             <Shortcut
               label={t("toolBar.freedraw")}
-              shortcuts={[KEYS.P, KEYS["7"]]}
+              shortcuts={[KEYS.W, KEYS.P, KEYS.X]}
             />
-            <Shortcut
-              label={t("toolBar.text")}
-              shortcuts={[KEYS.T, KEYS["8"]]}
-            />
-            <Shortcut label={t("toolBar.image")} shortcuts={[KEYS["9"]]} />
-            <Shortcut
-              label={t("toolBar.eraser")}
-              shortcuts={[KEYS.E, KEYS["0"]]}
-            />
+            <Shortcut label={t("toolBar.text")} shortcuts={[KEYS.T]} />
             <Shortcut label={t("toolBar.frame")} shortcuts={[KEYS.F]} />
-            <Shortcut label={t("toolBar.laser")} shortcuts={[KEYS.K]} />
+            <Shortcut label={t("toolBar.laser")} shortcuts={[KEYS.E, KEYS.K]} />
+            <Shortcut
+              label={t("helpDialog.selectedPrimaryColor")}
+              shortcuts={["Color key"]}
+            />
+            <Shortcut
+              label={t("helpDialog.selectedStrokeColor")}
+              shortcuts={["Shift+Color key"]}
+            />
             <Shortcut
               label={t("labels.eyeDropper")}
               shortcuts={[KEYS.I, "Shift+S", "Shift+G"]}

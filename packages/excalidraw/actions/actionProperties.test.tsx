@@ -192,7 +192,13 @@ describe("element locking", () => {
       "should carry the shared exact width into the %s tool",
       (tool) => {
         API.setAppState({ currentItemVectorStrokeWidth: 7.5 });
-        UI.clickTool(tool);
+        if (tool === "diamond") {
+          act(() => {
+            window.h.app.setActiveTool({ type: "diamond" });
+          });
+        } else {
+          UI.clickTool(tool);
+        }
 
         const input = queryByTestId(
           document.body,

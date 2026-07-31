@@ -99,3 +99,5 @@ export { actionToggleSearchMenu } from "./actionToggleSearchMenu";
 export { actionChangeSmartShape } from "./actionSmartShape";
 
 export { actionToggleCropEditor } from "./actionCropEditor";
+
+export { actionResizeSelectionToPreset } from "../selectionSizePresets";

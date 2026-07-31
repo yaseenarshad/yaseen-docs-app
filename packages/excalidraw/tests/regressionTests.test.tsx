@@ -19,6 +19,7 @@ import * as StaticScene from "../renderer/staticScene";
 import { API } from "./helpers/api";
 import { Keyboard, Pointer, UI } from "./helpers/ui";
 import {
+  act,
   assertSelectedElements,
   checkpointHistory,
   fireEvent,
@@ -79,7 +80,9 @@ describe("regression tests", () => {
     mouse.down(10, -10);
     mouse.up(20, 10);
 
-    UI.clickTool("diamond");
+    act(() => {
+      h.app.setActiveTool({ type: "diamond" });
+    });
     mouse.down(10, -10);
     mouse.up(20, 10);
 
@@ -142,12 +145,11 @@ describe("regression tests", () => {
   });
 
   for (const [keys, shape, shouldSelect] of [
-    [`2${KEYS.R}`, "rectangle", true],
-    [`3${KEYS.D}`, "diamond", true],
-    [`4${KEYS.O}`, "ellipse", true],
-    [`5${KEYS.A}`, "arrow", true],
-    [`6${KEYS.L}`, "line", true],
-    [`7${KEYS.P}`, "freedraw", false],
+    [KEYS.R, "rectangle", true],
+    [KEYS.O, "ellipse", true],
+    [KEYS.A, "arrow", true],
+    [`${KEYS.D}${KEYS.L}`, "line", true],
+    [`${KEYS.W}${KEYS.P}${KEYS.X}`, "freedraw", false],
   ] as [string, ExcalidrawElement["type"], boolean][]) {
     for (const key of keys) {
       it(`key ${key} selects ${shape} tool`, () => {
@@ -859,7 +861,9 @@ describe("regression tests", () => {
     mouse.down(100, 100);
     mouse.up(100, 100);
 
-    UI.clickTool("diamond");
+    act(() => {
+      h.app.setActiveTool({ type: "diamond" });
+    });
     mouse.down(100, 100);
     mouse.up(100, 100);
 
@@ -954,7 +958,9 @@ describe("regression tests", () => {
       mouse.down(100, 100);
       mouse.up(100, 100);
 
-      UI.clickTool("diamond");
+      act(() => {
+        h.app.setActiveTool({ type: "diamond" });
+      });
       mouse.down(100, 100);
       mouse.up(100, 100);
 

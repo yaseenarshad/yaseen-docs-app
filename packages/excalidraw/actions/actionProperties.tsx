@@ -286,7 +286,7 @@ const offsetElementAfterFontResize = (
   });
 };
 
-const changeFontSize = (
+export const changeFontSize = (
   elements: readonly ExcalidrawElement[],
   appState: AppState,
   app: AppClassProperties,
@@ -445,6 +445,7 @@ const getSemanticColorProperty = (element: ExcalidrawElement) => {
 
 export const actionApplySelectedSemanticColor = register<{
   colorName: ColorPickerColor;
+  target?: "primary" | "stroke";
 }>({
   name: "applySelectedSemanticColor",
   label: "labels.stroke",
@@ -457,7 +458,12 @@ export const actionApplySelectedSemanticColor = register<{
     let supportedElementCount = 0;
     const paletteValue = COLOR_PALETTE[value.colorName];
     const updatedElements = changeProperty(elements, appState, (element) => {
-      const property = getSemanticColorProperty(element);
+      const property =
+        value.target === "stroke"
+          ? hasStrokeColor(element.type)
+            ? ("strokeColor" as const)
+            : null
+          : getSemanticColorProperty(element);
       if (!property) {
         return element;
       }
@@ -480,7 +486,9 @@ export const actionApplySelectedSemanticColor = register<{
           ...appState,
           toast: {
             message:
-              "The selected elements do not support direct color shortcuts.",
+              value.target === "stroke"
+                ? "The selected elements do not support stroke color shortcuts."
+                : "The selected elements do not support direct color shortcuts.",
             duration: 3000,
           },
         },

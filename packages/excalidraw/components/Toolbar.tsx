@@ -18,14 +18,12 @@ import {
   EmbedIcon,
   frameToolIcon,
   LassoIcon,
-  laserPointerToolIcon,
   MagicIcon,
   mermaidLogoIcon,
   DotsIcon,
 } from "./icons";
 import {
   ArrowToolButton,
-  DiamondToolButton,
   EllipseToolButton,
   EraserToolButton,
   FreedrawToolPopover,
@@ -35,6 +33,7 @@ import {
   ImageToolButton,
   isToolButtonDisabled,
   LassoToolButton,
+  LaserToolButton,
   LineToolButton,
   RectangleToolButton,
   SelectionToolButton,
@@ -64,7 +63,6 @@ const ExtraToolsDropdown = ({
 
   const frameToolSelected = activeTool.type === "frame";
   const drawShapeToolSelected = activeTool.type === "autoshape";
-  const laserToolSelected = activeTool.type === "laser";
   const lassoToolSelected =
     isFullStylesPanel &&
     activeTool.type === "lasso" &&
@@ -79,11 +77,7 @@ const ExtraToolsDropdown = ({
             frameToolSelected ||
             embeddableToolSelected ||
             (isFullStylesPanel && drawShapeToolSelected) ||
-            lassoToolSelected ||
-            // in collab we're already highlighting the laser button
-            // outside toolbar, so let's not highlight extra-tools button
-            // on top of it
-            (laserToolSelected && !app.props.isCollaborating),
+            lassoToolSelected,
         })}
         onToggle={() => {
           setIsExtraToolsMenuOpen(!isExtraToolsMenuOpen);
@@ -97,8 +91,6 @@ const ExtraToolsDropdown = ({
           ? EmbedIcon
           : isFullStylesPanel && drawShapeToolSelected
           ? drawShapeToolIcon
-          : laserToolSelected && !app.props.isCollaborating
-          ? laserPointerToolIcon
           : lassoToolSelected
           ? LassoIcon
           : DotsIcon}
@@ -136,16 +128,6 @@ const ExtraToolsDropdown = ({
           disabled={isToolButtonDisabled(app, "autoshape")}
         >
           {t("toolBar.autoshape")}
-        </DropdownMenu.Item>
-        <DropdownMenu.Item
-          onSelect={() => app.setActiveTool({ type: "laser" })}
-          icon={laserPointerToolIcon}
-          data-testid="toolbar-laser"
-          selected={laserToolSelected}
-          shortcut={KEYS.K.toLocaleUpperCase()}
-          disabled={isToolButtonDisabled(app, "laser")}
-        >
-          {t("toolBar.laser")}
         </DropdownMenu.Item>
         {isFullStylesPanel && (
           <DropdownMenu.Item
@@ -262,7 +244,7 @@ export const Toolbar = ({
           <SelectionToolButton {...toolProps} />
         )}
         <RectangleToolButton {...toolProps} />
-        <DiamondToolButton {...toolProps} />
+        <LaserToolButton {...toolProps} />
         <EllipseToolButton {...toolProps} />
         <ArrowToolButton {...toolProps} />
         <LineToolButton {...toolProps} />

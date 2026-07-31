@@ -1223,18 +1223,16 @@ describe("select single element on the scene", () => {
       <Excalidraw handleKeyboardGlobally={true} />,
     );
     const canvas = container.querySelector("canvas.interactive")!;
-    {
-      // create element
-      const tool = getByToolName("diamond");
-      fireEvent.click(tool);
-      fireEvent.pointerDown(canvas, { clientX: 30, clientY: 20 });
-      fireEvent.pointerMove(canvas, { clientX: -1000, clientY: -1000 });
-      fireEvent.pointerMove(canvas, { clientX: 60, clientY: 70 });
-      fireEvent.pointerUp(canvas);
-      fireEvent.keyDown(document, {
-        key: KEYS.ESCAPE,
-      });
-    }
+    act(() => {
+      h.app.setActiveTool({ type: "diamond" });
+    });
+    fireEvent.pointerDown(canvas, { clientX: 30, clientY: 20 });
+    fireEvent.pointerMove(canvas, { clientX: -1000, clientY: -1000 });
+    fireEvent.pointerMove(canvas, { clientX: 60, clientY: 70 });
+    fireEvent.pointerUp(canvas);
+    fireEvent.keyDown(document, {
+      key: KEYS.ESCAPE,
+    });
 
     const tool = getByToolName("selection");
     fireEvent.click(tool);

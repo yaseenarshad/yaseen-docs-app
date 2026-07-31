@@ -43,7 +43,6 @@ export type ToolConfig = {
   letterKey?: string | readonly string[];
   /** whether `letterKey` requires Shift to be held (e.g. Shift+X) */
   shiftKey?: boolean;
-  numericKey?: string;
   /** whether the tool's shapes can be filled — fills the icon when active */
   fillable?: boolean;
   /**
@@ -73,57 +72,45 @@ export const TOOLS = defineTools({
   selection: {
     icon: SelectionIcon,
     letterKey: KEYS.V,
-    numericKey: KEYS["1"],
     fillable: true,
   },
   rectangle: {
     icon: RectangleIcon,
     letterKey: KEYS.R,
-    numericKey: KEYS["2"],
     fillable: true,
   },
   diamond: {
     icon: DiamondIcon,
-    letterKey: KEYS.D,
-    numericKey: KEYS["3"],
     fillable: true,
   },
   ellipse: {
     icon: EllipseIcon,
     letterKey: KEYS.O,
-    numericKey: KEYS["4"],
     fillable: true,
   },
   arrow: {
     icon: ArrowIcon,
     letterKey: KEYS.A,
-    numericKey: KEYS["5"],
     fillable: true,
   },
   line: {
     icon: LineIcon,
-    letterKey: KEYS.L,
-    numericKey: KEYS["6"],
+    letterKey: [KEYS.D, KEYS.L],
     fillable: true,
   },
   freedraw: {
     icon: FreedrawIcon,
-    letterKey: [KEYS.P, KEYS.X],
-    numericKey: KEYS["7"],
+    letterKey: [KEYS.W, KEYS.P, KEYS.X],
   },
   text: {
     icon: TextIcon,
     letterKey: KEYS.T,
-    numericKey: KEYS["8"],
   },
   image: {
     icon: ImageIcon,
-    numericKey: KEYS["9"],
   },
   eraser: {
     icon: EraserIcon,
-    letterKey: KEYS.E,
-    numericKey: KEYS["0"],
     toggle: true,
   },
   frame: {
@@ -141,7 +128,7 @@ export const TOOLS = defineTools({
   },
   laser: {
     icon: laserPointerToolIcon,
-    letterKey: KEYS.K,
+    letterKey: [KEYS.E, KEYS.K],
   },
   lasso: {
     icon: LassoIcon,
@@ -170,13 +157,28 @@ export const getToolLetter = (type: ToolbarToolType) => {
   return shiftKey ? getShortcutKey(`Shift+${letter}`) : letter;
 };
 
-/** human-readable shortcut hint, e.g. "R or 2", used in tooltips & aria */
+/** human-readable shortcut hint, e.g. "D or L", used in tooltips */
 export const getToolShortcut = (type: ToolbarToolType) => {
-  const letter = getToolLetter(type);
-  const { numericKey } = TOOLS[type];
-  return letter && numericKey != null
-    ? `${letter} ${t("helpDialog.or")} ${numericKey}`
-    : `${letter || numericKey}`;
+  const { letterKey, shiftKey } = TOOLS[type];
+  const letters = letterKey
+    ? (typeof letterKey === "string" ? [letterKey] : letterKey).map((key) => {
+        const letter = capitalizeString(key);
+        return shiftKey ? getShortcutKey(`Shift+${letter}`) : letter;
+      })
+    : [];
+  return letters.join(` ${t("helpDialog.or")} `);
+};
+
+/** valid ARIA key tokens for each alternate shortcut, e.g. "D L" */
+export const getToolAriaKeyShortcuts = (type: ToolbarToolType) => {
+  const { letterKey, shiftKey } = TOOLS[type];
+  const letters = letterKey
+    ? (typeof letterKey === "string" ? [letterKey] : letterKey).map((key) => {
+        const letter = capitalizeString(key);
+        return shiftKey ? `Shift+${letter}` : letter;
+      })
+    : [];
+  return letters.join(" ");
 };
 
 export const findShapeByKey = (
@@ -190,17 +192,16 @@ export const findShapeByKey = (
   const lowerKey = key.toLowerCase();
 
   for (const type of Object.keys(TOOLS) as ToolbarToolType[]) {
-    const { letterKey, numericKey, shiftKey: requiresShift } = TOOLS[type];
+    const { letterKey, shiftKey: requiresShift } = TOOLS[type];
     // shift-bound tools require shift; plain-bound ones require its absence
     if (shiftKey !== Boolean(requiresShift)) {
       continue;
     }
     if (
-      (numericKey != null && key === numericKey) ||
-      (letterKey &&
-        (typeof letterKey === "string"
-          ? letterKey === lowerKey
-          : letterKey.includes(lowerKey)))
+      letterKey &&
+      (typeof letterKey === "string"
+        ? letterKey === lowerKey
+        : letterKey.includes(lowerKey))
     ) {
       // the selection shortcut activates whichever selection tool the user
       // prefers (selection or lasso)
@@ -281,10 +282,12 @@ const createToolButton = (
         keyBindingLabel={
           hideKeyBinding || hideShortcut
             ? undefined
-            : TOOLS[shortcutType].numericKey || getToolLetter(shortcutType)
+            : getToolLetter(shortcutType)
         }
         aria-label={label}
-        aria-keyshortcuts={shortcut ?? undefined}
+        aria-keyshortcuts={
+          hideShortcut ? undefined : getToolAriaKeyShortcuts(shortcutType)
+        }
         data-testid={`toolbar-${type}`}
         onSelect={({ pointerType }) => {
           if (!app.state.penDetected && pointerType === "pen") {
@@ -321,6 +324,7 @@ export const TextToolButton = createToolButton("text");
 export const ImageToolButton = createToolButton("image");
 export const EraserToolButton = createToolButton("eraser");
 export const FrameToolButton = createToolButton("frame");
+export const LaserToolButton = createToolButton("laser");
 
 /**
  * The selection tool button — pointer-clicking it while the selection tool

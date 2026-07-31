@@ -10,6 +10,7 @@ import * as InteractiveScene from "../renderer/interactiveScene";
 import * as StaticScene from "../renderer/staticScene";
 
 import {
+  act,
   render,
   fireEvent,
   mockBoundingClientRect,
@@ -106,10 +107,10 @@ describe("Test dragCreate", () => {
     });
 
     it("diamond", async () => {
-      const { getByToolName, container } = await render(<Excalidraw />);
-      // select tool
-      const tool = getByToolName("diamond");
-      fireEvent.click(tool);
+      const { container } = await render(<Excalidraw />);
+      act(() => {
+        h.app.setActiveTool({ type: "diamond" });
+      });
 
       const canvas = container.querySelector("canvas.interactive")!;
 
@@ -268,10 +269,10 @@ describe("Test dragCreate", () => {
     });
 
     it("diamond", async () => {
-      const { getByToolName, container } = await render(<Excalidraw />);
-      // select tool
-      const tool = getByToolName("diamond");
-      fireEvent.click(tool);
+      const { container } = await render(<Excalidraw />);
+      act(() => {
+        h.app.setActiveTool({ type: "diamond" });
+      });
 
       const canvas = container.querySelector("canvas.interactive")!;
 

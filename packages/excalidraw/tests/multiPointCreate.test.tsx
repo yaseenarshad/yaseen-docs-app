@@ -11,6 +11,7 @@ import * as InteractiveCanvas from "../renderer/interactiveScene";
 import * as StaticScene from "../renderer/staticScene";
 
 import {
+  act,
   render,
   fireEvent,
   mockBoundingClientRect,
@@ -76,10 +77,10 @@ describe("remove shape in non linear elements", () => {
   });
 
   it("diamond", async () => {
-    const { getByToolName, container } = await render(<Excalidraw />);
-    // select tool
-    const tool = getByToolName("diamond");
-    fireEvent.click(tool);
+    const { container } = await render(<Excalidraw />);
+    act(() => {
+      h.app.setActiveTool({ type: "diamond" });
+    });
 
     const canvas = container.querySelector("canvas.interactive")!;
     fireEvent.pointerDown(canvas, { clientX: 30, clientY: 20 });

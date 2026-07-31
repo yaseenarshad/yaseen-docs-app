@@ -65,6 +65,7 @@ export type ActionName =
   | "changeStrokeColor"
   | "changeBackgroundColor"
   | "applySelectedSemanticColor"
+  | "resizeSelectionToPreset"
   | "changeFillStyle"
   | "changeStrokeWidth"
   | "changeVectorStrokeWidth"

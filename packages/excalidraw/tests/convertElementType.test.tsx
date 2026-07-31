@@ -43,4 +43,41 @@ describe("convert element type", () => {
     expect(h.elements[0].type).toBe("rectangle");
     expect(h.elements[0].roundness?.type).toBe(ROUNDNESS.ADAPTIVE_RADIUS);
   });
+
+  it("never converts a human-created rectangle or ellipse into Diamond", () => {
+    const rectangle = API.createElement({ type: "rectangle" });
+    API.setElements([rectangle]);
+    API.setSelectedElements([rectangle]);
+
+    act(() => {
+      convertElementTypes(h.app, {
+        conversionType: "generic",
+        direction: "right",
+      });
+    });
+    expect(h.elements[0].type).toBe("ellipse");
+
+    act(() => {
+      convertElementTypes(h.app, {
+        conversionType: "generic",
+        direction: "right",
+      });
+    });
+    expect(h.elements[0].type).toBe("rectangle");
+  });
+
+  it("preserves conversion away from an existing Diamond", () => {
+    const diamond = API.createElement({ type: "diamond" });
+    API.setElements([diamond]);
+    API.setSelectedElements([diamond]);
+
+    act(() => {
+      convertElementTypes(h.app, {
+        conversionType: "generic",
+        direction: "right",
+      });
+    });
+
+    expect(h.elements[0].type).toBe("rectangle");
+  });
 });

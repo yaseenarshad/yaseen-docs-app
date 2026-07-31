@@ -514,6 +514,9 @@ function CommandPaletteInner({
         },
         ...(Object.keys(TOOLS) as ToolbarToolType[]).reduce(
           (acc: CommandPaletteItem[], value) => {
+            if (value === "diamond") {
+              return acc;
+            }
             const config = TOOLS[value];
 
             if (
@@ -527,7 +530,7 @@ function CommandPaletteInner({
               return acc;
             }
 
-            const shortcut = getToolLetter(value) || config.numericKey;
+            const shortcut = getToolLetter(value);
 
             const command: CommandPaletteItem = {
               label: t(`toolBar.${value}`),

@@ -85,7 +85,7 @@ describe("selected-element semantic color hotkeys", () => {
     expect(h.state.activeTool.type).toBe("arrow");
 
     Keyboard.keyPress(KEYS.D);
-    expect(h.state.activeTool.type).toBe("diamond");
+    expect(h.state.activeTool.type).toBe("line");
   });
 
   it.each(Object.entries(SEMANTIC_COLOR_HOTKEYS))(
@@ -111,6 +111,112 @@ describe("selected-element semantic color hotkeys", () => {
       expect(h.state.activeTool.type).toBe("selection");
     },
   );
+
+  it.each(Object.entries(SEMANTIC_COLOR_HOTKEYS))(
+    "applies Shift+%s = %s to stroke while preserving fill",
+    (colorName, hotkey) => {
+      const rectangle = API.createElement({
+        type: "rectangle",
+        strokeColor: "#123456",
+        backgroundColor: "#abcdef",
+      });
+      API.setElements([rectangle]);
+      API.setSelectedElements([rectangle]);
+      const paletteValue =
+        COLOR_PALETTE[colorName as keyof typeof COLOR_PALETTE];
+      const expectedColor =
+        typeof paletteValue === "string"
+          ? paletteValue
+          : paletteValue[DEFAULT_ELEMENT_STROKE_COLOR_INDEX];
+
+      Keyboard.withModifierKeys({ shift: true }, () => {
+        Keyboard.keyPress(hotkey.toUpperCase());
+      });
+
+      expect(h.app.scene.getElement(rectangle.id)).toMatchObject({
+        strokeColor: expectedColor,
+        backgroundColor: "#abcdef",
+      });
+      expect(h.state.activeTool.type).toBe("selection");
+    },
+  );
+
+  it("applies Shift stroke to supported mixed members and skips unsupported members", () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      strokeColor: "#111111",
+      backgroundColor: "#aaaaaa",
+    });
+    const image = API.createElement({
+      type: "image",
+      strokeColor: "#222222",
+      backgroundColor: "#bbbbbb",
+    });
+    const iframe = API.createElement({ type: "iframe" });
+    API.setElements([rectangle, image, iframe]);
+    API.setSelectedElements([rectangle, image, iframe]);
+
+    Keyboard.withModifierKeys({ shift: true }, () => {
+      Keyboard.keyPress(KEYS.G);
+    });
+
+    [rectangle, image].forEach((element) => {
+      expect(h.app.scene.getElement(element.id)).toMatchObject({
+        strokeColor: COLOR_PALETTE.green[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+        backgroundColor: element.backgroundColor,
+      });
+    });
+    expect(h.app.scene.getElement(iframe.id)).toMatchObject(iframe);
+    expect(h.state.selectedElementIds).toEqual({
+      [rectangle.id]: true,
+      [image.id]: true,
+      [iframe.id]: true,
+    });
+  });
+
+  it("changes only a selected container stroke and not its bound text", () => {
+    const [container, text] = API.createTextContainer();
+    API.setElements([container, text]);
+    API.setSelectedElements([container]);
+
+    Keyboard.withModifierKeys({ shift: true }, () => {
+      Keyboard.keyPress(KEYS.G.toUpperCase());
+    });
+
+    expect(h.app.scene.getElement(container.id)).toMatchObject({
+      strokeColor: COLOR_PALETTE.green[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+      backgroundColor: container.backgroundColor,
+      boundElements: container.boundElements,
+    });
+    expect(h.app.scene.getElement(text.id)).toMatchObject({
+      strokeColor: text.strokeColor,
+      containerId: container.id,
+    });
+  });
+
+  it("consumes unsupported-only Shift colors with stroke-specific feedback", () => {
+    const iframe = API.createElement({ type: "iframe" });
+    API.setElements([iframe]);
+    API.setSelectedElements([iframe]);
+
+    Keyboard.withModifierKeys({ shift: true }, () => {
+      Keyboard.keyPress(KEYS.E);
+    });
+
+    expect(h.state.activeTool.type).toBe("selection");
+    expect(h.state.toast?.message).toBe(
+      "The selected elements do not support stroke color shortcuts.",
+    );
+  });
+
+  it("does not use Shift color aliases as drawing tools without a selection", () => {
+    Keyboard.withModifierKeys({ shift: true }, () => {
+      Keyboard.keyPress(KEYS.E);
+    });
+
+    expect(h.state.activeTool.type).toBe("selection");
+    expect(h.state.currentItemStrokeColor).toBe(COLOR_PALETTE.black);
+  });
 
   it.each(Object.entries(SEMANTIC_COLOR_HOTKEYS))(
     "applies the approved selected-image outline %s = %s shortcut",
@@ -526,6 +632,31 @@ describe("selected-element semantic color hotkeys", () => {
     expect(h.app.scene.getElement(image.id)).toMatchObject({
       strokeColor: COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
       strokeWidth: 6.5,
+    });
+  });
+
+  it("commits a Shift-stroke change as one undoable operation", async () => {
+    const rectangle = UI.createElement("rectangle");
+    const originalFill = rectangle.get().backgroundColor;
+    const originalStroke = rectangle.get().strokeColor;
+    act(() => {
+      h.app.setActiveTool({ type: "selection" });
+    });
+    API.setSelectedElements([rectangle.get() as any]);
+
+    Keyboard.withModifierKeys({ shift: true }, () => {
+      Keyboard.keyPress(KEYS.R.toUpperCase());
+    });
+    expect(h.app.scene.getElement(rectangle.id)).toMatchObject({
+      backgroundColor: originalFill,
+      strokeColor: COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+    });
+
+    Keyboard.undo();
+    await act(async () => {});
+    expect(h.app.scene.getElement(rectangle.id)).toMatchObject({
+      backgroundColor: originalFill,
+      strokeColor: originalStroke,
     });
   });
 

@@ -9,11 +9,16 @@ import {
 
 import { Excalidraw } from "../index";
 
-import { findShapeByKey } from "../components/Tools";
+import {
+  findShapeByKey,
+  getToolLetter,
+  getToolShortcut,
+  TOOLS,
+} from "../components/Tools";
 
 import { API } from "./helpers/api";
 import { Pointer } from "./helpers/ui";
-import { act, fireEvent, GlobalTestState, render } from "./test-utils";
+import { act, fireEvent, GlobalTestState, render, waitFor } from "./test-utils";
 
 import type { AppClassProperties, ExcalidrawImperativeAPI } from "../types";
 
@@ -90,14 +95,47 @@ describe("findShapeByKey()", () => {
     const app = appWithPreferredTool("selection");
 
     expect(findShapeByKey("v", app)).toBe("selection");
-    expect(findShapeByKey("1", app)).toBe("selection");
   });
 
   it("selection shortcuts activate lasso when it's preferred", () => {
     const app = appWithPreferredTool("lasso");
 
     expect(findShapeByKey("v", app)).toBe("lasso");
-    expect(findShapeByKey("1", app)).toBe("lasso");
+  });
+
+  it("routes the approved preferred and retained left-hand aliases", () => {
+    const app = appWithPreferredTool("selection");
+
+    ["d", "D", "l", "L"].forEach((key) => {
+      expect(findShapeByKey(key, app)).toBe("line");
+    });
+    ["w", "W", "p", "P", "x", "X"].forEach((key) => {
+      expect(findShapeByKey(key, app)).toBe("freedraw");
+    });
+    ["e", "E", "k", "K"].forEach((key) => {
+      expect(findShapeByKey(key, app)).toBe("laser");
+    });
+  });
+
+  it("reserves every plain number key for selected-element size presets", () => {
+    const app = appWithPreferredTool("selection");
+
+    "1234567890".split("").forEach((key) => {
+      expect(findShapeByKey(key, app)).toBeNull();
+    });
+    expect(Object.values(TOOLS).every((tool) => !("numericKey" in tool))).toBe(
+      true,
+    );
+  });
+
+  it("exposes preferred letters and retained aliases without numeric metadata", () => {
+    expect(getToolLetter("line")).toBe("D");
+    expect(getToolShortcut("line")).toBe("D or L");
+    expect(getToolLetter("freedraw")).toBe("W");
+    expect(getToolShortcut("freedraw")).toBe("W or P or X");
+    expect(getToolLetter("laser")).toBe("E");
+    expect(getToolShortcut("laser")).toBe("E or K");
+    expect(getToolShortcut("eraser")).toBe("");
   });
 
   it("letter shortcuts are CapsLock-insensitive", () => {
@@ -122,6 +160,130 @@ describe("findShapeByKey()", () => {
 
     expect(findShapeByKey("R", app, true)).toBeNull();
     expect(findShapeByKey("V", app, true)).toBeNull();
+  });
+});
+
+describe("approved toolbar composition", () => {
+  const h = window.h;
+  const visibleToolIds = [
+    "hand",
+    "selection",
+    "rectangle",
+    "laser",
+    "ellipse",
+    "arrow",
+    "line",
+    "freedraw",
+    "text",
+    "image",
+    "eraser",
+  ];
+
+  it("renders Laser once in Diamond's desktop slot with letter-only badges", async () => {
+    const { container } = await render(<Excalidraw />);
+    const toolbar = container.querySelector(".App-toolbar")!;
+    const buttons = [
+      ...toolbar.querySelectorAll<HTMLButtonElement>("[data-testid^=toolbar-]"),
+    ].filter((button) =>
+      visibleToolIds.includes(button.dataset.testid!.replace("toolbar-", "")),
+    );
+
+    expect(buttons.map((button) => button.dataset.testid)).toEqual(
+      visibleToolIds.map((tool) => `toolbar-${tool}`),
+    );
+    expect(toolbar.querySelector('[data-testid="toolbar-diamond"]')).toBeNull();
+    expect(
+      toolbar.querySelectorAll('[data-testid="toolbar-laser"]'),
+    ).toHaveLength(1);
+
+    const expectedBadges: Record<string, string | null> = {
+      hand: null,
+      selection: "V",
+      rectangle: "R",
+      laser: "E",
+      ellipse: "O",
+      arrow: "A",
+      line: "D",
+      freedraw: "W",
+      text: "T",
+      image: null,
+      eraser: null,
+    };
+    Object.entries(expectedBadges).forEach(([tool, badge]) => {
+      expect(
+        toolbar
+          .querySelector(`[data-testid="toolbar-${tool}"]`)
+          ?.querySelector(".ToolIcon__keybinding")?.textContent ?? null,
+      ).toBe(badge);
+    });
+    expect(
+      toolbar
+        .querySelector('[data-testid="toolbar-line"]')
+        ?.getAttribute("aria-keyshortcuts"),
+    ).toBe("D L");
+    expect(
+      toolbar
+        .querySelector('[data-testid="toolbar-freedraw"]')
+        ?.getAttribute("aria-keyshortcuts"),
+    ).toBe("W P X");
+    expect(
+      toolbar
+        .querySelector('[data-testid="toolbar-laser"]')
+        ?.getAttribute("aria-keyshortcuts"),
+    ).toBe("E K");
+  });
+
+  it("does not add a collaboration-only duplicate Laser button", async () => {
+    const { container } = await render(<Excalidraw isCollaborating />);
+
+    expect(
+      container.querySelectorAll('[data-testid="toolbar-laser"]'),
+    ).toHaveLength(1);
+  });
+
+  it("keeps Laser in phone overflow and removes Diamond from the shape picker", async () => {
+    const { container } = await render(
+      <Excalidraw UIOptions={{ getFormFactor: () => "phone" }} />,
+    );
+    fireEvent.resize(window);
+    await waitFor(() => expect(h.app.editorInterface.formFactor).toBe("phone"));
+
+    fireEvent.click(
+      container.querySelector('[data-testid="toolbar-rectangle"]')!,
+    );
+    expect(
+      document.querySelector(
+        '.tool-popover-content [data-testid="toolbar-diamond"]',
+      ),
+    ).toBeNull();
+
+    fireEvent.click(
+      container.querySelector(".App-toolbar__extra-tools-trigger")!,
+    );
+    expect(
+      document.querySelector(
+        '.App-toolbar__extra-tools-dropdown [data-testid="toolbar-laser"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  it("documents retained aliases and selected primary versus Shift-stroke colors", async () => {
+    await render(<Excalidraw handleKeyboardGlobally />);
+
+    fireEvent.keyDown(document, { key: "?" });
+    const help = await waitFor(() => {
+      const dialog = document.querySelector(".HelpDialog");
+      expect(dialog).not.toBeNull();
+      return dialog!;
+    });
+
+    expect(help.textContent).toContain("Selected color: primary / fill");
+    expect(help.textContent).toContain("Selected color: stroke");
+    expect(help.textContent).toContain("D");
+    expect(help.textContent).toContain("L");
+    expect(help.textContent).toContain("E");
+    expect(help.textContent).toContain("K");
+    expect(help.textContent).not.toContain("Diamond");
   });
 });
 

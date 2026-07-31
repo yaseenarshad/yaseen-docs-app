@@ -328,6 +328,7 @@ import {
   actionUnbindText,
   actionBindText,
   actionApplySelectedSemanticColor,
+  actionResizeSelectionToPreset,
   actionUngroup,
   actionLink,
   actionToggleElementLock,
@@ -435,6 +436,7 @@ import { LassoTrail } from "../lasso";
 import { EraserTrail } from "../eraser";
 import { getShortcutKey } from "../shortcut";
 import { tryParseSpreadsheet } from "../charts";
+import { isSelectionSizePresetKey } from "../selectionSizePresets";
 
 import ConvertElementTypePopup, {
   getConversionTypeFromElements,
@@ -5450,7 +5452,48 @@ class App extends React.Component<AppProps, AppState> {
     this.actionManager.executeAction(
       actionApplySelectedSemanticColor,
       "keyboard",
-      { colorName },
+      { colorName, target: event.shiftKey ? "stroke" : "primary" },
+    );
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+  };
+
+  private maybeApplySelectedSizePreset = (
+    event: React.KeyboardEvent | KeyboardEvent,
+  ) => {
+    if (
+      !isSelectionSizePresetKey(event.key) ||
+      event.ctrlKey ||
+      event.altKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      this.props.viewModeEnabled === true ||
+      this.state.viewModeEnabled ||
+      this.state.editingTextElement ||
+      this.state.openDialog ||
+      this.state.openPopup ||
+      this.state.newElement ||
+      this.state.selectionElement ||
+      this.state.selectedElementsAreBeingDragged ||
+      this.state.isResizing ||
+      this.state.isRotating
+    ) {
+      return false;
+    }
+
+    const selectedElements = this.scene.getSelectedElements(this.state);
+    if (
+      !selectedElements.length ||
+      selectedElements.some((element) => element.locked)
+    ) {
+      return false;
+    }
+
+    this.actionManager.executeAction(
+      actionResizeSelectionToPreset,
+      "keyboard",
+      { key: event.key },
     );
     event.preventDefault();
     event.stopPropagation();
@@ -5624,6 +5667,10 @@ class App extends React.Component<AppProps, AppState> {
       }
 
       if (this.maybeApplySelectedSemanticColor(event)) {
+        return;
+      }
+
+      if (this.maybeApplySelectedSizePreset(event)) {
         return;
       }
 

@@ -456,6 +456,8 @@
     "preventBinding": "Prevent arrow binding",
     "tools": "Tools",
     "shortcuts": "Keyboard shortcuts",
+    "selectedPrimaryColor": "Selected color: primary / fill",
+    "selectedStrokeColor": "Selected color: stroke",
     "textFinish": "Finish editing (text editor)",
     "textNewLine": "Add new line (text editor)",
     "title": "Help",

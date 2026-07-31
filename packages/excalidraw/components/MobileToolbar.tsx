@@ -48,7 +48,7 @@ export const MobileToolbar = ({ app, setAppState }: MobileToolbarProps) => {
   const activeTool = app.state.activeTool;
   const [isOtherShapesMenuOpen, setIsOtherShapesMenuOpen] = useState(false);
   const [lastActiveGenericShape, setLastActiveGenericShape] = useState<
-    "rectangle" | "diamond" | "ellipse"
+    "rectangle" | "ellipse"
   >("rectangle");
   const [lastActiveLinearElement, setLastActiveLinearElement] = useState<
     "arrow" | "line"
@@ -56,11 +56,7 @@ export const MobileToolbar = ({ app, setAppState }: MobileToolbarProps) => {
 
   // keep lastActiveGenericShape in sync with active tool if user switches via other UI
   useEffect(() => {
-    if (
-      activeTool.type === "rectangle" ||
-      activeTool.type === "diamond" ||
-      activeTool.type === "ellipse"
-    ) {
+    if (activeTool.type === "rectangle" || activeTool.type === "ellipse") {
       setLastActiveGenericShape(activeTool.type);
     }
   }, [activeTool.type]);
@@ -79,14 +75,12 @@ export const MobileToolbar = ({ app, setAppState }: MobileToolbarProps) => {
 
   const { TTDDialogTriggerTunnel } = useTunnels();
 
-  const SHAPE_TOOLS = (["rectangle", "diamond", "ellipse"] as const).map(
-    (type) => ({
-      type,
-      icon: TOOLS[type].icon,
-      title: capitalizeString(t(`toolBar.${type}`)),
-      fillable: TOOLS[type].fillable,
-    }),
-  );
+  const SHAPE_TOOLS = (["rectangle", "ellipse"] as const).map((type) => ({
+    type,
+    icon: TOOLS[type].icon,
+    title: capitalizeString(t(`toolBar.${type}`)),
+    fillable: TOOLS[type].fillable,
+  }));
 
   const LINEAR_ELEMENT_TOOLS = (["arrow", "line"] as const).map((type) => ({
     type,
@@ -160,7 +154,7 @@ export const MobileToolbar = ({ app, setAppState }: MobileToolbarProps) => {
       {/* Eraser */}
       <EraserToolButton {...toolProps} hideShortcut />
 
-      {/* Rectangle/Diamond/Ellipse */}
+      {/* Rectangle/Ellipse */}
       <ToolPopover
         app={app}
         options={SHAPE_TOOLS}
@@ -168,11 +162,7 @@ export const MobileToolbar = ({ app, setAppState }: MobileToolbarProps) => {
         defaultOption={lastActiveGenericShape}
         data-testid="toolbar-rectangle"
         onToolChange={(type: string) => {
-          if (
-            type === "rectangle" ||
-            type === "diamond" ||
-            type === "ellipse"
-          ) {
+          if (type === "rectangle" || type === "ellipse") {
             setLastActiveGenericShape(type);
             app.setActiveTool({ type });
           }

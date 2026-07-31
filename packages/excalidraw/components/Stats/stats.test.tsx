@@ -522,7 +522,9 @@ describe("stats for multiple elements", () => {
     mouse.down(50, 50);
     mouse.up(100, 100);
 
-    UI.clickTool("diamond");
+    act(() => {
+      h.app.setActiveTool({ type: "diamond" });
+    });
     mouse.down(-100, -100);
     mouse.up(125, 145);
 
