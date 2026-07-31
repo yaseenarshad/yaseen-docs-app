@@ -37,7 +37,6 @@ const getTaggedShortcutKey = (key: string | string[]) =>
 
 const getHints = ({
   appState,
-  isMobile,
   editorInterface,
   app,
 }: HintViewerProps): null | string | string[] => {
@@ -177,13 +176,6 @@ const getHints = ({
     if (isGridModeEnabled(app) && appState.selectedElementsAreBeingDragged) {
       return t("hints.disableSnapping", {
         shortcut: getTaggedShortcutKey("CtrlOrCmd"),
-      });
-    }
-
-    if (!selectedElements.length && !isMobile) {
-      return t("hints.canvasPanning", {
-        shortcut_1: getTaggedShortcutKey(t("keys.mmb")),
-        shortcut_2: getTaggedShortcutKey("Space"),
       });
     }
 
