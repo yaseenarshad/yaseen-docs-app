@@ -69,6 +69,7 @@ describe("actionStyles", () => {
     });
     fireEvent.blur(strokeWidth);
     // Stroke style
+    togglePopover("More properties");
     fireEvent.click(screen.getByTitle("Dotted"));
     // Roughness
     fireEvent.click(screen.getByTitle("Cartoonist"));

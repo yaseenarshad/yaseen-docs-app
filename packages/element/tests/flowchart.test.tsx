@@ -3,7 +3,7 @@ import { KEYS, reseed } from "@excalidraw/common";
 import { Excalidraw } from "@excalidraw/excalidraw";
 
 import { API } from "@excalidraw/excalidraw/tests/helpers/api";
-import { UI, Keyboard, Pointer } from "@excalidraw/excalidraw/tests/helpers/ui";
+import { Keyboard, Pointer } from "@excalidraw/excalidraw/tests/helpers/ui";
 import {
   render,
   unmountComponent,
@@ -27,9 +27,7 @@ beforeEach(async () => {
 
   // The bounds of hand-drawn linear elements may change after flipping, so
   // removing this style for testing
-  UI.clickTool("arrow");
-  UI.clickByTitle("Architect");
-  UI.clickTool("selection");
+  API.setAppState({ currentItemRoughness: 0 });
 });
 
 describe("flow chart creation", () => {

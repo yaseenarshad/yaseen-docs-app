@@ -777,36 +777,12 @@ const LinearStrokeWidthInput = ({
     }
   };
 
-  const nudge = (amount: number) => {
-    const parsed = inputValue.trim() ? Number(inputValue) : Number.NaN;
-    const currentValue = Number.isFinite(parsed)
-      ? parsed
-      : value ?? VECTOR_STROKE_WIDTH.default;
-    const nextValue = normalizeVectorStrokeWidth(currentValue + amount);
-    setInputValue(nextValue.toString());
-    if (nextValue !== value) {
-      onChange(nextValue);
-    }
-  };
-
   return (
     <div
       className="linear-stroke-width-custom"
       data-prevent-outside-click
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <button
-        type="button"
-        aria-label="Decrease stroke width"
-        disabled={value !== null && value <= VECTOR_STROKE_WIDTH.min}
-        onPointerDown={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-        onClick={() => nudge(-VECTOR_STROKE_WIDTH.step)}
-      >
-        −
-      </button>
       <label>
         <input
           aria-label="Exact stroke width"
@@ -839,18 +815,6 @@ const LinearStrokeWidthInput = ({
         />
         <span>px</span>
       </label>
-      <button
-        type="button"
-        aria-label="Increase stroke width"
-        disabled={value !== null && value >= VECTOR_STROKE_WIDTH.max}
-        onPointerDown={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-        onClick={() => nudge(VECTOR_STROKE_WIDTH.step)}
-      >
-        +
-      </button>
     </div>
   );
 };
@@ -918,16 +882,27 @@ export const actionChangeVectorStrokeWidth = register<number>({
           min={VECTOR_STROKE_WIDTH.min}
           max={VECTOR_STROKE_WIDTH.max}
           step={VECTOR_STROKE_WIDTH.step}
-          minLabel={VECTOR_STROKE_WIDTH.min}
-          maxLabel={VECTOR_STROKE_WIDTH.max}
+          minLabel={data?.contextToolbar ? null : VECTOR_STROKE_WIDTH.min}
+          maxLabel={data?.contextToolbar ? undefined : VECTOR_STROKE_WIDTH.max}
           preventCanvasInteraction
           showValueBubble={false}
           testId="linear-stroke-width-slider"
         />
-        <LinearStrokeWidthInput
-          value={value}
-          onChange={(nextValue) => updateData(nextValue)}
-        />
+        {data?.contextToolbar ? (
+          <div className="linear-stroke-width-contextual-meta">
+            <span>{VECTOR_STROKE_WIDTH.min}</span>
+            <LinearStrokeWidthInput
+              value={value}
+              onChange={(nextValue) => updateData(nextValue)}
+            />
+            <span>{VECTOR_STROKE_WIDTH.max}</span>
+          </div>
+        ) : (
+          <LinearStrokeWidthInput
+            value={value}
+            onChange={(nextValue) => updateData(nextValue)}
+          />
+        )}
       </fieldset>
     );
   },

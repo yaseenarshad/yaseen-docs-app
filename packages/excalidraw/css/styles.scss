@@ -263,46 +263,60 @@ body.excalidraw-cursor-resize * {
     .linear-stroke-width-fieldset--contextual {
       align-items: center;
       display: flex;
-      gap: 0.45rem;
-      min-width: 20rem;
+      flex-direction: column;
+      gap: 0.15rem;
+      min-width: 9rem;
+      width: 9rem;
 
       .linear-stroke-width-range--contextual {
         margin: 0;
-        min-width: 9rem;
+        width: 100%;
 
         .range-wrapper {
-          align-items: center;
-          display: flex;
-          gap: 0.35rem;
           padding: 0;
         }
 
         .range-input {
-          flex: 1 1 6rem;
+          display: block;
           margin: 0;
-          min-width: 6rem;
-          order: 2;
+          width: 100%;
         }
 
         .zero-label,
         .max-label {
-          bottom: auto;
-          line-height: 1;
-          position: static;
+          display: none;
         }
+      }
 
-        .zero-label {
-          order: 1;
-        }
+      .linear-stroke-width-contextual-meta {
+        align-items: center;
+        color: var(--text-secondary-color);
+        display: grid;
+        font-size: 0.65rem;
+        grid-template-columns: 1fr auto 1fr;
+        line-height: 1;
+        width: 100%;
 
-        .max-label {
-          order: 3;
+        > span:last-child {
+          text-align: right;
         }
       }
 
       .linear-stroke-width-custom {
         flex: 0 0 auto;
         margin: 0;
+
+        input {
+          border-radius: var(--border-radius-sm);
+          font-size: 0.7rem;
+          height: 1.25rem;
+          padding: 0 0.15rem;
+          width: 3rem;
+        }
+
+        span {
+          display: none;
+        }
       }
     }
 
@@ -342,29 +356,6 @@ body.excalidraw-cursor-resize * {
       gap: 0.35rem;
       justify-content: center;
       margin-top: 4px;
-
-      > button {
-        align-items: center;
-        background: var(--button-gray-1);
-        border: 1px solid var(--default-border-color);
-        border-radius: var(--border-radius-md);
-        color: var(--text-primary-color);
-        cursor: pointer;
-        display: flex;
-        font-size: 1rem;
-        height: 2rem;
-        justify-content: center;
-        width: 2rem;
-
-        &:hover:not(:disabled) {
-          background: var(--button-gray-2);
-        }
-
-        &:disabled {
-          cursor: default;
-          opacity: 0.5;
-        }
-      }
 
       > label {
         align-items: center;
@@ -628,6 +619,38 @@ body.excalidraw-cursor-resize * {
     max-height: min(32rem, calc(100vh - 8rem));
     max-width: min(28rem, calc(100vw - 2rem));
     overflow: auto;
+
+    .contextual-properties-toolbar__secondary-properties {
+      align-items: flex-end;
+      display: flex;
+      gap: 0.75rem;
+
+      fieldset {
+        border: 0;
+        display: grid;
+        gap: 0.35rem;
+        margin: 0;
+        padding: 0;
+      }
+
+      legend,
+      .control-label {
+        color: var(--text-secondary-color);
+        font-size: 0.7rem;
+        font-weight: 600;
+      }
+
+      .buttonList {
+        display: flex;
+        flex-wrap: nowrap;
+        gap: 0.25rem;
+      }
+
+      .control-label {
+        margin: 0;
+        min-width: 9rem;
+      }
+    }
 
     .selected-shape-actions {
       display: grid;

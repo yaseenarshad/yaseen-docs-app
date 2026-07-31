@@ -537,22 +537,15 @@ export const ContextualPropertiesToolbar = ({
           {renderAction("changeStrokeColor", { contextToolbar: true })}
           <ContextualToolbarDivider />
           {renderAction("changeStrokeWidth", { contextToolbar: true })}
-          {predicates.roundness && (
-            <>
-              <ContextualToolbarDivider />
-              {renderAction("changeRoundness", { contextToolbar: true })}
-            </>
-          )}
-          {predicates.opacity && (
-            <>
-              <ContextualToolbarDivider />
-              {renderAction("changeOpacity", { contextToolbar: true })}
-            </>
-          )}
           <ContextualToolbarDivider />
           <ImageBackgroundRemovalAction
             app={app}
             targetElements={targetElements}
+          />
+          <ContextualSecondaryProperties
+            renderAction={renderAction}
+            showRoundness={predicates.roundness}
+            showOpacity={predicates.opacity}
           />
         </>
       )}
@@ -594,24 +587,6 @@ export const ContextualPropertiesToolbar = ({
               {renderAction("changeFreedrawMode", { contextToolbar: true })}
             </>
           )}
-          {predicates.strokeStyle && (
-            <>
-              <ContextualToolbarDivider />
-              {renderAction("changeStrokeStyle", { contextToolbar: true })}
-            </>
-          )}
-          {predicates.sloppiness && (
-            <>
-              <ContextualToolbarDivider />
-              {renderAction("changeSloppiness", { contextToolbar: true })}
-            </>
-          )}
-          {predicates.roundness && (
-            <>
-              <ContextualToolbarDivider />
-              {renderAction("changeRoundness", { contextToolbar: true })}
-            </>
-          )}
           {predicates.arrowType && (
             <>
               <ContextualToolbarDivider />
@@ -641,18 +616,19 @@ export const ContextualPropertiesToolbar = ({
               {renderAction("changeVerticalAlign", { contextToolbar: true })}
             </>
           )}
-          {predicates.opacity && (
-            <>
-              <ContextualToolbarDivider />
-              {renderAction("changeOpacity", { contextToolbar: true })}
-            </>
-          )}
           {hasSmartShape && (
             <>
               <ContextualToolbarDivider />
               {renderAction("changeSmartShape", { contextToolbar: true })}
             </>
           )}
+          <ContextualSecondaryProperties
+            renderAction={renderAction}
+            showStrokeStyle={predicates.strokeStyle}
+            showSloppiness={predicates.sloppiness}
+            showRoundness={predicates.roundness}
+            showOpacity={predicates.opacity}
+          />
         </>
       )}
       {isGeneralSelectionTarget && (
@@ -685,25 +661,10 @@ export const ContextualPropertiesToolbar = ({
               )}
             </>
           )}
-          {targetElements.every((element) => hasStrokeStyle(element.type)) && (
-            <>
-              <ContextualToolbarDivider />
-              {renderAction("changeStrokeStyle", { contextToolbar: true })}
-              {renderAction("changeSloppiness", { contextToolbar: true })}
-            </>
-          )}
           {targetElements.every((element) => hasFreedrawMode(element.type)) && (
             <>
               <ContextualToolbarDivider />
               {renderAction("changeFreedrawMode", { contextToolbar: true })}
-            </>
-          )}
-          {targetElements.every((element) =>
-            canChangeRoundness(element.type),
-          ) && (
-            <>
-              <ContextualToolbarDivider />
-              {renderAction("changeRoundness", { contextToolbar: true })}
             </>
           )}
           {targetElements.every((element) =>
@@ -732,12 +693,6 @@ export const ContextualPropertiesToolbar = ({
               {renderAction("changeVerticalAlign", { contextToolbar: true })}
             </>
           )}
-          {predicates.opacity && (
-            <>
-              <ContextualToolbarDivider />
-              {renderAction("changeOpacity", { contextToolbar: true })}
-            </>
-          )}
           {predicates.align && (
             <>
               <ContextualToolbarDivider />
@@ -747,6 +702,20 @@ export const ContextualPropertiesToolbar = ({
               />
             </>
           )}
+          <ContextualSecondaryProperties
+            renderAction={renderAction}
+            showStrokeStyle={targetElements.every((element) =>
+              hasStrokeStyle(element.type),
+            )}
+            showSloppiness={
+              predicates.sloppiness &&
+              targetElements.every((element) => hasStrokeStyle(element.type))
+            }
+            showRoundness={targetElements.every((element) =>
+              canChangeRoundness(element.type),
+            )}
+            showOpacity={predicates.opacity}
+          />
         </>
       )}
     </Island>
@@ -814,6 +783,45 @@ export const ContextualToolbarPopover = ({
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+  );
+};
+
+const ContextualSecondaryProperties = ({
+  renderAction,
+  showStrokeStyle = false,
+  showSloppiness = false,
+  showRoundness = false,
+  showOpacity = false,
+}: {
+  renderAction: ActionManager["renderAction"];
+  showStrokeStyle?: boolean;
+  showSloppiness?: boolean;
+  showRoundness?: boolean;
+  showOpacity?: boolean;
+}) => {
+  if (!showStrokeStyle && !showSloppiness && !showRoundness && !showOpacity) {
+    return null;
+  }
+
+  return (
+    <>
+      <ContextualToolbarDivider />
+      <ContextualToolbarPopover
+        label="More properties"
+        icon={DotsHorizontalIcon}
+      >
+        <div className="contextual-properties-toolbar__secondary-properties">
+          {showStrokeStyle &&
+            renderAction("changeStrokeStyle", { contextToolbar: true })}
+          {showSloppiness &&
+            renderAction("changeSloppiness", { contextToolbar: true })}
+          {showRoundness &&
+            renderAction("changeRoundness", { contextToolbar: true })}
+          {showOpacity &&
+            renderAction("changeOpacity", { contextToolbar: true })}
+        </div>
+      </ContextualToolbarPopover>
+    </>
   );
 };
 

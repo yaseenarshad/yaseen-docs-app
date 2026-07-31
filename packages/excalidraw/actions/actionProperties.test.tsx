@@ -101,14 +101,17 @@ describe("element locking", () => {
       ) as HTMLInputElement;
       expect(input.value).toBe("2");
 
-      fireEvent.click(
-        document.querySelector(
-          '[aria-label="Increase stroke width"]',
-        ) as HTMLElement,
-      );
+      fireEvent.change(input, { target: { value: "2.5" } });
+      fireEvent.blur(input);
 
       expect(window.h.state.currentItemVectorStrokeWidth).toBe(2.5);
       expect(API.createElement({ type: "line" }).strokeWidth).toBe(2.5);
+      expect(
+        document.querySelector('[aria-label="Decrease stroke width"]'),
+      ).toBeNull();
+      expect(
+        document.querySelector('[aria-label="Increase stroke width"]'),
+      ).toBeNull();
     });
 
     it("should synchronize the line-width slider before drawing without leaking shortcuts", () => {
@@ -137,6 +140,16 @@ describe("element locking", () => {
       expect(control).toHaveTextContent("0.5");
       expect(control).toHaveTextContent("50");
       expect(control?.querySelector(".value-bubble")).toBeNull();
+      const valueRow = control?.querySelector(
+        ".linear-stroke-width-contextual-meta",
+      );
+      expect(valueRow).not.toBeNull();
+      expect(valueRow?.children).toHaveLength(3);
+      expect(valueRow?.children[0]).toHaveTextContent("0.5");
+      expect(valueRow?.children[1]).toContainElement(
+        queryByTestId(document.body, "linear-stroke-width-input"),
+      );
+      expect(valueRow?.children[2]).toHaveTextContent("50");
 
       fireEvent.change(slider, { target: { value: "7.5" } });
 
@@ -617,7 +630,7 @@ describe("element locking", () => {
       expect(selectedImage.strokeWidth).toBe(STROKE_WIDTH.bold);
     });
 
-    it("should expose image edges and opacity in the contextual helper", () => {
+    it("should move image edges and opacity into the secondary helper", () => {
       const image = API.createElement({
         type: "image",
         roundness: null,
@@ -626,8 +639,17 @@ describe("element locking", () => {
       API.setElements([image]);
       API.setSelectedElements([image]);
 
+      expect(
+        document.querySelector(
+          '.contextual-properties-toolbar label[title="Round"] input',
+        ),
+      ).toBeNull();
+      expect(queryByTestId(document.body, "opacity")).toBeNull();
+
+      togglePopover("More properties");
+
       const roundEdges = document.querySelector<HTMLInputElement>(
-        '.contextual-properties-toolbar label[title="Round"] input',
+        '.contextual-properties-toolbar__popover label[title="Round"] input',
       );
       const opacity = queryByTestId(
         document.body,
@@ -642,6 +664,55 @@ describe("element locking", () => {
       expect(API.getSelectedElement()).toMatchObject({
         opacity: 40,
         roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS },
+      });
+    });
+
+    it("should move secondary vector properties behind one overflow button", () => {
+      const line = API.createElement({
+        type: "line",
+        strokeStyle: "solid",
+        roughness: 0,
+        opacity: 100,
+      });
+      API.setElements([line]);
+      API.setSelectedElements([line]);
+
+      expect(
+        document.querySelector(
+          '.contextual-properties-toolbar label[title="Dashed"] input',
+        ),
+      ).toBeNull();
+      expect(
+        document.querySelector(
+          '.contextual-properties-toolbar label[title="Artist"] input',
+        ),
+      ).toBeNull();
+      expect(queryByTestId(document.body, "opacity")).toBeNull();
+
+      togglePopover("More properties");
+
+      const dashed = document.querySelector<HTMLInputElement>(
+        '.contextual-properties-toolbar__popover label[title="Dashed"] input',
+      );
+      const artist = document.querySelector<HTMLInputElement>(
+        '.contextual-properties-toolbar__popover label[title="Artist"] input',
+      );
+      const opacity = queryByTestId(
+        document.body,
+        "opacity",
+      ) as HTMLInputElement;
+      expect(dashed).not.toBeNull();
+      expect(artist).not.toBeNull();
+      expect(opacity).not.toBeNull();
+
+      fireEvent.click(dashed!);
+      fireEvent.click(artist!);
+      fireEvent.change(opacity, { target: { value: "60" } });
+
+      expect(API.getSelectedElement()).toMatchObject({
+        strokeStyle: "dashed",
+        roughness: 1,
+        opacity: 60,
       });
     });
 
@@ -890,7 +961,7 @@ describe("element locking", () => {
       ).toBe("3.5");
     });
 
-    it("should step, cancel, and undo exact linear stroke-width edits", () => {
+    it("should commit, cancel, and undo exact linear stroke-width edits", () => {
       const line = UI.createElement("line", {
         x: 10,
         y: 10,
@@ -911,11 +982,8 @@ describe("element locking", () => {
       fireEvent.blur(input);
       expect(API.getSelectedElements()[0].strokeWidth).toBe(2);
 
-      fireEvent.click(
-        document.querySelector(
-          '[aria-label="Increase stroke width"]',
-        ) as HTMLElement,
-      );
+      fireEvent.change(input, { target: { value: "2.5" } });
+      fireEvent.blur(input);
       expect(API.getSelectedElements()[0].strokeWidth).toBe(2.5);
 
       Keyboard.undo();

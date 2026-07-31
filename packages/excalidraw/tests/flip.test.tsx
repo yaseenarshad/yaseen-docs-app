@@ -32,7 +32,6 @@ import {
   fireEvent,
   GlobalTestState,
   render,
-  screen,
   unmountComponent,
   waitFor,
 } from "./test-utils";
@@ -857,8 +856,7 @@ describe("image", () => {
 
 describe("mutliple elements", () => {
   it("with bound text flip correctly", async () => {
-    UI.clickTool("arrow");
-    fireEvent.click(screen.getByTitle("Architect"));
+    API.setAppState({ currentItemRoughness: 0 });
     const arrow = UI.createElement("arrow", {
       x: 0,
       y: 0,

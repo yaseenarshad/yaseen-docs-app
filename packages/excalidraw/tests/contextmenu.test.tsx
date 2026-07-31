@@ -331,6 +331,7 @@ describe("contextMenu element", () => {
     UI.clickOnTestId("color-red");
     togglePopover("Background");
     UI.clickOnTestId("color-blue");
+    togglePopover("Background");
     // Fill style
     fireEvent.click(screen.getByTitle("Cross-hatch"));
     // Stroke width
@@ -340,6 +341,7 @@ describe("contextMenu element", () => {
     fireEvent.change(widthInput, { target: { value: "4" } });
     fireEvent.blur(widthInput);
     // Stroke style
+    togglePopover("More properties");
     fireEvent.click(screen.getByTitle("Dotted"));
     // Roughness
     fireEvent.click(screen.getByTitle("Cartoonist"));
@@ -348,10 +350,10 @@ describe("contextMenu element", () => {
       target: { value: "60" },
     });
 
-    // closing the background popover as this blocks
+    // closing the secondary-properties popover as this blocks
     // context menu from rendering after we started focussing
     // the popover once rendered :/
-    togglePopover("Background");
+    togglePopover("More properties");
 
     mouse.reset();
 

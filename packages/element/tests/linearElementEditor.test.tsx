@@ -21,6 +21,7 @@ import {
   render,
   fireEvent,
   GlobalTestState,
+  togglePopover,
   unmountComponent,
 } from "@excalidraw/excalidraw/tests/test-utils";
 
@@ -476,6 +477,7 @@ describe("Test Linear Elements", () => {
       );
 
       // update roundness
+      togglePopover("More properties");
       fireEvent.click(screen.getByTitle("Round"));
 
       expect(renderInteractiveScene.mock.calls.length).toMatchInlineSnapshot(

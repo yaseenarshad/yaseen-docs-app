@@ -67,9 +67,7 @@ beforeEach(async () => {
 
   // The bounds of hand-drawn linear elements may change after flipping, so
   // removing this style for testing
-  UI.clickTool("arrow");
-  UI.clickByTitle("Architect");
-  UI.clickTool("selection");
+  API.setAppState({ currentItemRoughness: 0 });
 });
 
 describe("generic element", () => {
@@ -929,8 +927,7 @@ describe("multiple selection", () => {
   });
 
   it("resizes with linear elements > 2 points", async () => {
-    UI.clickTool("line");
-    UI.clickByTitle("Sharp");
+    API.setAppState({ currentItemRoundness: "sharp" });
 
     const line = UI.createElement("line", {
       x: 60,
