@@ -928,9 +928,26 @@ describe("element locking", () => {
       expect(dashed).not.toBeNull();
       expect(artist).not.toBeNull();
       expect(opacity).not.toBeNull();
+      const opacitySection = opacity.closest(
+        ".contextual-properties-toolbar__secondary-properties__opacity",
+      );
+      expect(opacitySection).not.toBeNull();
+      expect(opacitySection?.querySelector(".zero-label")).toHaveTextContent(
+        "0",
+      );
+      expect(opacitySection?.querySelector(".max-label")).toHaveTextContent(
+        "100",
+      );
+      expect(opacitySection?.querySelector(".value-bubble")).toHaveTextContent(
+        "100",
+      );
 
       fireEvent.click(dashed!);
       fireEvent.click(artist!);
+      fireEvent.change(opacity, { target: { value: "0" } });
+      expect(opacitySection?.querySelector(".value-bubble")).toHaveTextContent(
+        "0",
+      );
       fireEvent.change(opacity, { target: { value: "60" } });
 
       expect(API.getSelectedElement()).toMatchObject({

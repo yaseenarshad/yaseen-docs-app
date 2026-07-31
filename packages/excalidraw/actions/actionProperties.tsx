@@ -1191,7 +1191,7 @@ export const actionChangeOpacity = register<ExcalidrawElement["opacity"]>({
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     };
   },
-  PanelComponent: ({ elements, appState, app, updateData }) => {
+  PanelComponent: ({ elements, appState, app, updateData, data }) => {
     const opacity = getFormValue(
       elements,
       app,
@@ -1209,6 +1209,10 @@ export const actionChangeOpacity = register<ExcalidrawElement["opacity"]>({
         min={0}
         max={100}
         step={10}
+        minLabel={data?.contextToolbar ? 0 : undefined}
+        maxLabel={data?.contextToolbar ? 100 : undefined}
+        preventCanvasInteraction={!!data?.contextToolbar}
+        showMinValueInBubble={!!data?.contextToolbar}
         testId="opacity"
       />
     );

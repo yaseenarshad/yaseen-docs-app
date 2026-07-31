@@ -756,8 +756,11 @@ const ContextualSecondaryProperties = ({
             renderAction("changeSloppiness", { contextToolbar: true })}
           {showRoundness &&
             renderAction("changeRoundness", { contextToolbar: true })}
-          {showOpacity &&
-            renderAction("changeOpacity", { contextToolbar: true })}
+          {showOpacity && (
+            <div className="contextual-properties-toolbar__secondary-properties__opacity">
+              {renderAction("changeOpacity", { contextToolbar: true })}
+            </div>
+          )}
         </div>
       </ContextualToolbarPopover>
     </>

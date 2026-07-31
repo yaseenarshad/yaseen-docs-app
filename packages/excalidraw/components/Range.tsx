@@ -16,6 +16,7 @@ export type RangeProps = {
   hasCommonValue?: boolean;
   preventCanvasInteraction?: boolean;
   showValueBubble?: boolean;
+  showMinValueInBubble?: boolean;
   testId?: string;
 };
 
@@ -33,6 +34,7 @@ export const Range = ({
   hasCommonValue = true,
   preventCanvasInteraction = false,
   showValueBubble = true,
+  showMinValueInBubble = false,
   testId,
 }: RangeProps) => {
   const rangeRef = React.useRef<HTMLInputElement>(null);
@@ -51,7 +53,9 @@ export const Range = ({
         ) || 16;
       const progress = ((value - min) / (max - min || 1)) * 100;
       const position =
-        (progress / 100) * (inputWidth - thumbWidth) + thumbWidth / 2;
+        rangeElement.offsetLeft +
+        (progress / 100) * (inputWidth - thumbWidth) +
+        thumbWidth / 2;
       if (valueElement) {
         valueElement.style.left = `${position}px`;
       }
@@ -100,7 +104,7 @@ export const Range = ({
         />
         {showValueBubble && (
           <div className="value-bubble" ref={valueRef}>
-            {value !== min ? value : null}
+            {value !== min || showMinValueInBubble ? value : null}
           </div>
         )}
         <div className="zero-label">{minLabel}</div>
