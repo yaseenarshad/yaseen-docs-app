@@ -4,6 +4,7 @@ import { Excalidraw } from "@excalidraw/excalidraw";
 import {
   type Bounds,
   KEYS,
+  ROUNDNESS,
   getSizeFromPoints,
   reseed,
   arrayToMap,
@@ -592,6 +593,25 @@ describe("text element", () => {
     expect(text.height).toBeCloseTo(height * scale);
     expect(text.angle).toBeCloseTo(0);
     expect(text.fontSize).toBeCloseTo(fontSize * scale);
+  });
+
+  it("scales adaptive background rounding when resized with handles", async () => {
+    const text = UI.createElement("text");
+    await UI.editText(text, "hello\nworld");
+    const roundedText = h.app.scene.mutateElement(API.getElement(text), {
+      backgroundColor: "#ffec99",
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 5 },
+    });
+
+    const { height, fontSize } = roundedText;
+    const scale = 40 / height + 1;
+    UI.resize(roundedText, "se", [30, 40]);
+
+    expect(roundedText.fontSize).toBeCloseTo(fontSize * scale);
+    expect(roundedText.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: Math.round(5 * scale),
+    });
   });
 
   // TODO enable this test after adding single text element flipping
@@ -1201,6 +1221,15 @@ describe("multiple selection", () => {
     const bottomText = UI.createElement("text", { position: 40 });
     await UI.editText(bottomText, "dolor\nsit amet");
 
+    API.updateElement(API.getElement(topText), {
+      backgroundColor: "#ffec99",
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 5 },
+    });
+    API.updateElement(API.getElement(bottomText), {
+      backgroundColor: "#ffec99",
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 7 },
+    });
+
     const topTextStart = {
       x: topText.x,
       y: topText.y,
@@ -1238,6 +1267,10 @@ describe("multiple selection", () => {
       selectionBottom - (selectionBottom - topTextStart.y) * scale,
     );
     expect(topText.fontSize).toBeCloseTo(topTextStart.fontSize * scale);
+    expect(topText.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: Math.round(5 * scale),
+    });
     expect(topText.angle).toEqual(0);
 
     expect(bottomText.x).toBeCloseTo(
@@ -1247,6 +1280,10 @@ describe("multiple selection", () => {
       selectionBottom - (selectionBottom - bottomTextStart.y) * scale,
     );
     expect(bottomText.fontSize).toBeCloseTo(bottomTextStart.fontSize * scale);
+    expect(bottomText.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: Math.round(7 * scale),
+    });
     expect(bottomText.angle).toEqual(0);
   });
 

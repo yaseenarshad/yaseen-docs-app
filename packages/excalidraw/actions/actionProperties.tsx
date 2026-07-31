@@ -59,6 +59,7 @@ import { getArrowheadForPicker } from "@excalidraw/element";
 
 import {
   getBoundTextElement,
+  getScaledTextRoundness,
   redrawTextBoundingBox,
 } from "@excalidraw/element";
 
@@ -112,10 +113,7 @@ import type { ElementUpdate, Scene } from "@excalidraw/element";
 import type { CaptureUpdateActionType } from "@excalidraw/element";
 
 import { trackEvent } from "../analytics";
-import {
-  getTextBackgroundRadiusForFontSize,
-  scaleTextBackgroundRadiusForFontSize,
-} from "../textCreation";
+import { getTextBackgroundRadiusForFontSize } from "../textCreation";
 import {
   getTextListMode,
   setTextListMode,
@@ -321,19 +319,7 @@ export const changeFontSize = (
 
         let newElement: ExcalidrawTextElement = newElementWith(oldElement, {
           fontSize: newFontSize,
-          roundness:
-            oldElement.containerId === null && oldElement.roundness
-              ? {
-                  ...oldElement.roundness,
-                  type: ROUNDNESS.ADAPTIVE_RADIUS,
-                  value: scaleTextBackgroundRadiusForFontSize(
-                    oldElement.roundness.value ??
-                      getTextBackgroundRadiusForFontSize(oldElement.fontSize),
-                    oldElement.fontSize,
-                    newFontSize,
-                  ),
-                }
-              : oldElement.roundness,
+          roundness: getScaledTextRoundness(oldElement, newFontSize),
         });
         redrawTextBoundingBox(
           newElement,

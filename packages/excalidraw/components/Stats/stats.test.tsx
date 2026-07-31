@@ -3,7 +3,7 @@ import { act, fireEvent, queryByTestId } from "@testing-library/react";
 import React from "react";
 import { vi } from "vitest";
 
-import { setDateTimeForTests, reseed } from "@excalidraw/common";
+import { ROUNDNESS, setDateTimeForTests, reseed } from "@excalidraw/common";
 
 import { isInGroup } from "@excalidraw/element";
 
@@ -365,6 +365,11 @@ describe("stats for a non-generic element", () => {
     Keyboard.exitTextEditor(editor);
 
     const text = h.elements[0] as ExcalidrawTextElement;
+    const initialFontSize = text.fontSize;
+    API.updateElement(text, {
+      backgroundColor: "#ffec99",
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 5 },
+    });
     API.setSelectedElements([text] as NonDeletedExcalidrawElement[]);
 
     elementStats = stats?.querySelector("#elementStats");
@@ -377,6 +382,10 @@ describe("stats for a non-generic element", () => {
     expect(input.value).toBe(text.fontSize.toString());
     UI.updateInput(input, "36");
     expect(text.fontSize).toBe(36);
+    expect(text.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: Math.round((5 * 36) / initialFontSize),
+    });
 
     // can change width or height
     const width = UI.queryStatsProperty("W")?.querySelector(
@@ -511,6 +520,83 @@ describe("stats for multiple elements", () => {
 
   afterAll(() => {
     restoreOriginalGetBoundingClientRect();
+  });
+
+  it("scales text rounding when multiple font sizes are changed", () => {
+    const firstText = API.createElement({
+      type: "text",
+      x: 0,
+      fontSize: 20,
+      backgroundColor: "#ffec99",
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 5 },
+    });
+    const secondText = API.createElement({
+      type: "text",
+      x: 200,
+      fontSize: 40,
+      backgroundColor: "#ffec99",
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 10 },
+    });
+    API.setElements([firstText, secondText]);
+    API.setSelectedElements([firstText, secondText]);
+
+    const fontSize = UI.queryStatsProperty("F")?.querySelector(
+      ".drag-input",
+    ) as HTMLInputElement;
+    expect(fontSize).toBeDefined();
+    expect(fontSize.value).toBe("Mixed");
+
+    UI.updateInput(fontSize, "40");
+
+    expect(firstText.fontSize).toBe(40);
+    expect(firstText.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 10,
+    });
+    expect(secondText.fontSize).toBe(40);
+    expect(secondText.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 10,
+    });
+  });
+
+  it("scales text rounding when a grouped selection is resized", () => {
+    const groupId = "rounded-text-group";
+    const text = API.createElement({
+      type: "text",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 50,
+      fontSize: 20,
+      groupIds: [groupId],
+      backgroundColor: "#ffec99",
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 5 },
+    });
+    const rectangle = API.createElement({
+      type: "rectangle",
+      x: 150,
+      y: 0,
+      width: 100,
+      height: 50,
+      groupIds: [groupId],
+    });
+    API.setElements([text, rectangle]);
+    API.setSelectedElements([text, rectangle]);
+
+    const width = UI.queryStatsProperty("W")?.querySelector(
+      ".drag-input",
+    ) as HTMLInputElement;
+    expect(width).toBeDefined();
+    const initialWidth = Number(width.value);
+
+    UI.updateInput(width, String(initialWidth * 2));
+
+    expect(text.fontSize).toBe(40);
+    expect(text.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 10,
+    });
   });
 
   it("should display MIXED for elements with different values", () => {
