@@ -9,7 +9,11 @@ import {
 } from "@excalidraw/common";
 
 import { pointFrom } from "@excalidraw/math";
-import { getTextBackgroundGeometry } from "@excalidraw/element";
+import {
+  getStyledVisualLineStart,
+  getTextBackgroundGeometry,
+  getTextElementStyledLayout,
+} from "@excalidraw/element";
 
 import type {
   ExcalidrawTextElement,
@@ -197,6 +201,44 @@ describe("exportToSvg", () => {
     );
     expect(textNodes[1].hasAttribute("font-weight")).toBe(false);
     expect(textNodes[1].getAttribute("text-decoration")).toBe("underline");
+  });
+
+  it("exports wrapped list continuations at their shared layout positions", async () => {
+    const listText = {
+      ...API.createElement({
+        type: "text",
+        text: "• Search inventory facts from the connected store",
+        width: 120,
+        height: 100,
+        textAlign: "left",
+      }),
+      originalText: "• Search inventory facts from the connected store",
+      autoResize: false,
+      lineUnderlines: [true],
+    } as NonDeleted<ExcalidrawTextElement>;
+    const layout = getTextElementStyledLayout(listText, listText.width);
+
+    expect(layout.lines.length).toBeGreaterThan(1);
+    expect(layout.lines[1].horizontalOffset).toBeGreaterThan(0);
+
+    const svg = await exportUtils.exportToSvg(
+      [listText],
+      DEFAULT_OPTIONS,
+      null,
+    );
+    const textNodes = Array.from(svg.querySelectorAll("text"));
+
+    expect(textNodes.map((node) => node.textContent)).toEqual(
+      layout.lines.map((line) => line.text),
+    );
+    expect(textNodes.map((node) => Number(node.getAttribute("x")))).toEqual(
+      layout.lines.map((line) =>
+        getStyledVisualLineStart(line, listText.width, listText.textAlign),
+      ),
+    );
+    expect(
+      textNodes.every((node) => node.getAttribute("text-anchor") === "start"),
+    ).toBe(true);
   });
 
   it("exports an image border", async () => {
@@ -567,6 +609,48 @@ describe("exportToCanvas", () => {
     );
 
     expect(underlineRules).toHaveLength(3);
+  });
+
+  it("draws canvas list continuations at their shared layout positions", async () => {
+    const listText = {
+      ...API.createElement({
+        type: "text",
+        text: "• Search inventory facts from the connected store",
+        width: 120,
+        height: 100,
+        textAlign: "left",
+      }),
+      originalText: "• Search inventory facts from the connected store",
+      autoResize: false,
+      lineUnderlines: [true],
+    } as NonDeleted<ExcalidrawTextElement>;
+    const layout = getTextElementStyledLayout(listText, listText.width);
+
+    const canvas = await exportToCanvas({
+      elements: [listText],
+      files: null,
+      appState: { exportBackground: false },
+    });
+    const textEvents = (canvas.getContext("2d") as any)
+      .__getEvents()
+      .filter((event: any) => event.type === "fillText");
+
+    expect(textEvents.map((event: any) => event.props.text)).toEqual(
+      layout.lines.map((line) => line.text),
+    );
+    expect(textEvents.map((event: any) => event.props.x)).toEqual(
+      layout.lines.map((line) =>
+        getStyledVisualLineStart(line, listText.width, listText.textAlign),
+      ),
+    );
+    const underlineEvents = (canvas.getContext("2d") as any)
+      .__getEvents()
+      .filter((event: any) => event.type === "fillRect");
+    expect(underlineEvents.map((event: any) => event.props.x)).toEqual(
+      layout.lines.map((line) =>
+        getStyledVisualLineStart(line, listText.width, listText.textAlign),
+      ),
+    );
   });
 
   it("does not paint over elements beneath a labeled arrow's label (#11591)", async () => {

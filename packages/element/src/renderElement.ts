@@ -54,7 +54,10 @@ import {
   getTextBackgroundGeometry,
 } from "./textElement";
 import { getLineHeightInPx } from "./textMeasurements";
-import { getStyledVisualLines } from "./textLineUnderlines";
+import {
+  getStyledVisualLineStart,
+  getStyledVisualLines,
+} from "./textLineUnderlines";
 import {
   isTextElement,
   isLinearElement,
@@ -67,6 +70,7 @@ import {
 } from "./typeChecks";
 import { getContainingFrame } from "./frame";
 import { getCornerRadius } from "./utils";
+import { hasTextList } from "./textList";
 
 import { ShapeCache } from "./shape";
 
@@ -561,18 +565,21 @@ const drawElementOnCanvas = (
           : element.autoResize
           ? Infinity
           : element.width;
-        const hasPerLineStyles =
+        const shouldUseSourceLayout =
           !!element.lineBolds?.some(Boolean) ||
           !!element.lineUnderlines?.some(Boolean) ||
-          !!element.lineStrikethroughs?.some(Boolean);
+          !!element.lineStrikethroughs?.some(Boolean) ||
+          hasTextList(element.originalText);
         const lines = getStyledVisualLines({
-          originalText: hasPerLineStyles ? element.originalText : element.text,
+          originalText: shouldUseSourceLayout
+            ? element.originalText
+            : element.text,
           regularFont: getFontString({
             ...element,
             fontWeight: "normal",
           }),
           boldFont: getFontString({ ...element, fontWeight: "bold" }),
-          maxWidth: hasPerLineStyles ? maxWidth : Infinity,
+          maxWidth: shouldUseSourceLayout ? maxWidth : Infinity,
           lineBolds: element.lineBolds,
           lineUnderlines: element.lineUnderlines,
           lineStrikethroughs: element.lineStrikethroughs,
@@ -602,15 +609,21 @@ const drawElementOnCanvas = (
         for (let index = 0; index < lines.length; index++) {
           const baseline = index * lineHeightPx + verticalOffset;
           context.font = lines[index].font;
-          context.fillText(lines[index].text, horizontalOffset, baseline);
+          const lineStart = getStyledVisualLineStart(
+            lines[index],
+            element.width,
+            element.textAlign,
+          );
+          if (lines[index].isListItem) {
+            context.textAlign = "left";
+            context.fillText(lines[index].text, lineStart, baseline);
+          } else {
+            context.textAlign = element.textAlign as CanvasTextAlign;
+            context.fillText(lines[index].text, horizontalOffset, baseline);
+          }
           if (lines[index].text) {
             const lineWidth = lines[index].width;
-            const underlineX =
-              element.textAlign === "center"
-                ? horizontalOffset - lineWidth / 2
-                : element.textAlign === "right"
-                ? horizontalOffset - lineWidth
-                : horizontalOffset;
+            const underlineX = lineStart;
             if (lines[index].underlined) {
               context.fillRect(
                 underlineX,

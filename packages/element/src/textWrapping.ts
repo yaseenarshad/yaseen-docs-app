@@ -1,6 +1,7 @@
 import { isDevEnv, isTestEnv } from "@excalidraw/common";
 
 import { charWidth, getLineWidth } from "./textMeasurements";
+import { parseTextListLine } from "./textList";
 
 import type { FontString } from "./types";
 
@@ -415,7 +416,10 @@ export type WrappedTextLine = {
   text: string;
   start: number;
   end: number;
+  horizontalOffset: number;
 };
+
+type SourceTextLine = Omit<WrappedTextLine, "horizontalOffset">;
 
 /**
  * Splits only on existing hard line breaks and preserves original offsets.
@@ -433,6 +437,7 @@ const getHardLineBreaks = (text: string): WrappedTextLine[] => {
       text: line,
       start,
       end,
+      horizontalOffset: 0,
     };
   });
 };
@@ -466,9 +471,18 @@ export const getWrappedTextLines = (
         text: originalLine,
         start: offset,
         end: offset + originalLine.length,
+        horizontalOffset: 0,
       });
     } else {
-      lines.push(...wrapLine(originalLine, font, maxWidth, offset));
+      const parsed = parseTextListLine(originalLine);
+      const contentStart = originalLine.length - parsed.content.length;
+      const continuationOffset =
+        parsed.markerKind === "none"
+          ? 0
+          : getLineWidth(originalLine.slice(0, contentStart), font);
+      lines.push(
+        ...wrapLine(originalLine, font, maxWidth, offset, continuationOffset),
+      );
     }
 
     offset += originalLine.length + 1;
@@ -488,6 +502,7 @@ const wrapLine = (
   font: FontString,
   maxWidth: number,
   lineStart: number,
+  continuationOffset = 0,
 ): WrappedTextLine[] => {
   const lines: WrappedTextLine[] = [];
   const tokens = parseTokens(line);
@@ -499,6 +514,13 @@ const wrapLine = (
   // Tracks the next token's code-unit position in the original source string.
   let tokenOffset = lineStart;
   let tokenIndex = 0;
+
+  const getCurrentMaxWidth = () =>
+    Math.max(0, maxWidth - (lines.length > 0 ? continuationOffset : 0));
+  const withHorizontalOffset = (wrappedLine: SourceTextLine) => ({
+    ...wrappedLine,
+    horizontalOffset: lines.length > 0 ? continuationOffset : 0,
+  });
 
   while (tokenIndex < tokens.length) {
     const token = tokens[tokenIndex];
@@ -512,7 +534,7 @@ const wrapLine = (
       : getLineWidth(testLine, font);
 
     // build up the current line, skipping length check for possibly trailing whitespaces
-    if (/\s/.test(token) || testLineWidth <= maxWidth) {
+    if (/\s/.test(token) || testLineWidth <= getCurrentMaxWidth()) {
       if (!currentLine) {
         currentLineStart = tokenStart;
       }
@@ -526,7 +548,12 @@ const wrapLine = (
 
     // current line is empty => just the token (word) is longer than `maxWidth` and needs to be wrapped
     if (!currentLine) {
-      const wrappedWord = wrapWord(token, font, maxWidth, tokenStart);
+      const wrappedWord = wrapWord(
+        token,
+        font,
+        getCurrentMaxWidth(),
+        tokenStart,
+      );
       const trailingLine = wrappedWord[wrappedWord.length - 1] ?? {
         text: "",
         start: tokenStart,
@@ -534,7 +561,9 @@ const wrapLine = (
       };
       const precedingLines = wrappedWord.slice(0, -1);
 
-      lines.push(...precedingLines);
+      for (const precedingLine of precedingLines) {
+        lines.push(withHorizontalOffset(precedingLine));
+      }
 
       // trailing line of the wrapped word might still be joined with next token/s
       currentLine = trailingLine.text;
@@ -546,7 +575,9 @@ const wrapLine = (
     } else {
       // push & reset, but don't iterate on the next token, as we didn't use it yet!
       lines.push(
-        trimLineEndAtSoftBreak(currentLine, currentLineStart, currentLineEnd),
+        withHorizontalOffset(
+          trimLineEndAtSoftBreak(currentLine, currentLineStart, currentLineEnd),
+        ),
       );
 
       // purposefully not iterating and not setting `currentLine` to `token`, so that we could use a simple !currentLine check above
@@ -564,9 +595,9 @@ const wrapLine = (
       currentLineStart,
       currentLineEnd,
       font,
-      maxWidth,
+      getCurrentMaxWidth(),
     );
-    lines.push(trailingLine);
+    lines.push(withHorizontalOffset(trailingLine));
   }
 
   return lines;
@@ -580,7 +611,7 @@ const wrapWord = (
   font: FontString,
   maxWidth: number,
   wordStart: number,
-): WrappedTextLine[] => {
+): SourceTextLine[] => {
   // multi-codepoint emojis are already broken apart and shouldn't be broken further
   if (getEmojiRegex().test(word)) {
     return [
@@ -594,7 +625,7 @@ const wrapWord = (
 
   satisfiesWordInvariant(word);
 
-  const lines: WrappedTextLine[] = [];
+  const lines: SourceTextLine[] = [];
   const chars = Array.from(word);
 
   let currentLine = "";
@@ -658,7 +689,7 @@ const trimLine = (
   end: number,
   font: FontString,
   maxWidth: number,
-): WrappedTextLine => {
+): SourceTextLine => {
   const shouldTrimWhitespaces = getLineWidth(line, font) > maxWidth;
 
   if (!shouldTrimWhitespaces) {
@@ -706,7 +737,7 @@ const trimLineEndAtSoftBreak = (
   line: string,
   start: number,
   end: number,
-): WrappedTextLine => {
+): SourceTextLine => {
   const trimmedLine = line.trimEnd();
 
   return {

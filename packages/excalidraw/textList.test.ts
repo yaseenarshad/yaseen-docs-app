@@ -3,6 +3,7 @@ import {
   continueTextListItem,
   formatPastedTextForList,
   getBulletMarkerForDepth,
+  hasTextList,
   getTextListMode,
   indentTextList,
   parseTextListLine,
@@ -35,6 +36,12 @@ describe("text list engine", () => {
     expect(
       Array.from({ length: 7 }, (_, depth) => getBulletMarkerForDepth(depth)),
     ).toEqual(["•", "○", "▪", "•", "○", "▪", "•"]);
+  });
+
+  it("detects supported list lines without treating prose as a list", () => {
+    expect(hasTextList("Intro\n• Item")).toBe(true);
+    expect(hasTextList("Intro\n    10. Nested number")).toBe(true);
+    expect(hasTextList("Version 10. Notes\nPlain text")).toBe(false);
   });
 
   it("cycles plain, bulleted, and numbered logical lines", () => {

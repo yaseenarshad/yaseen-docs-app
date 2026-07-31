@@ -95,6 +95,7 @@ export * from "./sizeHelpers";
 export * from "./sortElements";
 export * from "./store";
 export * from "./textElement";
+export * from "./textList";
 export * from "./textLineUnderlines";
 export * from "./textMeasurements";
 export * from "./textWrapping";

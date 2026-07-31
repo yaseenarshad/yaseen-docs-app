@@ -25,7 +25,9 @@ import {
   getBoundTextMaxWidth,
   getContainerElement,
   getTextBackgroundGeometry,
+  getStyledVisualLineStart,
   getStyledVisualLines,
+  hasTextList,
 } from "@excalidraw/element";
 import { getLineHeightInPx } from "@excalidraw/element";
 import {
@@ -738,18 +740,21 @@ const renderElementToSvg = (
           : element.autoResize
           ? Infinity
           : element.width;
-        const hasPerLineStyles =
+        const shouldUseSourceLayout =
           !!element.lineBolds?.some(Boolean) ||
           !!element.lineUnderlines?.some(Boolean) ||
-          !!element.lineStrikethroughs?.some(Boolean);
+          !!element.lineStrikethroughs?.some(Boolean) ||
+          hasTextList(element.originalText);
         const lines = getStyledVisualLines({
-          originalText: hasPerLineStyles ? element.originalText : element.text,
+          originalText: shouldUseSourceLayout
+            ? element.originalText
+            : element.text,
           regularFont: getFontString({
             ...element,
             fontWeight: "normal",
           }),
           boldFont: getFontString({ ...element, fontWeight: "bold" }),
-          maxWidth: hasPerLineStyles ? maxWidth : Infinity,
+          maxWidth: shouldUseSourceLayout ? maxWidth : Infinity,
           lineBolds: element.lineBolds,
           lineUnderlines: element.lineUnderlines,
           lineStrikethroughs: element.lineStrikethroughs,
@@ -782,7 +787,18 @@ const renderElementToSvg = (
         for (let i = 0; i < lines.length; i++) {
           const text = svgRoot.ownerDocument.createElementNS(SVG_NS, "text");
           text.textContent = lines[i].text;
-          text.setAttribute("x", `${horizontalOffset}`);
+          text.setAttribute(
+            "x",
+            `${
+              lines[i].isListItem
+                ? getStyledVisualLineStart(
+                    lines[i],
+                    element.width,
+                    element.textAlign,
+                  )
+                : horizontalOffset
+            }`,
+          );
           text.setAttribute("y", `${i * lineHeightPx + verticalOffset}`);
           text.setAttribute("font-family", getFontFamilyString(element));
           text.setAttribute("font-size", `${element.fontSize}px`);
@@ -803,7 +819,10 @@ const renderElementToSvg = (
               renderConfig.theme === THEME.DARK,
             ),
           );
-          text.setAttribute("text-anchor", textAnchor);
+          text.setAttribute(
+            "text-anchor",
+            lines[i].isListItem ? "start" : textAnchor,
+          );
           text.setAttribute("style", "white-space: pre;");
           text.setAttribute("direction", direction);
           text.setAttribute("dominant-baseline", "alphabetic");

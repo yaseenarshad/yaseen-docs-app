@@ -4,6 +4,8 @@ import { pointFrom } from "@excalidraw/math";
 import {
   getLineHeightInPx,
   getOriginalContainerHeightFromCache,
+  getStyledVisualLineStart,
+  getTextElementStyledLayout,
 } from "@excalidraw/element";
 
 import {
@@ -430,6 +432,109 @@ describe("textWysiwyg", () => {
 
     afterAll(() => {
       restoreOriginalGetBoundingClientRect();
+    });
+
+    it("mirrors wrapped list continuations at their hanging-indent positions while preserving source text", async () => {
+      const originalText = "• Search inventory facts from the connected store";
+      const text = {
+        ...API.createElement({
+          type: "text",
+          text: originalText,
+          width: 120,
+          height: 120,
+          textAlign: "left",
+        }),
+        originalText,
+        autoResize: false,
+      } as ExcalidrawTextElement;
+      API.setElements([text]);
+
+      UI.clickTool("selection");
+      mouse.doubleClickAt(text.x + 10, text.y + 10);
+      const editor = await getTextEditor();
+      const visualLines = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          ".excalidraw-wysiwyg-styled-line",
+        ),
+      );
+
+      expect(editor.value).toBe(originalText);
+      expect(editor.style.color).toBe("transparent");
+      expect(visualLines.length).toBeGreaterThan(1);
+      expect(visualLines[0].textContent).toContain("•");
+      expect(parseFloat(visualLines[0].style.left)).toBe(0);
+      expect(parseFloat(visualLines[1].style.left)).toBeGreaterThan(0);
+      expect((h.elements[0] as ExcalidrawTextElement).originalText).toBe(
+        originalText,
+      );
+    });
+
+    it("maps a continuation-line click from its hanging-indent origin to the source text", async () => {
+      const originalText = "• Search inventory facts from the connected store";
+      const text = {
+        ...API.createElement({
+          type: "text",
+          text: originalText,
+          width: 120,
+          height: 120,
+          textAlign: "left",
+        }),
+        originalText,
+        autoResize: false,
+      } as ExcalidrawTextElement;
+      API.setElements([text]);
+      const layout = getTextElementStyledLayout(text, text.width);
+      const continuation = layout.lines[1];
+      const lineHeight = getLineHeightInPx(text.fontSize, text.lineHeight);
+      const continuationX = getStyledVisualLineStart(
+        continuation,
+        text.width,
+        text.textAlign,
+      );
+
+      UI.clickTool("text");
+      mouse.clickAt(text.x + continuationX + 1, text.y + lineHeight * 1.5);
+      const editor = await getTextEditor();
+
+      await waitFor(() => {
+        expect(editor.selectionStart).toBeGreaterThanOrEqual(
+          continuation.start,
+        );
+        expect(editor.selectionStart).toBeLessThanOrEqual(
+          continuation.start + 1,
+        );
+      });
+      expect(editor.selectionEnd).toBe(editor.selectionStart);
+    });
+
+    it("uses the same hanging-indent overlay for list text bound inside a shape", async () => {
+      const originalText = "• Search inventory facts from the connected store";
+      const [container, boundText] = API.createTextContainer({
+        label: { text: originalText },
+      });
+      const boundTextElement = {
+        ...boundText,
+        originalText,
+      } as ExcalidrawTextElement;
+      API.setElements([container, boundTextElement]);
+      API.setSelectedElements([container]);
+
+      Keyboard.keyPress(KEYS.ENTER);
+      const editor = await getTextEditor();
+      const visualLines = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          ".excalidraw-wysiwyg-styled-line",
+        ),
+      );
+
+      expect(editor.value).toBe(originalText);
+      expect(visualLines.length).toBeGreaterThan(1);
+      expect(parseFloat(visualLines[1].style.left)).toBeGreaterThan(
+        parseFloat(visualLines[0].style.left),
+      );
+      expect((h.elements[1] as ExcalidrawTextElement).originalText).toBe(
+        originalText,
+      );
     });
 
     it("should keep width when editing a wrapped text", async () => {

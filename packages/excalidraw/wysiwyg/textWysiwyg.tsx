@@ -37,6 +37,7 @@ import {
 import { getTextWidth } from "@excalidraw/element";
 import { getLineHeightInPx } from "@excalidraw/element";
 import {
+  getStyledVisualLineStart,
   getStyledVisualLines,
   remapLineStylesForTextEdit,
   remapLineUnderlinesForTextEdit,
@@ -427,43 +428,6 @@ export const textWysiwyg = ({
         updatedTextElement.strokeColor,
         appState.theme === THEME.DARK,
       );
-      const hasPerLineStyles =
-        !!updatedTextElement.lineBolds?.some(Boolean) ||
-        !!updatedTextElement.lineUnderlines?.some(Boolean) ||
-        !!updatedTextElement.lineStrikethroughs?.some(Boolean);
-      const wholeTextDecorations = [
-        updatedTextElement.textDecoration === "underline" ? "underline" : null,
-        updatedTextElement.strikethrough === true ? "line-through" : null,
-      ].filter(Boolean);
-      Object.assign(editable.style, {
-        font,
-        // must be defined *after* font ¯\_(ツ)_/¯
-        lineHeight: updatedTextElement.lineHeight,
-        width: `${width}px`,
-        height: `${height}px`,
-        left: `${viewportX}px`,
-        top: `${viewportY}px`,
-        transform,
-        textAlign,
-        verticalAlign,
-        fontWeight: updatedTextElement.fontWeight ?? "normal",
-        textDecoration: wholeTextDecorations.join(" ") || "none",
-        color: hasPerLineStyles ? "transparent" : color,
-        caretColor: color,
-        opacity: updatedTextElement.opacity / 100,
-        maxHeight: `${editorMaxHeight}px`,
-      });
-      Object.assign(underlineOverlay.style, {
-        width: `${width}px`,
-        height: `${height}px`,
-        left: `${viewportX}px`,
-        top: `${viewportY}px`,
-        transform,
-        opacity: updatedTextElement.opacity / 100,
-        maxHeight: `${editorMaxHeight}px`,
-      });
-      underlineOverlay.replaceChildren();
-
       const visualLines = getStyledVisualLines({
         originalText: editable.value,
         regularFont: getFontString({
@@ -483,17 +447,53 @@ export const textWysiwyg = ({
           updatedTextElement.textDecoration === "underline",
         wholeElementStrikethrough: updatedTextElement.strikethrough === true,
       });
+      const hasPerLineStyles =
+        !!updatedTextElement.lineBolds?.some(Boolean) ||
+        !!updatedTextElement.lineUnderlines?.some(Boolean) ||
+        !!updatedTextElement.lineStrikethroughs?.some(Boolean);
+      const hasHangingIndent = visualLines.some(
+        (line) => line.horizontalOffset > 0,
+      );
+      const hasVisualLineOverlay = hasPerLineStyles || hasHangingIndent;
+      const wholeTextDecorations = [
+        updatedTextElement.textDecoration === "underline" ? "underline" : null,
+        updatedTextElement.strikethrough === true ? "line-through" : null,
+      ].filter(Boolean);
+      Object.assign(editable.style, {
+        font,
+        // must be defined *after* font ¯\_(ツ)_/¯
+        lineHeight: updatedTextElement.lineHeight,
+        width: `${width}px`,
+        height: `${height}px`,
+        left: `${viewportX}px`,
+        top: `${viewportY}px`,
+        transform,
+        textAlign,
+        verticalAlign,
+        fontWeight: updatedTextElement.fontWeight ?? "normal",
+        textDecoration: wholeTextDecorations.join(" ") || "none",
+        color: hasVisualLineOverlay ? "transparent" : color,
+        caretColor: color,
+        opacity: updatedTextElement.opacity / 100,
+        maxHeight: `${editorMaxHeight}px`,
+      });
+      Object.assign(underlineOverlay.style, {
+        width: `${width}px`,
+        height: `${height}px`,
+        left: `${viewportX}px`,
+        top: `${viewportY}px`,
+        transform,
+        opacity: updatedTextElement.opacity / 100,
+        maxHeight: `${editorMaxHeight}px`,
+      });
+      underlineOverlay.replaceChildren();
+
       for (const [index, line] of visualLines.entries()) {
-        if (!hasPerLineStyles || !line.text) {
+        if (!hasVisualLineOverlay || !line.text) {
           continue;
         }
 
-        const left =
-          textAlign === "center"
-            ? (width - line.width) / 2
-            : textAlign === "right"
-            ? width - line.width
-            : 0;
+        const left = getStyledVisualLineStart(line, width, textAlign);
         const styledLine = document.createElement("span");
         styledLine.className = [
           "excalidraw-wysiwyg-styled-line",
@@ -636,13 +636,11 @@ export const textWysiwyg = ({
     );
     const line = lines[lineIndex];
     const direction = getLineDirection(editable.value, line.start);
-    const lineWidth = line.width;
-    const lineStartX =
-      layout.textAlign === "center"
-        ? (layout.width - lineWidth) / 2
-        : layout.textAlign === "right"
-        ? layout.width - lineWidth
-        : 0;
+    const lineStartX = getStyledVisualLineStart(
+      line,
+      layout.width,
+      layout.textAlign,
+    );
     const relativeX = localX - lineStartX;
 
     if (!line.text) {

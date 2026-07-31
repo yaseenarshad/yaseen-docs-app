@@ -1,5 +1,6 @@
 import {
   areSelectedLinesStyled,
+  getStyledVisualLineStart,
   getStyledVisualLines,
   getUnderlinedVisualLines,
   getSelectedLogicalLineRange,
@@ -255,4 +256,109 @@ it("preserves the text metrics width for an empty caret line", () => {
 
   expect(line.text).toBe("");
   expect(line.width).toBeGreaterThan(0);
+});
+
+it("keeps one measured block width for a list item's first and continuation lines", () => {
+  const lines = getStyledVisualLines({
+    originalText: "• A abcdefg",
+    regularFont: "10px Assistant" as FontString,
+    boldFont: "bold 10px Assistant" as FontString,
+    maxWidth: 100,
+    lineBolds: undefined,
+    lineUnderlines: undefined,
+    lineStrikethroughs: undefined,
+    wholeElementBold: false,
+    wholeElementUnderlined: false,
+    wholeElementStrikethrough: false,
+  });
+
+  expect(lines).toMatchObject([
+    {
+      text: "• A",
+      horizontalOffset: 0,
+      width: 30,
+      visualWidth: 30,
+      blockWidth: 90,
+      isListItem: true,
+    },
+    {
+      text: "abcdefg",
+      horizontalOffset: 20,
+      width: 70,
+      visualWidth: 90,
+      blockWidth: 90,
+      isListItem: true,
+    },
+  ]);
+});
+
+it("preserves independent visual line widths for wrapped plain text", () => {
+  const lines = getStyledVisualLines({
+    originalText: "A abcdefg",
+    regularFont: "10px Assistant" as FontString,
+    boldFont: "bold 10px Assistant" as FontString,
+    maxWidth: 80,
+    lineBolds: undefined,
+    lineUnderlines: undefined,
+    lineStrikethroughs: undefined,
+    wholeElementBold: false,
+    wholeElementUnderlined: false,
+    wholeElementStrikethrough: false,
+  });
+
+  expect(lines).toMatchObject([
+    {
+      text: "A",
+      horizontalOffset: 0,
+      width: 10,
+      visualWidth: 10,
+      blockWidth: 10,
+      isListItem: false,
+    },
+    {
+      text: "abcdefg",
+      horizontalOffset: 0,
+      width: 70,
+      visualWidth: 70,
+      blockWidth: 70,
+      isListItem: false,
+    },
+  ]);
+});
+
+it("aligns a list item as one block while preserving plain-line alignment", () => {
+  const listLines = getStyledVisualLines({
+    originalText: "• A abcdefg",
+    regularFont: "10px Assistant" as FontString,
+    boldFont: "bold 10px Assistant" as FontString,
+    maxWidth: 100,
+    lineBolds: undefined,
+    lineUnderlines: undefined,
+    lineStrikethroughs: undefined,
+    wholeElementBold: false,
+    wholeElementUnderlined: false,
+    wholeElementStrikethrough: false,
+  });
+  const plainLines = getStyledVisualLines({
+    originalText: "A abcdefg",
+    regularFont: "10px Assistant" as FontString,
+    boldFont: "bold 10px Assistant" as FontString,
+    maxWidth: 80,
+    lineBolds: undefined,
+    lineUnderlines: undefined,
+    lineStrikethroughs: undefined,
+    wholeElementBold: false,
+    wholeElementUnderlined: false,
+    wholeElementStrikethrough: false,
+  });
+
+  expect(
+    listLines.map((line) => getStyledVisualLineStart(line, 200, "center")),
+  ).toEqual([55, 75]);
+  expect(
+    listLines.map((line) => getStyledVisualLineStart(line, 200, "right")),
+  ).toEqual([110, 130]);
+  expect(
+    plainLines.map((line) => getStyledVisualLineStart(line, 200, "center")),
+  ).toEqual([95, 65]);
 });

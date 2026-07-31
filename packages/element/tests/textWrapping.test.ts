@@ -112,11 +112,13 @@ describe("Test wrapText", () => {
         text: "Hello",
         start: 0,
         end: 5,
+        horizontalOffset: 0,
       },
       {
         text: "World!",
         start: 6,
         end: 12,
+        horizontalOffset: 0,
       },
     ]);
   });
@@ -127,11 +129,13 @@ describe("Test wrapText", () => {
         text: "  Hello",
         start: 0,
         end: 7,
+        horizontalOffset: 0,
       },
       {
         text: "World",
         start: 9,
         end: 14,
+        horizontalOffset: 0,
       },
     ]);
   });
@@ -142,11 +146,13 @@ describe("Test wrapText", () => {
         text: "Excal",
         start: 0,
         end: 5,
+        horizontalOffset: 0,
       },
       {
         text: "idraw",
         start: 5,
         end: 10,
+        horizontalOffset: 0,
       },
     ]);
   });
@@ -157,16 +163,89 @@ describe("Test wrapText", () => {
         text: "A",
         start: 0,
         end: 1,
+        horizontalOffset: 0,
       },
       {
         text: "",
         start: 2,
         end: 2,
+        horizontalOffset: 0,
       },
       {
         text: "B",
         start: 3,
         end: 4,
+        horizontalOffset: 0,
+      },
+    ]);
+  });
+
+  it("uses the rendered list prefix as the offset and width reservation for automatic continuations", () => {
+    expect(getWrappedTextLines("• Alpha beta gamma", font, 100)).toEqual([
+      {
+        text: "• Alpha",
+        start: 0,
+        end: 7,
+        horizontalOffset: 0,
+      },
+      {
+        text: "beta",
+        start: 8,
+        end: 12,
+        horizontalOffset: 20,
+      },
+      {
+        text: "gamma",
+        start: 13,
+        end: 18,
+        horizontalOffset: 20,
+      },
+    ]);
+  });
+
+  it("measures each nested or numbered item's own prefix", () => {
+    expect(
+      getWrappedTextLines(
+        "    ○ Nested continuation\n100. Numbered continuation",
+        font,
+        150,
+      ),
+    ).toEqual([
+      {
+        text: "    ○ Nested",
+        start: 0,
+        end: 12,
+        horizontalOffset: 0,
+      },
+      {
+        text: "continuat",
+        start: 13,
+        end: 22,
+        horizontalOffset: 60,
+      },
+      {
+        text: "ion",
+        start: 22,
+        end: 25,
+        horizontalOffset: 60,
+      },
+      {
+        text: "100. Numbered",
+        start: 26,
+        end: 39,
+        horizontalOffset: 0,
+      },
+      {
+        text: "continuati",
+        start: 40,
+        end: 50,
+        horizontalOffset: 50,
+      },
+      {
+        text: "on",
+        start: 50,
+        end: 52,
+        horizontalOffset: 50,
       },
     ]);
   });

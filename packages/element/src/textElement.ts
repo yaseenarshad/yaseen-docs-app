@@ -23,7 +23,10 @@ import {
 import { LinearElementEditor } from "./linearElementEditor";
 
 import { getCornerRadius } from "./utils";
-import { getTextElementStyledLayout } from "./textLineUnderlines";
+import {
+  getStyledVisualLineStart,
+  getTextElementStyledLayout,
+} from "./textLineUnderlines";
 import {
   isBoundToContainer,
   isArrowElement,
@@ -105,6 +108,15 @@ const getTextVisualBounds = (
 
   for (let index = 0; index < lines.length; index++) {
     context.font = lines[index].font;
+    const lineStart = getStyledVisualLineStart(
+      lines[index],
+      element.width,
+      element.textAlign,
+    );
+    const drawX = lines[index].isListItem ? lineStart : horizontalOffset;
+    context.textAlign = lines[index].isListItem
+      ? "left"
+      : (element.textAlign as CanvasTextAlign);
     const metrics = context.measureText(lines[index].text || " ");
     const baseline = index * lineHeightPx + verticalOffset;
     const values = [
@@ -118,8 +130,8 @@ const getTextVisualBounds = (
       return null;
     }
 
-    left = Math.min(left, horizontalOffset - metrics.actualBoundingBoxLeft);
-    right = Math.max(right, horizontalOffset + metrics.actualBoundingBoxRight);
+    left = Math.min(left, drawX - metrics.actualBoundingBoxLeft);
+    right = Math.max(right, drawX + metrics.actualBoundingBoxRight);
     top = Math.min(top, baseline - metrics.actualBoundingBoxAscent);
     bottom = Math.max(bottom, baseline + metrics.actualBoundingBoxDescent);
   }

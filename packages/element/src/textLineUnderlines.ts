@@ -2,8 +2,9 @@ import { getFontString } from "@excalidraw/common";
 
 import { getWrappedTextLines } from "./textWrapping";
 import { getLineHeightInPx, getLineWidth } from "./textMeasurements";
+import { parseTextListLine } from "./textList";
 
-import type { ExcalidrawTextElement, FontString } from "./types";
+import type { ExcalidrawTextElement, FontString, TextAlign } from "./types";
 
 const getLineCount = (text: string) => text.split("\n").length;
 
@@ -250,12 +251,31 @@ export type StyledVisualLine = {
   text: string;
   start: number;
   end: number;
+  horizontalOffset: number;
   logicalLine: number;
   bold: boolean;
   underlined: boolean;
   strikethrough: boolean;
   font: FontString;
   width: number;
+  visualWidth: number;
+  blockWidth: number;
+  isListItem: boolean;
+};
+
+export const getStyledVisualLineStart = (
+  line: StyledVisualLine,
+  containerWidth: number,
+  textAlign: TextAlign,
+) => {
+  const alignedBlockStart =
+    textAlign === "center"
+      ? (containerWidth - line.blockWidth) / 2
+      : textAlign === "right"
+      ? containerWidth - line.blockWidth
+      : 0;
+
+  return alignedBlockStart + line.horizontalOffset;
 };
 
 export const getStyledVisualLines = (args: {
@@ -286,8 +306,24 @@ export const getStyledVisualLines = (args: {
       args.lineStrikethroughs?.[logicalLine] === true;
     const font = bold ? args.boldFont : args.regularFont;
     const visualLines = getWrappedTextLines(originalLine, font, args.maxWidth);
+    const isListItem = parseTextListLine(originalLine).markerKind !== "none";
+    const measuredLines = visualLines.map((line) => {
+      // Empty text lines still occupy one space of layout width in the
+      // existing text metrics contract. This keeps a new/empty bound text
+      // editor centered and large enough to place the caret.
+      const width = getLineWidth(line.text || " ", font);
+      return {
+        ...line,
+        width,
+        visualWidth: line.horizontalOffset + width,
+      };
+    });
+    const listBlockWidth = Math.max(
+      0,
+      ...measuredLines.map((line) => line.visualWidth),
+    );
 
-    for (const line of visualLines) {
+    for (const line of measuredLines) {
       lines.push({
         ...line,
         start: sourceOffset + line.start,
@@ -297,10 +333,8 @@ export const getStyledVisualLines = (args: {
         underlined,
         strikethrough,
         font,
-        // Empty text lines still occupy one space of layout width in the
-        // existing text metrics contract. This keeps a new/empty bound text
-        // editor centered and large enough to place the caret.
-        width: getLineWidth(line.text || " ", font),
+        blockWidth: isListItem ? listBlockWidth : line.visualWidth,
+        isListItem,
       });
     }
 
@@ -321,7 +355,7 @@ export const getStyledTextLayout = (
   return {
     lines,
     text: lines.map((line) => line.text).join("\n"),
-    width: Math.max(0, ...lines.map((line) => line.width)),
+    width: Math.max(0, ...lines.map((line) => line.blockWidth)),
     height: getLineHeightInPx(args.fontSize, args.lineHeight) * lines.length,
   };
 };
