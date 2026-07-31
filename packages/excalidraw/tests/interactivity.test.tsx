@@ -837,6 +837,16 @@ describe("Fit board controls", () => {
 });
 
 describe("ui={false} with host UI", () => {
+  it("lets a host suppress the fallback sidebar trigger without rendering one", async () => {
+    await render(
+      <Excalidraw ui={false}>
+        <DefaultSidebar.Trigger hidden />
+      </Excalidraw>,
+    );
+
+    expect(queryContainer(".sidebar-trigger__label-element")).toBe(null);
+  });
+
   it("renders host outlets and dialogs invoked by host UI", async () => {
     const { container } = await render(
       <Excalidraw

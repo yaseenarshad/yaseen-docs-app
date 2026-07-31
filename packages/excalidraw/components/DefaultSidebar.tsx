@@ -25,18 +25,21 @@ import type { SidebarProps, SidebarTriggerProps } from "./Sidebar/common";
 
 const DefaultSidebarTrigger = withInternalFallback(
   "DefaultSidebarTrigger",
-  (
-    props: Omit<SidebarTriggerProps, "name"> &
-      React.HTMLAttributes<HTMLDivElement>,
-  ) => {
+  ({
+    hidden,
+    ...props
+  }: Omit<SidebarTriggerProps, "name"> &
+    React.HTMLAttributes<HTMLDivElement>) => {
     const { DefaultSidebarTriggerTunnel } = useTunnels();
     return (
       <DefaultSidebarTriggerTunnel.In>
-        <Sidebar.Trigger
-          {...props}
-          className="default-sidebar-trigger"
-          name={DEFAULT_SIDEBAR.name}
-        />
+        {!hidden && (
+          <Sidebar.Trigger
+            {...props}
+            className="default-sidebar-trigger"
+            name={DEFAULT_SIDEBAR.name}
+          />
+        )}
       </DefaultSidebarTriggerTunnel.In>
     );
   },
