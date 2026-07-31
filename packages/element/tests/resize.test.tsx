@@ -12,6 +12,7 @@ import {
 import { API } from "@excalidraw/excalidraw/tests/helpers/api";
 import { UI, Keyboard, Pointer } from "@excalidraw/excalidraw/tests/helpers/ui";
 import {
+  fireEvent,
   render,
   unmountComponent,
 } from "@excalidraw/excalidraw/tests/test-utils";
@@ -583,12 +584,12 @@ describe("text element", () => {
   it("resizes", async () => {
     const text = UI.createElement("text");
     await UI.editText(text, "hello\nworld");
-    const { width, height, fontSize } = text;
+    const { x, y, width, height, fontSize } = text;
     const scale = 40 / height + 1;
     UI.resize(text, "se", [30, 40]);
 
-    expect(text.x).toBeCloseTo(0);
-    expect(text.y).toBeCloseTo(0);
+    expect(text.x).toBeCloseTo(x);
+    expect(text.y).toBeCloseTo(y);
     expect(text.width).toBeCloseTo(width * scale);
     expect(text.height).toBeCloseTo(height * scale);
     expect(text.angle).toBeCloseTo(0);
@@ -1114,7 +1115,11 @@ describe("multiple selection", () => {
     const topArrowLabel = await UI.editText(topArrow.get(), "lorem ipsum");
 
     UI.clickTool("text");
-    UI.clickByTitle("Large");
+    const labeledArrowFontSize = document.querySelector<HTMLInputElement>(
+      '[aria-label="Exact font size"]',
+    )!;
+    fireEvent.change(labeledArrowFontSize, { target: { value: "28" } });
+    fireEvent.blur(labeledArrowFontSize);
     const bottomArrow = UI.createElement("arrow", {
       x: 0,
       y: 80,
@@ -1183,14 +1188,43 @@ describe("multiple selection", () => {
   it("resizes with text elements", async () => {
     const topText = UI.createElement("text", { position: 0 });
     await UI.editText(topText, "lorem ipsum");
+    const topTextFontSize = document.querySelector<HTMLInputElement>(
+      '[aria-label="Exact font size"]',
+    )!;
+    fireEvent.change(topTextFontSize, { target: { value: "20" } });
+    fireEvent.blur(topTextFontSize);
 
     UI.clickTool("text");
-    UI.clickByTitle("Large");
+    const selectionFontSize = document.querySelector<HTMLInputElement>(
+      '[aria-label="Exact font size"]',
+    )!;
+    fireEvent.change(selectionFontSize, { target: { value: "28" } });
+    fireEvent.blur(selectionFontSize);
     const bottomText = UI.createElement("text", { position: 40 });
     await UI.editText(bottomText, "dolor\nsit amet");
 
-    const selectionWidth = 40 + bottomText.width;
-    const selectionHeight = 40 + bottomText.height;
+    const topTextStart = {
+      x: topText.x,
+      y: topText.y,
+      fontSize: topText.fontSize,
+    };
+    const bottomTextStart = {
+      x: bottomText.x,
+      y: bottomText.y,
+      fontSize: bottomText.fontSize,
+    };
+    const selectionLeft = Math.min(topText.x, bottomText.x);
+    const selectionRight = Math.max(
+      topText.x + topText.width,
+      bottomText.x + bottomText.width,
+    );
+    const selectionTop = Math.min(topText.y, bottomText.y);
+    const selectionBottom = Math.max(
+      topText.y + topText.height,
+      bottomText.y + bottomText.height,
+    );
+    const selectionWidth = selectionRight - selectionLeft;
+    const selectionHeight = selectionBottom - selectionTop;
     const move = [30, -40] as [number, number];
     const scale = Math.max(
       1 + move[0] / selectionWidth,
@@ -1199,14 +1233,22 @@ describe("multiple selection", () => {
 
     UI.resize([topText, bottomText], "ne", move, { shift: true });
 
-    expect(topText.x).toBeCloseTo(0);
-    expect(topText.y).toBeCloseTo(-selectionHeight * (scale - 1));
-    expect(topText.fontSize).toBeCloseTo(20 * scale);
+    expect(topText.x).toBeCloseTo(
+      selectionLeft + (topTextStart.x - selectionLeft) * scale,
+    );
+    expect(topText.y).toBeCloseTo(
+      selectionBottom - (selectionBottom - topTextStart.y) * scale,
+    );
+    expect(topText.fontSize).toBeCloseTo(topTextStart.fontSize * scale);
     expect(topText.angle).toEqual(0);
 
-    expect(bottomText.x).toBeCloseTo(40 * scale);
-    expect(bottomText.y).toBeCloseTo(40 - (selectionHeight - 40) * (scale - 1));
-    expect(bottomText.fontSize).toBeCloseTo(28 * scale);
+    expect(bottomText.x).toBeCloseTo(
+      selectionLeft + (bottomTextStart.x - selectionLeft) * scale,
+    );
+    expect(bottomText.y).toBeCloseTo(
+      selectionBottom - (selectionBottom - bottomTextStart.y) * scale,
+    );
+    expect(bottomText.fontSize).toBeCloseTo(bottomTextStart.fontSize * scale);
     expect(bottomText.angle).toEqual(0);
   });
 

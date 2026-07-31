@@ -1032,6 +1032,7 @@ describe("aligning", () => {
       y: 140,
       width: 60,
       height: 20,
+      textAlign: "left",
       containerId: container.id,
       groupIds: [groupId],
     });

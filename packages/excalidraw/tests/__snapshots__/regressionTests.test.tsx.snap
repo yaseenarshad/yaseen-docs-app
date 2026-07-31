@@ -15116,7 +15116,7 @@ exports[`regression tests > updates fontSize & fontFamily appState > [end of tes
 
 exports[`regression tests > updates fontSize & fontFamily appState > [end of test] number of elements 1`] = `0`;
 
-exports[`regression tests > updates fontSize & fontFamily appState > [end of test] number of renders 1`] = `5`;
+exports[`regression tests > updates fontSize & fontFamily appState > [end of test] number of renders 1`] = `6`;
 
 exports[`regression tests > updates fontSize & fontFamily appState > [end of test] redo stack 1`] = `[]`;
 

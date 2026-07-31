@@ -62,8 +62,12 @@ describe("actionStyles", () => {
     UI.clickOnTestId("color-blue");
     // Fill style
     fireEvent.click(screen.getByTitle("Cross-hatch"));
-    // Stroke width
-    fireEvent.click(screen.getByTitle("Bold"));
+    // Exact vector stroke width
+    const strokeWidth = screen.getByTestId("linear-stroke-width-input");
+    fireEvent.change(strokeWidth, {
+      target: { value: STROKE_WIDTH.bold.toString() },
+    });
+    fireEvent.blur(strokeWidth);
     // Stroke style
     fireEvent.click(screen.getByTitle("Dotted"));
     // Roughness

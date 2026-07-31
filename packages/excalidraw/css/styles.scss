@@ -412,20 +412,39 @@ body.excalidraw-cursor-resize * {
     display: flex;
     gap: 0.35rem;
     left: 50%;
-    max-width: calc(100% - 24rem);
+    max-width: calc(100% - 2rem);
     min-height: 2.75rem;
-    overflow: visible;
+    overflow-x: auto;
+    overflow-y: hidden;
     pointer-events: var(--ui-pointerEvents);
     position: absolute;
+    scrollbar-width: none;
     top: 4.6rem;
     transform: translateX(-50%);
     white-space: nowrap;
+    width: max-content;
     z-index: var(--zIndex-ui-top);
 
+    &::-webkit-scrollbar {
+      display: none;
+    }
+
     fieldset {
+      align-items: center;
       border: 0;
+      display: flex;
       margin: 0;
       padding: 0;
+    }
+
+    legend {
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      height: 1px;
+      overflow: hidden;
+      position: absolute;
+      white-space: nowrap;
+      width: 1px;
     }
 
     .context-fieldset,

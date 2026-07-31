@@ -23,14 +23,6 @@ import { render, togglePopover } from "../tests/test-utils";
 
 import { actionChangeFontFamily } from "./actionProperties";
 
-const openContextualProperties = (label: string) => {
-  const trigger = document.querySelector<HTMLElement>(
-    `.contextual-properties-toolbar [aria-label="${label}"]`,
-  );
-  expect(trigger).not.toBeNull();
-  togglePopover(label);
-};
-
 describe("element locking", () => {
   beforeEach(async () => {
     await render(<Excalidraw handleKeyboardGlobally={true} />);
@@ -67,7 +59,6 @@ describe("element locking", () => {
         currentItemBackgroundColor: color,
         currentItemFillStyle: "hachure",
       });
-      openContextualProperties("More shape properties");
       const hachureFillButton = queryByTestId(document.body, `fill-hachure`);
 
       expect(hachureFillButton).toHaveClass("active");
@@ -227,7 +218,6 @@ describe("element locking", () => {
       API.setElements([rect]);
       API.setSelectedElements([rect]);
 
-      openContextualProperties("More shape properties");
       const crossHatchButton = queryByTestId(document.body, `fill-cross-hatch`);
       expect(crossHatchButton).toHaveClass("active");
     });
@@ -566,7 +556,6 @@ describe("element locking", () => {
         document.querySelector(".contextual-properties-toolbar"),
       ).not.toBeNull();
       expect(queryByTestId(document.body, "font-family-code")).toBeNull();
-      openContextualProperties("Common selection properties");
       expect(queryByTestId(document.body, "strokeWidth-thin")).toBeNull();
     });
 
@@ -637,9 +626,8 @@ describe("element locking", () => {
       API.setElements([image]);
       API.setSelectedElements([image]);
 
-      openContextualProperties("More image properties");
       const roundEdges = document.querySelector<HTMLInputElement>(
-        '.contextual-properties-toolbar__popover label[title="Round"] input',
+        '.contextual-properties-toolbar label[title="Round"] input',
       );
       const opacity = queryByTestId(
         document.body,
@@ -666,7 +654,6 @@ describe("element locking", () => {
       API.setElements([rect]);
       API.setSelectedElements([rect]);
 
-      openContextualProperties("More shape properties");
       const crossHatchButton = queryByTestId(document.body, `fill-cross-hatch`);
       expect(crossHatchButton).toBe(null);
     });
@@ -703,7 +690,6 @@ describe("element locking", () => {
       API.setElements([rect, freedraw]);
       API.setSelectedElements([rect, freedraw]);
 
-      openContextualProperties("Common selection properties");
       expect(queryByTestId(document.body, `strokeWidth-medium`)).toBeChecked();
     });
 
@@ -719,7 +705,6 @@ describe("element locking", () => {
       API.setElements([rect, freedraw]);
       API.setSelectedElements([rect, freedraw]);
 
-      openContextualProperties("Common selection properties");
       const boldStrokeWidthButton = queryByTestId(
         document.body,
         `strokeWidth-bold`,
@@ -983,7 +968,6 @@ describe("element locking", () => {
       expect(
         queryByTestId(document.body, "linear-stroke-width-input"),
       ).toBeNull();
-      openContextualProperties("Common selection properties");
       expect(queryByTestId(document.body, "strokeWidth-thin")).not.toBeNull();
     });
 
@@ -997,13 +981,6 @@ describe("element locking", () => {
         expect(
           queryByTestId(document.body, "linear-stroke-width-input"),
         ).toBeNull();
-        if (type !== "image") {
-          openContextualProperties(
-            type === "freedraw"
-              ? "More shape properties"
-              : "Common selection properties",
-          );
-        }
         expect(queryByTestId(document.body, "strokeWidth-thin")).not.toBeNull();
       },
     );
@@ -1086,7 +1063,6 @@ describe("element locking", () => {
         document.querySelector(".contextual-properties-toolbar"),
       ).not.toBeNull();
       expect(queryByTestId(document.body, "font-family-code")).toBeNull();
-      openContextualProperties("Common selection properties");
       expect(queryByTestId(document.body, "strokeWidth-medium")).toBeNull();
     });
   });

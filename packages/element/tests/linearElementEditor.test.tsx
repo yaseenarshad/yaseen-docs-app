@@ -1028,6 +1028,7 @@ describe("Test Linear Elements", () => {
         x: 0,
         y: 0,
         text: wrapText(text, font, getBoundTextMaxWidth(container, null)),
+        textAlign: "left",
         containerId: container.id,
         width: 30,
         height: 20,
@@ -1432,6 +1433,7 @@ describe("Test Linear Elements", () => {
       const text = API.createElement({
         type: "text",
         text: "Hello Excalidraw",
+        textAlign: "left",
       });
       expect(text.x).toBe(0);
       expect(text.y).toBe(0);
@@ -1495,10 +1497,10 @@ describe("Test Linear Elements", () => {
       let arrow = h.elements[0] as ExcalidrawLinearElement;
       createBoundTextElement(DEFAULT_TEXT, arrow);
       let label = h.elements[1] as ExcalidrawTextElementWithContainer;
+      const labelStart = { x: label.x, y: label.y };
       expect(arrow.x).toBe(20);
       expect(arrow.y).toBe(20);
-      expect(label.x).toBe(0);
-      expect(label.y).toBe(0);
+      expect(labelStart).toEqual({ x: 0, y: 0 });
       mouse.reset();
       mouse.select(arrow);
       mouse.select(label);
@@ -1510,8 +1512,7 @@ describe("Test Linear Elements", () => {
       label = h.elements[1] as ExcalidrawTextElementWithContainer;
       expect(arrow.x).toBe(80);
       expect(arrow.y).toBe(100);
-      expect(label.x).toBe(0);
-      expect(label.y).toBe(0);
+      expect({ x: label.x, y: label.y }).toEqual(labelStart);
     });
   });
 

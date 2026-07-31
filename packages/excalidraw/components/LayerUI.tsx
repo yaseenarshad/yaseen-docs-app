@@ -594,16 +594,14 @@ const LayerUI = ({
           >
             {renderWelcomeScreen && <tunnels.WelcomeScreenCenterTunnel.Out />}
             {renderFixedSideContainer()}
-            {defaultUIEnabled &&
-              editorInterface.formFactor === "desktop" &&
-              !appState.viewModeEnabled && (
-                <ContextualPropertiesToolbar
-                  appState={appState}
-                  elementsMap={app.scene.getNonDeletedElementsMap()}
-                  renderAction={actionManager.renderAction}
-                  app={app}
-                />
-              )}
+            {defaultUIEnabled && !appState.viewModeEnabled && (
+              <ContextualPropertiesToolbar
+                appState={appState}
+                elementsMap={app.scene.getNonDeletedElementsMap()}
+                renderAction={actionManager.renderAction}
+                app={app}
+              />
+            )}
             <Footer
               appState={appState}
               actionManager={actionManager}

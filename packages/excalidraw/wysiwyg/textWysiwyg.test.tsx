@@ -49,6 +49,18 @@ unmountComponent();
 const tab = "    ";
 const mouse = new Pointer("mouse");
 
+const selectFontFamily = (title: string) => {
+  (globalThis as any).ResizeObserver =
+    (globalThis as any).ResizeObserver ||
+    class ResizeObserver {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+  fireEvent.click(screen.getByTestId("font-family-show-fonts"));
+  fireEvent.click(screen.getByTitle(title));
+};
+
 const exitTextEditorAndAssertSelection = async ({
   editor,
   selectedIds,
@@ -271,7 +283,7 @@ describe("textWysiwyg", () => {
       const text = h.elements[0] as ExcalidrawTextElement;
 
       expect(editor).not.toBe(null);
-      expect(text.x).toBe(96);
+      expect(text.x + text.width / 2).toBe(96);
       expect(text.y).toBe(72);
     });
 
@@ -900,7 +912,7 @@ describe("textWysiwyg", () => {
       );
       Keyboard.exitTextEditor(textarea);
 
-      expect(textarea.style.width).toBe("792px");
+      expect(textarea.style.width).toBe("1000px");
       expect(h.elements[0].width).toBe(1000);
     });
   });
@@ -1287,7 +1299,7 @@ describe("textWysiwyg", () => {
 
       expect(text.fontFamily).toEqual(FONT_FAMILY.Excalifont);
 
-      fireEvent.click(screen.getByTitle(/code/i));
+      selectFontFamily("Comic Shanns");
 
       expect(
         (h.elements[1] as ExcalidrawTextElementWithContainer).fontFamily,
@@ -1713,14 +1725,16 @@ describe("textWysiwyg", () => {
       mouse.select(rectangle);
       Keyboard.keyPress(KEYS.ENTER);
 
-      fireEvent.click(screen.getByTitle(/code/i));
+      selectFontFamily("Comic Shanns");
 
       expect(
         (h.elements[1] as ExcalidrawTextElementWithContainer).fontFamily,
       ).toEqual(FONT_FAMILY["Comic Shanns"]);
       expect(getOriginalContainerHeightFromCache(rectangle.id)).toBe(75);
 
-      fireEvent.click(screen.getByTitle(/Very large/i));
+      const fontSize = screen.getByLabelText("Exact font size");
+      fireEvent.change(fontSize, { target: { value: "36" } });
+      fireEvent.blur(fontSize);
       expect(
         (h.elements[1] as ExcalidrawTextElementWithContainer).fontSize,
       ).toEqual(36);
@@ -1741,7 +1755,7 @@ describe("textWysiwyg", () => {
       mouse.select(rectangle);
       Keyboard.keyPress(KEYS.ENTER);
 
-      fireEvent.click(screen.getByTitle(/code/i));
+      selectFontFamily("Comic Shanns");
       expect(
         (h.elements[1] as ExcalidrawTextElementWithContainer).fontFamily,
       ).toEqual(FONT_FAMILY["Comic Shanns"]);
@@ -1749,7 +1763,7 @@ describe("textWysiwyg", () => {
         (h.elements[1] as ExcalidrawTextElementWithContainer).lineHeight,
       ).toEqual(1.25);
 
-      fireEvent.click(screen.getByTitle(/normal/i));
+      selectFontFamily("Nunito");
       expect(
         (h.elements[1] as ExcalidrawTextElementWithContainer).fontFamily,
       ).toEqual(FONT_FAMILY.Nunito);
@@ -1939,7 +1953,7 @@ describe("textWysiwyg", () => {
           updated: 1,
           version: 2,
           width: 610,
-          x: 15,
+          x: -285,
           y: 12.5,
         }),
       );

@@ -537,16 +537,18 @@ export const ContextualPropertiesToolbar = ({
           {renderAction("changeStrokeColor", { contextToolbar: true })}
           <ContextualToolbarDivider />
           {renderAction("changeStrokeWidth", { contextToolbar: true })}
-          <ContextualToolbarDivider />
-          <ContextualToolbarPopover
-            label="More image properties"
-            icon={adjustmentsIcon}
-          >
-            <div className="selected-shape-actions">
-              {predicates.roundness && renderAction("changeRoundness")}
-              {predicates.opacity && renderAction("changeOpacity")}
-            </div>
-          </ContextualToolbarPopover>
+          {predicates.roundness && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeRoundness", { contextToolbar: true })}
+            </>
+          )}
+          {predicates.opacity && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeOpacity", { contextToolbar: true })}
+            </>
+          )}
           <ContextualToolbarDivider />
           <ImageBackgroundRemovalAction
             app={app}
@@ -574,26 +576,83 @@ export const ContextualPropertiesToolbar = ({
               })}
             </>
           )}
-          <ContextualToolbarDivider />
-          <ContextualToolbarPopover
-            label="More shape properties"
-            icon={adjustmentsIcon}
-          >
-            <div className="selected-shape-actions">
-              {predicates.fill && renderAction("changeFillStyle")}
-              {predicates.strokeWidth &&
-                !isExclusiveVectorStrokeTarget &&
-                renderAction("changeStrokeWidth")}
-              {predicates.freedrawMode && renderAction("changeFreedrawMode")}
-              {predicates.strokeStyle && renderAction("changeStrokeStyle")}
-              {predicates.sloppiness && renderAction("changeSloppiness")}
-              {predicates.roundness && renderAction("changeRoundness")}
-              {predicates.arrowType && renderAction("changeArrowType")}
-              {predicates.arrowheads && renderAction("changeArrowhead")}
-              {predicates.opacity && renderAction("changeOpacity")}
-              {hasSmartShape && renderAction("changeSmartShape")}
-            </div>
-          </ContextualToolbarPopover>
+          {predicates.fill && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeFillStyle", { contextToolbar: true })}
+            </>
+          )}
+          {predicates.strokeWidth && !isExclusiveVectorStrokeTarget && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeStrokeWidth", { contextToolbar: true })}
+            </>
+          )}
+          {predicates.freedrawMode && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeFreedrawMode", { contextToolbar: true })}
+            </>
+          )}
+          {predicates.strokeStyle && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeStrokeStyle", { contextToolbar: true })}
+            </>
+          )}
+          {predicates.sloppiness && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeSloppiness", { contextToolbar: true })}
+            </>
+          )}
+          {predicates.roundness && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeRoundness", { contextToolbar: true })}
+            </>
+          )}
+          {predicates.arrowType && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeArrowType", { contextToolbar: true })}
+            </>
+          )}
+          {predicates.arrowheads && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeArrowhead", { contextToolbar: true })}
+            </>
+          )}
+          {predicates.text && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeFontFamily", { contextToolbar: true })}
+              {renderAction("changeFontSize", { contextToolbar: true })}
+              {renderAction("changeTextStyle", { contextToolbar: true })}
+              {renderAction("changeLineHeight", { contextToolbar: true })}
+              {predicates.textAlign &&
+                renderAction("changeTextAlign", { contextToolbar: true })}
+            </>
+          )}
+          {predicates.verticalAlign && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeVerticalAlign", { contextToolbar: true })}
+            </>
+          )}
+          {predicates.opacity && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeOpacity", { contextToolbar: true })}
+            </>
+          )}
+          {hasSmartShape && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeSmartShape", { contextToolbar: true })}
+            </>
+          )}
         </>
       )}
       {isGeneralSelectionTarget && (
@@ -608,49 +667,86 @@ export const ContextualPropertiesToolbar = ({
               })}
             </>
           )}
-          <ContextualToolbarDivider />
-          <ContextualToolbarPopover
-            label="Common selection properties"
-            icon={adjustmentsIcon}
-          >
-            <div className="selected-shape-actions">
-              {targetElements.every((element) => hasBackground(element.type)) &&
-                predicates.fill &&
-                renderAction("changeFillStyle")}
-              {targetElements.every((element) =>
-                hasStrokeWidth(element.type),
-              ) &&
-                renderAction(
-                  isExclusiveVectorStrokeTarget
-                    ? "changeVectorStrokeWidth"
-                    : "changeStrokeWidth",
-                )}
-              {targetElements.every((element) =>
-                hasStrokeStyle(element.type),
-              ) && renderAction("changeStrokeStyle")}
-              {targetElements.every((element) =>
-                hasFreedrawMode(element.type),
-              ) && renderAction("changeFreedrawMode")}
-              {targetElements.every((element) =>
-                canChangeRoundness(element.type),
-              ) && renderAction("changeRoundness")}
-              {targetElements.every((element) =>
-                canHaveArrowheads(element.type),
-              ) && (
-                <>
-                  {renderAction("changeArrowType")}
-                  {renderAction("changeArrowhead")}
-                </>
+          {targetElements.every((element) => hasBackground(element.type)) &&
+            predicates.fill && (
+              <>
+                <ContextualToolbarDivider />
+                {renderAction("changeFillStyle", { contextToolbar: true })}
+              </>
+            )}
+          {targetElements.every((element) => hasStrokeWidth(element.type)) && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction(
+                isExclusiveVectorStrokeTarget
+                  ? "changeVectorStrokeWidth"
+                  : "changeStrokeWidth",
+                { contextToolbar: true },
               )}
-              {predicates.opacity && renderAction("changeOpacity")}
-              {predicates.align && (
-                <AlignFieldset
-                  renderAction={renderAction}
-                  showDistribute={predicates.distribute}
-                />
-              )}
-            </div>
-          </ContextualToolbarPopover>
+            </>
+          )}
+          {targetElements.every((element) => hasStrokeStyle(element.type)) && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeStrokeStyle", { contextToolbar: true })}
+              {renderAction("changeSloppiness", { contextToolbar: true })}
+            </>
+          )}
+          {targetElements.every((element) => hasFreedrawMode(element.type)) && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeFreedrawMode", { contextToolbar: true })}
+            </>
+          )}
+          {targetElements.every((element) =>
+            canChangeRoundness(element.type),
+          ) && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeRoundness", { contextToolbar: true })}
+            </>
+          )}
+          {targetElements.every((element) =>
+            canHaveArrowheads(element.type),
+          ) && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeArrowType", { contextToolbar: true })}
+              {renderAction("changeArrowhead", { contextToolbar: true })}
+            </>
+          )}
+          {predicates.text && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeFontFamily", { contextToolbar: true })}
+              {renderAction("changeFontSize", { contextToolbar: true })}
+              {renderAction("changeTextStyle", { contextToolbar: true })}
+              {renderAction("changeLineHeight", { contextToolbar: true })}
+              {predicates.textAlign &&
+                renderAction("changeTextAlign", { contextToolbar: true })}
+            </>
+          )}
+          {predicates.verticalAlign && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeVerticalAlign", { contextToolbar: true })}
+            </>
+          )}
+          {predicates.opacity && (
+            <>
+              <ContextualToolbarDivider />
+              {renderAction("changeOpacity", { contextToolbar: true })}
+            </>
+          )}
+          {predicates.align && (
+            <>
+              <ContextualToolbarDivider />
+              <AlignFieldset
+                renderAction={renderAction}
+                showDistribute={predicates.distribute}
+              />
+            </>
+          )}
         </>
       )}
     </Island>

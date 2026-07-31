@@ -40,20 +40,25 @@ describe("Test LanguageList", () => {
 
     // select rectangle tool to show properties menu
     UI.clickTool("rectangle");
-    // english lang should display `thin` label
-    expect(screen.queryByTitle(/thin/i)).not.toBeNull();
+    // English should display the unlocalized Architect roughness label.
+    expect(screen.queryByTitle(/^architect$/i)).not.toBeNull();
     fireEvent.click(document.querySelector(".dropdown-menu-button")!);
 
     fireEvent.change(document.querySelector(".dropdown-select__language")!, {
       target: { value: TEST_LANG_CODE },
     });
-    // switching to French, `thin` label should no longer exist
-    await waitFor(() => expect(screen.queryByTitle(/thin/i)).toBeNull());
+    // Switching to French replaces the English label.
+    await waitFor(() => {
+      expect(screen.queryByTitle(/^architect$/i)).toBeNull();
+      expect(screen.queryByTitle(/architecte/i)).not.toBeNull();
+    });
     // reset language
     fireEvent.change(document.querySelector(".dropdown-select__language")!, {
       target: { value: defaultLang.code },
     });
     // switching back to English
-    await waitFor(() => expect(screen.queryByTitle(/thin/i)).not.toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByTitle(/^architect$/i)).not.toBeNull(),
+    );
   });
 });

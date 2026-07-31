@@ -262,7 +262,7 @@ describe("adding elements to frames", () => {
       (element) => element.id !== offsetFrame.id,
     );
 
-    expect(createdText?.x).toBe(0);
+    expect(createdText!.x + createdText!.width / 2).toBe(0);
     expect(createdText?.y).toBe(0);
     expect(createdText?.frameId).toBe(null);
   });
