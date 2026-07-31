@@ -1112,7 +1112,7 @@ describe("element locking", () => {
           backgroundColor: DEFAULT_ELEMENT_BACKGROUND_PICKS[1],
           fontSize: 130,
         }),
-        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 32 },
+        roundness: { type: ROUNDNESS.PROPORTIONAL_RADIUS, value: 32 },
       } as NonDeleted<ExcalidrawTextElement>;
       API.setElements([text]);
       API.setSelectedElements([text]);
