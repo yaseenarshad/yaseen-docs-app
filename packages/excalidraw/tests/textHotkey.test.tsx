@@ -1,8 +1,14 @@
 import React from "react";
 import { vi } from "vitest";
 
-import { KEYS } from "@excalidraw/common";
+import { CANVAS_SEARCH_TAB, DEFAULT_SIDEBAR, KEYS } from "@excalidraw/common";
 
+import type {
+  ExcalidrawTextElement,
+  NonDeleted,
+} from "@excalidraw/element/types";
+
+import { actionTextAutoResize } from "../actions/actionTextAutoResize";
 import { Excalidraw } from "../index";
 import { getNormalizedZoom } from "../scene";
 
@@ -315,5 +321,274 @@ describe("direct T text entry", () => {
     expect(h.state.activeTool.type).toBe("text");
     expect(h.state.editingTextElement).toBe(null);
     expect(h.elements.filter((element) => !element.isDeleted)).toHaveLength(0);
+  });
+});
+
+describe("S text fit-to-content shortcut", () => {
+  const fixedText = (
+    overrides: Partial<ExcalidrawTextElement> = {},
+  ): NonDeleted<ExcalidrawTextElement> =>
+    ({
+      ...API.createElement({
+        type: "text",
+        id: "fixed-text",
+        x: 100,
+        y: 100,
+        width: 300,
+        height: 80,
+        text: "Fit this text\nto its content",
+      }),
+      originalText: "Fit this text to its content",
+      autoResize: false,
+      ...overrides,
+    } as NonDeleted<ExcalidrawTextElement>);
+
+  beforeEach(async () => {
+    mouse.reset();
+    await render(<Excalidraw handleKeyboardGlobally={true} />);
+    API.setElements([]);
+  });
+
+  it.each([
+    {
+      textAlign: "left" as const,
+      anchor: (text: ExcalidrawTextElement) => text.x,
+    },
+    {
+      textAlign: "center" as const,
+      anchor: (text: ExcalidrawTextElement) => text.x + text.width / 2,
+    },
+    {
+      textAlign: "right" as const,
+      anchor: (text: ExcalidrawTextElement) => text.x + text.width,
+    },
+  ])(
+    "fits one selected fixed-width text and preserves its $textAlign anchor",
+    ({ textAlign, anchor }) => {
+      const text = fixedText({
+        textAlign,
+        angle: (Math.PI / 7) as ExcalidrawTextElement["angle"],
+        strokeColor: "#e03131",
+        backgroundColor: "#a5d8ff",
+        groupIds: ["group"],
+        frameId: "frame",
+      });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+      const anchorBefore = anchor(text);
+
+      Keyboard.keyPress(KEYS.S);
+
+      const fitted = h.elements[0] as ExcalidrawTextElement;
+      expect(fitted).toMatchObject({
+        id: text.id,
+        autoResize: true,
+        text: text.originalText,
+        originalText: text.originalText,
+        textAlign,
+        angle: text.angle,
+        strokeColor: text.strokeColor,
+        backgroundColor: text.backgroundColor,
+        groupIds: text.groupIds,
+        frameId: text.frameId,
+      });
+      expect(fitted.width).not.toBe(text.width);
+      expect(anchor(fitted)).toBeCloseTo(anchorBefore, 4);
+      expect(h.state.selectedElementIds).toEqual({ [text.id]: true });
+    },
+  );
+
+  it("creates one undoable edit and restores it on redo", async () => {
+    const text = API.createElement({
+      type: "text",
+      id: "history-text",
+      x: 100,
+      y: 100,
+      width: 300,
+      text: "History text wraps across its fixed width",
+    });
+    API.setElements([text]);
+    API.setSelectedElements([text]);
+    UI.resize(text, "e", [-80, 0]);
+    const fixed = h.elements[0] as ExcalidrawTextElement;
+    expect(fixed.autoResize).toBe(false);
+    const undoEntriesBefore = API.getUndoStack().length;
+
+    Keyboard.keyPress(KEYS.S);
+
+    await waitFor(() => {
+      expect((h.elements[0] as ExcalidrawTextElement).autoResize).toBe(true);
+      expect(API.getUndoStack()).toHaveLength(undoEntriesBefore + 1);
+    });
+
+    Keyboard.undo();
+    await waitFor(() => {
+      expect(h.elements[0]).toMatchObject({
+        id: text.id,
+        autoResize: false,
+        width: fixed.width,
+        height: fixed.height,
+      });
+    });
+
+    Keyboard.redo();
+    await waitFor(() => {
+      expect(h.elements[0]).toMatchObject({
+        id: text.id,
+        autoResize: true,
+        originalText: text.originalText,
+      });
+    });
+  });
+
+  it("is a no-op for ineligible selections and modified S keys", () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class ResizeObserver {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    const fixed = fixedText();
+    const autoSized = fixedText({ id: "auto", autoResize: true });
+    const bound = fixedText({ id: "bound", containerId: "container" });
+    const cases = [
+      { elements: [fixed], selected: [] },
+      { elements: [autoSized], selected: [autoSized] },
+      { elements: [bound], selected: [bound] },
+      { elements: [fixed, autoSized], selected: [fixed, autoSized] },
+    ];
+
+    for (const { elements, selected } of cases) {
+      API.setElements(elements);
+      API.setSelectedElements(selected);
+      const undoEntriesBefore = API.getUndoStack().length;
+      const before = h.elements.map((element) => ({
+        id: element.id,
+        autoResize: element.type === "text" ? element.autoResize : undefined,
+        width: element.width,
+        height: element.height,
+      }));
+
+      Keyboard.keyPress(KEYS.S);
+
+      expect(
+        h.elements.map((element) => ({
+          id: element.id,
+          autoResize: element.type === "text" ? element.autoResize : undefined,
+          width: element.width,
+          height: element.height,
+        })),
+      ).toEqual(before);
+      expect(API.getUndoStack()).toHaveLength(undoEntriesBefore);
+    }
+
+    API.setElements([fixed]);
+    API.setSelectedElements([fixed]);
+    for (const init of [
+      { ctrlKey: true },
+      { altKey: true },
+      { metaKey: true },
+      { shiftKey: true },
+    ]) {
+      expect(
+        actionTextAutoResize.keyTest?.(
+          new KeyboardEvent("keydown", { key: KEYS.S, ...init }),
+          h.state,
+          h.elements,
+        ),
+      ).toBe(false);
+    }
+    expect((h.elements[0] as ExcalidrawTextElement).autoResize).toBe(false);
+  });
+
+  it("suppresses S in non-canvas and conflicting interaction contexts", () => {
+    const text = fixedText();
+    API.setElements([text]);
+    API.setSelectedElements([text]);
+    const input = document.createElement("input");
+    const textarea = document.createElement("textarea");
+    const editable = document.createElement("div");
+    editable.contentEditable = "true";
+    document.body.append(input, textarea, editable);
+
+    fireEvent.keyDown(input, { key: KEYS.S });
+    fireEvent.keyDown(textarea, { key: KEYS.S });
+    fireEvent.keyDown(editable, { key: KEYS.S });
+
+    const conflictingStates = [
+      { name: "text editing", state: { editingTextElement: text } },
+      {
+        name: "dialog",
+        state: { openDialog: { name: "help" } as const },
+      },
+      {
+        name: "search",
+        state: {
+          openSidebar: {
+            name: DEFAULT_SIDEBAR.name,
+            tab: CANVAS_SEARCH_TAB,
+          },
+        },
+      },
+      { name: "view mode", state: { viewModeEnabled: true } },
+      { name: "element creation", state: { newElement: text } },
+      { name: "selection drag", state: { selectionElement: text } },
+      {
+        name: "element drag",
+        state: { selectedElementsAreBeingDragged: true },
+      },
+      { name: "resize", state: { isResizing: true } },
+      { name: "rotation", state: { isRotating: true } },
+    ];
+
+    const keyEvent = new KeyboardEvent("keydown", { key: KEYS.S });
+    for (const { name, state } of conflictingStates) {
+      const appState = {
+        ...h.state,
+        editingTextElement: null,
+        openDialog: null,
+        openPopup: null,
+        openSidebar: null,
+        viewModeEnabled: false,
+        newElement: null,
+        selectionElement: null,
+        selectedElementsAreBeingDragged: false,
+        isResizing: false,
+        isRotating: false,
+        ...state,
+      };
+      expect({
+        [name]: actionTextAutoResize.keyTest?.(keyEvent, appState, h.elements),
+      }).toEqual({ [name]: false });
+    }
+
+    expect(
+      actionTextAutoResize.keyTest?.(
+        keyEvent,
+        { ...h.state, openPopup: "elementStroke" },
+        h.elements,
+      ),
+    ).toBe(false);
+
+    input.remove();
+    textarea.remove();
+    editable.remove();
+  });
+
+  it("leaves lowercase s available inside the WYSIWYG text editor", async () => {
+    const text = fixedText();
+    API.setElements([text]);
+    API.setSelectedElements([text]);
+    mouse.doubleClickAt(text.x + text.width / 2, text.y + text.height / 2);
+    const editor = await getTextEditor();
+
+    fireEvent.keyDown(editor, { key: KEYS.S });
+    updateTextEditor(editor, `${text.originalText}s`);
+
+    expect(h.state.editingTextElement?.id).toBe(text.id);
+    expect((h.elements[0] as ExcalidrawTextElement).autoResize).toBe(false);
+    expect(editor.value).toBe(`${text.originalText}s`);
   });
 });

@@ -1,4 +1,9 @@
-import { getFontString } from "@excalidraw/common";
+import {
+  CANVAS_SEARCH_TAB,
+  DEFAULT_SIDEBAR,
+  getFontString,
+  KEYS,
+} from "@excalidraw/common";
 
 import {
   getTextAnchorRatios,
@@ -84,5 +89,34 @@ export const actionTextAutoResize = register({
       ),
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     };
+  },
+  keyTest: (event, appState, elements) => {
+    const selectedElements = getSelectedElements(elements, appState);
+    const target = selectedElements[0];
+    const isSearchOpen =
+      appState.openSidebar?.name === DEFAULT_SIDEBAR.name &&
+      appState.openSidebar.tab === CANVAS_SEARCH_TAB;
+
+    return (
+      event.key.toLowerCase() === KEYS.S &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.metaKey &&
+      !event.shiftKey &&
+      selectedElements.length === 1 &&
+      isTextElement(target) &&
+      target.autoResize === false &&
+      target.containerId === null &&
+      !appState.viewModeEnabled &&
+      !appState.editingTextElement &&
+      !appState.openDialog &&
+      !appState.openPopup &&
+      !isSearchOpen &&
+      !appState.newElement &&
+      !appState.selectionElement &&
+      !appState.selectedElementsAreBeingDragged &&
+      !appState.isResizing &&
+      !appState.isRotating
+    );
   },
 });
