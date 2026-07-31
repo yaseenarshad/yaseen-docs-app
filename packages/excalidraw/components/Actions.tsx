@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Popover } from "radix-ui";
 
 import {
@@ -457,6 +457,9 @@ export const ContextualPropertiesToolbar = ({
       className="contextual-properties-toolbar"
       padding={1}
       data-prevent-outside-click
+      data-viewport-ui="top"
+      role="toolbar"
+      aria-label="Element properties"
     >
       {isTextTarget && (
         <>
@@ -464,18 +467,18 @@ export const ContextualPropertiesToolbar = ({
             Text color
           </span>
           {renderAction("changeStrokeColor", { contextToolbar: true })}
-          <div className="contextual-properties-toolbar__divider" />
+          <ContextualToolbarDivider />
           <div className="contextual-properties-toolbar__font">
             <span>{fontFamilyName}</span>
             {renderAction("changeFontFamily", { contextToolbar: true })}
           </div>
-          <div className="contextual-properties-toolbar__divider" />
+          <ContextualToolbarDivider />
           {renderAction("changeFontSize", { contextToolbar: true })}
-          <div className="contextual-properties-toolbar__divider" />
+          <ContextualToolbarDivider />
           {renderAction("changeTextStyle", { contextToolbar: true })}
-          <div className="contextual-properties-toolbar__divider" />
+          <ContextualToolbarDivider />
           {renderAction("changeTextAlign", { contextToolbar: true })}
-          <div className="contextual-properties-toolbar__divider" />
+          <ContextualToolbarDivider />
           {renderAction("changeLineHeight", { contextToolbar: true })}
         </>
       )}
@@ -483,9 +486,9 @@ export const ContextualPropertiesToolbar = ({
         <>
           <span className="contextual-properties-toolbar__label">Border</span>
           {renderAction("changeStrokeColor", { contextToolbar: true })}
-          <div className="contextual-properties-toolbar__divider" />
+          <ContextualToolbarDivider />
           {renderAction("changeStrokeWidth", { contextToolbar: true })}
-          <div className="contextual-properties-toolbar__divider" />
+          <ContextualToolbarDivider />
           <ImageBackgroundRemovalAction
             app={app}
             targetElements={targetElements}
@@ -493,6 +496,70 @@ export const ContextualPropertiesToolbar = ({
         </>
       )}
     </Island>
+  );
+};
+
+const ContextualToolbarDivider = () => (
+  <div className="contextual-properties-toolbar__divider" aria-hidden="true" />
+);
+
+export const ContextualToolbarPopover = ({
+  label,
+  icon,
+  children,
+}: {
+  label: string;
+  icon: ReactNode;
+  children: ReactNode;
+}) => {
+  const { container } = useExcalidrawContainer();
+
+  return (
+    <Popover.Root>
+      <Tooltip label={label}>
+        <Popover.Trigger asChild>
+          <button
+            type="button"
+            className="contextual-properties-toolbar__popover-trigger"
+            aria-label={label}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+          >
+            {icon}
+          </button>
+        </Popover.Trigger>
+      </Tooltip>
+      <Popover.Portal container={container}>
+        <Popover.Content
+          className={clsx(PROPERTIES_CLASSES, "focus-visible-none")}
+          data-prevent-outside-click
+          side="bottom"
+          align="center"
+          sideOffset={8}
+          collisionBoundary={container ?? undefined}
+          onPointerDown={(event) => event.stopPropagation()}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          onCloseAutoFocus={(event) => event.preventDefault()}
+          style={{ zIndex: "var(--zIndex-ui-styles-popup)" }}
+        >
+          <Island
+            className="contextual-properties-toolbar__popover"
+            padding={3}
+          >
+            {children}
+          </Island>
+          <Popover.Arrow
+            width={20}
+            height={10}
+            style={{
+              fill: "var(--popup-bg-color)",
+              filter: "drop-shadow(rgba(0, 0, 0, 0.05) 0px 3px 2px)",
+            }}
+          />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 };
 

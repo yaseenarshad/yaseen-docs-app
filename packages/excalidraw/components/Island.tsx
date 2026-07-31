@@ -16,6 +16,8 @@ type IslandProps = {
   /** identifies the surface so `getViewportOffsets` can reserve space for
    * it while hidden (see {@link ViewportUIName}) */
   "data-viewport-ui-name"?: ViewportUIName;
+  role?: React.AriaRole;
+  "aria-label"?: string;
 };
 
 export const Island = React.forwardRef<HTMLDivElement, IslandProps>(
@@ -27,6 +29,8 @@ export const Island = React.forwardRef<HTMLDivElement, IslandProps>(
       style,
       "data-viewport-ui": viewportUI,
       "data-viewport-ui-name": viewportUIName,
+      role,
+      "aria-label": ariaLabel,
     },
     ref,
   ) => (
@@ -35,6 +39,8 @@ export const Island = React.forwardRef<HTMLDivElement, IslandProps>(
       style={{ "--padding": padding, ...style }}
       data-viewport-ui={viewportUI}
       data-viewport-ui-name={viewportUIName}
+      role={role}
+      aria-label={ariaLabel}
       ref={ref}
     >
       {children}
