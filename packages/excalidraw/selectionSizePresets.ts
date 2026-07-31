@@ -3,6 +3,7 @@ import {
   CaptureUpdateAction,
   deepCopyElement,
   getCommonBoundingBox,
+  isBoundToContainer,
   isTextElement,
   resizeMultipleElements,
 } from "@excalidraw/element";
@@ -103,11 +104,21 @@ export const actionResizeSelectionToPreset = register<{
       includeBoundTextElement: true,
       includeElementsInFrames: true,
     });
-    if (!selectedElements.length) {
+    if (
+      !selectedElements.length ||
+      selectedElements.some((element) => element.locked)
+    ) {
       return false;
     }
 
-    const bounds = getCommonBoundingBox(selectedElements);
+    const resizeTargets = selectedElements.filter(
+      (element) => !isBoundToContainer(element),
+    );
+    if (!resizeTargets.length) {
+      return false;
+    }
+
+    const bounds = getCommonBoundingBox(resizeTargets);
     const longestEdge = Math.max(bounds.width, bounds.height);
     const targetLongestEdge = getSelectionSizePreset(
       value.key,
@@ -124,7 +135,7 @@ export const actionResizeSelectionToPreset = register<{
         .map((element) => [element.id, deepCopyElement(element)]),
     );
     resizeMultipleElements(
-      selectedElements,
+      resizeTargets,
       app.scene.getNonDeletedElementsMap(),
       "se",
       app.scene,

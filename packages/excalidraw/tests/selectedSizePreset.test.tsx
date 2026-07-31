@@ -2,6 +2,7 @@ import React from "react";
 
 import { CANVAS_SEARCH_TAB, DEFAULT_SIDEBAR } from "@excalidraw/common";
 import { getCommonBoundingBox } from "@excalidraw/element";
+import { pointFrom } from "@excalidraw/math";
 
 import {
   getSelectionSizePreset,
@@ -133,6 +134,217 @@ describe("selected-element size presets", () => {
     ]);
   });
 
+  it.each([
+    { zoom: 0.25, label: "25%" },
+    { zoom: 1, label: "100%" },
+    { zoom: 2, label: "200%" },
+    { zoom: 4, label: "400%" },
+  ])(
+    "preserves rotation and hidden Diamond geometry at $label zoom",
+    ({ zoom }) => {
+      const diamond = API.createElement({
+        type: "diamond",
+        x: 100,
+        y: 80,
+        width: 240,
+        height: 120,
+        angle: Math.PI / 6,
+      });
+      API.setElements([diamond]);
+      API.setSelectedElements([diamond]);
+      API.setAppState({ zoom: { value: zoom as any } });
+
+      Keyboard.keyPress("4");
+
+      const resized = h.app.scene.getElement(diamond.id)!;
+      const bounds = getCommonBoundingBox([resized]);
+      expect(Math.max(bounds.width, bounds.height)).toBeCloseTo(128 / zoom, 4);
+      expect(resized.angle).toBeCloseTo(Math.PI / 6);
+      expect(resized.type).toBe("diamond");
+    },
+  );
+
+  it("preserves line/arrow point geometry and bindings while scaling their unit", () => {
+    const start = API.createElement({
+      type: "rectangle",
+      id: "start",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      boundElements: [{ id: "arrow", type: "arrow" }],
+    });
+    const end = API.createElement({
+      type: "ellipse",
+      id: "end",
+      x: 300,
+      y: 100,
+      width: 100,
+      height: 100,
+      boundElements: [{ id: "arrow", type: "arrow" }],
+    });
+    const arrow = API.createElement({
+      type: "arrow",
+      id: "arrow",
+      x: 100,
+      y: 50,
+      width: 200,
+      height: 100,
+      points: [pointFrom(0, 0), pointFrom(100, 100), pointFrom(200, 0)],
+      startBinding: {
+        elementId: start.id,
+        fixedPoint: [1, 0.5],
+        mode: "orbit",
+      },
+      endBinding: {
+        elementId: end.id,
+        fixedPoint: [0, 0.5],
+        mode: "orbit",
+      },
+    });
+    const line = API.createElement({
+      type: "line",
+      x: 100,
+      y: 220,
+      width: 200,
+      height: 80,
+      points: [pointFrom(0, 0), pointFrom(80, 80), pointFrom(200, 20)],
+    });
+    const elements = [start, arrow, end, line];
+    const pointRatios = (element: typeof arrow | typeof line) =>
+      element.points.map(([x, y]) => [
+        element.width ? x / element.width : 0,
+        element.height ? y / element.height : 0,
+      ]);
+    const arrowRatios = pointRatios(arrow);
+    const lineRatios = pointRatios(line);
+    const startBinding = arrow.startBinding;
+    const endBinding = arrow.endBinding;
+    API.setElements(elements);
+    API.setSelectedElements(elements);
+
+    Keyboard.keyPress("4");
+
+    const resizedElements = elements.map(
+      (element) => h.app.scene.getElement(element.id)!,
+    );
+    expect(
+      Math.max(
+        getCommonBoundingBox(resizedElements).width,
+        getCommonBoundingBox(resizedElements).height,
+      ),
+    ).toBeCloseTo(128);
+    const resizedArrow = h.app.scene.getElement(arrow.id)! as typeof arrow;
+    const resizedLine = h.app.scene.getElement(line.id)! as typeof line;
+    pointRatios(resizedArrow).forEach((point, index) => {
+      expect(point[0]).toBeCloseTo(arrowRatios[index][0]);
+      expect(point[1]).toBeCloseTo(arrowRatios[index][1]);
+    });
+    pointRatios(resizedLine).forEach((point, index) => {
+      expect(point[0]).toBeCloseTo(lineRatios[index][0]);
+      expect(point[1]).toBeCloseTo(lineRatios[index][1]);
+    });
+    expect(resizedArrow.startBinding).toEqual(startBinding);
+    expect(resizedArrow.endBinding).toEqual(endBinding);
+    expect(h.app.scene.getElement(start.id)?.boundElements).toEqual([
+      { id: arrow.id, type: "arrow" },
+    ]);
+    expect(h.app.scene.getElement(end.id)?.boundElements).toEqual([
+      { id: arrow.id, type: "arrow" },
+    ]);
+  });
+
+  it("preserves a bound container/text relationship through native scaling", () => {
+    const [container, text] = API.createTextContainer();
+    if (container.type !== "rectangle" || text.type !== "text") {
+      throw new Error("expected a rectangle with bound text");
+    }
+    API.setElements([container, text]);
+    API.setSelectedElements([container]);
+    const beforeFontSize = text.fontSize;
+    const expectedScale = 96 / Math.max(container.width, container.height);
+
+    Keyboard.keyPress("3");
+
+    const resizedContainer = h.app.scene.getElement(container.id)!;
+    const resizedText = h.app.scene.getElement(text.id)!;
+    if (resizedText.type !== "text") {
+      throw new Error("expected bound text to remain text");
+    }
+    const resizedBounds = getCommonBoundingBox([resizedContainer, resizedText]);
+    expect(Math.max(resizedBounds.width, resizedBounds.height)).toBeCloseTo(96);
+    expect(resizedContainer.boundElements).toEqual([
+      { type: "text", id: text.id },
+    ]);
+    expect(resizedText.containerId).toBe(container.id);
+    expect(resizedText.fontSize).toBeCloseTo(beforeFontSize * expectedScale);
+  });
+
+  it("preserves image crop metadata and aspect ratio through native scaling", () => {
+    const baseImage = API.createElement({
+      type: "image",
+      x: 20,
+      y: 30,
+      width: 200,
+      height: 100,
+    });
+    const image = {
+      ...baseImage,
+      crop: {
+        x: 20,
+        y: 10,
+        width: 160,
+        height: 80,
+        naturalWidth: 400,
+        naturalHeight: 200,
+      },
+    } as typeof baseImage;
+    const crop = image.crop;
+    const aspectRatio = image.width / image.height;
+    API.setElements([image]);
+    API.setSelectedElements([image]);
+
+    Keyboard.keyPress("3");
+
+    const resized = h.app.scene.getElement(image.id)!;
+    expect(Math.max(resized.width, resized.height)).toBeCloseTo(96);
+    expect(resized.width / resized.height).toBeCloseTo(aspectRatio);
+    expect((resized as typeof image).crop).toEqual(crop);
+  });
+
+  it("resizes frame contents and embeds while preserving frame membership", () => {
+    const frame = API.createElement({
+      type: "frame",
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 300,
+    });
+    const embed = API.createElement({
+      type: "embeddable",
+      x: 50,
+      y: 50,
+      width: 200,
+      height: 100,
+      frameId: frame.id,
+    });
+    API.setElements([frame, embed]);
+    API.setSelectedElements([frame]);
+    const embedAspectRatio = embed.width / embed.height;
+
+    Keyboard.keyPress("3");
+
+    const resizedFrame = h.app.scene.getElement(frame.id)!;
+    const resizedEmbed = h.app.scene.getElement(embed.id)!;
+    const resizedBounds = getCommonBoundingBox([resizedFrame, resizedEmbed]);
+    expect(Math.max(resizedBounds.width, resizedBounds.height)).toBeCloseTo(96);
+    expect(resizedEmbed.frameId).toBe(frame.id);
+    expect(resizedEmbed.type).toBe("embeddable");
+    expect(resizedEmbed.width / resizedEmbed.height).toBeCloseTo(
+      embedAspectRatio,
+    );
+  });
+
   it("does nothing without a selection and ignores modified digits", () => {
     const rectangle = API.createElement({
       type: "rectangle",
@@ -167,6 +379,48 @@ describe("selected-element size presets", () => {
     Keyboard.keyPress("1");
 
     expect(h.app.scene.getElement(locked.id)).toMatchObject(locked);
+  });
+
+  it("protects the whole resize unit when a selected frame contains a locked member", () => {
+    const frame = API.createElement({
+      type: "frame",
+      width: 300,
+      height: 200,
+    });
+    const lockedChild = API.createElement({
+      type: "rectangle",
+      x: 50,
+      y: 50,
+      width: 100,
+      height: 60,
+      frameId: frame.id,
+      locked: true,
+    });
+    API.setElements([frame, lockedChild]);
+    API.setSelectedElements([frame]);
+    const undoEntriesBefore = API.getUndoStack().length;
+    const before = {
+      frame: {
+        x: frame.x,
+        y: frame.y,
+        width: frame.width,
+        height: frame.height,
+      },
+      lockedChild: {
+        x: lockedChild.x,
+        y: lockedChild.y,
+        width: lockedChild.width,
+        height: lockedChild.height,
+      },
+    };
+
+    Keyboard.keyPress("1");
+
+    expect(h.app.scene.getElement(frame.id)).toMatchObject(before.frame);
+    expect(h.app.scene.getElement(lockedChild.id)).toMatchObject(
+      before.lockedChild,
+    );
+    expect(API.getUndoStack()).toHaveLength(undoEntriesBefore);
   });
 
   it("requires canvas keyboard ownership and respects search", () => {
@@ -207,10 +461,15 @@ describe("selected-element size presets", () => {
       width: rectangle.get().width,
       height: rectangle.get().height,
     };
+    const undoEntriesBefore = API.getUndoStack().length;
 
     Keyboard.keyPress("1");
     const resized = h.app.scene.getElement(rectangle.id)!;
     expect(Math.max(resized.width, resized.height)).toBeCloseTo(48);
+    expect(API.getUndoStack()).toHaveLength(undoEntriesBefore + 1);
+
+    Keyboard.keyPress("1");
+    expect(API.getUndoStack()).toHaveLength(undoEntriesBefore + 1);
 
     Keyboard.undo();
     await act(async () => {});
