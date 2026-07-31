@@ -322,10 +322,10 @@ export const changeFontSize = (
         let newElement: ExcalidrawTextElement = newElementWith(oldElement, {
           fontSize: newFontSize,
           roundness:
-            oldElement.containerId === null &&
-            oldElement.roundness?.type === ROUNDNESS.ADAPTIVE_RADIUS
+            oldElement.containerId === null && oldElement.roundness
               ? {
                   ...oldElement.roundness,
+                  type: ROUNDNESS.ADAPTIVE_RADIUS,
                   value: scaleTextBackgroundRadiusForFontSize(
                     oldElement.roundness.value ??
                       getTextBackgroundRadiusForFontSize(oldElement.fontSize),
