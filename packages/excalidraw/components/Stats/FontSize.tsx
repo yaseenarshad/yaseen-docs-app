@@ -1,5 +1,6 @@
 import {
   getBoundTextElement,
+  getScaledTextRoundness,
   redrawTextBoundingBox,
 } from "@excalidraw/element";
 import { hasBoundTextElement, isTextElement } from "@excalidraw/element";
@@ -67,6 +68,7 @@ const handleFontSizeChange: DragInputCallbackType<
     if (nextFontSize) {
       scene.mutateElement(latestElement, {
         fontSize: nextFontSize,
+        roundness: getScaledTextRoundness(origElement, nextFontSize),
       });
       redrawTextBoundingBox(
         latestElement,

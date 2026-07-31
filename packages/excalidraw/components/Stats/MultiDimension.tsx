@@ -5,6 +5,7 @@ import { MIN_WIDTH_OR_HEIGHT } from "@excalidraw/common";
 import {
   getElementsInResizingFrame,
   getNonDeletedElements,
+  getScaledTextRoundness,
   isFrameLikeElement,
   replaceAllElementsInFrame,
   updateBoundElements,
@@ -69,7 +70,13 @@ const getResizedUpdates = (
     y,
     ...rescalePointsInElement(origElement, nextWidth, nextHeight, false),
     ...(isTextElement(origElement)
-      ? { fontSize: origElement.fontSize * scale }
+      ? {
+          fontSize: origElement.fontSize * scale,
+          roundness: getScaledTextRoundness(
+            origElement,
+            origElement.fontSize * scale,
+          ),
+        }
       : {}),
   };
 };
@@ -100,6 +107,7 @@ const resizeElementInGroup = (
     if (latestBoundTextElement && isTextElement(latestBoundTextElement)) {
       scene.mutateElement(latestBoundTextElement, {
         fontSize: newFontSize,
+        roundness: getScaledTextRoundness(boundTextElement, newFontSize),
       });
       handleBindTextResize(
         latestElement,

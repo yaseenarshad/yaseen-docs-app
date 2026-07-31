@@ -40,6 +40,7 @@ import {
   handleBindTextResize,
   getBoundTextMaxWidth,
   computeBoundTextPosition,
+  getScaledTextRoundness,
 } from "./textElement";
 import {
   getMinTextElementWidth,
@@ -342,6 +343,7 @@ export const resizeSingleTextElement = (
 
     scene.mutateElement(element, {
       fontSize: metrics.size,
+      roundness: getScaledTextRoundness(origElement, metrics.size),
       width: metricsWidth,
       height: nextHeight,
       x: newOrigin.x,
@@ -1339,6 +1341,7 @@ export const resizeMultipleElements = (
       > & {
         points?: ExcalidrawLinearElement["points"];
         fontSize?: ExcalidrawTextElement["fontSize"];
+        roundness?: ExcalidrawTextElement["roundness"];
         scale?: ExcalidrawImageElement["scale"];
         boundTextFontSize?: ExcalidrawTextElement["fontSize"];
         startBinding?: ExcalidrawElbowArrowElement["startBinding"];
@@ -1435,6 +1438,7 @@ export const resizeMultipleElements = (
           return;
         }
         update.fontSize = metrics.size;
+        update.roundness = getScaledTextRoundness(orig, metrics.size);
       }
 
       const boundTextElement = originalElementsMap.get(

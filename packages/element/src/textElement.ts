@@ -2,7 +2,9 @@ import {
   ARROW_LABEL_FONT_SIZE_TO_MIN_WIDTH_RATIO,
   ARROW_LABEL_WIDTH_FRACTION,
   BOUND_TEXT_PADDING,
+  CORNER_RADIUS,
   DEFAULT_FONT_SIZE,
+  ROUNDNESS,
   TEXT_ALIGN,
   VERTICAL_ALIGN,
   getVerticalOffset,
@@ -53,6 +55,53 @@ type TextVisualBounds = {
   y: number;
   width: number;
   height: number;
+};
+
+const TEXT_BACKGROUND_RADIUS_BASE_FONT_SIZE = 130;
+
+export const getScaledTextRoundness = (
+  element: ExcalidrawTextElement,
+  nextFontSize: number,
+): ExcalidrawTextElement["roundness"] => {
+  if (element.containerId !== null || !element.roundness) {
+    return element.roundness;
+  }
+
+  const previousFontSize =
+    Number.isFinite(element.fontSize) && element.fontSize > 0
+      ? element.fontSize
+      : nextFontSize;
+  const safeNextFontSize =
+    Number.isFinite(nextFontSize) && nextFontSize > 0
+      ? nextFontSize
+      : previousFontSize;
+  const defaultRadius = Math.min(
+    CORNER_RADIUS.max,
+    Math.max(
+      CORNER_RADIUS.min,
+      Math.round(
+        (CORNER_RADIUS.default * previousFontSize) /
+          TEXT_BACKGROUND_RADIUS_BASE_FONT_SIZE,
+      ),
+    ),
+  );
+  const previousRadius =
+    Number.isFinite(element.roundness.value) &&
+    (element.roundness.value ?? 0) >= 0
+      ? element.roundness.value ?? defaultRadius
+      : defaultRadius;
+
+  return {
+    ...element.roundness,
+    type: ROUNDNESS.ADAPTIVE_RADIUS,
+    value: Math.min(
+      CORNER_RADIUS.max,
+      Math.max(
+        CORNER_RADIUS.min,
+        Math.round((previousRadius * safeNextFontSize) / previousFontSize),
+      ),
+    ),
+  };
 };
 
 let textBackgroundMeasurementContext:
