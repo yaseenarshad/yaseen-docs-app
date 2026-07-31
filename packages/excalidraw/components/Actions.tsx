@@ -529,6 +529,12 @@ export const ContextualPropertiesToolbar = ({
           {renderAction("changeTextAlign", { contextToolbar: true })}
           <ContextualToolbarDivider />
           {renderAction("changeLineHeight", { contextToolbar: true })}
+          <ContextualSecondaryProperties
+            renderAction={renderAction}
+            showBackgroundColor={predicates.backgroundColor}
+            showRoundness={predicates.roundness}
+            showOpacity={predicates.opacity}
+          />
         </>
       )}
       {isImageTarget && (
@@ -783,6 +789,7 @@ export const ContextualToolbarPopover = ({
 
 const ContextualSecondaryProperties = ({
   renderAction,
+  showBackgroundColor = false,
   showFreedrawMode = false,
   showStrokeStyle = false,
   showSloppiness = false,
@@ -790,6 +797,7 @@ const ContextualSecondaryProperties = ({
   showOpacity = false,
 }: {
   renderAction: ActionManager["renderAction"];
+  showBackgroundColor?: boolean;
   showFreedrawMode?: boolean;
   showStrokeStyle?: boolean;
   showSloppiness?: boolean;
@@ -797,6 +805,7 @@ const ContextualSecondaryProperties = ({
   showOpacity?: boolean;
 }) => {
   if (
+    !showBackgroundColor &&
     !showFreedrawMode &&
     !showStrokeStyle &&
     !showSloppiness &&
@@ -814,6 +823,8 @@ const ContextualSecondaryProperties = ({
         icon={DotsHorizontalIcon}
       >
         <div className="contextual-properties-toolbar__secondary-properties">
+          {showBackgroundColor &&
+            renderAction("changeBackgroundColor", { contextToolbar: true })}
           {showFreedrawMode &&
             renderAction("changeFreedrawMode", { contextToolbar: true })}
           {showStrokeStyle &&

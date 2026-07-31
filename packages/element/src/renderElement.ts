@@ -51,6 +51,7 @@ import {
   getContainerElement,
   getBoundTextMaxHeight,
   getBoundTextMaxWidth,
+  getTextBackgroundGeometry,
 } from "./textElement";
 import { getLineHeightInPx } from "./textMeasurements";
 import { getUnderlinedVisualLines } from "./textLineUnderlines";
@@ -520,6 +521,33 @@ const drawElementOnCanvas = (
         }
         context.canvas.setAttribute("dir", rtl ? "rtl" : "ltr");
         context.save();
+
+        const background = getTextBackgroundGeometry(element);
+        if (background) {
+          context.fillStyle = applyDarkModeFilter(
+            element.backgroundColor,
+            renderConfig.theme === THEME.DARK,
+          );
+          if (background.radius > 0 && context.roundRect) {
+            context.beginPath();
+            context.roundRect(
+              background.x,
+              background.y,
+              background.width,
+              background.height,
+              background.radius,
+            );
+            context.fill();
+          } else {
+            context.fillRect(
+              background.x,
+              background.y,
+              background.width,
+              background.height,
+            );
+          }
+        }
+
         context.font = getFontString(element);
         context.fillStyle = applyDarkModeFilter(
           element.strokeColor,

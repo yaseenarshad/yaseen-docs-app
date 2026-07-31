@@ -574,6 +574,17 @@ describe("element locking", () => {
       expect(queryByTestId(document.body, "color-orange")).not.toBeNull();
     });
 
+    it("should keep newly created free text transparent despite the shape fill default", async () => {
+      API.setAppState({ currentItemBackgroundColor: "#ff0000" });
+
+      const text = UI.createElement("text");
+      await UI.editText(text, "Transparent by default");
+
+      expect(window.h.app.scene.getElement(text.id)?.backgroundColor).toBe(
+        COLOR_PALETTE.transparent,
+      );
+    });
+
     it("should apply, undo, and redo a white text quick pick", async () => {
       const text = UI.createElement("text");
       await UI.editText(text, "Undo white");
@@ -854,7 +865,7 @@ describe("element locking", () => {
       });
     });
 
-    it("should move image edges and opacity into the secondary helper", () => {
+    it("should move image rounding and opacity into the secondary helper", () => {
       const image = API.createElement({
         type: "image",
         roundness: null,
@@ -863,31 +874,267 @@ describe("element locking", () => {
       API.setElements([image]);
       API.setSelectedElements([image]);
 
-      expect(
-        document.querySelector(
-          '.contextual-properties-toolbar label[title="Round"] input',
-        ),
-      ).toBeNull();
+      expect(queryByTestId(document.body, "corner-radius-slider")).toBeNull();
       expect(queryByTestId(document.body, "opacity")).toBeNull();
 
       togglePopover("More properties");
 
-      const roundEdges = document.querySelector<HTMLInputElement>(
-        '.contextual-properties-toolbar__popover label[title="Round"] input',
-      );
+      const radiusSlider = queryByTestId(
+        document.body,
+        "corner-radius-slider",
+      ) as HTMLInputElement;
       const opacity = queryByTestId(
         document.body,
         "opacity",
       ) as HTMLInputElement;
-      expect(roundEdges).not.toBeNull();
+      expect(radiusSlider).not.toBeNull();
+      expect(radiusSlider).toHaveAttribute("min", "0");
+      expect(radiusSlider).toHaveAttribute("max", "100");
+      expect(radiusSlider).toHaveAttribute("step", "1");
       expect(opacity).not.toBeNull();
 
-      fireEvent.click(roundEdges!);
+      fireEvent.change(radiusSlider, { target: { value: "64" } });
       fireEvent.change(opacity, { target: { value: "40" } });
 
       expect(API.getSelectedElement()).toMatchObject({
         opacity: 40,
-        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS },
+        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 64 },
+      });
+      expect(window.h.state.currentItemCornerRadius).toBe(64);
+    });
+
+    it("should synchronize corner-radius presets, slider, exact input, and sharp zero", () => {
+      const rectangle = API.createElement({
+        type: "rectangle",
+        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+      });
+      API.setElements([rectangle]);
+      API.setSelectedElements([rectangle]);
+
+      togglePopover("More properties");
+
+      const slider = queryByTestId(
+        document.body,
+        "corner-radius-slider",
+      ) as HTMLInputElement;
+      const input = queryByTestId(
+        document.body,
+        "corner-radius-input",
+      ) as HTMLInputElement;
+
+      expect(slider).toHaveValue("16");
+      expect(input).toHaveValue(16);
+      expect(
+        queryByTestId(document.body, "corner-radius-preset-16"),
+      ).toHaveAttribute("aria-pressed", "true");
+
+      fireEvent.click(queryByTestId(document.body, "corner-radius-preset-64")!);
+      expect(API.getSelectedElement()?.roundness).toEqual({
+        type: ROUNDNESS.ADAPTIVE_RADIUS,
+        value: 64,
+      });
+      expect(slider).toHaveValue("64");
+      expect(input).toHaveValue(64);
+
+      fireEvent.change(input, { target: { value: "140" } });
+      fireEvent.blur(input);
+      expect(API.getSelectedElement()?.roundness).toEqual({
+        type: ROUNDNESS.ADAPTIVE_RADIUS,
+        value: 100,
+      });
+
+      fireEvent.click(queryByTestId(document.body, "corner-radius-preset-0")!);
+      expect(API.getSelectedElement()?.roundness).toBeNull();
+    });
+
+    it("should expose native free-text background and rounding in the text overflow", () => {
+      const backgroundColor = DEFAULT_ELEMENT_BACKGROUND_PICKS[1];
+      const text = API.createElement({
+        type: "text",
+        text: "Native background",
+        strokeColor: "#123456",
+        backgroundColor: COLOR_PALETTE.transparent,
+        roundness: null,
+      });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+
+      expect(queryByTestId(document.body, "corner-radius-slider")).toBeNull();
+      togglePopover("More properties");
+
+      expect(
+        document.querySelector(
+          `.contextual-properties-toolbar__popover [data-testid="color-top-pick-${backgroundColor}"]`,
+        ),
+      ).not.toBeNull();
+      expect(queryByTestId(document.body, "corner-radius-slider")).toBeNull();
+
+      fireEvent.click(
+        document.querySelector(
+          `.contextual-properties-toolbar__popover [data-testid="color-top-pick-${backgroundColor}"]`,
+        )!,
+      );
+
+      expect(API.getSelectedElement()).toMatchObject({
+        strokeColor: "#123456",
+        backgroundColor,
+      });
+      const slider = queryByTestId(
+        document.body,
+        "corner-radius-slider",
+      ) as HTMLInputElement;
+      expect(slider).not.toBeNull();
+
+      fireEvent.change(slider, { target: { value: "48" } });
+      expect(API.getSelectedElement()).toMatchObject({
+        backgroundColor,
+        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 48 },
+      });
+    });
+
+    it("should exclude transparent and bound text from continuous rounding", () => {
+      const transparent = API.createElement({
+        type: "text",
+        text: "Transparent",
+        backgroundColor: COLOR_PALETTE.transparent,
+      });
+      API.setElements([transparent]);
+      API.setSelectedElements([transparent]);
+      togglePopover("More properties");
+      expect(queryByTestId(document.body, "corner-radius-slider")).toBeNull();
+      togglePopover("More properties");
+
+      const [container, boundText] = API.createTextContainer();
+      API.setElements([container, boundText]);
+      API.setSelectedElements([boundText]);
+      if (document.querySelector('[aria-label="More properties"]')) {
+        togglePopover("More properties");
+      }
+      expect(queryByTestId(document.body, "corner-radius-slider")).toBeNull();
+    });
+
+    it("should keep line edges binary and hide numeric rounding for unsupported mixtures", () => {
+      const line = API.createElement({ type: "line", roundness: null });
+      API.setElements([line]);
+      API.setSelectedElements([line]);
+
+      togglePopover("More properties");
+
+      expect(
+        document.querySelector(
+          '.contextual-properties-toolbar__popover label[title="Round"] input',
+        ),
+      ).not.toBeNull();
+      expect(queryByTestId(document.body, "corner-radius-slider")).toBeNull();
+
+      togglePopover("More properties");
+
+      const rectangle = API.createElement({ type: "rectangle" });
+      const ellipse = API.createElement({ type: "ellipse" });
+      API.setElements([rectangle, ellipse]);
+      API.setSelectedElements([rectangle, ellipse]);
+
+      if (document.querySelector('[aria-label="More properties"]')) {
+        togglePopover("More properties");
+      }
+      expect(queryByTestId(document.body, "corner-radius-slider")).toBeNull();
+    });
+
+    it("should use the last chosen radius for subsequently created box shapes", () => {
+      const rectangle = API.createElement({
+        type: "rectangle",
+        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+      });
+      API.setElements([rectangle]);
+      API.setSelectedElements([rectangle]);
+      togglePopover("More properties");
+
+      fireEvent.click(queryByTestId(document.body, "corner-radius-preset-64")!);
+
+      const nextRectangle = UI.createElement("rectangle", {
+        x: 200,
+        y: 200,
+        width: 100,
+        height: 80,
+      });
+
+      expect(nextRectangle.roundness).toEqual({
+        type: ROUNDNESS.ADAPTIVE_RADIUS,
+        value: 64,
+      });
+
+      const ellipse = UI.createElement("ellipse", {
+        x: 400,
+        y: 200,
+        width: 100,
+        height: 80,
+      });
+      expect(ellipse.roundness).toBeNull();
+    });
+
+    it("should apply one radius to a mixed eligible selection", () => {
+      const rectangle = API.createElement({
+        type: "rectangle",
+        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+      });
+      const diamond = API.createElement({
+        type: "diamond",
+        roundness: { type: ROUNDNESS.PROPORTIONAL_RADIUS, value: 64 },
+      });
+      API.setElements([rectangle, diamond]);
+      API.setSelectedElements([rectangle, diamond]);
+      togglePopover("More properties");
+      const slider = queryByTestId(
+        document.body,
+        "corner-radius-slider",
+      ) as HTMLInputElement;
+      expect(slider.style.getPropertyValue("--color-slider-track")).toBe(
+        "var(--button-bg)",
+      );
+
+      fireEvent.change(slider, { target: { value: "48" } });
+
+      expect(
+        [rectangle.id, diamond.id].map(
+          (id) => window.h.app.scene.getElement(id)?.roundness,
+        ),
+      ).toEqual([
+        { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 48 },
+        { type: ROUNDNESS.PROPORTIONAL_RADIUS, value: 48 },
+      ]);
+    });
+
+    it("should undo and redo a corner-radius edit as one history step", () => {
+      const rectangle = UI.createElement("rectangle", {
+        x: 20,
+        y: 20,
+        width: 100,
+        height: 80,
+      });
+      API.setSelectedElements([rectangle.get() as any]);
+      const undoEntriesBefore = API.getUndoStack().length;
+      togglePopover("More properties");
+
+      fireEvent.change(
+        queryByTestId(
+          document.body,
+          "corner-radius-slider",
+        ) as HTMLInputElement,
+        { target: { value: "48" } },
+      );
+
+      expect(window.h.app.scene.getElement(rectangle.id)?.roundness).toEqual({
+        type: ROUNDNESS.ADAPTIVE_RADIUS,
+        value: 48,
+      });
+      expect(API.getUndoStack()).toHaveLength(undoEntriesBefore + 1);
+
+      Keyboard.undo();
+      expect(window.h.app.scene.getElement(rectangle.id)?.roundness).toBeNull();
+      Keyboard.redo();
+      expect(window.h.app.scene.getElement(rectangle.id)?.roundness).toEqual({
+        type: ROUNDNESS.ADAPTIVE_RADIUS,
+        value: 48,
       });
     });
 

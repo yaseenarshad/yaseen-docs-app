@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   COLOR_PALETTE,
+  CORNER_RADIUS,
   DEFAULT_ELEMENT_BACKGROUND_COLOR_PALETTE,
   DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX,
   DEFAULT_ELEMENT_BACKGROUND_PICKS,
@@ -71,6 +72,10 @@ import {
   isLineElement,
   isTextElement,
   isUsingAdaptiveRadius,
+  canChangeCornerRadius,
+  canChangeCornerRadiusForElement,
+  getRequestedCornerRadius,
+  normalizeCornerRadius,
 } from "@excalidraw/element";
 
 import { hasStrokeColor } from "@excalidraw/element";
@@ -482,7 +487,11 @@ export const actionApplySelectedSemanticColor = register<{
     const updatedElements = changeProperty(elements, appState, (element) => {
       const property =
         value.target === "stroke"
-          ? hasStrokeColor(element.type)
+          ? isTextElement(element)
+            ? element.containerId === null
+              ? ("backgroundColor" as const)
+              : null
+            : hasStrokeColor(element.type)
             ? ("strokeColor" as const)
             : null
           : getSemanticColorProperty(element);
@@ -509,7 +518,7 @@ export const actionApplySelectedSemanticColor = register<{
           toast: {
             message:
               value.target === "stroke"
-                ? "The selected elements do not support stroke color shortcuts."
+                ? "The selected elements do not support alternate color shortcuts."
                 : "The selected elements do not support direct color shortcuts.",
             duration: 3000,
           },
@@ -564,9 +573,11 @@ export const actionChangeBackgroundColor = register<
       });
     } else {
       nextElements = changeProperty(elements, appState, (el) =>
-        newElementWith(el, {
-          backgroundColor: value.currentItemBackgroundColor,
-        }),
+        isTextElement(el) && el.containerId !== null
+          ? el
+          : newElementWith(el, {
+              backgroundColor: value.currentItemBackgroundColor,
+            }),
       );
     }
 
@@ -2719,11 +2730,118 @@ export const actionChangeVerticalAlign = register<VerticalAlign>({
   },
 });
 
-export const actionChangeRoundness = register<"sharp" | "round">({
+const CornerRadiusInput = ({
+  value,
+  onChange,
+}: {
+  value: number | null;
+  onChange: (value: number) => void;
+}) => {
+  const [inputValue, setInputValue] = useState(value?.toString() ?? "");
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    setInputValue(value?.toString() ?? "");
+  }, [value]);
+
+  const commit = () => {
+    if (cancelledRef.current) {
+      cancelledRef.current = false;
+      return;
+    }
+
+    const parsed = Number(inputValue);
+    if (!inputValue.trim() || !Number.isFinite(parsed)) {
+      setInputValue(value?.toString() ?? "");
+      return;
+    }
+
+    const nextValue = normalizeCornerRadius(parsed);
+    setInputValue(nextValue.toString());
+    if (nextValue !== value) {
+      onChange(nextValue);
+    }
+  };
+
+  return (
+    <label className="corner-radius-input" data-prevent-outside-click>
+      <input
+        aria-label="Exact corner radius"
+        data-testid="corner-radius-input"
+        type="number"
+        inputMode="numeric"
+        min={CORNER_RADIUS.min}
+        max={CORNER_RADIUS.max}
+        step={CORNER_RADIUS.step}
+        value={inputValue}
+        placeholder="Mixed"
+        onChange={(event) => setInputValue(event.target.value)}
+        onBlur={commit}
+        onWheel={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === KEYS.ENTER) {
+            event.preventDefault();
+            commit();
+          } else if (event.key === KEYS.ESCAPE) {
+            event.preventDefault();
+            cancelledRef.current = true;
+            setInputValue(value?.toString() ?? "");
+            event.currentTarget.blur();
+          }
+        }}
+      />
+      <span>px</span>
+    </label>
+  );
+};
+
+export const actionChangeRoundness = register<number | "sharp" | "round">({
   name: "changeRoundness",
   label: "Change edge roundness",
   trackEvent: false,
   perform: (elements, appState, value) => {
+    if (typeof value === "number") {
+      const selectedElements = getSelectedElements(elements, appState);
+      if (
+        selectedElements.length > 0 &&
+        !selectedElements.every(canChangeCornerRadiusForElement)
+      ) {
+        return false;
+      }
+
+      const radius = normalizeCornerRadius(value);
+      return {
+        elements: changeProperty(elements, appState, (element) => {
+          if (!canChangeCornerRadiusForElement(element)) {
+            return element;
+          }
+
+          return newElementWith(element, {
+            roundness:
+              radius === CORNER_RADIUS.min
+                ? null
+                : {
+                    type:
+                      isTextElement(element) ||
+                      isUsingAdaptiveRadius(element.type)
+                        ? ROUNDNESS.ADAPTIVE_RADIUS
+                        : ROUNDNESS.PROPORTIONAL_RADIUS,
+                    value: radius,
+                  },
+          });
+        }),
+        appState: {
+          ...appState,
+          currentItemCornerRadius: radius,
+        },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      };
+    }
+
     return {
       elements: changeProperty(elements, appState, (el) => {
         if (isElbowArrow(el)) {
@@ -2757,6 +2875,81 @@ export const actionChangeRoundness = register<"sharp" | "round">({
     const hasLegacyRoundness = targetElements.some(
       (el) => el.roundness?.type === ROUNDNESS.LEGACY,
     );
+
+    const hasSelection = targetElements.length > 0;
+    const usesContinuousCornerRadius = hasSelection
+      ? targetElements.every(canChangeCornerRadiusForElement)
+      : canChangeCornerRadius(appState.activeTool.type);
+
+    if (usesContinuousCornerRadius) {
+      const value = getFormValue(
+        elements,
+        app,
+        getRequestedCornerRadius,
+        canChangeCornerRadiusForElement,
+        (selectionExists) =>
+          selectionExists
+            ? null
+            : appState.currentItemCornerRadius ?? CORNER_RADIUS.default,
+      );
+
+      return (
+        <fieldset
+          className="corner-radius-fieldset"
+          data-prevent-outside-click
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <legend>Rounding</legend>
+          <div
+            className="corner-radius-presets"
+            role="group"
+            aria-label="Corner radius presets"
+          >
+            {CORNER_RADIUS.presets.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                aria-label={`Set corner radius to ${preset} px`}
+                aria-pressed={value === preset}
+                data-testid={`corner-radius-preset-${preset}`}
+                onClick={() => updateData(preset)}
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+          <Range
+            ariaLabel="Corner radius"
+            className="corner-radius-range"
+            label={null}
+            value={
+              value ?? appState.currentItemCornerRadius ?? CORNER_RADIUS.default
+            }
+            hasCommonValue={value !== null}
+            onChange={(nextValue) => updateData(nextValue)}
+            min={CORNER_RADIUS.min}
+            max={CORNER_RADIUS.max}
+            step={CORNER_RADIUS.step}
+            minLabel={null}
+            maxLabel={null}
+            preventCanvasInteraction
+            showValueBubble={false}
+            testId="corner-radius-slider"
+          />
+          <CornerRadiusInput
+            value={value}
+            onChange={(nextValue) => updateData(nextValue)}
+          />
+        </fieldset>
+      );
+    }
+
+    if (
+      hasSelection &&
+      !targetElements.every((element) => isLineElement(element))
+    ) {
+      return null;
+    }
 
     return (
       <fieldset>

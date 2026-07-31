@@ -170,6 +170,11 @@ const APP_STATE_STORAGE_CONF = (<
     export: false,
     server: false,
   },
+  currentItemCornerRadius: {
+    browser: true,
+    export: false,
+    server: false,
+  },
   currentItemArrowType: {
     browser: true,
     export: false,

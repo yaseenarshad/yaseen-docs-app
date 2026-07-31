@@ -854,6 +854,7 @@ const convertElementType = <
               type: isUsingAdaptiveRadius(targetType)
                 ? ROUNDNESS.ADAPTIVE_RADIUS
                 : ROUNDNESS.PROPORTIONAL_RADIUS,
+              value: element.roundness.value,
             }
           : element.roundness,
       }),

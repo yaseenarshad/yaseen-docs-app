@@ -6,6 +6,7 @@ import {
   TEXT_ALIGN,
   VERTICAL_ALIGN,
   getFontString,
+  isTransparent,
   isProdEnv,
   invariant,
 } from "@excalidraw/common";
@@ -22,6 +23,7 @@ import { LinearElementEditor } from "./linearElementEditor";
 
 import { measureText } from "./textMeasurements";
 import { wrapText } from "./textWrapping";
+import { getCornerRadius } from "./utils";
 import {
   isBoundToContainer,
   isArrowElement,
@@ -42,6 +44,22 @@ import type {
   ExcalidrawTextElementWithContainer,
   NonDeleted,
 } from "./types";
+
+export const getTextBackgroundGeometry = (element: ExcalidrawTextElement) => {
+  if (element.containerId !== null || isTransparent(element.backgroundColor)) {
+    return null;
+  }
+
+  return {
+    x: 0,
+    y: 0,
+    width: element.width,
+    height: element.height,
+    radius: element.roundness
+      ? getCornerRadius(Math.min(element.width, element.height), element)
+      : 0,
+  };
+};
 
 export const redrawTextBoundingBox = (
   textElement: ExcalidrawTextElement,

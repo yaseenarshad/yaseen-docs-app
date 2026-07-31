@@ -141,6 +141,85 @@ describe("selected-element semantic color hotkeys", () => {
     },
   );
 
+  it.each(Object.entries(SEMANTIC_COLOR_HOTKEYS))(
+    "applies Shift+%s = %s to a free-text background while preserving glyph color",
+    (colorName, hotkey) => {
+      const text = API.createElement({
+        type: "text",
+        text: colorName,
+        strokeColor: "#123456",
+        backgroundColor: COLOR_PALETTE.transparent,
+      });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+      const paletteValue =
+        COLOR_PALETTE[colorName as keyof typeof COLOR_PALETTE];
+      const expectedColor =
+        typeof paletteValue === "string"
+          ? paletteValue
+          : paletteValue[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX];
+
+      Keyboard.withModifierKeys({ shift: true }, () => {
+        Keyboard.keyPress(hotkey.toUpperCase());
+      });
+
+      expect(h.app.scene.getElement(text.id)).toMatchObject({
+        strokeColor: "#123456",
+        backgroundColor: expectedColor,
+      });
+    },
+  );
+
+  it("applies Shift color type-aware across free text and outlined elements", () => {
+    const text = API.createElement({
+      type: "text",
+      text: "Background",
+      strokeColor: "#111111",
+      backgroundColor: COLOR_PALETTE.transparent,
+    });
+    const rectangle = API.createElement({
+      type: "rectangle",
+      strokeColor: "#222222",
+      backgroundColor: "#abcdef",
+    });
+    API.setElements([text, rectangle]);
+    API.setSelectedElements([text, rectangle]);
+
+    Keyboard.withModifierKeys({ shift: true }, () => {
+      Keyboard.keyPress(KEYS.G);
+    });
+
+    expect(h.app.scene.getElement(text.id)).toMatchObject({
+      strokeColor: "#111111",
+      backgroundColor:
+        COLOR_PALETTE.green[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+    });
+    expect(h.app.scene.getElement(rectangle.id)).toMatchObject({
+      strokeColor: COLOR_PALETTE.green[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
+      backgroundColor: "#abcdef",
+    });
+  });
+
+  it("uses Shift+T to clear a free-text background without clearing glyphs", () => {
+    const text = API.createElement({
+      type: "text",
+      text: "Clear background",
+      strokeColor: "#123456",
+      backgroundColor: "#abcdef",
+    });
+    API.setElements([text]);
+    API.setSelectedElements([text]);
+
+    Keyboard.withModifierKeys({ shift: true }, () => {
+      Keyboard.keyPress(KEYS.T);
+    });
+
+    expect(h.app.scene.getElement(text.id)).toMatchObject({
+      strokeColor: "#123456",
+      backgroundColor: COLOR_PALETTE.transparent,
+    });
+  });
+
   it("applies Shift stroke to supported mixed members and skips unsupported members", () => {
     const rectangle = API.createElement({
       type: "rectangle",
@@ -205,7 +284,7 @@ describe("selected-element semantic color hotkeys", () => {
 
     expect(h.state.activeTool.type).toBe("selection");
     expect(h.state.toast?.message).toBe(
-      "The selected elements do not support stroke color shortcuts.",
+      "The selected elements do not support alternate color shortcuts.",
     );
   });
 
@@ -635,14 +714,16 @@ describe("selected-element semantic color hotkeys", () => {
     });
   });
 
-  it("commits a Shift-stroke change as one undoable operation", async () => {
+  it("commits a type-aware Shift color change as one undoable operation", async () => {
     const rectangle = UI.createElement("rectangle");
+    const text = UI.createElement("text", { position: 100 });
+    await UI.editText(text, "Background history");
     const originalFill = rectangle.get().backgroundColor;
     const originalStroke = rectangle.get().strokeColor;
     act(() => {
       h.app.setActiveTool({ type: "selection" });
     });
-    API.setSelectedElements([rectangle.get() as any]);
+    API.setSelectedElements([rectangle.get() as any, text.get() as any]);
 
     Keyboard.withModifierKeys({ shift: true }, () => {
       Keyboard.keyPress(KEYS.R.toUpperCase());
@@ -651,12 +732,21 @@ describe("selected-element semantic color hotkeys", () => {
       backgroundColor: originalFill,
       strokeColor: COLOR_PALETTE.red[DEFAULT_ELEMENT_STROKE_COLOR_INDEX],
     });
+    expect(h.app.scene.getElement(text.id)).toMatchObject({
+      strokeColor: COLOR_PALETTE.black,
+      backgroundColor:
+        COLOR_PALETTE.red[DEFAULT_ELEMENT_BACKGROUND_COLOR_INDEX],
+    });
 
     Keyboard.undo();
     await act(async () => {});
     expect(h.app.scene.getElement(rectangle.id)).toMatchObject({
       backgroundColor: originalFill,
       strokeColor: originalStroke,
+    });
+    expect(h.app.scene.getElement(text.id)).toMatchObject({
+      strokeColor: COLOR_PALETTE.black,
+      backgroundColor: COLOR_PALETTE.transparent,
     });
   });
 

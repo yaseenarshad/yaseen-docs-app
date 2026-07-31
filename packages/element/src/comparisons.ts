@@ -1,4 +1,8 @@
+import { isTransparent } from "@excalidraw/common";
+
 import type { ElementOrToolType } from "@excalidraw/excalidraw/types";
+
+import type { ExcalidrawElement } from "./types";
 
 export const hasBackground = (type: ElementOrToolType) =>
   type === "rectangle" ||
@@ -56,6 +60,19 @@ export const canChangeRoundness = (type: ElementOrToolType) =>
   type === "line" ||
   type === "diamond" ||
   type === "image";
+
+export const canChangeCornerRadius = (type: ElementOrToolType) =>
+  type === "rectangle" ||
+  type === "iframe" ||
+  type === "embeddable" ||
+  type === "diamond" ||
+  type === "image";
+
+export const canChangeCornerRadiusForElement = (element: ExcalidrawElement) =>
+  canChangeCornerRadius(element.type) ||
+  (element.type === "text" &&
+    element.containerId === null &&
+    !isTransparent(element.backgroundColor));
 
 export const toolIsArrow = (type: ElementOrToolType) => type === "arrow";
 
