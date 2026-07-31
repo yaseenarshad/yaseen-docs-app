@@ -1,6 +1,8 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 import { internal } from "./_generated/api";
+import { createAssetDeleteGrant } from "./assetDeletePersistence";
+import { toBoardPreviewSummary } from "./boardPreviewModel";
 import { createDiagramSnapshotIfNeeded } from "./diagramHistory";
 import { hasElementVersionRegression } from "./sceneConflict";
 
@@ -95,6 +97,33 @@ const createRecord = async (
 };
 
 export const toBoardSummary = (diagram: {
+  _id: Id<"diagrams">;
+  slug: string;
+  title: string;
+  visibility: "private" | "unlisted" | "public";
+  shareEnabled: boolean;
+  folderId?: Id<"boardFolders">;
+  createdAt: number;
+  updatedAt: number;
+  previewObjectKey?: string;
+  previewVersion?: number;
+  previewMimeType?: string;
+  previewWidth?: number;
+  previewHeight?: number;
+  previewUpdatedAt?: number;
+}) => ({
+  _id: diagram._id,
+  slug: diagram.slug,
+  title: diagram.title,
+  visibility: diagram.visibility,
+  shareEnabled: diagram.shareEnabled,
+  ...(diagram.folderId ? { folderId: diagram.folderId } : {}),
+  createdAt: diagram.createdAt,
+  updatedAt: diagram.updatedAt,
+  preview: toBoardPreviewSummary(diagram),
+});
+
+const toSharedBoardSummary = (diagram: {
   _id: Id<"diagrams">;
   slug: string;
   title: string;
@@ -273,7 +302,7 @@ export const openSharedBoardRecord = async (
     throw new Error("Board content is missing");
   }
   return {
-    board: toBoardSummary(diagram),
+    board: toSharedBoardSummary(diagram),
     sceneJson: content.sceneJson,
     version: content.version,
     access: "viewer" as const,
@@ -396,20 +425,15 @@ export const removeBoardRecord = async (
       .take(1000),
   ]);
 
-  const objectKeys = assets.flatMap((asset) =>
-    asset.objectKey ? [asset.objectKey] : [],
+  const objectKeys = [
+    ...assets.flatMap((asset) => (asset.objectKey ? [asset.objectKey] : [])),
+    ...(diagram.previewObjectKey ? [diagram.previewObjectKey] : []),
+  ];
+  const assetDeleteToken = await createAssetDeleteGrant(
+    ctx,
+    ownerId,
+    objectKeys,
   );
-  const assetDeleteToken = objectKeys.length > 0 ? makeShareToken() : null;
-  if (assetDeleteToken) {
-    const now = Date.now();
-    await ctx.db.insert("assetDeleteGrants", {
-      token: assetDeleteToken,
-      ownerId,
-      objectKeys,
-      createdAt: now,
-      expiresAt: now + 10 * 60 * 1000,
-    });
-  }
 
   if (content) {
     await ctx.db.delete("diagramContents", content._id);

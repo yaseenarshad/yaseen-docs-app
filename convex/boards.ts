@@ -18,6 +18,7 @@ import {
   saveBoardRecord,
   setBoardSharingRecord,
 } from "./boardPersistence";
+import { boardPreviewSummaryValidator } from "./boardPreviewModel";
 
 const boardSortValidator = v.union(
   v.literal("name-asc"),
@@ -28,7 +29,7 @@ const boardSortValidator = v.union(
   v.literal("modified-asc"),
 );
 
-const boardSummaryValidator = v.object({
+const sharedBoardSummaryValidator = v.object({
   _id: v.id("diagrams"),
   slug: v.string(),
   title: v.string(),
@@ -43,11 +44,22 @@ const boardSummaryValidator = v.object({
   updatedAt: v.number(),
 });
 
-const openedBoardValidator = v.object({
+const boardSummaryValidator = sharedBoardSummaryValidator.extend({
+  preview: boardPreviewSummaryValidator,
+});
+
+const openedOwnedBoardValidator = v.object({
   board: boardSummaryValidator,
   sceneJson: v.string(),
   version: v.number(),
   access: v.union(v.literal("owner"), v.literal("viewer")),
+});
+
+const openedSharedBoardValidator = v.object({
+  board: sharedBoardSummaryValidator,
+  sceneJson: v.string(),
+  version: v.number(),
+  access: v.literal("viewer"),
 });
 
 export const ensureDefault = mutation({
@@ -98,13 +110,13 @@ export const listMinePaginated = query({
 
 export const openMine = query({
   args: { slug: v.string() },
-  returns: v.union(v.null(), openedBoardValidator),
+  returns: v.union(v.null(), openedOwnedBoardValidator),
   handler: async (ctx, args) => await openOwnedBoardRecord(ctx, args.slug),
 });
 
 export const openShared = query({
   args: { shareToken: v.string() },
-  returns: v.union(v.null(), openedBoardValidator),
+  returns: v.union(v.null(), openedSharedBoardValidator),
   handler: async (ctx, args) =>
     await openSharedBoardRecord(ctx, args.shareToken),
 });

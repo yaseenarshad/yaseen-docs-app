@@ -12,8 +12,9 @@ import {
   saveBoardRecord,
   setBoardSharingRecord,
 } from "./boardPersistence";
+import { boardPreviewSummaryValidator } from "./boardPreviewModel";
 
-const diagramSummaryValidator = v.object({
+const sharedDiagramSummaryValidator = v.object({
   _id: v.id("diagrams"),
   slug: v.string(),
   title: v.string(),
@@ -28,11 +29,22 @@ const diagramSummaryValidator = v.object({
   updatedAt: v.number(),
 });
 
-const openedDiagramValidator = v.object({
+const diagramSummaryValidator = sharedDiagramSummaryValidator.extend({
+  preview: boardPreviewSummaryValidator,
+});
+
+const openedOwnedDiagramValidator = v.object({
   diagram: diagramSummaryValidator,
   sceneJson: v.string(),
   version: v.number(),
   access: v.union(v.literal("owner"), v.literal("viewer")),
+});
+
+const openedSharedDiagramValidator = v.object({
+  diagram: sharedDiagramSummaryValidator,
+  sceneJson: v.string(),
+  version: v.number(),
+  access: v.literal("viewer"),
 });
 
 export const ensureDefault = mutation({
@@ -62,7 +74,7 @@ export const listMine = query({
 
 export const openMine = query({
   args: { slug: v.string() },
-  returns: v.union(v.null(), openedDiagramValidator),
+  returns: v.union(v.null(), openedOwnedDiagramValidator),
   handler: async (ctx, args) => {
     const opened = await openOwnedBoardRecord(ctx, args.slug);
     if (!opened) {
@@ -75,7 +87,7 @@ export const openMine = query({
 
 export const openShared = query({
   args: { shareToken: v.string() },
-  returns: v.union(v.null(), openedDiagramValidator),
+  returns: v.union(v.null(), openedSharedDiagramValidator),
   handler: async (ctx, args) => {
     const opened = await openSharedBoardRecord(ctx, args.shareToken);
     if (!opened) {

@@ -23,6 +23,11 @@ import {
   acceptCloudSceneWithoutSave,
   shouldQueueCloudSceneSave,
 } from "./cloudSaveBaseline";
+import {
+  createBoardPreviewImage,
+  getBoardPreviewDelay,
+} from "./boardPreviewGeneration";
+import { publishBoardPreview } from "./boardPreviewPublishing";
 
 import {
   BOARD_SORT_STORAGE_KEY,
@@ -34,6 +39,10 @@ import type { Id } from "../../convex/_generated/dataModel";
 import type { BoardSort } from "./boardOrganizer";
 import type { CloudRouteGeneration } from "./cloudRouteLifecycle";
 import type { CloudRoute } from "./cloudRoutes";
+import type {
+  BoardPreviewImage,
+  BoardPreviewScene,
+} from "./boardPreviewGeneration";
 
 export type CloudSaveStatus =
   | "loading"
@@ -76,12 +85,21 @@ export const useCloudBoard = () => {
   const removeFolderMutation = useMutation(api.boardFolders.remove);
   const createAssetUploadGrant = useMutation(api.boardAssets.createUploadGrant);
   const registerAssetUpload = useMutation(api.boardAssets.registerUpload);
+  const createPreviewUploadGrant = useMutation(
+    api.boardPreviews.createUploadGrant,
+  );
+  const registerPreviewUpload = useMutation(api.boardPreviews.registerUpload);
+  const recordEmptyPreview = useMutation(api.boardPreviews.recordEmpty);
   const versionRef = useRef(0);
   const saveTimerRef = useRef<number | null>(null);
+  const previewTimerRef = useRef<number | null>(null);
+  const previewRequestRef = useRef(0);
+  const lastPreviewStartedAtRef = useRef(new Map<string, number>());
   const pendingSceneRef = useRef<{
     boardId: Id<"diagrams">;
     route: CloudRouteGeneration;
     sceneJson: string;
+    previewScene?: BoardPreviewScene;
   } | null>(null);
   const acceptedSceneRef = useRef<string | null>(null);
   const uploadedFileIdsRef = useRef(new Set<string>());
@@ -143,6 +161,11 @@ export const useCloudBoard = () => {
     if (saveTimerRef.current !== null) {
       window.clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
+    }
+    previewRequestRef.current += 1;
+    if (previewTimerRef.current !== null) {
+      window.clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
     }
     setSaveStatus("loading");
     setErrorMessage(null);
@@ -233,6 +256,89 @@ export const useCloudBoard = () => {
     }
   }, [assets]);
 
+  const scheduleBoardPreview = useCallback(
+    (request: {
+      boardId: Id<"diagrams">;
+      route: CloudRouteGeneration;
+      sourceVersion: number;
+      scene: BoardPreviewScene;
+    }) => {
+      const requestId = ++previewRequestRef.current;
+      if (previewTimerRef.current !== null) {
+        window.clearTimeout(previewTimerRef.current);
+      }
+      const now = Date.now();
+      const lastStartedAt =
+        lastPreviewStartedAtRef.current.get(request.boardId) ?? null;
+      previewTimerRef.current = window.setTimeout(() => {
+        previewTimerRef.current = null;
+        const isCurrent = () =>
+          previewRequestRef.current === requestId &&
+          isCurrentRouteCompletion(request.route, currentRouteRef.current);
+        if (!isCurrent()) {
+          return;
+        }
+        lastPreviewStartedAtRef.current.set(request.boardId, Date.now());
+        void publishBoardPreview(
+          {
+            boardId: request.boardId,
+            sourceVersion: request.sourceVersion,
+            scene: request.scene,
+            isCurrent,
+          },
+          {
+            createImage: createBoardPreviewImage,
+            createUploadGrant: async (args) =>
+              await createPreviewUploadGrant({
+                ...args,
+                boardId: args.boardId as Id<"diagrams">,
+              }),
+            upload: async (token: string, preview: BoardPreviewImage) => {
+              const response = await fetch("/api/assets", {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Content-Type": preview.mimeType,
+                },
+                body: preview.blob,
+              });
+              const body = (await response.json()) as {
+                etag?: string;
+                error?: string;
+              };
+              if (!response.ok || !body.etag) {
+                throw new Error(body.error || "Board preview upload failed");
+              }
+              return { etag: body.etag };
+            },
+            registerUpload: registerPreviewUpload,
+            recordEmpty: async (args) =>
+              await recordEmptyPreview({
+                boardId: args.boardId as Id<"diagrams">,
+                sourceVersion: args.sourceVersion,
+              }),
+            cleanup: async (token: string) => {
+              const response = await fetch("/api/assets", {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (!response.ok) {
+                throw new Error("Board preview cleanup failed");
+              }
+            },
+            onCleanupError: (error) =>
+              console.warn("Could not clean up an old Board preview", error),
+          },
+        ).catch((error) => {
+          if (isCurrent()) {
+            console.warn("Could not generate the saved Board preview", error);
+          }
+        });
+      }, getBoardPreviewDelay(now, lastStartedAt));
+    },
+    [createPreviewUploadGrant, recordEmptyPreview, registerPreviewUpload],
+  );
+
   const flushSave = useCallback(async () => {
     if (!openedBoard || openedBoard.access !== "owner") {
       return true;
@@ -266,6 +372,14 @@ export const useCloudBoard = () => {
       }
       setSaveStatus("saved");
       setErrorMessage(null);
+      if (pending.previewScene) {
+        scheduleBoardPreview({
+          boardId: pending.boardId,
+          route: pending.route,
+          sourceVersion: result.version,
+          scene: pending.previewScene,
+        });
+      }
       return true;
     } catch (cause) {
       if (!isCurrentRouteCompletion(pending.route, currentRouteRef.current)) {
@@ -278,12 +392,12 @@ export const useCloudBoard = () => {
       );
       return false;
     }
-  }, [openedBoard, saveBoard]);
+  }, [openedBoard, saveBoard, scheduleBoardPreview]);
 
   flushSaveRef.current = flushSave;
 
   const queueSave = useCallback(
-    (sceneJson: string) => {
+    (sceneJson: string, previewScene?: BoardPreviewScene) => {
       if (!openedBoard || openedBoard.access !== "owner") {
         return;
       }
@@ -296,11 +410,16 @@ export const useCloudBoard = () => {
         boardId: openedBoard.board._id,
         route: { ...currentRouteRef.current },
         sceneJson,
+        previewScene,
       };
       setSaveStatus("saving");
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
       }
+      if (previewTimerRef.current !== null) {
+        window.clearTimeout(previewTimerRef.current);
+      }
+      previewRequestRef.current += 1;
       saveTimerRef.current = window.setTimeout(() => {
         saveTimerRef.current = null;
         void flushSave();
@@ -331,6 +450,10 @@ export const useCloudBoard = () => {
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
       }
+      if (previewTimerRef.current !== null) {
+        window.clearTimeout(previewTimerRef.current);
+      }
+      previewRequestRef.current += 1;
     },
     [],
   );

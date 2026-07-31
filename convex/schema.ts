@@ -39,6 +39,12 @@ export default defineSchema({
     ),
     shareEnabled: v.boolean(),
     shareToken: v.optional(v.string()),
+    previewObjectKey: v.optional(v.string()),
+    previewVersion: v.optional(v.number()),
+    previewMimeType: v.optional(v.string()),
+    previewWidth: v.optional(v.number()),
+    previewHeight: v.optional(v.number()),
+    previewUpdatedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -101,6 +107,12 @@ export default defineSchema({
     objectKey: v.string(),
     mimeType: v.string(),
     size: v.number(),
+    purpose: v.optional(
+      v.union(v.literal("sceneAsset"), v.literal("boardPreview")),
+    ),
+    sourceVersion: v.optional(v.number()),
+    previewWidth: v.optional(v.number()),
+    previewHeight: v.optional(v.number()),
     createdAt: v.number(),
     expiresAt: v.number(),
   })

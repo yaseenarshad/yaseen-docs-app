@@ -9,6 +9,7 @@
  */
 
 import type * as account from "../account.js";
+import type * as assetDeletePersistence from "../assetDeletePersistence.js";
 import type * as assetPersistence from "../assetPersistence.js";
 import type * as assets from "../assets.js";
 import type * as auth from "../auth.js";
@@ -16,6 +17,9 @@ import type * as boardAssets from "../boardAssets.js";
 import type * as boardFolders from "../boardFolders.js";
 import type * as boardHistory from "../boardHistory.js";
 import type * as boardPersistence from "../boardPersistence.js";
+import type * as boardPreviewModel from "../boardPreviewModel.js";
+import type * as boardPreviewPersistence from "../boardPreviewPersistence.js";
+import type * as boardPreviews from "../boardPreviews.js";
 import type * as boards from "../boards.js";
 import type * as crons from "../crons.js";
 import type * as diagramHistory from "../diagramHistory.js";
@@ -44,6 +48,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   account: typeof account;
+  assetDeletePersistence: typeof assetDeletePersistence;
   assetPersistence: typeof assetPersistence;
   assets: typeof assets;
   auth: typeof auth;
@@ -51,6 +56,9 @@ declare const fullApi: ApiFromModules<{
   boardFolders: typeof boardFolders;
   boardHistory: typeof boardHistory;
   boardPersistence: typeof boardPersistence;
+  boardPreviewModel: typeof boardPreviewModel;
+  boardPreviewPersistence: typeof boardPreviewPersistence;
+  boardPreviews: typeof boardPreviews;
   boards: typeof boards;
   crons: typeof crons;
   diagramHistory: typeof diagramHistory;

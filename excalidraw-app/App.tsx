@@ -996,7 +996,11 @@ const ExcalidrawWrapper = () => {
       !applyingCloudSceneRef.current
     ) {
       cloud.queueAssets(files);
-      cloud.queueSave(serializeAsJSON(elements, appState, files, "database"));
+      cloud.queueSave(serializeAsJSON(elements, appState, files, "database"), {
+        elements: [...elements],
+        appState: { ...appState },
+        files: { ...files },
+      });
     }
 
     // Render the debug scene if the debug canvas is available

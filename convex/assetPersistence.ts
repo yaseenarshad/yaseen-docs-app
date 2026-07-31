@@ -134,6 +134,7 @@ export const createBoardAssetUploadGrant = async (
     objectKey,
     mimeType: args.mimeType,
     size: args.size,
+    purpose: "sceneAsset",
     createdAt: now,
     expiresAt: now + GRANT_LIFETIME_MS,
   });
@@ -153,6 +154,9 @@ export const registerBoardAssetUpload = async (
     .unique();
   if (!grant || grant.ownerId !== ownerId || grant.expiresAt < Date.now()) {
     throw new Error("Upload grant expired");
+  }
+  if (grant.purpose === "boardPreview") {
+    throw new Error("Preview grants cannot register scene assets");
   }
   const diagram = await ctx.db.get("diagrams", grant.diagramId);
   if (!diagram || diagram.ownerId !== ownerId) {
