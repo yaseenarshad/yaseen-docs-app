@@ -8,6 +8,7 @@ import type { ExcalidrawElement } from "@excalidraw/element/types";
 import { actionZoomIn } from "../actions/actionCanvas";
 import { createPasteEvent, serializeAsClipboardJSON } from "../clipboard";
 import { DefaultSidebar, Excalidraw, Footer, MainMenu } from "../index";
+import { getNormalizedZoom } from "../scene";
 
 import { API } from "./helpers/api";
 import { Keyboard, Pointer, UI } from "./helpers/ui";
@@ -803,7 +804,7 @@ describe("Fit board controls", () => {
       h.app.setState({
         scrollX: -10_000,
         scrollY: -10_000,
-        zoom: { value: 1 },
+        zoom: { value: getNormalizedZoom(1) },
       });
     });
     fireEvent.click(fitBoard!);
