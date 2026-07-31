@@ -1,8 +1,12 @@
 import {
+  areSelectedLinesStyled,
   getUnderlinedVisualLines,
   getSelectedLogicalLineRange,
+  normalizeLineStyles,
   normalizeLineUnderlines,
+  remapLineStylesForTextEdit,
   remapLineUnderlinesForTextEdit,
+  toggleSelectedLineStyles,
   toggleSelectedLineUnderlines,
 } from "../src/textLineUnderlines";
 
@@ -66,6 +70,45 @@ describe("text line underlines", () => {
   });
 });
 
+describe("generic logical-line styles", () => {
+  it("normalizes and toggles an independent boolean line style", () => {
+    expect(normalizeLineStyles([true, "invalid", false, true], 3)).toEqual([
+      true,
+    ]);
+
+    const enabled = toggleSelectedLineStyles({
+      text: "Title\nSubtitle\nBody",
+      lineStyles: undefined,
+      selectionStart: 0,
+      selectionEnd: 14,
+      wholeElementStyled: false,
+    });
+
+    expect(enabled).toEqual([true, true]);
+    expect(
+      areSelectedLinesStyled({
+        text: "Title\nSubtitle\nBody",
+        lineStyles: enabled,
+        selectionStart: 0,
+        selectionEnd: 14,
+        wholeElementStyled: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("materializes a whole-element style before disabling one line", () => {
+    expect(
+      toggleSelectedLineStyles({
+        text: "Title\nSubtitle",
+        lineStyles: undefined,
+        selectionStart: 0,
+        selectionEnd: 5,
+        wholeElementStyled: true,
+      }),
+    ).toEqual([false, true]);
+  });
+});
+
 describe("remapLineUnderlinesForTextEdit", () => {
   it("preserves decoration for character edits", () => {
     expect(
@@ -94,6 +137,45 @@ describe("remapLineUnderlinesForTextEdit", () => {
   it("shifts unaffected lines after multiline insertion", () => {
     expect(
       remapLineUnderlinesForTextEdit("Title\nBody", "Intro\nTitle\nBody", [
+        true,
+        false,
+      ]),
+    ).toEqual([true, true]);
+  });
+});
+
+describe("remapLineStylesForTextEdit", () => {
+  it("starts the new right line plain when Enter splits a styled line", () => {
+    expect(
+      remapLineStylesForTextEdit("Title", "Ti\ntle", [true], {
+        newLineStyle: "plain",
+      }),
+    ).toEqual([true]);
+    expect(
+      remapLineStylesForTextEdit("Title", "Title\n", [true], {
+        newLineStyle: "plain",
+      }),
+    ).toEqual([true]);
+  });
+
+  it("lets manually styled blank lines retain their style as text is typed", () => {
+    expect(
+      remapLineStylesForTextEdit("Title\n", "Title\nIdea", [false, true]),
+    ).toEqual([false, true]);
+  });
+
+  it("preserves a style on merge when either source line had it", () => {
+    expect(
+      remapLineStylesForTextEdit("Title\nSubtitle", "TitleSubtitle", [
+        false,
+        true,
+      ]),
+    ).toEqual([true]);
+  });
+
+  it("inherits the receiving line style for multiline paste", () => {
+    expect(
+      remapLineStylesForTextEdit("Title\nBody", "Intro\nTitle\nBody", [
         true,
         false,
       ]),

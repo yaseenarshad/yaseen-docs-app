@@ -268,7 +268,12 @@ export const newTextElement = (
     containerId?: ExcalidrawTextContainer["id"] | null;
     lineHeight?: ExcalidrawTextElement["lineHeight"];
     autoResize?: ExcalidrawTextElement["autoResize"];
+    fontWeight?: ExcalidrawTextElement["fontWeight"];
+    textDecoration?: ExcalidrawTextElement["textDecoration"];
+    strikethrough?: ExcalidrawTextElement["strikethrough"];
+    lineBolds?: ExcalidrawTextElement["lineBolds"];
     lineUnderlines?: ExcalidrawTextElement["lineUnderlines"];
+    lineStrikethroughs?: ExcalidrawTextElement["lineStrikethroughs"];
   } & ElementConstructorOpts,
 ): NonDeleted<ExcalidrawTextElement> => {
   const fontFamily = opts.fontFamily || DEFAULT_FONT_FAMILY;
@@ -282,9 +287,15 @@ export const newTextElement = (
   );
   const textAlign = opts.textAlign || DEFAULT_TEXT_ALIGN;
   const verticalAlign = opts.verticalAlign || DEFAULT_VERTICAL_ALIGN;
+  const logicalLineCount = (opts.originalText ?? text).split("\n").length;
+  const lineBolds = normalizeLineUnderlines(opts.lineBolds, logicalLineCount);
   const lineUnderlines = normalizeLineUnderlines(
     opts.lineUnderlines,
-    (opts.originalText ?? text).split("\n").length,
+    logicalLineCount,
+  );
+  const lineStrikethroughs = normalizeLineUnderlines(
+    opts.lineStrikethroughs,
+    logicalLineCount,
   );
   const offsets = getTextElementPositionOffsets(
     { textAlign, verticalAlign },
@@ -306,7 +317,14 @@ export const newTextElement = (
     originalText: opts.originalText ?? text,
     autoResize: opts.autoResize ?? true,
     lineHeight,
+    ...(opts.fontWeight === "bold" ? { fontWeight: "bold" as const } : {}),
+    ...(opts.textDecoration === "underline"
+      ? { textDecoration: "underline" as const }
+      : {}),
+    ...(opts.strikethrough === true ? { strikethrough: true } : {}),
+    ...(lineBolds ? { lineBolds } : {}),
     ...(lineUnderlines ? { lineUnderlines } : {}),
+    ...(lineStrikethroughs ? { lineStrikethroughs } : {}),
   };
 
   const textElement: NonDeleted<ExcalidrawTextElement> = newElementWith(

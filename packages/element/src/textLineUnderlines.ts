@@ -24,7 +24,7 @@ export const getSelectedLogicalLineRange = (
   };
 };
 
-export const normalizeLineUnderlines = (
+export const normalizeLineStyles = (
   value: unknown,
   lineCount: number,
 ): readonly boolean[] | undefined => {
@@ -41,12 +41,14 @@ export const normalizeLineUnderlines = (
   return normalized.length ? normalized : undefined;
 };
 
-export const areSelectedLinesUnderlined = (args: {
+export const normalizeLineUnderlines = normalizeLineStyles;
+
+export const areSelectedLinesStyled = (args: {
   text: string;
-  lineUnderlines: readonly boolean[] | undefined;
+  lineStyles: readonly boolean[] | undefined;
   selectionStart: number;
   selectionEnd: number;
-  wholeElementUnderlined: boolean;
+  wholeElementStyled: boolean;
 }) => {
   const range = getSelectedLogicalLineRange(
     args.text,
@@ -57,9 +59,59 @@ export const areSelectedLinesUnderlined = (args: {
   return Array.from(
     { length: range.end - range.start + 1 },
     (_, offset) =>
-      args.wholeElementUnderlined ||
-      args.lineUnderlines?.[range.start + offset] === true,
+      args.wholeElementStyled ||
+      args.lineStyles?.[range.start + offset] === true,
   ).every(Boolean);
+};
+
+export const areSelectedLinesUnderlined = (args: {
+  text: string;
+  lineUnderlines: readonly boolean[] | undefined;
+  selectionStart: number;
+  selectionEnd: number;
+  wholeElementUnderlined: boolean;
+}) =>
+  areSelectedLinesStyled({
+    text: args.text,
+    lineStyles: args.lineUnderlines,
+    selectionStart: args.selectionStart,
+    selectionEnd: args.selectionEnd,
+    wholeElementStyled: args.wholeElementUnderlined,
+  });
+
+export const toggleSelectedLineStyles = (args: {
+  text: string;
+  lineStyles: readonly boolean[] | undefined;
+  selectionStart: number;
+  selectionEnd: number;
+  wholeElementStyled: boolean;
+  enabled?: boolean;
+}) => {
+  const lineCount = getLineCount(args.text);
+  const next = args.wholeElementStyled
+    ? Array<boolean>(lineCount).fill(true)
+    : Array.from(
+        { length: lineCount },
+        (_, index) => args.lineStyles?.[index] === true,
+      );
+  const range = getSelectedLogicalLineRange(
+    args.text,
+    args.selectionStart,
+    args.selectionEnd,
+  );
+  const enabled =
+    args.enabled ??
+    !areSelectedLinesStyled({
+      ...args,
+      lineStyles: next,
+      wholeElementStyled: false,
+    });
+
+  for (let index = range.start; index <= range.end; index++) {
+    next[index] = enabled;
+  }
+
+  return normalizeLineStyles(next, lineCount);
 };
 
 export const toggleSelectedLineUnderlines = (args: {
@@ -69,33 +121,15 @@ export const toggleSelectedLineUnderlines = (args: {
   selectionEnd: number;
   wholeElementUnderlined: boolean;
   enabled?: boolean;
-}) => {
-  const lineCount = getLineCount(args.text);
-  const next = args.wholeElementUnderlined
-    ? Array<boolean>(lineCount).fill(true)
-    : Array.from(
-        { length: lineCount },
-        (_, index) => args.lineUnderlines?.[index] === true,
-      );
-  const range = getSelectedLogicalLineRange(
-    args.text,
-    args.selectionStart,
-    args.selectionEnd,
-  );
-  const enabled =
-    args.enabled ??
-    !areSelectedLinesUnderlined({
-      ...args,
-      lineUnderlines: next,
-      wholeElementUnderlined: false,
-    });
-
-  for (let index = range.start; index <= range.end; index++) {
-    next[index] = enabled;
-  }
-
-  return normalizeLineUnderlines(next, lineCount);
-};
+}) =>
+  toggleSelectedLineStyles({
+    text: args.text,
+    lineStyles: args.lineUnderlines,
+    selectionStart: args.selectionStart,
+    selectionEnd: args.selectionEnd,
+    wholeElementStyled: args.wholeElementUnderlined,
+    enabled: args.enabled,
+  });
 
 const getEditWindow = (previousText: string, nextText: string) => {
   let start = 0;
@@ -121,13 +155,22 @@ const getEditWindow = (previousText: string, nextText: string) => {
   return { start, previousEnd, nextEnd };
 };
 
-export const remapLineUnderlinesForTextEdit = (
+export const remapLineStylesForTextEdit = (
   previousText: string,
   nextText: string,
-  lineUnderlines: readonly boolean[] | undefined,
+  lineStyles: readonly boolean[] | undefined,
+  options?: {
+    newLineStyle?: "inherit" | "plain";
+    wholeElementStyled?: boolean;
+  },
 ) => {
-  if (!lineUnderlines?.some(Boolean) || previousText === nextText) {
-    return normalizeLineUnderlines(lineUnderlines, nextText.split("\n").length);
+  const previousLineCount = previousText.split("\n").length;
+  const resolvedLineStyles = options?.wholeElementStyled
+    ? Array<boolean>(previousLineCount).fill(true)
+    : lineStyles;
+
+  if (!resolvedLineStyles?.some(Boolean) || previousText === nextText) {
+    return normalizeLineStyles(resolvedLineStyles, nextText.split("\n").length);
   }
 
   const edit = getEditWindow(previousText, nextText);
@@ -143,21 +186,42 @@ export const remapLineUnderlinesForTextEdit = (
   const nextEndLine = getLogicalLineIndexAtOffset(nextText, edit.nextEnd);
   const previousAffected = Array.from(
     { length: previousEndLine - previousStartLine + 1 },
-    (_, offset) => lineUnderlines[previousStartLine + offset] === true,
+    (_, offset) => resolvedLineStyles[previousStartLine + offset] === true,
   );
   const nextAffectedCount = nextEndLine - nextStartLine + 1;
-  const inherited =
-    nextAffectedCount < previousAffected.length
-      ? previousAffected.some(Boolean)
-      : previousAffected[0] === true;
+  const insertedText = nextText.slice(edit.start, edit.nextEnd);
+  const nextAffected =
+    options?.newLineStyle === "plain" &&
+    nextAffectedCount > 1 &&
+    insertedText.includes("\n")
+      ? [
+          previousAffected[0] === true,
+          ...Array<boolean>(nextAffectedCount - 1).fill(false),
+        ]
+      : Array<boolean>(nextAffectedCount).fill(
+          nextAffectedCount < previousAffected.length
+            ? previousAffected.some(Boolean)
+            : previousAffected[0] === true,
+        );
   const next = [
-    ...lineUnderlines.slice(0, previousStartLine),
-    ...Array<boolean>(nextAffectedCount).fill(inherited),
-    ...lineUnderlines.slice(previousEndLine + 1),
+    ...resolvedLineStyles.slice(0, previousStartLine),
+    ...nextAffected,
+    ...resolvedLineStyles.slice(previousEndLine + 1),
   ];
 
-  return normalizeLineUnderlines(next, nextText.split("\n").length);
+  return normalizeLineStyles(next, nextText.split("\n").length);
 };
+
+export const remapLineUnderlinesForTextEdit = (
+  previousText: string,
+  nextText: string,
+  lineUnderlines: readonly boolean[] | undefined,
+  options?: {
+    newLineStyle?: "inherit" | "plain";
+    wholeElementStyled?: boolean;
+  },
+) =>
+  remapLineStylesForTextEdit(previousText, nextText, lineUnderlines, options);
 
 export const getUnderlinedVisualLines = (args: {
   originalText: string;

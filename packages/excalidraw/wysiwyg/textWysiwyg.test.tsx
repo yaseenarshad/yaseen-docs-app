@@ -654,6 +654,30 @@ describe("textWysiwyg", () => {
       ]);
     });
 
+    it("starts a line created with Enter without inherited line formatting", () => {
+      fireEvent.input(textarea, {
+        target: { value: "Title" },
+      });
+      textarea.setSelectionRange(0, 5);
+      fireEvent.keyDown(textarea, {
+        [KEYS.CTRL_OR_CMD]: true,
+        key: "u",
+        code: CODES.U,
+      });
+      expect((h.elements[0] as ExcalidrawTextElement).lineUnderlines).toEqual([
+        true,
+      ]);
+
+      fireEvent.input(textarea, {
+        target: { value: "Ti\ntle" },
+        inputType: "insertLineBreak",
+      });
+
+      expect((h.elements[0] as ExcalidrawTextElement).lineUnderlines).toEqual([
+        true,
+      ]);
+    });
+
     it("should toggle bullets on the selected lines from the text toolbar", () => {
       fireEvent.input(textarea, {
         target: { value: "First\nSecond\nThird" },

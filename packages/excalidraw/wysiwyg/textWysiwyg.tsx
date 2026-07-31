@@ -40,6 +40,7 @@ import { getLineHeightInPx } from "@excalidraw/element";
 import { getLineWidth } from "@excalidraw/element";
 import {
   getLogicalLineIndexAtOffset,
+  remapLineStylesForTextEdit,
   remapLineUnderlinesForTextEdit,
 } from "@excalidraw/element";
 import { normalizeText } from "@excalidraw/element";
@@ -222,12 +223,22 @@ export const textWysiwyg = ({
    */
   onChange?: (data: {
     nextOriginalText: string;
+    nextFontWeight: ExcalidrawTextElement["fontWeight"];
+    nextTextDecoration: ExcalidrawTextElement["textDecoration"];
+    nextStrikethrough: ExcalidrawTextElement["strikethrough"];
+    nextLineBolds: readonly boolean[] | undefined;
     nextLineUnderlines: readonly boolean[] | undefined;
+    nextLineStrikethroughs: readonly boolean[] | undefined;
   }) => void;
   onSubmit: (data: {
     viaKeyboard: boolean;
     nextOriginalText: string;
+    nextFontWeight: ExcalidrawTextElement["fontWeight"];
+    nextTextDecoration: ExcalidrawTextElement["textDecoration"];
+    nextStrikethrough: ExcalidrawTextElement["strikethrough"];
+    nextLineBolds: readonly boolean[] | undefined;
     nextLineUnderlines: readonly boolean[] | undefined;
+    nextLineStrikethroughs: readonly boolean[] | undefined;
   }) => void;
   getViewportCoords: (x: number, y: number) => [number, number];
   element: ExcalidrawTextElement;
@@ -706,7 +717,7 @@ export const textWysiwyg = ({
       }
     };
 
-    editable.oninput = () => {
+    editable.oninput = (event) => {
       const normalized = normalizeText(editable.value);
       if (editable.value !== normalized) {
         const selectionStart = editable.selectionStart;
@@ -719,15 +730,57 @@ export const textWysiwyg = ({
       const currentElement = app.scene.getElement(
         element.id,
       ) as ExcalidrawTextElement | null;
+      const inputType = (event as InputEvent).inputType;
+      const newLineStyle =
+        inputType === "insertLineBreak" || inputType === "insertParagraph"
+          ? "plain"
+          : "inherit";
+      const nextLineBolds = remapLineStylesForTextEdit(
+        previousEditableValue,
+        editable.value,
+        currentElement?.lineBolds,
+        {
+          newLineStyle,
+          wholeElementStyled: currentElement?.fontWeight === "bold",
+        },
+      );
       const nextLineUnderlines = remapLineUnderlinesForTextEdit(
         previousEditableValue,
         editable.value,
         currentElement?.lineUnderlines,
+        {
+          newLineStyle,
+          wholeElementStyled: currentElement?.textDecoration === "underline",
+        },
+      );
+      const nextLineStrikethroughs = remapLineStylesForTextEdit(
+        previousEditableValue,
+        editable.value,
+        currentElement?.lineStrikethroughs,
+        {
+          newLineStyle,
+          wholeElementStyled: currentElement?.strikethrough === true,
+        },
       );
       previousEditableValue = editable.value;
       onChange({
         nextOriginalText: editable.value,
+        nextFontWeight:
+          newLineStyle === "plain" && currentElement?.fontWeight === "bold"
+            ? "normal"
+            : currentElement?.fontWeight,
+        nextTextDecoration:
+          newLineStyle === "plain" &&
+          currentElement?.textDecoration === "underline"
+            ? "none"
+            : currentElement?.textDecoration,
+        nextStrikethrough:
+          newLineStyle === "plain" && currentElement?.strikethrough === true
+            ? false
+            : currentElement?.strikethrough,
+        nextLineBolds,
         nextLineUnderlines,
+        nextLineStrikethroughs,
       });
     };
   }
@@ -1003,7 +1056,12 @@ export const textWysiwyg = ({
     onSubmit({
       viaKeyboard: submittedViaKeyboard,
       nextOriginalText: editable.value,
+      nextFontWeight: updateElement.fontWeight,
+      nextTextDecoration: updateElement.textDecoration,
+      nextStrikethrough: updateElement.strikethrough,
+      nextLineBolds: updateElement.lineBolds,
       nextLineUnderlines: updateElement.lineUnderlines,
+      nextLineStrikethroughs: updateElement.lineStrikethroughs,
     });
   };
 
