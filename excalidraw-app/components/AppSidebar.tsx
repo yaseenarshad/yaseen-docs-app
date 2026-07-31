@@ -942,6 +942,11 @@ export const AppSidebarLaunchers = ({
         (target instanceof HTMLElement &&
           (target.isContentEditable ||
             target.closest("[contenteditable='true']") !== null));
+      const isActivePanelToggle = tab !== null && activeTab === tab;
+      const isEditableTargetWithinActivePanel =
+        isActivePanelToggle &&
+        target instanceof HTMLElement &&
+        target.closest(".default-sidebar") !== null;
       const appState = excalidrawAPI.getAppState();
       const hasNativeSelection = Boolean(
         window.getSelection() && !window.getSelection()?.isCollapsed,
@@ -969,7 +974,7 @@ export const AppSidebarLaunchers = ({
         event.repeat ||
         event.isComposing ||
         event.keyCode === 229 ||
-        isEditableTarget ||
+        (isEditableTarget && !isEditableTargetWithinActivePanel) ||
         hasNativeSelection ||
         appState.editingTextElement ||
         appState.openDialog ||
@@ -981,7 +986,7 @@ export const AppSidebarLaunchers = ({
 
       event.preventDefault();
       event.stopPropagation();
-      const shouldOpen = activeTab !== tab;
+      const shouldOpen = !isActivePanelToggle;
       excalidrawAPI.toggleSidebar({
         name: "default",
         tab,

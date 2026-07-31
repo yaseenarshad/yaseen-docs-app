@@ -236,6 +236,53 @@ describe("AppSidebarLaunchers", () => {
     },
   );
 
+  it.each([
+    ["b", "boards"],
+    ["c", "components"],
+    ["f", "image-studio"],
+  ] as const)(
+    "closes %s from a writable control inside its active panel",
+    (key, tab) => {
+      const toggleSidebar = vi.fn();
+      const appState = {
+        ...getDefaultAppState(),
+        openSidebar: { name: "default", tab },
+      };
+      render(
+        <UIAppStateContext.Provider value={appState as never}>
+          <div className="default-sidebar">
+            <input aria-label="Active panel input" />
+          </div>
+          <AppSidebarLaunchers
+            excalidrawAPI={
+              {
+                getAppState: () => appState,
+                toggleSidebar,
+              } as unknown as ExcalidrawImperativeAPI
+            }
+          />
+        </UIAppStateContext.Provider>,
+      );
+
+      const event = new KeyboardEvent("keydown", {
+        key,
+        [KEYS.CTRL_OR_CMD]: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      screen
+        .getByRole("textbox", { name: "Active panel input" })
+        .dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(toggleSidebar).toHaveBeenCalledWith({
+        name: "default",
+        tab,
+        force: false,
+      });
+    },
+  );
+
   it("switches directly from one active panel to another shortcut target", () => {
     const toggleSidebar = vi.fn();
     const appState = {
