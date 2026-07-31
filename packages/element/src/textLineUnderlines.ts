@@ -297,7 +297,10 @@ export const getStyledVisualLines = (args: {
         underlined,
         strikethrough,
         font,
-        width: getLineWidth(line.text, font),
+        // Empty text lines still occupy one space of layout width in the
+        // existing text metrics contract. This keeps a new/empty bound text
+        // editor centered and large enough to place the caret.
+        width: getLineWidth(line.text || " ", font),
       });
     }
 

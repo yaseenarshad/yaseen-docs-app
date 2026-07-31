@@ -238,3 +238,21 @@ it("resolves every visual line font and combined logical-line styles", () => {
   ]);
   expect(lines.every((line) => line.width >= 0)).toBe(true);
 });
+
+it("preserves the text metrics width for an empty caret line", () => {
+  const [line] = getStyledVisualLines({
+    originalText: "",
+    regularFont: "20px Assistant" as FontString,
+    boldFont: "bold 20px Assistant" as FontString,
+    maxWidth: Infinity,
+    lineBolds: undefined,
+    lineUnderlines: undefined,
+    lineStrikethroughs: undefined,
+    wholeElementBold: false,
+    wholeElementUnderlined: false,
+    wholeElementStrikethrough: false,
+  });
+
+  expect(line.text).toBe("");
+  expect(line.width).toBeGreaterThan(0);
+});
