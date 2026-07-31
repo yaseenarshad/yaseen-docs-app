@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { DefaultSidebar, Sidebar } from "@excalidraw/excalidraw";
 import {
@@ -20,8 +20,16 @@ import { ImageStudio } from "../image-studio/ImageStudio";
 import "./AppSidebar.scss";
 
 import { SavedComponents } from "./SavedComponents";
+import {
+  BOARD_PREVIEW_DWELL_MS,
+  BoardPreviewOverlay,
+} from "./boardPreviewOverlay";
 
 import type { MouseEvent as ReactMouseEvent } from "react";
+import type {
+  BoardPreviewLoadState,
+  BoardPreviewSummary,
+} from "./boardPreviewOverlay";
 
 import type { BoardSort, BoardSortCategory } from "../cloud/boardOrganizer";
 
@@ -32,6 +40,7 @@ type BoardSummary = {
   folderId?: string;
   createdAt: number;
   updatedAt: number;
+  preview: BoardPreviewSummary;
 };
 
 type BoardFolderSummary = {
@@ -65,6 +74,28 @@ type BoardBrowserProps = {
 type AppSidebarProps = BoardBrowserProps & {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
   canInsertMedia: boolean;
+};
+
+type ActiveBoardPreview = {
+  board: BoardSummary;
+  cacheKey: string;
+  requestId: number;
+  loadState: BoardPreviewLoadState;
+};
+
+const BOARD_PREVIEW_CAPABILITY_QUERY = "(hover: hover) and (pointer: fine)";
+
+const supportsAutomaticBoardPreviews = () =>
+  Boolean(window.matchMedia?.(BOARD_PREVIEW_CAPABILITY_QUERY).matches);
+
+const getBoardPreviewCacheKey = (board: BoardSummary) => {
+  if (board.preview.status === "legacy") {
+    return `${board._id}:legacy`;
+  }
+  if (board.preview.status === "empty") {
+    return `${board._id}:${board.preview.version}:empty`;
+  }
+  return `${board._id}:${board.preview.version}:${board.preview.url}`;
 };
 
 const shouldUseSaveSafeBoardNavigation = (
@@ -131,8 +162,19 @@ export const BoardBrowser = ({
   const [liveMessage, setLiveMessage] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [dragTargetKey, setDragTargetKey] = useState<string | null>(null);
+  const [activePreview, setActivePreview] = useState<ActiveBoardPreview | null>(
+    null,
+  );
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const boardBrowserRef = useRef<HTMLDivElement>(null);
   const moveHandleRefs = useRef(new Map<string, HTMLButtonElement>());
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingPreviewBoardIdRef = useRef<string | null>(null);
+  const previewRequestIdRef = useRef(0);
+  const activePreviewRef = useRef<ActiveBoardPreview | null>(null);
+  const previewCacheRef = useRef(
+    new Map<string, Exclude<BoardPreviewLoadState, "loading">>(),
+  );
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     try {
       return JSON.parse(
@@ -143,6 +185,86 @@ export const BoardBrowser = ({
       return {};
     }
   });
+
+  const closePreview = useCallback(() => {
+    if (previewTimerRef.current !== null) {
+      clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+    pendingPreviewBoardIdRef.current = null;
+    previewRequestIdRef.current += 1;
+    activePreviewRef.current = null;
+    setActivePreview(null);
+  }, []);
+
+  const schedulePreview = useCallback(
+    (board: BoardSummary, pointerType?: string) => {
+      if (
+        !supportsAutomaticBoardPreviews() ||
+        openMenuSlug ||
+        openFolderMenuId ||
+        (pointerType !== undefined && pointerType !== "mouse")
+      ) {
+        return;
+      }
+      if (
+        pendingPreviewBoardIdRef.current === board._id ||
+        activePreviewRef.current?.board._id === board._id
+      ) {
+        return;
+      }
+
+      closePreview();
+      const requestId = previewRequestIdRef.current;
+      pendingPreviewBoardIdRef.current = board._id;
+      previewTimerRef.current = setTimeout(() => {
+        if (
+          previewRequestIdRef.current !== requestId ||
+          pendingPreviewBoardIdRef.current !== board._id
+        ) {
+          return;
+        }
+        previewTimerRef.current = null;
+        pendingPreviewBoardIdRef.current = null;
+        const cacheKey = getBoardPreviewCacheKey(board);
+        const cachedLoadState = previewCacheRef.current.get(cacheKey);
+        const nextPreview: ActiveBoardPreview = {
+          board,
+          cacheKey,
+          requestId,
+          loadState:
+            board.preview.status === "available"
+              ? cachedLoadState ?? "loading"
+              : "loaded",
+        };
+        activePreviewRef.current = nextPreview;
+        setActivePreview(nextPreview);
+      }, BOARD_PREVIEW_DWELL_MS);
+    },
+    [closePreview, openFolderMenuId, openMenuSlug],
+  );
+
+  const updatePreviewImageState = useCallback(
+    (
+      requestId: number,
+      cacheKey: string,
+      loadState: Exclude<BoardPreviewLoadState, "loading">,
+    ) => {
+      const current = activePreviewRef.current;
+      if (
+        !current ||
+        current.requestId !== requestId ||
+        current.cacheKey !== cacheKey
+      ) {
+        return;
+      }
+      previewCacheRef.current.set(cacheKey, loadState);
+      const next = { ...current, loadState };
+      activePreviewRef.current = next;
+      setActivePreview(next);
+    },
+    [],
+  );
   const groups = useMemo(() => {
     const next = new Map<string, BoardSummary[]>();
     next.set("unfiled", []);
@@ -176,6 +298,55 @@ export const BoardBrowser = ({
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [canLoadMore, isLoadingMore, onLoadMore]);
+
+  useEffect(() => {
+    closePreview();
+  }, [activeSlug, closePreview]);
+
+  useEffect(() => {
+    const current = activePreviewRef.current;
+    if (!current) {
+      return;
+    }
+    const currentBoard = boards.find(
+      (board) => board._id === current.board._id,
+    );
+    if (
+      !currentBoard ||
+      getBoardPreviewCacheKey(currentBoard) !== current.cacheKey
+    ) {
+      closePreview();
+    }
+  }, [boards, closePreview]);
+
+  useEffect(() => {
+    const closePreviewOnEscape = (event: KeyboardEvent) => {
+      if (
+        event.key !== "Escape" ||
+        (!activePreviewRef.current && !pendingPreviewBoardIdRef.current)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      closePreview();
+    };
+    document.addEventListener("keydown", closePreviewOnEscape, true);
+    return () =>
+      document.removeEventListener("keydown", closePreviewOnEscape, true);
+  }, [closePreview]);
+
+  useEffect(
+    () => () => {
+      if (previewTimerRef.current !== null) {
+        clearTimeout(previewTimerRef.current);
+      }
+      previewRequestIdRef.current += 1;
+      activePreviewRef.current = null;
+    },
+    [],
+  );
 
   useEffect(() => {
     const cancelMove = (event: KeyboardEvent) => {
@@ -248,6 +419,8 @@ export const BoardBrowser = ({
             : "board-browser__item"
         }
         aria-busy={isPending}
+        onPointerEnter={(event) => schedulePreview(board, event.pointerType)}
+        onPointerLeave={closePreview}
       >
         <button
           ref={(node) => {
@@ -263,6 +436,7 @@ export const BoardBrowser = ({
           aria-label={`Move ${board.title}`}
           title="Drag or press Enter to move"
           onDragStart={(event) => {
+            closePreview();
             event.dataTransfer.effectAllowed = "move";
             event.dataTransfer.setData(
               "application/x-yaseen-board-id",
@@ -277,6 +451,7 @@ export const BoardBrowser = ({
           onKeyDown={(event) => {
             if (event.key === "Enter" || event.key === " ") {
               event.preventDefault();
+              closePreview();
               setOpenMenuSlug(board.slug);
               setMoveDestination(board.folderId ?? "");
             }
@@ -288,7 +463,10 @@ export const BoardBrowser = ({
           className="board-browser__open"
           href={`/b/${encodeURIComponent(board.slug)}`}
           aria-label={`Open ${board.title}`}
+          onFocus={() => schedulePreview(board)}
+          onBlur={closePreview}
           onClick={(event) => {
+            closePreview();
             if (!shouldUseSaveSafeBoardNavigation(event)) {
               return;
             }
@@ -310,6 +488,7 @@ export const BoardBrowser = ({
             aria-label={`More options for ${board.title}`}
             aria-expanded={openMenuSlug === board.slug}
             onClick={() => {
+              closePreview();
               setOpenMenuSlug((current) =>
                 current === board.slug ? null : board.slug,
               );
@@ -435,11 +614,12 @@ export const BoardBrowser = ({
                 className="board-browser__more"
                 aria-label={`Folder options for ${name}`}
                 aria-expanded={openFolderMenuId === folder._id}
-                onClick={() =>
+                onClick={() => {
+                  closePreview();
                   setOpenFolderMenuId((current) =>
                     current === folder._id ? null : folder._id,
-                  )
-                }
+                  );
+                }}
               >
                 ⋯
               </button>
@@ -509,7 +689,7 @@ export const BoardBrowser = ({
   };
 
   return (
-    <div className="board-browser">
+    <div ref={boardBrowserRef} className="board-browser">
       <div className="board-browser__heading">
         <div>
           <strong>Your boards</strong>
@@ -649,6 +829,29 @@ export const BoardBrowser = ({
           </div>
         )}
       </div>
+      {activePreview && (
+        <BoardPreviewOverlay
+          boardId={activePreview.board._id}
+          title={activePreview.board.title}
+          preview={activePreview.board.preview}
+          loadState={activePreview.loadState}
+          anchorRef={boardBrowserRef}
+          onImageLoad={() =>
+            updatePreviewImageState(
+              activePreview.requestId,
+              activePreview.cacheKey,
+              "loaded",
+            )
+          }
+          onImageError={() =>
+            updatePreviewImageState(
+              activePreview.requestId,
+              activePreview.cacheKey,
+              "failed",
+            )
+          }
+        />
+      )}
     </div>
   );
 };

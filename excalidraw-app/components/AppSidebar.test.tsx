@@ -162,6 +162,7 @@ describe("BoardBrowser", () => {
             folderId: "folder-1",
             createdAt: 1_724_000_000_000,
             updatedAt: 1_725_000_000_000,
+            preview: { status: "legacy" },
           },
           {
             _id: "board-2",
@@ -169,6 +170,7 @@ describe("BoardBrowser", () => {
             title: "Inbox",
             createdAt: 1_724_000_000_000,
             updatedAt: 1_725_000_000_000,
+            preview: { status: "legacy" },
           },
         ]}
         activeSlug={null}
@@ -259,6 +261,7 @@ describe("BoardBrowser", () => {
             title: "Inbox",
             createdAt: 1_724_000_000_000,
             updatedAt: 1_725_000_000_000,
+            preview: { status: "legacy" },
           },
         ]}
         activeSlug={null}
@@ -336,6 +339,7 @@ describe("BoardBrowser", () => {
             title: "Already loaded",
             createdAt: 1_724_000_000_000,
             updatedAt: 1_725_000_000_000,
+            preview: { status: "legacy" },
           },
         ]}
         activeSlug={null}
@@ -476,6 +480,7 @@ describe("BoardBrowser", () => {
             title: "Project plan",
             createdAt: 1_724_000_000_000,
             updatedAt: 1_725_000_000_000,
+            preview: { status: "legacy" },
           },
         ]}
         activeSlug={null}
@@ -562,6 +567,7 @@ describe("BoardBrowser", () => {
             title: "Project plan",
             createdAt: 1_724_000_000_000,
             updatedAt: 1_725_000_000_000,
+            preview: { status: "legacy" },
           },
         ]}
         activeSlug="project-plan"
