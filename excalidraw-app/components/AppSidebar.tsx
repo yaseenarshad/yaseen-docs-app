@@ -14,6 +14,7 @@ import type {
   SidebarTabName,
 } from "@excalidraw/excalidraw/types";
 
+import { composeBoardSort, splitBoardSort } from "../cloud/boardOrganizer";
 import { ImageStudio } from "../image-studio/ImageStudio";
 
 import "./AppSidebar.scss";
@@ -22,7 +23,7 @@ import { SavedComponents } from "./SavedComponents";
 
 import type { MouseEvent as ReactMouseEvent } from "react";
 
-import type { BoardSort } from "../cloud/boardOrganizer";
+import type { BoardSort, BoardSortCategory } from "../cloud/boardOrganizer";
 
 type BoardSummary = {
   _id: string;
@@ -117,6 +118,7 @@ export const BoardBrowser = ({
   onDelete,
   onOpen,
 }: BoardBrowserProps) => {
+  const sortParts = splitBoardSort(sort);
   const [isCreating, setIsCreating] = useState(false);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [openMenuSlug, setOpenMenuSlug] = useState<string | null>(null);
@@ -294,7 +296,6 @@ export const BoardBrowser = ({
             void onOpen(board.slug);
           }}
         >
-          <span className="board-browser__thumbnail">{file}</span>
           <span className="board-browser__details">
             <strong title={board.title}>{board.title}</strong>
             <span>
@@ -426,7 +427,6 @@ export const BoardBrowser = ({
           >
             <span aria-hidden="true">{isExpanded ? "⌄" : "›"}</span>
             <strong title={name}>{name}</strong>
-            <span>{children.length}</span>
           </button>
           {folder && (
             <div className="board-browser__options">
@@ -472,6 +472,14 @@ export const BoardBrowser = ({
                   <button
                     type="button"
                     onClick={async () => {
+                      if (
+                        !window.confirm(
+                          `Delete “${folder.name}”? Its boards will move to Unfiled.`,
+                        )
+                      ) {
+                        return;
+                      }
+                      setActionError(null);
                       try {
                         await onDeleteFolder(folder._id);
                         setOpenFolderMenuId(null);
@@ -558,19 +566,47 @@ export const BoardBrowser = ({
           placeholder="Search all boards"
           aria-label="Search all boards"
         />
-        <select
-          className="board-browser__sort"
-          aria-label="Sort boards"
-          value={sort}
-          onChange={(event) => onSortChange(event.target.value as BoardSort)}
-        >
-          <option value="modified-desc">Modified: newest</option>
-          <option value="modified-asc">Modified: oldest</option>
-          <option value="created-desc">Created: newest</option>
-          <option value="created-asc">Created: oldest</option>
-          <option value="name-asc">Name: A–Z</option>
-          <option value="name-desc">Name: Z–A</option>
-        </select>
+        <div className="board-browser__sort-controls">
+          <select
+            className="board-browser__sort"
+            aria-label="Sort category"
+            value={sortParts.category}
+            onChange={(event) =>
+              onSortChange(
+                composeBoardSort(
+                  event.target.value as BoardSortCategory,
+                  sortParts.direction,
+                ),
+              )
+            }
+          >
+            <option value="name">Name</option>
+            <option value="created">Created</option>
+            <option value="modified">Modified</option>
+          </select>
+          <button
+            type="button"
+            className="board-browser__sort-direction"
+            aria-label={`Sort ${
+              sortParts.direction === "asc" ? "ascending" : "descending"
+            }`}
+            title={`Sort ${
+              sortParts.direction === "asc" ? "ascending" : "descending"
+            }`}
+            onClick={() =>
+              onSortChange(
+                composeBoardSort(
+                  sortParts.category,
+                  sortParts.direction === "asc" ? "desc" : "asc",
+                ),
+              )
+            }
+          >
+            <span aria-hidden="true">
+              {sortParts.direction === "asc" ? "↑" : "↓"}
+            </span>
+          </button>
+        </div>
       </div>
       {(actionError || errorMessage) && (
         <div className="board-browser__error" role="alert">

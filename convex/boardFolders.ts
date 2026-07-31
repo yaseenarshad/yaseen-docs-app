@@ -128,16 +128,15 @@ export const remove = mutation({
     if (!folder || folder.ownerId !== ownerId) {
       throw new Error("Folder not found");
     }
-    const board = await ctx.db
+    const boards = ctx.db
       .query("diagrams")
       .withIndex("by_ownerId_and_folderId", (q) =>
         q.eq("ownerId", ownerId).eq("folderId", folder._id),
-      )
-      .first();
-    if (board) {
-      throw new Error(
-        "This folder is not empty. Move its boards before deleting it.",
       );
+    for await (const board of boards) {
+      await ctx.db.patch("diagrams", board._id, {
+        folderId: undefined,
+      });
     }
     await ctx.db.delete("boardFolders", folder._id);
     return null;

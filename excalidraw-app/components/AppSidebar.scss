@@ -147,6 +147,38 @@
   width: 100%;
 }
 
+.board-browser__sort-controls {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.board-browser__sort-direction {
+  align-items: center;
+  background: var(--input-bg-color);
+  border: 1px solid var(--default-border-color);
+  border-radius: 8px;
+  color: var(--text-primary-color);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 36px;
+  font: inherit;
+  font-size: 16px;
+  justify-content: center;
+  min-height: 34px;
+}
+
+.board-browser__sort-direction:hover {
+  background: var(--button-hover-bg);
+}
+
+.board-browser__sort:focus-visible,
+.board-browser__sort-direction:focus-visible {
+  border-color: #6965db;
+  outline: 2px solid #6965db;
+  outline-offset: 1px;
+}
+
 .board-browser__search:focus {
   border-color: #6965db;
   outline: none;
@@ -218,6 +250,10 @@
   margin-left: auto;
 }
 
+.board-browser__folder-row .board-browser__more {
+  opacity: 1;
+}
+
 .board-browser__folder-toggle {
   align-items: center;
   background: transparent;
@@ -229,7 +265,7 @@
   flex: 1;
   font-size: 12px;
   gap: 5px;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
+  grid-template-columns: 14px minmax(0, 1fr);
   min-width: 0;
   padding: 7px 5px;
   text-align: left;
@@ -244,11 +280,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.board-browser__folder-toggle > span:last-child {
-  color: var(--text-secondary-color);
-  font-size: 10px;
 }
 
 .board-browser__folder-boards {
@@ -270,15 +301,22 @@
   align-items: center;
   background: transparent;
   border: 0;
-  color: inherit;
+  color: var(--text-primary-color);
   cursor: pointer;
   display: flex;
   flex: 1;
-  gap: 10px;
+  gap: 0;
   min-width: 0;
   padding: 8px 4px 8px 8px;
   text-align: left;
   text-decoration: none;
+}
+
+.board-browser__open:visited,
+.board-browser__open:hover,
+.board-browser__open:active,
+.board-browser__open:focus {
+  color: var(--text-primary-color);
 }
 
 .board-browser__open:focus-visible {
@@ -375,22 +413,6 @@
 .board-browser__menu button:disabled {
   cursor: wait;
   opacity: 0.65;
-}
-
-.board-browser__thumbnail {
-  align-items: center;
-  background: var(--island-bg-color);
-  border: 1px solid var(--default-border-color);
-  border-radius: 7px;
-  display: flex;
-  flex: 0 0 36px;
-  height: 36px;
-  justify-content: center;
-}
-
-.board-browser__thumbnail svg {
-  height: 18px;
-  width: 18px;
 }
 
 .board-browser__details {

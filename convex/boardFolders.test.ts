@@ -45,63 +45,130 @@ describe("Board folders", () => {
     ).resolves.toBeTruthy();
   });
 
-  it("moves only folder membership and refuses to delete a non-empty folder", async () => {
+  it("deletes a non-empty folder by moving every Board to Unfiled without changing Board data", async () => {
     const { t, owner } = await authenticatedTestClient();
-    const board = await owner.mutation(boards.create, {
-      title: "Preserve me",
+    const firstBoard = await owner.mutation(boards.create, {
+      title: "Preserve everything",
+    });
+    const secondBoard = await owner.mutation(boards.create, {
+      title: "Move me too",
     });
     await owner.mutation(boards.setSharing, {
-      boardId: board.boardId,
+      boardId: firstBoard.boardId,
       enabled: true,
     });
     const folder = await owner.mutation(boardFolders.create, {
       name: "Projects",
     });
+    await owner.mutation(boards.moveToFolder, {
+      boardId: firstBoard.boardId,
+      folderId: folder.folderId,
+    });
+    await owner.mutation(boards.moveToFolder, {
+      boardId: secondBoard.boardId,
+      folderId: folder.folderId,
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.patch("diagrams", firstBoard.boardId, {
+        previewObjectKey: "owner/board/previews/preview.webp",
+        previewVersion: 3,
+        previewMimeType: "image/webp",
+        previewWidth: 640,
+        previewHeight: 480,
+        previewUpdatedAt: 1_725_000_000_000,
+      });
+      await ctx.db.insert("diagramAssets", {
+        diagramId: firstBoard.boardId,
+        fileId: "embedded-image",
+        objectKey: "owner/board/assets/image.png",
+        mimeType: "image/png",
+        createdAt: 1_724_000_000_000,
+        updatedAt: 1_724_000_000_000,
+      });
+      await ctx.db.insert("diagramSnapshots", {
+        diagramId: firstBoard.boardId,
+        createdBy: (await ctx.db.get("diagrams", firstBoard.boardId))!.ownerId,
+        sceneJson: '{"elements":[{"id":"kept"}]}',
+        version: 1,
+        createdAt: 1_724_000_000_000,
+      });
+    });
     const before = await t.run(async (ctx) => {
-      const diagram = await ctx.db.get("diagrams", board.boardId);
+      const diagrams = await Promise.all([
+        ctx.db.get("diagrams", firstBoard.boardId),
+        ctx.db.get("diagrams", secondBoard.boardId),
+      ]);
       const content = await ctx.db
         .query("diagramContents")
-        .withIndex("by_diagramId", (q) => q.eq("diagramId", board.boardId))
+        .withIndex("by_diagramId", (q) => q.eq("diagramId", firstBoard.boardId))
         .unique();
-      return { diagram, content };
+      const assets = await ctx.db
+        .query("diagramAssets")
+        .withIndex("by_diagramId", (q) => q.eq("diagramId", firstBoard.boardId))
+        .collect();
+      const snapshots = await ctx.db
+        .query("diagramSnapshots")
+        .withIndex("by_diagramId_and_createdAt", (q) =>
+          q.eq("diagramId", firstBoard.boardId),
+        )
+        .collect();
+      return { diagrams, content, assets, snapshots };
     });
 
-    await owner.mutation(boards.moveToFolder, {
-      boardId: board.boardId,
-      folderId: folder.folderId,
-    });
-    await owner.mutation(boards.moveToFolder, {
-      boardId: board.boardId,
-      folderId: folder.folderId,
-    });
+    await expect(
+      owner.mutation(boardFolders.remove, {
+        folderId: folder.folderId,
+      }),
+    ).resolves.toBeNull();
+
     const after = await t.run(async (ctx) => {
-      const diagram = await ctx.db.get("diagrams", board.boardId);
+      const diagrams = await Promise.all([
+        ctx.db.get("diagrams", firstBoard.boardId),
+        ctx.db.get("diagrams", secondBoard.boardId),
+      ]);
       const content = await ctx.db
         .query("diagramContents")
-        .withIndex("by_diagramId", (q) => q.eq("diagramId", board.boardId))
+        .withIndex("by_diagramId", (q) => q.eq("diagramId", firstBoard.boardId))
         .unique();
-      return { diagram, content };
+      const assets = await ctx.db
+        .query("diagramAssets")
+        .withIndex("by_diagramId", (q) => q.eq("diagramId", firstBoard.boardId))
+        .collect();
+      const snapshots = await ctx.db
+        .query("diagramSnapshots")
+        .withIndex("by_diagramId_and_createdAt", (q) =>
+          q.eq("diagramId", firstBoard.boardId),
+        )
+        .collect();
+      const deletedFolder = await ctx.db.get("boardFolders", folder.folderId);
+      return { diagrams, content, assets, snapshots, deletedFolder };
     });
 
+    expect(after.deletedFolder).toBeNull();
+    expect(after.diagrams).toEqual(
+      before.diagrams.map((diagram) => {
+        const { folderId: _folderId, ...unchanged } = diagram!;
+        return unchanged;
+      }),
+    );
     expect(after.content).toEqual(before.content);
-    expect(after.diagram).toEqual({
-      ...before.diagram,
-      folderId: folder.folderId,
-    });
-    await expect(
-      owner.mutation(boardFolders.remove, {
-        folderId: folder.folderId,
-      }),
-    ).rejects.toThrow("Move its boards");
+    expect(after.assets).toEqual(before.assets);
+    expect(after.snapshots).toEqual(before.snapshots);
+  });
 
-    await owner.mutation(boards.moveToFolder, {
-      boardId: board.boardId,
-      folderId: null,
+  it("deletes an empty folder", async () => {
+    const { t, owner } = await authenticatedTestClient();
+    const folder = await owner.mutation(boardFolders.create, {
+      name: "Empty",
     });
+
     await expect(
       owner.mutation(boardFolders.remove, {
         folderId: folder.folderId,
       }),
+    ).resolves.toBeNull();
+    await expect(
+      t.run(async (ctx) => ctx.db.get("boardFolders", folder.folderId)),
     ).resolves.toBeNull();
   });
 
@@ -133,6 +200,11 @@ describe("Board folders", () => {
       otherOwner.mutation(boardFolders.rename, {
         folderId: folder.folderId,
         name: "Leaked",
+      }),
+    ).rejects.toThrow("Folder not found");
+    await expect(
+      otherOwner.mutation(boardFolders.remove, {
+        folderId: folder.folderId,
       }),
     ).rejects.toThrow("Folder not found");
     await expect(

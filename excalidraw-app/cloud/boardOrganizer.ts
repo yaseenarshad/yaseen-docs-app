@@ -8,8 +8,29 @@ export const BOARD_SORTS = [
 ] as const;
 
 export type BoardSort = typeof BOARD_SORTS[number];
+export type BoardSortCategory = "name" | "created" | "modified";
+export type BoardSortDirection = "asc" | "desc";
 
 export const BOARD_SORT_STORAGE_KEY = "yaseen-whiteboard-board-sort";
+
+export const splitBoardSort = (
+  sort: BoardSort,
+): {
+  category: BoardSortCategory;
+  direction: BoardSortDirection;
+} => ({
+  category: sort.startsWith("name-")
+    ? "name"
+    : sort.startsWith("created-")
+    ? "created"
+    : "modified",
+  direction: sort.endsWith("-asc") ? "asc" : "desc",
+});
+
+export const composeBoardSort = (
+  category: BoardSortCategory,
+  direction: BoardSortDirection,
+): BoardSort => `${category}-${direction}`;
 
 export const getStoredBoardSort = (value: string | null): BoardSort =>
   BOARD_SORTS.includes(value as BoardSort)

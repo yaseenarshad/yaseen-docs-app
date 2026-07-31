@@ -181,19 +181,68 @@ describe("BoardBrowser", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: /Unfiled 1/ })).toBeVisible();
-    expect(screen.getByRole("button", { name: /Projects 1/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Unfiled" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Projects" })).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Folder options for Unfiled" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Folder options for Projects" }),
+    ).toBeVisible();
     expect(screen.getAllByText(/Modified Aug/)).toHaveLength(2);
+    expect(
+      screen
+        .getByRole("link", { name: "Open Project plan" })
+        .querySelector(".board-browser__thumbnail"),
+    ).not.toBeInTheDocument();
 
     fireEvent.change(
       screen.getByRole("searchbox", { name: "Search all boards" }),
       { target: { value: "road" } },
     );
-    fireEvent.change(screen.getByRole("combobox", { name: "Sort boards" }), {
-      target: { value: "name-asc" },
+    const category = screen.getByRole("combobox", {
+      name: "Sort category",
     });
+    const direction = screen.getByRole("button", {
+      name: "Sort descending",
+    });
+    expect(category).toHaveValue("modified");
+    expect(category).toHaveTextContent("Name");
+    expect(category).toHaveTextContent("Created");
+    expect(category).toHaveTextContent("Modified");
+    expect(direction).toHaveAttribute("title", "Sort descending");
+    expect(direction).toHaveTextContent("↓");
+
+    fireEvent.change(category, { target: { value: "name" } });
+    fireEvent.click(direction);
     expect(onSearchChange).toHaveBeenCalledWith("road");
-    expect(onSortChange).toHaveBeenCalledWith("name-asc");
+    expect(onSortChange.mock.calls).toEqual([["name-desc"], ["modified-asc"]]);
+  });
+
+  it("shows ascending direction from the combined sort value", () => {
+    const onSortChange = vi.fn();
+    render(
+      <BoardBrowser
+        {...organizerProps}
+        sort="created-asc"
+        boards={[]}
+        activeSlug={null}
+        isLoading={false}
+        onCreate={vi.fn().mockResolvedValue(undefined)}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
+        onOpen={vi.fn().mockResolvedValue(undefined)}
+        onSortChange={onSortChange}
+      />,
+    );
+
+    expect(screen.getByRole("combobox", { name: "Sort category" })).toHaveValue(
+      "created",
+    );
+    const direction = screen.getByRole("button", { name: "Sort ascending" });
+    expect(direction).toHaveAttribute("title", "Sort ascending");
+    expect(direction).toHaveTextContent("↑");
+    fireEvent.click(direction);
+    expect(onSortChange).toHaveBeenCalledWith("created-desc");
   });
 
   it("moves through the overflow/keyboard path without opening the Board", async () => {
@@ -313,6 +362,7 @@ describe("BoardBrowser", () => {
     vi.spyOn(window, "prompt")
       .mockReturnValueOnce("New work")
       .mockReturnValueOnce("Renamed work");
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     render(
       <BoardBrowser
         {...organizerProps}
@@ -353,6 +403,65 @@ describe("BoardBrowser", () => {
     await waitFor(() =>
       expect(onDeleteFolder).toHaveBeenCalledWith("folder-1"),
     );
+    expect(window.confirm).toHaveBeenCalledWith(
+      "Delete “Projects”? Its boards will move to Unfiled.",
+    );
+  });
+
+  it("cancels folder deletion without calling the mutation", () => {
+    const onDeleteFolder = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(
+      <BoardBrowser
+        {...organizerProps}
+        folders={[{ _id: "folder-1", name: "Projects" }]}
+        boards={[]}
+        activeSlug={null}
+        isLoading={false}
+        onCreate={vi.fn().mockResolvedValue(undefined)}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
+        onOpen={vi.fn().mockResolvedValue(undefined)}
+        onDeleteFolder={onDeleteFolder}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Folder options for Projects" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete folder" }));
+
+    expect(onDeleteFolder).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Delete folder" })).toBeVisible();
+  });
+
+  it("keeps the folder menu open and reports folder deletion failure", async () => {
+    const onDeleteFolder = vi
+      .fn()
+      .mockRejectedValue(new Error("Folder deletion failed"));
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(
+      <BoardBrowser
+        {...organizerProps}
+        folders={[{ _id: "folder-1", name: "Projects" }]}
+        boards={[]}
+        activeSlug={null}
+        isLoading={false}
+        onCreate={vi.fn().mockResolvedValue(undefined)}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
+        onOpen={vi.fn().mockResolvedValue(undefined)}
+        onDeleteFolder={onDeleteFolder}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Folder options for Projects" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete folder" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Folder deletion failed",
+    );
+    expect(screen.getByRole("button", { name: "Delete folder" })).toBeVisible();
   });
 
   it("renders canonical Board anchors and intercepts only an unmodified mouse click", () => {
