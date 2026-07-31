@@ -12,6 +12,7 @@ import type {
   ExcalidrawTextElement,
 } from "@excalidraw/element/types";
 
+import { actionToggleSearchMenu } from "../actions/actionToggleSearchMenu";
 import { Excalidraw } from "../index";
 
 import { API } from "./helpers/api";
@@ -30,6 +31,12 @@ const querySearchInput = async () => {
   return input;
 };
 
+const openCanvasSearch = () => {
+  act(() => {
+    h.app.actionManager.executeAction(actionToggleSearchMenu, "ui");
+  });
+};
+
 describe("search", () => {
   beforeEach(async () => {
     await render(<Excalidraw handleKeyboardGlobally />);
@@ -38,12 +45,10 @@ describe("search", () => {
     });
   });
 
-  it("should toggle search on cmd+f", async () => {
+  it("should open search from its retained UI action", async () => {
     expect(h.app.state.openSidebar).toBeNull();
 
-    Keyboard.withModifierKeys({ ctrl: true }, () => {
-      Keyboard.keyPress(KEYS.F);
-    });
+    openCanvasSearch();
     expect(h.app.state.openSidebar).not.toBeNull();
     expect(h.app.state.openSidebar?.name).toBe(DEFAULT_SIDEBAR.name);
     expect(h.app.state.openSidebar?.tab).toBe(CANVAS_SEARCH_TAB);
@@ -52,10 +57,8 @@ describe("search", () => {
     expect(searchInput.matches(":focus")).toBe(true);
   });
 
-  it("should refocus search input with cmd+f when search sidebar is still open", async () => {
-    Keyboard.withModifierKeys({ ctrl: true }, () => {
-      Keyboard.keyPress(KEYS.F);
-    });
+  it("should refocus search input when its UI action runs while already open", async () => {
+    openCanvasSearch();
 
     const searchInput =
       h.app.excalidrawContainerValue.container?.querySelector<HTMLInputElement>(
@@ -69,9 +72,7 @@ describe("search", () => {
     expect(h.app.state.openSidebar).not.toBeNull();
     expect(searchInput?.matches(":focus")).toBe(false);
 
-    Keyboard.withModifierKeys({ ctrl: true }, () => {
-      Keyboard.keyPress(KEYS.F);
-    });
+    openCanvasSearch();
     expect(searchInput?.matches(":focus")).toBe(true);
   });
 
@@ -86,9 +87,7 @@ describe("search", () => {
 
     expect(h.app.state.openSidebar).toBeNull();
 
-    Keyboard.withModifierKeys({ ctrl: true }, () => {
-      Keyboard.keyPress(KEYS.F);
-    });
+    openCanvasSearch();
     expect(h.app.state.openSidebar).not.toBeNull();
     expect(h.app.state.openSidebar?.name).toBe(DEFAULT_SIDEBAR.name);
     expect(h.app.state.openSidebar?.tab).toBe(CANVAS_SEARCH_TAB);
@@ -131,9 +130,7 @@ describe("search", () => {
 
     expect(h.app.state.openSidebar).toBeNull();
 
-    Keyboard.withModifierKeys({ ctrl: true }, () => {
-      Keyboard.keyPress(KEYS.F);
-    });
+    openCanvasSearch();
     expect(h.app.state.openSidebar).not.toBeNull();
     expect(h.app.state.openSidebar?.name).toBe(DEFAULT_SIDEBAR.name);
     expect(h.app.state.openSidebar?.tab).toBe(CANVAS_SEARCH_TAB);
@@ -177,9 +174,7 @@ describe("search", () => {
 
     expect(h.app.state.openSidebar).toBeNull();
 
-    Keyboard.withModifierKeys({ ctrl: true }, () => {
-      Keyboard.keyPress(KEYS.F);
-    });
+    openCanvasSearch();
     expect(h.app.state.openSidebar).not.toBeNull();
     expect(h.app.state.openSidebar?.name).toBe(DEFAULT_SIDEBAR.name);
     expect(h.app.state.openSidebar?.tab).toBe(CANVAS_SEARCH_TAB);

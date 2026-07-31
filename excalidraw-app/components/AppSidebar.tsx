@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { KEYS, isWritableElement } from "@excalidraw/common";
 import { DefaultSidebar, Sidebar } from "@excalidraw/excalidraw";
 import {
   file,
@@ -74,6 +75,7 @@ type BoardBrowserProps = {
 type AppSidebarProps = BoardBrowserProps & {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
   canInsertMedia: boolean;
+  imageStudioSearchFocusRequest: number;
 };
 
 type ActiveBoardPreview = {
@@ -899,8 +901,10 @@ const rememberSidebarTab = (tab: SidebarTabName | undefined) => {
 
 export const AppSidebarLaunchers = ({
   excalidrawAPI,
+  onRequestImageStudioSearch,
 }: {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
+  onRequestImageStudioSearch?: () => void;
 }) => {
   const { openSidebar } = useUIAppState();
   const activeTab =
@@ -913,6 +917,83 @@ export const AppSidebarLaunchers = ({
       force: true,
     });
   };
+
+  useEffect(() => {
+    if (!excalidrawAPI) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      const tab =
+        key === "b"
+          ? "boards"
+          : key === "c"
+          ? "components"
+          : key === "f"
+          ? "image-studio"
+          : null;
+      const secondaryPrimaryModifier =
+        KEYS.CTRL_OR_CMD === "metaKey" ? event.ctrlKey : event.metaKey;
+      const target = event.target;
+      const isEditableTarget =
+        isWritableElement(target) ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement &&
+          (target.isContentEditable ||
+            target.closest("[contenteditable='true']") !== null));
+      const appState = excalidrawAPI.getAppState();
+      const hasNativeSelection = Boolean(
+        window.getSelection() && !window.getSelection()?.isCollapsed,
+      );
+      const hasActiveGesture = Boolean(
+        appState.newElement ||
+          appState.multiElement ||
+          appState.selectionElement ||
+          appState.resizingElement ||
+          appState.selectedLinearElement ||
+          appState.editingFrame ||
+          appState.croppingElementId ||
+          appState.cursorButton === "down" ||
+          appState.selectedElementsAreBeingDragged ||
+          appState.isResizing ||
+          appState.isRotating,
+      );
+
+      if (
+        !tab ||
+        !event[KEYS.CTRL_OR_CMD] ||
+        secondaryPrimaryModifier ||
+        event.shiftKey ||
+        event.altKey ||
+        event.repeat ||
+        event.isComposing ||
+        event.keyCode === 229 ||
+        isEditableTarget ||
+        hasNativeSelection ||
+        appState.editingTextElement ||
+        appState.openDialog ||
+        hasActiveGesture ||
+        Object.keys(appState.selectedElementIds).length > 0
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      excalidrawAPI.toggleSidebar({
+        name: "default",
+        tab,
+        force: true,
+      });
+      if (tab === "image-studio") {
+        onRequestImageStudioSearch?.();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, [excalidrawAPI, onRequestImageStudioSearch]);
 
   return (
     <nav className="app-sidebar-launchers" aria-label="Workspace panels">
@@ -950,6 +1031,7 @@ export const AppSidebarLaunchers = ({
 export const AppSidebar = ({
   excalidrawAPI,
   canInsertMedia,
+  imageStudioSearchFocusRequest,
   ...boardBrowserProps
 }: AppSidebarProps) => {
   const { openSidebar } = useUIAppState();
@@ -1015,6 +1097,7 @@ export const AppSidebar = ({
             <ImageStudio
               excalidrawAPI={excalidrawAPI}
               canInsert={canInsertMedia}
+              searchFocusRequest={imageStudioSearchFocusRequest}
             />
           )}
         </Sidebar.Tab>

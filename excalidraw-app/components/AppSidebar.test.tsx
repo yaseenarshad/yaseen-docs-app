@@ -7,7 +7,9 @@ import {
 } from "@testing-library/react";
 import { vi } from "vitest";
 
+import { KEYS } from "@excalidraw/common";
 import { UIAppStateContext } from "@excalidraw/excalidraw/context/ui-appState";
+import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
@@ -143,6 +145,163 @@ describe("AppSidebarLaunchers", () => {
       tab: "boards",
       force: true,
     });
+  });
+
+  it.each([
+    ["b", "boards"],
+    ["c", "components"],
+    ["f", "image-studio"],
+  ] as const)(
+    "opens %s from the guarded primary-modifier shortcut",
+    (key, tab) => {
+      const toggleSidebar = vi.fn();
+      const onRequestImageStudioSearch = vi.fn();
+      const appState = getDefaultAppState();
+      render(
+        <UIAppStateContext.Provider value={appState as never}>
+          <AppSidebarLaunchers
+            excalidrawAPI={
+              {
+                getAppState: () => appState,
+                toggleSidebar,
+              } as unknown as ExcalidrawImperativeAPI
+            }
+            onRequestImageStudioSearch={onRequestImageStudioSearch}
+          />
+        </UIAppStateContext.Provider>,
+      );
+
+      const event = new KeyboardEvent("keydown", {
+        key,
+        [KEYS.CTRL_OR_CMD]: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      document.dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(toggleSidebar).toHaveBeenCalledWith({
+        name: "default",
+        tab,
+        force: true,
+      });
+      expect(onRequestImageStudioSearch).toHaveBeenCalledTimes(
+        tab === "image-studio" ? 1 : 0,
+      );
+    },
+  );
+
+  it.each([
+    ["selected elements", { selectedElementIds: { selected: true } }],
+    ["text editing", { editingTextElement: { id: "text" } }],
+    ["an active gesture", { cursorButton: "down" }],
+    ["an open dialog", { openDialog: { name: "help" } }],
+  ])("does not claim shortcuts during %s", (_label, overrides) => {
+    const toggleSidebar = vi.fn();
+    const appState = { ...getDefaultAppState(), ...overrides };
+    render(
+      <UIAppStateContext.Provider value={appState as never}>
+        <AppSidebarLaunchers
+          excalidrawAPI={
+            {
+              getAppState: () => appState,
+              toggleSidebar,
+            } as unknown as ExcalidrawImperativeAPI
+          }
+        />
+      </UIAppStateContext.Provider>,
+    );
+
+    const event = new KeyboardEvent("keydown", {
+      key: "b",
+      [KEYS.CTRL_OR_CMD]: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(toggleSidebar).not.toHaveBeenCalled();
+  });
+
+  it("does not claim shortcuts from editable controls, repeats, or extra modifiers", () => {
+    const toggleSidebar = vi.fn();
+    const appState = getDefaultAppState();
+    render(
+      <UIAppStateContext.Provider value={appState as never}>
+        <input aria-label="Editable" />
+        <div contentEditable role="textbox" aria-label="Content editable" />
+        <AppSidebarLaunchers
+          excalidrawAPI={
+            {
+              getAppState: () => appState,
+              toggleSidebar,
+            } as unknown as ExcalidrawImperativeAPI
+          }
+        />
+      </UIAppStateContext.Provider>,
+    );
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Editable" }), {
+      key: "b",
+      [KEYS.CTRL_OR_CMD]: true,
+    });
+    fireEvent.keyDown(
+      screen.getByRole("textbox", { name: "Content editable" }),
+      {
+        key: "b",
+        [KEYS.CTRL_OR_CMD]: true,
+      },
+    );
+    fireEvent.keyDown(document, {
+      key: "b",
+      [KEYS.CTRL_OR_CMD]: true,
+      repeat: true,
+    });
+    fireEvent.keyDown(document, {
+      key: "b",
+      [KEYS.CTRL_OR_CMD]: true,
+      shiftKey: true,
+    });
+    fireEvent.keyDown(document, {
+      key: "b",
+      [KEYS.CTRL_OR_CMD]: true,
+      altKey: true,
+    });
+
+    expect(toggleSidebar).not.toHaveBeenCalled();
+  });
+
+  it("does not claim shortcuts during IME composition or native text selection", () => {
+    const toggleSidebar = vi.fn();
+    const appState = getDefaultAppState();
+    render(
+      <UIAppStateContext.Provider value={appState as never}>
+        <AppSidebarLaunchers
+          excalidrawAPI={
+            {
+              getAppState: () => appState,
+              toggleSidebar,
+            } as unknown as ExcalidrawImperativeAPI
+          }
+        />
+      </UIAppStateContext.Provider>,
+    );
+
+    fireEvent.keyDown(document, {
+      key: "f",
+      [KEYS.CTRL_OR_CMD]: true,
+      isComposing: true,
+    });
+    vi.spyOn(window, "getSelection").mockReturnValue({
+      isCollapsed: false,
+    } as Selection);
+    fireEvent.keyDown(document, {
+      key: "f",
+      [KEYS.CTRL_OR_CMD]: true,
+    });
+
+    expect(toggleSidebar).not.toHaveBeenCalled();
   });
 });
 

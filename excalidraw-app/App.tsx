@@ -445,6 +445,11 @@ const ExcalidrawWrapper = () => {
   const loadingCloudFileIdsRef = useRef(new Set<string>());
 
   const [errorMessage, setErrorMessage] = useState("");
+  const [imageStudioSearchFocusRequest, setImageStudioSearchFocusRequest] =
+    useState(0);
+  const requestImageStudioSearchFocus = useCallback(() => {
+    setImageStudioSearchFocusRequest((request) => request + 1);
+  }, []);
   const isCollabDisabled = isRunningInIframe();
 
   const { editorTheme, appTheme, setAppTheme } = useHandleAppTheme();
@@ -1244,7 +1249,10 @@ const ExcalidrawWrapper = () => {
         theme={editorTheme}
         onThemeChange={setAppTheme}
         renderTopLeftUI={() => (
-          <AppSidebarLaunchers excalidrawAPI={excalidrawAPI} />
+          <AppSidebarLaunchers
+            excalidrawAPI={excalidrawAPI}
+            onRequestImageStudioSearch={requestImageStudioSearchFocus}
+          />
         )}
         renderTopRightUI={(isMobile) => {
           return (
@@ -1402,6 +1410,7 @@ const ExcalidrawWrapper = () => {
             cloud.route.kind === "owner" &&
             cloud.openedBoard?.access === "owner"
           }
+          imageStudioSearchFocusRequest={imageStudioSearchFocusRequest}
         />
 
         {errorMessage && (

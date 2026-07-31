@@ -26,6 +26,7 @@ type StudioView = "search" | "shapes" | "favorites" | "recent";
 type ImageStudioProps = {
   excalidrawAPI: ExcalidrawImperativeAPI;
   canInsert: boolean;
+  searchFocusRequest?: number;
 };
 
 const shapeItem = (id: string, title: string): ImageStudioItem => ({
@@ -127,7 +128,11 @@ const ShapePreview = ({ kind }: { kind: string }) => {
   );
 };
 
-export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
+export const ImageStudio = ({
+  excalidrawAPI,
+  canInsert,
+  searchFocusRequest = 0,
+}: ImageStudioProps) => {
   const [view, setView] = useState<StudioView>("search");
   const [query, setQuery] = useState("");
   const [source, setSource] = useState<ImageStudioSearchSource>("all");
@@ -145,6 +150,7 @@ export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
   const [error, setError] = useState<string | null>(null);
   const searchRequestId = useRef(0);
   const searchRequestInFlight = useRef(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const searchGridRef = useRef<HTMLDivElement>(null);
   const searchSentinelRef = useRef<HTMLDivElement>(null);
   const loadNextPageRef = useRef<() => void>(() => {});
@@ -173,6 +179,18 @@ export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
       : view === "recent"
       ? (recent ?? []).map(restorePreview)
       : results;
+
+  useEffect(() => {
+    if (searchFocusRequest > 0) {
+      setView("search");
+    }
+  }, [searchFocusRequest]);
+
+  useEffect(() => {
+    if (searchFocusRequest > 0 && view === "search") {
+      searchInputRef.current?.focus();
+    }
+  }, [searchFocusRequest, view]);
 
   const runSearch = async ({
     append = false,
@@ -368,6 +386,7 @@ export const ImageStudio = ({ excalidrawAPI, canInsert }: ImageStudioProps) => {
             <option value="pixabay">Pixabay</option>
           </select>
           <input
+            ref={searchInputRef}
             type="search"
             aria-label="Search graphics, icons, and logos"
             placeholder="Search graphics, icons, and logos"

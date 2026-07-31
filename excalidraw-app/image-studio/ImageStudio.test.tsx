@@ -26,6 +26,35 @@ describe("ImageStudio", () => {
     vi.mocked(useMutation).mockReturnValue(vi.fn() as never);
   });
 
+  it("switches to Search, preserves its query, and focuses it on a host request", async () => {
+    const { rerender } = render(
+      <ImageStudio
+        excalidrawAPI={{} as never}
+        canInsert={true}
+        searchFocusRequest={0}
+      />,
+    );
+    const searchbox = screen.getByRole("searchbox", {
+      name: "Search graphics, icons, and logos",
+    });
+    fireEvent.change(searchbox, { target: { value: "existing query" } });
+    fireEvent.click(screen.getByRole("button", { name: "Favorites" }));
+
+    rerender(
+      <ImageStudio
+        excalidrawAPI={{} as never}
+        canInsert={true}
+        searchFocusRequest={1}
+      />,
+    );
+
+    const focusedSearchbox = await screen.findByRole("searchbox", {
+      name: "Search graphics, icons, and logos",
+    });
+    expect(focusedSearchbox).toHaveValue("existing query");
+    await waitFor(() => expect(focusedSearchbox).toHaveFocus());
+  });
+
   it("shows Pixabay and Iconify results in one search grid", async () => {
     vi.stubGlobal(
       "fetch",
