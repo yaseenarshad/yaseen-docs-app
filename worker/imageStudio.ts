@@ -37,15 +37,11 @@ type IconifySearchPayload = {
   limit?: number;
 };
 
-type ProviderSearchResult = {
-  items: ImageStudioItem[];
-  hasMore: boolean;
-};
-
 const SEARCH_LIMIT = 18;
-const ICONIFY_FETCH_LIMIT = 64;
-const ICONIFY_RESULT_LIMIT = 14;
-const PIXABAY_RESULT_LIMIT = 5;
+const ICONIFY_ALL_RESULT_LIMIT = 14;
+const PIXABAY_ALL_RESULT_LIMIT = SEARCH_LIMIT - ICONIFY_ALL_RESULT_LIMIT;
+const ICONIFY_COLOR_BATCH_LIMIT = 6;
+const PIXABAY_PAGE_SIZE = 4;
 const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
 const CACHE_SECONDS = 24 * 60 * 60;
 const PIXABAY_API = "https://pixabay.com/api/";
@@ -72,6 +68,43 @@ const LOW_PRIORITY_COLLECTIONS = [
   "fa6-solid",
   "fa6-regular",
 ];
+
+type SearchProvider = Exclude<ImageStudioSearchSource, "all">;
+type PixabayImageType = "vector" | "illustration";
+
+type IconifyCursor = {
+  colorStart: number;
+  generalStart: number;
+  colorExhausted: boolean;
+  generalExhausted: boolean;
+};
+
+type PixabayCursor = {
+  vectorPage: number;
+  illustrationPage: number;
+  nextType: PixabayImageType;
+  vectorExhausted: boolean;
+  illustrationExhausted: boolean;
+};
+
+type SearchCursor = {
+  version: 1;
+  query: string;
+  source: ImageStudioSearchSource;
+  iconify: IconifyCursor;
+  pixabay: PixabayCursor;
+};
+
+type ProviderCursor = {
+  iconify: IconifyCursor;
+  pixabay: PixabayCursor;
+};
+
+type ProviderSearchResult<Provider extends SearchProvider> = {
+  items: ImageStudioItem[];
+  cursor: ProviderCursor[Provider];
+  hasMore: boolean;
+};
 
 const stringValue = (value: unknown) =>
   typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -184,24 +217,12 @@ const iconPriority = (item: ImageStudioItem, query: string) => {
   return lowPriorityIndex >= 0 ? 100 + lowPriorityIndex : 40;
 };
 
-const canonicalIconName = (title: string) =>
-  title
-    .toLowerCase()
-    .replace(
-      /\b(outline|outlined|fill|filled|solid|line|regular|round|sharp|color|colour|two tone|twotone)\b/g,
-      "",
-    )
-    .replace(/\b(16|20|24|28|32|48)\b/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
 export const curateIconifyResults = (
   items: ImageStudioItem[],
   query: string,
-  limit = ICONIFY_RESULT_LIMIT,
+  limit = SEARCH_LIMIT,
 ) => {
-  const collectionCounts = new Map<string, number>();
-  const exactNames = new Set<string>();
+  const itemKeys = new Set<string>();
   return [...items]
     .sort(
       (left, right) =>
@@ -209,23 +230,10 @@ export const curateIconifyResults = (
         left.title.localeCompare(right.title),
     )
     .filter((item) => {
-      const collection = item.providerId.split(":")[0];
-      const count = collectionCounts.get(collection) ?? 0;
-      if (count >= 2) {
+      if (itemKeys.has(item.itemKey)) {
         return false;
       }
-      const canonical = canonicalIconName(item.title);
-      const dedupeKey =
-        COLOR_COLLECTION_PRIORITY.includes(collection) && canonical
-          ? `${collection}:${canonical}`
-          : canonical;
-      if (dedupeKey && exactNames.has(dedupeKey)) {
-        return false;
-      }
-      collectionCounts.set(collection, count + 1);
-      if (dedupeKey) {
-        exactNames.add(dedupeKey);
-      }
+      itemKeys.add(item.itemKey);
       return true;
     })
     .slice(0, limit);
@@ -301,14 +309,15 @@ const cachedJsonFetch = async <T>(
 const pixabaySearchUrl = (
   query: string,
   page: number,
-  imageType: "vector" | "illustration",
+  imageType: PixabayImageType,
   key: string,
+  perPage = 20,
 ) => {
   const url = new URL(PIXABAY_API);
   url.searchParams.set("key", key);
   url.searchParams.set("q", query);
   url.searchParams.set("page", String(page));
-  url.searchParams.set("per_page", "20");
+  url.searchParams.set("per_page", String(perPage));
   url.searchParams.set("image_type", imageType);
   url.searchParams.set("colors", "transparent");
   url.searchParams.set("safesearch", "true");
@@ -320,112 +329,287 @@ export const buildPixabaySearchUrls = (
   query: string,
   page: number,
   key: string,
+  perPage = 20,
 ) => [
-  pixabaySearchUrl(query, page, "vector", key),
-  pixabaySearchUrl(query, page, "illustration", key),
+  pixabaySearchUrl(query, page, "vector", key, perPage),
+  pixabaySearchUrl(query, page, "illustration", key, perPage),
 ];
 
-const fetchPixabaySearch = async (
+const fetchPixabayPage = async (
   query: string,
+  imageType: PixabayImageType,
   page: number,
   env: ImageStudioEnv,
 ) => {
   if (!env.PIXABAY_API_KEY) {
     throw new Error("Pixabay is not configured");
   }
-  const urls = buildPixabaySearchUrls(query, page, env.PIXABAY_API_KEY);
-  const payloads = await Promise.all(
-    urls.map((url) =>
-      cachedJsonFetch<{ hits?: PixabayHit[]; totalHits?: number }>(
-        `https://image-studio-cache.invalid/pixabay/search/${encodeURIComponent(
-          query,
-        )}/${page}/${url.searchParams.get("image_type")}`,
-        url.toString(),
-      ),
-    ),
+  const url = pixabaySearchUrl(
+    query,
+    page,
+    imageType,
+    env.PIXABAY_API_KEY,
+    PIXABAY_PAGE_SIZE,
   );
-  const seen = new Set<number>();
+  const payload = await cachedJsonFetch<{
+    hits?: PixabayHit[];
+    totalHits?: number;
+  }>(
+    `https://image-studio-cache.invalid/pixabay/search/${encodeURIComponent(
+      query,
+    )}/${imageType}/${page}/${PIXABAY_PAGE_SIZE}`,
+    url.toString(),
+  );
+  const hits = payload.hits ?? [];
+  const totalHits = numberValue(payload.totalHits);
   return {
-    hits: payloads
-      .flatMap(({ hits }) => hits ?? [])
-      .filter((hit) => {
-        if (hit.id === undefined || seen.has(hit.id)) {
-          return false;
-        }
-        seen.add(hit.id);
-        return true;
-      }),
-    hasMore: payloads.some(
-      ({ hits, totalHits }) =>
-        page * 20 <
-        (numberValue(totalHits) ??
-          (hits?.length === 20 ? page * 20 + 1 : page * 20)),
-    ),
+    hits,
+    hasMore:
+      totalHits !== undefined
+        ? page * PIXABAY_PAGE_SIZE < totalHits
+        : hits.length === PIXABAY_PAGE_SIZE,
   };
 };
 
-const parseCursor = (cursor: string | null) => {
-  const page = Number(cursor);
-  return Number.isInteger(page) && page > 0 ? page : 1;
+const colorCollectionSet = new Set(COLOR_COLLECTION_PRIORITY);
+
+const fetchIconifyPage = async (
+  query: string,
+  start: number,
+  limit: number,
+  prefixes?: string[],
+) => {
+  const iconifyUrl = new URL(`${ICONIFY_API}/search`);
+  iconifyUrl.searchParams.set("query", query);
+  iconifyUrl.searchParams.set("limit", String(limit));
+  iconifyUrl.searchParams.set("start", String(start));
+  if (prefixes?.length) {
+    iconifyUrl.searchParams.set("prefixes", prefixes.join(","));
+  }
+  const payload = await fetchJson<IconifySearchPayload>(iconifyUrl.toString());
+  const fetchedCount = payload.icons?.length ?? 0;
+  const total = numberValue(payload.total);
+  const responseLimit = numberValue(payload.limit) ?? limit;
+  return {
+    items: normalizeIconifyResults(payload),
+    fetchedCount,
+    responseLimit,
+    total,
+  };
 };
+
+const iconifyPageExhausted = (
+  start: number,
+  consumedCount: number,
+  page: Awaited<ReturnType<typeof fetchIconifyPage>>,
+) =>
+  page.total !== undefined
+    ? start + consumedCount >= page.total
+    : consumedCount === page.fetchedCount &&
+      page.fetchedCount < page.responseLimit;
 
 const searchIconify = async (
   query: string,
-  page: number,
-  source: ImageStudioSearchSource,
-): Promise<ProviderSearchResult> => {
-  const start = (page - 1) * ICONIFY_FETCH_LIMIT;
-  const iconifyUrl = new URL(`${ICONIFY_API}/search`);
-  iconifyUrl.searchParams.set("query", query);
-  iconifyUrl.searchParams.set("limit", String(ICONIFY_FETCH_LIMIT));
-  iconifyUrl.searchParams.set("start", String(start));
-  const payload = await fetchJson<IconifySearchPayload>(iconifyUrl.toString());
-  const items = curateIconifyResults(
-    normalizeIconifyResults(payload),
-    query,
-    source === "iconify" ? SEARCH_LIMIT : ICONIFY_RESULT_LIMIT,
-  );
-  const fetchedCount = payload.icons?.length ?? 0;
-  const total = numberValue(payload.total);
+  currentCursor: IconifyCursor,
+  limit: number,
+): Promise<ProviderSearchResult<"iconify">> => {
+  const cursor = { ...currentCursor };
+  const items: ImageStudioItem[] = [];
+  if (!cursor.colorExhausted && limit > 0) {
+    const start = cursor.colorStart;
+    const page = await fetchIconifyPage(
+      query,
+      start,
+      Math.min(ICONIFY_COLOR_BATCH_LIMIT, limit),
+      COLOR_COLLECTION_PRIORITY,
+    );
+    const returnedItems = page.items.slice(0, limit);
+    const consumedCount =
+      returnedItems.length || page.fetchedCount === 0
+        ? returnedItems.length
+        : page.fetchedCount;
+    cursor.colorStart += consumedCount;
+    cursor.colorExhausted = iconifyPageExhausted(start, consumedCount, page);
+    items.push(...returnedItems);
+  }
+
+  let requests = 0;
+  while (items.length < limit && !cursor.generalExhausted && requests < 8) {
+    const start = cursor.generalStart;
+    const page = await fetchIconifyPage(query, start, limit - items.length);
+    let consumedCount = 0;
+    for (const item of page.items) {
+      consumedCount++;
+      if (!colorCollectionSet.has(item.providerId.split(":")[0])) {
+        items.push(item);
+      }
+      if (items.length === limit) {
+        break;
+      }
+    }
+    if (consumedCount === 0 && page.fetchedCount > 0) {
+      consumedCount = page.fetchedCount;
+    }
+    cursor.generalStart += consumedCount;
+    cursor.generalExhausted = iconifyPageExhausted(start, consumedCount, page);
+    requests++;
+    if (consumedCount === 0) {
+      break;
+    }
+  }
+
   return {
-    items,
-    hasMore:
-      total !== undefined
-        ? start + fetchedCount < total
-        : fetchedCount === ICONIFY_FETCH_LIMIT,
+    items: items.slice(0, limit),
+    cursor,
+    hasMore: !cursor.colorExhausted || !cursor.generalExhausted,
   };
+};
+
+const oppositePixabayType = (type: PixabayImageType): PixabayImageType =>
+  type === "vector" ? "illustration" : "vector";
+
+const nextPixabayType = (cursor: PixabayCursor) => {
+  if (!cursor[`${cursor.nextType}Exhausted`]) {
+    return cursor.nextType;
+  }
+  const alternate = oppositePixabayType(cursor.nextType);
+  return cursor[`${alternate}Exhausted`] ? null : alternate;
 };
 
 const searchPixabay = async (
   query: string,
-  page: number,
-  source: ImageStudioSearchSource,
+  currentCursor: PixabayCursor,
+  limit: number,
   env: ImageStudioEnv,
-): Promise<ProviderSearchResult> => {
-  const payload = await fetchPixabaySearch(query, page, env);
+): Promise<ProviderSearchResult<"pixabay">> => {
+  const cursor = { ...currentCursor };
+  const items: ImageStudioItem[] = [];
+  const itemKeys = new Set<string>();
+  const maxRequests = Math.ceil(limit / PIXABAY_PAGE_SIZE) + 2;
+  let requests = 0;
+  while (items.length + PIXABAY_PAGE_SIZE <= limit && requests < maxRequests) {
+    const imageType = nextPixabayType(cursor);
+    if (!imageType) {
+      break;
+    }
+    const pageKey = `${imageType}Page` as const;
+    const exhaustedKey = `${imageType}Exhausted` as const;
+    const payload = await fetchPixabayPage(
+      query,
+      imageType,
+      cursor[pageKey],
+      env,
+    );
+    cursor[pageKey]++;
+    cursor[exhaustedKey] = !payload.hasMore;
+    cursor.nextType = oppositePixabayType(imageType);
+    for (const item of normalizePixabayResults(payload)) {
+      if (!itemKeys.has(item.itemKey)) {
+        itemKeys.add(item.itemKey);
+        items.push(item);
+      }
+    }
+    requests++;
+  }
   return {
-    items: normalizePixabayResults(payload).slice(
-      0,
-      source === "pixabay" ? SEARCH_LIMIT : PIXABAY_RESULT_LIMIT,
-    ),
-    hasMore: payload.hasMore,
+    items,
+    cursor,
+    hasMore: !cursor.vectorExhausted || !cursor.illustrationExhausted,
   };
 };
 
-type SearchProvider = Exclude<ImageStudioSearchSource, "all">;
+type AnyProviderSearchResult =
+  | ProviderSearchResult<"iconify">
+  | ProviderSearchResult<"pixabay">;
 
-const PROVIDER_SEARCHERS: Record<
-  SearchProvider,
-  (
-    query: string,
-    page: number,
-    source: ImageStudioSearchSource,
-    env: ImageStudioEnv,
-  ) => Promise<ProviderSearchResult>
-> = {
-  iconify: (query, page, source) => searchIconify(query, page, source),
-  pixabay: searchPixabay,
+const initialCursor = (
+  query: string,
+  source: ImageStudioSearchSource,
+): SearchCursor => ({
+  version: 1,
+  query,
+  source,
+  iconify: {
+    colorStart: 0,
+    generalStart: 0,
+    colorExhausted: false,
+    generalExhausted: false,
+  },
+  pixabay: {
+    vectorPage: 1,
+    illustrationPage: 1,
+    nextType: "vector",
+    vectorExhausted: false,
+    illustrationExhausted: false,
+  },
+});
+
+const encodeCursor = (cursor: SearchCursor) => {
+  const bytes = new TextEncoder().encode(JSON.stringify(cursor));
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
 };
+
+const decodeCursor = (
+  value: string | null,
+  query: string,
+  source: ImageStudioSearchSource,
+) => {
+  if (!value) {
+    return initialCursor(query, source);
+  }
+  try {
+    const base64 = value.replaceAll("-", "+").replaceAll("_", "/");
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (character) =>
+      character.charCodeAt(0),
+    );
+    const cursor = JSON.parse(new TextDecoder().decode(bytes)) as SearchCursor;
+    const validInteger = (candidate: unknown, minimum: number) =>
+      typeof candidate === "number" &&
+      Number.isInteger(candidate) &&
+      candidate >= minimum;
+    const validBoolean = (candidate: unknown) => typeof candidate === "boolean";
+    if (
+      cursor.version !== 1 ||
+      cursor.query !== query ||
+      cursor.source !== source ||
+      !validInteger(cursor.iconify?.colorStart, 0) ||
+      !validInteger(cursor.iconify?.generalStart, 0) ||
+      !validBoolean(cursor.iconify?.colorExhausted) ||
+      !validBoolean(cursor.iconify?.generalExhausted) ||
+      !validInteger(cursor.pixabay?.vectorPage, 1) ||
+      !validInteger(cursor.pixabay?.illustrationPage, 1) ||
+      (cursor.pixabay?.nextType !== "vector" &&
+        cursor.pixabay?.nextType !== "illustration") ||
+      !validBoolean(cursor.pixabay?.vectorExhausted) ||
+      !validBoolean(cursor.pixabay?.illustrationExhausted)
+    ) {
+      throw new Error("Invalid search cursor");
+    }
+    return cursor;
+  } catch {
+    throw new Error("Invalid search cursor");
+  }
+};
+
+const searchProvider = (
+  provider: SearchProvider,
+  query: string,
+  cursor: SearchCursor,
+  limit: number,
+  env: ImageStudioEnv,
+): Promise<AnyProviderSearchResult> =>
+  provider === "iconify"
+    ? searchIconify(query, cursor.iconify, limit)
+    : searchPixabay(query, cursor.pixabay, limit, env);
 
 const providerWarning = (
   provider: SearchProvider,
@@ -453,36 +637,117 @@ const searchUncached = async (
   if (source !== "all" && source !== "iconify" && source !== "pixabay") {
     return json({ error: "Unknown search source" }, { status: 400 });
   }
-  const page = parseCursor(url.searchParams.get("cursor"));
+  let cursor: SearchCursor;
+  try {
+    cursor = decodeCursor(url.searchParams.get("cursor"), query, source);
+  } catch (cause) {
+    return json(
+      {
+        error: cause instanceof Error ? cause.message : "Invalid search cursor",
+      },
+      { status: 400 },
+    );
+  }
   const providers: SearchProvider[] =
     source === "all" ? ["iconify", "pixabay"] : [source];
+  const limits: Record<SearchProvider, number> =
+    source === "all"
+      ? {
+          iconify: ICONIFY_ALL_RESULT_LIMIT,
+          pixabay: PIXABAY_ALL_RESULT_LIMIT,
+        }
+      : { iconify: SEARCH_LIMIT, pixabay: SEARCH_LIMIT };
   const settled = await Promise.allSettled(
     providers.map((provider) =>
-      PROVIDER_SEARCHERS[provider](query, page, source, env),
+      searchProvider(provider, query, cursor, limits[provider], env),
     ),
   );
   const warnings: ImageStudioSearchResponse["warnings"] = [];
-  const resultsByProvider = new Map<SearchProvider, ProviderSearchResult>();
+  const warnedProviders = new Set<SearchProvider>();
+  const successfulProviders = new Set<SearchProvider>();
+  const resultsByProvider = new Map<SearchProvider, ImageStudioItem[]>();
+  const appendResult = (
+    provider: SearchProvider,
+    result: AnyProviderSearchResult,
+  ) => {
+    const current = resultsByProvider.get(provider) ?? [];
+    const itemKeys = new Set(current.map(({ itemKey }) => itemKey));
+    resultsByProvider.set(provider, [
+      ...current,
+      ...result.items.filter(({ itemKey }) => {
+        if (itemKeys.has(itemKey)) {
+          return false;
+        }
+        itemKeys.add(itemKey);
+        return true;
+      }),
+    ]);
+    if (provider === "iconify") {
+      cursor.iconify = result.cursor as IconifyCursor;
+    } else {
+      cursor.pixabay = result.cursor as PixabayCursor;
+    }
+  };
+  const warn = (provider: SearchProvider) => {
+    if (!warnedProviders.has(provider)) {
+      warnedProviders.add(provider);
+      warnings.push(providerWarning(provider, env));
+    }
+    if (provider === "pixabay" && !env.PIXABAY_API_KEY) {
+      cursor.pixabay.vectorExhausted = true;
+      cursor.pixabay.illustrationExhausted = true;
+    }
+  };
   settled.forEach((result, index) => {
     const provider = providers[index];
     if (result.status === "fulfilled") {
-      resultsByProvider.set(provider, result.value);
+      successfulProviders.add(provider);
+      appendResult(provider, result.value);
     } else {
-      warnings.push(providerWarning(provider, env));
+      warn(provider);
     }
   });
-  const iconifyResults = resultsByProvider.get("iconify")?.items ?? [];
-  const pixabayResults = resultsByProvider.get("pixabay")?.items ?? [];
+
+  if (source === "all") {
+    for (const provider of providers) {
+      const resultCount = [...resultsByProvider.values()].reduce(
+        (total, items) => total + items.length,
+        0,
+      );
+      const remaining = SEARCH_LIMIT - resultCount;
+      if (remaining <= 0 || !successfulProviders.has(provider)) {
+        continue;
+      }
+      try {
+        const refill = await searchProvider(
+          provider,
+          query,
+          cursor,
+          remaining,
+          env,
+        );
+        appendResult(provider, refill);
+      } catch {
+        warn(provider);
+      }
+    }
+  }
+
+  const iconifyResults = resultsByProvider.get("iconify") ?? [];
+  const pixabayResults = resultsByProvider.get("pixabay") ?? [];
   const results =
     source === "all"
       ? interleaveResults(iconifyResults, pixabayResults)
-      : resultsByProvider.get(source)?.items ?? [];
-  const hasMore = [...resultsByProvider.values()].some(
-    (result) => result.hasMore,
+      : resultsByProvider.get(source) ?? [];
+  const hasMore = providers.some((provider) =>
+    provider === "iconify"
+      ? !cursor.iconify.colorExhausted || !cursor.iconify.generalExhausted
+      : !cursor.pixabay.vectorExhausted ||
+        !cursor.pixabay.illustrationExhausted,
   );
   return json({
     results,
-    cursor: hasMore ? String(page + 1) : null,
+    cursor: hasMore ? encodeCursor(cursor) : null,
     warnings,
   } as ImageStudioSearchResponse);
 };

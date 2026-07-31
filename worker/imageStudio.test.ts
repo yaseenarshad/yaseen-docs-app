@@ -61,7 +61,7 @@ describe("Image Studio provider normalization", () => {
     }
   });
 
-  it("prioritizes colorful collections and caps each collection at two", () => {
+  it("prioritizes colorful collections without collapsing valid variants", () => {
     const results = normalizeIconifyResults({
       icons: [
         "mdi:rocket",
@@ -85,8 +85,7 @@ describe("Image Studio provider normalization", () => {
     const mdiResults = curated.filter(({ providerId }) =>
       providerId.startsWith("mdi:"),
     );
-    expect(mdiResults.length).toBeGreaterThan(0);
-    expect(mdiResults.length).toBeLessThanOrEqual(2);
+    expect(mdiResults).toHaveLength(3);
     expect(new Set(curated.map(({ providerId }) => providerId)).size).toBe(
       curated.length,
     );
@@ -122,13 +121,15 @@ describe("Image Studio provider normalization", () => {
   it("returns Iconify results with a clear warning when Pixabay is not configured", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        Response.json({
-          icons: ["fluent-emoji-flat:rocket"],
-          collections: {
-            "fluent-emoji-flat": { name: "Fluent Emoji Flat" },
-          },
-        }),
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          Response.json({
+            icons: ["fluent-emoji-flat:rocket"],
+            collections: {
+              "fluent-emoji-flat": { name: "Fluent Emoji Flat" },
+            },
+          }),
+        ),
       ),
     );
 
@@ -148,12 +149,14 @@ describe("Image Studio provider normalization", () => {
   });
 
   it("runs only the requested provider and rejects unknown sources", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      Response.json({
-        icons: ["fluent-color:rocket-24"],
-        collections: { "fluent-color": { name: "Fluent Color" } },
-        total: 1,
-      }),
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        Response.json({
+          icons: ["fluent-color:rocket-24"],
+          collections: { "fluent-color": { name: "Fluent Color" } },
+          total: 1,
+        }),
+      ),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -170,7 +173,7 @@ describe("Image Studio provider normalization", () => {
     };
 
     expect(response.status).toBe(200);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(body.results.every(({ provider }) => provider === "iconify")).toBe(
       true,
     );
@@ -186,7 +189,7 @@ describe("Image Studio provider normalization", () => {
     expect(invalid.status).toBe(400);
   });
 
-  it("returns a finite next cursor from provider pagination metadata", async () => {
+  it("returns an opaque next cursor from provider pagination metadata", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -207,7 +210,321 @@ describe("Image Studio provider normalization", () => {
       {},
     );
     const body = (await response.json()) as { cursor: string | null };
-    expect(body.cursor).toBe("2");
+    expect(body.cursor).not.toBeNull();
+    expect(body.cursor).not.toBe("2");
+  });
+
+  it("eventually returns every Iconify variant without discarding curated results", async () => {
+    const colorIcons = [
+      "fluent-emoji-flat:rocket",
+      "noto:rocket",
+      "openmoji:rocket",
+      "twemoji:rocket",
+    ];
+    const generalIcons = Array.from(
+      { length: 25 },
+      (_, index) => `tabler:rocket-${index + 1}`,
+    );
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      const icons = url.searchParams.has("prefixes")
+        ? colorIcons
+        : generalIcons;
+      const start = Number(url.searchParams.get("start") ?? 0);
+      const limit = Number(url.searchParams.get("limit") ?? icons.length);
+      return Response.json({
+        icons: icons.slice(start, start + limit),
+        collections: {
+          "fluent-emoji-flat": { name: "Fluent Emoji Flat" },
+          noto: { name: "Noto Emoji" },
+          openmoji: { name: "OpenMoji" },
+          twemoji: { name: "Twemoji" },
+          tabler: { name: "Tabler" },
+        },
+        total: icons.length,
+        start,
+        limit,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const results: Array<{ itemKey: string; providerId: string }> = [];
+    let cursor: string | null = null;
+    do {
+      const url = new URL("https://draw.test/api/image-studio/search");
+      url.searchParams.set("q", "rocket");
+      url.searchParams.set("source", "iconify");
+      if (cursor) {
+        url.searchParams.set("cursor", cursor);
+      }
+      const response = await handleImageStudioRequest(new Request(url), {});
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        results: Array<{ itemKey: string; providerId: string }>;
+        cursor: string | null;
+      };
+      results.push(...body.results);
+      cursor = body.cursor;
+    } while (cursor);
+
+    expect(
+      results.slice(0, colorIcons.length).map(({ providerId }) => providerId),
+    ).toEqual(colorIcons);
+    expect(new Set(results.map(({ itemKey }) => itemKey))).toEqual(
+      new Set(
+        [...colorIcons, ...generalIcons].map(
+          (providerId) => `iconify:${providerId}`,
+        ),
+      ),
+    );
+    expect(results).toHaveLength(colorIcons.length + generalIcons.length);
+    expect(
+      fetchMock.mock.calls
+        .map(([input]) => new URL(String(input)).searchParams.get("limit"))
+        .map(Number),
+    ).not.toContain(64);
+  });
+
+  it("does not advance past Iconify's oversized minimum response window", async () => {
+    const colorIcons = Array.from(
+      { length: 20 },
+      (_, index) => `openmoji:color-rocket-${index + 1}`,
+    );
+    const generalIcons = Array.from(
+      { length: 35 },
+      (_, index) => `tabler:general-rocket-${index + 1}`,
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = new URL(String(input));
+        const icons = url.searchParams.has("prefixes")
+          ? colorIcons
+          : generalIcons;
+        const start = Number(url.searchParams.get("start") ?? 0);
+        const providerLimit = 32;
+        return Response.json({
+          icons: icons.slice(start, start + providerLimit),
+          collections: {
+            openmoji: { name: "OpenMoji" },
+            tabler: { name: "Tabler" },
+          },
+          total: icons.length,
+          start,
+          limit: providerLimit,
+        });
+      }),
+    );
+
+    const itemKeys: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const url = new URL("https://draw.test/api/image-studio/search");
+      url.searchParams.set("q", "rocket");
+      url.searchParams.set("source", "iconify");
+      if (cursor) {
+        url.searchParams.set("cursor", cursor);
+      }
+      const response = await handleImageStudioRequest(new Request(url), {});
+      const body = (await response.json()) as {
+        results: Array<{ itemKey: string }>;
+        cursor: string | null;
+      };
+      itemKeys.push(...body.results.map(({ itemKey }) => itemKey));
+      cursor = body.cursor;
+    } while (cursor);
+
+    expect(itemKeys).toHaveLength(colorIcons.length + generalIcons.length);
+    expect(new Set(itemKeys)).toEqual(
+      new Set([...colorIcons, ...generalIcons].map((id) => `iconify:${id}`)),
+    );
+  });
+
+  it("exhausts both providers independently without skipping mixed results", async () => {
+    const colorIcons = ["fluent-emoji-flat:rocket", "openmoji:rocket"];
+    const generalIcons = Array.from(
+      { length: 20 },
+      (_, index) => `lucide:rocket-${index + 1}`,
+    );
+    const vectors = Array.from({ length: 5 }, (_, index) => ({
+      id: 100 + index,
+      type: "vector/svg",
+      tags: `vector rocket ${index + 1}`,
+      previewURL: `https://example.com/vector-${index + 1}.png`,
+    }));
+    const illustrations = Array.from({ length: 5 }, (_, index) => ({
+      id: 200 + index,
+      type: "illustration",
+      tags: `illustrated rocket ${index + 1}`,
+      previewURL: `https://example.com/illustration-${index + 1}.png`,
+    }));
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.hostname === "api.iconify.design") {
+        const icons = url.searchParams.has("prefixes")
+          ? colorIcons
+          : generalIcons;
+        const start = Number(url.searchParams.get("start") ?? 0);
+        const limit = Number(url.searchParams.get("limit") ?? icons.length);
+        return Response.json({
+          icons: icons.slice(start, start + limit),
+          collections: {
+            "fluent-emoji-flat": { name: "Fluent Emoji Flat" },
+            openmoji: { name: "OpenMoji" },
+            lucide: { name: "Lucide" },
+          },
+          total: icons.length,
+          start,
+          limit,
+        });
+      }
+      const items =
+        url.searchParams.get("image_type") === "vector"
+          ? vectors
+          : illustrations;
+      const page = Number(url.searchParams.get("page") ?? 1);
+      const perPage = Number(url.searchParams.get("per_page") ?? 20);
+      const start = (page - 1) * perPage;
+      return Response.json({
+        hits: items.slice(start, start + perPage),
+        totalHits: items.length,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const results: Array<{ itemKey: string; provider: string }> = [];
+    let cursor: string | null = null;
+    do {
+      const url = new URL("https://draw.test/api/image-studio/search");
+      url.searchParams.set("q", "rocket");
+      url.searchParams.set("source", "all");
+      if (cursor) {
+        url.searchParams.set("cursor", cursor);
+      }
+      const response = await handleImageStudioRequest(new Request(url), {
+        PIXABAY_API_KEY: "secret",
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        results: Array<{ itemKey: string; provider: string }>;
+        cursor: string | null;
+      };
+      expect(body.results.length).toBeLessThanOrEqual(18);
+      results.push(...body.results);
+      cursor = body.cursor;
+    } while (cursor);
+
+    const expectedKeys = [
+      ...colorIcons.map((id) => `iconify:${id}`),
+      ...generalIcons.map((id) => `iconify:${id}`),
+      ...vectors.map(({ id }) => `pixabay:${id}`),
+      ...illustrations.map(({ id }) => `pixabay:${id}`),
+    ];
+    expect(results.slice(0, 4).map(({ provider }) => provider)).toEqual([
+      "iconify",
+      "iconify",
+      "iconify",
+      "pixabay",
+    ]);
+    expect(results.map(({ itemKey }) => itemKey)).toHaveLength(
+      new Set(expectedKeys).size,
+    );
+    expect(new Set(results.map(({ itemKey }) => itemKey))).toEqual(
+      new Set(expectedKeys),
+    );
+  });
+
+  it("retries a failed provider from its unchanged position on the next cursor", async () => {
+    const icons = Array.from(
+      { length: 20 },
+      (_, index) => `lucide:recovery-${index + 1}`,
+    );
+    const vectors = Array.from({ length: 8 }, (_, index) => ({
+      id: 300 + index,
+      type: "vector/svg",
+      tags: `recovered vector ${index + 1}`,
+      previewURL: `https://example.com/recovered-${index + 1}.png`,
+    }));
+    let pixabayFailures = 1;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = new URL(String(input));
+        if (url.hostname === "api.iconify.design") {
+          const available = url.searchParams.has("prefixes") ? [] : icons;
+          const start = Number(url.searchParams.get("start") ?? 0);
+          const limit = Number(
+            url.searchParams.get("limit") ?? available.length,
+          );
+          return Response.json({
+            icons: available.slice(start, start + limit),
+            collections: { lucide: { name: "Lucide" } },
+            total: available.length,
+            start,
+            limit,
+          });
+        }
+        if (pixabayFailures > 0) {
+          pixabayFailures--;
+          throw new Error("Pixabay unavailable");
+        }
+        const available =
+          url.searchParams.get("image_type") === "vector" ? vectors : [];
+        const page = Number(url.searchParams.get("page") ?? 1);
+        const perPage = Number(url.searchParams.get("per_page") ?? 4);
+        const start = (page - 1) * perPage;
+        return Response.json({
+          hits: available.slice(start, start + perPage),
+          totalHits: available.length,
+        });
+      }),
+    );
+
+    const itemKeys: string[] = [];
+    const warningCounts: number[] = [];
+    let cursor: string | null = null;
+    do {
+      const url = new URL("https://draw.test/api/image-studio/search");
+      url.searchParams.set("q", "recovery");
+      url.searchParams.set("source", "all");
+      if (cursor) {
+        url.searchParams.set("cursor", cursor);
+      }
+      const response = await handleImageStudioRequest(new Request(url), {
+        PIXABAY_API_KEY: "secret",
+      });
+      const body = (await response.json()) as {
+        results: Array<{ itemKey: string }>;
+        cursor: string | null;
+        warnings: unknown[];
+      };
+      itemKeys.push(...body.results.map(({ itemKey }) => itemKey));
+      warningCounts.push(body.warnings.length);
+      cursor = body.cursor;
+    } while (cursor);
+
+    expect(warningCounts[0]).toBe(1);
+    expect(warningCounts.slice(1)).toEqual(expect.arrayContaining([0]));
+    expect(new Set(itemKeys)).toEqual(
+      new Set([
+        ...icons.map((id) => `iconify:${id}`),
+        ...vectors.map(({ id }) => `pixabay:${id}`),
+      ]),
+    );
+    expect(itemKeys).toHaveLength(new Set(itemKeys).size);
+  });
+
+  it("rejects malformed or mismatched opaque cursors", async () => {
+    const malformed = await handleImageStudioRequest(
+      new Request(
+        "https://draw.test/api/image-studio/search?q=rocket&source=all&cursor=2",
+      ),
+      {},
+    );
+    expect(malformed.status).toBe(400);
+    await expect(malformed.json()).resolves.toEqual({
+      error: "Invalid search cursor",
+    });
   });
 
   it("serves repeated configured searches from the 24-hour Worker cache", async () => {
@@ -254,7 +571,7 @@ describe("Image Studio provider normalization", () => {
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(cache.put).toHaveBeenCalled();
   });
 

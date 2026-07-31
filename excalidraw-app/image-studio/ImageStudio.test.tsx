@@ -194,7 +194,7 @@ describe("ImageStudio", () => {
       .mockResolvedValueOnce(
         Response.json({
           results: [repeated],
-          cursor: "2",
+          cursor: "opaque-provider-state-a",
           warnings: [],
         }),
       )
@@ -209,7 +209,7 @@ describe("ImageStudio", () => {
               title: "Two",
             },
           ],
-          cursor: "3",
+          cursor: "opaque-provider-state-b",
           warnings: [],
         }),
       )
@@ -260,7 +260,9 @@ describe("ImageStudio", () => {
     );
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(grid.scrollTop).toBe(88);
-    expect(String(fetchMock.mock.calls[1][0])).toContain("cursor=2&source=all");
+    expect(String(fetchMock.mock.calls[1][0])).toContain(
+      "cursor=opaque-provider-state-a&source=all",
+    );
 
     await act(async () => {
       intersect?.([{ isIntersecting: true }]);
@@ -273,12 +275,21 @@ describe("ImageStudio", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(screen.getAllByRole("button", { name: "Add One" })).toHaveLength(1);
     expect(grid.scrollTop).toBe(88);
-    expect(String(fetchMock.mock.calls[2][0])).toContain("cursor=3&source=all");
+    expect(String(fetchMock.mock.calls[2][0])).toContain(
+      "cursor=opaque-provider-state-b&source=all",
+    );
   });
 
-  it.each(["2", "1"])(
-    "stops automatic pagination when a response cursor returns %s instead of advancing",
-    async (responseCursor) => {
+  it.each([
+    { requestedCursor: "2", responseCursor: "2" },
+    { requestedCursor: "2", responseCursor: "1" },
+    {
+      requestedCursor: "opaque-provider-state",
+      responseCursor: "opaque-provider-state",
+    },
+  ])(
+    "stops automatic pagination when $responseCursor does not advance beyond $requestedCursor",
+    async ({ requestedCursor, responseCursor }) => {
       let intersect:
         | ((entries: Array<{ isIntersecting: boolean }>) => void)
         | null = null;
@@ -307,7 +318,7 @@ describe("ImageStudio", () => {
         .mockResolvedValueOnce(
           Response.json({
             results: [first],
-            cursor: "2",
+            cursor: requestedCursor,
             warnings: [],
           }),
         )
