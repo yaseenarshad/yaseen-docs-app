@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   publishPresentationAnimation,
+  publishAndCommitPresentationAnimation,
+  withRegisteredPresentationAnimation,
   type PublishPresentationAnimationDependencies,
 } from "./presentationAnimationPublishing";
 
@@ -108,5 +110,53 @@ describe("presentation animation publishing", () => {
     );
     expect(deps.abandonUpload).toHaveBeenCalledWith({ token: "upload-token" });
     expect(deps.cleanup).toHaveBeenCalledWith("delete-token");
+  });
+
+  it("commits a replacement reference only after the immutable version registers", async () => {
+    const deps = dependencies();
+    const commit = vi.fn();
+    deps.upload.mockImplementationOnce(async () => {
+      const manifest = deps.createUploadGrant.mock.calls[0][0];
+      return { etag: "etag-v2", sha256: manifest!.sha256 };
+    });
+
+    await publishAndCommitPresentationAnimation(input, deps, commit);
+
+    expect(commit).toHaveBeenCalledWith(reference);
+    expect(deps.registerUpload.mock.invocationCallOrder[0]).toBeLessThan(
+      commit.mock.invocationCallOrder[0],
+    );
+
+    const element = withRegisteredPresentationAnimation(
+      {
+        id: reference.sourceElementId,
+        customData: {
+          animationAssetId: "legacy",
+          animationUrl: "/expired-capability",
+          generationData: { status: "done", html: "large old bundle" },
+          preserved: true,
+        },
+      },
+      reference,
+    );
+    expect(element.customData).toEqual({
+      preserved: true,
+      animationAsset: { assetId: "lesson-animation", version: 2 },
+    });
+  });
+
+  it("does not change an element reference when replacement registration fails", async () => {
+    const deps = dependencies();
+    const commit = vi.fn();
+    deps.upload.mockImplementationOnce(async () => {
+      const manifest = deps.createUploadGrant.mock.calls[0][0];
+      return { etag: "etag-v2", sha256: manifest!.sha256 };
+    });
+    deps.registerUpload.mockRejectedValueOnce(new Error("registration failed"));
+
+    await expect(
+      publishAndCommitPresentationAnimation(input, deps, commit),
+    ).rejects.toThrow("registration failed");
+    expect(commit).not.toHaveBeenCalled();
   });
 });

@@ -8,6 +8,10 @@ export type AnimationRuntimeDescriptor = {
   elementId: string;
   targetOrigin?: string;
   responseOrigin?: string;
+  asset?: {
+    assetId: string;
+    version: number;
+  };
 };
 
 export type AnimationRuntimeCommand =

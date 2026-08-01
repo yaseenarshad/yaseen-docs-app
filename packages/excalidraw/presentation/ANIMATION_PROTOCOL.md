@@ -29,9 +29,9 @@ The iframe reports `ready`, `state`, `complete`, `error`, or `unsupported-versio
 
 ## Trust boundary
 
-The iframe bridge accepts commands only from `window.parent`. The host accepts a response only when all of the following match the registered runtime: iframe `contentWindow`, exact response origin, element ID, and current request ID. Sandboxed embedded `srcdoc` documents have the opaque response origin `"null"`; that value is allowed only for elements generated as trusted embedded animation HTML. Hosted assets must use their exact approved HTTPS origin. `"*"` is never a valid expected response origin.
+The iframe bridge accepts commands only from `window.parent`. The host accepts a response only when all of the following match the registered runtime: iframe `contentWindow`, exact response origin, element ID, and current request ID. Every managed animation iframe—embedded or hosted—uses `sandbox="allow-scripts"` without `allow-same-origin`, so its exact expected response origin is the opaque value `"null"`.
 
-The host may need `"*"` as the outbound target for an opaque `srcdoc`, but it still validates the returning window identity and exact opaque origin. Hosted R2 assets use an exact outbound origin.
+The opaque child requires `"*"` as the outbound target. This is not used as a response-origin wildcard: returning messages still require the exact `null` origin, exact iframe window, element ID, and request ID. A hosted iframe URL is accepted only when it is same-origin and exactly matches `/api/presentation-animations/<capability-token>`; the worker resolves that short-lived token to a registered R2 version and serves it with a no-network CSP.
 
 ## Compatibility
 

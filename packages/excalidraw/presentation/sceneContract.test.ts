@@ -82,6 +82,18 @@ describe("validateStoryboardPresentation", () => {
     );
   });
 
+  it("requires hosted animations to pin an immutable asset version", () => {
+    const invalid = structuredClone(presentation) as Record<string, any>;
+    invalid.slides[1].visual.source = {
+      kind: "asset",
+      assetId: "lesson-animation",
+    };
+
+    expect(() => validateStoryboardPresentation(invalid, templates)).toThrow(
+      "animation asset version must be a positive integer",
+    );
+  });
+
   it("reports missing copy, unknown templates, and text overflow together", () => {
     const invalid = structuredClone(presentation) as Record<string, any>;
     invalid.slides[0].headline = "";

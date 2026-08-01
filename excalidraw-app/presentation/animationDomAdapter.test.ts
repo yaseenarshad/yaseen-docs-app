@@ -2,6 +2,7 @@ import { newFrameElement, newIframeElement } from "@excalidraw/element";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createAnimationResponse } from "@excalidraw/excalidraw/presentation/animationProtocol";
+import { ANIMATION_RUNTIME_URL_EVENT } from "@excalidraw/excalidraw/presentation/animationRuntimePolicy";
 
 import {
   ANIMATION_RUNTIME_STATUS_EVENT,
@@ -133,6 +134,84 @@ describe("animation DOM adapter", () => {
       "*",
     );
     adapter.dispose();
+  });
+
+  it("resolves a hosted asset only when lifecycle loading requests it", async () => {
+    const iframe = document.createElement("iframe");
+    iframe.dataset.yaseendrawAnimationElementId = "animation-hosted";
+    document.body.append(iframe);
+    const postMessage = vi
+      .spyOn(iframe.contentWindow!, "postMessage")
+      .mockImplementation(() => undefined);
+    const resolvePresentationAnimation = vi.fn(async () => ({
+      url: `/api/presentation-animations/${"a".repeat(64)}`,
+      expiresAt: Date.now() + 300_000,
+    }));
+    const onUrl = (event: CustomEvent<{ url: string | null }>) => {
+      if (event.detail.url) {
+        iframe.dataset.yaseendrawAnimationUrl = event.detail.url;
+      }
+    };
+    window.addEventListener(
+      ANIMATION_RUNTIME_URL_EVENT,
+      onUrl as EventListener,
+    );
+    const adapter = new DomAnimationRuntimeAdapter({
+      timeoutMs: 500,
+      resolvePresentationAnimation,
+    });
+    const runtime = {
+      presentationId: "deck",
+      frameId: "frame-hosted",
+      elementId: "animation-hosted",
+      targetOrigin: "*",
+      responseOrigin: "null",
+      asset: { assetId: "lesson-animation", version: 2 },
+    };
+    adapter.setPolicy({
+      sessionId: "session-hosted",
+      activeFrameId: runtime.frameId,
+      preloadFrameIds: [],
+    });
+    expect(resolvePresentationAnimation).not.toHaveBeenCalled();
+
+    const result = adapter.send(
+      runtime,
+      { command: "load" },
+      { sessionId: "session-hosted" },
+    );
+    await vi.waitFor(() => expect(postMessage).toHaveBeenCalled());
+    const command = postMessage.mock.calls[0][0] as { requestId: string };
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: createAnimationResponse({
+          presentationId: runtime.presentationId,
+          sessionId: "session-hosted",
+          frameId: runtime.frameId,
+          elementId: runtime.elementId,
+          requestId: command.requestId,
+          event: "state",
+          state: "paused",
+          time: 0,
+        }),
+        origin: "null",
+        source: iframe.contentWindow,
+      }),
+    );
+
+    await expect(result).resolves.toBe(true);
+    expect(resolvePresentationAnimation).toHaveBeenCalledWith({
+      assetId: "lesson-animation",
+      version: 2,
+    });
+    expect(iframe.dataset.yaseendrawAnimationUrl).toMatch(
+      /\/api\/presentation-animations\/[a-f0-9]{64}$/,
+    );
+    adapter.dispose();
+    window.removeEventListener(
+      ANIMATION_RUNTIME_URL_EVENT,
+      onUrl as EventListener,
+    );
   });
 
   it("fails safely when the iframe does not mount before the timeout", async () => {

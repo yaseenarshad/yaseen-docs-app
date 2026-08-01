@@ -26,6 +26,7 @@ import {
 } from "../cloud/sidebarDockPreference";
 import { ImageStudio } from "../image-studio/ImageStudio";
 import { PresentationAnimationController } from "../presentation/PresentationAnimationController";
+
 import { PresentationPlayer } from "../presentation/PresentationPlayer";
 import { PresentationSidebar } from "../presentation/PresentationSidebar";
 
@@ -44,6 +45,7 @@ import type {
 } from "./boardPreviewOverlay";
 
 import type { BoardSort, BoardSortCategory } from "../cloud/boardOrganizer";
+import type { ResolvePresentationAnimation } from "../presentation/animationDomAdapter";
 
 type BoardSummary = {
   _id: string;
@@ -87,6 +89,7 @@ type AppSidebarProps = BoardBrowserProps & {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
   canInsertMedia: boolean;
   imageStudioSearchFocusRequest: number;
+  resolvePresentationAnimation?: ResolvePresentationAnimation;
   footer?: React.ReactNode;
 };
 
@@ -1125,6 +1128,7 @@ export const AppSidebar = ({
   excalidrawAPI,
   canInsertMedia,
   imageStudioSearchFocusRequest,
+  resolvePresentationAnimation,
   footer,
   ...boardBrowserProps
 }: AppSidebarProps) => {
@@ -1273,7 +1277,10 @@ export const AppSidebar = ({
         {footer && <div className="app-sidebar-footer">{footer}</div>}
       </DefaultSidebar>
       {excalidrawAPI && (
-        <PresentationAnimationController excalidrawAPI={excalidrawAPI} />
+        <PresentationAnimationController
+          excalidrawAPI={excalidrawAPI}
+          resolvePresentationAnimation={resolvePresentationAnimation}
+        />
       )}
       {presentationSession && excalidrawAPI && (
         <PresentationPlayer

@@ -5,9 +5,11 @@ import {
 
 import {
   ANIMATION_RUNTIME_STATUS_EVENT,
+  getTrustedPresentationAnimationUrl,
   isManagedPresentationAnimation,
   publishAnimationRuntimePolicy,
   publishAnimationRuntimeStatus,
+  publishAnimationRuntimeUrl,
   type AnimationRuntimeStatusDetail,
 } from "@excalidraw/excalidraw/presentation/animationRuntimePolicy";
 import { getPresentationMetadata } from "@excalidraw/excalidraw/presentation/templateApplication";
@@ -23,6 +25,21 @@ import type {
 } from "./animationOrchestrator";
 
 export { ANIMATION_RUNTIME_STATUS_EVENT };
+
+const getAnimationAssetReference = (element: ExcalidrawElement) => {
+  const asset = element.customData?.animationAsset;
+  if (
+    typeof asset !== "object" ||
+    asset === null ||
+    typeof asset.assetId !== "string" ||
+    asset.assetId.length === 0 ||
+    !Number.isSafeInteger(asset.version) ||
+    asset.version < 1
+  ) {
+    return undefined;
+  }
+  return { assetId: asset.assetId, version: asset.version };
+};
 
 export const collectAnimationRuntimes = (
   elements: readonly ExcalidrawElement[],
@@ -46,6 +63,7 @@ export const collectAnimationRuntimes = (
     if (!presentationId) {
       return [];
     }
+    const asset = getAnimationAssetReference(element);
     return [
       {
         presentationId,
@@ -56,30 +74,47 @@ export const collectAnimationRuntimes = (
         // are accepted solely from its exact contentWindow and null origin.
         targetOrigin: "*",
         responseOrigin: "null",
+        ...(asset ? { asset } : null),
       },
     ];
   });
 };
 
-const findRuntimeIframe = (elementId: string) =>
+const findRuntimeIframe = (elementId: string, expectedUrl?: string) =>
   Array.from(
     document.querySelectorAll<HTMLIFrameElement>(
       "iframe[data-yaseendraw-animation-element-id]",
     ),
   ).find(
-    (iframe) => iframe.dataset.yaseendrawAnimationElementId === elementId,
+    (iframe) =>
+      iframe.dataset.yaseendrawAnimationElementId === elementId &&
+      (!expectedUrl || iframe.dataset.yaseendrawAnimationUrl === expectedUrl),
   ) ?? null;
+
+export type ResolvePresentationAnimation = (reference: {
+  assetId: string;
+  version: number;
+}) => Promise<{ url: string; expiresAt: number }>;
 
 export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
   private readonly timeoutMs: number;
   private requestSequence = 0;
   private disposed = false;
   private pending = new Set<() => void>();
+  private readonly resolvePresentationAnimation?: ResolvePresentationAnimation;
+  private resolvedUrls = new Map<string, { url: string; expiresAt: number }>();
   private runtimePolicy: Parameters<AnimationRuntimeAdapter["setPolicy"]>[0] =
     null;
 
-  constructor({ timeoutMs = 1200 }: { timeoutMs?: number } = {}) {
+  constructor({
+    timeoutMs = 1200,
+    resolvePresentationAnimation,
+  }: {
+    timeoutMs?: number;
+    resolvePresentationAnimation?: ResolvePresentationAnimation;
+  } = {}) {
     this.timeoutMs = timeoutMs;
+    this.resolvePresentationAnimation = resolvePresentationAnimation;
   }
 
   setPolicy: AnimationRuntimeAdapter["setPolicy"] = (policy) => {
@@ -95,7 +130,12 @@ export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
     );
   }
 
-  private waitForIframe(elementId: string) {
+  private clearResolvedRuntime(elementId: string) {
+    this.resolvedUrls.delete(elementId);
+    publishAnimationRuntimeUrl({ elementId, url: null });
+  }
+
+  private waitForIframe(elementId: string, expectedUrl?: string) {
     const deadline = Date.now() + this.timeoutMs;
     return new Promise<HTMLIFrameElement | null>((resolve) => {
       const check = () => {
@@ -103,7 +143,7 @@ export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
           resolve(null);
           return;
         }
-        const iframe = findRuntimeIframe(elementId);
+        const iframe = findRuntimeIframe(elementId, expectedUrl);
         if (iframe?.contentWindow) {
           resolve(iframe);
           return;
@@ -133,22 +173,76 @@ export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
         status: "loading",
       });
     }
+    let expectedUrl: string | undefined;
+    if (runtime.asset) {
+      const cached = this.resolvedUrls.get(runtime.elementId);
+      if (cached && cached.expiresAt > Date.now() + 10_000) {
+        expectedUrl = cached.url;
+      } else if (
+        directive.command === "load" &&
+        this.resolvePresentationAnimation
+      ) {
+        try {
+          const resolved = await this.resolvePresentationAnimation(
+            runtime.asset,
+          );
+          expectedUrl =
+            getTrustedPresentationAnimationUrl(
+              resolved.url,
+              window.location.href,
+            ) ?? undefined;
+          if (!expectedUrl) {
+            throw new Error("Animation viewer returned an invalid URL");
+          }
+          this.resolvedUrls.set(runtime.elementId, {
+            url: expectedUrl,
+            expiresAt: resolved.expiresAt,
+          });
+          publishAnimationRuntimeUrl({
+            elementId: runtime.elementId,
+            url: expectedUrl,
+          });
+        } catch (error) {
+          publishAnimationRuntimeStatus({
+            elementId: runtime.elementId,
+            frameId: runtime.frameId,
+            status: "error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Could not authorize the animation",
+          });
+          return false;
+        }
+      } else if (directive.command === "load") {
+        publishAnimationRuntimeStatus({
+          elementId: runtime.elementId,
+          frameId: runtime.frameId,
+          status: "error",
+          message: "Hosted animation resolver is unavailable",
+        });
+        return false;
+      }
+    }
     const cleanupStatus =
       directive.command === "unload"
         ? "unloaded"
         : directive.command === "pause"
         ? "paused"
         : null;
-    let iframe = findRuntimeIframe(runtime.elementId);
+    let iframe = findRuntimeIframe(runtime.elementId, expectedUrl);
     if (!iframe && cleanupStatus) {
       publishAnimationRuntimeStatus({
         elementId: runtime.elementId,
         frameId: runtime.frameId,
         status: cleanupStatus,
       });
+      if (directive.command === "unload" && runtime.asset) {
+        this.clearResolvedRuntime(runtime.elementId);
+      }
       return true;
     }
-    iframe ??= await this.waitForIframe(runtime.elementId);
+    iframe ??= await this.waitForIframe(runtime.elementId, expectedUrl);
     if (!iframe?.contentWindow || this.disposed) {
       if (cleanupStatus) {
         publishAnimationRuntimeStatus({
@@ -156,6 +250,9 @@ export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
           frameId: runtime.frameId,
           status: cleanupStatus,
         });
+        if (directive.command === "unload" && runtime.asset) {
+          this.clearResolvedRuntime(runtime.elementId);
+        }
         return true;
       }
       if (!this.isRuntimeDesired(runtime)) {
@@ -180,7 +277,7 @@ export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
       ...directive,
     } as AnimationCommandInput);
 
-    return new Promise<boolean>((resolve) => {
+    const result = await new Promise<boolean>((resolve) => {
       let settled = false;
       const finish = (result: boolean) => {
         if (settled) {
@@ -262,6 +359,10 @@ export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
       iframe.addEventListener("load", post, { once: true });
       post();
     });
+    if (directive.command === "unload" && runtime.asset) {
+      this.clearResolvedRuntime(runtime.elementId);
+    }
+    return result;
   };
 
   dispose() {
@@ -271,6 +372,10 @@ export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
     }
     this.pending.clear();
     this.runtimePolicy = null;
+    for (const elementId of this.resolvedUrls.keys()) {
+      this.clearResolvedRuntime(elementId);
+    }
+    this.resolvedUrls.clear();
     publishAnimationRuntimePolicy(null);
   }
 }

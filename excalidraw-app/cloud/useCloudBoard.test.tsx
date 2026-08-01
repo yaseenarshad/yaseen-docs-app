@@ -74,4 +74,27 @@ describe("useCloudBoard preview scheduling", () => {
 
     expect(mocks.publishBoardPreview).toHaveBeenCalledTimes(1);
   });
+
+  it("exchanges an immutable animation reference for a short-lived owner URL on demand", async () => {
+    mocks.mutate.mockResolvedValueOnce({
+      path: `/api/presentation-animations/${"a".repeat(64)}`,
+      expiresAt: 12345,
+    });
+    const { result } = renderHook(() => useCloudBoard());
+
+    await expect(
+      result.current.resolvePresentationAnimation({
+        assetId: "lesson-animation",
+        version: 2,
+      }),
+    ).resolves.toEqual({
+      url: `/api/presentation-animations/${"a".repeat(64)}`,
+      expiresAt: 12345,
+    });
+    expect(mocks.mutate).toHaveBeenCalledWith({
+      diagramId: "board-id",
+      assetId: "lesson-animation",
+      version: 2,
+    });
+  });
 });

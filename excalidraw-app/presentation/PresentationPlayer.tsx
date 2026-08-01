@@ -225,6 +225,9 @@ export const PresentationPlayer = ({
       // the remounted controls inert.
       queueMicrotask(() => {
         if (
+          // This must read the latest generation after the microtask; capturing
+          // the cleanup-time value would break the Strict Mode replay guard.
+          // eslint-disable-next-line react-hooks/exhaustive-deps
           effectGenerationRef.current !== effectGeneration ||
           didExitRef.current
         ) {

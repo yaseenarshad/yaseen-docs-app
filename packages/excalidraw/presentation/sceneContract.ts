@@ -23,6 +23,7 @@ export type AnimationVisualReference = {
     | {
         kind: "asset";
         assetId: string;
+        version: number;
       };
   previewAssetId?: string;
 };
@@ -206,6 +207,16 @@ const validateVisual = (
         slideId,
         path: "visual.source.assetId",
         message: "animation assetId is required",
+      });
+    } else if (
+      visual.source.kind === "asset" &&
+      (!Number.isSafeInteger(visual.source.version) ||
+        (visual.source.version as number) < 1)
+    ) {
+      issues.push({
+        slideId,
+        path: "visual.source.version",
+        message: "animation asset version must be a positive integer",
       });
     } else if (
       visual.source.kind !== "embedded-html" &&

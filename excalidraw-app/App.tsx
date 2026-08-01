@@ -160,6 +160,7 @@ import {
   shouldRunLocalSceneSync,
 } from "./cloud/cloudSceneOwnership";
 import { useCloudBoard } from "./cloud/useCloudBoard";
+import { sanitizeCloudPresentationScene } from "./cloud/presentationScenePersistence";
 import DebugCanvas, {
   debugRenderer,
   isVisualDebuggerEnabled,
@@ -564,7 +565,9 @@ const ExcalidrawWrapper = () => {
     }
 
     try {
-      const scene = JSON.parse(cloud.openedBoard.sceneJson);
+      const scene = JSON.parse(
+        sanitizeCloudPresentationScene(cloud.openedBoard.sceneJson),
+      );
       const appState = excalidrawAPI.getAppState();
       const remoteElements = restoreElements(scene.elements, null, {
         repairBindings: true,
@@ -1403,6 +1406,7 @@ const ExcalidrawWrapper = () => {
             cloud.openedBoard?.access === "owner"
           }
           imageStudioSearchFocusRequest={imageStudioSearchFocusRequest}
+          resolvePresentationAnimation={cloud.resolvePresentationAnimation}
           footer={
             <CloudAccount
               menuItems={

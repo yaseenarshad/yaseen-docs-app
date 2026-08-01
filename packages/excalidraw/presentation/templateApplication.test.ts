@@ -165,6 +165,38 @@ describe("applyPresentationTemplate", () => {
     });
   });
 
+  it("stores only an immutable reference for a hosted animation", () => {
+    const hostedSlide = {
+      ...structuredClone(presentation.slides[0]),
+      renderMode: "animation" as const,
+      visual: {
+        kind: "animation" as const,
+        source: {
+          kind: "asset" as const,
+          assetId: "lesson-animation",
+          version: 3,
+        },
+      },
+    };
+    const hosted = applyPresentationTemplate({
+      presentation,
+      slide: hostedSlide,
+      template,
+    });
+    const animation = elementByRole(hosted, "animated-visual");
+
+    expect(animation?.customData).toMatchObject({
+      animationProtocolVersion: ANIMATION_PROTOCOL_VERSION,
+      animationAsset: { assetId: "lesson-animation", version: 3 },
+    });
+    expect(animation?.customData).not.toHaveProperty("generationData.html");
+    expect(hosted.warnings).toContainEqual(
+      expect.objectContaining({
+        message: expect.stringContaining("trusted asset resolver"),
+      }),
+    );
+  });
+
   it("wraps copy explicitly and returns clear slot overflow warnings", () => {
     const slide = structuredClone(presentation.slides[0]);
     slide.body = Array.from(

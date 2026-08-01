@@ -8,6 +8,8 @@ export const ANIMATION_RUNTIME_POLICY_EVENT =
   "yaseendraw:animation-runtime-policy" as const;
 export const ANIMATION_RUNTIME_STATUS_EVENT =
   "yaseendraw:animation-runtime-status" as const;
+export const ANIMATION_RUNTIME_URL_EVENT =
+  "yaseendraw:animation-runtime-url" as const;
 
 export type AnimationRuntimeMountPolicy = {
   sessionId: string;
@@ -21,6 +23,10 @@ export type AnimationRuntimeStatusDetail = {
   frameId: string;
   status: "loading" | "ready" | "playing" | "paused" | "unloaded" | "error";
   message?: string;
+};
+export type AnimationRuntimeUrlDetail = {
+  elementId: string;
+  url: string | null;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -115,9 +121,20 @@ export const publishAnimationRuntimeStatus = (
   );
 };
 
+export const publishAnimationRuntimeUrl = (
+  detail: AnimationRuntimeUrlDetail,
+) => {
+  window.dispatchEvent(
+    new CustomEvent<AnimationRuntimeUrlDetail>(ANIMATION_RUNTIME_URL_EVENT, {
+      detail,
+    }),
+  );
+};
+
 declare global {
   interface WindowEventMap {
     [ANIMATION_RUNTIME_POLICY_EVENT]: CustomEvent<AnimationRuntimeMountPolicy | null>;
     [ANIMATION_RUNTIME_STATUS_EVENT]: CustomEvent<AnimationRuntimeStatusDetail>;
+    [ANIMATION_RUNTIME_URL_EVENT]: CustomEvent<AnimationRuntimeUrlDetail>;
   }
 }

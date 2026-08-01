@@ -306,12 +306,14 @@ import type { Mutable, ValueOf } from "@excalidraw/common/utility-types";
 import {
   ANIMATION_RUNTIME_POLICY_EVENT,
   ANIMATION_RUNTIME_STATUS_EVENT,
+  ANIMATION_RUNTIME_URL_EVENT,
   getAnimationRuntimeMode,
   getPresentationIframeSandbox,
   getTrustedPresentationAnimationUrl,
   isManagedPresentationAnimation,
   type AnimationRuntimeMountPolicy,
   type AnimationRuntimeStatusDetail,
+  type AnimationRuntimeUrlDetail,
 } from "../presentation/animationRuntimePolicy";
 
 import {
@@ -693,6 +695,7 @@ class App extends React.Component<AppProps, AppState> {
     string,
     AnimationRuntimeStatusDetail
   >();
+  private animationRuntimeUrlByElement = new Map<string, string>();
 
   private onAnimationRuntimePolicy = (
     event: CustomEvent<AnimationRuntimeMountPolicy | null>,
@@ -712,6 +715,22 @@ class App extends React.Component<AppProps, AppState> {
       this.animationRuntimeStatusByElement.set(
         event.detail.elementId,
         event.detail,
+      );
+    }
+    if (!this.unmounted) {
+      this.forceUpdate();
+    }
+  };
+
+  private onAnimationRuntimeUrl = (
+    event: CustomEvent<AnimationRuntimeUrlDetail>,
+  ) => {
+    if (event.detail.url === null) {
+      this.animationRuntimeUrlByElement.delete(event.detail.elementId);
+    } else {
+      this.animationRuntimeUrlByElement.set(
+        event.detail.elementId,
+        event.detail.url,
       );
     }
     if (!this.unmounted) {
@@ -1859,13 +1878,17 @@ class App extends React.Component<AppProps, AppState> {
           }
 
           let src: IframeData | null;
+          let trustedAnimationUrl: string | null = null;
 
           if (isIframeElement(el)) {
             src = null;
 
-            const trustedAnimationUrl = isManagedAnimation
+            const runtimeAnimationUrl =
+              this.animationRuntimeUrlByElement.get(el.id) ??
+              el.customData?.animationUrl;
+            trustedAnimationUrl = isManagedAnimation
               ? getTrustedPresentationAnimationUrl(
-                  el.customData?.animationUrl,
+                  runtimeAnimationUrl,
                   window.location.href,
                 )
               : null;
@@ -2160,6 +2183,9 @@ class App extends React.Component<AppProps, AppState> {
                         }
                         data-yaseendraw-animation-runtime={
                           animationRuntimeMode ?? undefined
+                        }
+                        data-yaseendraw-animation-url={
+                          trustedAnimationUrl ?? undefined
                         }
                         srcDoc={
                           src?.type === "document"
@@ -3844,6 +3870,10 @@ class App extends React.Component<AppProps, AppState> {
       ANIMATION_RUNTIME_STATUS_EVENT,
       this.onAnimationRuntimeStatus,
     );
+    window.addEventListener(
+      ANIMATION_RUNTIME_URL_EVENT,
+      this.onAnimationRuntimeUrl,
+    );
 
     this.excalidrawContainerValue.container =
       this.excalidrawContainerRef.current;
@@ -3943,8 +3973,13 @@ class App extends React.Component<AppProps, AppState> {
       ANIMATION_RUNTIME_STATUS_EVENT,
       this.onAnimationRuntimeStatus,
     );
+    window.removeEventListener(
+      ANIMATION_RUNTIME_URL_EVENT,
+      this.onAnimationRuntimeUrl,
+    );
     this.animationRuntimePolicy = null;
     this.animationRuntimeStatusByElement.clear();
+    this.animationRuntimeUrlByElement.clear();
     // we're recreating the api object reference so that the
     // <ExcalidrawAPIContext.Provider/> picks up on it
     this.api = { ...this.api, isDestroyed: true };

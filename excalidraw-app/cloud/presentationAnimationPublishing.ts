@@ -144,3 +144,43 @@ export const publishPresentationAnimation = async (
     throw error;
   }
 };
+
+export const publishAndCommitPresentationAnimation = async (
+  input: Parameters<typeof publishPresentationAnimation>[0],
+  dependencies: PublishPresentationAnimationDependencies,
+  commitReference: (
+    reference: PresentationAnimationReference,
+  ) => void | Promise<void>,
+) => {
+  const reference = await publishPresentationAnimation(input, dependencies);
+  await commitReference(reference);
+  return reference;
+};
+
+export const withRegisteredPresentationAnimation = <
+  Element extends {
+    id: string;
+    customData?: Record<string, unknown>;
+  },
+>(
+  element: Element,
+  reference: PresentationAnimationReference,
+): Element => {
+  if (element.id !== reference.sourceElementId) {
+    throw new Error("Registered animation does not belong to this element");
+  }
+  const customData = { ...element.customData };
+  delete customData.animationUrl;
+  delete customData.animationAssetId;
+  delete customData.generationData;
+  return {
+    ...element,
+    customData: {
+      ...customData,
+      animationAsset: {
+        assetId: reference.assetId,
+        version: reference.version,
+      },
+    },
+  };
+};

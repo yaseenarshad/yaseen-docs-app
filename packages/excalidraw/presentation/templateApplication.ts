@@ -293,9 +293,12 @@ const createVisualElement = ({
         customData: {
           animationProtocolVersion: ANIMATION_PROTOCOL_VERSION,
           generationData,
-          animationAssetId:
+          animationAsset:
             slide.visual.source.kind === "asset"
-              ? slide.visual.source.assetId
+              ? {
+                  assetId: slide.visual.source.assetId,
+                  version: slide.visual.source.version,
+                }
               : undefined,
           previewAssetId: slide.visual.previewAssetId,
           yaseenPresentation: metadata,

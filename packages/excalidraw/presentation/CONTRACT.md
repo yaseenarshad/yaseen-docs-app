@@ -9,7 +9,7 @@ Call `validateStoryboardPresentation(input, templates)` before rendering. A pres
 The approved modes are:
 
 - `image`: the visual reference owns a binary asset ID. The renderer creates a normal image element in the template's visual slot.
-- `animation`: the visual reference owns either embedded HTML for small prototypes or an animation asset ID. The renderer creates an iframe in the visual slot. A preview image is optional.
+- `animation`: the visual reference owns either embedded HTML for small prototypes or an immutable animation asset ID/version pair. The renderer creates an iframe in the visual slot. A preview image is optional.
 - `full-native`: the visual reference owns the stable source ID for a native element composition. The renderer creates only normal Excalidraw elements.
 
 The canonical fixture at `fixtures/canonical-storyboard.json` contains one example of every mode.
@@ -43,6 +43,6 @@ Use `createPresentationElementId()` for every generated frame and child. Its ID 
 - Scene JSON owns frame geometry, native copy, element relationships, metadata, template IDs, and asset references.
 - Excalidraw binary files / the existing R2 board-asset path own shared SVG plates, static visuals, and preview images.
 - Embedded animation HTML remains in scene JSON only for small prototypes and counts against the scene-size limit.
-- Hosted animation bundles will use the later trusted R2 animation contract; this v1 contract already supports a stable animation asset reference without defining that storage implementation.
+- Hosted animation bundles use the dedicated trusted R2 contract. Cloud scene JSON persists only `customData.animationAsset = { assetId, version }`; short-lived viewer URLs remain in editor memory and are resolved only when Presentation Mode requests the active or adjacent runtime. Local embedded animations keep their bridged HTML for portable `.excalidraw` files.
 
 Validation collects all actionable errors in one `StoryboardContractError`. Each slide error includes its stable slide ID, field path, and reason. Duplicate slide IDs/orders, missing copy or visuals, unknown templates, mode/visual mismatches, unsupported modes, and template text overflow all fail before scene generation starts.

@@ -28,6 +28,12 @@ import {
   getBoardPreviewDelay,
 } from "./boardPreviewGeneration";
 import { publishBoardPreview } from "./boardPreviewPublishing";
+import { sanitizeCloudPresentationScene } from "./presentationScenePersistence";
+import {
+  cleanupPresentationAnimationObjects,
+  publishPresentationAnimation as publishTrustedPresentationAnimation,
+  uploadPresentationAnimationBlob,
+} from "./presentationAnimationPublishing";
 
 import {
   BOARD_SORT_STORAGE_KEY,
@@ -90,6 +96,18 @@ export const useCloudBoard = () => {
   );
   const registerPreviewUpload = useMutation(api.boardPreviews.registerUpload);
   const recordEmptyPreview = useMutation(api.boardPreviews.recordEmpty);
+  const createPresentationAnimationReadGrant = useMutation(
+    api.presentationAnimations.createReadGrant,
+  );
+  const createPresentationAnimationUploadGrant = useMutation(
+    api.presentationAnimations.createUploadGrant,
+  );
+  const registerPresentationAnimationUpload = useMutation(
+    api.presentationAnimations.registerUpload,
+  );
+  const abandonPresentationAnimationUpload = useMutation(
+    api.presentationAnimations.abandonUpload,
+  );
   const versionRef = useRef(0);
   const saveTimerRef = useRef<number | null>(null);
   const previewTimerRef = useRef<number | null>(null);
@@ -240,7 +258,7 @@ export const useCloudBoard = () => {
     if (openedBoard) {
       versionRef.current = openedBoard.version;
       acceptedSceneRef.current = acceptCloudSceneWithoutSave(
-        openedBoard.sceneJson,
+        sanitizeCloudPresentationScene(openedBoard.sceneJson),
       );
       setSaveStatus(openedBoard.access === "viewer" ? "viewer" : "saved");
       setErrorMessage(null);
@@ -401,7 +419,10 @@ export const useCloudBoard = () => {
       if (!openedBoard || openedBoard.access !== "owner") {
         return;
       }
-      if (!shouldQueueCloudSceneSave(acceptedSceneRef.current, sceneJson)) {
+      const persistedSceneJson = sanitizeCloudPresentationScene(sceneJson);
+      if (
+        !shouldQueueCloudSceneSave(acceptedSceneRef.current, persistedSceneJson)
+      ) {
         pendingSceneRef.current = null;
         setSaveStatus("saved");
         return;
@@ -409,7 +430,7 @@ export const useCloudBoard = () => {
       pendingSceneRef.current = {
         boardId: openedBoard.board._id,
         route: { ...currentRouteRef.current },
-        sceneJson,
+        sceneJson: persistedSceneJson,
         previewScene,
       };
       setSaveStatus("saving");
@@ -435,7 +456,9 @@ export const useCloudBoard = () => {
   const acceptSceneWithoutSave = useCallback(
     (sceneJson: string) => {
       discardPendingSave();
-      acceptedSceneRef.current = acceptCloudSceneWithoutSave(sceneJson);
+      acceptedSceneRef.current = acceptCloudSceneWithoutSave(
+        sanitizeCloudPresentationScene(sceneJson),
+      );
       setSaveStatus(openedBoard?.access === "viewer" ? "viewer" : "saved");
     },
     [discardPendingSave, openedBoard?.access],
@@ -467,6 +490,69 @@ export const useCloudBoard = () => {
     }
     return `${window.location.origin}/s/${result.shareToken}`;
   }, [openedBoard, setSharing]);
+
+  const resolvePresentationAnimation = useCallback(
+    async (reference: { assetId: string; version: number }) => {
+      if (!openedBoard) {
+        throw new Error("Open a cloud board to load this animation");
+      }
+      const grant = await createPresentationAnimationReadGrant(
+        route.kind === "owner" && openedBoard.access === "owner"
+          ? {
+              diagramId: openedBoard.board._id,
+              assetId: reference.assetId,
+              version: reference.version,
+            }
+          : route.kind === "shared" && openedBoard.access === "viewer"
+          ? {
+              shareToken: route.shareToken,
+              assetId: reference.assetId,
+              version: reference.version,
+            }
+          : (() => {
+              throw new Error("This board cannot authorize animations");
+            })(),
+      );
+      return { url: grant.path, expiresAt: grant.expiresAt };
+    },
+    [createPresentationAnimationReadGrant, openedBoard, route],
+  );
+
+  const publishPresentationAnimation = useCallback(
+    async (input: {
+      assetId: string;
+      version: number;
+      sourceElementId: string;
+      slideId: string;
+      html: string;
+      previewFileId?: string;
+      replacementForVersion?: number;
+    }) => {
+      if (!openedBoard || openedBoard.access !== "owner") {
+        throw new Error("Only the board owner can publish animations");
+      }
+      return await publishTrustedPresentationAnimation(
+        { ...input, diagramId: openedBoard.board._id },
+        {
+          createUploadGrant: async (manifest) =>
+            await createPresentationAnimationUploadGrant({
+              ...manifest,
+              diagramId: manifest.diagramId as Id<"diagrams">,
+            }),
+          upload: uploadPresentationAnimationBlob,
+          registerUpload: registerPresentationAnimationUpload,
+          abandonUpload: abandonPresentationAnimationUpload,
+          cleanup: cleanupPresentationAnimationObjects,
+        },
+      );
+    },
+    [
+      abandonPresentationAnimationUpload,
+      createPresentationAnimationUploadGrant,
+      openedBoard,
+      registerPresentationAnimationUpload,
+    ],
+  );
 
   const openBoard = useCallback(
     async (slug: string) => {
@@ -693,6 +779,8 @@ export const useCloudBoard = () => {
       acceptSceneWithoutSave,
       flushSave,
       enableSharing,
+      resolvePresentationAnimation,
+      publishPresentationAnimation,
       boards,
       isBoardListLoading:
         paginatedBoards.status === "pending" && boards.length === 0,
@@ -725,6 +813,8 @@ export const useCloudBoard = () => {
     }),
     [
       enableSharing,
+      resolvePresentationAnimation,
+      publishPresentationAnimation,
       boards,
       paginatedBoards,
       boardSearch,

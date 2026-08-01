@@ -12,6 +12,7 @@ import {
   collectAnimationRuntimes,
   DomAnimationRuntimeAdapter,
 } from "./animationDomAdapter";
+
 import {
   AnimationOrchestrator,
   type AnimationRuntimeAdapter,
@@ -22,6 +23,8 @@ import {
 } from "./events";
 import { getOrderedPresentationFrames } from "./slides";
 
+import type { ResolvePresentationAnimation } from "./animationDomAdapter";
+
 export { ANIMATION_RUNTIME_STATUS_EVENT };
 
 type DisposableAnimationRuntimeAdapter = AnimationRuntimeAdapter & {
@@ -31,9 +34,11 @@ type DisposableAnimationRuntimeAdapter = AnimationRuntimeAdapter & {
 export const PresentationAnimationController = ({
   excalidrawAPI,
   adapter,
+  resolvePresentationAnimation,
 }: {
   excalidrawAPI: ExcalidrawImperativeAPI;
   adapter?: DisposableAnimationRuntimeAdapter;
+  resolvePresentationAnimation?: ResolvePresentationAnimation;
 }) => {
   const orchestratorRef = useRef<AnimationOrchestrator | null>(null);
   const activeFrameIdRef = useRef<string | null>(null);
@@ -41,7 +46,9 @@ export const PresentationAnimationController = ({
     useState<AnimationRuntimeStatusDetail | null>(null);
 
   useEffect(() => {
-    const runtimeAdapter = adapter ?? new DomAnimationRuntimeAdapter();
+    const runtimeAdapter =
+      adapter ??
+      new DomAnimationRuntimeAdapter({ resolvePresentationAnimation });
     const orchestrator = new AnimationOrchestrator({
       adapter: runtimeAdapter,
       getRuntimes: () =>
@@ -97,7 +104,7 @@ export const PresentationAnimationController = ({
       runtimeAdapter.setPolicy(null);
       runtimeAdapter.dispose?.();
     };
-  }, [adapter, excalidrawAPI]);
+  }, [adapter, excalidrawAPI, resolvePresentationAnimation]);
 
   if (
     !activeStatus ||

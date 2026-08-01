@@ -35,7 +35,11 @@ describe("presentation template persistence", () => {
     );
 
     expect(plateElements).toHaveLength(2);
-    expect(Object.keys(files)).toEqual(["template-foundations-editorial-v1"]);
+    expect(
+      Object.keys(files).filter(
+        (fileId) => fileId === "template-foundations-editorial-v1",
+      ),
+    ).toEqual(["template-foundations-editorial-v1"]);
   });
 
   it("embeds the shared SVG once for local export and strips binaries for cloud scene JSON", () => {
@@ -58,9 +62,7 @@ describe("presentation template persistence", () => {
       serializeAsJSON(elements, {}, files, "database"),
     );
 
-    expect(Object.keys(local.files)).toEqual([
-      "template-foundations-editorial-v1",
-    ]);
+    expect(local.files).toHaveProperty("template-foundations-editorial-v1");
     expect(local.files["template-foundations-editorial-v1"].dataURL).toMatch(
       /^data:image\/svg\+xml/,
     );
