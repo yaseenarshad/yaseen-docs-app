@@ -7,7 +7,10 @@ import {
   getLineHeight,
 } from "@excalidraw/common";
 
-import { newElementWith } from "@excalidraw/element";
+import {
+  getTextBackgroundPaddingScale,
+  newElementWith,
+} from "@excalidraw/element";
 
 import {
   hasBoundTextElement,
@@ -130,6 +133,15 @@ export const actionPasteStyles = register({
               lineHeight:
                 (elementStylesToCopyFrom as ExcalidrawTextElement).lineHeight ||
                 getLineHeight(fontFamily),
+              ...(!newElement.containerId &&
+              isTextElement(elementStylesToCopyFrom) &&
+              !elementStylesToCopyFrom.containerId
+                ? {
+                    backgroundPaddingScale: getTextBackgroundPaddingScale(
+                      elementStylesToCopyFrom,
+                    ),
+                  }
+                : {}),
             });
             newElement = newTextElement;
             let container = null;

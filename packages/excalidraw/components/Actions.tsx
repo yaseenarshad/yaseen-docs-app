@@ -38,7 +38,10 @@ import {
   hasStrokeWidth,
 } from "../scene";
 
-import { getFormValue } from "../actions/actionProperties";
+import {
+  canChangeTextBackgroundPadding,
+  getFormValue,
+} from "../actions/actionProperties";
 
 import { useTextEditorFocus } from "../hooks/useTextEditorFocus";
 
@@ -477,6 +480,9 @@ export const ContextualPropertiesToolbar = ({
             showBackgroundColor={predicates.backgroundColor}
             showRoundness={predicates.roundness}
             showOpacity={predicates.opacity}
+            showTextBackgroundPadding={targetElements.some(
+              canChangeTextBackgroundPadding,
+            )}
           />
         </>
       )}
@@ -729,6 +735,7 @@ const ContextualSecondaryProperties = ({
   showSloppiness = false,
   showRoundness = false,
   showOpacity = false,
+  showTextBackgroundPadding = false,
 }: {
   renderAction: ActionManager["renderAction"];
   showBackgroundColor?: boolean;
@@ -737,6 +744,7 @@ const ContextualSecondaryProperties = ({
   showSloppiness?: boolean;
   showRoundness?: boolean;
   showOpacity?: boolean;
+  showTextBackgroundPadding?: boolean;
 }) => {
   if (
     !showBackgroundColor &&
@@ -744,7 +752,8 @@ const ContextualSecondaryProperties = ({
     !showStrokeStyle &&
     !showSloppiness &&
     !showRoundness &&
-    !showOpacity
+    !showOpacity &&
+    !showTextBackgroundPadding
   ) {
     return null;
   }
@@ -767,6 +776,10 @@ const ContextualSecondaryProperties = ({
             renderAction("changeSloppiness", { contextToolbar: true })}
           {showRoundness &&
             renderAction("changeRoundness", { contextToolbar: true })}
+          {showTextBackgroundPadding &&
+            renderAction("changeTextBackgroundPadding", {
+              contextToolbar: true,
+            })}
           {showOpacity && (
             <div className="contextual-properties-toolbar__secondary-properties__opacity">
               {renderAction("changeOpacity", { contextToolbar: true })}

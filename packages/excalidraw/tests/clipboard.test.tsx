@@ -94,6 +94,26 @@ beforeEach(async () => {
 });
 
 describe("general paste behavior", () => {
+  it("preserves proportional text-fill padding on clipboard paste", async () => {
+    const text = {
+      ...API.createElement({
+        type: "text",
+        text: "Clipboard padding",
+        backgroundColor: "#a5d8ff",
+      }),
+      backgroundPaddingScale: 2,
+    };
+    const clipboardJSON = await serializeAsClipboardJSON({
+      elements: [text],
+      files: null,
+    });
+    pasteWithCtrlCmdV(clipboardJSON);
+
+    await waitFor(() => {
+      expect((h.elements[0] as any).backgroundPaddingScale).toBe(2);
+    });
+  });
+
   it("should randomize seed on paste", async () => {
     const rectangle = API.createElement({ type: "rectangle" });
     const clipboardJSON = await serializeAsClipboardJSON({

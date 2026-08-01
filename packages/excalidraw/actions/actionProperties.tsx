@@ -59,6 +59,8 @@ import { getArrowheadForPicker } from "@excalidraw/element";
 
 import {
   getBoundTextElement,
+  getTextBackgroundNominalPadding,
+  getTextBackgroundPaddingScaleFromNominalPx,
   getScaledTextRoundness,
   redrawTextBoundingBox,
 } from "@excalidraw/element";
@@ -569,6 +571,7 @@ export const actionClearSelectedTextFormatting = register({
           ? newElementWith(element, {
               strokeColor: COLOR_PALETTE.black,
               backgroundColor: COLOR_PALETTE.transparent,
+              backgroundPaddingScale: undefined,
               roundness: null,
             })
           : element,
@@ -1297,6 +1300,190 @@ export const actionChangeOpacity = register<ExcalidrawElement["opacity"]>({
     );
   },
 });
+
+export const canChangeTextBackgroundPadding = (
+  element: ExcalidrawElement,
+): element is ExcalidrawTextElement =>
+  isTextElement(element) &&
+  element.containerId === null &&
+  !isTransparent(element.backgroundColor);
+
+type TextBackgroundPaddingChange = {
+  value: number;
+  mode: "normalized" | "nominalPx";
+  captureUpdate?: CaptureUpdateActionType;
+};
+
+const TextBackgroundPaddingInput = ({
+  value,
+  max,
+  onChange,
+}: {
+  value: number | null;
+  max: number;
+  onChange: (value: number) => void;
+}) => {
+  const [inputValue, setInputValue] = useState(value?.toString() ?? "");
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    setInputValue(value?.toString() ?? "");
+  }, [value]);
+
+  const commit = () => {
+    if (cancelledRef.current) {
+      cancelledRef.current = false;
+      return;
+    }
+    const parsed = Number(inputValue);
+    if (!Number.isFinite(parsed)) {
+      setInputValue(value?.toString() ?? "");
+      return;
+    }
+    const nextValue = Math.min(max, Math.max(0, parsed));
+    setInputValue(nextValue.toString());
+    onChange(nextValue);
+  };
+
+  return (
+    <label className="text-background-padding-input" data-prevent-outside-click>
+      <input
+        aria-label="Exact fill padding"
+        data-testid="text-background-padding-input"
+        type="number"
+        inputMode="decimal"
+        min={0}
+        max={max}
+        step={0.5}
+        value={inputValue}
+        placeholder="Mixed"
+        onChange={(event) => setInputValue(event.target.value)}
+        onBlur={commit}
+        onWheel={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === KEYS.ENTER) {
+            event.preventDefault();
+            commit();
+          } else if (event.key === KEYS.ESCAPE) {
+            event.preventDefault();
+            cancelledRef.current = true;
+            setInputValue(value?.toString() ?? "");
+            event.currentTarget.blur();
+          }
+        }}
+      />
+      <span>px</span>
+    </label>
+  );
+};
+
+export const actionChangeTextBackgroundPadding =
+  register<TextBackgroundPaddingChange>({
+    name: "changeTextBackgroundPadding",
+    label: "Change text fill padding",
+    trackEvent: false,
+    perform: (elements, appState, data) => {
+      if (!data || !Number.isFinite(data.value)) {
+        return false;
+      }
+
+      return {
+        elements: changeProperty(elements, appState, (element) => {
+          if (!canChangeTextBackgroundPadding(element)) {
+            return element;
+          }
+
+          const backgroundPaddingScale =
+            data.mode === "normalized"
+              ? getTextBackgroundPaddingScaleFromNominalPx(
+                  element.fontSize,
+                  Math.min(1, Math.max(0, data.value)) * element.fontSize,
+                )
+              : getTextBackgroundPaddingScaleFromNominalPx(
+                  element.fontSize,
+                  data.value,
+                );
+
+          return newElementWith(element, { backgroundPaddingScale });
+        }),
+        captureUpdate: data.captureUpdate ?? CaptureUpdateAction.IMMEDIATELY,
+      };
+    },
+    PanelComponent: ({ elements, appState, updateData }) => {
+      const eligibleElements = getTargetElements(
+        getNonDeletedElements(elements),
+        appState,
+      ).filter(canChangeTextBackgroundPadding);
+      if (eligibleElements.length === 0) {
+        return null;
+      }
+
+      const referenceElement = eligibleElements[0];
+      const referenceValue = getTextBackgroundNominalPadding(referenceElement);
+      const commonValue = reduceToCommonValue(
+        eligibleElements,
+        getTextBackgroundNominalPadding,
+      );
+      const exactMaximum = Math.min(
+        ...eligibleElements.map((element) => element.fontSize),
+      );
+      const applyNormalizedValue = (
+        nextValue: number,
+        captureUpdate: CaptureUpdateActionType,
+      ) =>
+        updateData({
+          value: nextValue / referenceElement.fontSize,
+          mode: "normalized",
+          captureUpdate,
+        });
+
+      return (
+        <fieldset
+          className="text-background-padding-fieldset"
+          data-prevent-outside-click
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <legend>Fill padding</legend>
+          <Range
+            ariaLabel="Fill padding"
+            className="text-background-padding-range"
+            label={null}
+            value={commonValue ?? referenceValue}
+            hasCommonValue={commonValue !== null}
+            onChange={(nextValue) =>
+              applyNormalizedValue(nextValue, CaptureUpdateAction.EVENTUALLY)
+            }
+            onChangeEnd={(nextValue) =>
+              applyNormalizedValue(nextValue, CaptureUpdateAction.IMMEDIATELY)
+            }
+            min={0}
+            max={referenceElement.fontSize}
+            step={0.5}
+            minLabel={null}
+            maxLabel={null}
+            preventCanvasInteraction
+            showValueBubble={false}
+            testId="text-background-padding-slider"
+          />
+          <TextBackgroundPaddingInput
+            value={commonValue}
+            max={exactMaximum}
+            onChange={(nextValue) =>
+              updateData({
+                value: nextValue,
+                mode: "nominalPx",
+                captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+              })
+            }
+          />
+        </fieldset>
+      );
+    },
+  });
 
 export const actionChangeFontSize = register<ExcalidrawTextElement["fontSize"]>(
   {

@@ -240,6 +240,11 @@ export type ExcalidrawTextElement = _ExcalidrawElementBase &
     fontWeight?: "normal" | "bold";
     textDecoration?: "none" | "underline";
     strikethrough?: boolean;
+    /**
+     * Proportional scale applied to the native free-text background padding.
+     * Missing values preserve the legacy 0.23em/0.26em geometry.
+     */
+    backgroundPaddingScale?: number;
     lineBolds?: readonly boolean[];
     lineUnderlines?: readonly boolean[];
     lineStrikethroughs?: readonly boolean[];

@@ -273,6 +273,7 @@ export const newTextElement = (
     fontWeight?: ExcalidrawTextElement["fontWeight"];
     textDecoration?: ExcalidrawTextElement["textDecoration"];
     strikethrough?: ExcalidrawTextElement["strikethrough"];
+    backgroundPaddingScale?: ExcalidrawTextElement["backgroundPaddingScale"];
     lineBolds?: ExcalidrawTextElement["lineBolds"];
     lineUnderlines?: ExcalidrawTextElement["lineUnderlines"];
     lineStrikethroughs?: ExcalidrawTextElement["lineStrikethroughs"];
@@ -337,6 +338,9 @@ export const newTextElement = (
       ? { textDecoration: "underline" as const }
       : {}),
     ...(opts.strikethrough === true ? { strikethrough: true } : {}),
+    ...(opts.backgroundPaddingScale !== undefined
+      ? { backgroundPaddingScale: opts.backgroundPaddingScale }
+      : {}),
     ...(lineBolds ? { lineBolds } : {}),
     ...(lineUnderlines ? { lineUnderlines } : {}),
     ...(lineStrikethroughs ? { lineStrikethroughs } : {}),

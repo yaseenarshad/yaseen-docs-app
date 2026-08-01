@@ -134,6 +134,7 @@ describe("exportToSvg", () => {
       width: 100,
       height: 40,
       backgroundColor: "#ff0000",
+      backgroundPaddingScale: 2,
       roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 64 },
       index: "a0" as FractionalIndex,
     } as NonDeleted<ExcalidrawTextElement>;
@@ -441,14 +442,17 @@ describe("exportToCanvas", () => {
       }) as typeof document.createElement);
 
     try {
-      const text = API.createElement({
-        type: "text",
-        text: "Canvas background",
-        width: 100,
-        height: 40,
-        backgroundColor: "#ff0000",
-        roundness: null,
-      });
+      const text = {
+        ...API.createElement({
+          type: "text",
+          text: "Canvas background",
+          width: 100,
+          height: 40,
+          backgroundColor: "#ff0000",
+          roundness: null,
+        }),
+        backgroundPaddingScale: 2,
+      } as NonDeleted<ExcalidrawTextElement>;
       const appState = {
         ...getDefaultAppState(),
         height: 0,

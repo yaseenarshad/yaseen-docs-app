@@ -65,6 +65,71 @@ type TextVisualBounds = {
 
 const TEXT_BACKGROUND_RADIUS_BASE_FONT_SIZE = 130;
 const TEXT_INTERACTION_PADDING_RATIO = 0.04;
+const TEXT_BACKGROUND_VERTICAL_PADDING_RATIO = 0.23;
+const TEXT_BACKGROUND_HORIZONTAL_PADDING_RATIO = 0.26;
+export const TEXT_BACKGROUND_NOMINAL_PADDING_RATIO =
+  (TEXT_BACKGROUND_VERTICAL_PADDING_RATIO +
+    TEXT_BACKGROUND_HORIZONTAL_PADDING_RATIO) /
+  2;
+export const TEXT_BACKGROUND_MAX_PADDING_SCALE =
+  1 / TEXT_BACKGROUND_NOMINAL_PADDING_RATIO;
+
+const roundTextBackgroundMetric = (value: number) =>
+  Math.round(value * 100) / 100;
+
+export const normalizeTextBackgroundPaddingScale = (
+  value: unknown,
+): number | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return undefined;
+  }
+
+  return Math.min(value, TEXT_BACKGROUND_MAX_PADDING_SCALE);
+};
+
+export const getTextBackgroundPaddingScale = (element: ExcalidrawTextElement) =>
+  normalizeTextBackgroundPaddingScale(element.backgroundPaddingScale) ?? 1;
+
+export const getTextBackgroundPaddingScaleFromNominalPx = (
+  fontSize: number,
+  nominalPadding: number,
+) => {
+  const safeFontSize =
+    Number.isFinite(fontSize) && fontSize > 0 ? fontSize : DEFAULT_FONT_SIZE;
+  if (!Number.isFinite(nominalPadding) || nominalPadding < 0) {
+    return 1;
+  }
+
+  return (
+    Math.min(nominalPadding, safeFontSize) /
+    (safeFontSize * TEXT_BACKGROUND_NOMINAL_PADDING_RATIO)
+  );
+};
+
+export const getTextBackgroundNominalPadding = (
+  element: ExcalidrawTextElement,
+) =>
+  roundTextBackgroundMetric(
+    element.fontSize *
+      TEXT_BACKGROUND_NOMINAL_PADDING_RATIO *
+      getTextBackgroundPaddingScale(element),
+  );
+
+export const getTextBackgroundPadding = (element: ExcalidrawTextElement) => {
+  const scale = getTextBackgroundPaddingScale(element);
+  return {
+    horizontal: roundTextBackgroundMetric(
+      element.fontSize * TEXT_BACKGROUND_HORIZONTAL_PADDING_RATIO * scale,
+    ),
+    vertical: roundTextBackgroundMetric(
+      element.fontSize * TEXT_BACKGROUND_VERTICAL_PADDING_RATIO * scale,
+    ),
+  };
+};
 
 export const getScaledTextRoundness = (
   element: ExcalidrawTextElement,
@@ -320,20 +385,23 @@ export const getTextBackgroundGeometry = (
   // Slightly wider side padding gives the filled text a compact label shape
   // instead of a square block. Measuring actual glyph bounds keeps words
   // without descenders from looking bottom-heavy.
-  const horizontalPadding = element.fontSize * 0.26;
-  const verticalPadding = element.fontSize * 0.23;
-  const roundMetric = (value: number) => Math.round(value * 100) / 100;
-  const x = roundMetric(visualBounds.x - horizontalPadding);
-  const y = roundMetric(visualBounds.y - verticalPadding);
-  const width = roundMetric(visualBounds.width + horizontalPadding * 2);
-  const height = roundMetric(visualBounds.height + verticalPadding * 2);
+  const { horizontal: horizontalPadding, vertical: verticalPadding } =
+    getTextBackgroundPadding(element);
+  const x = roundTextBackgroundMetric(visualBounds.x - horizontalPadding);
+  const y = roundTextBackgroundMetric(visualBounds.y - verticalPadding);
+  const width = roundTextBackgroundMetric(
+    visualBounds.width + horizontalPadding * 2,
+  );
+  const height = roundTextBackgroundMetric(
+    visualBounds.height + verticalPadding * 2,
+  );
 
   return {
     x,
     y,
     width,
     height,
-    radius: roundMetric(
+    radius: roundTextBackgroundMetric(
       element.roundness ? getCornerRadius(Math.min(width, height), element) : 0,
     ),
   };

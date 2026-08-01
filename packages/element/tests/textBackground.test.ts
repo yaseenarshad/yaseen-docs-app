@@ -5,11 +5,30 @@ import { API } from "@excalidraw/excalidraw/tests/helpers/api";
 import {
   getFreeTextInteractionCoords,
   getFreeTextInteractionGeometry,
+  getTextBackgroundNominalPadding,
+  getTextBackgroundPaddingScaleFromNominalPx,
   getTextBackgroundGeometry,
+  getTextBackgroundPadding,
   isPointInFreeTextInteractionBounds,
 } from "../src/textElement";
+import { mutateElement } from "../src/mutateElement";
+import { elementWithCanvasCache } from "../src/renderElement";
 
 describe("native text background geometry", () => {
+  it("invalidates the cached canvas when proportional padding mutates", () => {
+    const text = API.createElement({
+      type: "text",
+      backgroundColor: "#111111",
+    });
+    elementWithCanvasCache.set(text, {} as any);
+
+    mutateElement(text as any, new Map(), {
+      backgroundPaddingScale: 2,
+    });
+
+    expect(elementWithCanvasCache.has(text)).toBe(false);
+  });
+
   it("adds 0.04em padding around measured glyph interaction bounds", () => {
     const text = API.createElement({
       type: "text",
@@ -204,5 +223,101 @@ describe("native text background geometry", () => {
     });
 
     expect(getTextBackgroundGeometry(text)?.radius).toBe(0);
+  });
+
+  it("preserves the legacy padding when the optional scale is missing", () => {
+    const text = API.createElement({
+      type: "text",
+      width: 100,
+      height: 40,
+      fontSize: 130,
+      backgroundColor: "#00ff00",
+    });
+
+    expect(getTextBackgroundNominalPadding(text)).toBeCloseTo(31.85);
+    expect(getTextBackgroundPadding(text)).toEqual({
+      horizontal: 33.8,
+      vertical: 29.9,
+    });
+    expect(getTextBackgroundGeometry(text)).toMatchObject({
+      x: -33.8,
+      y: -29.9,
+      width: 167.6,
+      height: 99.8,
+    });
+  });
+
+  it("converts scene pixels into a proportional scale", () => {
+    const text = {
+      ...API.createElement({
+        type: "text",
+        width: 100,
+        height: 40,
+        fontSize: 130,
+        backgroundColor: "#00ff00",
+      }),
+      backgroundPaddingScale: getTextBackgroundPaddingScaleFromNominalPx(
+        130,
+        16,
+      ),
+    };
+
+    expect(text.backgroundPaddingScale).toBeCloseTo(16 / 31.85);
+    expect(getTextBackgroundNominalPadding(text)).toBeCloseTo(16);
+    expect(getTextBackgroundPadding(text)).toEqual({
+      horizontal: 16.98,
+      vertical: 15.02,
+    });
+  });
+
+  it("supports zero padding and clamps the nominal maximum to one em", () => {
+    const base = API.createElement({
+      type: "text",
+      width: 100,
+      height: 40,
+      fontSize: 20,
+      backgroundColor: "#00ff00",
+    });
+    const noPadding = { ...base, backgroundPaddingScale: 0 };
+    const oversized = { ...base, backgroundPaddingScale: 999 };
+
+    expect(getTextBackgroundGeometry(noPadding)).toMatchObject({
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 40,
+    });
+    expect(getTextBackgroundNominalPadding(oversized)).toBe(20);
+    expect(getTextBackgroundPadding(oversized)).toEqual({
+      horizontal: 21.22,
+      vertical: 18.78,
+    });
+  });
+
+  it("keeps painted padding separate from glyph interaction geometry", () => {
+    const text = {
+      ...API.createElement({
+        type: "text",
+        width: 100,
+        height: 40,
+        fontSize: 20,
+        backgroundColor: "#00ff00",
+      }),
+      backgroundPaddingScale: 3,
+    };
+    const measuredGlyphs = { x: 10, y: 8, width: 70, height: 20 };
+
+    expect(getFreeTextInteractionGeometry(text, measuredGlyphs)).toEqual({
+      x: 9.2,
+      y: 7.2,
+      width: 71.6,
+      height: 21.6,
+    });
+    expect(getTextBackgroundGeometry(text, measuredGlyphs)).toMatchObject({
+      x: -5.6,
+      y: -5.8,
+      width: 101.2,
+      height: 47.6,
+    });
   });
 });

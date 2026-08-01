@@ -31,6 +31,7 @@ import {
   isPointInElement,
   isValidPolygon,
   normalizeLineUnderlines,
+  normalizeTextBackgroundPaddingScale,
   projectFixedPointOntoDiagonal,
   isNonDeletedElement,
 } from "@excalidraw/element";
@@ -542,6 +543,10 @@ export const restoreElement = (
         (element as { strikethrough?: unknown }).strikethrough === true
           ? true
           : undefined;
+      const backgroundPaddingScale = normalizeTextBackgroundPaddingScale(
+        (element as { backgroundPaddingScale?: unknown })
+          .backgroundPaddingScale,
+      );
 
       // line-height might not be specified either when creating elements
       // programmatically, or when importing old diagrams.
@@ -570,6 +575,7 @@ export const restoreElement = (
         lineUnderlines,
         lineStrikethroughs,
         strikethrough,
+        backgroundPaddingScale,
       });
       if (!lineBolds) {
         delete (element as { lineBolds?: unknown }).lineBolds;
@@ -582,6 +588,10 @@ export const restoreElement = (
       }
       if (!strikethrough) {
         delete (element as { strikethrough?: unknown }).strikethrough;
+      }
+      if (backgroundPaddingScale === undefined) {
+        delete (element as { backgroundPaddingScale?: unknown })
+          .backgroundPaddingScale;
       }
 
       // if empty text, mark as deleted. We keep in array

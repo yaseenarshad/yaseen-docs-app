@@ -6,6 +6,7 @@ export type RangeProps = {
   label: React.ReactNode;
   value: number;
   onChange: (value: number) => void;
+  onChangeEnd?: (value: number) => void;
   ariaLabel?: string;
   className?: string;
   min?: number;
@@ -24,6 +25,7 @@ export const Range = ({
   label,
   value,
   onChange,
+  onChangeEnd,
   ariaLabel,
   className,
   min = 0,
@@ -39,8 +41,10 @@ export const Range = ({
 }: RangeProps) => {
   const rangeRef = React.useRef<HTMLInputElement>(null);
   const valueRef = React.useRef<HTMLDivElement>(null);
+  const latestValueRef = React.useRef(value);
 
   useEffect(() => {
+    latestValueRef.current = value;
     if (rangeRef.current) {
       const rangeElement = rangeRef.current;
       const valueElement = valueRef.current;
@@ -89,7 +93,14 @@ export const Range = ({
           max={max}
           step={step}
           onChange={(event) => {
-            onChange(+event.target.value);
+            latestValueRef.current = +event.target.value;
+            onChange(latestValueRef.current);
+          }}
+          onPointerUp={() => {
+            onChangeEnd?.(latestValueRef.current);
+          }}
+          onPointerCancel={() => {
+            onChangeEnd?.(latestValueRef.current);
           }}
           onKeyDown={
             preventCanvasInteraction
@@ -98,6 +109,12 @@ export const Range = ({
                 }
               : undefined
           }
+          onKeyUp={(event) => {
+            if (preventCanvasInteraction) {
+              event.stopPropagation();
+            }
+            onChangeEnd?.(latestValueRef.current);
+          }}
           value={value}
           className="range-input"
           data-testid={testId}

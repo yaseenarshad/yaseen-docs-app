@@ -19,6 +19,7 @@ export {
   actionChangeSloppiness,
   actionChangeFreedrawMode,
   actionChangeOpacity,
+  actionChangeTextBackgroundPadding,
   actionChangeFontSize,
   actionChangeTextStyle,
   actionChangeLineHeight,

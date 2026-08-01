@@ -3,7 +3,10 @@ import { vi } from "vitest";
 
 import { DEFAULT_SIDEBAR, FONT_FAMILY, ROUNDNESS } from "@excalidraw/common";
 
-import { newElementWith } from "@excalidraw/element";
+import {
+  newElementWith,
+  TEXT_BACKGROUND_MAX_PADDING_SCALE,
+} from "@excalidraw/element";
 import * as sizeHelpers from "@excalidraw/element";
 
 import type { LocalPoint } from "@excalidraw/math";
@@ -98,6 +101,28 @@ describe("restoreElements", () => {
     });
   });
 
+  it("round-trips proportional text-fill padding through scene JSON", () => {
+    const element = {
+      ...API.createElement({
+        type: "text",
+        backgroundColor: "#a5d8ff",
+      }),
+      backgroundPaddingScale: 2.5,
+    } as ExcalidrawTextElement;
+    const serialized = serializeAsJSON(
+      [element],
+      getDefaultAppState(),
+      {},
+      "local",
+    );
+    const parsed = JSON.parse(serialized);
+    const [restored] = restore.restoreElements(parsed.elements, null);
+
+    expect((restored as ExcalidrawTextElement).backgroundPaddingScale).toBe(
+      2.5,
+    );
+  });
+
   it.each([0.5, 1.5, 3, 7.5, 20, 50, 100, 140])(
     "round-trips an exact linear stroke width of %s through scene JSON",
     (strokeWidth) => {
@@ -176,6 +201,29 @@ describe("restoreElements", () => {
       seed: expect.any(Number),
       versionNonce: expect.any(Number),
     });
+  });
+
+  it("preserves and normalizes native text background padding scale", () => {
+    const base = API.createElement({ type: "text", text: "Padding" });
+    const [missing, valid, oversized, negative, nonfinite] =
+      restore.restoreElements(
+        [
+          base,
+          { ...base, id: "valid", backgroundPaddingScale: 2.5 },
+          { ...base, id: "oversized", backgroundPaddingScale: 999 },
+          { ...base, id: "negative", backgroundPaddingScale: -1 },
+          { ...base, id: "nonfinite", backgroundPaddingScale: NaN },
+        ] as any,
+        null,
+      ) as ExcalidrawTextElement[];
+
+    expect(missing.backgroundPaddingScale).toBeUndefined();
+    expect(valid.backgroundPaddingScale).toBe(2.5);
+    expect(oversized.backgroundPaddingScale).toBe(
+      TEXT_BACKGROUND_MAX_PADDING_SCALE,
+    );
+    expect(negative.backgroundPaddingScale).toBeUndefined();
+    expect(nonfinite.backgroundPaddingScale).toBeUndefined();
   });
 
   it("keeps the legacy Artist fallback and explicit authored roughness", () => {

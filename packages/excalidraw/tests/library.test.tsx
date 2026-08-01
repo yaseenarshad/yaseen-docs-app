@@ -39,6 +39,31 @@ const mockLibraryFilePromise = new Promise<Blob>(async (resolve, reject) => {
   }
 });
 
+describe("text fill padding library lifecycle", () => {
+  it("preserves proportional padding through library serialization", () => {
+    const text = {
+      ...API.createElement({
+        type: "text",
+        text: "Library padding",
+        backgroundColor: "#a5d8ff",
+      }),
+      backgroundPaddingScale: 2,
+    };
+    const items: LibraryItems = [
+      {
+        id: "text-padding",
+        status: "unpublished",
+        elements: [text],
+        created: 1,
+      },
+    ];
+
+    const restored = parseLibraryJSON(serializeLibraryAsJSON(items));
+
+    expect((restored[0].elements[0] as any).backgroundPaddingScale).toBe(2);
+  });
+});
+
 vi.mock("../data/filesystem.ts", async (importOriginal) => {
   const module = await importOriginal();
   return {

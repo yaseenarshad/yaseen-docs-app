@@ -77,6 +77,7 @@ export type ActionName =
   | "changeArrowType"
   | "changeArrowProperties"
   | "changeOpacity"
+  | "changeTextBackgroundPadding"
   | "changeFontSize"
   | "changeTextStyle"
   | "changeLineHeight"

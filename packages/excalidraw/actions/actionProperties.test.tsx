@@ -15,6 +15,7 @@ import {
   STROKE_WIDTH,
   THEME,
 } from "@excalidraw/common";
+import { getTextBackgroundNominalPadding } from "@excalidraw/element";
 
 import type {
   ExcalidrawTextElement,
@@ -1104,6 +1105,167 @@ describe("element locking", () => {
       });
     });
 
+    it("should edit native text fill padding from the text overflow", () => {
+      const text = API.createElement({
+        type: "text",
+        text: "Adjust padding",
+        backgroundColor: DEFAULT_ELEMENT_BACKGROUND_PICKS[1],
+        fontSize: 130,
+      });
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+      togglePopover("More properties");
+
+      const slider = queryByTestId(
+        document.body,
+        "text-background-padding-slider",
+      ) as HTMLInputElement;
+      const input = queryByTestId(
+        document.body,
+        "text-background-padding-input",
+      ) as HTMLInputElement;
+      expect(slider).not.toBeNull();
+      expect(slider).toHaveAttribute("min", "0");
+      expect(slider).toHaveAttribute("max", "130");
+      expect(slider).toHaveAttribute("step", "0.5");
+      expect(input).toHaveValue(31.85);
+
+      fireEvent.change(slider, { target: { value: "65" } });
+      fireEvent.pointerUp(slider);
+      expect(
+        (API.getSelectedElement() as ExcalidrawTextElement)
+          .backgroundPaddingScale,
+      ).toBeCloseTo(0.5 / 0.245);
+
+      fireEvent.change(input, { target: { value: "16" } });
+      fireEvent.keyDown(input, { key: KEYS.ENTER });
+      expect(
+        (API.getSelectedElement() as ExcalidrawTextElement)
+          .backgroundPaddingScale,
+      ).toBeCloseTo(16 / 31.85);
+
+      fireEvent.change(input, { target: { value: "80" } });
+      fireEvent.keyDown(input, { key: KEYS.ESCAPE });
+      expect(
+        (API.getSelectedElement() as ExcalidrawTextElement)
+          .backgroundPaddingScale,
+      ).toBeCloseTo(16 / 31.85);
+    });
+
+    it("should apply slider position proportionally across mixed-size filled text", () => {
+      const large = API.createElement({
+        type: "text",
+        text: "Large",
+        backgroundColor: DEFAULT_ELEMENT_BACKGROUND_PICKS[1],
+        fontSize: 130,
+      });
+      const small = {
+        ...API.createElement({
+          type: "text",
+          text: "Small",
+          backgroundColor: DEFAULT_ELEMENT_BACKGROUND_PICKS[1],
+          fontSize: 65,
+        }),
+        backgroundPaddingScale: 1.5,
+      } as NonDeleted<ExcalidrawTextElement>;
+      const transparent = API.createElement({
+        type: "text",
+        text: "Transparent",
+        backgroundColor: COLOR_PALETTE.transparent,
+        fontSize: 65,
+      }) as NonDeleted<ExcalidrawTextElement>;
+      const transparentWithPadding = {
+        ...transparent,
+        backgroundPaddingScale: 3,
+      } as NonDeleted<ExcalidrawTextElement>;
+      API.setElements([large, small, transparentWithPadding]);
+      API.setSelectedElements([large, small, transparentWithPadding]);
+
+      togglePopover("More properties");
+      const input = queryByTestId(
+        document.body,
+        "text-background-padding-input",
+      ) as HTMLInputElement;
+      const slider = queryByTestId(
+        document.body,
+        "text-background-padding-slider",
+      ) as HTMLInputElement;
+      expect(input.value).toBe("");
+      expect(input.placeholder).toBe("Mixed");
+
+      fireEvent.change(slider, { target: { value: "65" } });
+      fireEvent.pointerUp(slider);
+
+      const [updatedLarge, updatedSmall, updatedTransparent] =
+        API.getSelectedElements() as ExcalidrawTextElement[];
+      expect(updatedLarge.backgroundPaddingScale).toBeCloseTo(0.5 / 0.245);
+      expect(updatedSmall.backgroundPaddingScale).toBeCloseTo(0.5 / 0.245);
+      expect(updatedTransparent.backgroundPaddingScale).toBe(3);
+
+      fireEvent.change(input, { target: { value: "16" } });
+      fireEvent.blur(input);
+      const [exactLarge, exactSmall, exactTransparent] =
+        API.getSelectedElements() as ExcalidrawTextElement[];
+      expect(exactLarge.backgroundPaddingScale).toBeCloseTo(16 / 31.85);
+      expect(exactSmall.backgroundPaddingScale).toBeCloseTo(16 / 15.925);
+      expect(exactTransparent.backgroundPaddingScale).toBe(3);
+    });
+
+    it("should commit one text fill-padding slider drag as one history step", () => {
+      const text = UI.createElement("text", {
+        x: 20,
+        y: 20,
+      });
+      API.setAppState({ editingTextElement: null });
+      API.setSelectedElements([text.get() as any]);
+      togglePopover("More properties");
+      fireEvent.click(
+        document.querySelector(
+          `.contextual-properties-toolbar__popover [data-testid="color-top-pick-${DEFAULT_ELEMENT_BACKGROUND_PICKS[1]}"]`,
+        )!,
+      );
+      const undoEntriesBefore = API.getUndoStack().length;
+      expect(
+        (
+          API.getSnapshot().find((element) => element.id === text.id) as
+            | ExcalidrawTextElement
+            | undefined
+        )?.backgroundPaddingScale,
+      ).toBeUndefined();
+      const slider = queryByTestId(
+        document.body,
+        "text-background-padding-slider",
+      ) as HTMLInputElement;
+      const fontSize = (text.get() as ExcalidrawTextElement).fontSize;
+
+      fireEvent.change(slider, { target: { value: `${fontSize * 0.2}` } });
+      fireEvent.change(slider, { target: { value: `${fontSize * 0.4}` } });
+      expect(
+        (
+          API.getSnapshot().find((element) => element.id === text.id) as
+            | ExcalidrawTextElement
+            | undefined
+        )?.backgroundPaddingScale,
+      ).toBeUndefined();
+      fireEvent.pointerUp(slider);
+
+      expect(
+        (window.h.app.scene.getElement(text.id) as ExcalidrawTextElement)
+          .backgroundPaddingScale,
+      ).toBeCloseTo(0.4 / 0.245);
+      expect(API.getUndoStack()).toHaveLength(undoEntriesBefore + 1);
+      Keyboard.undo();
+      expect(
+        (window.h.app.scene.getElement(text.id) as ExcalidrawTextElement)
+          .backgroundPaddingScale,
+      ).toBeUndefined();
+      Keyboard.redo();
+      expect(
+        (window.h.app.scene.getElement(text.id) as ExcalidrawTextElement)
+          .backgroundPaddingScale,
+      ).toBeCloseTo(0.4 / 0.245);
+    });
+
     it("should keep free-text background rounding proportional to font size", () => {
       const text = {
         ...API.createElement({
@@ -1136,6 +1298,33 @@ describe("element locking", () => {
       });
     });
 
+    it("should preserve proportional fill padding while font size changes", () => {
+      const text = {
+        ...API.createElement({
+          type: "text",
+          text: "Responsive padding",
+          backgroundColor: DEFAULT_ELEMENT_BACKGROUND_PICKS[1],
+          fontSize: 65,
+        }),
+        backgroundPaddingScale: 2,
+      } as NonDeleted<ExcalidrawTextElement>;
+      API.setElements([text]);
+      API.setSelectedElements([text]);
+      const initialPadding = getTextBackgroundNominalPadding(text);
+
+      const fontSizeInput = document.querySelector<HTMLInputElement>(
+        '[aria-label="Exact font size"]',
+      )!;
+      fireEvent.change(fontSizeInput, { target: { value: "130" } });
+      fireEvent.blur(fontSizeInput);
+
+      const resized = API.getSelectedElement() as ExcalidrawTextElement;
+      expect(resized.backgroundPaddingScale).toBe(2);
+      expect(getTextBackgroundNominalPadding(resized)).toBeCloseTo(
+        initialPadding * 2,
+      );
+    });
+
     it("should clear selected text colors with Cmd-or-Ctrl+backslash", () => {
       const text = {
         ...API.createElement({
@@ -1146,6 +1335,7 @@ describe("element locking", () => {
           fontSize: 65,
         }),
         fontWeight: "bold",
+        backgroundPaddingScale: 2,
         roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
       } as NonDeleted<ExcalidrawTextElement>;
       const rectangle = API.createElement({
@@ -1169,6 +1359,10 @@ describe("element locking", () => {
         fontSize: 65,
         fontWeight: "bold",
       });
+      expect(
+        (window.h.app.scene.getElement(text.id) as ExcalidrawTextElement)
+          .backgroundPaddingScale,
+      ).toBeUndefined();
       expect(window.h.app.scene.getElement(rectangle.id)).toMatchObject({
         strokeColor: "#00ff00",
         backgroundColor: "#0000ff",
@@ -1185,6 +1379,9 @@ describe("element locking", () => {
       API.setSelectedElements([transparent]);
       togglePopover("More properties");
       expect(queryByTestId(document.body, "corner-radius-slider")).toBeNull();
+      expect(
+        queryByTestId(document.body, "text-background-padding-slider"),
+      ).toBeNull();
       togglePopover("More properties");
 
       const [container, boundText] = API.createTextContainer();
@@ -1194,6 +1391,9 @@ describe("element locking", () => {
         togglePopover("More properties");
       }
       expect(queryByTestId(document.body, "corner-radius-slider")).toBeNull();
+      expect(
+        queryByTestId(document.body, "text-background-padding-slider"),
+      ).toBeNull();
     });
 
     it("should keep line edges binary and hide numeric rounding for unsupported mixtures", () => {

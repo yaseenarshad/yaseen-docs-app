@@ -90,24 +90,27 @@ describe("duplicating single elements", () => {
   });
 
   it("clones text element", () => {
-    const element = API.createElement({
-      type: "text",
-      x: 0,
-      y: 0,
-      strokeColor: "#000000",
-      backgroundColor: "transparent",
-      fillStyle: "hachure",
-      strokeWidth: 1,
-      strokeStyle: "solid",
-      roundness: null,
-      roughness: 1,
-      opacity: 100,
-      text: "hello",
-      fontSize: 20,
-      fontFamily: FONT_FAMILY.Virgil,
-      textAlign: "left",
-      verticalAlign: "top",
-    });
+    const element = {
+      ...API.createElement({
+        type: "text",
+        x: 0,
+        y: 0,
+        strokeColor: "#000000",
+        backgroundColor: "#a5d8ff",
+        fillStyle: "hachure",
+        strokeWidth: 1,
+        strokeStyle: "solid",
+        roundness: null,
+        roughness: 1,
+        opacity: 100,
+        text: "hello",
+        fontSize: 20,
+        fontFamily: FONT_FAMILY.Virgil,
+        textAlign: "left",
+        verticalAlign: "top",
+      }),
+      backgroundPaddingScale: 2,
+    };
 
     const copy = duplicateElement(null, new Map(), element);
 
@@ -118,6 +121,7 @@ describe("duplicating single elements", () => {
     expect(copy.id).not.toBe(element.id);
     expect(typeof copy.id).toBe("string");
     expect(typeof copy.seed).toBe("number");
+    expect(copy.backgroundPaddingScale).toBe(2);
   });
 });
 

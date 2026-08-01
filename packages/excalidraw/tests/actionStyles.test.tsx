@@ -2,7 +2,11 @@ import React from "react";
 
 import { CODES, STROKE_WIDTH } from "@excalidraw/common";
 
-import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
+import type {
+  ExcalidrawTextElement,
+  NonDeleted,
+  NonDeletedExcalidrawElement,
+} from "@excalidraw/element/types";
 
 import { copiedStyles } from "../actions/actionStyles";
 import { Excalidraw } from "../index";
@@ -108,5 +112,47 @@ describe("actionStyles", () => {
     expect(firstRect.strokeStyle).toBe("dotted");
     expect(firstRect.roughness).toBe(2); // Cartoonist: 2
     expect(firstRect.opacity).toBe(60);
+  });
+
+  it("copies proportional text-fill padding only between free-text elements", () => {
+    const target = {
+      ...API.createElement({
+        type: "text",
+        text: "Target",
+        backgroundColor: "#a5d8ff",
+      }),
+      backgroundPaddingScale: 0.5,
+    } as NonDeleted<ExcalidrawTextElement>;
+    const rectangle = API.createElement({
+      type: "rectangle",
+      backgroundColor: "#a5d8ff",
+    });
+    const source = {
+      ...API.createElement({
+        type: "text",
+        text: "Source",
+        backgroundColor: "#ffc9c9",
+      }),
+      backgroundPaddingScale: 2,
+    } as NonDeleted<ExcalidrawTextElement>;
+    API.setElements([target, rectangle, source]);
+    API.setSelectedElements([source]);
+
+    Keyboard.withModifierKeys({ ctrl: true, alt: true }, () => {
+      Keyboard.codeDown(CODES.C);
+    });
+    API.setSelectedElements([target, rectangle]);
+    Keyboard.withModifierKeys({ ctrl: true, alt: true }, () => {
+      Keyboard.codeDown(CODES.V);
+    });
+
+    expect(
+      (window.h.app.scene.getElement(target.id) as ExcalidrawTextElement)
+        .backgroundPaddingScale,
+    ).toBe(2);
+    expect(
+      (window.h.app.scene.getElement(rectangle.id) as Record<string, unknown>)
+        .backgroundPaddingScale,
+    ).toBeUndefined();
   });
 });

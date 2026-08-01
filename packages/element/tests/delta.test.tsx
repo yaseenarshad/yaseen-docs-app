@@ -8,6 +8,35 @@ import { AppStateDelta, Delta, ElementsDelta } from "../src/delta";
 
 describe("ElementsDelta", () => {
   describe("elements delta calculation", () => {
+    it("applies removal of an optional native text padding field", () => {
+      const text = {
+        ...API.createElement({
+          type: "text",
+          backgroundColor: "#ff0000",
+        }),
+        backgroundPaddingScale: 2,
+      } as any;
+      const delta = ElementsDelta.create(
+        {},
+        {},
+        {
+          [text.id]: Delta.create(
+            { backgroundPaddingScale: 2, version: 2 },
+            { backgroundPaddingScale: undefined, version: 1 },
+          ),
+        },
+      );
+
+      const [nextElements, containsVisibleDifference] = delta.applyTo(
+        new Map([[text.id, text]]) as SceneElementsMap,
+      );
+
+      expect((nextElements.get(text.id) as any).backgroundPaddingScale).toBe(
+        undefined,
+      );
+      expect(containsVisibleDifference).toBe(true);
+    });
+
     it("should not throw when element gets removed but was already deleted", () => {
       const element = API.createElement({
         type: "rectangle",
