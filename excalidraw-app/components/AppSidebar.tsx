@@ -7,6 +7,7 @@ import {
   HamburgerMenuIcon,
   ImageIcon,
   LibraryIcon,
+  presentationIcon,
   sidebarRightIcon,
 } from "@excalidraw/excalidraw/components/icons";
 import { useUIAppState } from "@excalidraw/excalidraw/context/ui-appState";
@@ -24,6 +25,7 @@ import {
   writeProfileSidebarDockPreference,
 } from "../cloud/sidebarDockPreference";
 import { ImageStudio } from "../image-studio/ImageStudio";
+import { PresentationSidebar } from "../presentation/PresentationSidebar";
 
 import "./AppSidebar.scss";
 
@@ -880,6 +882,12 @@ const APP_SIDEBAR_LAUNCHERS = [
     shortLabel: "Images",
     icon: ImageIcon,
   },
+  {
+    tab: "presentation",
+    label: "Presentation",
+    shortLabel: "Present",
+    icon: presentationIcon,
+  },
 ] as const;
 
 const LAST_APP_SIDEBAR_TAB_STORAGE_KEY =
@@ -889,6 +897,7 @@ const APP_SIDEBAR_TABS = new Set<SidebarTabName>([
   "boards",
   "components",
   "image-studio",
+  "presentation",
   "search",
 ]);
 
@@ -1088,7 +1097,7 @@ export const AppSidebarLaunchers = ({
         className="app-sidebar-launcher app-sidebar-launchers__compact"
         aria-label="Open last workspace panel"
         aria-pressed={openSidebar?.name === "default"}
-        title="Boards, Components, and Image Studio"
+        title="Boards, Components, Images, and Presentation"
         disabled={!excalidrawAPI}
         onClick={() => open(activeTab ?? getRememberedSidebarTab())}
       >
@@ -1218,6 +1227,16 @@ export const AppSidebar = ({
             {ImageIcon}
             <span className="app-sidebar-tab-label">Images</span>
           </Sidebar.TabTrigger>
+          <Sidebar.TabTrigger
+            tab="presentation"
+            className="app-sidebar-tab-trigger"
+            aria-label="Presentation"
+            title="Presentation"
+            style={{ opacity: openSidebar?.tab === "presentation" ? 1 : 0.4 }}
+          >
+            {presentationIcon}
+            <span className="app-sidebar-tab-label">Present</span>
+          </Sidebar.TabTrigger>
         </DefaultSidebar.TabTriggers>
         <Sidebar.Tab tab="boards">
           <BoardBrowser {...boardBrowserProps} onOpen={openBoard} />
@@ -1231,6 +1250,14 @@ export const AppSidebar = ({
               excalidrawAPI={excalidrawAPI}
               canInsert={canInsertMedia}
               searchFocusRequest={imageStudioSearchFocusRequest}
+            />
+          )}
+        </Sidebar.Tab>
+        <Sidebar.Tab tab="presentation">
+          {excalidrawAPI && (
+            <PresentationSidebar
+              excalidrawAPI={excalidrawAPI}
+              canEdit={canInsertMedia}
             />
           )}
         </Sidebar.Tab>

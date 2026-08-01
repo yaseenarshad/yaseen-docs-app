@@ -300,7 +300,10 @@ export const applyPresentationTemplate = ({
       height: template.canvas.height,
       strokeColor: "#0f5843",
       roughness: 0,
-      customData: { yaseenPresentation: metadata.frame },
+      customData: {
+        presentationOrder: slide.order,
+        yaseenPresentation: metadata.frame,
+      },
     }),
     id: frameId,
   };

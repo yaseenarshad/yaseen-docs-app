@@ -49,9 +49,10 @@ describe("generatePresentationDeck", () => {
     expect(
       result.scene.files["template-foundations-editorial-v1"],
     ).toBeDefined();
-    expect(frames[0]).toMatchObject(
-      FOUNDATIONS_OF_AI_LAYOUT.origins["slide-01"],
-    );
+    expect(frames[0]).toMatchObject({
+      ...FOUNDATIONS_OF_AI_LAYOUT.origins["slide-01"],
+      customData: { presentationOrder: 1 },
+    });
     expect(result.report).toMatchObject({
       slideCount: 17,
       frameCount: 17,

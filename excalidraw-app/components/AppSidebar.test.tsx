@@ -69,6 +69,7 @@ describe("AppSidebarLaunchers", () => {
     expect(screen.getByText("Boards")).toBeVisible();
     expect(screen.getByText("Components")).toBeVisible();
     expect(screen.getByText("Images")).toBeVisible();
+    expect(screen.getByText("Present")).toBeVisible();
     const hamburger = screen.getByRole("button", {
       name: "Open workspace panel",
     });
@@ -157,6 +158,7 @@ describe("AppSidebarLaunchers", () => {
     const boards = screen.getByRole("button", { name: "Boards" });
     const components = screen.getByRole("button", { name: "Components" });
     const imageStudio = screen.getByRole("button", { name: "Image Studio" });
+    const presentation = screen.getByRole("button", { name: "Presentation" });
     expect(boards).toHaveAttribute("aria-pressed", "true");
     expect(components).toHaveAttribute("aria-pressed", "false");
     expect(imageStudio).toHaveAttribute("aria-pressed", "false");
@@ -164,11 +166,13 @@ describe("AppSidebarLaunchers", () => {
     fireEvent.click(boards);
     fireEvent.click(components);
     fireEvent.click(imageStudio);
+    fireEvent.click(presentation);
 
     expect(toggleSidebar.mock.calls).toEqual([
       [{ name: "default", tab: "boards", force: true }],
       [{ name: "default", tab: "components", force: true }],
       [{ name: "default", tab: "image-studio", force: true }],
+      [{ name: "default", tab: "presentation", force: true }],
     ]);
   });
 
@@ -631,7 +635,12 @@ describe("AppSidebar", () => {
     expect(screen.getAllByText("Boards").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Components").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Images").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Present").length).toBeGreaterThan(0);
     expect(screen.getByRole("tab", { name: "Boards" })).toHaveClass(
+      "sidebar-tab-trigger",
+      "app-sidebar-tab-trigger",
+    );
+    expect(screen.getByRole("tab", { name: "Presentation" })).toHaveClass(
       "sidebar-tab-trigger",
       "app-sidebar-tab-trigger",
     );

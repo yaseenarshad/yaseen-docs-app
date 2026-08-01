@@ -228,7 +228,10 @@ const renderFullNativeSlide = ({
       strokeColor: "#0f5843",
       roughness: 0,
       locked: false,
-      customData: { yaseenPresentation: metadata.frame },
+      customData: {
+        presentationOrder: slide.order,
+        yaseenPresentation: metadata.frame,
+      },
     }),
     frameId,
   );

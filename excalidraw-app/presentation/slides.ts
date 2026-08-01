@@ -1,0 +1,121 @@
+import { newElementWith } from "@excalidraw/element";
+
+import type {
+  ExcalidrawElement,
+  ExcalidrawFrameElement,
+} from "@excalidraw/element/types";
+
+export type OrderedPresentationFrame = {
+  frame: ExcalidrawFrameElement;
+  order: number;
+  sceneIndex: number;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+export const getPresentationOrder = (frame: ExcalidrawFrameElement) => {
+  const rootOrder = frame.customData?.presentationOrder;
+  if (Number.isInteger(rootOrder) && Number(rootOrder) > 0) {
+    return Number(rootOrder);
+  }
+  const generatedMetadata = frame.customData?.yaseenPresentation;
+  if (isRecord(generatedMetadata)) {
+    const generatedOrder = generatedMetadata.presentationOrder;
+    if (Number.isInteger(generatedOrder) && Number(generatedOrder) > 0) {
+      return Number(generatedOrder);
+    }
+  }
+  return null;
+};
+
+export const getTopLevelFrames = (
+  elements: readonly ExcalidrawElement[],
+): { frame: ExcalidrawFrameElement; sceneIndex: number }[] =>
+  elements.flatMap((element, sceneIndex) =>
+    element.type === "frame" && !element.isDeleted && element.frameId === null
+      ? [{ frame: element, sceneIndex }]
+      : [],
+  );
+
+export const getOrderedPresentationFrames = (
+  elements: readonly ExcalidrawElement[],
+): OrderedPresentationFrame[] => {
+  const frames = getTopLevelFrames(elements);
+  const orderCounts = new Map<number, number>();
+  const requestedOrders = frames.map(({ frame }) => {
+    const order = getPresentationOrder(frame);
+    if (order !== null && order <= frames.length) {
+      orderCounts.set(order, (orderCounts.get(order) ?? 0) + 1);
+      return order;
+    }
+    return null;
+  });
+  const slots: (typeof frames[number] | undefined)[] = Array(frames.length);
+  const unresolved: typeof frames[number][] = [];
+
+  frames.forEach((entry, index) => {
+    const requestedOrder = requestedOrders[index];
+    if (requestedOrder !== null && orderCounts.get(requestedOrder) === 1) {
+      slots[requestedOrder - 1] = entry;
+    } else {
+      unresolved.push(entry);
+    }
+  });
+
+  let unresolvedIndex = 0;
+  for (let index = 0; index < slots.length; index += 1) {
+    if (!slots[index]) {
+      slots[index] = unresolved[unresolvedIndex];
+      unresolvedIndex += 1;
+    }
+  }
+
+  return slots.flatMap((entry, index) =>
+    entry ? [{ ...entry, order: index + 1 }] : [],
+  );
+};
+
+export const reorderPresentationFrames = (
+  elements: readonly ExcalidrawElement[],
+  orderedFrameIds: readonly string[],
+): ExcalidrawElement[] => {
+  const current = getOrderedPresentationFrames(elements);
+  const topLevelIds = new Set(current.map(({ frame }) => frame.id));
+  const uniqueRequestedIds = orderedFrameIds.filter(
+    (id, index) => topLevelIds.has(id) && orderedFrameIds.indexOf(id) === index,
+  );
+  const completeIds = [
+    ...uniqueRequestedIds,
+    ...current
+      .map(({ frame }) => frame.id)
+      .filter((id) => !uniqueRequestedIds.includes(id)),
+  ];
+  const orderById = new Map(
+    completeIds.map((frameId, index) => [frameId, index + 1]),
+  );
+
+  return elements.map((element) => {
+    const order = orderById.get(element.id);
+    if (element.type !== "frame" || order === undefined) {
+      return element;
+    }
+    return newElementWith(element, {
+      customData: {
+        ...element.customData,
+        presentationOrder: order,
+      },
+    });
+  });
+};
+
+export const renamePresentationFrame = (
+  elements: readonly ExcalidrawElement[],
+  frameId: string,
+  name: string,
+): ExcalidrawElement[] =>
+  elements.map((element) =>
+    element.type === "frame" && element.id === frameId
+      ? newElementWith(element, { name })
+      : element,
+  );
