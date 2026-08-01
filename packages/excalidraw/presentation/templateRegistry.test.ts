@@ -50,6 +50,20 @@ describe("presentationTemplateRegistry", () => {
     expect(first.plate.assetId).toBe("template-foundations-editorial-v1");
   });
 
+  it("supports dense four- and five-card slides without duplicating the SVG plate", () => {
+    const standard = presentationTemplateRegistry.resolve({
+      id: "foundations-editorial",
+      version: "1.0.0",
+    });
+    const dense = presentationTemplateRegistry.resolve({
+      id: "foundations-editorial-dense",
+      version: "1.0.0",
+    });
+
+    expect(dense.slots["card-5"]).toBeDefined();
+    expect(dense.plate).toBe(standard.plate);
+  });
+
   it("rejects unknown semantic slots when creating a registry", () => {
     const invalid = structuredClone(
       FOUNDATIONS_OF_AI_TEMPLATE,

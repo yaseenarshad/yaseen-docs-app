@@ -443,6 +443,57 @@ export const FOUNDATIONS_OF_AI_TEMPLATE: PresentationTemplateDefinition = {
   },
 };
 
+export const FOUNDATIONS_OF_AI_DENSE_TEMPLATE: PresentationTemplateDefinition =
+  {
+    ...FOUNDATIONS_OF_AI_TEMPLATE,
+    id: "foundations-editorial-dense",
+    plate: FOUNDATIONS_OF_AI_TEMPLATE.plate,
+    slots: {
+      ...FOUNDATIONS_OF_AI_TEMPLATE.slots,
+      "card-1": textSlot({
+        id: "card-1",
+        role: "card",
+        bounds: { x: 86, y: 452, width: 326, height: 84 },
+        size: 15,
+        lineHeight: 1.12,
+        maxLines: 5,
+      }),
+      "card-2": textSlot({
+        id: "card-2",
+        role: "card",
+        bounds: { x: 86, y: 548, width: 326, height: 84 },
+        size: 15,
+        lineHeight: 1.12,
+        maxLines: 5,
+      }),
+      "card-3": textSlot({
+        id: "card-3",
+        role: "card",
+        bounds: { x: 464, y: 452, width: 326, height: 84 },
+        size: 15,
+        lineHeight: 1.12,
+        maxLines: 5,
+      }),
+      "card-4": textSlot({
+        id: "card-4",
+        role: "card",
+        bounds: { x: 464, y: 548, width: 326, height: 84 },
+        size: 15,
+        lineHeight: 1.12,
+        maxLines: 5,
+      }),
+      "card-5": textSlot({
+        id: "card-5",
+        role: "card",
+        bounds: { x: 842, y: 464, width: 352, height: 160 },
+        size: 19,
+        lineHeight: 1.18,
+        maxLines: 7,
+      }),
+    },
+  };
+
 export const presentationTemplateRegistry = createPresentationTemplateRegistry([
   FOUNDATIONS_OF_AI_TEMPLATE,
+  FOUNDATIONS_OF_AI_DENSE_TEMPLATE,
 ]);

@@ -360,8 +360,12 @@ export const applyPresentationTemplate = ({
     );
   }
 
+  const cardSlotIds =
+    template.id === "foundations-editorial-dense" && slide.cards.length === 4
+      ? ["card-1", "card-2", "card-3", "card-5"]
+      : slide.cards.map((_, index) => `card-${index + 1}`);
   slide.cards.forEach((card, index) => {
-    const slotId = `card-${index + 1}`;
+    const slotId = cardSlotIds[index];
     const slot = template.slots[slotId];
     if (!slot || slot.kind !== "text") {
       warnings.push({
