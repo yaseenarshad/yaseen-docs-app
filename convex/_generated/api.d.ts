@@ -30,6 +30,8 @@ import type * as http from "../http.js";
 import type * as mediaLibrary from "../mediaLibrary.js";
 import type * as mediaTypes from "../mediaTypes.js";
 import type * as migrations from "../migrations.js";
+import type * as presentationAnimationModel from "../presentationAnimationModel.js";
+import type * as presentationAnimations from "../presentationAnimations.js";
 import type * as programmaticBoardEdits from "../programmaticBoardEdits.js";
 import type * as programmaticEditPersistence from "../programmaticEditPersistence.js";
 import type * as programmaticEdits from "../programmaticEdits.js";
@@ -69,6 +71,8 @@ declare const fullApi: ApiFromModules<{
   mediaLibrary: typeof mediaLibrary;
   mediaTypes: typeof mediaTypes;
   migrations: typeof migrations;
+  presentationAnimationModel: typeof presentationAnimationModel;
+  presentationAnimations: typeof presentationAnimations;
   programmaticBoardEdits: typeof programmaticBoardEdits;
   programmaticEditPersistence: typeof programmaticEditPersistence;
   programmaticEdits: typeof programmaticEdits;

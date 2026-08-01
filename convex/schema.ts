@@ -125,6 +125,56 @@ export default defineSchema({
     createdAt: v.number(),
     expiresAt: v.number(),
   }).index("by_token", ["token"]),
+  presentationAnimationAssets: defineTable({
+    diagramId: v.id("diagrams"),
+    assetId: v.string(),
+    version: v.number(),
+    sourceElementId: v.string(),
+    slideId: v.string(),
+    objectKey: v.string(),
+    mimeType: v.literal("text/html"),
+    size: v.number(),
+    sha256: v.string(),
+    etag: v.string(),
+    status: v.literal("ready"),
+    previewFileId: v.optional(v.string()),
+    replacementForVersion: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_diagramId", ["diagramId"])
+    .index("by_diagramId_and_assetId_and_version", [
+      "diagramId",
+      "assetId",
+      "version",
+    ])
+    .index("by_objectKey", ["objectKey"]),
+  presentationAnimationUploadGrants: defineTable({
+    token: v.string(),
+    diagramId: v.id("diagrams"),
+    ownerId: v.id("users"),
+    assetId: v.string(),
+    version: v.number(),
+    sourceElementId: v.string(),
+    slideId: v.string(),
+    objectKey: v.string(),
+    mimeType: v.literal("text/html"),
+    size: v.number(),
+    sha256: v.string(),
+    previewFileId: v.optional(v.string()),
+    replacementForVersion: v.optional(v.number()),
+    registeredAt: v.optional(v.number()),
+    etag: v.optional(v.string()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_diagramId", ["diagramId"])
+    .index("by_diagramId_and_assetId_and_version", [
+      "diagramId",
+      "assetId",
+      "version",
+    ]),
   mediaFavorites: defineTable({
     ownerId: v.id("users"),
     ...mediaFields,
