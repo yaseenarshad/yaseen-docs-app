@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { newIframeElement } from "@excalidraw/element";
+
 import { exportToSvg } from "../scene/export";
 
 import canonicalStoryboard from "./fixtures/canonical-storyboard.json";
@@ -35,12 +37,22 @@ describe("animation static export", () => {
       );
     });
     const iframe = result.elements.find((element) => element.type === "iframe");
+    const normalIframe = {
+      ...newIframeElement({
+        type: "iframe",
+        x: 0,
+        y: 900,
+        width: 320,
+        height: 180,
+      }),
+      id: "normal-iframe-regression",
+    };
 
     expect(preview).toBeDefined();
     expect(iframe).toBeDefined();
 
     const svg = await exportToSvg(
-      result.elements,
+      [...result.elements, normalIframe],
       {
         exportBackground: false,
         viewBackgroundColor: "#ffffff",
@@ -50,5 +62,6 @@ describe("animation static export", () => {
 
     expect(svg.querySelector(`[data-id="${preview!.id}"]`)).not.toBeNull();
     expect(svg.querySelector(`[data-id="${iframe!.id}"]`)).toBeNull();
+    expect(svg.querySelector(`[data-id="${normalIframe.id}"]`)).not.toBeNull();
   });
 });

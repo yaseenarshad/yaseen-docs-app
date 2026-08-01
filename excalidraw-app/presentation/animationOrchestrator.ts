@@ -37,8 +37,8 @@ export class AnimationOrchestrator {
   private epoch = 0;
   private pendingFrameId: string | null = null;
   private currentSessionId: string | null = null;
-  private playingElementId: string | null = null;
-  private loadedElementIds = new Set<string>();
+  private playingRuntime: AnimationRuntimeDescriptor | null = null;
+  private loadedRuntimes = new Map<string, AnimationRuntimeDescriptor>();
   private loadPromises = new Map<string, Promise<boolean>>();
   private lastTransitionKey: string | null = null;
 
@@ -85,16 +85,13 @@ export class AnimationOrchestrator {
     ++this.epoch;
     this.pendingFrameId = frameId;
     this.currentSessionId = detail.sessionId;
-    const runtimes = this.getRuntimes();
-    const runtimeByElementId = new Map(
-      runtimes.map((runtime) => [runtime.elementId, runtime]),
-    );
-    if (this.playingElementId) {
-      const playing = runtimeByElementId.get(this.playingElementId);
-      if (playing) {
-        void this.safeSend(playing, { command: "pause" }, detail.sessionId);
-      }
-      this.playingElementId = null;
+    if (this.playingRuntime) {
+      void this.safeSend(
+        this.playingRuntime,
+        { command: "pause" },
+        detail.sessionId,
+      );
+      this.playingRuntime = null;
     }
 
     const frameOrder = this.getFrameOrder();
@@ -119,16 +116,19 @@ export class AnimationOrchestrator {
       desiredRuntimes.map(({ elementId }) => elementId),
     );
 
-    for (const loadedElementId of this.loadedElementIds) {
+    for (const [loadedElementId, loadedRuntime] of this.loadedRuntimes) {
       if (!desiredElementIds.has(loadedElementId)) {
-        const runtime = runtimeByElementId.get(loadedElementId);
-        if (runtime) {
-          void this.safeSend(runtime, { command: "unload" }, detail.sessionId);
-        }
+        void this.safeSend(
+          loadedRuntime,
+          { command: "unload" },
+          detail.sessionId,
+        );
         this.loadPromises.delete(loadedElementId);
       }
     }
-    this.loadedElementIds = desiredElementIds;
+    this.loadedRuntimes = new Map(
+      desiredRuntimes.map((runtime) => [runtime.elementId, runtime]),
+    );
     this.adapter.setPolicy({
       sessionId: detail.sessionId,
       activeFrameId: frameId,
@@ -184,20 +184,16 @@ export class AnimationOrchestrator {
     ) {
       return;
     }
-    this.playingElementId = runtime.elementId;
+    this.playingRuntime = runtime;
   }
 
   private async deactivate(detail: PresentationFrameLifecycleDetail) {
-    if (!this.playingElementId) {
+    if (!this.playingRuntime) {
       return;
     }
-    const runtime = this.getRuntimes().find(
-      ({ elementId }) => elementId === this.playingElementId,
-    );
-    this.playingElementId = null;
-    if (runtime) {
-      await this.safeSend(runtime, { command: "pause" }, detail.sessionId);
-    }
+    const runtime = this.playingRuntime;
+    this.playingRuntime = null;
+    await this.safeSend(runtime, { command: "pause" }, detail.sessionId);
   }
 
   private async end(detail: PresentationFrameLifecycleDetail) {
@@ -205,13 +201,17 @@ export class AnimationOrchestrator {
     this.pendingFrameId = null;
     this.lastTransitionKey = null;
     await this.deactivate(detail);
-    const runtimes = this.getRuntimes();
+    const runtimes = new Map(
+      [...this.loadedRuntimes.values(), ...this.getRuntimes()].map(
+        (runtime) => [runtime.elementId, runtime],
+      ),
+    );
     await Promise.all(
-      runtimes.map((runtime) =>
+      [...runtimes.values()].map((runtime) =>
         this.safeSend(runtime, { command: "unload" }, detail.sessionId),
       ),
     );
-    this.loadedElementIds.clear();
+    this.loadedRuntimes.clear();
     this.loadPromises.clear();
     this.currentSessionId = null;
     this.adapter.setPolicy(null);

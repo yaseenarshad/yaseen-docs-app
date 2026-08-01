@@ -114,6 +114,51 @@ export const FOUNDATIONS_OF_AI_STORYBOARD: StoryboardPresentation = {
   }),
 };
 
+export const FOUNDATIONS_OF_AI_ANIMATION_SLIDE_ORDERS = [
+  2, 5, 8, 11, 14, 17,
+] as const;
+export const FOUNDATIONS_OF_AI_FAILURE_SLIDE_ORDER = 11;
+
+const createProofAnimationHtml = (slideOrder: number) => `<!doctype html>
+<html><head><meta charset="utf-8"><style>
+html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#f8f7f3;font-family:Inter,system-ui,sans-serif;color:#14251f}
+body{display:grid;place-items:center}.stage{position:relative;width:82%;height:70%;border:2px solid #0f5843;border-radius:24px;background:linear-gradient(135deg,#fff,#dff3e8);overflow:hidden}
+.label{position:absolute;left:7%;top:10%;font:700 14px IBM Plex Mono,monospace;letter-spacing:2px;color:#0f5843}.counter{position:absolute;right:7%;top:9%;font:800 24px IBM Plex Mono,monospace}
+.track{position:absolute;left:8%;right:8%;top:52%;height:4px;background:#b7d9ca}.orb{position:absolute;left:8%;top:calc(52% - 23px);width:50px;height:50px;border-radius:50%;background:#19c37d;box-shadow:0 12px 30px rgba(25,195,125,.32);transform:translateX(0) scale(.82)}
+.caption{position:absolute;left:7%;bottom:10%;font-size:18px;font-weight:700}
+</style></head><body><div class="stage"><div class="label">LIVE TEACHING VISUAL</div><div class="counter">0.00</div><div class="track"></div><div class="orb"></div><div class="caption">Slide ${slideOrder} · deterministic restart</div></div>
+<script>(()=>{let time=0;let playing=false;let raf=0;let started=0;const orb=document.querySelector('.orb');const counter=document.querySelector('.counter');const render=()=>{const phase=(time%3)/3;orb.style.transform='translateX('+phase*520+'px) scale('+(0.82+Math.sin(phase*Math.PI)*0.25)+')';counter.textContent=time.toFixed(2)};const tick=(now)=>{if(!playing)return;if(!started)started=now;time=((now-started)/1000)%3;render();raf=requestAnimationFrame(tick)};const timeline={pause(){playing=false;cancelAnimationFrame(raf);return this},play(){if(!playing){playing=true;started=performance.now()-time*1000;raf=requestAnimationFrame(tick)}return this},time(value){if(typeof value==='number'){time=value;started=performance.now()-time*1000;render();return this}return time}};window.__timelines={proof:timeline};timeline.pause();timeline.time(0)})();</script></body></html>`;
+
+/**
+ * Reproducible stress fixture: 17 slides, six managed animations, and eleven
+ * image slides. The browser proof generator can hydrate the image assets from
+ * any previously generated Foundations deck.
+ */
+export const FOUNDATIONS_OF_AI_MIXED_STORYBOARD: StoryboardPresentation = {
+  ...FOUNDATIONS_OF_AI_STORYBOARD,
+  presentationId: "foundations-of-ai-mixed-animation-proof",
+  slides: FOUNDATIONS_OF_AI_STORYBOARD.slides.map((slide) =>
+    FOUNDATIONS_OF_AI_ANIMATION_SLIDE_ORDERS.includes(
+      slide.order as typeof FOUNDATIONS_OF_AI_ANIMATION_SLIDE_ORDERS[number],
+    )
+      ? {
+          ...slide,
+          renderMode: "animation" as const,
+          visual: {
+            kind: "animation" as const,
+            source: {
+              kind: "embedded-html" as const,
+              html:
+                slide.order === FOUNDATIONS_OF_AI_FAILURE_SLIDE_ORDER
+                  ? "<!doctype html><html><body><p>Intentional proof fixture: timeline unavailable.</p></body></html>"
+                  : createProofAnimationHtml(slide.order),
+            },
+          },
+        }
+      : slide,
+  ),
+};
+
 const sourceGeometry: Record<string, readonly [number, number]> = {
   "slide-01": [623, 730],
   "slide-02": [240, 1551],

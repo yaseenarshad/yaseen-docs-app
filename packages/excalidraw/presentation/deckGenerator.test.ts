@@ -6,6 +6,7 @@ import canonicalStoryboard from "./fixtures/canonical-storyboard.json";
 import {
   FOUNDATIONS_OF_AI_ASSETS,
   FOUNDATIONS_OF_AI_LAYOUT,
+  FOUNDATIONS_OF_AI_MIXED_STORYBOARD,
   FOUNDATIONS_OF_AI_STORYBOARD,
 } from "./fixtures/foundationsOfAi";
 import {
@@ -72,6 +73,32 @@ describe("generatePresentationDeck", () => {
       });
 
     expect(generate()).toEqual(generate());
+  });
+
+  it("generates the reproducible 17-slide mixed animation stress deck", () => {
+    const result = generatePresentationDeck({
+      storyboard: FOUNDATIONS_OF_AI_MIXED_STORYBOARD,
+      assets: FOUNDATIONS_OF_AI_ASSETS,
+      layout: FOUNDATIONS_OF_AI_LAYOUT,
+    });
+
+    expect(result.report).toMatchObject({
+      slideCount: 17,
+      frameCount: 17,
+      modeCounts: { image: 11, animation: 6, "full-native": 0 },
+    });
+    expect(
+      result.scene.elements.filter((element) => element.type === "iframe"),
+    ).toHaveLength(6);
+    expect(
+      result.scene.elements.filter((element) => {
+        const metadata = getPresentationMetadata(element);
+        return (
+          metadata?.kind === "slide-child" &&
+          metadata.role === "animation-preview"
+        );
+      }),
+    ).toHaveLength(6);
   });
 
   it("preserves mixed image, animation, and full-native mode metadata", () => {

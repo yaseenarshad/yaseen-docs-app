@@ -86,14 +86,25 @@ export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
   private requestSequence = 0;
   private disposed = false;
   private pending = new Set<() => void>();
+  private runtimePolicy: Parameters<AnimationRuntimeAdapter["setPolicy"]>[0] =
+    null;
 
   constructor({ timeoutMs = 1200 }: { timeoutMs?: number } = {}) {
     this.timeoutMs = timeoutMs;
   }
 
   setPolicy: AnimationRuntimeAdapter["setPolicy"] = (policy) => {
+    this.runtimePolicy = policy;
     publishAnimationRuntimePolicy(policy);
   };
+
+  private isRuntimeDesired(runtime: AnimationRuntimeDescriptor) {
+    return Boolean(
+      this.runtimePolicy &&
+        (runtime.frameId === this.runtimePolicy.activeFrameId ||
+          this.runtimePolicy.preloadFrameIds.includes(runtime.frameId)),
+    );
+  }
 
   private waitForIframe(elementId: string) {
     const deadline = Date.now() + this.timeoutMs;
@@ -133,8 +144,34 @@ export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
         status: "loading",
       });
     }
-    const iframe = await this.waitForIframe(runtime.elementId);
+    const cleanupStatus =
+      directive.command === "unload"
+        ? "unloaded"
+        : directive.command === "pause"
+        ? "paused"
+        : null;
+    let iframe = findRuntimeIframe(runtime.elementId);
+    if (!iframe && cleanupStatus) {
+      publishAnimationRuntimeStatus({
+        elementId: runtime.elementId,
+        frameId: runtime.frameId,
+        status: cleanupStatus,
+      });
+      return true;
+    }
+    iframe ??= await this.waitForIframe(runtime.elementId);
     if (!iframe?.contentWindow || this.disposed) {
+      if (cleanupStatus) {
+        publishAnimationRuntimeStatus({
+          elementId: runtime.elementId,
+          frameId: runtime.frameId,
+          status: cleanupStatus,
+        });
+        return true;
+      }
+      if (!this.isRuntimeDesired(runtime)) {
+        return false;
+      }
       publishAnimationRuntimeStatus({
         elementId: runtime.elementId,
         frameId: runtime.frameId,
@@ -192,6 +229,10 @@ export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
         if (!response) {
           return;
         }
+        if (!cleanupStatus && !this.isRuntimeDesired(runtime)) {
+          finish(false);
+          return;
+        }
         const failed =
           response.event === "error" ||
           response.event === "unsupported-version";
@@ -206,6 +247,19 @@ export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
       const post = () =>
         iframe.contentWindow?.postMessage(command, runtime.targetOrigin ?? "*");
       const timeout = window.setTimeout(() => {
+        if (cleanupStatus) {
+          publishAnimationRuntimeStatus({
+            elementId: runtime.elementId,
+            frameId: runtime.frameId,
+            status: cleanupStatus,
+          });
+          finish(true);
+          return;
+        }
+        if (!this.isRuntimeDesired(runtime)) {
+          finish(false);
+          return;
+        }
         publishAnimationRuntimeStatus({
           elementId: runtime.elementId,
           frameId: runtime.frameId,
@@ -227,6 +281,7 @@ export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
       cancel();
     }
     this.pending.clear();
+    this.runtimePolicy = null;
     publishAnimationRuntimePolicy(null);
   }
 }

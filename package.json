@@ -89,6 +89,7 @@
     "locales-coverage": "node scripts/build-locales-coverage.js",
     "locales-coverage:description": "node scripts/locales-coverage-description.js",
     "presentation:generate": "vite-node --config vitest.config.mts scripts/presentation/run.ts",
+    "presentation:proof": "vite-node --config vitest.config.mts scripts/presentation/proof.ts",
     "prepare": "husky install",
     "prettier": "prettier \"**/*.{css,scss,json,md,html,yml}\" --ignore-path=.eslintignore",
     "release": "node scripts/release.js",

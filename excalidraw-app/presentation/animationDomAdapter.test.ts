@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAnimationResponse } from "@excalidraw/excalidraw/presentation/animationProtocol";
 
 import {
+  ANIMATION_RUNTIME_STATUS_EVENT,
   DomAnimationRuntimeAdapter,
   collectAnimationRuntimes,
 } from "./animationDomAdapter";
@@ -82,6 +83,11 @@ describe("animation DOM adapter", () => {
       targetOrigin: "*",
       responseOrigin: "null",
     };
+    adapter.setPolicy({
+      sessionId: "session-1",
+      activeFrameId: runtime.frameId,
+      preloadFrameIds: [],
+    });
 
     const result = adapter.send(
       runtime,
@@ -145,6 +151,65 @@ describe("animation DOM adapter", () => {
         { sessionId: "session-1" },
       ),
     ).resolves.toBe(false);
+    adapter.dispose();
+  });
+
+  it("treats an already-unmounted runtime as successful pause and unload cleanup", async () => {
+    const adapter = new DomAnimationRuntimeAdapter({ timeoutMs: 10 });
+
+    for (const command of ["pause", "unload"] as const) {
+      await expect(
+        adapter.send(
+          {
+            presentationId: "deck",
+            frameId: "frame-removed",
+            elementId: "animation-removed",
+          },
+          { command },
+          { sessionId: "session-1" },
+        ),
+      ).resolves.toBe(true);
+    }
+    adapter.dispose();
+  });
+
+  it("suppresses a stale load failure after rapid navigation supersedes its policy", async () => {
+    const statuses: string[] = [];
+    const onStatus = (event: CustomEvent<{ status: string }>) => {
+      statuses.push(event.detail.status);
+    };
+    window.addEventListener(
+      ANIMATION_RUNTIME_STATUS_EVENT,
+      onStatus as EventListener,
+    );
+    const adapter = new DomAnimationRuntimeAdapter({ timeoutMs: 10 });
+    const runtime = {
+      presentationId: "deck",
+      frameId: "frame-skipped",
+      elementId: "animation-skipped",
+    };
+    adapter.setPolicy({
+      sessionId: "session-1",
+      activeFrameId: runtime.frameId,
+      preloadFrameIds: [],
+    });
+    const load = adapter.send(
+      runtime,
+      { command: "load" },
+      { sessionId: "session-1" },
+    );
+    adapter.setPolicy({
+      sessionId: "session-1",
+      activeFrameId: "frame-next",
+      preloadFrameIds: [],
+    });
+
+    await expect(load).resolves.toBe(false);
+    expect(statuses).toEqual(["loading"]);
+    window.removeEventListener(
+      ANIMATION_RUNTIME_STATUS_EVENT,
+      onStatus as EventListener,
+    );
     adapter.dispose();
   });
 });
