@@ -18,6 +18,13 @@ import {
 } from "@excalidraw/math";
 
 import {
+  ANIMATION_RUNTIME_POLICY_EVENT,
+  getAnimationRuntimeMode,
+  isManagedPresentationAnimation,
+  type AnimationRuntimeMountPolicy,
+} from "../presentation/animationRuntimePolicy";
+
+import {
   COLOR_PALETTE,
   CODES,
   shouldResizeFromCenter,
@@ -677,6 +684,16 @@ class App extends React.Component<AppProps, AppState> {
   /** embeds that have been inserted to DOM (as a perf optim, we don't want to
    * insert to DOM before user initially scrolls to them) */
   private initializedEmbeds = new Set<ExcalidrawIframeLikeElement["id"]>();
+  private animationRuntimePolicy: AnimationRuntimeMountPolicy | null = null;
+
+  private onAnimationRuntimePolicy = (
+    event: CustomEvent<AnimationRuntimeMountPolicy | null>,
+  ) => {
+    this.animationRuntimePolicy = event.detail;
+    if (!this.unmounted) {
+      this.forceUpdate();
+    }
+  };
 
   private elementsPendingErasure: ElementsPendingErasure = new Set();
 
@@ -1460,6 +1477,8 @@ class App extends React.Component<AppProps, AppState> {
   ) {
     if (ref) {
       this.iFrameRefs.set(element.id, ref);
+    } else {
+      this.iFrameRefs.delete(element.id);
     }
   }
 
@@ -1799,7 +1818,16 @@ class App extends React.Component<AppProps, AppState> {
           }
           const shouldRender = isVisible || hasBeenInitialized;
 
-          if (!shouldRender) {
+          const isManagedAnimation = isManagedPresentationAnimation(el);
+          const animationRuntimeMode = isManagedAnimation
+            ? getAnimationRuntimeMode(el.frameId, this.animationRuntimePolicy)
+            : null;
+
+          if (
+            isManagedAnimation
+              ? animationRuntimeMode === "unloaded"
+              : !shouldRender
+          ) {
             return null;
           }
 
@@ -2043,6 +2071,15 @@ class App extends React.Component<AppProps, AppState> {
                       <iframe
                         ref={(ref) => this.cacheEmbeddableRef(el, ref)}
                         className="excalidraw__embeddable"
+                        data-yaseendraw-animation-element-id={
+                          isManagedAnimation ? el.id : undefined
+                        }
+                        data-yaseendraw-animation-frame-id={
+                          isManagedAnimation ? el.frameId ?? undefined : undefined
+                        }
+                        data-yaseendraw-animation-runtime={
+                          animationRuntimeMode ?? undefined
+                        }
                         srcDoc={
                           src?.type === "document"
                             ? src.srcdoc(this.state.theme)
@@ -3711,6 +3748,10 @@ class App extends React.Component<AppProps, AppState> {
   public async componentDidMount() {
     this.unmounted = false;
     this.api = this.createExcalidrawAPI();
+    window.addEventListener(
+      ANIMATION_RUNTIME_POLICY_EVENT,
+      this.onAnimationRuntimePolicy,
+    );
 
     this.excalidrawContainerValue.container =
       this.excalidrawContainerRef.current;
@@ -3802,6 +3843,11 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   public componentWillUnmount() {
+    window.removeEventListener(
+      ANIMATION_RUNTIME_POLICY_EVENT,
+      this.onAnimationRuntimePolicy,
+    );
+    this.animationRuntimePolicy = null;
     // we're recreating the api object reference so that the
     // <ExcalidrawAPIContext.Provider/> picks up on it
     this.api = { ...this.api, isDestroyed: true };

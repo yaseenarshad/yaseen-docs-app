@@ -25,6 +25,7 @@ import {
   writeProfileSidebarDockPreference,
 } from "../cloud/sidebarDockPreference";
 import { ImageStudio } from "../image-studio/ImageStudio";
+import { PresentationAnimationController } from "../presentation/PresentationAnimationController";
 import { PresentationPlayer } from "../presentation/PresentationPlayer";
 import { PresentationSidebar } from "../presentation/PresentationSidebar";
 
@@ -1271,6 +1272,9 @@ export const AppSidebar = ({
         </Sidebar.Tab>
         {footer && <div className="app-sidebar-footer">{footer}</div>}
       </DefaultSidebar>
+      {excalidrawAPI && (
+        <PresentationAnimationController excalidrawAPI={excalidrawAPI} />
+      )}
       {presentationSession && excalidrawAPI && (
         <PresentationPlayer
           excalidrawAPI={excalidrawAPI}
