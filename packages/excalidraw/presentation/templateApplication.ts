@@ -24,6 +24,8 @@ import {
   type StoryboardPresentation,
   type StoryboardSlide,
 } from "./sceneContract";
+import { wrapAnimationHtmlWithLifecycleBridge } from "./animationBridge";
+import { ANIMATION_PROTOCOL_VERSION } from "./animationProtocol";
 
 import type { BinaryFiles, DataURL } from "../types";
 
@@ -227,7 +229,12 @@ const createVisualElement = ({
   if (slide.renderMode === "animation") {
     const generationData =
       slide.visual.source.kind === "embedded-html"
-        ? { status: "done" as const, html: slide.visual.source.html }
+        ? {
+            status: "done" as const,
+            html: wrapAnimationHtmlWithLifecycleBridge(
+              slide.visual.source.html,
+            ),
+          }
         : undefined;
     if (slide.visual.source.kind === "asset") {
       warnings.push({
@@ -243,6 +250,7 @@ const createVisualElement = ({
         type: "iframe",
         roundness: { type: 3 },
         customData: {
+          animationProtocolVersion: ANIMATION_PROTOCOL_VERSION,
           generationData,
           animationAssetId:
             slide.visual.source.kind === "asset"

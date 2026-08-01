@@ -2,6 +2,8 @@ import { FONT_FAMILY } from "@excalidraw/common";
 import { describe, expect, it } from "vitest";
 
 import canonicalStoryboard from "./fixtures/canonical-storyboard.json";
+import { ANIMATION_BRIDGE_MARKER } from "./animationBridge";
+import { ANIMATION_PROTOCOL_VERSION } from "./animationProtocol";
 import {
   applyPresentationTemplate,
   getPresentationMetadata,
@@ -121,12 +123,19 @@ describe("applyPresentationTemplate", () => {
       width: 590,
       height: 332,
       customData: {
+        animationProtocolVersion: ANIMATION_PROTOCOL_VERSION,
         generationData: {
           status: "done",
-          html: "<!doctype html><title>Token animation</title>",
         },
       },
     });
+    expect(
+      animationVisual?.customData?.generationData &&
+        typeof animationVisual.customData.generationData === "object" &&
+        "html" in animationVisual.customData.generationData
+        ? animationVisual.customData.generationData.html
+        : "",
+    ).toContain(ANIMATION_BRIDGE_MARKER);
     expect({
       x: imageVisual?.x,
       y: imageVisual?.y,
