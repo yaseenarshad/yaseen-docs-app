@@ -64,12 +64,18 @@ export const DefaultSidebar = Object.assign(
       className,
       onDock,
       docked,
+      headerStart,
+      hideLibrary,
       ...rest
     }: Merge<
       MarkOptional<Omit<SidebarProps, "name">, "children">,
       {
         /** pass `false` to disable docking */
         onDock?: SidebarProps["onDock"] | false;
+        /** optional host control rendered before the built-in tab triggers */
+        headerStart?: React.ReactNode;
+        /** hide the legacy element Library in host-managed workspaces */
+        hideLibrary?: boolean;
       }
     >) => {
       const appState = useUIAppState();
@@ -101,19 +107,24 @@ export const DefaultSidebar = Object.assign(
         >
           <Sidebar.Tabs>
             <Sidebar.Header>
+              {headerStart}
               <Sidebar.TabTriggers>
                 <Sidebar.TabTrigger tab={CANVAS_SEARCH_TAB}>
                   {searchIcon}
                 </Sidebar.TabTrigger>
-                <Sidebar.TabTrigger tab={LIBRARY_SIDEBAR_TAB}>
-                  {LibraryIcon}
-                </Sidebar.TabTrigger>
+                {!hideLibrary && (
+                  <Sidebar.TabTrigger tab={LIBRARY_SIDEBAR_TAB}>
+                    {LibraryIcon}
+                  </Sidebar.TabTrigger>
+                )}
                 <DefaultSidebarTabTriggersTunnel.Out />
               </Sidebar.TabTriggers>
             </Sidebar.Header>
-            <Sidebar.Tab tab={LIBRARY_SIDEBAR_TAB}>
-              <LibraryMenu />
-            </Sidebar.Tab>
+            {!hideLibrary && (
+              <Sidebar.Tab tab={LIBRARY_SIDEBAR_TAB}>
+                <LibraryMenu />
+              </Sidebar.Tab>
+            )}
             <Sidebar.Tab tab={CANVAS_SEARCH_TAB}>
               <SearchMenu />
             </Sidebar.Tab>

@@ -108,7 +108,7 @@ import Collab, {
   isOfflineAtom,
 } from "./collab/Collab";
 import { AppFooter } from "./components/AppFooter";
-import { AppMainMenu } from "./components/AppMainMenu";
+import { AppMenuItems } from "./components/AppMainMenu";
 import { AppWelcomeScreen } from "./components/AppWelcomeScreen";
 import {
   ExportToExcalidrawPlus,
@@ -1266,7 +1266,6 @@ const ExcalidrawWrapper = () => {
                   onRename={cloud.renameOpenedBoard}
                 />
               )}
-              <CloudAccount />
               {!isMobile && collabAPI && !isCollabDisabled && (
                 <>
                   {collabError.message && (
@@ -1299,13 +1298,6 @@ const ExcalidrawWrapper = () => {
           }
         }}
       >
-        <AppMainMenu
-          onCollabDialogOpen={onCollabDialogOpen}
-          isCollaborating={isCollaborating}
-          isCollabEnabled={!isCollabDisabled}
-          theme={appTheme}
-          refresh={() => forceRefresh((prev) => !prev)}
-        />
         <AppWelcomeScreen
           onCollabDialogOpen={onCollabDialogOpen}
           isCollabEnabled={!isCollabDisabled}
@@ -1411,6 +1403,19 @@ const ExcalidrawWrapper = () => {
             cloud.openedBoard?.access === "owner"
           }
           imageStudioSearchFocusRequest={imageStudioSearchFocusRequest}
+          footer={
+            <CloudAccount
+              menuItems={
+                <AppMenuItems
+                  onCollabDialogOpen={onCollabDialogOpen}
+                  isCollaborating={isCollaborating}
+                  isCollabEnabled={!isCollabDisabled}
+                  theme={appTheme}
+                  refresh={() => forceRefresh((prev) => !prev)}
+                />
+              }
+            />
+          }
         />
 
         {errorMessage && (

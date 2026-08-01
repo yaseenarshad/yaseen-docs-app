@@ -8,12 +8,20 @@ import {
 import { vi } from "vitest";
 
 import { KEYS } from "@excalidraw/common";
+import { Excalidraw } from "@excalidraw/excalidraw";
 import { UIAppStateContext } from "@excalidraw/excalidraw/context/ui-appState";
 import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
-import { AppSidebarLaunchers, BoardBrowser } from "./AppSidebar";
+import { CloudProfileContext } from "../cloud/CloudProfileContext";
+
+import {
+  AppSidebar,
+  AppSidebarLaunchers,
+  BoardBrowser,
+  openBoardFromSidebar,
+} from "./AppSidebar";
 
 const organizerProps = {
   folders: [],
@@ -35,6 +43,70 @@ const organizerProps = {
 describe("AppSidebarLaunchers", () => {
   beforeEach(() => {
     window.localStorage.removeItem("yaseen-whiteboard-last-sidebar-section");
+  });
+
+  it("toggles Your Boards from the persistent hamburger without removing the labeled direct launchers", () => {
+    const toggleSidebar = vi.fn();
+    render(
+      <UIAppStateContext.Provider
+        value={
+          {
+            openSidebar: null,
+          } as never
+        }
+      >
+        <AppSidebarLaunchers
+          excalidrawAPI={
+            {
+              toggleSidebar,
+            } as unknown as ExcalidrawImperativeAPI
+          }
+        />
+      </UIAppStateContext.Provider>,
+    );
+
+    expect(screen.getByRole("button", { name: "Boards" })).toBeVisible();
+    expect(screen.getByText("Boards")).toBeVisible();
+    expect(screen.getByText("Components")).toBeVisible();
+    expect(screen.getByText("Images")).toBeVisible();
+    const hamburger = screen.getByRole("button", {
+      name: "Open workspace panel",
+    });
+
+    fireEvent.click(hamburger);
+
+    expect(toggleSidebar).toHaveBeenCalledWith({
+      name: "default",
+      tab: "boards",
+      force: true,
+    });
+  });
+
+  it("turns the persistent hamburger into a close action while the panel is open", () => {
+    const toggleSidebar = vi.fn();
+    render(
+      <UIAppStateContext.Provider
+        value={{ openSidebar: { name: "default", tab: "boards" } } as never}
+      >
+        <AppSidebarLaunchers
+          excalidrawAPI={
+            { toggleSidebar } as unknown as ExcalidrawImperativeAPI
+          }
+        />
+      </UIAppStateContext.Provider>,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Close workspace panel",
+        hidden: true,
+      }),
+    );
+    expect(toggleSidebar).toHaveBeenCalledWith({
+      name: "default",
+      tab: "boards",
+      force: false,
+    });
   });
 
   it("opens and switches the approved panels without active-click toggling", () => {
@@ -79,6 +151,42 @@ describe("AppSidebarLaunchers", () => {
     const toggleSidebar = vi.fn();
     window.localStorage.setItem(
       "yaseen-whiteboard-last-sidebar-section",
+      "components",
+    );
+
+    render(
+      <UIAppStateContext.Provider
+        value={
+          {
+            openSidebar: null,
+          } as never
+        }
+      >
+        <AppSidebarLaunchers
+          excalidrawAPI={
+            {
+              toggleSidebar,
+            } as unknown as ExcalidrawImperativeAPI
+          }
+        />
+      </UIAppStateContext.Provider>,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open last workspace panel" }),
+    );
+
+    expect(toggleSidebar).toHaveBeenCalledWith({
+      name: "default",
+      tab: "components",
+      force: true,
+    });
+  });
+
+  it("falls back to Boards when stored section data is stale", () => {
+    const toggleSidebar = vi.fn();
+    window.localStorage.setItem(
+      "yaseen-whiteboard-last-sidebar-section",
       "library",
     );
 
@@ -101,43 +209,7 @@ describe("AppSidebarLaunchers", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Open workspace panel" }),
-    );
-
-    expect(toggleSidebar).toHaveBeenCalledWith({
-      name: "default",
-      tab: "library",
-      force: true,
-    });
-  });
-
-  it("falls back to Boards when stored section data is stale", () => {
-    const toggleSidebar = vi.fn();
-    window.localStorage.setItem(
-      "yaseen-whiteboard-last-sidebar-section",
-      "comments",
-    );
-
-    render(
-      <UIAppStateContext.Provider
-        value={
-          {
-            openSidebar: null,
-          } as never
-        }
-      >
-        <AppSidebarLaunchers
-          excalidrawAPI={
-            {
-              toggleSidebar,
-            } as unknown as ExcalidrawImperativeAPI
-          }
-        />
-      </UIAppStateContext.Provider>,
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Open workspace panel" }),
+      screen.getByRole("button", { name: "Open last workspace panel" }),
     );
 
     expect(toggleSidebar).toHaveBeenCalledWith({
@@ -426,6 +498,118 @@ describe("AppSidebarLaunchers", () => {
     });
 
     expect(toggleSidebar).not.toHaveBeenCalled();
+  });
+});
+
+describe("AppSidebar", () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it("closes an unpinned panel only after a Board opens successfully", async () => {
+    const closeSidebar = vi.fn();
+    const failedOpen = vi.fn().mockRejectedValue(new Error("open failed"));
+
+    await expect(
+      openBoardFromSidebar("failed", failedOpen, closeSidebar, false),
+    ).rejects.toThrow("open failed");
+    expect(closeSidebar).not.toHaveBeenCalled();
+
+    const successfulOpen = vi.fn().mockResolvedValue(undefined);
+    await openBoardFromSidebar(
+      "successful",
+      successfulOpen,
+      closeSidebar,
+      false,
+    );
+    expect(successfulOpen).toHaveBeenCalledWith("successful");
+    expect(closeSidebar).toHaveBeenCalledTimes(1);
+
+    closeSidebar.mockClear();
+    await openBoardFromSidebar("pinned", successfulOpen, closeSidebar, true);
+    expect(closeSidebar).not.toHaveBeenCalled();
+  });
+
+  it("renders a fixed workspace footer outside the active tab content", async () => {
+    render(
+      <Excalidraw
+        initialData={{
+          appState: { openSidebar: { name: "default", tab: "boards" } },
+        }}
+      >
+        <AppSidebar
+          {...organizerProps}
+          boards={[]}
+          activeSlug={null}
+          isLoading={false}
+          onCreate={vi.fn().mockResolvedValue(undefined)}
+          onDelete={vi.fn().mockResolvedValue(undefined)}
+          onOpen={vi.fn().mockResolvedValue(undefined)}
+          excalidrawAPI={null}
+          canInsertMedia={false}
+          imageStudioSearchFocusRequest={0}
+          footer={<div>Workspace account footer</div>}
+        />
+      </Excalidraw>,
+    );
+
+    expect(await screen.findByText("Workspace account footer")).toBeVisible();
+    expect(
+      screen
+        .getByText("Workspace account footer")
+        .closest(".app-sidebar-footer"),
+    ).not.toBeNull();
+  });
+
+  it("hydrates the dock preference for the active profile", async () => {
+    window.localStorage.setItem(
+      "yaseen-whiteboard-sidebar-docked:yaseen",
+      "true",
+    );
+    const updateScene = vi.fn();
+    const api = {
+      getAppState: () => ({ defaultSidebarDockedPreference: false }),
+      toggleSidebar: vi.fn(),
+      updateScene,
+    } as unknown as ExcalidrawImperativeAPI;
+
+    render(
+      <Excalidraw
+        initialData={{
+          appState: { openSidebar: { name: "default", tab: "boards" } },
+        }}
+      >
+        <CloudProfileContext.Provider value="yaseen">
+          <AppSidebar
+            {...organizerProps}
+            boards={[]}
+            activeSlug={null}
+            isLoading={false}
+            onCreate={vi.fn().mockResolvedValue(undefined)}
+            onDelete={vi.fn().mockResolvedValue(undefined)}
+            onOpen={vi.fn().mockResolvedValue(undefined)}
+            excalidrawAPI={api}
+            canInsertMedia={false}
+            imageStudioSearchFocusRequest={0}
+          />
+        </CloudProfileContext.Provider>
+      </Excalidraw>,
+    );
+
+    await waitFor(() =>
+      expect(updateScene).toHaveBeenCalledWith({
+        appState: { defaultSidebarDockedPreference: true },
+      }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Close workspace panel" }),
+    ).toBeVisible();
+    expect(screen.getAllByText("Boards").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Components").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Images").length).toBeGreaterThan(0);
+    expect(screen.getByRole("tab", { name: "Boards" })).toHaveClass(
+      "sidebar-tab-trigger",
+      "app-sidebar-tab-trigger",
+    );
   });
 });
 

@@ -4,11 +4,13 @@ import { KEYS, isWritableElement } from "@excalidraw/common";
 import { DefaultSidebar, Sidebar } from "@excalidraw/excalidraw";
 import {
   file,
+  HamburgerMenuIcon,
   ImageIcon,
   LibraryIcon,
   sidebarRightIcon,
 } from "@excalidraw/excalidraw/components/icons";
 import { useUIAppState } from "@excalidraw/excalidraw/context/ui-appState";
+import { useEditorInterface } from "@excalidraw/excalidraw/components/App";
 
 import type {
   ExcalidrawImperativeAPI,
@@ -16,6 +18,11 @@ import type {
 } from "@excalidraw/excalidraw/types";
 
 import { composeBoardSort, splitBoardSort } from "../cloud/boardOrganizer";
+import { useCloudProfileUsername } from "../cloud/CloudProfileContext";
+import {
+  readProfileSidebarDockPreference,
+  writeProfileSidebarDockPreference,
+} from "../cloud/sidebarDockPreference";
 import { ImageStudio } from "../image-studio/ImageStudio";
 
 import "./AppSidebar.scss";
@@ -76,6 +83,7 @@ type AppSidebarProps = BoardBrowserProps & {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
   canInsertMedia: boolean;
   imageStudioSearchFocusRequest: number;
+  footer?: React.ReactNode;
 };
 
 type ActiveBoardPreview = {
@@ -859,9 +867,19 @@ export const BoardBrowser = ({
 };
 
 const APP_SIDEBAR_LAUNCHERS = [
-  { tab: "boards", label: "Boards", icon: file },
-  { tab: "components", label: "Components", icon: LibraryIcon },
-  { tab: "image-studio", label: "Image Studio", icon: ImageIcon },
+  { tab: "boards", label: "Boards", shortLabel: "Boards", icon: file },
+  {
+    tab: "components",
+    label: "Components",
+    shortLabel: "Components",
+    icon: LibraryIcon,
+  },
+  {
+    tab: "image-studio",
+    label: "Image Studio",
+    shortLabel: "Images",
+    icon: ImageIcon,
+  },
 ] as const;
 
 const LAST_APP_SIDEBAR_TAB_STORAGE_KEY =
@@ -871,7 +889,6 @@ const APP_SIDEBAR_TABS = new Set<SidebarTabName>([
   "boards",
   "components",
   "image-studio",
-  "library",
   "search",
 ]);
 
@@ -1020,7 +1037,33 @@ export const AppSidebarLaunchers = ({
   }, [activeTab, excalidrawAPI, onRequestImageStudioSearch]);
 
   return (
-    <nav className="app-sidebar-launchers" aria-label="Workspace panels">
+    <nav
+      className={`app-sidebar-launchers${
+        openSidebar?.name === "default"
+          ? " app-sidebar-launchers--panel-open"
+          : ""
+      }`}
+      aria-label="Workspace panels"
+    >
+      <button
+        type="button"
+        className="app-sidebar-launcher app-sidebar-launchers__boards-menu"
+        aria-label={
+          activeTab ? "Close workspace panel" : "Open workspace panel"
+        }
+        aria-pressed={openSidebar?.name === "default"}
+        title={activeTab ? "Close workspace panel" : "Open Your Boards"}
+        disabled={!excalidrawAPI}
+        onClick={() => {
+          excalidrawAPI?.toggleSidebar({
+            name: "default",
+            tab: "boards",
+            force: !activeTab,
+          });
+        }}
+      >
+        {HamburgerMenuIcon}
+      </button>
       <div className="app-sidebar-launchers__direct">
         {APP_SIDEBAR_LAUNCHERS.map((launcher) => (
           <button
@@ -1034,13 +1077,16 @@ export const AppSidebarLaunchers = ({
             onClick={() => open(launcher.tab)}
           >
             {launcher.icon}
+            <span className="app-sidebar-launcher__label">
+              {launcher.shortLabel}
+            </span>
           </button>
         ))}
       </div>
       <button
         type="button"
         className="app-sidebar-launcher app-sidebar-launchers__compact"
-        aria-label="Open workspace panel"
+        aria-label="Open last workspace panel"
         aria-pressed={openSidebar?.name === "default"}
         title="Boards, Components, and Image Studio"
         disabled={!excalidrawAPI}
@@ -1052,13 +1098,28 @@ export const AppSidebarLaunchers = ({
   );
 };
 
+export const openBoardFromSidebar = async (
+  slug: string,
+  onOpen: (slug: string) => Promise<void>,
+  closeSidebar: () => void,
+  keepOpen: boolean,
+) => {
+  await onOpen(slug);
+  if (!keepOpen) {
+    closeSidebar();
+  }
+};
+
 export const AppSidebar = ({
   excalidrawAPI,
   canInsertMedia,
   imageStudioSearchFocusRequest,
+  footer,
   ...boardBrowserProps
 }: AppSidebarProps) => {
-  const { openSidebar } = useUIAppState();
+  const { openSidebar, defaultSidebarDockedPreference } = useUIAppState();
+  const editorInterface = useEditorInterface();
+  const profileUsername = useCloudProfileUsername();
   const didInitializeSidebarRef = useRef(false);
 
   useEffect(() => {
@@ -1069,10 +1130,57 @@ export const AppSidebar = ({
     excalidrawAPI.toggleSidebar({ name: null, force: false });
   }, [excalidrawAPI]);
 
+  useEffect(() => {
+    if (!excalidrawAPI || !profileUsername) {
+      return;
+    }
+    const docked = readProfileSidebarDockPreference(profileUsername);
+    if (excalidrawAPI.getAppState().defaultSidebarDockedPreference !== docked) {
+      excalidrawAPI.updateScene({
+        appState: { defaultSidebarDockedPreference: docked },
+      });
+    }
+  }, [excalidrawAPI, profileUsername]);
+
+  const keepOpenAfterBoardNavigation =
+    defaultSidebarDockedPreference &&
+    editorInterface.canFitSidebar &&
+    editorInterface.formFactor !== "phone";
+
+  const openBoard = useCallback(
+    (slug: string) =>
+      openBoardFromSidebar(
+        slug,
+        boardBrowserProps.onOpen,
+        () => excalidrawAPI?.toggleSidebar({ name: null, force: false }),
+        keepOpenAfterBoardNavigation,
+      ),
+    [boardBrowserProps.onOpen, excalidrawAPI, keepOpenAfterBoardNavigation],
+  );
+
   return (
     <>
       <DefaultSidebar.Trigger hidden />
       <DefaultSidebar
+        hideLibrary
+        headerStart={
+          <button
+            type="button"
+            className="app-sidebar-panel-toggle"
+            aria-label="Close workspace panel"
+            title="Close workspace panel"
+            onClick={() =>
+              excalidrawAPI?.toggleSidebar({ name: null, force: false })
+            }
+          >
+            {HamburgerMenuIcon}
+          </button>
+        }
+        onDock={(docked) => {
+          if (profileUsername) {
+            writeProfileSidebarDockPreference(profileUsername, docked);
+          }
+        }}
         onStateChange={(state) => {
           if (state?.name === "default") {
             rememberSidebarTab(state.tab);
@@ -1082,31 +1190,37 @@ export const AppSidebar = ({
         <DefaultSidebar.TabTriggers>
           <Sidebar.TabTrigger
             tab="boards"
+            className="app-sidebar-tab-trigger"
             aria-label="Boards"
             title="Boards"
             style={{ opacity: openSidebar?.tab === "boards" ? 1 : 0.4 }}
           >
             {file}
+            <span className="app-sidebar-tab-label">Boards</span>
           </Sidebar.TabTrigger>
           <Sidebar.TabTrigger
             tab="components"
+            className="app-sidebar-tab-trigger"
             aria-label="Components"
             title="Components"
             style={{ opacity: openSidebar?.tab === "components" ? 1 : 0.4 }}
           >
             {LibraryIcon}
+            <span className="app-sidebar-tab-label">Components</span>
           </Sidebar.TabTrigger>
           <Sidebar.TabTrigger
             tab="image-studio"
+            className="app-sidebar-tab-trigger"
             aria-label="Image Studio"
             title="Image Studio"
             style={{ opacity: openSidebar?.tab === "image-studio" ? 1 : 0.4 }}
           >
             {ImageIcon}
+            <span className="app-sidebar-tab-label">Images</span>
           </Sidebar.TabTrigger>
         </DefaultSidebar.TabTriggers>
         <Sidebar.Tab tab="boards">
-          <BoardBrowser {...boardBrowserProps} />
+          <BoardBrowser {...boardBrowserProps} onOpen={openBoard} />
         </Sidebar.Tab>
         <Sidebar.Tab tab="components">
           {excalidrawAPI && <SavedComponents excalidrawAPI={excalidrawAPI} />}
@@ -1120,6 +1234,7 @@ export const AppSidebar = ({
             />
           )}
         </Sidebar.Tab>
+        {footer && <div className="app-sidebar-footer">{footer}</div>}
       </DefaultSidebar>
     </>
   );

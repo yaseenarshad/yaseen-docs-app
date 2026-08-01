@@ -117,23 +117,11 @@ export const SidebarInner = forwardRef(
           if ((event.target as Element).closest(".sidebar-trigger")) {
             return;
           }
-          // The app workspace panel is an explicit tool surface. Keep it open
-          // through canvas and board interaction until the user invokes its
-          // visible close control.
-          if (name === "default" && editorInterface.formFactor !== "phone") {
-            return;
-          }
           if (!docked || !editorInterface.canFitSidebar) {
             closeLibrary();
           }
         },
-        [
-          closeLibrary,
-          docked,
-          editorInterface.canFitSidebar,
-          editorInterface.formFactor,
-          name,
-        ],
+        [closeLibrary, docked, editorInterface.canFitSidebar],
       ),
     );
 

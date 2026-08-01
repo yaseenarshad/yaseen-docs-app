@@ -10,15 +10,17 @@ import { LanguageList } from "../app-language/LanguageList";
 
 import { saveDebugState } from "./DebugCanvas";
 
-export const AppMainMenu: React.FC<{
+type AppMenuItemsProps = {
   onCollabDialogOpen: () => any;
   isCollaborating: boolean;
   isCollabEnabled: boolean;
   theme: Theme | "system";
   refresh: () => void;
-}> = React.memo((props) => {
+};
+
+export const AppMenuItems: React.FC<AppMenuItemsProps> = React.memo((props) => {
   return (
-    <MainMenu>
+    <>
       <MainMenu.DefaultItems.LoadScene />
       <MainMenu.DefaultItems.SaveToActiveFile />
       <MainMenu.DefaultItems.Export />
@@ -56,6 +58,14 @@ export const AppMainMenu: React.FC<{
         <LanguageList style={{ width: "100%" }} />
       </MainMenu.ItemCustom>
       <MainMenu.DefaultItems.ChangeCanvasBackground />
+    </>
+  );
+});
+
+export const AppMainMenu: React.FC<AppMenuItemsProps> = React.memo((props) => {
+  return (
+    <MainMenu>
+      <AppMenuItems {...props} />
     </MainMenu>
   );
 });

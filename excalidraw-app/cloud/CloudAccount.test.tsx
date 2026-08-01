@@ -39,8 +39,17 @@ describe("CloudLoginGate", () => {
 });
 
 describe("CloudProfile", () => {
+  const renderProfile = (props?: { menuItems?: React.ReactNode }) =>
+    render(
+      <CloudProfile
+        username="yaseen"
+        onSignOut={vi.fn().mockResolvedValue(undefined)}
+        menuItems={props?.menuItems}
+      />,
+    );
+
   it("uses an icon-only profile trigger", () => {
-    render(<CloudProfile username="yaseen" onSignOut={vi.fn()} />);
+    renderProfile();
 
     const trigger = screen.getByRole("button", { name: "Yaseen profile" });
     expect(trigger).toHaveTextContent(/^Y$/);
@@ -53,10 +62,32 @@ describe("CloudProfile", () => {
     render(<CloudProfile username="yaseen" onSignOut={onSignOut} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Yaseen profile" }));
-    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Sign out" }));
 
     await waitFor(() => {
       expect(onSignOut).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("hosts editor commands in the profile menu", () => {
+    renderProfile({ menuItems: <div>Editor settings</div> });
+
+    fireEvent.click(screen.getByRole("button", { name: "Yaseen profile" }));
+
+    expect(screen.getByText("Editor settings")).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "Sign out" })).toBeVisible();
+  });
+
+  it("closes the profile menu when clicking outside", async () => {
+    renderProfile({ menuItems: <div>Editor settings</div> });
+
+    fireEvent.click(screen.getByRole("button", { name: "Yaseen profile" }));
+    expect(screen.getByText("Editor settings")).toBeVisible();
+
+    fireEvent.pointerDown(document.body);
+
+    await waitFor(() =>
+      expect(screen.queryByText("Editor settings")).not.toBeInTheDocument(),
+    );
   });
 });

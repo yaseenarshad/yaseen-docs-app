@@ -17,6 +17,18 @@ import {
 const { h } = window;
 
 describe("DefaultSidebar", () => {
+  it("can remove the legacy Library tab for a host workspace", async () => {
+    await assertExcalidrawWithSidebar(
+      <DefaultSidebar hideLibrary />,
+      DEFAULT_SIDEBAR.name,
+      () => {
+        expect(
+          document.querySelectorAll(".default-sidebar .sidebar-tab-trigger"),
+        ).toHaveLength(1);
+      },
+    );
+  });
+
   it("when `docked={undefined}` & `onDock={undefined}`, should allow docking", async () => {
     await assertExcalidrawWithSidebar(
       <DefaultSidebar />,
@@ -45,12 +57,33 @@ describe("DefaultSidebar", () => {
     );
   });
 
-  it("stays open through desktop canvas interaction until explicitly closed", async () => {
+  it("closes an unpinned sidebar after desktop canvas interaction", async () => {
     await assertExcalidrawWithSidebar(
       <DefaultSidebar />,
       DEFAULT_SIDEBAR.name,
       async () => {
         expect(h.state.openSidebar?.name).toBe(DEFAULT_SIDEBAR.name);
+
+        fireEvent.pointerDown(document.body);
+
+        await waitFor(() => {
+          expect(h.state.openSidebar).toBe(null);
+        });
+      },
+    );
+  });
+
+  it("keeps a pinned sidebar open after desktop canvas interaction", async () => {
+    await assertExcalidrawWithSidebar(
+      <DefaultSidebar />,
+      DEFAULT_SIDEBAR.name,
+      async () => {
+        const { dockButton } = await assertSidebarDockButton(true);
+        fireEvent.click(dockButton);
+
+        await waitFor(() => {
+          expect(h.state.defaultSidebarDockedPreference).toBe(true);
+        });
 
         fireEvent.pointerDown(document.body);
 
