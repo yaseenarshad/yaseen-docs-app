@@ -141,6 +141,28 @@
     }
   }
 
+  &__footer {
+    padding: 0.65rem;
+    border-top: 1px solid var(--color-surface-high);
+
+    button {
+      display: flex;
+      width: 100%;
+      min-height: 2.7rem;
+      padding: 0.6rem 0.85rem;
+      border: 0;
+      border-radius: 0.6rem;
+      background: var(--color-primary);
+      color: white;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  }
+
   &__live {
     position: absolute;
     overflow: hidden;

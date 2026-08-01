@@ -124,9 +124,11 @@ const LazyFramePreview = ({
 export const PresentationSidebar = ({
   excalidrawAPI,
   canEdit,
+  onStartPresentation,
 }: {
   excalidrawAPI: ExcalidrawImperativeAPI;
   canEdit: boolean;
+  onStartPresentation?: (initialFrameId: string | null) => void;
 }) => {
   const [elements, setElements] = useState<readonly ExcalidrawElement[]>(() =>
     excalidrawAPI.getSceneElements(),
@@ -357,6 +359,16 @@ export const PresentationSidebar = ({
           );
         })}
       </ol>
+      {onStartPresentation && (
+        <footer className="presentation-sidebar__footer">
+          <button
+            type="button"
+            onClick={() => onStartPresentation(activeFrameId)}
+          >
+            <span aria-hidden="true">▶</span> Start presentation
+          </button>
+        </footer>
+      )}
       <p className="presentation-sidebar__live" aria-live="polite">
         {liveMessage}
       </p>

@@ -74,6 +74,23 @@ describe("PresentationSidebar", () => {
     expect(api.updateScene).not.toHaveBeenCalled();
   });
 
+  it("starts from the currently highlighted slide", () => {
+    const { api } = createApi();
+    const onStartPresentation = vi.fn();
+    render(
+      <PresentationSidebar
+        excalidrawAPI={api}
+        canEdit
+        onStartPresentation={onStartPresentation}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Go to slide 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start presentation" }));
+
+    expect(onStartPresentation).toHaveBeenCalledWith("two");
+  });
+
   it("reorders metadata without moving frame geometry", () => {
     const original = [frame("one", 1), frame("two", 2)];
     const { api } = createApi(original);

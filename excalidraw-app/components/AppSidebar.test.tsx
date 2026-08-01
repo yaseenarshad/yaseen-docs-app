@@ -11,6 +11,7 @@ import { KEYS } from "@excalidraw/common";
 import { Excalidraw } from "@excalidraw/excalidraw";
 import { UIAppStateContext } from "@excalidraw/excalidraw/context/ui-appState";
 import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
+import { newFrameElement } from "@excalidraw/element";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
@@ -586,6 +587,67 @@ describe("AppSidebar", () => {
         .getByText("Workspace account footer")
         .closest(".app-sidebar-footer"),
     ).not.toBeNull();
+  });
+
+  it("starts and exits the player from the Presentation tab", async () => {
+    const frame = {
+      ...newFrameElement({
+        name: "Opening",
+        x: 0,
+        y: 0,
+        width: 1280,
+        height: 720,
+      }),
+      id: "opening-frame",
+      customData: { presentationOrder: 1 },
+    };
+    const setViewport = vi.fn();
+    const api = {
+      getSceneElements: () => [frame],
+      getAppState: () => ({ selectedElementIds: {} }),
+      onChange: vi.fn(() => vi.fn()),
+      toggleSidebar: vi.fn(),
+      setViewport,
+      updateScene: vi.fn(),
+      setActiveTool: vi.fn(),
+    } as unknown as ExcalidrawImperativeAPI;
+
+    render(
+      <Excalidraw
+        initialData={{
+          appState: { openSidebar: { name: "default", tab: "presentation" } },
+        }}
+      >
+        <AppSidebar
+          {...organizerProps}
+          boards={[]}
+          activeSlug={null}
+          isLoading={false}
+          onCreate={vi.fn().mockResolvedValue(undefined)}
+          onDelete={vi.fn().mockResolvedValue(undefined)}
+          onOpen={vi.fn().mockResolvedValue(undefined)}
+          excalidrawAPI={api}
+          canInsertMedia
+          imageStudioSearchFocusRequest={0}
+        />
+      </Excalidraw>,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Start presentation" }),
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Presentation mode" }),
+    ).toBeVisible();
+    expect(setViewport).toHaveBeenCalledWith(
+      expect.objectContaining({ target: "opening-frame" }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Exit" }));
+    expect(setViewport).toHaveBeenLastCalledWith(null);
+    expect(
+      screen.queryByRole("dialog", { name: "Presentation mode" }),
+    ).not.toBeInTheDocument();
   });
 
   it("hydrates the dock preference for the active profile", async () => {

@@ -25,6 +25,7 @@ import {
   writeProfileSidebarDockPreference,
 } from "../cloud/sidebarDockPreference";
 import { ImageStudio } from "../image-studio/ImageStudio";
+import { PresentationPlayer } from "../presentation/PresentationPlayer";
 import { PresentationSidebar } from "../presentation/PresentationSidebar";
 
 import "./AppSidebar.scss";
@@ -1130,6 +1131,9 @@ export const AppSidebar = ({
   const editorInterface = useEditorInterface();
   const profileUsername = useCloudProfileUsername();
   const didInitializeSidebarRef = useRef(false);
+  const [presentationSession, setPresentationSession] = useState<{
+    initialFrameId: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!excalidrawAPI || didInitializeSidebarRef.current) {
@@ -1258,11 +1262,22 @@ export const AppSidebar = ({
             <PresentationSidebar
               excalidrawAPI={excalidrawAPI}
               canEdit={canInsertMedia}
+              onStartPresentation={(initialFrameId) => {
+                setPresentationSession({ initialFrameId });
+                excalidrawAPI.toggleSidebar({ name: null, force: false });
+              }}
             />
           )}
         </Sidebar.Tab>
         {footer && <div className="app-sidebar-footer">{footer}</div>}
       </DefaultSidebar>
+      {presentationSession && excalidrawAPI && (
+        <PresentationPlayer
+          excalidrawAPI={excalidrawAPI}
+          initialFrameId={presentationSession.initialFrameId}
+          onExit={() => setPresentationSession(null)}
+        />
+      )}
     </>
   );
 };

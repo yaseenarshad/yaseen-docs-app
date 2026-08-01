@@ -1,0 +1,115 @@
+.presentation-player {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  outline: none;
+  cursor: pointer;
+
+  &::before,
+  &::after {
+    position: absolute;
+    z-index: -1;
+    width: 50%;
+    height: 100%;
+    content: "";
+  }
+
+  &::before {
+    inset-inline-start: 0;
+  }
+
+  &::after {
+    inset-inline-end: 0;
+  }
+
+  &__status {
+    position: absolute;
+    overflow: hidden;
+    width: 1px;
+    height: 1px;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  &__controls {
+    position: absolute;
+    display: flex;
+    max-width: min(36rem, calc(100vw - 2rem));
+    min-height: 3.25rem;
+    padding: 0.45rem;
+    border: 1px solid rgb(255 255 255 / 30%);
+    border-radius: 0.85rem;
+    background: rgb(20 37 31 / 88%);
+    box-shadow: 0 0.8rem 2rem rgb(20 37 31 / 20%);
+    color: white;
+    inset-block-end: 1rem;
+    inset-inline-start: 50%;
+    align-items: center;
+    gap: 0.35rem;
+    transform: translateX(-50%);
+    backdrop-filter: blur(14px);
+    cursor: default;
+
+    button {
+      display: grid;
+      min-width: 2.35rem;
+      min-height: 2.35rem;
+      padding: 0.4rem 0.65rem;
+      border: 0;
+      border-radius: 0.55rem;
+      background: rgb(255 255 255 / 12%);
+      color: white;
+      place-items: center;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+
+      &:hover:not(:disabled),
+      &:focus-visible {
+        background: rgb(255 255 255 / 22%);
+      }
+
+      &:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+    }
+  }
+
+  &__progress {
+    display: flex;
+    overflow: hidden;
+    min-width: min(15rem, 36vw);
+    padding-inline: 0.45rem;
+    flex-direction: column;
+    gap: 0.1rem;
+
+    strong {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.8rem;
+    }
+
+    span {
+      color: rgb(255 255 255 / 68%);
+      font-size: 0.68rem;
+    }
+  }
+
+  &__exit {
+    padding-inline: 0.8rem !important;
+  }
+}
+
+@media (max-width: 36rem) {
+  .presentation-player__controls {
+    width: calc(100vw - 1rem);
+    inset-block-end: 0.5rem;
+  }
+
+  .presentation-player__progress {
+    min-width: 0;
+    flex: 1;
+  }
+}

@@ -1,0 +1,170 @@
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { newFrameElement } from "@excalidraw/element";
+
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+
+import {
+  PRESENTATION_FRAME_LIFECYCLE_EVENT,
+  type PresentationFrameLifecycleDetail,
+} from "./events";
+import {
+  PRESENTATION_TRANSITION_DURATION,
+  PresentationPlayer,
+} from "./PresentationPlayer";
+
+const frame = (id: string, order: number) => ({
+  ...newFrameElement({
+    name: `Frame ${id}`,
+    x: order * 2000,
+    y: order * 1000,
+    width: 1280,
+    height: 720,
+  }),
+  id,
+  customData: { presentationOrder: order },
+});
+
+const createApi = () => {
+  let elements = [frame("one", 1), frame("two", 2), frame("three", 3)];
+  let onChange: Parameters<ExcalidrawImperativeAPI["onChange"]>[0] | null =
+    null;
+  return {
+    api: {
+      getSceneElements: () => elements,
+      onChange: vi.fn((callback) => {
+        onChange = callback;
+        return vi.fn();
+      }),
+      setViewport: vi.fn(),
+      updateScene: vi.fn(),
+    } as unknown as ExcalidrawImperativeAPI,
+    deleteFrame(id: string) {
+      elements = elements.filter((element) => element.id !== id);
+      onChange?.(elements, {} as never, {});
+    },
+  };
+};
+
+describe("PresentationPlayer", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("starts from the highlighted slide and publishes transition then active", () => {
+    const { api } = createApi();
+    const lifecycle: PresentationFrameLifecycleDetail[] = [];
+    const listener = (event: Event) =>
+      lifecycle.push(
+        (event as CustomEvent<PresentationFrameLifecycleDetail>).detail,
+      );
+    window.addEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
+
+    const { unmount } = render(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        initialFrameId="two"
+        onExit={vi.fn()}
+      />,
+    );
+
+    expect(api.setViewport).toHaveBeenCalledWith({
+      target: "two",
+      fit: "contain",
+      animation: { duration: PRESENTATION_TRANSITION_DURATION },
+      lock: { scroll: true, zoom: true, overscroll: false },
+      offsets: { ui: true },
+    });
+    expect(screen.getByText("2 / 3")).toBeVisible();
+    expect(lifecycle.at(-1)).toMatchObject({
+      frameId: "two",
+      order: 2,
+      phase: "transitioning",
+    });
+
+    act(() => vi.advanceTimersByTime(PRESENTATION_TRANSITION_DURATION + 20));
+    expect(lifecycle.at(-1)).toMatchObject({
+      frameId: "two",
+      order: 2,
+      phase: "active",
+    });
+    expect(api.updateScene).not.toHaveBeenCalled();
+
+    unmount();
+    window.removeEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
+  });
+
+  it("handles approved keyboard, click, and boundary controls", () => {
+    const { api } = createApi();
+    const onExit = vi.fn();
+    render(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        initialFrameId="one"
+        onExit={onExit}
+      />,
+    );
+
+    fireEvent.keyDown(document, { key: "End" });
+    expect(screen.getByText("3 / 3")).toBeVisible();
+    fireEvent.keyDown(document, { key: "Home" });
+    expect(screen.getByText("1 / 3")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Next slide" }));
+    expect(screen.getByText("2 / 3")).toBeVisible();
+    fireEvent.click(screen.getByRole("dialog"), { clientX: 1 });
+    expect(screen.getByText("1 / 3")).toBeVisible();
+    fireEvent.keyDown(document, { key: "PageDown" });
+    fireEvent.keyDown(document, { key: "ArrowLeft" });
+    expect(screen.getByText("1 / 3")).toBeVisible();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(api.setViewport).toHaveBeenLastCalledWith(null);
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it("coalesces rapid navigation so only the final frame becomes active", () => {
+    const { api } = createApi();
+    const lifecycle: PresentationFrameLifecycleDetail[] = [];
+    const listener = (event: Event) =>
+      lifecycle.push(
+        (event as CustomEvent<PresentationFrameLifecycleDetail>).detail,
+      );
+    window.addEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
+    const { unmount } = render(
+      <PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />,
+    );
+
+    fireEvent.keyDown(document, { key: "ArrowRight" });
+    fireEvent.keyDown(document, { key: " " });
+    act(() => vi.advanceTimersByTime(PRESENTATION_TRANSITION_DURATION + 20));
+
+    expect(screen.getByText("3 / 3")).toBeVisible();
+    expect(
+      lifecycle
+        .filter((event) => event.phase === "active")
+        .map((event) => event.frameId),
+    ).toEqual(["three"]);
+
+    unmount();
+    window.removeEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
+  });
+
+  it("recovers to the nearest remaining frame when the active frame is deleted", () => {
+    const controller = createApi();
+    render(
+      <PresentationPlayer
+        excalidrawAPI={controller.api}
+        initialFrameId="two"
+        onExit={vi.fn()}
+      />,
+    );
+    act(() => vi.advanceTimersByTime(PRESENTATION_TRANSITION_DURATION + 20));
+
+    act(() => controller.deleteFrame("two"));
+
+    expect(screen.getByText("2 / 2")).toBeVisible();
+    expect(controller.api.setViewport).toHaveBeenLastCalledWith(
+      expect.objectContaining({ target: "three" }),
+    );
+  });
+});
