@@ -56,6 +56,15 @@
     }
   }
 
+  .app-sidebar-launcher--quiet {
+    background: transparent;
+    border-color: transparent;
+
+    &:hover {
+      border-color: transparent;
+    }
+  }
+
   .app-sidebar-launchers__boards-menu {
     height: 2rem;
     min-width: 2rem;

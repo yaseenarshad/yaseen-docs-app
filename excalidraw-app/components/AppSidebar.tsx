@@ -1069,7 +1069,7 @@ export const AppSidebarLaunchers = ({
           <button
             key={launcher.tab}
             type="button"
-            className="app-sidebar-launcher"
+            className="app-sidebar-launcher app-sidebar-launcher--quiet"
             aria-label={launcher.label}
             aria-pressed={activeTab === launcher.tab}
             title={launcher.label}

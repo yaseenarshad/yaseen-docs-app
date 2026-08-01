@@ -82,6 +82,31 @@ describe("AppSidebarLaunchers", () => {
     });
   });
 
+  it("renders the three labeled launchers with the quiet unboxed treatment", () => {
+    render(
+      <UIAppStateContext.Provider value={{ openSidebar: null } as never}>
+        <AppSidebarLaunchers
+          excalidrawAPI={
+            { toggleSidebar: vi.fn() } as unknown as ExcalidrawImperativeAPI
+          }
+        />
+      </UIAppStateContext.Provider>,
+    );
+
+    expect(screen.getByRole("button", { name: "Boards" })).toHaveClass(
+      "app-sidebar-launcher--quiet",
+    );
+    expect(screen.getByRole("button", { name: "Components" })).toHaveClass(
+      "app-sidebar-launcher--quiet",
+    );
+    expect(screen.getByRole("button", { name: "Image Studio" })).toHaveClass(
+      "app-sidebar-launcher--quiet",
+    );
+    expect(
+      screen.getByRole("button", { name: "Open workspace panel" }),
+    ).not.toHaveClass("app-sidebar-launcher--quiet");
+  });
+
   it("turns the persistent hamburger into a close action while the panel is open", () => {
     const toggleSidebar = vi.fn();
     render(
