@@ -410,7 +410,13 @@ export const removeBoardRecord = async (
     throw new Error(`${entityName} not found`);
   }
 
-  const [content, assets, uploadGrants] = await Promise.all([
+  const [
+    content,
+    assets,
+    uploadGrants,
+    animationAssets,
+    animationUploadGrants,
+  ] = await Promise.all([
     ctx.db
       .query("diagramContents")
       .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
@@ -423,10 +429,20 @@ export const removeBoardRecord = async (
       .query("assetUploadGrants")
       .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
       .take(1000),
+    ctx.db
+      .query("presentationAnimationAssets")
+      .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
+      .take(1000),
+    ctx.db
+      .query("presentationAnimationUploadGrants")
+      .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
+      .take(1000),
   ]);
 
   const objectKeys = [
     ...assets.flatMap((asset) => (asset.objectKey ? [asset.objectKey] : [])),
+    ...animationAssets.map((asset) => asset.objectKey),
+    ...animationUploadGrants.map((grant) => grant.objectKey),
     ...(diagram.previewObjectKey ? [diagram.previewObjectKey] : []),
   ];
   const assetDeleteToken = await createAssetDeleteGrant(
@@ -446,6 +462,12 @@ export const removeBoardRecord = async (
   }
   for (const grant of uploadGrants) {
     await ctx.db.delete("assetUploadGrants", grant._id);
+  }
+  for (const asset of animationAssets) {
+    await ctx.db.delete("presentationAnimationAssets", asset._id);
+  }
+  for (const grant of animationUploadGrants) {
+    await ctx.db.delete("presentationAnimationUploadGrants", grant._id);
   }
   await ctx.db.delete("diagrams", diagram._id);
   await ctx.scheduler.runAfter(

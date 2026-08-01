@@ -58,6 +58,79 @@ const getDeleteGrant = async (request: Request, env: Env) => {
   return (await response.json()) as { objectKeys: string[] };
 };
 
+const getPresentationAnimationGrant = async (request: Request, env: Env) => {
+  const authorization = request.headers.get("Authorization");
+  if (!authorization?.startsWith("Bearer ")) {
+    return null;
+  }
+  const response = await fetch(
+    `${env.CONVEX_SITE_URL}/presentation-animation-upload-grant`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: authorization.slice("Bearer ".length) }),
+    },
+  );
+  if (!response.ok) {
+    return null;
+  }
+  return (await response.json()) as {
+    objectKey: string;
+    mimeType: "text/html";
+    size: number;
+    sha256: string;
+  };
+};
+
+const sha256Hex = async (value: ArrayBuffer) =>
+  Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", value)))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+
+const uploadPresentationAnimation = async (request: Request, env: Env) => {
+  const grant = await getPresentationAnimationGrant(request, env);
+  if (!grant) {
+    return json(
+      { error: "Invalid or expired presentation animation grant" },
+      { status: 403 },
+    );
+  }
+  if (request.headers.get("Content-Type") !== grant.mimeType) {
+    return json(
+      { error: "Animation MIME type does not match grant" },
+      { status: 400 },
+    );
+  }
+  const body = await request.arrayBuffer();
+  if (body.byteLength !== grant.size) {
+    return json(
+      { error: "Animation size does not match grant" },
+      { status: 400 },
+    );
+  }
+  if ((await sha256Hex(body)) !== grant.sha256) {
+    return json(
+      { error: "Animation checksum does not match grant" },
+      { status: 400 },
+    );
+  }
+  const object = await env.DIAGRAM_ASSETS.put(grant.objectKey, body, {
+    httpMetadata: {
+      contentType: grant.mimeType,
+      cacheControl: "public, max-age=31536000, immutable",
+    },
+    customMetadata: { sha256: grant.sha256 },
+  });
+  if (object.size !== grant.size) {
+    await env.DIAGRAM_ASSETS.delete(grant.objectKey);
+    return json(
+      { error: "Stored animation size does not match grant" },
+      { status: 500 },
+    );
+  }
+  return json({ etag: object.etag, sha256: grant.sha256 });
+};
+
 const uploadAsset = async (request: Request, env: Env) => {
   const grant = await getGrant(request, env);
   if (!grant) {
@@ -140,6 +213,12 @@ const worker: ExportedHandler<Env> = {
     }
     if (url.pathname === "/api/assets" && request.method === "POST") {
       return await uploadAsset(request, env);
+    }
+    if (
+      url.pathname === "/api/presentation-animations" &&
+      request.method === "POST"
+    ) {
+      return await uploadPresentationAnimation(request, env);
     }
     if (url.pathname === "/api/assets" && request.method === "DELETE") {
       return await deleteAssets(request, env);

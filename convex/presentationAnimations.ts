@@ -7,8 +7,10 @@ import {
   assertPresentationAnimationManifest,
   makePresentationAnimationToken,
   presentationAnimationUploadResultValidator,
+  presentationAnimationReferenceValidator,
   toPresentationAnimationReference,
 } from "./presentationAnimationModel";
+import { createAssetDeleteGrant } from "./assetDeletePersistence";
 import { internalQuery, mutation } from "./_generated/server";
 
 import type { Id } from "./_generated/dataModel";
@@ -192,5 +194,153 @@ export const validateUploadGrant = internalQuery({
       size: grant.size,
       sha256: grant.sha256,
     };
+  },
+});
+
+export const registerUpload = mutation({
+  args: { token: v.string(), etag: v.string() },
+  returns: presentationAnimationReferenceValidator,
+  handler: async (ctx, args) => {
+    const ownerId = await requireUserId(ctx);
+    if (
+      args.etag.trim() !== args.etag ||
+      args.etag.length < 1 ||
+      args.etag.length > 256
+    ) {
+      throw new Error("Invalid presentation animation etag");
+    }
+    const grant = await ctx.db
+      .query("presentationAnimationUploadGrants")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .unique();
+    if (!grant || grant.ownerId !== ownerId) {
+      throw new Error("Animation upload grant expired");
+    }
+    const diagram = await ctx.db.get("diagrams", grant.diagramId);
+    if (!diagram || diagram.ownerId !== ownerId) {
+      throw new Error("Board not found");
+    }
+    const existing = await findAssetVersion(
+      ctx,
+      grant.diagramId,
+      grant.assetId,
+      grant.version,
+    );
+    if (existing) {
+      if (
+        existing.objectKey !== grant.objectKey ||
+        existing.sha256 !== grant.sha256 ||
+        existing.etag !== args.etag
+      ) {
+        throw new Error("Presentation animation version already exists");
+      }
+      if (grant.registeredAt === undefined) {
+        await ctx.db.patch("presentationAnimationUploadGrants", grant._id, {
+          registeredAt: Date.now(),
+          etag: args.etag,
+        });
+      }
+      return toPresentationAnimationReference(existing);
+    }
+    if (grant.registeredAt !== undefined || grant.expiresAt < Date.now()) {
+      throw new Error("Animation upload grant expired");
+    }
+    if (grant.replacementForVersion !== undefined) {
+      const replaced = await findAssetVersion(
+        ctx,
+        grant.diagramId,
+        grant.assetId,
+        grant.replacementForVersion,
+      );
+      if (!replaced) {
+        throw new Error("Replacement presentation animation was not found");
+      }
+    }
+    const now = Date.now();
+    await ctx.db.insert("presentationAnimationAssets", {
+      diagramId: grant.diagramId,
+      assetId: grant.assetId,
+      version: grant.version,
+      sourceElementId: grant.sourceElementId,
+      slideId: grant.slideId,
+      objectKey: grant.objectKey,
+      mimeType: PRESENTATION_ANIMATION_MIME_TYPE,
+      size: grant.size,
+      sha256: grant.sha256,
+      etag: args.etag,
+      status: "ready",
+      previewFileId: grant.previewFileId,
+      replacementForVersion: grant.replacementForVersion,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.patch("presentationAnimationUploadGrants", grant._id, {
+      registeredAt: now,
+      etag: args.etag,
+    });
+    return {
+      assetId: grant.assetId,
+      version: grant.version,
+      mimeType: PRESENTATION_ANIMATION_MIME_TYPE,
+      size: grant.size,
+      sha256: grant.sha256,
+      etag: args.etag,
+      sourceElementId: grant.sourceElementId,
+      slideId: grant.slideId,
+      ...(grant.previewFileId ? { previewFileId: grant.previewFileId } : null),
+    };
+  },
+});
+
+export const abandonUpload = mutation({
+  args: { token: v.string() },
+  returns: v.object({ deleteToken: v.union(v.string(), v.null()) }),
+  handler: async (ctx, args) => {
+    const ownerId = await requireUserId(ctx);
+    const grant = await ctx.db
+      .query("presentationAnimationUploadGrants")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .unique();
+    if (!grant || grant.ownerId !== ownerId) {
+      throw new Error("Animation upload grant not found");
+    }
+    if (grant.registeredAt !== undefined) {
+      throw new Error("Registered animation uploads cannot be abandoned");
+    }
+    const deleteToken = await createAssetDeleteGrant(ctx, ownerId, [
+      grant.objectKey,
+    ]);
+    await ctx.db.delete("presentationAnimationUploadGrants", grant._id);
+    return { deleteToken };
+  },
+});
+
+export const removeVersion = mutation({
+  args: {
+    diagramId: v.id("diagrams"),
+    assetId: v.string(),
+    version: v.number(),
+  },
+  returns: v.object({ deleteToken: v.union(v.string(), v.null()) }),
+  handler: async (ctx, args) => {
+    const ownerId = await requireUserId(ctx);
+    const diagram = await ctx.db.get("diagrams", args.diagramId);
+    if (!diagram || diagram.ownerId !== ownerId) {
+      throw new Error("Board not found");
+    }
+    const asset = await findAssetVersion(
+      ctx,
+      diagram._id,
+      args.assetId,
+      args.version,
+    );
+    if (!asset) {
+      return { deleteToken: null };
+    }
+    const deleteToken = await createAssetDeleteGrant(ctx, ownerId, [
+      asset.objectKey,
+    ]);
+    await ctx.db.delete("presentationAnimationAssets", asset._id);
+    return { deleteToken };
   },
 });

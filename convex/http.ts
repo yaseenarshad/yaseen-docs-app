@@ -27,6 +27,36 @@ http.route({
 });
 
 http.route({
+  path: "/presentation-animation-upload-grant",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const body = (await request.json()) as unknown;
+    if (
+      typeof body !== "object" ||
+      body === null ||
+      !("token" in body) ||
+      typeof body.token !== "string"
+    ) {
+      return Response.json(
+        { error: "Invalid animation grant" },
+        { status: 400 },
+      );
+    }
+    const grant = await ctx.runQuery(
+      internal.presentationAnimations.validateUploadGrant,
+      { token: body.token },
+    );
+    if (!grant) {
+      return Response.json(
+        { error: "Animation grant expired" },
+        { status: 403 },
+      );
+    }
+    return Response.json(grant);
+  }),
+});
+
+http.route({
   path: "/asset-delete-grant",
   method: "POST",
   handler: httpAction(async (ctx, request) => {

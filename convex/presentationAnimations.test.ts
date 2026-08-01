@@ -101,6 +101,125 @@ describe("trusted presentation animation upload grants", () => {
     expect(renewed).not.toEqual(first);
   });
 
+  it("registers, retries, replaces, removes, and cleans immutable versions", async () => {
+    const { t, owner, board } = await setup();
+    const firstGrant = await owner.mutation(
+      api.presentationAnimations.createUploadGrant,
+      manifest(board.boardId),
+    );
+    if (firstGrant.kind !== "upload") {
+      throw new Error("Expected upload grant");
+    }
+    const first = await owner.mutation(
+      api.presentationAnimations.registerUpload,
+      { token: firstGrant.token, etag: "etag-v1" },
+    );
+    await expect(
+      owner.mutation(api.presentationAnimations.registerUpload, {
+        token: firstGrant.token,
+        etag: "etag-v1",
+      }),
+    ).resolves.toEqual(first);
+
+    const secondGrant = await owner.mutation(
+      api.presentationAnimations.createUploadGrant,
+      {
+        ...manifest(board.boardId),
+        version: 2,
+        replacementForVersion: 1,
+        sha256: "b".repeat(64),
+      },
+    );
+    if (secondGrant.kind !== "upload") {
+      throw new Error("Expected replacement upload grant");
+    }
+    const second = await owner.mutation(
+      api.presentationAnimations.registerUpload,
+      { token: secondGrant.token, etag: "etag-v2" },
+    );
+    expect(second).toMatchObject({
+      assetId: "lesson-animation",
+      version: 2,
+      etag: "etag-v2",
+      sha256: "b".repeat(64),
+    });
+    const versions = await t.run(async (ctx) =>
+      ctx.db
+        .query("presentationAnimationAssets")
+        .withIndex("by_diagramId", (q) => q.eq("diagramId", board.boardId))
+        .collect(),
+    );
+    expect(versions.map(({ version }) => version).sort()).toEqual([1, 2]);
+
+    const removed = await owner.mutation(
+      api.presentationAnimations.removeVersion,
+      { diagramId: board.boardId, assetId: "lesson-animation", version: 1 },
+    );
+    expect(removed.deleteToken).not.toBeNull();
+    const cleanup = await t.mutation(internal.assets.consumeDeleteGrant, {
+      token: removed.deleteToken!,
+    });
+    expect(cleanup?.objectKeys).toHaveLength(1);
+
+    const deleted = await owner.mutation(api.boards.remove, {
+      boardId: board.boardId,
+    });
+    const boardCleanup = await t.mutation(internal.assets.consumeDeleteGrant, {
+      token: deleted.assetDeleteToken!,
+    });
+    expect(boardCleanup?.objectKeys).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("/presentation-animations/"),
+      ]),
+    );
+    const remaining = await t.run(async (ctx) =>
+      ctx.db
+        .query("presentationAnimationAssets")
+        .withIndex("by_diagramId", (q) => q.eq("diagramId", board.boardId))
+        .collect(),
+    );
+    expect(remaining).toEqual([]);
+  });
+
+  it("cleans abandoned uploads and rejects normal image grants", async () => {
+    const { t, owner, board } = await setup();
+    const imageGrant = await owner.mutation(api.boardAssets.createUploadGrant, {
+      boardId: board.boardId,
+      fileId: "image-only",
+      mimeType: "image/png",
+      size: 128,
+    });
+    await expect(
+      owner.mutation(api.presentationAnimations.registerUpload, {
+        token: imageGrant.token,
+        etag: "wrong-purpose",
+      }),
+    ).rejects.toThrow("Animation upload grant expired");
+
+    const animationGrant = await owner.mutation(
+      api.presentationAnimations.createUploadGrant,
+      manifest(board.boardId),
+    );
+    if (animationGrant.kind !== "upload") {
+      throw new Error("Expected upload grant");
+    }
+    const abandoned = await owner.mutation(
+      api.presentationAnimations.abandonUpload,
+      { token: animationGrant.token },
+    );
+    const cleanup = await t.mutation(internal.assets.consumeDeleteGrant, {
+      token: abandoned.deleteToken!,
+    });
+    expect(cleanup?.objectKeys).toEqual([
+      expect.stringContaining("/presentation-animations/"),
+    ]);
+    await expect(
+      t.query(internal.presentationAnimations.validateUploadGrant, {
+        token: animationGrant.token,
+      }),
+    ).resolves.toBeNull();
+  });
+
   it("rejects cross-board, image-grant, invalid type, size, and checksum paths", async () => {
     const { owner, intruder, board } = await setup();
 
