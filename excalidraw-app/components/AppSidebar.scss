@@ -9,7 +9,7 @@
     align-items: center;
     display: flex;
     gap: 0.25rem;
-    margin-left: -0.5rem;
+    margin-inline-start: -0.5rem;
     min-width: 0;
     order: 2;
   }
@@ -101,8 +101,8 @@
 
   .default-sidebar {
     .sidebar__header {
-      padding-left: 0.5rem;
-      padding-right: 0.375rem;
+      padding-inline-end: 0.375rem;
+      padding-inline-start: 0.5rem;
     }
 
     .sidebar-triggers {
@@ -121,7 +121,7 @@
       flex: 0 0 2rem;
       height: 2rem;
       justify-content: center;
-      margin-right: 0.25rem;
+      margin-inline-end: 0.25rem;
       padding: 0;
       width: 2rem;
 
