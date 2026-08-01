@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 
 import { CloudLoginGate } from "./CloudAccount";
+import { CloudProfileContext } from "./CloudProfileContext";
 
 import type { ReactNode } from "react";
 
@@ -90,7 +91,11 @@ const AnonymousSession = ({ children }: { children: ReactNode }) => {
     );
   }
 
-  return children;
+  return (
+    <CloudProfileContext.Provider value={account?.username ?? null}>
+      {children}
+    </CloudProfileContext.Provider>
+  );
 };
 
 export const ConvexAppProvider = ({ children }: { children: ReactNode }) => (

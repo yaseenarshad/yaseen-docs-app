@@ -1,8 +1,11 @@
 import { useAuthActions } from "@convex-dev/auth/react";
-import { useQuery } from "convex/react";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui";
 
-import { api } from "../../convex/_generated/api";
+import { DropdownMenuContentPropsContext } from "@excalidraw/excalidraw/components/dropdownMenu/common";
+import { useOutsideClick } from "@excalidraw/excalidraw/hooks/useOutsideClick";
+
+import { useCloudProfileUsername } from "./CloudProfileContext";
 
 type AuthenticationRequest = {
   password: string;
@@ -91,45 +94,75 @@ export const CloudLoginGate = ({
 export const CloudProfile = ({
   username,
   onSignOut,
+  menuItems,
 }: {
   username: string;
   onSignOut: () => Promise<void>;
+  menuItems?: React.ReactNode;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isWorking, setIsWorking] = useState(false);
+  const accountRef = useRef<HTMLDivElement>(null);
   const displayName =
     profileNames[username as keyof typeof profileNames] ?? username;
+  const closeMenu = useCallback(() => setIsOpen(false), []);
+
+  useOutsideClick(accountRef, closeMenu);
 
   return (
-    <div className="cloud-account">
-      <button
-        className="cloud-account__trigger"
-        type="button"
-        aria-label={`${displayName} profile`}
-        aria-expanded={isOpen}
-        onClick={() => setIsOpen((value) => !value)}
-      >
-        <span className="cloud-account__avatar" aria-hidden="true">
-          {displayName.slice(0, 1).toUpperCase()}
-        </span>
-      </button>
-      {isOpen && (
-        <div className="cloud-account__menu">
-          <strong>{displayName}</strong>
-          <span>Your boards follow this profile.</span>
+    <DropdownMenuPrimitive.Root open={isOpen} modal={false}>
+      <div className="cloud-account" ref={accountRef}>
+        <DropdownMenuPrimitive.Trigger asChild>
           <button
+            className="cloud-account__trigger"
             type="button"
-            onClick={() => {
-              setIsWorking(true);
-              void onSignOut().finally(() => setIsWorking(false));
-            }}
-            disabled={isWorking}
+            aria-label={`${displayName} profile`}
+            aria-expanded={isOpen}
+            onClick={() => setIsOpen((value) => !value)}
           >
-            {isWorking ? "Signing out…" : "Sign out"}
+            <span className="cloud-account__avatar" aria-hidden="true">
+              {displayName.slice(0, 1).toUpperCase()}
+            </span>
           </button>
-        </div>
-      )}
-    </div>
+        </DropdownMenuPrimitive.Trigger>
+        <DropdownMenuPrimitive.Content
+          className="cloud-account__menu dropdown-menu"
+          side="top"
+          align="start"
+          sideOffset={8}
+          collisionPadding={8}
+          data-prevent-outside-click
+          onPointerDownOutside={() => setIsOpen(false)}
+          onEscapeKeyDown={() => setIsOpen(false)}
+        >
+          <div className="dropdown-menu-container">
+            <div className="cloud-account__identity">
+              <strong>{displayName}</strong>
+              <span>Your boards follow this profile.</span>
+            </div>
+            <DropdownMenuContentPropsContext.Provider
+              value={{ onSelect: () => setIsOpen(false) }}
+            >
+              {menuItems}
+            </DropdownMenuContentPropsContext.Provider>
+            {menuItems && <div className="cloud-account__separator" />}
+            <DropdownMenuPrimitive.Item asChild>
+              <button
+                className="cloud-account__sign-out"
+                type="button"
+                onClick={() => {
+                  setIsWorking(true);
+                  void onSignOut().finally(() => setIsWorking(false));
+                }}
+                disabled={isWorking}
+              >
+                {isWorking ? "Signing out…" : "Sign out"}
+              </button>
+            </DropdownMenuPrimitive.Item>
+          </div>
+        </DropdownMenuPrimitive.Content>
+      </div>
+    </DropdownMenuPrimitive.Root>
   );
 };
 
@@ -138,17 +171,22 @@ const goHome = () => {
   window.dispatchEvent(new PopStateEvent("popstate"));
 };
 
-export const CloudAccount = () => {
-  const account = useQuery(api.account.current, {});
+export const CloudAccount = ({
+  menuItems,
+}: {
+  menuItems?: React.ReactNode;
+}) => {
+  const username = useCloudProfileUsername();
   const { signOut } = useAuthActions();
 
-  if (!account || account.isAnonymous || !account.username) {
+  if (!username) {
     return null;
   }
 
   return (
     <CloudProfile
-      username={account.username}
+      username={username}
+      menuItems={menuItems}
       onSignOut={async () => {
         await signOut();
         goHome();

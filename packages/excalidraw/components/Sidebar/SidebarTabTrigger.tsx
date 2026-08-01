@@ -1,3 +1,4 @@
+import clsx from "clsx";
 import { Tabs as RadixTabs } from "radix-ui";
 
 import type { SidebarTabName } from "../../types";
@@ -6,6 +7,7 @@ export const SidebarTabTrigger = ({
   children,
   tab,
   onSelect,
+  className,
   ...rest
 }: {
   children: React.ReactNode;
@@ -16,7 +18,7 @@ export const SidebarTabTrigger = ({
     <RadixTabs.Trigger value={tab} asChild onSelect={onSelect}>
       <button
         type={"button"}
-        className={`excalidraw-button sidebar-tab-trigger`}
+        className={clsx("excalidraw-button sidebar-tab-trigger", className)}
         {...rest}
       >
         {children}
