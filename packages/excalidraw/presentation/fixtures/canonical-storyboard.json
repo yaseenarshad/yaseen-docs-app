@@ -15,7 +15,8 @@
           "body": "A useful model ranks plausible continuations."
         }
       ],
-      "templateId": "foundations-editorial-v1",
+      "templateId": "foundations-editorial",
+      "templateVersion": "1.0.0",
       "renderMode": "image",
       "visual": {
         "kind": "image",
@@ -29,7 +30,8 @@
       "headline": "Tokens resolve over time",
       "body": "Animate only the teaching visual inside the shared plate.",
       "cards": [],
-      "templateId": "foundations-editorial-v1",
+      "templateId": "foundations-editorial",
+      "templateVersion": "1.0.0",
       "renderMode": "animation",
       "visual": {
         "kind": "animation",
@@ -47,7 +49,8 @@
       "headline": "Build the idea with native elements",
       "body": "Every teaching object remains directly editable.",
       "cards": [],
-      "templateId": "foundations-editorial-v1",
+      "templateId": "foundations-editorial",
+      "templateVersion": "1.0.0",
       "renderMode": "full-native",
       "visual": {
         "kind": "native",

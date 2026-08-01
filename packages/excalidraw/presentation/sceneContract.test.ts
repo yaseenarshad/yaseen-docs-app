@@ -14,7 +14,7 @@ import {
 
 const templates: readonly PresentationTemplateContract[] = [
   {
-    id: "foundations-editorial-v1",
+    id: "foundations-editorial",
     textLimits: {
       eyebrow: 32,
       headline: 90,
@@ -70,6 +70,15 @@ describe("validateStoryboardPresentation", () => {
 
     expect(() => validateStoryboardPresentation(invalid, templates)).toThrow(
       'renderMode "html" is unsupported',
+    );
+  });
+
+  it("requires an exact template version for deterministic resolution", () => {
+    const invalid = structuredClone(presentation) as Record<string, any>;
+    delete invalid.slides[0].templateVersion;
+
+    expect(() => validateStoryboardPresentation(invalid, templates)).toThrow(
+      "templateVersion is required",
     );
   });
 
@@ -134,7 +143,8 @@ describe("scene metadata mapping", () => {
       presentationId: "foundations-of-ai",
       slideId: "slide-image",
       presentationOrder: 1,
-      templateId: "foundations-editorial-v1",
+      templateId: "foundations-editorial",
+      templateVersion: "1.0.0",
       renderMode: "image",
     });
     expect(mapping.children.staticVisual).toEqual({

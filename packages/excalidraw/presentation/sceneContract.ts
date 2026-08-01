@@ -47,6 +47,7 @@ type StoryboardSlideBase = {
   body: string;
   cards: StoryboardCard[];
   templateId: string;
+  templateVersion: string;
 };
 
 export type StoryboardSlide =
@@ -274,6 +275,7 @@ export const validateStoryboardPresentation = (
       addRequiredStringIssue(issues, slideId, slideValue, "headline");
       addRequiredStringIssue(issues, slideId, slideValue, "body");
       addRequiredStringIssue(issues, slideId, slideValue, "templateId");
+      addRequiredStringIssue(issues, slideId, slideValue, "templateVersion");
 
       if (nonEmptyString(slideValue.id)) {
         if (slideIds.has(slideValue.id)) {
@@ -446,6 +448,7 @@ export type PresentationFrameMetadata = {
   slideId: string;
   presentationOrder: number;
   templateId: string;
+  templateVersion: string;
   renderMode: PresentationRenderMode;
 };
 
@@ -481,6 +484,7 @@ export const mapSlideToSceneMetadata = (
     slideId: slide.id,
     presentationOrder: slide.order,
     templateId: slide.templateId,
+    templateVersion: slide.templateVersion,
     renderMode: slide.renderMode,
   };
 

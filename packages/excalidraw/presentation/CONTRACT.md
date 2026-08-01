@@ -4,7 +4,7 @@ Version 1 converts one validated storyboard slide into one ordinary top-level Ex
 
 ## Input
 
-Call `validateStoryboardPresentation(input, templates)` before rendering. A presentation declares a stable `presentationId`, the generator version, and an ordered collection of slides. Every slide supplies editable copy, a registered template, exactly one of the approved render modes, and the matching visual reference.
+Call `validateStoryboardPresentation(input, templates)` before rendering. A presentation declares a stable `presentationId`, the generator version, and an ordered collection of slides. Every slide supplies editable copy, an exact registered template ID/version, exactly one of the approved render modes, and the matching visual reference.
 
 The approved modes are:
 
@@ -28,7 +28,8 @@ The frame metadata owns presentation identity and ordering:
   "presentationId": "foundations-of-ai",
   "slideId": "slide-image",
   "presentationOrder": 1,
-  "templateId": "foundations-editorial-v1",
+  "templateId": "foundations-editorial",
+  "templateVersion": "1.0.0",
   "renderMode": "image"
 }
 ```
