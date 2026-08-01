@@ -47,6 +47,7 @@ export const PresentationPlayer = ({
   const transitionTokenRef = useRef(0);
   const sessionIdRef = useRef(createSessionId());
   const didExitRef = useRef(false);
+  const effectGenerationRef = useRef(0);
   const overlayRef = useRef<HTMLDivElement>(null);
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
@@ -186,6 +187,8 @@ export const PresentationPlayer = ({
   );
 
   useEffect(() => {
+    const effectGeneration = ++effectGenerationRef.current;
+    didExitRef.current = false;
     overlayRef.current?.focus();
     document.body.classList.add("yaseendraw-presentation-active");
     navigateTo(initialIndex, "start");
@@ -216,7 +219,17 @@ export const PresentationPlayer = ({
     return () => {
       unsubscribe();
       document.body.classList.remove("yaseendraw-presentation-active");
-      if (!didExitRef.current) {
+      // Strict Mode performs a setup → cleanup → setup replay in development.
+      // Defer terminal cleanup by one microtask so a replaying setup can claim
+      // the same session without publishing a false `ended` event or leaving
+      // the remounted controls inert.
+      queueMicrotask(() => {
+        if (
+          effectGenerationRef.current !== effectGeneration ||
+          didExitRef.current
+        ) {
+          return;
+        }
         didExitRef.current = true;
         clearTransition();
         excalidrawAPI.setViewport(null);
@@ -226,7 +239,7 @@ export const PresentationPlayer = ({
           phase: "ended",
           reason: "unmounted",
         });
-      }
+      });
     };
   }, [clearTransition, excalidrawAPI, exit, initialIndex, navigateTo, publish]);
 

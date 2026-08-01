@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { newFrameElement } from "@excalidraw/element";
@@ -120,6 +121,37 @@ describe("PresentationPlayer", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(api.setViewport).toHaveBeenLastCalledWith(null);
     expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it("remains interactive without ending during the Strict Mode effect replay", async () => {
+    const { api } = createApi();
+    const onExit = vi.fn();
+    const lifecycle: PresentationFrameLifecycleDetail[] = [];
+    const listener = (event: Event) =>
+      lifecycle.push(
+        (event as CustomEvent<PresentationFrameLifecycleDetail>).detail,
+      );
+    window.addEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
+    render(
+      <StrictMode>
+        <PresentationPlayer
+          excalidrawAPI={api}
+          initialFrameId="one"
+          onExit={onExit}
+        />
+      </StrictMode>,
+    );
+    await act(async () => undefined);
+
+    expect(lifecycle.some((event) => event.phase === "ended")).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next slide" }));
+    expect(screen.getByText("2 / 3")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Exit" }));
+    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(api.setViewport).toHaveBeenLastCalledWith(null);
+    window.removeEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
   });
 
   it("coalesces rapid navigation so only the final frame becomes active", () => {
