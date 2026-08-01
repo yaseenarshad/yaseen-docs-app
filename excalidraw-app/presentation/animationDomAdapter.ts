@@ -2,11 +2,17 @@ import {
   createAnimationCommand,
   validateAnimationMessageEvent,
 } from "@excalidraw/excalidraw/presentation/animationProtocol";
+
 import {
+  ANIMATION_RUNTIME_STATUS_EVENT,
   isManagedPresentationAnimation,
   publishAnimationRuntimePolicy,
+  publishAnimationRuntimeStatus,
+  type AnimationRuntimeStatusDetail,
 } from "@excalidraw/excalidraw/presentation/animationRuntimePolicy";
 import { getPresentationMetadata } from "@excalidraw/excalidraw/presentation/templateApplication";
+
+import type { AnimationCommandInput } from "@excalidraw/excalidraw/presentation/animationProtocol";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 
@@ -16,24 +22,7 @@ import type {
   AnimationRuntimeDescriptor,
 } from "./animationOrchestrator";
 
-export const ANIMATION_RUNTIME_STATUS_EVENT =
-  "yaseendraw:animation-runtime-status" as const;
-
-export type AnimationRuntimeStatusDetail = {
-  elementId: string;
-  frameId: string;
-  status: "loading" | "ready" | "playing" | "paused" | "unloaded" | "error";
-  message?: string;
-};
-
-const publishStatus = (detail: AnimationRuntimeStatusDetail) => {
-  window.dispatchEvent(
-    new CustomEvent<AnimationRuntimeStatusDetail>(
-      ANIMATION_RUNTIME_STATUS_EVENT,
-      { detail },
-    ),
-  );
-};
+export { ANIMATION_RUNTIME_STATUS_EVENT };
 
 const hostedAnimationOrigin = (element: ExcalidrawElement) => {
   const url = element.customData?.animationUrl;
@@ -89,8 +78,7 @@ const findRuntimeIframe = (elementId: string) =>
       "iframe[data-yaseendraw-animation-element-id]",
     ),
   ).find(
-    (iframe) =>
-      iframe.dataset.yaseendrawAnimationElementId === elementId,
+    (iframe) => iframe.dataset.yaseendrawAnimationElementId === elementId,
   ) ?? null;
 
 export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
@@ -139,7 +127,7 @@ export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
       return false;
     }
     if (directive.command === "load") {
-      publishStatus({
+      publishAnimationRuntimeStatus({
         elementId: runtime.elementId,
         frameId: runtime.frameId,
         status: "loading",
@@ -147,7 +135,7 @@ export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
     }
     const iframe = await this.waitForIframe(runtime.elementId);
     if (!iframe?.contentWindow || this.disposed) {
-      publishStatus({
+      publishAnimationRuntimeStatus({
         elementId: runtime.elementId,
         frameId: runtime.frameId,
         status: "error",
@@ -164,10 +152,7 @@ export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
       elementId: runtime.elementId,
       requestId,
       ...directive,
-    } as Omit<
-      ReturnType<typeof createAnimationCommand>,
-      "type" | "version"
-    >);
+    } as AnimationCommandInput);
 
     return new Promise<boolean>((resolve) => {
       let settled = false;
@@ -210,7 +195,7 @@ export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
         const failed =
           response.event === "error" ||
           response.event === "unsupported-version";
-        publishStatus({
+        publishAnimationRuntimeStatus({
           elementId: runtime.elementId,
           frameId: runtime.frameId,
           status: failed ? "error" : statusForCommand(directive),
@@ -219,12 +204,9 @@ export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
         finish(!failed);
       };
       const post = () =>
-        iframe.contentWindow?.postMessage(
-          command,
-          runtime.targetOrigin ?? "*",
-        );
+        iframe.contentWindow?.postMessage(command, runtime.targetOrigin ?? "*");
       const timeout = window.setTimeout(() => {
-        publishStatus({
+        publishAnimationRuntimeStatus({
           elementId: runtime.elementId,
           frameId: runtime.frameId,
           status: "error",
@@ -246,11 +228,5 @@ export class DomAnimationRuntimeAdapter implements AnimationRuntimeAdapter {
     }
     this.pending.clear();
     publishAnimationRuntimePolicy(null);
-  }
-}
-
-declare global {
-  interface WindowEventMap {
-    [ANIMATION_RUNTIME_STATUS_EVENT]: CustomEvent<AnimationRuntimeStatusDetail>;
   }
 }

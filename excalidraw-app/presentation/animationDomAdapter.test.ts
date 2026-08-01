@@ -17,6 +17,8 @@ describe("animation DOM adapter", () => {
   it("collects trusted runtimes from generated frame and animation metadata", () => {
     const frame = {
       ...newFrameElement({
+        x: 0,
+        y: 0,
         name: "Slide 2",
         customData: {
           yaseenPresentation: {
@@ -37,6 +39,8 @@ describe("animation DOM adapter", () => {
     const animation = {
       ...newIframeElement({
         type: "iframe",
+        x: 0,
+        y: 0,
         frameId: frame.id,
         customData: {
           animationProtocolVersion: 1,

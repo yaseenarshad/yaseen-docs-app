@@ -437,6 +437,7 @@ export type PresentationChildRole =
   | "body"
   | "card"
   | "static-visual"
+  | "animation-preview"
   | "animated-visual"
   | "native-visual";
 
@@ -497,6 +498,7 @@ export const mapSlideToSceneMetadata = (
       body: childMetadata(slide.id, "body"),
       cards: (slotId: string) => childMetadata(slide.id, "card", slotId),
       staticVisual: childMetadata(slide.id, "static-visual"),
+      animationPreview: childMetadata(slide.id, "animation-preview"),
       animatedVisual: childMetadata(slide.id, "animated-visual"),
       nativeVisual: childMetadata(slide.id, "native-visual"),
     },

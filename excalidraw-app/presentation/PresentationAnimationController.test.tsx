@@ -1,17 +1,29 @@
-import { act, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { newFrameElement, newIframeElement } from "@excalidraw/element";
 import { describe, expect, it, vi } from "vitest";
+
+import { publishAnimationRuntimeStatus } from "@excalidraw/excalidraw/presentation/animationRuntimePolicy";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 import { publishPresentationFrameLifecycle } from "./events";
-import type { AnimationRuntimeAdapter } from "./animationOrchestrator";
+
 import { PresentationAnimationController } from "./PresentationAnimationController";
+
+import type { AnimationRuntimeAdapter } from "./animationOrchestrator";
 
 describe("PresentationAnimationController", () => {
   it("connects Presentation Mode lifecycle events to managed animation commands", async () => {
     const frame = {
       ...newFrameElement({
+        x: 0,
+        y: 0,
         name: "Slide 1",
         customData: {
           presentationOrder: 1,
@@ -33,6 +45,8 @@ describe("PresentationAnimationController", () => {
     const animation = {
       ...newIframeElement({
         type: "iframe",
+        x: 0,
+        y: 0,
         frameId: frame.id,
         customData: {
           animationProtocolVersion: 1,
@@ -56,10 +70,7 @@ describe("PresentationAnimationController", () => {
       dispose: vi.fn(),
     };
     const { unmount } = render(
-      <PresentationAnimationController
-        excalidrawAPI={api}
-        adapter={adapter}
-      />,
+      <PresentationAnimationController excalidrawAPI={api} adapter={adapter} />,
     );
 
     act(() => {
@@ -90,6 +101,18 @@ describe("PresentationAnimationController", () => {
         ],
       ),
     );
+    act(() => {
+      publishAnimationRuntimeStatus({
+        elementId: "animation-1",
+        frameId: "frame-1",
+        status: "error",
+        message: "Runtime failed",
+      });
+    });
+    expect(screen.getByText("Animation unavailable")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Retry animation" }));
+    await waitFor(() => expect(adapter.send).toHaveBeenCalledTimes(7));
+
     unmount();
     expect(adapter.setPolicy).toHaveBeenLastCalledWith(null);
     expect(adapter.dispose).toHaveBeenCalledTimes(1);

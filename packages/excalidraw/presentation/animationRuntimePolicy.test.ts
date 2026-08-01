@@ -13,6 +13,8 @@ describe("animation runtime mount policy", () => {
   it("identifies only generated managed animation iframe elements", () => {
     const animation = newIframeElement({
       type: "iframe",
+      x: 0,
+      y: 0,
       customData: {
         animationProtocolVersion: 1,
         yaseenPresentation: {

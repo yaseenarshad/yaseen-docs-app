@@ -18,13 +18,6 @@ import {
 } from "@excalidraw/math";
 
 import {
-  ANIMATION_RUNTIME_POLICY_EVENT,
-  getAnimationRuntimeMode,
-  isManagedPresentationAnimation,
-  type AnimationRuntimeMountPolicy,
-} from "../presentation/animationRuntimePolicy";
-
-import {
   COLOR_PALETTE,
   CODES,
   shouldResizeFromCenter,
@@ -309,6 +302,15 @@ import type {
 import type { ArrowEndpoint } from "@excalidraw/element";
 
 import type { Mutable, ValueOf } from "@excalidraw/common/utility-types";
+
+import {
+  ANIMATION_RUNTIME_POLICY_EVENT,
+  ANIMATION_RUNTIME_STATUS_EVENT,
+  getAnimationRuntimeMode,
+  isManagedPresentationAnimation,
+  type AnimationRuntimeMountPolicy,
+  type AnimationRuntimeStatusDetail,
+} from "../presentation/animationRuntimePolicy";
 
 import {
   actionAddToLibrary,
@@ -685,11 +687,31 @@ class App extends React.Component<AppProps, AppState> {
    * insert to DOM before user initially scrolls to them) */
   private initializedEmbeds = new Set<ExcalidrawIframeLikeElement["id"]>();
   private animationRuntimePolicy: AnimationRuntimeMountPolicy | null = null;
+  private animationRuntimeStatusByElement = new Map<
+    string,
+    AnimationRuntimeStatusDetail
+  >();
 
   private onAnimationRuntimePolicy = (
     event: CustomEvent<AnimationRuntimeMountPolicy | null>,
   ) => {
     this.animationRuntimePolicy = event.detail;
+    if (!this.unmounted) {
+      this.forceUpdate();
+    }
+  };
+
+  private onAnimationRuntimeStatus = (
+    event: CustomEvent<AnimationRuntimeStatusDetail>,
+  ) => {
+    if (event.detail.status === "unloaded") {
+      this.animationRuntimeStatusByElement.delete(event.detail.elementId);
+    } else {
+      this.animationRuntimeStatusByElement.set(
+        event.detail.elementId,
+        event.detail,
+      );
+    }
     if (!this.unmounted) {
       this.forceUpdate();
     }
@@ -1822,6 +1844,9 @@ class App extends React.Component<AppProps, AppState> {
           const animationRuntimeMode = isManagedAnimation
             ? getAnimationRuntimeMode(el.frameId, this.animationRuntimePolicy)
             : null;
+          const animationRuntimeStatus = isManagedAnimation
+            ? this.animationRuntimeStatusByElement.get(el.id)
+            : undefined;
 
           if (
             isManagedAnimation
@@ -2019,6 +2044,40 @@ class App extends React.Component<AppProps, AppState> {
                 )}px`,
               }}
             >
+              {isManagedAnimation &&
+                isVisible &&
+                (animationRuntimeStatus?.status === "loading" ||
+                  animationRuntimeStatus?.status === "error") && (
+                  <div
+                    data-yaseendraw-animation-status={
+                      animationRuntimeStatus.status
+                    }
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      zIndex: 2,
+                      display: "flex",
+                      alignItems: "flex-end",
+                      justifyContent: "center",
+                      padding: 16,
+                      pointerEvents: "none",
+                    }}
+                  >
+                    <span
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: 999,
+                        background: "rgba(20, 37, 31, 0.86)",
+                        color: "white",
+                        font: "600 13px Inter, sans-serif",
+                      }}
+                    >
+                      {animationRuntimeStatus.status === "loading"
+                        ? "Loading animation…"
+                        : "Animation unavailable · showing preview"}
+                    </span>
+                  </div>
+                )}
               <div
                 //this is a hack that addresses isse with embedded excalidraw.com embeddable
                 //https://github.com/excalidraw/excalidraw/pull/6691#issuecomment-1607383938
@@ -2063,6 +2122,11 @@ class App extends React.Component<AppProps, AppState> {
                       width: `${embeddableViewportScale * 100}%`,
                       height: `${embeddableViewportScale * 100}%`,
                       transform: `scale(${1 / embeddableViewportScale})`,
+                      opacity:
+                        isManagedAnimation &&
+                        animationRuntimeStatus?.status !== "playing"
+                          ? 0
+                          : 1,
                     }}
                   >
                     {(isEmbeddableElement(el)
@@ -2075,7 +2139,9 @@ class App extends React.Component<AppProps, AppState> {
                           isManagedAnimation ? el.id : undefined
                         }
                         data-yaseendraw-animation-frame-id={
-                          isManagedAnimation ? el.frameId ?? undefined : undefined
+                          isManagedAnimation
+                            ? el.frameId ?? undefined
+                            : undefined
                         }
                         data-yaseendraw-animation-runtime={
                           animationRuntimeMode ?? undefined
@@ -3752,6 +3818,10 @@ class App extends React.Component<AppProps, AppState> {
       ANIMATION_RUNTIME_POLICY_EVENT,
       this.onAnimationRuntimePolicy,
     );
+    window.addEventListener(
+      ANIMATION_RUNTIME_STATUS_EVENT,
+      this.onAnimationRuntimeStatus,
+    );
 
     this.excalidrawContainerValue.container =
       this.excalidrawContainerRef.current;
@@ -3847,7 +3917,12 @@ class App extends React.Component<AppProps, AppState> {
       ANIMATION_RUNTIME_POLICY_EVENT,
       this.onAnimationRuntimePolicy,
     );
+    window.removeEventListener(
+      ANIMATION_RUNTIME_STATUS_EVENT,
+      this.onAnimationRuntimeStatus,
+    );
     this.animationRuntimePolicy = null;
+    this.animationRuntimeStatusByElement.clear();
     // we're recreating the api object reference so that the
     // <ExcalidrawAPIContext.Provider/> picks up on it
     this.api = { ...this.api, isDestroyed: true };

@@ -106,6 +106,7 @@ describe("applyPresentationTemplate", () => {
     });
 
     const imageVisual = elementByRole(image, "static-visual");
+    const animationPreview = elementByRole(animation, "animation-preview");
     const animationVisual = elementByRole(animation, "animated-visual");
 
     expect(imageVisual).toMatchObject({
@@ -129,6 +130,21 @@ describe("applyPresentationTemplate", () => {
         },
       },
     });
+    expect(animationPreview).toMatchObject({
+      type: "image",
+      x: 630,
+      y: 59,
+      width: 590,
+      height: 332,
+    });
+    expect(
+      animationPreview?.type === "image" && animationPreview.fileId
+        ? animation.files[animationPreview.fileId]
+        : null,
+    ).toMatchObject({ mimeType: "image/svg+xml" });
+    expect(animation.elements.indexOf(animationPreview!)).toBeLessThan(
+      animation.elements.indexOf(animationVisual!),
+    );
     expect(
       animationVisual?.customData?.generationData &&
         typeof animationVisual.customData.generationData === "object" &&

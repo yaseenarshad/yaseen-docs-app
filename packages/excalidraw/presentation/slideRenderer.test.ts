@@ -75,7 +75,10 @@ describe("renderPresentationSlide", () => {
     });
     const withoutVisual = (roles: string[]) =>
       roles.filter(
-        (role) => role !== "static-visual" && role !== "animated-visual",
+        (role) =>
+          role !== "static-visual" &&
+          role !== "animation-preview" &&
+          role !== "animated-visual",
       );
 
     expect(withoutVisual(childRoles(animation))).toEqual(
@@ -83,6 +86,66 @@ describe("renderPresentationSlide", () => {
     );
     expect(animation.elements.at(-1)?.type).toBe("iframe");
     expect(childRoles(animation).at(-1)).toBe("animated-visual");
+  });
+
+  it("uses an authored animation preview when available and keeps the fallback when missing", () => {
+    const base = structuredClone(presentation.slides[0]);
+    const previewAssetId = "animation-preview" as FileId;
+    const animationSlide: StoryboardSlide = {
+      ...base,
+      renderMode: "animation",
+      visual: {
+        kind: "animation",
+        source: {
+          kind: "embedded-html",
+          html: "<!doctype html><title>Animated visual</title>",
+        },
+        previewAssetId,
+      },
+    };
+    const preview = {
+      id: previewAssetId,
+      mimeType: "image/png" as const,
+      dataURL: "data:image/png;base64,cHJldmlldw==" as DataURL,
+      created: 0,
+    };
+    const authored = renderPresentationSlide({
+      presentation,
+      slide: animationSlide,
+      assets: { [previewAssetId]: preview },
+    });
+    const authoredElement = authored.elements.find((element) => {
+      const metadata = getPresentationMetadata(element);
+      return (
+        metadata?.kind === "slide-child" &&
+        metadata.role === "animation-preview"
+      );
+    });
+    const missing = renderPresentationSlide({
+      presentation,
+      slide: animationSlide,
+    });
+    const missingElement = missing.elements.find((element) => {
+      const metadata = getPresentationMetadata(element);
+      return (
+        metadata?.kind === "slide-child" &&
+        metadata.role === "animation-preview"
+      );
+    });
+
+    expect(authoredElement).toMatchObject({
+      type: "image",
+      fileId: previewAssetId,
+    });
+    expect(authored.files[previewAssetId]).toEqual(preview);
+    expect(missingElement).not.toMatchObject({ fileId: previewAssetId });
+    expect(missing.issues).toContainEqual(
+      expect.objectContaining({
+        code: "MISSING_ASSET",
+        severity: "warning",
+        target: previewAssetId,
+      }),
+    );
   });
 
   it("renders full-native as editable Excalidraw elements without a plate binary or iframe", () => {

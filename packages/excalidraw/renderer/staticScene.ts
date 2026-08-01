@@ -34,6 +34,7 @@ import {
   ELEMENT_LINK_IMG,
   getLinkHandleFromCoords,
 } from "../components/hyperlink/helpers";
+import { isManagedPresentationAnimation } from "../presentation/animationRuntimePolicy";
 
 import { bootstrapCanvas, getNormalizedCanvasDimensions } from "./helpers";
 
@@ -393,7 +394,9 @@ const _renderStaticScene = ({
 
   // render embeddables on top
   visibleElements
-    .filter((el) => isIframeLikeElement(el))
+    .filter(
+      (el) => isIframeLikeElement(el) && !isManagedPresentationAnimation(el),
+    )
     .forEach((element) => {
       try {
         const render = () => {

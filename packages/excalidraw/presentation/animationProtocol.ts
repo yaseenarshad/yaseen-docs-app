@@ -51,6 +51,12 @@ export type AnimationCommand = AnimationCommandBase &
     | { command: Exclude<AnimationCommandName, "seek" | "preview"> }
   );
 
+type WithoutAnimationEnvelope<T> = T extends unknown
+  ? Omit<T, "type" | "version">
+  : never;
+
+export type AnimationCommandInput = WithoutAnimationEnvelope<AnimationCommand>;
+
 export type AnimationResponse = AnimationMessageIdentity & {
   type: typeof ANIMATION_RESPONSE_TYPE;
   version: typeof ANIMATION_PROTOCOL_VERSION;
@@ -80,7 +86,7 @@ const hasValidIdentity = (value: UnknownRecord) =>
   isNonEmptyString(value.requestId);
 
 export const createAnimationCommand = (
-  command: Omit<AnimationCommand, "type" | "version">,
+  command: AnimationCommandInput,
 ): AnimationCommand =>
   ({
     type: ANIMATION_COMMAND_TYPE,

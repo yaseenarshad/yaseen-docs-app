@@ -182,6 +182,47 @@ const createTextElement = ({
 const svgDataUrl = (svg: string) =>
   `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` as DataURL;
 
+const escapeSvgText = (value: string) =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+
+const createAnimationPosterSvg = ({
+  width,
+  height,
+  headline,
+}: {
+  width: number;
+  height: number;
+  headline: string;
+}) => {
+  const safeHeadline = escapeSvgText(
+    headline.length > 64 ? `${headline.slice(0, 61)}…` : headline,
+  );
+  const labelSize = Math.max(11, Math.round(width * 0.022));
+  const headlineSize = Math.max(20, Math.round(width * 0.05));
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><defs><pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M 24 0 L 0 0 0 24" fill="none" stroke="#dce9e3" stroke-width="1"/></pattern><linearGradient id="wash" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f8f7f3"/><stop offset="1" stop-color="#dff3e8"/></linearGradient></defs><rect width="100%" height="100%" rx="22" fill="url(#wash)"/><rect width="100%" height="100%" rx="22" fill="url(#grid)" opacity=".72"/><rect x="${Math.round(
+    width * 0.08,
+  )}" y="${Math.round(height * 0.18)}" width="${Math.round(
+    width * 0.05,
+  )}" height="6" rx="3" fill="#19c37d"/><text x="${Math.round(
+    width * 0.08,
+  )}" y="${Math.round(
+    height * 0.34,
+  )}" fill="#0f5843" font-family="IBM Plex Mono, monospace" font-size="${labelSize}" font-weight="700" letter-spacing="2">ANIMATED VISUAL</text><text x="${Math.round(
+    width * 0.08,
+  )}" y="${Math.round(
+    height * 0.56,
+  )}" fill="#14251f" font-family="Inter, sans-serif" font-size="${headlineSize}" font-weight="700">${safeHeadline}</text><text x="${Math.round(
+    width * 0.08,
+  )}" y="${Math.round(
+    height * 0.76,
+  )}" fill="#5f7169" font-family="Inter, sans-serif" font-size="${labelSize}">Deterministic preview · plays in Presentation Mode</text></svg>`;
+};
+
 const createVisualElement = ({
   presentation,
   slide,
@@ -343,6 +384,7 @@ export const applyPresentationTemplate = ({
   };
 
   const elements: NonDeletedExcalidrawElement[] = [frame, plate];
+  const supplementalFiles: BinaryFiles = {};
 
   const copySlots = [
     ["eyebrow", slide.eyebrow, metadata.children.eyebrow],
@@ -430,6 +472,52 @@ export const applyPresentationTemplate = ({
     );
   }
   if (visualSlot?.kind === "visual") {
+    if (slide.renderMode === "animation") {
+      const bounds = absoluteBounds(visualSlot.bounds, origin);
+      const previewFileId = createPresentationElementId({
+        presentationId: presentation.presentationId,
+        slideId: slide.id,
+        role: "animation-preview",
+        slotId: "fallback-poster-file",
+      }) as FileId;
+      elements.push({
+        ...newImageElement({
+          ...bounds,
+          frameId,
+          type: "image",
+          fileId: previewFileId,
+          status: "saved",
+          roundness: { type: 3 },
+          roughness: 0,
+          locked: true,
+          customData: {
+            yaseenPresentation: {
+              ...metadata.children.animationPreview,
+              slotId: "fallback-poster",
+            },
+          },
+        }),
+        id: createPresentationElementId({
+          presentationId: presentation.presentationId,
+          slideId: slide.id,
+          role: "animation-preview",
+          slotId: "fallback-poster",
+        }),
+      });
+      supplementalFiles[previewFileId] = {
+        id: previewFileId,
+        mimeType: "image/svg+xml",
+        dataURL: svgDataUrl(
+          createAnimationPosterSvg({
+            width: visualSlot.bounds.width,
+            height: visualSlot.bounds.height,
+            headline: slide.headline,
+          }),
+        ),
+        created: 0,
+        lastRetrieved: 0,
+      };
+    }
     const visual = createVisualElement({
       presentation,
       slide,
@@ -449,6 +537,7 @@ export const applyPresentationTemplate = ({
 
   const plateFileId = template.plate.assetId as FileId;
   const files: BinaryFiles = {
+    ...supplementalFiles,
     [plateFileId]: {
       id: plateFileId,
       mimeType: template.plate.mimeType,

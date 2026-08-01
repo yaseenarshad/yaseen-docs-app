@@ -51,6 +51,8 @@ import type {
   NonDeletedExcalidrawElement,
 } from "@excalidraw/element/types";
 
+import { isManagedPresentationAnimation } from "../presentation/animationRuntimePolicy";
+
 import type { RenderableElementsMap, SVGRenderConfig } from "../scene/types";
 import type { AppState, BinaryFiles } from "../types";
 import type { Drawable } from "roughjs/bin/core";
@@ -103,6 +105,9 @@ const renderElementToSvg = (
   offsetY: number,
   renderConfig: SVGRenderConfig,
 ) => {
+  if (isManagedPresentationAnimation(element)) {
+    return;
+  }
   const offset = { x: offsetX, y: offsetY };
   const [x1, y1, x2, y2] = getElementAbsoluteCoords(element, elementsMap);
   let cx = (x2 - x1) / 2 - (element.x - x1);

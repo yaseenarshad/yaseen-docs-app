@@ -14,6 +14,7 @@ import type {
 
 import {
   applyPresentationTemplate,
+  getPresentationMetadata,
   type PresentationLayoutWarning,
 } from "./templateApplication";
 import {
@@ -419,6 +420,7 @@ export const renderPresentationSlide = ({
     origin,
   });
   const files: BinaryFiles = { ...applied.files };
+  let elements = applied.elements;
   const issues = applied.warnings.map(layoutWarningToIssue);
 
   if (slide.renderMode === "image") {
@@ -438,13 +440,35 @@ export const renderPresentationSlide = ({
     const preview = assets[slide.visual.previewAssetId];
     if (preview) {
       files[preview.id] = preview;
+      elements = applied.elements.map((element) => {
+        const metadata = getPresentationMetadata(element);
+        if (
+          element.type !== "image" ||
+          metadata?.kind !== "slide-child" ||
+          metadata.role !== "animation-preview"
+        ) {
+          return element;
+        }
+        if (element.fileId) {
+          delete files[element.fileId];
+        }
+        return { ...element, fileId: preview.id };
+      });
+    } else {
+      issues.push({
+        code: "MISSING_ASSET",
+        severity: "warning",
+        slideId: slide.id,
+        target: slide.visual.previewAssetId,
+        message: `animation preview asset "${slide.visual.previewAssetId}" is unavailable; using the deterministic fallback poster`,
+      });
     }
   }
 
   return {
     slideId: slide.id,
     mode: slide.renderMode,
-    elements: applied.elements,
+    elements,
     files,
     issues,
   };

@@ -6,6 +6,8 @@ import { ANIMATION_PROTOCOL_VERSION } from "./animationProtocol";
 
 export const ANIMATION_RUNTIME_POLICY_EVENT =
   "yaseendraw:animation-runtime-policy" as const;
+export const ANIMATION_RUNTIME_STATUS_EVENT =
+  "yaseendraw:animation-runtime-status" as const;
 
 export type AnimationRuntimeMountPolicy = {
   sessionId: string;
@@ -14,17 +16,20 @@ export type AnimationRuntimeMountPolicy = {
 };
 
 export type AnimationRuntimeMode = "active" | "preload" | "unloaded";
+export type AnimationRuntimeStatusDetail = {
+  elementId: string;
+  frameId: string;
+  status: "loading" | "ready" | "playing" | "paused" | "unloaded" | "error";
+  message?: string;
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-export const isManagedPresentationAnimation = (
-  element: ExcalidrawElement,
-) => {
+export const isManagedPresentationAnimation = (element: ExcalidrawElement) => {
   if (
     !isIframeElement(element) ||
-    element.customData?.animationProtocolVersion !==
-      ANIMATION_PROTOCOL_VERSION
+    element.customData?.animationProtocolVersion !== ANIMATION_PROTOCOL_VERSION
   ) {
     return false;
   }
@@ -60,8 +65,20 @@ export const publishAnimationRuntimePolicy = (
   );
 };
 
+export const publishAnimationRuntimeStatus = (
+  detail: AnimationRuntimeStatusDetail,
+) => {
+  window.dispatchEvent(
+    new CustomEvent<AnimationRuntimeStatusDetail>(
+      ANIMATION_RUNTIME_STATUS_EVENT,
+      { detail },
+    ),
+  );
+};
+
 declare global {
   interface WindowEventMap {
     [ANIMATION_RUNTIME_POLICY_EVENT]: CustomEvent<AnimationRuntimeMountPolicy | null>;
+    [ANIMATION_RUNTIME_STATUS_EVENT]: CustomEvent<AnimationRuntimeStatusDetail>;
   }
 }

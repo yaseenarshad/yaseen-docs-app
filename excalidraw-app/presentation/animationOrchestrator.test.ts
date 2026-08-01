@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { PresentationFrameLifecycleDetail } from "./events";
-
 import {
   AnimationOrchestrator,
   type AnimationRuntimeAdapter,
   type AnimationRuntimeDescriptor,
 } from "./animationOrchestrator";
+
+import type { PresentationFrameLifecycleDetail } from "./events";
 
 const runtimes: AnimationRuntimeDescriptor[] = [
   {
@@ -26,8 +26,9 @@ const runtimes: AnimationRuntimeDescriptor[] = [
   },
 ];
 
-const frameOrder = Array.from({ length: 10 }, (_, index) =>
-  `frame-${index + 1}`,
+const frameOrder = Array.from(
+  { length: 10 },
+  (_, index) => `frame-${index + 1}`,
 );
 
 const event = (
@@ -90,11 +91,8 @@ describe("AnimationOrchestrator", () => {
           elementId: runtime.elementId,
           command: command.command,
         });
-        if (
-          runtime.elementId === "animation-2" &&
-          command.command === "load"
-        ) {
-          return new Promise((resolve) => {
+        if (runtime.elementId === "animation-2" && command.command === "load") {
+          return new Promise<boolean>((resolve) => {
             resolveFirstLoad = resolve;
           });
         }
@@ -111,7 +109,8 @@ describe("AnimationOrchestrator", () => {
     const staleActivation = orchestrator.handle(event("active", "frame-2"));
     await orchestrator.handle(event("transitioning", "frame-3"));
     await orchestrator.handle(event("active", "frame-3"));
-    resolveFirstLoad?.(true);
+    expect(resolveFirstLoad).not.toBeNull();
+    (resolveFirstLoad as unknown as (value: boolean) => void)(true);
     await staleActivation;
 
     expect(commands).not.toContainEqual({
@@ -160,8 +159,8 @@ describe("AnimationOrchestrator", () => {
 
   it("does not block navigation or play when a runtime fails to load", async () => {
     const { adapter, commands } = createAdapter();
-    vi.mocked(adapter.send).mockImplementation(async (_runtime, command) =>
-      command.command === "load" ? false : true,
+    vi.mocked(adapter.send).mockImplementation(
+      async (_runtime, command) => command.command !== "load",
     );
     const orchestrator = new AnimationOrchestrator({
       adapter,
@@ -179,5 +178,30 @@ describe("AnimationOrchestrator", () => {
       elementId: "animation-9",
       command: "play",
     });
+  });
+
+  it("retries only the current failed runtime with a fresh deterministic restart", async () => {
+    const { adapter, commands } = createAdapter();
+    let loadSucceeds = false;
+    vi.mocked(adapter.send).mockImplementation(async (runtime, command) => {
+      commands.push({ elementId: runtime.elementId, command: command.command });
+      return command.command === "load" ? loadSucceeds : true;
+    });
+    const orchestrator = new AnimationOrchestrator({
+      adapter,
+      getRuntimes: () => runtimes,
+      getFrameOrder: () => frameOrder,
+    });
+
+    await orchestrator.handle(event("transitioning", "frame-9"));
+    await orchestrator.handle(event("active", "frame-9"));
+    loadSucceeds = true;
+    await orchestrator.retryActive();
+
+    expect(commands.slice(-3)).toEqual([
+      { elementId: "animation-9", command: "load" },
+      { elementId: "animation-9", command: "seek" },
+      { elementId: "animation-9", command: "play" },
+    ]);
   });
 });

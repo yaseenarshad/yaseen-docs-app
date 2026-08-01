@@ -67,7 +67,9 @@ export class AnimationOrchestrator {
   }
 
   private runtimesByFrame() {
-    return new Map(this.getRuntimes().map((runtime) => [runtime.frameId, runtime]));
+    return new Map(
+      this.getRuntimes().map((runtime) => [runtime.frameId, runtime]),
+    );
   }
 
   private beginTransition(detail: PresentationFrameLifecycleDetail) {
@@ -80,7 +82,7 @@ export class AnimationOrchestrator {
       return;
     }
     this.lastTransitionKey = transitionKey;
-    const epoch = ++this.epoch;
+    ++this.epoch;
     this.pendingFrameId = frameId;
     this.currentSessionId = detail.sessionId;
     const runtimes = this.getRuntimes();
@@ -107,7 +109,9 @@ export class AnimationOrchestrator {
     const activeRuntime = runtimesByFrame.get(frameId);
     const preloadRuntimes = adjacentFrameIds
       .map((adjacentFrameId) => runtimesByFrame.get(adjacentFrameId))
-      .filter((runtime): runtime is AnimationRuntimeDescriptor => Boolean(runtime));
+      .filter((runtime): runtime is AnimationRuntimeDescriptor =>
+        Boolean(runtime),
+      );
     const desiredRuntimes = [activeRuntime, ...preloadRuntimes].filter(
       (runtime): runtime is AnimationRuntimeDescriptor => Boolean(runtime),
     );
@@ -142,11 +146,6 @@ export class AnimationOrchestrator {
         detail.sessionId,
       );
       this.loadPromises.set(runtime.elementId, load);
-      void load.then((loaded) => {
-        if (!loaded || this.epoch !== epoch) {
-          return;
-        }
-      });
     }
   }
 
@@ -228,5 +227,31 @@ export class AnimationOrchestrator {
     } else if (detail.phase === "ended") {
       await this.end(detail);
     }
+  }
+
+  async retryActive(): Promise<void> {
+    if (!this.pendingFrameId || !this.currentSessionId) {
+      return;
+    }
+    const frameId = this.pendingFrameId;
+    const sessionId = this.currentSessionId;
+    const frameOrder = this.getFrameOrder();
+    this.lastTransitionKey = null;
+    this.beginTransition({
+      sessionId,
+      frameId,
+      order: Math.max(frameOrder.indexOf(frameId) + 1, 1),
+      slideCount: frameOrder.length,
+      phase: "transitioning",
+      reason: "retry",
+    });
+    await this.activate({
+      sessionId,
+      frameId,
+      order: Math.max(frameOrder.indexOf(frameId) + 1, 1),
+      slideCount: frameOrder.length,
+      phase: "active",
+      reason: "retry",
+    });
   }
 }
