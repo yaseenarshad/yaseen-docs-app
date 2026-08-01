@@ -263,3 +263,148 @@ describe("trusted presentation animation upload grants", () => {
     ).rejects.toThrow("Upload grant expired");
   });
 });
+
+describe("controlled presentation animation read grants", () => {
+  const registerAsset = async (
+    owner: Awaited<ReturnType<typeof setup>>["owner"],
+    boardId: string,
+  ) => {
+    const upload = await owner.mutation(
+      api.presentationAnimations.createUploadGrant,
+      manifest(boardId),
+    );
+    if (upload.kind !== "upload") {
+      throw new Error("Expected upload grant");
+    }
+    return await owner.mutation(api.presentationAnimations.registerUpload, {
+      token: upload.token,
+      etag: "read-etag",
+    });
+  };
+
+  it("issues exact owner and viewer capabilities without exposing object keys", async () => {
+    const { t, owner, intruder, board } = await setup();
+    await registerAsset(owner, board.boardId);
+    const owned = await owner.mutation(
+      api.presentationAnimations.createReadGrant,
+      {
+        diagramId: board.boardId,
+        assetId: "lesson-animation",
+        version: 1,
+      },
+    );
+    expect(owned).toMatchObject({
+      path: `/api/presentation-animations/${owned.token}`,
+      assetId: "lesson-animation",
+      version: 1,
+      etag: "read-etag",
+    });
+    expect(JSON.stringify(owned)).not.toContain("objectKey");
+    await expect(
+      t.query(internal.presentationAnimations.validateReadGrant, {
+        token: owned.token,
+      }),
+    ).resolves.toMatchObject({
+      objectKey: expect.stringContaining("/presentation-animations/"),
+      sha256: SHA256,
+      etag: "read-etag",
+    });
+    await expect(
+      intruder.mutation(api.presentationAnimations.createReadGrant, {
+        diagramId: board.boardId,
+        assetId: "lesson-animation",
+        version: 1,
+      }),
+    ).rejects.toThrow("Board not found");
+
+    const sharing = await owner.mutation(api.boards.setSharing, {
+      boardId: board.boardId,
+      enabled: true,
+    });
+    const shared = await t.mutation(
+      api.presentationAnimations.createReadGrant,
+      {
+        shareToken: sharing.shareToken!,
+        assetId: "lesson-animation",
+        version: 1,
+      },
+    );
+    await expect(
+      t.query(internal.presentationAnimations.validateReadGrant, {
+        token: shared.token,
+      }),
+    ).resolves.toMatchObject({ etag: "read-etag" });
+
+    await owner.mutation(api.boards.setSharing, {
+      boardId: board.boardId,
+      enabled: false,
+    });
+    await expect(
+      t.query(internal.presentationAnimations.validateReadGrant, {
+        token: shared.token,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("invalidates expired, deleted, guessed, and cross-board capabilities", async () => {
+    const { t, owner, board } = await setup();
+    await registerAsset(owner, board.boardId);
+    const other = await owner.mutation(api.boards.create, {
+      title: "Other board",
+    });
+    await expect(
+      owner.mutation(api.presentationAnimations.createReadGrant, {
+        diagramId: other.boardId,
+        assetId: "lesson-animation",
+        version: 1,
+      }),
+    ).rejects.toThrow("Presentation animation not found");
+    await expect(
+      t.query(internal.presentationAnimations.validateReadGrant, {
+        token: "a".repeat(64),
+      }),
+    ).resolves.toBeNull();
+
+    const expired = await owner.mutation(
+      api.presentationAnimations.createReadGrant,
+      {
+        diagramId: board.boardId,
+        assetId: "lesson-animation",
+        version: 1,
+      },
+    );
+    await t.run(async (ctx) => {
+      const grant = await ctx.db
+        .query("presentationAnimationReadGrants")
+        .withIndex("by_token", (q) => q.eq("token", expired.token))
+        .unique();
+      await ctx.db.patch("presentationAnimationReadGrants", grant!._id, {
+        expiresAt: Date.now() - 1,
+      });
+    });
+    await expect(
+      t.query(internal.presentationAnimations.validateReadGrant, {
+        token: expired.token,
+      }),
+    ).resolves.toBeNull();
+
+    const deleted = await owner.mutation(
+      api.presentationAnimations.createReadGrant,
+      {
+        diagramId: board.boardId,
+        assetId: "lesson-animation",
+        version: 1,
+      },
+    );
+    await owner.mutation(api.presentationAnimations.removeVersion, {
+      diagramId: board.boardId,
+      assetId: "lesson-animation",
+      version: 1,
+    });
+    await expect(
+      t.query(internal.presentationAnimations.validateReadGrant, {
+        token: deleted.token,
+      }),
+    ).resolves.toBeNull();
+  });
+});

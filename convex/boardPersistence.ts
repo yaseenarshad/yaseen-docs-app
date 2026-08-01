@@ -416,6 +416,7 @@ export const removeBoardRecord = async (
     uploadGrants,
     animationAssets,
     animationUploadGrants,
+    animationReadGrants,
   ] = await Promise.all([
     ctx.db
       .query("diagramContents")
@@ -437,6 +438,10 @@ export const removeBoardRecord = async (
       .query("presentationAnimationUploadGrants")
       .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
       .take(1000),
+    ctx.db
+      .query("presentationAnimationReadGrants")
+      .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
+      .take(2000),
   ]);
 
   const objectKeys = [
@@ -468,6 +473,9 @@ export const removeBoardRecord = async (
   }
   for (const grant of animationUploadGrants) {
     await ctx.db.delete("presentationAnimationUploadGrants", grant._id);
+  }
+  for (const grant of animationReadGrants) {
+    await ctx.db.delete("presentationAnimationReadGrants", grant._id);
   }
   await ctx.db.delete("diagrams", diagram._id);
   await ctx.scheduler.runAfter(

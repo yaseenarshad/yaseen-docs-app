@@ -41,6 +41,45 @@ export const isManagedPresentationAnimation = (element: ExcalidrawElement) => {
   );
 };
 
+const PRESENTATION_ANIMATION_PATH =
+  /^\/api\/presentation-animations\/[a-f0-9]{64}$/;
+
+export const getTrustedPresentationAnimationUrl = (
+  value: unknown,
+  baseUrl: string,
+) => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  try {
+    const base = new URL(baseUrl);
+    const candidate = new URL(value, base);
+    if (
+      candidate.origin !== base.origin ||
+      candidate.username ||
+      candidate.password ||
+      candidate.search ||
+      candidate.hash ||
+      !PRESENTATION_ANIMATION_PATH.test(candidate.pathname)
+    ) {
+      return null;
+    }
+    return candidate.href;
+  } catch {
+    return null;
+  }
+};
+
+export const getPresentationIframeSandbox = (
+  isManagedAnimation: boolean,
+  allowSameOrigin: boolean,
+) =>
+  isManagedAnimation
+    ? "allow-scripts"
+    : `${
+        allowSameOrigin ? "allow-same-origin " : ""
+      }allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation allow-downloads`;
+
 export const getAnimationRuntimeMode = (
   frameId: string | null,
   policy: AnimationRuntimeMountPolicy | null,

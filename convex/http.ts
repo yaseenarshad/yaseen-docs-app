@@ -57,6 +57,33 @@ http.route({
 });
 
 http.route({
+  path: "/presentation-animation-read-grant",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const body = (await request.json()) as unknown;
+    if (
+      typeof body !== "object" ||
+      body === null ||
+      !("token" in body) ||
+      typeof body.token !== "string"
+    ) {
+      return Response.json({ error: "Invalid read grant" }, { status: 400 });
+    }
+    const grant = await ctx.runQuery(
+      internal.presentationAnimations.validateReadGrant,
+      { token: body.token },
+    );
+    if (!grant) {
+      return Response.json(
+        { error: "Animation read grant expired" },
+        { status: 403 },
+      );
+    }
+    return Response.json(grant);
+  }),
+});
+
+http.route({
   path: "/asset-delete-grant",
   method: "POST",
   handler: httpAction(async (ctx, request) => {

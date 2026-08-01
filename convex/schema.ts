@@ -175,6 +175,25 @@ export default defineSchema({
       "assetId",
       "version",
     ]),
+  presentationAnimationReadGrants: defineTable({
+    token: v.string(),
+    diagramId: v.id("diagrams"),
+    assetRecordId: v.id("presentationAnimationAssets"),
+    assetId: v.string(),
+    version: v.number(),
+    objectKey: v.string(),
+    mimeType: v.literal("text/html"),
+    size: v.number(),
+    sha256: v.string(),
+    etag: v.string(),
+    access: v.union(v.literal("owner"), v.literal("shared")),
+    shareToken: v.optional(v.string()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_diagramId", ["diagramId"])
+    .index("by_assetRecordId", ["assetRecordId"]),
   mediaFavorites: defineTable({
     ownerId: v.id("users"),
     ...mediaFields,

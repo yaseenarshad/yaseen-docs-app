@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import {
   PRESENTATION_ANIMATION_GRANT_LIFETIME_MS,
   PRESENTATION_ANIMATION_MIME_TYPE,
+  PRESENTATION_ANIMATION_READ_GRANT_LIFETIME_MS,
   assertPresentationAnimationManifest,
   makePresentationAnimationToken,
   presentationAnimationUploadResultValidator,
@@ -197,6 +198,137 @@ export const validateUploadGrant = internalQuery({
   },
 });
 
+export const createReadGrant = mutation({
+  args: {
+    diagramId: v.optional(v.id("diagrams")),
+    shareToken: v.optional(v.string()),
+    assetId: v.string(),
+    version: v.number(),
+  },
+  returns: v.object({
+    token: v.string(),
+    path: v.string(),
+    expiresAt: v.number(),
+    assetId: v.string(),
+    version: v.number(),
+    etag: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    if ((args.diagramId === undefined) === (args.shareToken === undefined)) {
+      throw new Error("Choose owner or shared board access");
+    }
+
+    let diagram;
+    let access: "owner" | "shared";
+    if (args.diagramId !== undefined) {
+      const ownerId = await requireUserId(ctx);
+      diagram = await ctx.db.get("diagrams", args.diagramId);
+      if (!diagram || diagram.ownerId !== ownerId) {
+        throw new Error("Board not found");
+      }
+      access = "owner";
+    } else {
+      diagram = await ctx.db
+        .query("diagrams")
+        .withIndex("by_shareToken", (q) => q.eq("shareToken", args.shareToken))
+        .unique();
+      if (!diagram || !diagram.shareEnabled) {
+        throw new Error("Shared board not found");
+      }
+      access = "shared";
+    }
+
+    const asset = await findAssetVersion(
+      ctx,
+      diagram._id,
+      args.assetId,
+      args.version,
+    );
+    if (!asset || asset.status !== "ready") {
+      throw new Error("Presentation animation not found");
+    }
+
+    const token = makePresentationAnimationToken();
+    const now = Date.now();
+    const expiresAt = now + PRESENTATION_ANIMATION_READ_GRANT_LIFETIME_MS;
+    await ctx.db.insert("presentationAnimationReadGrants", {
+      token,
+      diagramId: diagram._id,
+      assetRecordId: asset._id,
+      assetId: asset.assetId,
+      version: asset.version,
+      objectKey: asset.objectKey,
+      mimeType: PRESENTATION_ANIMATION_MIME_TYPE,
+      size: asset.size,
+      sha256: asset.sha256,
+      etag: asset.etag,
+      access,
+      ...(access === "shared" ? { shareToken: args.shareToken } : null),
+      createdAt: now,
+      expiresAt,
+    });
+    return {
+      token,
+      path: `/api/presentation-animations/${token}`,
+      expiresAt,
+      assetId: asset.assetId,
+      version: asset.version,
+      etag: asset.etag,
+    };
+  },
+});
+
+export const validateReadGrant = internalQuery({
+  args: { token: v.string() },
+  returns: v.union(
+    v.null(),
+    v.object({
+      objectKey: v.string(),
+      mimeType: v.literal(PRESENTATION_ANIMATION_MIME_TYPE),
+      size: v.number(),
+      sha256: v.string(),
+      etag: v.string(),
+      expiresAt: v.number(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const grant = await ctx.db
+      .query("presentationAnimationReadGrants")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .unique();
+    if (!grant || grant.expiresAt < Date.now()) {
+      return null;
+    }
+    const [diagram, asset] = await Promise.all([
+      ctx.db.get("diagrams", grant.diagramId),
+      ctx.db.get("presentationAnimationAssets", grant.assetRecordId),
+    ]);
+    if (
+      !diagram ||
+      !asset ||
+      asset.diagramId !== grant.diagramId ||
+      asset.assetId !== grant.assetId ||
+      asset.version !== grant.version ||
+      asset.objectKey !== grant.objectKey ||
+      asset.sha256 !== grant.sha256 ||
+      asset.etag !== grant.etag ||
+      asset.status !== "ready" ||
+      (grant.access === "shared" &&
+        (!diagram.shareEnabled || diagram.shareToken !== grant.shareToken))
+    ) {
+      return null;
+    }
+    return {
+      objectKey: grant.objectKey,
+      mimeType: PRESENTATION_ANIMATION_MIME_TYPE,
+      size: grant.size,
+      sha256: grant.sha256,
+      etag: grant.etag,
+      expiresAt: grant.expiresAt,
+    };
+  },
+});
+
 export const registerUpload = mutation({
   args: { token: v.string(), etag: v.string() },
   returns: presentationAnimationReferenceValidator,
@@ -340,6 +472,13 @@ export const removeVersion = mutation({
     const deleteToken = await createAssetDeleteGrant(ctx, ownerId, [
       asset.objectKey,
     ]);
+    const readGrants = await ctx.db
+      .query("presentationAnimationReadGrants")
+      .withIndex("by_assetRecordId", (q) => q.eq("assetRecordId", asset._id))
+      .collect();
+    for (const grant of readGrants) {
+      await ctx.db.delete("presentationAnimationReadGrants", grant._id);
+    }
     await ctx.db.delete("presentationAnimationAssets", asset._id);
     return { deleteToken };
   },

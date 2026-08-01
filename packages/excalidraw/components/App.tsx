@@ -307,6 +307,8 @@ import {
   ANIMATION_RUNTIME_POLICY_EVENT,
   ANIMATION_RUNTIME_STATUS_EVENT,
   getAnimationRuntimeMode,
+  getPresentationIframeSandbox,
+  getTrustedPresentationAnimationUrl,
   isManagedPresentationAnimation,
   type AnimationRuntimeMountPolicy,
   type AnimationRuntimeStatusDetail,
@@ -1861,6 +1863,13 @@ class App extends React.Component<AppProps, AppState> {
           if (isIframeElement(el)) {
             src = null;
 
+            const trustedAnimationUrl = isManagedAnimation
+              ? getTrustedPresentationAnimationUrl(
+                  el.customData?.animationUrl,
+                  window.location.href,
+                )
+              : null;
+
             const data: MagicGenerationData = (el.customData?.generationData ??
               this.magicGenerations.get(el.id)) || {
               status: "error",
@@ -1868,7 +1877,13 @@ class App extends React.Component<AppProps, AppState> {
               code: "ERR_NO_GENERATION_DATA",
             };
 
-            if (data.status === "done") {
+            if (trustedAnimationUrl) {
+              src = {
+                intrinsicSize: { w: el.width, h: el.height },
+                type: "generic",
+                link: trustedAnimationUrl,
+              } as const;
+            } else if (data.status === "done") {
               const html = data.html;
               src = {
                 intrinsicSize: { w: el.width, h: el.height },
@@ -2156,15 +2171,22 @@ class App extends React.Component<AppProps, AppState> {
                         }
                         // https://stackoverflow.com/q/18470015
                         scrolling="no"
-                        referrerPolicy="no-referrer-when-downgrade"
+                        referrerPolicy={
+                          isManagedAnimation
+                            ? "no-referrer"
+                            : "no-referrer-when-downgrade"
+                        }
                         title="Excalidraw Embedded Content"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen={true}
-                        sandbox={`${
-                          src?.sandbox?.allowSameOrigin
-                            ? "allow-same-origin"
-                            : ""
-                        } allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation allow-downloads`}
+                        allow={
+                          isManagedAnimation
+                            ? ""
+                            : "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        }
+                        allowFullScreen={!isManagedAnimation}
+                        sandbox={getPresentationIframeSandbox(
+                          isManagedAnimation,
+                          Boolean(src?.sandbox?.allowSameOrigin),
+                        )}
                       />
                     )}
                   </div>

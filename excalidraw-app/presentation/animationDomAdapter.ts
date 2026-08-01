@@ -24,19 +24,6 @@ import type {
 
 export { ANIMATION_RUNTIME_STATUS_EVENT };
 
-const hostedAnimationOrigin = (element: ExcalidrawElement) => {
-  const url = element.customData?.animationUrl;
-  if (typeof url !== "string") {
-    return null;
-  }
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === "https:" ? parsed.origin : null;
-  } catch {
-    return null;
-  }
-};
-
 export const collectAnimationRuntimes = (
   elements: readonly ExcalidrawElement[],
 ): AnimationRuntimeDescriptor[] => {
@@ -59,14 +46,16 @@ export const collectAnimationRuntimes = (
     if (!presentationId) {
       return [];
     }
-    const hostedOrigin = hostedAnimationOrigin(element);
     return [
       {
         presentationId,
         frameId: element.frameId,
         elementId: element.id,
-        targetOrigin: hostedOrigin ?? "*",
-        responseOrigin: hostedOrigin ?? "null",
+        // Managed animation iframes intentionally omit allow-same-origin.
+        // The opaque child can only be addressed with `*`, while responses
+        // are accepted solely from its exact contentWindow and null origin.
+        targetOrigin: "*",
+        responseOrigin: "null",
       },
     ];
   });
