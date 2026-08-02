@@ -18,6 +18,7 @@ firebase
 logs
 node_modules
 .worktrees/
+.wrangler/
 npm-debug.log*
 package-lock.json
 yarn-debug.log*
