@@ -75,6 +75,7 @@ const AnonymousSession = ({ children }: { children: ReactNode }) => {
   if (!isAuthenticated || (account?.isAnonymous && !isSharedRoute)) {
     return (
       <CloudLoginGate
+        allowAccountCreation={import.meta.env.MODE === "development"}
         onAuthenticate={async ({ username, password, flow }) => {
           await signIn("password", { username, password, flow });
         }}

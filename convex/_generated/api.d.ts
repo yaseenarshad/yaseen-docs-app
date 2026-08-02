@@ -13,6 +13,7 @@ import type * as assetDeletePersistence from "../assetDeletePersistence.js";
 import type * as assetPersistence from "../assetPersistence.js";
 import type * as assets from "../assets.js";
 import type * as auth from "../auth.js";
+import type * as authPolicy from "../authPolicy.js";
 import type * as boardAssets from "../boardAssets.js";
 import type * as boardFolders from "../boardFolders.js";
 import type * as boardHistory from "../boardHistory.js";
@@ -54,6 +55,7 @@ declare const fullApi: ApiFromModules<{
   assetPersistence: typeof assetPersistence;
   assets: typeof assets;
   auth: typeof auth;
+  authPolicy: typeof authPolicy;
   boardAssets: typeof boardAssets;
   boardFolders: typeof boardFolders;
   boardHistory: typeof boardHistory;

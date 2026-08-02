@@ -36,6 +36,41 @@ describe("CloudLoginGate", () => {
       "current-password",
     );
   });
+
+  it("can create a fixed account when local development enables it", async () => {
+    const onAuthenticate = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <CloudLoginGate allowAccountCreation onAuthenticate={onAuthenticate} />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create local account" }),
+    );
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "yaseen" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "local-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    await waitFor(() => {
+      expect(onAuthenticate).toHaveBeenCalledWith({
+        username: "yaseen",
+        password: "local-password",
+        flow: "signUp",
+      });
+    });
+  });
+
+  it("does not offer account creation by default", () => {
+    render(<CloudLoginGate onAuthenticate={vi.fn()} />);
+
+    expect(
+      screen.queryByRole("button", { name: "Create local account" }),
+    ).toBeNull();
+  });
 });
 
 describe("CloudProfile", () => {

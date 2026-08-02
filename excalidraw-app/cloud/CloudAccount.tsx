@@ -10,7 +10,7 @@ import { useCloudProfileUsername } from "./CloudProfileContext";
 type AuthenticationRequest = {
   password: string;
   username: string;
-  flow: "signIn";
+  flow: "signIn" | "signUp";
 };
 
 const profileNames = {
@@ -19,21 +19,33 @@ const profileNames = {
 } as const;
 
 export const CloudLoginGate = ({
+  allowAccountCreation = false,
   onAuthenticate,
 }: {
+  allowAccountCreation?: boolean;
   onAuthenticate: (request: AuthenticationRequest) => Promise<void>;
 }) => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [flow, setFlow] = useState<AuthenticationRequest["flow"]>("signIn");
   const [isWorking, setIsWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isCreatingAccount = flow === "signUp";
 
   return (
     <main className="cloud-login">
       <section className="cloud-login__card">
         <span className="cloud-account__eyebrow">DRAW.YASEENARSHAD.COM</span>
-        <h1>Sign in to your boards</h1>
-        <p>Enter your username and password.</p>
+        <h1>
+          {isCreatingAccount
+            ? "Create your local account"
+            : "Sign in to your boards"}
+        </h1>
+        <p>
+          {isCreatingAccount
+            ? "Choose a password for this development deployment."
+            : "Enter your username and password."}
+        </p>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -42,10 +54,14 @@ export const CloudLoginGate = ({
             void onAuthenticate({
               username: username.trim().toLowerCase(),
               password,
-              flow: "signIn",
+              flow,
             })
               .catch(() => {
-                setError("The username or password was incorrect.");
+                setError(
+                  isCreatingAccount
+                    ? "The local account could not be created."
+                    : "The username or password was incorrect.",
+                );
               })
               .finally(() => setIsWorking(false));
           }}
@@ -83,9 +99,27 @@ export const CloudLoginGate = ({
           </label>
           {error && <div className="cloud-account__error">{error}</div>}
           <button type="submit" disabled={isWorking}>
-            {isWorking ? "Opening…" : "Open boards"}
+            {isWorking
+              ? isCreatingAccount
+                ? "Creating…"
+                : "Opening…"
+              : isCreatingAccount
+              ? "Create account"
+              : "Open boards"}
           </button>
         </form>
+        {allowAccountCreation && (
+          <button
+            className="cloud-login__mode-toggle"
+            type="button"
+            onClick={() => {
+              setFlow(isCreatingAccount ? "signIn" : "signUp");
+              setError(null);
+            }}
+          >
+            {isCreatingAccount ? "Back to sign in" : "Create local account"}
+          </button>
+        )}
       </section>
     </main>
   );
