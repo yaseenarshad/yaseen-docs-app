@@ -1,7 +1,7 @@
 import React from "react";
 import { vi } from "vitest";
 
-import { CANVAS_SEARCH_TAB, DEFAULT_SIDEBAR, KEYS } from "@excalidraw/common";
+import { KEYS } from "@excalidraw/common";
 
 import type {
   ExcalidrawTextElement,
@@ -337,7 +337,7 @@ describe("direct T text entry", () => {
   });
 });
 
-describe("S text fit-to-content shortcut", () => {
+describe("text fit-to-content and Stroke shortcut", () => {
   const fixedText = (
     overrides: Partial<ExcalidrawTextElement> = {},
   ): NonDeleted<ExcalidrawTextElement> =>
@@ -357,9 +357,37 @@ describe("S text fit-to-content shortcut", () => {
     } as NonDeleted<ExcalidrawTextElement>);
 
   beforeEach(async () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class ResizeObserver {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
     mouse.reset();
     await render(<Excalidraw handleKeyboardGlobally={true} />);
     API.setElements([]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps fixed text geometry when S opens the Stroke picker", () => {
+    const text = fixedText();
+    API.setElements([text]);
+    API.setSelectedElements([text]);
+
+    Keyboard.keyPress(KEYS.S);
+
+    expect(h.elements[0]).toMatchObject({
+      id: text.id,
+      autoResize: false,
+      width: text.width,
+      height: text.height,
+    });
+    expect(h.state.openPopup).toBe("elementStroke");
   });
 
   it.each([
@@ -390,7 +418,7 @@ describe("S text fit-to-content shortcut", () => {
       API.setSelectedElements([text]);
       const anchorBefore = anchor(text);
 
-      Keyboard.keyPress(KEYS.S);
+      API.executeAction(actionTextAutoResize);
 
       const fitted = h.elements[0] as ExcalidrawTextElement;
       expect(fitted).toMatchObject({
@@ -427,7 +455,7 @@ describe("S text fit-to-content shortcut", () => {
     expect(fixed.autoResize).toBe(false);
     const undoEntriesBefore = API.getUndoStack().length;
 
-    Keyboard.keyPress(KEYS.S);
+    API.executeAction(actionTextAutoResize);
 
     await waitFor(() => {
       expect((h.elements[0] as ExcalidrawTextElement).autoResize).toBe(true);
@@ -454,140 +482,8 @@ describe("S text fit-to-content shortcut", () => {
     });
   });
 
-  it("is a no-op for ineligible selections and modified S keys", () => {
-    vi.stubGlobal(
-      "ResizeObserver",
-      class ResizeObserver {
-        observe() {}
-        unobserve() {}
-        disconnect() {}
-      },
-    );
-    const fixed = fixedText();
-    const autoSized = fixedText({ id: "auto", autoResize: true });
-    const bound = fixedText({ id: "bound", containerId: "container" });
-    const cases = [
-      { elements: [fixed], selected: [] },
-      { elements: [autoSized], selected: [autoSized] },
-      { elements: [bound], selected: [bound] },
-      { elements: [fixed, autoSized], selected: [fixed, autoSized] },
-    ];
-
-    for (const { elements, selected } of cases) {
-      API.setElements(elements);
-      API.setSelectedElements(selected);
-      const undoEntriesBefore = API.getUndoStack().length;
-      const before = h.elements.map((element) => ({
-        id: element.id,
-        autoResize: element.type === "text" ? element.autoResize : undefined,
-        width: element.width,
-        height: element.height,
-      }));
-
-      Keyboard.keyPress(KEYS.S);
-
-      expect(
-        h.elements.map((element) => ({
-          id: element.id,
-          autoResize: element.type === "text" ? element.autoResize : undefined,
-          width: element.width,
-          height: element.height,
-        })),
-      ).toEqual(before);
-      expect(API.getUndoStack()).toHaveLength(undoEntriesBefore);
-    }
-
-    API.setElements([fixed]);
-    API.setSelectedElements([fixed]);
-    for (const init of [
-      { ctrlKey: true },
-      { altKey: true },
-      { metaKey: true },
-      { shiftKey: true },
-    ]) {
-      expect(
-        actionTextAutoResize.keyTest?.(
-          new KeyboardEvent("keydown", { key: KEYS.S, ...init }),
-          h.state,
-          h.elements,
-        ),
-      ).toBe(false);
-    }
-    expect((h.elements[0] as ExcalidrawTextElement).autoResize).toBe(false);
-  });
-
-  it("suppresses S in non-canvas and conflicting interaction contexts", () => {
-    const text = fixedText();
-    API.setElements([text]);
-    API.setSelectedElements([text]);
-    const input = document.createElement("input");
-    const textarea = document.createElement("textarea");
-    const editable = document.createElement("div");
-    editable.contentEditable = "true";
-    document.body.append(input, textarea, editable);
-
-    fireEvent.keyDown(input, { key: KEYS.S });
-    fireEvent.keyDown(textarea, { key: KEYS.S });
-    fireEvent.keyDown(editable, { key: KEYS.S });
-
-    const conflictingStates = [
-      { name: "text editing", state: { editingTextElement: text } },
-      {
-        name: "dialog",
-        state: { openDialog: { name: "help" } as const },
-      },
-      {
-        name: "search",
-        state: {
-          openSidebar: {
-            name: DEFAULT_SIDEBAR.name,
-            tab: CANVAS_SEARCH_TAB,
-          },
-        },
-      },
-      { name: "view mode", state: { viewModeEnabled: true } },
-      { name: "element creation", state: { newElement: text } },
-      { name: "selection drag", state: { selectionElement: text } },
-      {
-        name: "element drag",
-        state: { selectedElementsAreBeingDragged: true },
-      },
-      { name: "resize", state: { isResizing: true } },
-      { name: "rotation", state: { isRotating: true } },
-    ];
-
-    const keyEvent = new KeyboardEvent("keydown", { key: KEYS.S });
-    for (const { name, state } of conflictingStates) {
-      const appState = {
-        ...h.state,
-        editingTextElement: null,
-        openDialog: null,
-        openPopup: null,
-        openSidebar: null,
-        viewModeEnabled: false,
-        newElement: null,
-        selectionElement: null,
-        selectedElementsAreBeingDragged: false,
-        isResizing: false,
-        isRotating: false,
-        ...state,
-      };
-      expect({
-        [name]: actionTextAutoResize.keyTest?.(keyEvent, appState, h.elements),
-      }).toEqual({ [name]: false });
-    }
-
-    expect(
-      actionTextAutoResize.keyTest?.(
-        keyEvent,
-        { ...h.state, openPopup: "elementStroke" },
-        h.elements,
-      ),
-    ).toBe(false);
-
-    input.remove();
-    textarea.remove();
-    editable.remove();
+  it("keeps fit-to-content available as a direct action without claiming S", () => {
+    expect(actionTextAutoResize.keyTest).toBeUndefined();
   });
 
   it("leaves lowercase s available inside the WYSIWYG text editor", async () => {

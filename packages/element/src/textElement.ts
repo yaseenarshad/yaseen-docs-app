@@ -280,7 +280,7 @@ export const getFreeTextInteractionGeometry = (
   element: ExcalidrawTextElement,
   measuredVisualBounds?: TextVisualBounds,
 ): TextVisualBounds | null => {
-  if (element.containerId !== null) {
+  if (element.containerId !== null || !element.autoResize) {
     return null;
   }
 

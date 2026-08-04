@@ -1,6 +1,7 @@
-import { ROUNDNESS } from "@excalidraw/common";
+import { ROUNDNESS, arrayToMap } from "@excalidraw/common";
 import { pointFrom, type GlobalPoint } from "@excalidraw/math";
 import { API } from "@excalidraw/excalidraw/tests/helpers/api";
+import { getNormalizedZoom } from "@excalidraw/excalidraw/scene";
 
 import {
   getFreeTextInteractionCoords,
@@ -13,6 +14,7 @@ import {
 } from "../src/textElement";
 import { mutateElement } from "../src/mutateElement";
 import { elementWithCanvasCache } from "../src/renderElement";
+import { getTransformHandles } from "../src/transformHandles";
 
 describe("native text background geometry", () => {
   it("invalidates the cached canvas when proportional padding mutates", () => {
@@ -130,6 +132,56 @@ describe("native text background geometry", () => {
     });
 
     expect(getFreeTextInteractionGeometry(text)).toBeNull();
+  });
+
+  it("uses canonical interaction geometry for fixed-width free text", () => {
+    const text = {
+      ...API.createElement({
+        type: "text",
+        x: 100,
+        y: 200,
+        width: 300,
+        height: 80,
+        fontSize: 60,
+        backgroundColor: "#111111",
+      }),
+      autoResize: false,
+    };
+    const measuredGlyphs = { x: 8, y: 14, width: 96, height: 42 };
+
+    expect(getFreeTextInteractionGeometry(text, measuredGlyphs)).toBeNull();
+    expect(getFreeTextInteractionCoords(text, measuredGlyphs)).toBeNull();
+    expect(
+      isPointInFreeTextInteractionBounds(
+        text,
+        pointFrom<GlobalPoint>(350, 240),
+        0,
+        measuredGlyphs,
+      ),
+    ).toBeNull();
+  });
+
+  it("places fixed-width text transform handles around the canonical box", () => {
+    const text = {
+      ...API.createElement({
+        type: "text",
+        x: 100,
+        y: 200,
+        width: 300,
+        height: 80,
+        text: "test",
+      }),
+      autoResize: false,
+    };
+    const handles = getTransformHandles(
+      text,
+      { value: getNormalizedZoom(1) },
+      arrayToMap([text]),
+    );
+    const northwestCenter = handles.nw![0] + handles.nw![2] / 2;
+    const northeastCenter = handles.ne![0] + handles.ne![2] / 2;
+
+    expect(northeastCenter - northwestCenter).toBeGreaterThan(text.width);
   });
 
   it("adds scale-aware symmetric padding and uses it for the radius", () => {
