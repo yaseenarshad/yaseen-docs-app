@@ -650,6 +650,59 @@ describe("textWysiwyg", () => {
       expect(movedCaretLeft).toBeGreaterThan(initialCaretLeft);
     });
 
+    it("leaves arrow navigation to the native editor for styled text on a filled background", async () => {
+      const originalText = "Styled text";
+      const text = {
+        ...API.createElement({
+          type: "text",
+          text: originalText,
+          strokeColor: "#ffffff",
+          backgroundColor: "#000000",
+        }),
+        originalText,
+        lineBolds: [true],
+        lineUnderlines: [true],
+      } as ExcalidrawTextElement;
+      API.setElements([text]);
+
+      UI.clickTool("selection");
+      mouse.doubleClickAt(text.x + 10, text.y + 10);
+      const editor = await getTextEditor();
+      editor.setSelectionRange(5, 5);
+      fireEvent(document, new Event("selectionchange"));
+
+      expect(fireEvent.keyDown(editor, { key: KEYS.ARROW_LEFT })).toBe(true);
+
+      editor.setSelectionRange(0, 0);
+      fireEvent(document, new Event("selectionchange"));
+      const background = document.querySelector<HTMLElement>(
+        ".excalidraw-wysiwyg-text-background",
+      )!;
+      const styledLine = document.querySelector<HTMLElement>(
+        ".excalidraw-wysiwyg-styled-line",
+      )!;
+      const caret = document.querySelector<HTMLElement>(
+        ".excalidraw-wysiwyg-caret",
+      )!;
+
+      expect(background.parentElement!.style.display).toBe("block");
+      expect(colorToHex(background.style.backgroundColor)).toBe("#000000");
+      expect(colorToHex(styledLine.style.color)).toBe("#ffffff");
+      expect(colorToHex(caret.style.backgroundColor)).toBe("#ffffff");
+      const initialCaretLeft = parseFloat(caret.style.left);
+
+      // Some browser/host combinations do not reliably emit the document
+      // selectionchange event for native textarea navigation.
+      editor.setSelectionRange(1, 1);
+      fireEvent.keyUp(editor, { key: KEYS.ARROW_RIGHT });
+      const movedCaretLeft = parseFloat(
+        document.querySelector<HTMLElement>(".excalidraw-wysiwyg-caret")!.style
+          .left,
+      );
+
+      expect(movedCaretLeft).toBeGreaterThan(initialCaretLeft);
+    });
+
     it.each([
       ["bold", { lineBolds: [true] }],
       ["underlined", { lineUnderlines: [true] }],

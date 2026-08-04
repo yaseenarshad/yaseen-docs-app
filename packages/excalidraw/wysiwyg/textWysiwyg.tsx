@@ -1430,6 +1430,7 @@ export const textWysiwyg = ({
     editable.oninput = null;
     editable.onkeydown = null;
     editable.removeEventListener("select", renderVisualSelection);
+    editable.removeEventListener("keyup", renderVisualSelection);
     editable.removeEventListener("pointerdown", handleEditablePointerDown);
     document.removeEventListener(
       "selectionchange",
@@ -1608,6 +1609,11 @@ export const textWysiwyg = ({
   }
 
   editable.addEventListener("select", renderVisualSelection);
+  // `selectionchange` is the canonical signal, but some browser/host
+  // combinations do not emit it consistently for native textarea keyboard
+  // navigation. Repaint on keyup as a harmless fallback so the custom caret
+  // used by styled text cannot appear frozen.
+  editable.addEventListener("keyup", renderVisualSelection);
   editable.addEventListener("pointerdown", handleEditablePointerDown);
   document.addEventListener("selectionchange", handleDocumentSelectionChange);
 
