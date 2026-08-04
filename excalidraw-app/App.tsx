@@ -150,6 +150,7 @@ import { CloudAccount } from "./cloud/CloudAccount";
 import { CloudShareDialog } from "./cloud/CloudShareDialog";
 import { getCloudDocumentTitle } from "./cloud/cloudDocumentTitle";
 import {
+  hasUnpersistedCloudElements,
   isSameCloudRoute,
   resolveCloudViewport,
   shouldApplyCloudScene,
@@ -583,6 +584,8 @@ const ExcalidrawWrapper = () => {
             appState,
           )
         : remoteElements;
+      const hasLocalMerge =
+        shouldMerge && hasUnpersistedCloudElements(elements, remoteElements);
       const restoredAppState = resolveCloudViewport(
         {
           ...restoreAppState(scene.appState, appState),
@@ -614,7 +617,11 @@ const ExcalidrawWrapper = () => {
       applyingCloudSceneRef.current = false;
 
       if (shouldMerge) {
-        cloud.queueSave(appliedSceneJson);
+        cloud.queueSave(
+          appliedSceneJson,
+          undefined,
+          hasLocalMerge ? "server-merge" : "server-echo",
+        );
       }
     } catch (error) {
       applyingCloudSceneRef.current = false;

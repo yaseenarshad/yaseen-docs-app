@@ -10,6 +10,43 @@ export type AppliedCloudScene = {
   version: number;
 };
 
+type VersionedCloudElement = {
+  id: string;
+  version?: number;
+  versionNonce?: number;
+  isDeleted?: boolean;
+};
+
+export const hasUnpersistedCloudElements = (
+  reconciledElements: readonly VersionedCloudElement[],
+  persistedElements: readonly VersionedCloudElement[],
+) => {
+  const persistedById = new Map(
+    persistedElements.map((element) => [element.id, element]),
+  );
+  for (const element of reconciledElements) {
+    const persisted = persistedById.get(element.id);
+    if (!persisted) {
+      if (element.isDeleted !== true) {
+        return true;
+      }
+      continue;
+    }
+    const version = element.version ?? 0;
+    const persistedVersion = persisted.version ?? 0;
+    if (version > persistedVersion) {
+      return true;
+    }
+    if (
+      version === persistedVersion &&
+      element.versionNonce !== persisted.versionNonce
+    ) {
+      return true;
+    }
+  }
+  return false;
+};
+
 export const shouldApplyCloudScene = (
   previous: AppliedCloudScene | null,
   next: AppliedCloudScene,

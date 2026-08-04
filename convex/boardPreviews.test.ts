@@ -59,6 +59,25 @@ const createPreviewGrant = async (
   });
 
 describe("durable Board previews", () => {
+  it("validates preview versions from lightweight Board metadata", async () => {
+    const { t, owner } = await authenticatedTestClient();
+    const board = await createSavedBoard(owner);
+    await t.run(async (ctx) => {
+      const content = await ctx.db
+        .query("diagramContents")
+        .withIndex("by_diagramId", (q) => q.eq("diagramId", board.boardId))
+        .unique();
+      if (!content) {
+        throw new Error("Expected Board content");
+      }
+      await ctx.db.delete("diagramContents", content._id);
+    });
+
+    await expect(
+      createPreviewGrant(owner, board.boardId, board.version),
+    ).resolves.toEqual({ token: expect.any(String) });
+  });
+
   it("registers an owner WebP without changing Modified sorting metadata", async () => {
     const { t, owner } = await authenticatedTestClient();
     const board = await createSavedBoard(owner);

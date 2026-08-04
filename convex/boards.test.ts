@@ -209,6 +209,51 @@ describe("boards compatibility API", () => {
     expect(opened?.version).toBe(1);
   });
 
+  it("treats an identical scene save as a no-op without incrementing the version", async () => {
+    const { t, owner } = await authenticatedTestClient();
+    const created = await owner.mutation(boardsApi.create, {
+      title: "No-op Board",
+    });
+    const sceneJson = JSON.stringify({
+      elements: [{ id: "same", type: "rectangle", version: 1 }],
+      appState: {},
+      files: {},
+    });
+    const first = await owner.mutation(boardsApi.save, {
+      boardId: created.boardId,
+      expectedVersion: 0,
+      sceneJson,
+    });
+    if (first.status !== "saved") {
+      throw new Error("Expected initial save to succeed");
+    }
+    await t.run(async (ctx) => {
+      await ctx.db.patch("diagrams", created.boardId, {
+        contentVersion: undefined,
+      });
+    });
+    const beforeNoOp = await t.run(async (ctx) =>
+      ctx.db.get("diagrams", created.boardId),
+    );
+
+    const duplicate = await owner.mutation(boardsApi.save, {
+      boardId: created.boardId,
+      expectedVersion: first.version,
+      sceneJson,
+    });
+    const afterNoOp = await t.run(async (ctx) =>
+      ctx.db.get("diagrams", created.boardId),
+    );
+
+    expect(duplicate).toEqual({
+      status: "saved",
+      version: first.version,
+      updatedAt: beforeNoOp?.updatedAt,
+    });
+    expect(afterNoOp?.updatedAt).toBe(beforeNoOp?.updatedAt);
+    expect(afterNoOp?.contentVersion).toBe(first.version);
+  });
+
   it("enforces the same ownership boundary through the Board API", async () => {
     const { t, owner } = await authenticatedTestClient();
     const created = await owner.mutation(boardsApi.create, {
@@ -278,5 +323,53 @@ describe("boards compatibility API", () => {
         text: "After",
       }),
     ).resolves.toMatchObject({ version: 1 });
+    const programmaticMetadata = await t.run(async (ctx) =>
+      ctx.db.get("diagrams", created.boardId),
+    );
+    expect(programmaticMetadata?.contentVersion).toBe(1);
+  });
+
+  it("keeps lightweight content metadata in sync when restoring history", async () => {
+    const { t, owner } = await authenticatedTestClient();
+    const boardHistory = (api as any).boardHistory;
+    const created = await owner.mutation(boardsApi.create, {
+      title: "History metadata",
+    });
+    const first = await owner.mutation(boardsApi.save, {
+      boardId: created.boardId,
+      expectedVersion: 0,
+      sceneJson: JSON.stringify({
+        elements: [{ id: "shape", version: 1 }],
+        appState: {},
+        files: {},
+      }),
+    });
+    if (first.status !== "saved") {
+      throw new Error("Expected first save");
+    }
+    const second = await owner.mutation(boardsApi.save, {
+      boardId: created.boardId,
+      expectedVersion: first.version,
+      sceneJson: JSON.stringify({
+        elements: [{ id: "shape", version: 2 }],
+        appState: {},
+        files: {},
+      }),
+    });
+    if (second.status !== "saved") {
+      throw new Error("Expected second save");
+    }
+    const snapshots = await owner.query(boardHistory.list, {
+      boardId: created.boardId,
+    });
+    const restored = await owner.mutation(boardHistory.restore, {
+      boardId: created.boardId,
+      snapshotId: snapshots[0]._id,
+    });
+    const metadata = await t.run(async (ctx) =>
+      ctx.db.get("diagrams", created.boardId),
+    );
+
+    expect(metadata?.contentVersion).toBe(restored.version);
   });
 });

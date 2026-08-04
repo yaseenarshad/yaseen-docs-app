@@ -1,6 +1,9 @@
 export const acceptCloudSceneWithoutSave = (sceneJson: string) => sceneJson;
 
+export type CloudSceneSaveOrigin = "local" | "server-echo" | "server-merge";
+
 export const shouldQueueCloudSceneSave = (
   acceptedSceneJson: string | null,
   sceneJson: string,
-) => acceptedSceneJson !== sceneJson;
+  origin: CloudSceneSaveOrigin = "local",
+) => origin !== "server-echo" && acceptedSceneJson !== sceneJson;

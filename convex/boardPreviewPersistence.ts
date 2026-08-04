@@ -44,6 +44,12 @@ const getBoardContent = async (ctx: MutationCtx, boardId: Id<"diagrams">) => {
   return content;
 };
 
+const getCurrentBoardVersion = async (
+  ctx: MutationCtx,
+  diagram: Awaited<ReturnType<typeof getOwnedBoard>>,
+) =>
+  diagram.contentVersion ?? (await getBoardContent(ctx, diagram._id)).version;
+
 export const createBoardPreviewUploadGrant = async (
   ctx: MutationCtx,
   args: {
@@ -56,9 +62,9 @@ export const createBoardPreviewUploadGrant = async (
   },
 ) => {
   const ownerId = await requireUserId(ctx);
-  await getOwnedBoard(ctx, args.boardId, ownerId);
-  const content = await getBoardContent(ctx, args.boardId);
-  if (content.version !== args.sourceVersion) {
+  const diagram = await getOwnedBoard(ctx, args.boardId, ownerId);
+  const currentVersion = await getCurrentBoardVersion(ctx, diagram);
+  if (currentVersion !== args.sourceVersion) {
     throw new Error("The saved Board version changed before preview upload");
   }
   if (
@@ -122,9 +128,9 @@ export const registerBoardPreviewUpload = async (
     throw new Error("A Board preview grant is required");
   }
   const diagram = await getOwnedBoard(ctx, grant.diagramId, ownerId);
-  const content = await getBoardContent(ctx, grant.diagramId);
+  const currentVersion = await getCurrentBoardVersion(ctx, diagram);
   const isStale =
-    grant.sourceVersion < content.version ||
+    grant.sourceVersion < currentVersion ||
     (diagram.previewVersion !== undefined &&
       diagram.previewVersion >= grant.sourceVersion);
   if (isStale) {
@@ -160,8 +166,8 @@ export const recordEmptyBoardPreview = async (
 ) => {
   const ownerId = await requireUserId(ctx);
   const diagram = await getOwnedBoard(ctx, boardId, ownerId);
-  const content = await getBoardContent(ctx, boardId);
-  if (content.version !== sourceVersion) {
+  const currentVersion = await getCurrentBoardVersion(ctx, diagram);
+  if (currentVersion !== sourceVersion) {
     throw new Error("The saved Board version changed before preview update");
   }
   if (

@@ -84,6 +84,7 @@ const createRecord = async (
     normalizedTitle: normalizeBoardTitle(title),
     visibility: "private",
     shareEnabled: false,
+    contentVersion: 0,
     createdAt: now,
     updatedAt: now,
   });
@@ -331,10 +332,22 @@ export const saveBoardRecord = async (
   if (!content) {
     throw new Error(`${entityName} content is missing`);
   }
-  if (
-    content.version !== args.expectedVersion ||
-    hasElementVersionRegression(content.sceneJson, args.sceneJson)
-  ) {
+  if (content.version !== args.expectedVersion) {
+    return { status: "conflict" as const, version: content.version };
+  }
+  if (content.sceneJson === args.sceneJson) {
+    if (diagram.contentVersion !== content.version) {
+      await ctx.db.patch("diagrams", diagram._id, {
+        contentVersion: content.version,
+      });
+    }
+    return {
+      status: "saved" as const,
+      version: content.version,
+      updatedAt: content.updatedAt,
+    };
+  }
+  if (hasElementVersionRegression(content.sceneJson, args.sceneJson)) {
     return { status: "conflict" as const, version: content.version };
   }
   const now = Date.now();
@@ -352,7 +365,10 @@ export const saveBoardRecord = async (
     version,
     updatedAt: now,
   });
-  await ctx.db.patch("diagrams", diagram._id, { updatedAt: now });
+  await ctx.db.patch("diagrams", diagram._id, {
+    contentVersion: version,
+    updatedAt: now,
+  });
   return { status: "saved" as const, version, updatedAt: now };
 };
 

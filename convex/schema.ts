@@ -45,6 +45,7 @@ export default defineSchema({
     previewWidth: v.optional(v.number()),
     previewHeight: v.optional(v.number()),
     previewUpdatedAt: v.optional(v.number()),
+    contentVersion: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

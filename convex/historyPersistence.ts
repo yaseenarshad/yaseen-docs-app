@@ -118,6 +118,9 @@ export const restoreBoardSnapshot = async (
     version,
     updatedAt,
   });
-  await ctx.db.patch("diagrams", diagram._id, { updatedAt });
+  await ctx.db.patch("diagrams", diagram._id, {
+    contentVersion: version,
+    updatedAt,
+  });
   return { version, updatedAt };
 };

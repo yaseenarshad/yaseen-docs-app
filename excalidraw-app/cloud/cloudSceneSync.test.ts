@@ -8,8 +8,32 @@ import {
   resolveCloudViewport,
   shouldApplyCloudScene,
 } from "./cloudSceneSync";
+import * as cloudSceneSync from "./cloudSceneSync";
 
 describe("cloud scene synchronization", () => {
+  it("detects a reconciled element that is newer than the server echo", () => {
+    const hasUnpersistedCloudElements = (
+      cloudSceneSync as Record<string, unknown>
+    ).hasUnpersistedCloudElements;
+
+    expect(typeof hasUnpersistedCloudElements).toBe("function");
+    if (typeof hasUnpersistedCloudElements !== "function") {
+      return;
+    }
+    expect(
+      hasUnpersistedCloudElements(
+        [{ id: "shape", version: 3, versionNonce: 30 }],
+        [{ id: "shape", version: 2, versionNonce: 20 }],
+      ),
+    ).toBe(true);
+    expect(
+      hasUnpersistedCloudElements(
+        [{ id: "shape", version: 2, versionNonce: 20 }],
+        [{ id: "shape", version: 2, versionNonce: 20 }],
+      ),
+    ).toBe(false);
+  });
+
   it("applies a newer server version for an owner route", () => {
     expect(
       shouldApplyCloudScene(

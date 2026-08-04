@@ -49,6 +49,7 @@ import type {
   BoardPreviewImage,
   BoardPreviewScene,
 } from "./boardPreviewGeneration";
+import type { CloudSceneSaveOrigin } from "./cloudSaveBaseline";
 
 export type CloudSaveStatus =
   | "loading"
@@ -57,6 +58,8 @@ export type CloudSaveStatus =
   | "conflict"
   | "error"
   | "viewer";
+
+export const CLOUD_SAVE_DEBOUNCE_MS = 3_000;
 
 const getRoute = () => parseCloudRoute(window.location.pathname);
 
@@ -110,6 +113,7 @@ export const useCloudBoard = () => {
   );
   const versionRef = useRef(0);
   const saveTimerRef = useRef<number | null>(null);
+  const saveInFlightRef = useRef<Promise<boolean> | null>(null);
   const previewTimerRef = useRef<number | null>(null);
   const previewRequestRef = useRef(0);
   const lastPreviewStartedAtRef = useRef(new Map<string, number>());
@@ -358,6 +362,18 @@ export const useCloudBoard = () => {
   );
 
   const flushSave = useCallback(async () => {
+    const inFlight = saveInFlightRef.current;
+    if (inFlight) {
+      const didSave = await inFlight;
+      if (didSave && pendingSceneRef.current !== null) {
+        if (saveTimerRef.current !== null) {
+          window.clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = null;
+        }
+        return await flushSaveRef.current();
+      }
+      return didSave;
+    }
     if (!openedBoard || openedBoard.access !== "owner") {
       return true;
     }
@@ -371,59 +387,88 @@ export const useCloudBoard = () => {
     }
     pendingSceneRef.current = null;
     setSaveStatus("saving");
-    try {
-      const result = await saveBoard({
-        boardId: pending.boardId,
-        expectedVersion: versionRef.current,
-        sceneJson: pending.sceneJson,
-      });
-      if (!isCurrentRouteCompletion(pending.route, currentRouteRef.current)) {
-        return false;
-      }
-      versionRef.current = result.version;
-      if (result.status === "conflict") {
-        setSaveStatus("conflict");
+    const savePromise = (async () => {
+      try {
+        const result = await saveBoard({
+          boardId: pending.boardId,
+          expectedVersion: versionRef.current,
+          sceneJson: pending.sceneJson,
+        });
+        if (!isCurrentRouteCompletion(pending.route, currentRouteRef.current)) {
+          return false;
+        }
+        versionRef.current = result.version;
+        if (result.status === "conflict") {
+          setSaveStatus("conflict");
+          setErrorMessage(
+            "This board changed in another tab. Your next edit will save against the latest version.",
+          );
+          return false;
+        }
+        acceptedSceneRef.current = acceptCloudSceneWithoutSave(
+          pending.sceneJson,
+        );
+        setSaveStatus("saved");
+        setErrorMessage(null);
+        if (pending.previewScene) {
+          scheduleBoardPreview({
+            boardId: pending.boardId,
+            route: pending.route,
+            sourceVersion: result.version,
+            scene: pending.previewScene,
+          });
+        }
+        return true;
+      } catch (cause) {
+        if (!isCurrentRouteCompletion(pending.route, currentRouteRef.current)) {
+          return false;
+        }
+        pendingSceneRef.current ??= pending;
+        setSaveStatus("error");
         setErrorMessage(
-          "This board changed in another tab. Your next edit will save against the latest version.",
+          cause instanceof Error ? cause.message : "Cloud save failed",
         );
         return false;
       }
-      setSaveStatus("saved");
-      setErrorMessage(null);
-      if (pending.previewScene) {
-        scheduleBoardPreview({
-          boardId: pending.boardId,
-          route: pending.route,
-          sourceVersion: result.version,
-          scene: pending.previewScene,
-        });
+    })();
+    saveInFlightRef.current = savePromise;
+    try {
+      return await savePromise;
+    } finally {
+      if (saveInFlightRef.current === savePromise) {
+        saveInFlightRef.current = null;
       }
-      return true;
-    } catch (cause) {
-      if (!isCurrentRouteCompletion(pending.route, currentRouteRef.current)) {
-        return false;
-      }
-      pendingSceneRef.current = pending;
-      setSaveStatus("error");
-      setErrorMessage(
-        cause instanceof Error ? cause.message : "Cloud save failed",
-      );
-      return false;
     }
   }, [openedBoard, saveBoard, scheduleBoardPreview]);
 
   flushSaveRef.current = flushSave;
 
   const queueSave = useCallback(
-    (sceneJson: string, previewScene?: BoardPreviewScene) => {
+    (
+      sceneJson: string,
+      previewScene?: BoardPreviewScene,
+      origin: CloudSceneSaveOrigin = "local",
+    ) => {
       if (!openedBoard || openedBoard.access !== "owner") {
         return;
       }
       const persistedSceneJson = sanitizeCloudPresentationScene(sceneJson);
       if (
-        !shouldQueueCloudSceneSave(acceptedSceneRef.current, persistedSceneJson)
+        !shouldQueueCloudSceneSave(
+          acceptedSceneRef.current,
+          persistedSceneJson,
+          origin,
+        )
       ) {
+        if (origin === "server-echo") {
+          acceptedSceneRef.current =
+            acceptCloudSceneWithoutSave(persistedSceneJson);
+        }
         pendingSceneRef.current = null;
+        if (saveTimerRef.current !== null) {
+          window.clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = null;
+        }
         setSaveStatus("saved");
         return;
       }
@@ -440,7 +485,7 @@ export const useCloudBoard = () => {
       saveTimerRef.current = window.setTimeout(() => {
         saveTimerRef.current = null;
         void flushSave();
-      }, 900);
+      }, CLOUD_SAVE_DEBOUNCE_MS);
     },
     [flushSave, openedBoard],
   );

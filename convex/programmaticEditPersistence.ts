@@ -72,6 +72,7 @@ const commitProgrammaticScene = async (
     updatedAt: args.updatedAt,
   });
   await ctx.db.patch("diagrams", args.boardId, {
+    contentVersion: version,
     updatedAt: args.updatedAt,
   });
   return { version, updatedAt: args.updatedAt };
