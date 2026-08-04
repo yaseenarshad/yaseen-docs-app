@@ -38,6 +38,7 @@ import {
 import { getTextWidth } from "@excalidraw/element";
 import { getLineHeightInPx } from "@excalidraw/element";
 import {
+  getTextBackgroundGeometry,
   getStyledVisualLineStart,
   getStyledVisualLines,
   getStyledVisualSelectionGeometry,
@@ -439,6 +440,38 @@ export const textWysiwyg = ({
         updatedTextElement.strokeColor,
         appState.theme === THEME.DARK,
       );
+      const background = getTextBackgroundGeometry(updatedTextElement);
+      if (background) {
+        Object.assign(textBackgroundOverlay.style, {
+          display: "block",
+          width: `${updatedTextElement.width}px`,
+          height: `${updatedTextElement.height}px`,
+          left: `${viewportX}px`,
+          top: `${viewportY}px`,
+          transform: getTransform(
+            updatedTextElement.width,
+            updatedTextElement.height,
+            angle,
+            appState,
+            updatedTextElement.width,
+            updatedTextElement.height,
+          ),
+          opacity: updatedTextElement.opacity / 100,
+        });
+        Object.assign(textBackgroundFill.style, {
+          left: `${background.x}px`,
+          top: `${background.y}px`,
+          width: `${background.width}px`,
+          height: `${background.height}px`,
+          borderRadius: `${background.radius}px`,
+          backgroundColor: applyDarkModeFilter(
+            updatedTextElement.backgroundColor,
+            appState.theme === THEME.DARK,
+          ),
+        });
+      } else {
+        textBackgroundOverlay.style.display = "none";
+      }
       const visualLines = getStyledVisualLines({
         originalText: editable.value,
         regularFont: getFontString({
@@ -567,6 +600,24 @@ export const textWysiwyg = ({
 
   const editable = document.createElement("textarea");
   const underlineOverlay = document.createElement("div");
+  const textBackgroundOverlay = document.createElement("div");
+  const textBackgroundFill = document.createElement("div");
+
+  textBackgroundOverlay.className =
+    "excalidraw-wysiwyg-text-background-overlay";
+  textBackgroundFill.className = "excalidraw-wysiwyg-text-background";
+  Object.assign(textBackgroundOverlay.style, {
+    position: "absolute",
+    pointerEvents: "none",
+    overflow: "visible",
+    transformOrigin: "center center",
+    zIndex: "var(--zIndex-wysiwyg)",
+  });
+  Object.assign(textBackgroundFill.style, {
+    position: "absolute",
+    pointerEvents: "none",
+  });
+  textBackgroundOverlay.appendChild(textBackgroundFill);
 
   underlineOverlay.className = "excalidraw-wysiwyg-underlines";
   Object.assign(underlineOverlay.style, {
@@ -739,9 +790,20 @@ export const textWysiwyg = ({
   })();
 
   let visualSelectionAnchor: number | null = null;
+  let visualSelectionPointerId: number | null = null;
+
+  const handleDocumentSelectionChange = () => {
+    if (document.activeElement === editable) {
+      renderVisualSelection();
+    }
+  };
 
   const updateVisualSelectionFromPointer = (event: PointerEvent) => {
-    if (visualSelectionAnchor === null) {
+    if (
+      visualSelectionAnchor === null ||
+      (visualSelectionPointerId !== null &&
+        event.pointerId !== visualSelectionPointerId)
+    ) {
       return;
     }
 
@@ -760,9 +822,17 @@ export const textWysiwyg = ({
   };
 
   const stopVisualSelectionDrag = () => {
+    if (
+      visualSelectionPointerId !== null &&
+      editable.hasPointerCapture?.(visualSelectionPointerId)
+    ) {
+      editable.releasePointerCapture(visualSelectionPointerId);
+    }
     visualSelectionAnchor = null;
+    visualSelectionPointerId = null;
     window.removeEventListener("pointermove", updateVisualSelectionFromPointer);
     window.removeEventListener("pointerup", stopVisualSelectionDrag);
+    window.removeEventListener("pointercancel", stopVisualSelectionDrag);
   };
 
   const handleEditablePointerDown = (event: PointerEvent) => {
@@ -785,6 +855,8 @@ export const textWysiwyg = ({
     event.preventDefault();
     editable.focus();
     stopVisualSelectionDrag();
+    visualSelectionPointerId = event.pointerId;
+    editable.setPointerCapture?.(event.pointerId);
 
     if (event.detail >= 3) {
       const lineStart = editable.value.lastIndexOf("\n", caretIndex - 1) + 1;
@@ -835,6 +907,7 @@ export const textWysiwyg = ({
     renderVisualSelection();
     window.addEventListener("pointermove", updateVisualSelectionFromPointer);
     window.addEventListener("pointerup", stopVisualSelectionDrag);
+    window.addEventListener("pointercancel", stopVisualSelectionDrag);
   };
 
   if (onChange) {
@@ -1358,6 +1431,10 @@ export const textWysiwyg = ({
     editable.onkeydown = null;
     editable.removeEventListener("select", renderVisualSelection);
     editable.removeEventListener("pointerdown", handleEditablePointerDown);
+    document.removeEventListener(
+      "selectionchange",
+      handleDocumentSelectionChange,
+    );
     stopVisualSelectionDrag();
 
     if (observer) {
@@ -1374,6 +1451,7 @@ export const textWysiwyg = ({
     unsubOnChange();
     unbindOnScroll();
 
+    textBackgroundOverlay.remove();
     underlineOverlay.remove();
     editable.remove();
   };
@@ -1531,6 +1609,7 @@ export const textWysiwyg = ({
 
   editable.addEventListener("select", renderVisualSelection);
   editable.addEventListener("pointerdown", handleEditablePointerDown);
+  document.addEventListener("selectionchange", handleDocumentSelectionChange);
 
   // rAF (+ capture to by doubly sure) so we don't catch te pointerdown that
   // triggered the wysiwyg
@@ -1541,6 +1620,7 @@ export const textWysiwyg = ({
   const editorContainer = excalidrawContainer?.querySelector(
     ".excalidraw-textEditorContainer",
   );
+  editorContainer?.appendChild(textBackgroundOverlay);
   editorContainer?.appendChild(underlineOverlay);
   editorContainer?.appendChild(editable);
 

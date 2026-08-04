@@ -6,6 +6,7 @@ import {
   getOriginalContainerHeightFromCache,
   getStyledVisualLineStart,
   getTextElementStyledLayout,
+  getTextBackgroundGeometry,
 } from "@excalidraw/element";
 
 import {
@@ -611,6 +612,147 @@ describe("textWysiwyg", () => {
       expect(caret).not.toBeNull();
       expect(parseFloat(caret!.style.left)).toBeCloseTo(continuationX);
       expect(parseFloat(caret!.style.top)).toBe(lineHeight);
+    });
+
+    it("repaints the visual caret when the native textarea selection changes", async () => {
+      const originalText = "• Search inventory facts from the connected store";
+      const text = {
+        ...API.createElement({
+          type: "text",
+          text: originalText,
+          width: 120,
+          height: 120,
+          textAlign: "left",
+        }),
+        originalText,
+        autoResize: false,
+      } as ExcalidrawTextElement;
+      API.setElements([text]);
+
+      UI.clickTool("selection");
+      mouse.doubleClickAt(text.x + 10, text.y + 10);
+      const editor = await getTextEditor();
+
+      editor.setSelectionRange(0, 0);
+      fireEvent(document, new Event("selectionchange"));
+      const initialCaretLeft = parseFloat(
+        document.querySelector<HTMLElement>(".excalidraw-wysiwyg-caret")!.style
+          .left,
+      );
+
+      editor.setSelectionRange(4, 4);
+      fireEvent(document, new Event("selectionchange"));
+      const movedCaretLeft = parseFloat(
+        document.querySelector<HTMLElement>(".excalidraw-wysiwyg-caret")!.style
+          .left,
+      );
+
+      expect(movedCaretLeft).toBeGreaterThan(initialCaretLeft);
+    });
+
+    it.each([
+      ["bold", { lineBolds: [true] }],
+      ["underlined", { lineUnderlines: [true] }],
+    ])(
+      "keeps keyboard and drag selection visible for %s text",
+      async (_styleName, lineStyles) => {
+        const originalText = "Styled text selection";
+        const text = {
+          ...API.createElement({
+            type: "text",
+            text: originalText,
+          }),
+          originalText,
+          ...lineStyles,
+        } as ExcalidrawTextElement;
+        API.setElements([text]);
+
+        UI.clickTool("selection");
+        mouse.doubleClickAt(text.x + 10, text.y + 10);
+        const editor = await getTextEditor();
+
+        expect(editor.classList).toContain(
+          "excalidraw-wysiwyg-visual-selection",
+        );
+        editor.setSelectionRange(0, 0);
+        fireEvent(document, new Event("selectionchange"));
+        const initialCaretLeft = parseFloat(
+          document.querySelector<HTMLElement>(".excalidraw-wysiwyg-caret")!
+            .style.left,
+        );
+
+        editor.setSelectionRange(1, 1);
+        fireEvent(document, new Event("selectionchange"));
+        const movedCaretLeft = parseFloat(
+          document.querySelector<HTMLElement>(".excalidraw-wysiwyg-caret")!
+            .style.left,
+        );
+        expect(movedCaretLeft).toBeGreaterThan(initialCaretLeft);
+
+        editor.setSelectionRange(0, 6, "forward");
+        fireEvent(document, new Event("selectionchange"));
+        expect(
+          document.querySelectorAll(".excalidraw-wysiwyg-selection"),
+        ).not.toHaveLength(0);
+      },
+    );
+
+    it("renders the native free-text background beneath the active editor", async () => {
+      const text = API.createElement({
+        type: "text",
+        text: "Readable while editing",
+        strokeColor: "#ffffff",
+        backgroundColor: "#000000",
+        opacity: 70,
+        roundness: { type: 3 },
+      });
+      API.setElements([text]);
+
+      UI.clickTool("selection");
+      mouse.doubleClickAt(text.x + 10, text.y + 10);
+      const editor = await getTextEditor();
+      const editingText = h.elements[0] as ExcalidrawTextElement;
+      const geometry = getTextBackgroundGeometry(editingText)!;
+      const backgroundOverlay = document.querySelector<HTMLElement>(
+        ".excalidraw-wysiwyg-text-background-overlay",
+      )!;
+      const background = document.querySelector<HTMLElement>(
+        ".excalidraw-wysiwyg-text-background",
+      )!;
+
+      expect(editor.style.background).toBe("transparent");
+      expect(backgroundOverlay.style.display).toBe("block");
+      expect(backgroundOverlay.style.width).toBe(`${editingText.width}px`);
+      expect(backgroundOverlay.style.height).toBe(`${editingText.height}px`);
+      expect(backgroundOverlay.style.opacity).toBe("0.7");
+      expect(background.style.left).toBe(`${geometry.x}px`);
+      expect(background.style.top).toBe(`${geometry.y}px`);
+      expect(background.style.width).toBe(`${geometry.width}px`);
+      expect(background.style.height).toBe(`${geometry.height}px`);
+      expect(background.style.borderRadius).toBe(`${geometry.radius}px`);
+      expect(colorToHex(background.style.backgroundColor)).toBe("#000000");
+      expect(backgroundOverlay.nextElementSibling).toHaveClass(
+        "excalidraw-wysiwyg-underlines",
+      );
+    });
+
+    it("does not render an editing background for transparent free text", async () => {
+      const text = API.createElement({
+        type: "text",
+        text: "Transparent background",
+        backgroundColor: "transparent",
+      });
+      API.setElements([text]);
+
+      UI.clickTool("selection");
+      mouse.doubleClickAt(text.x + 10, text.y + 10);
+      await getTextEditor();
+
+      expect(
+        document.querySelector<HTMLElement>(
+          ".excalidraw-wysiwyg-text-background-overlay",
+        )!.style.display,
+      ).toBe("none");
     });
 
     it("maps a click inside the open editor through hanging-indent geometry", async () => {
