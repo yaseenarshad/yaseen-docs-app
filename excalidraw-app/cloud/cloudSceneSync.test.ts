@@ -3,14 +3,43 @@ import { getNormalizedZoom } from "@excalidraw/excalidraw/scene";
 import { newElement } from "@excalidraw/element";
 
 import {
+  getCloudSceneRevision,
   isSameCloudRoute,
   preserveCloudViewport,
   resolveCloudViewport,
   shouldApplyCloudScene,
+  shouldSuppressCloudSceneSaveForAppliedRevision,
 } from "./cloudSceneSync";
 import * as cloudSceneSync from "./cloudSceneSync";
 
 describe("cloud scene synchronization", () => {
+  it("recognizes a delayed onChange echo without suppressing a newer local revision", () => {
+    const appliedElements = [
+      { id: "shape", version: 2, versionNonce: 20, isDeleted: false },
+      { id: "deleted", version: 4, versionNonce: 40, isDeleted: true },
+    ];
+    const appliedRevision = getCloudSceneRevision(appliedElements);
+
+    expect(
+      shouldSuppressCloudSceneSaveForAppliedRevision(
+        appliedRevision,
+        appliedElements.map((element) => ({ ...element })),
+      ),
+    ).toBe(true);
+    expect(
+      shouldSuppressCloudSceneSaveForAppliedRevision(appliedRevision, [
+        { ...appliedElements[0], version: 3, versionNonce: 30 },
+        appliedElements[1],
+      ]),
+    ).toBe(false);
+    expect(
+      shouldSuppressCloudSceneSaveForAppliedRevision(
+        appliedRevision,
+        [...appliedElements].reverse(),
+      ),
+    ).toBe(false);
+  });
+
   it("detects a reconciled element that is newer than the server echo", () => {
     const hasUnpersistedCloudElements = (
       cloudSceneSync as Record<string, unknown>

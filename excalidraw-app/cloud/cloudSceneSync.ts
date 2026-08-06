@@ -17,6 +17,25 @@ type VersionedCloudElement = {
   isDeleted?: boolean;
 };
 
+export const getCloudSceneRevision = (
+  elements: readonly VersionedCloudElement[],
+) =>
+  JSON.stringify(
+    elements.map((element) => [
+      element.id,
+      element.version ?? 0,
+      element.versionNonce ?? null,
+      element.isDeleted === true,
+    ]),
+  );
+
+export const shouldSuppressCloudSceneSaveForAppliedRevision = (
+  appliedRevision: string | null,
+  elements: readonly VersionedCloudElement[],
+) =>
+  appliedRevision !== null &&
+  appliedRevision === getCloudSceneRevision(elements);
+
 export const hasUnpersistedCloudElements = (
   reconciledElements: readonly VersionedCloudElement[],
   persistedElements: readonly VersionedCloudElement[],

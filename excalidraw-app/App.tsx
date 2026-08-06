@@ -150,10 +150,12 @@ import { CloudAccount } from "./cloud/CloudAccount";
 import { CloudShareDialog } from "./cloud/CloudShareDialog";
 import { getCloudDocumentTitle } from "./cloud/cloudDocumentTitle";
 import {
+  getCloudSceneRevision,
   hasUnpersistedCloudElements,
   isSameCloudRoute,
   resolveCloudViewport,
   shouldApplyCloudScene,
+  shouldSuppressCloudSceneSaveForAppliedRevision,
 } from "./cloud/cloudSceneSync";
 import {
   cloudRouteOwnsScene,
@@ -443,7 +445,7 @@ const ExcalidrawWrapper = () => {
     version: number;
   } | null>(null);
   const visibleCloudRouteRef = useRef<string | null>(null);
-  const applyingCloudSceneRef = useRef(false);
+  const appliedCloudSceneRevisionRef = useRef<string | null>(null);
   const loadingCloudFileIdsRef = useRef(new Set<string>());
 
   const [errorMessage, setErrorMessage] = useState("");
@@ -533,7 +535,7 @@ const ExcalidrawWrapper = () => {
       return;
     }
     cloud.discardPendingSave();
-    applyingCloudSceneRef.current = true;
+    appliedCloudSceneRevisionRef.current = getCloudSceneRevision([]);
     excalidrawAPI.updateScene({
       elements: [],
       appState: {
@@ -543,7 +545,6 @@ const ExcalidrawWrapper = () => {
     });
     excalidrawAPI.resetFiles();
     loadingCloudFileIdsRef.current = new Set();
-    applyingCloudSceneRef.current = false;
     visibleCloudRouteRef.current = activeCloudRouteKey;
   }, [activeCloudRouteKey, cloud, cloud.route.kind, excalidrawAPI]);
 
@@ -607,14 +608,13 @@ const ExcalidrawWrapper = () => {
       } else {
         cloud.acceptSceneWithoutSave(appliedSceneJson);
       }
-      applyingCloudSceneRef.current = true;
+      appliedCloudSceneRevisionRef.current = getCloudSceneRevision(elements);
       loadedCloudSceneRef.current = nextAppliedScene;
       excalidrawAPI.updateScene({
         elements,
         appState: restoredAppState,
         captureUpdate: CaptureUpdateAction.NEVER,
       });
-      applyingCloudSceneRef.current = false;
 
       if (shouldMerge) {
         cloud.queueSave(
@@ -624,7 +624,7 @@ const ExcalidrawWrapper = () => {
         );
       }
     } catch (error) {
-      applyingCloudSceneRef.current = false;
+      appliedCloudSceneRevisionRef.current = null;
       console.error("Could not restore cloud board", error);
       excalidrawAPI.updateScene({
         appState: {
@@ -1006,9 +1006,20 @@ const ExcalidrawWrapper = () => {
       });
     }
 
+    // updateScene reports through onChange after React commits. Match the
+    // applied element revisions instead of relying on a synchronous flag.
+    const shouldSuppressAppliedCloudScene =
+      shouldSuppressCloudSceneSaveForAppliedRevision(
+        appliedCloudSceneRevisionRef.current,
+        elements,
+      );
+    if (appliedCloudSceneRevisionRef.current !== null) {
+      appliedCloudSceneRevisionRef.current = null;
+    }
+
     if (
       cloud.openedBoard?.access === "owner" &&
-      !applyingCloudSceneRef.current
+      !shouldSuppressAppliedCloudScene
     ) {
       cloud.queueAssets(files);
       cloud.queueSave(serializeAsJSON(elements, appState, files, "database"), {
