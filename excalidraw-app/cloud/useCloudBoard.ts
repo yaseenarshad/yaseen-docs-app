@@ -23,6 +23,7 @@ import {
   acceptCloudSceneWithoutSave,
   shouldQueueCloudSceneSave,
 } from "./cloudSaveBaseline";
+import { createBrowserCloudTabSaveCoordinator } from "./cloudTabCoordination";
 import {
   createBoardPreviewImage,
   getBoardPreviewDelay,
@@ -50,6 +51,7 @@ import type {
   BoardPreviewScene,
 } from "./boardPreviewGeneration";
 import type { CloudSceneSaveOrigin } from "./cloudSaveBaseline";
+import type { CloudTabSaveCoordinator } from "./cloudTabCoordination";
 
 export type CloudSaveStatus =
   | "loading"
@@ -60,6 +62,7 @@ export type CloudSaveStatus =
   | "viewer";
 
 export const CLOUD_SAVE_DEBOUNCE_MS = 3_000;
+export const CLOUD_HANDOFF_VERSION_WAIT_MS = 5_000;
 
 const getRoute = () => parseCloudRoute(window.location.pathname);
 
@@ -112,8 +115,10 @@ export const useCloudBoard = () => {
     api.presentationAnimations.abandonUpload,
   );
   const versionRef = useRef(0);
+  const observedVersionRef = useRef(0);
   const saveTimerRef = useRef<number | null>(null);
   const saveInFlightRef = useRef<Promise<boolean> | null>(null);
+  const saveInFlightBoardIdRef = useRef<Id<"diagrams"> | null>(null);
   const previewTimerRef = useRef<number | null>(null);
   const previewRequestRef = useRef(0);
   const lastPreviewStartedAtRef = useRef(new Map<string, number>());
@@ -122,12 +127,107 @@ export const useCloudBoard = () => {
     route: CloudRouteGeneration;
     sceneJson: string;
     previewScene?: BoardPreviewScene;
+    recoveryAttempt: 0 | 1;
+  } | null>(null);
+  const conflictRecoveryRef = useRef<{
+    boardId: Id<"diagrams">;
+    route: CloudRouteGeneration;
+    sceneJson: string;
+    requiredVersion: number;
+  } | null>(null);
+  const blockedConflictRef = useRef<{
+    boardId: Id<"diagrams">;
+    route: CloudRouteGeneration;
+    sceneJson: string;
   } | null>(null);
   const acceptedSceneRef = useRef<string | null>(null);
   const uploadedFileIdsRef = useRef(new Set<string>());
   const uploadingFileIdsRef = useRef(new Set<string>());
   const flushSaveRef = useRef<() => Promise<boolean>>(async () => true);
+  const saveCoordinatorRef = useRef<CloudTabSaveCoordinator | null>(null);
+  const requiredVersionByBoardRef = useRef(new Map<string, number>());
+  const requiredVersionTimerByBoardRef = useRef(new Map<string, number>());
   const navigationRequestRef = useRef(0);
+
+  const requireObservedVersion = useCallback(
+    (boardId: Id<"diagrams">, version: number) => {
+      const previousRequired =
+        requiredVersionByBoardRef.current.get(boardId) ?? 0;
+      requiredVersionByBoardRef.current.set(
+        boardId,
+        Math.max(previousRequired, version),
+      );
+      const previousTimer = requiredVersionTimerByBoardRef.current.get(boardId);
+      if (previousTimer !== undefined) {
+        window.clearTimeout(previousTimer);
+      }
+      const timer = window.setTimeout(() => {
+        requiredVersionTimerByBoardRef.current.delete(boardId);
+        requiredVersionByBoardRef.current.delete(boardId);
+        const recovery = conflictRecoveryRef.current;
+        if (recovery?.boardId === boardId) {
+          const pending = pendingSceneRef.current;
+          conflictRecoveryRef.current = null;
+          blockedConflictRef.current = {
+            boardId,
+            route: recovery.route,
+            sceneJson:
+              pending?.boardId === boardId
+                ? pending.sceneJson
+                : recovery.sceneJson,
+          };
+          pendingSceneRef.current = null;
+          if (saveTimerRef.current !== null) {
+            window.clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = null;
+          }
+          setSaveStatus("conflict");
+          setErrorMessage(
+            "The latest change from another tab could not be loaded. Your local edit is still on this canvas; copy or export it before reloading.",
+          );
+          return;
+        }
+        if (
+          pendingSceneRef.current?.boardId === boardId &&
+          saveTimerRef.current === null
+        ) {
+          saveTimerRef.current = window.setTimeout(() => {
+            saveTimerRef.current = null;
+            void flushSaveRef.current();
+          }, 0);
+        }
+      }, CLOUD_HANDOFF_VERSION_WAIT_MS);
+      requiredVersionTimerByBoardRef.current.set(boardId, timer);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const coordinator = createBrowserCloudTabSaveCoordinator({
+      onRemoteClaim: ({ boardId }) => {
+        const pendingBoardId = pendingSceneRef.current?.boardId;
+        if (
+          pendingBoardId === boardId ||
+          saveInFlightBoardIdRef.current === boardId
+        ) {
+          void flushSaveRef.current();
+        }
+      },
+      onRemoteSaveComplete: ({ boardId, version }) => {
+        if (version <= observedVersionRef.current) {
+          return;
+        }
+        requireObservedVersion(boardId as Id<"diagrams">, version);
+      },
+    });
+    saveCoordinatorRef.current = coordinator;
+    return () => {
+      if (saveCoordinatorRef.current === coordinator) {
+        saveCoordinatorRef.current = null;
+      }
+      coordinator.close();
+    };
+  }, [requireObservedVersion]);
 
   const ownedBoard = useQuery(
     api.boards.openMine,
@@ -176,7 +276,15 @@ export const useCloudBoard = () => {
 
   useEffect(() => {
     versionRef.current = 0;
+    observedVersionRef.current = 0;
     pendingSceneRef.current = null;
+    conflictRecoveryRef.current = null;
+    blockedConflictRef.current = null;
+    requiredVersionByBoardRef.current.clear();
+    for (const timer of requiredVersionTimerByBoardRef.current.values()) {
+      window.clearTimeout(timer);
+    }
+    requiredVersionTimerByBoardRef.current.clear();
     acceptedSceneRef.current = null;
     uploadedFileIdsRef.current = new Set();
     uploadingFileIdsRef.current = new Set();
@@ -201,6 +309,23 @@ export const useCloudBoard = () => {
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useEffect(() => {
+    const flushPendingSave = () => {
+      void flushSaveRef.current();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        flushPendingSave();
+      }
+    };
+    window.addEventListener("pagehide", flushPendingSave);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("pagehide", flushPendingSave);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -261,11 +386,34 @@ export const useCloudBoard = () => {
   useEffect(() => {
     if (openedBoard) {
       versionRef.current = openedBoard.version;
+      observedVersionRef.current = openedBoard.version;
+      const requiredVersion = requiredVersionByBoardRef.current.get(
+        openedBoard.board._id,
+      );
+      if (
+        requiredVersion !== undefined &&
+        openedBoard.version >= requiredVersion
+      ) {
+        requiredVersionByBoardRef.current.delete(openedBoard.board._id);
+        const timer = requiredVersionTimerByBoardRef.current.get(
+          openedBoard.board._id,
+        );
+        if (timer !== undefined) {
+          window.clearTimeout(timer);
+          requiredVersionTimerByBoardRef.current.delete(openedBoard.board._id);
+        }
+      }
       acceptedSceneRef.current = acceptCloudSceneWithoutSave(
         sanitizeCloudPresentationScene(openedBoard.sceneJson),
       );
-      setSaveStatus(openedBoard.access === "viewer" ? "viewer" : "saved");
-      setErrorMessage(null);
+      const hasActiveConflict =
+        openedBoard.access === "owner" &&
+        (conflictRecoveryRef.current?.boardId === openedBoard.board._id ||
+          blockedConflictRef.current?.boardId === openedBoard.board._id);
+      if (!hasActiveConflict) {
+        setSaveStatus(openedBoard.access === "viewer" ? "viewer" : "saved");
+        setErrorMessage(null);
+      }
     } else if (openedBoard === null) {
       setSaveStatus("error");
       setErrorMessage("This board does not exist or you do not have access.");
@@ -385,29 +533,76 @@ export const useCloudBoard = () => {
     ) {
       return true;
     }
+    const requiredVersion = requiredVersionByBoardRef.current.get(
+      pending.boardId,
+    );
+    if (
+      requiredVersion !== undefined &&
+      observedVersionRef.current < requiredVersion
+    ) {
+      setSaveStatus("saving");
+      setErrorMessage("Waiting for the latest change from another tab…");
+      return false;
+    }
     pendingSceneRef.current = null;
     setSaveStatus("saving");
     const savePromise = (async () => {
       try {
-        const result = await saveBoard({
-          boardId: pending.boardId,
-          expectedVersion: versionRef.current,
-          sceneJson: pending.sceneJson,
-        });
+        const result = await (saveCoordinatorRef.current?.runSaveExclusive(
+          pending.boardId,
+          async () =>
+            await saveBoard({
+              boardId: pending.boardId,
+              expectedVersion: versionRef.current,
+              sceneJson: pending.sceneJson,
+            }),
+        ) ??
+          saveBoard({
+            boardId: pending.boardId,
+            expectedVersion: versionRef.current,
+            sceneJson: pending.sceneJson,
+          }));
         if (!isCurrentRouteCompletion(pending.route, currentRouteRef.current)) {
           return false;
         }
-        versionRef.current = result.version;
         if (result.status === "conflict") {
+          if (pending.recoveryAttempt === 1) {
+            conflictRecoveryRef.current = null;
+            blockedConflictRef.current = {
+              boardId: pending.boardId,
+              route: pending.route,
+              sceneJson: pending.sceneJson,
+            };
+            setSaveStatus("conflict");
+            setErrorMessage(
+              "This board is still changing in another tab. Your local edit is still on this canvas; wait for the other tab or copy/export it before reloading.",
+            );
+            return false;
+          }
+          conflictRecoveryRef.current = {
+            boardId: pending.boardId,
+            route: pending.route,
+            sceneJson: pending.sceneJson,
+            requiredVersion: result.version,
+          };
+          requireObservedVersion(pending.boardId, result.version);
           setSaveStatus("conflict");
           setErrorMessage(
-            "This board changed in another tab. Your next edit will save against the latest version.",
+            "This board changed in another tab. Your local edit is preserved while the latest version is reconciled.",
           );
           return false;
         }
+        versionRef.current = result.version;
+        conflictRecoveryRef.current = null;
+        blockedConflictRef.current = null;
         acceptedSceneRef.current = acceptCloudSceneWithoutSave(
           pending.sceneJson,
         );
+        saveCoordinatorRef.current?.announceSaveComplete({
+          boardId: pending.boardId,
+          generation: pending.route.generation,
+          version: result.version,
+        });
         setSaveStatus("saved");
         setErrorMessage(null);
         if (pending.previewScene) {
@@ -423,7 +618,16 @@ export const useCloudBoard = () => {
         if (!isCurrentRouteCompletion(pending.route, currentRouteRef.current)) {
           return false;
         }
-        pendingSceneRef.current ??= pending;
+        if (pending.recoveryAttempt === 1) {
+          conflictRecoveryRef.current = null;
+          blockedConflictRef.current = {
+            boardId: pending.boardId,
+            route: pending.route,
+            sceneJson: pending.sceneJson,
+          };
+        } else {
+          pendingSceneRef.current ??= pending;
+        }
         setSaveStatus("error");
         setErrorMessage(
           cause instanceof Error ? cause.message : "Cloud save failed",
@@ -432,14 +636,16 @@ export const useCloudBoard = () => {
       }
     })();
     saveInFlightRef.current = savePromise;
+    saveInFlightBoardIdRef.current = pending.boardId;
     try {
       return await savePromise;
     } finally {
       if (saveInFlightRef.current === savePromise) {
         saveInFlightRef.current = null;
+        saveInFlightBoardIdRef.current = null;
       }
     }
-  }, [openedBoard, saveBoard, scheduleBoardPreview]);
+  }, [openedBoard, requireObservedVersion, saveBoard, scheduleBoardPreview]);
 
   flushSaveRef.current = flushSave;
 
@@ -453,6 +659,25 @@ export const useCloudBoard = () => {
         return;
       }
       const persistedSceneJson = sanitizeCloudPresentationScene(sceneJson);
+      const recovery = conflictRecoveryRef.current;
+      const blockedConflict = blockedConflictRef.current;
+      const matchesCurrentBoard = (candidate: {
+        boardId: Id<"diagrams">;
+        route: CloudRouteGeneration;
+      }) =>
+        candidate.boardId === openedBoard.board._id &&
+        isCurrentRouteCompletion(candidate.route, currentRouteRef.current);
+      if (
+        origin === "server-merge" &&
+        blockedConflict &&
+        matchesCurrentBoard(blockedConflict)
+      ) {
+        setSaveStatus("conflict");
+        setErrorMessage(
+          "This board is still changing in another tab. Your local edit is still on this canvas; wait for the other tab or copy/export it before reloading.",
+        );
+        return;
+      }
       if (
         !shouldQueueCloudSceneSave(
           acceptedSceneRef.current,
@@ -463,6 +688,8 @@ export const useCloudBoard = () => {
         if (origin === "server-echo") {
           acceptedSceneRef.current =
             acceptCloudSceneWithoutSave(persistedSceneJson);
+          conflictRecoveryRef.current = null;
+          blockedConflictRef.current = null;
         }
         pendingSceneRef.current = null;
         if (saveTimerRef.current !== null) {
@@ -477,15 +704,42 @@ export const useCloudBoard = () => {
         route: { ...currentRouteRef.current },
         sceneJson: persistedSceneJson,
         previewScene,
+        recoveryAttempt:
+          origin === "server-merge" &&
+          recovery &&
+          matchesCurrentBoard(recovery) &&
+          versionRef.current >= recovery.requiredVersion
+            ? 1
+            : 0,
       };
+      if (origin === "local") {
+        if (recovery && matchesCurrentBoard(recovery)) {
+          recovery.sceneJson = persistedSceneJson;
+        } else {
+          conflictRecoveryRef.current = null;
+        }
+        blockedConflictRef.current = null;
+        saveCoordinatorRef.current?.claimWriter({
+          boardId: openedBoard.board._id,
+          generation: currentRouteRef.current.generation,
+          version: versionRef.current,
+        });
+      }
       setSaveStatus("saving");
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
       }
-      saveTimerRef.current = window.setTimeout(() => {
-        saveTimerRef.current = null;
-        void flushSave();
-      }, CLOUD_SAVE_DEBOUNCE_MS);
+      const isRecoveryRetry = pendingSceneRef.current.recoveryAttempt === 1;
+      if (isRecoveryRetry) {
+        conflictRecoveryRef.current = null;
+      }
+      saveTimerRef.current = window.setTimeout(
+        () => {
+          saveTimerRef.current = null;
+          void flushSave();
+        },
+        isRecoveryRetry ? 0 : CLOUD_SAVE_DEBOUNCE_MS,
+      );
     },
     [flushSave, openedBoard],
   );
@@ -517,6 +771,11 @@ export const useCloudBoard = () => {
       if (previewTimerRef.current !== null) {
         window.clearTimeout(previewTimerRef.current);
       }
+      for (const timer of requiredVersionTimerByBoardRef.current.values()) {
+        window.clearTimeout(timer);
+      }
+      requiredVersionTimerByBoardRef.current.clear();
+      requiredVersionByBoardRef.current.clear();
       previewRequestRef.current += 1;
     },
     [],

@@ -325,6 +325,15 @@ export const saveBoardRecord = async (
     throw new Error(`${entityName} not found`);
   }
   assertSceneSize(args.sceneJson, entityName);
+  if (
+    diagram.contentVersion !== undefined &&
+    diagram.contentVersion !== args.expectedVersion
+  ) {
+    return {
+      status: "conflict" as const,
+      version: diagram.contentVersion,
+    };
+  }
   const content = await ctx.db
     .query("diagramContents")
     .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))

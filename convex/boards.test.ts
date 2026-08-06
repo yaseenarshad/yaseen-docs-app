@@ -209,6 +209,69 @@ describe("boards compatibility API", () => {
     expect(opened?.version).toBe(1);
   });
 
+  it("rejects a metadata-known stale save without reading Board content", async () => {
+    const { t, owner } = await authenticatedTestClient();
+    const created = await owner.mutation(boardsApi.create, {
+      title: "Lightweight stale Board",
+    });
+    await t.run(async (ctx) => {
+      const content = await ctx.db
+        .query("diagramContents")
+        .withIndex("by_diagramId", (q) => q.eq("diagramId", created.boardId))
+        .unique();
+      if (!content) {
+        throw new Error("Missing test content");
+      }
+      await ctx.db.patch("diagrams", created.boardId, { contentVersion: 1 });
+      await ctx.db.delete("diagramContents", content._id);
+    });
+
+    await expect(
+      owner.mutation(boardsApi.save, {
+        boardId: created.boardId,
+        expectedVersion: 0,
+        sceneJson: JSON.stringify({
+          elements: [{ id: "stale" }],
+          appState: {},
+          files: {},
+        }),
+      }),
+    ).resolves.toEqual({ status: "conflict", version: 1 });
+  });
+
+  it("falls back to the content version for a legacy Board without metadata", async () => {
+    const { t, owner } = await authenticatedTestClient();
+    const created = await owner.mutation(boardsApi.create, {
+      title: "Legacy metadata Board",
+    });
+    await owner.mutation(boardsApi.save, {
+      boardId: created.boardId,
+      expectedVersion: 0,
+      sceneJson: JSON.stringify({
+        elements: [{ id: "winner", version: 1 }],
+        appState: {},
+        files: {},
+      }),
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.patch("diagrams", created.boardId, {
+        contentVersion: undefined,
+      });
+    });
+
+    await expect(
+      owner.mutation(boardsApi.save, {
+        boardId: created.boardId,
+        expectedVersion: 0,
+        sceneJson: JSON.stringify({
+          elements: [{ id: "stale", version: 1 }],
+          appState: {},
+          files: {},
+        }),
+      }),
+    ).resolves.toEqual({ status: "conflict", version: 1 });
+  });
+
   it("treats an identical scene save as a no-op without incrementing the version", async () => {
     const { t, owner } = await authenticatedTestClient();
     const created = await owner.mutation(boardsApi.create, {
