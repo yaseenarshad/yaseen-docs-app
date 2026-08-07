@@ -14,6 +14,36 @@ const parseElements = (sceneJson: string) => {
   return scene.elements;
 };
 
+const normalizeSceneIgnoringDerivedBindings = (sceneJson: string) => {
+  let scene: unknown;
+  try {
+    scene = JSON.parse(sceneJson);
+  } catch {
+    throw new Error("Diagram scene is invalid");
+  }
+  if (!isRecord(scene) || !Array.isArray(scene.elements)) {
+    throw new Error("Diagram scene is invalid");
+  }
+  return JSON.stringify({
+    ...scene,
+    elements: scene.elements.map((element) => {
+      if (!isRecord(element)) {
+        return element;
+      }
+      const semanticElement = { ...element };
+      delete semanticElement.boundElements;
+      return semanticElement;
+    }),
+  });
+};
+
+export const areScenesEquivalentIgnoringDerivedBindings = (
+  currentSceneJson: string,
+  incomingSceneJson: string,
+) =>
+  normalizeSceneIgnoringDerivedBindings(currentSceneJson) ===
+  normalizeSceneIgnoringDerivedBindings(incomingSceneJson);
+
 export const hasElementVersionRegression = (
   currentSceneJson: string,
   incomingSceneJson: string,

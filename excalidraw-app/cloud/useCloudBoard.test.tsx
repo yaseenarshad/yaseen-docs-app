@@ -6,6 +6,7 @@ import {
   CLOUD_SAVE_DEBOUNCE_MS,
   useCloudBoard,
 } from "./useCloudBoard";
+import { CLOUD_SAVE_PROTOCOL_VERSION } from "./cloudSaveProtocol";
 
 const mocks = vi.hoisted(() => ({
   mutate: vi.fn(),
@@ -229,6 +230,7 @@ describe("useCloudBoard preview scheduling", () => {
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
     expect(mocks.mutate).toHaveBeenCalledWith({
       boardId: "board-id",
+      clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
       expectedVersion: 2,
       sceneJson: "merged local and peer edit",
     });
@@ -378,10 +380,31 @@ describe("useCloudBoard preview scheduling", () => {
     expect(mocks.mutate).toHaveBeenCalledTimes(2);
     expect(mocks.mutate).toHaveBeenLastCalledWith({
       boardId: "board-id",
+      clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
       expectedVersion: 2,
       sceneJson: "reconciled local edit",
     });
     expect(result.current.saveStatus).toBe("saved");
+  });
+
+  it("stops retrying and requires a reload when the save protocol is outdated", async () => {
+    mocks.mutate.mockResolvedValue({ status: "upgrade-required" });
+    const { result } = renderHook(() => useCloudBoard());
+
+    act(() => result.current.queueSave("legacy client edit"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+
+    expect(mocks.mutate).toHaveBeenCalledTimes(1);
+    expect(result.current.saveStatus).toBe("error");
+    expect(result.current.errorMessage).toBe(
+      "This tab is outdated and cannot save safely. Reload the page before editing.",
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS * 3);
+    });
+    expect(mocks.mutate).toHaveBeenCalledTimes(1);
   });
 
   it("coalesces newer local edits without saving before the conflicting baseline is observed", async () => {

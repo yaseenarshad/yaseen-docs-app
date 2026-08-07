@@ -36,6 +36,40 @@ export const shouldSuppressCloudSceneSaveForAppliedRevision = (
   appliedRevision !== null &&
   appliedRevision === getCloudSceneRevision(elements);
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+export const getCloudSceneSemanticRevision = (sceneJson: string) => {
+  const scene: unknown = JSON.parse(sceneJson);
+  if (!isRecord(scene) || !Array.isArray(scene.elements)) {
+    return sceneJson;
+  }
+  return JSON.stringify({
+    ...scene,
+    elements: scene.elements.map((element) => {
+      if (!isRecord(element)) {
+        return element;
+      }
+      const semanticElement = { ...element };
+      delete semanticElement.boundElements;
+      return semanticElement;
+    }),
+  });
+};
+
+export const classifyAppliedCloudSceneChange = (
+  appliedRevision: string | null,
+  sceneJson: string,
+) => {
+  const suppress =
+    appliedRevision !== null &&
+    appliedRevision === getCloudSceneSemanticRevision(sceneJson);
+  return {
+    suppress,
+    nextAppliedRevision: suppress ? appliedRevision : null,
+  };
+};
+
 export const hasUnpersistedCloudElements = (
   reconciledElements: readonly VersionedCloudElement[],
   persistedElements: readonly VersionedCloudElement[],

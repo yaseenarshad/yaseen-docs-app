@@ -22,6 +22,7 @@ import type * as boardPreviewModel from "../boardPreviewModel.js";
 import type * as boardPreviewPersistence from "../boardPreviewPersistence.js";
 import type * as boardPreviews from "../boardPreviews.js";
 import type * as boards from "../boards.js";
+import type * as cloudSaveProtocol from "../cloudSaveProtocol.js";
 import type * as crons from "../crons.js";
 import type * as diagramHistory from "../diagramHistory.js";
 import type * as diagrams from "../diagrams.js";
@@ -64,6 +65,7 @@ declare const fullApi: ApiFromModules<{
   boardPreviewPersistence: typeof boardPreviewPersistence;
   boardPreviews: typeof boardPreviews;
   boards: typeof boards;
+  cloudSaveProtocol: typeof cloudSaveProtocol;
   crons: typeof crons;
   diagramHistory: typeof diagramHistory;
   diagrams: typeof diagrams;

@@ -124,6 +124,7 @@ export const openShared = query({
 export const save = mutation({
   args: {
     boardId: v.id("diagrams"),
+    clientSaveProtocol: v.optional(v.number()),
     expectedVersion: v.number(),
     sceneJson: v.string(),
   },
@@ -136,6 +137,9 @@ export const save = mutation({
     v.object({
       status: v.literal("conflict"),
       version: v.number(),
+    }),
+    v.object({
+      status: v.literal("upgrade-required"),
     }),
   ),
   handler: async (ctx, args) => await saveBoardRecord(ctx, args, "Board"),

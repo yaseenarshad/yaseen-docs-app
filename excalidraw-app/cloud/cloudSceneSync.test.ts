@@ -40,6 +40,90 @@ describe("cloud scene synchronization", () => {
     ).toBe(false);
   });
 
+  it("keeps suppressing repeated binding-repair echoes until a semantic change occurs", () => {
+    const getCloudSceneSemanticRevision = (
+      cloudSceneSync as Record<string, unknown>
+    ).getCloudSceneSemanticRevision;
+    const classifyAppliedCloudSceneChange = (
+      cloudSceneSync as Record<string, unknown>
+    ).classifyAppliedCloudSceneChange;
+
+    expect(typeof getCloudSceneSemanticRevision).toBe("function");
+    expect(typeof classifyAppliedCloudSceneChange).toBe("function");
+    if (
+      typeof getCloudSceneSemanticRevision !== "function" ||
+      typeof classifyAppliedCloudSceneChange !== "function"
+    ) {
+      return;
+    }
+
+    const serverScene = JSON.stringify({
+      elements: [
+        {
+          id: "container",
+          type: "rectangle",
+          version: 4,
+          versionNonce: 40,
+          boundElements: [{ id: "label", type: "text" }],
+        },
+        {
+          id: "label",
+          type: "text",
+          version: 2,
+          versionNonce: 20,
+          containerId: "container",
+        },
+      ],
+      appState: { viewBackgroundColor: "#ffffff" },
+      files: {},
+    });
+    const repairedEcho = JSON.stringify({
+      elements: [
+        {
+          id: "container",
+          type: "rectangle",
+          version: 4,
+          versionNonce: 40,
+          boundElements: [],
+        },
+        {
+          id: "label",
+          type: "text",
+          version: 2,
+          versionNonce: 20,
+          containerId: "container",
+        },
+      ],
+      appState: { viewBackgroundColor: "#ffffff" },
+      files: {},
+    });
+    const appStateEdit = JSON.stringify({
+      ...JSON.parse(repairedEcho),
+      appState: { viewBackgroundColor: "#f5f5f5" },
+    });
+    const appliedRevision = getCloudSceneSemanticRevision(serverScene);
+
+    expect(getCloudSceneSemanticRevision(repairedEcho)).toBe(appliedRevision);
+    expect(
+      classifyAppliedCloudSceneChange(appliedRevision, repairedEcho),
+    ).toEqual({
+      suppress: true,
+      nextAppliedRevision: appliedRevision,
+    });
+    expect(
+      classifyAppliedCloudSceneChange(appliedRevision, repairedEcho),
+    ).toEqual({
+      suppress: true,
+      nextAppliedRevision: appliedRevision,
+    });
+    expect(
+      classifyAppliedCloudSceneChange(appliedRevision, appStateEdit),
+    ).toEqual({
+      suppress: false,
+      nextAppliedRevision: null,
+    });
+  });
+
   it("detects a reconciled element that is newer than the server echo", () => {
     const hasUnpersistedCloudElements = (
       cloudSceneSync as Record<string, unknown>

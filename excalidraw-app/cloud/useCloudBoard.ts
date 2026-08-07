@@ -24,6 +24,7 @@ import {
   shouldQueueCloudSceneSave,
 } from "./cloudSaveBaseline";
 import { createBrowserCloudTabSaveCoordinator } from "./cloudTabCoordination";
+import { CLOUD_SAVE_PROTOCOL_VERSION } from "./cloudSaveProtocol";
 import {
   createBoardPreviewImage,
   getBoardPreviewDelay,
@@ -553,12 +554,14 @@ export const useCloudBoard = () => {
           async () =>
             await saveBoard({
               boardId: pending.boardId,
+              clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
               expectedVersion: versionRef.current,
               sceneJson: pending.sceneJson,
             }),
         ) ??
           saveBoard({
             boardId: pending.boardId,
+            clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
             expectedVersion: versionRef.current,
             sceneJson: pending.sceneJson,
           }));
@@ -589,6 +592,13 @@ export const useCloudBoard = () => {
           setSaveStatus("conflict");
           setErrorMessage(
             "This board changed in another tab. Your local edit is preserved while the latest version is reconciled.",
+          );
+          return false;
+        }
+        if (result.status === "upgrade-required") {
+          setSaveStatus("error");
+          setErrorMessage(
+            "This tab is outdated and cannot save safely. Reload the page before editing.",
           );
           return false;
         }

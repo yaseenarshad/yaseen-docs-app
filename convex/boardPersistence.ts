@@ -4,7 +4,11 @@ import { internal } from "./_generated/api";
 import { createAssetDeleteGrant } from "./assetDeletePersistence";
 import { toBoardPreviewSummary } from "./boardPreviewModel";
 import { createDiagramSnapshotIfNeeded } from "./diagramHistory";
-import { hasElementVersionRegression } from "./sceneConflict";
+import { CLOUD_SAVE_PROTOCOL_VERSION } from "./cloudSaveProtocol";
+import {
+  areScenesEquivalentIgnoringDerivedBindings,
+  hasElementVersionRegression,
+} from "./sceneConflict";
 
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -314,11 +318,15 @@ export const saveBoardRecord = async (
   ctx: MutationCtx,
   args: {
     boardId: Id<"diagrams">;
+    clientSaveProtocol?: number;
     expectedVersion: number;
     sceneJson: string;
   },
   entityName: string,
 ) => {
+  if (args.clientSaveProtocol !== CLOUD_SAVE_PROTOCOL_VERSION) {
+    return { status: "upgrade-required" as const };
+  }
   const ownerId = await requireUserId(ctx);
   const diagram = await ctx.db.get("diagrams", args.boardId);
   if (!diagram || diagram.ownerId !== ownerId) {
@@ -344,7 +352,13 @@ export const saveBoardRecord = async (
   if (content.version !== args.expectedVersion) {
     return { status: "conflict" as const, version: content.version };
   }
-  if (content.sceneJson === args.sceneJson) {
+  if (
+    content.sceneJson === args.sceneJson ||
+    areScenesEquivalentIgnoringDerivedBindings(
+      content.sceneJson,
+      args.sceneJson,
+    )
+  ) {
     if (diagram.contentVersion !== content.version) {
       await ctx.db.patch("diagrams", diagram._id, {
         contentVersion: content.version,

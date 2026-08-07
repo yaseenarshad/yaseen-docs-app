@@ -5,6 +5,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 
 import { api } from "./_generated/api";
+import { CLOUD_SAVE_PROTOCOL_VERSION as CLIENT_SAVE_PROTOCOL } from "./cloudSaveProtocol";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -51,6 +52,7 @@ describe("boards compatibility API", () => {
 
     const saved = await owner.mutation(boardsApi.save, {
       boardId: created.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
       expectedVersion: 0,
       sceneJson: JSON.stringify({
         elements: [],
@@ -183,6 +185,7 @@ describe("boards compatibility API", () => {
     await expect(
       owner.mutation(boardsApi.save, {
         boardId: created.boardId,
+        clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
         expectedVersion: 0,
         sceneJson: firstScene,
       }),
@@ -190,6 +193,7 @@ describe("boards compatibility API", () => {
     await expect(
       owner.mutation(boardsApi.save, {
         boardId: created.boardId,
+        clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
         expectedVersion: 0,
         sceneJson: JSON.stringify({
           elements: [{ id: "stale" }],
@@ -229,6 +233,7 @@ describe("boards compatibility API", () => {
     await expect(
       owner.mutation(boardsApi.save, {
         boardId: created.boardId,
+        clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
         expectedVersion: 0,
         sceneJson: JSON.stringify({
           elements: [{ id: "stale" }],
@@ -239,6 +244,93 @@ describe("boards compatibility API", () => {
     ).resolves.toEqual({ status: "conflict", version: 1 });
   });
 
+  it("rejects a legacy save protocol before reading Board content", async () => {
+    const { t, owner } = await authenticatedTestClient();
+    const created = await owner.mutation(boardsApi.create, {
+      title: "Legacy save client",
+    });
+    await t.run(async (ctx) => {
+      const content = await ctx.db
+        .query("diagramContents")
+        .withIndex("by_diagramId", (q) => q.eq("diagramId", created.boardId))
+        .unique();
+      if (!content) {
+        throw new Error("Missing test content");
+      }
+      await ctx.db.delete("diagramContents", content._id);
+    });
+
+    await expect(
+      owner.mutation(boardsApi.save, {
+        boardId: created.boardId,
+        expectedVersion: 0,
+        sceneJson: JSON.stringify({
+          elements: [{ id: "legacy", version: 1 }],
+          appState: {},
+          files: {},
+        }),
+      }),
+    ).resolves.toEqual({ status: "upgrade-required" });
+  });
+
+  it("does not increment the version for a binding-repair-only echo", async () => {
+    const { owner } = await authenticatedTestClient();
+    const created = await owner.mutation(boardsApi.create, {
+      title: "Binding repair echo",
+    });
+    const firstScene = JSON.stringify({
+      elements: [
+        {
+          id: "container",
+          type: "rectangle",
+          version: 4,
+          versionNonce: 40,
+          boundElements: [{ id: "label", type: "text" }],
+        },
+        {
+          id: "label",
+          type: "text",
+          version: 2,
+          versionNonce: 20,
+          containerId: "container",
+        },
+      ],
+      appState: { viewBackgroundColor: "#ffffff" },
+      files: {},
+    });
+    const repairedEcho = JSON.stringify({
+      ...JSON.parse(firstScene),
+      elements: [
+        {
+          ...JSON.parse(firstScene).elements[0],
+          boundElements: [],
+        },
+        JSON.parse(firstScene).elements[1],
+      ],
+    });
+
+    const first = await owner.mutation(boardsApi.save, {
+      boardId: created.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
+      expectedVersion: 0,
+      sceneJson: firstScene,
+    });
+    expect(first).toMatchObject({ status: "saved", version: 1 });
+    const echo = await owner.mutation(boardsApi.save, {
+      boardId: created.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
+      expectedVersion: 1,
+      sceneJson: repairedEcho,
+    });
+
+    expect(echo).toMatchObject({ status: "saved", version: 1 });
+    const opened = await owner.query(boardsApi.openMine, {
+      slug: created.slug,
+    });
+    expect(opened?.version).toBe(1);
+    expect(opened?.sceneJson).toBe(firstScene);
+  });
+
   it("falls back to the content version for a legacy Board without metadata", async () => {
     const { t, owner } = await authenticatedTestClient();
     const created = await owner.mutation(boardsApi.create, {
@@ -246,6 +338,7 @@ describe("boards compatibility API", () => {
     });
     await owner.mutation(boardsApi.save, {
       boardId: created.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
       expectedVersion: 0,
       sceneJson: JSON.stringify({
         elements: [{ id: "winner", version: 1 }],
@@ -262,6 +355,7 @@ describe("boards compatibility API", () => {
     await expect(
       owner.mutation(boardsApi.save, {
         boardId: created.boardId,
+        clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
         expectedVersion: 0,
         sceneJson: JSON.stringify({
           elements: [{ id: "stale", version: 1 }],
@@ -284,6 +378,7 @@ describe("boards compatibility API", () => {
     });
     const first = await owner.mutation(boardsApi.save, {
       boardId: created.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
       expectedVersion: 0,
       sceneJson,
     });
@@ -301,6 +396,7 @@ describe("boards compatibility API", () => {
 
     const duplicate = await owner.mutation(boardsApi.save, {
       boardId: created.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
       expectedVersion: first.version,
       sceneJson,
     });
@@ -400,6 +496,7 @@ describe("boards compatibility API", () => {
     });
     const first = await owner.mutation(boardsApi.save, {
       boardId: created.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
       expectedVersion: 0,
       sceneJson: JSON.stringify({
         elements: [{ id: "shape", version: 1 }],
@@ -412,6 +509,7 @@ describe("boards compatibility API", () => {
     }
     const second = await owner.mutation(boardsApi.save, {
       boardId: created.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
       expectedVersion: first.version,
       sceneJson: JSON.stringify({
         elements: [{ id: "shape", version: 2 }],

@@ -5,6 +5,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 
 import { api, internal } from "./_generated/api";
+import { CLOUD_SAVE_PROTOCOL_VERSION as CLIENT_SAVE_PROTOCOL } from "./cloudSaveProtocol";
 import schema from "./schema";
 
 import type { Id } from "./_generated/dataModel";
@@ -31,6 +32,7 @@ const createSavedBoard = async (
   const created = await owner.mutation(api.boards.create, { title });
   const saved = await owner.mutation(api.boards.save, {
     boardId: created.boardId,
+    clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
     expectedVersion: 0,
     sceneJson: JSON.stringify({
       elements: [{ id: "shape", type: "rectangle", version: 1 }],
@@ -240,6 +242,7 @@ describe("durable Board previews", () => {
     );
     const nextSave = await owner.mutation(api.boards.save, {
       boardId: board.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
       expectedVersion: board.version,
       sceneJson: JSON.stringify({
         elements: [{ id: "shape", type: "rectangle", version: 2 }],
@@ -283,6 +286,7 @@ describe("durable Board previews", () => {
 
     const thirdSave = await owner.mutation(api.boards.save, {
       boardId: board.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
       expectedVersion: nextSave.version,
       sceneJson: JSON.stringify({
         elements: [{ id: "shape", type: "rectangle", version: 3 }],
@@ -333,6 +337,7 @@ describe("durable Board previews", () => {
     });
     await owner.mutation(api.boards.save, {
       boardId: board.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
       expectedVersion: board.version,
       sceneJson: JSON.stringify({
         elements: [{ id: "shape", type: "rectangle", version: 2 }],
@@ -371,6 +376,7 @@ describe("durable Board previews", () => {
 
     const saved = await owner.mutation(api.boards.save, {
       boardId: legacy.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
       expectedVersion: 0,
       sceneJson: JSON.stringify({
         elements: [],

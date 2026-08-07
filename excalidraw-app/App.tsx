@@ -150,12 +150,12 @@ import { CloudAccount } from "./cloud/CloudAccount";
 import { CloudShareDialog } from "./cloud/CloudShareDialog";
 import { getCloudDocumentTitle } from "./cloud/cloudDocumentTitle";
 import {
-  getCloudSceneRevision,
+  classifyAppliedCloudSceneChange,
+  getCloudSceneSemanticRevision,
   hasUnpersistedCloudElements,
   isSameCloudRoute,
   resolveCloudViewport,
   shouldApplyCloudScene,
-  shouldSuppressCloudSceneSaveForAppliedRevision,
 } from "./cloud/cloudSceneSync";
 import {
   cloudRouteOwnsScene,
@@ -535,7 +535,17 @@ const ExcalidrawWrapper = () => {
       return;
     }
     cloud.discardPendingSave();
-    appliedCloudSceneRevisionRef.current = getCloudSceneRevision([]);
+    appliedCloudSceneRevisionRef.current = getCloudSceneSemanticRevision(
+      serializeAsJSON(
+        [],
+        {
+          ...excalidrawAPI.getAppState(),
+          viewModeEnabled: cloud.route.kind === "shared",
+        },
+        {},
+        "database",
+      ),
+    );
     excalidrawAPI.updateScene({
       elements: [],
       appState: {
@@ -608,7 +618,8 @@ const ExcalidrawWrapper = () => {
       } else {
         cloud.acceptSceneWithoutSave(appliedSceneJson);
       }
-      appliedCloudSceneRevisionRef.current = getCloudSceneRevision(elements);
+      appliedCloudSceneRevisionRef.current =
+        getCloudSceneSemanticRevision(appliedSceneJson);
       loadedCloudSceneRef.current = nextAppliedScene;
       excalidrawAPI.updateScene({
         elements,
@@ -1006,23 +1017,29 @@ const ExcalidrawWrapper = () => {
       });
     }
 
-    // updateScene reports through onChange after React commits. Match the
-    // applied element revisions instead of relying on a synchronous flag.
-    const shouldSuppressAppliedCloudScene =
-      shouldSuppressCloudSceneSaveForAppliedRevision(
-        appliedCloudSceneRevisionRef.current,
-        elements,
-      );
-    if (appliedCloudSceneRevisionRef.current !== null) {
-      appliedCloudSceneRevisionRef.current = null;
-    }
+    const serializedCloudScene =
+      cloud.openedBoard?.access === "owner"
+        ? serializeAsJSON(elements, appState, files, "database")
+        : null;
+    // updateScene can report more than once as bindings and files settle.
+    // Keep suppressing the applied semantic revision until a real local
+    // element, app-state, or file change produces a different revision.
+    const appliedCloudChange = serializedCloudScene
+      ? classifyAppliedCloudSceneChange(
+          appliedCloudSceneRevisionRef.current,
+          serializedCloudScene,
+        )
+      : { suppress: false, nextAppliedRevision: null };
+    appliedCloudSceneRevisionRef.current =
+      appliedCloudChange.nextAppliedRevision;
 
     if (
       cloud.openedBoard?.access === "owner" &&
-      !shouldSuppressAppliedCloudScene
+      serializedCloudScene &&
+      !appliedCloudChange.suppress
     ) {
       cloud.queueAssets(files);
-      cloud.queueSave(serializeAsJSON(elements, appState, files, "database"), {
+      cloud.queueSave(serializedCloudScene, {
         elements: [...elements],
         appState: { ...appState },
         files: { ...files },
