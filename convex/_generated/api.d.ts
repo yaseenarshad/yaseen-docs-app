@@ -24,6 +24,7 @@ import type * as boardPreviews from "../boardPreviews.js";
 import type * as boardSceneCleanup from "../boardSceneCleanup.js";
 import type * as boardSceneModel from "../boardSceneModel.js";
 import type * as boardScenePersistence from "../boardScenePersistence.js";
+import type * as boardSceneTransport from "../boardSceneTransport.js";
 import type * as boardScenes from "../boardScenes.js";
 import type * as boards from "../boards.js";
 import type * as cloudSaveProtocol from "../cloudSaveProtocol.js";
@@ -47,6 +48,7 @@ import type * as savedComponents from "../savedComponents.js";
 import type * as sceneConflict from "../sceneConflict.js";
 import type * as snapshotPolicy from "../snapshotPolicy.js";
 import type * as snapshotRetention from "../snapshotRetention.js";
+import type * as zzProbe from "../zzProbe.js";
 
 import type {
   ApiFromModules,
@@ -71,6 +73,7 @@ declare const fullApi: ApiFromModules<{
   boardSceneCleanup: typeof boardSceneCleanup;
   boardSceneModel: typeof boardSceneModel;
   boardScenePersistence: typeof boardScenePersistence;
+  boardSceneTransport: typeof boardSceneTransport;
   boardScenes: typeof boardScenes;
   boards: typeof boards;
   cloudSaveProtocol: typeof cloudSaveProtocol;
@@ -94,6 +97,7 @@ declare const fullApi: ApiFromModules<{
   sceneConflict: typeof sceneConflict;
   snapshotPolicy: typeof snapshotPolicy;
   snapshotRetention: typeof snapshotRetention;
+  zzProbe: typeof zzProbe;
 }>;
 
 /**

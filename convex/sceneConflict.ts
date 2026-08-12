@@ -37,6 +37,21 @@ const normalizeSceneIgnoringDerivedBindings = (sceneJson: string) => {
   });
 };
 
+/**
+ * The binding-insensitive projection a semantic digest is taken over. It
+ * mirrors the client's `getCloudSceneSemanticRevision` exactly, including its
+ * fallback for a scene that is not a recognisable document, so a scene written
+ * by a server-side action and the same scene echoed back by a client produce
+ * the same `semanticSha256`.
+ */
+export const getSceneSemanticRevision = (sceneJson: string) => {
+  try {
+    return normalizeSceneIgnoringDerivedBindings(sceneJson);
+  } catch {
+    return sceneJson;
+  }
+};
+
 export const areScenesEquivalentIgnoringDerivedBindings = (
   currentSceneJson: string,
   incomingSceneJson: string,
