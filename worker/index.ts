@@ -1,3 +1,5 @@
+import { referencesBoardSceneNamespace } from "../board-scenes/types";
+
 import { handleImageStudioRequest } from "./imageStudio";
 import {
   backgroundRemovalAssetManifest,
@@ -5,6 +7,7 @@ import {
 } from "./backgroundRemovalAssets";
 import { getCanonicalRedirectResponse } from "./canonicalRedirect";
 import { getLegacyServiceWorkerResponse } from "./legacyServiceWorker";
+import { handleBoardSceneRequest, isBoardSceneRoute } from "./boardScenes";
 
 interface Env {
   ASSETS: Fetcher;
@@ -294,6 +297,9 @@ const worker: ExportedHandler<Env> = {
     if (url.pathname.startsWith("/api/image-studio/")) {
       return await handleImageStudioRequest(request, env);
     }
+    if (isBoardSceneRoute(url.pathname)) {
+      return await handleBoardSceneRequest(request, env, url);
+    }
     if (url.pathname === "/api/assets" && request.method === "POST") {
       return await uploadAsset(request, env);
     }
@@ -326,7 +332,8 @@ const worker: ExportedHandler<Env> = {
       if (
         !objectKey ||
         objectKey.includes("..") ||
-        objectKey.includes("/presentation-animations/")
+        objectKey.includes("/presentation-animations/") ||
+        referencesBoardSceneNamespace(objectKey)
       ) {
         return new Response("Invalid image key", { status: 400 });
       }
