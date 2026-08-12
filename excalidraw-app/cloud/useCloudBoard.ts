@@ -1239,11 +1239,19 @@ export const useCloudBoard = () => {
           saveCoordinatorRef.current?.runSaveExclusive(boardId, task) ?? task(),
       })
       .then((entry) => {
+        if (!entry) {
+          return;
+        }
+        // Claiming took the entry out of the journal to keep a second tab from
+        // replaying it too. A tab that then declines to replay it is holding
+        // the only copy of an unsaved edit, so it hands the entry back instead
+        // of spending it: the next open reclassifies it against the version
+        // that is current by then.
         if (
-          !entry ||
           !isCurrentRouteCompletion(startedRoute, currentRouteRef.current) ||
           versionRef.current !== serverVersion
         ) {
+          void getCrashJournal().write(entry);
           return;
         }
         queueSave(entry.sceneJson);
