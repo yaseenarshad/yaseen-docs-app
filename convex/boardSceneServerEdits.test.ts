@@ -402,6 +402,51 @@ describe("programmatic edits on a migrated Board", () => {
 });
 
 describe("history restore on a migrated Board", () => {
+  it("lists legacy and R2 snapshots together in the existing order", async () => {
+    const { t, owner, board } = await setup();
+    await t.run(async (ctx) => {
+      const createdBy = (await ctx.db.query("users").first())!._id;
+      for (const version of [1, 3]) {
+        await ctx.db.insert("diagramSnapshots", {
+          diagramId: board.boardId,
+          createdBy,
+          sceneJson: textScene(`legacy-${version}`),
+          version,
+          createdAt: 1_000 + version,
+        });
+      }
+      for (const version of [2, 4]) {
+        await ctx.db.insert("diagramSnapshots", {
+          diagramId: board.boardId,
+          createdBy,
+          objectKey: `board-scenes/${board.boardId}/v${version}.bin`,
+          encoding: "deflate-v1",
+          rawSize: 10,
+          compressedSize: 5,
+          rawSha256: "a".repeat(64),
+          compressedSha256: "b".repeat(64),
+          semanticSha256: "c".repeat(64),
+          etag: `etag-${version}`,
+          version,
+          createdAt: 1_000 + version,
+        });
+      }
+    });
+
+    const history = await owner.query(api.boardHistory.list, {
+      boardId: board.boardId,
+    });
+
+    expect(history.map((entry) => entry.version)).toEqual([4, 3, 2, 1]);
+    for (const entry of history) {
+      expect(Object.keys(entry).sort()).toEqual([
+        "_id",
+        "createdAt",
+        "version",
+      ]);
+    }
+  });
+
   it("commits an R2 snapshot as a new version and preserves the displaced one", async () => {
     const { t, owner, board, harness } = await setup();
     await clientCommit(owner, board.boardId, "migration", 0, textScene("v0"));
