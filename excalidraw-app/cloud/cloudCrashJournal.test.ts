@@ -184,6 +184,51 @@ describe("cloud crash journal degradation", () => {
     ).resolves.toBeNull();
   });
 
+  it("reports a journal whose writes are landing as healthy", async () => {
+    const { storage } = createMemoryStorage();
+    const journal = createCloudCrashJournal(storage);
+
+    expect(journal.isDegraded()).toBe(false);
+    await journal.write(createEntry());
+    expect(journal.isDegraded()).toBe(false);
+  });
+
+  // A swallowed write failure still means the pending edit was never stored, so
+  // the failure is remembered even though the caller never sees it.
+  it("reports a journal that could not store the pending edit as degraded", async () => {
+    const { storage } = createMemoryStorage();
+    const journal = createCloudCrashJournal({
+      ...storage,
+      write: () => Promise.reject(new Error("IndexedDB blocked")),
+    });
+
+    await journal.write(createEntry());
+
+    expect(journal.isDegraded()).toBe(true);
+  });
+
+  it("reports the journal healthy again once a write lands", async () => {
+    const { storage, records } = createMemoryStorage();
+    let isBlocked = true;
+    const journal = createCloudCrashJournal({
+      ...storage,
+      write: async (boardId, entry) => {
+        if (isBlocked) {
+          throw new Error("IndexedDB blocked");
+        }
+        await storage.write(boardId, entry);
+      },
+    });
+
+    await journal.write(createEntry());
+    expect(journal.isDegraded()).toBe(true);
+    isBlocked = false;
+    await journal.write(createEntry());
+
+    expect(journal.isDegraded()).toBe(false);
+    expect(records.get("board-1")).toEqual(createEntry());
+  });
+
   it("degrades when the exclusive section itself is unavailable", async () => {
     const { storage } = createMemoryStorage();
     const journal = createCloudCrashJournal(storage);

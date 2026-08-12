@@ -65,6 +65,7 @@ const mocks = vi.hoisted(() => ({
   journalWrite: vi.fn(),
   journalClear: vi.fn(),
   journalClaim: vi.fn(),
+  journalIsDegraded: vi.fn(),
   openedBoard: {
     access: "owner" as const,
     board: {
@@ -294,12 +295,15 @@ describe("useCloudBoard preview scheduling", () => {
     mocks.journalClear.mockResolvedValue(undefined);
     mocks.journalClaim.mockReset();
     mocks.journalClaim.mockResolvedValue(null);
+    mocks.journalIsDegraded.mockReset();
+    mocks.journalIsDegraded.mockReturnValue(false);
     mocks.createJournal.mockReset();
     mocks.createJournal.mockImplementation(() => ({
       read: mocks.journalRead,
       write: mocks.journalWrite,
       clear: mocks.journalClear,
       claim: mocks.journalClaim,
+      isDegraded: mocks.journalIsDegraded,
     }));
     mocks.sceneQuery.mockReset();
     mocks.sceneQuery.mockImplementation(async () => ({
@@ -1835,6 +1839,145 @@ describe("useCloudBoard preview scheduling", () => {
       expect.objectContaining({ sceneJson: "duplicated elements" }),
     );
     rendered.unmount();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Warning before a close that would strand work
+  // ---------------------------------------------------------------------------
+
+  /** A `beforeunload` a browser would answer by showing its own leave dialog. */
+  const dispatchBeforeUnload = () => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event;
+  };
+
+  /** Leaves the Board in the retryable save-failure state, edit still pending. */
+  const failOneSave = async (
+    result: { current: ReturnType<typeof useCloudBoard> },
+    sceneJson = "edit the cloud rejected",
+  ) => {
+    mocks.mutate.mockRejectedValueOnce(new Error("offline"));
+    act(() => result.current.queueSave(sceneJson));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+    expect(result.current.saveStatus).toBe("error");
+  };
+
+  it("warns before closing while a failing save leaves the edit on this machine", async () => {
+    const { result } = await renderCloudBoard();
+    await failOneSave(result);
+
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
+  });
+
+  it("warns before closing when the journal cannot store the pending edit", async () => {
+    mocks.journalIsDegraded.mockReturnValue(true);
+    const { result } = await renderCloudBoard();
+
+    act(() => result.current.queueSave("edit no journal could store"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_CRASH_JOURNAL_DEBOUNCE_MS);
+    });
+
+    expect(result.current.saveStatus).toBe("saving");
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
+    act(() => result.current.discardPendingSave());
+  });
+
+  it("stays silent while an ordinary pending edit waits for its save", async () => {
+    const { result } = await renderCloudBoard();
+
+    act(() => result.current.queueSave("ordinary edit"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_CRASH_JOURNAL_DEBOUNCE_MS);
+    });
+
+    expect(result.current.saveStatus).toBe("saving");
+    expect(mocks.journalWrite).toHaveBeenCalledWith(
+      expect.objectContaining({ sceneJson: "ordinary edit" }),
+    );
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false);
+
+    await flushQueuedSave(result);
+    expect(result.current.saveStatus).toBe("saved");
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false);
+  });
+
+  it("stays silent in the error state once no edit is pending", async () => {
+    const { result } = await renderCloudBoard();
+    await failOneSave(result);
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
+
+    act(() => result.current.discardPendingSave());
+
+    expect(result.current.saveStatus).toBe("error");
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false);
+  });
+
+  it("never warns on a shared board route", async () => {
+    window.history.replaceState({}, "", "/s/share-token");
+    mocks.journalIsDegraded.mockReturnValue(true);
+    const { result } = await renderCloudBoard();
+
+    expect(result.current.isViewer).toBe(true);
+    act(() => result.current.queueSave("viewer edit"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false);
+  });
+
+  it("stops warning once the save recovers", async () => {
+    const { result } = await renderCloudBoard();
+    await failOneSave(result);
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
+
+    act(() => result.current.queueSave("edit the retry saved"));
+    await flushQueuedSave(result);
+
+    expect(result.current.saveStatus).toBe("saved");
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false);
+  });
+
+  it("stops warning once the journal stores the pending edit again", async () => {
+    mocks.journalIsDegraded.mockReturnValue(true);
+    const { result } = await renderCloudBoard();
+
+    act(() => result.current.queueSave("edit the journal missed"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_CRASH_JOURNAL_DEBOUNCE_MS);
+    });
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
+
+    mocks.journalIsDegraded.mockReturnValue(false);
+
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false);
+    act(() => result.current.discardPendingSave());
+  });
+
+  // The warning only asks the browser to confirm; leaving still has to save.
+  it("leaves the pagehide flush untouched while the warning is active", async () => {
+    const { result } = await renderCloudBoard();
+    await failOneSave(result);
+    expect(mocks.mutate).toHaveBeenCalledTimes(1);
+
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
+    expect(mocks.mutate).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      window.dispatchEvent(new Event("pagehide"));
+      await Promise.resolve();
+    });
+    await settleUntil(() => mocks.mutate.mock.calls.length > 1);
+
+    expect(mocks.mutate).toHaveBeenCalledTimes(2);
+    expect(mocks.mutate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sceneJson: "edit the cloud rejected" }),
+    );
+    expect(result.current.saveStatus).toBe("saved");
   });
 
   it("drains pending scene cleanup capabilities in the background", async () => {

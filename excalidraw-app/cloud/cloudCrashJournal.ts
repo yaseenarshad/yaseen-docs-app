@@ -84,6 +84,12 @@ export const createCloudCrashJournal = (storage: CloudCrashJournalStorage) => {
   const readEntry = async (boardId: string) =>
     parseCloudCrashJournalEntry(await storage.read(boardId));
 
+  // A swallowed write failure is invisible to the caller but not harmless: for
+  // as long as it lasts, a pending edit has nowhere local to survive a crash.
+  // The last write outcome is remembered so the editor can say so; nothing
+  // about when or in what order the journal writes changes.
+  let areWritesFailing = false;
+
   return {
     read: (boardId: string) =>
       enqueue<CloudCrashJournalEntry | null>(
@@ -92,8 +98,17 @@ export const createCloudCrashJournal = (storage: CloudCrashJournalStorage) => {
       ),
     write: (entry: CloudCrashJournalEntry) =>
       enqueue(async () => {
-        await storage.write(entry.boardId, entry);
+        try {
+          await storage.write(entry.boardId, entry);
+          areWritesFailing = false;
+        } catch (cause) {
+          areWritesFailing = true;
+          throw cause;
+        }
       }, undefined),
+    // True while the last attempt to store a pending scene failed, so a caller
+    // can treat this machine as having nowhere to keep unsaved work.
+    isDegraded: () => areWritesFailing,
     clear: (boardId: string) =>
       enqueue(async () => {
         await storage.remove(boardId);
