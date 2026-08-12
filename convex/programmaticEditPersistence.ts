@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 
+import { assertBoardSceneNotMigrated } from "./boardScenePersistence";
 import { createDiagramSnapshotIfNeeded } from "./historyPersistence";
 import {
   patchElementsInScene,
@@ -35,6 +36,9 @@ const getOwnedBoardContent = async (
   if (!diagram || diagram.ownerId !== ownerId) {
     throw new Error(`${entityName} not found`);
   }
+  // Programmatic edits of a migrated Board need an action that can fetch R2, so
+  // this mutation path refuses rather than reading a scene that is not here.
+  await assertBoardSceneNotMigrated(ctx, diagram._id);
   const content = await ctx.db
     .query("diagramContents")
     .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))

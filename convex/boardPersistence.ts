@@ -2,6 +2,12 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 
 import { internal } from "./_generated/api";
 import { createAssetDeleteGrant } from "./assetDeletePersistence";
+import { toBoardSceneManifestSummary } from "./boardSceneModel";
+import {
+  assertBoardSceneNotMigrated,
+  purgeBoardSceneRecords,
+  readBoardSceneManifest,
+} from "./boardScenePersistence";
 import { toBoardPreviewSummary } from "./boardPreviewModel";
 import { createDiagramSnapshotIfNeeded } from "./diagramHistory";
 import { CLOUD_SAVE_PROTOCOL_VERSION } from "./cloudSaveProtocol";
@@ -286,6 +292,9 @@ const readBoardContentVersion = async (
 };
 
 const readBoardScene = async (ctx: QueryCtx, diagramId: Id<"diagrams">) => {
+  // Once a manifest exists the scene lives in R2, and neither an open nor a
+  // save may fall back to the large legacy document.
+  await assertBoardSceneNotMigrated(ctx, diagramId);
   const content = await ctx.db
     .query("diagramContents")
     .withIndex("by_diagramId", (q) => q.eq("diagramId", diagramId))
@@ -309,14 +318,16 @@ export const openOwnedBoardMetadata = async (ctx: QueryCtx, slug: string) => {
   if (!diagram || diagram.ownerId !== ownerId) {
     return null;
   }
+  const manifest = await readBoardSceneManifest(ctx, diagram._id);
   return {
     board: toBoardSummary(diagram),
-    version: await readBoardContentVersion(
-      ctx,
-      diagram._id,
-      diagram.contentVersion,
-    ),
+    version: manifest
+      ? manifest.version
+      : await readBoardContentVersion(ctx, diagram._id, diagram.contentVersion),
     access: "owner" as const,
+    ...(manifest
+      ? { sceneManifest: toBoardSceneManifestSummary(manifest) }
+      : null),
   };
 };
 
@@ -343,14 +354,16 @@ export const openSharedBoardMetadata = async (
   if (!diagram || !diagram.shareEnabled) {
     return null;
   }
+  const manifest = await readBoardSceneManifest(ctx, diagram._id);
   return {
     board: toSharedBoardSummary(diagram),
-    version: await readBoardContentVersion(
-      ctx,
-      diagram._id,
-      diagram.contentVersion,
-    ),
+    version: manifest
+      ? manifest.version
+      : await readBoardContentVersion(ctx, diagram._id, diagram.contentVersion),
     access: "viewer" as const,
+    ...(manifest
+      ? { sceneManifest: toBoardSceneManifestSummary(manifest) }
+      : null),
   };
 };
 
@@ -377,6 +390,7 @@ export const openOwnedBoardRecord = async (ctx: QueryCtx, slug: string) => {
   if (!diagram || diagram.ownerId !== ownerId) {
     return null;
   }
+  await assertBoardSceneNotMigrated(ctx, diagram._id);
   const content = await ctx.db
     .query("diagramContents")
     .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
@@ -403,6 +417,7 @@ export const openSharedBoardRecord = async (
   if (!diagram || !diagram.shareEnabled) {
     return null;
   }
+  await assertBoardSceneNotMigrated(ctx, diagram._id);
   const content = await ctx.db
     .query("diagramContents")
     .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
@@ -435,6 +450,11 @@ export const saveBoardRecord = async (
   const diagram = await ctx.db.get("diagrams", args.boardId);
   if (!diagram || diagram.ownerId !== ownerId) {
     throw new Error(`${entityName} not found`);
+  }
+  // A migrated Board only accepts the R2 commit path. A client old enough to
+  // still send a whole scene is told to reload rather than silently ignored.
+  if (await readBoardSceneManifest(ctx, diagram._id)) {
+    return { status: "upgrade-required" as const };
   }
   assertSceneSize(args.sceneJson, entityName);
   if (
@@ -598,6 +618,7 @@ export const removeBoardRecord = async (
     ownerId,
     objectKeys,
   );
+  const sceneDeleteToken = await purgeBoardSceneRecords(ctx, diagram, ownerId);
 
   if (content) {
     await ctx.db.delete("diagramContents", content._id);
@@ -629,7 +650,7 @@ export const removeBoardRecord = async (
     },
   );
 
-  return { assetDeleteToken };
+  return { assetDeleteToken, sceneDeleteToken };
 };
 
 export const setBoardSharingRecord = async (

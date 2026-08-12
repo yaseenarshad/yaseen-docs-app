@@ -16,6 +16,7 @@ import {
   parseBoardSceneReadGrant,
   parseBoardSceneUploadGrant,
 } from "../board-scenes/types";
+
 import { api, internal } from "./_generated/api";
 import { CLOUD_SAVE_PROTOCOL_VERSION } from "./cloudSaveProtocol";
 import { SNAPSHOT_INTERVAL_MS } from "./snapshotPolicy";
@@ -28,7 +29,7 @@ const modules = import.meta.glob("./**/*.ts");
 const hex = (label: string) => label.padEnd(64, "0");
 
 const sceneObject = (overrides: Record<string, unknown> = {}) => ({
-  encoding: BOARD_SCENE_ENCODING,
+  encoding: BOARD_SCENE_ENCODING as typeof BOARD_SCENE_ENCODING,
   rawSize: 4096,
   compressedSize: 1024,
   rawSha256: hex("a1"),
@@ -166,9 +167,9 @@ describe("Board scene upload grants", () => {
         ...sceneObject(),
       }),
     ).rejects.toThrow("Authentication required");
-    await expect(
-      requestUploadGrant(intruder, board.boardId),
-    ).rejects.toThrow("Board not found");
+    await expect(requestUploadGrant(intruder, board.boardId)).rejects.toThrow(
+      "Board not found",
+    );
 
     const granted = await requestUploadGrant(owner, board.boardId);
     expect(granted).toMatchObject({ status: "upload", version: 0 });
@@ -310,7 +311,7 @@ describe("Board scene commits", () => {
     expect(snapshots[0].sceneJson).toBeUndefined();
 
     const history = await owner.query(api.boardHistory.list, {
-      diagramId: board.boardId,
+      boardId: board.boardId,
     });
     expect(history).toEqual([
       { _id: snapshots[0]._id, version: 1, createdAt: expect.any(Number) },
@@ -323,7 +324,11 @@ describe("Board scene commits", () => {
       boardId: board.boardId,
       clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
       expectedVersion: 0,
-      sceneJson: JSON.stringify({ elements: [], appState: {}, files: {} }),
+      sceneJson: JSON.stringify({
+        elements: [],
+        appState: { viewBackgroundColor: "#eee" },
+        files: {},
+      }),
     });
     await t.run(async (ctx) => {
       await ctx.db.insert("diagramSnapshots", {
@@ -338,7 +343,7 @@ describe("Board scene commits", () => {
     await migrate(owner, board.boardId, { expectedVersion: 1 });
 
     const history = await owner.query(api.boardHistory.list, {
-      diagramId: board.boardId,
+      boardId: board.boardId,
     });
     expect(history).toHaveLength(1);
     expect(history[0].version).toBe(1);
@@ -533,7 +538,7 @@ describe("Board scene read grants", () => {
     });
     await saveNextVersion(owner, board.boardId, 1);
     const [snapshot] = await owner.query(api.boardHistory.list, {
-      diagramId: board.boardId,
+      boardId: board.boardId,
     });
 
     const grant = await owner.mutation(api.boardScenes.createReadGrant, {
@@ -627,10 +632,18 @@ describe("Board scene Worker routes", () => {
       throw new Error("Expected an upload grant");
     }
 
-    expect((await resolve(t, BOARD_SCENE_UPLOAD_GRANT_PATH, grant.token)).status).toBe(200);
-    expect((await resolve(t, BOARD_SCENE_UPLOAD_GRANT_PATH, grant.token)).status).toBe(403);
-    expect((await resolve(t, BOARD_SCENE_READ_GRANT_PATH, hex("ab"))).status).toBe(403);
-    expect((await resolve(t, BOARD_SCENE_DELETE_GRANT_PATH, hex("ab"))).status).toBe(403);
+    expect(
+      (await resolve(t, BOARD_SCENE_UPLOAD_GRANT_PATH, grant.token)).status,
+    ).toBe(200);
+    expect(
+      (await resolve(t, BOARD_SCENE_UPLOAD_GRANT_PATH, grant.token)).status,
+    ).toBe(403);
+    expect(
+      (await resolve(t, BOARD_SCENE_READ_GRANT_PATH, hex("ab"))).status,
+    ).toBe(403);
+    expect(
+      (await resolve(t, BOARD_SCENE_DELETE_GRANT_PATH, hex("ab"))).status,
+    ).toBe(403);
 
     const malformed = await t.fetch(BOARD_SCENE_UPLOAD_GRANT_PATH, {
       method: "POST",
@@ -699,8 +712,14 @@ describe("Board scene cleanup and deletion", () => {
       return grant!.objectKey;
     });
 
-    const first = await t.mutation(internal.boardSceneCleanup.pruneExpiredGrants, {});
-    const second = await t.mutation(internal.boardSceneCleanup.pruneExpiredGrants, {});
+    const first = await t.mutation(
+      internal.boardSceneCleanup.pruneExpiredGrants,
+      {},
+    );
+    const second = await t.mutation(
+      internal.boardSceneCleanup.pruneExpiredGrants,
+      {},
+    );
 
     expect(first.uploadGrants).toBe(1);
     expect(second).toEqual({

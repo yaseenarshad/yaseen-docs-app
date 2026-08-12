@@ -23,6 +23,7 @@ import {
   setBoardSharingRecord,
 } from "./boardPersistence";
 import { boardPreviewSummaryValidator } from "./boardPreviewModel";
+import { boardSceneManifestSummaryValidator } from "./boardSceneModel";
 
 const boardSortValidator = v.union(
   v.literal("name-asc"),
@@ -66,11 +67,15 @@ const openedSharedBoardValidator = v.object({
   access: v.literal("viewer"),
 });
 
-const openedOwnedBoardMetadataValidator =
-  openedOwnedBoardValidator.omit("sceneJson");
+// A migrated Board carries small manifest metadata instead of a scene. The
+// object key is never part of it: only a capability can name a scene object.
+const openedOwnedBoardMetadataValidator = openedOwnedBoardValidator
+  .omit("sceneJson")
+  .extend({ sceneManifest: v.optional(boardSceneManifestSummaryValidator) });
 
-const openedSharedBoardMetadataValidator =
-  openedSharedBoardValidator.omit("sceneJson");
+const openedSharedBoardMetadataValidator = openedSharedBoardValidator
+  .omit("sceneJson")
+  .extend({ sceneManifest: v.optional(boardSceneManifestSummaryValidator) });
 
 const boardSceneValidator = v.object({
   boardId: v.id("diagrams"),
@@ -218,6 +223,7 @@ export const remove = mutation({
   args: { boardId: v.id("diagrams") },
   returns: v.object({
     assetDeleteToken: v.union(v.string(), v.null()),
+    sceneDeleteToken: v.union(v.string(), v.null()),
   }),
   handler: async (ctx, args) =>
     await removeBoardRecord(ctx, args.boardId, "Board"),

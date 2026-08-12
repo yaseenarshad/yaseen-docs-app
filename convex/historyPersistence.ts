@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 
+import { assertBoardSceneNotMigrated } from "./boardScenePersistence";
 import { shouldCreateDiagramSnapshot } from "./snapshotPolicy";
 
 import type { Doc, Id } from "./_generated/dataModel";
@@ -128,6 +129,13 @@ export const restoreBoardSnapshot = async (
   if (!snapshot || snapshot.diagramId !== diagram._id) {
     throw new Error(`${entityName} snapshot not found`);
   }
+  // A metadata-only snapshot, or any snapshot of a migrated Board, is restored
+  // through the object-storage commit path instead of this legacy replacement.
+  await assertBoardSceneNotMigrated(ctx, diagram._id);
+  if (snapshot.sceneJson === undefined) {
+    throw new Error(`${entityName} snapshot is stored in object storage`);
+  }
+  const sceneJson = snapshot.sceneJson;
   const content = await ctx.db
     .query("diagramContents")
     .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
@@ -148,7 +156,7 @@ export const restoreBoardSnapshot = async (
 
   const version = content.version + 1;
   await ctx.db.patch("diagramContents", content._id, {
-    sceneJson: snapshot.sceneJson,
+    sceneJson,
     version,
     updatedAt,
   });

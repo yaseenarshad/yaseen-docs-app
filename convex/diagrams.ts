@@ -148,6 +148,7 @@ export const remove = mutation({
   args: { diagramId: v.id("diagrams") },
   returns: v.object({
     assetDeleteToken: v.union(v.string(), v.null()),
+    sceneDeleteToken: v.union(v.string(), v.null()),
   }),
   handler: async (ctx, args) =>
     await removeBoardRecord(ctx, args.diagramId, "Diagram"),
