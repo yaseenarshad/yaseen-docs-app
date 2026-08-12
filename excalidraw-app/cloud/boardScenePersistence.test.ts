@@ -142,7 +142,9 @@ describe("board scene save", () => {
     });
     expect(dependencies.upload).toHaveBeenCalledWith(
       "upload-token",
-      expect.objectContaining({ compressedSha256: compressed.compressedSha256 }),
+      expect.objectContaining({
+        compressedSha256: compressed.compressedSha256,
+      }),
     );
     expect(dependencies.commitUpload).toHaveBeenCalledWith({
       clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,

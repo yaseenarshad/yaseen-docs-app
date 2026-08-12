@@ -556,13 +556,15 @@ export const useCloudBoard = () => {
           })
         : null
       : route.kind === "owner"
-      ? async () => await convex.query(api.boards.openMineScene, {
-          slug: route.slug,
-        })
+      ? async () =>
+          await convex.query(api.boards.openMineScene, {
+            slug: route.slug,
+          })
       : route.kind === "shared"
-      ? async () => await convex.query(api.boards.openSharedScene, {
-          shareToken: route.shareToken,
-        })
+      ? async () =>
+          await convex.query(api.boards.openSharedScene, {
+            shareToken: route.shareToken,
+          })
       : null;
     if (!loadScene) {
       return;

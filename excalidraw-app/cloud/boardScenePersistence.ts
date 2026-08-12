@@ -155,7 +155,7 @@ export const uploadBoardSceneObject = async (
   const response = await fetch(BOARD_SCENE_ROUTE, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
       "Content-Type": BOARD_SCENE_CONTENT_TYPE,
       [BOARD_SCENE_ENCODING_HEADER]: scene.encoding,
     },
@@ -278,7 +278,8 @@ export const saveBoardScene = async (
 export const migrateBoardScene = async (
   input: { boardId: string; expectedVersion: number; sceneJson: string },
   dependencies: BoardSceneSaveDependencies,
-) => await runBoardSceneUpload({ ...input, purpose: "migration" }, dependencies);
+) =>
+  await runBoardSceneUpload({ ...input, purpose: "migration" }, dependencies);
 
 export const readBoardScene = async (
   request: { boardId: string } | { shareToken: string },
