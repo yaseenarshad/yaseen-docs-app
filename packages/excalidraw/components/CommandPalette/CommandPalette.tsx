@@ -24,6 +24,7 @@ import {
   actionCopyElementLink,
   actionLinkToElement,
 } from "../../actions/actionElementLink";
+import { VIEW_MODE_SELECTION_ACTIONS } from "../../actions/manager";
 import { getShortcutFromShortcutName } from "../../actions/shortcuts";
 import { trackEvent } from "../../analytics";
 import { useUIAppState } from "../../context/ui-appState";
@@ -292,6 +293,7 @@ function CommandPaletteInner({
       const command: CommandPaletteItem = {
         label: getActionLabel(action),
         icon: getActionIcon(action),
+        actionName: action.name,
         category,
         shortcut: getShortcutFromShortcutName(action.name as ShortcutName),
         keywords: action.keywords,
@@ -405,6 +407,7 @@ function CommandPaletteInner({
           label: t("buttons.exportImage"),
           category: DEFAULT_CATEGORIES.export,
           icon: ExportImageIcon,
+          viewMode: true,
           shortcut: getShortcutFromShortcutName("imageExport"),
           keywords: [
             "export",
@@ -675,7 +678,19 @@ function CommandPaletteInner({
 
   const isCommandAvailable = useStableCallback(
     (command: CommandPaletteItem) => {
-      if (command.viewMode === false && uiAppState.viewModeEnabled) {
+      if (app.isViewModeSelectionEnabled()) {
+        // a view-mode selection satisfies the "something is selected"
+        // predicate of every element command, so flip the default: only
+        // explicitly view-safe commands are listed
+        const isViewSafe =
+          command.viewMode === true ||
+          (!!command.actionName &&
+            VIEW_MODE_SELECTION_ACTIONS.has(command.actionName));
+
+        if (!isViewSafe) {
+          return false;
+        }
+      } else if (command.viewMode === false && uiAppState.viewModeEnabled) {
         return false;
       }
 

@@ -12,6 +12,8 @@ export type CommandPaletteItem = {
    */
   haystack?: string;
   icon?: Action["icon"];
+  /** set when the command is a thin wrapper around a registered action */
+  actionName?: Action["name"];
   category: string;
   order?: number;
   predicate?: boolean | Action["predicate"];

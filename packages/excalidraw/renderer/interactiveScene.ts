@@ -2006,19 +2006,24 @@ const _renderInteractiveScene = ({
       );
       context.lineWidth = lineWidth;
       context.setLineDash(initialLineDash);
-      const transformHandles = getTransformHandlesFromCoords(
-        [x1, y1, x2, y2, (x1 + x2) / 2, (y1 + y2) / 2],
-        0 as Radians,
-        appState.zoom,
-        "mouse",
-        isFrameSelected
-          ? {
-              ...getOmitSidesForEditorInterface(editorInterface),
-              rotation: true,
-            }
-          : getOmitSidesForEditorInterface(editorInterface),
-      );
-      if (selectedElements.some((element) => !element.locked)) {
+      // the dashed outline above stays in view mode; the handles must not,
+      // since nothing they offer (resize, rotate) is reachable there
+      if (
+        !appState.viewModeEnabled &&
+        selectedElements.some((element) => !element.locked)
+      ) {
+        const transformHandles = getTransformHandlesFromCoords(
+          [x1, y1, x2, y2, (x1 + x2) / 2, (y1 + y2) / 2],
+          0 as Radians,
+          appState.zoom,
+          "mouse",
+          isFrameSelected
+            ? {
+                ...getOmitSidesForEditorInterface(editorInterface),
+                rotation: true,
+              }
+            : getOmitSidesForEditorInterface(editorInterface),
+        );
         renderTransformHandles(
           context,
           renderConfig,
