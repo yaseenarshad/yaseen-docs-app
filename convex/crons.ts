@@ -11,4 +11,11 @@ crons.interval(
   {},
 );
 
+crons.interval(
+  "prune expired Board scene grants",
+  { hours: 1 },
+  internal.boardSceneCleanup.startCleanup,
+  {},
+);
+
 export default crons;
