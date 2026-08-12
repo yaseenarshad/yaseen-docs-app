@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 import { createAssetDeleteGrant } from "./assetDeletePersistence";
+import { readBoardSceneManifest } from "./boardScenePersistence";
 
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
@@ -44,11 +45,23 @@ const getBoardContent = async (ctx: MutationCtx, boardId: Id<"diagrams">) => {
   return content;
 };
 
+/**
+ * A preview is only ever generated from a committed version. The manifest is
+ * the authority for a migrated Board, and the legacy content row is consulted
+ * only for a Board that has neither a manifest nor a recorded version.
+ */
 const getCurrentBoardVersion = async (
   ctx: MutationCtx,
   diagram: Awaited<ReturnType<typeof getOwnedBoard>>,
-) =>
-  diagram.contentVersion ?? (await getBoardContent(ctx, diagram._id)).version;
+) => {
+  const manifest = await readBoardSceneManifest(ctx, diagram._id);
+  if (manifest) {
+    return manifest.version;
+  }
+  return (
+    diagram.contentVersion ?? (await getBoardContent(ctx, diagram._id)).version
+  );
+};
 
 export const createBoardPreviewUploadGrant = async (
   ctx: MutationCtx,

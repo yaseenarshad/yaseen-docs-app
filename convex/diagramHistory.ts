@@ -1,11 +1,14 @@
 import { v } from "convex/values";
 
-import { mutation, query } from "./_generated/server";
+import { runBoardSceneEdit } from "./boardSceneEditing";
 import {
   createDiagramSnapshotIfNeeded,
   listBoardSnapshots,
-  restoreBoardSnapshot,
 } from "./historyPersistence";
+import { internal } from "./_generated/api";
+import { action, query } from "./_generated/server";
+
+import type { BoardSceneEditResult } from "./boardSceneEditing";
 
 export { createDiagramSnapshotIfNeeded };
 
@@ -22,7 +25,7 @@ export const list = query({
     await listBoardSnapshots(ctx, args.diagramId, "Diagram"),
 });
 
-export const restore = mutation({
+export const restore = action({
   args: {
     diagramId: v.id("diagrams"),
     snapshotId: v.id("diagramSnapshots"),
@@ -31,10 +34,21 @@ export const restore = mutation({
     version: v.number(),
     updatedAt: v.number(),
   }),
-  handler: async (ctx, args) =>
-    await restoreBoardSnapshot(
-      ctx,
-      { boardId: args.diagramId, snapshotId: args.snapshotId },
-      "Diagram",
-    ),
+  handler: async (ctx, args): Promise<BoardSceneEditResult> =>
+    await runBoardSceneEdit(ctx, {
+      boardId: args.diagramId,
+      begin: async () =>
+        await ctx.runMutation(internal.boardSceneEdits.beginRestore, {
+          boardId: args.diagramId,
+          snapshotId: args.snapshotId,
+          entityName: "Diagram",
+        }),
+      legacy: async () =>
+        await ctx.runMutation(internal.boardSceneEdits.restoreLegacySnapshot, {
+          boardId: args.diagramId,
+          snapshotId: args.snapshotId,
+          entityName: "Diagram",
+        }),
+      transform: (sceneJson) => sceneJson,
+    }),
 });

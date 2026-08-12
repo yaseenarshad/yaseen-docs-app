@@ -22,8 +22,11 @@ import type * as boardPreviewModel from "../boardPreviewModel.js";
 import type * as boardPreviewPersistence from "../boardPreviewPersistence.js";
 import type * as boardPreviews from "../boardPreviews.js";
 import type * as boardSceneCleanup from "../boardSceneCleanup.js";
+import type * as boardSceneEditing from "../boardSceneEditing.js";
+import type * as boardSceneEdits from "../boardSceneEdits.js";
 import type * as boardSceneModel from "../boardSceneModel.js";
 import type * as boardScenePersistence from "../boardScenePersistence.js";
+import type * as boardSceneTransport from "../boardSceneTransport.js";
 import type * as boardScenes from "../boardScenes.js";
 import type * as boards from "../boards.js";
 import type * as cloudSaveProtocol from "../cloudSaveProtocol.js";
@@ -33,6 +36,7 @@ import type * as diagrams from "../diagrams.js";
 import type * as fixedAccounts from "../fixedAccounts.js";
 import type * as historyPersistence from "../historyPersistence.js";
 import type * as http from "../http.js";
+import type * as legacyBoardContent from "../legacyBoardContent.js";
 import type * as mediaLibrary from "../mediaLibrary.js";
 import type * as mediaTypes from "../mediaTypes.js";
 import type * as migrations from "../migrations.js";
@@ -47,6 +51,7 @@ import type * as savedComponents from "../savedComponents.js";
 import type * as sceneConflict from "../sceneConflict.js";
 import type * as snapshotPolicy from "../snapshotPolicy.js";
 import type * as snapshotRetention from "../snapshotRetention.js";
+import type * as zzProbe from "../zzProbe.js";
 
 import type {
   ApiFromModules,
@@ -69,8 +74,11 @@ declare const fullApi: ApiFromModules<{
   boardPreviewPersistence: typeof boardPreviewPersistence;
   boardPreviews: typeof boardPreviews;
   boardSceneCleanup: typeof boardSceneCleanup;
+  boardSceneEditing: typeof boardSceneEditing;
+  boardSceneEdits: typeof boardSceneEdits;
   boardSceneModel: typeof boardSceneModel;
   boardScenePersistence: typeof boardScenePersistence;
+  boardSceneTransport: typeof boardSceneTransport;
   boardScenes: typeof boardScenes;
   boards: typeof boards;
   cloudSaveProtocol: typeof cloudSaveProtocol;
@@ -80,6 +88,7 @@ declare const fullApi: ApiFromModules<{
   fixedAccounts: typeof fixedAccounts;
   historyPersistence: typeof historyPersistence;
   http: typeof http;
+  legacyBoardContent: typeof legacyBoardContent;
   mediaLibrary: typeof mediaLibrary;
   mediaTypes: typeof mediaTypes;
   migrations: typeof migrations;
@@ -94,6 +103,7 @@ declare const fullApi: ApiFromModules<{
   sceneConflict: typeof sceneConflict;
   snapshotPolicy: typeof snapshotPolicy;
   snapshotRetention: typeof snapshotRetention;
+  zzProbe: typeof zzProbe;
 }>;
 
 /**
