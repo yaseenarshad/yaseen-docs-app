@@ -2,6 +2,12 @@ import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+import {
+  boardSceneIntegrityFields,
+  boardSceneObjectFields,
+  boardSceneSnapshotFields,
+  boardScenePurposeValidator,
+} from "./boardSceneModel";
 import { mediaKindValidator, mediaProviderValidator } from "./mediaTypes";
 import { savedComponentFields } from "./savedComponentModel";
 
@@ -74,15 +80,75 @@ export default defineSchema({
     version: v.number(),
     updatedAt: v.number(),
   }).index("by_diagramId", ["diagramId"]),
+  // A snapshot row holds either the legacy inline `sceneJson` or the metadata
+  // of one immutable R2 scene object. New snapshots are always metadata-only.
   diagramSnapshots: defineTable({
     diagramId: v.id("diagrams"),
     createdBy: v.id("users"),
-    sceneJson: v.string(),
+    sceneJson: v.optional(v.string()),
+    ...boardSceneSnapshotFields,
     version: v.number(),
     createdAt: v.number(),
   })
     .index("by_diagramId_and_version", ["diagramId", "version"])
     .index("by_diagramId_and_createdAt", ["diagramId", "createdAt"]),
+  // One row per migrated Board pointing at its current scene object. Small by
+  // construction: it never contains scene bytes.
+  diagramSceneManifests: defineTable({
+    diagramId: v.id("diagrams"),
+    version: v.number(),
+    ...boardSceneObjectFields,
+    lastSnapshotAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_diagramId", ["diagramId"])
+    .index("by_objectKey", ["objectKey"]),
+  boardSceneUploadGrants: defineTable({
+    token: v.string(),
+    purpose: boardScenePurposeValidator,
+    diagramId: v.id("diagrams"),
+    ownerId: v.id("users"),
+    expectedVersion: v.number(),
+    version: v.number(),
+    objectKey: v.string(),
+    ...boardSceneIntegrityFields,
+    resolvedAt: v.optional(v.number()),
+    registeredAt: v.optional(v.number()),
+    etag: v.optional(v.string()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_diagramId", ["diagramId"])
+    .index("by_expiresAt", ["expiresAt"]),
+  boardSceneReadGrants: defineTable({
+    token: v.string(),
+    diagramId: v.id("diagrams"),
+    source: v.union(v.literal("current"), v.literal("snapshot")),
+    snapshotId: v.optional(v.id("diagramSnapshots")),
+    version: v.number(),
+    ...boardSceneObjectFields,
+    access: v.union(v.literal("owner"), v.literal("shared")),
+    shareToken: v.optional(v.string()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_diagramId", ["diagramId"])
+    .index("by_expiresAt", ["expiresAt"]),
+  boardSceneDeleteGrants: defineTable({
+    token: v.string(),
+    ownerId: v.id("users"),
+    diagramId: v.optional(v.id("diagrams")),
+    objectKeys: v.array(v.string()),
+    objectKeyPrefix: v.optional(v.string()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_ownerId_and_createdAt", ["ownerId", "createdAt"])
+    .index("by_expiresAt", ["expiresAt"]),
   diagramAssets: defineTable({
     diagramId: v.id("diagrams"),
     fileId: v.string(),
