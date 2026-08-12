@@ -12,11 +12,13 @@ type DeleteBoardAndCleanupOptions<BoardId extends string> = {
   isActive: boolean;
   startedRoute: CloudRouteGeneration;
   getCurrentRoute: () => CloudRouteGeneration;
-  removeBoard: (args: {
-    boardId: BoardId;
-  }) => Promise<{ assetDeleteToken: string | null }>;
+  removeBoard: (args: { boardId: BoardId }) => Promise<{
+    assetDeleteToken: string | null;
+    sceneDeleteToken?: string | null;
+  }>;
   navigate: (destination: BoardDeletionDestination) => void;
   cleanupAssets: (assetDeleteToken: string) => Promise<void>;
+  cleanupScenes?: (sceneDeleteToken: string) => Promise<void>;
   onCleanupError: () => void;
 };
 
@@ -29,21 +31,35 @@ export const deleteBoardAndCleanup = async <BoardId extends string>({
   removeBoard,
   navigate,
   cleanupAssets,
+  cleanupScenes,
   onCleanupError,
 }: DeleteBoardAndCleanupOptions<BoardId>) => {
-  const { assetDeleteToken } = await removeBoard({ boardId });
+  const { assetDeleteToken, sceneDeleteToken } = await removeBoard({ boardId });
 
   if (isActive && isCurrentRouteCompletion(startedRoute, getCurrentRoute())) {
     navigate(destination);
   }
 
-  if (!assetDeleteToken) {
-    return;
-  }
+  // Images and scene objects are separate capabilities, so one failing sweep
+  // must not skip the other; deletion itself is already durable either way.
+  let failed = false;
+  const drain = async (
+    token: string | null | undefined,
+    cleanup: ((token: string) => Promise<void>) | undefined,
+  ) => {
+    if (!token || !cleanup) {
+      return;
+    }
+    try {
+      await cleanup(token);
+    } catch {
+      failed = true;
+    }
+  };
 
-  try {
-    await cleanupAssets(assetDeleteToken);
-  } catch {
+  await drain(assetDeleteToken, cleanupAssets);
+  await drain(sceneDeleteToken, cleanupScenes);
+  if (failed) {
     onCleanupError();
   }
 };

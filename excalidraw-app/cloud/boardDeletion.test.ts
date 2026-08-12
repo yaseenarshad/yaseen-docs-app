@@ -83,6 +83,56 @@ describe("active Board deletion", () => {
     expect(removeBoard).toHaveBeenCalledTimes(2);
   });
 
+  it("sweeps the Board's stored scene objects alongside its images", async () => {
+    const cleanupAssets = vi.fn();
+    const cleanupScenes = vi.fn();
+
+    await deleteBoardAndCleanup({
+      boardId: "board-id",
+      destination: { kind: "home" },
+      isActive: true,
+      startedRoute,
+      getCurrentRoute: () => startedRoute,
+      removeBoard: async () => ({
+        assetDeleteToken: "asset-token",
+        sceneDeleteToken: "scene-token",
+      }),
+      navigate: vi.fn(),
+      cleanupAssets,
+      cleanupScenes,
+      onCleanupError: vi.fn(),
+    });
+
+    expect(cleanupAssets).toHaveBeenCalledWith("asset-token");
+    expect(cleanupScenes).toHaveBeenCalledWith("scene-token");
+  });
+
+  it("still sweeps stored scenes when the image sweep fails", async () => {
+    const cleanupScenes = vi.fn();
+    const onCleanupError = vi.fn();
+
+    await deleteBoardAndCleanup({
+      boardId: "board-id",
+      destination: { kind: "home" },
+      isActive: true,
+      startedRoute,
+      getCurrentRoute: () => startedRoute,
+      removeBoard: async () => ({
+        assetDeleteToken: "asset-token",
+        sceneDeleteToken: "scene-token",
+      }),
+      navigate: vi.fn(),
+      cleanupAssets: async () => {
+        throw new Error("R2 unavailable");
+      },
+      cleanupScenes,
+      onCleanupError,
+    });
+
+    expect(cleanupScenes).toHaveBeenCalledWith("scene-token");
+    expect(onCleanupError).toHaveBeenCalledOnce();
+  });
+
   it("reports an R2 cleanup failure after leaving the deleted route", async () => {
     const navigate = vi.fn();
     const onCleanupError = vi.fn();
