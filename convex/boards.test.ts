@@ -73,6 +73,152 @@ describe("boards compatibility API", () => {
     expect(legacyOpened?.version).toBe(1);
   });
 
+  it("splits the reactive open into scene-free metadata and a scene fetch", async () => {
+    const { owner } = await authenticatedTestClient();
+    const created = await owner.mutation(boardsApi.create, {
+      title: "Split open Board",
+    });
+    const sceneJson = JSON.stringify({
+      elements: [{ id: "shape", version: 1 }],
+      appState: {},
+      files: {},
+    });
+    const saved = await owner.mutation(boardsApi.save, {
+      boardId: created.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
+      expectedVersion: 0,
+      sceneJson,
+    });
+    if (saved.status !== "saved") {
+      throw new Error("Expected save");
+    }
+
+    const metadata = await owner.query(boardsApi.openMineMetadata, {
+      slug: created.slug,
+    });
+    const scene = await owner.query(boardsApi.openMineScene, {
+      slug: created.slug,
+    });
+
+    expect(metadata).toEqual({
+      board: expect.objectContaining({ _id: created.boardId }),
+      version: saved.version,
+      access: "owner",
+    });
+    expect(metadata && "sceneJson" in metadata).toBe(false);
+    expect(scene).toEqual({
+      boardId: created.boardId,
+      sceneJson,
+      version: saved.version,
+    });
+  });
+
+  it("reads the open metadata version from a legacy Board without one", async () => {
+    const { t, owner } = await authenticatedTestClient();
+    const created = await owner.mutation(boardsApi.create, {
+      title: "Legacy open metadata Board",
+    });
+    const saved = await owner.mutation(boardsApi.save, {
+      boardId: created.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
+      expectedVersion: 0,
+      sceneJson: JSON.stringify({
+        elements: [{ id: "shape", version: 1 }],
+        appState: {},
+        files: {},
+      }),
+    });
+    if (saved.status !== "saved") {
+      throw new Error("Expected save");
+    }
+    await t.run(async (ctx) => {
+      await ctx.db.patch("diagrams", created.boardId, {
+        contentVersion: undefined,
+      });
+    });
+
+    await expect(
+      owner.query(boardsApi.openMineMetadata, { slug: created.slug }),
+    ).resolves.toMatchObject({ version: saved.version });
+  });
+
+  it("splits the shared open the same way behind the share token", async () => {
+    const { t, owner } = await authenticatedTestClient();
+    const created = await owner.mutation(boardsApi.create, {
+      title: "Shared split Board",
+    });
+    const sceneJson = JSON.stringify({
+      elements: [{ id: "shape", version: 1 }],
+      appState: {},
+      files: {},
+    });
+    await owner.mutation(boardsApi.save, {
+      boardId: created.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
+      expectedVersion: 0,
+      sceneJson,
+    });
+    const sharing = await owner.mutation(boardsApi.setSharing, {
+      boardId: created.boardId,
+      enabled: true,
+    });
+    if (!sharing.shareToken) {
+      throw new Error("Expected a share token");
+    }
+
+    const metadata = await t.query(boardsApi.openSharedMetadata, {
+      shareToken: sharing.shareToken,
+    });
+    const scene = await t.query(boardsApi.openSharedScene, {
+      shareToken: sharing.shareToken,
+    });
+    expect(metadata).toMatchObject({ version: 1, access: "viewer" });
+    expect(metadata && "sceneJson" in metadata).toBe(false);
+    expect(scene).toEqual({
+      boardId: created.boardId,
+      sceneJson,
+      version: 1,
+    });
+
+    await owner.mutation(boardsApi.setSharing, {
+      boardId: created.boardId,
+      enabled: false,
+    });
+    await expect(
+      t.query(boardsApi.openSharedMetadata, {
+        shareToken: sharing.shareToken,
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      t.query(boardsApi.openSharedScene, {
+        shareToken: sharing.shareToken,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("keeps the split open behind the same owner boundary", async () => {
+    const { t, owner } = await authenticatedTestClient();
+    const created = await owner.mutation(boardsApi.create, {
+      title: "Guarded split Board",
+    });
+    const otherUserId = await t.run(async (ctx) =>
+      ctx.db.insert("users", { name: "Other user" }),
+    );
+    const otherUser = t.withIdentity({
+      subject: `${otherUserId}|other-session`,
+    });
+
+    await expect(
+      otherUser.query(boardsApi.openMineMetadata, { slug: created.slug }),
+    ).resolves.toBeNull();
+    await expect(
+      otherUser.query(boardsApi.openMineScene, { slug: created.slug }),
+    ).resolves.toBeNull();
+    await expect(
+      t.query(boardsApi.openMineScene, { slug: created.slug }),
+    ).rejects.toThrow("Authentication required");
+  });
+
   it("offers finite cursor pagination for Board lists", async () => {
     const { owner } = await authenticatedTestClient();
     await owner.mutation(boardsApi.create, { title: "One" });
@@ -486,6 +632,205 @@ describe("boards compatibility API", () => {
       ctx.db.get("diagrams", created.boardId),
     );
     expect(programmaticMetadata?.contentVersion).toBe(1);
+  });
+
+  it("records snapshot timing metadata instead of re-reading the newest snapshot", async () => {
+    const { t, owner } = await authenticatedTestClient();
+    const created = await owner.mutation(boardsApi.create, {
+      title: "Snapshot metadata Board",
+    });
+    const first = await owner.mutation(boardsApi.save, {
+      boardId: created.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
+      expectedVersion: 0,
+      sceneJson: JSON.stringify({
+        elements: [{ id: "shape", version: 1 }],
+        appState: {},
+        files: {},
+      }),
+    });
+    if (first.status !== "saved") {
+      throw new Error("Expected first save");
+    }
+    await owner.mutation(boardsApi.save, {
+      boardId: created.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
+      expectedVersion: first.version,
+      sceneJson: JSON.stringify({
+        elements: [{ id: "shape", version: 2 }],
+        appState: {},
+        files: {},
+      }),
+    });
+
+    const { metadata, snapshots } = await t.run(async (ctx) => ({
+      metadata: await ctx.db.get("diagrams", created.boardId),
+      snapshots: await ctx.db
+        .query("diagramSnapshots")
+        .withIndex("by_diagramId_and_version", (q) =>
+          q.eq("diagramId", created.boardId),
+        )
+        .order("desc")
+        .take(10),
+    }));
+
+    expect(snapshots).toHaveLength(1);
+    expect(metadata?.lastSnapshotVersion).toBe(snapshots[0].version);
+    expect(metadata?.lastSnapshotAt).toBe(snapshots[0].createdAt);
+  });
+
+  it("keeps the snapshot interval closed while the metadata is fresh", async () => {
+    const { t, owner } = await authenticatedTestClient();
+    const created = await owner.mutation(boardsApi.create, {
+      title: "Snapshot interval Board",
+    });
+    let version = 0;
+    for (let edit = 1; edit <= 3; edit++) {
+      const saved = await owner.mutation(boardsApi.save, {
+        boardId: created.boardId,
+        clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
+        expectedVersion: version,
+        sceneJson: JSON.stringify({
+          elements: [{ id: "shape", version: edit }],
+          appState: {},
+          files: {},
+        }),
+      });
+      if (saved.status !== "saved") {
+        throw new Error("Expected save");
+      }
+      version = saved.version;
+    }
+
+    const snapshots = await t.run(async (ctx) =>
+      ctx.db
+        .query("diagramSnapshots")
+        .withIndex("by_diagramId_and_version", (q) =>
+          q.eq("diagramId", created.boardId),
+        )
+        .take(10),
+    );
+
+    expect(snapshots.map((snapshot) => snapshot.version)).toEqual([1]);
+  });
+
+  it("backfills snapshot timing from the newest snapshot of a legacy Board", async () => {
+    const { t, owner } = await authenticatedTestClient();
+    const created = await owner.mutation(boardsApi.create, {
+      title: "Legacy snapshot Board",
+    });
+    let version = 0;
+    for (const edit of [1, 2]) {
+      const saved = await owner.mutation(boardsApi.save, {
+        boardId: created.boardId,
+        clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
+        expectedVersion: version,
+        sceneJson: JSON.stringify({
+          elements: [{ id: "shape", version: edit }],
+          appState: {},
+          files: {},
+        }),
+      });
+      if (saved.status !== "saved") {
+        throw new Error("Expected save");
+      }
+      version = saved.version;
+    }
+    const legacySnapshot = await t.run(async (ctx) => {
+      await ctx.db.patch("diagrams", created.boardId, {
+        lastSnapshotAt: undefined,
+        lastSnapshotVersion: undefined,
+      });
+      return await ctx.db
+        .query("diagramSnapshots")
+        .withIndex("by_diagramId_and_version", (q) =>
+          q.eq("diagramId", created.boardId),
+        )
+        .order("desc")
+        .first();
+    });
+
+    await owner.mutation(boardsApi.save, {
+      boardId: created.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
+      expectedVersion: version,
+      sceneJson: JSON.stringify({
+        elements: [{ id: "shape", version: 3 }],
+        appState: {},
+        files: {},
+      }),
+    });
+    const { metadata, snapshots } = await t.run(async (ctx) => ({
+      metadata: await ctx.db.get("diagrams", created.boardId),
+      snapshots: await ctx.db
+        .query("diagramSnapshots")
+        .withIndex("by_diagramId_and_version", (q) =>
+          q.eq("diagramId", created.boardId),
+        )
+        .take(10),
+    }));
+
+    expect(snapshots.map((snapshot) => snapshot.version)).toEqual([1]);
+    expect(metadata?.lastSnapshotVersion).toBe(legacySnapshot?.version);
+    expect(metadata?.lastSnapshotAt).toBe(legacySnapshot?.createdAt);
+  });
+
+  it("still forces a programmatic checkpoint and dedupes the same version", async () => {
+    const { t, owner } = await authenticatedTestClient();
+    const programmaticBoardEdits = (api as any).programmaticBoardEdits;
+    const created = await owner.mutation(boardsApi.create, {
+      title: "Forced checkpoint Board",
+    });
+    await owner.mutation(boardsApi.save, {
+      boardId: created.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
+      expectedVersion: 0,
+      sceneJson: JSON.stringify({
+        elements: [
+          {
+            id: "text-1",
+            type: "text",
+            text: "Before",
+            originalText: "Before",
+            version: 1,
+            versionNonce: 1,
+          },
+        ],
+        appState: {},
+        files: {},
+      }),
+    });
+    const afterSave = await t.run(async (ctx) =>
+      ctx.db.get("diagrams", created.boardId),
+    );
+
+    await owner.mutation(programmaticBoardEdits.updateTextElement, {
+      boardId: created.boardId,
+      elementId: "text-1",
+      text: "After",
+    });
+    const afterFirstEdit = await t.run(async (ctx) =>
+      ctx.db.get("diagrams", created.boardId),
+    );
+    await owner.mutation(programmaticBoardEdits.updateTextElement, {
+      boardId: created.boardId,
+      elementId: "text-1",
+      text: "Later",
+    });
+    const snapshots = await t.run(async (ctx) =>
+      ctx.db
+        .query("diagramSnapshots")
+        .withIndex("by_diagramId_and_version", (q) =>
+          q.eq("diagramId", created.boardId),
+        )
+        .take(10),
+    );
+
+    // The first save checkpoints nothing new, the forced programmatic edits
+    // checkpoint versions 1 and 2, and neither repeats an already-saved version.
+    expect(afterSave?.lastSnapshotVersion).toBeUndefined();
+    expect(afterFirstEdit?.lastSnapshotVersion).toBe(1);
+    expect(snapshots.map((snapshot) => snapshot.version)).toEqual([1, 2]);
   });
 
   it("keeps lightweight content metadata in sync when restoring history", async () => {

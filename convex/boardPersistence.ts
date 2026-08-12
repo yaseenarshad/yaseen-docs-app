@@ -264,6 +264,110 @@ const getBoardSummaryComparator =
       : value * direction;
   };
 
+// The reactive open subscription re-runs on every committed write, so it must
+// never touch `diagramContents`. The version already lives on the small diagram
+// row; only a Board written before that field existed needs the content read.
+const readBoardContentVersion = async (
+  ctx: QueryCtx,
+  diagramId: Id<"diagrams">,
+  contentVersion: number | undefined,
+) => {
+  if (contentVersion !== undefined) {
+    return contentVersion;
+  }
+  const content = await ctx.db
+    .query("diagramContents")
+    .withIndex("by_diagramId", (q) => q.eq("diagramId", diagramId))
+    .unique();
+  if (!content) {
+    throw new Error("Board content is missing");
+  }
+  return content.version;
+};
+
+const readBoardScene = async (ctx: QueryCtx, diagramId: Id<"diagrams">) => {
+  const content = await ctx.db
+    .query("diagramContents")
+    .withIndex("by_diagramId", (q) => q.eq("diagramId", diagramId))
+    .unique();
+  if (!content) {
+    throw new Error("Board content is missing");
+  }
+  return {
+    boardId: diagramId,
+    sceneJson: content.sceneJson,
+    version: content.version,
+  };
+};
+
+export const openOwnedBoardMetadata = async (ctx: QueryCtx, slug: string) => {
+  const ownerId = await requireUserId(ctx);
+  const diagram = await ctx.db
+    .query("diagrams")
+    .withIndex("by_slug", (q) => q.eq("slug", slug))
+    .unique();
+  if (!diagram || diagram.ownerId !== ownerId) {
+    return null;
+  }
+  return {
+    board: toBoardSummary(diagram),
+    version: await readBoardContentVersion(
+      ctx,
+      diagram._id,
+      diagram.contentVersion,
+    ),
+    access: "owner" as const,
+  };
+};
+
+export const readOwnedBoardScene = async (ctx: QueryCtx, slug: string) => {
+  const ownerId = await requireUserId(ctx);
+  const diagram = await ctx.db
+    .query("diagrams")
+    .withIndex("by_slug", (q) => q.eq("slug", slug))
+    .unique();
+  if (!diagram || diagram.ownerId !== ownerId) {
+    return null;
+  }
+  return await readBoardScene(ctx, diagram._id);
+};
+
+export const openSharedBoardMetadata = async (
+  ctx: QueryCtx,
+  shareToken: string,
+) => {
+  const diagram = await ctx.db
+    .query("diagrams")
+    .withIndex("by_shareToken", (q) => q.eq("shareToken", shareToken))
+    .unique();
+  if (!diagram || !diagram.shareEnabled) {
+    return null;
+  }
+  return {
+    board: toSharedBoardSummary(diagram),
+    version: await readBoardContentVersion(
+      ctx,
+      diagram._id,
+      diagram.contentVersion,
+    ),
+    access: "viewer" as const,
+  };
+};
+
+export const readSharedBoardScene = async (
+  ctx: QueryCtx,
+  shareToken: string,
+) => {
+  const diagram = await ctx.db
+    .query("diagrams")
+    .withIndex("by_shareToken", (q) => q.eq("shareToken", shareToken))
+    .unique();
+  if (!diagram || !diagram.shareEnabled) {
+    return null;
+  }
+  return await readBoardScene(ctx, diagram._id);
+};
+
 export const openOwnedBoardRecord = async (ctx: QueryCtx, slug: string) => {
   const ownerId = await requireUserId(ctx);
   const diagram = await ctx.db
@@ -375,7 +479,7 @@ export const saveBoardRecord = async (
   }
   const now = Date.now();
   await createDiagramSnapshotIfNeeded(ctx, {
-    diagramId: diagram._id,
+    diagram,
     ownerId,
     sceneJson: content.sceneJson,
     version: content.version,

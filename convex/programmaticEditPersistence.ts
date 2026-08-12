@@ -48,7 +48,7 @@ const getOwnedBoardContent = async (
 const commitProgrammaticScene = async (
   ctx: MutationCtx,
   args: {
-    boardId: Id<"diagrams">;
+    diagram: Awaited<ReturnType<typeof getOwnedBoardContent>>["diagram"];
     entityName: string;
     sceneJson: string;
     updatedAt: number;
@@ -58,7 +58,7 @@ const commitProgrammaticScene = async (
 ) => {
   assertSceneSize(args.sceneJson, args.entityName);
   await createDiagramSnapshotIfNeeded(ctx, {
-    diagramId: args.boardId,
+    diagram: args.diagram,
     ownerId: args.ownerId,
     sceneJson: args.content.sceneJson,
     version: args.content.version,
@@ -71,7 +71,7 @@ const commitProgrammaticScene = async (
     version,
     updatedAt: args.updatedAt,
   });
-  await ctx.db.patch("diagrams", args.boardId, {
+  await ctx.db.patch("diagrams", args.diagram._id, {
     contentVersion: version,
     updatedAt: args.updatedAt,
   });
@@ -90,7 +90,7 @@ export const updateBoardTextElement = async (
   if (args.text.length > MAX_TEXT_LENGTH) {
     throw new Error("Text is too long");
   }
-  const { content, ownerId } = await getOwnedBoardContent(
+  const { content, diagram, ownerId } = await getOwnedBoardContent(
     ctx,
     args.boardId,
     entityName,
@@ -103,7 +103,7 @@ export const updateBoardTextElement = async (
     updatedAt,
   );
   return await commitProgrammaticScene(ctx, {
-    boardId: args.boardId,
+    diagram,
     entityName,
     sceneJson,
     updatedAt,
@@ -126,7 +126,7 @@ export const patchBoardElements = async (
   ) {
     throw new Error("Element updates are too large");
   }
-  const { content, ownerId } = await getOwnedBoardContent(
+  const { content, diagram, ownerId } = await getOwnedBoardContent(
     ctx,
     args.boardId,
     entityName,
@@ -138,7 +138,7 @@ export const patchBoardElements = async (
     updatedAt,
   );
   return await commitProgrammaticScene(ctx, {
-    boardId: args.boardId,
+    diagram,
     entityName,
     sceneJson,
     updatedAt,
