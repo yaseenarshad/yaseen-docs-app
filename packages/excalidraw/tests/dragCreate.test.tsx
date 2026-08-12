@@ -9,6 +9,7 @@ import { Excalidraw } from "../index";
 import * as InteractiveScene from "../renderer/interactiveScene";
 import * as StaticScene from "../renderer/staticScene";
 
+import { API } from "./helpers/api";
 import {
   act,
   render,
@@ -37,6 +38,26 @@ const { h } = window;
 
 describe("Test dragCreate", () => {
   describe("add element to the scene when pointer dragging long enough", () => {
+    it("uses the 8px rounded rectangle baseline when rounding is active", async () => {
+      const { getByToolName, container } = await render(<Excalidraw />);
+      API.setAppState({
+        currentItemRoundness: "round",
+        currentItemCornerRadius: undefined,
+      });
+      fireEvent.click(getByToolName("rectangle"));
+
+      const canvas = container.querySelector("canvas.interactive")!;
+      fireEvent.pointerDown(canvas, { clientX: 30, clientY: 20 });
+      fireEvent.pointerMove(canvas, { clientX: 130, clientY: 100 });
+      fireEvent.pointerUp(canvas);
+
+      expect(h.elements).toHaveLength(1);
+      expect(h.elements[0]).toMatchObject({
+        type: "rectangle",
+        roundness: { type: 3, value: 8 },
+      });
+    });
+
     it("rectangle", async () => {
       const { getByToolName, container } = await render(<Excalidraw />);
       // select tool

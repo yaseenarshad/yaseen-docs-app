@@ -221,6 +221,20 @@ describe("stats for a generic element", () => {
     testInputProperty(rectangle, "angle", "A", 0, 45);
   });
 
+  it("scales rectangle rounding through exact Stats dimensions", () => {
+    const rectangle = h.elements[0];
+    API.updateElement(rectangle, {
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 8 },
+    });
+
+    testInputProperty(rectangle, "height", "H", 100, 200);
+
+    expect(rectangle.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 16,
+    });
+  });
+
   it("should keep only two decimal places", () => {
     const rectangle = h.elements[0];
     const rectangleId = rectangle.id;
@@ -580,6 +594,7 @@ describe("stats for multiple elements", () => {
       width: 100,
       height: 50,
       groupIds: [groupId],
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 8 },
     });
     API.setElements([text, rectangle]);
     API.setSelectedElements([text, rectangle]);
@@ -596,6 +611,10 @@ describe("stats for multiple elements", () => {
     expect(text.roundness).toEqual({
       type: ROUNDNESS.ADAPTIVE_RADIUS,
       value: 10,
+    });
+    expect(rectangle.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 16,
     });
   });
 

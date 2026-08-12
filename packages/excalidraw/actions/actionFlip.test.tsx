@@ -1,4 +1,5 @@
 import { pointFrom } from "@excalidraw/math";
+import { ROUNDNESS } from "@excalidraw/common";
 
 import { Excalidraw } from "../index";
 import { API } from "../tests/helpers/api";
@@ -207,5 +208,29 @@ describe("flipping arrowheads", () => {
     API.executeAction(actionFlipHorizontal);
     expect(API.getElement(arrow).startArrowhead).toBe("arrow");
     expect(API.getElement(arrow).endArrowhead).toBe(null);
+  });
+});
+
+describe("flipping rounded boxes", () => {
+  beforeEach(async () => {
+    await render(<Excalidraw />);
+  });
+
+  it("preserves an explicit rectangle radius when dimensions do not change", () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      width: 100,
+      height: 80,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 8 },
+    });
+    API.setElements([rectangle]);
+    API.setSelectedElements([rectangle]);
+
+    API.executeAction(actionFlipHorizontal);
+
+    expect(API.getElement(rectangle).roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 8,
+    });
   });
 });

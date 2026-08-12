@@ -79,6 +79,7 @@ import {
   canChangeCornerRadius,
   canChangeCornerRadiusForElement,
   getRequestedCornerRadius,
+  getDefaultCornerRadiusForElementType,
   normalizeCornerRadius,
 } from "@excalidraw/element";
 
@@ -3170,7 +3171,8 @@ export const actionChangeRoundness = register<number | "sharp" | "round">({
         (selectionExists) =>
           selectionExists
             ? null
-            : appState.currentItemCornerRadius ?? CORNER_RADIUS.default,
+            : appState.currentItemCornerRadius ??
+              getDefaultCornerRadiusForElementType(appState.activeTool.type),
       );
 
       return (
@@ -3203,7 +3205,9 @@ export const actionChangeRoundness = register<number | "sharp" | "round">({
             className="corner-radius-range"
             label={null}
             value={
-              value ?? appState.currentItemCornerRadius ?? CORNER_RADIUS.default
+              value ??
+              appState.currentItemCornerRadius ??
+              getDefaultCornerRadiusForElementType(appState.activeTool.type)
             }
             hasCommonValue={value !== null}
             onChange={(nextValue) => updateData(nextValue)}

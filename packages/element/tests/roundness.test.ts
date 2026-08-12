@@ -27,7 +27,7 @@ describe("continuous corner radius", () => {
       max: 100,
       step: 1,
       default: 32,
-      presets: [0, 16, 32, 64],
+      presets: [0, 4, 8, 16, 32, 64],
     });
   });
 

@@ -165,6 +165,7 @@ import {
   isElementInViewport,
   isInvisiblySmallElement,
   getCornerRadius,
+  getDefaultCornerRadiusForElementType,
   isPathALoop,
   createSrcDoc,
   embeddableURLValidator,
@@ -10946,6 +10947,16 @@ class App extends React.Component<AppProps, AppState> {
             value: this.state.currentItemCornerRadius,
           }
         : null;
+    }
+
+    if (
+      this.state.currentItemRoundness === "round" &&
+      (elementType === "rectangle" || elementType === "image")
+    ) {
+      return {
+        type: ROUNDNESS.ADAPTIVE_RADIUS,
+        value: getDefaultCornerRadiusForElementType(elementType),
+      };
     }
 
     return this.state.currentItemRoundness === "round"

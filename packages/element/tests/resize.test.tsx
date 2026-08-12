@@ -13,6 +13,7 @@ import {
 import { API } from "@excalidraw/excalidraw/tests/helpers/api";
 import { UI, Keyboard, Pointer } from "@excalidraw/excalidraw/tests/helpers/ui";
 import {
+  act,
   fireEvent,
   render,
   unmountComponent,
@@ -73,6 +74,144 @@ beforeEach(async () => {
 
 describe("generic element", () => {
   // = rectangle/diamond/ellipse
+
+  it("scales explicit rectangle rounding from the resize-start shortest side", () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      width: 100,
+      height: 100,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 8 },
+    });
+    API.setElements([rectangle]);
+
+    UI.resize(rectangle, "se", [100, 100]);
+
+    expect(rectangle).toMatchObject({
+      width: 200,
+      height: 200,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+    });
+  });
+
+  it("keeps explicit rectangle rounding when the shortest side is unchanged", () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      width: 100,
+      height: 100,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 8 },
+    });
+    API.setElements([rectangle]);
+
+    UI.resize(rectangle, "e", [100, 0]);
+
+    expect(rectangle).toMatchObject({
+      width: 200,
+      height: 100,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 8 },
+    });
+  });
+
+  it("derives repeated pointer updates from the resize-start snapshot", () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      width: 100,
+      height: 100,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 8 },
+    });
+    const original = { ...rectangle };
+    const originalElements = new Map([[original.id, original]]);
+    API.setElements([rectangle]);
+
+    act(() => {
+      resizeSingleElement(
+        150,
+        150,
+        rectangle,
+        original,
+        originalElements,
+        h.app.scene,
+        "se",
+      );
+      resizeSingleElement(
+        200,
+        200,
+        rectangle,
+        original,
+        originalElements,
+        h.app.scene,
+        "se",
+      );
+    });
+
+    expect(rectangle.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 16,
+    });
+  });
+
+  it("normalizes scaled rounding to the existing 0–100px contract", () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      width: 100,
+      height: 100,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 8 },
+    });
+    API.setElements([rectangle]);
+
+    UI.resize(rectangle, "se", [1900, 1900]);
+
+    expect(rectangle.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 100,
+    });
+  });
+
+  it("maps a scaled explicit radius that rounds to zero back to sharp", () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      width: 100,
+      height: 100,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 1 },
+    });
+    API.setElements([rectangle]);
+
+    UI.resize(rectangle, "se", [-90, -90]);
+
+    expect(rectangle.roundness).toBeNull();
+  });
+
+  it("does not scale explicit rounding for excluded element families", () => {
+    const diamond = API.createElement({
+      type: "diamond",
+      width: 100,
+      height: 100,
+      roundness: { type: ROUNDNESS.PROPORTIONAL_RADIUS, value: 8 },
+    });
+    API.setElements([diamond]);
+
+    UI.resize(diamond, "se", [100, 100]);
+
+    expect(diamond.roundness).toEqual({
+      type: ROUNDNESS.PROPORTIONAL_RADIUS,
+      value: 8,
+    });
+  });
+
+  it("preserves value-less legacy rectangle rounding while resizing", () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      width: 100,
+      height: 100,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS },
+    });
+    API.setElements([rectangle]);
+
+    UI.resize(rectangle, "se", [100, 100]);
+
+    expect(rectangle.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+    });
+  });
 
   describe("resizes", () => {
     it.each`
@@ -817,6 +956,23 @@ describe("text element", () => {
 });
 
 describe("image element", () => {
+  it("scales explicit image rounding with proportional resize", () => {
+    const image = API.createElement({
+      type: "image",
+      width: 100,
+      height: 100,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 4 },
+    });
+    API.setElements([image]);
+
+    UI.resize(image, "se", [100, 100]);
+
+    expect(image.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 8,
+    });
+  });
+
   it("resizes", async () => {
     const image = API.createElement({ type: "image", width: 100, height: 100 });
     API.setElements([image]);
@@ -1316,6 +1472,7 @@ describe("multiple selection", () => {
       y: 0,
       width: 200,
       height: 100,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 4 },
     });
     const bottomImage = API.createElement({
       type: "image",
@@ -1323,6 +1480,7 @@ describe("multiple selection", () => {
       y: 150,
       width: 120,
       height: 80,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 8 },
     });
     API.setElements([topImage, bottomImage]);
 
@@ -1342,6 +1500,10 @@ describe("multiple selection", () => {
     expect(topImage.height).toBeCloseTo(100 * scale);
     expect(topImage.angle).toEqual(0);
     expect(topImage.scale).toEqual([1, 1]);
+    expect(topImage.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: Math.round(4 * scale),
+    });
 
     expect(bottomImage.x).toBeCloseTo(30 * scale);
     expect(bottomImage.y).toBeCloseTo(150 * scale);
@@ -1349,6 +1511,10 @@ describe("multiple selection", () => {
     expect(bottomImage.height).toBeCloseTo(80 * scale);
     expect(bottomImage.angle).toEqual(0);
     expect(bottomImage.scale).toEqual([1, 1]);
+    expect(bottomImage.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: Math.round(8 * scale),
+    });
   });
 
   it("resizes from center", () => {

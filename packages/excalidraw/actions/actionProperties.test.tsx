@@ -1034,6 +1034,12 @@ describe("element locking", () => {
       expect(
         queryByTestId(document.body, "corner-radius-preset-16"),
       ).toHaveAttribute("aria-pressed", "true");
+      expect(
+        queryByTestId(document.body, "corner-radius-preset-4"),
+      ).not.toBeNull();
+      expect(
+        queryByTestId(document.body, "corner-radius-preset-8"),
+      ).not.toBeNull();
 
       fireEvent.click(queryByTestId(document.body, "corner-radius-preset-64")!);
       expect(API.getSelectedElement()?.roundness).toEqual({
@@ -1052,6 +1058,22 @@ describe("element locking", () => {
 
       fireEvent.click(queryByTestId(document.body, "corner-radius-preset-0")!);
       expect(API.getSelectedElement()?.roundness).toBeNull();
+    });
+
+    it("should show the 8px baseline for a fresh rectangle tool", () => {
+      API.setAppState({
+        currentItemRoundness: "round",
+        currentItemCornerRadius: undefined,
+      });
+      UI.clickTool("rectangle");
+      togglePopover("More properties");
+
+      expect(queryByTestId(document.body, "corner-radius-slider")).toHaveValue(
+        "8",
+      );
+      expect(queryByTestId(document.body, "corner-radius-input")).toHaveValue(
+        8,
+      );
     });
 
     it("should expose native free-text background and rounding in the text overflow", () => {

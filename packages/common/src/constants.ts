@@ -388,12 +388,17 @@ export const DEFAULT_PROPORTIONAL_RADIUS = 0.25;
 // Fixed radius for the ADAPTIVE_RADIUS algorithm. In pixels.
 export const DEFAULT_ADAPTIVE_RADIUS = 32;
 
+export const DEFAULT_ELEMENT_CORNER_RADIUS = {
+  rectangle: 8,
+  image: 4,
+} as const;
+
 export const CORNER_RADIUS = {
   min: 0,
   max: 100,
   step: 1,
   default: DEFAULT_ADAPTIVE_RADIUS,
-  presets: [0, 16, DEFAULT_ADAPTIVE_RADIUS, 64],
+  presets: [0, 4, 8, 16, DEFAULT_ADAPTIVE_RADIUS, 64],
 } as const;
 
 // roundness type (algorithm)
