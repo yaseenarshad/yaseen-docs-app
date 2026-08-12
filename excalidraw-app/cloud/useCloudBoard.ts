@@ -1,4 +1,5 @@
 import {
+  useConvex,
   useMutation,
   usePaginatedQuery_experimental,
   useQuery,
@@ -73,8 +74,42 @@ const getRoute = () => parseCloudRoute(window.location.pathname);
 export const getCloudSaveDelay = (now: number, pendingSince: number) =>
   Math.max(
     0,
-    Math.min(CLOUD_SAVE_DEBOUNCE_MS, pendingSince + CLOUD_SAVE_MAX_PENDING_MS - now),
+    Math.min(
+      CLOUD_SAVE_DEBOUNCE_MS,
+      pendingSince + CLOUD_SAVE_MAX_PENDING_MS - now,
+    ),
   );
+
+type OpenedCloudScene = {
+  boardId: Id<"diagrams">;
+  sceneJson: string;
+  version: number;
+};
+
+// The reactive subscription only carries metadata, so the opened Board is only
+// complete once the scene for the board it describes has been fetched. The
+// version reported is the scene's, never the metadata's: saving against a
+// version whose scene this tab has not seen would silently drop peer edits.
+const withCloudScene = <Metadata extends { board: { _id: Id<"diagrams"> } }>(
+  metadata: Metadata | null | undefined,
+  scene: OpenedCloudScene | null,
+) => {
+  if (metadata === null) {
+    return null;
+  }
+  if (
+    metadata === undefined ||
+    scene === null ||
+    scene.boardId !== metadata.board._id
+  ) {
+    return undefined;
+  }
+  return {
+    ...metadata,
+    sceneJson: scene.sceneJson,
+    version: scene.version,
+  };
+};
 
 export const useCloudBoard = () => {
   const [route, setRoute] = useState<CloudRoute>(getRoute);
@@ -95,6 +130,10 @@ export const useCloudBoard = () => {
   }
   const [saveStatus, setSaveStatus] = useState<CloudSaveStatus>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [openedScene, setOpenedScene] = useState<OpenedCloudScene | null>(null);
+  const openedSceneRef = useRef<OpenedCloudScene | null>(null);
+  const sceneRequestRef = useRef(0);
+  const convex = useConvex();
   const ensureDefault = useMutation(api.boards.ensureDefault);
   const createBoard = useMutation(api.boards.create);
   const removeBoard = useMutation(api.boards.remove);
@@ -241,8 +280,8 @@ export const useCloudBoard = () => {
     };
   }, [requireObservedVersion]);
 
-  const ownedBoard = useQuery(
-    api.boards.openMine,
+  const ownedBoardMetadata = useQuery(
+    api.boards.openMineMetadata,
     route.kind === "owner" ? { slug: route.slug } : "skip",
   );
   const paginatedBoards = usePaginatedQuery_experimental({
@@ -255,19 +294,35 @@ export const useCloudBoard = () => {
     [paginatedBoards.data],
   );
   const folders = useQuery(api.boardFolders.listMine, {});
-  const sharedBoard = useQuery(
-    api.boards.openShared,
+  const sharedBoardMetadata = useQuery(
+    api.boards.openSharedMetadata,
     route.kind === "shared" ? { shareToken: route.shareToken } : "skip",
   );
-  const currentOwnedBoard =
-    route.kind === "owner" && ownedBoard && ownedBoard.board.slug !== route.slug
+  const currentOwnedBoardMetadata =
+    route.kind === "owner" &&
+    ownedBoardMetadata &&
+    ownedBoardMetadata.board.slug !== route.slug
       ? undefined
-      : ownedBoard;
+      : ownedBoardMetadata;
+  const openedBoardMetadata =
+    route.kind === "owner"
+      ? currentOwnedBoardMetadata
+      : route.kind === "shared"
+      ? sharedBoardMetadata
+      : undefined;
+  const currentOwnedBoard = useMemo(
+    () => withCloudScene(currentOwnedBoardMetadata, openedScene),
+    [currentOwnedBoardMetadata, openedScene],
+  );
+  const currentSharedBoard = useMemo(
+    () => withCloudScene(sharedBoardMetadata, openedScene),
+    [openedScene, sharedBoardMetadata],
+  );
   const openedBoard =
     route.kind === "owner"
       ? currentOwnedBoard
       : route.kind === "shared"
-      ? sharedBoard
+      ? currentSharedBoard
       : undefined;
   const ownedAssets = useQuery(
     api.boardAssets.listMine,
@@ -286,9 +341,23 @@ export const useCloudBoard = () => {
       ? sharedAssets
       : undefined;
 
+  // Board versions only ever move forward, so a scene that is not newer than
+  // the one already held is a lagging subscription or a superseded fetch.
+  const acceptOpenedScene = useCallback((scene: OpenedCloudScene) => {
+    const known = openedSceneRef.current;
+    if (known?.boardId === scene.boardId && known.version >= scene.version) {
+      return;
+    }
+    openedSceneRef.current = scene;
+    setOpenedScene(scene);
+  }, []);
+
   useEffect(() => {
     versionRef.current = 0;
     observedVersionRef.current = 0;
+    sceneRequestRef.current += 1;
+    openedSceneRef.current = null;
+    setOpenedScene(null);
     pendingSceneRef.current = null;
     pendingSinceRef.current = null;
     conflictRecoveryRef.current = null;
@@ -313,6 +382,52 @@ export const useCloudBoard = () => {
     setSaveStatus("loading");
     setErrorMessage(null);
   }, [routeIdentity]);
+
+  // Declared after the route reset so a route change clears the previous scene
+  // before this effect can start a fetch the reset would immediately discard.
+  useEffect(() => {
+    const metadata = openedBoardMetadata;
+    if (!metadata) {
+      return;
+    }
+    const boardId = metadata.board._id;
+    const known = openedSceneRef.current;
+    if (known?.boardId === boardId && known.version >= metadata.version) {
+      return;
+    }
+    const startedRoute = { ...currentRouteRef.current };
+    const requestId = ++sceneRequestRef.current;
+    const isCurrentRequest = () =>
+      requestId === sceneRequestRef.current &&
+      isCurrentRouteCompletion(startedRoute, currentRouteRef.current);
+    const pendingScene =
+      route.kind === "owner"
+        ? convex.query(api.boards.openMineScene, { slug: route.slug })
+        : route.kind === "shared"
+        ? convex.query(api.boards.openSharedScene, {
+            shareToken: route.shareToken,
+          })
+        : null;
+    if (!pendingScene) {
+      return;
+    }
+    void pendingScene
+      .then((scene) => {
+        if (!isCurrentRequest() || !scene || scene.boardId !== boardId) {
+          return;
+        }
+        acceptOpenedScene(scene);
+      })
+      .catch((cause) => {
+        if (!isCurrentRequest()) {
+          return;
+        }
+        setSaveStatus("error");
+        setErrorMessage(
+          cause instanceof Error ? cause.message : "Could not open this board",
+        );
+      });
+  }, [acceptOpenedScene, convex, openedBoardMetadata, route]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -621,6 +736,13 @@ export const useCloudBoard = () => {
         acceptedSceneRef.current = acceptCloudSceneWithoutSave(
           pending.sceneJson,
         );
+        // This tab already holds the scene it just wrote, so adopting it here
+        // keeps the metadata subscription from triggering a scene re-fetch.
+        acceptOpenedScene({
+          boardId: pending.boardId,
+          sceneJson: pending.sceneJson,
+          version: result.version,
+        });
         saveCoordinatorRef.current?.announceSaveComplete({
           boardId: pending.boardId,
           generation: pending.route.generation,
@@ -668,7 +790,13 @@ export const useCloudBoard = () => {
         saveInFlightBoardIdRef.current = null;
       }
     }
-  }, [openedBoard, requireObservedVersion, saveBoard, scheduleBoardPreview]);
+  }, [
+    acceptOpenedScene,
+    openedBoard,
+    requireObservedVersion,
+    saveBoard,
+    scheduleBoardPreview,
+  ]);
 
   flushSaveRef.current = flushSave;
 

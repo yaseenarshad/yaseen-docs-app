@@ -73,6 +73,152 @@ describe("boards compatibility API", () => {
     expect(legacyOpened?.version).toBe(1);
   });
 
+  it("splits the reactive open into scene-free metadata and a scene fetch", async () => {
+    const { owner } = await authenticatedTestClient();
+    const created = await owner.mutation(boardsApi.create, {
+      title: "Split open Board",
+    });
+    const sceneJson = JSON.stringify({
+      elements: [{ id: "shape", version: 1 }],
+      appState: {},
+      files: {},
+    });
+    const saved = await owner.mutation(boardsApi.save, {
+      boardId: created.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
+      expectedVersion: 0,
+      sceneJson,
+    });
+    if (saved.status !== "saved") {
+      throw new Error("Expected save");
+    }
+
+    const metadata = await owner.query(boardsApi.openMineMetadata, {
+      slug: created.slug,
+    });
+    const scene = await owner.query(boardsApi.openMineScene, {
+      slug: created.slug,
+    });
+
+    expect(metadata).toEqual({
+      board: expect.objectContaining({ _id: created.boardId }),
+      version: saved.version,
+      access: "owner",
+    });
+    expect(metadata && "sceneJson" in metadata).toBe(false);
+    expect(scene).toEqual({
+      boardId: created.boardId,
+      sceneJson,
+      version: saved.version,
+    });
+  });
+
+  it("reads the open metadata version from a legacy Board without one", async () => {
+    const { t, owner } = await authenticatedTestClient();
+    const created = await owner.mutation(boardsApi.create, {
+      title: "Legacy open metadata Board",
+    });
+    const saved = await owner.mutation(boardsApi.save, {
+      boardId: created.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
+      expectedVersion: 0,
+      sceneJson: JSON.stringify({
+        elements: [{ id: "shape", version: 1 }],
+        appState: {},
+        files: {},
+      }),
+    });
+    if (saved.status !== "saved") {
+      throw new Error("Expected save");
+    }
+    await t.run(async (ctx) => {
+      await ctx.db.patch("diagrams", created.boardId, {
+        contentVersion: undefined,
+      });
+    });
+
+    await expect(
+      owner.query(boardsApi.openMineMetadata, { slug: created.slug }),
+    ).resolves.toMatchObject({ version: saved.version });
+  });
+
+  it("splits the shared open the same way behind the share token", async () => {
+    const { t, owner } = await authenticatedTestClient();
+    const created = await owner.mutation(boardsApi.create, {
+      title: "Shared split Board",
+    });
+    const sceneJson = JSON.stringify({
+      elements: [{ id: "shape", version: 1 }],
+      appState: {},
+      files: {},
+    });
+    await owner.mutation(boardsApi.save, {
+      boardId: created.boardId,
+      clientSaveProtocol: CLIENT_SAVE_PROTOCOL,
+      expectedVersion: 0,
+      sceneJson,
+    });
+    const sharing = await owner.mutation(boardsApi.setSharing, {
+      boardId: created.boardId,
+      enabled: true,
+    });
+    if (!sharing.shareToken) {
+      throw new Error("Expected a share token");
+    }
+
+    const metadata = await t.query(boardsApi.openSharedMetadata, {
+      shareToken: sharing.shareToken,
+    });
+    const scene = await t.query(boardsApi.openSharedScene, {
+      shareToken: sharing.shareToken,
+    });
+    expect(metadata).toMatchObject({ version: 1, access: "viewer" });
+    expect(metadata && "sceneJson" in metadata).toBe(false);
+    expect(scene).toEqual({
+      boardId: created.boardId,
+      sceneJson,
+      version: 1,
+    });
+
+    await owner.mutation(boardsApi.setSharing, {
+      boardId: created.boardId,
+      enabled: false,
+    });
+    await expect(
+      t.query(boardsApi.openSharedMetadata, {
+        shareToken: sharing.shareToken,
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      t.query(boardsApi.openSharedScene, {
+        shareToken: sharing.shareToken,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("keeps the split open behind the same owner boundary", async () => {
+    const { t, owner } = await authenticatedTestClient();
+    const created = await owner.mutation(boardsApi.create, {
+      title: "Guarded split Board",
+    });
+    const otherUserId = await t.run(async (ctx) =>
+      ctx.db.insert("users", { name: "Other user" }),
+    );
+    const otherUser = t.withIdentity({
+      subject: `${otherUserId}|other-session`,
+    });
+
+    await expect(
+      otherUser.query(boardsApi.openMineMetadata, { slug: created.slug }),
+    ).resolves.toBeNull();
+    await expect(
+      otherUser.query(boardsApi.openMineScene, { slug: created.slug }),
+    ).resolves.toBeNull();
+    await expect(
+      t.query(boardsApi.openMineScene, { slug: created.slug }),
+    ).rejects.toThrow("Authentication required");
+  });
+
   it("offers finite cursor pagination for Board lists", async () => {
     const { owner } = await authenticatedTestClient();
     await owner.mutation(boardsApi.create, { title: "One" });

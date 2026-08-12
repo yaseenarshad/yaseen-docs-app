@@ -10,9 +10,13 @@ import {
   ensureDefaultRecord,
   listOwnedBoardRecords,
   paginateOwnedBoardRecords,
+  openOwnedBoardMetadata,
   openOwnedBoardRecord,
+  openSharedBoardMetadata,
   openSharedBoardRecord,
   moveBoardToFolderRecord,
+  readOwnedBoardScene,
+  readSharedBoardScene,
   removeBoardRecord,
   renameBoardRecord,
   saveBoardRecord,
@@ -60,6 +64,18 @@ const openedSharedBoardValidator = v.object({
   sceneJson: v.string(),
   version: v.number(),
   access: v.literal("viewer"),
+});
+
+const openedOwnedBoardMetadataValidator =
+  openedOwnedBoardValidator.omit("sceneJson");
+
+const openedSharedBoardMetadataValidator =
+  openedSharedBoardValidator.omit("sceneJson");
+
+const boardSceneValidator = v.object({
+  boardId: v.id("diagrams"),
+  sceneJson: v.string(),
+  version: v.number(),
 });
 
 export const ensureDefault = mutation({
@@ -119,6 +135,35 @@ export const openShared = query({
   returns: v.union(v.null(), openedSharedBoardValidator),
   handler: async (ctx, args) =>
     await openSharedBoardRecord(ctx, args.shareToken),
+});
+
+// `openMineMetadata` and `openSharedMetadata` are the reactive subscriptions:
+// they carry no scene, so a save no longer re-streams the whole Board to every
+// subscribed tab. Their scene counterparts are fetched once per version change.
+export const openMineMetadata = query({
+  args: { slug: v.string() },
+  returns: v.union(v.null(), openedOwnedBoardMetadataValidator),
+  handler: async (ctx, args) => await openOwnedBoardMetadata(ctx, args.slug),
+});
+
+export const openMineScene = query({
+  args: { slug: v.string() },
+  returns: v.union(v.null(), boardSceneValidator),
+  handler: async (ctx, args) => await readOwnedBoardScene(ctx, args.slug),
+});
+
+export const openSharedMetadata = query({
+  args: { shareToken: v.string() },
+  returns: v.union(v.null(), openedSharedBoardMetadataValidator),
+  handler: async (ctx, args) =>
+    await openSharedBoardMetadata(ctx, args.shareToken),
+});
+
+export const openSharedScene = query({
+  args: { shareToken: v.string() },
+  returns: v.union(v.null(), boardSceneValidator),
+  handler: async (ctx, args) =>
+    await readSharedBoardScene(ctx, args.shareToken),
 });
 
 export const save = mutation({

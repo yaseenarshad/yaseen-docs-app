@@ -23,7 +23,9 @@ const readDiagramSnapshotTiming = async (
   }
   const latestSnapshot = await ctx.db
     .query("diagramSnapshots")
-    .withIndex("by_diagramId_and_version", (q) => q.eq("diagramId", diagram._id))
+    .withIndex("by_diagramId_and_version", (q) =>
+      q.eq("diagramId", diagram._id),
+    )
     .order("desc")
     .first();
   if (!latestSnapshot) {
