@@ -17,6 +17,26 @@ Board is the product and application-domain name for a saved whiteboard. The exi
 
 New schema concepts use Board vocabulary (for example, `boardFolders`). Existing records and R2 objects must never be recreated, re-keyed, or moved solely to rename the product concept.
 
+### Private R2 Board scenes
+
+Committed Board scenes are compressed objects in the same private bucket, reached only through capability-checked Worker routes. Browsers use the same-origin `/api/board-scenes` routes, so they need no configuration.
+
+Convex actions that must read or replace a scene themselves — history restore, `updateTextElement`, `patchElements`, and the legacy-content removal tool — reach those routes over HTTP and therefore need the Worker origin as a Convex environment variable:
+
+```bash
+npx convex env set BOARD_SCENE_WORKER_ORIGIN https://draw.yaseenarshad.com
+```
+
+Without it those functions fail closed with `Board scene storage is not configured`; ordinary opens and saves are unaffected.
+
+Legacy `diagramContents` rows are retained through the observation window and removed only by an explicit, bounded, idempotent run that first reads each Board's R2 object back and verifies it. Nothing schedules it:
+
+```bash
+npx convex run --no-push internal/legacyBoardContent:removeVerifiedLegacyContents '{"batchSize": 25}'
+```
+
+Each call reports `examined`, `removed`, `alreadyRemoved`, `kept`, `isDone`, and `continueCursor`; pass the cursor back to continue. A Board whose object fails read-back keeps its legacy row and is counted in `kept`.
+
 Pixabay requires a server-side `PIXABAY_API_KEY` Cloudflare Worker secret. Pixabay search responses are cached for 24 hours and inserted assets are copied to R2 instead of permanently hotlinked. Iconify's public search API does not require a key.
 
 ## Production services

@@ -36,6 +36,7 @@ import type * as diagrams from "../diagrams.js";
 import type * as fixedAccounts from "../fixedAccounts.js";
 import type * as historyPersistence from "../historyPersistence.js";
 import type * as http from "../http.js";
+import type * as legacyBoardContent from "../legacyBoardContent.js";
 import type * as mediaLibrary from "../mediaLibrary.js";
 import type * as mediaTypes from "../mediaTypes.js";
 import type * as migrations from "../migrations.js";
@@ -87,6 +88,7 @@ declare const fullApi: ApiFromModules<{
   fixedAccounts: typeof fixedAccounts;
   historyPersistence: typeof historyPersistence;
   http: typeof http;
+  legacyBoardContent: typeof legacyBoardContent;
   mediaLibrary: typeof mediaLibrary;
   mediaTypes: typeof mediaTypes;
   migrations: typeof migrations;
