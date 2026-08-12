@@ -1,6 +1,9 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
 
+import { BOARD_SCENE_ROUTE } from "../../board-scenes/types";
+
+import { compressBoardScene } from "./boardScenePersistence";
 import {
   CLOUD_CRASH_JOURNAL_DEBOUNCE_MS,
   CLOUD_HANDOFF_VERSION_WAIT_MS,
@@ -13,6 +16,12 @@ import { createCloudCrashJournal } from "./cloudCrashJournal";
 
 const mocks = vi.hoisted(() => ({
   mutate: vi.fn(),
+  createSceneUploadGrant: vi.fn(),
+  commitSceneUpload: vi.fn(),
+  abandonSceneUpload: vi.fn(),
+  createSceneReadGrant: vi.fn(),
+  sceneCleanupTokens: [] as string[],
+  fetch: vi.fn(),
   publishBoardPreview: vi.fn(),
   coordinatorHandlers: null as null | {
     onRemoteClaim: (claim: {
@@ -49,6 +58,7 @@ const mocks = vi.hoisted(() => ({
     },
     version: 1,
     sceneJson: "baseline",
+    sceneManifest: undefined as undefined | { version: number },
   },
 }));
 
@@ -72,6 +82,9 @@ vi.mock("convex/react", async () => {
         access: mocks.openedBoard.access,
         board: mocks.openedBoard.board,
         version: mocks.openedBoard.version,
+        ...(mocks.openedBoard.sceneManifest
+          ? { sceneManifest: mocks.openedBoard.sceneManifest }
+          : null),
       };
     }
     return cache.value;
@@ -83,13 +96,25 @@ vi.mock("convex/react", async () => {
         access: "viewer",
         board: mocks.openedBoard.board,
         version: mocks.openedBoard.version,
+        ...(mocks.openedBoard.sceneManifest
+          ? { sceneManifest: mocks.openedBoard.sceneManifest }
+          : null),
       };
     }
     return sharedCache.value;
   };
+  // Each Convex function keeps its own mock so a Board-scene grant can never be
+  // mistaken for the legacy `boards.save` the older assertions still watch.
+  const mutations: Record<string, unknown> = {
+    "boardScenes:createUploadGrant": mocks.createSceneUploadGrant,
+    "boardScenes:commitUpload": mocks.commitSceneUpload,
+    "boardScenes:abandonUpload": mocks.abandonSceneUpload,
+    "boardScenes:createReadGrant": mocks.createSceneReadGrant,
+  };
   return {
     useConvex: () => ({ query: mocks.sceneQuery }),
-    useMutation: () => mocks.mutate,
+    useMutation: (mutation: never) =>
+      mutations[getFunctionName(mutation)] ?? mocks.mutate,
     usePaginatedQuery_experimental: () => ({
       data: [],
       status: "exhausted",
@@ -105,6 +130,8 @@ vi.mock("convex/react", async () => {
         ? boardMetadata()
         : name === "boards:openSharedMetadata"
         ? sharedBoardMetadata()
+        : name === "boardScenes:pendingCleanup"
+        ? mocks.sceneCleanupTokens
         : [];
     },
   };
@@ -136,6 +163,44 @@ vi.mock("./cloudTabCoordination", () => ({
   },
 }));
 
+const SCENE_READ_PATH = `${BOARD_SCENE_ROUTE}/${"a".repeat(64)}`;
+
+const jsonResponse = (body: unknown, ok = true) =>
+  ({ ok, status: ok ? 200 : 500, json: async () => body } as never);
+
+const bytesResponse = (bytes: Uint8Array, ok = true) =>
+  ({
+    ok,
+    status: ok ? 200 : 404,
+    arrayBuffer: async () => bytes.slice().buffer,
+  } as never);
+
+/** Publishes `sceneJson` as the object the Worker read route would serve. */
+const publishSceneObject = async (sceneJson: string, version: number) => {
+  const compressed = await compressBoardScene(sceneJson);
+  mocks.createSceneReadGrant.mockResolvedValue({
+    token: "a".repeat(64),
+    path: SCENE_READ_PATH,
+    version,
+    expiresAt: Date.now() + 300_000,
+    encoding: compressed.encoding,
+    rawSize: compressed.rawSize,
+    compressedSize: compressed.compressedSize,
+    rawSha256: compressed.rawSha256,
+    compressedSha256: compressed.compressedSha256,
+    semanticSha256: compressed.semanticSha256,
+    etag: `etag-v${version}`,
+  });
+  mocks.fetch.mockImplementation(async (input: string, init?: RequestInit) =>
+    init?.method === "POST"
+      ? jsonResponse({ etag: `etag-v${version + 1}` })
+      : init?.method === "DELETE"
+      ? jsonResponse({ deleted: 1 })
+      : bytesResponse(compressed.bytes),
+  );
+  return compressed;
+};
+
 const settleOpenedScene = async () => {
   await act(async () => {
     await Promise.resolve();
@@ -155,6 +220,27 @@ describe("useCloudBoard preview scheduling", () => {
     window.history.replaceState({}, "", "/b/test-board");
     mocks.mutate.mockReset();
     mocks.mutate.mockResolvedValue({ status: "saved", version: 2 });
+    // Migration is off by default: a legacy Board stays legacy unless a test
+    // deliberately grants the upload that moves it.
+    mocks.createSceneUploadGrant.mockReset();
+    mocks.createSceneUploadGrant.mockResolvedValue({
+      status: "upgrade-required",
+    });
+    mocks.commitSceneUpload.mockReset();
+    mocks.commitSceneUpload.mockResolvedValue({
+      status: "committed",
+      version: 2,
+      updatedAt: 20,
+      snapshotCreated: false,
+      cleanupToken: null,
+    });
+    mocks.abandonSceneUpload.mockReset();
+    mocks.abandonSceneUpload.mockResolvedValue({ cleanupToken: null });
+    mocks.createSceneReadGrant.mockReset();
+    mocks.sceneCleanupTokens = [];
+    mocks.fetch.mockReset();
+    mocks.fetch.mockResolvedValue(jsonResponse({ etag: "etag" }));
+    vi.stubGlobal("fetch", mocks.fetch);
     mocks.publishBoardPreview.mockReset();
     mocks.publishBoardPreview.mockResolvedValue(undefined);
     mocks.coordinatorHandlers = null;
@@ -195,12 +281,14 @@ describe("useCloudBoard preview scheduling", () => {
       },
       version: 1,
       sceneJson: "baseline",
+      sceneManifest: undefined,
     };
   });
 
   afterEach(() => {
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("keeps the last successful save preview scheduled when a transient queue returns to the accepted baseline", async () => {
