@@ -691,6 +691,46 @@ export const useCloudBoard = () => {
     };
   }, [flushJournalWrite]);
 
+  // Closing a Board mid-edit is normally safe: the pending scene is journaled
+  // locally within a fraction of a second and replayed the next time this Board
+  // opens, so an ordinary unsaved edit is never worth interrupting a close for.
+  // Two states break that promise, and only while an edit is actually pending:
+  // a save that is failing, which leaves the edit reachable only from this
+  // machine's journal until this machine reopens the Board, and a journal whose
+  // writes are failing, which leaves it nowhere at all.
+  const isClosingRisky = useCallback(() => {
+    const pending = pendingSceneRef.current;
+    if (
+      !pending ||
+      !isCurrentRouteCompletion(pending.route, currentRouteRef.current)
+    ) {
+      return false;
+    }
+    // The journal is only consulted, never created: an unload is the last
+    // moment to be opening IndexedDB, and no journal yet means no failed write.
+    return (
+      saveStatus === "error" || (crashJournalRef.current?.isDegraded() ?? false)
+    );
+  }, [saveStatus]);
+
+  // The handler decides nothing else and starts no work, so the pagehide flush
+  // that follows a confirmed leave runs exactly as it did before.
+  useEffect(() => {
+    if (route.kind !== "owner" || openedBoard?.access !== "owner") {
+      return;
+    }
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!isClosingRisky()) {
+        return;
+      }
+      // The browser owns the wording; a handler only opts the dialog in.
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isClosingRisky, openedBoard?.access, route.kind]);
+
   useEffect(() => {
     if (route.kind !== "owner" || !route.isLegacyPath) {
       return;
