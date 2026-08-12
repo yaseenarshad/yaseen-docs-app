@@ -208,10 +208,11 @@ const settleOpenedScene = async () => {
   });
 };
 
-// Verifying and decompressing a stored scene takes several async hops more than
-// a one-shot Convex query, so a stored-scene open needs the timer queue drained.
-const settleStoredScene = async () => {
-  for (let attempt = 0; attempt < 3; attempt++) {
+// Compressing, hashing and verifying a stored scene takes an unbounded number
+// of async hops more than a one-shot Convex query, so anything that waits on one
+// drains the queue until the outcome it is waiting for is actually there.
+const settleUntil = async (isSettled: () => boolean, attempts = 50) => {
+  for (let attempt = 0; attempt < attempts && !isSettled(); attempt++) {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
@@ -295,7 +296,10 @@ describe("useCloudBoard preview scheduling", () => {
     };
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // A silent background migration must not still be in flight when the next
+    // test resets the mocks it would otherwise call.
+    await settleUntil(() => false, 5);
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
     vi.unstubAllGlobals();
@@ -1194,7 +1198,7 @@ describe("useCloudBoard preview scheduling", () => {
     };
     const compressed = await publishSceneObject(sceneJson, version);
     const rendered = await renderCloudBoard();
-    await settleStoredScene();
+    await settleUntil(() => rendered.result.current.openedBoard !== undefined);
     return { ...rendered, compressed };
   };
 
@@ -1260,7 +1264,7 @@ describe("useCloudBoard preview scheduling", () => {
       sceneManifest: { version: 2 },
     };
     rerender();
-    await settleStoredScene();
+    await settleUntil(() => mocks.fetch.mock.calls.length > 1);
     await publishSceneObject("newest peer edit", 3);
     mocks.openedBoard = {
       ...mocks.openedBoard,
@@ -1268,7 +1272,7 @@ describe("useCloudBoard preview scheduling", () => {
       sceneManifest: { version: 3 },
     };
     rerender();
-    await settleStoredScene();
+    await settleUntil(() => result.current.openedBoard?.version === 3);
 
     await act(async () => {
       resolveStaleScene(bytesResponse(stale.bytes));
@@ -1292,7 +1296,7 @@ describe("useCloudBoard preview scheduling", () => {
       sceneManifest: { version: 2 },
     };
     rerender();
-    await settleStoredScene();
+    await settleUntil(() => result.current.saveStatus === "error");
 
     expect(result.current.saveStatus).toBe("error");
     expect(result.current.errorMessage).toBe(
@@ -1473,7 +1477,7 @@ describe("useCloudBoard preview scheduling", () => {
       cleanupToken: null,
     });
     const { result } = await renderCloudBoard();
-    await settleOpenedScene();
+    await settleUntil(() => mocks.commitSceneUpload.mock.calls.length > 0);
 
     expect(mocks.createSceneUploadGrant).toHaveBeenCalledWith(
       expect.objectContaining({ purpose: "migration", expectedVersion: 1 }),
@@ -1504,7 +1508,7 @@ describe("useCloudBoard preview scheduling", () => {
   it("leaves a Board legacy and silent when migration fails", async () => {
     mocks.createSceneUploadGrant.mockRejectedValue(new Error("offline"));
     const { result } = await renderCloudBoard();
-    await settleOpenedScene();
+    await settleUntil(() => mocks.createSceneUploadGrant.mock.calls.length > 0);
 
     expect(result.current.saveStatus).toBe("saved");
     expect(result.current.errorMessage).toBeNull();
@@ -1522,9 +1526,9 @@ describe("useCloudBoard preview scheduling", () => {
   it("attempts migration only once per Board in a tab", async () => {
     grantSceneUpload(1);
     const { rerender } = await renderCloudBoard();
-    await settleOpenedScene();
+    await settleUntil(() => mocks.commitSceneUpload.mock.calls.length > 0);
     rerender();
-    await settleOpenedScene();
+    await settleUntil(() => false, 3);
 
     expect(mocks.createSceneUploadGrant).toHaveBeenCalledTimes(1);
   });
@@ -1538,7 +1542,7 @@ describe("useCloudBoard preview scheduling", () => {
     };
     await publishSceneObject("shared r2 scene", 1);
     const { result } = await renderCloudBoard();
-    await settleStoredScene();
+    await settleUntil(() => result.current.openedBoard !== undefined);
 
     expect(mocks.createSceneReadGrant).toHaveBeenCalledWith({
       shareToken: "share-token",
@@ -1552,6 +1556,7 @@ describe("useCloudBoard preview scheduling", () => {
   it("drains pending scene cleanup capabilities in the background", async () => {
     mocks.sceneCleanupTokens = ["retired-one", "retired-two"];
     await renderCloudBoard();
+    await settleUntil(() => mocks.fetch.mock.calls.length > 1);
 
     expect(mocks.fetch).toHaveBeenCalledWith(BOARD_SCENE_ROUTE, {
       method: "DELETE",
