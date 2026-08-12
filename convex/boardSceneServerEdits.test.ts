@@ -10,7 +10,7 @@ import {
   createBoardSceneWorkerHarness,
 } from "../board-scenes/testWorkerHarness";
 
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import {
   BOARD_SCENE_WORKER_ORIGIN_VARIABLE,
   compressBoardScene,
@@ -212,6 +212,82 @@ describe("Board scenes through the private Worker", () => {
     await expect(
       owner.query(api.boards.openMine, { slug: board.slug }),
     ).rejects.toThrow(/^(?!.*board-scenes\/).*moved to object storage/s);
+  });
+
+  it("refuses both legacy full-record queries once a Board has migrated", async () => {
+    const { t, owner, board } = await setup();
+    await clientCommit(owner, board.boardId, "migration", 0, textScene("v0"));
+    const { shareToken } = await owner.mutation(api.boards.setSharing, {
+      boardId: board.boardId,
+      enabled: true,
+    });
+
+    // A client old enough to ask for a whole scene document is told to reload
+    // rather than served, and never reaches the large legacy row.
+    await expect(
+      owner.query(api.boards.openMine, { slug: board.slug }),
+    ).rejects.toThrow("moved to object storage");
+    await expect(
+      t.query(api.boards.openShared, { shareToken: shareToken as string }),
+    ).rejects.toThrow("moved to object storage");
+    await expect(
+      owner.query(api.boards.openMineScene, { slug: board.slug }),
+    ).rejects.toThrow("moved to object storage");
+    await expect(
+      t.query(api.boards.openSharedScene, {
+        shareToken: shareToken as string,
+      }),
+    ).rejects.toThrow("moved to object storage");
+    await expect(
+      owner.mutation(api.boards.save, {
+        boardId: board.boardId,
+        clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
+        expectedVersion: 0,
+        sceneJson: textScene("stale"),
+      }),
+    ).resolves.toEqual({ status: "upgrade-required" });
+
+    // The metadata subscriptions both sides actually use keep working.
+    await expect(
+      owner.query(api.boards.openMineMetadata, { slug: board.slug }),
+    ).resolves.toMatchObject({ version: 0 });
+    await expect(
+      t.query(api.boards.openSharedMetadata, {
+        shareToken: shareToken as string,
+      }),
+    ).resolves.toMatchObject({ version: 0 });
+  });
+
+  it("keeps preview generation tied to the committed R2 version", async () => {
+    const { t, owner, board } = await setup();
+    await clientCommit(owner, board.boardId, "migration", 0, textScene("v0"));
+    await clientCommit(owner, board.boardId, "save", 0, textScene("v1"));
+    // The observation-window tool has already taken the legacy row away.
+    await t.action(
+      internal.legacyBoardContent.removeVerifiedLegacyContents,
+      {},
+    );
+
+    const grant = await owner.mutation(api.boardPreviews.createUploadGrant, {
+      boardId: board.boardId,
+      sourceVersion: 1,
+      mimeType: "image/webp",
+      size: 1024,
+      width: 600,
+      height: 400,
+    });
+
+    expect(grant.token).toEqual(expect.any(String));
+    await expect(
+      owner.mutation(api.boardPreviews.createUploadGrant, {
+        boardId: board.boardId,
+        sourceVersion: 0,
+        mimeType: "image/webp",
+        size: 1024,
+        width: 600,
+        height: 400,
+      }),
+    ).rejects.toThrow("changed before preview upload");
   });
 });
 
