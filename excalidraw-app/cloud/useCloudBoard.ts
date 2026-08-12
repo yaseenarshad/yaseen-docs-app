@@ -17,6 +17,12 @@ import {
 } from "./cloudRoutes";
 import { deleteBoardAndCleanup } from "./boardDeletion";
 import {
+  cloneBoardIntoOwnAccount,
+  requireSharedBoardTitle,
+  shouldOfferBoardCopy,
+  uploadClonedBoardAsset,
+} from "./boardCloning";
+import {
   getCloudRouteIdentity,
   isCurrentRouteCompletion,
 } from "./cloudRouteLifecycle";
@@ -54,6 +60,7 @@ import {
 } from "./boardOrganizer";
 
 import type { Id } from "../../convex/_generated/dataModel";
+import type { BoardCloneSource } from "./boardCloning";
 import type { BoardSort } from "./boardOrganizer";
 import type { CloudRouteGeneration } from "./cloudRouteLifecycle";
 import type { CloudRoute } from "./cloudRoutes";
@@ -434,6 +441,12 @@ export const useCloudBoard = () => {
   const sharedBoardMetadata = useQuery(
     api.boards.openSharedMetadata,
     route.kind === "shared" ? { shareToken: route.shareToken } : "skip",
+  );
+  // Only a real account can be given a copy: an anonymous viewer's session is
+  // throwaway, so the clone would land somewhere they can never get back to.
+  const account = useQuery(
+    api.account.current,
+    route.kind === "shared" ? {} : "skip",
   );
   const currentOwnedBoardMetadata =
     route.kind === "owner" &&
@@ -1629,6 +1642,42 @@ export const useCloudBoard = () => {
     [createAssetUploadGrant, openedBoard, registerAssetUpload],
   );
 
+  const cloneSharedBoard = useCallback(
+    async (source: Omit<BoardCloneSource, "title">) => {
+      const title = requireSharedBoardTitle(openedBoard);
+      return await cloneBoardIntoOwnAccount(
+        { ...source, title },
+        {
+          createBoard,
+          removeBoard,
+          uploadAsset: async ({ boardId, file }) =>
+            await uploadClonedBoardAsset(
+              { boardId, file },
+              {
+                createUploadGrant: createAssetUploadGrant,
+                registerUpload: registerAssetUpload,
+              },
+            ),
+          sceneSave: sceneSaveDependencies,
+          navigate: ({ slug }) => {
+            setSaveStatus("loading");
+            setErrorMessage(null);
+            window.history.pushState({}, "", getCanonicalOwnerPath(slug));
+            setRoute({ kind: "owner", slug, isLegacyPath: false });
+          },
+        },
+      );
+    },
+    [
+      createAssetUploadGrant,
+      createBoard,
+      openedBoard,
+      registerAssetUpload,
+      removeBoard,
+      sceneSaveDependencies,
+    ],
+  );
+
   return useMemo(
     () => ({
       route,
@@ -1671,8 +1720,16 @@ export const useCloudBoard = () => {
       queueAssets,
       isViewer: openedBoard?.access === "viewer",
       isReady: openedBoard !== undefined && openedBoard !== null,
+      canCopySharedBoard: shouldOfferBoardCopy({
+        routeKind: route.kind,
+        isViewer: openedBoard?.access === "viewer",
+        account,
+      }),
+      cloneSharedBoard,
     }),
     [
+      account,
+      cloneSharedBoard,
       enableSharing,
       resolvePresentationAnimation,
       publishPresentationAnimation,

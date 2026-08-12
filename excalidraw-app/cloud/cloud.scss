@@ -45,12 +45,44 @@
   min-width: 0;
 }
 
+.excalidraw-ui-top-right .cloud-status--with-action {
+  max-width: min(380px, 40vw);
+}
+
 .cloud-status__identity {
   display: flex;
   flex-direction: column;
   line-height: 1.1;
   min-width: 0;
   width: min(12rem, 22vw);
+}
+
+.cloud-status__action {
+  display: flex;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.cloud-status__copy {
+  background: transparent;
+  border: 1px solid var(--default-border-color, var(--color-gray-30));
+  border-radius: var(--border-radius-lg, 8px);
+  color: var(--text-primary-color);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+
+.cloud-status__copy:hover:not(:disabled) {
+  background: var(--button-hover-bg, var(--island-bg-color));
+}
+
+.cloud-status__copy:disabled {
+  cursor: progress;
+  opacity: 0.6;
 }
 
 .cloud-status__title {

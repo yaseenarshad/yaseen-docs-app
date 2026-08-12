@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { CloudSaveStatus } from "./useCloudBoard";
+import type { ReactNode } from "react";
 
 const statusLabels: Record<CloudSaveStatus, string> = {
   loading: "Opening…",
@@ -11,18 +12,52 @@ const statusLabels: Record<CloudSaveStatus, string> = {
   viewer: "View only",
 };
 
+/**
+ * The one action a viewer can take on someone else's Board. It owns its busy
+ * state so a clone in flight cannot be started twice, and `onCopy` is expected
+ * to report its own failures — the button only reflects that work is running.
+ */
+export const CloudCopyAction = ({
+  onCopy,
+}: {
+  onCopy: () => Promise<void>;
+}) => {
+  const [isCopying, setIsCopying] = useState(false);
+
+  return (
+    <button
+      className="cloud-status__copy"
+      type="button"
+      disabled={isCopying}
+      title="Make a copy of this board in your account"
+      onClick={() => {
+        setIsCopying(true);
+        void onCopy()
+          .catch((error) => {
+            console.error("Could not copy the shared board", error);
+          })
+          .finally(() => setIsCopying(false));
+      }}
+    >
+      {isCopying ? "Copying…" : "Make a copy"}
+    </button>
+  );
+};
+
 export const CloudStatus = ({
   title,
   status,
   errorMessage,
   canRename,
   onRename,
+  action,
 }: {
   title: string;
   status: CloudSaveStatus;
   errorMessage: string | null;
   canRename: boolean;
   onRename: (title: string) => Promise<void>;
+  action?: ReactNode;
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [draftTitle, setDraftTitle] = useState(title);
@@ -51,7 +86,10 @@ export const CloudStatus = ({
   };
 
   return (
-    <div className="cloud-status" title={errorMessage ?? undefined}>
+    <div
+      className={`cloud-status${action ? " cloud-status--with-action" : ""}`}
+      title={errorMessage ?? undefined}
+    >
       <div className="cloud-status__identity">
         {isEditingTitle ? (
           <input
@@ -88,6 +126,7 @@ export const CloudStatus = ({
           {statusLabels[status]}
         </span>
       </div>
+      {action ? <div className="cloud-status__action">{action}</div> : null}
     </div>
   );
 };

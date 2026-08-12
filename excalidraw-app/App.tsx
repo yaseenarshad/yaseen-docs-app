@@ -145,7 +145,7 @@ import CollabError, { collabErrorIndicatorAtom } from "./collab/CollabError";
 import { useHandleAppTheme } from "./useHandleAppTheme";
 import { getPreferredLanguage } from "./app-language/language-detector";
 import { useAppLangCode } from "./app-language/language-state";
-import { CloudStatus } from "./cloud/CloudStatus";
+import { CloudCopyAction, CloudStatus } from "./cloud/CloudStatus";
 import { CloudAccount } from "./cloud/CloudAccount";
 import { CloudShareDialog } from "./cloud/CloudShareDialog";
 import { getCloudDocumentTitle } from "./cloud/cloudDocumentTitle";
@@ -700,6 +700,40 @@ const ExcalidrawWrapper = () => {
         }
       });
   }, [activeCloudRouteKey, cloud.assets, excalidrawAPI]);
+
+  // The clone is taken from what this viewer already has on canvas, so legacy
+  // and migrated shared Boards travel the same path and the images are known
+  // to be in memory. The source Board is only ever read.
+  const copySharedBoard = useCallback(async () => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    try {
+      const { failedAssetFileIds } = await cloud.cloneSharedBoard({
+        elements: excalidrawAPI.getSceneElements(),
+        appState: excalidrawAPI.getAppState(),
+        files: excalidrawAPI.getFiles(),
+      });
+      if (failedAssetFileIds.length > 0) {
+        excalidrawAPI.setToast({
+          message: `Copied, but ${failedAssetFileIds.length} image${
+            failedAssetFileIds.length === 1 ? "" : "s"
+          } could not be copied.`,
+          closable: true,
+          duration: 8000,
+        });
+      }
+    } catch (error) {
+      excalidrawAPI.updateScene({
+        appState: {
+          errorMessage:
+            error instanceof Error
+              ? error.message
+              : "This board could not be copied.",
+        },
+      });
+    }
+  }, [cloud, excalidrawAPI]);
 
   // ---------------------------------------------------------------------------
   // Hoisted loadImages
@@ -1302,6 +1336,11 @@ const ExcalidrawWrapper = () => {
                   errorMessage={cloud.errorMessage}
                   canRename={cloud.openedBoard?.access === "owner"}
                   onRename={cloud.renameOpenedBoard}
+                  action={
+                    cloud.canCopySharedBoard && excalidrawAPI ? (
+                      <CloudCopyAction onCopy={copySharedBoard} />
+                    ) : null
+                  }
                 />
               )}
               {!isMobile && collabAPI && !isCollabDisabled && (
