@@ -62,10 +62,19 @@ export type CloudSaveStatus =
   | "error"
   | "viewer";
 
-export const CLOUD_SAVE_DEBOUNCE_MS = 3_000;
+export const CLOUD_SAVE_DEBOUNCE_MS = 10_000;
+export const CLOUD_SAVE_MAX_PENDING_MS = 60_000;
 export const CLOUD_HANDOFF_VERSION_WAIT_MS = 5_000;
 
 const getRoute = () => parseCloudRoute(window.location.pathname);
+
+// A trailing debounce alone lets an uninterrupted drawing session keep local
+// edits unsaved forever, so cap how long the oldest pending change may wait.
+export const getCloudSaveDelay = (now: number, pendingSince: number) =>
+  Math.max(
+    0,
+    Math.min(CLOUD_SAVE_DEBOUNCE_MS, pendingSince + CLOUD_SAVE_MAX_PENDING_MS - now),
+  );
 
 export const useCloudBoard = () => {
   const [route, setRoute] = useState<CloudRoute>(getRoute);
@@ -130,6 +139,7 @@ export const useCloudBoard = () => {
     previewScene?: BoardPreviewScene;
     recoveryAttempt: 0 | 1;
   } | null>(null);
+  const pendingSinceRef = useRef<number | null>(null);
   const conflictRecoveryRef = useRef<{
     boardId: Id<"diagrams">;
     route: CloudRouteGeneration;
@@ -178,6 +188,7 @@ export const useCloudBoard = () => {
                 : recovery.sceneJson,
           };
           pendingSceneRef.current = null;
+          pendingSinceRef.current = null;
           if (saveTimerRef.current !== null) {
             window.clearTimeout(saveTimerRef.current);
             saveTimerRef.current = null;
@@ -279,6 +290,7 @@ export const useCloudBoard = () => {
     versionRef.current = 0;
     observedVersionRef.current = 0;
     pendingSceneRef.current = null;
+    pendingSinceRef.current = null;
     conflictRecoveryRef.current = null;
     blockedConflictRef.current = null;
     requiredVersionByBoardRef.current.clear();
@@ -546,6 +558,7 @@ export const useCloudBoard = () => {
       return false;
     }
     pendingSceneRef.current = null;
+    pendingSinceRef.current = null;
     setSaveStatus("saving");
     const savePromise = (async () => {
       try {
@@ -702,6 +715,7 @@ export const useCloudBoard = () => {
           blockedConflictRef.current = null;
         }
         pendingSceneRef.current = null;
+        pendingSinceRef.current = null;
         if (saveTimerRef.current !== null) {
           window.clearTimeout(saveTimerRef.current);
           saveTimerRef.current = null;
@@ -735,6 +749,8 @@ export const useCloudBoard = () => {
           version: versionRef.current,
         });
       }
+      const now = Date.now();
+      const pendingSince = (pendingSinceRef.current ??= now);
       setSaveStatus("saving");
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
@@ -748,7 +764,7 @@ export const useCloudBoard = () => {
           saveTimerRef.current = null;
           void flushSave();
         },
-        isRecoveryRetry ? 0 : CLOUD_SAVE_DEBOUNCE_MS,
+        isRecoveryRetry ? 0 : getCloudSaveDelay(now, pendingSince),
       );
     },
     [flushSave, openedBoard],
@@ -756,6 +772,7 @@ export const useCloudBoard = () => {
 
   const discardPendingSave = useCallback(() => {
     pendingSceneRef.current = null;
+    pendingSinceRef.current = null;
     if (saveTimerRef.current !== null) {
       window.clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;

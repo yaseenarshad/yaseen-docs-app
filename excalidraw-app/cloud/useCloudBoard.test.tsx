@@ -4,6 +4,7 @@ import { afterEach, beforeEach, vi } from "vitest";
 import {
   CLOUD_HANDOFF_VERSION_WAIT_MS,
   CLOUD_SAVE_DEBOUNCE_MS,
+  CLOUD_SAVE_MAX_PENDING_MS,
   useCloudBoard,
 } from "./useCloudBoard";
 import { CLOUD_SAVE_PROTOCOL_VERSION } from "./cloudSaveProtocol";
@@ -133,9 +134,10 @@ describe("useCloudBoard preview scheduling", () => {
     expect(mocks.publishBoardPreview).toHaveBeenCalledTimes(1);
   });
 
-  it("waits three seconds after the latest local change before saving", async () => {
+  it("waits ten seconds after the latest local change before saving", async () => {
     const { result } = renderHook(() => useCloudBoard());
 
+    expect(CLOUD_SAVE_DEBOUNCE_MS).toBe(10_000);
     act(() => {
       result.current.queueSave("changed");
     });
@@ -148,6 +150,58 @@ describe("useCloudBoard preview scheduling", () => {
       await vi.advanceTimersByTimeAsync(1);
     });
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("flushes an uninterrupted editing session once the maximum pending interval elapses", async () => {
+    const editInterval = CLOUD_SAVE_DEBOUNCE_MS / 2;
+    const { result } = renderHook(() => useCloudBoard());
+
+    expect(CLOUD_SAVE_MAX_PENDING_MS).toBe(60_000);
+    for (
+      let elapsed = 0;
+      elapsed < CLOUD_SAVE_MAX_PENDING_MS;
+      elapsed += editInterval
+    ) {
+      act(() => {
+        result.current.queueSave(`edit at ${elapsed}`);
+      });
+      expect(mocks.mutate).not.toHaveBeenCalled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(editInterval);
+      });
+    }
+
+    expect(mocks.mutate).toHaveBeenCalledTimes(1);
+    expect(mocks.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sceneJson: `edit at ${CLOUD_SAVE_MAX_PENDING_MS - editInterval}`,
+      }),
+    );
+  });
+
+  it("restarts the maximum pending interval after a save drains the queue", async () => {
+    const { result } = renderHook(() => useCloudBoard());
+
+    act(() => {
+      result.current.queueSave("first change");
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_MAX_PENDING_MS);
+    });
+    expect(mocks.mutate).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      result.current.queueSave("second change");
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS - 1);
+    });
+    expect(mocks.mutate).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(mocks.mutate).toHaveBeenCalledTimes(2);
   });
 
   it("claims the current board once local editing begins", () => {
@@ -206,7 +260,7 @@ describe("useCloudBoard preview scheduling", () => {
     });
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+      await result.current.flushSave();
     });
     expect(mocks.mutate).not.toHaveBeenCalled();
 
@@ -248,6 +302,26 @@ describe("useCloudBoard preview scheduling", () => {
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
     expect(mocks.mutate).toHaveBeenCalledWith(
       expect.objectContaining({ sceneJson: "pending tab switch edit" }),
+    );
+  });
+
+  it("flushes a pending Board edit as soon as the tab is hidden", async () => {
+    const { result } = renderHook(() => useCloudBoard());
+    act(() => result.current.queueSave("pending hidden tab edit"));
+
+    await act(async () => {
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        get: () => "hidden",
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+      await Promise.resolve();
+    });
+    Reflect.deleteProperty(document, "visibilityState");
+
+    expect(mocks.mutate).toHaveBeenCalledTimes(1);
+    expect(mocks.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ sceneJson: "pending hidden tab edit" }),
     );
   });
 
@@ -419,7 +493,7 @@ describe("useCloudBoard preview scheduling", () => {
     });
     act(() => result.current.queueSave("newer local edit"));
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+      await result.current.flushSave();
     });
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
 
