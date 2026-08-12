@@ -62,6 +62,7 @@ import {
 } from "./typeChecks";
 
 import { isInGroup } from "./groups";
+import { normalizeCornerRadius } from "./utils";
 
 import type { Scene } from "./Scene";
 
@@ -282,6 +283,44 @@ export const rescalePointsInElement = (
         ),
       }
     : {};
+
+export const getScaledElementRoundness = (
+  element: ExcalidrawElement,
+  nextWidth: number,
+  nextHeight: number,
+): ExcalidrawElement["roundness"] => {
+  if (
+    (element.type !== "rectangle" && element.type !== "image") ||
+    element.roundness?.value === undefined
+  ) {
+    return element.roundness;
+  }
+
+  const previousShortestSide = Math.min(
+    Math.abs(element.width),
+    Math.abs(element.height),
+  );
+  const nextShortestSide = Math.min(Math.abs(nextWidth), Math.abs(nextHeight));
+
+  if (
+    !Number.isFinite(previousShortestSide) ||
+    !Number.isFinite(nextShortestSide) ||
+    previousShortestSide <= 0 ||
+    nextShortestSide <= 0
+  ) {
+    return element.roundness;
+  }
+
+  const value = normalizeCornerRadius(
+    element.roundness.value * (nextShortestSide / previousShortestSide),
+  );
+
+  if (value === element.roundness.value) {
+    return element.roundness;
+  }
+
+  return value === 0 ? null : { ...element.roundness, value };
+};
 
 export const measureFontSizeFromWidth = (
   element: NonDeleted<ExcalidrawTextElement>,
@@ -880,11 +919,19 @@ export const resizeSingleElement = (
     Number.isFinite(newOrigin.x) &&
     Number.isFinite(newOrigin.y)
   ) {
+    const scaledRoundness = getScaledElementRoundness(
+      origElement,
+      nextWidth,
+      nextHeight,
+    );
     let updates: ElementUpdate<ExcalidrawElement> = {
       ...newOrigin,
       width: Math.abs(nextWidth),
       height: Math.abs(nextHeight),
       ...rescaledPoints,
+      ...(scaledRoundness !== origElement.roundness
+        ? { roundness: scaledRoundness }
+        : {}),
     };
 
     if (isBindingElement(latestElement)) {
@@ -1386,6 +1433,11 @@ export const resizeMultipleElements = (
         angle,
         ...rescaledPoints,
       };
+
+      const scaledRoundness = getScaledElementRoundness(orig, width, height);
+      if (scaledRoundness !== orig.roundness) {
+        update.roundness = scaledRoundness;
+      }
 
       if (isElbowArrow(orig)) {
         // Mirror fixed point binding for elbow arrows

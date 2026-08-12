@@ -1,6 +1,7 @@
 import {
   CORNER_RADIUS,
   DEFAULT_ADAPTIVE_RADIUS,
+  DEFAULT_ELEMENT_CORNER_RADIUS,
   DEFAULT_PROPORTIONAL_RADIUS,
   invariant,
   LINE_CONFIRM_THRESHOLD,
@@ -537,6 +538,18 @@ export const getRequestedCornerRadius = (element: ExcalidrawElement) => {
   return element.roundness.value === undefined
     ? CORNER_RADIUS.default
     : normalizeCornerRadius(element.roundness.value);
+};
+
+export const getDefaultCornerRadiusForElementType = (type: string) => {
+  if (type === "rectangle") {
+    return DEFAULT_ELEMENT_CORNER_RADIUS.rectangle;
+  }
+
+  if (type === "image") {
+    return DEFAULT_ELEMENT_CORNER_RADIUS.image;
+  }
+
+  return CORNER_RADIUS.default;
 };
 
 export const normalizeElementRoundness = (

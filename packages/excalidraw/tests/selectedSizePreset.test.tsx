@@ -59,6 +59,7 @@ describe("selected-element size presets", () => {
       y: 40,
       width: 240,
       height: 120,
+      roundness: { type: 3, value: 8 },
     });
     API.setElements([rectangle]);
     API.setSelectedElements([rectangle]);
@@ -71,6 +72,7 @@ describe("selected-element size presets", () => {
     const after = getCommonBoundingBox([resized]);
     expect(Math.max(after.width, after.height)).toBeCloseTo(64);
     expect([after.midX, after.midY]).toEqual([before.midX, before.midY]);
+    expect(resized.roundness).toEqual({ type: 3, value: 2 });
 
     Keyboard.keyPress("4");
     const repeated = getCommonBoundingBox([

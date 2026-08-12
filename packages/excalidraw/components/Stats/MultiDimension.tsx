@@ -6,6 +6,7 @@ import {
   getElementsInResizingFrame,
   getNonDeletedElements,
   getScaledTextRoundness,
+  getScaledElementRoundness,
   isFrameLikeElement,
   replaceAllElementsInFrame,
   updateBoundElements,
@@ -62,6 +63,11 @@ const getResizedUpdates = (
   const nextHeight = origElement.height * scale;
   const x = anchorX + offsetX * scale;
   const y = anchorY + offsetY * scale;
+  const scaledRoundness = getScaledElementRoundness(
+    origElement,
+    nextWidth,
+    nextHeight,
+  );
 
   return {
     width: nextWidth,
@@ -69,6 +75,9 @@ const getResizedUpdates = (
     x,
     y,
     ...rescalePointsInElement(origElement, nextWidth, nextHeight, false),
+    ...(scaledRoundness !== origElement.roundness
+      ? { roundness: scaledRoundness }
+      : {}),
     ...(isTextElement(origElement)
       ? {
           fontSize: origElement.fontSize * scale,

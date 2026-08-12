@@ -197,6 +197,26 @@ describe("image insertion", () => {
     expect(inserted[0]).toMatchObject(DEER_IMAGE_DIMENSIONS);
   });
 
+  it("keeps the 4px image baseline through async image initialization", async () => {
+    await setupImageTest([DEER_IMAGE_DIMENSIONS]);
+    API.setAppState({
+      currentItemRoundness: "round",
+      currentItemCornerRadius: undefined,
+    });
+
+    let inserted: Awaited<ReturnType<typeof h.app.insertImages>> = [];
+    await act(async () => {
+      inserted = await h.app.insertImages([
+        await API.loadFile("./fixtures/deer.png"),
+      ]);
+    });
+
+    expect(inserted[0]).toMatchObject({
+      ...DEER_IMAGE_DIMENSIONS,
+      roundness: { type: 3, value: 4 },
+    });
+  });
+
   it("passes host-configured max image dimensions to the resize helper", async () => {
     await setupImageTest([DEER_IMAGE_DIMENSIONS], {
       imageOptions: { maxWidthOrHeight: 2048 },
