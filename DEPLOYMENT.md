@@ -32,7 +32,7 @@ Without it those functions fail closed with `Board scene storage is not configur
 Legacy `diagramContents` rows are retained through the observation window and removed only by an explicit, bounded, idempotent run that first reads each Board's R2 object back and verifies it. Nothing schedules it:
 
 ```bash
-npx convex run --no-push internal/legacyBoardContent:removeVerifiedLegacyContents '{"batchSize": 25}'
+npx convex run legacyBoardContent:removeVerifiedLegacyContents '{"batchSize": 25}'
 ```
 
 Each call reports `examined`, `removed`, `alreadyRemoved`, `kept`, `isDone`, and `continueCursor`; pass the cursor back to continue. A Board whose object fails read-back keeps its legacy row and is counted in `kept`.
