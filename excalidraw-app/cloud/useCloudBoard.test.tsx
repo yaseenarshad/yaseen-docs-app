@@ -2,12 +2,14 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
 
 import {
+  CLOUD_CRASH_JOURNAL_DEBOUNCE_MS,
   CLOUD_HANDOFF_VERSION_WAIT_MS,
   CLOUD_SAVE_DEBOUNCE_MS,
   CLOUD_SAVE_MAX_PENDING_MS,
   useCloudBoard,
 } from "./useCloudBoard";
 import { CLOUD_SAVE_PROTOCOL_VERSION } from "./cloudSaveProtocol";
+import { createCloudCrashJournal } from "./cloudCrashJournal";
 
 const mocks = vi.hoisted(() => ({
   mutate: vi.fn(),
@@ -33,6 +35,11 @@ const mocks = vi.hoisted(() => ({
     async (_boardId: string, task: () => Promise<unknown>) => await task(),
   ),
   sceneQuery: vi.fn(),
+  createJournal: vi.fn(),
+  journalRead: vi.fn(),
+  journalWrite: vi.fn(),
+  journalClear: vi.fn(),
+  journalClaim: vi.fn(),
   openedBoard: {
     access: "owner" as const,
     board: {
@@ -45,11 +52,16 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("convex/react", () => {
+vi.mock("convex/react", async () => {
+  const { getFunctionName } = await import("convex/server");
   // The reactive open subscription carries metadata only; the scene arrives
   // through the one-shot client query. Cache the derived metadata so it stays
   // referentially stable the way a real reactive query result does.
   const cache: { source: unknown; value: unknown } = {
+    source: null,
+    value: null,
+  };
+  const sharedCache: { source: unknown; value: unknown } = {
     source: null,
     value: null,
   };
@@ -64,6 +76,17 @@ vi.mock("convex/react", () => {
     }
     return cache.value;
   };
+  const sharedBoardMetadata = () => {
+    if (sharedCache.source !== mocks.openedBoard) {
+      sharedCache.source = mocks.openedBoard;
+      sharedCache.value = {
+        access: "viewer",
+        board: mocks.openedBoard.board,
+        version: mocks.openedBoard.version,
+      };
+    }
+    return sharedCache.value;
+  };
   return {
     useConvex: () => ({ query: mocks.sceneQuery }),
     useMutation: () => mocks.mutate,
@@ -73,18 +96,31 @@ vi.mock("convex/react", () => {
       canLoadMore: false,
       loadMore: vi.fn(),
     }),
-    useQuery: (_query: unknown, args: unknown) =>
-      args === "skip"
-        ? undefined
-        : args && typeof args === "object" && "slug" in args
+    useQuery: (query: never, args: unknown) => {
+      if (args === "skip") {
+        return undefined;
+      }
+      const name = getFunctionName(query);
+      return name === "boards:openMineMetadata"
         ? boardMetadata()
-        : [],
+        : name === "boards:openSharedMetadata"
+        ? sharedBoardMetadata()
+        : [];
+    },
   };
 });
 
 vi.mock("./boardPreviewPublishing", () => ({
   publishBoardPreview: mocks.publishBoardPreview,
 }));
+
+vi.mock("./cloudCrashJournal", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./cloudCrashJournal")>();
+  return {
+    ...actual,
+    createBrowserCloudCrashJournal: () => mocks.createJournal(),
+  };
+});
 
 vi.mock("./cloudTabCoordination", () => ({
   createBrowserCloudTabSaveCoordinator: (
@@ -129,6 +165,21 @@ describe("useCloudBoard preview scheduling", () => {
     mocks.runSaveExclusive.mockImplementation(
       async (_boardId: string, task: () => Promise<unknown>) => await task(),
     );
+    mocks.journalRead.mockReset();
+    mocks.journalRead.mockResolvedValue(null);
+    mocks.journalWrite.mockReset();
+    mocks.journalWrite.mockResolvedValue(undefined);
+    mocks.journalClear.mockReset();
+    mocks.journalClear.mockResolvedValue(undefined);
+    mocks.journalClaim.mockReset();
+    mocks.journalClaim.mockResolvedValue(null);
+    mocks.createJournal.mockReset();
+    mocks.createJournal.mockImplementation(() => ({
+      read: mocks.journalRead,
+      write: mocks.journalWrite,
+      clear: mocks.journalClear,
+      claim: mocks.journalClaim,
+    }));
     mocks.sceneQuery.mockReset();
     mocks.sceneQuery.mockImplementation(async () => ({
       boardId: mocks.openedBoard.board._id,
@@ -776,5 +827,259 @@ describe("useCloudBoard preview scheduling", () => {
       assetId: "lesson-animation",
       version: 2,
     });
+  });
+
+  it("journals a local edit long before the cloud save that owes it", async () => {
+    const { result } = await renderCloudBoard();
+
+    act(() => result.current.queueSave("changed"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_CRASH_JOURNAL_DEBOUNCE_MS);
+    });
+
+    expect(CLOUD_CRASH_JOURNAL_DEBOUNCE_MS).toBeLessThan(
+      CLOUD_SAVE_DEBOUNCE_MS,
+    );
+    expect(mocks.journalWrite).toHaveBeenCalledWith({
+      boardId: "board-id",
+      sceneJson: "changed",
+      baseVersion: 1,
+      savedAt: expect.any(Number),
+    });
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    act(() => result.current.discardPendingSave());
+  });
+
+  it("clears the journaled scene once the cloud save commits it", async () => {
+    const { result } = await renderCloudBoard();
+
+    act(() => result.current.queueSave("changed"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+
+    expect(mocks.mutate).toHaveBeenCalledTimes(1);
+    expect(mocks.journalClear).toHaveBeenCalledWith("board-id");
+  });
+
+  it("rejournals an edit that arrived while the previous save was in flight", async () => {
+    let resolveFirstSave!: (result: {
+      status: "saved";
+      version: number;
+    }) => void;
+    mocks.mutate.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFirstSave = resolve;
+        }),
+    );
+    const { result } = await renderCloudBoard();
+
+    act(() => result.current.queueSave("first change"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+    act(() => result.current.queueSave("second change"));
+    mocks.journalWrite.mockClear();
+
+    await act(async () => {
+      resolveFirstSave({ status: "saved", version: 2 });
+      await vi.advanceTimersByTimeAsync(CLOUD_CRASH_JOURNAL_DEBOUNCE_MS);
+    });
+
+    expect(mocks.journalClear).toHaveBeenCalledWith("board-id");
+    expect(mocks.journalWrite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sceneJson: "second change",
+        baseVersion: 2,
+      }),
+    );
+  });
+
+  it("keeps a journaled scene the cloud save could not commit", async () => {
+    mocks.mutate.mockRejectedValueOnce(new Error("offline"));
+    const { result } = await renderCloudBoard();
+
+    act(() => result.current.queueSave("changed"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+
+    expect(result.current.saveStatus).toBe("error");
+    expect(mocks.journalWrite).toHaveBeenCalledWith(
+      expect.objectContaining({ sceneJson: "changed", baseVersion: 1 }),
+    );
+    expect(mocks.journalClear).not.toHaveBeenCalled();
+  });
+
+  // Discarding a pending save does not save it. Both callers either leave the
+  // Board — where the edit has to stay recoverable — or immediately re-queue a
+  // reconciled scene that supersedes the journaled one, so the journal is
+  // written out instead of dropped.
+  it("keeps a discarded pending scene recoverable", async () => {
+    const { result } = await renderCloudBoard();
+
+    act(() => result.current.queueSave("edit that never reached the cloud"));
+    act(() => result.current.discardPendingSave());
+
+    expect(mocks.journalWrite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sceneJson: "edit that never reached the cloud",
+        baseVersion: 1,
+      }),
+    );
+    expect(mocks.journalClear).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+    expect(mocks.mutate).not.toHaveBeenCalled();
+  });
+
+  it("replays a journaled scene the tab died before flushing", async () => {
+    mocks.journalClaim.mockResolvedValue({
+      boardId: "board-id",
+      sceneJson: "edit lost to the crash",
+      baseVersion: 1,
+      savedAt: 10,
+    });
+    const { result } = await renderCloudBoard();
+
+    await act(async () => {
+      result.current.acceptSceneWithoutSave("baseline");
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(mocks.journalClaim).toHaveBeenCalledWith(
+      expect.objectContaining({ boardId: "board-id", serverVersion: 1 }),
+    );
+    expect(mocks.mutate).toHaveBeenCalledWith({
+      boardId: "board-id",
+      clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
+      expectedVersion: 1,
+      sceneJson: "edit lost to the crash",
+    });
+    expect(result.current.openedBoard?.sceneJson).toBe(
+      "edit lost to the crash",
+    );
+    expect(result.current.openedBoard?.version).toBe(2);
+    expect(result.current.saveStatus).toBe("saved");
+  });
+
+  it("replays a journaled scene through the pending-edit path a local edit takes", async () => {
+    mocks.journalClaim.mockResolvedValue({
+      boardId: "board-id",
+      sceneJson: "edit lost to the crash",
+      baseVersion: 1,
+      savedAt: 10,
+    });
+    const { result } = await renderCloudBoard();
+
+    await act(async () => {
+      result.current.acceptSceneWithoutSave("baseline");
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(mocks.claimWriter).toHaveBeenCalledWith({
+      boardId: "board-id",
+      generation: 0,
+      version: 1,
+    });
+    expect(mocks.runSaveExclusive).toHaveBeenCalledWith(
+      "board-id",
+      expect.any(Function),
+    );
+    // The replay is committed, so it leaves no journal behind for a second tab.
+    expect(mocks.journalClear).toHaveBeenCalledWith("board-id");
+    expect(mocks.journalWrite).not.toHaveBeenCalled();
+
+    act(() =>
+      result.current.queueSave(
+        "edit lost to the crash",
+        undefined,
+        "server-echo",
+      ),
+    );
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync();
+    });
+    expect(mocks.mutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("claims a journaled scene inside the same-Board section other tabs share", async () => {
+    const { result } = await renderCloudBoard();
+
+    await act(async () => {
+      result.current.acceptSceneWithoutSave("baseline");
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const [claim] = mocks.journalClaim.mock.calls[0];
+    await claim.runExclusive(async () => "claimed");
+
+    expect(mocks.runSaveExclusive).toHaveBeenCalledWith(
+      "board-id",
+      expect.any(Function),
+    );
+  });
+
+  it("leaves the canvas alone when the journal has nothing replayable", async () => {
+    mocks.openedBoard = { ...mocks.openedBoard, version: 2 };
+    const { result } = await renderCloudBoard();
+
+    await act(async () => {
+      result.current.acceptSceneWithoutSave("baseline");
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(mocks.journalClaim).toHaveBeenCalledWith(
+      expect.objectContaining({ serverVersion: 2 }),
+    );
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(result.current.openedBoard?.sceneJson).toBe("baseline");
+    expect(result.current.openedBoard?.version).toBe(2);
+  });
+
+  it("never journals or replays a shared board", async () => {
+    window.history.replaceState({}, "", "/s/share-token");
+    const { result } = await renderCloudBoard();
+
+    expect(result.current.isViewer).toBe(true);
+    await act(async () => {
+      result.current.acceptSceneWithoutSave("baseline");
+      result.current.queueSave("viewer edit");
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+
+    expect(mocks.journalClaim).not.toHaveBeenCalled();
+    expect(mocks.journalWrite).not.toHaveBeenCalled();
+    expect(mocks.journalClear).not.toHaveBeenCalled();
+    expect(mocks.mutate).not.toHaveBeenCalled();
+  });
+
+  it("saves normally when IndexedDB is unavailable", async () => {
+    const unavailable = () =>
+      Promise.reject(new Error("IndexedDB is unavailable"));
+    mocks.createJournal.mockImplementation(() =>
+      createCloudCrashJournal({
+        read: unavailable,
+        write: unavailable,
+        remove: unavailable,
+      }),
+    );
+    const { result } = await renderCloudBoard();
+
+    await act(async () => {
+      result.current.acceptSceneWithoutSave("baseline");
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    act(() => result.current.queueSave("changed"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+
+    expect(mocks.mutate).toHaveBeenCalledTimes(1);
+    expect(mocks.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ sceneJson: "changed" }),
+    );
+    expect(result.current.saveStatus).toBe("saved");
   });
 });

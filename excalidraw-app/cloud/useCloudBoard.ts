@@ -25,6 +25,7 @@ import {
   shouldQueueCloudSceneSave,
 } from "./cloudSaveBaseline";
 import { createBrowserCloudTabSaveCoordinator } from "./cloudTabCoordination";
+import { createBrowserCloudCrashJournal } from "./cloudCrashJournal";
 import { CLOUD_SAVE_PROTOCOL_VERSION } from "./cloudSaveProtocol";
 import {
   createBoardPreviewImage,
@@ -54,6 +55,7 @@ import type {
 } from "./boardPreviewGeneration";
 import type { CloudSceneSaveOrigin } from "./cloudSaveBaseline";
 import type { CloudTabSaveCoordinator } from "./cloudTabCoordination";
+import type { CloudCrashJournal } from "./cloudCrashJournal";
 
 export type CloudSaveStatus =
   | "loading"
@@ -66,6 +68,9 @@ export type CloudSaveStatus =
 export const CLOUD_SAVE_DEBOUNCE_MS = 10_000;
 export const CLOUD_SAVE_MAX_PENDING_MS = 60_000;
 export const CLOUD_HANDOFF_VERSION_WAIT_MS = 5_000;
+// The crash journal has to be durable long before the cloud save it protects,
+// so it runs on a debounce short enough to survive an abrupt tab teardown.
+export const CLOUD_CRASH_JOURNAL_DEBOUNCE_MS = 300;
 
 const getRoute = () => parseCloudRoute(window.location.pathname);
 
@@ -198,6 +203,68 @@ export const useCloudBoard = () => {
   const requiredVersionByBoardRef = useRef(new Map<string, number>());
   const requiredVersionTimerByBoardRef = useRef(new Map<string, number>());
   const navigationRequestRef = useRef(0);
+  const crashJournalRef = useRef<CloudCrashJournal | null>(null);
+  const journalTimerRef = useRef<number | null>(null);
+  const journalEntryRef = useRef<{
+    boardId: Id<"diagrams">;
+    sceneJson: string;
+    baseVersion: number;
+  } | null>(null);
+
+  const getCrashJournal = useCallback(
+    () => (crashJournalRef.current ??= createBrowserCloudCrashJournal()),
+    [],
+  );
+
+  const writeJournalEntry = useCallback(
+    (entry: NonNullable<typeof journalEntryRef.current>) => {
+      journalEntryRef.current = null;
+      void getCrashJournal().write({ ...entry, savedAt: Date.now() });
+    },
+    [getCrashJournal],
+  );
+
+  const scheduleJournalWrite = useCallback(
+    (entry: NonNullable<typeof journalEntryRef.current>) => {
+      journalEntryRef.current = entry;
+      if (journalTimerRef.current !== null) {
+        window.clearTimeout(journalTimerRef.current);
+      }
+      journalTimerRef.current = window.setTimeout(() => {
+        journalTimerRef.current = null;
+        const pending = journalEntryRef.current;
+        if (pending) {
+          writeJournalEntry(pending);
+        }
+      }, CLOUD_CRASH_JOURNAL_DEBOUNCE_MS);
+    },
+    [writeJournalEntry],
+  );
+
+  // Anything that ends this tab's ownership of a pending scene writes the
+  // journal out rather than dropping it: the edit is still unsaved either way.
+  const flushJournalWrite = useCallback(() => {
+    if (journalTimerRef.current !== null) {
+      window.clearTimeout(journalTimerRef.current);
+      journalTimerRef.current = null;
+    }
+    const pending = journalEntryRef.current;
+    if (pending) {
+      writeJournalEntry(pending);
+    }
+  }, [writeJournalEntry]);
+
+  const clearJournalEntry = useCallback(
+    (boardId: Id<"diagrams">) => {
+      if (journalTimerRef.current !== null) {
+        window.clearTimeout(journalTimerRef.current);
+        journalTimerRef.current = null;
+      }
+      journalEntryRef.current = null;
+      void getCrashJournal().clear(boardId);
+    },
+    [getCrashJournal],
+  );
 
   const requireObservedVersion = useCallback(
     (boardId: Id<"diagrams">, version: number) => {
@@ -353,6 +420,7 @@ export const useCloudBoard = () => {
   }, []);
 
   useEffect(() => {
+    flushJournalWrite();
     versionRef.current = 0;
     observedVersionRef.current = 0;
     sceneRequestRef.current += 1;
@@ -381,7 +449,7 @@ export const useCloudBoard = () => {
     }
     setSaveStatus("loading");
     setErrorMessage(null);
-  }, [routeIdentity]);
+  }, [flushJournalWrite, routeIdentity]);
 
   // Declared after the route reset so a route change clears the previous scene
   // before this effect can start a fetch the reset would immediately discard.
@@ -441,6 +509,7 @@ export const useCloudBoard = () => {
 
   useEffect(() => {
     const flushPendingSave = () => {
+      flushJournalWrite();
       void flushSaveRef.current();
     };
     const handleVisibilityChange = () => {
@@ -454,7 +523,7 @@ export const useCloudBoard = () => {
       window.removeEventListener("pagehide", flushPendingSave);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [flushJournalWrite]);
 
   useEffect(() => {
     if (route.kind !== "owner" || !route.isLegacyPath) {
@@ -730,7 +799,19 @@ export const useCloudBoard = () => {
           );
           return false;
         }
+        // The committed scene is durable, so the journaled copy of it is spent.
+        // An edit that arrived while this save was in flight is not: it is
+        // rejournaled against the version the commit just established.
         versionRef.current = result.version;
+        clearJournalEntry(pending.boardId);
+        const queuedDuringSave = pendingSceneRef.current;
+        if (queuedDuringSave?.boardId === pending.boardId) {
+          scheduleJournalWrite({
+            boardId: queuedDuringSave.boardId,
+            sceneJson: queuedDuringSave.sceneJson,
+            baseVersion: result.version,
+          });
+        }
         conflictRecoveryRef.current = null;
         blockedConflictRef.current = null;
         acceptedSceneRef.current = acceptCloudSceneWithoutSave(
@@ -792,10 +873,12 @@ export const useCloudBoard = () => {
     }
   }, [
     acceptOpenedScene,
+    clearJournalEntry,
     openedBoard,
     requireObservedVersion,
     saveBoard,
     scheduleBoardPreview,
+    scheduleJournalWrite,
   ]);
 
   flushSaveRef.current = flushSave;
@@ -810,6 +893,9 @@ export const useCloudBoard = () => {
         return;
       }
       const persistedSceneJson = sanitizeCloudPresentationScene(sceneJson);
+      // Only a Board this tab owns is journaled: a shared route is read-only
+      // here and has no pending scene of its own to recover.
+      const journalsThisRoute = route.kind === "owner";
       const recovery = conflictRecoveryRef.current;
       const blockedConflict = blockedConflictRef.current;
       const matchesCurrentBoard = (candidate: {
@@ -848,6 +934,9 @@ export const useCloudBoard = () => {
           window.clearTimeout(saveTimerRef.current);
           saveTimerRef.current = null;
         }
+        if (journalsThisRoute) {
+          clearJournalEntry(openedBoard.board._id);
+        }
         setSaveStatus("saved");
         return;
       }
@@ -864,6 +953,13 @@ export const useCloudBoard = () => {
             ? 1
             : 0,
       };
+      if (journalsThisRoute) {
+        scheduleJournalWrite({
+          boardId: openedBoard.board._id,
+          sceneJson: persistedSceneJson,
+          baseVersion: versionRef.current,
+        });
+      }
       if (origin === "local") {
         if (recovery && matchesCurrentBoard(recovery)) {
           recovery.sceneJson = persistedSceneJson;
@@ -895,17 +991,66 @@ export const useCloudBoard = () => {
         isRecoveryRetry ? 0 : getCloudSaveDelay(now, pendingSince),
       );
     },
-    [flushSave, openedBoard],
+    [
+      clearJournalEntry,
+      flushSave,
+      openedBoard,
+      route.kind,
+      scheduleJournalWrite,
+    ],
   );
 
+  // Dropping the pending save does not make the scene it held saved, so the
+  // journal is written out rather than cleared: every caller either leaves the
+  // Board (the edit stays recoverable) or immediately re-queues a scene that
+  // supersedes it.
   const discardPendingSave = useCallback(() => {
+    flushJournalWrite();
     pendingSceneRef.current = null;
     pendingSinceRef.current = null;
     if (saveTimerRef.current !== null) {
       window.clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
-  }, []);
+  }, [flushJournalWrite]);
+
+  // A journaled scene re-enters through queueSave, exactly like a local edit,
+  // so echo suppression, writer coordination and conflict handling apply to it
+  // unchanged. It is never applied to the canvas directly: the canvas only
+  // moves once the server accepts the replay and hands the version back.
+  const restoreJournaledScene = useCallback(() => {
+    if (route.kind !== "owner" || openedBoard?.access !== "owner") {
+      return;
+    }
+    const boardId = openedBoard.board._id;
+    const serverVersion = openedBoard.version;
+    const startedRoute = { ...currentRouteRef.current };
+    void getCrashJournal()
+      .claim({
+        boardId,
+        serverVersion,
+        runExclusive: (task) =>
+          saveCoordinatorRef.current?.runSaveExclusive(boardId, task) ?? task(),
+      })
+      .then((entry) => {
+        if (
+          !entry ||
+          !isCurrentRouteCompletion(startedRoute, currentRouteRef.current) ||
+          versionRef.current !== serverVersion
+        ) {
+          return;
+        }
+        queueSave(entry.sceneJson);
+        // Recovered work waits on a round trip to become visible again, so it
+        // skips the editing debounce instead of risking a second teardown.
+        if (saveTimerRef.current !== null) {
+          window.clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = null;
+        }
+        void flushSaveRef.current();
+      })
+      .catch(() => undefined);
+  }, [getCrashJournal, openedBoard, queueSave, route.kind]);
 
   const acceptSceneWithoutSave = useCallback(
     (sceneJson: string) => {
@@ -914,12 +1059,14 @@ export const useCloudBoard = () => {
         sanitizeCloudPresentationScene(sceneJson),
       );
       setSaveStatus(openedBoard?.access === "viewer" ? "viewer" : "saved");
+      restoreJournaledScene();
     },
-    [discardPendingSave, openedBoard?.access],
+    [discardPendingSave, openedBoard?.access, restoreJournaledScene],
   );
 
   useEffect(
     () => () => {
+      flushJournalWrite();
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
       }
@@ -933,7 +1080,7 @@ export const useCloudBoard = () => {
       requiredVersionByBoardRef.current.clear();
       previewRequestRef.current += 1;
     },
-    [],
+    [flushJournalWrite],
   );
 
   const enableSharing = useCallback(async () => {
