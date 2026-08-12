@@ -1,6 +1,9 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
 
+import { BOARD_SCENE_ROUTE } from "../../board-scenes/types";
+
+import { compressBoardScene } from "./boardScenePersistence";
 import {
   CLOUD_CRASH_JOURNAL_DEBOUNCE_MS,
   CLOUD_HANDOFF_VERSION_WAIT_MS,
@@ -13,6 +16,12 @@ import { createCloudCrashJournal } from "./cloudCrashJournal";
 
 const mocks = vi.hoisted(() => ({
   mutate: vi.fn(),
+  createSceneUploadGrant: vi.fn(),
+  commitSceneUpload: vi.fn(),
+  abandonSceneUpload: vi.fn(),
+  createSceneReadGrant: vi.fn(),
+  sceneCleanupTokens: [] as string[],
+  fetch: vi.fn(),
   publishBoardPreview: vi.fn(),
   coordinatorHandlers: null as null | {
     onRemoteClaim: (claim: {
@@ -49,6 +58,7 @@ const mocks = vi.hoisted(() => ({
     },
     version: 1,
     sceneJson: "baseline",
+    sceneManifest: undefined as undefined | { version: number },
   },
 }));
 
@@ -72,6 +82,9 @@ vi.mock("convex/react", async () => {
         access: mocks.openedBoard.access,
         board: mocks.openedBoard.board,
         version: mocks.openedBoard.version,
+        ...(mocks.openedBoard.sceneManifest
+          ? { sceneManifest: mocks.openedBoard.sceneManifest }
+          : null),
       };
     }
     return cache.value;
@@ -83,13 +96,25 @@ vi.mock("convex/react", async () => {
         access: "viewer",
         board: mocks.openedBoard.board,
         version: mocks.openedBoard.version,
+        ...(mocks.openedBoard.sceneManifest
+          ? { sceneManifest: mocks.openedBoard.sceneManifest }
+          : null),
       };
     }
     return sharedCache.value;
   };
+  // Each Convex function keeps its own mock so a Board-scene grant can never be
+  // mistaken for the legacy `boards.save` the older assertions still watch.
+  const mutations: Record<string, unknown> = {
+    "boardScenes:createUploadGrant": mocks.createSceneUploadGrant,
+    "boardScenes:commitUpload": mocks.commitSceneUpload,
+    "boardScenes:abandonUpload": mocks.abandonSceneUpload,
+    "boardScenes:createReadGrant": mocks.createSceneReadGrant,
+  };
   return {
     useConvex: () => ({ query: mocks.sceneQuery }),
-    useMutation: () => mocks.mutate,
+    useMutation: (mutation: never) =>
+      mutations[getFunctionName(mutation)] ?? mocks.mutate,
     usePaginatedQuery_experimental: () => ({
       data: [],
       status: "exhausted",
@@ -105,6 +130,8 @@ vi.mock("convex/react", async () => {
         ? boardMetadata()
         : name === "boards:openSharedMetadata"
         ? sharedBoardMetadata()
+        : name === "boardScenes:pendingCleanup"
+        ? mocks.sceneCleanupTokens
         : [];
     },
   };
@@ -136,11 +163,60 @@ vi.mock("./cloudTabCoordination", () => ({
   },
 }));
 
+const SCENE_READ_PATH = `${BOARD_SCENE_ROUTE}/${"a".repeat(64)}`;
+
+const jsonResponse = (body: unknown, ok = true) =>
+  ({ ok, status: ok ? 200 : 500, json: async () => body } as never);
+
+const bytesResponse = (bytes: Uint8Array, ok = true) =>
+  ({
+    ok,
+    status: ok ? 200 : 404,
+    arrayBuffer: async () => bytes.slice().buffer,
+  } as never);
+
+/** Publishes `sceneJson` as the object the Worker read route would serve. */
+const publishSceneObject = async (sceneJson: string, version: number) => {
+  const compressed = await compressBoardScene(sceneJson);
+  mocks.createSceneReadGrant.mockResolvedValue({
+    token: "a".repeat(64),
+    path: SCENE_READ_PATH,
+    version,
+    expiresAt: Date.now() + 300_000,
+    encoding: compressed.encoding,
+    rawSize: compressed.rawSize,
+    compressedSize: compressed.compressedSize,
+    rawSha256: compressed.rawSha256,
+    compressedSha256: compressed.compressedSha256,
+    semanticSha256: compressed.semanticSha256,
+    etag: `etag-v${version}`,
+  });
+  mocks.fetch.mockImplementation(async (input: string, init?: RequestInit) =>
+    init?.method === "POST"
+      ? jsonResponse({ etag: `etag-v${version + 1}` })
+      : init?.method === "DELETE"
+      ? jsonResponse({ deleted: 1 })
+      : bytesResponse(compressed.bytes),
+  );
+  return compressed;
+};
+
 const settleOpenedScene = async () => {
   await act(async () => {
     await Promise.resolve();
     await Promise.resolve();
   });
+};
+
+// Compressing, hashing and verifying a stored scene takes an unbounded number
+// of async hops more than a one-shot Convex query, so anything that waits on one
+// drains the queue until the outcome it is waiting for is actually there.
+const settleUntil = async (isSettled: () => boolean, attempts = 50) => {
+  for (let attempt = 0; attempt < attempts && !isSettled(); attempt++) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+  }
 };
 
 const renderCloudBoard = async () => {
@@ -155,6 +231,27 @@ describe("useCloudBoard preview scheduling", () => {
     window.history.replaceState({}, "", "/b/test-board");
     mocks.mutate.mockReset();
     mocks.mutate.mockResolvedValue({ status: "saved", version: 2 });
+    // Migration is off by default: a legacy Board stays legacy unless a test
+    // deliberately grants the upload that moves it.
+    mocks.createSceneUploadGrant.mockReset();
+    mocks.createSceneUploadGrant.mockResolvedValue({
+      status: "upgrade-required",
+    });
+    mocks.commitSceneUpload.mockReset();
+    mocks.commitSceneUpload.mockResolvedValue({
+      status: "committed",
+      version: 2,
+      updatedAt: 20,
+      snapshotCreated: false,
+      cleanupToken: null,
+    });
+    mocks.abandonSceneUpload.mockReset();
+    mocks.abandonSceneUpload.mockResolvedValue({ cleanupToken: null });
+    mocks.createSceneReadGrant.mockReset();
+    mocks.sceneCleanupTokens = [];
+    mocks.fetch.mockReset();
+    mocks.fetch.mockResolvedValue(jsonResponse({ etag: "etag" }));
+    vi.stubGlobal("fetch", mocks.fetch);
     mocks.publishBoardPreview.mockReset();
     mocks.publishBoardPreview.mockResolvedValue(undefined);
     mocks.coordinatorHandlers = null;
@@ -195,12 +292,17 @@ describe("useCloudBoard preview scheduling", () => {
       },
       version: 1,
       sceneJson: "baseline",
+      sceneManifest: undefined,
     };
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // A silent background migration must not still be in flight when the next
+    // test resets the mocks it would otherwise call.
+    await settleUntil(() => false, 5);
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("keeps the last successful save preview scheduled when a transient queue returns to the accepted baseline", async () => {
@@ -1081,5 +1183,388 @@ describe("useCloudBoard preview scheduling", () => {
       expect.objectContaining({ sceneJson: "changed" }),
     );
     expect(result.current.saveStatus).toBe("saved");
+  });
+
+  // ---------------------------------------------------------------------------
+  // Boards whose scene lives in private object storage
+  // ---------------------------------------------------------------------------
+
+  const openMigratedBoard = async (sceneJson = "r2 scene", version = 1) => {
+    mocks.openedBoard = {
+      ...mocks.openedBoard,
+      version,
+      sceneJson,
+      sceneManifest: { version },
+    };
+    const compressed = await publishSceneObject(sceneJson, version);
+    const rendered = await renderCloudBoard();
+    await settleUntil(() => rendered.result.current.openedBoard !== undefined);
+    return { ...rendered, compressed };
+  };
+
+  const grantSceneUpload = (version: number) => {
+    mocks.createSceneUploadGrant.mockResolvedValue({
+      status: "upload",
+      token: "upload-token",
+      version,
+      expiresAt: Date.now() + 600_000,
+    });
+  };
+
+  it("opens a migrated Board through a private read grant", async () => {
+    const { result } = await openMigratedBoard("r2 scene", 4);
+
+    expect(mocks.createSceneReadGrant).toHaveBeenCalledWith({
+      boardId: "board-id",
+    });
+    expect(mocks.fetch).toHaveBeenCalledWith(SCENE_READ_PATH, {
+      method: "GET",
+    });
+    expect(mocks.sceneQuery).not.toHaveBeenCalled();
+    expect(result.current.openedBoard?.sceneJson).toBe("r2 scene");
+    expect(result.current.openedBoard?.version).toBe(4);
+    expect(result.current.saveStatus).toBe("saved");
+  });
+
+  it("keeps reading a Board that has no manifest from the legacy scene", async () => {
+    const { result } = await renderCloudBoard();
+
+    expect(mocks.sceneQuery).toHaveBeenCalledTimes(1);
+    expect(mocks.createSceneReadGrant).not.toHaveBeenCalled();
+    expect(result.current.openedBoard?.sceneJson).toBe("baseline");
+  });
+
+  it("ignores a stored scene that lands after a newer version arrives", async () => {
+    const { result, rerender } = await openMigratedBoard("r2 scene", 1);
+    let resolveStaleScene!: (bytes: never) => void;
+    const stale = await compressBoardScene("stale peer edit");
+    mocks.createSceneReadGrant.mockResolvedValueOnce({
+      token: "a".repeat(64),
+      path: SCENE_READ_PATH,
+      version: 2,
+      expiresAt: Date.now() + 300_000,
+      encoding: stale.encoding,
+      rawSize: stale.rawSize,
+      compressedSize: stale.compressedSize,
+      rawSha256: stale.rawSha256,
+      compressedSha256: stale.compressedSha256,
+      semanticSha256: stale.semanticSha256,
+      etag: "etag-v2",
+    });
+    mocks.fetch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveStaleScene = resolve as never;
+        }),
+    );
+
+    mocks.openedBoard = {
+      ...mocks.openedBoard,
+      version: 2,
+      sceneManifest: { version: 2 },
+    };
+    rerender();
+    await settleUntil(() => mocks.fetch.mock.calls.length > 1);
+    await publishSceneObject("newest peer edit", 3);
+    mocks.openedBoard = {
+      ...mocks.openedBoard,
+      version: 3,
+      sceneManifest: { version: 3 },
+    };
+    rerender();
+    await settleUntil(() => result.current.openedBoard?.version === 3);
+
+    await act(async () => {
+      resolveStaleScene(bytesResponse(stale.bytes));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.openedBoard?.version).toBe(3);
+    expect(result.current.openedBoard?.sceneJson).toBe("newest peer edit");
+  });
+
+  it("keeps the prior canvas and reports a retryable error when a stored scene fails verification", async () => {
+    const { result, rerender } = await openMigratedBoard("r2 scene", 1);
+
+    await publishSceneObject("corrupted peer edit", 2);
+    mocks.fetch.mockImplementation(async () =>
+      bytesResponse(new Uint8Array([1, 2, 3])),
+    );
+    mocks.openedBoard = {
+      ...mocks.openedBoard,
+      version: 2,
+      sceneManifest: { version: 2 },
+    };
+    rerender();
+    await settleUntil(() => result.current.saveStatus === "error");
+
+    expect(result.current.saveStatus).toBe("error");
+    expect(result.current.errorMessage).toBe(
+      "Board scene download is incomplete",
+    );
+    expect(result.current.openedBoard?.sceneJson).toBe("r2 scene");
+    expect(result.current.openedBoard?.version).toBe(1);
+  });
+
+  it("saves a migrated Board through grant, upload, and commit", async () => {
+    grantSceneUpload(2);
+    const { result } = await openMigratedBoard("r2 scene", 1);
+    const changed = await compressBoardScene("changed scene");
+
+    act(() => result.current.queueSave("changed scene"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(mocks.createSceneUploadGrant).toHaveBeenCalledWith({
+      boardId: "board-id",
+      clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
+      purpose: "save",
+      expectedVersion: 1,
+      encoding: "deflate-v1",
+      rawSize: changed.rawSize,
+      compressedSize: changed.compressedSize,
+      rawSha256: changed.rawSha256,
+      compressedSha256: changed.compressedSha256,
+      semanticSha256: changed.semanticSha256,
+    });
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      BOARD_SCENE_ROUTE,
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer upload-token",
+          "Content-Type": "application/octet-stream",
+          "X-Board-Scene-Encoding": "deflate-v1",
+        }),
+      }),
+    );
+    expect(mocks.commitSceneUpload).toHaveBeenCalledWith({
+      clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
+      token: "upload-token",
+      etag: "etag-v2",
+    });
+    expect(mocks.runSaveExclusive).toHaveBeenCalledWith(
+      "board-id",
+      expect.any(Function),
+    );
+    expect(result.current.saveStatus).toBe("saved");
+    expect(result.current.openedBoard?.version).toBe(2);
+    expect(mocks.journalClear).toHaveBeenCalledWith("board-id");
+    expect(mocks.announceSaveComplete).toHaveBeenCalledWith({
+      boardId: "board-id",
+      generation: 0,
+      version: 2,
+    });
+  });
+
+  it("adopts a binding echo as saved without uploading or moving the version", async () => {
+    mocks.createSceneUploadGrant.mockResolvedValue({
+      status: "unchanged",
+      version: 1,
+      updatedAt: 99,
+    });
+    const { result } = await openMigratedBoard("r2 scene", 1);
+    mocks.fetch.mockClear();
+
+    act(() => result.current.queueSave("rebound scene"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(mocks.commitSceneUpload).not.toHaveBeenCalled();
+    expect(result.current.saveStatus).toBe("saved");
+    expect(result.current.openedBoard?.version).toBe(1);
+    expect(mocks.journalClear).toHaveBeenCalledWith("board-id");
+    expect(mocks.announceSaveComplete).not.toHaveBeenCalled();
+
+    // The echo is the accepted baseline now, so re-queueing it saves nothing.
+    act(() => result.current.queueSave("rebound scene"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+    expect(mocks.createSceneUploadGrant).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves a conflicted save and sweeps the object it could not commit", async () => {
+    grantSceneUpload(2);
+    mocks.commitSceneUpload.mockResolvedValue({
+      status: "conflict",
+      version: 5,
+      cleanupToken: "orphan-cleanup",
+    });
+    const { result } = await openMigratedBoard("r2 scene", 1);
+
+    act(() => result.current.queueSave("conflicting scene"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+
+    expect(result.current.saveStatus).toBe("conflict");
+    expect(mocks.fetch).toHaveBeenCalledWith(BOARD_SCENE_ROUTE, {
+      method: "DELETE",
+      headers: { Authorization: "Bearer orphan-cleanup" },
+    });
+    expect(result.current.openedBoard?.version).toBe(1);
+    expect(mocks.journalClear).not.toHaveBeenCalled();
+  });
+
+  it("abandons a failed upload and retries the save with a fresh grant", async () => {
+    grantSceneUpload(2);
+    const { result } = await openMigratedBoard("r2 scene", 1);
+    mocks.abandonSceneUpload.mockResolvedValue({
+      cleanupToken: "abandoned-object",
+    });
+    mocks.fetch.mockImplementationOnce(async () =>
+      jsonResponse({ error: "Board scene could not be stored" }, false),
+    );
+
+    act(() => result.current.queueSave("changed scene"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+
+    expect(mocks.abandonSceneUpload).toHaveBeenCalledWith({
+      token: "upload-token",
+    });
+    expect(mocks.fetch).toHaveBeenCalledWith(BOARD_SCENE_ROUTE, {
+      method: "DELETE",
+      headers: { Authorization: "Bearer abandoned-object" },
+    });
+    expect(mocks.commitSceneUpload).not.toHaveBeenCalled();
+    expect(result.current.saveStatus).toBe("error");
+    expect(result.current.openedBoard?.version).toBe(1);
+    // The pending scene survives, and the retry mints a second grant.
+    expect(mocks.journalClear).not.toHaveBeenCalled();
+
+    act(() => result.current.queueSave("changed scene again"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+
+    expect(mocks.createSceneUploadGrant).toHaveBeenCalledTimes(2);
+    expect(mocks.commitSceneUpload).toHaveBeenCalledTimes(1);
+    expect(result.current.saveStatus).toBe("saved");
+  });
+
+  it("requires a reload when the scene save protocol is outdated", async () => {
+    mocks.createSceneUploadGrant.mockResolvedValue({
+      status: "upgrade-required",
+    });
+    const { result } = await openMigratedBoard("r2 scene", 1);
+
+    act(() => result.current.queueSave("changed scene"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+
+    expect(result.current.saveStatus).toBe("error");
+    expect(result.current.errorMessage).toBe(
+      "This tab is outdated and cannot save safely. Reload the page before editing.",
+    );
+    expect(mocks.commitSceneUpload).not.toHaveBeenCalled();
+  });
+
+  it("migrates a legacy Board silently on owner open without moving its version", async () => {
+    grantSceneUpload(1);
+    mocks.commitSceneUpload.mockResolvedValue({
+      status: "committed",
+      version: 1,
+      updatedAt: 7,
+      snapshotCreated: false,
+      cleanupToken: null,
+    });
+    const { result } = await renderCloudBoard();
+    await settleUntil(() => mocks.commitSceneUpload.mock.calls.length > 0);
+
+    expect(mocks.createSceneUploadGrant).toHaveBeenCalledWith(
+      expect.objectContaining({ purpose: "migration", expectedVersion: 1 }),
+    );
+    expect(mocks.runSaveExclusive).toHaveBeenCalledWith(
+      "board-id",
+      expect.any(Function),
+    );
+    expect(mocks.commitSceneUpload).toHaveBeenCalledTimes(1);
+    expect(result.current.saveStatus).toBe("saved");
+    expect(result.current.errorMessage).toBeNull();
+    expect(result.current.openedBoard?.version).toBe(1);
+    expect(result.current.openedBoard?.sceneJson).toBe("baseline");
+
+    // The next save belongs to object storage even though the reactive
+    // metadata has not published the manifest yet.
+    grantSceneUpload(2);
+    act(() => result.current.queueSave("changed after migration"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(mocks.createSceneUploadGrant).toHaveBeenLastCalledWith(
+      expect.objectContaining({ purpose: "save", expectedVersion: 1 }),
+    );
+  });
+
+  it("leaves a Board legacy and silent when migration fails", async () => {
+    mocks.createSceneUploadGrant.mockRejectedValue(new Error("offline"));
+    const { result } = await renderCloudBoard();
+    await settleUntil(() => mocks.createSceneUploadGrant.mock.calls.length > 0);
+
+    expect(result.current.saveStatus).toBe("saved");
+    expect(result.current.errorMessage).toBeNull();
+
+    act(() => result.current.queueSave("changed"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+    expect(mocks.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ sceneJson: "changed" }),
+    );
+    expect(mocks.createSceneUploadGrant).toHaveBeenCalledTimes(1);
+  });
+
+  it("attempts migration only once per Board in a tab", async () => {
+    grantSceneUpload(1);
+    const { rerender } = await renderCloudBoard();
+    await settleUntil(() => mocks.commitSceneUpload.mock.calls.length > 0);
+    rerender();
+    await settleUntil(() => false, 3);
+
+    expect(mocks.createSceneUploadGrant).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads a shared migrated Board through its share token and never migrates it", async () => {
+    window.history.replaceState({}, "", "/s/share-token");
+    mocks.openedBoard = {
+      ...mocks.openedBoard,
+      sceneJson: "shared r2 scene",
+      sceneManifest: { version: 1 },
+    };
+    await publishSceneObject("shared r2 scene", 1);
+    const { result } = await renderCloudBoard();
+    await settleUntil(() => result.current.openedBoard !== undefined);
+
+    expect(mocks.createSceneReadGrant).toHaveBeenCalledWith({
+      shareToken: "share-token",
+    });
+    expect(result.current.isViewer).toBe(true);
+    expect(result.current.openedBoard?.sceneJson).toBe("shared r2 scene");
+    expect(mocks.createSceneUploadGrant).not.toHaveBeenCalled();
+    expect(mocks.sceneQuery).not.toHaveBeenCalled();
+  });
+
+  it("drains pending scene cleanup capabilities in the background", async () => {
+    mocks.sceneCleanupTokens = ["retired-one", "retired-two"];
+    await renderCloudBoard();
+    await settleUntil(() => mocks.fetch.mock.calls.length > 1);
+
+    expect(mocks.fetch).toHaveBeenCalledWith(BOARD_SCENE_ROUTE, {
+      method: "DELETE",
+      headers: { Authorization: "Bearer retired-one" },
+    });
+    expect(mocks.fetch).toHaveBeenCalledWith(BOARD_SCENE_ROUTE, {
+      method: "DELETE",
+      headers: { Authorization: "Bearer retired-two" },
+    });
   });
 });

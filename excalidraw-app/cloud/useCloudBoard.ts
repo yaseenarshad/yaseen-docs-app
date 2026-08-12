@@ -24,6 +24,14 @@ import {
   acceptCloudSceneWithoutSave,
   shouldQueueCloudSceneSave,
 } from "./cloudSaveBaseline";
+import {
+  cleanupBoardSceneObjects,
+  fetchBoardSceneObject,
+  migrateBoardScene,
+  readBoardScene,
+  saveBoardScene,
+  uploadBoardSceneObject,
+} from "./boardScenePersistence";
 import { createBrowserCloudTabSaveCoordinator } from "./cloudTabCoordination";
 import { createBrowserCloudCrashJournal } from "./cloudCrashJournal";
 import { CLOUD_SAVE_PROTOCOL_VERSION } from "./cloudSaveProtocol";
@@ -56,6 +64,10 @@ import type {
 import type { CloudSceneSaveOrigin } from "./cloudSaveBaseline";
 import type { CloudTabSaveCoordinator } from "./cloudTabCoordination";
 import type { CloudCrashJournal } from "./cloudCrashJournal";
+import type {
+  BoardSceneReadDependencies,
+  BoardSceneSaveDependencies,
+} from "./boardScenePersistence";
 
 export type CloudSaveStatus =
   | "loading"
@@ -90,6 +102,22 @@ type OpenedCloudScene = {
   sceneJson: string;
   version: number;
 };
+
+/**
+ * Both stores answer a save the same way, so the legacy `saved` result and an
+ * object-storage commit are normalized before anything reacts to them. Only
+ * `committed` advances the accepted version.
+ */
+type CloudBoardSaveOutcome =
+  | { status: "upgrade-required" }
+  | { status: "conflict"; version: number }
+  | { status: "unchanged"; version: number; updatedAt: number }
+  | {
+      status: "committed";
+      version: number;
+      updatedAt: number;
+      snapshotCreated: boolean;
+    };
 
 // The reactive subscription only carries metadata, so the opened Board is only
 // complete once the scene for the board it describes has been fetched. The
@@ -149,6 +177,10 @@ export const useCloudBoard = () => {
   const createFolderMutation = useMutation(api.boardFolders.create);
   const renameFolderMutation = useMutation(api.boardFolders.rename);
   const removeFolderMutation = useMutation(api.boardFolders.remove);
+  const createSceneUploadGrant = useMutation(api.boardScenes.createUploadGrant);
+  const commitSceneUpload = useMutation(api.boardScenes.commitUpload);
+  const abandonSceneUpload = useMutation(api.boardScenes.abandonUpload);
+  const createSceneReadGrant = useMutation(api.boardScenes.createReadGrant);
   const createAssetUploadGrant = useMutation(api.boardAssets.createUploadGrant);
   const registerAssetUpload = useMutation(api.boardAssets.registerUpload);
   const createPreviewUploadGrant = useMutation(
@@ -204,6 +236,12 @@ export const useCloudBoard = () => {
   const requiredVersionTimerByBoardRef = useRef(new Map<string, number>());
   const navigationRequestRef = useRef(0);
   const crashJournalRef = useRef<CloudCrashJournal | null>(null);
+  // Boards this tab knows are stored in object storage. A Board this tab just
+  // migrated belongs here before the reactive metadata catches up, so the save
+  // that follows cannot fall back to the legacy document it no longer owns.
+  const sceneManifestBoardsRef = useRef(new Set<string>());
+  const migrationAttemptedRef = useRef(new Set<string>());
+  const drainedCleanupTokensRef = useRef(new Set<string>());
   const journalTimerRef = useRef<number | null>(null);
   const journalEntryRef = useRef<{
     boardId: Id<"diagrams">;
@@ -214,6 +252,34 @@ export const useCloudBoard = () => {
   const getCrashJournal = useCallback(
     () => (crashJournalRef.current ??= createBrowserCloudCrashJournal()),
     [],
+  );
+
+  const sceneSaveDependencies = useMemo<BoardSceneSaveDependencies>(
+    () => ({
+      createUploadGrant: async ({ boardId, ...manifest }) =>
+        await createSceneUploadGrant({
+          ...manifest,
+          boardId: boardId as Id<"diagrams">,
+        }),
+      upload: uploadBoardSceneObject,
+      commitUpload: commitSceneUpload,
+      abandonUpload: abandonSceneUpload,
+      cleanup: cleanupBoardSceneObjects,
+    }),
+    [abandonSceneUpload, commitSceneUpload, createSceneUploadGrant],
+  );
+
+  const sceneReadDependencies = useMemo<BoardSceneReadDependencies>(
+    () => ({
+      createReadGrant: async (args) =>
+        await createSceneReadGrant(
+          "boardId" in args
+            ? { boardId: args.boardId as Id<"diagrams"> }
+            : { shareToken: args.shareToken },
+        ),
+      fetchObject: fetchBoardSceneObject,
+    }),
+    [createSceneReadGrant],
   );
 
   const writeJournalEntry = useCallback(
@@ -361,6 +427,10 @@ export const useCloudBoard = () => {
     [paginatedBoards.data],
   );
   const folders = useQuery(api.boardFolders.listMine, {});
+  const pendingSceneCleanupTokens = useQuery(
+    api.boardScenes.pendingCleanup,
+    route.kind === "owner" ? {} : "skip",
+  );
   const sharedBoardMetadata = useQuery(
     api.boards.openSharedMetadata,
     route.kind === "shared" ? { shareToken: route.shareToken } : "skip",
@@ -468,18 +538,38 @@ export const useCloudBoard = () => {
     const isCurrentRequest = () =>
       requestId === sceneRequestRef.current &&
       isCurrentRouteCompletion(startedRoute, currentRouteRef.current);
-    const pendingScene =
-      route.kind === "owner"
-        ? convex.query(api.boards.openMineScene, { slug: route.slug })
+    // A Board that carries a manifest is stored in R2 and its legacy document
+    // is off limits; a Board without one is still a legacy read.
+    const loadScene = metadata.sceneManifest
+      ? route.kind === "owner"
+        ? async () => ({
+            boardId,
+            ...(await readBoardScene({ boardId }, sceneReadDependencies)),
+          })
         : route.kind === "shared"
-        ? convex.query(api.boards.openSharedScene, {
+        ? async () => ({
+            boardId,
+            ...(await readBoardScene(
+              { shareToken: route.shareToken },
+              sceneReadDependencies,
+            )),
+          })
+        : null
+      : route.kind === "owner"
+      ? async () =>
+          await convex.query(api.boards.openMineScene, {
+            slug: route.slug,
+          })
+      : route.kind === "shared"
+      ? async () =>
+          await convex.query(api.boards.openSharedScene, {
             shareToken: route.shareToken,
           })
-        : null;
-    if (!pendingScene) {
+      : null;
+    if (!loadScene) {
       return;
     }
-    void pendingScene
+    void loadScene()
       .then((scene) => {
         if (!isCurrentRequest() || !scene || scene.boardId !== boardId) {
           return;
@@ -495,7 +585,83 @@ export const useCloudBoard = () => {
           cause instanceof Error ? cause.message : "Could not open this board",
         );
       });
-  }, [acceptOpenedScene, convex, openedBoardMetadata, route]);
+  }, [
+    acceptOpenedScene,
+    convex,
+    openedBoardMetadata,
+    route,
+    sceneReadDependencies,
+  ]);
+
+  // A Board whose scene is already in object storage is remembered for the rest
+  // of the session: the reactive metadata is the source, but a save must never
+  // wait on it to learn the legacy document is gone.
+  useEffect(() => {
+    if (openedBoardMetadata?.sceneManifest) {
+      sceneManifestBoardsRef.current.add(openedBoardMetadata.board._id);
+    }
+  }, [openedBoardMetadata]);
+
+  // Lazy migration: the owner who just opened a legacy Board re-registers that
+  // exact scene as its first R2 object, at the same version and without
+  // touching the modified time. It is invisible, it takes the same same-Board
+  // exclusive section a save takes so only one tab performs it, and a failure
+  // simply leaves the Board legacy for the next open to retry.
+  useEffect(() => {
+    const metadata = openedBoardMetadata;
+    const scene = openedScene;
+    if (
+      route.kind !== "owner" ||
+      !metadata ||
+      metadata.access !== "owner" ||
+      metadata.sceneManifest ||
+      !scene ||
+      scene.boardId !== metadata.board._id
+    ) {
+      return;
+    }
+    const boardId = metadata.board._id;
+    if (
+      migrationAttemptedRef.current.has(boardId) ||
+      sceneManifestBoardsRef.current.has(boardId)
+    ) {
+      return;
+    }
+    migrationAttemptedRef.current.add(boardId);
+    const migrate = async () =>
+      await migrateBoardScene(
+        {
+          boardId,
+          expectedVersion: scene.version,
+          sceneJson: scene.sceneJson,
+        },
+        sceneSaveDependencies,
+      );
+    void (
+      saveCoordinatorRef.current?.runSaveExclusive(boardId, migrate) ??
+      migrate()
+    )
+      .then((result) => {
+        if (result.status === "committed") {
+          sceneManifestBoardsRef.current.add(boardId);
+        }
+      })
+      .catch(() => undefined);
+  }, [openedBoardMetadata, openedScene, route.kind, sceneSaveDependencies]);
+
+  // Retired scene objects are swept opportunistically: the capability is
+  // bounded, deleting is idempotent, and a failure is never user-facing.
+  useEffect(() => {
+    for (const token of pendingSceneCleanupTokens ?? []) {
+      if (drainedCleanupTokensRef.current.has(token)) {
+        continue;
+      }
+      drainedCleanupTokensRef.current.add(token);
+      void cleanupBoardSceneObjects(token).catch((error) =>
+        console.warn("Could not clean up a retired Board scene object", error),
+      );
+    }
+  }, [pendingSceneCleanupTokens]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -745,23 +911,40 @@ export const useCloudBoard = () => {
     pendingSinceRef.current = null;
     setSaveStatus("saving");
     const savePromise = (async () => {
+      // Which store owns this Board is decided inside the exclusive section, so
+      // a migration that just finished in this tab is never raced by a save
+      // that still believes the legacy document is authoritative.
+      const runSave = async (): Promise<CloudBoardSaveOutcome> => {
+        if (sceneManifestBoardsRef.current.has(pending.boardId)) {
+          return await saveBoardScene(
+            {
+              boardId: pending.boardId,
+              expectedVersion: versionRef.current,
+              sceneJson: pending.sceneJson,
+            },
+            sceneSaveDependencies,
+          );
+        }
+        const saved = await saveBoard({
+          boardId: pending.boardId,
+          clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
+          expectedVersion: versionRef.current,
+          sceneJson: pending.sceneJson,
+        });
+        return saved.status === "saved"
+          ? {
+              status: "committed",
+              version: saved.version,
+              updatedAt: saved.updatedAt,
+              snapshotCreated: false,
+            }
+          : saved;
+      };
       try {
         const result = await (saveCoordinatorRef.current?.runSaveExclusive(
           pending.boardId,
-          async () =>
-            await saveBoard({
-              boardId: pending.boardId,
-              clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
-              expectedVersion: versionRef.current,
-              sceneJson: pending.sceneJson,
-            }),
-        ) ??
-          saveBoard({
-            boardId: pending.boardId,
-            clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
-            expectedVersion: versionRef.current,
-            sceneJson: pending.sceneJson,
-          }));
+          runSave,
+        ) ?? runSave());
         if (!isCurrentRouteCompletion(pending.route, currentRouteRef.current)) {
           return false;
         }
@@ -798,6 +981,28 @@ export const useCloudBoard = () => {
             "This tab is outdated and cannot save safely. Reload the page before editing.",
           );
           return false;
+        }
+        // A binding echo: the stored scene already means exactly this, so it is
+        // adopted as the baseline without a version, an upload, a peer
+        // announcement or a preview. Nothing is owed, so the journal is spent.
+        if (result.status === "unchanged") {
+          clearJournalEntry(pending.boardId);
+          const queuedDuringEcho = pendingSceneRef.current;
+          if (queuedDuringEcho?.boardId === pending.boardId) {
+            scheduleJournalWrite({
+              boardId: queuedDuringEcho.boardId,
+              sceneJson: queuedDuringEcho.sceneJson,
+              baseVersion: versionRef.current,
+            });
+          }
+          conflictRecoveryRef.current = null;
+          blockedConflictRef.current = null;
+          acceptedSceneRef.current = acceptCloudSceneWithoutSave(
+            pending.sceneJson,
+          );
+          setSaveStatus("saved");
+          setErrorMessage(null);
+          return true;
         }
         // The committed scene is durable, so the journaled copy of it is spent.
         // An edit that arrived while this save was in flight is not: it is
@@ -877,6 +1082,7 @@ export const useCloudBoard = () => {
     openedBoard,
     requireObservedVersion,
     saveBoard,
+    sceneSaveDependencies,
     scheduleBoardPreview,
     scheduleJournalWrite,
   ]);
@@ -1252,9 +1458,10 @@ export const useCloudBoard = () => {
             throw new Error("Image cleanup failed");
           }
         },
+        cleanupScenes: cleanupBoardSceneObjects,
         onCleanupError: () =>
           setErrorMessage(
-            "The board was deleted, but some stored images could not be cleaned up.",
+            "The board was deleted, but some stored data could not be cleaned up.",
           ),
       });
     },
