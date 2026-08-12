@@ -16,10 +16,10 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 
 const MAX_SCENE_BYTES = 900_000;
+// The input ceilings are checked by the action before it reads any scene, and
+// again here for a Board that takes the single-transaction path.
 export const MAX_PROGRAMMATIC_TEXT_LENGTH = 10_000;
 export const MAX_PROGRAMMATIC_UPDATES_BYTES = 200_000;
-const MAX_TEXT_LENGTH = MAX_PROGRAMMATIC_TEXT_LENGTH;
-const MAX_ELEMENT_UPDATES_BYTES = MAX_PROGRAMMATIC_UPDATES_BYTES;
 
 export const assertSceneSize = (sceneJson: string, entityName: string) => {
   const bytes = new TextEncoder().encode(sceneJson).byteLength;
@@ -127,7 +127,7 @@ export const updateBoardTextElement = async (
   },
   entityName: string,
 ) => {
-  if (args.text.length > MAX_TEXT_LENGTH) {
+  if (args.text.length > MAX_PROGRAMMATIC_TEXT_LENGTH) {
     throw new Error("Text is too long");
   }
   const { content, diagram, ownerId } = await getOwnedBoardContent(
@@ -162,7 +162,7 @@ export const patchBoardElements = async (
 ) => {
   if (
     new TextEncoder().encode(args.updatesJson).byteLength >
-    MAX_ELEMENT_UPDATES_BYTES
+    MAX_PROGRAMMATIC_UPDATES_BYTES
   ) {
     throw new Error("Element updates are too large");
   }
