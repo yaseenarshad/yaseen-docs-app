@@ -2,13 +2,47 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 
 import { shouldCreateDiagramSnapshot } from "./snapshotPolicy";
 
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+
+// Reading the newest snapshot document costs a full scene read on every save,
+// so snapshot timing lives on the small diagram row instead. Boards written
+// before those fields existed are backfilled from the snapshot table once.
+const readDiagramSnapshotTiming = async (
+  ctx: MutationCtx,
+  diagram: Doc<"diagrams">,
+) => {
+  if (
+    diagram.lastSnapshotAt !== undefined &&
+    diagram.lastSnapshotVersion !== undefined
+  ) {
+    return {
+      lastSnapshotAt: diagram.lastSnapshotAt,
+      lastSnapshotVersion: diagram.lastSnapshotVersion,
+    };
+  }
+  const latestSnapshot = await ctx.db
+    .query("diagramSnapshots")
+    .withIndex("by_diagramId_and_version", (q) => q.eq("diagramId", diagram._id))
+    .order("desc")
+    .first();
+  if (!latestSnapshot) {
+    return { lastSnapshotAt: null, lastSnapshotVersion: null };
+  }
+  await ctx.db.patch("diagrams", diagram._id, {
+    lastSnapshotAt: latestSnapshot.createdAt,
+    lastSnapshotVersion: latestSnapshot.version,
+  });
+  return {
+    lastSnapshotAt: latestSnapshot.createdAt,
+    lastSnapshotVersion: latestSnapshot.version,
+  };
+};
 
 export const createDiagramSnapshotIfNeeded = async (
   ctx: MutationCtx,
   args: {
-    diagramId: Id<"diagrams">;
+    diagram: Doc<"diagrams">;
     ownerId: Id<"users">;
     sceneJson: string;
     version: number;
@@ -16,20 +50,14 @@ export const createDiagramSnapshotIfNeeded = async (
     force: boolean;
   },
 ) => {
-  const latestSnapshot = await ctx.db
-    .query("diagramSnapshots")
-    .withIndex("by_diagramId_and_version", (q) =>
-      q.eq("diagramId", args.diagramId),
-    )
-    .order("desc")
-    .first();
+  const timing = await readDiagramSnapshotTiming(ctx, args.diagram);
 
   if (
-    latestSnapshot?.version === args.version ||
+    timing.lastSnapshotVersion === args.version ||
     !shouldCreateDiagramSnapshot({
       currentVersion: args.version,
       force: args.force,
-      lastSnapshotAt: latestSnapshot?.createdAt ?? null,
+      lastSnapshotAt: timing.lastSnapshotAt,
       now: args.now,
     })
   ) {
@@ -37,11 +65,15 @@ export const createDiagramSnapshotIfNeeded = async (
   }
 
   await ctx.db.insert("diagramSnapshots", {
-    diagramId: args.diagramId,
+    diagramId: args.diagram._id,
     createdBy: args.ownerId,
     sceneJson: args.sceneJson,
     version: args.version,
     createdAt: args.now,
+  });
+  await ctx.db.patch("diagrams", args.diagram._id, {
+    lastSnapshotAt: args.now,
+    lastSnapshotVersion: args.version,
   });
   return true;
 };
@@ -104,7 +136,7 @@ export const restoreBoardSnapshot = async (
 
   const updatedAt = Date.now();
   await createDiagramSnapshotIfNeeded(ctx, {
-    diagramId: diagram._id,
+    diagram,
     ownerId,
     sceneJson: content.sceneJson,
     version: content.version,

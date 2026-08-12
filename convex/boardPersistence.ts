@@ -375,7 +375,7 @@ export const saveBoardRecord = async (
   }
   const now = Date.now();
   await createDiagramSnapshotIfNeeded(ctx, {
-    diagramId: diagram._id,
+    diagram,
     ownerId,
     sceneJson: content.sceneJson,
     version: content.version,
