@@ -9,6 +9,8 @@ import {
   MAX_BOARD_SCENE_RAW_BYTES,
 } from "../board-scenes/types";
 
+import type { Infer } from "convex/values";
+
 /** An upload capability only has to survive one compress-and-upload round. */
 export const BOARD_SCENE_UPLOAD_GRANT_LIFETIME_MS = 10 * 60 * 1000;
 /** Read capabilities are deliberately short-lived; the client re-mints them. */
@@ -83,6 +85,35 @@ export const boardSceneUploadGrantResultValidator = v.union(
   }),
 );
 
+/**
+ * A trusted server-side edit has already authorized its caller and is never a
+ * binding echo, so neither `upgrade-required` nor `unchanged` can occur.
+ */
+export const boardSceneServerUploadGrantResultValidator = v.union(
+  v.object({ status: v.literal("conflict"), version: v.number() }),
+  v.object({
+    status: v.literal("upload"),
+    token: v.string(),
+    version: v.number(),
+    expiresAt: v.number(),
+  }),
+);
+
+export const boardSceneServerCommitResultValidator = v.union(
+  v.object({
+    status: v.literal("conflict"),
+    version: v.number(),
+    cleanupToken: v.union(v.string(), v.null()),
+  }),
+  v.object({
+    status: v.literal("committed"),
+    version: v.number(),
+    updatedAt: v.number(),
+    snapshotCreated: v.boolean(),
+    cleanupToken: v.union(v.string(), v.null()),
+  }),
+);
+
 export const boardSceneCommitResultValidator = v.union(
   v.object({ status: v.literal("upgrade-required") }),
   v.object({
@@ -106,6 +137,37 @@ export const boardSceneReadGrantResultValidator = v.object({
   expiresAt: v.number(),
   ...boardSceneIntegrityFields,
   etag: v.string(),
+});
+
+export const boardSceneEntityNameValidator = v.union(
+  v.literal("Board"),
+  v.literal("Diagram"),
+);
+
+/**
+ * What an authorizing mutation tells a server-side edit it has to read: nothing
+ * at all for a Board that never migrated, one legacy snapshot document, or one
+ * capability naming an immutable R2 object.
+ */
+export const boardSceneEditPlanValidator = v.union(
+  v.object({ mode: v.literal("legacy") }),
+  v.object({
+    mode: v.literal("inline"),
+    currentVersion: v.number(),
+    sceneJson: v.string(),
+  }),
+  v.object({
+    mode: v.literal("object"),
+    currentVersion: v.number(),
+    grant: boardSceneReadGrantResultValidator,
+  }),
+);
+
+export type BoardSceneEditPlan = Infer<typeof boardSceneEditPlanValidator>;
+
+export const boardSceneEditResultValidator = v.object({
+  version: v.number(),
+  updatedAt: v.number(),
 });
 
 /** Exactly the shape `parseBoardSceneUploadGrant` accepts. */

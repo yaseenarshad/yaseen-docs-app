@@ -1,8 +1,13 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 
-import { assertBoardSceneNotMigrated } from "./boardScenePersistence";
+import {
+  assertBoardSceneNotMigrated,
+  createBoardSceneReadGrant,
+  readBoardSceneManifest,
+} from "./boardScenePersistence";
 import { shouldCreateDiagramSnapshot } from "./snapshotPolicy";
 
+import type { BoardSceneEditPlan } from "./boardSceneModel";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 
@@ -107,7 +112,7 @@ export const listBoardSnapshots = async (
   }));
 };
 
-export const restoreBoardSnapshot = async (
+const getOwnedSnapshot = async (
   ctx: MutationCtx,
   args: {
     boardId: Id<"diagrams">;
@@ -129,6 +134,61 @@ export const restoreBoardSnapshot = async (
   if (!snapshot || snapshot.diagramId !== diagram._id) {
     throw new Error(`${entityName} snapshot not found`);
   }
+  return { diagram, ownerId, snapshot };
+};
+
+/**
+ * Authorizes a restore and reports what the restoring action has to read. A
+ * migrated Board is restored by committing the snapshot as a new R2 version,
+ * whether the snapshot itself is an R2 object or one of the legacy documents
+ * this Board wrote before it migrated.
+ */
+export const beginBoardSnapshotRestore = async (
+  ctx: MutationCtx,
+  args: {
+    boardId: Id<"diagrams">;
+    snapshotId: Id<"diagramSnapshots">;
+  },
+  entityName: string,
+): Promise<BoardSceneEditPlan> => {
+  const { diagram, snapshot } = await getOwnedSnapshot(ctx, args, entityName);
+  const manifest = await readBoardSceneManifest(ctx, diagram._id);
+  if (!manifest) {
+    return { mode: "legacy" };
+  }
+  if (snapshot.objectKey !== undefined) {
+    return {
+      mode: "object",
+      currentVersion: manifest.version,
+      grant: await createBoardSceneReadGrant(ctx, {
+        boardId: diagram._id,
+        snapshotId: snapshot._id,
+      }),
+    };
+  }
+  if (snapshot.sceneJson === undefined) {
+    throw new Error(`${entityName} snapshot not found`);
+  }
+  return {
+    mode: "inline",
+    currentVersion: manifest.version,
+    sceneJson: snapshot.sceneJson,
+  };
+};
+
+export const restoreBoardSnapshot = async (
+  ctx: MutationCtx,
+  args: {
+    boardId: Id<"diagrams">;
+    snapshotId: Id<"diagramSnapshots">;
+  },
+  entityName: string,
+) => {
+  const { diagram, ownerId, snapshot } = await getOwnedSnapshot(
+    ctx,
+    args,
+    entityName,
+  );
   // A metadata-only snapshot, or any snapshot of a migrated Board, is restored
   // through the object-storage commit path instead of this legacy replacement.
   await assertBoardSceneNotMigrated(ctx, diagram._id);

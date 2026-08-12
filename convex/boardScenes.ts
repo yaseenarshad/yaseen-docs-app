@@ -7,15 +7,19 @@ import {
   boardScenePurposeValidator,
   boardSceneReadGrantContractValidator,
   boardSceneReadGrantResultValidator,
+  boardSceneServerCommitResultValidator,
+  boardSceneServerUploadGrantResultValidator,
   boardSceneUploadGrantContractValidator,
   boardSceneUploadGrantResultValidator,
 } from "./boardSceneModel";
 import {
   abandonBoardSceneUpload,
   commitBoardSceneUpload,
+  commitServerBoardSceneUpload,
   consumeBoardSceneDeleteGrant,
   createBoardSceneReadGrant,
   createBoardSceneUploadGrant,
+  createServerBoardSceneUploadGrant,
   listPendingBoardSceneCleanup,
   resolveBoardSceneReadGrant,
   resolveBoardSceneUploadGrant,
@@ -69,6 +73,27 @@ export const pendingCleanup = query({
   args: {},
   returns: v.array(v.string()),
   handler: async (ctx) => await listPendingBoardSceneCleanup(ctx),
+});
+
+// A server-side edit (history restore, programmatic edit) runs as an action so
+// it can fetch R2, and reaches the same commit contract through these trusted
+// entry points. They are internal: only backend code that has already
+// authorized the owner may skip the client save protocol.
+export const createServerUploadGrant = internalMutation({
+  args: {
+    boardId: v.id("diagrams"),
+    expectedVersion: v.number(),
+    ...boardSceneIntegrityFields,
+  },
+  returns: boardSceneServerUploadGrantResultValidator,
+  handler: async (ctx, args) =>
+    await createServerBoardSceneUploadGrant(ctx, args),
+});
+
+export const commitServerUpload = internalMutation({
+  args: { token: v.string(), etag: v.string() },
+  returns: boardSceneServerCommitResultValidator,
+  handler: async (ctx, args) => await commitServerBoardSceneUpload(ctx, args),
 });
 
 export const resolveUploadGrant = internalMutation({

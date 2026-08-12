@@ -144,6 +144,89 @@ const findReusableUploadGrant = async (
   );
 };
 
+const issueBoardSceneUploadGrant = async (
+  ctx: MutationCtx,
+  args: BoardSceneIntegrity & {
+    diagramId: Id<"diagrams">;
+    ownerId: Id<"users">;
+    purpose: "migration" | "save";
+    expectedVersion: number;
+    version: number;
+    reuse: boolean;
+  },
+) => {
+  const now = Date.now();
+  const reusable = args.reuse
+    ? await findReusableUploadGrant(ctx, { ...args, now })
+    : null;
+  if (reusable) {
+    return {
+      status: "upload" as const,
+      token: reusable.token,
+      version: reusable.version,
+      expiresAt: reusable.expiresAt,
+    };
+  }
+
+  const token = makeBoardSceneToken();
+  const expiresAt = now + BOARD_SCENE_UPLOAD_GRANT_LIFETIME_MS;
+  await ctx.db.insert("boardSceneUploadGrants", {
+    token,
+    purpose: args.purpose,
+    diagramId: args.diagramId,
+    ownerId: args.ownerId,
+    expectedVersion: args.expectedVersion,
+    version: args.version,
+    objectKey: makeBoardSceneObjectKey(args.diagramId),
+    encoding: args.encoding,
+    rawSize: args.rawSize,
+    compressedSize: args.compressedSize,
+    rawSha256: args.rawSha256,
+    compressedSha256: args.compressedSha256,
+    semanticSha256: args.semanticSha256,
+    createdAt: now,
+    expiresAt,
+  });
+  return { status: "upload" as const, token, version: args.version, expiresAt };
+};
+
+/**
+ * The trusted counterpart of `createBoardSceneUploadGrant` for a server-side
+ * edit that has already authorized its caller and already holds the scene it
+ * means to replace. A server edit is never a binding echo, so the semantic
+ * no-op is deliberately not applied: an edit that happens to reproduce the
+ * current scene still commits a new version, exactly as the legacy path did.
+ */
+export const createServerBoardSceneUploadGrant = async (
+  ctx: MutationCtx,
+  args: BoardSceneIntegrity & {
+    boardId: Id<"diagrams">;
+    expectedVersion: number;
+  },
+) => {
+  const ownerId = await requireUserId(ctx);
+  const diagram = await ctx.db.get("diagrams", args.boardId);
+  if (!diagram || diagram.ownerId !== ownerId) {
+    throw new Error("Board not found");
+  }
+  assertBoardSceneIntegrity(args);
+  const manifest = await readBoardSceneManifest(ctx, diagram._id);
+  if (!manifest) {
+    throw new Error("Board scene manifest is missing");
+  }
+  if (manifest.version !== args.expectedVersion) {
+    return { status: "conflict" as const, version: manifest.version };
+  }
+  return await issueBoardSceneUploadGrant(ctx, {
+    ...args,
+    diagramId: diagram._id,
+    ownerId,
+    purpose: "save",
+    version: manifest.version + 1,
+    reuse: false,
+  });
+};
+
 export const createBoardSceneUploadGrant = async (
   ctx: MutationCtx,
   args: BoardSceneIntegrity & {
@@ -190,43 +273,13 @@ export const createBoardSceneUploadGrant = async (
     };
   }
 
-  const now = Date.now();
-  const reusable = await findReusableUploadGrant(ctx, {
+  return await issueBoardSceneUploadGrant(ctx, {
     ...args,
     diagramId: diagram._id,
-    now,
-  });
-  if (reusable) {
-    return {
-      status: "upload" as const,
-      token: reusable.token,
-      version: reusable.version,
-      expiresAt: reusable.expiresAt,
-    };
-  }
-
-  const token = makeBoardSceneToken();
-  const expiresAt = now + BOARD_SCENE_UPLOAD_GRANT_LIFETIME_MS;
-  const version =
-    args.purpose === "migration" ? currentVersion : currentVersion + 1;
-  await ctx.db.insert("boardSceneUploadGrants", {
-    token,
-    purpose: args.purpose,
-    diagramId: diagram._id,
     ownerId,
-    expectedVersion: args.expectedVersion,
-    version,
-    objectKey: makeBoardSceneObjectKey(diagram._id),
-    encoding: args.encoding,
-    rawSize: args.rawSize,
-    compressedSize: args.compressedSize,
-    rawSha256: args.rawSha256,
-    compressedSha256: args.compressedSha256,
-    semanticSha256: args.semanticSha256,
-    createdAt: now,
-    expiresAt,
+    version: args.purpose === "migration" ? currentVersion : currentVersion + 1,
+    reuse: true,
   });
-  return { status: "upload" as const, token, version, expiresAt };
 };
 
 /**
@@ -282,6 +335,7 @@ const createBoardSceneSnapshotIfNeeded = async (
 export const commitBoardSceneUpload = async (
   ctx: MutationCtx,
   args: { clientSaveProtocol?: number; token: string; etag: string },
+  options: { forceSnapshot: boolean } = { forceSnapshot: false },
 ) => {
   if (args.clientSaveProtocol !== CLOUD_SAVE_PROTOCOL_VERSION) {
     return { status: "upgrade-required" as const };
@@ -371,7 +425,7 @@ export const commitBoardSceneUpload = async (
     manifest,
     ownerId,
     now,
-    force: false,
+    force: options.forceSnapshot,
   });
   // The displaced object is either preserved as the snapshot or handed back as
   // bounded cleanup work; it is never both and never silently leaked.
@@ -412,6 +466,26 @@ export const commitBoardSceneUpload = async (
   };
 };
 
+/**
+ * A restore or a programmatic edit replaces a version the owner has no other
+ * way to get back, so the version it displaces is force-preserved as a snapshot
+ * instead of waiting for the normal snapshot interval.
+ */
+export const commitServerBoardSceneUpload = async (
+  ctx: MutationCtx,
+  args: { token: string; etag: string },
+) => {
+  const result = await commitBoardSceneUpload(
+    ctx,
+    { clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION, ...args },
+    { forceSnapshot: true },
+  );
+  if (result.status === "upgrade-required") {
+    throw new Error("Board scene commit is not available");
+  }
+  return result;
+};
+
 export const abandonBoardSceneUpload = async (
   ctx: MutationCtx,
   token: string,
@@ -431,6 +505,92 @@ export const abandonBoardSceneUpload = async (
   });
   await ctx.db.delete("boardSceneUploadGrants", grant._id);
   return { cleanupToken };
+};
+
+type BoardSceneReadGrantObject = {
+  source: "current" | "snapshot";
+  snapshotId?: Id<"diagramSnapshots">;
+  version: number;
+  objectKey: string;
+  encoding: typeof BOARD_SCENE_ENCODING;
+  rawSize: number;
+  compressedSize: number;
+  rawSha256: string;
+  compressedSha256: string;
+  semanticSha256: string;
+  etag: string;
+};
+
+/**
+ * The read capability itself: an unguessable token, the exact object it names,
+ * and the integrity contract the caller must verify. The object key stays in
+ * the row and never appears in the returned capability.
+ */
+const insertBoardSceneReadGrant = async (
+  ctx: MutationCtx,
+  args: {
+    diagramId: Id<"diagrams">;
+    object: BoardSceneReadGrantObject;
+    access: "owner" | "shared";
+    shareToken?: string;
+  },
+) => {
+  const token = makeBoardSceneToken();
+  const now = Date.now();
+  const expiresAt = now + BOARD_SCENE_READ_GRANT_LIFETIME_MS;
+  await ctx.db.insert("boardSceneReadGrants", {
+    token,
+    diagramId: args.diagramId,
+    ...args.object,
+    access: args.access,
+    ...(args.shareToken ? { shareToken: args.shareToken } : null),
+    createdAt: now,
+    expiresAt,
+  });
+  return {
+    token,
+    path: boardSceneReadPath(token),
+    version: args.object.version,
+    expiresAt,
+    encoding: args.object.encoding,
+    rawSize: args.object.rawSize,
+    compressedSize: args.object.compressedSize,
+    rawSha256: args.object.rawSha256,
+    compressedSha256: args.object.compressedSha256,
+    semanticSha256: args.object.semanticSha256,
+    etag: args.object.etag,
+  };
+};
+
+/**
+ * Trusted backend code reading a Board's current scene for its own use. The
+ * caller is responsible for authorization; there is no user identity here, so
+ * the grant is recorded as owner access against the Board's own owner.
+ */
+export const createInternalBoardSceneReadGrant = async (
+  ctx: MutationCtx,
+  diagramId: Id<"diagrams">,
+) => {
+  const manifest = await readBoardSceneManifest(ctx, diagramId);
+  if (!manifest) {
+    return null;
+  }
+  return await insertBoardSceneReadGrant(ctx, {
+    diagramId,
+    access: "owner",
+    object: {
+      source: "current" as const,
+      version: manifest.version,
+      objectKey: manifest.objectKey,
+      encoding: manifest.encoding,
+      rawSize: manifest.rawSize,
+      compressedSize: manifest.compressedSize,
+      rawSha256: manifest.rawSha256,
+      compressedSha256: manifest.compressedSha256,
+      semanticSha256: manifest.semanticSha256,
+      etag: manifest.etag,
+    },
+  });
 };
 
 export const createBoardSceneReadGrant = async (
@@ -517,31 +677,12 @@ export const createBoardSceneReadGrant = async (
     };
   }
 
-  const token = makeBoardSceneToken();
-  const now = Date.now();
-  const expiresAt = now + BOARD_SCENE_READ_GRANT_LIFETIME_MS;
-  await ctx.db.insert("boardSceneReadGrants", {
-    token,
+  return await insertBoardSceneReadGrant(ctx, {
     diagramId: diagram._id,
-    ...object,
+    object,
     access,
     ...(access === "shared" ? { shareToken: args.shareToken } : null),
-    createdAt: now,
-    expiresAt,
   });
-  return {
-    token,
-    path: boardSceneReadPath(token),
-    version: object.version,
-    expiresAt,
-    encoding: object.encoding,
-    rawSize: object.rawSize,
-    compressedSize: object.compressedSize,
-    rawSha256: object.rawSha256,
-    compressedSha256: object.compressedSha256,
-    semanticSha256: object.semanticSha256,
-    etag: object.etag,
-  };
 };
 
 /**

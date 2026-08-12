@@ -1,20 +1,27 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 
-import { assertBoardSceneNotMigrated } from "./boardScenePersistence";
+import {
+  assertBoardSceneNotMigrated,
+  createBoardSceneReadGrant,
+  readBoardSceneManifest,
+} from "./boardScenePersistence";
 import { createDiagramSnapshotIfNeeded } from "./historyPersistence";
 import {
   patchElementsInScene,
   updateTextElementInScene,
 } from "./programmaticScene";
 
+import type { BoardSceneEditPlan } from "./boardSceneModel";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 
 const MAX_SCENE_BYTES = 900_000;
-const MAX_TEXT_LENGTH = 10_000;
-const MAX_ELEMENT_UPDATES_BYTES = 200_000;
+export const MAX_PROGRAMMATIC_TEXT_LENGTH = 10_000;
+export const MAX_PROGRAMMATIC_UPDATES_BYTES = 200_000;
+const MAX_TEXT_LENGTH = MAX_PROGRAMMATIC_TEXT_LENGTH;
+const MAX_ELEMENT_UPDATES_BYTES = MAX_PROGRAMMATIC_UPDATES_BYTES;
 
-const assertSceneSize = (sceneJson: string, entityName: string) => {
+export const assertSceneSize = (sceneJson: string, entityName: string) => {
   const bytes = new TextEncoder().encode(sceneJson).byteLength;
   if (bytes > MAX_SCENE_BYTES) {
     throw new Error(
@@ -47,6 +54,35 @@ const getOwnedBoardContent = async (
     throw new Error(`${entityName} content is missing`);
   }
   return { content, diagram, ownerId };
+};
+
+/**
+ * Authorizes a programmatic edit and reports what the editing action has to
+ * read. A Board that never migrated stays on the single-transaction mutation
+ * path, so its result is produced exactly as it was before.
+ */
+export const beginProgrammaticBoardEdit = async (
+  ctx: MutationCtx,
+  boardId: Id<"diagrams">,
+  entityName: string,
+): Promise<BoardSceneEditPlan> => {
+  const ownerId = await getAuthUserId(ctx);
+  if (!ownerId) {
+    throw new Error("Authentication required");
+  }
+  const diagram = await ctx.db.get("diagrams", boardId);
+  if (!diagram || diagram.ownerId !== ownerId) {
+    throw new Error(`${entityName} not found`);
+  }
+  const manifest = await readBoardSceneManifest(ctx, diagram._id);
+  if (!manifest) {
+    return { mode: "legacy" };
+  }
+  return {
+    mode: "object",
+    currentVersion: manifest.version,
+    grant: await createBoardSceneReadGrant(ctx, { boardId: diagram._id }),
+  };
 };
 
 const commitProgrammaticScene = async (

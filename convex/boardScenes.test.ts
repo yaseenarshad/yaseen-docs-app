@@ -787,13 +787,24 @@ describe("legacy Board paths after migration", () => {
         sceneJson: JSON.stringify({ elements: [], appState: {}, files: {} }),
       }),
     ).resolves.toEqual({ status: "upgrade-required" });
+    // The single-transaction programmatic path is still refused outright; a
+    // migrated Board is only edited through the action that can fetch R2.
     await expect(
-      owner.mutation(api.programmaticBoardEdits.updateTextElement, {
+      owner.mutation(internal.boardSceneEdits.updateLegacyTextElement, {
         boardId: board.boardId,
         elementId: "element-1",
         text: "hello",
+        entityName: "Board",
       }),
     ).rejects.toThrow("moved to object storage");
+    await expect(
+      owner.mutation(internal.boardSceneEdits.restoreLegacySnapshot, {
+        boardId: board.boardId,
+        snapshotId:
+          "kd700000000000000000000000000000" as Id<"diagramSnapshots">,
+        entityName: "Board",
+      }),
+    ).rejects.toThrow();
   });
 
   it("keeps unmigrated Boards on the legacy path", async () => {

@@ -622,7 +622,7 @@ describe("boards compatibility API", () => {
     });
 
     await expect(
-      owner.mutation(programmaticBoardEdits.updateTextElement, {
+      owner.action(programmaticBoardEdits.updateTextElement, {
         boardId: created.boardId,
         elementId: "text-1",
         text: "After",
@@ -804,7 +804,7 @@ describe("boards compatibility API", () => {
       ctx.db.get("diagrams", created.boardId),
     );
 
-    await owner.mutation(programmaticBoardEdits.updateTextElement, {
+    await owner.action(programmaticBoardEdits.updateTextElement, {
       boardId: created.boardId,
       elementId: "text-1",
       text: "After",
@@ -812,7 +812,7 @@ describe("boards compatibility API", () => {
     const afterFirstEdit = await t.run(async (ctx) =>
       ctx.db.get("diagrams", created.boardId),
     );
-    await owner.mutation(programmaticBoardEdits.updateTextElement, {
+    await owner.action(programmaticBoardEdits.updateTextElement, {
       boardId: created.boardId,
       elementId: "text-1",
       text: "Later",
@@ -868,7 +868,7 @@ describe("boards compatibility API", () => {
     const snapshots = await owner.query(boardHistory.list, {
       boardId: created.boardId,
     });
-    const restored = await owner.mutation(boardHistory.restore, {
+    const restored = await owner.action(boardHistory.restore, {
       boardId: created.boardId,
       snapshotId: snapshots[0]._id,
     });
