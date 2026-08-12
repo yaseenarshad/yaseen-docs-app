@@ -19,6 +19,27 @@ import type {
   ActionSource,
 } from "./types";
 
+/**
+ * Actions that only read the scene or the selection, so they stay reachable
+ * while `viewModeSelectionEnabled` lets a view-mode user hold a selection.
+ *
+ * Default-deny by design: an action absent from this set (and not flagged
+ * `viewMode: true`) can never be reached from the keyboard, the context menu,
+ * the command palette, or any future UI surface — so a newly added mutating
+ * action cannot silently become available to a viewer.
+ */
+export const VIEW_MODE_SELECTION_ACTIONS = new Set<string>([
+  "selectAll",
+  "copy",
+  "copyAsPng",
+  "copyAsSvg",
+  "copyText",
+  "copyElementLink",
+]);
+
+export const isViewModeSelectionAction = (action: Pick<Action, "name">) =>
+  VIEW_MODE_SELECTION_ACTIONS.has(action.name);
+
 const trackAction = (
   action: Action,
   source: ActionSource,
@@ -126,7 +147,14 @@ export class ActionManager {
       return false;
     }
 
-    if (this.getAppState().viewModeEnabled && action.viewMode !== true) {
+    if (
+      this.getAppState().viewModeEnabled &&
+      action.viewMode !== true &&
+      !(
+        this.app.isViewModeSelectionEnabled() &&
+        isViewModeSelectionAction(action)
+      )
+    ) {
       return false;
     }
 
@@ -160,6 +188,18 @@ export class ActionManager {
       source !== "api" &&
       !this.app.isInteractionEnabled() &&
       !(this.app.isNavigationEnabled() && action.navigation === true)
+    ) {
+      return;
+    }
+
+    // a view-mode selection must not become a lever for mutation: close
+    // every user-driven surface at once (context menu, command palette, and
+    // anything added later) rather than one gate per callsite
+    if (
+      source !== "api" &&
+      this.app.isViewModeSelectionEnabled() &&
+      action.viewMode !== true &&
+      !isViewModeSelectionAction(action)
     ) {
       return;
     }

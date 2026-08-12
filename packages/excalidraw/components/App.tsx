@@ -981,6 +981,23 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   /**
+   * Whether the user may build a selection while in view mode (`Cmd+A`,
+   * click, marquee) so the scene can be copied. Mutation stays closed —
+   * every gate that keys off `viewModeEnabled` remains in force, and the
+   * paths that only a non-empty selection would unlock consult this getter.
+   *
+   * False unless the host opted in, and always false in the non-interactive
+   * editor (which implies view mode for a different reason).
+   */
+  public isViewModeSelectionEnabled(): boolean {
+    return (
+      this.props.viewModeSelectionEnabled === true &&
+      this.state.viewModeEnabled &&
+      this.isInteractionEnabled()
+    );
+  }
+
+  /**
    * Whether element links render their link icon and are clickable.
    * True when fully interactive, or when `interaction: { enabled: { links:
    * true } }`
@@ -5724,7 +5741,12 @@ class App extends React.Component<AppProps, AppState> {
           this.state,
         );
 
+        // these three run before the master view-mode bail below, and all
+        // act on the selection — which view mode may now hold
+        const canMutateSelection = !this.state.viewModeEnabled;
+
         if (
+          canMutateSelection &&
           selectedElements.length === 1 &&
           isImageElement(selectedElements[0]) &&
           event.key === KEYS.ENTER
@@ -5737,6 +5759,7 @@ class App extends React.Component<AppProps, AppState> {
         if (event.key === KEYS.ESCAPE) {
           this.updateEditorAtom(convertElementTypePopupAtom, null);
         } else if (
+          canMutateSelection &&
           event.key === KEYS.TAB &&
           (document.activeElement === this.excalidrawContainerRef?.current ||
             document.activeElement?.classList.contains(
@@ -5767,7 +5790,7 @@ class App extends React.Component<AppProps, AppState> {
           }
         }
 
-        if (this.flowchart.handleKeyEvent(event)) {
+        if (canMutateSelection && this.flowchart.handleKeyEvent(event)) {
           return;
         }
       }
@@ -6308,7 +6331,9 @@ class App extends React.Component<AppProps, AppState> {
       this.setState({ suggestedBinding: null });
     }
 
-    this.flowchart.handleKeyEvent(event);
+    if (!this.state.viewModeEnabled) {
+      this.flowchart.handleKeyEvent(event);
+    }
   });
 
   setActiveTool = (
@@ -8623,6 +8648,8 @@ class App extends React.Component<AppProps, AppState> {
         );
       } else if (
         !event[KEYS.CTRL_OR_CMD] &&
+        // a view-mode selection can't be dragged, so don't promise it
+        !this.isViewModeSelectionEnabled() &&
         this.isHittingCommonBoundingBoxOfSelectedElements(
           scenePointer,
           selectedElements,
@@ -9340,7 +9367,12 @@ class App extends React.Component<AppProps, AppState> {
       onPointerUp(_event || event.nativeEvent),
     );
 
-    if (!this.state.viewModeEnabled || this.isActiveToolPointerCapturing()) {
+    if (
+      !this.state.viewModeEnabled ||
+      this.isActiveToolPointerCapturing() ||
+      // marquee drag & pointer-up need to resolve for selection to work
+      this.isViewModeSelectionEnabled()
+    ) {
       window.addEventListener(EVENT.POINTER_MOVE, onPointerMove);
       window.addEventListener(EVENT.POINTER_UP, onPointerUp);
       window.addEventListener(EVENT.KEYDOWN, onKeyDown);
@@ -9397,10 +9429,12 @@ class App extends React.Component<AppProps, AppState> {
       !this.maybeHandleElementLinkClick(event, scenePointer) &&
       this.state.viewModeEnabled
     ) {
-      this.setState({
-        activeEmbeddable: null,
-        selectedElementIds: {},
-      });
+      this.setState({ activeEmbeddable: null });
+      // a view-mode selection is the point of `viewModeSelectionEnabled`,
+      // so it must survive pointer-up
+      if (!this.isViewModeSelectionEnabled()) {
+        this.setState({ selectedElementIds: {} });
+      }
     }
   };
 
@@ -9445,6 +9479,21 @@ class App extends React.Component<AppProps, AppState> {
     this.missingPointerEventCleanupEmitter.trigger(event).clear();
   };
 
+  /**
+   * A plain primary-button press that must reach the selection code rather
+   * than be claimed for panning, because the host opted into view-mode
+   * selection. Space-drag, the wheel button, the hand tool and touch keep
+   * panning — touch has no other way to pan.
+   */
+  private isSelectionPressInViewMode = (
+    event: React.PointerEvent<HTMLElement> | MouseEvent,
+  ): boolean =>
+    this.isViewModeSelectionEnabled() &&
+    event.button === POINTER_BUTTON.MAIN &&
+    !isHoldingSpace &&
+    !isHandToolActive(this.state) &&
+    (!("pointerType" in event) || event.pointerType !== "touch");
+
   // Returns whether the event is a panning
   public handleCanvasPanUsingWheelOrSpaceDrag = (
     event: React.PointerEvent<HTMLElement> | MouseEvent,
@@ -9459,7 +9508,9 @@ class App extends React.Component<AppProps, AppState> {
           // via `interaction.enabled.tools` — panning must remain gated on
           // `navigation` then
           (this.isInteractionEnabled() || this.isNavigationEnabled())) ||
-          (this.state.viewModeEnabled && !this.isActiveToolPointerCapturing()))
+          (this.state.viewModeEnabled &&
+            !this.isActiveToolPointerCapturing() &&
+            !this.isSelectionPressInViewMode(event)))
       )
     ) {
       return false;
@@ -9817,7 +9868,12 @@ class App extends React.Component<AppProps, AppState> {
         }
       }
 
+      // transform handles aren't rendered in view mode, so they must not be
+      // hit-testable either — nor may a press enter the linear editor
+      const canEditSelection = !this.isViewModeSelectionEnabled();
+
       if (
+        canEditSelection &&
         selectedElements.length === 1 &&
         !this.state.selectedLinearElement?.isEditing &&
         !isElbowArrow(selectedElements[0]) &&
@@ -9862,7 +9918,7 @@ class App extends React.Component<AppProps, AppState> {
               elementWithTransformHandleType.transformHandleType;
           }
         }
-      } else if (selectedElements.length > 1) {
+      } else if (canEditSelection && selectedElements.length > 1) {
         pointerDownState.resize.handleType = getTransformHandleTypeFromCoords(
           getCommonBounds(selectedElements),
           pointerDownState.origin.x,
@@ -9894,7 +9950,7 @@ class App extends React.Component<AppProps, AppState> {
           );
         }
       } else {
-        if (this.state.selectedLinearElement) {
+        if (canEditSelection && this.state.selectedLinearElement) {
           const linearElementEditor = this.state.selectedLinearElement;
           const ret = LinearElementEditor.handlePointerDown(
             event,
@@ -11082,6 +11138,9 @@ class App extends React.Component<AppProps, AppState> {
       if (this.state.openDialog?.name === "elementLinkSelector") {
         return;
       }
+      // with view-mode selection on, a drag may only draw the selection
+      // marquee — every other branch below mutates the scene
+      const canEditSelection = !this.isViewModeSelectionEnabled();
       const pointerCoords = viewportCoordsToSceneCoords(event, this.state);
 
       if (
@@ -11101,6 +11160,7 @@ class App extends React.Component<AppProps, AppState> {
       }
 
       if (
+        canEditSelection &&
         this.state.selectedLinearElement &&
         this.state.selectedLinearElement.elbowed &&
         this.state.selectedLinearElement.initialState.segmentMidpoint.index
@@ -11197,7 +11257,7 @@ class App extends React.Component<AppProps, AppState> {
         event[KEYS.CTRL_OR_CMD] ? null : this.getEffectiveGridSize(),
       );
 
-      if (pointerDownState.resize.isResizing) {
+      if (canEditSelection && pointerDownState.resize.isResizing) {
         pointerDownState.lastCoords.x = pointerCoords.x;
         pointerDownState.lastCoords.y = pointerCoords.y;
         if (this.maybeHandleCrop(pointerDownState, event)) {
@@ -11209,7 +11269,7 @@ class App extends React.Component<AppProps, AppState> {
       }
       const elementsMap = this.scene.getNonDeletedElementsMap();
 
-      if (this.state.selectedLinearElement) {
+      if (canEditSelection && this.state.selectedLinearElement) {
         const linearElementEditor = this.state.selectedLinearElement;
 
         // Handle focus point dragging if needed
@@ -11364,6 +11424,7 @@ class App extends React.Component<AppProps, AppState> {
           pointerDownState.hit.element?.id;
 
       if (
+        canEditSelection &&
         (hasHitASelectedElement ||
           pointerDownState.hit.hasHitCommonBoundingBoxOfSelectedElements) &&
         !isSelectingPointsInLineEditor &&
@@ -11743,7 +11804,7 @@ class App extends React.Component<AppProps, AppState> {
       if (this.state.selectionElement) {
         pointerDownState.lastCoords.x = pointerCoords.x;
         pointerDownState.lastCoords.y = pointerCoords.y;
-        if (event.altKey) {
+        if (canEditSelection && event.altKey) {
           this.setActiveTool(
             { type: "lasso", fromSelection: true },
             { keepSelection: event.shiftKey },
@@ -12017,6 +12078,8 @@ class App extends React.Component<AppProps, AppState> {
   ): (event: PointerEvent) => void {
     return withBatchedUpdates((childEvent: PointerEvent) => {
       const elementsMap = this.scene.getNonDeletedElementsMap();
+      // with view-mode selection on, pointer-up may only settle the selection
+      const canEditSelection = !this.isViewModeSelectionEnabled();
 
       this.removePointer(childEvent);
       pointerDownState.drag.blockDragging = false;
@@ -12132,6 +12195,7 @@ class App extends React.Component<AppProps, AppState> {
       // Handle end of dragging a point of a linear element, might close a loop
       // and sets binding element
       if (
+        canEditSelection &&
         this.state.selectedLinearElement?.isEditing &&
         !this.state.newElement &&
         this.state.selectedLinearElement.draggedFocusPointBinding === null
@@ -12161,7 +12225,7 @@ class App extends React.Component<AppProps, AppState> {
             });
           }
         }
-      } else if (this.state.selectedLinearElement) {
+      } else if (canEditSelection && this.state.selectedLinearElement) {
         // Normalize elbow arrow points, remove close parallel segments
         if (this.state.selectedLinearElement.elbowed) {
           const element = LinearElementEditor.getElement(
@@ -12909,6 +12973,7 @@ class App extends React.Component<AppProps, AppState> {
         this.getSelectedTextEditingContainerAtPosition(hitElement, sceneCoords);
 
       if (
+        canEditSelection &&
         activeTool.type === this.state.preferredSelectionTool.type &&
         !this.state.editingTextElement &&
         !pointerDownState.drag.hasOccurred &&
@@ -14255,6 +14320,13 @@ class App extends React.Component<AppProps, AppState> {
       if (this.state.viewModeEnabled) {
         return [
           ...options,
+          ...(this.isViewModeSelectionEnabled()
+            ? ([
+                CONTEXT_MENU_SEPARATOR,
+                actionSelectAll,
+                CONTEXT_MENU_SEPARATOR,
+              ] as ContextMenuItems)
+            : []),
           actionToggleGridMode,
           actionToggleZenMode,
           actionToggleViewMode,

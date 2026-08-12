@@ -1284,6 +1284,9 @@ const ExcalidrawWrapper = () => {
         handleKeyboardGlobally={true}
         autoFocus={true}
         viewModeEnabled={cloud.isViewer}
+        // keyed off the route, not `isViewer`, which is false until shared
+        // metadata resolves and would flicker the capability off
+        viewModeSelectionEnabled={cloud.route.kind === "shared"}
         theme={editorTheme}
         onThemeChange={setAppTheme}
         renderTopLeftUI={() => (

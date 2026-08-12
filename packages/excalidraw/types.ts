@@ -852,6 +852,19 @@ export interface ExcalidrawProps {
   langCode?: Language["code"];
   viewModeEnabled?: boolean;
   /**
+   * Opt into element selection while in view mode: `Cmd+A`, click-to-select,
+   * marquee drag, and a selection that survives pointer-up — so the scene can
+   * be copied (`Cmd+C`, copy as PNG/SVG) without becoming editable.
+   *
+   * Every mutation path stays closed: no dragging, resizing, rotating,
+   * deleting, styling, or element commands in the command palette.
+   *
+   * Ignored while the editor is non-interactive (`interaction={false}`).
+   *
+   * @default false
+   */
+  viewModeSelectionEnabled?: boolean;
+  /**
    * Whether the editor accepts user input (pointer, keyboard, wheel, touch,
    * clipboard, drag&drop). When `false`, the scene still renders and reacts
    * to programmatic updates (imperative API), but the user cannot affect it
@@ -1137,6 +1150,7 @@ export type AppClassProperties = {
 
   isInteractionEnabled: App["isInteractionEnabled"];
   isNavigationEnabled: App["isNavigationEnabled"];
+  isViewModeSelectionEnabled: App["isViewModeSelectionEnabled"];
 };
 
 export type PointerDownState = Readonly<{
