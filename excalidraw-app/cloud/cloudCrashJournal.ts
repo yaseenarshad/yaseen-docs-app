@@ -100,30 +100,32 @@ export const createCloudCrashJournal = (storage: CloudCrashJournalStorage) => {
       }, undefined),
     // Claiming runs inside the caller's same-Board exclusive section and takes
     // the entry away, so two tabs opening one Board cannot both replay it.
-    claim: async ({
-      boardId,
-      serverVersion,
-      runExclusive,
-    }: CloudCrashJournalClaim) => {
-      try {
-        return await runExclusive(
-          async () =>
-            await enqueue<CloudCrashJournalEntry | null>(async () => {
-              const entry = await readEntry(boardId);
-              const outcome = classifyCloudCrashJournalEntry(
-                entry,
-                serverVersion,
-              );
-              if (outcome === "restore" || outcome === "superseded") {
-                await storage.remove(boardId);
-              }
-              return outcome === "restore" ? entry : null;
-            }, null),
-        );
-      } catch {
-        return null;
-      }
-    },
+    //
+    // The slot is reserved before that section is even requested. Entering it
+    // costs at least a task — `navigator.locks` never runs its callback
+    // synchronously — and the tab that is claiming has just opened the Board,
+    // so it is about to report the opened scene straight back through the
+    // ordinary editing path. A clear or a write from that echo would otherwise
+    // be serialized ahead of the read and empty the slot the claim exists to
+    // rescue. Waiting inside the queue costs those writes the same delay every
+    // save on this Board already pays, and nothing inside the section touches
+    // the journal, so the wait cannot deadlock against itself.
+    claim: ({ boardId, serverVersion, runExclusive }: CloudCrashJournalClaim) =>
+      enqueue<CloudCrashJournalEntry | null>(
+        async () =>
+          await runExclusive(async () => {
+            const entry = await readEntry(boardId);
+            const outcome = classifyCloudCrashJournalEntry(
+              entry,
+              serverVersion,
+            );
+            if (outcome === "restore" || outcome === "superseded") {
+              await storage.remove(boardId);
+            }
+            return outcome === "restore" ? entry : null;
+          }),
+        null,
+      ),
   };
 };
 

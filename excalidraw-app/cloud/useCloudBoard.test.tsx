@@ -14,6 +14,19 @@ import {
 import { CLOUD_SAVE_PROTOCOL_VERSION } from "./cloudSaveProtocol";
 import { createCloudCrashJournal } from "./cloudCrashJournal";
 
+import type { CloudCrashJournalEntry } from "./cloudCrashJournal";
+
+// `navigator.locks` never runs its callback synchronously, so neither does the
+// stand-in: work a tab queues while a section is being entered must be able to
+// land ahead of it here exactly as it does in a browser.
+const deferToExclusiveSection = async (
+  _boardId: string,
+  task: () => Promise<unknown>,
+) => {
+  await Promise.resolve();
+  return await task();
+};
+
 const mocks = vi.hoisted(() => ({
   mutate: vi.fn(),
   createSceneUploadGrant: vi.fn(),
@@ -41,7 +54,10 @@ const mocks = vi.hoisted(() => ({
   announceSaveComplete: vi.fn(),
   closeCoordinator: vi.fn(),
   runSaveExclusive: vi.fn(
-    async (_boardId: string, task: () => Promise<unknown>) => await task(),
+    async (_boardId: string, task: () => Promise<unknown>) => {
+      await Promise.resolve();
+      return await task();
+    },
   ),
   sceneQuery: vi.fn(),
   createJournal: vi.fn(),
@@ -219,6 +235,16 @@ const settleUntil = async (isSettled: () => boolean, attempts = 50) => {
   }
 };
 
+// A save that has left the debounce is still an unbounded number of hops from
+// settling: the object-storage pipeline compresses, hashes, uploads and
+// verifies. Waiting on the status is what makes that deterministic.
+const flushQueuedSave = async (result: { current: { saveStatus: string } }) => {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+  });
+  await settleUntil(() => result.current.saveStatus !== "saving");
+};
+
 const renderCloudBoard = async () => {
   const rendered = renderHook(() => useCloudBoard());
   await settleOpenedScene();
@@ -259,9 +285,7 @@ describe("useCloudBoard preview scheduling", () => {
     mocks.announceSaveComplete.mockReset();
     mocks.closeCoordinator.mockReset();
     mocks.runSaveExclusive.mockReset();
-    mocks.runSaveExclusive.mockImplementation(
-      async (_boardId: string, task: () => Promise<unknown>) => await task(),
-    );
+    mocks.runSaveExclusive.mockImplementation(deferToExclusiveSection);
     mocks.journalRead.mockReset();
     mocks.journalRead.mockResolvedValue(null);
     mocks.journalWrite.mockReset();
@@ -1312,9 +1336,7 @@ describe("useCloudBoard preview scheduling", () => {
     const changed = await compressBoardScene("changed scene");
 
     act(() => result.current.queueSave("changed scene"));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
-    });
+    await flushQueuedSave(result);
 
     expect(mocks.mutate).not.toHaveBeenCalled();
     expect(mocks.createSceneUploadGrant).toHaveBeenCalledWith({
@@ -1369,9 +1391,7 @@ describe("useCloudBoard preview scheduling", () => {
     mocks.fetch.mockClear();
 
     act(() => result.current.queueSave("rebound scene"));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
-    });
+    await flushQueuedSave(result);
 
     expect(mocks.fetch).not.toHaveBeenCalled();
     expect(mocks.commitSceneUpload).not.toHaveBeenCalled();
@@ -1382,9 +1402,7 @@ describe("useCloudBoard preview scheduling", () => {
 
     // The echo is the accepted baseline now, so re-queueing it saves nothing.
     act(() => result.current.queueSave("rebound scene"));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
-    });
+    await flushQueuedSave(result);
     expect(mocks.createSceneUploadGrant).toHaveBeenCalledTimes(1);
   });
 
@@ -1398,9 +1416,7 @@ describe("useCloudBoard preview scheduling", () => {
     const { result } = await openMigratedBoard("r2 scene", 1);
 
     act(() => result.current.queueSave("conflicting scene"));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
-    });
+    await flushQueuedSave(result);
 
     expect(result.current.saveStatus).toBe("conflict");
     expect(mocks.fetch).toHaveBeenCalledWith(BOARD_SCENE_ROUTE, {
@@ -1422,9 +1438,7 @@ describe("useCloudBoard preview scheduling", () => {
     );
 
     act(() => result.current.queueSave("changed scene"));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
-    });
+    await flushQueuedSave(result);
 
     expect(mocks.abandonSceneUpload).toHaveBeenCalledWith({
       token: "upload-token",
@@ -1440,9 +1454,7 @@ describe("useCloudBoard preview scheduling", () => {
     expect(mocks.journalClear).not.toHaveBeenCalled();
 
     act(() => result.current.queueSave("changed scene again"));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
-    });
+    await flushQueuedSave(result);
 
     expect(mocks.createSceneUploadGrant).toHaveBeenCalledTimes(2);
     expect(mocks.commitSceneUpload).toHaveBeenCalledTimes(1);
@@ -1456,9 +1468,7 @@ describe("useCloudBoard preview scheduling", () => {
     const { result } = await openMigratedBoard("r2 scene", 1);
 
     act(() => result.current.queueSave("changed scene"));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
-    });
+    await flushQueuedSave(result);
 
     expect(result.current.saveStatus).toBe("error");
     expect(result.current.errorMessage).toBe(
@@ -1496,9 +1506,7 @@ describe("useCloudBoard preview scheduling", () => {
     // metadata has not published the manifest yet.
     grantSceneUpload(2);
     act(() => result.current.queueSave("changed after migration"));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
-    });
+    await flushQueuedSave(result);
     expect(mocks.mutate).not.toHaveBeenCalled();
     expect(mocks.createSceneUploadGrant).toHaveBeenLastCalledWith(
       expect.objectContaining({ purpose: "save", expectedVersion: 1 }),
@@ -1551,6 +1559,282 @@ describe("useCloudBoard preview scheduling", () => {
     expect(result.current.openedBoard?.sceneJson).toBe("shared r2 scene");
     expect(mocks.createSceneUploadGrant).not.toHaveBeenCalled();
     expect(mocks.sceneQuery).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Crash recovery across a real page teardown
+  // ---------------------------------------------------------------------------
+
+  /**
+   * The journal's IndexedDB outlives the page that wrote it, and every
+   * operation on it costs asynchronous hops. A claim therefore never wins a
+   * race against work the reopening tab queues synchronously behind it.
+   */
+  const createPersistentJournalStorage = () => {
+    const entries = new Map<string, unknown>();
+    const latency = async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    };
+    return {
+      entries,
+      storage: {
+        read: async (boardId: string) => {
+          await latency();
+          return entries.get(boardId);
+        },
+        write: async (boardId: string, entry: CloudCrashJournalEntry) => {
+          await latency();
+          entries.set(boardId, entry);
+        },
+        remove: async (boardId: string) => {
+          await latency();
+          entries.delete(boardId);
+        },
+      },
+    };
+  };
+
+  /**
+   * `navigator.locks` is per-origin, not per-page: an exclusive section a tab
+   * enters is only released when its task settles or the page holding it is
+   * destroyed. A refresh that kills a tab mid-save leaves the next page waiting
+   * on that section until the dying document goes away.
+   */
+  const createOriginSaveLock = () => {
+    let tail: Promise<unknown> = Promise.resolve();
+    return {
+      destroyHoldingPage: () => {
+        tail = Promise.resolve();
+      },
+      runExclusive: async (_boardId: string, task: () => Promise<unknown>) => {
+        const run = tail.then(task, task);
+        tail = run.then(
+          () => undefined,
+          () => undefined,
+        );
+        return await run;
+      },
+    };
+  };
+
+  /** The App applies an opened scene, then hands the journal its chance. */
+  const openAndAcceptScene = async (
+    board: Awaited<ReturnType<typeof openMigratedBoard>>,
+    sceneJson: string,
+  ) => {
+    await act(async () => {
+      board.result.current.acceptSceneWithoutSave(sceneJson);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // A claim crosses the exclusive section, IndexedDB, and — when it restores
+    // — a whole object-storage save, so the queue is drained unconditionally.
+    await settleUntil(() => false, 60);
+  };
+
+  it("replays the journal a migrated Board's tab died holding", async () => {
+    const journal = createPersistentJournalStorage();
+    mocks.createJournal.mockImplementation(() =>
+      createCloudCrashJournal(journal.storage),
+    );
+    const lock = createOriginSaveLock();
+    mocks.runSaveExclusive.mockImplementation(lock.runExclusive);
+
+    // The tab that dies: a local edit is journaled well before the cloud save
+    // it owes, and the hard refresh lands while that save is still debounced.
+    const dying = await openMigratedBoard("r2 scene", 341);
+    act(() => dying.result.current.queueSave("duplicated elements"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_CRASH_JOURNAL_DEBOUNCE_MS);
+    });
+    await settleUntil(() => journal.entries.has("board-id"));
+    expect(journal.entries.get("board-id")).toEqual(
+      expect.objectContaining({
+        sceneJson: "duplicated elements",
+        baseVersion: 341,
+      }),
+    );
+
+    // pagehide starts the save the tab will not live long enough to finish.
+    mocks.createSceneUploadGrant.mockImplementation(
+      () => new Promise(() => undefined),
+    );
+    await act(async () => {
+      window.dispatchEvent(new Event("pagehide"));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    dying.unmount();
+    lock.destroyHoldingPage();
+    expect(journal.entries.has("board-id")).toBe(true);
+
+    // The reload: same Board, same version, fresh page.
+    grantSceneUpload(342);
+    mocks.commitSceneUpload.mockResolvedValue({
+      status: "committed",
+      version: 342,
+      updatedAt: 20,
+      snapshotCreated: false,
+      cleanupToken: null,
+    });
+    const revived = await openMigratedBoard("r2 scene", 341);
+    await openAndAcceptScene(revived, "r2 scene");
+
+    expect(revived.result.current.openedBoard?.sceneJson).toBe(
+      "duplicated elements",
+    );
+    expect(revived.result.current.openedBoard?.version).toBe(342);
+    expect(journal.entries.has("board-id")).toBe(false);
+    revived.unmount();
+  });
+
+  it("replays the journal even though applying the opened scene re-reports it", async () => {
+    const journal = createPersistentJournalStorage();
+    mocks.createJournal.mockImplementation(() =>
+      createCloudCrashJournal(journal.storage),
+    );
+    await journal.storage.write("board-id", {
+      boardId: "board-id",
+      sceneJson: "duplicated elements",
+      baseVersion: 341,
+      savedAt: 10,
+    });
+    mocks.runSaveExclusive.mockImplementation(
+      createOriginSaveLock().runExclusive,
+    );
+    grantSceneUpload(342);
+    mocks.commitSceneUpload.mockResolvedValue({
+      status: "committed",
+      version: 342,
+      updatedAt: 20,
+      snapshotCreated: false,
+      cleanupToken: null,
+    });
+    const rendered = await openMigratedBoard("r2 scene", 341);
+
+    // Applying an opened scene to the canvas makes the editor report it
+    // straight back, in the same task that accepted it and long before the
+    // claim's exclusive section opens.
+    await act(async () => {
+      rendered.result.current.acceptSceneWithoutSave("r2 scene");
+      rendered.result.current.queueSave("r2 scene");
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await settleUntil(() => false, 60);
+
+    expect(rendered.result.current.openedBoard?.sceneJson).toBe(
+      "duplicated elements",
+    );
+    expect(rendered.result.current.openedBoard?.version).toBe(342);
+    rendered.unmount();
+  });
+
+  it("replays the journal a dying tab's still-open exclusive section delayed", async () => {
+    const journal = createPersistentJournalStorage();
+    mocks.createJournal.mockImplementation(() =>
+      createCloudCrashJournal(journal.storage),
+    );
+    await journal.storage.write("board-id", {
+      boardId: "board-id",
+      sceneJson: "duplicated elements",
+      baseVersion: 341,
+      savedAt: 10,
+    });
+    // The refreshed-away page is still holding the Board's section for the
+    // save it started on pagehide, so this page's claim queues behind it.
+    let releaseDyingPage!: () => void;
+    const held = new Promise<void>((resolve) => {
+      releaseDyingPage = resolve;
+    });
+    mocks.runSaveExclusive.mockImplementation(
+      async (_boardId: string, task: () => Promise<unknown>) => {
+        await held;
+        return await task();
+      },
+    );
+    grantSceneUpload(342);
+    mocks.commitSceneUpload.mockResolvedValue({
+      status: "committed",
+      version: 342,
+      updatedAt: 20,
+      snapshotCreated: false,
+      cleanupToken: null,
+    });
+    const rendered = await openMigratedBoard("r2 scene", 341);
+
+    // Applying the opened scene settles bindings and the viewport, so the
+    // editor reports a scene of its own and journals it on the short debounce.
+    act(() => rendered.result.current.acceptSceneWithoutSave("r2 scene"));
+    act(() => rendered.result.current.queueSave("r2 scene, bindings settled"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_CRASH_JOURNAL_DEBOUNCE_MS);
+    });
+
+    await act(async () => {
+      releaseDyingPage();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await settleUntil(() => false, 60);
+
+    expect(rendered.result.current.openedBoard?.sceneJson).toBe(
+      "duplicated elements",
+    );
+    expect(rendered.result.current.openedBoard?.version).toBe(342);
+    rendered.unmount();
+  });
+
+  it("keeps a claimed entry recoverable when the replay guard refuses it", async () => {
+    const journal = createPersistentJournalStorage();
+    mocks.createJournal.mockImplementation(() =>
+      createCloudCrashJournal(journal.storage),
+    );
+    await journal.storage.write("board-id", {
+      boardId: "board-id",
+      sceneJson: "duplicated elements",
+      baseVersion: 341,
+      savedAt: 10,
+    });
+    // Another tab is mid-save, so this tab's claim waits for the section.
+    let openExclusiveSection!: () => void;
+    const held = new Promise<void>((resolve) => {
+      openExclusiveSection = resolve;
+    });
+    mocks.runSaveExclusive.mockImplementation(
+      async (_boardId: string, task: () => Promise<unknown>) => {
+        await held;
+        return await task();
+      },
+    );
+    const rendered = await openMigratedBoard("r2 scene", 341);
+
+    act(() => rendered.result.current.acceptSceneWithoutSave("r2 scene"));
+
+    // That save lands first, so by the time the section opens the journaled
+    // edit no longer builds on the version this tab would save against.
+    await publishSceneObject("peer edit", 342);
+    mocks.openedBoard = {
+      ...mocks.openedBoard,
+      version: 342,
+      sceneJson: "peer edit",
+      sceneManifest: { version: 342 },
+    };
+    rendered.rerender();
+    await settleUntil(
+      () => rendered.result.current.openedBoard?.version === 342,
+    );
+    await act(async () => {
+      openExclusiveSection();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await settleUntil(() => false, 60);
+
+    // Nothing replayed it, so nothing may have consumed it either.
+    expect(rendered.result.current.openedBoard?.sceneJson).toBe("peer edit");
+    expect(mocks.createSceneUploadGrant).not.toHaveBeenCalled();
+    expect(journal.entries.get("board-id")).toEqual(
+      expect.objectContaining({ sceneJson: "duplicated elements" }),
+    );
+    rendered.unmount();
   });
 
   it("drains pending scene cleanup capabilities in the background", async () => {
