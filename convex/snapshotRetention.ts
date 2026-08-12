@@ -1,6 +1,7 @@
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 
+import { createBoardSceneDeleteGrant } from "./boardScenePersistence";
 import { internal } from "./_generated/api";
 import { internalMutation } from "./_generated/server";
 import {
@@ -189,6 +190,26 @@ export const pruneDiagramSnapshots = internalMutation({
       cutoff: args.cutoff,
       minimumRetained: args.retainedIds.length,
     });
+
+    const deletedIds = new Set(snapshotIdsToDelete);
+    // Retiring an R2 snapshot must also retire its object, through the same
+    // idempotent capability the rest of the cleanup uses.
+    const expiredObjectKeys = expiredSnapshotsOutsideRetentionFloor.flatMap(
+      (snapshot) =>
+        deletedIds.has(snapshot._id) && snapshot.objectKey
+          ? [snapshot.objectKey]
+          : [],
+    );
+    if (expiredObjectKeys.length > 0) {
+      const diagram = await ctx.db.get("diagrams", args.diagramId);
+      if (diagram) {
+        await createBoardSceneDeleteGrant(ctx, {
+          ownerId: diagram.ownerId,
+          diagramId: diagram._id,
+          objectKeys: expiredObjectKeys,
+        });
+      }
+    }
 
     for (const snapshotId of snapshotIdsToDelete) {
       await ctx.db.delete("diagramSnapshots", snapshotId);
