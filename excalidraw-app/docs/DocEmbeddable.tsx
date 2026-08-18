@@ -529,6 +529,7 @@ export const DocEmbeddable = ({
       </header>
       {canEdit ? (
         <div
+          key="milkdown-editor"
           ref={editorRootRef}
           className="yaseendraw-doc-embeddable__editor"
           aria-label={`Editing ${title}`}
@@ -538,6 +539,7 @@ export const DocEmbeddable = ({
         />
       ) : (
         <div
+          key="static-preview"
           className="yaseendraw-doc-embeddable__preview"
           aria-label={`${title} preview`}
           ref={(node) => {
