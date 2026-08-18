@@ -974,6 +974,10 @@ export interface ExcalidrawProps {
     element: NonDeleted<ExcalidrawEmbeddableElement>,
     appState: AppState,
   ) => JSX.Element | null;
+  /** Lets host-rendered embeddables require an intentional second click. */
+  getEmbeddableActivationMode?: (
+    element: NonDeleted<ExcalidrawIframeLikeElement>,
+  ) => "single" | "double";
   aiEnabled?: boolean;
   showDeprecatedFonts?: boolean;
   renderScrollbars?: boolean;

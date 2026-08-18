@@ -1,4 +1,5 @@
 import { referencesBoardSceneNamespace } from "../board-scenes/types";
+import { referencesDocContentNamespace } from "../doc-content/types";
 
 import { handleImageStudioRequest } from "./imageStudio";
 import {
@@ -8,11 +9,14 @@ import {
 import { getCanonicalRedirectResponse } from "./canonicalRedirect";
 import { getLegacyServiceWorkerResponse } from "./legacyServiceWorker";
 import { handleBoardSceneRequest, isBoardSceneRoute } from "./boardScenes";
+import { handleDocContentRequest, isDocContentRoute } from "./docContents";
+import { handleDocAssetRequest, isDocAssetRoute } from "./docAssets";
 
 interface Env {
   ASSETS: Fetcher;
   DIAGRAM_ASSETS: R2Bucket;
   CONVEX_SITE_URL: string;
+  DOCS_MODE?: "off" | "read-only" | "on";
   PIXABAY_API_KEY?: string;
 }
 
@@ -300,6 +304,32 @@ const worker: ExportedHandler<Env> = {
     if (isBoardSceneRoute(url.pathname)) {
       return await handleBoardSceneRequest(request, env, url);
     }
+    if (isDocContentRoute(url.pathname)) {
+      if (env.DOCS_MODE === "off" || !env.DOCS_MODE) {
+        return new Response("Not found", { status: 404 });
+      }
+      if (
+        env.DOCS_MODE === "read-only" &&
+        request.method !== "GET" &&
+        request.method !== "HEAD"
+      ) {
+        return json({ error: "Docs are read-only" }, { status: 403 });
+      }
+      return await handleDocContentRequest(request, env, url);
+    }
+    if (isDocAssetRoute(url.pathname)) {
+      if (env.DOCS_MODE === "off" || !env.DOCS_MODE) {
+        return new Response("Not found", { status: 404 });
+      }
+      if (
+        env.DOCS_MODE === "read-only" &&
+        request.method !== "GET" &&
+        request.method !== "HEAD"
+      ) {
+        return json({ error: "Docs are read-only" }, { status: 403 });
+      }
+      return await handleDocAssetRequest(request, env, url);
+    }
     if (url.pathname === "/api/assets" && request.method === "POST") {
       return await uploadAsset(request, env);
     }
@@ -333,7 +363,8 @@ const worker: ExportedHandler<Env> = {
         !objectKey ||
         objectKey.includes("..") ||
         objectKey.includes("/presentation-animations/") ||
-        referencesBoardSceneNamespace(objectKey)
+        referencesBoardSceneNamespace(objectKey) ||
+        referencesDocContentNamespace(objectKey)
       ) {
         return new Response("Invalid image key", { status: 400 });
       }

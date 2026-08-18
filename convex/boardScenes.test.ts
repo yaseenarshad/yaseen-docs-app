@@ -16,6 +16,10 @@ import {
   parseBoardSceneReadGrant,
   parseBoardSceneUploadGrant,
 } from "../board-scenes/types";
+import {
+  DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+  hashDocPlacementRefs,
+} from "../doc-placement/types";
 
 import { api, internal } from "./_generated/api";
 import { CLOUD_SAVE_PROTOCOL_VERSION } from "./cloudSaveProtocol";
@@ -215,6 +219,156 @@ describe("Board scene upload grants", () => {
 });
 
 describe("Board scene commits", () => {
+  it("reconciles owned Doc placements only inside an accepted commit", async () => {
+    const { t, owner, board } = await setup();
+    const firstDoc = await owner.mutation(api.docs.create, { folderId: null });
+    const secondDoc = await owner.mutation(api.docs.create, { folderId: null });
+    const initialRefs = [
+      { docId: firstDoc.docId, elementId: "element-a" },
+      { docId: secondDoc.docId, elementId: "element-b" },
+    ];
+    const initialHash = await hashDocPlacementRefs(initialRefs);
+
+    await migrate(owner, board.boardId, {
+      docRefsProtocolVersion: DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+      docRefsHash: initialHash,
+      docRefs: initialRefs,
+    });
+    await expect(
+      t.run(async (ctx) =>
+        ctx.db
+          .query("docPlacements")
+          .withIndex("by_diagramId_and_elementId", (q) =>
+            q.eq("diagramId", board.boardId),
+          )
+          .collect(),
+      ),
+    ).resolves.toMatchObject(initialRefs);
+
+    const nextRefs = [
+      { docId: secondDoc.docId, elementId: "element-b" },
+      { docId: firstDoc.docId, elementId: "element-c" },
+    ];
+    await saveNextVersion(owner, board.boardId, 0, {
+      docRefsProtocolVersion: DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+      docRefsHash: await hashDocPlacementRefs(nextRefs),
+      docRefs: nextRefs,
+    });
+
+    const placements = await t.run(async (ctx) =>
+      ctx.db
+        .query("docPlacements")
+        .withIndex("by_diagramId_and_elementId", (q) =>
+          q.eq("diagramId", board.boardId),
+        )
+        .collect(),
+    );
+    expect(
+      placements.map(({ docId, elementId }) => ({ docId, elementId })),
+    ).toEqual(nextRefs);
+  });
+
+  it("skips placement reconciliation when the accepted sorted hash is unchanged", async () => {
+    const { t, owner, board } = await setup();
+    const doc = await owner.mutation(api.docs.create, { folderId: null });
+    const refs = [{ docId: doc.docId, elementId: "element-a" }];
+    const hash = await hashDocPlacementRefs(refs);
+    await migrate(owner, board.boardId, {
+      docRefsProtocolVersion: DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+      docRefsHash: hash,
+      docRefs: refs,
+    });
+    const sentinelId = await t.run(async (ctx) =>
+      ctx.db.insert("docPlacements", {
+        diagramId: board.boardId,
+        docId: doc.docId,
+        elementId: "sentinel-proves-no-reconcile-query",
+        createdAt: 1,
+        updatedAt: 1,
+      }),
+    );
+
+    await saveNextVersion(owner, board.boardId, 0, {
+      docRefsProtocolVersion: DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+      docRefsHash: hash,
+    });
+
+    await expect(
+      t.run(async (ctx) => ctx.db.get("docPlacements", sentinelId)),
+    ).resolves.toMatchObject({
+      elementId: "sentinel-proves-no-reconcile-query",
+    });
+  });
+
+  it("accepts foreign Doc cards as inert metadata without granting access", async () => {
+    const { t, owner, intruder, board } = await setup();
+    const foreignDoc = await intruder.mutation(api.docs.create, {
+      folderId: null,
+    });
+    const foreignRefs = [{ docId: foreignDoc.docId, elementId: "foreign" }];
+    const foreignHash = await hashDocPlacementRefs(foreignRefs);
+
+    await migrate(owner, board.boardId, {
+      docRefsProtocolVersion: DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+      docRefsHash: foreignHash,
+      docRefs: foreignRefs,
+    });
+
+    await expect(
+      t.run(async (ctx) => ctx.db.query("docPlacements").collect()),
+    ).resolves.toEqual([]);
+    await expect(readManifest(t, board.boardId)).resolves.toMatchObject({
+      docRefsHash: foreignHash,
+    });
+  });
+
+  it("rejects missing and forged refs while isolating stale updates", async () => {
+    const { t, owner, board } = await setup();
+    const ownedDoc = await owner.mutation(api.docs.create, { folderId: null });
+    const ownedRefs = [{ docId: ownedDoc.docId, elementId: "owned" }];
+    const ownedHash = await hashDocPlacementRefs(ownedRefs);
+
+    await expect(
+      requestUploadGrant(owner, board.boardId, {
+        docRefsProtocolVersion: DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+        docRefsHash: ownedHash,
+      }),
+    ).rejects.toThrow("Full Doc placement refs are required");
+    await expect(
+      requestUploadGrant(owner, board.boardId, {
+        docRefsProtocolVersion: DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+        docRefsHash: hex("ab"),
+        docRefs: ownedRefs,
+      }),
+    ).rejects.toThrow("Doc placement hash does not match");
+    await migrate(owner, board.boardId, {
+      docRefsProtocolVersion: DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+      docRefsHash: ownedHash,
+      docRefs: ownedRefs,
+    });
+    const stale = await requestUploadGrant(owner, board.boardId, {
+      purpose: "save",
+      expectedVersion: 0,
+      ...sceneObject({ semanticSha256: hex("aa") }),
+      docRefsProtocolVersion: DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+      docRefsHash: await hashDocPlacementRefs([]),
+      docRefs: [],
+    });
+    if (stale.status !== "upload") {
+      throw new Error("Expected an upload grant");
+    }
+    await saveNextVersion(owner, board.boardId, 0, {
+      docRefsProtocolVersion: DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+      docRefsHash: ownedHash,
+    });
+    await commit(owner, stale.token, "etag-stale");
+
+    const placements = await t.run(async (ctx) =>
+      ctx.db.query("docPlacements").collect(),
+    );
+    expect(placements).toMatchObject(ownedRefs);
+  });
+
   it("commits a lazy migration without changing the user-visible modified time", async () => {
     const { t, owner, board } = await setup();
     const before = await owner.query(api.boards.openMineMetadata, {
@@ -657,7 +811,13 @@ describe("Board scene Worker routes", () => {
 describe("Board scene cleanup and deletion", () => {
   it("purges manifests, grants and snapshot metadata when a Board is deleted", async () => {
     const { t, owner, board } = await setup();
-    await migrate(owner, board.boardId);
+    const doc = await owner.mutation(api.docs.create, { folderId: null });
+    const refs = [{ docId: doc.docId, elementId: "doc-card" }];
+    await migrate(owner, board.boardId, {
+      docRefsProtocolVersion: DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+      docRefsHash: await hashDocPlacementRefs(refs),
+      docRefs: refs,
+    });
     await owner.mutation(api.boardScenes.createReadGrant, {
       boardId: board.boardId,
     });
@@ -677,11 +837,13 @@ describe("Board scene cleanup and deletion", () => {
       uploadGrants: await ctx.db.query("boardSceneUploadGrants").collect(),
       readGrants: await ctx.db.query("boardSceneReadGrants").collect(),
       snapshots: await ctx.db.query("diagramSnapshots").collect(),
+      placements: await ctx.db.query("docPlacements").collect(),
     }));
     expect(remaining.manifests).toHaveLength(0);
     expect(remaining.uploadGrants).toHaveLength(0);
     expect(remaining.readGrants).toHaveLength(0);
     expect(remaining.snapshots).toHaveLength(0);
+    expect(remaining.placements).toHaveLength(0);
   });
 
   it("prunes expired grants idempotently and offers the orphans for deletion", async () => {

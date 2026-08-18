@@ -2,6 +2,10 @@ import { deflate, inflate } from "pako";
 import { describe, expect, it, vi } from "vitest";
 
 import { BOARD_SCENE_ENCODING } from "../../board-scenes/types";
+import {
+  DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+  describeDocPlacementRefs,
+} from "../../doc-placement/types";
 
 import {
   compressBoardScene,
@@ -128,6 +132,7 @@ describe("board scene save", () => {
     );
 
     const compressed = await compressBoardScene(scene);
+    const docRefs = await describeDocPlacementRefs(scene);
     expect(dependencies.createUploadGrant).toHaveBeenCalledWith({
       boardId: "board-id",
       clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
@@ -139,6 +144,9 @@ describe("board scene save", () => {
       rawSha256: compressed.rawSha256,
       compressedSha256: compressed.compressedSha256,
       semanticSha256: compressed.semanticSha256,
+      docRefsProtocolVersion: DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+      docRefsHash: docRefs.hash,
+      docRefs: [],
     });
     expect(dependencies.upload).toHaveBeenCalledWith(
       "upload-token",
@@ -157,6 +165,31 @@ describe("board scene save", () => {
       updatedAt: 42,
       snapshotCreated: false,
     });
+  });
+
+  it("omits the full Doc refs when their accepted manifest hash is unchanged", async () => {
+    const dependencies = saveDependencies();
+    const docRefs = await describeDocPlacementRefs(scene);
+
+    await saveBoardScene(
+      {
+        boardId: "board-id",
+        expectedVersion: 2,
+        sceneJson: scene,
+        acceptedDocRefsHash: docRefs.hash,
+      },
+      dependencies,
+    );
+
+    expect(dependencies.createUploadGrant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        docRefsProtocolVersion: DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+        docRefsHash: docRefs.hash,
+      }),
+    );
+    expect(dependencies.createUploadGrant.mock.calls[0][0]).not.toHaveProperty(
+      "docRefs",
+    );
   });
 
   it("treats a binding echo as saved without uploading anything", async () => {

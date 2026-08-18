@@ -160,6 +160,9 @@ export const beginBoardSnapshotRestore = async (
     return {
       mode: "object",
       currentVersion: manifest.version,
+      ...(manifest.docRefsHash !== undefined
+        ? { currentDocRefsHash: manifest.docRefsHash }
+        : null),
       grant: await createBoardSceneReadGrant(ctx, {
         boardId: diagram._id,
         snapshotId: snapshot._id,
@@ -172,6 +175,9 @@ export const beginBoardSnapshotRestore = async (
   return {
     mode: "inline",
     currentVersion: manifest.version,
+    ...(manifest.docRefsHash !== undefined
+      ? { currentDocRefsHash: manifest.docRefsHash }
+      : null),
     sceneJson: snapshot.sceneJson,
   };
 };

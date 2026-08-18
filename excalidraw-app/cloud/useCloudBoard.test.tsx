@@ -149,6 +149,8 @@ vi.mock("convex/react", async () => {
         ? sharedBoardMetadata()
         : name === "boardScenes:pendingCleanup"
         ? mocks.sceneCleanupTokens
+        : name === "boardDocs:listManifestPage"
+        ? { page: [], nextCursor: null, isDone: true }
         : [];
     },
   };
@@ -1354,6 +1356,9 @@ describe("useCloudBoard preview scheduling", () => {
       rawSha256: changed.rawSha256,
       compressedSha256: changed.compressedSha256,
       semanticSha256: changed.semanticSha256,
+      docRefsProtocolVersion: 1,
+      docRefsHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      docRefs: [],
     });
     expect(mocks.fetch).toHaveBeenCalledWith(
       BOARD_SCENE_ROUTE,

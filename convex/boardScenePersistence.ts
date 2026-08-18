@@ -1,6 +1,13 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 import {
+  DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+  MAX_DOC_PLACEMENT_REFS,
+  hashDocPlacementRefs,
+  normalizeDocPlacementRefs,
+} from "../doc-placement/types";
+
+import {
   BOARD_SCENE_DELETE_GRANT_LIFETIME_MS,
   BOARD_SCENE_READ_GRANT_LIFETIME_MS,
   BOARD_SCENE_UPLOAD_GRANT_LIFETIME_MS,
@@ -14,6 +21,7 @@ import {
   toBoardSceneGrantContract,
 } from "./boardSceneModel";
 import { CLOUD_SAVE_PROTOCOL_VERSION } from "./cloudSaveProtocol";
+import { getDocsMode } from "./docsMode";
 import { shouldCreateDiagramSnapshot } from "./snapshotPolicy";
 
 import type { BOARD_SCENE_ENCODING } from "../board-scenes/types";
@@ -35,6 +43,20 @@ type BoardSceneIntegrity = {
   compressedSha256: string;
   semanticSha256: string;
 };
+
+type BoardDocRefsUpload = {
+  docRefsProtocolVersion?: number;
+  docRefsHash?: string;
+  docRefs?: Array<{ docId: Id<"docs">; elementId: string }>;
+};
+
+type ValidatedBoardDocRefs = {
+  docRefsProtocolVersion: number;
+  docRefsHash: string;
+  docRefs?: Array<{ docId: Id<"docs">; elementId: string }>;
+};
+
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 
 const requireUserId = async (ctx: QueryCtx | MutationCtx) => {
   const userId = await getAuthUserId(ctx);
@@ -60,6 +82,82 @@ export const assertBoardSceneNotMigrated = async (
   if (await readBoardSceneManifest(ctx, diagramId)) {
     throw new Error(BOARD_SCENE_MOVED_MESSAGE);
   }
+};
+
+const filterOwnedDocPlacementRefs = async (
+  ctx: MutationCtx,
+  ownerId: Id<"users">,
+  refs: readonly { docId: Id<"docs">; elementId: string }[],
+) => {
+  const ownedDocIds = new Set<Id<"docs">>();
+  for (const docId of new Set(refs.map((ref) => ref.docId))) {
+    const doc = await ctx.db.get("docs", docId);
+    if (doc?.ownerId === ownerId && doc.lifecycle === "active") {
+      ownedDocIds.add(docId);
+    }
+  }
+  return refs.filter((ref) => ownedDocIds.has(ref.docId));
+};
+
+/**
+ * New clients declare a compact hash on every grant. The full list is required
+ * only when that hash differs from the accepted manifest, keeping ordinary
+ * Board saves on their existing small-document path.
+ */
+const validateBoardDocRefsUpload = async (
+  ctx: MutationCtx,
+  args: BoardDocRefsUpload,
+  ownerId: Id<"users">,
+  manifest: Doc<"diagramSceneManifests"> | null,
+): Promise<ValidatedBoardDocRefs | null> => {
+  const hasAnyField =
+    args.docRefsProtocolVersion !== undefined ||
+    args.docRefsHash !== undefined ||
+    args.docRefs !== undefined;
+  if (!hasAnyField) {
+    return null;
+  }
+  const docsMode = getDocsMode();
+  if (docsMode === "off") {
+    return null;
+  }
+  if (
+    args.docRefsProtocolVersion !== DOC_PLACEMENT_REFS_PROTOCOL_VERSION ||
+    args.docRefsHash === undefined ||
+    !SHA256_PATTERN.test(args.docRefsHash)
+  ) {
+    throw new Error("Doc placement reference contract is invalid");
+  }
+
+  const changed =
+    manifest?.docRefsProtocolVersion !== args.docRefsProtocolVersion ||
+    manifest?.docRefsHash !== args.docRefsHash;
+  if (docsMode === "read-only") {
+    if (changed) {
+      throw new Error("Docs are read-only");
+    }
+    return null;
+  }
+  if (changed && args.docRefs === undefined) {
+    throw new Error("Full Doc placement refs are required for a changed hash");
+  }
+
+  let refs: Array<{ docId: Id<"docs">; elementId: string }> | undefined;
+  if (args.docRefs !== undefined) {
+    refs = normalizeDocPlacementRefs(args.docRefs).map((ref) => ({
+      docId: ref.docId as Id<"docs">,
+      elementId: ref.elementId,
+    }));
+    if ((await hashDocPlacementRefs(refs)) !== args.docRefsHash) {
+      throw new Error("Doc placement hash does not match its refs");
+    }
+  }
+
+  return {
+    docRefsProtocolVersion: args.docRefsProtocolVersion,
+    docRefsHash: args.docRefsHash,
+    ...(changed ? { docRefs: refs } : null),
+  };
 };
 
 /**
@@ -114,12 +212,13 @@ export const createBoardSceneDeleteGrant = async (
 
 const findReusableUploadGrant = async (
   ctx: MutationCtx,
-  args: BoardSceneIntegrity & {
-    diagramId: Id<"diagrams">;
-    purpose: "migration" | "save";
-    expectedVersion: number;
-    now: number;
-  },
+  args: BoardSceneIntegrity &
+    BoardDocRefsUpload & {
+      diagramId: Id<"diagrams">;
+      purpose: "migration" | "save";
+      expectedVersion: number;
+      now: number;
+    },
 ) => {
   const recent = await ctx.db
     .query("boardSceneUploadGrants")
@@ -139,21 +238,25 @@ const findReusableUploadGrant = async (
         grant.compressedSize === args.compressedSize &&
         grant.rawSha256 === args.rawSha256 &&
         grant.compressedSha256 === args.compressedSha256 &&
-        grant.semanticSha256 === args.semanticSha256,
+        grant.semanticSha256 === args.semanticSha256 &&
+        grant.docRefsProtocolVersion === args.docRefsProtocolVersion &&
+        grant.docRefsHash === args.docRefsHash &&
+        JSON.stringify(grant.docRefs) === JSON.stringify(args.docRefs),
     ) ?? null
   );
 };
 
 const issueBoardSceneUploadGrant = async (
   ctx: MutationCtx,
-  args: BoardSceneIntegrity & {
-    diagramId: Id<"diagrams">;
-    ownerId: Id<"users">;
-    purpose: "migration" | "save";
-    expectedVersion: number;
-    version: number;
-    reuse: boolean;
-  },
+  args: BoardSceneIntegrity &
+    BoardDocRefsUpload & {
+      diagramId: Id<"diagrams">;
+      ownerId: Id<"users">;
+      purpose: "migration" | "save";
+      expectedVersion: number;
+      version: number;
+      reuse: boolean;
+    },
 ) => {
   const now = Date.now();
   const reusable = args.reuse
@@ -184,6 +287,13 @@ const issueBoardSceneUploadGrant = async (
     rawSha256: args.rawSha256,
     compressedSha256: args.compressedSha256,
     semanticSha256: args.semanticSha256,
+    ...(args.docRefsProtocolVersion !== undefined
+      ? { docRefsProtocolVersion: args.docRefsProtocolVersion }
+      : null),
+    ...(args.docRefsHash !== undefined
+      ? { docRefsHash: args.docRefsHash }
+      : null),
+    ...(args.docRefs !== undefined ? { docRefs: args.docRefs } : null),
     createdAt: now,
     expiresAt,
   });
@@ -199,10 +309,11 @@ const issueBoardSceneUploadGrant = async (
  */
 export const createServerBoardSceneUploadGrant = async (
   ctx: MutationCtx,
-  args: BoardSceneIntegrity & {
-    boardId: Id<"diagrams">;
-    expectedVersion: number;
-  },
+  args: BoardSceneIntegrity &
+    BoardDocRefsUpload & {
+      boardId: Id<"diagrams">;
+      expectedVersion: number;
+    },
 ) => {
   const ownerId = await requireUserId(ctx);
   const diagram = await ctx.db.get("diagrams", args.boardId);
@@ -217,6 +328,12 @@ export const createServerBoardSceneUploadGrant = async (
   if (manifest.version !== args.expectedVersion) {
     return { status: "conflict" as const, version: manifest.version };
   }
+  const docRefs = await validateBoardDocRefsUpload(
+    ctx,
+    args,
+    ownerId,
+    manifest,
+  );
   return await issueBoardSceneUploadGrant(ctx, {
     ...args,
     diagramId: diagram._id,
@@ -224,17 +341,19 @@ export const createServerBoardSceneUploadGrant = async (
     purpose: "save",
     version: manifest.version + 1,
     reuse: false,
+    ...(docRefs ?? null),
   });
 };
 
 export const createBoardSceneUploadGrant = async (
   ctx: MutationCtx,
-  args: BoardSceneIntegrity & {
-    boardId: Id<"diagrams">;
-    clientSaveProtocol?: number;
-    purpose: "migration" | "save";
-    expectedVersion: number;
-  },
+  args: BoardSceneIntegrity &
+    BoardDocRefsUpload & {
+      boardId: Id<"diagrams">;
+      clientSaveProtocol?: number;
+      purpose: "migration" | "save";
+      expectedVersion: number;
+    },
 ) => {
   // Deliberately first: a stale client learns to reload before it can
   // authenticate or make this transaction read anything.
@@ -263,9 +382,19 @@ export const createBoardSceneUploadGrant = async (
   if (currentVersion !== args.expectedVersion) {
     return { status: "conflict" as const, version: currentVersion };
   }
+  const docRefs = await validateBoardDocRefsUpload(
+    ctx,
+    args,
+    ownerId,
+    manifest,
+  );
   // The binding-echo safety valve, decided from one small document: an
   // unchanged scene is accepted without an upload and without a scene read.
-  if (manifest && manifest.semanticSha256 === args.semanticSha256) {
+  if (
+    manifest &&
+    manifest.semanticSha256 === args.semanticSha256 &&
+    (docRefs === null || manifest.docRefsHash === docRefs.docRefsHash)
+  ) {
     return {
       status: "unchanged" as const,
       version: manifest.version,
@@ -279,7 +408,71 @@ export const createBoardSceneUploadGrant = async (
     ownerId,
     version: args.purpose === "migration" ? currentVersion : currentVersion + 1,
     reuse: true,
+    ...(docRefs ?? null),
   });
+};
+
+const reconcileBoardDocPlacements = async (
+  ctx: MutationCtx,
+  args: {
+    diagramId: Id<"diagrams">;
+    ownerId: Id<"users">;
+    previousHash?: string;
+    grant: Doc<"boardSceneUploadGrants">;
+    now: number;
+  },
+) => {
+  if (getDocsMode() !== "on") {
+    return;
+  }
+  if (
+    args.grant.docRefsProtocolVersion === undefined ||
+    args.grant.docRefsHash === undefined ||
+    args.previousHash === args.grant.docRefsHash
+  ) {
+    return;
+  }
+  const refs = args.grant.docRefs;
+  if (!refs) {
+    throw new Error("Full Doc placement refs are required for reconciliation");
+  }
+  const ownedRefs = await filterOwnedDocPlacementRefs(ctx, args.ownerId, refs);
+  const existing = await ctx.db
+    .query("docPlacements")
+    .withIndex("by_diagramId_and_elementId", (q) =>
+      q.eq("diagramId", args.diagramId),
+    )
+    .take(MAX_DOC_PLACEMENT_REFS + 1);
+  if (existing.length > MAX_DOC_PLACEMENT_REFS) {
+    throw new Error("Board has too many Doc placement rows to reconcile");
+  }
+
+  const desired = new Map(ownedRefs.map((ref) => [ref.elementId, ref.docId]));
+  const settled = new Set<string>();
+  for (const placement of existing) {
+    const desiredDocId = desired.get(placement.elementId);
+    if (
+      desiredDocId === undefined ||
+      desiredDocId !== placement.docId ||
+      settled.has(placement.elementId)
+    ) {
+      await ctx.db.delete("docPlacements", placement._id);
+      continue;
+    }
+    settled.add(placement.elementId);
+  }
+  for (const ref of ownedRefs) {
+    if (settled.has(ref.elementId)) {
+      continue;
+    }
+    await ctx.db.insert("docPlacements", {
+      diagramId: args.diagramId,
+      docId: ref.docId,
+      elementId: ref.elementId,
+      createdAt: args.now,
+      updatedAt: args.now,
+    });
+  }
 };
 
 /**
@@ -383,6 +576,12 @@ export const commitBoardSceneUpload = async (
   }
 
   if (!manifest) {
+    await reconcileBoardDocPlacements(ctx, {
+      diagramId: diagram._id,
+      ownerId,
+      grant,
+      now,
+    });
     await ctx.db.insert("diagramSceneManifests", {
       diagramId: diagram._id,
       version: grant.version,
@@ -394,6 +593,12 @@ export const commitBoardSceneUpload = async (
       compressedSha256: grant.compressedSha256,
       semanticSha256: grant.semanticSha256,
       etag: args.etag,
+      ...(grant.docRefsHash !== undefined
+        ? { docRefsHash: grant.docRefsHash }
+        : null),
+      ...(grant.docRefsProtocolVersion !== undefined
+        ? { docRefsProtocolVersion: grant.docRefsProtocolVersion }
+        : null),
       ...(diagram.lastSnapshotAt !== undefined
         ? { lastSnapshotAt: diagram.lastSnapshotAt }
         : null),
@@ -436,6 +641,13 @@ export const commitBoardSceneUpload = async (
         diagramId: diagram._id,
         objectKeys: [manifest.objectKey],
       });
+  await reconcileBoardDocPlacements(ctx, {
+    diagramId: diagram._id,
+    ownerId,
+    previousHash: manifest.docRefsHash,
+    grant,
+    now,
+  });
   await ctx.db.patch("diagramSceneManifests", manifest._id, {
     version: grant.version,
     objectKey: grant.objectKey,
@@ -446,6 +658,12 @@ export const commitBoardSceneUpload = async (
     compressedSha256: grant.compressedSha256,
     semanticSha256: grant.semanticSha256,
     etag: args.etag,
+    ...(grant.docRefsHash !== undefined
+      ? { docRefsHash: grant.docRefsHash }
+      : null),
+    ...(grant.docRefsProtocolVersion !== undefined
+      ? { docRefsProtocolVersion: grant.docRefsProtocolVersion }
+      : null),
     ...(snapshotCreated ? { lastSnapshotAt: now } : null),
     updatedAt: now,
   });

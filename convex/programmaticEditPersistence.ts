@@ -81,6 +81,9 @@ export const beginProgrammaticBoardEdit = async (
   return {
     mode: "object",
     currentVersion: manifest.version,
+    ...(manifest.docRefsHash !== undefined
+      ? { currentDocRefsHash: manifest.docRefsHash }
+      : null),
     grant: await createBoardSceneReadGrant(ctx, { boardId: diagram._id }),
   };
 };

@@ -38,9 +38,11 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
+import { useMutation, useQuery } from "convex/react";
 import { loadFromBlob } from "@excalidraw/excalidraw/data/blob";
 import { serializeAsJSON } from "@excalidraw/excalidraw/data/json";
 import { t } from "@excalidraw/excalidraw/i18n";
@@ -87,6 +89,8 @@ import type {
 } from "@excalidraw/excalidraw/types";
 import type { ResolutionType } from "@excalidraw/common/utility-types";
 import type { ResolvablePromise } from "@excalidraw/common/utils";
+
+import { api } from "../convex/_generated/api";
 
 import CustomStats from "./CustomStats";
 import {
@@ -176,7 +180,35 @@ import "./index.scss";
 
 import { AppSidebar, AppSidebarLaunchers } from "./components/AppSidebar";
 
+import { BoardDocEmbeddable } from "./docs/BoardDocEmbeddable";
+import { BoardDocContentStore } from "./docs/docContentStore";
+import { DocAutosaveScheduler } from "./docs/docAutosaveScheduler";
+import { saveDocContent } from "./docs/docContentClient";
+import { createBrowserDocCrashJournal } from "./docs/docCrashJournal";
+import { createBrowserDocWriterCoordinator } from "./docs/docWriterCoordinator";
+import { DOCS_ENABLED, DOCS_WRITABLE } from "./docs/docsMode";
+import {
+  DocAssetResolver,
+  cleanupDocAsset,
+  uploadDocAsset,
+} from "./docs/docAssetClient";
+import {
+  getDocEmbeddableLink,
+  getDocPlacementReference,
+  isDocEmbeddableLink,
+} from "./docs/docEmbeddableData";
+import {
+  DOC_CANVAS_DRAG_TYPE,
+  activateOrInsertDocPlacement,
+  decodeDocCanvasDragPayload,
+  getDocDropScenePoint,
+  hasDocCanvasDragType,
+  insertDocPlacementAtPoint,
+} from "./docs/docCanvasPlacement";
+
 import type { CollabAPI } from "./collab/Collab";
+import type { Id } from "../convex/_generated/dataModel";
+import type { DocSaveStatus } from "./docs/docAutosaveScheduler";
 
 polyfill();
 
@@ -407,6 +439,15 @@ const initializeScene = async (opts: {
   return { scene: null, isExternalScene: false };
 };
 
+const validateAppEmbeddable: NonNullable<
+  ExcalidrawProps["validateEmbeddable"]
+> = (link) => (DOCS_ENABLED && isDocEmbeddableLink(link) ? true : undefined);
+
+const getAppEmbeddableActivationMode: NonNullable<
+  ExcalidrawProps["getEmbeddableActivationMode"]
+> = (element) =>
+  DOCS_ENABLED && getDocPlacementReference(element) ? "double" : "single";
+
 const ExcalidrawWrapper = () => {
   const excalidrawAPI = useExcalidrawAPI();
   const onImageBackgroundRemoval = useCallback<
@@ -425,6 +466,353 @@ const ExcalidrawWrapper = () => {
     [excalidrawAPI],
   );
   const cloud = useCloudBoard();
+  const createBoardDocReadGrants = useMutation(api.boardDocs.createReadGrants);
+  const createDocUploadGrant = useMutation(api.docContents.createUploadGrant);
+  const commitDocUpload = useMutation(api.docContents.commitUpload);
+  const abandonDocUpload = useMutation(api.docContents.abandonUpload);
+  const createDoc = useMutation(api.docs.create);
+  const restoreDoc = useMutation(api.docs.restore);
+  const confirmDocPurge = useMutation(api.docs.confirmPurge);
+  const createDocAssetUploadGrant = useMutation(
+    api.docAssets.createUploadGrant,
+  );
+  const registerDocAssetUpload = useMutation(api.docAssets.registerUpload);
+  const createDocAssetReadGrant = useMutation(api.docAssets.createReadGrant);
+  const pendingDocAssetCleanup = useQuery(
+    api.docAssets.pendingCleanup,
+    DOCS_WRITABLE &&
+      cloud.route.kind === "owner" &&
+      cloud.openedBoard?.access === "owner"
+      ? {}
+      : "skip",
+  );
+  const pendingDocPurges = useQuery(
+    api.docs.pendingPurges,
+    DOCS_WRITABLE &&
+      cloud.route.kind === "owner" &&
+      cloud.openedBoard?.access === "owner"
+      ? {}
+      : "skip",
+  );
+  const docContentAccessRef = useRef<{
+    boardId: Id<"diagrams"> | null;
+    shareToken: string | null;
+  } | null>(null);
+  docContentAccessRef.current = !DOCS_ENABLED
+    ? null
+    : cloud.route.kind === "owner" && cloud.openedBoard?.access === "owner"
+    ? { boardId: cloud.openedBoard.board._id, shareToken: null }
+    : cloud.route.kind === "shared"
+    ? { boardId: null, shareToken: cloud.route.shareToken }
+    : null;
+  const docAssetResolver = useMemo(
+    () =>
+      new DocAssetResolver(async (assetId) => {
+        const access = docContentAccessRef.current;
+        if (!access) {
+          throw new Error("This Board is not available");
+        }
+        return await createDocAssetReadGrant({
+          assetId,
+          boardId: access.boardId,
+          shareToken: access.shareToken,
+        });
+      }),
+    [createDocAssetReadGrant],
+  );
+  const resolveDocAssetPath = useCallback(
+    async (path: string) => await docAssetResolver.resolve(path),
+    [docAssetResolver],
+  );
+  const uploadDocFiles = useCallback(
+    async (docId: string, files: readonly File[], signal: AbortSignal) =>
+      await Promise.all(
+        files.map(
+          async (file) =>
+            (
+              await uploadDocAsset({
+                docId,
+                file,
+                signal,
+                createGrant: async (args) =>
+                  await createDocAssetUploadGrant({
+                    ...args,
+                    docId: args.docId as Id<"docs">,
+                  }),
+                register: registerDocAssetUpload,
+              })
+            ).markdown,
+        ),
+      ),
+    [createDocAssetUploadGrant, registerDocAssetUpload],
+  );
+  useEffect(() => {
+    for (const token of pendingDocAssetCleanup ?? []) {
+      void cleanupDocAsset(token).catch((error) =>
+        console.warn("Could not clean up an expired Doc attachment", error),
+      );
+    }
+  }, [pendingDocAssetCleanup]);
+  useEffect(() => {
+    for (const purge of pendingDocPurges ?? []) {
+      void fetch("/api/doc-content", {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${purge.cleanupToken}` },
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error("Doc storage cleanup failed");
+          }
+          await confirmDocPurge(purge);
+        })
+        .catch((error) =>
+          console.warn("Could not finish a pending Doc purge", error),
+        );
+    }
+  }, [confirmDocPurge, pendingDocPurges]);
+  const docContentStore = useMemo(
+    () =>
+      new BoardDocContentStore({
+        createReadGrants: async (docIds) => {
+          const access = docContentAccessRef.current;
+          if (!access) {
+            throw new Error("This Board is not available");
+          }
+          const response = await createBoardDocReadGrants({
+            ...access,
+            docIds: docIds as Id<"docs">[],
+          });
+          return {
+            results: response.results.map((result) => ({
+              ...result,
+              docId: String(result.docId),
+            })),
+          };
+        },
+      }),
+    [createBoardDocReadGrants],
+  );
+  const [docSaveStatuses, setDocSaveStatuses] = useState<
+    Record<string, DocSaveStatus>
+  >({});
+  const [docConflicts, setDocConflicts] = useState<
+    Record<string, { markdown: string; version: number }>
+  >({});
+  const docCrashJournal = useMemo(() => createBrowserDocCrashJournal(), []);
+  const docAutosaveRef = useRef<DocAutosaveScheduler | null>(null);
+  const docWriterCoordinator = useMemo(
+    () =>
+      createBrowserDocWriterCoordinator(async (docId) => {
+        await docAutosaveRef.current?.flush(docId);
+        return docContentStore.getSnapshot(docId).version;
+      }),
+    [docContentStore],
+  );
+  const docAutosave = useMemo(
+    () =>
+      new DocAutosaveScheduler({
+        save: async ({ docId, markdown, expectedVersion }) =>
+          await saveDocContent({
+            docId,
+            markdown,
+            expectedVersion,
+            createUploadGrant: (args) =>
+              createDocUploadGrant({
+                ...args,
+                docId: args.docId as Id<"docs">,
+              }),
+            commitUpload: commitDocUpload,
+            abandonUpload: abandonDocUpload,
+          }),
+        onStatus: (docId, status) =>
+          setDocSaveStatuses((current) => ({ ...current, [docId]: status })),
+        onSaved: ({ docId, markdown, version, hash }) =>
+          docContentStore.acceptSaved(docId, markdown, version, hash),
+        onConflict: ({ docId, markdown, version }) => {
+          setDocConflicts((current) => ({
+            ...current,
+            [docId]: { markdown, version },
+          }));
+        },
+        journal: docCrashJournal,
+        runExclusive: docWriterCoordinator.runSaveExclusive,
+      }),
+    [
+      abandonDocUpload,
+      commitDocUpload,
+      createDocUploadGrant,
+      docContentStore,
+      docCrashJournal,
+      docWriterCoordinator,
+    ],
+  );
+  docAutosaveRef.current = docAutosave;
+  const loadLatestDoc = useCallback(
+    (docId: string) => {
+      const conflict = docConflicts[docId];
+      docContentStore.invalidate(docId, conflict?.version);
+      setDocConflicts((current) => {
+        const next = { ...current };
+        delete next[docId];
+        return next;
+      });
+      setDocSaveStatuses((current) => ({ ...current, [docId]: "saved" }));
+    },
+    [docConflicts, docContentStore],
+  );
+  const saveDocConflictAsNew = useCallback(
+    async (docId: string) => {
+      const conflict = docConflicts[docId];
+      if (!conflict || !excalidrawAPI) {
+        return;
+      }
+      const created = await createDoc({ folderId: null });
+      const activeId = excalidrawAPI.getAppState().activeEmbeddable?.element.id;
+      const elements = excalidrawAPI.getSceneElements();
+      const activeElement = elements.find((element) => element.id === activeId);
+      const reference = activeElement
+        ? getDocPlacementReference(activeElement)
+        : null;
+      if (!activeElement || reference?.docId !== docId) {
+        throw new Error("The conflicted Doc card is no longer active");
+      }
+      const replacement = newElementWith(activeElement, {
+        link: getDocEmbeddableLink(String(created.docId)),
+        customData: {
+          ...activeElement.customData,
+          yaseenDoc: {
+            docId: String(created.docId),
+            titleSnapshot: created.title,
+          },
+        },
+      });
+      excalidrawAPI.updateScene({
+        elements: elements.map((element) =>
+          element.id === activeElement.id ? replacement : element,
+        ),
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      docAutosave.queue(String(created.docId), conflict.markdown, 0);
+      await docAutosave.flush(String(created.docId));
+      setDocConflicts((current) => {
+        const next = { ...current };
+        delete next[docId];
+        return next;
+      });
+    },
+    [createDoc, docAutosave, docConflicts, excalidrawAPI],
+  );
+  const canManageDocs =
+    DOCS_WRITABLE &&
+    cloud.route.kind === "owner" &&
+    cloud.openedBoard?.access === "owner";
+  const activateDoc = useCallback(
+    (docId: string, title: string) => {
+      if (!excalidrawAPI || !canManageDocs) {
+        return;
+      }
+      activateOrInsertDocPlacement(excalidrawAPI, { docId, title });
+    },
+    [canManageDocs, excalidrawAPI],
+  );
+  const boardDocsById = useMemo(
+    () =>
+      new Map(
+        (cloud.boardDocManifest ?? []).map(
+          (doc) => [String(doc.docId), doc] as const,
+        ),
+      ),
+    [cloud.boardDocManifest],
+  );
+  const renderAppEmbeddable = useCallback<
+    NonNullable<ExcalidrawProps["renderEmbeddable"]>
+  >(
+    (element, appState) => {
+      if (!DOCS_ENABLED) {
+        return null;
+      }
+      const reference = getDocPlacementReference(element);
+      if (!reference) {
+        return null;
+      }
+      const metadata = boardDocsById.get(reference.docId);
+      const status = cloud.isBoardDocManifestLoading
+        ? "loading"
+        : !metadata
+        ? "error"
+        : metadata.lifecycle !== "active"
+        ? "deleted"
+        : metadata.version === 0
+        ? "empty"
+        : "ready";
+      const active =
+        appState.activeEmbeddable?.element.id === element.id &&
+        appState.activeEmbeddable.state === "active";
+
+      return (
+        <BoardDocEmbeddable
+          store={docContentStore}
+          docId={reference.docId}
+          boardId={String(cloud.openedBoard?.board._id ?? "unavailable")}
+          elementId={element.id}
+          docVersion={metadata?.version ?? 0}
+          active={active}
+          editable={canManageDocs}
+          title={metadata?.title ?? reference.titleSnapshot}
+          metadataStatus={status}
+          autosave={canManageDocs ? docAutosave : undefined}
+          journal={canManageDocs ? docCrashJournal : undefined}
+          writerCoordinator={canManageDocs ? docWriterCoordinator : undefined}
+          saveStatus={docSaveStatuses[reference.docId]}
+          onLoadLatest={() => loadLatestDoc(reference.docId)}
+          onSaveDraftAsNew={() => void saveDocConflictAsNew(reference.docId)}
+          uploadFiles={uploadDocFiles}
+          resolveAssetPath={resolveDocAssetPath}
+          onRestore={
+            canManageDocs && status === "deleted"
+              ? () => void restoreDoc({ docId: reference.docId as Id<"docs"> })
+              : undefined
+          }
+          onRemoveCard={
+            canManageDocs && status === "deleted"
+              ? () => {
+                  if (!excalidrawAPI) {
+                    return;
+                  }
+                  excalidrawAPI.updateScene({
+                    elements: excalidrawAPI
+                      .getSceneElementsIncludingDeleted()
+                      .map((candidate) =>
+                        candidate.id === element.id
+                          ? newElementWith(candidate, { isDeleted: true })
+                          : candidate,
+                      ),
+                    captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+                  });
+                }
+              : undefined
+          }
+        />
+      );
+    },
+    [
+      boardDocsById,
+      canManageDocs,
+      cloud.isBoardDocManifestLoading,
+      cloud.openedBoard?.board._id,
+      docContentStore,
+      docAutosave,
+      docCrashJournal,
+      docSaveStatuses,
+      docWriterCoordinator,
+      excalidrawAPI,
+      loadLatestDoc,
+      resolveDocAssetPath,
+      restoreDoc,
+      saveDocConflictAsNew,
+      uploadDocFiles,
+    ],
+  );
   useLayoutEffect(() => {
     document.title = getCloudDocumentTitle(
       cloud.route,
@@ -440,6 +828,46 @@ const ExcalidrawWrapper = () => {
       : cloud.route.kind === "shared"
       ? `shared:${cloud.route.shareToken}`
       : null;
+  useEffect(() => {
+    void docAutosave.flush();
+    docContentStore.reset();
+    return () => {
+      void docAutosave.flush();
+      docContentStore.reset();
+    };
+  }, [activeCloudRouteKey, docAutosave, docContentStore]);
+  useEffect(() => {
+    const flushWhenHidden = () => {
+      if (document.hidden) {
+        void docAutosave.flush();
+      }
+    };
+    document.addEventListener("visibilitychange", flushWhenHidden);
+    return () =>
+      document.removeEventListener("visibilitychange", flushWhenHidden);
+  }, [docAutosave]);
+  useEffect(() => () => docWriterCoordinator.close(), [docWriterCoordinator]);
+  useEffect(() => {
+    const warnOnUnsafeExit = (event: BeforeUnloadEvent) => {
+      if (docAutosave.hasUnsafeExit()) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener("beforeunload", warnOnUnsafeExit);
+    return () => window.removeEventListener("beforeunload", warnOnUnsafeExit);
+  }, [docAutosave]);
+  useEffect(() => {
+    if (cloud.boardDocManifest) {
+      docContentStore.updateManifest(
+        cloud.boardDocManifest.map((doc) => ({
+          docId: String(doc.docId),
+          lifecycle: doc.lifecycle,
+          version: doc.version,
+          ...(doc.contentHash ? { contentHash: doc.contentHash } : {}),
+        })),
+      );
+    }
+  }, [cloud.boardDocManifest, docContentStore]);
   const loadedCloudSceneRef = useRef<{
     routeKey: string;
     version: number;
@@ -1271,8 +1699,44 @@ const ExcalidrawWrapper = () => {
       className={clsx("excalidraw-app", {
         "is-collaborating": isCollaborating,
       })}
+      onDragOverCapture={(event) => {
+        if (
+          canManageDocs &&
+          event.target instanceof HTMLCanvasElement &&
+          event.target.classList.contains("interactive") &&
+          hasDocCanvasDragType(Array.from(event.dataTransfer.types))
+        ) {
+          event.preventDefault();
+        }
+      }}
+      onDropCapture={(event) => {
+        if (
+          !canManageDocs ||
+          !excalidrawAPI ||
+          !(event.target instanceof HTMLCanvasElement) ||
+          !event.target.classList.contains("interactive")
+        ) {
+          return;
+        }
+        const payload = decodeDocCanvasDragPayload(
+          event.dataTransfer.getData(DOC_CANVAS_DRAG_TYPE),
+        );
+        if (!payload) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        insertDocPlacementAtPoint(
+          excalidrawAPI,
+          payload,
+          getDocDropScenePoint(event, excalidrawAPI.getAppState()),
+        );
+      }}
     >
       <Excalidraw
+        validateEmbeddable={validateAppEmbeddable}
+        renderEmbeddable={renderAppEmbeddable}
+        getEmbeddableActivationMode={getAppEmbeddableActivationMode}
         onChange={onChange}
         onImageBackgroundRemoval={onImageBackgroundRemoval}
         onExport={onExport}
@@ -1326,6 +1790,7 @@ const ExcalidrawWrapper = () => {
         renderTopLeftUI={() => (
           <AppSidebarLaunchers
             excalidrawAPI={excalidrawAPI}
+            canManageDocs={canManageDocs}
             onRequestImageStudioSearch={requestImageStudioSearchFocus}
           />
         )}
@@ -1482,6 +1947,12 @@ const ExcalidrawWrapper = () => {
             cloud.route.kind === "owner" &&
             cloud.openedBoard?.access === "owner"
           }
+          canManageDocs={
+            DOCS_WRITABLE &&
+            cloud.route.kind === "owner" &&
+            cloud.openedBoard?.access === "owner"
+          }
+          onActivateDoc={activateDoc}
           imageStudioSearchFocusRequest={imageStudioSearchFocusRequest}
           resolvePresentationAnimation={cloud.resolvePresentationAnimation}
           footer={

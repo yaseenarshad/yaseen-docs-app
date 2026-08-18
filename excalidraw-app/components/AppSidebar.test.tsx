@@ -46,6 +46,39 @@ describe("AppSidebarLaunchers", () => {
     window.localStorage.removeItem("yaseen-whiteboard-last-sidebar-section");
   });
 
+  it("exposes Docs only when the current Board can manage them", () => {
+    const toggleSidebar = vi.fn();
+    const { rerender } = render(
+      <UIAppStateContext.Provider value={{ openSidebar: null } as never}>
+        <AppSidebarLaunchers
+          excalidrawAPI={
+            { toggleSidebar } as unknown as ExcalidrawImperativeAPI
+          }
+        />
+      </UIAppStateContext.Provider>,
+    );
+
+    expect(screen.queryByRole("button", { name: "Docs" })).toBeNull();
+
+    rerender(
+      <UIAppStateContext.Provider value={{ openSidebar: null } as never}>
+        <AppSidebarLaunchers
+          excalidrawAPI={
+            { toggleSidebar } as unknown as ExcalidrawImperativeAPI
+          }
+          canManageDocs
+        />
+      </UIAppStateContext.Provider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Docs" }));
+    expect(toggleSidebar).toHaveBeenCalledWith({
+      name: "default",
+      tab: "docs",
+      force: true,
+    });
+  });
+
   it("toggles Your Boards from the persistent hamburger without removing the labeled direct launchers", () => {
     const toggleSidebar = vi.fn();
     render(

@@ -1,3 +1,8 @@
+import {
+  DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+  describeDocPlacementRefs,
+} from "../doc-placement/types";
+
 import { api, internal } from "./_generated/api";
 import {
   compressBoardScene,
@@ -30,11 +35,13 @@ const commitBoardSceneEdit = async (
     boardId: Id<"diagrams">;
     expectedVersion: number;
     sceneJson: string;
+    acceptedDocRefsHash?: string;
   },
 ): Promise<
   ({ status: "committed" } & BoardSceneEditResult) | { status: "conflict" }
 > => {
   const compressed = await compressBoardScene(args.sceneJson);
+  const docRefs = await describeDocPlacementRefs(args.sceneJson);
   const grant = await ctx.runMutation(
     internal.boardScenes.createServerUploadGrant,
     {
@@ -46,6 +53,16 @@ const commitBoardSceneEdit = async (
       rawSha256: compressed.rawSha256,
       compressedSha256: compressed.compressedSha256,
       semanticSha256: compressed.semanticSha256,
+      docRefsProtocolVersion: DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+      docRefsHash: docRefs.hash,
+      ...(args.acceptedDocRefsHash === docRefs.hash
+        ? null
+        : {
+            docRefs: docRefs.refs.map((ref) => ({
+              ...ref,
+              docId: ref.docId as Id<"docs">,
+            })),
+          }),
     },
   );
   if (grant.status === "conflict") {
@@ -117,6 +134,7 @@ export const runBoardSceneEdit = async (
       boardId: args.boardId,
       expectedVersion: plan.currentVersion,
       sceneJson: args.transform(sceneJson),
+      acceptedDocRefsHash: plan.currentDocRefsHash,
     });
     if (committed.status === "committed") {
       return { version: committed.version, updatedAt: committed.updatedAt };

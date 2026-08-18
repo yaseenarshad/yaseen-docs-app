@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BOARD_SCENE_KEY_PREFIX } from "../board-scenes/types";
 import {
+  DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+  describeDocPlacementRefs,
+} from "../doc-placement/types";
+import {
   BOARD_SCENE_TEST_WORKER_ORIGIN,
   createBoardSceneWorkerHarness,
 } from "../board-scenes/testWorkerHarness";
@@ -49,6 +53,24 @@ const textScene = (text: string, version = 1) =>
     files: {},
   });
 
+const docScene = (docId?: Id<"docs">) =>
+  JSON.stringify({
+    elements: docId
+      ? [
+          {
+            id: "doc-card",
+            type: "embeddable",
+            link: `https://docs.yaseendraw.local/${docId}`,
+            customData: {
+              yaseenDoc: { docId, titleSnapshot: "Restored Doc" },
+            },
+          },
+        ]
+      : [],
+    appState: {},
+    files: {},
+  });
+
 const setup = async () => {
   const t = convexTest(schema, modules);
   const harness = createBoardSceneWorkerHarness(
@@ -79,6 +101,7 @@ const clientCommit = async (
   sceneJson: string,
 ) => {
   const compressed = await compressBoardScene(sceneJson);
+  const docRefs = await describeDocPlacementRefs(sceneJson);
   const grant = await client.mutation(api.boardScenes.createUploadGrant, {
     boardId,
     clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
@@ -90,6 +113,12 @@ const clientCommit = async (
     rawSha256: compressed.rawSha256,
     compressedSha256: compressed.compressedSha256,
     semanticSha256: compressed.semanticSha256,
+    docRefsProtocolVersion: DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+    docRefsHash: docRefs.hash,
+    docRefs: docRefs.refs.map((ref) => ({
+      ...ref,
+      docId: ref.docId as Id<"docs">,
+    })),
   });
   if (grant.status !== "upload") {
     return grant;
@@ -478,6 +507,32 @@ describe("programmatic edits on a migrated Board", () => {
 });
 
 describe("history restore on a migrated Board", () => {
+  it("reconciles Doc placements from the exact restored snapshot", async () => {
+    const { t, owner, board } = await setup();
+    const doc = await owner.mutation(api.docs.create, { folderId: null });
+    await clientCommit(owner, board.boardId, "migration", 0, docScene());
+    await clientCommit(owner, board.boardId, "save", 0, docScene(doc.docId));
+    await dueForSnapshot(t, board.boardId);
+    await clientCommit(owner, board.boardId, "save", 1, docScene());
+    const [snapshot] = await owner.query(api.boardHistory.list, {
+      boardId: board.boardId,
+    });
+    await expect(
+      t.run(async (ctx) => ctx.db.query("docPlacements").collect()),
+    ).resolves.toEqual([]);
+
+    await owner.action(api.boardHistory.restore, {
+      boardId: board.boardId,
+      snapshotId: snapshot._id,
+    });
+
+    await expect(
+      t.run(async (ctx) => ctx.db.query("docPlacements").collect()),
+    ).resolves.toMatchObject([
+      { diagramId: board.boardId, docId: doc.docId, elementId: "doc-card" },
+    ]);
+  });
+
   it("lists legacy and R2 snapshots together in the existing order", async () => {
     const { t, owner, board } = await setup();
     await t.run(async (ctx) => {
