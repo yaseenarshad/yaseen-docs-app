@@ -161,6 +161,43 @@ describe("DocEmbeddable", () => {
     );
   });
 
+  it("keeps the React preview separate while Milkdown teardown finishes", async () => {
+    const editor = makeEditor();
+    let editorRoot: HTMLElement | null = null;
+    let finishDeactivation: (() => void) | undefined;
+    const onDeactivate = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDeactivation = resolve;
+        }),
+    );
+    const createEditor = vi.fn(async ({ root }: { root: HTMLElement }) => {
+      editorRoot = root;
+      vi.mocked(editor.destroy).mockImplementation(async () => {
+        editorRoot?.replaceChildren();
+      });
+      return editor;
+    });
+    const props = {
+      title: "Strategy",
+      markdown: "# Strategy",
+      onMarkdownChange: vi.fn(),
+      onDeactivate,
+      createEditor,
+    };
+    const { rerender } = render(<DocEmbeddable {...props} active />);
+
+    await waitFor(() => expect(createEditor).toHaveBeenCalledTimes(1));
+    const editorHost = screen.getByLabelText("Editing Strategy");
+    rerender(<DocEmbeddable {...props} active={false} />);
+
+    const preview = screen.getByLabelText("Strategy preview");
+    expect(preview).not.toBe(editorHost);
+    finishDeactivation?.();
+    await waitFor(() => expect(editor.destroy).toHaveBeenCalledTimes(1));
+    expect(preview).toHaveTextContent("Strategy");
+  });
+
   it("renders lightweight loading, empty, error, and deleted static states", () => {
     const createEditor = vi.fn();
     const { rerender } = render(

@@ -1,7 +1,25 @@
-import Trans from "@excalidraw/excalidraw/components/Trans";
 import { t } from "@excalidraw/excalidraw/i18n";
 import * as Sentry from "@sentry/browser";
 import React from "react";
+
+const ErrorSplashMessage = ({
+  message,
+  onButtonClick,
+}: {
+  message: string;
+  onButtonClick: () => void;
+}) => {
+  const parts = /^(.*?)<button>(.*?)<\/button>(.*)$/.exec(message);
+  return parts ? (
+    <>
+      {parts[1]}
+      <button onClick={onButtonClick}>{parts[2]}</button>
+      {parts[3]}
+    </>
+  ) : (
+    message
+  );
+};
 
 interface TopErrorBoundaryState {
   hasError: boolean;
@@ -77,30 +95,22 @@ export class TopErrorBoundary extends React.Component<
       <div className="ErrorSplash excalidraw">
         <div className="ErrorSplash-messageContainer">
           <div className="ErrorSplash-paragraph bigger align-center">
-            <Trans
-              i18nKey="errorSplash.headingMain"
-              button={(el) => (
-                <button onClick={() => window.location.reload()}>{el}</button>
-              )}
+            <ErrorSplashMessage
+              message={t("errorSplash.headingMain")}
+              onButtonClick={() => window.location.reload()}
             />
           </div>
           <div className="ErrorSplash-paragraph align-center">
-            <Trans
-              i18nKey="errorSplash.clearCanvasMessage"
-              button={(el) => (
-                <button
-                  onClick={() => {
-                    try {
-                      localStorage.clear();
-                      window.location.reload();
-                    } catch (error: any) {
-                      console.error(error);
-                    }
-                  }}
-                >
-                  {el}
-                </button>
-              )}
+            <ErrorSplashMessage
+              message={t("errorSplash.clearCanvasMessage")}
+              onButtonClick={() => {
+                try {
+                  localStorage.clear();
+                  window.location.reload();
+                } catch (error: any) {
+                  console.error(error);
+                }
+              }}
             />
             <br />
             <div className="smaller">
@@ -120,11 +130,9 @@ export class TopErrorBoundary extends React.Component<
               })}
             </div>
             <div className="ErrorSplash-paragraph">
-              <Trans
-                i18nKey="errorSplash.openIssueMessage"
-                button={(el) => (
-                  <button onClick={() => this.createGithubIssue()}>{el}</button>
-                )}
+              <ErrorSplashMessage
+                message={t("errorSplash.openIssueMessage")}
+                onButtonClick={() => void this.createGithubIssue()}
               />
             </div>
             <div className="ErrorSplash-paragraph">
