@@ -14,6 +14,39 @@ const makeEditor = (): MilkdownAdapter => ({
 });
 
 describe("DocEmbeddable", () => {
+  it("groups the title and controls so narrow cards can wrap without clipping the editor", () => {
+    const { container } = render(
+      <DocEmbeddable
+        active={false}
+        title="A very long strategy title"
+        markdown="# Strategy"
+        saveStatus="conflict"
+        onMarkdownChange={vi.fn()}
+        onLoadLatest={vi.fn()}
+        onSaveDraftAsNew={vi.fn()}
+      />,
+    );
+
+    const header = container.querySelector(
+      ".yaseendraw-doc-embeddable__header",
+    );
+    const title = header?.querySelector(".yaseendraw-doc-embeddable__title");
+    const actions = header?.querySelector(
+      ".yaseendraw-doc-embeddable__actions",
+    );
+
+    expect(title).toHaveTextContent("A very long strategy title");
+    expect(actions).toContainElement(
+      screen.getByRole("button", {
+        name: "Copy A very long strategy title Markdown",
+      }),
+    );
+    expect(actions).toContainElement(
+      screen.getByRole("button", { name: "Download .md" }),
+    );
+    expect(actions).toContainElement(screen.getByText("Conflict"));
+  });
+
   it("stays static until active and destroys the editor on deactivation", async () => {
     const editor = makeEditor();
     const createEditor = vi.fn().mockResolvedValue(editor);

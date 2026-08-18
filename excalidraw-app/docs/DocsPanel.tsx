@@ -440,8 +440,8 @@ export const DocsPanel = ({
         ) : (
           <ul className="docs-panel__trash-list">
             {trashDocs.map((doc) => (
-              <li key={doc._id}>
-                <span>{doc.title}</span>
+              <li className="docs-panel__trash-item" key={doc._id}>
+                <span className="docs-panel__trash-title">{doc.title}</span>
                 <button
                   type="button"
                   onClick={() =>

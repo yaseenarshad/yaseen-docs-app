@@ -190,7 +190,9 @@ describe("DocsPanel", () => {
       expect(props.onTrash).toHaveBeenCalledWith("doc-unfiled"),
     );
     fireEvent.click(screen.getByRole("button", { name: "Trash (1)" }));
-    expect(screen.getByText("Former plan")).toBeVisible();
+    const trashTitle = screen.getByText("Former plan");
+    expect(trashTitle).toHaveClass("docs-panel__trash-title");
+    expect(trashTitle.closest("li")).toHaveClass("docs-panel__trash-item");
     fireEvent.click(screen.getByRole("button", { name: "Restore" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete forever" }));
     await waitFor(() => {

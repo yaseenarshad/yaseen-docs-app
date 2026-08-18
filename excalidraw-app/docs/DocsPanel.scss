@@ -60,13 +60,14 @@
   }
 
   &__doc {
+    flex-wrap: wrap;
     padding: 0.25rem;
     border-radius: 0.35rem;
     background: var(--color-surface-low);
 
     input {
       min-width: 4rem;
-      flex: 1;
+      flex: 1 1 8rem;
     }
 
     select {
@@ -95,5 +96,22 @@
 
   &__trash {
     margin-top: auto;
+  }
+
+  &__trash-item {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem;
+    border-radius: 0.35rem;
+    background: var(--color-surface-low);
+  }
+
+  &__trash-title {
+    min-width: 0;
+    flex: 1 1 8rem;
+    overflow-wrap: anywhere;
   }
 }
