@@ -441,84 +441,91 @@ export const DocEmbeddable = ({
   return (
     <article className="yaseendraw-doc-embeddable" data-status={status}>
       <header className="yaseendraw-doc-embeddable__header" title={title}>
-        <span>{title}</span>
-        <button
-          type="button"
-          className="yaseendraw-doc-embeddable__copy-markdown"
-          title="Copy canonical Markdown"
-          aria-label={`Copy ${title} Markdown`}
-          onClick={() => void navigator.clipboard?.writeText(markdown)}
-        >
-          Copy Markdown
-        </button>
-        <button
-          type="button"
-          className="yaseendraw-doc-embeddable__download-markdown"
-          onClick={() => downloadDocMarkdown(title, markdown)}
-        >
-          Download .md
-        </button>
-        {resolveAssetPath && extractManagedDocAssetPaths(markdown).length > 0 && (
+        <span className="yaseendraw-doc-embeddable__title">{title}</span>
+        <div className="yaseendraw-doc-embeddable__actions">
           <button
             type="button"
-            className="yaseendraw-doc-embeddable__download-zip"
-            onClick={() =>
-              void downloadPortableDocZip({ title, markdown, resolveAssetPath })
-            }
+            className="yaseendraw-doc-embeddable__copy-markdown"
+            title="Copy canonical Markdown"
+            aria-label={`Copy ${title} Markdown`}
+            onClick={() => void navigator.clipboard?.writeText(markdown)}
           >
-            Download ZIP
+            Copy Markdown
           </button>
-        )}
-        {canEdit && onUploadFiles && (
-          <>
-            <button
-              type="button"
-              className="yaseendraw-doc-embeddable__attach"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              Attach
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              hidden
-              onChange={(event) => {
-                const files = [...(event.currentTarget.files ?? [])];
-                event.currentTarget.value = "";
-                void editorRef.current?.insertFiles(files);
-              }}
-            />
-          </>
-        )}
-        {saveStatus && (
-          <span className="yaseendraw-doc-embeddable__save-status">
-            {saveStatus === "saving"
-              ? "Saving…"
-              : saveStatus === "saved"
-              ? "Saved"
-              : saveStatus === "local"
-              ? "Saved locally"
-              : saveStatus === "conflict"
-              ? "Conflict"
-              : "Couldn’t save"}
-            {saveStatus === "error" && onRetrySave && (
-              <button type="button" onClick={onRetrySave}>
-                Retry
+          <button
+            type="button"
+            className="yaseendraw-doc-embeddable__download-markdown"
+            onClick={() => downloadDocMarkdown(title, markdown)}
+          >
+            Download .md
+          </button>
+          {resolveAssetPath &&
+            extractManagedDocAssetPaths(markdown).length > 0 && (
+              <button
+                type="button"
+                className="yaseendraw-doc-embeddable__download-zip"
+                onClick={() =>
+                  void downloadPortableDocZip({
+                    title,
+                    markdown,
+                    resolveAssetPath,
+                  })
+                }
+              >
+                Download ZIP
               </button>
             )}
-            {saveStatus === "conflict" && onLoadLatest && (
-              <button type="button" onClick={onLoadLatest}>
-                Load latest
+          {canEdit && onUploadFiles && (
+            <>
+              <button
+                type="button"
+                className="yaseendraw-doc-embeddable__attach"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                Attach
               </button>
-            )}
-            {saveStatus === "conflict" && onSaveDraftAsNew && (
-              <button type="button" onClick={onSaveDraftAsNew}>
-                Save draft as new Doc
-              </button>
-            )}
-          </span>
-        )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                hidden
+                onChange={(event) => {
+                  const files = [...(event.currentTarget.files ?? [])];
+                  event.currentTarget.value = "";
+                  void editorRef.current?.insertFiles(files);
+                }}
+              />
+            </>
+          )}
+          {saveStatus && (
+            <span className="yaseendraw-doc-embeddable__save-status">
+              {saveStatus === "saving"
+                ? "Saving…"
+                : saveStatus === "saved"
+                ? "Saved"
+                : saveStatus === "local"
+                ? "Saved locally"
+                : saveStatus === "conflict"
+                ? "Conflict"
+                : "Couldn’t save"}
+              {saveStatus === "error" && onRetrySave && (
+                <button type="button" onClick={onRetrySave}>
+                  Retry
+                </button>
+              )}
+              {saveStatus === "conflict" && onLoadLatest && (
+                <button type="button" onClick={onLoadLatest}>
+                  Load latest
+                </button>
+              )}
+              {saveStatus === "conflict" && onSaveDraftAsNew && (
+                <button type="button" onClick={onSaveDraftAsNew}>
+                  Save draft as new Doc
+                </button>
+              )}
+            </span>
+          )}
+        </div>
       </header>
       {canEdit ? (
         <div
