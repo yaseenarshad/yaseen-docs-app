@@ -29,6 +29,7 @@ import { PresentationAnimationController } from "../presentation/PresentationAni
 
 import { PresentationPlayer } from "../presentation/PresentationPlayer";
 import { PresentationSidebar } from "../presentation/PresentationSidebar";
+import { DocsPanelContainer } from "../docs/DocsPanel";
 
 import "./AppSidebar.scss";
 
@@ -88,6 +89,8 @@ type BoardBrowserProps = {
 type AppSidebarProps = BoardBrowserProps & {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
   canInsertMedia: boolean;
+  canManageDocs?: boolean;
+  onActivateDoc?: (docId: string, title: string) => void;
   imageStudioSearchFocusRequest: number;
   resolvePresentationAnimation?: ResolvePresentationAnimation;
   footer?: React.ReactNode;
@@ -875,6 +878,7 @@ export const BoardBrowser = ({
 
 const APP_SIDEBAR_LAUNCHERS = [
   { tab: "boards", label: "Boards", shortLabel: "Boards", icon: file },
+  { tab: "docs", label: "Docs", shortLabel: "Docs", icon: file },
   {
     tab: "components",
     label: "Components",
@@ -900,6 +904,7 @@ const LAST_APP_SIDEBAR_TAB_STORAGE_KEY =
 
 const APP_SIDEBAR_TABS = new Set<SidebarTabName>([
   "boards",
+  "docs",
   "components",
   "image-studio",
   "presentation",
@@ -932,9 +937,11 @@ const rememberSidebarTab = (tab: SidebarTabName | undefined) => {
 
 export const AppSidebarLaunchers = ({
   excalidrawAPI,
+  canManageDocs = false,
   onRequestImageStudioSearch,
 }: {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
+  canManageDocs?: boolean;
   onRequestImageStudioSearch?: () => void;
 }) => {
   const { openSidebar } = useUIAppState();
@@ -959,6 +966,8 @@ export const AppSidebarLaunchers = ({
       const tab =
         key === "b"
           ? "boards"
+          : key === "d" && canManageDocs
+          ? "docs"
           : key === "c"
           ? "components"
           : key === "f"
@@ -1048,7 +1057,7 @@ export const AppSidebarLaunchers = ({
 
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [activeTab, excalidrawAPI, onRequestImageStudioSearch]);
+  }, [activeTab, canManageDocs, excalidrawAPI, onRequestImageStudioSearch]);
 
   return (
     <nav
@@ -1079,7 +1088,9 @@ export const AppSidebarLaunchers = ({
         {HamburgerMenuIcon}
       </button>
       <div className="app-sidebar-launchers__direct">
-        {APP_SIDEBAR_LAUNCHERS.map((launcher) => (
+        {APP_SIDEBAR_LAUNCHERS.filter(
+          (launcher) => launcher.tab !== "docs" || canManageDocs,
+        ).map((launcher) => (
           <button
             key={launcher.tab}
             type="button"
@@ -1102,7 +1113,7 @@ export const AppSidebarLaunchers = ({
         className="app-sidebar-launcher app-sidebar-launchers__compact"
         aria-label="Open last workspace panel"
         aria-pressed={openSidebar?.name === "default"}
-        title="Boards, Components, Images, and Presentation"
+        title="Boards, Docs, Components, Images, and Presentation"
         disabled={!excalidrawAPI}
         onClick={() => open(activeTab ?? getRememberedSidebarTab())}
       >
@@ -1127,6 +1138,8 @@ export const openBoardFromSidebar = async (
 export const AppSidebar = ({
   excalidrawAPI,
   canInsertMedia,
+  canManageDocs = false,
+  onActivateDoc,
   imageStudioSearchFocusRequest,
   resolvePresentationAnimation,
   footer,
@@ -1216,6 +1229,18 @@ export const AppSidebar = ({
             {file}
             <span className="app-sidebar-tab-label">Boards</span>
           </Sidebar.TabTrigger>
+          {canManageDocs && (
+            <Sidebar.TabTrigger
+              tab="docs"
+              className="app-sidebar-tab-trigger"
+              aria-label="Docs"
+              title="Docs"
+              style={{ opacity: openSidebar?.tab === "docs" ? 1 : 0.4 }}
+            >
+              {file}
+              <span className="app-sidebar-tab-label">Docs</span>
+            </Sidebar.TabTrigger>
+          )}
           <Sidebar.TabTrigger
             tab="components"
             className="app-sidebar-tab-trigger"
@@ -1250,6 +1275,13 @@ export const AppSidebar = ({
         <Sidebar.Tab tab="boards">
           <BoardBrowser {...boardBrowserProps} onOpen={openBoard} />
         </Sidebar.Tab>
+        {canManageDocs && (
+          <Sidebar.Tab tab="docs">
+            {openSidebar?.tab === "docs" && (
+              <DocsPanelContainer onActivate={onActivateDoc} />
+            )}
+          </Sidebar.Tab>
+        )}
         <Sidebar.Tab tab="components">
           {excalidrawAPI && <SavedComponents excalidrawAPI={excalidrawAPI} />}
         </Sidebar.Tab>

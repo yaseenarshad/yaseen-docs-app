@@ -6,9 +6,17 @@ import {
   BOARD_SCENE_ENCODING_HEADER,
   BOARD_SCENE_ROUTE,
 } from "../../board-scenes/types";
+import {
+  DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+  describeDocPlacementRefs,
+} from "../../doc-placement/types";
+
+import { DOCS_ENABLED } from "../docs/docsMode";
 
 import { CLOUD_SAVE_PROTOCOL_VERSION } from "./cloudSaveProtocol";
 import { getCloudSceneSemanticRevision } from "./cloudSceneSync";
+
+import type { DocPlacementRef } from "../../doc-placement/types";
 
 /**
  * The integrity contract the client declares before it is allowed to upload a
@@ -62,6 +70,9 @@ export type BoardSceneSaveDependencies = {
       clientSaveProtocol: number;
       purpose: "migration" | "save";
       expectedVersion: number;
+      docRefsProtocolVersion?: number;
+      docRefsHash?: string;
+      docRefs?: DocPlacementRef[];
     },
   ) => Promise<BoardSceneUploadGrant>;
   upload: (
@@ -207,10 +218,16 @@ const runBoardSceneUpload = async (
     purpose: "migration" | "save";
     expectedVersion: number;
     sceneJson: string;
+    acceptedDocRefsHash?: string;
   },
   dependencies: BoardSceneSaveDependencies,
 ): Promise<BoardSceneSaveResult> => {
-  const compressed = await compressBoardScene(input.sceneJson);
+  const [compressed, docRefs] = await Promise.all([
+    compressBoardScene(input.sceneJson),
+    DOCS_ENABLED
+      ? describeDocPlacementRefs(input.sceneJson)
+      : Promise.resolve(null),
+  ]);
   const grant = await dependencies.createUploadGrant({
     boardId: input.boardId,
     clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
@@ -222,6 +239,15 @@ const runBoardSceneUpload = async (
     rawSha256: compressed.rawSha256,
     compressedSha256: compressed.compressedSha256,
     semanticSha256: compressed.semanticSha256,
+    ...(docRefs
+      ? {
+          docRefsProtocolVersion: DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
+          docRefsHash: docRefs.hash,
+          ...(input.acceptedDocRefsHash === docRefs.hash
+            ? null
+            : { docRefs: docRefs.refs }),
+        }
+      : null),
   });
   if (grant.status !== "upload") {
     return grant;
@@ -267,7 +293,12 @@ const runBoardSceneUpload = async (
 };
 
 export const saveBoardScene = async (
-  input: { boardId: string; expectedVersion: number; sceneJson: string },
+  input: {
+    boardId: string;
+    expectedVersion: number;
+    sceneJson: string;
+    acceptedDocRefsHash?: string;
+  },
   dependencies: BoardSceneSaveDependencies,
 ) => await runBoardSceneUpload({ ...input, purpose: "save" }, dependencies);
 
@@ -276,7 +307,12 @@ export const saveBoardScene = async (
  * first R2 object. It is not an edit: the version and modified time do not move.
  */
 export const migrateBoardScene = async (
-  input: { boardId: string; expectedVersion: number; sceneJson: string },
+  input: {
+    boardId: string;
+    expectedVersion: number;
+    sceneJson: string;
+    acceptedDocRefsHash?: string;
+  },
   dependencies: BoardSceneSaveDependencies,
 ) =>
   await runBoardSceneUpload({ ...input, purpose: "migration" }, dependencies);

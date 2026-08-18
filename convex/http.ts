@@ -5,6 +5,16 @@ import {
   BOARD_SCENE_READ_GRANT_PATH,
   BOARD_SCENE_UPLOAD_GRANT_PATH,
 } from "../board-scenes/types";
+import {
+  DOC_CONTENT_DELETE_GRANT_PATH,
+  DOC_CONTENT_READ_GRANT_PATH,
+  DOC_CONTENT_UPLOAD_GRANT_PATH,
+} from "../doc-content/types";
+import {
+  DOC_ASSET_DELETE_GRANT_PATH,
+  DOC_ASSET_READ_GRANT_PATH,
+  DOC_ASSET_UPLOAD_GRANT_PATH,
+} from "../doc-assets/types";
 
 import { auth } from "./auth";
 import { internal } from "./_generated/api";
@@ -56,6 +66,72 @@ http.route({
 });
 
 http.route({
+  path: DOC_ASSET_UPLOAD_GRANT_PATH,
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const token = await boardSceneGrantToken(request);
+    if (!token) {
+      return Response.json(
+        { error: "Invalid Doc asset grant" },
+        { status: 400 },
+      );
+    }
+    const grant = await ctx.runMutation(internal.docAssets.resolveUploadGrant, {
+      token,
+    });
+    return grant
+      ? Response.json(grant)
+      : Response.json({ error: "Doc asset grant expired" }, { status: 403 });
+  }),
+});
+
+http.route({
+  path: DOC_ASSET_READ_GRANT_PATH,
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const token = await boardSceneGrantToken(request);
+    if (!token) {
+      return Response.json(
+        { error: "Invalid Doc asset read grant" },
+        { status: 400 },
+      );
+    }
+    const grant = await ctx.runMutation(internal.docAssets.resolveReadGrant, {
+      token,
+    });
+    return grant
+      ? Response.json(grant)
+      : Response.json(
+          { error: "Doc asset read grant expired" },
+          { status: 403 },
+        );
+  }),
+});
+
+http.route({
+  path: DOC_ASSET_DELETE_GRANT_PATH,
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const token = await boardSceneGrantToken(request);
+    if (!token) {
+      return Response.json(
+        { error: "Invalid Doc asset delete grant" },
+        { status: 400 },
+      );
+    }
+    const grant = await ctx.runMutation(internal.docAssets.consumeDeleteGrant, {
+      token,
+    });
+    return grant
+      ? Response.json(grant)
+      : Response.json(
+          { error: "Doc asset delete grant expired" },
+          { status: 403 },
+        );
+  }),
+});
+
+http.route({
   path: BOARD_SCENE_READ_GRANT_PATH,
   method: "POST",
   handler: httpAction(async (ctx, request) => {
@@ -101,6 +177,74 @@ http.route({
       );
     }
     return Response.json(grant);
+  }),
+});
+
+http.route({
+  path: DOC_CONTENT_UPLOAD_GRANT_PATH,
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const token = await boardSceneGrantToken(request);
+    if (token === null) {
+      return Response.json(
+        { error: "Invalid Doc content grant" },
+        { status: 400 },
+      );
+    }
+    const grant = await ctx.runMutation(
+      internal.docContents.resolveUploadGrant,
+      { token },
+    );
+    return grant
+      ? Response.json(grant)
+      : Response.json({ error: "Doc content grant expired" }, { status: 403 });
+  }),
+});
+
+http.route({
+  path: DOC_CONTENT_READ_GRANT_PATH,
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const token = await boardSceneGrantToken(request);
+    if (token === null) {
+      return Response.json(
+        { error: "Invalid Doc content read grant" },
+        { status: 400 },
+      );
+    }
+    const grant = await ctx.runMutation(internal.docContents.resolveReadGrant, {
+      token,
+    });
+    return grant
+      ? Response.json(grant)
+      : Response.json(
+          { error: "Doc content read grant expired" },
+          { status: 403 },
+        );
+  }),
+});
+
+http.route({
+  path: DOC_CONTENT_DELETE_GRANT_PATH,
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const token = await boardSceneGrantToken(request);
+    if (token === null) {
+      return Response.json(
+        { error: "Invalid Doc content delete grant" },
+        { status: 400 },
+      );
+    }
+    const grant = await ctx.runMutation(
+      internal.docContents.consumeDeleteGrant,
+      { token },
+    );
+    return grant
+      ? Response.json(grant)
+      : Response.json(
+          { error: "Doc content delete grant expired" },
+          { status: 403 },
+        );
   }),
 });
 

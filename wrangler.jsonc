@@ -29,9 +29,28 @@
     }
   ],
   "vars": {
-    "CONVEX_SITE_URL": "https://moonlit-boar-611.convex.site"
+    "CONVEX_SITE_URL": "https://moonlit-boar-611.convex.site",
+    "DOCS_MODE": "off"
   },
   "observability": {
     "enabled": true
+  },
+  "env": {
+    "development": {
+      "name": "yaseen-excalidraw-dev",
+      "workers_dev": true,
+      "preview_urls": true,
+      "routes": [],
+      "r2_buckets": [
+        {
+          "binding": "DIAGRAM_ASSETS",
+          "bucket_name": "yaseen-excalidraw-assets-dev"
+        }
+      ],
+      "vars": {
+        "CONVEX_SITE_URL": "https://honorable-possum-626.convex.site",
+        "DOCS_MODE": "on"
+      }
+    }
   }
 }

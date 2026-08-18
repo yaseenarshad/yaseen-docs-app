@@ -24,6 +24,7 @@ import {
   resolveBoardSceneReadGrant,
   resolveBoardSceneUploadGrant,
 } from "./boardScenePersistence";
+import { boardDocRefsUploadFields } from "./docModel";
 import {
   internalMutation,
   internalQuery,
@@ -38,6 +39,7 @@ export const createUploadGrant = mutation({
     purpose: boardScenePurposeValidator,
     expectedVersion: v.number(),
     ...boardSceneIntegrityFields,
+    ...boardDocRefsUploadFields,
   },
   returns: boardSceneUploadGrantResultValidator,
   handler: async (ctx, args) => await createBoardSceneUploadGrant(ctx, args),
@@ -84,6 +86,7 @@ export const createServerUploadGrant = internalMutation({
     boardId: v.id("diagrams"),
     expectedVersion: v.number(),
     ...boardSceneIntegrityFields,
+    ...boardDocRefsUploadFields,
   },
   returns: boardSceneServerUploadGrantResultValidator,
   handler: async (ctx, args) =>

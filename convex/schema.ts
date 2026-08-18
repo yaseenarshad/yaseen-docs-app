@@ -8,6 +8,18 @@ import {
   boardSceneSnapshotFields,
   boardScenePurposeValidator,
 } from "./boardSceneModel";
+import {
+  docAssetReferenceSummaryFields,
+  docContentObjectFields,
+  docLifecycleValidator,
+  docRefsManifestFields,
+  boardDocRefsUploadFields,
+} from "./docModel";
+import {
+  docAssetReferenceArgs,
+  docContentGrantObjectFields,
+  docContentIntegrityFields,
+} from "./docContentModel";
 import { mediaKindValidator, mediaProviderValidator } from "./mediaTypes";
 import { savedComponentFields } from "./savedComponentModel";
 
@@ -74,6 +86,214 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_ownerId_and_normalizedName", ["ownerId", "normalizedName"]),
+  docFolders: defineTable({
+    ownerId: v.id("users"),
+    name: v.string(),
+    normalizedName: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_ownerId_and_normalizedName", ["ownerId", "normalizedName"])
+    .index("by_ownerId_and_updatedAt", ["ownerId", "updatedAt"]),
+  docs: defineTable({
+    ownerId: v.id("users"),
+    folderId: v.optional(v.id("docFolders")),
+    folderScope: v.string(),
+    title: v.string(),
+    normalizedTitle: v.string(),
+    lifecycle: docLifecycleValidator,
+    deletedAt: v.optional(v.number()),
+    purgeAfter: v.optional(v.number()),
+    purgeRequestedAt: v.optional(v.number()),
+    purgeCleanupToken: v.optional(v.string()),
+    purgedAt: v.optional(v.number()),
+    lastSnapshotAt: v.optional(v.number()),
+    lastSnapshotVersion: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_ownerId_and_lifecycle_and_updatedAt", [
+      "ownerId",
+      "lifecycle",
+      "updatedAt",
+    ])
+    .index("by_ownerId_and_lifecycle_and_normalizedTitle", [
+      "ownerId",
+      "lifecycle",
+      "normalizedTitle",
+    ])
+    .index("by_ownerId_and_lifecycle_and_createdAt", [
+      "ownerId",
+      "lifecycle",
+      "createdAt",
+    ])
+    .index("by_ownerId_and_folderScope_and_normalizedTitle", [
+      "ownerId",
+      "folderScope",
+      "normalizedTitle",
+    ])
+    .index("by_ownerId_and_folderScope_and_updatedAt", [
+      "ownerId",
+      "folderScope",
+      "updatedAt",
+    ])
+    .index("by_lifecycle_and_purgeAfter", ["lifecycle", "purgeAfter"])
+    .searchIndex("search_normalizedTitle", {
+      searchField: "normalizedTitle",
+      filterFields: ["ownerId", "lifecycle"],
+    }),
+  docContents: defineTable({
+    docId: v.id("docs"),
+    version: v.number(),
+    ...docContentObjectFields,
+    ...docAssetReferenceSummaryFields,
+    assetIds: v.optional(v.array(v.string())),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_docId", ["docId"])
+    .index("by_objectKey", ["objectKey"]),
+  docContentSnapshots: defineTable({
+    docId: v.id("docs"),
+    version: v.number(),
+    ...docContentObjectFields,
+    ...docAssetReferenceSummaryFields,
+    assetIds: v.optional(v.array(v.string())),
+    createdAt: v.number(),
+  })
+    .index("by_docId_and_version", ["docId", "version"])
+    .index("by_docId_and_createdAt", ["docId", "createdAt"])
+    .index("by_objectKey", ["objectKey"]),
+  docContentUploadGrants: defineTable({
+    token: v.string(),
+    docId: v.id("docs"),
+    ownerId: v.id("users"),
+    expectedVersion: v.number(),
+    version: v.number(),
+    objectKey: v.string(),
+    ...docContentIntegrityFields,
+    ...docAssetReferenceArgs,
+    resolvedAt: v.optional(v.number()),
+    registeredAt: v.optional(v.number()),
+    etag: v.optional(v.string()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_docId", ["docId"])
+    .index("by_expiresAt", ["expiresAt"]),
+  docContentReadGrants: defineTable({
+    token: v.string(),
+    docId: v.id("docs"),
+    source: v.union(v.literal("current"), v.literal("snapshot")),
+    snapshotId: v.optional(v.id("docContentSnapshots")),
+    version: v.number(),
+    ...docContentGrantObjectFields,
+    access: v.union(v.literal("owner"), v.literal("shared")),
+    diagramId: v.optional(v.id("diagrams")),
+    shareToken: v.optional(v.string()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_docId", ["docId"])
+    .index("by_expiresAt", ["expiresAt"]),
+  docContentDeleteGrants: defineTable({
+    token: v.string(),
+    ownerId: v.id("users"),
+    docId: v.optional(v.id("docs")),
+    objectKeys: v.array(v.string()),
+    objectKeyPrefix: v.optional(v.string()),
+    retainUntilConfirmed: v.optional(v.boolean()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_ownerId_and_createdAt", ["ownerId", "createdAt"])
+    .index("by_expiresAt", ["expiresAt"]),
+  docAssets: defineTable({
+    assetId: v.string(),
+    ownerId: v.id("users"),
+    sourceDocId: v.id("docs"),
+    filename: v.string(),
+    mimeType: v.string(),
+    size: v.number(),
+    sha256: v.string(),
+    objectKey: v.string(),
+    etag: v.string(),
+    status: v.union(
+      v.literal("ready"),
+      v.literal("purging"),
+      v.literal("purged"),
+    ),
+    currentRefCount: v.number(),
+    snapshotRefCount: v.number(),
+    unreferencedAt: v.optional(v.number()),
+    purgedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_assetId", ["assetId"])
+    .index("by_ownerId_and_assetId", ["ownerId", "assetId"])
+    .index("by_unreferencedAt", ["unreferencedAt"]),
+  docAssetUploadGrants: defineTable({
+    token: v.string(),
+    assetId: v.string(),
+    docId: v.id("docs"),
+    ownerId: v.id("users"),
+    filename: v.string(),
+    mimeType: v.string(),
+    size: v.number(),
+    sha256: v.string(),
+    objectKey: v.string(),
+    resolvedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_expiresAt", ["expiresAt"]),
+  docAssetReadGrants: defineTable({
+    token: v.string(),
+    assetId: v.string(),
+    ownerId: v.id("users"),
+    access: v.union(v.literal("owner"), v.literal("shared")),
+    diagramId: v.optional(v.id("diagrams")),
+    shareToken: v.optional(v.string()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_expiresAt", ["expiresAt"]),
+  docAssetDeleteGrants: defineTable({
+    token: v.string(),
+    assetId: v.string(),
+    ownerId: v.id("users"),
+    objectKey: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_expiresAt", ["expiresAt"]),
+  docAssetReferences: defineTable({
+    docId: v.id("docs"),
+    assetId: v.string(),
+    source: v.union(v.literal("current"), v.literal("snapshot")),
+    sourceVersion: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_docId_and_source", ["docId", "source"])
+    .index("by_assetId_and_source", ["assetId", "source"])
+    .index("by_docId_and_assetId_and_source", ["docId", "assetId", "source"]),
+  docPlacements: defineTable({
+    diagramId: v.id("diagrams"),
+    docId: v.id("docs"),
+    elementId: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_diagramId_and_elementId", ["diagramId", "elementId"])
+    .index("by_diagramId_and_docId", ["diagramId", "docId"])
+    .index("by_docId_and_diagramId", ["docId", "diagramId"]),
   diagramContents: defineTable({
     diagramId: v.id("diagrams"),
     sceneJson: v.string(),
@@ -98,6 +318,7 @@ export default defineSchema({
     diagramId: v.id("diagrams"),
     version: v.number(),
     ...boardSceneObjectFields,
+    ...docRefsManifestFields,
     lastSnapshotAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -113,6 +334,7 @@ export default defineSchema({
     version: v.number(),
     objectKey: v.string(),
     ...boardSceneIntegrityFields,
+    ...boardDocRefsUploadFields,
     resolvedAt: v.optional(v.number()),
     registeredAt: v.optional(v.number()),
     etag: v.optional(v.string()),

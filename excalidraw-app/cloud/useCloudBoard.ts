@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BinaryFiles } from "@excalidraw/excalidraw/types";
 
 import { api } from "../../convex/_generated/api";
+import { DOCS_ENABLED } from "../docs/docsMode";
 
 import {
   getCanonicalOwnerPath,
@@ -110,6 +111,15 @@ type OpenedCloudScene = {
   version: number;
 };
 
+type BoardDocManifestSummary = {
+  docId: Id<"docs">;
+  title: string;
+  lifecycle: "active" | "trashed" | "purged";
+  version: number;
+  contentSize: number;
+  contentHash?: string;
+};
+
 /**
  * Both stores answer a save the same way, so the legacy `saved` result and an
  * object-storage commit are normalized before anything reacts to them. Only
@@ -174,6 +184,8 @@ export const useCloudBoard = () => {
   const openedSceneRef = useRef<OpenedCloudScene | null>(null);
   const sceneRequestRef = useRef(0);
   const convex = useConvex();
+  const convexRef = useRef(convex);
+  convexRef.current = convex;
   const ensureDefault = useMutation(api.boards.ensureDefault);
   const createBoard = useMutation(api.boards.create);
   const removeBoard = useMutation(api.boards.remove);
@@ -263,10 +275,18 @@ export const useCloudBoard = () => {
 
   const sceneSaveDependencies = useMemo<BoardSceneSaveDependencies>(
     () => ({
-      createUploadGrant: async ({ boardId, ...manifest }) =>
+      createUploadGrant: async ({ boardId, docRefs, ...manifest }) =>
         await createSceneUploadGrant({
           ...manifest,
           boardId: boardId as Id<"diagrams">,
+          ...(docRefs
+            ? {
+                docRefs: docRefs.map((ref) => ({
+                  ...ref,
+                  docId: ref.docId as Id<"docs">,
+                })),
+              }
+            : null),
         }),
       upload: uploadBoardSceneObject,
       commitUpload: commitSceneUpload,
@@ -460,6 +480,99 @@ export const useCloudBoard = () => {
       : route.kind === "shared"
       ? sharedBoardMetadata
       : undefined;
+  const boardDocManifestPage = useQuery(
+    api.boardDocs.listManifestPage,
+    DOCS_ENABLED && route.kind === "owner" && currentOwnedBoardMetadata
+      ? {
+          boardId: currentOwnedBoardMetadata.board._id,
+          shareToken: null,
+          cursor: null,
+        }
+      : DOCS_ENABLED && route.kind === "shared" && sharedBoardMetadata
+      ? { boardId: null, shareToken: route.shareToken, cursor: null }
+      : "skip",
+  );
+  const [additionalBoardDocManifest, setAdditionalBoardDocManifest] = useState<
+    BoardDocManifestSummary[]
+  >([]);
+  const [isBoardDocManifestPaging, setIsBoardDocManifestPaging] =
+    useState(false);
+  const manifestOwnerBoardId =
+    route.kind === "owner" && currentOwnedBoardMetadata
+      ? currentOwnedBoardMetadata.board._id
+      : null;
+  const manifestShareToken =
+    route.kind === "shared" && sharedBoardMetadata ? route.shareToken : null;
+  const manifestNextCursor = boardDocManifestPage?.nextCursor ?? null;
+  const manifestPageIsDone = boardDocManifestPage?.isDone ?? true;
+  const manifestPageSignature =
+    boardDocManifestPage?.page
+      .map(
+        (doc) =>
+          `${doc.docId}:${doc.version}:${doc.lifecycle}:${doc.title}:${
+            doc.contentHash ?? ""
+          }`,
+      )
+      .join("|") ?? "missing";
+  useEffect(() => {
+    let cancelled = false;
+    setAdditionalBoardDocManifest((current) =>
+      current.length === 0 ? current : [],
+    );
+    if (manifestPageSignature === "missing" || manifestPageIsDone) {
+      setIsBoardDocManifestPaging(false);
+      return;
+    }
+    const access =
+      manifestOwnerBoardId !== null
+        ? { boardId: manifestOwnerBoardId, shareToken: null }
+        : manifestShareToken !== null
+        ? { boardId: null, shareToken: manifestShareToken }
+        : null;
+    if (!access) {
+      return;
+    }
+    setIsBoardDocManifestPaging(true);
+    void (async () => {
+      const pages: BoardDocManifestSummary[] = [];
+      let cursor = manifestNextCursor;
+      while (cursor && !cancelled) {
+        const page = await convexRef.current.query(
+          api.boardDocs.listManifestPage,
+          {
+            ...access,
+            cursor,
+          },
+        );
+        pages.push(...page.page);
+        cursor = page.nextCursor;
+      }
+      if (!cancelled) {
+        setAdditionalBoardDocManifest(pages);
+        setIsBoardDocManifestPaging(false);
+      }
+    })().catch(() => {
+      if (!cancelled) {
+        setIsBoardDocManifestPaging(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    manifestNextCursor,
+    manifestOwnerBoardId,
+    manifestPageIsDone,
+    manifestPageSignature,
+    manifestShareToken,
+  ]);
+  const boardDocManifest = useMemo(
+    () =>
+      boardDocManifestPage
+        ? [...boardDocManifestPage.page, ...additionalBoardDocManifest]
+        : undefined,
+    [additionalBoardDocManifest, boardDocManifestPage],
+  );
   const currentOwnedBoard = useMemo(
     () => withCloudScene(currentOwnedBoardMetadata, openedScene),
     [currentOwnedBoardMetadata, openedScene],
@@ -974,6 +1087,7 @@ export const useCloudBoard = () => {
               boardId: pending.boardId,
               expectedVersion: versionRef.current,
               sceneJson: pending.sceneJson,
+              acceptedDocRefsHash: openedBoard.sceneManifest?.docRefsHash,
             },
             sceneSaveDependencies,
           );
@@ -1717,6 +1831,10 @@ export const useCloudBoard = () => {
       deleteBoard,
       renameOpenedBoard,
       assets: assets ?? [],
+      boardDocManifest,
+      isBoardDocManifestLoading:
+        openedBoardMetadata !== undefined &&
+        (boardDocManifestPage === undefined || isBoardDocManifestPaging),
       queueAssets,
       isViewer: openedBoard?.access === "viewer",
       isReady: openedBoard !== undefined && openedBoard !== null,
@@ -1746,6 +1864,10 @@ export const useCloudBoard = () => {
       errorMessage,
       flushSave,
       assets,
+      boardDocManifest,
+      boardDocManifestPage,
+      isBoardDocManifestPaging,
+      openedBoardMetadata,
       createNewBoard,
       deleteBoard,
       openedBoard,

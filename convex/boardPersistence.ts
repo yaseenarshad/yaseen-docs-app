@@ -580,6 +580,7 @@ export const removeBoardRecord = async (
     animationAssets,
     animationUploadGrants,
     animationReadGrants,
+    docPlacements,
   ] = await Promise.all([
     ctx.db
       .query("diagramContents")
@@ -605,6 +606,12 @@ export const removeBoardRecord = async (
       .query("presentationAnimationReadGrants")
       .withIndex("by_diagramId", (q) => q.eq("diagramId", diagram._id))
       .take(2000),
+    ctx.db
+      .query("docPlacements")
+      .withIndex("by_diagramId_and_elementId", (q) =>
+        q.eq("diagramId", diagram._id),
+      )
+      .take(1001),
   ]);
 
   const objectKeys = [
@@ -640,6 +647,12 @@ export const removeBoardRecord = async (
   }
   for (const grant of animationReadGrants) {
     await ctx.db.delete("presentationAnimationReadGrants", grant._id);
+  }
+  if (docPlacements.length > 1000) {
+    throw new Error("Board has too many Doc placement rows to remove");
+  }
+  for (const placement of docPlacements) {
+    await ctx.db.delete("docPlacements", placement._id);
   }
   await ctx.db.delete("diagrams", diagram._id);
   await ctx.scheduler.runAfter(

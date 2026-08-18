@@ -12,6 +12,7 @@ import Sitemap from "vite-plugin-sitemap";
 import { woff2BrowserPlugin } from "../scripts/woff2/woff2-vite-plugins";
 
 const PRODUCTION_CONVEX_URL = "https://moonlit-boar-611.convex.cloud";
+const DEVELOPMENT_CONVEX_URL = "https://honorable-possum-626.convex.cloud";
 
 const externalBackgroundRemovalWasmPlugin = () => ({
   name: "external-background-removal-wasm",
@@ -43,6 +44,18 @@ export default defineConfig(({ mode }) => {
   ) {
     throw new Error(
       `Production builds must use the production Convex deployment (${PRODUCTION_CONVEX_URL}).`,
+    );
+  }
+  if (mode === "production" && envVars.VITE_DOCS_MODE !== "off") {
+    throw new Error("Production Docs must remain off until the rollout step.");
+  }
+  if (
+    mode === "development" &&
+    envVars.VITE_DOCS_MODE === "on" &&
+    envVars.VITE_CONVEX_URL !== DEVELOPMENT_CONVEX_URL
+  ) {
+    throw new Error(
+      `Development Docs must use the isolated Convex deployment (${DEVELOPMENT_CONVEX_URL}).`,
     );
   }
 
@@ -164,6 +177,18 @@ export default defineConfig(({ mode }) => {
 
             if (id.includes("@excalidraw/mermaid-to-excalidraw")) {
               return "mermaid-to-excalidraw";
+            }
+
+            if (id.includes("/@milkdown/") || id.includes("/prosemirror-")) {
+              return "milkdown.chunk";
+            }
+
+            if (
+              (id.includes("/excalidraw-app/docs/") &&
+                !id.endsWith("/outlineFolding.ts")) ||
+              id.includes("/fflate/")
+            ) {
+              return "docs";
             }
 
             if (id.includes("@codemirror/") || id.includes("@lezer/")) {

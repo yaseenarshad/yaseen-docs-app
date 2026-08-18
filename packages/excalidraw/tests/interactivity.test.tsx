@@ -1357,6 +1357,36 @@ describe("interaction={{ enabled: { embeds / interactiveContent } }}", () => {
     expect(h.state.activeEmbeddable).toBe(null);
   });
 
+  it("supports embeddables that activate only after a double click", async () => {
+    await render(
+      <Excalidraw
+        autoFocus={true}
+        handleKeyboardGlobally={true}
+        validateEmbeddable={true}
+        getEmbeddableActivationMode={() => "double"}
+      />,
+    );
+    await waitFor(() => expect(h.state.width).toBe(200));
+    const embed = addEmbeddable();
+
+    mouse.clickAt(80, 65);
+    await sleep(150);
+
+    expect(h.state.activeEmbeddable).toBe(null);
+    expect(h.state.selectedElementIds).toEqual({ [embed.id]: true });
+
+    mouse.doubleClickAt(80, 65);
+    await waitFor(() =>
+      expect(h.state.activeEmbeddable).toMatchObject({
+        element: expect.objectContaining({ id: embed.id }),
+        state: "active",
+      }),
+    );
+
+    fireEvent.keyDown(document, { key: "Escape", code: "Escape" });
+    expect(h.state.activeEmbeddable).toBe(null);
+  });
+
   it("without embeds allowed, embeddables stay inert", async () => {
     await render(<Excalidraw interaction={false} validateEmbeddable={true} />);
     await waitFor(() => expect(h.state.width).toBe(200));

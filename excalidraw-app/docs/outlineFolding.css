@@ -1,0 +1,23 @@
+.yaseendraw-outline-toggle {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-inline-start: -1.35rem;
+  margin-inline-end: 0.1rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.yaseendraw-outline-toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+[data-yaseendraw-outline-folded="true"] {
+  display: none;
+}

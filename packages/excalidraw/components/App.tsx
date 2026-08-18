@@ -1681,6 +1681,14 @@ class App extends React.Component<AppProps, AppState> {
     const iframeLikeElement = hitElement;
 
     if (
+      this.props.getEmbeddableActivationMode?.(iframeLikeElement) ===
+        "double" &&
+      !this.lastPointerUpIsDoubleClick
+    ) {
+      return false;
+    }
+
+    if (
       this.state.activeEmbeddable?.element === iframeLikeElement &&
       this.state.activeEmbeddable?.state === "active"
     ) {
@@ -5700,6 +5708,17 @@ class App extends React.Component<AppProps, AppState> {
   private onKeyDown = withBatchedUpdates(
     (event: React.KeyboardEvent | KeyboardEvent) => {
       if (!this.isInteractionEnabled()) {
+        return;
+      }
+
+      if (
+        event.key === KEYS.ESCAPE &&
+        this.state.activeEmbeddable?.state === "active"
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.setState({ activeEmbeddable: null });
+        this.focusContainer();
         return;
       }
 

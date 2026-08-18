@@ -62,6 +62,8 @@ export const boardSceneManifestSummaryValidator = v.object({
   ...boardSceneIntegrityFields,
   etag: v.string(),
   updatedAt: v.number(),
+  docRefsHash: v.optional(v.string()),
+  docRefsProtocolVersion: v.optional(v.number()),
 });
 
 export const boardScenePurposeValidator = v.union(
@@ -154,11 +156,13 @@ export const boardSceneEditPlanValidator = v.union(
   v.object({
     mode: v.literal("inline"),
     currentVersion: v.number(),
+    currentDocRefsHash: v.optional(v.string()),
     sceneJson: v.string(),
   }),
   v.object({
     mode: v.literal("object"),
     currentVersion: v.number(),
+    currentDocRefsHash: v.optional(v.string()),
     grant: boardSceneReadGrantResultValidator,
   }),
 );
@@ -257,6 +261,8 @@ export const toBoardSceneManifestSummary = (manifest: {
   semanticSha256: string;
   etag: string;
   updatedAt: number;
+  docRefsHash?: string;
+  docRefsProtocolVersion?: number;
 }) => ({
   version: manifest.version,
   encoding: manifest.encoding,
@@ -267,6 +273,12 @@ export const toBoardSceneManifestSummary = (manifest: {
   semanticSha256: manifest.semanticSha256,
   etag: manifest.etag,
   updatedAt: manifest.updatedAt,
+  ...(manifest.docRefsHash !== undefined
+    ? { docRefsHash: manifest.docRefsHash }
+    : null),
+  ...(manifest.docRefsProtocolVersion !== undefined
+    ? { docRefsProtocolVersion: manifest.docRefsProtocolVersion }
+    : null),
 });
 
 export const toBoardSceneGrantContract = (grant: {
