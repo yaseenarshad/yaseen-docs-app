@@ -618,6 +618,42 @@ describe("stats for multiple elements", () => {
     });
   });
 
+  it("scales image border width when a grouped selection is resized", () => {
+    const groupId = "bordered-image-group";
+    const image = API.createElement({
+      type: "image",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 50,
+      groupIds: [groupId],
+      strokeWidth: 2,
+    });
+    const rectangle = API.createElement({
+      type: "rectangle",
+      x: 150,
+      y: 0,
+      width: 100,
+      height: 50,
+      groupIds: [groupId],
+      strokeWidth: 2,
+    });
+    API.setElements([image, rectangle]);
+    API.setSelectedElements([image, rectangle]);
+
+    const width = UI.queryStatsProperty("W")?.querySelector(
+      ".drag-input",
+    ) as HTMLInputElement;
+    expect(width).toBeDefined();
+    const initialWidth = Number(width.value);
+
+    UI.updateInput(width, String(initialWidth * 2));
+
+    expect(image.width).toBeCloseTo(200);
+    expect(image.strokeWidth).toBe(4);
+    expect(rectangle.strokeWidth).toBe(2);
+  });
+
   it("should display MIXED for elements with different values", () => {
     UI.clickTool("rectangle");
     mouse.down();

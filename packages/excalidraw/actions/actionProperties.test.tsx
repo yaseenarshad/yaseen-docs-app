@@ -972,6 +972,169 @@ describe("element locking", () => {
       });
     });
 
+    it("should size a newly activated image border relative to the image", () => {
+      API.setAppState({ currentItemStrokeColor: COLOR_PALETTE.transparent });
+      const image = API.createElement({
+        type: "image",
+        width: 400,
+        height: 300,
+        strokeWidth: VECTOR_STROKE_WIDTH.default,
+      });
+      API.setElements([image]);
+      API.setSelectedElements([image]);
+
+      const borderColor = DEFAULT_ELEMENT_STROKE_PICKS[3];
+      const borderColorButton = queryByTestId(
+        document.body,
+        `color-top-pick-${borderColor}`,
+      );
+      expect(borderColorButton).not.toBeNull();
+      fireEvent.click(borderColorButton!);
+
+      // 1% of the shortest side (300) = 3px
+      expect(API.getSelectedElement()).toMatchObject({
+        strokeColor: borderColor,
+        strokeWidth: 3,
+      });
+    });
+
+    it("should keep the image border width when re-coloring a visible border", () => {
+      API.setAppState({ currentItemStrokeColor: COLOR_PALETTE.black });
+      // newImageElement always starts transparent; paint the border directly
+      const image = {
+        ...API.createElement({
+          type: "image",
+          width: 400,
+          height: 300,
+          strokeWidth: 7,
+        }),
+        strokeColor: DEFAULT_ELEMENT_STROKE_PICKS[1],
+      };
+      API.setElements([image]);
+      API.setSelectedElements([image]);
+
+      const borderColor = DEFAULT_ELEMENT_STROKE_PICKS[3];
+      const borderColorButton = queryByTestId(
+        document.body,
+        `color-top-pick-${borderColor}`,
+      );
+      expect(borderColorButton).not.toBeNull();
+      fireEvent.click(borderColorButton!);
+
+      expect(API.getSelectedElement()).toMatchObject({
+        strokeColor: borderColor,
+        strokeWidth: 7,
+      });
+    });
+
+    it("should keep the image border width when picking transparent", () => {
+      API.setAppState({ currentItemStrokeColor: COLOR_PALETTE.black });
+      const image = {
+        ...API.createElement({
+          type: "image",
+          width: 400,
+          height: 300,
+          strokeWidth: 7,
+        }),
+        strokeColor: DEFAULT_ELEMENT_STROKE_PICKS[1],
+      };
+      API.setElements([image]);
+      API.setSelectedElements([image]);
+
+      togglePopover("Stroke");
+      const transparentButton = queryByTestId(
+        document.body,
+        "color-transparent",
+      );
+      expect(transparentButton).not.toBeNull();
+      fireEvent.click(transparentButton!);
+
+      expect(API.getSelectedElement()).toMatchObject({
+        strokeColor: COLOR_PALETTE.transparent,
+        strokeWidth: 7,
+      });
+    });
+
+    it("should let a width preset override the relative image border width", () => {
+      API.setAppState({ currentItemStrokeColor: COLOR_PALETTE.transparent });
+      const image = API.createElement({
+        type: "image",
+        width: 400,
+        height: 300,
+        strokeWidth: VECTOR_STROKE_WIDTH.default,
+      });
+      API.setElements([image]);
+      API.setSelectedElements([image]);
+
+      const borderColor = DEFAULT_ELEMENT_STROKE_PICKS[3];
+      fireEvent.click(
+        queryByTestId(document.body, `color-top-pick-${borderColor}`)!,
+      );
+      expect(API.getSelectedElement()?.strokeWidth).toBe(3);
+
+      fireEvent.click(
+        queryByTestId(document.body, "vector-stroke-width-preset-8")!,
+      );
+      expect(API.getSelectedElement()).toMatchObject({
+        strokeColor: borderColor,
+        strokeWidth: 8,
+      });
+    });
+
+    it("should size only the transparent image border in a mixed image selection", () => {
+      API.setAppState({ currentItemStrokeColor: COLOR_PALETTE.transparent });
+      const transparentImage = API.createElement({
+        type: "image",
+        width: 400,
+        height: 300,
+        strokeWidth: VECTOR_STROKE_WIDTH.default,
+      });
+      const visibleImage = {
+        ...API.createElement({
+          type: "image",
+          width: 400,
+          height: 300,
+          strokeWidth: 7,
+        }),
+        strokeColor: DEFAULT_ELEMENT_STROKE_PICKS[1],
+      };
+      API.setElements([transparentImage, visibleImage]);
+      API.setSelectedElements([transparentImage, visibleImage]);
+
+      const borderColor = DEFAULT_ELEMENT_STROKE_PICKS[3];
+      fireEvent.click(
+        queryByTestId(document.body, `color-top-pick-${borderColor}`)!,
+      );
+
+      expect(API.getSelectedElements()).toEqual([
+        expect.objectContaining({ strokeColor: borderColor, strokeWidth: 3 }),
+        expect.objectContaining({ strokeColor: borderColor, strokeWidth: 7 }),
+      ]);
+    });
+
+    it("should not resize non-image strokes when activating a color", () => {
+      API.setAppState({ currentItemStrokeColor: COLOR_PALETTE.transparent });
+      const rect = API.createElement({
+        type: "rectangle",
+        width: 400,
+        height: 300,
+        strokeWidth: 7,
+      });
+      API.setElements([rect]);
+      API.setSelectedElements([rect]);
+      expect(rect.strokeColor).toBe(COLOR_PALETTE.transparent);
+
+      const borderColor = DEFAULT_ELEMENT_STROKE_PICKS[3];
+      fireEvent.click(
+        queryByTestId(document.body, `color-top-pick-${borderColor}`)!,
+      );
+
+      expect(API.getSelectedElement()).toMatchObject({
+        strokeColor: borderColor,
+        strokeWidth: 7,
+      });
+    });
+
     it("should move image rounding and opacity into the secondary helper", () => {
       const image = API.createElement({
         type: "image",

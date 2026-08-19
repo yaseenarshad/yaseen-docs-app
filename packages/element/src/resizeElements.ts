@@ -12,6 +12,7 @@ import {
   SHIFT_LOCKING_ANGLE,
   rescalePoints,
   getFontString,
+  normalizeVectorStrokeWidth,
 } from "@excalidraw/common";
 
 import type { GlobalPoint } from "@excalidraw/math";
@@ -284,18 +285,17 @@ export const rescalePointsInElement = (
       }
     : {};
 
-export const getScaledElementRoundness = (
+/**
+ * Ratio between the shortest side of `element` and the shortest side of the
+ * `nextWidth` x `nextHeight` box, or `null` when either side is degenerate
+ * (non-finite or <= 0). Shared by the size-relative roundness and stroke
+ * width scaling so they agree on the guards.
+ */
+const getShortestSideRatio = (
   element: ExcalidrawElement,
   nextWidth: number,
   nextHeight: number,
-): ExcalidrawElement["roundness"] => {
-  if (
-    (element.type !== "rectangle" && element.type !== "image") ||
-    element.roundness?.value === undefined
-  ) {
-    return element.roundness;
-  }
-
+): number | null => {
   const previousShortestSide = Math.min(
     Math.abs(element.width),
     Math.abs(element.height),
@@ -308,12 +308,31 @@ export const getScaledElementRoundness = (
     previousShortestSide <= 0 ||
     nextShortestSide <= 0
   ) {
+    return null;
+  }
+
+  return nextShortestSide / previousShortestSide;
+};
+
+export const getScaledElementRoundness = (
+  element: ExcalidrawElement,
+  nextWidth: number,
+  nextHeight: number,
+): ExcalidrawElement["roundness"] => {
+  if (
+    (element.type !== "rectangle" && element.type !== "image") ||
+    element.roundness?.value === undefined
+  ) {
     return element.roundness;
   }
 
-  const value = normalizeCornerRadius(
-    element.roundness.value * (nextShortestSide / previousShortestSide),
-  );
+  const ratio = getShortestSideRatio(element, nextWidth, nextHeight);
+
+  if (ratio === null) {
+    return element.roundness;
+  }
+
+  const value = normalizeCornerRadius(element.roundness.value * ratio);
 
   if (value === element.roundness.value) {
     return element.roundness;
@@ -361,8 +380,21 @@ export const getSizeRelativeResizeUpdates = (
     updates.roundness = roundness;
   }
 
-  // EXTENSION POINT: strokeWidth scaling will be added here by later children
-  // (image border; closed-shape + linear strokes via opts.groupScale).
+  // Image border width scales with the image's own shortest side in both
+  // single and group resizes (GRO-1545). Other element types are not yet
+  // size-relative (closed-shape + linear strokes via opts.groupScale are
+  // handled by later children).
+  if (origElement.type === "image" && origElement.strokeWidth > 0) {
+    const ratio = getShortestSideRatio(origElement, nextWidth, nextHeight);
+    if (ratio !== null) {
+      const strokeWidth = normalizeVectorStrokeWidth(
+        origElement.strokeWidth * ratio,
+      );
+      if (strokeWidth !== origElement.strokeWidth) {
+        updates.strokeWidth = strokeWidth;
+      }
+    }
+  }
 
   return updates;
 };

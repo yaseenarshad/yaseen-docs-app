@@ -1006,6 +1006,53 @@ describe("image element", () => {
     });
   });
 
+  it("scales image border width with proportional resize", () => {
+    const image = API.createElement({
+      type: "image",
+      width: 100,
+      height: 100,
+      strokeWidth: 2,
+    });
+    API.setElements([image]);
+
+    UI.resize(image, "se", [100, 100]);
+
+    expect(image.width).toBeCloseTo(200);
+    expect(image.height).toBeCloseTo(200);
+    expect(image.strokeWidth).toBe(4);
+  });
+
+  it("keeps image border width when only the longer side is stretched", () => {
+    const image = API.createElement({
+      type: "image",
+      width: 100,
+      height: 100,
+      strokeWidth: 2,
+    });
+    API.setElements([image]);
+
+    // shift unlocks the image aspect ratio so only the width changes
+    UI.resize(image, "e", [100, 0], { shift: true });
+
+    expect(image.width).toBeCloseTo(200);
+    expect(image.height).toBeCloseTo(100);
+    expect(image.strokeWidth).toBe(2);
+  });
+
+  it("keeps a zero image border width at zero while resizing", () => {
+    const image = API.createElement({
+      type: "image",
+      width: 100,
+      height: 100,
+      strokeWidth: 0,
+    });
+    API.setElements([image]);
+
+    UI.resize(image, "se", [100, 100]);
+
+    expect(image.strokeWidth).toBe(0);
+  });
+
   it("resizes", async () => {
     const image = API.createElement({ type: "image", width: 100, height: 100 });
     API.setElements([image]);
@@ -1550,6 +1597,35 @@ describe("multiple selection", () => {
     });
   });
 
+  it("scales image border width but not rectangle stroke in a group resize", () => {
+    const image = API.createElement({
+      type: "image",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      strokeWidth: 2,
+    });
+    const rectangle = API.createElement({
+      type: "rectangle",
+      x: 0,
+      y: 100,
+      width: 100,
+      height: 100,
+      strokeWidth: 2,
+    });
+    API.setElements([image, rectangle]);
+
+    // selection is 100x200; moving the SE handle by [100, 200] doubles it
+    UI.resize([image, rectangle], "se", [100, 200]);
+
+    expect(image.width).toBeCloseTo(200);
+    expect(image.height).toBeCloseTo(200);
+    expect(image.strokeWidth).toBe(4);
+    expect(rectangle.width).toBeCloseTo(200);
+    expect(rectangle.strokeWidth).toBe(2);
+  });
+
   it("resizes from center", () => {
     const rectangle = UI.createElement("rectangle", {
       x: -200,
@@ -1756,12 +1832,13 @@ describe("getSizeRelativeResizeUpdates", () => {
     ).toEqual({
       roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 32 },
     });
-    // image behaves like rectangle
+    // image behaves like rectangle (border scaling is covered separately)
     const image = API.createElement({
       type: "image",
       width: 100,
       height: 50,
       roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+      strokeWidth: 0,
     });
     expect(
       getSizeRelativeResizeUpdates(image, 100, 25, { mode: "single" }),
@@ -1806,6 +1883,97 @@ describe("getSizeRelativeResizeUpdates", () => {
     expect(
       getSizeRelativeResizeUpdates(rect, Infinity, Infinity, {
         mode: "single",
+      }),
+    ).toEqual({});
+  });
+
+  it("scales image strokeWidth by the shortest side in single mode", () => {
+    const image = API.createElement({
+      type: "image",
+      width: 200,
+      height: 100,
+      roundness: null,
+      strokeWidth: 2,
+    });
+    expect(
+      getSizeRelativeResizeUpdates(image, 400, 200, { mode: "single" }),
+    ).toEqual({ strokeWidth: 4 });
+    // only the longer side changes -> shortest side unchanged -> {}
+    expect(
+      getSizeRelativeResizeUpdates(image, 400, 100, { mode: "single" }),
+    ).toEqual({});
+    // shrink: rounds to 0.1 and clamps at the 0.5 minimum
+    expect(
+      getSizeRelativeResizeUpdates(image, 200, 10, { mode: "single" }),
+    ).toEqual({ strokeWidth: 0.5 });
+  });
+
+  it("scales image strokeWidth by its own shortest side in group mode", () => {
+    const image = API.createElement({
+      type: "image",
+      width: 200,
+      height: 100,
+      roundness: null,
+      strokeWidth: 2,
+    });
+    expect(
+      getSizeRelativeResizeUpdates(image, 400, 200, {
+        mode: "group",
+        groupScale: 10,
+      }),
+    ).toEqual({ strokeWidth: 4 });
+  });
+
+  it("returns both roundness and strokeWidth for an image", () => {
+    const image = API.createElement({
+      type: "image",
+      width: 100,
+      height: 100,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 4 },
+      strokeWidth: 2,
+    });
+    expect(
+      getSizeRelativeResizeUpdates(image, 200, 200, { mode: "single" }),
+    ).toEqual({
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 8 },
+      strokeWidth: 4,
+    });
+  });
+
+  it("does not scale a zero image strokeWidth", () => {
+    const image = API.createElement({
+      type: "image",
+      width: 100,
+      height: 100,
+      roundness: null,
+      strokeWidth: 0,
+    });
+    expect(
+      getSizeRelativeResizeUpdates(image, 200, 200, { mode: "single" }),
+    ).toEqual({});
+  });
+
+  it("does not scale strokeWidth for non-image types yet", () => {
+    const rect = API.createElement({
+      type: "rectangle",
+      width: 100,
+      height: 100,
+      roundness: null,
+      strokeWidth: 2,
+    });
+    expect(
+      getSizeRelativeResizeUpdates(rect, 200, 200, { mode: "single" }),
+    ).toEqual({});
+    const ellipse = API.createElement({
+      type: "ellipse",
+      width: 100,
+      height: 100,
+      strokeWidth: 2,
+    });
+    expect(
+      getSizeRelativeResizeUpdates(ellipse, 200, 200, {
+        mode: "group",
+        groupScale: 2,
       }),
     ).toEqual({});
   });
