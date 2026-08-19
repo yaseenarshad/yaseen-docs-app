@@ -322,6 +322,51 @@ export const getScaledElementRoundness = (
   return value === 0 ? null : { ...element.roundness, value };
 };
 
+export type SizeRelativeResizeMode = "single" | "group";
+
+export type SizeRelativeResizeUpdates = Partial<
+  Pick<ExcalidrawElement, "roundness" | "strokeWidth">
+>;
+
+/**
+ * Computes the size-relative property updates (roundness, and in later
+ * iterations strokeWidth) that should accompany a resize of `origElement`
+ * to `nextWidth` x `nextHeight`.
+ *
+ * Everything is derived from `origElement` (the resize-start snapshot), never
+ * from the live element, so repeated calls during a single drag are stable.
+ *
+ * Returns only the keys that actually change; returns `{}` when nothing does.
+ *
+ * @param opts.mode `"single"` for a single-element resize, `"group"` for a
+ *   multi-element / group resize.
+ * @param opts.groupScale uniform factor for the whole selection; used by
+ *   element types whose own shortest side is not meaningful
+ *   (line/arrow/freedraw) — consumed by later children.
+ */
+export const getSizeRelativeResizeUpdates = (
+  origElement: ExcalidrawElement,
+  nextWidth: number,
+  nextHeight: number,
+  opts: { mode: SizeRelativeResizeMode; groupScale?: number },
+): SizeRelativeResizeUpdates => {
+  const updates: Mutable<SizeRelativeResizeUpdates> = {};
+
+  const roundness = getScaledElementRoundness(
+    origElement,
+    nextWidth,
+    nextHeight,
+  );
+  if (roundness !== origElement.roundness) {
+    updates.roundness = roundness;
+  }
+
+  // EXTENSION POINT: strokeWidth scaling will be added here by later children
+  // (image border; closed-shape + linear strokes via opts.groupScale).
+
+  return updates;
+};
+
 export const measureFontSizeFromWidth = (
   element: NonDeleted<ExcalidrawTextElement>,
   elementsMap: ElementsMap,
@@ -919,19 +964,18 @@ export const resizeSingleElement = (
     Number.isFinite(newOrigin.x) &&
     Number.isFinite(newOrigin.y)
   ) {
-    const scaledRoundness = getScaledElementRoundness(
+    const sizeRelativeUpdates = getSizeRelativeResizeUpdates(
       origElement,
       nextWidth,
       nextHeight,
+      { mode: "single" },
     );
     let updates: ElementUpdate<ExcalidrawElement> = {
       ...newOrigin,
       width: Math.abs(nextWidth),
       height: Math.abs(nextHeight),
       ...rescaledPoints,
-      ...(scaledRoundness !== origElement.roundness
-        ? { roundness: scaledRoundness }
-        : {}),
+      ...sizeRelativeUpdates,
     };
 
     if (isBindingElement(latestElement)) {
@@ -1434,10 +1478,13 @@ export const resizeMultipleElements = (
         ...rescaledPoints,
       };
 
-      const scaledRoundness = getScaledElementRoundness(orig, width, height);
-      if (scaledRoundness !== orig.roundness) {
-        update.roundness = scaledRoundness;
-      }
+      Object.assign(
+        update,
+        getSizeRelativeResizeUpdates(orig, width, height, {
+          mode: "group",
+          groupScale: Math.min(scaleX, scaleY),
+        }),
+      );
 
       if (isElbowArrow(orig)) {
         // Mirror fixed point binding for elbow arrows

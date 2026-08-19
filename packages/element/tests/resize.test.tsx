@@ -22,7 +22,10 @@ import {
 import type { LocalPoint } from "@excalidraw/math";
 
 import { isLinearElement } from "../src/typeChecks";
-import { resizeSingleElement } from "../src/resizeElements";
+import {
+  getSizeRelativeResizeUpdates,
+  resizeSingleElement,
+} from "../src/resizeElements";
 import { LinearElementEditor } from "../src/linearElementEditor";
 import { getElementPointsCoords } from "../src/bounds";
 import { computeContainerDimensionForBoundText } from "../src/textElement";
@@ -1658,5 +1661,122 @@ describe("multiple selection", () => {
     );
     expect(arrowLabel.angle).toEqual(0);
     expect(arrowLabel.fontSize).toBeCloseTo(20 * scaleY);
+  });
+});
+
+describe("getSizeRelativeResizeUpdates", () => {
+  it("returns {} for element types without size-relative roundness", () => {
+    const ellipse = API.createElement({
+      type: "ellipse",
+      width: 100,
+      height: 50,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+    });
+    expect(
+      getSizeRelativeResizeUpdates(ellipse, 200, 100, { mode: "single" }),
+    ).toEqual({});
+
+    const line = UI.createElement("line", {
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 50,
+    });
+    expect(
+      getSizeRelativeResizeUpdates(line, 200, 100, {
+        mode: "group",
+        groupScale: 2,
+      }),
+    ).toEqual({});
+  });
+
+  it("returns {} when roundness is unchanged (identity resize)", () => {
+    const rect = API.createElement({
+      type: "rectangle",
+      width: 100,
+      height: 50,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+    });
+    expect(
+      getSizeRelativeResizeUpdates(rect, 100, 50, { mode: "single" }),
+    ).toEqual({});
+  });
+
+  it("returns {} when the element has no roundness value", () => {
+    const rect = API.createElement({
+      type: "rectangle",
+      width: 100,
+      height: 50,
+      roundness: null,
+    });
+    expect(
+      getSizeRelativeResizeUpdates(rect, 200, 100, { mode: "single" }),
+    ).toEqual({});
+  });
+
+  it("scales rectangle roundness by the shortest side in single mode", () => {
+    const rect = API.createElement({
+      type: "rectangle",
+      width: 100,
+      height: 50,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+    });
+    expect(
+      getSizeRelativeResizeUpdates(rect, 200, 100, { mode: "single" }),
+    ).toEqual({
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 32 },
+    });
+    // image behaves like rectangle
+    const image = API.createElement({
+      type: "image",
+      width: 100,
+      height: 50,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+    });
+    expect(
+      getSizeRelativeResizeUpdates(image, 100, 25, { mode: "single" }),
+    ).toEqual({
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 8 },
+    });
+  });
+
+  it("ignores groupScale for rectangles in group mode (uses shortest side)", () => {
+    const rect = API.createElement({
+      type: "rectangle",
+      width: 100,
+      height: 50,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+    });
+    expect(
+      getSizeRelativeResizeUpdates(rect, 200, 100, {
+        mode: "group",
+        groupScale: 10,
+      }),
+    ).toEqual({
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 32 },
+    });
+  });
+
+  it("returns {} for zero / NaN / non-finite next sizes", () => {
+    const rect = API.createElement({
+      type: "rectangle",
+      width: 100,
+      height: 50,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+    });
+    expect(
+      getSizeRelativeResizeUpdates(rect, 0, 100, { mode: "single" }),
+    ).toEqual({});
+    expect(
+      getSizeRelativeResizeUpdates(rect, NaN, 100, { mode: "single" }),
+    ).toEqual({});
+    expect(
+      getSizeRelativeResizeUpdates(rect, 100, -0, { mode: "single" }),
+    ).toEqual({});
+    expect(
+      getSizeRelativeResizeUpdates(rect, Infinity, Infinity, {
+        mode: "single",
+      }),
+    ).toEqual({});
   });
 });

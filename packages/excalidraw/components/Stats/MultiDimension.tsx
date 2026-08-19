@@ -6,7 +6,7 @@ import {
   getElementsInResizingFrame,
   getNonDeletedElements,
   getScaledTextRoundness,
-  getScaledElementRoundness,
+  getSizeRelativeResizeUpdates,
   isFrameLikeElement,
   replaceAllElementsInFrame,
   updateBoundElements,
@@ -63,10 +63,11 @@ const getResizedUpdates = (
   const nextHeight = origElement.height * scale;
   const x = anchorX + offsetX * scale;
   const y = anchorY + offsetY * scale;
-  const scaledRoundness = getScaledElementRoundness(
+  const sizeRelativeUpdates = getSizeRelativeResizeUpdates(
     origElement,
     nextWidth,
     nextHeight,
+    { mode: "group", groupScale: scale },
   );
 
   return {
@@ -75,9 +76,7 @@ const getResizedUpdates = (
     x,
     y,
     ...rescalePointsInElement(origElement, nextWidth, nextHeight, false),
-    ...(scaledRoundness !== origElement.roundness
-      ? { roundness: scaledRoundness }
-      : {}),
+    ...sizeRelativeUpdates,
     ...(isTextElement(origElement)
       ? {
           fontSize: origElement.fontSize * scale,
