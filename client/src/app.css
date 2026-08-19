@@ -77,6 +77,51 @@ button {
   --crepe-color-background: transparent;
 }
 
+/* Obsidian default typography (GRO-2009): system font stack, 16px / 1.5 body, Obsidian heading scale.
+   Overrides Crepe's frame theme (Rubik/Noto Serif → serif fallback) via its own custom properties. */
+.editor-instance .milkdown {
+  --crepe-base-font-size: 16px;
+  --crepe-font-default: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --crepe-font-title: var(--crepe-font-default);
+  --crepe-font-code: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: 1.5;
+}
+
+.editor-instance .milkdown .ProseMirror h1,
+.editor-instance .milkdown .ProseMirror h2,
+.editor-instance .milkdown .ProseMirror h3,
+.editor-instance .milkdown .ProseMirror h4,
+.editor-instance .milkdown .ProseMirror h5,
+.editor-instance .milkdown .ProseMirror h6 {
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.editor-instance .milkdown .ProseMirror h1 {
+  font-size: 1.802em;
+  font-weight: 700;
+}
+
+.editor-instance .milkdown .ProseMirror h2 {
+  font-size: 1.602em;
+}
+
+.editor-instance .milkdown .ProseMirror h3 {
+  font-size: 1.424em;
+}
+
+.editor-instance .milkdown .ProseMirror h4 {
+  font-size: 1.266em;
+}
+
+.editor-instance .milkdown .ProseMirror h5 {
+  font-size: 1.125em;
+}
+
+.editor-instance .milkdown .ProseMirror h6 {
+  font-size: 1em;
+}
+
 /* Crepe's reset pads `.milkdown .ProseMirror` by 60px 120px; the column above owns the gutters. */
 .editor-instance .milkdown .ProseMirror {
   padding: 16px 0;
