@@ -1,6 +1,6 @@
 import { pointFrom } from "@excalidraw/math";
 
-import { Excalidraw } from "@excalidraw/excalidraw";
+import { Excalidraw, restoreElements } from "@excalidraw/excalidraw";
 import {
   type Bounds,
   KEYS,
@@ -213,6 +213,36 @@ describe("generic element", () => {
 
     expect(rectangle.roundness).toEqual({
       type: ROUNDNESS.ADAPTIVE_RADIUS,
+    });
+  });
+
+  it("scales restored value-less rectangle rounding like native shapes", () => {
+    const [rectangle] = restoreElements(
+      [
+        API.createElement({
+          type: "rectangle",
+          width: 100,
+          height: 100,
+          roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS },
+        }),
+      ],
+      null,
+    );
+    // 100x100 is below the adaptive cutoff (128px), so the rendered radius
+    // of 100 * 0.25 = 25 gets materialized on restore
+    expect(rectangle.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 25,
+    });
+    API.setElements([rectangle]);
+
+    UI.resize(rectangle, "se", [100, 100]);
+
+    expect(rectangle.width).toBeCloseTo(200);
+    expect(rectangle.height).toBeCloseTo(200);
+    expect(rectangle.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 50,
     });
   });
 

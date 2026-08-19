@@ -847,8 +847,191 @@ describe("restoreElements", () => {
       value: 100,
     });
     expect(restoredElements[2].roundness).toBeNull();
+    // value-less adaptive on a 100x100 rect: below the 128px cutoff, so the
+    // rendered radius is 100 * 0.25 = 25 and gets materialized
     expect(restoredElements[3].roundness).toEqual({
       type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 25,
+    });
+  });
+
+  describe("materializes value-less roundness for rectangles and images", () => {
+    it("materializes adaptive radius above the cutoff", () => {
+      const [rect] = restore.restoreElements(
+        [
+          API.createElement({
+            type: "rectangle",
+            width: 300,
+            height: 400,
+            roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS },
+          }),
+        ],
+        null,
+      );
+      expect(rect.roundness).toEqual({
+        type: ROUNDNESS.ADAPTIVE_RADIUS,
+        value: 32,
+      });
+    });
+
+    it("materializes value-less image roundness", () => {
+      const [image] = restore.restoreElements(
+        [
+          API.createElement({
+            type: "image",
+            width: 300,
+            height: 300,
+            roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS },
+          }),
+        ],
+        null,
+      );
+      expect(image.roundness).toEqual({
+        type: ROUNDNESS.ADAPTIVE_RADIUS,
+        value: 32,
+      });
+    });
+
+    it("materializes proportional radius from the shortest side", () => {
+      // API.createElement forces rectangles to ADAPTIVE, so override here to
+      // exercise the stock `{ type: 2 }` proportional branch
+      const [rect] = restore.restoreElements(
+        [
+          {
+            ...API.createElement({
+              type: "rectangle",
+              width: 80,
+              height: 200,
+            }),
+            roundness: { type: ROUNDNESS.PROPORTIONAL_RADIUS },
+          },
+        ],
+        null,
+      );
+      // 80 * 0.25 = 20
+      expect(rect.roundness).toEqual({
+        type: ROUNDNESS.PROPORTIONAL_RADIUS,
+        value: 20,
+      });
+    });
+
+    it("clamps proportional radius on large shapes to the max", () => {
+      const [rect] = restore.restoreElements(
+        [
+          {
+            ...API.createElement({
+              type: "rectangle",
+              width: 1000,
+              height: 1000,
+            }),
+            roundness: { type: ROUNDNESS.PROPORTIONAL_RADIUS },
+          },
+        ],
+        null,
+      );
+      // 1000 * 0.25 = 250 -> clamped to CORNER_RADIUS.max (100)
+      expect(rect.roundness).toEqual({
+        type: ROUNDNESS.PROPORTIONAL_RADIUS,
+        value: 100,
+      });
+    });
+
+    it("is idempotent across repeated restores", () => {
+      const first = restore.restoreElements(
+        [
+          API.createElement({
+            type: "rectangle",
+            width: 100,
+            height: 100,
+            roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS },
+          }),
+          API.createElement({
+            type: "image",
+            width: 500,
+            height: 300,
+            roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS },
+          }),
+        ],
+        null,
+      );
+      const second = restore.restoreElements(first, null);
+      expect(second.map((el) => el.roundness)).toEqual(
+        first.map((el) => el.roundness),
+      );
+      expect(first[0].roundness).toEqual({
+        type: ROUNDNESS.ADAPTIVE_RADIUS,
+        value: 25,
+      });
+      expect(first[1].roundness).toEqual({
+        type: ROUNDNESS.ADAPTIVE_RADIUS,
+        value: 32,
+      });
+    });
+
+    it("leaves already-materialized values untouched", () => {
+      const [rect] = restore.restoreElements(
+        [
+          API.createElement({
+            type: "rectangle",
+            width: 100,
+            height: 100,
+            roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 64 },
+          }),
+        ],
+        null,
+      );
+      expect(rect.roundness).toEqual({
+        type: ROUNDNESS.ADAPTIVE_RADIUS,
+        value: 64,
+      });
+    });
+
+    it("keeps value-less roundness when dimensions are zero or missing", () => {
+      const zero = API.createElement({
+        type: "rectangle",
+        width: 0,
+        height: 100,
+        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS },
+      });
+      const missing = {
+        ...API.createElement({
+          type: "rectangle",
+          roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS },
+        }),
+      } as any;
+      delete missing.width;
+      delete missing.height;
+
+      const restored = restore.restoreElements([zero, missing], null);
+
+      expect(restored[0].roundness).toEqual({ type: ROUNDNESS.ADAPTIVE_RADIUS });
+      expect(restored[1].roundness).toEqual({ type: ROUNDNESS.ADAPTIVE_RADIUS });
+    });
+
+    it("does not touch value-less roundness on other element families", () => {
+      const restored = restore.restoreElements(
+        [
+          API.createElement({
+            type: "ellipse",
+            width: 100,
+            height: 100,
+            roundness: { type: ROUNDNESS.PROPORTIONAL_RADIUS },
+          }),
+          API.createElement({
+            type: "diamond",
+            width: 100,
+            height: 100,
+            roundness: { type: ROUNDNESS.PROPORTIONAL_RADIUS },
+          }),
+        ],
+        null,
+      );
+      expect(restored[0].roundness).toEqual({
+        type: ROUNDNESS.PROPORTIONAL_RADIUS,
+      });
+      expect(restored[1].roundness).toEqual({
+        type: ROUNDNESS.PROPORTIONAL_RADIUS,
+      });
     });
   });
 

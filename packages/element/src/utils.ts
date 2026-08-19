@@ -564,6 +564,43 @@ export const normalizeElementRoundness = (
   return value === CORNER_RADIUS.min ? null : { ...roundness, value };
 };
 
+/**
+ * Materializes a value-less roundness (e.g. stock `{ type: 3 }` adaptive or
+ * `{ type: 2 }` proportional) into an explicit px `value` equal to what the
+ * element already renders as, so it looks identical on load/paste and then
+ * scales with the element on resize like natively-created shapes.
+ *
+ * Only applies to rectangles and images; other families are returned as-is.
+ * Idempotent: elements that already carry a value are returned unchanged.
+ */
+export const materializeElementRoundnessValue = (
+  roundness: ExcalidrawElement["roundness"],
+  element: Pick<ExcalidrawElement, "type" | "width" | "height">,
+): ExcalidrawElement["roundness"] => {
+  if (
+    !roundness ||
+    roundness.value !== undefined ||
+    (element.type !== "rectangle" && element.type !== "image")
+  ) {
+    return roundness;
+  }
+
+  const shortest = Math.min(
+    Math.abs(element.width || 0),
+    Math.abs(element.height || 0),
+  );
+
+  if (!Number.isFinite(shortest) || shortest <= 0) {
+    return roundness;
+  }
+
+  const value = normalizeCornerRadius(
+    getCornerRadius(shortest, { ...element, roundness } as ExcalidrawElement),
+  );
+
+  return value === CORNER_RADIUS.min ? null : { ...roundness, value };
+};
+
 const getDiagonalsForBindableElement = (
   element: ExcalidrawElement,
   elementsMap: ElementsMap,

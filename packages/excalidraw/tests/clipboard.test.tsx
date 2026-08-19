@@ -128,6 +128,41 @@ describe("general paste behavior", () => {
     });
   });
 
+  it("materializes value-less rectangle roundness on paste", async () => {
+    const data = JSON.stringify({
+      type: "excalidraw/clipboard",
+      elements: [
+        {
+          type: "rectangle",
+          id: "value-less-rect",
+          x: 0,
+          y: 0,
+          width: 300,
+          height: 400,
+          roundness: { type: 3 },
+        },
+        {
+          type: "rectangle",
+          id: "value-less-small-rect",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 200,
+          roundness: { type: 2 },
+        },
+      ],
+    });
+    pasteWithCtrlCmdShiftV(data);
+
+    await waitFor(() => {
+      expect(h.elements.length).toBe(2);
+      // adaptive above the 128px cutoff -> fixed 32px
+      expect(h.elements[0].roundness).toEqual({ type: 3, value: 32 });
+      // proportional: shortest side 100 * 0.25 = 25
+      expect(h.elements[1].roundness).toEqual({ type: 2, value: 25 });
+    });
+  });
+
   it("should retain seed on shift-paste", async () => {
     const rectangle = API.createElement({ type: "rectangle" });
     const clipboardJSON = await serializeAsClipboardJSON({

@@ -52,6 +52,7 @@ import {
   isLineElement,
   isTextElement,
   isUsingAdaptiveRadius,
+  materializeElementRoundnessValue,
   normalizeCornerRadius,
   normalizeElementRoundness,
 } from "@excalidraw/element";
@@ -456,7 +457,10 @@ const restoreElementWithProperties = <
     groupIds: element.groupIds ?? [],
     frameId: element.frameId ?? null,
     roundness: element.roundness
-      ? normalizeElementRoundness(element.roundness)
+      ? materializeElementRoundnessValue(
+          normalizeElementRoundness(element.roundness),
+          element,
+        )
       : element.strokeSharpness === "round"
       ? {
           // for old elements that would now use adaptive radius algo,
