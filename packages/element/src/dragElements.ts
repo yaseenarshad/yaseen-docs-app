@@ -16,13 +16,13 @@ import type {
 import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
 
 import { unbindBindingElement, updateBoundElements } from "./binding";
-import { getCommonBounds } from "./bounds";
-import { getElementsWithinSelection } from "./selection";
+import { getCommonBounds, getElementBounds } from "./bounds";
 import { getPerfectElementSize } from "./sizeHelpers";
 import { getBoundTextElement } from "./textElement";
 import { getMinTextElementWidth } from "./textMeasurements";
 import {
   isArrowElement,
+  isBoundToContainer,
   isElbowArrow,
   isFrameLikeElement,
   isImageElement,
@@ -85,17 +85,33 @@ export const dragSelectedElements = (
       }
     }
     // Frames are one level deep, so a frame drawn around other frames never
-    // owns them. Dragging it still carries everything sitting fully inside
-    // its bounds — nested frames, their children, loose elements — the way a
-    // presenter expects a "part" or "deck" frame to move as one piece.
+    // owns them. Dragging it still carries what sits inside it, the way a
+    // presenter expects a "part" or "deck" frame to move as one piece:
+    // - a nested frame rides along only when it is fully inside (so dragging
+    //   a small slide can never pick up the part frame around it);
+    // - any other element rides along when its centre is inside (a title
+    //   text box a few pixels wider than its frame still belongs to it).
+    // Bound text follows its container; locked elements stay put.
     for (const frame of frames) {
-      for (const element of getElementsWithinSelection(
-        allElements,
-        frame,
-        elementsMap,
-        false,
-      )) {
-        elementsToUpdate.add(element);
+      const [fx1, fy1, fx2, fy2] = getElementBounds(frame, elementsMap);
+      for (const element of allElements) {
+        if (
+          elementsToUpdate.has(element) ||
+          element.locked ||
+          isBoundToContainer(element)
+        ) {
+          continue;
+        }
+        const [x1, y1, x2, y2] = getElementBounds(element, elementsMap);
+        const inside = isFrameLikeElement(element)
+          ? x1 >= fx1 && y1 >= fy1 && x2 <= fx2 && y2 <= fy2
+          : (x1 + x2) / 2 >= fx1 &&
+            (x1 + x2) / 2 <= fx2 &&
+            (y1 + y2) / 2 >= fy1 &&
+            (y1 + y2) / 2 <= fy2;
+        if (inside) {
+          elementsToUpdate.add(element);
+        }
       }
     }
   }
