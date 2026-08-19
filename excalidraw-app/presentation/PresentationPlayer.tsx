@@ -112,6 +112,10 @@ export const PresentationPlayer = ({
   const currentIndexRef = useRef(initialIndex);
   const currentFrameIdRef = useRef<string | null>(null);
   const activeFrameIdRef = useRef<string | null>(null);
+  // Overview is free-form (D8): the canvas pans with the hand tool, so the tool
+  // the presenter had before is remembered here and put back on the way out.
+  const isOverviewRef = useRef(false);
+  const toolBeforeOverviewRef = useRef<string | null>(null);
   const transitionTimerRef = useRef<number | null>(null);
   const transitionTokenRef = useRef(0);
   const sessionIdRef = useRef(createSessionId());
@@ -175,6 +179,28 @@ export const PresentationPlayer = ({
     [excalidrawAPI],
   );
 
+  /** Clears overview state and hands the tool back. Safe when not in overview. */
+  const settleOverview = useCallback(() => {
+    if (!isOverviewRef.current) {
+      return;
+    }
+    isOverviewRef.current = false;
+    setIsOverview(false);
+    const previous = toolBeforeOverviewRef.current;
+    toolBeforeOverviewRef.current = null;
+    // `custom`/`image` cannot be re-activated blindly; selection is the safe default.
+    const type =
+      previous &&
+      previous !== "custom" &&
+      previous !== "image" &&
+      previous !== "hand"
+        ? previous
+        : "selection";
+    excalidrawAPI.setActiveTool({ type } as Parameters<
+      typeof excalidrawAPI.setActiveTool
+    >[0]);
+  }, [excalidrawAPI]);
+
   const navigateTo = useCallback(
     (requestedIndex: number, reason: string) => {
       const currentSlides = slidesRef.current;
@@ -192,7 +218,7 @@ export const PresentationPlayer = ({
 
       // Every navigation lands on a single frame, so it is also the way out of
       // overview — including the arrows pressed while zoomed out.
-      setIsOverview(false);
+      settleOverview();
       clearTransition();
       if (activeFrameIdRef.current) {
         const previousIndex = currentSlides.findIndex(
@@ -241,7 +267,7 @@ export const PresentationPlayer = ({
         });
       }, PRESENTATION_TRANSITION_DURATION + 16);
     },
-    [applyViewport, clearTransition, publish],
+    [applyViewport, clearTransition, publish, settleOverview],
   );
 
   /**
@@ -253,11 +279,12 @@ export const PresentationPlayer = ({
     (reason: string) => {
       didExitRef.current = true;
       clearTransition();
+      settleOverview();
       publish({ frameId: null, order: null, phase: "ended", reason });
       excalidrawAPI.setViewport(null);
       applyFramesVisibility(excalidrawAPI, readFramesVisiblePreference());
     },
-    [clearTransition, excalidrawAPI, publish],
+    [clearTransition, excalidrawAPI, publish, settleOverview],
   );
 
   const exit = useCallback(
@@ -300,7 +327,12 @@ export const PresentationPlayer = ({
     // Otherwise an in-flight transition would land its `active` beat, and play
     // the slide's animation, while the deck is zoomed out.
     clearTransition();
+    isOverviewRef.current = true;
     setIsOverview(true);
+    // Free-form (D8): no lock, and the hand tool so a drag pans instead of
+    // marqueeing. Double-click on a slide is the way in (see the dblclick effect).
+    toolBeforeOverviewRef.current = excalidrawAPI.getAppState().activeTool.type;
+    excalidrawAPI.setActiveTool({ type: "hand" });
     publish({
       frameId: currentFrameIdRef.current,
       order: currentIndexRef.current + 1,
@@ -308,10 +340,18 @@ export const PresentationPlayer = ({
       reason: "overview",
     });
     applyViewport(deckViewportTarget(currentSlides), {
-      locked: true,
+      locked: false,
       animation: { duration: PRESENTATION_TRANSITION_DURATION },
     });
-  }, [applyViewport, clearTransition, publish]);
+  }, [applyViewport, clearTransition, excalidrawAPI, publish]);
+
+  /** Esc in overview: back to the whole deck, still free-form. */
+  const resetOverview = useCallback(() => {
+    applyViewport(deckViewportTarget(slidesRef.current), {
+      locked: false,
+      animation: { duration: PRESENTATION_TRANSITION_DURATION },
+    });
+  }, [applyViewport]);
 
   const leaveOverview = useCallback(
     () => navigateTo(currentIndexRef.current, "overview-return"),
@@ -337,7 +377,10 @@ export const PresentationPlayer = ({
       if (!target || didExitRef.current) {
         return;
       }
-      applyViewport(target, { locked, animation: animated });
+      applyViewport(target, {
+        locked: locked && !isOverview,
+        animation: animated,
+      });
     },
     [applyViewport, isOverview],
   );
@@ -448,7 +491,7 @@ export const PresentationPlayer = ({
         // the presentation (D7): restarting a deck by accident is worse than
         // reaching for the ✕. On a slide it is left to Excalidraw.
         if (isOverview) {
-          leaveOverview();
+          resetOverview();
         } else {
           handled = false;
         }
@@ -491,13 +534,41 @@ export const PresentationPlayer = ({
   }, [
     exit,
     isOverview,
-    leaveOverview,
     navigateTo,
+    resetOverview,
     step,
     toggleOverview,
     toggleTools,
     toolsVisible,
   ]);
+
+  // Overview: double-click the canvas → present the smallest slide under the
+  // pointer. Captured on the document so Excalidraw never sees the dblclick
+  // (which would otherwise start a text element or edit a shape).
+  useEffect(() => {
+    if (!isOverview) {
+      return;
+    }
+    const handleDoubleClick = (event: MouseEvent) => {
+      if (didExitRef.current || isTextEntryTarget(event.target)) {
+        return;
+      }
+      const index = findSlideIndexAtPoint(
+        viewportCoordsToSceneCoords(event, excalidrawAPI.getAppState()),
+        slidesRef.current,
+      );
+      if (index === null) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      navigateTo(index, "overview-dblclick");
+    };
+    document.addEventListener("dblclick", handleDoubleClick, true);
+    return () =>
+      document.removeEventListener("dblclick", handleDoubleClick, true);
+  }, [excalidrawAPI, isOverview, navigateTo]);
 
   useEffect(() => {
     let timer: number | null = null;
@@ -543,19 +614,13 @@ export const PresentationPlayer = ({
         // The overlay is `pointer-events: none` while tools are shown, so this
         // rarely fires then — the guard keeps both click behaviours off for any
         // event that still reaches it.
-        if (toolsVisible || event.target !== event.currentTarget) {
-          return;
-        }
-        if (isOverview) {
-          // Zoomed out, a click means "present that frame". A miss stays in
-          // overview: there is nothing else the gap between frames could mean.
-          const index = findSlideIndexAtPoint(
-            viewportCoordsToSceneCoords(event, excalidrawAPI.getAppState()),
-            slidesRef.current,
-          );
-          if (index !== null) {
-            navigateTo(index, "overview-click");
-          }
+        // In overview the overlay is also `pointer-events: none` (free-form
+        // canvas); a double-click is what presents a slide there.
+        if (
+          toolsVisible ||
+          isOverview ||
+          event.target !== event.currentTarget
+        ) {
           return;
         }
         if (event.clientX < window.innerWidth / 2) {
