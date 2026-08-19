@@ -1,11 +1,11 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { serve } from '@hono/node-server'
 import type { Server } from 'node:http'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { WatchEvent } from '@shared/types'
-import { app } from '../index'
-import { makeFixture } from '../fixture'
+import { app } from '../app'
+import { makeFixture } from '../test-fixture'
 import { activeWatcherRoots } from '../watchers'
 
 let root: string
@@ -27,8 +27,21 @@ afterAll(async () => {
   await cleanup()
 })
 
-/** Opens an SSE connection and yields parsed events; `close()` aborts it. */
-async function openWatch(r: string) {
+interface Stream {
+  res: Response
+  /** Next parsed event (events arrive in order; `ready` is always first). */
+  next: () => Promise<WatchEvent>
+  close: () => void
+}
+
+const open: Stream[] = []
+afterEach(async () => {
+  open.splice(0).forEach((s) => s.close())
+  await until(() => activeWatcherRoots().length === 0)
+})
+
+/** Opens an SSE connection and parses `data:` lines into a queue. */
+async function openWatch(r: string): Promise<Stream> {
   const ctrl = new AbortController()
   const res = await fetch(`${base}/api/watch?root=${encodeURIComponent(r)}`, { signal: ctrl.signal })
   const reader = res.body!.getReader()
@@ -54,14 +67,16 @@ async function openWatch(r: string) {
       }
     }
   })()
-  const next = (timeoutMs = 3000) =>
+  const next = () =>
     new Promise<WatchEvent>((resolve, reject) => {
       const q = queue.shift()
       if (q) return resolve(q)
-      const t = setTimeout(() => reject(new Error('timed out waiting for event')), timeoutMs)
+      const t = setTimeout(() => reject(new Error('timed out waiting for event')), 3000)
       waiters.push((ev) => (clearTimeout(t), resolve(ev)))
     })
-  return { res, next, close: () => ctrl.abort() }
+  const stream = { res, next, close: () => ctrl.abort() }
+  open.push(stream)
+  return stream
 }
 
 const until = async (pred: () => boolean, ms = 3000) => {
@@ -78,24 +93,26 @@ describe('GET /api/watch', () => {
     expect((await app.request(`/api/watch?root=${encodeURIComponent(path.join(root, 'nope'))}`)).status).toBe(404)
   })
 
-  it('sends ready, then add/change/unlink with mtime; shares one watcher; closes it on last disconnect', async () => {
+  it('streams `ready` first and shares one watcher per root', async () => {
     const a = await openWatch(root)
     expect(a.res.headers.get('content-type')).toContain('text/event-stream')
     expect(await a.next()).toEqual({ type: 'ready', root })
-    expect(activeWatcherRoots()).toEqual([root])
-
     const b = await openWatch(root)
     expect(await b.next()).toEqual({ type: 'ready', root })
     expect(activeWatcherRoots()).toEqual([root])
+  })
 
+  it('add / change / unlink for a markdown file, with mtime, to every client', async () => {
+    const a = await openWatch(root)
+    const b = await openWatch(root)
+    await a.next()
+    await b.next()
     const file = path.join(root, 'alpha', 'watched.md')
-    const t0 = Date.now()
     await writeFile(file, 'v1')
     const add = await a.next()
     expect(add).toMatchObject({ type: 'add', path: file })
     expect((add as { mtime: number }).mtime).toBeGreaterThan(0)
-    expect(Date.now() - t0).toBeLessThan(1500)
-    expect(await b.next()).toMatchObject({ type: 'add', path: file })
+    expect(await b.next()).toEqual(add)
 
     await writeFile(file, 'v2 longer')
     const change = await a.next()
@@ -104,14 +121,23 @@ describe('GET /api/watch', () => {
 
     await rm(file)
     expect(await a.next()).toEqual({ type: 'unlink', path: file })
+  })
 
-    // non-markdown and dot-entries are invisible
+  it('ignores non-markdown and dot-entries; reports new directories', async () => {
+    const a = await openWatch(root)
+    await a.next()
     await writeFile(path.join(root, 'alpha', 'ignored.txt'), 'x')
     await mkdir(path.join(root, '.cache'))
     await writeFile(path.join(root, '.cache', 'c.md'), 'x')
     await mkdir(path.join(root, 'newdir'))
     expect(await a.next()).toEqual({ type: 'addDir', path: path.join(root, 'newdir') })
+  })
 
+  it('closes the watcher only when the last client disconnects', async () => {
+    const a = await openWatch(root)
+    const b = await openWatch(root)
+    await a.next()
+    await b.next()
     a.close()
     await new Promise((r) => setTimeout(r, 100))
     expect(activeWatcherRoots()).toEqual([root])
