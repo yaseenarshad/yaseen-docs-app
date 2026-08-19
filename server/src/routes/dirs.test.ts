@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import type { DirsResponse } from '@shared/types'
-import { app } from '../index'
-import { makeFixture } from '../fixture'
+import { app } from '../app'
+import { makeFixture } from '../test-fixture'
 
 let root: string
 let cleanup: () => Promise<void>

@@ -1,13 +1,14 @@
 import { randomBytes } from 'node:crypto'
 import { readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { ApiErrorCode, DirEntry, TreeNode } from '@shared/types'
 import { MARKDOWN_EXTENSIONS } from '@shared/types'
 
 /** Thrown by routes/helpers; mapped to `{ error: { code, message, path } }` by `app.onError`. */
 export class ApiFailure extends Error {
   constructor(
-    readonly status: number,
+    readonly status: ContentfulStatusCode,
     readonly code: ApiErrorCode,
     message: string,
     readonly path?: string,
@@ -76,11 +77,17 @@ export async function fsCall<T>(p: string, fn: () => Promise<T>): Promise<T> {
   }
 }
 
+/** Throws 404 / 403 / 400 NOT_A_DIRECTORY unless `dir` is a readable directory. */
+export async function requireDir(dir: string): Promise<void> {
+  await fsCall(dir, async () => {
+    if (!(await stat(dir)).isDirectory()) throw new ApiFailure(400, 'NOT_A_DIRECTORY', 'expected a directory', dir)
+  })
+}
+
 /** Immediate child directories of `dir` (no dot-dirs / node_modules), sorted case-insensitively. */
 export async function listDirs(dir: string): Promise<DirEntry[]> {
+  await requireDir(dir)
   return fsCall(dir, async () => {
-    const st = await stat(dir)
-    if (!st.isDirectory()) throw new ApiFailure(400, 'NOT_A_DIRECTORY', 'expected a directory', dir)
     const entries = await readdir(dir, { withFileTypes: true })
     return entries
       .filter((e) => e.isDirectory() && !isSkipped(e.name))

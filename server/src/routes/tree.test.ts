@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import path from 'node:path'
 import type { TreeNode, TreeResponse } from '@shared/types'
-import { app } from '../index'
-import { makeFixture } from '../fixture'
+import { app } from '../app'
+import { makeFixture } from '../test-fixture'
 
 let root: string
 let cleanup: () => Promise<void>

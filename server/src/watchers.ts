@@ -1,6 +1,5 @@
 import { watch, type FSWatcher } from 'chokidar'
 import type { Stats } from 'node:fs'
-import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { WatchEvent } from '@shared/types'
 import { isMarkdown, isSkipped } from './fs-utils'
@@ -36,18 +35,17 @@ function createEntry(root: string): Entry {
   })
   const entry: Entry = { watcher, listeners: new Set(), ready: false }
   const emit = (ev: WatchEvent) => entry.listeners.forEach((l) => l(ev))
-  const fileEvent = async (type: 'add' | 'change', p: string, stats?: Stats) => {
-    if (!isMarkdown(p)) return
-    const mtime = stats?.mtimeMs ?? (await stat(p).catch(() => undefined))?.mtimeMs
-    if (mtime !== undefined) emit({ type, path: p, mtime })
+  // `alwaysStat` guarantees stats on add/change; the guard only narrows the type.
+  const fileEvent = (type: 'add' | 'change', p: string, stats?: Stats) => {
+    if (isMarkdown(p) && stats !== undefined) emit({ type, path: p, mtime: stats.mtimeMs })
   }
   watcher
     .on('ready', () => {
       entry.ready = true
       emit({ type: 'ready', root })
     })
-    .on('add', (p, stats) => void fileEvent('add', p, stats))
-    .on('change', (p, stats) => void fileEvent('change', p, stats))
+    .on('add', (p, stats) => fileEvent('add', p, stats))
+    .on('change', (p, stats) => fileEvent('change', p, stats))
     .on('unlink', (p) => isMarkdown(p) && emit({ type: 'unlink', path: p }))
     .on('addDir', (p) => p !== root && emit({ type: 'addDir', path: p }))
     .on('unlinkDir', (p) => p !== root && emit({ type: 'unlinkDir', path: p }))
