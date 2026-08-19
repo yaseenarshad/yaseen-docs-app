@@ -25,10 +25,14 @@ npm run build    # client production build into client/dist
 
 ## Editing
 
-Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Editor rules" for the exact semantics:
+Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Editor rules" and "Keyboard" for the exact semantics:
 
-- **Fold**: parent bullets get a chevron; collapsed state is remembered per file in `localStorage` only — the markdown on disk (and its mtime) is never touched by folding.
+- **Fold**: parent bullets get a chevron; collapsed state is remembered per file in `localStorage` only — the markdown on disk (and its mtime) is never touched by folding. `⌘⇧U` folds every parent, `⌘⇧I` unfolds all.
 - **Keys**: `Tab` indents (no-op on a first sibling), `Shift-Tab` outdents (level 1 → paragraph), `Enter` at the end of a parent creates its first child, `Enter` on an empty item outdents, `Backspace` at the start of an item joins it into the previous line.
+- **Tasks**: `⌘Enter` cycles the item(s) under the selection: bullet → `[ ]` → `[x]` → bullet.
+- **Marks**: `⌘U` toggles underline (stored as `<u>text</u>`, like obsidian-underline), `⌘⇧X` toggles strikethrough.
+- **Zoom**: click a bullet's glyph (or `⌘.` at the caret) to zoom into that subtree, Workflowy-style; breadcrumbs at the top zoom back out (`⌘⇧.` = out one level). View-only — the file is never touched.
+- **Guide lines**: nested lists draw a vertical line under their parent's glyph; clicking a line folds/unfolds that parent (caret stays put).
 - **Look**: ● ○ ■ bullet glyphs by depth and Obsidian's default typography (system font, 16px, Obsidian heading scale).
 - **Round-trip**: the first real edit rewrites the file in remark's normalised form (bullet markers, 2-space indent, …); empty items are written as a bare `*` / `* [ ]`. Typing without changes never writes.
 
