@@ -24,6 +24,8 @@ import { findSlideIndexAtPoint, getOrderedPresentationFrames } from "./slides";
 
 import "./PresentationPlayer.scss";
 
+import type { OrderedPresentationFrame } from "./slides";
+
 export const PRESENTATION_TRANSITION_DURATION = 460;
 
 const PRESENTATION_ACTIVE_BODY_CLASS = "yaseendraw-presentation-active";
@@ -53,6 +55,10 @@ const isTextEntryTarget = (target: EventTarget | null) =>
   (target.tagName === "INPUT" ||
     target.tagName === "TEXTAREA" ||
     target.isContentEditable);
+
+/** Every frame at once — the `setViewport` target while in overview. */
+const deckViewportTarget = (slides: readonly OrderedPresentationFrame[]) =>
+  slides.map(({ frame }) => frame);
 
 /** A control's tooltip and its accessible name are always the same string. */
 const labelled = (label: string) => ({ title: label, "aria-label": label });
@@ -258,7 +264,7 @@ export const PresentationPlayer = ({
       reason: "overview",
     });
     excalidrawAPI.setViewport({
-      target: currentSlides.map(({ frame }) => frame),
+      target: deckViewportTarget(currentSlides),
       fit: "contain",
       animation: { duration: PRESENTATION_TRANSITION_DURATION },
       lock: PRESENTATION_VIEWPORT_LOCK,
@@ -289,18 +295,23 @@ export const PresentationPlayer = ({
       // chrome-hiding CSS has already resolved when `setViewport` measures
       // `[data-viewport-ui]` for its `offsets: { ui: true }`.
       document.body.classList.toggle(PRESENTATION_TOOLS_BODY_CLASS, visible);
-      const frameId = currentFrameIdRef.current;
-      if (!frameId) {
+      // Re-issues whatever the viewport is already showing — the whole deck
+      // while zoomed out, otherwise the current slide — so toggling the tools
+      // in overview does not quietly zoom back into one frame.
+      const target = overview
+        ? deckViewportTarget(slidesRef.current)
+        : currentFrameIdRef.current;
+      if (!target) {
         return;
       }
       excalidrawAPI.setViewport({
-        target: frameId,
+        target,
         fit: "contain",
         offsets: { ui: true },
         ...(visible ? {} : { lock: PRESENTATION_VIEWPORT_LOCK }),
       });
     },
-    [excalidrawAPI],
+    [excalidrawAPI, overview],
   );
 
   const toggleTools = useCallback(

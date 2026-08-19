@@ -627,6 +627,31 @@ describe("PresentationPlayer", () => {
     window.removeEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
   });
 
+  it("keeps the deck framed when the tools are toggled in overview", () => {
+    const { api } = createApi();
+    render(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        initialFrameId="one"
+        onExit={vi.fn()}
+      />,
+    );
+    fireEvent.keyDown(document, { key: "O", shiftKey: true });
+
+    fireEvent.keyDown(document, { key: "T", shiftKey: true });
+
+    expect(api.setViewport).toHaveBeenLastCalledWith({
+      target: [
+        expect.objectContaining({ id: "one" }),
+        expect.objectContaining({ id: "two" }),
+        expect.objectContaining({ id: "three" }),
+      ],
+      fit: "contain",
+      offsets: { ui: true },
+    });
+    expect(screen.getByText("Overview — 3 frames")).toBeVisible();
+  });
+
   it("ignores overview clicks while tools are shown", () => {
     const { api } = createApi();
     render(
