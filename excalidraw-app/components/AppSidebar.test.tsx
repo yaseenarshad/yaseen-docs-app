@@ -642,6 +642,7 @@ describe("AppSidebar", () => {
       toggleSidebar: vi.fn(),
       setViewport,
       updateScene: vi.fn(),
+      updateFrameRendering: vi.fn(),
       setActiveTool: vi.fn(),
     } as unknown as ExcalidrawImperativeAPI;
 

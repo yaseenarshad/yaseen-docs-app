@@ -5,6 +5,11 @@ import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 import {
+  applyFramesVisibility,
+  readFramesVisiblePreference,
+} from "../frames/framesVisibility";
+
+import {
   publishPresentationFrameLifecycle,
   type PresentationFrameLifecyclePhase,
 } from "./events";
@@ -175,6 +180,7 @@ export const PresentationPlayer = ({
         reason,
       });
       excalidrawAPI.setViewport(null);
+      applyFramesVisibility(excalidrawAPI, readFramesVisiblePreference());
       onExitRef.current();
     },
     [clearTransition, excalidrawAPI, publish],
@@ -191,6 +197,9 @@ export const PresentationPlayer = ({
     didExitRef.current = false;
     overlayRef.current?.focus();
     document.body.classList.add("yaseendraw-presentation-active");
+    // Before the first `setViewport` so the opening slide never flashes a
+    // frame outline or name label.
+    applyFramesVisibility(excalidrawAPI, false);
     navigateTo(initialIndex, "start");
 
     const unsubscribe = excalidrawAPI.onChange(
@@ -236,6 +245,7 @@ export const PresentationPlayer = ({
         didExitRef.current = true;
         clearTransition();
         excalidrawAPI.setViewport(null);
+        applyFramesVisibility(excalidrawAPI, readFramesVisiblePreference());
         publish({
           frameId: null,
           order: null,
