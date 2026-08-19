@@ -4,6 +4,7 @@ import { KEYS, isWritableElement } from "@excalidraw/common";
 import { DefaultSidebar, Sidebar } from "@excalidraw/excalidraw";
 import {
   file,
+  frameToolIcon,
   HamburgerMenuIcon,
   ImageIcon,
   LibraryIcon,
@@ -24,6 +25,11 @@ import {
   readProfileSidebarDockPreference,
   writeProfileSidebarDockPreference,
 } from "../cloud/sidebarDockPreference";
+import {
+  applyFramesVisibility,
+  readFramesVisiblePreference,
+  writeFramesVisiblePreference,
+} from "../frames/framesVisibility";
 import { ImageStudio } from "../image-studio/ImageStudio";
 import { PresentationAnimationController } from "../presentation/PresentationAnimationController";
 
@@ -947,6 +953,15 @@ export const AppSidebarLaunchers = ({
   const { openSidebar } = useUIAppState();
   const activeTab =
     openSidebar?.name === "default" ? openSidebar.tab ?? "boards" : null;
+  const [framesVisible, setFramesVisible] = useState(
+    readFramesVisiblePreference,
+  );
+
+  useEffect(() => {
+    if (excalidrawAPI) {
+      applyFramesVisibility(excalidrawAPI, framesVisible);
+    }
+  }, [excalidrawAPI, framesVisible]);
 
   const open = (tab: SidebarTabName) => {
     excalidrawAPI?.toggleSidebar({
@@ -1107,6 +1122,22 @@ export const AppSidebarLaunchers = ({
             </span>
           </button>
         ))}
+        <button
+          type="button"
+          className="app-sidebar-launcher app-sidebar-launcher--quiet app-sidebar-launcher--toggle"
+          aria-label="Show frames"
+          aria-pressed={framesVisible}
+          title={framesVisible ? "Hide frames" : "Show frames"}
+          disabled={!excalidrawAPI}
+          onClick={() => {
+            const nextVisible = !framesVisible;
+            setFramesVisible(nextVisible);
+            writeFramesVisiblePreference(nextVisible);
+          }}
+        >
+          {frameToolIcon}
+          <span className="app-sidebar-launcher__label">Frames</span>
+        </button>
       </div>
       <button
         type="button"

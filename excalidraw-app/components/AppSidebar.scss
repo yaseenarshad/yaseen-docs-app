@@ -65,6 +65,22 @@
     }
   }
 
+  // A preference toggle, not a panel launcher: "on" is the resting state, so
+  // it stays quiet and only dims when the user has switched it off.
+  .app-sidebar-launcher--toggle[aria-pressed="true"] {
+    background: transparent;
+    border-color: transparent;
+    color: var(--text-primary-color);
+
+    &:hover {
+      background: var(--button-hover-bg);
+    }
+  }
+
+  .app-sidebar-launcher--toggle[aria-pressed="false"] {
+    opacity: 0.55;
+  }
+
   .app-sidebar-launchers__boards-menu {
     height: 2rem;
     min-width: 2rem;
