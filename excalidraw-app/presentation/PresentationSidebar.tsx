@@ -1,13 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 
-import type {
-  ExcalidrawElement,
-  ExcalidrawFrameElement,
-} from "@excalidraw/element/types";
+import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
+import { MoveSlideDownIcon, MoveSlideUpIcon, RenameIcon } from "./icons";
 import {
   getOrderedPresentationFrames,
   renamePresentationFrame,
@@ -16,110 +14,41 @@ import {
 
 import "./PresentationSidebar.scss";
 
-const SLIDE_DRAG_MIME = "application/x-yaseendraw-slide-id";
+const slideName = (name: string | null, order: number) =>
+  name?.trim() || `Slide ${order}`;
 
-const frameName = (frame: ExcalidrawFrameElement, order: number) =>
-  frame.name?.trim() || `Slide ${order}`;
-
-const LazyFramePreview = ({
-  frame,
-  order,
-  elements,
+/**
+ * Inline rename field. Uncontrolled on purpose: the scene is the source of
+ * truth for the name, and this only owns the draft while it is open.
+ */
+const SlideNameInput = ({
+  label,
+  initialName,
+  onCommit,
+  onCancel,
 }: {
-  frame: ExcalidrawFrameElement;
-  order: number;
-  elements: readonly ExcalidrawElement[];
-}) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [isVisible, setIsVisible] = useState(
-    () => typeof IntersectionObserver === "undefined",
-  );
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (
-      !container ||
-      isVisible ||
-      typeof IntersectionObserver === "undefined"
-    ) {
-      return;
-    }
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        setIsVisible(true);
-        observer.disconnect();
+  label: string;
+  initialName: string;
+  onCommit: (name: string) => void;
+  onCancel: () => void;
+}) => (
+  <input
+    className="presentation-sidebar__rename"
+    aria-label={label}
+    defaultValue={initialName}
+    autoFocus
+    onKeyDown={(event) => {
+      if (event.key === "Enter") {
+        onCommit(event.currentTarget.value);
+      } else if (event.key === "Escape") {
+        onCancel();
       }
-    });
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [isVisible]);
-
-  const children = elements.filter(
-    (element) => !element.isDeleted && element.frameId === frame.id,
-  );
-  return (
-    <div ref={containerRef} className="presentation-sidebar__preview-shell">
-      {isVisible ? (
-        <svg
-          className="presentation-sidebar__preview"
-          viewBox={`${frame.x} ${frame.y} ${frame.width} ${frame.height}`}
-          preserveAspectRatio="xMidYMid meet"
-          role="img"
-          aria-label={`Preview of ${frameName(frame, order)}`}
-        >
-          <rect
-            x={frame.x}
-            y={frame.y}
-            width={frame.width}
-            height={frame.height}
-            fill="#f8f7f3"
-          />
-          {children.slice(0, 80).map((element) => {
-            if (element.type === "text") {
-              return (
-                <text
-                  key={element.id}
-                  x={element.x}
-                  y={element.y + Math.min(element.fontSize, element.height)}
-                  fill={element.strokeColor || "#14251f"}
-                  fontSize={Math.max(element.fontSize, 12)}
-                  fontWeight={element.fontWeight}
-                >
-                  {element.text.split("\n")[0].slice(0, 80)}
-                </text>
-              );
-            }
-            return (
-              <rect
-                key={element.id}
-                x={element.x}
-                y={element.y}
-                width={Math.max(element.width, 1)}
-                height={Math.max(element.height, 1)}
-                rx={
-                  element.type === "image" || element.type === "iframe" ? 18 : 4
-                }
-                fill={
-                  element.type === "image" || element.type === "iframe"
-                    ? "#d8eee5"
-                    : element.backgroundColor === "transparent"
-                    ? "#ffffff"
-                    : element.backgroundColor
-                }
-                stroke={element.strokeColor || "#d8ded9"}
-                strokeWidth={Math.max(element.strokeWidth, 1)}
-              />
-            );
-          })}
-        </svg>
-      ) : (
-        <span className="presentation-sidebar__preview-loading">
-          Preview loads when visible
-        </span>
-      )}
-    </div>
-  );
-};
+      // Row-level shortcuts (Alt+↑/↓) must not fire while typing a name.
+      event.stopPropagation();
+    }}
+    onBlur={(event) => onCommit(event.currentTarget.value)}
+  />
+);
 
 export const PresentationSidebar = ({
   excalidrawAPI,
@@ -144,6 +73,7 @@ export const PresentationSidebar = ({
         )?.id ?? null
     );
   });
+  const [renamingFrameId, setRenamingFrameId] = useState<string | null>(null);
   const [liveMessage, setLiveMessage] = useState("");
   const slides = useMemo(
     () => getOrderedPresentationFrames(elements),
@@ -208,6 +138,26 @@ export const PresentationSidebar = ({
     [persistOrder, slides],
   );
 
+  const commitRename = useCallback(
+    (frameId: string, order: number, nextName: string) => {
+      setRenamingFrameId(null);
+      const name = nextName.trim();
+      if (!name) {
+        return;
+      }
+      excalidrawAPI.updateScene({
+        elements: renamePresentationFrame(
+          excalidrawAPI.getSceneElements(),
+          frameId,
+          name,
+        ),
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      setLiveMessage(`Slide ${order} renamed to ${name}`);
+    },
+    [excalidrawAPI],
+  );
+
   const focusFrame = (frameId: string) => {
     setActiveFrameId(frameId);
     excalidrawAPI.setViewport({
@@ -243,14 +193,14 @@ export const PresentationSidebar = ({
       aria-labelledby="presentation-title"
     >
       <header className="presentation-sidebar__header">
-        <div>
-          <h2 id="presentation-title">Presentation</h2>
-          <p>{slides.length} slides · drag to reorder</p>
-        </div>
+        <h2 id="presentation-title">Presentation</h2>
+        <p>
+          {slides.length} {slides.length === 1 ? "slide" : "slides"}
+        </p>
       </header>
       <ol className="presentation-sidebar__slides">
         {slides.map(({ frame, order }, index) => {
-          const name = frameName(frame, order);
+          const name = slideName(frame.name, order);
           return (
             <li
               key={frame.id}
@@ -260,100 +210,62 @@ export const PresentationSidebar = ({
                   ? " presentation-sidebar__slide--active"
                   : ""
               }`}
-              draggable={canEdit}
-              onDragStart={(event) => {
-                event.dataTransfer.setData(SLIDE_DRAG_MIME, frame.id);
-              }}
-              onDragOver={(event) => {
-                if (event.dataTransfer.types.includes(SLIDE_DRAG_MIME)) {
-                  event.preventDefault();
-                }
-              }}
-              onDrop={(event) => {
-                if (!canEdit) {
-                  return;
-                }
-                event.preventDefault();
-                const sourceId = event.dataTransfer.getData(SLIDE_DRAG_MIME);
-                const ids = slides.map(({ frame: item }) => item.id);
-                const sourceIndex = ids.indexOf(sourceId);
-                const targetIndex = ids.indexOf(frame.id);
-                if (
-                  sourceIndex < 0 ||
-                  targetIndex < 0 ||
-                  sourceIndex === targetIndex
-                ) {
-                  return;
-                }
-                ids.splice(sourceIndex, 1);
-                const insertionIndex =
-                  sourceIndex < targetIndex ? targetIndex : targetIndex;
-                ids.splice(insertionIndex, 0, sourceId);
-                persistOrder(
-                  ids,
-                  `Slide moved to position ${insertionIndex + 1}`,
-                );
-              }}
             >
-              <button
-                type="button"
-                className="presentation-sidebar__card"
-                aria-label={`Go to slide ${order}`}
-                aria-current={activeFrameId === frame.id ? "true" : undefined}
-                onClick={() => focusFrame(frame.id)}
-              >
-                <LazyFramePreview
-                  frame={frame}
-                  order={order}
-                  elements={elements}
+              {renamingFrameId === frame.id ? (
+                <SlideNameInput
+                  label={`Slide ${order} name`}
+                  initialName={name}
+                  onCommit={(nextName) =>
+                    commitRename(frame.id, order, nextName)
+                  }
+                  onCancel={() => setRenamingFrameId(null)}
                 />
-                <span className="presentation-sidebar__card-copy">
-                  <span className="presentation-sidebar__number">{order}</span>
-                  <strong title={name}>{name}</strong>
-                </span>
-              </button>
-              {canEdit && (
-                <div className="presentation-sidebar__actions">
+              ) : (
+                <>
                   <button
                     type="button"
-                    aria-label={`Move slide ${order} up`}
-                    disabled={index === 0}
-                    onClick={() => moveSlide(frame.id, -1)}
+                    className="presentation-sidebar__open"
+                    aria-label={`Go to slide ${order}`}
+                    aria-current={
+                      activeFrameId === frame.id ? "true" : undefined
+                    }
+                    onClick={() => focusFrame(frame.id)}
                   >
-                    ↑
+                    <span className="presentation-sidebar__number">
+                      {order}
+                    </span>
+                    <span className="presentation-sidebar__name" title={name}>
+                      {name}
+                    </span>
                   </button>
-                  <button
-                    type="button"
-                    aria-label={`Move slide ${order} down`}
-                    disabled={index === slides.length - 1}
-                    onClick={() => moveSlide(frame.id, 1)}
-                  >
-                    ↓
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Rename slide ${order}`}
-                    onClick={() => {
-                      const nextName = window
-                        .prompt("Rename slide", name)
-                        ?.trim();
-                      if (!nextName) {
-                        return;
-                      }
-                      excalidrawAPI.updateScene({
-                        elements: renamePresentationFrame(
-                          excalidrawAPI.getSceneElements(),
-                          frame.id,
-                          nextName,
-                        ),
-                        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-                      });
-                      setLiveMessage(`Slide ${order} renamed to ${nextName}`);
-                    }}
-                  >
-                    Rename
-                  </button>
-                </div>
+                  {canEdit && (
+                    <div className="presentation-sidebar__actions">
+                      <button
+                        type="button"
+                        aria-label={`Rename slide ${order}`}
+                        onClick={() => setRenamingFrameId(frame.id)}
+                      >
+                        {RenameIcon}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Move slide ${order} up`}
+                        disabled={index === 0}
+                        onClick={() => moveSlide(frame.id, -1)}
+                      >
+                        {MoveSlideUpIcon}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Move slide ${order} down`}
+                        disabled={index === slides.length - 1}
+                        onClick={() => moveSlide(frame.id, 1)}
+                      >
+                        {MoveSlideDownIcon}
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </li>
           );
