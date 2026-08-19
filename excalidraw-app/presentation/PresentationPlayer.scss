@@ -7,8 +7,16 @@
 
   // Overview has its own click semantics (click a slide to present it), so
   // the whole viewport gets a visible edge while it is on.
+  // Overview is free-form: the canvas underneath takes the pointer (pan,
+  // zoom, double-click to present a slide); only the bar stays ours. The inset
+  // edge says "different rules here".
   &--overview {
+    pointer-events: none;
     box-shadow: inset 0 0 0 4px var(--color-primary, #6965db);
+
+    .presentation-player__controls {
+      pointer-events: auto;
+    }
   }
 
   &__status {

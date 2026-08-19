@@ -44,7 +44,9 @@ const createApi = (ids = ["one", "two", "three"]) => {
         offsetTop: 0,
         scrollX: 0,
         scrollY: 0,
+        activeTool: { type: "selection" },
       }),
+      setActiveTool: vi.fn(),
       onChange: vi.fn((callback) => {
         onChange = callback;
         return vi.fn();
@@ -499,9 +501,10 @@ describe("PresentationPlayer", () => {
       ],
       fit: "contain",
       animation: { duration: PRESENTATION_TRANSITION_DURATION },
-      lock: { scroll: true, zoom: true, overscroll: false },
       offsets: cameraOffsets(),
     });
+    // Free-form overview (D8): no lock, hand tool so dragging pans.
+    expect(api.setActiveTool).toHaveBeenLastCalledWith({ type: "hand" });
     expect(lifecycle.at(-1)).toMatchObject({
       frameId: "two",
       order: 2,
@@ -511,6 +514,7 @@ describe("PresentationPlayer", () => {
     expect(screen.getByText("Overview — 3 frames")).toBeVisible();
 
     fireEvent.click(control("Exit overview (⇧O)"));
+    expect(api.setActiveTool).toHaveBeenLastCalledWith({ type: "selection" });
 
     expectSlide(2, 3);
     expect(api.setViewport).toHaveBeenLastCalledWith(
@@ -564,7 +568,7 @@ describe("PresentationPlayer", () => {
     );
   });
 
-  it("returns to the slide on Escape from overview and never exits on Escape", () => {
+  it("re-fits the whole deck on Escape in overview and never exits on Escape", () => {
     const { api } = createApi();
     const onExit = vi.fn();
     render(
@@ -581,19 +585,26 @@ describe("PresentationPlayer", () => {
     );
     fireEvent.keyDown(document, { key: "Escape" });
 
+    // Still in overview — Esc just snaps back to the full deck view.
     expect(onExit).not.toHaveBeenCalled();
-    expectSlide(2, 3);
-    expect(screen.getByRole("dialog")).not.toHaveClass(
+    expect(screen.getByRole("dialog")).toHaveClass(
       "presentation-player--overview",
     );
+    expect(api.setViewport).toHaveBeenLastCalledWith(
+      expect.objectContaining({ target: expect.any(Array) }),
+    );
+    expect(api.setViewport).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ lock: expect.anything() }),
+    );
 
+    fireEvent.click(control("Exit overview (⇧O)"));
     fireEvent.keyDown(document, { key: "Escape" });
 
     expect(onExit).not.toHaveBeenCalled();
     expect(api.setViewport).not.toHaveBeenLastCalledWith(null);
   });
 
-  it("presents the frame clicked in overview and ignores a miss", () => {
+  it("presents the frame double-clicked in overview and ignores a miss or single click", () => {
     const { api } = createApi();
     render(
       <PresentationPlayer
@@ -605,10 +616,11 @@ describe("PresentationPlayer", () => {
     fireEvent.keyDown(document, { key: "O", shiftKey: true });
 
     // `frame("three", 3)` sits at x 6000..7280, y 3000..3720.
-    fireEvent.click(screen.getByRole("dialog"), {
-      clientX: 6100,
-      clientY: 3100,
-    });
+    // A single click pans (free-form); it must not present.
+    fireEvent.click(document.body, { clientX: 6100, clientY: 3100 });
+    expect(screen.getByText("Overview — 3 frames")).toBeVisible();
+
+    fireEvent.doubleClick(document.body, { clientX: 6100, clientY: 3100 });
 
     expectSlide(3, 3);
     expect(api.setViewport).toHaveBeenLastCalledWith(
@@ -619,7 +631,7 @@ describe("PresentationPlayer", () => {
     );
 
     fireEvent.keyDown(document, { key: "O", shiftKey: true });
-    fireEvent.click(screen.getByRole("dialog"), { clientX: 1, clientY: 1 });
+    fireEvent.doubleClick(document.body, { clientX: 1, clientY: 1 });
 
     expect(screen.getByText("Overview — 3 frames")).toBeVisible();
     expect(api.setViewport).toHaveBeenLastCalledWith(
@@ -627,7 +639,7 @@ describe("PresentationPlayer", () => {
     );
   });
 
-  it("publishes the normal slide change when a frame is clicked in overview", () => {
+  it("publishes the normal slide change when a frame is double-clicked in overview", () => {
     const { api } = createApi();
     const lifecycle: PresentationFrameLifecycleDetail[] = [];
     const listener = (event: Event) =>
@@ -645,14 +657,11 @@ describe("PresentationPlayer", () => {
     act(() => vi.advanceTimersByTime(PRESENTATION_TRANSITION_DURATION + 20));
 
     fireEvent.keyDown(document, { key: "O", shiftKey: true });
-    fireEvent.click(screen.getByRole("dialog"), {
-      clientX: 4100,
-      clientY: 2100,
-    });
+    fireEvent.doubleClick(document.body, { clientX: 4100, clientY: 2100 });
     act(() => vi.advanceTimersByTime(PRESENTATION_TRANSITION_DURATION + 20));
 
     expect(
-      lifecycle.filter((event) => event.reason === "overview-click"),
+      lifecycle.filter((event) => event.reason === "overview-dblclick"),
     ).toMatchObject([
       { frameId: "one", order: 1, phase: "inactive" },
       { frameId: "two", order: 2, phase: "transitioning" },
@@ -687,7 +696,7 @@ describe("PresentationPlayer", () => {
     expect(screen.getByText("Overview — 3 frames")).toBeVisible();
   });
 
-  it("ignores overview clicks while tools are shown", () => {
+  it("still presents on double-click in overview while tools are shown", () => {
     const { api } = createApi();
     render(
       <PresentationPlayer
@@ -699,12 +708,9 @@ describe("PresentationPlayer", () => {
     fireEvent.keyDown(document, { key: "O", shiftKey: true });
     fireEvent.keyDown(document, { key: "T", shiftKey: true });
 
-    fireEvent.click(screen.getByRole("dialog"), {
-      clientX: 6100,
-      clientY: 3100,
-    });
+    fireEvent.doubleClick(document.body, { clientX: 6100, clientY: 3100 });
 
-    expect(screen.getByText("Overview — 3 frames")).toBeVisible();
+    expectSlide(3, 3);
   });
 
   it("disables overview for a single-slide deck", () => {
@@ -823,7 +829,6 @@ describe("PresentationPlayer", () => {
       fit: "contain",
       animation: false,
       offsets: { ui: true, right: 512 },
-      lock: { scroll: true, zoom: true, overscroll: false },
     });
   });
 
