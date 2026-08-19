@@ -1004,8 +1004,12 @@ describe("restoreElements", () => {
 
       const restored = restore.restoreElements([zero, missing], null);
 
-      expect(restored[0].roundness).toEqual({ type: ROUNDNESS.ADAPTIVE_RADIUS });
-      expect(restored[1].roundness).toEqual({ type: ROUNDNESS.ADAPTIVE_RADIUS });
+      expect(restored[0].roundness).toEqual({
+        type: ROUNDNESS.ADAPTIVE_RADIUS,
+      });
+      expect(restored[1].roundness).toEqual({
+        type: ROUNDNESS.ADAPTIVE_RADIUS,
+      });
     });
 
     it("does not touch value-less roundness on other element families", () => {
