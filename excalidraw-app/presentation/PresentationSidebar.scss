@@ -120,6 +120,9 @@
 
   &__name {
     overflow: hidden;
+    // Without this a flex item refuses to shrink below its text, so a long
+    // slide name would push the row wide instead of ellipsising.
+    min-width: 0;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 0.8rem;

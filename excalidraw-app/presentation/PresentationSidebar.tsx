@@ -1,6 +1,8 @@
 import clsx from "clsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import type { PointerEvent as ReactPointerEvent } from "react";
+
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
@@ -242,6 +244,31 @@ export const PresentationSidebar = ({
     };
   }, [draggedFrameId, slides, updateDropIndex]);
 
+  const startDrag = (
+    event: ReactPointerEvent<HTMLElement>,
+    frameId: string,
+    index: number,
+  ) => {
+    if (event.pointerType === "mouse" && event.button > 0) {
+      // Right/middle click is not a drag.
+      return;
+    }
+    // Keep the browser from starting a text selection or a scroll gesture on
+    // top of the drag.
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    pointerYRef.current = event.clientY;
+    setDrag({ frameId, fromIndex: index, toIndex: index });
+  };
+
+  const trackDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!drag) {
+      return;
+    }
+    pointerYRef.current = event.clientY;
+    updateDropIndex(event.clientY);
+  };
+
   const dropSlide = () => {
     if (drag && drag.toIndex !== drag.fromIndex) {
       const ids = slides.map(({ frame }) => frame.id);
@@ -349,31 +376,11 @@ export const PresentationSidebar = ({
                       type="button"
                       className="presentation-sidebar__handle"
                       aria-label={`Reorder slide ${order}`}
-                      onPointerDown={(event) => {
-                        if (event.pointerType === "mouse" && event.button > 0) {
-                          // Right/middle click is not a drag.
-                          return;
-                        }
-                        // Keep the browser from starting a text selection or a
-                        // scroll gesture on top of the drag.
-                        event.preventDefault();
-                        event.currentTarget.setPointerCapture?.(
-                          event.pointerId,
-                        );
-                        pointerYRef.current = event.clientY;
-                        setDrag({
-                          frameId: frame.id,
-                          fromIndex: index,
-                          toIndex: index,
-                        });
-                      }}
-                      onPointerMove={(event) => {
-                        if (drag?.frameId !== frame.id) {
-                          return;
-                        }
-                        pointerYRef.current = event.clientY;
-                        updateDropIndex(event.clientY);
-                      }}
+                      title="Drag to reorder, or Alt+↑ / Alt+↓"
+                      onPointerDown={(event) =>
+                        startDrag(event, frame.id, index)
+                      }
+                      onPointerMove={trackDrag}
                       onPointerUp={dropSlide}
                       onPointerCancel={() => setDrag(null)}
                     >
