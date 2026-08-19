@@ -435,37 +435,124 @@ describe("PresentationPlayer", () => {
     expect(control("Next slide (→)")).toBeDisabled();
   });
 
-  it("disables overview until GRO-1922 wires a handler", () => {
+  it("zooms out to every frame in overview without changing the slide", () => {
     const { api } = createApi();
-    const onToggleOverview = vi.fn();
-    const { rerender } = render(
-      <PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />,
-    );
-
-    expect(control("Overview (⇧O)")).toBeDisabled();
-
-    rerender(
-      <PresentationPlayer
-        excalidrawAPI={api}
-        onExit={vi.fn()}
-        onToggleOverview={onToggleOverview}
-      />,
-    );
-    fireEvent.click(control("Overview (⇧O)"));
-
-    expect(control("Overview (⇧O)")).toBeEnabled();
-    expect(onToggleOverview).toHaveBeenCalledTimes(1);
-  });
-
-  it("disables overview for a single-slide deck even when wired", () => {
-    const { api } = createApi(["only"]);
+    const lifecycle: PresentationFrameLifecycleDetail[] = [];
+    const listener = (event: Event) =>
+      lifecycle.push(
+        (event as CustomEvent<PresentationFrameLifecycleDetail>).detail,
+      );
+    window.addEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
     render(
       <PresentationPlayer
         excalidrawAPI={api}
+        initialFrameId="two"
         onExit={vi.fn()}
-        onToggleOverview={vi.fn()}
       />,
     );
+    act(() => vi.advanceTimersByTime(PRESENTATION_TRANSITION_DURATION + 20));
+
+    fireEvent.click(control("Overview (⇧O)"));
+
+    expect(api.setViewport).toHaveBeenLastCalledWith({
+      target: [
+        expect.objectContaining({ id: "one" }),
+        expect.objectContaining({ id: "two" }),
+        expect.objectContaining({ id: "three" }),
+      ],
+      fit: "contain",
+      animation: { duration: PRESENTATION_TRANSITION_DURATION },
+      lock: { scroll: true, zoom: true, overscroll: false },
+      offsets: { ui: true },
+    });
+    expect(lifecycle.at(-1)).toMatchObject({
+      frameId: "two",
+      order: 2,
+      phase: "transitioning",
+      reason: "overview",
+    });
+    expect(screen.getByText("Overview — 3 frames")).toBeVisible();
+
+    fireEvent.click(control("Exit overview (⇧O)"));
+
+    expectSlide(2, 3);
+    expect(api.setViewport).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        target: "two",
+        lock: { scroll: true, zoom: true, overscroll: false },
+      }),
+    );
+    expect(lifecycle.at(-1)).toMatchObject({
+      frameId: "two",
+      phase: "transitioning",
+      reason: "overview-return",
+    });
+    window.removeEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
+  });
+
+  it("keeps an in-flight transition from activating while zoomed out", () => {
+    const { api } = createApi();
+    const lifecycle: PresentationFrameLifecycleDetail[] = [];
+    const listener = (event: Event) =>
+      lifecycle.push(
+        (event as CustomEvent<PresentationFrameLifecycleDetail>).detail,
+      );
+    window.addEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
+    render(<PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />);
+
+    fireEvent.keyDown(document, { key: "O", shiftKey: true });
+    act(() => vi.advanceTimersByTime(PRESENTATION_TRANSITION_DURATION + 20));
+
+    expect(lifecycle.some((event) => event.phase === "active")).toBe(false);
+    window.removeEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
+  });
+
+  it("leaves overview when an arrow moves to another slide", () => {
+    const { api } = createApi();
+    render(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        initialFrameId="one"
+        onExit={vi.fn()}
+      />,
+    );
+
+    fireEvent.keyDown(document, { key: "O", shiftKey: true });
+    fireEvent.keyDown(document, { key: "ArrowRight" });
+
+    expectSlide(2, 3);
+    expect(control("Overview (⇧O)")).toBeVisible();
+    expect(api.setViewport).toHaveBeenLastCalledWith(
+      expect.objectContaining({ target: "two" }),
+    );
+  });
+
+  it("returns to the slide on the first Escape from overview, exits on the next", () => {
+    const { api } = createApi();
+    const onExit = vi.fn();
+    render(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        initialFrameId="two"
+        onExit={onExit}
+      />,
+    );
+
+    fireEvent.keyDown(document, { key: "O", shiftKey: true });
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(onExit).not.toHaveBeenCalled();
+    expectSlide(2, 3);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(api.setViewport).toHaveBeenLastCalledWith(null);
+  });
+
+  it("disables overview for a single-slide deck", () => {
+    const { api } = createApi(["only"]);
+    render(<PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />);
 
     expect(control("Overview (⇧O)")).toBeDisabled();
     expect(control("Previous slide (←)")).toBeDisabled();
@@ -488,30 +575,23 @@ describe("PresentationPlayer", () => {
     expect(document.body).not.toHaveClass("yaseendraw-presentation-tools");
   });
 
-  it("routes Shift+O to overview, and does nothing while it is unwired", () => {
+  it("toggles overview on Shift+O and leaves plain o to the ellipse tool", () => {
     const { api } = createApi();
-    const onToggleOverview = vi.fn();
-    const { rerender } = render(
-      <PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />,
+    render(<PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />);
+
+    fireEvent.keyDown(document, { key: "o" });
+
+    expect(control("Overview (⇧O)")).toBeVisible();
+
+    fireEvent.keyDown(document, { key: "O", shiftKey: true });
+    expect(control("Exit overview (⇧O)")).toHaveAttribute(
+      "aria-pressed",
+      "true",
     );
 
     fireEvent.keyDown(document, { key: "O", shiftKey: true });
-    fireEvent.keyDown(document, { key: "o" });
-
-    expect(onToggleOverview).not.toHaveBeenCalled();
     expectSlide(1, 3);
-
-    rerender(
-      <PresentationPlayer
-        excalidrawAPI={api}
-        onExit={vi.fn()}
-        onToggleOverview={onToggleOverview}
-      />,
-    );
-    fireEvent.keyDown(document, { key: "O", shiftKey: true });
-    fireEvent.keyDown(document, { key: "o" });
-
-    expect(onToggleOverview).toHaveBeenCalledTimes(1);
+    expect(control("Overview (⇧O)")).toHaveAttribute("aria-pressed", "false");
   });
 
   it("restores frames when unmounted without an explicit exit", async () => {

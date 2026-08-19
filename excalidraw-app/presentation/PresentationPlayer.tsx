@@ -65,17 +65,10 @@ export const PresentationPlayer = ({
   excalidrawAPI,
   initialFrameId,
   onExit,
-  onToggleOverview,
 }: {
   excalidrawAPI: ExcalidrawImperativeAPI;
   initialFrameId?: string | null;
   onExit: () => void;
-  /**
-   * Overview mode is GRO-1922. Until something passes a handler the overview
-   * button renders disabled rather than hidden, so the bar's width and tab
-   * order do not shift when it arrives.
-   */
-  onToggleOverview?: () => void;
 }) => {
   const initialSlides = useMemo(
     () => getOrderedPresentationFrames(excalidrawAPI.getSceneElements()),
@@ -89,6 +82,7 @@ export const PresentationPlayer = ({
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [isTransitioning, setIsTransitioning] = useState(true);
   const [toolsVisible, setToolsVisible] = useState(false);
+  const [overview, setOverview] = useState(false);
   const slidesRef = useRef(initialSlides);
   const currentIndexRef = useRef(initialIndex);
   const currentFrameIdRef = useRef<string | null>(null);
@@ -148,6 +142,9 @@ export const PresentationPlayer = ({
         return;
       }
 
+      // Every navigation lands on a single frame, so it is also the way out of
+      // overview — including the arrows pressed while zoomed out.
+      setOverview(false);
       clearTransition();
       if (activeFrameIdRef.current) {
         const previousIndex = currentSlides.findIndex(
@@ -235,6 +232,47 @@ export const PresentationPlayer = ({
     (amount: -1 | 1, reason: string) =>
       navigateTo(currentIndexRef.current + amount, reason),
     [navigateTo],
+  );
+
+  /**
+   * Overview zooms out to the whole deck without leaving the presentation. The
+   * lock stays on — panning is the tools toggle's job (D2) — and the current
+   * slide does not change, so the lifecycle only gets a `transitioning` beat
+   * for the frame we are still on. Consumers dedupe on session+frame, so that
+   * beat costs an animation nothing.
+   */
+  const showOverview = useCallback(() => {
+    const currentSlides = slidesRef.current;
+    if (currentSlides.length < 2 || didExitRef.current) {
+      return;
+    }
+    // Otherwise an in-flight transition would land its `active` beat, and play
+    // the slide's animation, while the deck is zoomed out.
+    clearTransition();
+    setOverview(true);
+    publish({
+      frameId: currentFrameIdRef.current,
+      order: currentIndexRef.current + 1,
+      phase: "transitioning",
+      reason: "overview",
+    });
+    excalidrawAPI.setViewport({
+      target: currentSlides.map(({ frame }) => frame),
+      fit: "contain",
+      animation: { duration: PRESENTATION_TRANSITION_DURATION },
+      lock: PRESENTATION_VIEWPORT_LOCK,
+      offsets: { ui: true },
+    });
+  }, [clearTransition, excalidrawAPI, publish]);
+
+  const leaveOverview = useCallback(
+    () => navigateTo(currentIndexRef.current, "overview-return"),
+    [navigateTo],
+  );
+
+  const toggleOverview = useCallback(
+    () => (overview ? leaveOverview() : showOverview()),
+    [leaveOverview, overview, showOverview],
   );
 
   /**
@@ -358,15 +396,19 @@ export const PresentationPlayer = ({
       } else if (key === "End") {
         navigateTo(slidesRef.current.length - 1, "end");
       } else if (key === "Escape") {
-        exit("escape");
+        // The first Esc out of overview goes back to the slide you left; only
+        // an Esc from a slide ends the presentation.
+        if (overview) {
+          leaveOverview();
+        } else {
+          exit("escape");
+        }
       } else if (event.shiftKey && (key === "t" || key === "T")) {
         // Shift, so plain `t` still reaches Excalidraw's text tool (GRO-1954).
         toggleTools();
       } else if (event.shiftKey && (key === "o" || key === "O")) {
-        // Inert until GRO-1922 passes a handler; the key falls through to the
-        // editor until then rather than being silently swallowed.
-        handled = onToggleOverview !== undefined;
-        onToggleOverview?.();
+        // Shift for the same reason as tools: plain `o` stays the ellipse tool.
+        toggleOverview();
       } else if (key === "Tab" && !toolsVisible) {
         // With tools shown the overlay is no longer modal, so the trap would
         // make the toolbar unreachable by keyboard.
@@ -397,7 +439,16 @@ export const PresentationPlayer = ({
     };
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [exit, navigateTo, onToggleOverview, step, toggleTools, toolsVisible]);
+  }, [
+    exit,
+    leaveOverview,
+    navigateTo,
+    overview,
+    step,
+    toggleOverview,
+    toggleTools,
+    toolsVisible,
+  ]);
 
   const current = slides[currentIndex];
   if (!current) {
@@ -417,7 +468,7 @@ export const PresentationPlayer = ({
         // The overlay is `pointer-events: none` while tools are shown, so this
         // rarely fires then — the guard keeps click-half navigation off for any
         // event that still reaches it.
-        if (toolsVisible || event.target !== event.currentTarget) {
+        if (toolsVisible || overview || event.target !== event.currentTarget) {
           return;
         }
         if (event.clientX < window.innerWidth / 2) {
@@ -428,8 +479,11 @@ export const PresentationPlayer = ({
       }}
     >
       <div className="presentation-player__status" aria-live="polite">
-        {isTransitioning ? "Moving to" : "Showing"} slide {currentIndex + 1} of{" "}
-        {slides.length} — {name}
+        {overview
+          ? `Overview — ${slides.length} frames`
+          : `${isTransitioning ? "Moving to" : "Showing"} slide ${
+              currentIndex + 1
+            } of ${slides.length} — ${name}`}
       </div>
       <div className="presentation-player__status" aria-live="polite">
         {toolsVisible ? "Tools shown" : "Tools hidden"}
@@ -458,9 +512,10 @@ export const PresentationPlayer = ({
         <span className="presentation-player__divider" aria-hidden="true" />
         <button
           type="button"
-          {...labelled("Overview (⇧O)")}
-          disabled={!onToggleOverview || slides.length < 2}
-          onClick={onToggleOverview}
+          {...labelled(overview ? "Exit overview (⇧O)" : "Overview (⇧O)")}
+          aria-pressed={overview}
+          disabled={slides.length < 2}
+          onClick={toggleOverview}
         >
           {OverviewIcon}
         </button>
