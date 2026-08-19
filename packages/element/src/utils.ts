@@ -1,5 +1,6 @@
 import {
   CORNER_RADIUS,
+  IMAGE_CORNER_RADIUS_RATIO,
   DEFAULT_ADAPTIVE_RADIUS,
   DEFAULT_ELEMENT_CORNER_RADIUS,
   DEFAULT_PROPORTIONAL_RADIUS,
@@ -551,6 +552,12 @@ export const getDefaultCornerRadiusForElementType = (type: string) => {
 
   return CORNER_RADIUS.default;
 };
+
+/** Inserted-image starting corner radius: 1% of the shortest side (GRO-1928). */
+export const getRelativeImageCornerRadius = (width: number, height: number) =>
+  normalizeCornerRadius(
+    Math.min(Math.abs(width), Math.abs(height)) * IMAGE_CORNER_RADIUS_RATIO,
+  );
 
 export const normalizeElementRoundness = (
   roundness: ExcalidrawElement["roundness"],

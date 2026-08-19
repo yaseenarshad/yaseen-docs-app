@@ -497,6 +497,9 @@ export const getRelativeImageBorderWidth = (width: number, height: number) =>
     Math.min(Math.abs(width), Math.abs(height)) * IMAGE_BORDER_WIDTH_RATIO,
   );
 
+/** Default image corner radius on insertion: 1% of the image's shortest side (GRO-1928). */
+export const IMAGE_CORNER_RADIUS_RATIO = 0.01;
+
 /** @deprecated Use VECTOR_STROKE_WIDTH. */
 export const LINEAR_STROKE_WIDTH = VECTOR_STROKE_WIDTH;
 /** @deprecated Use normalizeVectorStrokeWidth. */

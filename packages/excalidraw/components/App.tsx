@@ -166,6 +166,7 @@ import {
   isInvisiblySmallElement,
   getCornerRadius,
   getDefaultCornerRadiusForElementType,
+  getRelativeImageCornerRadius,
   isPathALoop,
   createSrcDoc,
   embeddableURLValidator,
@@ -13326,6 +13327,15 @@ class App extends React.Component<AppProps, AppState> {
 
             // no need to create a new instance anymore, just assign the natural dimensions
             Object.assign(initializedImageElement, naturalDimensions);
+            // Inserted images start with a corner radius relative to their
+            // real size (GRO-1928). Users can still change it afterward from
+            // the Rounding control.
+            Object.assign(initializedImageElement, {
+              roundness: this.getInsertedImageRoundness(
+                naturalDimensions.width,
+                naturalDimensions.height,
+              ),
+            });
           }
 
           resolve(initializedImageElement);
@@ -13394,6 +13404,20 @@ class App extends React.Component<AppProps, AppState> {
         },
       );
     }
+  };
+
+  /**
+   * Starting roundness for a freshly inserted image once its real dimensions
+   * are known: 1% of the shortest side (GRO-1928). The sticky
+   * `currentItemCornerRadius` is intentionally ignored here; if that decision
+   * flips, this is the single place to prefer the sticky value instead.
+   */
+  private getInsertedImageRoundness = (
+    width: number,
+    height: number,
+  ): ExcalidrawImageElement["roundness"] => {
+    const value = getRelativeImageCornerRadius(width, height);
+    return value > 0 ? { type: ROUNDNESS.ADAPTIVE_RADIUS, value } : null;
   };
 
   private getImageNaturalDimensions = (
