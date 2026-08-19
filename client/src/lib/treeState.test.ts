@@ -1,0 +1,42 @@
+import { describe, expect, it } from 'vitest'
+import type { TreeNode } from '@shared/types'
+import { ancestorDirs, treeHasFile, treeReducer } from './treeState'
+
+describe('treeReducer', () => {
+  it('toggle adds then removes a dir', () => {
+    const a = treeReducer([], { type: 'toggle', dir: '/r/a' })
+    expect(a).toEqual(['/r/a'])
+    expect(treeReducer(a, { type: 'toggle', dir: '/r/a' })).toEqual([])
+  })
+
+  it('expandTo opens every ancestor of the file under root and keeps existing state', () => {
+    const next = treeReducer(['/r/other'], { type: 'expandTo', root: '/r', file: '/r/a/b/c.md' })
+    expect(next).toEqual(['/r/other', '/r/a', '/r/a/b'])
+    expect(treeReducer(next, { type: 'expandTo', root: '/r', file: '/r/a/b/c.md' })).toBe(next)
+  })
+
+  it('replace swaps the whole set', () => {
+    expect(treeReducer(['/r/a'], { type: 'replace', dirs: ['/r/z'] })).toEqual(['/r/z'])
+  })
+})
+
+describe('ancestorDirs', () => {
+  it('returns nothing for a file directly under root or outside it', () => {
+    expect(ancestorDirs('/r', '/r/x.md')).toEqual([])
+    expect(ancestorDirs('/r', '/other/x.md')).toEqual([])
+    expect(ancestorDirs('/r/', '/r/a/x.md')).toEqual(['/r/a'])
+  })
+})
+
+describe('treeHasFile', () => {
+  const tree: TreeNode[] = [
+    { type: 'dir', name: 'a', path: '/r/a', children: [{ type: 'file', name: 'x.md', path: '/r/a/x.md', size: 1, mtime: 1 }] },
+    { type: 'file', name: 'y.md', path: '/r/y.md', size: 1, mtime: 1 },
+  ]
+  it('finds nested and top-level files only', () => {
+    expect(treeHasFile(tree, '/r/a/x.md')).toBe(true)
+    expect(treeHasFile(tree, '/r/y.md')).toBe(true)
+    expect(treeHasFile(tree, '/r/a')).toBe(false)
+    expect(treeHasFile(tree, '/r/z.md')).toBe(false)
+  })
+})
