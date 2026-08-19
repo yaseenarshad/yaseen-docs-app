@@ -55,7 +55,7 @@ const isListItem = (node: ProseNode | null | undefined): node is ProseNode => no
 export const getZoomedItemPos = (state: EditorState): number | null => pluginKey.getState(state)?.itemPos ?? null
 
 /** First-block text of a list item, trimmed and truncated for the breadcrumb. */
-export const itemLabel = (item: ProseNode): string => {
+const itemLabel = (item: ProseNode): string => {
   const text = item.firstChild?.textContent.trim() || 'Untitled item'
   return text.length > LABEL_MAX_CHARS ? `${text.slice(0, LABEL_MAX_CHARS - 1).trimEnd()}…` : text
 }
@@ -76,7 +76,7 @@ const itemAtSelection = (state: EditorState): number | null => {
 }
 
 /** Zoom into the list_item at `itemPos`; moves the caret into it if the selection was outside. */
-export const zoomTo = (itemPos: ZoomMeta): Command => (state, dispatch) => {
+const zoomTo = (itemPos: ZoomMeta): Command => (state, dispatch) => {
   const zoom = pluginKey.getState(state)
   if (!zoom || zoom.itemPos === itemPos) return false
   if (itemPos !== null && !isListItem(state.doc.nodeAt(itemPos))) return false
@@ -94,13 +94,13 @@ export const zoomTo = (itemPos: ZoomMeta): Command => (state, dispatch) => {
 }
 
 /** `Mod-.`: zoom into the item at the caret. */
-export const zoomIntoSelection: Command = (state, dispatch) => {
+const zoomIntoSelection: Command = (state, dispatch) => {
   const itemPos = itemAtSelection(state)
   return itemPos === null ? false : zoomTo(itemPos)(state, dispatch)
 }
 
 /** `Mod-Shift-.`: zoom out one level (to the parent item, or fully when the zoomed item is top-level). */
-export const zoomOutOneLevel: Command = (state, dispatch) => {
+const zoomOutOneLevel: Command = (state, dispatch) => {
   const itemPos = getZoomedItemPos(state)
   if (itemPos === null) return false
   const parents = ancestorItemPositions(state.doc.resolve(itemPos))

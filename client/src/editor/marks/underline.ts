@@ -110,7 +110,7 @@ export const underlineSchema = $markSchema('underline', () => ({
 /** Priority above Crepe's keymaps (default 50), like the outliner keymaps. */
 const PRIORITY = 100
 
-export const toggleUnderline = (ctx: Ctx): Command => toggleMark(underlineSchema.type(ctx))
+const toggleUnderline = (ctx: Ctx): Command => toggleMark(underlineSchema.type(ctx))
 
 export const underlineKeymap = $shortcut((ctx: Ctx) => ({
   ToggleUnderline: { key: 'Mod-u', priority: PRIORITY, onRun: () => toggleUnderline(ctx) },
