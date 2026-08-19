@@ -15,6 +15,7 @@ import {
   readFramesVisiblePreference,
 } from "../frames/framesVisibility";
 
+import { getPresentationViewportOffsets } from "./camera";
 import {
   publishPresentationFrameLifecycle,
   type PresentationFrameLifecyclePhase,
@@ -44,6 +45,13 @@ const PRESENTATION_VIEWPORT_LOCK = {
   zoom: true,
   overscroll: false,
 } as const;
+
+/**
+ * The camera reserve is a fraction of the window, so every resize has to be
+ * followed by a re-fit. Resizing fires a burst of events and each re-fit is a
+ * full viewport write, so only the trailing one lands.
+ */
+const PRESENTATION_RESIZE_DEBOUNCE = 100;
 
 /**
  * Excalidraw's text editor is a `textarea` and the chrome is full of inputs, so
@@ -182,7 +190,7 @@ export const PresentationPlayer = ({
         fit: "contain",
         animation: { duration: PRESENTATION_TRANSITION_DURATION },
         lock: PRESENTATION_VIEWPORT_LOCK,
-        offsets: { ui: true },
+        offsets: getPresentationViewportOffsets(),
       });
       transitionTimerRef.current = window.setTimeout(() => {
         if (
@@ -268,7 +276,7 @@ export const PresentationPlayer = ({
       fit: "contain",
       animation: { duration: PRESENTATION_TRANSITION_DURATION },
       lock: PRESENTATION_VIEWPORT_LOCK,
-      offsets: { ui: true },
+      offsets: getPresentationViewportOffsets(),
     });
   }, [clearTransition, excalidrawAPI, publish]);
 
@@ -283,6 +291,31 @@ export const PresentationPlayer = ({
   );
 
   /**
+   * Re-fits whatever the viewport is already showing — the whole deck while
+   * zoomed out, otherwise the current slide — with freshly measured offsets, so
+   * toggling the tools in overview does not quietly zoom back into one frame
+   * and a resize does not leave the slide fitted to the old window.
+   */
+  const refit = useCallback(
+    ({ locked, animated }: { locked: boolean; animated: boolean }) => {
+      const target = overview
+        ? deckViewportTarget(slidesRef.current)
+        : currentFrameIdRef.current;
+      if (!target || didExitRef.current) {
+        return;
+      }
+      excalidrawAPI.setViewport({
+        target,
+        fit: "contain",
+        animation: animated,
+        offsets: getPresentationViewportOffsets(),
+        ...(locked ? { lock: PRESENTATION_VIEWPORT_LOCK } : {}),
+      });
+    },
+    [excalidrawAPI, overview],
+  );
+
+  /**
    * Tools shown means the canvas is the presenter's again: the chrome comes
    * back, the overlay stops swallowing pointer events (both via the body class)
    * and the viewport is re-issued without the lock. Hiding them puts the lock
@@ -293,25 +326,13 @@ export const PresentationPlayer = ({
       setToolsVisible(visible);
       // Written straight to the DOM instead of from an effect so the
       // chrome-hiding CSS has already resolved when `setViewport` measures
-      // `[data-viewport-ui]` for its `offsets: { ui: true }`.
+      // `[data-viewport-ui]` for the `ui` half of its offsets.
       document.body.classList.toggle(PRESENTATION_TOOLS_BODY_CLASS, visible);
-      // Re-issues whatever the viewport is already showing — the whole deck
-      // while zoomed out, otherwise the current slide — so toggling the tools
-      // in overview does not quietly zoom back into one frame.
-      const target = overview
-        ? deckViewportTarget(slidesRef.current)
-        : currentFrameIdRef.current;
-      if (!target) {
-        return;
-      }
-      excalidrawAPI.setViewport({
-        target,
-        fit: "contain",
-        offsets: { ui: true },
-        ...(visible ? {} : { lock: PRESENTATION_VIEWPORT_LOCK }),
-      });
+      // The reserve holds even with the tools out — only the lock is dropped,
+      // so the presenter can pan away from the left-hand fit if they want to.
+      refit({ locked: !visible, animated: true });
     },
-    [excalidrawAPI, overview],
+    [refit],
   );
 
   const toggleTools = useCallback(
@@ -461,6 +482,28 @@ export const PresentationPlayer = ({
     toggleTools,
     toolsVisible,
   ]);
+
+  useEffect(() => {
+    let timer: number | null = null;
+    const handleResize = () => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+      timer = window.setTimeout(() => {
+        timer = null;
+        // Instantly, and with the lock exactly as the presenter left it: a
+        // resize is not a navigation, it just re-measures the same view.
+        refit({ locked: !toolsVisible, animated: false });
+      }, PRESENTATION_RESIZE_DEBOUNCE);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [refit, toolsVisible]);
 
   const current = slides[currentIndex];
   if (!current) {
