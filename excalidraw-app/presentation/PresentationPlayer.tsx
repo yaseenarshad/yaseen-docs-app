@@ -444,12 +444,13 @@ export const PresentationPlayer = ({
       } else if (key === "End") {
         navigateTo(slidesRef.current.length - 1, "end");
       } else if (key === "Escape") {
-        // The first Esc out of overview goes back to the slide you left; only
-        // an Esc from a slide ends the presentation.
+        // Esc steps back out of overview to the slide you left. It never ends
+        // the presentation (D7): restarting a deck by accident is worse than
+        // reaching for the ✕. On a slide it is left to Excalidraw.
         if (isOverview) {
           leaveOverview();
         } else {
-          exit("escape");
+          handled = false;
         }
       } else if (event.shiftKey && (key === "t" || key === "T")) {
         // Shift, so plain `t` still reaches Excalidraw's text tool (GRO-1954).
@@ -529,7 +530,11 @@ export const PresentationPlayer = ({
   return createPortal(
     <div
       ref={overlayRef}
-      className="presentation-player"
+      className={
+        isOverview
+          ? "presentation-player presentation-player--overview"
+          : "presentation-player"
+      }
       role="dialog"
       aria-modal={!toolsVisible}
       aria-label="Presentation mode"
@@ -610,7 +615,7 @@ export const PresentationPlayer = ({
         <span className="presentation-player__divider" aria-hidden="true" />
         <button
           type="button"
-          {...labelled("Exit presentation (Esc)")}
+          {...labelled("Exit presentation")}
           onClick={() => exit("exit-button")}
         >
           {CloseIcon}
