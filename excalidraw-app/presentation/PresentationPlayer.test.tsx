@@ -77,6 +77,8 @@ const cameraOffsets = () => ({
   right: Math.round(window.innerWidth * 0.32),
 });
 
+const DEFAULT_WINDOW_WIDTH = window.innerWidth;
+
 const setWindowWidth = (width: number) =>
   Object.defineProperty(window, "innerWidth", {
     value: width,
@@ -89,7 +91,12 @@ describe("PresentationPlayer", () => {
     window.localStorage.removeItem(FRAMES_VISIBLE_STORAGE_KEY);
     vi.useFakeTimers();
   });
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    // Half the suite reads `innerWidth` (click-half navigation, the camera
+    // reserve), so a resize test must not leak its window into the next one.
+    setWindowWidth(DEFAULT_WINDOW_WIDTH);
+  });
 
   it("starts from the highlighted slide and publishes transition then active", () => {
     const { api } = createApi();
@@ -736,7 +743,6 @@ describe("PresentationPlayer", () => {
   });
 
   it("re-fits the slide with fresh offsets on resize, and stops once exited", () => {
-    const originalWidth = window.innerWidth;
     const { api } = createApi();
     render(
       <PresentationPlayer
@@ -782,12 +788,9 @@ describe("PresentationPlayer", () => {
     fireEvent(window, new Event("resize"));
     act(() => vi.advanceTimersByTime(200));
     expect(api.setViewport).toHaveBeenLastCalledWith(null);
-
-    setWindowWidth(originalWidth);
   });
 
   it("re-fits the whole deck on resize while in overview", () => {
-    const originalWidth = window.innerWidth;
     const { api } = createApi();
     render(
       <PresentationPlayer
@@ -813,8 +816,6 @@ describe("PresentationPlayer", () => {
       offsets: { ui: true, right: 512 },
       lock: { scroll: true, zoom: true, overscroll: false },
     });
-
-    setWindowWidth(originalWidth);
   });
 
   it("restores frames when unmounted without an explicit exit", async () => {
