@@ -11,7 +11,9 @@
  *    `\[\[wikilink]]` / `!\[\[embed]]` that remark-stringify escapes.
  */
 import { Crepe, type CrepeConfig } from '@milkdown/crepe'
+import { editorViewCtx } from '@milkdown/kit/core'
 import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
+import { Selection } from '@milkdown/kit/prose/state'
 import { replaceAll } from '@milkdown/kit/utils'
 
 export interface CreateCrepeOptions {
@@ -57,9 +59,22 @@ export function getMarkdownForSave(crepe: Crepe): string {
   return postProcessMarkdown(crepe.getMarkdown())
 }
 
-/** Replace the whole document in an existing instance (e.g. external file change). */
+/**
+ * Replace the whole document in an existing instance (e.g. external file change).
+ * Uses `flush` (fresh EditorState, so no `markdownUpdated` fires and history is
+ * reset) but keeps focus and the caret position so the user is not kicked out.
+ */
 export function setMarkdown(crepe: Crepe, markdown: string): void {
-  crepe.editor.action(replaceAll(markdown, true))
+  crepe.editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx)
+    const hadFocus = view.hasFocus()
+    const { from } = view.state.selection
+    replaceAll(markdown, true)(ctx)
+    const doc = view.state.doc
+    const sel = Selection.near(doc.resolve(Math.min(from, doc.content.size)))
+    view.dispatch(view.state.tr.setSelection(sel))
+    if (hadFocus) view.focus()
+  })
 }
 
 export function postProcessMarkdown(md: string): string {

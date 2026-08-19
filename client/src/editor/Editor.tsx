@@ -1,16 +1,19 @@
 import { useEffect, useRef } from 'react'
 import type { FileResponse } from '@shared/types'
-import { createCrepe } from './createCrepe'
+import { api } from '../api'
+import { createCrepe, getMarkdownForSave, setMarkdown } from './createCrepe'
 import { splitFrontmatter } from './frontmatter'
 import { SaveIndicator } from './SaveIndicator'
 import { useAutosave } from '../hooks/useAutosave'
 import { useFile } from '../hooks/useFile'
+import type { WatchSource } from '../hooks/useWatch'
 
 interface EditorProps {
   path: string | null
+  watch: WatchSource
 }
 
-export function Editor({ path }: EditorProps) {
+export function Editor({ path, watch }: EditorProps) {
   const state = useFile(path)
   const file = state.status === 'ready' ? state.file : null
   return (
@@ -18,16 +21,17 @@ export function Editor({ path }: EditorProps) {
       {state.status === 'idle' && <p className="editor-msg">Select a file from the sidebar.</p>}
       {state.status === 'loading' && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
-      {file !== null && <CrepeHost key={file.path} file={file} />}
+      {file !== null && <CrepeHost key={file.path} file={file} watch={watch} />}
     </section>
   )
 }
 
 /** Mounts exactly one Crepe instance for `file`; remounted (via `key`) when the path changes. */
-function CrepeHost({ file }: { file: FileResponse }) {
+function CrepeHost({ file, watch }: { file: FileResponse; watch: WatchSource }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const autosave = useAutosave(file.path)
-  const { attach } = autosave
+  const { attach, markReloaded, reportConflict } = autosave
+  const reloadRef = useRef<() => void>(() => {})
 
   useEffect(() => {
     const host = hostRef.current
@@ -43,15 +47,47 @@ function CrepeHost({ file }: { file: FileResponse }) {
     const ready = crepe.create().then(() => {
       if (!cancelled) controller = attach(crepe, file.mtime, frontmatter)
     })
+
+    const reload = async () => {
+      const fresh = await api.readFile(file.path)
+      if (cancelled) return
+      const split = splitFrontmatter(fresh.content)
+      setMarkdown(crepe, split.body)
+      markReloaded(crepe, fresh.mtime, split.frontmatter)
+    }
+    reloadRef.current = () => void reload()
+
+    const unsubscribe = watch.subscribe((ev) => {
+      if (ev.type !== 'change' || ev.path !== file.path || controller === null) return
+      if (ev.mtime === controller.mtime) return // echo of our own PUT
+      // The listener plugin debounces markdownUpdated by 200ms, so pull the live content
+      // before deciding whether in-progress typing would be lost by a silent reload.
+      controller.update(getMarkdownForSave(crepe))
+      if (controller.dirty) reportConflict(ev.mtime)
+      else void reload()
+    })
+
     return () => {
       cancelled = true
+      unsubscribe()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [file, attach])
+  }, [file, watch, attach, markReloaded, reportConflict])
 
   return (
     <>
       <SaveIndicator status={autosave.status} />
+      {autosave.conflictMtime !== null && (
+        <div className="conflict-bar" role="alert">
+          <span>File changed on disk.</span>
+          <button type="button" onClick={() => reloadRef.current()}>
+            Reload
+          </button>
+          <button type="button" onClick={autosave.keepMine}>
+            Keep mine
+          </button>
+        </div>
+      )}
       <div className="editor-host" ref={hostRef} />
     </>
   )

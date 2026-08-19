@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Editor } from './editor/Editor'
+import { useWatch } from './hooks/useWatch'
 
 /** Temporary shell until the sidebar lands (GRO-1971): open a file via `#/abs/path.md`. */
 export function App() {
@@ -9,9 +10,10 @@ export function App() {
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
+  const watch = useWatch(path === null ? null : path.slice(0, path.lastIndexOf('/')))
   return (
     <div className="app">
-      <Editor path={path} />
+      <Editor path={path} watch={watch} />
     </div>
   )
 }
