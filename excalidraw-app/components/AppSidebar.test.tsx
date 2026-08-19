@@ -619,7 +619,10 @@ describe("AppSidebar", () => {
     const setViewport = vi.fn();
     const api = {
       getSceneElements: () => [frame],
-      getAppState: () => ({ selectedElementIds: {} }),
+      getAppState: () => ({
+        selectedElementIds: {},
+        activeTool: { type: "selection" },
+      }),
       onChange: vi.fn(() => vi.fn()),
       toggleSidebar: vi.fn(),
       setViewport,
@@ -659,9 +662,7 @@ describe("AppSidebar", () => {
       expect.objectContaining({ target: "opening-frame" }),
     );
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Exit presentation (Esc)" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Exit presentation" }));
     expect(setViewport).toHaveBeenLastCalledWith(null);
     expect(
       screen.queryByRole("dialog", { name: "Presentation mode" }),
