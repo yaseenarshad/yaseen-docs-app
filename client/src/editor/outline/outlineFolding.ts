@@ -13,15 +13,15 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { findNestedList } from './listNodes'
+import { findNestedLists } from './listNodes'
 import { getOutlineFoldKey } from './outlineFoldKeys'
 
 interface OutlineEntry {
   foldKey: string
   itemPos: number
   label: string
-  nestedListPos: number
-  nestedListEnd: number
+  /** Document ranges of every nested list (mixed markers parse as sibling lists; folding hides them all). */
+  nestedListRanges: readonly { from: number; to: number }[]
 }
 
 interface OutlineFoldingState {
@@ -79,19 +79,20 @@ const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
 
   doc.descendants((node, itemPos) => {
     if (node.type.name !== 'list_item') return true
-    const nested = findNestedList(node)
-    if (nested === null) return true
+    const nestedLists = findNestedLists(node)
+    if (nestedLists.length === 0) return true
 
     const label = node.firstChild?.textContent.trim() || 'Untitled item'
     const occurrence = labelOccurrences.get(label) ?? 0
     labelOccurrences.set(label, occurrence + 1)
-    const nestedListPos = itemPos + 1 + nested.offset
     entries.push({
       foldKey: getOutlineFoldKey(label, occurrence),
       itemPos,
       label,
-      nestedListPos,
-      nestedListEnd: nestedListPos + nested.list.nodeSize,
+      nestedListRanges: nestedLists.map(({ list, offset }) => {
+        const from = itemPos + 1 + offset
+        return { from, to: from + list.nodeSize }
+      }),
     })
     return true
   })
@@ -184,11 +185,9 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
                 ),
               )
               if (collapsed) {
-                decorations.push(
-                  Decoration.node(entry.nestedListPos, entry.nestedListEnd, {
-                    [OUTLINE_FOLDED_ATTR]: 'true',
-                  }),
-                )
+                entry.nestedListRanges.forEach(({ from, to }) => {
+                  decorations.push(Decoration.node(from, to, { [OUTLINE_FOLDED_ATTR]: 'true' }))
+                })
               }
             })
             return DecorationSet.create(state.doc, decorations)
