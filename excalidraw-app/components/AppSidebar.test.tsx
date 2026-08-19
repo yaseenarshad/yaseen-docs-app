@@ -16,6 +16,7 @@ import { newFrameElement } from "@excalidraw/element";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 import { CloudProfileContext } from "../cloud/CloudProfileContext";
+import { FRAMES_VISIBLE_STORAGE_KEY } from "../frames/framesVisibility";
 
 import {
   AppSidebar,
@@ -41,20 +42,24 @@ const organizerProps = {
   onMove: vi.fn().mockResolvedValue(undefined),
 };
 
+const launcherApi = (toggleSidebar = vi.fn(), getAppState?: () => unknown) =>
+  ({
+    toggleSidebar,
+    getAppState,
+    updateFrameRendering: vi.fn(),
+  } as unknown as ExcalidrawImperativeAPI);
+
 describe("AppSidebarLaunchers", () => {
   beforeEach(() => {
     window.localStorage.removeItem("yaseen-whiteboard-last-sidebar-section");
+    window.localStorage.removeItem(FRAMES_VISIBLE_STORAGE_KEY);
   });
 
   it("exposes Docs only when the current Board can manage them", () => {
     const toggleSidebar = vi.fn();
     const { rerender } = render(
       <UIAppStateContext.Provider value={{ openSidebar: null } as never}>
-        <AppSidebarLaunchers
-          excalidrawAPI={
-            { toggleSidebar } as unknown as ExcalidrawImperativeAPI
-          }
-        />
+        <AppSidebarLaunchers excalidrawAPI={launcherApi(toggleSidebar)} />
       </UIAppStateContext.Provider>,
     );
 
@@ -63,9 +68,7 @@ describe("AppSidebarLaunchers", () => {
     rerender(
       <UIAppStateContext.Provider value={{ openSidebar: null } as never}>
         <AppSidebarLaunchers
-          excalidrawAPI={
-            { toggleSidebar } as unknown as ExcalidrawImperativeAPI
-          }
+          excalidrawAPI={launcherApi(toggleSidebar)}
           canManageDocs
         />
       </UIAppStateContext.Provider>,
@@ -89,13 +92,7 @@ describe("AppSidebarLaunchers", () => {
           } as never
         }
       >
-        <AppSidebarLaunchers
-          excalidrawAPI={
-            {
-              toggleSidebar,
-            } as unknown as ExcalidrawImperativeAPI
-          }
-        />
+        <AppSidebarLaunchers excalidrawAPI={launcherApi(toggleSidebar)} />
       </UIAppStateContext.Provider>,
     );
 
@@ -120,11 +117,7 @@ describe("AppSidebarLaunchers", () => {
   it("renders the three labeled launchers with the quiet unboxed treatment", () => {
     render(
       <UIAppStateContext.Provider value={{ openSidebar: null } as never}>
-        <AppSidebarLaunchers
-          excalidrawAPI={
-            { toggleSidebar: vi.fn() } as unknown as ExcalidrawImperativeAPI
-          }
-        />
+        <AppSidebarLaunchers excalidrawAPI={launcherApi()} />
       </UIAppStateContext.Provider>,
     );
 
@@ -148,11 +141,7 @@ describe("AppSidebarLaunchers", () => {
       <UIAppStateContext.Provider
         value={{ openSidebar: { name: "default", tab: "boards" } } as never}
       >
-        <AppSidebarLaunchers
-          excalidrawAPI={
-            { toggleSidebar } as unknown as ExcalidrawImperativeAPI
-          }
-        />
+        <AppSidebarLaunchers excalidrawAPI={launcherApi(toggleSidebar)} />
       </UIAppStateContext.Provider>,
     );
 
@@ -179,13 +168,7 @@ describe("AppSidebarLaunchers", () => {
           } as never
         }
       >
-        <AppSidebarLaunchers
-          excalidrawAPI={
-            {
-              toggleSidebar,
-            } as unknown as ExcalidrawImperativeAPI
-          }
-        />
+        <AppSidebarLaunchers excalidrawAPI={launcherApi(toggleSidebar)} />
       </UIAppStateContext.Provider>,
     );
 
@@ -225,13 +208,7 @@ describe("AppSidebarLaunchers", () => {
           } as never
         }
       >
-        <AppSidebarLaunchers
-          excalidrawAPI={
-            {
-              toggleSidebar,
-            } as unknown as ExcalidrawImperativeAPI
-          }
-        />
+        <AppSidebarLaunchers excalidrawAPI={launcherApi(toggleSidebar)} />
       </UIAppStateContext.Provider>,
     );
 
@@ -261,13 +238,7 @@ describe("AppSidebarLaunchers", () => {
           } as never
         }
       >
-        <AppSidebarLaunchers
-          excalidrawAPI={
-            {
-              toggleSidebar,
-            } as unknown as ExcalidrawImperativeAPI
-          }
-        />
+        <AppSidebarLaunchers excalidrawAPI={launcherApi(toggleSidebar)} />
       </UIAppStateContext.Provider>,
     );
 
@@ -295,12 +266,7 @@ describe("AppSidebarLaunchers", () => {
       render(
         <UIAppStateContext.Provider value={appState as never}>
           <AppSidebarLaunchers
-            excalidrawAPI={
-              {
-                getAppState: () => appState,
-                toggleSidebar,
-              } as unknown as ExcalidrawImperativeAPI
-            }
+            excalidrawAPI={launcherApi(toggleSidebar, () => appState)}
             onRequestImageStudioSearch={onRequestImageStudioSearch}
           />
         </UIAppStateContext.Provider>,
@@ -342,12 +308,7 @@ describe("AppSidebarLaunchers", () => {
       render(
         <UIAppStateContext.Provider value={appState as never}>
           <AppSidebarLaunchers
-            excalidrawAPI={
-              {
-                getAppState: () => appState,
-                toggleSidebar,
-              } as unknown as ExcalidrawImperativeAPI
-            }
+            excalidrawAPI={launcherApi(toggleSidebar, () => appState)}
             onRequestImageStudioSearch={onRequestImageStudioSearch}
           />
         </UIAppStateContext.Provider>,
@@ -390,12 +351,7 @@ describe("AppSidebarLaunchers", () => {
             <input aria-label="Active panel input" />
           </div>
           <AppSidebarLaunchers
-            excalidrawAPI={
-              {
-                getAppState: () => appState,
-                toggleSidebar,
-              } as unknown as ExcalidrawImperativeAPI
-            }
+            excalidrawAPI={launcherApi(toggleSidebar, () => appState)}
           />
         </UIAppStateContext.Provider>,
       );
@@ -428,12 +384,7 @@ describe("AppSidebarLaunchers", () => {
     render(
       <UIAppStateContext.Provider value={appState as never}>
         <AppSidebarLaunchers
-          excalidrawAPI={
-            {
-              getAppState: () => appState,
-              toggleSidebar,
-            } as unknown as ExcalidrawImperativeAPI
-          }
+          excalidrawAPI={launcherApi(toggleSidebar, () => appState)}
         />
       </UIAppStateContext.Provider>,
     );
@@ -461,12 +412,7 @@ describe("AppSidebarLaunchers", () => {
     render(
       <UIAppStateContext.Provider value={appState as never}>
         <AppSidebarLaunchers
-          excalidrawAPI={
-            {
-              getAppState: () => appState,
-              toggleSidebar,
-            } as unknown as ExcalidrawImperativeAPI
-          }
+          excalidrawAPI={launcherApi(toggleSidebar, () => appState)}
         />
       </UIAppStateContext.Provider>,
     );
@@ -491,12 +437,7 @@ describe("AppSidebarLaunchers", () => {
         <input aria-label="Editable" />
         <div contentEditable role="textbox" aria-label="Content editable" />
         <AppSidebarLaunchers
-          excalidrawAPI={
-            {
-              getAppState: () => appState,
-              toggleSidebar,
-            } as unknown as ExcalidrawImperativeAPI
-          }
+          excalidrawAPI={launcherApi(toggleSidebar, () => appState)}
         />
       </UIAppStateContext.Provider>,
     );
@@ -537,12 +478,7 @@ describe("AppSidebarLaunchers", () => {
     render(
       <UIAppStateContext.Provider value={appState as never}>
         <AppSidebarLaunchers
-          excalidrawAPI={
-            {
-              getAppState: () => appState,
-              toggleSidebar,
-            } as unknown as ExcalidrawImperativeAPI
-          }
+          excalidrawAPI={launcherApi(toggleSidebar, () => appState)}
         />
       </UIAppStateContext.Provider>,
     );
@@ -561,6 +497,52 @@ describe("AppSidebarLaunchers", () => {
     });
 
     expect(toggleSidebar).not.toHaveBeenCalled();
+  });
+
+  it("applies and remembers the frames visibility preference", () => {
+    const excalidrawAPI = launcherApi();
+    const { unmount } = render(
+      <UIAppStateContext.Provider value={{ openSidebar: null } as never}>
+        <AppSidebarLaunchers excalidrawAPI={excalidrawAPI} />
+      </UIAppStateContext.Provider>,
+    );
+
+    const frames = screen.getByRole("button", { name: "Show frames" });
+    expect(frames).toHaveAttribute("aria-pressed", "true");
+    expect(frames).toHaveAttribute("title", "Hide frames");
+    expect(excalidrawAPI.updateFrameRendering).toHaveBeenCalledWith({
+      outline: true,
+      name: true,
+    });
+
+    fireEvent.click(frames);
+
+    expect(frames).toHaveAttribute("aria-pressed", "false");
+    expect(frames).toHaveAttribute("title", "Show frames");
+    expect(excalidrawAPI.updateFrameRendering).toHaveBeenLastCalledWith({
+      outline: false,
+      name: false,
+    });
+    expect(window.localStorage.getItem(FRAMES_VISIBLE_STORAGE_KEY)).toBe(
+      "false",
+    );
+
+    unmount();
+    const remountedAPI = launcherApi();
+    render(
+      <UIAppStateContext.Provider value={{ openSidebar: null } as never}>
+        <AppSidebarLaunchers excalidrawAPI={remountedAPI} />
+      </UIAppStateContext.Provider>,
+    );
+
+    expect(screen.getByRole("button", { name: "Show frames" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(remountedAPI.updateFrameRendering).toHaveBeenCalledWith({
+      outline: false,
+      name: false,
+    });
   });
 });
 
@@ -642,6 +624,7 @@ describe("AppSidebar", () => {
       toggleSidebar: vi.fn(),
       setViewport,
       updateScene: vi.fn(),
+      updateFrameRendering: vi.fn(),
       setActiveTool: vi.fn(),
     } as unknown as ExcalidrawImperativeAPI;
 

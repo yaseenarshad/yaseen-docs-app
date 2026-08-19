@@ -6,6 +6,8 @@ import { newFrameElement } from "@excalidraw/element";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
+import { FRAMES_VISIBLE_STORAGE_KEY } from "../frames/framesVisibility";
+
 import {
   PRESENTATION_FRAME_LIFECYCLE_EVENT,
   type PresentationFrameLifecycleDetail,
@@ -40,6 +42,7 @@ const createApi = () => {
       }),
       setViewport: vi.fn(),
       updateScene: vi.fn(),
+      updateFrameRendering: vi.fn(),
     } as unknown as ExcalidrawImperativeAPI,
     deleteFrame(id: string) {
       elements = elements.filter((element) => element.id !== id);
@@ -49,7 +52,10 @@ const createApi = () => {
 };
 
 describe("PresentationPlayer", () => {
-  beforeEach(() => vi.useFakeTimers());
+  beforeEach(() => {
+    window.localStorage.removeItem(FRAMES_VISIBLE_STORAGE_KEY);
+    vi.useFakeTimers();
+  });
   afterEach(() => vi.useRealTimers());
 
   it("starts from the highlighted slide and publishes transition then active", () => {
@@ -198,5 +204,59 @@ describe("PresentationPlayer", () => {
     expect(controller.api.setViewport).toHaveBeenLastCalledWith(
       expect.objectContaining({ target: "three" }),
     );
+  });
+
+  it("hides frame outlines and names before the first slide, then restores the edit preference", () => {
+    const { api } = createApi();
+    render(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        initialFrameId="one"
+        onExit={vi.fn()}
+      />,
+    );
+
+    expect(api.updateFrameRendering).toHaveBeenCalledWith({
+      outline: false,
+      name: false,
+    });
+    expect(
+      vi.mocked(api.updateFrameRendering).mock.invocationCallOrder[0],
+    ).toBeLessThan(vi.mocked(api.setViewport).mock.invocationCallOrder[0]);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(api.updateFrameRendering).toHaveBeenLastCalledWith({
+      outline: true,
+      name: true,
+    });
+  });
+
+  it("leaves frames hidden on exit when the edit preference is hidden", () => {
+    window.localStorage.setItem(FRAMES_VISIBLE_STORAGE_KEY, "false");
+    const { api } = createApi();
+    render(<PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(api.updateFrameRendering).toHaveBeenLastCalledWith({
+      outline: false,
+      name: false,
+    });
+  });
+
+  it("restores frames when unmounted without an explicit exit", async () => {
+    const { api } = createApi();
+    const { unmount } = render(
+      <PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />,
+    );
+
+    unmount();
+    await act(async () => undefined);
+
+    expect(api.updateFrameRendering).toHaveBeenLastCalledWith({
+      outline: true,
+      name: true,
+    });
   });
 });
