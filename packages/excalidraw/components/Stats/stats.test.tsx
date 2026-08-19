@@ -618,8 +618,8 @@ describe("stats for multiple elements", () => {
     });
   });
 
-  it("scales image border width when a grouped selection is resized", () => {
-    const groupId = "bordered-image-group";
+  it("scales image, rectangle and arrow strokes when a grouped selection is resized", () => {
+    const groupId = "stroked-group";
     const image = API.createElement({
       type: "image",
       x: 0,
@@ -638,8 +638,18 @@ describe("stats for multiple elements", () => {
       groupIds: [groupId],
       strokeWidth: 2,
     });
-    API.setElements([image, rectangle]);
-    API.setSelectedElements([image, rectangle]);
+    const arrow = API.createElement({
+      type: "arrow",
+      x: 300,
+      y: 0,
+      width: 100,
+      height: 50,
+      groupIds: [groupId],
+      strokeWidth: 4,
+      points: [pointFrom(0, 0), pointFrom(50, 50), pointFrom(100, 0)],
+    });
+    API.setElements([image, rectangle, arrow]);
+    API.setSelectedElements([image, rectangle, arrow]);
 
     const width = UI.queryStatsProperty("W")?.querySelector(
       ".drag-input",
@@ -651,41 +661,6 @@ describe("stats for multiple elements", () => {
 
     expect(image.width).toBeCloseTo(200);
     expect(image.strokeWidth).toBe(4);
-    expect(rectangle.strokeWidth).toBe(4);
-  });
-
-  it("scales rectangle and arrow strokes when a grouped selection is resized", () => {
-    const groupId = "stroked-group";
-    const rectangle = API.createElement({
-      type: "rectangle",
-      x: 0,
-      y: 0,
-      width: 100,
-      height: 50,
-      groupIds: [groupId],
-      strokeWidth: 2,
-    });
-    const arrow = API.createElement({
-      type: "arrow",
-      x: 150,
-      y: 0,
-      width: 100,
-      height: 50,
-      groupIds: [groupId],
-      strokeWidth: 4,
-      points: [pointFrom(0, 0), pointFrom(50, 50), pointFrom(100, 0)],
-    });
-    API.setElements([rectangle, arrow]);
-    API.setSelectedElements([rectangle, arrow]);
-
-    const width = UI.queryStatsProperty("W")?.querySelector(
-      ".drag-input",
-    ) as HTMLInputElement;
-    expect(width).toBeDefined();
-    const initialWidth = Number(width.value);
-
-    UI.updateInput(width, String(initialWidth * 2));
-
     expect(rectangle.width).toBeCloseTo(200);
     expect(rectangle.strokeWidth).toBe(4);
     expect(arrow.width).toBeCloseTo(200);

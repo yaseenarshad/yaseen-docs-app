@@ -2029,7 +2029,7 @@ describe("getSizeRelativeResizeUpdates", () => {
     ).toEqual({
       roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 32 },
     });
-    // image behaves like rectangle (border scaling is covered separately)
+    // image rounding behaves like rectangle
     const image = API.createElement({
       type: "image",
       width: 100,
@@ -2085,43 +2085,6 @@ describe("getSizeRelativeResizeUpdates", () => {
     ).toEqual({});
   });
 
-  it("scales image strokeWidth by the shortest side in single mode", () => {
-    const image = API.createElement({
-      type: "image",
-      width: 200,
-      height: 100,
-      roundness: null,
-      strokeWidth: 2,
-    });
-    expect(
-      getSizeRelativeResizeUpdates(image, 400, 200, { mode: "single" }),
-    ).toEqual({ strokeWidth: 4 });
-    // only the longer side changes -> shortest side unchanged -> {}
-    expect(
-      getSizeRelativeResizeUpdates(image, 400, 100, { mode: "single" }),
-    ).toEqual({});
-    // shrink: rounds to 0.1 and clamps at the 0.5 minimum
-    expect(
-      getSizeRelativeResizeUpdates(image, 200, 10, { mode: "single" }),
-    ).toEqual({ strokeWidth: 0.5 });
-  });
-
-  it("scales image strokeWidth by its own shortest side in group mode", () => {
-    const image = API.createElement({
-      type: "image",
-      width: 200,
-      height: 100,
-      roundness: null,
-      strokeWidth: 2,
-    });
-    expect(
-      getSizeRelativeResizeUpdates(image, 400, 200, {
-        mode: "group",
-        groupScale: 10,
-      }),
-    ).toEqual({ strokeWidth: 4 });
-  });
-
   it("returns both roundness and strokeWidth for an image", () => {
     const image = API.createElement({
       type: "image",
@@ -2138,24 +2101,12 @@ describe("getSizeRelativeResizeUpdates", () => {
     });
   });
 
-  it("does not scale a zero image strokeWidth", () => {
-    const image = API.createElement({
-      type: "image",
-      width: 100,
-      height: 100,
-      roundness: null,
-      strokeWidth: 0,
-    });
-    expect(
-      getSizeRelativeResizeUpdates(image, 200, 200, { mode: "single" }),
-    ).toEqual({});
-  });
-
   describe("closed-shape strokeWidth (own shortest side, both modes)", () => {
     it.each([
       "rectangle",
       "ellipse",
       "diamond",
+      "image",
       "iframe",
       "embeddable",
     ] as const)("%s: single ×2 doubles strokeWidth", (type) => {
@@ -2206,22 +2157,6 @@ describe("getSizeRelativeResizeUpdates", () => {
       ).toEqual({});
     });
 
-    it("returns roundness and strokeWidth together for a rectangle", () => {
-      const rect = API.createElement({
-        type: "rectangle",
-        width: 100,
-        height: 100,
-        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 4 },
-        strokeWidth: 2,
-      });
-      expect(
-        getSizeRelativeResizeUpdates(rect, 200, 200, { mode: "single" }),
-      ).toEqual({
-        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 8 },
-        strokeWidth: 4,
-      });
-    });
-
     it("normalizes scaled strokeWidth (0.5 floor, 100 cap, 0.1 rounding)", () => {
       const rect = API.createElement({
         type: "rectangle",
@@ -2260,27 +2195,13 @@ describe("getSizeRelativeResizeUpdates", () => {
       type: "line" | "arrow" | "freedraw",
       strokeWidth: number,
     ) =>
-      type === "freedraw"
-        ? API.createElement({
-            type: "freedraw",
-            width: 100,
-            height: 50,
-            strokeWidth,
-            points: [
-              pointFrom<LocalPoint>(0, 0),
-              pointFrom<LocalPoint>(100, 50),
-            ],
-          })
-        : API.createElement({
-            type,
-            width: 100,
-            height: 50,
-            strokeWidth,
-            points: [
-              pointFrom<LocalPoint>(0, 0),
-              pointFrom<LocalPoint>(100, 50),
-            ],
-          });
+      API.createElement({
+        type,
+        width: 100,
+        height: 50,
+        strokeWidth,
+        points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(100, 50)],
+      });
 
     it.each(["line", "arrow", "freedraw"] as const)(
       "%s: single mode never touches strokeWidth",
