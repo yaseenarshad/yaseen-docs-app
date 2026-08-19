@@ -12,6 +12,10 @@
  *    `\[\[wikilink]]` / `!\[\[embed]]` that remark-stringify escapes.
  *  - Outline folding plugin (GRO-2011) registered via `$prose`; fold toggles are
  *    metadata-only transactions and never reach `markdownUpdated` / autosave.
+ *  - Outliner keymap (GRO-2012, `outline/listCommands.ts`) patches the gaps in Crepe's
+ *    Tab / Enter / Backspace list handling; registered with a higher keymap priority.
+ *  - Empty list items round-trip as bare markers, never `* <br />` (GRO-2012,
+ *    `listItemRoundTrip.ts`): `<br />` opened an HTML block that swallowed nested children.
  */
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -19,6 +23,8 @@ import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
 import { Selection } from '@milkdown/kit/prose/state'
 import { replaceAll } from '@milkdown/kit/utils'
 import { features } from './featureConfig'
+import { listItemRoundTrip, normalizeLegacyEmptyItems } from './listItemRoundTrip'
+import { outlinerKeymap } from './outline/listCommands'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 
 export interface CreateCrepeOptions {
@@ -33,7 +39,7 @@ export interface CreateCrepeOptions {
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
   const crepe = new Crepe({
     root: opts.root,
-    defaultValue: opts.defaultValue ?? '',
+    defaultValue: normalizeLegacyEmptyItems(opts.defaultValue ?? ''),
     features,
   })
   crepe.editor.use(
@@ -42,7 +48,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     // would silently drop task-list checkbox support.
     extendListItemSchemaForTask.extendSchema((prev) => (ctx) => ({ ...prev(ctx), content: 'block+' })),
   )
+  crepe.editor.use(listItemRoundTrip)
   crepe.editor.use(createOutlineFolding(opts.folding))
+  crepe.editor.use(outlinerKeymap)
   if (opts.onMarkdownUpdated) {
     const cb = opts.onMarkdownUpdated
     crepe.on((listener) => {
@@ -69,7 +77,7 @@ export function setMarkdown(crepe: Crepe, markdown: string): void {
     const view = ctx.get(editorViewCtx)
     const hadFocus = view.hasFocus()
     const { from } = view.state.selection
-    replaceAll(markdown, true)(ctx)
+    replaceAll(normalizeLegacyEmptyItems(markdown), true)(ctx)
     const doc = view.state.doc
     const sel = Selection.near(doc.resolve(Math.min(from, doc.content.size)))
     view.dispatch(view.state.tr.setSelection(sel))

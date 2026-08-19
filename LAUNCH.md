@@ -17,7 +17,7 @@ Local markdown editor: Vite + React + Milkdown Crepe client, Hono file server. S
 ## Verify
 
 ```bash
-/opt/homebrew/bin/npm test          # 68 vitest tests (client jsdom + server node)
+/opt/homebrew/bin/npm test          # 89 vitest tests (client jsdom + server node)
 /opt/homebrew/bin/npm run typecheck
 /opt/homebrew/bin/npm run build
 ```

@@ -10,7 +10,7 @@
  * Persistence is by stable fold key (see outlineFoldKeys.ts), not by position.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { getOutlineFoldKey } from './outlineFoldKeys'
@@ -35,6 +35,13 @@ export interface OutlineFoldingOptions {
 
 export const OUTLINE_TOGGLE_CLASS = 'outline-toggle'
 export const OUTLINE_FOLDED_ATTR = 'data-outline-folded'
+
+/** Shared across instances: a PluginKey only identifies the plugin within one EditorState. */
+const pluginKey = new PluginKey<OutlineFoldingState>('mdapp-outline-folding')
+
+/** Whether the list_item starting at `itemPos` is currently folded (false when the plugin is absent). */
+export const isOutlineItemCollapsed = (state: EditorState, itemPos: number): boolean =>
+  pluginKey.getState(state)?.collapsedItemPositions.has(itemPos) ?? false
 
 const LIST_NODE_NAMES = new Set(['bullet_list', 'ordered_list'])
 
@@ -72,10 +79,8 @@ const getCollapsedKeys = (doc: ProseNode, collapsedItemPositions: ReadonlySet<nu
     .map(({ foldKey }) => foldKey)
     .sort()
 
-export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onCollapsedKeysChange }: OutlineFoldingOptions = {}) => {
-  const pluginKey = new PluginKey<OutlineFoldingState>('mdapp-outline-folding')
-
-  return $prose(
+export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onCollapsedKeysChange }: OutlineFoldingOptions = {}) =>
+  $prose(
     () =>
       new Plugin<OutlineFoldingState>({
         key: pluginKey,
@@ -175,4 +180,3 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
         },
       }),
   )
-}

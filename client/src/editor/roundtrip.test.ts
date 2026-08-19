@@ -151,6 +151,19 @@ describe('locked editor rules (createCrepe)', () => {
     expect(out).not.toContain('<br />')
     expect(out).toContain('* # Part 1')
   })
+  it('writes empty bullets as bare markers and keeps their children (GRO-2012)', async () => {
+    expect(await roundTrip('* a\n* \n* b\n')).toBe('* a\n*\n* b\n')
+    expect(await roundTrip('* a\n* \n  * c\n* b\n')).toBe('* a\n*\n  * c\n* b\n')
+    expect(await roundTrip('1. a\n2. \n   1. c\n')).toBe('1. a\n2.\n   1. c\n')
+    // legacy encoding from earlier builds: `<br />` must not swallow the children as an HTML block
+    expect(await roundTrip('* a\n* <br />\n  * c\n* b\n')).toBe('* a\n*\n  * c\n* b\n')
+    // empty task items keep `<br />` (remark drops the checkbox from `* [ ]`)
+    expect(await roundTrip('* [ ] a\n* [x] <br />\n  * c\n')).toBe('* [ ] a\n* [x] <br />\n  * c\n')
+    // `* 1) text` on one line is a list-first item and stays that way
+    expect(await roundTrip('* 1) one\n* 2) two\n')).toBe('* 1. one\n* 2. two\n')
+    // empty paragraphs outside list items are unchanged
+    expect(await roundTrip('x\n\n<br />\n\ny\n')).toBe('x\n\n<br />\n\ny\n')
+  })
   it('ends with exactly one newline even when the trailing plugin appends an empty paragraph', async () => {
     expect(await roundTrip('# H\n\n* a\n')).toBe('# H\n\n* a\n')
     expect(await roundTrip('# H\n\n* a\n\n\n')).toBe('# H\n\n* a\n')
