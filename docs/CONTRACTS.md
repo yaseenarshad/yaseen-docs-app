@@ -14,7 +14,7 @@ client/               Vite 7 + React 19 + TS, @milkdown/crepe 7.22.x  (127.0.0.1
                         vite proxy: /api -> http://127.0.0.1:3737
   src/App.tsx                 root/file/picker state; Sidebar is keyed by root
   src/api.ts                  typed fetch wrappers + ApiRequestError
-  src/editor/                 Editor (Crepe host + conflict bar), createCrepe (locked factory, see "Editor rules"), frontmatter, SaveIndicator
+  src/editor/                 Editor (Crepe host + conflict bar), createCrepe (locked factory, see "Editor rules"), featureConfig (Crepe feature allowlist + guard test), frontmatter, SaveIndicator
   src/editor/outline/         outlineFolding ($prose plugin: collapsible parent bullets), outlineFoldKeys, outlineFolding.css (+ tests)
   src/hooks/                  useFile (load), useAutosave (debounce/flush/conflict), useWatch (one EventSource per root, fan-out), usePickFolder (native dialog → modal fallback)
   src/lib/                    pure logic with unit tests: autosave state machine, storage (localStorage), treeState, paths
@@ -57,7 +57,7 @@ Notes
 ## Editor rules (client)
 
 1. **Frontmatter**: on load, `splitFrontmatter(content)` → `{ frontmatter, body }`; only `body` goes into Crepe. On save, write `frontmatter + getMarkdownForSave(crepe)`. Frontmatter is re-prepended byte-identically (Crepe would otherwise turn `---` YAML into `***` + paragraph + setext heading underline).
-2. **Crepe construction**: always via `createCrepe()` — ImageBlock feature OFF, list_item content `block+` (extended from GFM task item schema), `markdownUpdated` listener wired.
+2. **Crepe construction**: always via `createCrepe()` — features come ONLY from `src/editor/featureConfig.ts` (`ENABLED_FEATURES` / `DISABLED_FEATURES`, every `CrepeFeature` classified; ImageBlock, TopBar, AI off; `featureConfig.test.ts` asserts the running editor loads exactly the allowlist), list_item content `block+` (extended from GFM task item schema), `markdownUpdated` listener wired.
 3. **Save post-processing**: `postProcessMarkdown()` un-escapes `\[\[` → `[[` (wikilinks/embeds).
 4. **Replacing content in a live instance** (external change / Reload): `setMarkdown(crepe, md)` → `replaceAll(md, true)` from `@milkdown/kit/utils`, keeping focus and caret. File switch remounts the Crepe host (`key={path}`); the previous file stays on screen until the next one has loaded.
 5. **Outline folding** (GRO-2011): `createOutlineFolding()` (`src/editor/outline/`) is registered in `createCrepe()`. Parent `list_item`s (those owning a nested `bullet_list`/`ordered_list`) get a widget `<button class="outline-toggle" aria-expanded>` at the start of their content; collapsing adds `data-outline-folded="true"` to the nested list (CSS `display:none`). Toggles are metadata-only transactions (`tr.docChanged === false`) — the listener never fires `markdownUpdated`, `getMarkdownForSave()` is unchanged, and the file's mtime is untouched. Fold keys = FNV-1a hash of the item's first-block text + occurrence index (`outlineFoldKeys.ts`), persisted via `storage.getFolds/setFolds`.

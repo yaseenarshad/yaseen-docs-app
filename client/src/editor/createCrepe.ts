@@ -2,7 +2,8 @@
  * Locked Crepe construction for this app (GRO-1961).
  *
  * Decisions baked in here (see docs/CONTRACTS.md "Editor rules"):
- *  - ImageBlock feature OFF: its serializer overwrites image alt text with the
+ *  - Feature set comes from `featureConfig.ts` ONLY (GRO-2014 allowlist + guard test);
+ *    ImageBlock is OFF there: its serializer overwrites image alt text with the
  *    ratio ("![1.00](src)"). Plain commonmark image keeps alt/title intact.
  *  - list_item schema widened from `paragraph block*` to `block+` so that
  *    Logseq/Obsidian-style outlines (`* # Heading` / `* - nested`) do not get
@@ -17,6 +18,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
 import { Selection } from '@milkdown/kit/prose/state'
 import { replaceAll } from '@milkdown/kit/utils'
+import { features } from './featureConfig'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 
 export interface CreateCrepeOptions {
@@ -32,7 +34,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   const crepe = new Crepe({
     root: opts.root,
     defaultValue: opts.defaultValue ?? '',
-    features: { [Crepe.Feature.ImageBlock]: false },
+    features,
   })
   crepe.editor.use(
     // NB: extend the GFM task-item schema, not the commonmark base — extendSchema()
