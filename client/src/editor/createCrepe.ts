@@ -20,6 +20,8 @@
  *  - Obsidian hotkeys (GRO-2027, `outline/hotkeys.ts`): Mod-Enter task cycle, Mod-Shift-u/i
  *    fold/unfold all, Mod-Shift-x strikethrough.
  *  - Underline mark (GRO-2028, `marks/underline.ts`): Mod-u ↔ `<u>text</u>` inline HTML.
+ *  - Zoom into a bullet (GRO-2029, `outline/zoom.ts`): view-state-only decorations + breadcrumbs;
+ *    glyph click / Mod-. / Mod-Shift-. ; never a document change.
  */
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -32,6 +34,7 @@ import { underline } from './marks/underline'
 import { obsidianHotkeys } from './outline/hotkeys'
 import { outlinerKeymap } from './outline/listCommands'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
+import { createOutlineZoom, zoomKeymap, type ZoomOptions } from './outline/zoom'
 
 export interface CreateCrepeOptions {
   root: HTMLElement
@@ -40,6 +43,8 @@ export interface CreateCrepeOptions {
   onMarkdownUpdated?: (markdown: string) => void
   /** Fold state for collapsible parent bullets: restore from / report to the caller (persisted per file). */
   folding?: OutlineFoldingOptions
+  /** Zoom into a bullet (GRO-2029); `fileName` is the root breadcrumb. Defaults to an unnamed file. */
+  zoom?: ZoomOptions
 }
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
@@ -57,8 +62,10 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(listItemRoundTrip)
   crepe.editor.use(underline)
   crepe.editor.use(createOutlineFolding(opts.folding))
+  crepe.editor.use(createOutlineZoom(opts.zoom ?? { fileName: 'Untitled' }))
   crepe.editor.use(outlinerKeymap)
   crepe.editor.use(obsidianHotkeys)
+  crepe.editor.use(zoomKeymap)
   if (opts.onMarkdownUpdated) {
     const cb = opts.onMarkdownUpdated
     crepe.on((listener) => {

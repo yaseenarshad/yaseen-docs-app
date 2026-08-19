@@ -4,6 +4,7 @@ import { api } from '../api'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
 import './outline/outlineFolding.css'
 import './outline/bullets.css'
+import './outline/zoom.css'
 import { splitFrontmatter } from './frontmatter'
 import { SaveIndicator } from './SaveIndicator'
 import { useAutosave } from '../hooks/useAutosave'
@@ -54,6 +55,7 @@ function CrepeHost({ root, file, watch }: { root: string; file: FileResponse; wa
         initialCollapsedKeys: new Set(storage.getFolds(root, file.path)),
         onCollapsedKeysChange: (keys) => storage.setFolds(root, file.path, keys),
       },
+      zoom: { fileName: file.path.slice(file.path.lastIndexOf('/') + 1) },
     })
     let controller: ReturnType<typeof attach> | null = null
     let cancelled = false

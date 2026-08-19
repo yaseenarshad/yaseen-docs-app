@@ -71,6 +71,8 @@ Notes
 
 11. **Underline** (GRO-2028, `src/editor/marks/underline.ts`): ProseMirror mark `underline` (`<u>` in the DOM). On disk it is obsidian-underline's inline HTML `<u>text</u>`: a `$remark` plugin wraps each mdast `html("<u>")` … `html("</u>")` pair (nearest match, any depth, inside any inline parent such as `**…**`) into an `underline` mdast node after parsing, and registers the remark-stringify handler that writes it back as `<u>` + children + `</u>` — so `a <u>b</u> c` round-trips byte-identically. Unmatched tags and every other inline HTML keep going through Milkdown's `html` atom node unchanged. Not a Crepe feature (allowlist untouched, no toolbar button).
 
+12. **Zoom into a bullet** (GRO-2029, `src/editor/outline/zoom.ts` + `zoom.css`): view state ONLY, like folding — the plugin holds the zoomed `list_item` position (mapped through every transaction; cleared if the item is deleted), and decorations hide every block off the path root → zoomed item (`outline-zoom-hidden`), strip the ancestors' glyph/chevron/first block (`outline-zoom-ancestor`, a folded ancestor renders expanded without touching fold state) and render a breadcrumb widget (`File name › Ancestor › … › Item`, labels = first-block text truncated at 40 chars; crumbs zoom to that ancestor, the file crumb zooms out fully). Triggers: click the bullet glyph (`.label-wrapper`; task checkboxes keep toggling), `Mod-.`, `Mod-Shift-.` (see Keyboard). Zooming dispatches a metadata-only transaction: never `markdownUpdated`, disk untouched, fold state unaffected. Not persisted — switching files remounts the editor and clears it. `createCrepe({ zoom: { fileName } })`; allowlist untouched.
+
 ## Keyboard (client)
 
 All bindings are `$shortcut` keymaps registered in `createCrepe()` with priority 100 (Crepe's own keymaps are 50), so they run first and fall through (`return false`) when they do not apply. `Mod` = ⌘ on macOS, Ctrl elsewhere (ProseMirror decides by `navigator.platform`).
@@ -87,6 +89,9 @@ All bindings are `$shortcut` keymaps registered in `createCrepe()` with priority
 | `Mod-Shift-i` | anywhere | unfold all (`unfoldAllOutline`) | GRO-2027 |
 | `Mod-Shift-x` | selection | toggle strikethrough (Obsidian binding; Crepe's `Mod-Alt-x` still works) | GRO-2027 |
 | `Mod-u` | selection | toggle underline (`<u>…</u>` on disk) | GRO-2028 `marks/underline.ts` |
+| `Mod-.` | caret in a list item | zoom into that item (view-only; breadcrumbs appear); outside lists falls through | GRO-2029 `outline/zoom.ts` |
+| `Mod-Shift-.` | while zoomed | zoom out one level (parent item, or fully at top level); not zoomed falls through | GRO-2029 |
+| `Shift-Tab` / `Mod-[` | while zoomed, on the zoomed item or a direct child | no-op (lifting would escape the zoomed subtree); everywhere else outdents as usual | GRO-2029 |
 
 ## localStorage (client)
 
