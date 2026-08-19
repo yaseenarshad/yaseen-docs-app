@@ -1,13 +1,19 @@
+import clsx from "clsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import type { PointerEvent as ReactPointerEvent } from "react";
 
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 
-import type {
-  ExcalidrawElement,
-  ExcalidrawFrameElement,
-} from "@excalidraw/element/types";
+import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
+import {
+  DragHandleIcon,
+  MoveSlideDownIcon,
+  MoveSlideUpIcon,
+  RenameIcon,
+} from "./icons";
 import {
   getOrderedPresentationFrames,
   renamePresentationFrame,
@@ -16,110 +22,52 @@ import {
 
 import "./PresentationSidebar.scss";
 
-const SLIDE_DRAG_MIME = "application/x-yaseendraw-slide-id";
+/** How close to a list edge a drag has to get before the list scrolls itself. */
+const AUTO_SCROLL_MARGIN = 24;
+const AUTO_SCROLL_SPEED = 8;
 
-const frameName = (frame: ExcalidrawFrameElement, order: number) =>
-  frame.name?.trim() || `Slide ${order}`;
+const slideName = (name: string | null, order: number) =>
+  name?.trim() || `Slide ${order}`;
 
-const LazyFramePreview = ({
-  frame,
-  order,
-  elements,
-}: {
-  frame: ExcalidrawFrameElement;
-  order: number;
-  elements: readonly ExcalidrawElement[];
-}) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [isVisible, setIsVisible] = useState(
-    () => typeof IntersectionObserver === "undefined",
-  );
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (
-      !container ||
-      isVisible ||
-      typeof IntersectionObserver === "undefined"
-    ) {
-      return;
-    }
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        setIsVisible(true);
-        observer.disconnect();
-      }
-    });
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [isVisible]);
-
-  const children = elements.filter(
-    (element) => !element.isDeleted && element.frameId === frame.id,
-  );
-  return (
-    <div ref={containerRef} className="presentation-sidebar__preview-shell">
-      {isVisible ? (
-        <svg
-          className="presentation-sidebar__preview"
-          viewBox={`${frame.x} ${frame.y} ${frame.width} ${frame.height}`}
-          preserveAspectRatio="xMidYMid meet"
-          role="img"
-          aria-label={`Preview of ${frameName(frame, order)}`}
-        >
-          <rect
-            x={frame.x}
-            y={frame.y}
-            width={frame.width}
-            height={frame.height}
-            fill="#f8f7f3"
-          />
-          {children.slice(0, 80).map((element) => {
-            if (element.type === "text") {
-              return (
-                <text
-                  key={element.id}
-                  x={element.x}
-                  y={element.y + Math.min(element.fontSize, element.height)}
-                  fill={element.strokeColor || "#14251f"}
-                  fontSize={Math.max(element.fontSize, 12)}
-                  fontWeight={element.fontWeight}
-                >
-                  {element.text.split("\n")[0].slice(0, 80)}
-                </text>
-              );
-            }
-            return (
-              <rect
-                key={element.id}
-                x={element.x}
-                y={element.y}
-                width={Math.max(element.width, 1)}
-                height={Math.max(element.height, 1)}
-                rx={
-                  element.type === "image" || element.type === "iframe" ? 18 : 4
-                }
-                fill={
-                  element.type === "image" || element.type === "iframe"
-                    ? "#d8eee5"
-                    : element.backgroundColor === "transparent"
-                    ? "#ffffff"
-                    : element.backgroundColor
-                }
-                stroke={element.strokeColor || "#d8ded9"}
-                strokeWidth={Math.max(element.strokeWidth, 1)}
-              />
-            );
-          })}
-        </svg>
-      ) : (
-        <span className="presentation-sidebar__preview-loading">
-          Preview loads when visible
-        </span>
-      )}
-    </div>
-  );
+/** The live drag: which slide is held, where it started, where it would land. */
+type SlideDrag = {
+  frameId: string;
+  fromIndex: number;
+  toIndex: number;
 };
+
+/**
+ * Inline rename field. Uncontrolled on purpose: the scene is the source of
+ * truth for the name, and this only owns the draft while it is open.
+ */
+const SlideNameInput = ({
+  label,
+  initialName,
+  onCommit,
+  onCancel,
+}: {
+  label: string;
+  initialName: string;
+  onCommit: (name: string) => void;
+  onCancel: () => void;
+}) => (
+  <input
+    className="presentation-sidebar__rename"
+    aria-label={label}
+    defaultValue={initialName}
+    autoFocus
+    onKeyDown={(event) => {
+      if (event.key === "Enter") {
+        onCommit(event.currentTarget.value);
+      } else if (event.key === "Escape") {
+        onCancel();
+      }
+      // Row-level shortcuts (Alt+↑/↓) must not fire while typing a name.
+      event.stopPropagation();
+    }}
+    onBlur={(event) => onCommit(event.currentTarget.value)}
+  />
+);
 
 export const PresentationSidebar = ({
   excalidrawAPI,
@@ -144,7 +92,12 @@ export const PresentationSidebar = ({
         )?.id ?? null
     );
   });
+  const [renamingFrameId, setRenamingFrameId] = useState<string | null>(null);
+  const [drag, setDrag] = useState<SlideDrag | null>(null);
   const [liveMessage, setLiveMessage] = useState("");
+  const listRef = useRef<HTMLOListElement>(null);
+  const rowRefs = useRef(new Map<string, HTMLLIElement>());
+  const pointerYRef = useRef(0);
   const slides = useMemo(
     () => getOrderedPresentationFrames(elements),
     [elements],
@@ -208,6 +161,124 @@ export const PresentationSidebar = ({
     [persistOrder, slides],
   );
 
+  const commitRename = useCallback(
+    (frameId: string, order: number, nextName: string) => {
+      setRenamingFrameId(null);
+      const name = nextName.trim();
+      if (!name) {
+        return;
+      }
+      excalidrawAPI.updateScene({
+        elements: renamePresentationFrame(
+          excalidrawAPI.getSceneElements(),
+          frameId,
+          name,
+        ),
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      setLiveMessage(`Slide ${order} renamed to ${name}`);
+    },
+    [excalidrawAPI],
+  );
+
+  /** Where the held slide would land if the pointer were released at `clientY`. */
+  const updateDropIndex = useCallback(
+    (clientY: number) => {
+      const landing = slides.findIndex(({ frame }) => {
+        const rect = rowRefs.current.get(frame.id)?.getBoundingClientRect();
+        return rect ? clientY < rect.top + rect.height / 2 : false;
+      });
+      const toIndex = landing < 0 ? slides.length - 1 : landing;
+      setDrag((current) =>
+        !current || current.toIndex === toIndex
+          ? current
+          : { ...current, toIndex },
+      );
+    },
+    [slides],
+  );
+
+  const draggedFrameId = drag?.frameId ?? null;
+
+  // Everything that has to keep running for as long as a slide is held: the
+  // edge auto-scroll, the Escape abort, and dropping the drag if the slide
+  // disappears from the scene under it.
+  useEffect(() => {
+    if (!draggedFrameId) {
+      return;
+    }
+    if (!slides.some(({ frame }) => frame.id === draggedFrameId)) {
+      setDrag(null);
+      return;
+    }
+
+    const abortOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setDrag(null);
+      }
+    };
+    window.addEventListener("keydown", abortOnEscape);
+
+    let frameRequest = requestAnimationFrame(function scrollNearEdges() {
+      const list = listRef.current;
+      if (list) {
+        const { top, bottom } = list.getBoundingClientRect();
+        const y = pointerYRef.current;
+        const speed =
+          y < top + AUTO_SCROLL_MARGIN
+            ? -AUTO_SCROLL_SPEED
+            : y > bottom - AUTO_SCROLL_MARGIN
+            ? AUTO_SCROLL_SPEED
+            : 0;
+        if (speed !== 0) {
+          list.scrollTop += speed;
+          updateDropIndex(y);
+        }
+      }
+      frameRequest = requestAnimationFrame(scrollNearEdges);
+    });
+
+    return () => {
+      window.removeEventListener("keydown", abortOnEscape);
+      cancelAnimationFrame(frameRequest);
+    };
+  }, [draggedFrameId, slides, updateDropIndex]);
+
+  const startDrag = (
+    event: ReactPointerEvent<HTMLElement>,
+    frameId: string,
+    index: number,
+  ) => {
+    if (event.pointerType === "mouse" && event.button > 0) {
+      // Right/middle click is not a drag.
+      return;
+    }
+    // Keep the browser from starting a text selection or a scroll gesture on
+    // top of the drag.
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    pointerYRef.current = event.clientY;
+    setDrag({ frameId, fromIndex: index, toIndex: index });
+  };
+
+  const trackDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!drag) {
+      return;
+    }
+    pointerYRef.current = event.clientY;
+    updateDropIndex(event.clientY);
+  };
+
+  const dropSlide = () => {
+    if (drag && drag.toIndex !== drag.fromIndex) {
+      const ids = slides.map(({ frame }) => frame.id);
+      const [movedId] = ids.splice(drag.fromIndex, 1);
+      ids.splice(drag.toIndex, 0, movedId);
+      persistOrder(ids, `Slide moved to position ${drag.toIndex + 1}`);
+    }
+    setDrag(null);
+  };
+
   const focusFrame = (frameId: string) => {
     setActiveFrameId(frameId);
     excalidrawAPI.setViewport({
@@ -243,117 +314,123 @@ export const PresentationSidebar = ({
       aria-labelledby="presentation-title"
     >
       <header className="presentation-sidebar__header">
-        <div>
-          <h2 id="presentation-title">Presentation</h2>
-          <p>{slides.length} slides · drag to reorder</p>
-        </div>
+        <h2 id="presentation-title">Presentation</h2>
+        <p>
+          {slides.length} {slides.length === 1 ? "slide" : "slides"}
+        </p>
       </header>
-      <ol className="presentation-sidebar__slides">
+      <ol className="presentation-sidebar__slides" ref={listRef}>
         {slides.map(({ frame, order }, index) => {
-          const name = frameName(frame, order);
+          const name = slideName(frame.name, order);
+          // The insertion line sits on the edge of the row the held slide
+          // would take over — above it when moving up, below it when down.
+          const dropEdge =
+            drag && drag.toIndex === index && drag.toIndex !== drag.fromIndex
+              ? drag.toIndex < drag.fromIndex
+                ? "before"
+                : "after"
+              : null;
           return (
             <li
               key={frame.id}
               data-testid={`presentation-slide-${frame.id}`}
-              className={`presentation-sidebar__slide${
-                activeFrameId === frame.id
-                  ? " presentation-sidebar__slide--active"
-                  : ""
-              }`}
-              draggable={canEdit}
-              onDragStart={(event) => {
-                event.dataTransfer.setData(SLIDE_DRAG_MIME, frame.id);
+              ref={(row) => {
+                if (row) {
+                  rowRefs.current.set(frame.id, row);
+                } else {
+                  rowRefs.current.delete(frame.id);
+                }
               }}
-              onDragOver={(event) => {
-                if (event.dataTransfer.types.includes(SLIDE_DRAG_MIME)) {
+              className={clsx("presentation-sidebar__slide", {
+                "presentation-sidebar__slide--active":
+                  activeFrameId === frame.id,
+                "presentation-sidebar__slide--dragging":
+                  drag?.frameId === frame.id,
+                "presentation-sidebar__slide--drop-before":
+                  dropEdge === "before",
+                "presentation-sidebar__slide--drop-after": dropEdge === "after",
+              })}
+              onKeyDown={(event) => {
+                if (!canEdit || !event.altKey) {
+                  return;
+                }
+                if (event.key === "ArrowUp" || event.key === "ArrowDown") {
                   event.preventDefault();
+                  moveSlide(frame.id, event.key === "ArrowUp" ? -1 : 1);
                 }
-              }}
-              onDrop={(event) => {
-                if (!canEdit) {
-                  return;
-                }
-                event.preventDefault();
-                const sourceId = event.dataTransfer.getData(SLIDE_DRAG_MIME);
-                const ids = slides.map(({ frame: item }) => item.id);
-                const sourceIndex = ids.indexOf(sourceId);
-                const targetIndex = ids.indexOf(frame.id);
-                if (
-                  sourceIndex < 0 ||
-                  targetIndex < 0 ||
-                  sourceIndex === targetIndex
-                ) {
-                  return;
-                }
-                ids.splice(sourceIndex, 1);
-                const insertionIndex =
-                  sourceIndex < targetIndex ? targetIndex : targetIndex;
-                ids.splice(insertionIndex, 0, sourceId);
-                persistOrder(
-                  ids,
-                  `Slide moved to position ${insertionIndex + 1}`,
-                );
               }}
             >
-              <button
-                type="button"
-                className="presentation-sidebar__card"
-                aria-label={`Go to slide ${order}`}
-                aria-current={activeFrameId === frame.id ? "true" : undefined}
-                onClick={() => focusFrame(frame.id)}
-              >
-                <LazyFramePreview
-                  frame={frame}
-                  order={order}
-                  elements={elements}
+              {renamingFrameId === frame.id ? (
+                <SlideNameInput
+                  label={`Slide ${order} name`}
+                  initialName={name}
+                  onCommit={(nextName) =>
+                    commitRename(frame.id, order, nextName)
+                  }
+                  onCancel={() => setRenamingFrameId(null)}
                 />
-                <span className="presentation-sidebar__card-copy">
-                  <span className="presentation-sidebar__number">{order}</span>
-                  <strong title={name}>{name}</strong>
-                </span>
-              </button>
-              {canEdit && (
-                <div className="presentation-sidebar__actions">
-                  <button
-                    type="button"
-                    aria-label={`Move slide ${order} up`}
-                    disabled={index === 0}
-                    onClick={() => moveSlide(frame.id, -1)}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Move slide ${order} down`}
-                    disabled={index === slides.length - 1}
-                    onClick={() => moveSlide(frame.id, 1)}
-                  >
-                    ↓
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Rename slide ${order}`}
-                    onClick={() => {
-                      const nextName = window
-                        .prompt("Rename slide", name)
-                        ?.trim();
-                      if (!nextName) {
-                        return;
+              ) : (
+                <>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      className="presentation-sidebar__handle"
+                      aria-label={`Reorder slide ${order}`}
+                      title="Drag to reorder, or Alt+↑ / Alt+↓"
+                      onPointerDown={(event) =>
+                        startDrag(event, frame.id, index)
                       }
-                      excalidrawAPI.updateScene({
-                        elements: renamePresentationFrame(
-                          excalidrawAPI.getSceneElements(),
-                          frame.id,
-                          nextName,
-                        ),
-                        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-                      });
-                      setLiveMessage(`Slide ${order} renamed to ${nextName}`);
-                    }}
+                      onPointerMove={trackDrag}
+                      onPointerUp={dropSlide}
+                      onPointerCancel={() => setDrag(null)}
+                    >
+                      {DragHandleIcon}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="presentation-sidebar__open"
+                    aria-label={`Go to slide ${order}`}
+                    aria-current={
+                      activeFrameId === frame.id ? "true" : undefined
+                    }
+                    onClick={() => focusFrame(frame.id)}
                   >
-                    Rename
+                    <span className="presentation-sidebar__number">
+                      {order}
+                    </span>
+                    <span className="presentation-sidebar__name" title={name}>
+                      {name}
+                    </span>
                   </button>
-                </div>
+                  {canEdit && (
+                    <div className="presentation-sidebar__actions">
+                      <button
+                        type="button"
+                        aria-label={`Rename slide ${order}`}
+                        onClick={() => setRenamingFrameId(frame.id)}
+                      >
+                        {RenameIcon}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Move slide ${order} up`}
+                        disabled={index === 0}
+                        onClick={() => moveSlide(frame.id, -1)}
+                      >
+                        {MoveSlideUpIcon}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Move slide ${order} down`}
+                        disabled={index === slides.length - 1}
+                        onClick={() => moveSlide(frame.id, 1)}
+                      >
+                        {MoveSlideDownIcon}
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </li>
           );

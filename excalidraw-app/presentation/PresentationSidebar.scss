@@ -30,115 +30,157 @@
     overflow: auto;
     min-height: 0;
     margin: 0;
-    padding: 0.65rem;
+    padding: 0.35rem;
     flex: 1;
     flex-direction: column;
-    gap: 0.65rem;
+    gap: 0.15rem;
     list-style: none;
   }
 
   &__slide {
-    border: 1px solid var(--color-surface-high);
-    border-radius: 0.7rem;
-    background: var(--color-surface-low);
-    box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
+    display: flex;
+    min-height: 2.25rem;
+    padding-right: 0.15rem;
+    border-radius: 0.45rem;
+    align-items: center;
+    gap: 0.15rem;
 
-    &--active {
-      border-color: var(--color-primary);
-      box-shadow: 0 0 0 2px
-        color-mix(in srgb, var(--color-primary) 18%, transparent);
+    &:hover {
+      background: var(--color-surface-high);
     }
 
-    &[draggable="true"] {
-      cursor: grab;
+    &--active {
+      background: var(--color-primary-light);
+
+      .presentation-sidebar__name {
+        font-weight: 600;
+      }
+    }
+
+    &--dragging {
+      background: var(--color-surface-high);
+      opacity: 0.6;
+    }
+
+    &--drop-before {
+      box-shadow: inset 0 2px 0 var(--color-primary);
+    }
+
+    &--drop-after {
+      box-shadow: inset 0 -2px 0 var(--color-primary);
     }
   }
 
-  &__card {
-    display: block;
-    width: 100%;
+  &__handle {
+    display: grid;
+    width: 1.1rem;
+    height: 1.5rem;
     padding: 0;
     border: 0;
     background: transparent;
+    color: var(--text-secondary-color);
+    opacity: 0;
+    place-items: center;
+    touch-action: none;
+    cursor: grab;
+
+    &:active {
+      cursor: grabbing;
+    }
+
+    svg {
+      width: 0.9rem;
+      height: 0.9rem;
+    }
+  }
+
+  &__open {
+    display: flex;
+    overflow: hidden;
+    min-width: 0;
+    padding: 0.35rem 0.2rem 0.35rem 0.35rem;
+    border: 0;
+    background: transparent;
     color: inherit;
+    flex: 1;
+    align-items: center;
+    gap: 0.5rem;
+    font: inherit;
     text-align: left;
     cursor: pointer;
   }
 
-  &__preview-shell {
-    overflow: hidden;
-    aspect-ratio: 16 / 9;
-    border-radius: 0.65rem 0.65rem 0 0;
-    background: #f8f7f3;
-  }
-
-  &__preview {
-    display: block;
-    width: 100%;
-    height: 100%;
-  }
-
-  &__preview-loading {
-    display: grid;
-    height: 100%;
-    place-items: center;
+  &__number {
+    min-width: 1.15rem;
     color: var(--text-secondary-color);
     font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
   }
 
-  &__card-copy {
-    display: grid;
+  &__name {
+    overflow: hidden;
+    // Without this a flex item refuses to shrink below its text, so a long
+    // slide name would push the row wide instead of ellipsising.
     min-width: 0;
-    padding: 0.55rem 0.65rem;
-    grid-template-columns: 1.45rem minmax(0, 1fr);
-    align-items: center;
-    gap: 0.4rem;
-
-    strong {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 0.8rem;
-    }
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8rem;
   }
 
-  &__number {
-    display: grid;
-    width: 1.4rem;
-    height: 1.4rem;
-    border-radius: 0.4rem;
-    background: var(--color-primary-light);
-    color: var(--color-primary);
-    place-items: center;
-    font-size: 0.7rem;
-    font-weight: 700;
+  &__rename {
+    width: 100%;
+    min-height: 1.9rem;
+    margin: 0.15rem 0.2rem;
+    padding: 0.2rem 0.4rem;
+    border: 1px solid var(--color-primary);
+    border-radius: 0.35rem;
+    background: var(--island-bg-color);
+    color: inherit;
+    font: inherit;
+    font-size: 0.8rem;
   }
 
   &__actions {
     display: flex;
-    padding: 0 0.55rem 0.5rem;
-    gap: 0.3rem;
+    opacity: 0;
+    gap: 0.1rem;
 
     button {
-      min-width: 1.75rem;
-      min-height: 1.75rem;
-      padding: 0.25rem 0.45rem;
+      display: grid;
+      width: 1.5rem;
+      height: 1.5rem;
+      padding: 0;
       border: 0;
-      border-radius: 0.4rem;
-      background: var(--color-surface-high);
-      color: inherit;
-      font-size: 0.7rem;
+      border-radius: 0.35rem;
+      background: transparent;
+      color: var(--text-secondary-color);
+      place-items: center;
       cursor: pointer;
 
+      &:hover:not(:disabled) {
+        background: var(--color-surface-lowest);
+        color: var(--color-on-surface);
+      }
+
       &:disabled {
-        opacity: 0.35;
+        opacity: 0.3;
         cursor: default;
       }
 
-      &:last-child {
-        margin-left: auto;
+      svg {
+        width: 0.9rem;
+        height: 0.9rem;
       }
     }
+  }
+
+  &__slide:hover &__actions,
+  &__slide:focus-within &__actions,
+  &__slide:hover &__handle,
+  &__slide:focus-within &__handle,
+  &__slide--dragging &__handle {
+    opacity: 1;
   }
 
   &__footer {
