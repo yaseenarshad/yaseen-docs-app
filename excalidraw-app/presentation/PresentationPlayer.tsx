@@ -19,6 +19,34 @@ import "./PresentationPlayer.scss";
 
 export const PRESENTATION_TRANSITION_DURATION = 460;
 
+const PRESENTATION_ACTIVE_BODY_CLASS = "yaseendraw-presentation-active";
+/**
+ * Keyed on by `PresentationPlayer.scss` to bring the editor chrome back and
+ * stop the overlay from swallowing pointer events.
+ */
+const PRESENTATION_TOOLS_BODY_CLASS = "yaseendraw-presentation-tools";
+
+/**
+ * Pins the viewport to the slide. Dropped while tools are shown so the
+ * presenter can pan, zoom and draw; re-applied on every navigation.
+ */
+const PRESENTATION_VIEWPORT_LOCK = {
+  scroll: true,
+  zoom: true,
+  overscroll: false,
+} as const;
+
+/**
+ * Excalidraw's text editor is a `textarea` and the chrome is full of inputs, so
+ * the presentation shortcuts stand down while focus is inside one of them —
+ * otherwise typing "t" or pressing an arrow would navigate instead of edit.
+ */
+const isTextEntryTarget = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.isContentEditable);
+
 const createSessionId = () =>
   `presentation-${Date.now().toString(36)}-${Math.random()
     .toString(36)
@@ -44,6 +72,7 @@ export const PresentationPlayer = ({
   const [slides, setSlides] = useState(initialSlides);
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [isTransitioning, setIsTransitioning] = useState(true);
+  const [toolsVisible, setToolsVisible] = useState(false);
   const slidesRef = useRef(initialSlides);
   const currentIndexRef = useRef(initialIndex);
   const currentFrameIdRef = useRef<string | null>(null);
@@ -132,7 +161,7 @@ export const PresentationPlayer = ({
         target: next.frame.id,
         fit: "contain",
         animation: { duration: PRESENTATION_TRANSITION_DURATION },
-        lock: { scroll: true, zoom: true, overscroll: false },
+        lock: PRESENTATION_VIEWPORT_LOCK,
         offsets: { ui: true },
       });
       transitionTimerRef.current = window.setTimeout(() => {
@@ -192,11 +221,43 @@ export const PresentationPlayer = ({
     [navigateTo],
   );
 
+  /**
+   * Tools shown means the canvas is the presenter's again: the chrome comes
+   * back, the overlay stops swallowing pointer events (both via the body class)
+   * and the viewport is re-issued without the lock. Hiding them puts the lock
+   * back. Navigation always re-locks, without touching this state.
+   */
+  const setToolsVisibility = useCallback(
+    (visible: boolean) => {
+      setToolsVisible(visible);
+      // Written straight to the DOM instead of from an effect so the
+      // chrome-hiding CSS has already resolved when `setViewport` measures
+      // `[data-viewport-ui]` for its `offsets: { ui: true }`.
+      document.body.classList.toggle(PRESENTATION_TOOLS_BODY_CLASS, visible);
+      const frameId = currentFrameIdRef.current;
+      if (!frameId) {
+        return;
+      }
+      excalidrawAPI.setViewport({
+        target: frameId,
+        fit: "contain",
+        offsets: { ui: true },
+        ...(visible ? {} : { lock: PRESENTATION_VIEWPORT_LOCK }),
+      });
+    },
+    [excalidrawAPI],
+  );
+
+  const toggleTools = useCallback(
+    () => setToolsVisibility(!toolsVisible),
+    [setToolsVisibility, toolsVisible],
+  );
+
   useEffect(() => {
     const effectGeneration = ++effectGenerationRef.current;
     didExitRef.current = false;
     overlayRef.current?.focus();
-    document.body.classList.add("yaseendraw-presentation-active");
+    document.body.classList.add(PRESENTATION_ACTIVE_BODY_CLASS);
     // Before the first `setViewport` so the opening slide never flashes a
     // frame outline or name label.
     applyFramesVisibility(excalidrawAPI, false);
@@ -227,7 +288,10 @@ export const PresentationPlayer = ({
 
     return () => {
       unsubscribe();
-      document.body.classList.remove("yaseendraw-presentation-active");
+      document.body.classList.remove(
+        PRESENTATION_ACTIVE_BODY_CLASS,
+        PRESENTATION_TOOLS_BODY_CLASS,
+      );
       // Strict Mode performs a setup → cleanup → setup replay in development.
       // Defer terminal cleanup by one microtask so a replaying setup can claim
       // the same session without publishing a false `ended` event or leaving
@@ -258,7 +322,7 @@ export const PresentationPlayer = ({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (didExitRef.current) {
+      if (didExitRef.current || isTextEntryTarget(event.target)) {
         return;
       }
       const key = event.key;
@@ -278,7 +342,11 @@ export const PresentationPlayer = ({
         navigateTo(slidesRef.current.length - 1, "end");
       } else if (key === "Escape") {
         exit("escape");
-      } else if (key === "Tab") {
+      } else if (key === "t" || key === "T") {
+        toggleTools();
+      } else if (key === "Tab" && !toolsVisible) {
+        // With tools shown the overlay is no longer modal, so the trap would
+        // make the toolbar unreachable by keyboard.
         const controls =
           overlayRef.current?.querySelectorAll<HTMLButtonElement>(
             "button:not(:disabled)",
@@ -306,7 +374,7 @@ export const PresentationPlayer = ({
     };
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [exit, navigateTo, step]);
+  }, [exit, navigateTo, step, toggleTools, toolsVisible]);
 
   const current = slides[currentIndex];
   if (!current) {
@@ -319,11 +387,14 @@ export const PresentationPlayer = ({
       ref={overlayRef}
       className="presentation-player"
       role="dialog"
-      aria-modal="true"
+      aria-modal={!toolsVisible}
       aria-label="Presentation mode"
       tabIndex={-1}
       onClick={(event) => {
-        if (event.target !== event.currentTarget) {
+        // The overlay is `pointer-events: none` while tools are shown, so this
+        // rarely fires then — the guard keeps click-half navigation off for any
+        // event that still reaches it.
+        if (toolsVisible || event.target !== event.currentTarget) {
           return;
         }
         if (event.clientX < window.innerWidth / 2) {
@@ -335,6 +406,9 @@ export const PresentationPlayer = ({
     >
       <div className="presentation-player__status" aria-live="polite">
         {isTransitioning ? "Moving to" : "Showing"} {name}
+      </div>
+      <div className="presentation-player__status" aria-live="polite">
+        {toolsVisible ? "Tools shown" : "Tools hidden"}
       </div>
       <div
         className="presentation-player__controls"
@@ -361,6 +435,14 @@ export const PresentationPlayer = ({
           onClick={() => step(1, "next-button")}
         >
           →
+        </button>
+        <button
+          type="button"
+          aria-label={toolsVisible ? "Hide tools" : "Show tools"}
+          aria-pressed={toolsVisible}
+          onClick={toggleTools}
+        >
+          Tools
         </button>
         <button
           type="button"
