@@ -85,14 +85,24 @@ export const findSlideIndexAtPoint = (
   { x, y }: { x: number; y: number },
   slides: readonly OrderedPresentationFrame[],
 ): number | null => {
-  const index = slides.findIndex(
-    ({ frame }) =>
+  // Slides may overlap — a deck-overview frame drawn around the slides is a
+  // real authoring pattern — so the innermost (smallest) frame under the
+  // point wins, not the first one in presentation order.
+  let bestIndex: number | null = null;
+  let bestArea = Infinity;
+  slides.forEach(({ frame }, index) => {
+    const inside =
       x >= frame.x &&
       x <= frame.x + frame.width &&
       y >= frame.y &&
-      y <= frame.y + frame.height,
-  );
-  return index === -1 ? null : index;
+      y <= frame.y + frame.height;
+    const area = frame.width * frame.height;
+    if (inside && area < bestArea) {
+      bestIndex = index;
+      bestArea = area;
+    }
+  });
+  return bestIndex;
 };
 
 export const reorderPresentationFrames = (

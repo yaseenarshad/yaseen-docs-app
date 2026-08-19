@@ -144,6 +144,26 @@ describe("presentation slides", () => {
       expect(findSlideIndexAtPoint({ x: 3280, y: 740 }, slides)).toBe(1);
     });
 
+    it("prefers the smallest frame when slides overlap (a deck-overview frame drawn around the slides)", () => {
+      // "Deck overview" (order 1) is a 10000x4000 frame that visually wraps
+      // slides b and c. A click on slide c must land on c, not the wrapper.
+      const nested = getOrderedPresentationFrames([
+        {
+          ...frame({ id: "frame-a", order: 1 }),
+          x: -500,
+          y: -500,
+          width: 10000,
+          height: 4000,
+        },
+        { ...frame({ id: "frame-b", order: 2 }), x: 2000 },
+        { ...frame({ id: "frame-c", order: 3 }), x: 4000 },
+      ]);
+      expect(findSlideIndexAtPoint({ x: 4640, y: 380 }, nested)).toBe(2);
+      expect(findSlideIndexAtPoint({ x: 2640, y: 380 }, nested)).toBe(1);
+      // Outside every slide but inside the wrapper → the wrapper.
+      expect(findSlideIndexAtPoint({ x: 100, y: 100 }, nested)).toBe(0);
+    });
+
     it("returns null for a point between or outside the frames", () => {
       expect(findSlideIndexAtPoint({ x: 1500, y: 380 }, slides)).toBeNull();
       expect(findSlideIndexAtPoint({ x: 640, y: 5000 }, slides)).toBeNull();
