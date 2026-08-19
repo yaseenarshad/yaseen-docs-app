@@ -31,42 +31,49 @@
     white-space: nowrap;
   }
 
+  // GRO-1938 (D5): a compact icon-only pill — 42px tall, ~196px wide. No
+  // counter, no frame name; both live in the `__status` live region above.
   &__controls {
     position: absolute;
     display: flex;
-    max-width: min(36rem, calc(100vw - 2rem));
-    min-height: 3.25rem;
-    padding: 0.45rem;
+    padding: 0.25rem;
     border: 1px solid rgb(255 255 255 / 30%);
-    border-radius: 0.85rem;
+    border-radius: 999px;
     background: rgb(20 37 31 / 88%);
     box-shadow: 0 0.8rem 2rem rgb(20 37 31 / 20%);
     color: white;
     inset-block-end: 1rem;
     inset-inline-start: 50%;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.25rem;
     transform: translateX(-50%);
     backdrop-filter: blur(14px);
     cursor: default;
 
     button {
       display: grid;
-      min-width: 2.35rem;
-      min-height: 2.35rem;
-      padding: 0.4rem 0.65rem;
+      width: 2rem;
+      height: 2rem;
+      padding: 0;
       border: 0;
-      border-radius: 0.55rem;
-      background: rgb(255 255 255 / 12%);
-      color: white;
+      border-radius: 50%;
+      background: transparent;
+      color: inherit;
       place-items: center;
-      font: inherit;
-      font-weight: 700;
       cursor: pointer;
 
-      &:hover:not(:disabled),
+      svg {
+        width: 1.15rem;
+        height: 1.15rem;
+      }
+
+      &:hover:not(:disabled) {
+        background: rgb(255 255 255 / 18%);
+      }
+
       &:focus-visible {
-        background: rgb(255 255 255 / 22%);
+        outline: 2px solid rgb(255 255 255 / 85%);
+        outline-offset: 1px;
       }
 
       &:disabled {
@@ -76,41 +83,29 @@
     }
   }
 
-  &__progress {
-    display: flex;
-    overflow: hidden;
-    min-width: min(15rem, 36vw);
-    padding-inline: 0.45rem;
-    flex-direction: column;
-    gap: 0.1rem;
-
-    strong {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 0.8rem;
-    }
-
-    span {
-      color: rgb(255 255 255 / 68%);
-      font-size: 0.68rem;
-    }
+  // The editor's icon set only ships a right arrow.
+  &__previous svg {
+    transform: scaleX(-1);
   }
 
-  &__exit {
-    padding-inline: 0.8rem !important;
+  &__divider {
+    width: 1px;
+    height: 1.15rem;
+    background: rgb(255 255 255 / 25%);
   }
 }
 
-@media (max-width: 36rem) {
+// GRO-1939: on a phone the bar is driven by a thumb — 40px targets, more room
+// between them, and clear of the home indicator.
+@media (max-width: 40rem) {
   .presentation-player__controls {
-    width: calc(100vw - 1rem);
-    inset-block-end: 0.5rem;
-  }
+    gap: 0.5rem;
+    inset-block-end: calc(0.5rem + env(safe-area-inset-bottom, 0px));
 
-  .presentation-player__progress {
-    min-width: 0;
-    flex: 1;
+    button {
+      width: 2.5rem;
+      height: 2.5rem;
+    }
   }
 }
 

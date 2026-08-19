@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import {
+  ArrowRightIcon,
+  CloseIcon,
+} from "@excalidraw/excalidraw/components/icons";
+
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
@@ -13,6 +18,7 @@ import {
   publishPresentationFrameLifecycle,
   type PresentationFrameLifecyclePhase,
 } from "./events";
+import { OverviewIcon, ToolsIcon } from "./icons";
 import { getOrderedPresentationFrames } from "./slides";
 
 import "./PresentationPlayer.scss";
@@ -39,13 +45,16 @@ const PRESENTATION_VIEWPORT_LOCK = {
 /**
  * Excalidraw's text editor is a `textarea` and the chrome is full of inputs, so
  * the presentation shortcuts stand down while focus is inside one of them —
- * otherwise typing "t" or pressing an arrow would navigate instead of edit.
+ * otherwise pressing an arrow (or Shift+T) would navigate instead of edit.
  */
 const isTextEntryTarget = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   (target.tagName === "INPUT" ||
     target.tagName === "TEXTAREA" ||
     target.isContentEditable);
+
+/** A control's tooltip and its accessible name are always the same string. */
+const labelled = (label: string) => ({ title: label, "aria-label": label });
 
 const createSessionId = () =>
   `presentation-${Date.now().toString(36)}-${Math.random()
@@ -56,10 +65,17 @@ export const PresentationPlayer = ({
   excalidrawAPI,
   initialFrameId,
   onExit,
+  onToggleOverview,
 }: {
   excalidrawAPI: ExcalidrawImperativeAPI;
   initialFrameId?: string | null;
   onExit: () => void;
+  /**
+   * Overview mode is GRO-1922. Until something passes a handler the overview
+   * button renders disabled rather than hidden, so the bar's width and tab
+   * order do not shift when it arrives.
+   */
+  onToggleOverview?: () => void;
 }) => {
   const initialSlides = useMemo(
     () => getOrderedPresentationFrames(excalidrawAPI.getSceneElements()),
@@ -343,8 +359,14 @@ export const PresentationPlayer = ({
         navigateTo(slidesRef.current.length - 1, "end");
       } else if (key === "Escape") {
         exit("escape");
-      } else if (key === "t" || key === "T") {
+      } else if (event.shiftKey && (key === "t" || key === "T")) {
+        // Shift, so plain `t` still reaches Excalidraw's text tool (GRO-1954).
         toggleTools();
+      } else if (event.shiftKey && (key === "o" || key === "O")) {
+        // Inert until GRO-1922 passes a handler; the key falls through to the
+        // editor until then rather than being silently swallowed.
+        handled = onToggleOverview !== undefined;
+        onToggleOverview?.();
       } else if (key === "Tab" && !toolsVisible) {
         // With tools shown the overlay is no longer modal, so the trap would
         // make the toolbar unreachable by keyboard.
@@ -375,7 +397,7 @@ export const PresentationPlayer = ({
     };
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [exit, navigateTo, step, toggleTools, toolsVisible]);
+  }, [exit, navigateTo, onToggleOverview, step, toggleTools, toolsVisible]);
 
   const current = slides[currentIndex];
   if (!current) {
@@ -406,7 +428,8 @@ export const PresentationPlayer = ({
       }}
     >
       <div className="presentation-player__status" aria-live="polite">
-        {isTransitioning ? "Moving to" : "Showing"} {name}
+        {isTransitioning ? "Moving to" : "Showing"} slide {currentIndex + 1} of{" "}
+        {slides.length} — {name}
       </div>
       <div className="presentation-player__status" aria-live="polite">
         {toolsVisible ? "Tools shown" : "Tools hidden"}
@@ -417,40 +440,45 @@ export const PresentationPlayer = ({
       >
         <button
           type="button"
-          aria-label="Previous slide"
+          className="presentation-player__previous"
+          {...labelled("Previous slide (←)")}
           disabled={currentIndex === 0}
           onClick={() => step(-1, "previous-button")}
         >
-          ←
+          {ArrowRightIcon}
         </button>
-        <div className="presentation-player__progress">
-          <strong>{name}</strong>
-          <span>
-            {currentIndex + 1} / {slides.length}
-          </span>
-        </div>
         <button
           type="button"
-          aria-label="Next slide"
+          {...labelled("Next slide (→)")}
           disabled={currentIndex === slides.length - 1}
           onClick={() => step(1, "next-button")}
         >
-          →
+          {ArrowRightIcon}
+        </button>
+        <span className="presentation-player__divider" aria-hidden="true" />
+        <button
+          type="button"
+          {...labelled("Overview (⇧O)")}
+          disabled={!onToggleOverview || slides.length < 2}
+          onClick={onToggleOverview}
+        >
+          {OverviewIcon}
         </button>
         <button
           type="button"
-          aria-label={toolsVisible ? "Hide tools" : "Show tools"}
+          {...labelled(toolsVisible ? "Hide tools (⇧T)" : "Show tools (⇧T)")}
           aria-pressed={toolsVisible}
           onClick={toggleTools}
         >
-          Tools
+          {ToolsIcon}
         </button>
+        <span className="presentation-player__divider" aria-hidden="true" />
         <button
           type="button"
-          className="presentation-player__exit"
+          {...labelled("Exit presentation (Esc)")}
           onClick={() => exit("exit-button")}
         >
-          Exit
+          {CloseIcon}
         </button>
       </div>
     </div>,

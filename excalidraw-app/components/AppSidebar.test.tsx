@@ -659,7 +659,9 @@ describe("AppSidebar", () => {
       expect.objectContaining({ target: "opening-frame" }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Exit" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Exit presentation (Esc)" }),
+    );
     expect(setViewport).toHaveBeenLastCalledWith(null);
     expect(
       screen.queryByRole("dialog", { name: "Presentation mode" }),
