@@ -13572,7 +13572,10 @@ exports[`history > singleplayer undo/redo > should create new history entry on i
   "locked": false,
   "opacity": 100,
   "roughness": 0,
-  "roundness": null,
+  "roundness": {
+    "type": 3,
+    "value": 3,
+  },
   "scale": [
     1,
     1,
@@ -13609,7 +13612,10 @@ exports[`history > singleplayer undo/redo > should create new history entry on i
   "locked": false,
   "opacity": 100,
   "roughness": 0,
-  "roundness": null,
+  "roundness": {
+    "type": 3,
+    "value": 1,
+  },
   "scale": [
     1,
     1,
@@ -13670,7 +13676,10 @@ exports[`history > singleplayer undo/redo > should create new history entry on i
             "locked": false,
             "opacity": 100,
             "roughness": 0,
-            "roundness": null,
+            "roundness": {
+              "type": 3,
+              "value": 3,
+            },
             "scale": [
               1,
               1,
@@ -13708,7 +13717,10 @@ exports[`history > singleplayer undo/redo > should create new history entry on i
             "locked": false,
             "opacity": 100,
             "roughness": 0,
-            "roundness": null,
+            "roundness": {
+              "type": 3,
+              "value": 1,
+            },
             "scale": [
               1,
               1,
@@ -13874,7 +13886,10 @@ exports[`history > singleplayer undo/redo > should create new history entry on i
   "locked": false,
   "opacity": 100,
   "roughness": 0,
-  "roundness": null,
+  "roundness": {
+    "type": 3,
+    "value": 3,
+  },
   "scale": [
     1,
     1,
@@ -13911,7 +13926,10 @@ exports[`history > singleplayer undo/redo > should create new history entry on i
   "locked": false,
   "opacity": 100,
   "roughness": 0,
-  "roundness": null,
+  "roundness": {
+    "type": 3,
+    "value": 1,
+  },
   "scale": [
     1,
     1,
@@ -13972,7 +13990,10 @@ exports[`history > singleplayer undo/redo > should create new history entry on i
             "locked": false,
             "opacity": 100,
             "roughness": 0,
-            "roundness": null,
+            "roundness": {
+              "type": 3,
+              "value": 3,
+            },
             "scale": [
               1,
               1,
@@ -14010,7 +14031,10 @@ exports[`history > singleplayer undo/redo > should create new history entry on i
             "locked": false,
             "opacity": 100,
             "roughness": 0,
-            "roundness": null,
+            "roundness": {
+              "type": 3,
+              "value": 1,
+            },
             "scale": [
               1,
               1,
