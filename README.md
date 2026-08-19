@@ -13,6 +13,8 @@ npm install
 npm run dev
 ```
 
+See `LAUNCH.md` for the full launch recipe.
+
 Open <http://127.0.0.1:5173> (or <http://localhost:5173>). The server listens on `127.0.0.1:3737`; the client proxies `/api` to it.
 
 ```sh
