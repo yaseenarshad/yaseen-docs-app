@@ -6,6 +6,7 @@ import {
 
 import {
   getCornerRadius,
+  getRelativeImageCornerRadius,
   getRequestedCornerRadius,
   normalizeCornerRadius,
 } from "../src/utils";
@@ -19,6 +20,17 @@ const elementWithRoundness = (
     type: "rectangle",
     roundness,
   } as ExcalidrawElement);
+
+describe("getRelativeImageCornerRadius", () => {
+  it.each([
+    [400, 300, 3],
+    [1200, 800, 8],
+    [30, 30, 0],
+    [20000, 20000, 100],
+  ])("%ix%i -> %i (1% of shortest side, clamped)", (w, h, expected) => {
+    expect(getRelativeImageCornerRadius(w, h)).toBe(expected);
+  });
+});
 
 describe("continuous corner radius", () => {
   it("publishes the approved numeric contract", () => {

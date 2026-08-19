@@ -1,4 +1,10 @@
-import { MIME_TYPES, randomId, reseed } from "@excalidraw/common";
+import {
+  IMAGE_CORNER_RADIUS_RATIO,
+  MIME_TYPES,
+  randomId,
+  reseed,
+} from "@excalidraw/common";
+import { normalizeCornerRadius } from "@excalidraw/element";
 
 import type { FileId } from "@excalidraw/element/types";
 
@@ -197,7 +203,7 @@ describe("image insertion", () => {
     expect(inserted[0]).toMatchObject(DEER_IMAGE_DIMENSIONS);
   });
 
-  it("keeps the 4px image baseline through async image initialization", async () => {
+  it("starts inserted images at a corner radius of 1% of the shortest side", async () => {
     await setupImageTest([DEER_IMAGE_DIMENSIONS]);
     API.setAppState({
       currentItemRoundness: "round",
@@ -211,9 +217,108 @@ describe("image insertion", () => {
       ]);
     });
 
+    // deer is 318x335 -> min(318, 335) * 0.01 = 3.18 -> 3
     expect(inserted[0]).toMatchObject({
       ...DEER_IMAGE_DIMENSIONS,
-      roundness: { type: 3, value: 4 },
+      roundness: { type: 3, value: 3 },
+    });
+  });
+
+  it("rounds the 1% image corner radius up to 1 for small images", async () => {
+    await setupImageTest([SMILEY_IMAGE_DIMENSIONS]);
+
+    let inserted: Awaited<ReturnType<typeof h.app.insertImages>> = [];
+    await act(async () => {
+      inserted = await h.app.insertImages([
+        await API.loadFile("./fixtures/smiley.png"),
+      ]);
+    });
+
+    // smiley is 56x77 -> 0.56 -> 1
+    expect(inserted[0]).toMatchObject({
+      ...SMILEY_IMAGE_DIMENSIONS,
+      roundness: { type: 3, value: 1 },
+    });
+  });
+
+  it("derives the image corner radius from the actual inserted size of large images", async () => {
+    await setupImageTest([{ width: 1600, height: 1200 }]);
+
+    let inserted: Awaited<ReturnType<typeof h.app.insertImages>> = [];
+    await act(async () => {
+      inserted = await h.app.insertImages([
+        await API.loadFile("./fixtures/deer.png"),
+      ]);
+    });
+
+    const shortestSide = Math.min(inserted[0].width, inserted[0].height);
+    expect(shortestSide).toBeGreaterThan(100);
+    expect(inserted[0].roundness).toEqual({
+      type: 3,
+      value: normalizeCornerRadius(shortestSide * IMAGE_CORNER_RADIUS_RATIO),
+    });
+  });
+
+  it("ignores the sticky corner radius when inserting images", async () => {
+    await setupImageTest([DEER_IMAGE_DIMENSIONS]);
+    API.setAppState({ currentItemCornerRadius: 64 });
+
+    let inserted: Awaited<ReturnType<typeof h.app.insertImages>> = [];
+    await act(async () => {
+      inserted = await h.app.insertImages([
+        await API.loadFile("./fixtures/deer.png"),
+      ]);
+    });
+
+    expect(inserted[0]).toMatchObject({
+      ...DEER_IMAGE_DIMENSIONS,
+      roundness: { type: 3, value: 3 },
+    });
+  });
+
+  it("leaves tiny images without roundness when 1% rounds to zero", async () => {
+    await setupImageTest([{ width: 30, height: 30 }]);
+    API.setAppState({
+      currentItemRoundness: "round",
+      currentItemCornerRadius: 64,
+    });
+
+    let inserted: Awaited<ReturnType<typeof h.app.insertImages>> = [];
+    await act(async () => {
+      inserted = await h.app.insertImages([
+        await API.loadFile("./fixtures/deer.png"),
+      ]);
+    });
+
+    expect(inserted[0]).toMatchObject({
+      width: 30,
+      height: 30,
+      roundness: null,
+    });
+  });
+
+  it("applies the 1% corner radius to the viewport-sized dimensions", async () => {
+    await setupImageTest([DEER_IMAGE_DIMENSIONS]);
+    h.state.width = 1600;
+    h.state.zoom = { value: getNormalizedZoom(0.25) };
+
+    let inserted: Awaited<ReturnType<typeof h.app.insertImages>> = [];
+    await act(async () => {
+      inserted = await h.app.insertImages(
+        [await API.loadFile("./fixtures/deer.png")],
+        undefined,
+        undefined,
+        { viewportSizing: IMAGE_STUDIO_INSERTION },
+      );
+    });
+
+    const shortestSide = Math.min(inserted[0].width, inserted[0].height);
+    expect(shortestSide).not.toBeCloseTo(
+      Math.min(DEER_IMAGE_DIMENSIONS.width, DEER_IMAGE_DIMENSIONS.height),
+    );
+    expect(inserted[0].roundness).toEqual({
+      type: 3,
+      value: normalizeCornerRadius(shortestSide * IMAGE_CORNER_RADIUS_RATIO),
     });
   });
 
