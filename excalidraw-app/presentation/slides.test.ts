@@ -5,6 +5,7 @@ import { newFrameElement, newElement } from "@excalidraw/element";
 import type { ExcalidrawFrameElement } from "@excalidraw/element/types";
 
 import {
+  findSlideIndexAtPoint,
   getOrderedPresentationFrames,
   reorderPresentationFrames,
 } from "./slides";
@@ -122,5 +123,40 @@ describe("presentation slides", () => {
     });
     expect(result[0]).not.toBe(first);
     expect(result[2]).not.toBe(second);
+  });
+
+  describe("findSlideIndexAtPoint", () => {
+    // 1280x720 frames at x = 0 / 2000 / 4000, all at y = 20.
+    const slides = getOrderedPresentationFrames([
+      { ...frame({ id: "frame-a", order: 1 }), x: 0 },
+      { ...frame({ id: "frame-b", order: 2 }), x: 2000 },
+      { ...frame({ id: "frame-c", order: 3 }), x: 4000 },
+    ]);
+
+    it("returns the slide whose frame contains the point", () => {
+      expect(findSlideIndexAtPoint({ x: 640, y: 380 }, slides)).toBe(0);
+      expect(findSlideIndexAtPoint({ x: 2640, y: 380 }, slides)).toBe(1);
+      expect(findSlideIndexAtPoint({ x: 4640, y: 380 }, slides)).toBe(2);
+    });
+
+    it("counts the edges as inside", () => {
+      expect(findSlideIndexAtPoint({ x: 2000, y: 20 }, slides)).toBe(1);
+      expect(findSlideIndexAtPoint({ x: 3280, y: 740 }, slides)).toBe(1);
+    });
+
+    it("returns null for a point between or outside the frames", () => {
+      expect(findSlideIndexAtPoint({ x: 1500, y: 380 }, slides)).toBeNull();
+      expect(findSlideIndexAtPoint({ x: 640, y: 5000 }, slides)).toBeNull();
+      expect(findSlideIndexAtPoint({ x: 0, y: 0 }, [])).toBeNull();
+    });
+
+    it("gives the earlier slide the point when frames overlap", () => {
+      const overlapping = getOrderedPresentationFrames([
+        { ...frame({ id: "frame-a", order: 1 }), x: 0 },
+        { ...frame({ id: "frame-b", order: 2 }), x: 100 },
+      ]);
+
+      expect(findSlideIndexAtPoint({ x: 200, y: 380 }, overlapping)).toBe(0);
+    });
   });
 });

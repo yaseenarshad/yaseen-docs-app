@@ -76,6 +76,25 @@ export const getOrderedPresentationFrames = (
   );
 };
 
+/**
+ * Which slide a scene point lands in, or `null` for a miss — the click target
+ * test for overview mode (GRO-1933). Frames are axis-aligned and never
+ * rotated, so bounds are the whole story; on overlap the earlier slide wins.
+ */
+export const findSlideIndexAtPoint = (
+  { x, y }: { x: number; y: number },
+  slides: readonly OrderedPresentationFrame[],
+): number | null => {
+  const index = slides.findIndex(
+    ({ frame }) =>
+      x >= frame.x &&
+      x <= frame.x + frame.width &&
+      y >= frame.y &&
+      y <= frame.y + frame.height,
+  );
+  return index === -1 ? null : index;
+};
+
 export const reorderPresentationFrames = (
   elements: readonly ExcalidrawElement[],
   orderedFrameIds: readonly string[],

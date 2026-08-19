@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
 import {
   ArrowRightIcon,
   CloseIcon,
@@ -19,7 +20,7 @@ import {
   type PresentationFrameLifecyclePhase,
 } from "./events";
 import { OverviewIcon, ToolsIcon } from "./icons";
-import { getOrderedPresentationFrames } from "./slides";
+import { findSlideIndexAtPoint, getOrderedPresentationFrames } from "./slides";
 
 import "./PresentationPlayer.scss";
 
@@ -466,9 +467,21 @@ export const PresentationPlayer = ({
       tabIndex={-1}
       onClick={(event) => {
         // The overlay is `pointer-events: none` while tools are shown, so this
-        // rarely fires then — the guard keeps click-half navigation off for any
+        // rarely fires then — the guard keeps both click behaviours off for any
         // event that still reaches it.
-        if (toolsVisible || overview || event.target !== event.currentTarget) {
+        if (toolsVisible || event.target !== event.currentTarget) {
+          return;
+        }
+        if (overview) {
+          // Zoomed out, a click means "present that frame". A miss stays in
+          // overview: there is nothing else the gap between frames could mean.
+          const index = findSlideIndexAtPoint(
+            viewportCoordsToSceneCoords(event, excalidrawAPI.getAppState()),
+            slidesRef.current,
+          );
+          if (index !== null) {
+            navigateTo(index, "overview-click");
+          }
           return;
         }
         if (event.clientX < window.innerWidth / 2) {

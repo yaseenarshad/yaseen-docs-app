@@ -36,6 +36,15 @@ const createApi = (ids = ["one", "two", "three"]) => {
   return {
     api: {
       getSceneElements: () => elements,
+      // Identity mapping between client and scene coordinates, so the overview
+      // hit-test in the tests below can use frame coordinates directly.
+      getAppState: () => ({
+        zoom: { value: 1 },
+        offsetLeft: 0,
+        offsetTop: 0,
+        scrollX: 0,
+        scrollY: 0,
+      }),
       onChange: vi.fn((callback) => {
         onChange = callback;
         return vi.fn();
@@ -548,6 +557,94 @@ describe("PresentationPlayer", () => {
 
     expect(onExit).toHaveBeenCalledTimes(1);
     expect(api.setViewport).toHaveBeenLastCalledWith(null);
+  });
+
+  it("presents the frame clicked in overview and ignores a miss", () => {
+    const { api } = createApi();
+    render(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        initialFrameId="one"
+        onExit={vi.fn()}
+      />,
+    );
+    fireEvent.keyDown(document, { key: "O", shiftKey: true });
+
+    // `frame("three", 3)` sits at x 6000..7280, y 3000..3720.
+    fireEvent.click(screen.getByRole("dialog"), {
+      clientX: 6100,
+      clientY: 3100,
+    });
+
+    expectSlide(3, 3);
+    expect(api.setViewport).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        target: "three",
+        lock: { scroll: true, zoom: true, overscroll: false },
+      }),
+    );
+
+    fireEvent.keyDown(document, { key: "O", shiftKey: true });
+    fireEvent.click(screen.getByRole("dialog"), { clientX: 1, clientY: 1 });
+
+    expect(screen.getByText("Overview — 3 frames")).toBeVisible();
+    expect(api.setViewport).toHaveBeenLastCalledWith(
+      expect.objectContaining({ target: expect.any(Array) }),
+    );
+  });
+
+  it("publishes the normal slide change when a frame is clicked in overview", () => {
+    const { api } = createApi();
+    const lifecycle: PresentationFrameLifecycleDetail[] = [];
+    const listener = (event: Event) =>
+      lifecycle.push(
+        (event as CustomEvent<PresentationFrameLifecycleDetail>).detail,
+      );
+    window.addEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
+    render(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        initialFrameId="one"
+        onExit={vi.fn()}
+      />,
+    );
+    act(() => vi.advanceTimersByTime(PRESENTATION_TRANSITION_DURATION + 20));
+
+    fireEvent.keyDown(document, { key: "O", shiftKey: true });
+    fireEvent.click(screen.getByRole("dialog"), {
+      clientX: 4100,
+      clientY: 2100,
+    });
+    act(() => vi.advanceTimersByTime(PRESENTATION_TRANSITION_DURATION + 20));
+
+    expect(
+      lifecycle.filter((event) => event.reason === "overview-click"),
+    ).toMatchObject([
+      { frameId: "one", order: 1, phase: "inactive" },
+      { frameId: "two", order: 2, phase: "transitioning" },
+      { frameId: "two", order: 2, phase: "active" },
+    ]);
+    window.removeEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
+  });
+
+  it("ignores overview clicks while tools are shown", () => {
+    const { api } = createApi();
+    render(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        initialFrameId="one"
+        onExit={vi.fn()}
+      />,
+    );
+    fireEvent.keyDown(document, { key: "O", shiftKey: true });
+    fireEvent.keyDown(document, { key: "T", shiftKey: true });
+
+    fireEvent.click(screen.getByRole("dialog"), {
+      clientX: 6100,
+      clientY: 3100,
+    });
+
+    expect(screen.getByText("Overview — 3 frames")).toBeVisible();
   });
 
   it("disables overview for a single-slide deck", () => {
