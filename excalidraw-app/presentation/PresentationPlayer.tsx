@@ -227,7 +227,7 @@ export const PresentationPlayer = ({
    * and the viewport is re-issued without the lock. Hiding them puts the lock
    * back. Navigation always re-locks, without touching this state.
    */
-  const setToolsVisibility = useCallback(
+  const applyToolsVisibility = useCallback(
     (visible: boolean) => {
       setToolsVisible(visible);
       // Written straight to the DOM instead of from an effect so the
@@ -249,8 +249,8 @@ export const PresentationPlayer = ({
   );
 
   const toggleTools = useCallback(
-    () => setToolsVisibility(!toolsVisible),
-    [setToolsVisibility, toolsVisible],
+    () => applyToolsVisibility(!toolsVisible),
+    [applyToolsVisibility, toolsVisible],
   );
 
   useEffect(() => {
@@ -330,8 +330,9 @@ export const PresentationPlayer = ({
       if (
         key === "ArrowRight" ||
         key === "PageDown" ||
-        key === " " ||
-        key === "Spacebar"
+        // Space pans the canvas and activates whatever the chrome has focused,
+        // so it only advances the slide while the tools are hidden.
+        ((key === " " || key === "Spacebar") && !toolsVisible)
       ) {
         step(1, "next");
       } else if (key === "ArrowLeft" || key === "PageUp") {

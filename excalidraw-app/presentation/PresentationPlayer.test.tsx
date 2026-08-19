@@ -299,6 +299,27 @@ describe("PresentationPlayer", () => {
     expect(screen.getByRole("button", { name: "Hide tools" })).toBeVisible();
   });
 
+  it("leaves Space to the canvas while tools are shown", () => {
+    const { api } = createApi();
+    render(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        initialFrameId="one"
+        onExit={vi.fn()}
+      />,
+    );
+
+    fireEvent.keyDown(document, { key: " " });
+    expect(screen.getByText("2 / 3")).toBeVisible();
+
+    fireEvent.keyDown(document, { key: "t" });
+    fireEvent.keyDown(document, { key: " " });
+    expect(screen.getByText("2 / 3")).toBeVisible();
+
+    fireEvent.keyDown(document, { key: "ArrowRight" });
+    expect(screen.getByText("3 / 3")).toBeVisible();
+  });
+
   it("ignores click-half navigation while tools are shown", () => {
     const { api } = createApi();
     render(
@@ -340,7 +361,7 @@ describe("PresentationPlayer", () => {
     editor.remove();
   });
 
-  it("adds the chrome-hiding body class while presenting and removes it on unmount", async () => {
+  it("owns both chrome body classes and clears them on unmount", async () => {
     const { api } = createApi();
     const { unmount } = render(
       <StrictMode>
@@ -350,11 +371,16 @@ describe("PresentationPlayer", () => {
     await act(async () => undefined);
 
     expect(document.body).toHaveClass("yaseendraw-presentation-active");
+    expect(document.body).not.toHaveClass("yaseendraw-presentation-tools");
+
+    fireEvent.keyDown(document, { key: "t" });
+    expect(document.body).toHaveClass("yaseendraw-presentation-tools");
 
     unmount();
     await act(async () => undefined);
 
     expect(document.body).not.toHaveClass("yaseendraw-presentation-active");
+    expect(document.body).not.toHaveClass("yaseendraw-presentation-tools");
   });
 
   it("restores frames when unmounted without an explicit exit", async () => {
