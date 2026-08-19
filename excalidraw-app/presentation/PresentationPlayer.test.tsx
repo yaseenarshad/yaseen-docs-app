@@ -245,6 +245,144 @@ describe("PresentationPlayer", () => {
     });
   });
 
+  it("unlocks the viewport while tools are shown and re-locks when they are hidden", () => {
+    const { api } = createApi();
+    render(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        initialFrameId="one"
+        onExit={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Show tools" }));
+
+    expect(document.body).toHaveClass("yaseendraw-presentation-tools");
+    expect(api.setViewport).toHaveBeenLastCalledWith({
+      target: "one",
+      fit: "contain",
+      offsets: { ui: true },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide tools" }));
+
+    expect(document.body).not.toHaveClass("yaseendraw-presentation-tools");
+    expect(api.setViewport).toHaveBeenLastCalledWith({
+      target: "one",
+      fit: "contain",
+      offsets: { ui: true },
+      lock: { scroll: true, zoom: true, overscroll: false },
+    });
+  });
+
+  it("re-locks on navigation but leaves the tools shown", () => {
+    const { api } = createApi();
+    render(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        initialFrameId="one"
+        onExit={vi.fn()}
+      />,
+    );
+    fireEvent.keyDown(document, { key: "t" });
+
+    fireEvent.keyDown(document, { key: "ArrowRight" });
+
+    expect(screen.getByText("2 / 3")).toBeVisible();
+    expect(api.setViewport).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        target: "two",
+        lock: { scroll: true, zoom: true, overscroll: false },
+      }),
+    );
+    expect(document.body).toHaveClass("yaseendraw-presentation-tools");
+    expect(screen.getByRole("button", { name: "Hide tools" })).toBeVisible();
+  });
+
+  it("leaves Space to the canvas while tools are shown", () => {
+    const { api } = createApi();
+    render(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        initialFrameId="one"
+        onExit={vi.fn()}
+      />,
+    );
+
+    fireEvent.keyDown(document, { key: " " });
+    expect(screen.getByText("2 / 3")).toBeVisible();
+
+    fireEvent.keyDown(document, { key: "t" });
+    fireEvent.keyDown(document, { key: " " });
+    expect(screen.getByText("2 / 3")).toBeVisible();
+
+    fireEvent.keyDown(document, { key: "ArrowRight" });
+    expect(screen.getByText("3 / 3")).toBeVisible();
+  });
+
+  it("ignores click-half navigation while tools are shown", () => {
+    const { api } = createApi();
+    render(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        initialFrameId="two"
+        onExit={vi.fn()}
+      />,
+    );
+    fireEvent.keyDown(document, { key: "t" });
+
+    fireEvent.click(screen.getByRole("dialog"), { clientX: 1 });
+
+    expect(screen.getByText("2 / 3")).toBeVisible();
+  });
+
+  it("stands down while focus is in a text editor", () => {
+    const { api } = createApi();
+    const onExit = vi.fn();
+    render(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        initialFrameId="two"
+        onExit={onExit}
+      />,
+    );
+    const editor = document.createElement("textarea");
+    document.body.appendChild(editor);
+    editor.focus();
+
+    fireEvent.keyDown(editor, { key: "ArrowRight" });
+    fireEvent.keyDown(editor, { key: "t" });
+    fireEvent.keyDown(editor, { key: "Escape" });
+
+    expect(screen.getByText("2 / 3")).toBeVisible();
+    expect(document.body).not.toHaveClass("yaseendraw-presentation-tools");
+    expect(onExit).not.toHaveBeenCalled();
+
+    editor.remove();
+  });
+
+  it("owns both chrome body classes and clears them on unmount", async () => {
+    const { api } = createApi();
+    const { unmount } = render(
+      <StrictMode>
+        <PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />
+      </StrictMode>,
+    );
+    await act(async () => undefined);
+
+    expect(document.body).toHaveClass("yaseendraw-presentation-active");
+    expect(document.body).not.toHaveClass("yaseendraw-presentation-tools");
+
+    fireEvent.keyDown(document, { key: "t" });
+    expect(document.body).toHaveClass("yaseendraw-presentation-tools");
+
+    unmount();
+    await act(async () => undefined);
+
+    expect(document.body).not.toHaveClass("yaseendraw-presentation-active");
+    expect(document.body).not.toHaveClass("yaseendraw-presentation-tools");
+  });
+
   it("restores frames when unmounted without an explicit exit", async () => {
     const { api } = createApi();
     const { unmount } = render(
