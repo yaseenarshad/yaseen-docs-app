@@ -245,6 +245,23 @@ describe("PresentationPlayer", () => {
     });
   });
 
+  it("adds the chrome-hiding body class while presenting and removes it on unmount", async () => {
+    const { api } = createApi();
+    const { unmount } = render(
+      <StrictMode>
+        <PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />
+      </StrictMode>,
+    );
+    await act(async () => undefined);
+
+    expect(document.body).toHaveClass("yaseendraw-presentation-active");
+
+    unmount();
+    await act(async () => undefined);
+
+    expect(document.body).not.toHaveClass("yaseendraw-presentation-active");
+  });
+
   it("restores frames when unmounted without an explicit exit", async () => {
     const { api } = createApi();
     const { unmount } = render(

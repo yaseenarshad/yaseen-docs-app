@@ -113,3 +113,25 @@
     flex: 1;
   }
 }
+
+// GRO-1935 (D1): hide the editor chrome while presenting. Pure CSS keyed on the
+// body class the player already owns — no zen/view mode, no appState churn — so
+// nothing can leak into a saved scene. The `:not()` lets the tools toggle
+// (GRO-1936) bring the chrome back.
+//
+// - `.layer-ui__wrapper`: desktop toolbar, main menu, contextual properties
+//   toolbar, footer/zoom, and the top-left/top-right app slots.
+// - `.sidebar`: the workspace panel, rendered as a sibling of the wrapper.
+// - `.App-top-bar` / `.App-bottom-bar`: phone chrome — `.layer-ui__wrapper` is
+//   not rendered at that form factor.
+//
+// Everything else stays painted: the canvases, the presentation overlay (it is
+// portalled to `body`, outside `.excalidraw`), and hosted animation iframes.
+body.yaseendraw-presentation-active:not(.yaseendraw-presentation-tools) {
+  .layer-ui__wrapper,
+  .sidebar,
+  .App-top-bar,
+  .App-bottom-bar {
+    display: none !important;
+  }
+}
