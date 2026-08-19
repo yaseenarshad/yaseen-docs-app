@@ -1,9 +1,10 @@
 /* List guide lines (GRO-2030, obsidian-outliner `listLines`). Pure CSS line: a `::before` strip
    on every nested list (`li.list-item > .children > .content-dom > ul/ol`), absolutely
    positioned into the parent item's gutter so the 1px line runs under the parent's glyph centre
-   (glyph column = `--list-indent` - 10px wide, then a 10px gap → centre is indent/2 + 5px left
-   of the nested list). The strip is 10px wide so it is clickable/hoverable; the visible line is
-   a centred 1px background gradient. `position: absolute` → zero layout shift on fold/unfold,
+   (glyph column = `--list-indent` - `--list-label-gap` wide, then the gap → centre is
+   indent/2 + gap/2 left of the nested list). The strip is `--list-label-gap` (10px) wide — width
+   MUST equal the gap for the centring to hold — and wide enough to click/hover; the visible line
+   is a centred 1px background gradient. `position: absolute` → zero layout shift on fold/unfold,
    and a folded list (`display: none`) takes its line with it. Colours from `currentColor`, so
    Crepe light + dark both work. Hover highlighting is driven by guideLines.ts
    (`outline-guide-hover` only when the pointer is over the strip itself, not the list content).
@@ -17,8 +18,8 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(-1 * (var(--list-indent) / 2 + 10px));
-  width: 10px;
+  left: calc(-1 * (var(--list-indent) / 2 + var(--list-label-gap)));
+  width: var(--list-label-gap);
   background: linear-gradient(
       color-mix(in srgb, currentColor 14%, transparent),
       color-mix(in srgb, currentColor 14%, transparent)

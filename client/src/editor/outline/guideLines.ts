@@ -21,7 +21,7 @@ import { toggleOutlineFold } from './outlineFolding'
 
 export const GUIDE_HOVER_CLASS = 'outline-guide-hover'
 
-/** Keep in sync with guideLines.css: strip is 10px wide, centred `--list-indent`/2 + 5px left of the list. */
+/** Keep in sync with guideLines.css / bullets.css: strip is `--list-label-gap` (10px) wide, centred `--list-indent`/2 + 5px left of the list (jsdom resolves no pseudo-element styles, so these stay constants). */
 const STRIP_HALF_WIDTH = 5
 const STRIP_CENTRE_GAP = 5
 /** `--list-indent` (bullets.css) is 2.15em of the editor's base font. */
