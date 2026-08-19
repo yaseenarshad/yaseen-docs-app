@@ -56,6 +56,42 @@
         font-weight: 600;
       }
     }
+
+    &--dragging {
+      background: var(--color-surface-high);
+      opacity: 0.6;
+    }
+
+    &--drop-before {
+      box-shadow: inset 0 2px 0 var(--color-primary);
+    }
+
+    &--drop-after {
+      box-shadow: inset 0 -2px 0 var(--color-primary);
+    }
+  }
+
+  &__handle {
+    display: grid;
+    width: 1.1rem;
+    height: 1.5rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary-color);
+    opacity: 0;
+    place-items: center;
+    touch-action: none;
+    cursor: grab;
+
+    &:active {
+      cursor: grabbing;
+    }
+
+    svg {
+      width: 0.9rem;
+      height: 0.9rem;
+    }
   }
 
   &__open {
@@ -137,7 +173,10 @@
   }
 
   &__slide:hover &__actions,
-  &__slide:focus-within &__actions {
+  &__slide:focus-within &__actions,
+  &__slide:hover &__handle,
+  &__slide:focus-within &__handle,
+  &__slide--dragging &__handle {
     opacity: 1;
   }
 
