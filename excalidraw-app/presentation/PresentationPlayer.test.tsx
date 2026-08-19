@@ -29,8 +29,8 @@ const frame = (id: string, order: number) => ({
   customData: { presentationOrder: order },
 });
 
-const createApi = () => {
-  let elements = [frame("one", 1), frame("two", 2), frame("three", 3)];
+const createApi = (ids = ["one", "two", "three"]) => {
+  let elements = ids.map((id, index) => frame(id, index + 1));
   let onChange: Parameters<ExcalidrawImperativeAPI["onChange"]>[0] | null =
     null;
   return {
@@ -50,6 +50,14 @@ const createApi = () => {
     },
   };
 };
+
+/** The bar is icons only (GRO-1938), so position is read from the live region. */
+const expectSlide = (index: number, total: number) =>
+  expect(
+    screen.getByText(new RegExp(`slide ${index} of ${total}`, "i")),
+  ).toBeVisible();
+
+const control = (name: string) => screen.getByRole("button", { name });
 
 describe("PresentationPlayer", () => {
   beforeEach(() => {
@@ -82,7 +90,7 @@ describe("PresentationPlayer", () => {
       lock: { scroll: true, zoom: true, overscroll: false },
       offsets: { ui: true },
     });
-    expect(screen.getByText("2 / 3")).toBeVisible();
+    expectSlide(2, 3);
     expect(lifecycle.at(-1)).toMatchObject({
       frameId: "two",
       order: 2,
@@ -113,16 +121,16 @@ describe("PresentationPlayer", () => {
     );
 
     fireEvent.keyDown(document, { key: "End" });
-    expect(screen.getByText("3 / 3")).toBeVisible();
+    expectSlide(3, 3);
     fireEvent.keyDown(document, { key: "Home" });
-    expect(screen.getByText("1 / 3")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Next slide" }));
-    expect(screen.getByText("2 / 3")).toBeVisible();
+    expectSlide(1, 3);
+    fireEvent.click(control("Next slide (→)"));
+    expectSlide(2, 3);
     fireEvent.click(screen.getByRole("dialog"), { clientX: 1 });
-    expect(screen.getByText("1 / 3")).toBeVisible();
+    expectSlide(1, 3);
     fireEvent.keyDown(document, { key: "PageDown" });
     fireEvent.keyDown(document, { key: "ArrowLeft" });
-    expect(screen.getByText("1 / 3")).toBeVisible();
+    expectSlide(1, 3);
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(api.setViewport).toHaveBeenLastCalledWith(null);
@@ -151,10 +159,10 @@ describe("PresentationPlayer", () => {
 
     expect(lifecycle.some((event) => event.phase === "ended")).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: "Next slide" }));
-    expect(screen.getByText("2 / 3")).toBeVisible();
+    fireEvent.click(control("Next slide (→)"));
+    expectSlide(2, 3);
 
-    fireEvent.click(screen.getByRole("button", { name: "Exit" }));
+    fireEvent.click(control("Exit presentation (Esc)"));
     expect(onExit).toHaveBeenCalledTimes(1);
     expect(api.setViewport).toHaveBeenLastCalledWith(null);
     window.removeEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
@@ -176,7 +184,7 @@ describe("PresentationPlayer", () => {
     fireEvent.keyDown(document, { key: " " });
     act(() => vi.advanceTimersByTime(PRESENTATION_TRANSITION_DURATION + 20));
 
-    expect(screen.getByText("3 / 3")).toBeVisible();
+    expectSlide(3, 3);
     expect(
       lifecycle
         .filter((event) => event.phase === "active")
@@ -200,7 +208,7 @@ describe("PresentationPlayer", () => {
 
     act(() => controller.deleteFrame("two"));
 
-    expect(screen.getByText("2 / 2")).toBeVisible();
+    expectSlide(2, 2);
     expect(controller.api.setViewport).toHaveBeenLastCalledWith(
       expect.objectContaining({ target: "three" }),
     );
@@ -255,7 +263,7 @@ describe("PresentationPlayer", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Show tools" }));
+    fireEvent.click(control("Show tools (T)"));
 
     expect(document.body).toHaveClass("yaseendraw-presentation-tools");
     expect(api.setViewport).toHaveBeenLastCalledWith({
@@ -264,7 +272,7 @@ describe("PresentationPlayer", () => {
       offsets: { ui: true },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Hide tools" }));
+    fireEvent.click(control("Hide tools (T)"));
 
     expect(document.body).not.toHaveClass("yaseendraw-presentation-tools");
     expect(api.setViewport).toHaveBeenLastCalledWith({
@@ -288,7 +296,7 @@ describe("PresentationPlayer", () => {
 
     fireEvent.keyDown(document, { key: "ArrowRight" });
 
-    expect(screen.getByText("2 / 3")).toBeVisible();
+    expectSlide(2, 3);
     expect(api.setViewport).toHaveBeenLastCalledWith(
       expect.objectContaining({
         target: "two",
@@ -296,7 +304,7 @@ describe("PresentationPlayer", () => {
       }),
     );
     expect(document.body).toHaveClass("yaseendraw-presentation-tools");
-    expect(screen.getByRole("button", { name: "Hide tools" })).toBeVisible();
+    expect(control("Hide tools (T)")).toBeVisible();
   });
 
   it("leaves Space to the canvas while tools are shown", () => {
@@ -310,14 +318,14 @@ describe("PresentationPlayer", () => {
     );
 
     fireEvent.keyDown(document, { key: " " });
-    expect(screen.getByText("2 / 3")).toBeVisible();
+    expectSlide(2, 3);
 
     fireEvent.keyDown(document, { key: "t" });
     fireEvent.keyDown(document, { key: " " });
-    expect(screen.getByText("2 / 3")).toBeVisible();
+    expectSlide(2, 3);
 
     fireEvent.keyDown(document, { key: "ArrowRight" });
-    expect(screen.getByText("3 / 3")).toBeVisible();
+    expectSlide(3, 3);
   });
 
   it("ignores click-half navigation while tools are shown", () => {
@@ -333,7 +341,7 @@ describe("PresentationPlayer", () => {
 
     fireEvent.click(screen.getByRole("dialog"), { clientX: 1 });
 
-    expect(screen.getByText("2 / 3")).toBeVisible();
+    expectSlide(2, 3);
   });
 
   it("stands down while focus is in a text editor", () => {
@@ -354,7 +362,7 @@ describe("PresentationPlayer", () => {
     fireEvent.keyDown(editor, { key: "t" });
     fireEvent.keyDown(editor, { key: "Escape" });
 
-    expect(screen.getByText("2 / 3")).toBeVisible();
+    expectSlide(2, 3);
     expect(document.body).not.toHaveClass("yaseendraw-presentation-tools");
     expect(onExit).not.toHaveBeenCalled();
 
@@ -381,6 +389,83 @@ describe("PresentationPlayer", () => {
 
     expect(document.body).not.toHaveClass("yaseendraw-presentation-active");
     expect(document.body).not.toHaveClass("yaseendraw-presentation-tools");
+  });
+
+  it("renders five icon controls in tab order with no text labels", () => {
+    const { api } = createApi();
+    const { container } = render(
+      <PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />,
+    );
+
+    const bar = container.ownerDocument.querySelector(
+      ".presentation-player__controls",
+    )!;
+    const buttons = Array.from(bar.querySelectorAll("button"));
+
+    expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Previous slide (←)",
+      "Next slide (→)",
+      "Overview (O)",
+      "Show tools (T)",
+      "Exit presentation (Esc)",
+    ]);
+    // Tooltip and accessible name are the same string on every control.
+    expect(buttons.map((button) => button.title)).toEqual(
+      buttons.map((button) => button.getAttribute("aria-label")),
+    );
+    expect(bar.textContent).toBe("");
+  });
+
+  it("disables the arrows at the ends of the deck", () => {
+    const { api } = createApi();
+    render(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        initialFrameId="one"
+        onExit={vi.fn()}
+      />,
+    );
+
+    expect(control("Previous slide (←)")).toBeDisabled();
+    expect(control("Next slide (→)")).toBeEnabled();
+
+    fireEvent.keyDown(document, { key: "End" });
+
+    expect(control("Previous slide (←)")).toBeEnabled();
+    expect(control("Next slide (→)")).toBeDisabled();
+  });
+
+  it("disables overview until a handler is wired, and for a single slide", () => {
+    const { api } = createApi();
+    const onToggleOverview = vi.fn();
+    const { rerender } = render(
+      <PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />,
+    );
+
+    expect(control("Overview (O)")).toBeDisabled();
+
+    rerender(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        onExit={vi.fn()}
+        onToggleOverview={onToggleOverview}
+      />,
+    );
+    fireEvent.click(control("Overview (O)"));
+
+    expect(onToggleOverview).toHaveBeenCalledTimes(1);
+
+    render(
+      <PresentationPlayer
+        excalidrawAPI={createApi(["only"]).api}
+        onExit={vi.fn()}
+        onToggleOverview={onToggleOverview}
+      />,
+    );
+
+    expect(
+      screen.getAllByRole("button", { name: "Overview (O)" })[1],
+    ).toBeDisabled();
   });
 
   it("restores frames when unmounted without an explicit exit", async () => {
