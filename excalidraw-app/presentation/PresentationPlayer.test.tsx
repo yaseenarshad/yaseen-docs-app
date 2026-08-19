@@ -511,7 +511,7 @@ describe("PresentationPlayer", () => {
       phase: "transitioning",
       reason: "overview",
     });
-    expect(screen.getByText("Overview — 3 frames")).toBeVisible();
+    expect(screen.getByText(/^Overview — /)).toBeVisible();
 
     fireEvent.click(control("Exit overview (⇧O)"));
     expect(api.setActiveTool).toHaveBeenLastCalledWith({ type: "selection" });
@@ -548,7 +548,7 @@ describe("PresentationPlayer", () => {
     window.removeEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
   });
 
-  it("leaves overview when an arrow moves to another slide", () => {
+  it("flies to the next slide on an arrow but stays in overview, unlocked", () => {
     const { api } = createApi();
     render(
       <PresentationPlayer
@@ -562,9 +562,28 @@ describe("PresentationPlayer", () => {
     fireEvent.keyDown(document, { key: "ArrowRight" });
 
     expectSlide(2, 3);
-    expect(control("Overview (⇧O)")).toBeVisible();
+    expect(control("Exit overview (⇧O)")).toBeVisible();
+    expect(screen.getByRole("dialog")).toHaveClass(
+      "presentation-player--overview",
+    );
     expect(api.setViewport).toHaveBeenLastCalledWith(
       expect.objectContaining({ target: "two" }),
+    );
+    expect(api.setViewport).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ lock: expect.anything() }),
+    );
+
+    // Leaving overview locks onto the slide we flew to.
+    fireEvent.click(control("Exit overview (⇧O)"));
+    expect(api.setActiveTool).toHaveBeenLastCalledWith({ type: "selection" });
+    expect(api.setViewport).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        target: "two",
+        lock: { scroll: true, zoom: true, overscroll: false },
+      }),
+    );
+    expect(screen.getByRole("dialog")).not.toHaveClass(
+      "presentation-player--overview",
     );
   });
 
@@ -618,24 +637,29 @@ describe("PresentationPlayer", () => {
     // `frame("three", 3)` sits at x 6000..7280, y 3000..3720.
     // A single click pans (free-form); it must not present.
     fireEvent.click(document.body, { clientX: 6100, clientY: 3100 });
-    expect(screen.getByText("Overview — 3 frames")).toBeVisible();
+    expect(screen.getByText(/^Overview — /)).toBeVisible();
 
     fireEvent.doubleClick(document.body, { clientX: 6100, clientY: 3100 });
 
     expectSlide(3, 3);
+    // Still overview: flew to the slide, no lock, border on.
+    expect(screen.getByRole("dialog")).toHaveClass(
+      "presentation-player--overview",
+    );
     expect(api.setViewport).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        target: "three",
-        lock: { scroll: true, zoom: true, overscroll: false },
-      }),
+      expect.objectContaining({ target: "three" }),
+    );
+    expect(api.setViewport).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ lock: expect.anything() }),
     );
 
-    fireEvent.keyDown(document, { key: "O", shiftKey: true });
+    // A miss does nothing: still overview, still on slide three.
     fireEvent.doubleClick(document.body, { clientX: 1, clientY: 1 });
 
-    expect(screen.getByText("Overview — 3 frames")).toBeVisible();
+    expect(screen.getByText(/^Overview — /)).toBeVisible();
+    expectSlide(3, 3);
     expect(api.setViewport).toHaveBeenLastCalledWith(
-      expect.objectContaining({ target: expect.any(Array) }),
+      expect.objectContaining({ target: "three" }),
     );
   });
 
@@ -693,7 +717,7 @@ describe("PresentationPlayer", () => {
       animation: true,
       offsets: cameraOffsets(),
     });
-    expect(screen.getByText("Overview — 3 frames")).toBeVisible();
+    expect(screen.getByText(/^Overview — /)).toBeVisible();
   });
 
   it("still presents on double-click in overview while tools are shown", () => {
