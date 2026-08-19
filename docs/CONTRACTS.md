@@ -6,16 +6,24 @@ Source of truth for types: [`shared/types.ts`](../shared/types.ts). This file is
 
 ```
 package.json          npm workspaces: client, server. Root scripts:
-                        dev        concurrently: server (tsx watch) + client (vite)
-                        build      vite build + server tsc --noEmit
+                        dev        concurrently: server (tsx watch, cwd server/) + client (vite)
+                        build      vite build (client/dist); the server runs from source via tsx
                         typecheck  tsc -p client && tsc -p server && tsc -p shared
                         test       vitest run  (projects: client=jsdom, server=node)
-client/               Vite 7 + React 19 + TS, @milkdown/crepe 7.22.x  (port 5173, strict)
+client/               Vite 7 + React 19 + TS, @milkdown/crepe 7.22.x  (127.0.0.1:5173, strict port)
                         vite proxy: /api -> http://127.0.0.1:3737
-  src/editor/createCrepe.ts   locked Crepe factory (see "Editor rules")
-  src/editor/frontmatter.ts   split/join YAML frontmatter
-  src/test-setup.ts           jsdom stubs (IntersectionObserver, ResizeObserver, Range rects)
+  src/App.tsx                 root/file/picker state; Sidebar is keyed by root
+  src/api.ts                  typed fetch wrappers + ApiRequestError
+  src/editor/                 Editor (Crepe host + conflict bar), createCrepe (locked factory, see "Editor rules"), frontmatter, SaveIndicator
+  src/hooks/                  useFile (load), useAutosave (debounce/flush/conflict), useWatch (one EventSource per root, fan-out)
+  src/lib/                    pure logic with unit tests: autosave state machine, storage (localStorage), treeState, paths
+  src/sidebar/                Sidebar, Tree, FolderPicker
+  src/test-setup.ts           jsdom stubs (observers, Range rects, localStorage on Node >= 25)
 server/               Hono 4 + @hono/node-server, chokidar 4, run with tsx (port 3737, binds 127.0.0.1)
+  src/app.ts                  Hono app + error mapping (tests import this); src/index.ts only listens
+  src/fs-utils.ts             ApiFailure, path/dir guards, listDirs, buildTree, atomicWrite
+  src/watchers.ts             one shared chokidar watcher per root
+  src/routes/                 dirs, tree, file, watch (+ *.test.ts); src/test-fixture.ts builds a temp vault
 shared/types.ts       shared TS types (alias @shared/* in both tsconfigs + vite)
 docs/CONTRACTS.md     this file
 ```
@@ -35,19 +43,20 @@ All errors: `{ error: { code, message, path? } }` with `ApiErrorCode` (see types
 | GET | `/api/dirs` | `?path=<abs>` (omitted → `$HOME`) | `DirsResponse` — child dirs only, no dotdirs, sorted case-insensitive; `parent` null at `/` |
 | GET | `/api/tree` | `?root=<abs>` | `TreeResponse` — recursive; only `.md`/`.markdown` files; dirs without markdown below are pruned; dot-entries and `node_modules` skipped; dirs before files, each sorted case-insensitive |
 | GET | `/api/file` | `?path=<abs>` | `FileResponse` — raw UTF-8 content incl. frontmatter; 413 if > 10 MiB |
-| PUT | `/api/file` | JSON `FileWriteRequest { path, content, expectedMtime? }` | `FileWriteResponse { path, mtime, size }` — atomic write (`<name>.tmp-<rand>` + `rename`); parent dir must exist; if `expectedMtime` given and disk mtime is newer → 409 `FileWriteConflict` and nothing written |
+| PUT | `/api/file` | JSON `FileWriteRequest { path, content, expectedMtime? }` | `FileWriteResponse { path, mtime, size }` — atomic write (`<name>.tmp-<rand>` + `rename`); parent dir must exist; if `expectedMtime` given and the disk mtime differs → 409 `FileWriteConflict` and nothing written |
 | GET | `/api/watch` | `?root=<abs>` | SSE stream of `WatchEvent`: `event: <type>\ndata: <json>\n\n`; first event `ready`; `: ping` comment every 25 s; chokidar with `ignoreInitial: true`, `awaitWriteFinish: { stabilityThreshold: 200 }`, ignores dot-entries and `node_modules`, only `.md`/`.markdown` file events (+ dir add/unlink) |
 
 Notes
 - Server writes trigger `change` events on the watcher; client must ignore events for a path whose mtime equals the mtime it just received from its own PUT (echo suppression).
-- Auto-save: client debounces 500 ms after last `markdownUpdated`, also flushes on file switch / window `beforeunload`.
+- Auto-save: client debounces 500 ms after last `markdownUpdated`, also flushes on file switch / window `beforeunload`. Only content that differs from the last loaded/saved markdown is saved (Crepe's first serialisation is a normalised rewrite and is never written on its own).
+- Server tests run chokidar with `CHOKIDAR_USEPOLLING=1` (see `server/vitest.config.ts`): on macOS libuv starts the FSEvents stream asynchronously, so a write right after `ready` can be missed; polling makes the tests deterministic.
 
 ## Editor rules (client)
 
 1. **Frontmatter**: on load, `splitFrontmatter(content)` → `{ frontmatter, body }`; only `body` goes into Crepe. On save, write `frontmatter + getMarkdownForSave(crepe)`. Frontmatter is re-prepended byte-identically (Crepe would otherwise turn `---` YAML into `***` + paragraph + setext heading underline).
 2. **Crepe construction**: always via `createCrepe()` — ImageBlock feature OFF, list_item content `block+` (extended from GFM task item schema), `markdownUpdated` listener wired.
 3. **Save post-processing**: `postProcessMarkdown()` un-escapes `\[\[` → `[[` (wikilinks/embeds).
-4. **Replacing content in a live instance** (external change, file switch without remount): `setMarkdown(crepe, md)` → `replaceAll(md, true)` from `@milkdown/kit/utils`. Simpler alternative for file switch: `destroy()` + `createCrepe()` again.
+4. **Replacing content in a live instance** (external change / Reload): `setMarkdown(crepe, md)` → `replaceAll(md, true)` from `@milkdown/kit/utils`, keeping focus and caret. File switch remounts the Crepe host (`key={path}`); the previous file stays on screen until the next one has loaded.
 5. **Accepted lossy normalisation** (standard remark-stringify behaviour; content preserved, formatting normalised): `-`/`+` bullets → `*` (alternating `-` for adjacent sibling lists), tabs → 2-space indent, `1)` ↔ `1.` ordered markers swap/renumber, setext → ATX headings, two-space hard breaks → `\`, trailing whitespace stripped, `___` → `***`, indented code → fenced, tables re-padded, lazy blockquote continuation gets `> `, `_`/`*`/`[`/`=`/`&` escaped in text where ambiguous, bare URLs/emails → `<autolink>`, file always ends with a single `\n`. First save of an untouched file WILL rewrite the file in this normalised form.
 
 ## localStorage (client)
