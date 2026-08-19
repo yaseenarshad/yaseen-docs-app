@@ -1947,6 +1947,10 @@ const ExcalidrawWrapper = () => {
             cloud.route.kind === "owner" &&
             cloud.openedBoard?.access === "owner"
           }
+          // Slide order/names live in the scene, so any board the user can
+          // draw on (local or owned) can reorder; only shared view-mode links
+          // are read-only.
+          canEditSlides={cloud.route.kind !== "shared"}
           canManageDocs={
             DOCS_WRITABLE &&
             cloud.route.kind === "owner" &&

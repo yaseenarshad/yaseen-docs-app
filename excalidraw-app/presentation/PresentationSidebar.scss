@@ -79,7 +79,8 @@
     border: 0;
     background: transparent;
     color: var(--text-secondary-color);
-    opacity: 0;
+    // Always discoverable: dim at rest, full on hover/focus/drag.
+    opacity: 0.45;
     place-items: center;
     touch-action: none;
     cursor: grab;

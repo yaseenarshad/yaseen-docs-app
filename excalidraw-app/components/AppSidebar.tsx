@@ -95,6 +95,7 @@ type BoardBrowserProps = {
 type AppSidebarProps = BoardBrowserProps & {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
   canInsertMedia: boolean;
+  canEditSlides?: boolean;
   canManageDocs?: boolean;
   onActivateDoc?: (docId: string, title: string) => void;
   imageStudioSearchFocusRequest: number;
@@ -1169,6 +1170,7 @@ export const openBoardFromSidebar = async (
 export const AppSidebar = ({
   excalidrawAPI,
   canInsertMedia,
+  canEditSlides = canInsertMedia,
   canManageDocs = false,
   onActivateDoc,
   imageStudioSearchFocusRequest,
@@ -1329,7 +1331,7 @@ export const AppSidebar = ({
           {excalidrawAPI && (
             <PresentationSidebar
               excalidrawAPI={excalidrawAPI}
-              canEdit={canInsertMedia}
+              canEdit={canEditSlides}
               onStartPresentation={(initialFrameId) => {
                 setPresentationSession({ initialFrameId });
                 excalidrawAPI.toggleSidebar({ name: null, force: false });
