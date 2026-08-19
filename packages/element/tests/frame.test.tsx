@@ -706,6 +706,17 @@ describe("adding elements to frames", () => {
         width: 30,
         height: 30,
       });
+      // A title text box that is a hair wider than the frame — its centre is
+      // inside, so it rides along (frames need full containment; other
+      // elements only need their centre inside).
+      const wideText = API.createElement({
+        id: "wideText",
+        type: "rectangle",
+        x: -5,
+        y: 10,
+        width: 410,
+        height: 20,
+      });
       const straddling = API.createElement({
         id: "straddling",
         type: "rectangle",
@@ -713,6 +724,15 @@ describe("adding elements to frames", () => {
         y: 380,
         width: 60,
         height: 60,
+      });
+      // A nested frame poking out is NOT carried: frames need full containment.
+      const pokingFrame = API.createElement({
+        id: "pokingFrame",
+        type: "frame",
+        x: 300,
+        y: 300,
+        width: 150,
+        height: 50,
       });
       const outside = API.createElement({
         id: "outside",
@@ -722,7 +742,16 @@ describe("adding elements to frames", () => {
         width: 30,
         height: 30,
       });
-      API.setElements([outer, inner, innerChild, loose, straddling, outside]);
+      API.setElements([
+        outer,
+        inner,
+        innerChild,
+        loose,
+        wideText,
+        straddling,
+        pokingFrame,
+        outside,
+      ]);
 
       // frames are hit on their outline: grab the outer frame's left edge
       mouse.clickAt(0, 200);
@@ -737,9 +766,12 @@ describe("adding elements to frames", () => {
       expect(API.getElement(innerChild).x).toBe(160);
       expect(API.getElement(loose).x).toBe(350);
       expect(API.getElement(loose).y).toBe(300);
-      // not fully inside → untouched
+      expect(API.getElement(wideText).x).toBe(95);
+      // centre outside → untouched
       expect(API.getElement(straddling).x).toBe(380);
       expect(API.getElement(outside).x).toBe(600);
+      // frame not fully inside → untouched
+      expect(API.getElement(pokingFrame).x).toBe(300);
       // still not parented: frames stay one level deep
       expect(API.getElement(inner).frameId).toBe(null);
       expect(API.getElement(loose).frameId).toBe(null);
