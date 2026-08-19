@@ -667,6 +667,85 @@ describe("adding elements to frames", () => {
     });
   });
 
+  describe("dragging a frame carries what sits inside it", () => {
+    // Frames are one level deep, so a frame drawn around other frames never
+    // becomes their parent. Dragging the outer frame must still carry them —
+    // nested frames, their children, and loose unparented elements — as long
+    // as they sit fully inside its bounds. Partially overlapping ones stay.
+    it("moves nested frames, their children and loose elements fully inside", () => {
+      const outer = API.createElement({
+        id: "outer",
+        type: "frame",
+        x: 0,
+        y: 0,
+        width: 400,
+        height: 400,
+      });
+      const inner = API.createElement({
+        id: "inner",
+        type: "frame",
+        x: 50,
+        y: 50,
+        width: 100,
+        height: 100,
+      });
+      const innerChild = API.createElement({
+        id: "innerChild",
+        type: "rectangle",
+        x: 60,
+        y: 60,
+        width: 20,
+        height: 20,
+        frameId: inner.id,
+      });
+      const loose = API.createElement({
+        id: "loose",
+        type: "rectangle",
+        x: 250,
+        y: 250,
+        width: 30,
+        height: 30,
+      });
+      const straddling = API.createElement({
+        id: "straddling",
+        type: "rectangle",
+        x: 380,
+        y: 380,
+        width: 60,
+        height: 60,
+      });
+      const outside = API.createElement({
+        id: "outside",
+        type: "rectangle",
+        x: 600,
+        y: 600,
+        width: 30,
+        height: 30,
+      });
+      API.setElements([outer, inner, innerChild, loose, straddling, outside]);
+
+      // frames are hit on their outline: grab the outer frame's left edge
+      mouse.clickAt(0, 200);
+      mouse.downAt(0, 200);
+      mouse.moveTo(100, 250);
+      mouse.up();
+
+      expect(API.getElement(outer).x).toBe(100);
+      expect(API.getElement(outer).y).toBe(50);
+      expect(API.getElement(inner).x).toBe(150);
+      expect(API.getElement(inner).y).toBe(100);
+      expect(API.getElement(innerChild).x).toBe(160);
+      expect(API.getElement(loose).x).toBe(350);
+      expect(API.getElement(loose).y).toBe(300);
+      // not fully inside → untouched
+      expect(API.getElement(straddling).x).toBe(380);
+      expect(API.getElement(outside).x).toBe(600);
+      // still not parented: frames stay one level deep
+      expect(API.getElement(inner).frameId).toBe(null);
+      expect(API.getElement(loose).frameId).toBe(null);
+    });
+  });
+
   describe("dragging elements into the frame", async () => {
     await commonTestCases(dragElementIntoFrame);
 

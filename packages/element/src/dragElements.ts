@@ -17,6 +17,7 @@ import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
 
 import { unbindBindingElement, updateBoundElements } from "./binding";
 import { getCommonBounds } from "./bounds";
+import { getElementsWithinSelection } from "./selection";
 import { getPerfectElementSize } from "./sizeHelpers";
 import { getBoundTextElement } from "./textElement";
 import { getMinTextElementWidth } from "./textMeasurements";
@@ -72,13 +73,28 @@ export const dragSelectedElements = (
   const elementsToUpdate = new Set<NonDeletedExcalidrawElement>(
     selectedElements,
   );
-  const frames = selectedElements
-    .filter((e) => isFrameLikeElement(e))
-    .map((f) => f.id);
+  const frames = selectedElements.filter(isFrameLikeElement);
 
   if (frames.length > 0) {
-    for (const element of scene.getNonDeletedElements()) {
-      if (element.frameId !== null && frames.includes(element.frameId)) {
+    const frameIds = new Set(frames.map((frame) => frame.id));
+    const allElements = scene.getNonDeletedElements();
+    const elementsMap = scene.getNonDeletedElementsMap();
+    for (const element of allElements) {
+      if (element.frameId !== null && frameIds.has(element.frameId)) {
+        elementsToUpdate.add(element);
+      }
+    }
+    // Frames are one level deep, so a frame drawn around other frames never
+    // owns them. Dragging it still carries everything sitting fully inside
+    // its bounds — nested frames, their children, loose elements — the way a
+    // presenter expects a "part" or "deck" frame to move as one piece.
+    for (const frame of frames) {
+      for (const element of getElementsWithinSelection(
+        allElements,
+        frame,
+        elementsMap,
+        false,
+      )) {
         elementsToUpdate.add(element);
       }
     }
