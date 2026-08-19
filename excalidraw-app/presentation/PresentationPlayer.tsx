@@ -45,7 +45,7 @@ const PRESENTATION_VIEWPORT_LOCK = {
 /**
  * Excalidraw's text editor is a `textarea` and the chrome is full of inputs, so
  * the presentation shortcuts stand down while focus is inside one of them —
- * otherwise typing "t" or pressing an arrow would navigate instead of edit.
+ * otherwise pressing an arrow (or Shift+T) would navigate instead of edit.
  */
 const isTextEntryTarget = (target: EventTarget | null) =>
   target instanceof HTMLElement &&

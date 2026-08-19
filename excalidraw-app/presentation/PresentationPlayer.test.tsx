@@ -435,7 +435,7 @@ describe("PresentationPlayer", () => {
     expect(control("Next slide (→)")).toBeDisabled();
   });
 
-  it("disables overview until a handler is wired, and for a single slide", () => {
+  it("disables overview until GRO-1922 wires a handler", () => {
     const { api } = createApi();
     const onToggleOverview = vi.fn();
     const { rerender } = render(
@@ -453,19 +453,23 @@ describe("PresentationPlayer", () => {
     );
     fireEvent.click(control("Overview (⇧O)"));
 
+    expect(control("Overview (⇧O)")).toBeEnabled();
     expect(onToggleOverview).toHaveBeenCalledTimes(1);
+  });
 
+  it("disables overview for a single-slide deck even when wired", () => {
+    const { api } = createApi(["only"]);
     render(
       <PresentationPlayer
-        excalidrawAPI={createApi(["only"]).api}
+        excalidrawAPI={api}
         onExit={vi.fn()}
-        onToggleOverview={onToggleOverview}
+        onToggleOverview={vi.fn()}
       />,
     );
 
-    expect(
-      screen.getAllByRole("button", { name: "Overview (⇧O)" })[1],
-    ).toBeDisabled();
+    expect(control("Overview (⇧O)")).toBeDisabled();
+    expect(control("Previous slide (←)")).toBeDisabled();
+    expect(control("Next slide (→)")).toBeDisabled();
   });
 
   it("toggles tools on Shift+T and leaves plain T to the text tool", () => {
