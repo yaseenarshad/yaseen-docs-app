@@ -68,6 +68,22 @@ const expectSlide = (index: number, total: number) =>
 
 const control = (name: string) => screen.getByRole("button", { name });
 
+/**
+ * What every presentation `setViewport` call is expected to pass (GRO-1948) —
+ * spelled out from the current window rather than read back from the helper.
+ */
+const cameraOffsets = () => ({
+  ui: true,
+  right: Math.round(window.innerWidth * 0.32),
+});
+
+const setWindowWidth = (width: number) =>
+  Object.defineProperty(window, "innerWidth", {
+    value: width,
+    configurable: true,
+    writable: true,
+  });
+
 describe("PresentationPlayer", () => {
   beforeEach(() => {
     window.localStorage.removeItem(FRAMES_VISIBLE_STORAGE_KEY);
@@ -97,7 +113,7 @@ describe("PresentationPlayer", () => {
       fit: "contain",
       animation: { duration: PRESENTATION_TRANSITION_DURATION },
       lock: { scroll: true, zoom: true, overscroll: false },
-      offsets: { ui: true },
+      offsets: cameraOffsets(),
     });
     expectSlide(2, 3);
     expect(lifecycle.at(-1)).toMatchObject({
@@ -278,7 +294,8 @@ describe("PresentationPlayer", () => {
     expect(api.setViewport).toHaveBeenLastCalledWith({
       target: "one",
       fit: "contain",
-      offsets: { ui: true },
+      animation: true,
+      offsets: cameraOffsets(),
     });
 
     fireEvent.click(control("Hide tools (⇧T)"));
@@ -287,7 +304,8 @@ describe("PresentationPlayer", () => {
     expect(api.setViewport).toHaveBeenLastCalledWith({
       target: "one",
       fit: "contain",
-      offsets: { ui: true },
+      animation: true,
+      offsets: cameraOffsets(),
       lock: { scroll: true, zoom: true, overscroll: false },
     });
   });
@@ -472,7 +490,7 @@ describe("PresentationPlayer", () => {
       fit: "contain",
       animation: { duration: PRESENTATION_TRANSITION_DURATION },
       lock: { scroll: true, zoom: true, overscroll: false },
-      offsets: { ui: true },
+      offsets: cameraOffsets(),
     });
     expect(lifecycle.at(-1)).toMatchObject({
       frameId: "two",
@@ -647,7 +665,8 @@ describe("PresentationPlayer", () => {
         expect.objectContaining({ id: "three" }),
       ],
       fit: "contain",
-      offsets: { ui: true },
+      animation: true,
+      offsets: cameraOffsets(),
     });
     expect(screen.getByText("Overview — 3 frames")).toBeVisible();
   });
@@ -714,6 +733,88 @@ describe("PresentationPlayer", () => {
     fireEvent.keyDown(document, { key: "O", shiftKey: true });
     expectSlide(1, 3);
     expect(control("Overview (⇧O)")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("re-fits the slide with fresh offsets on resize, and stops once exited", () => {
+    const originalWidth = window.innerWidth;
+    const { api } = createApi();
+    render(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        initialFrameId="two"
+        onExit={vi.fn()}
+      />,
+    );
+    act(() => vi.advanceTimersByTime(PRESENTATION_TRANSITION_DURATION + 20));
+
+    setWindowWidth(1600);
+    const callsBefore = vi.mocked(api.setViewport).mock.calls.length;
+    fireEvent(window, new Event("resize"));
+    fireEvent(window, new Event("resize"));
+    // Debounced: a burst of resize events costs a single viewport write.
+    expect(vi.mocked(api.setViewport).mock.calls).toHaveLength(callsBefore);
+
+    act(() => vi.advanceTimersByTime(200));
+
+    expect(api.setViewport).toHaveBeenLastCalledWith({
+      target: "two",
+      fit: "contain",
+      animation: false,
+      offsets: { ui: true, right: 512 },
+      lock: { scroll: true, zoom: true, overscroll: false },
+    });
+
+    // The lock state is whatever the presenter left it as — the reserve is not.
+    fireEvent.keyDown(document, { key: "T", shiftKey: true });
+    fireEvent(window, new Event("resize"));
+    act(() => vi.advanceTimersByTime(200));
+
+    expect(api.setViewport).toHaveBeenLastCalledWith({
+      target: "two",
+      fit: "contain",
+      animation: false,
+      offsets: { ui: true, right: 512 },
+    });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(api.setViewport).toHaveBeenLastCalledWith(null);
+
+    fireEvent(window, new Event("resize"));
+    act(() => vi.advanceTimersByTime(200));
+    expect(api.setViewport).toHaveBeenLastCalledWith(null);
+
+    setWindowWidth(originalWidth);
+  });
+
+  it("re-fits the whole deck on resize while in overview", () => {
+    const originalWidth = window.innerWidth;
+    const { api } = createApi();
+    render(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        initialFrameId="one"
+        onExit={vi.fn()}
+      />,
+    );
+    fireEvent.keyDown(document, { key: "O", shiftKey: true });
+
+    setWindowWidth(1600);
+    fireEvent(window, new Event("resize"));
+    act(() => vi.advanceTimersByTime(200));
+
+    expect(api.setViewport).toHaveBeenLastCalledWith({
+      target: [
+        expect.objectContaining({ id: "one" }),
+        expect.objectContaining({ id: "two" }),
+        expect.objectContaining({ id: "three" }),
+      ],
+      fit: "contain",
+      animation: false,
+      offsets: { ui: true, right: 512 },
+      lock: { scroll: true, zoom: true, overscroll: false },
+    });
+
+    setWindowWidth(originalWidth);
   });
 
   it("restores frames when unmounted without an explicit exit", async () => {
