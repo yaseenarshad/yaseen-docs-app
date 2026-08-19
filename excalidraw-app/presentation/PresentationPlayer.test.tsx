@@ -263,7 +263,7 @@ describe("PresentationPlayer", () => {
       />,
     );
 
-    fireEvent.click(control("Show tools (T)"));
+    fireEvent.click(control("Show tools (⇧T)"));
 
     expect(document.body).toHaveClass("yaseendraw-presentation-tools");
     expect(api.setViewport).toHaveBeenLastCalledWith({
@@ -272,7 +272,7 @@ describe("PresentationPlayer", () => {
       offsets: { ui: true },
     });
 
-    fireEvent.click(control("Hide tools (T)"));
+    fireEvent.click(control("Hide tools (⇧T)"));
 
     expect(document.body).not.toHaveClass("yaseendraw-presentation-tools");
     expect(api.setViewport).toHaveBeenLastCalledWith({
@@ -292,7 +292,7 @@ describe("PresentationPlayer", () => {
         onExit={vi.fn()}
       />,
     );
-    fireEvent.keyDown(document, { key: "t" });
+    fireEvent.keyDown(document, { key: "T", shiftKey: true });
 
     fireEvent.keyDown(document, { key: "ArrowRight" });
 
@@ -304,7 +304,7 @@ describe("PresentationPlayer", () => {
       }),
     );
     expect(document.body).toHaveClass("yaseendraw-presentation-tools");
-    expect(control("Hide tools (T)")).toBeVisible();
+    expect(control("Hide tools (⇧T)")).toBeVisible();
   });
 
   it("leaves Space to the canvas while tools are shown", () => {
@@ -320,7 +320,7 @@ describe("PresentationPlayer", () => {
     fireEvent.keyDown(document, { key: " " });
     expectSlide(2, 3);
 
-    fireEvent.keyDown(document, { key: "t" });
+    fireEvent.keyDown(document, { key: "T", shiftKey: true });
     fireEvent.keyDown(document, { key: " " });
     expectSlide(2, 3);
 
@@ -337,7 +337,7 @@ describe("PresentationPlayer", () => {
         onExit={vi.fn()}
       />,
     );
-    fireEvent.keyDown(document, { key: "t" });
+    fireEvent.keyDown(document, { key: "T", shiftKey: true });
 
     fireEvent.click(screen.getByRole("dialog"), { clientX: 1 });
 
@@ -359,7 +359,7 @@ describe("PresentationPlayer", () => {
     editor.focus();
 
     fireEvent.keyDown(editor, { key: "ArrowRight" });
-    fireEvent.keyDown(editor, { key: "t" });
+    fireEvent.keyDown(editor, { key: "T", shiftKey: true });
     fireEvent.keyDown(editor, { key: "Escape" });
 
     expectSlide(2, 3);
@@ -381,7 +381,7 @@ describe("PresentationPlayer", () => {
     expect(document.body).toHaveClass("yaseendraw-presentation-active");
     expect(document.body).not.toHaveClass("yaseendraw-presentation-tools");
 
-    fireEvent.keyDown(document, { key: "t" });
+    fireEvent.keyDown(document, { key: "T", shiftKey: true });
     expect(document.body).toHaveClass("yaseendraw-presentation-tools");
 
     unmount();
@@ -405,8 +405,8 @@ describe("PresentationPlayer", () => {
     expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
       "Previous slide (←)",
       "Next slide (→)",
-      "Overview (O)",
-      "Show tools (T)",
+      "Overview (⇧O)",
+      "Show tools (⇧T)",
       "Exit presentation (Esc)",
     ]);
     // Tooltip and accessible name are the same string on every control.
@@ -442,7 +442,7 @@ describe("PresentationPlayer", () => {
       <PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />,
     );
 
-    expect(control("Overview (O)")).toBeDisabled();
+    expect(control("Overview (⇧O)")).toBeDisabled();
 
     rerender(
       <PresentationPlayer
@@ -451,7 +451,7 @@ describe("PresentationPlayer", () => {
         onToggleOverview={onToggleOverview}
       />,
     );
-    fireEvent.click(control("Overview (O)"));
+    fireEvent.click(control("Overview (⇧O)"));
 
     expect(onToggleOverview).toHaveBeenCalledTimes(1);
 
@@ -464,8 +464,50 @@ describe("PresentationPlayer", () => {
     );
 
     expect(
-      screen.getAllByRole("button", { name: "Overview (O)" })[1],
+      screen.getAllByRole("button", { name: "Overview (⇧O)" })[1],
     ).toBeDisabled();
+  });
+
+  it("toggles tools on Shift+T and leaves plain T to the text tool", () => {
+    const { api } = createApi();
+    render(<PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />);
+
+    fireEvent.keyDown(document, { key: "t" });
+
+    expect(document.body).not.toHaveClass("yaseendraw-presentation-tools");
+    expect(control("Show tools (⇧T)")).toBeVisible();
+
+    fireEvent.keyDown(document, { key: "T", shiftKey: true });
+    expect(document.body).toHaveClass("yaseendraw-presentation-tools");
+
+    fireEvent.keyDown(document, { key: "T", shiftKey: true });
+    expect(document.body).not.toHaveClass("yaseendraw-presentation-tools");
+  });
+
+  it("routes Shift+O to overview, and does nothing while it is unwired", () => {
+    const { api } = createApi();
+    const onToggleOverview = vi.fn();
+    const { rerender } = render(
+      <PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />,
+    );
+
+    fireEvent.keyDown(document, { key: "O", shiftKey: true });
+    fireEvent.keyDown(document, { key: "o" });
+
+    expect(onToggleOverview).not.toHaveBeenCalled();
+    expectSlide(1, 3);
+
+    rerender(
+      <PresentationPlayer
+        excalidrawAPI={api}
+        onExit={vi.fn()}
+        onToggleOverview={onToggleOverview}
+      />,
+    );
+    fireEvent.keyDown(document, { key: "O", shiftKey: true });
+    fireEvent.keyDown(document, { key: "o" });
+
+    expect(onToggleOverview).toHaveBeenCalledTimes(1);
   });
 
   it("restores frames when unmounted without an explicit exit", async () => {

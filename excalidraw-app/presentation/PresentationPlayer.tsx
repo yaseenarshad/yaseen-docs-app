@@ -359,8 +359,14 @@ export const PresentationPlayer = ({
         navigateTo(slidesRef.current.length - 1, "end");
       } else if (key === "Escape") {
         exit("escape");
-      } else if (key === "t" || key === "T") {
+      } else if (event.shiftKey && (key === "t" || key === "T")) {
+        // Shift, so plain `t` still reaches Excalidraw's text tool (GRO-1954).
         toggleTools();
+      } else if (event.shiftKey && (key === "o" || key === "O")) {
+        // Inert until GRO-1922 passes a handler; the key falls through to the
+        // editor until then rather than being silently swallowed.
+        handled = onToggleOverview !== undefined;
+        onToggleOverview?.();
       } else if (key === "Tab" && !toolsVisible) {
         // With tools shown the overlay is no longer modal, so the trap would
         // make the toolbar unreachable by keyboard.
@@ -391,7 +397,7 @@ export const PresentationPlayer = ({
     };
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [exit, navigateTo, step, toggleTools, toolsVisible]);
+  }, [exit, navigateTo, onToggleOverview, step, toggleTools, toolsVisible]);
 
   const current = slides[currentIndex];
   if (!current) {
@@ -452,7 +458,7 @@ export const PresentationPlayer = ({
         <span className="presentation-player__divider" aria-hidden="true" />
         <button
           type="button"
-          {...labelled("Overview (O)")}
+          {...labelled("Overview (⇧O)")}
           disabled={!onToggleOverview || slides.length < 2}
           onClick={onToggleOverview}
         >
@@ -460,7 +466,7 @@ export const PresentationPlayer = ({
         </button>
         <button
           type="button"
-          {...labelled(toolsVisible ? "Hide tools (T)" : "Show tools (T)")}
+          {...labelled(toolsVisible ? "Hide tools (⇧T)" : "Show tools (⇧T)")}
           aria-pressed={toolsVisible}
           onClick={toggleTools}
         >

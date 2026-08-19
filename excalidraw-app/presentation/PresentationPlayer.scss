@@ -95,6 +95,20 @@
   }
 }
 
+// GRO-1939: on a phone the bar is driven by a thumb — 40px targets, more room
+// between them, and clear of the home indicator.
+@media (max-width: 40rem) {
+  .presentation-player__controls {
+    gap: 0.5rem;
+    inset-block-end: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+
+    button {
+      width: 2.5rem;
+      height: 2.5rem;
+    }
+  }
+}
+
 // GRO-1935 (D1): hide the editor chrome while presenting. Pure CSS keyed on the
 // body class the player already owns — no zen/view mode, no appState churn — so
 // nothing can leak into a saved scene. The `:not()` lets the tools toggle
