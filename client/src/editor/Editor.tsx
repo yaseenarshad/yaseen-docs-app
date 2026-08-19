@@ -2,18 +2,22 @@ import { useEffect, useRef } from 'react'
 import type { FileResponse } from '@shared/types'
 import { api } from '../api'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
+import './outline/outlineFolding.css'
 import { splitFrontmatter } from './frontmatter'
 import { SaveIndicator } from './SaveIndicator'
 import { useAutosave } from '../hooks/useAutosave'
 import { useFile } from '../hooks/useFile'
 import type { WatchSource } from '../hooks/useWatch'
+import { storage } from '../lib/storage'
 
 interface EditorProps {
+  /** Open root folder; fold state is persisted per root + file. */
+  root: string
   path: string | null
   watch: WatchSource
 }
 
-export function Editor({ path, watch }: EditorProps) {
+export function Editor({ root, path, watch }: EditorProps) {
   const state = useFile(path)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   return (
@@ -21,13 +25,13 @@ export function Editor({ path, watch }: EditorProps) {
       {state.status === 'idle' && <p className="editor-msg">Select a file from the sidebar.</p>}
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
-      {file !== null && <CrepeHost key={file.path} file={file} watch={watch} />}
+      {file !== null && <CrepeHost key={file.path} root={root} file={file} watch={watch} />}
     </section>
   )
 }
 
 /** Mounts exactly one Crepe instance for `file`; remounted (via `key`) when the path changes. */
-function CrepeHost({ file, watch }: { file: FileResponse; watch: WatchSource }) {
+function CrepeHost({ root, file, watch }: { root: string; file: FileResponse; watch: WatchSource }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const autosave = useAutosave(file.path)
   const { attach, markReloaded, reportConflict } = autosave
@@ -41,7 +45,15 @@ function CrepeHost({ file, watch }: { file: FileResponse; watch: WatchSource }) 
     el.className = 'editor-instance'
     host.appendChild(el)
     const { frontmatter, body } = splitFrontmatter(file.content)
-    const crepe = createCrepe({ root: el, defaultValue: body, onMarkdownUpdated: (md) => controller?.update(md) })
+    const crepe = createCrepe({
+      root: el,
+      defaultValue: body,
+      onMarkdownUpdated: (md) => controller?.update(md),
+      folding: {
+        initialCollapsedKeys: new Set(storage.getFolds(root, file.path)),
+        onCollapsedKeysChange: (keys) => storage.setFolds(root, file.path, keys),
+      },
+    })
     let controller: ReturnType<typeof attach> | null = null
     let cancelled = false
     const ready = crepe.create().then(() => {
@@ -81,7 +93,7 @@ function CrepeHost({ file, watch }: { file: FileResponse; watch: WatchSource }) 
       unsubscribe()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [file, watch, attach, markReloaded, reportConflict])
+  }, [root, file, watch, attach, markReloaded, reportConflict])
 
   return (
     <>

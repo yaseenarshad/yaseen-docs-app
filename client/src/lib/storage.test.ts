@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { LS_KEYS } from '@shared/types'
+import { LS_KEYS, MAX_FOLD_KEYS_PER_FILE } from '@shared/types'
 import { addRecentRoot, storage } from './storage'
 
 beforeEach(() => localStorage.clear())
@@ -52,12 +52,32 @@ describe('storage', () => {
     expect(JSON.parse(localStorage.getItem(LS_KEYS.expanded)!)).toEqual({ '/r1': ['/r1/a'], '/r2': ['/r2/b'] })
   })
 
+  it('folds are keyed by root then file, capped, and pruned when empty', () => {
+    expect(storage.getFolds('/r1', '/r1/a.md')).toEqual([])
+    storage.setFolds('/r1', '/r1/a.md', ['k1', 'k2'])
+    storage.setFolds('/r1', '/r1/b.md', ['k3'])
+    storage.setFolds('/r2', '/r2/a.md', ['k4'])
+    expect(storage.getFolds('/r1', '/r1/a.md')).toEqual(['k1', 'k2'])
+    expect(storage.getFolds('/r1', '/r1/b.md')).toEqual(['k3'])
+    expect(storage.getFolds('/r2', '/r1/a.md')).toEqual([])
+    // Replacing with the live set drops keys the plugin no longer reports.
+    storage.setFolds('/r1', '/r1/a.md', ['k2'])
+    expect(storage.getFolds('/r1', '/r1/a.md')).toEqual(['k2'])
+    storage.setFolds('/r1', '/r1/a.md', [])
+    storage.setFolds('/r1', '/r1/b.md', [])
+    expect(JSON.parse(localStorage.getItem(LS_KEYS.folds)!)).toEqual({ '/r2': { '/r2/a.md': ['k4'] } })
+    storage.setFolds('/r2', '/r2/a.md', Array.from({ length: MAX_FOLD_KEYS_PER_FILE + 50 }, (_, i) => `k${i}`))
+    expect(storage.getFolds('/r2', '/r2/a.md')).toHaveLength(MAX_FOLD_KEYS_PER_FILE)
+  })
+
   it('treats invalid JSON / wrong shapes as absent', () => {
     localStorage.setItem(LS_KEYS.recentRoots, '{not json')
     localStorage.setItem(LS_KEYS.expanded, JSON.stringify({ '/r': 'nope' }))
     localStorage.setItem(LS_KEYS.lastFile, JSON.stringify([1, 2]))
+    localStorage.setItem(LS_KEYS.folds, JSON.stringify({ '/r': { '/r/a.md': 'nope' } }))
     expect(storage.getRecentRoots()).toEqual([])
     expect(storage.getExpanded('/r')).toEqual([])
     expect(storage.getLastFile('/r')).toBeNull()
+    expect(storage.getFolds('/r', '/r/a.md')).toEqual([])
   })
 })

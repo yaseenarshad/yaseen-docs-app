@@ -15,6 +15,7 @@ client/               Vite 7 + React 19 + TS, @milkdown/crepe 7.22.x  (127.0.0.1
   src/App.tsx                 root/file/picker state; Sidebar is keyed by root
   src/api.ts                  typed fetch wrappers + ApiRequestError
   src/editor/                 Editor (Crepe host + conflict bar), createCrepe (locked factory, see "Editor rules"), frontmatter, SaveIndicator
+  src/editor/outline/         outlineFolding ($prose plugin: collapsible parent bullets), outlineFoldKeys, outlineFolding.css (+ tests)
   src/hooks/                  useFile (load), useAutosave (debounce/flush/conflict), useWatch (one EventSource per root, fan-out), usePickFolder (native dialog → modal fallback)
   src/lib/                    pure logic with unit tests: autosave state machine, storage (localStorage), treeState, paths
   src/sidebar/                Sidebar, Tree, FolderPicker
@@ -59,7 +60,8 @@ Notes
 2. **Crepe construction**: always via `createCrepe()` — ImageBlock feature OFF, list_item content `block+` (extended from GFM task item schema), `markdownUpdated` listener wired.
 3. **Save post-processing**: `postProcessMarkdown()` un-escapes `\[\[` → `[[` (wikilinks/embeds).
 4. **Replacing content in a live instance** (external change / Reload): `setMarkdown(crepe, md)` → `replaceAll(md, true)` from `@milkdown/kit/utils`, keeping focus and caret. File switch remounts the Crepe host (`key={path}`); the previous file stays on screen until the next one has loaded.
-5. **Accepted lossy normalisation** (standard remark-stringify behaviour; content preserved, formatting normalised): `-`/`+` bullets → `*` (alternating `-` for adjacent sibling lists), tabs → 2-space indent, `1)` ↔ `1.` ordered markers swap/renumber, setext → ATX headings, two-space hard breaks → `\`, trailing whitespace stripped, `___` → `***`, indented code → fenced, tables re-padded, lazy blockquote continuation gets `> `, `_`/`*`/`[`/`=`/`&` escaped in text where ambiguous, bare URLs/emails → `<autolink>`, file always ends with a single `\n`. First save of an untouched file WILL rewrite the file in this normalised form.
+5. **Outline folding** (GRO-2011): `createOutlineFolding()` (`src/editor/outline/`) is registered in `createCrepe()`. Parent `list_item`s (those owning a nested `bullet_list`/`ordered_list`) get a widget `<button class="outline-toggle" aria-expanded>` at the start of their content; collapsing adds `data-outline-folded="true"` to the nested list (CSS `display:none`). Toggles are metadata-only transactions (`tr.docChanged === false`) — the listener never fires `markdownUpdated`, `getMarkdownForSave()` is unchanged, and the file's mtime is untouched. Fold keys = FNV-1a hash of the item's first-block text + occurrence index (`outlineFoldKeys.ts`), persisted via `storage.getFolds/setFolds`.
+6. **Accepted lossy normalisation** (standard remark-stringify behaviour; content preserved, formatting normalised): `-`/`+` bullets → `*` (alternating `-` for adjacent sibling lists), tabs → 2-space indent, `1)` ↔ `1.` ordered markers swap/renumber, setext → ATX headings, two-space hard breaks → `\`, trailing whitespace stripped, `___` → `***`, indented code → fenced, tables re-padded, lazy blockquote continuation gets `> `, `_`/`*`/`[`/`=`/`&` escaped in text where ambiguous, bare URLs/emails → `<autolink>`, file always ends with a single `\n`. First save of an untouched file WILL rewrite the file in this normalised form.
 
 ## localStorage (client)
 
@@ -69,5 +71,6 @@ Notes
 | `mdapp.recentRoots` | `RecentRoots` | `[{ "path": "/Users/yasin/notes", "lastOpened": 1755600000000 }]` — most recent first, max 10, de-duped |
 | `mdapp.expanded` | `ExpandedState` | `{ "/Users/yasin/notes": ["/Users/yasin/notes/sub", ...] }` |
 | `mdapp.lastFile` | `LastFileState` | `{ "/Users/yasin/notes": "/Users/yasin/notes/a.md" }` |
+| `mdapp.folds` | `FoldState` | `{ "/Users/yasin/notes": { "/Users/yasin/notes/a.md": ["1fpm2d0:0", ...] } }` — collapsed outline fold keys per root + file (max 500/file; empty lists removed). Never written to disk. |
 
 All JSON values parsed defensively (invalid → treated as absent).

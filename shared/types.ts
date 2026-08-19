@@ -161,6 +161,8 @@ export const LS_KEYS = {
   expanded: 'mdapp.expanded',
   /** JSON LastFileState */
   lastFile: 'mdapp.lastFile',
+  /** JSON FoldState */
+  folds: 'mdapp.folds',
 } as const
 
 /** mdapp.recentRoots — most-recent first, max 10, de-duplicated. */
@@ -171,3 +173,11 @@ export type ExpandedState = Record<string, string[]>
 
 /** mdapp.lastFile — keyed by root path; value is the absolute path of the last opened file. */
 export type LastFileState = Record<string, string>
+
+/**
+ * mdapp.folds — keyed by root path, then by absolute file path; value is the list of collapsed
+ * outline fold keys (see client `outlineFoldKeys.ts`), max MAX_FOLD_KEYS_PER_FILE. Files with no
+ * folds are removed from the map. Never written to the markdown on disk.
+ */
+export type FoldState = Record<string, Record<string, string[]>>
+export const MAX_FOLD_KEYS_PER_FILE = 500

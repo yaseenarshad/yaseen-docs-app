@@ -1,4 +1,11 @@
-import { LS_KEYS, type ExpandedState, type LastFileState, type RecentRoots } from '@shared/types'
+import {
+  LS_KEYS,
+  MAX_FOLD_KEYS_PER_FILE,
+  type ExpandedState,
+  type FoldState,
+  type LastFileState,
+  type RecentRoots,
+} from '@shared/types'
 
 const MAX_RECENT = 10
 
@@ -24,6 +31,7 @@ const isRecentRoots = (v: unknown): v is RecentRoots =>
 const isExpandedState = (v: unknown): v is ExpandedState => isRecord(v) && Object.values(v).every(isStringArray)
 const isLastFileState = (v: unknown): v is LastFileState =>
   isRecord(v) && Object.values(v).every((x) => typeof x === 'string')
+const isFoldState = (v: unknown): v is FoldState => isRecord(v) && Object.values(v).every(isExpandedState)
 
 /** Pure: prepend `path` to the MRU list, de-duplicated, capped. */
 export function addRecentRoot(list: RecentRoots, path: string, now: number): RecentRoots {
@@ -55,5 +63,17 @@ export const storage = {
     if (file === null) delete state[root]
     else state[root] = file
     writeJson(LS_KEYS.lastFile, state)
+  },
+
+  getFolds: (root: string, file: string): string[] => (readJson(LS_KEYS.folds, isFoldState) ?? {})[root]?.[file] ?? [],
+  /** Replace the fold keys for one file; an empty list removes the entry (keys the plugin no longer reports are dropped). */
+  setFolds(root: string, file: string, keys: readonly string[]): void {
+    const state = readJson(LS_KEYS.folds, isFoldState) ?? {}
+    const files = { ...state[root] }
+    if (keys.length === 0) delete files[file]
+    else files[file] = keys.slice(0, MAX_FOLD_KEYS_PER_FILE)
+    if (Object.keys(files).length === 0) delete state[root]
+    else state[root] = files
+    writeJson(LS_KEYS.folds, state)
   },
 }

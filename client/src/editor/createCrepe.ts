@@ -9,18 +9,23 @@
  *    an empty `<br />` paragraph injected on round-trip.
  *  - Markdown out goes through `postProcessMarkdown()` which un-escapes
  *    `\[\[wikilink]]` / `!\[\[embed]]` that remark-stringify escapes.
+ *  - Outline folding plugin (GRO-2011) registered via `$prose`; fold toggles are
+ *    metadata-only transactions and never reach `markdownUpdated` / autosave.
  */
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
 import { Selection } from '@milkdown/kit/prose/state'
 import { replaceAll } from '@milkdown/kit/utils'
+import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 
 export interface CreateCrepeOptions {
   root: HTMLElement
   defaultValue?: string
   /** Called whenever the document changes (Crepe's listener debounces this ~200ms). */
   onMarkdownUpdated?: (markdown: string) => void
+  /** Fold state for collapsible parent bullets: restore from / report to the caller (persisted per file). */
+  folding?: OutlineFoldingOptions
 }
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
@@ -35,6 +40,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     // would silently drop task-list checkbox support.
     extendListItemSchemaForTask.extendSchema((prev) => (ctx) => ({ ...prev(ctx), content: 'block+' })),
   )
+  crepe.editor.use(createOutlineFolding(opts.folding))
   if (opts.onMarkdownUpdated) {
     const cb = opts.onMarkdownUpdated
     crepe.on((listener) => {
