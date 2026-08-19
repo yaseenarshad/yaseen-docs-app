@@ -1,0 +1,88 @@
+/**
+ * List guide lines — click to fold (GRO-2030, obsidian-outliner `listLines` +
+ * `listLineAction: toggle-folding`).
+ *
+ * The line itself is pure CSS (guideLines.css): a `::before` strip on every nested
+ * `ul`/`ol`, absolutely positioned in the parent item's gutter so the 1px line runs under the
+ * parent's bullet glyph. Pseudo-element boxes hit-test as their originating element, so a
+ * pointer over the strip targets the list element at a `clientX` LEFT of its border box —
+ * that is the whole detection: no extra DOM, no layout shift, chevron and glyph (separate
+ * elements) are never involved. This plugin turns those strip hits into behaviour:
+ *  - mousedown → toggle the GRO-2011 fold of the item owning the list (meta-only transaction,
+ *    markdown untouched) and swallow the event so the caret never moves;
+ *  - mousemove/mouseleave → `outline-guide-hover` on the list, so ONLY strip hover highlights
+ *    the line (CSS `ul:hover::before` would light up while merely editing text inside).
+ */
+import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import type { EditorView } from '@milkdown/kit/prose/view'
+import { $prose } from '@milkdown/kit/utils'
+import { LIST_NODE_NAMES } from './listNodes'
+import { toggleOutlineFold } from './outlineFolding'
+
+export const GUIDE_HOVER_CLASS = 'outline-guide-hover'
+
+/** Keep in sync with guideLines.css: strip is 10px wide, centred `--list-indent`/2 + 5px left of the list. */
+const STRIP_HALF_WIDTH = 5
+const STRIP_CENTRE_GAP = 5
+/** `--list-indent` (bullets.css) is 2.15em of the editor's base font. */
+const LIST_INDENT_EM = 2.15
+const FALLBACK_FONT_PX = 16
+
+const pluginKey = new PluginKey('mdapp-outline-guide-lines')
+
+/** The nested list element whose guide-line strip is under (`clientX`, target), or null. */
+const stripHit = (view: EditorView, event: MouseEvent): HTMLElement | null => {
+  const target = event.target
+  // Only the strip pseudo extends a nested list's hit area beyond its border box, so a list
+  // target at a clientX left of the box can only mean the strip was hit.
+  if (!(target instanceof HTMLElement) || (target.tagName !== 'UL' && target.tagName !== 'OL')) return null
+  if (!view.dom.contains(target) || !target.parentElement?.classList.contains('content-dom')) return null
+  const fontPx = Number.parseFloat(getComputedStyle(target).fontSize) || FALLBACK_FONT_PX
+  const centre = target.getBoundingClientRect().left - ((LIST_INDENT_EM * fontPx) / 2 + STRIP_CENTRE_GAP)
+  return Math.abs(event.clientX - centre) <= STRIP_HALF_WIDTH ? target : null
+}
+
+/** Position of the list_item owning the nested list rendered as `list`, or null. */
+const owningItemPos = (view: EditorView, list: HTMLElement): number | null => {
+  const $pos = view.state.doc.resolve(view.posAtDOM(list, 0))
+  if ($pos.depth < 2 || !LIST_NODE_NAMES.has($pos.parent.type.name)) return null
+  return $pos.node($pos.depth - 1).type.name === 'list_item' ? $pos.before($pos.depth - 1) : null
+}
+
+export const guideLines = $prose(
+  () => {
+    let hovered: HTMLElement | null = null
+    const setHovered = (list: HTMLElement | null) => {
+      if (hovered === list) return
+      hovered?.classList.remove(GUIDE_HOVER_CLASS)
+      list?.classList.add(GUIDE_HOVER_CLASS)
+      hovered = list
+    }
+    return new Plugin({
+      key: pluginKey,
+      props: {
+        handleDOMEvents: {
+          mousedown: (view, event) => {
+            const list = stripHit(view, event)
+            if (list === null) return false
+            const itemPos = owningItemPos(view, list)
+            if (itemPos === null) return false
+            // Swallow the event BEFORE toggling: the caret must not move and no text may select.
+            event.preventDefault()
+            toggleOutlineFold(itemPos)(view.state, view.dispatch)
+            return true
+          },
+          mousemove: (view, event) => {
+            setHovered(stripHit(view, event))
+            return false
+          },
+          mouseleave: () => {
+            setHovered(null)
+            return false
+          },
+        },
+      },
+      view: () => ({ destroy: () => setHovered(null) }),
+    })
+  },
+)

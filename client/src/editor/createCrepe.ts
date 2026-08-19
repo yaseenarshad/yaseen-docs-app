@@ -22,6 +22,8 @@
  *  - Underline mark (GRO-2028, `marks/underline.ts`): Mod-u ↔ `<u>text</u>` inline HTML.
  *  - Zoom into a bullet (GRO-2029, `outline/zoom.ts`): view-state-only decorations + breadcrumbs;
  *    glyph click / Mod-. / Mod-Shift-. ; never a document change.
+ *  - List guide lines (GRO-2030, `outline/guideLines.ts` + `.css`): CSS vertical lines on nested
+ *    lists; clicking a line toggles the parent's fold (meta-only, same as the chevron).
  */
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -31,6 +33,7 @@ import { replaceAll } from '@milkdown/kit/utils'
 import { features } from './featureConfig'
 import { listItemRoundTrip, normalizeEmptyItems, stripEmptyTaskBreaks } from './listItemRoundTrip'
 import { underline } from './marks/underline'
+import { guideLines } from './outline/guideLines'
 import { obsidianHotkeys } from './outline/hotkeys'
 import { outlinerKeymap } from './outline/listCommands'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
@@ -63,6 +66,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(underline)
   crepe.editor.use(createOutlineFolding(opts.folding))
   crepe.editor.use(createOutlineZoom(opts.zoom ?? { fileName: 'Untitled' }))
+  crepe.editor.use(guideLines)
   crepe.editor.use(outlinerKeymap)
   crepe.editor.use(obsidianHotkeys)
   crepe.editor.use(zoomKeymap)

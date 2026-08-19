@@ -58,6 +58,16 @@ const foldAllCommand = (meta: 'fold-all' | 'unfold-all'): Command => (state, dis
   return true
 }
 
+/** Toggle the fold of the parent list_item at `itemPos` (GRO-2030 guide-line click); metadata-only. */
+export const toggleOutlineFold = (itemPos: number): Command => (state, dispatch) => {
+  const foldingState = pluginKey.getState(state)
+  if (!foldingState) return false
+  const isParent = foldingState.entries.some((entry) => entry.itemPos === itemPos)
+  if (!isParent && !foldingState.collapsedItemPositions.has(itemPos)) return false
+  dispatch?.(state.tr.setMeta(pluginKey, itemPos))
+  return true
+}
+
 /** Collapse every parent item (GRO-2027 `Mod-Shift-u`); metadata-only transaction, the doc is untouched. */
 export const foldAllOutline: Command = foldAllCommand('fold-all')
 /** Expand every parent item (GRO-2027 `Mod-Shift-i`). */

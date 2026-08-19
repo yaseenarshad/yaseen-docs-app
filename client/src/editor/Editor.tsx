@@ -5,6 +5,7 @@ import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './cre
 import './outline/outlineFolding.css'
 import './outline/bullets.css'
 import './outline/zoom.css'
+import './outline/guideLines.css'
 import { splitFrontmatter } from './frontmatter'
 import { SaveIndicator } from './SaveIndicator'
 import { useAutosave } from '../hooks/useAutosave'
