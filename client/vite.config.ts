@@ -16,7 +16,11 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:3737',
-        changeOrigin: false,
+        // http-proxy leaves the browser's SSE response open when the backend goes away
+        // (e.g. tsx restart); end it so EventSource reconnects and gets a fresh `ready`.
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes, _req, res) => proxyRes.on('close', () => res.end()))
+        },
       },
     },
   },

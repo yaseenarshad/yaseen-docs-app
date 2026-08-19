@@ -30,8 +30,11 @@ export function useWatch(root: string | null): WatchSource {
   useEffect(() => {
     if (root === null) return
     const es = new EventSource(`/api/watch?root=${encodeURIComponent(root)}`)
-    const onMessage = (e: MessageEvent<string>) => {
-      const ev = JSON.parse(e.data) as WatchEvent
+    const onMessage = (e: Event) => {
+      // EventSource fires its own plain `error` Event on connection loss (it then reconnects);
+      // only server frames are MessageEvents with JSON data.
+      if (!(e instanceof MessageEvent)) return
+      const ev = JSON.parse(e.data as string) as WatchEvent
       listeners.current.forEach((l) => l(ev))
     }
     EVENT_TYPES.forEach((t) => es.addEventListener(t, onMessage))
