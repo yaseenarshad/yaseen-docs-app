@@ -157,8 +157,14 @@ describe('locked editor rules (createCrepe)', () => {
     expect(await roundTrip('1. a\n2. \n   1. c\n')).toBe('1. a\n2.\n   1. c\n')
     // legacy encoding from earlier builds: `<br />` must not swallow the children as an HTML block
     expect(await roundTrip('* a\n* <br />\n  * c\n* b\n')).toBe('* a\n*\n  * c\n* b\n')
-    // empty task items keep `<br />` (remark drops the checkbox from `* [ ]`)
-    expect(await roundTrip('* [ ] a\n* [x] <br />\n  * c\n')).toBe('* [ ] a\n* [x] <br />\n  * c\n')
+    // empty task items: `<br />` (Milkdown's encoding, also what earlier builds wrote) never reaches
+    // the disk, and Obsidian's bare `* [ ] ` / `* [ ]` stays a task instead of becoming text `\[ ]`
+    expect(await roundTrip('* [ ] a\n* [x] <br />\n  * c\n')).toBe('* [ ] a\n* [x]\n  * c\n')
+    expect(await roundTrip('* [ ] \n')).toBe('* [ ]\n')
+    expect(await roundTrip('- [x]\n  - child\n- [ ] a\n')).toBe('* [x]\n  * child\n* [ ] a\n')
+    expect(await roundTrip('1. [ ]\n2. [ ] b\n')).toBe('1. [ ]\n2. [ ] b\n')
+    // a task whose text happens to start with a bracket is not an empty task
+    expect(await roundTrip('* [ ] [x] literal\n')).toBe('* [ ] \\[x] literal\n')
     // `* 1) text` on one line is a list-first item and stays that way
     expect(await roundTrip('* 1) one\n* 2) two\n')).toBe('* 1. one\n* 2. two\n')
     // empty paragraphs outside list items are unchanged

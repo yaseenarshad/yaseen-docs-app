@@ -4,7 +4,7 @@
  * plugin and our `outlinerKeymap` all take part, in priority order), then the serialised
  * markdown (`getMarkdownForSave`) is asserted — markers and indent must match depth exactly,
  * which is what bit GRO-1844. Empty bullets serialise as a bare `*` (`listItemRoundTrip.ts`);
- * empty task items keep `* [ ] <br />`.
+ * empty task items as `* [ ]`.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -204,7 +204,7 @@ describe('Enter', () => {
     press(crepe, 'Enter')
     caretIn(crepe, 'todo')
     press(crepe, 'Enter')
-    expect(md(crepe)).toBe('* [x] done\n  * [ ] <br />\n  * [x] child\n* [ ] todo\n* [ ] <br />\n')
+    expect(md(crepe)).toBe('* [x] done\n  * [ ]\n  * [x] child\n* [ ] todo\n* [ ]\n')
   })
 
   it('on an empty nested item outdents it; on an empty level-1 item leaves the list', async () => {

@@ -5,17 +5,21 @@
  * as the start of an HTML block that runs to the next blank line, so the item's nested
  * children became literal text. Obsidian writes an empty bullet as a bare marker.
  *
- * Three pieces, all schema/remark-level (no Milkdown fork):
+ * Four pieces, all schema/remark/text-level (no Milkdown fork):
  *  1. serialise: an empty paragraph that STARTS a list item is emitted as an empty mdast
- *     paragraph → bare marker (`*`, `1.`); other empty paragraphs keep `<br />`. Empty TASK
- *     items keep `* [ ] <br />`: `[ ]` already stops the HTML-block reading, remark drops the
- *     checkbox from an empty item (`* [ ]` is not a task), and `<br />` is what keeps it one.
+ *     paragraph → bare marker (`*`, `1.`); other empty paragraphs keep `<br />`. Inside Milkdown
+ *     an empty TASK item stays `* [ ] <br />` (remark drops the checkbox from `* [ ]`, and `[ ]`
+ *     already stops the HTML-block reading) — see 4 for what reaches the disk.
  *  2. parse: a listItem whose nested list starts on a later line (`* ` + children — what
  *     Obsidian writes for an empty parent) gets an empty leading paragraph, instead of
  *     becoming a list_item that starts with a bullet_list and serialising as `* * child`.
  *     `* 1) text` on ONE line (a real vault idiom) is left as the list-first item it was.
- *  3. load: `normalizeLegacyEmptyItems()` rewrites `* <br />` lines written by earlier builds
- *     to bare markers before parsing, so their children are not swallowed.
+ *  3. load: `normalizeEmptyItems()` rewrites `* <br />` lines (written by earlier builds) to
+ *     bare markers so their children are not swallowed, and Obsidian's empty task `* [ ] ` /
+ *     `* [ ]` (text `[ ]` for remark, round-tripped as `* \[ ]`) to `* [ ] <br />` so it stays a
+ *     checkbox.
+ *  4. save: `stripEmptyTaskBreaks()` turns `* [ ] <br />` back into `* [ ]` — `<br />` never
+ *     reaches the disk, and 3 restores the checkbox on the next load.
  */
 import { paragraphSchema } from '@milkdown/kit/preset/commonmark'
 import type { Node as MdNode } from '@milkdown/kit/transformer'
@@ -64,7 +68,14 @@ const listItemLeadingParagraph = $remark('mdapp-list-item-leading-paragraph', ()
 /** Register with `editor.use(...)`. */
 export const listItemRoundTrip = [emptyParagraphFirstInListItem, listItemLeadingParagraph].flat()
 
-const LEGACY_EMPTY_ITEM = /^([ \t]*(?:[-*+]|\d+[.)])) <br \/>[ \t]*$/gm
+const MARKER = String.raw`[ \t]*(?:[-*+]|\d+[.)])`
+const LEGACY_EMPTY_ITEM = new RegExp(String.raw`^(${MARKER}) <br />[ \t]*$`, 'gm')
+const EMPTY_TASK_ITEM = new RegExp(String.raw`^(${MARKER} \[[ xX]\])[ \t]*$`, 'gm')
+const EMPTY_TASK_ITEM_BREAK = new RegExp(String.raw`^(${MARKER} \[[ xX]\]) <br />$`, 'gm')
 
-/** `* <br />` (empty item as written by earlier builds) → bare marker, before parsing. */
-export const normalizeLegacyEmptyItems = (markdown: string): string => markdown.replace(LEGACY_EMPTY_ITEM, '$1')
+/** Before parsing: `* <br />` → bare marker; empty task `* [ ]` → `* [ ] <br />` (keeps the checkbox). */
+export const normalizeEmptyItems = (markdown: string): string =>
+  markdown.replace(LEGACY_EMPTY_ITEM, '$1').replace(EMPTY_TASK_ITEM, '$1 <br />')
+
+/** Before writing: `* [ ] <br />` (Milkdown's empty task) → `* [ ]`. */
+export const stripEmptyTaskBreaks = (markdown: string): string => markdown.replace(EMPTY_TASK_ITEM_BREAK, '$1')
