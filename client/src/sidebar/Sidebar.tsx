@@ -13,6 +13,8 @@ interface SidebarProps {
   watch: WatchSource
   onOpenFile: (path: string) => void
   onPickFolder: () => void
+  /** True while the native folder dialog is open; the "change" button is disabled meanwhile. */
+  pickDisabled: boolean
   /** The stored root could not be read (e.g. deleted); parent decides what to do. */
   onRootMissing: () => void
   /** The restored last file is not in the tree any more (checked once per root). */
@@ -20,7 +22,16 @@ interface SidebarProps {
 }
 
 /** Mounted with `key={root}` by App, so all state below is per root. */
-export function Sidebar({ root, activeFile, watch, onOpenFile, onPickFolder, onRootMissing, onFileMissing }: SidebarProps) {
+export function Sidebar({
+  root,
+  activeFile,
+  watch,
+  onOpenFile,
+  onPickFolder,
+  pickDisabled,
+  onRootMissing,
+  onFileMissing,
+}: SidebarProps) {
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [expanded, dispatch] = useReducer(treeReducer, root, storage.getExpanded)
@@ -69,7 +80,7 @@ export function Sidebar({ root, activeFile, watch, onOpenFile, onPickFolder, onR
 
   return (
     <aside className="sidebar">
-      <button type="button" className="sidebar__root" onClick={onPickFolder} title={root}>
+      <button type="button" className="sidebar__root" onClick={onPickFolder} disabled={pickDisabled} title={root}>
         <span className="sidebar__root-name">{basename(root)}</span>
         <span className="sidebar__root-hint">change</span>
       </button>

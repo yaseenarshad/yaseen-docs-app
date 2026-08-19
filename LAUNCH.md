@@ -1,4 +1,4 @@
-# Agent notes — yaseen-milkdown
+# LAUNCH — how to run this app (for humans and agents)
 
 Local markdown editor: Vite + React + Milkdown Crepe client, Hono file server. See `README.md` for the human overview and `docs/CONTRACTS.md` for API shapes.
 
@@ -12,11 +12,12 @@ Local markdown editor: Vite + React + Milkdown Crepe client, Hono file server. S
 - `npm run dev` starts both: client on `http://127.0.0.1:5173`, server on `127.0.0.1:3737`. Open the client URL.
 - In Claude Code, prefer the browser preview tool: `preview_start` with name `milkdown-dev` (config in `.claude/launch.json`). It starts the dev server and opens the tab.
 - The app remembers the last folder/file in `localStorage` (`mdapp.root`, `mdapp.lastFile`, …). Yasin's vault is `/Users/yasin/yaseen-os/yaseen-machine-content`. If it opens the wrong folder, click **change** in the sidebar header, or set `localStorage.mdapp.root` and reload.
+- Folder picking uses the native macOS Finder dialog (`POST /api/pick-folder` → `osascript`); the in-app folder browser only appears as a fallback when the native dialog is unavailable. In an agent session the Finder dialog pops up on Yasin's screen, so set `localStorage.mdapp.root` instead of clicking **change**.
 
 ## Verify
 
 ```bash
-/opt/homebrew/bin/npm test          # 53 vitest tests (client jsdom + server node)
+/opt/homebrew/bin/npm test          # 59 vitest tests (client jsdom + server node)
 /opt/homebrew/bin/npm run typecheck
 /opt/homebrew/bin/npm run build
 ```

@@ -1,6 +1,7 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { RecentRoots } from '@shared/types'
 import { Editor } from './editor/Editor'
+import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
 import { storage } from './lib/storage'
 import { FolderPicker } from './sidebar/FolderPicker'
@@ -10,7 +11,7 @@ export function App() {
   const [root, setRoot] = useState<string | null>(storage.getRoot)
   const [file, setFile] = useState<string | null>(() => (root === null ? null : storage.getLastFile(root)))
   const [recent, setRecent] = useState<RecentRoots>(storage.getRecentRoots)
-  const [pickerOpen, setPickerOpen] = useState(root === null)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const watch = useWatch(root)
 
   const openRoot = useCallback((path: string) => {
@@ -29,15 +30,21 @@ export function App() {
     [root],
   )
 
+  const openPicker = useCallback(() => setPickerOpen(true), [])
+  const closePicker = useCallback(() => setPickerOpen(false), [])
+  const { pick, picking } = usePickFolder({ onPicked: openRoot, onFallback: openPicker })
+
   const onRootMissing = useCallback(() => {
     storage.setRoot(null)
     setRoot(null)
     setFile(null)
-    setPickerOpen(true)
   }, [])
   const onFileMissing = useCallback(() => openFile(null), [openFile])
-  const openPicker = useCallback(() => setPickerOpen(true), [])
-  const closePicker = useCallback(() => setPickerOpen(false), [])
+
+  // First launch (or lost root): offer a folder straight away.
+  useEffect(() => {
+    if (root === null) pick()
+  }, [root, pick])
 
   return (
     <div className="app">
@@ -48,12 +55,24 @@ export function App() {
           activeFile={file}
           watch={watch}
           onOpenFile={openFile}
-          onPickFolder={openPicker}
+          onPickFolder={pick}
+          pickDisabled={picking}
           onRootMissing={onRootMissing}
           onFileMissing={onFileMissing}
         />
       )}
-      <Editor path={file} watch={watch} />
+      {root === null ? (
+        <section className="editor">
+          <div className="landing">
+            <p className="editor-msg">{picking ? 'Choose a folder in the Finder dialog…' : 'No folder open.'}</p>
+            <button type="button" className="btn btn--primary" disabled={picking} onClick={pick}>
+              Open folder…
+            </button>
+          </div>
+        </section>
+      ) : (
+        <Editor path={file} watch={watch} />
+      )}
       {pickerOpen && (
         <FolderPicker initialPath={root} recent={recent} onOpen={openRoot} onCancel={root === null ? undefined : closePicker} />
       )}

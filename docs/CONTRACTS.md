@@ -15,7 +15,7 @@ client/               Vite 7 + React 19 + TS, @milkdown/crepe 7.22.x  (127.0.0.1
   src/App.tsx                 root/file/picker state; Sidebar is keyed by root
   src/api.ts                  typed fetch wrappers + ApiRequestError
   src/editor/                 Editor (Crepe host + conflict bar), createCrepe (locked factory, see "Editor rules"), frontmatter, SaveIndicator
-  src/hooks/                  useFile (load), useAutosave (debounce/flush/conflict), useWatch (one EventSource per root, fan-out)
+  src/hooks/                  useFile (load), useAutosave (debounce/flush/conflict), useWatch (one EventSource per root, fan-out), usePickFolder (native dialog → modal fallback)
   src/lib/                    pure logic with unit tests: autosave state machine, storage (localStorage), treeState, paths
   src/sidebar/                Sidebar, Tree, FolderPicker
   src/test-setup.ts           jsdom stubs (observers, Range rects, localStorage on Node >= 25)
@@ -23,7 +23,7 @@ server/               Hono 4 + @hono/node-server, chokidar 4, run with tsx (port
   src/app.ts                  Hono app + error mapping (tests import this); src/index.ts only listens
   src/fs-utils.ts             ApiFailure, path/dir guards, listDirs, buildTree, atomicWrite
   src/watchers.ts             one shared chokidar watcher per root
-  src/routes/                 dirs, tree, file, watch (+ *.test.ts); src/test-fixture.ts builds a temp vault
+  src/routes/                 dirs, tree, file, pickFolder, watch (+ *.test.ts); src/test-fixture.ts builds a temp vault
 shared/types.ts       shared TS types (alias @shared/* in both tsconfigs + vite)
 docs/CONTRACTS.md     this file
 ```
@@ -35,7 +35,7 @@ Import from shared: `import type { TreeResponse } from '@shared/types'`.
 All paths are absolute POSIX paths. No jail — any absolute path is allowed.
 All errors: `{ error: { code, message, path? } }` with `ApiErrorCode` (see types) and HTTP status:
 `BAD_REQUEST`/`NOT_ABSOLUTE`/`NOT_A_DIRECTORY`/`NOT_A_FILE`/`NOT_MARKDOWN` → 400,
-`FORBIDDEN` → 403, `NOT_FOUND` → 404, `CONFLICT` → 409, `TOO_LARGE` → 413, `IO_ERROR` → 500.
+`FORBIDDEN` → 403, `NOT_FOUND` → 404, `CONFLICT` → 409, `TOO_LARGE` → 413, `IO_ERROR`/`PICKER_FAILED` → 500, `NOT_SUPPORTED` → 501.
 
 | Method | Path | Query / body | 200 response |
 |---|---|---|---|
@@ -44,9 +44,11 @@ All errors: `{ error: { code, message, path? } }` with `ApiErrorCode` (see types
 | GET | `/api/tree` | `?root=<abs>` | `TreeResponse` — recursive; only `.md`/`.markdown` files; dirs without markdown below are pruned; dot-entries and `node_modules` skipped; dirs before files, each sorted case-insensitive |
 | GET | `/api/file` | `?path=<abs>` | `FileResponse` — raw UTF-8 content incl. frontmatter; 413 if > 10 MiB |
 | PUT | `/api/file` | JSON `FileWriteRequest { path, content, expectedMtime? }` | `FileWriteResponse { path, mtime, size }` — atomic write (`<name>.tmp-<rand>` + `rename`); parent dir must exist; if `expectedMtime` given and the disk mtime differs → 409 `FileWriteConflict` and nothing written |
+| POST | `/api/pick-folder` | – | `PickFolderResponse` — macOS only: runs `osascript` (`choose folder`, System Events activated, 5 min timeout) and blocks until the Finder dialog closes. Picked → `{ path }` (no trailing `/`); dismissed → `{ cancelled: true }`; osascript failure → 500 `PICKER_FAILED`; non-macOS → 501 `NOT_SUPPORTED` |
 | GET | `/api/watch` | `?root=<abs>` | SSE stream of `WatchEvent`: `event: <type>\ndata: <json>\n\n`; first event `ready`; `: ping` comment every 25 s; chokidar with `ignoreInitial: true`, `awaitWriteFinish: { stabilityThreshold: 200 }`, ignores dot-entries and `node_modules`, only `.md`/`.markdown` file events (+ dir add/unlink) |
 
 Notes
+- Folder picking (client): "change" / first launch call `POST /api/pick-folder` first; `{ path }` → set root + push to recents, `{ cancelled }` → nothing, any failure (501 or otherwise) → the in-app `FolderPicker` modal (the `/api/dirs` browser) as fallback. One native dialog in flight at a time; the trigger button is disabled meanwhile.
 - Server writes trigger `change` events on the watcher; client must ignore events for a path whose mtime equals the mtime it just received from its own PUT (echo suppression).
 - Auto-save: client debounces 500 ms after last `markdownUpdated`, also flushes on file switch / window `beforeunload`. Only content that differs from the last loaded/saved markdown is saved (Crepe's first serialisation is a normalised rewrite and is never written on its own).
 - Server tests run chokidar with `CHOKIDAR_USEPOLLING=1` (see `server/vitest.config.ts`): on macOS libuv starts the FSEvents stream asynchronously, so a write right after `ready` can be missed; polling makes the tests deterministic.

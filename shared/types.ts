@@ -18,6 +18,8 @@ export type ApiErrorCode =
   | 'FORBIDDEN' // OS permission denied (403)
   | 'TOO_LARGE' // file exceeds MAX_FILE_BYTES (413)
   | 'IO_ERROR' // any other fs error (500)
+  | 'PICKER_FAILED' // native folder dialog could not be run (500)
+  | 'NOT_SUPPORTED' // endpoint not available on this platform (501)
 
 export interface ApiError {
   error: {
@@ -114,6 +116,23 @@ export interface FileWriteConflict {
     mtime: number
   }
 }
+
+// ---------- POST /api/pick-folder ----------
+
+/**
+ * Opens the native macOS Finder "choose folder" dialog (osascript) and blocks until the user
+ * picks a folder or cancels (5 min timeout). Non-macOS → 501 NOT_SUPPORTED; client falls back
+ * to the in-app FolderPicker. Dialog failure → 500 PICKER_FAILED.
+ */
+export type PickFolderResponse =
+  | {
+      /** Absolute path of the chosen folder, without trailing slash. */
+      path: string
+    }
+  | {
+      /** The user dismissed the dialog. */
+      cancelled: true
+    }
 
 // ---------- GET /api/watch?root=<abs>  (Server-Sent Events) ----------
 

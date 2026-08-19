@@ -99,6 +99,20 @@ button {
   color: var(--danger);
 }
 
+/* Shown instead of the editor while no folder is open (native dialog first, modal as fallback). */
+.landing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: auto;
+  padding-bottom: 10vh;
+}
+
+.landing .editor-msg {
+  margin: 0 0 12px;
+}
+
 /* ---------- save indicator ---------- */
 
 .save-indicator {
@@ -192,6 +206,11 @@ button {
 
 .sidebar__root:hover {
   background: #eeeef0;
+}
+
+.sidebar__root:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .sidebar__root-name {

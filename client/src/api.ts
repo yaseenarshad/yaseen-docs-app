@@ -6,6 +6,7 @@ import type {
   FileWriteConflict,
   FileWriteRequest,
   FileWriteResponse,
+  PickFolderResponse,
   TreeResponse,
 } from '@shared/types'
 
@@ -37,6 +38,8 @@ const enc = encodeURIComponent
 export const api = {
   dirs: (path?: string) => request<DirsResponse>(path === undefined ? '/api/dirs' : `/api/dirs?path=${enc(path)}`),
   tree: (root: string) => request<TreeResponse>(`/api/tree?root=${enc(root)}`),
+  /** Native Finder dialog; resolves when the user picks or cancels. 501 NOT_SUPPORTED off macOS. */
+  pickFolder: () => request<PickFolderResponse>('/api/pick-folder', { method: 'POST' }),
   readFile: (path: string) => request<FileResponse>(`/api/file?path=${enc(path)}`),
   /** `keepalive` lets the PUT outlive the page (used by the beforeunload flush). */
   writeFile: (body: FileWriteRequest, keepalive = false) =>
