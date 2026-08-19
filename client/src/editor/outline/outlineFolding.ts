@@ -10,7 +10,7 @@
  * Persistence is by stable fold key (see outlineFoldKeys.ts), not by position.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import { type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { type Command, type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { findNestedList } from './listNodes'
@@ -42,9 +42,26 @@ export const OUTLINE_FOLDED_ATTR = 'data-outline-folded'
 /** Shared across instances: a PluginKey only identifies the plugin within one EditorState. */
 const pluginKey = new PluginKey<OutlineFoldingState>('mdapp-outline-folding')
 
+/** Transaction meta understood by the plugin: toggle one item (by position) or fold/unfold every parent. */
+type FoldMeta = number | 'fold-all' | 'unfold-all'
+
 /** Whether the list_item starting at `itemPos` is currently folded (false when the plugin is absent). */
 export const isOutlineItemCollapsed = (state: EditorState, itemPos: number): boolean =>
   pluginKey.getState(state)?.collapsedItemPositions.has(itemPos) ?? false
+
+const foldAllCommand = (meta: 'fold-all' | 'unfold-all'): Command => (state, dispatch) => {
+  const foldingState = pluginKey.getState(state)
+  if (!foldingState || foldingState.entries.length === 0) return false
+  const allCollapsed = foldingState.entries.every(({ itemPos }) => foldingState.collapsedItemPositions.has(itemPos))
+  if (meta === 'fold-all' ? allCollapsed : foldingState.collapsedItemPositions.size === 0) return false
+  dispatch?.(state.tr.setMeta(pluginKey, meta))
+  return true
+}
+
+/** Collapse every parent item (GRO-2027 `Mod-Shift-u`); metadata-only transaction, the doc is untouched. */
+export const foldAllOutline: Command = foldAllCommand('fold-all')
+/** Expand every parent item (GRO-2027 `Mod-Shift-i`). */
+export const unfoldAllOutline: Command = foldAllCommand('unfold-all')
 
 const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
   const entries: OutlineEntry[] = []
@@ -102,10 +119,12 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
               if (parentPositions.has(mappedPosition)) collapsedItemPositions.add(mappedPosition)
             })
 
-            const toggledPosition: unknown = transaction.getMeta(pluginKey)
-            if (typeof toggledPosition === 'number') {
-              if (collapsedItemPositions.has(toggledPosition)) collapsedItemPositions.delete(toggledPosition)
-              else if (parentPositions.has(toggledPosition)) collapsedItemPositions.add(toggledPosition)
+            const meta: FoldMeta | undefined = transaction.getMeta(pluginKey)
+            if (meta === 'fold-all') return { entries, collapsedItemPositions: parentPositions }
+            if (meta === 'unfold-all') return { entries, collapsedItemPositions: new Set() }
+            if (typeof meta === 'number') {
+              if (collapsedItemPositions.has(meta)) collapsedItemPositions.delete(meta)
+              else if (parentPositions.has(meta)) collapsedItemPositions.add(meta)
             }
             return { entries, collapsedItemPositions }
           },

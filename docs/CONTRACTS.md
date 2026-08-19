@@ -15,7 +15,7 @@ client/               Vite 7 + React 19 + TS, @milkdown/crepe 7.22.x  (127.0.0.1
   src/App.tsx                 root/file/picker state; Sidebar is keyed by root
   src/api.ts                  typed fetch wrappers + ApiRequestError
   src/editor/                 Editor (Crepe host + conflict bar), createCrepe (locked factory, see "Editor rules"), featureConfig (Crepe feature allowlist + guard test), listItemRoundTrip (empty-item round trip), frontmatter, SaveIndicator
-  src/editor/outline/         outlineFolding ($prose plugin: collapsible parent bullets) + outlineFoldKeys + outlineFolding.css, listCommands (outliner keymap), listNodes (shared helpers), bullets.css (depth glyphs) (+ tests)
+  src/editor/outline/         outlineFolding ($prose plugin: collapsible parent bullets) + outlineFoldKeys + outlineFolding.css, listCommands (outliner keymap), hotkeys (Obsidian hotkeys), listNodes (shared helpers), bullets.css (depth glyphs) (+ tests)
   src/hooks/                  useFile (load), useAutosave (debounce/flush/conflict), useWatch (one EventSource per root, fan-out), usePickFolder (native dialog → modal fallback)
   src/lib/                    pure logic with unit tests: autosave state machine, storage (localStorage), treeState, paths
   src/sidebar/                Sidebar, Tree, FolderPicker
@@ -67,6 +67,22 @@ Notes
 
 9. **Depth bullet glyphs** (GRO-2013, `src/editor/outline/bullets.css`): CSS only — Crepe's bullet svg is hidden and `.label.bullet::after` draws ● / ○ / ■ by nesting depth of `.milkdown-list-item-block` (repeating every three levels; ordered levels count), `--list-indent: 2.15em`, marker colour 78% of the text colour, all from Crepe theme tokens. Heading-first items (`* # Part 1`) offset the label row by the heading's margin and size it to the heading's line box (`--list-label-offset/height`, shared with the fold chevron). Markdown untouched.
 10. **Typography** (GRO-2009, `src/app.css`): Obsidian defaults — system font stack, 16px / 1.5 body, heading scale 1.802 / 1.602 / 1.424 / 1.266 / 1.125 / 1em at weight 600 (h1 700), line-height 1.3 — set through Crepe's `--crepe-font-*` / `--crepe-base-font-size` custom properties on `.editor-instance .milkdown`.
+
+## Keyboard (client)
+
+All bindings are `$shortcut` keymaps registered in `createCrepe()` with priority 100 (Crepe's own keymaps are 50), so they run first and fall through (`return false`) when they do not apply. `Mod` = ⌘ on macOS, Ctrl elsewhere (ProseMirror decides by `navigator.platform`).
+
+| Keys | Where | Does | Source |
+|---|---|---|---|
+| `Tab` | caret/selection in list items | indent (sink) the item(s); no-op on a first sibling — never inserts spaces | GRO-2012 `listCommands.ts` |
+| `Shift-Tab` | list items | outdent (lift); level 1 → paragraph; following siblings nest under the lifted item | GRO-2012 (Crepe default, kept) |
+| `Enter` | end of a parent item | new FIRST child (after the folded subtree when the parent is collapsed) | GRO-2012 |
+| `Enter` | empty item (no children) | outdent; at level 1 leaves the list as a paragraph | GRO-2012 |
+| `Backspace` | start of an item's first block | join into the previous paragraph / parent item; empty parent: children take its place; non-empty parent: no-op | GRO-2012 |
+| `Mod-Enter` | list item(s) whose first block touches the selection | cycle bullet → `[ ]` → `[x]` → bullet, each item from its own state; outside lists falls through (table exit / CodeMirror exit keep theirs) | GRO-2027 `hotkeys.ts` |
+| `Mod-Shift-u` | anywhere | fold every parent item (`foldAllOutline`, meta-only transaction, persisted via `mdapp.folds`) | GRO-2027 |
+| `Mod-Shift-i` | anywhere | unfold all (`unfoldAllOutline`) | GRO-2027 |
+| `Mod-Shift-x` | selection | toggle strikethrough (Obsidian binding; Crepe's `Mod-Alt-x` still works) | GRO-2027 |
 
 ## localStorage (client)
 

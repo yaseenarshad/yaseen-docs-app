@@ -17,6 +17,8 @@
  *  - Empty list items round-trip as bare markers, never `* <br />` (GRO-2012,
  *    `listItemRoundTrip.ts`): `<br />` opened an HTML block that swallowed nested children.
  *    Empty task items are `* [ ]` on disk and `* [ ] <br />` inside Milkdown (GRO-2018).
+ *  - Obsidian hotkeys (GRO-2027, `outline/hotkeys.ts`): Mod-Enter task cycle, Mod-Shift-u/i
+ *    fold/unfold all, Mod-Shift-x strikethrough.
  */
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -25,6 +27,7 @@ import { Selection } from '@milkdown/kit/prose/state'
 import { replaceAll } from '@milkdown/kit/utils'
 import { features } from './featureConfig'
 import { listItemRoundTrip, normalizeEmptyItems, stripEmptyTaskBreaks } from './listItemRoundTrip'
+import { obsidianHotkeys } from './outline/hotkeys'
 import { outlinerKeymap } from './outline/listCommands'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 
@@ -52,6 +55,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(listItemRoundTrip)
   crepe.editor.use(createOutlineFolding(opts.folding))
   crepe.editor.use(outlinerKeymap)
+  crepe.editor.use(obsidianHotkeys)
   if (opts.onMarkdownUpdated) {
     const cb = opts.onMarkdownUpdated
     crepe.on((listener) => {
