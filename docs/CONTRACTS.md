@@ -15,6 +15,7 @@ client/               Vite 7 + React 19 + TS, @milkdown/crepe 7.22.x  (127.0.0.1
   src/App.tsx                 root/file/picker state; Sidebar is keyed by root
   src/api.ts                  typed fetch wrappers + ApiRequestError
   src/editor/                 Editor (Crepe host + conflict bar), createCrepe (locked factory, see "Editor rules"), featureConfig (Crepe feature allowlist + guard test), listItemRoundTrip (empty-item round trip), frontmatter, SaveIndicator
+  src/editor/marks/           underline (mark: Mod-u ↔ `<u>…</u>` inline HTML, $remark + $markSchema + $shortcut) (+ test)
   src/editor/outline/         outlineFolding ($prose plugin: collapsible parent bullets) + outlineFoldKeys + outlineFolding.css, listCommands (outliner keymap), hotkeys (Obsidian hotkeys), listNodes (shared helpers), bullets.css (depth glyphs) (+ tests)
   src/hooks/                  useFile (load), useAutosave (debounce/flush/conflict), useWatch (one EventSource per root, fan-out), usePickFolder (native dialog → modal fallback)
   src/lib/                    pure logic with unit tests: autosave state machine, storage (localStorage), treeState, paths
@@ -68,6 +69,8 @@ Notes
 9. **Depth bullet glyphs** (GRO-2013, `src/editor/outline/bullets.css`): CSS only — Crepe's bullet svg is hidden and `.label.bullet::after` draws ● / ○ / ■ by nesting depth of `.milkdown-list-item-block` (repeating every three levels; ordered levels count), `--list-indent: 2.15em`, marker colour 78% of the text colour, all from Crepe theme tokens. Heading-first items (`* # Part 1`) offset the label row by the heading's margin and size it to the heading's line box (`--list-label-offset/height`, shared with the fold chevron). Markdown untouched.
 10. **Typography** (GRO-2009, `src/app.css`): Obsidian defaults — system font stack, 16px / 1.5 body, heading scale 1.802 / 1.602 / 1.424 / 1.266 / 1.125 / 1em at weight 600 (h1 700), line-height 1.3 — set through Crepe's `--crepe-font-*` / `--crepe-base-font-size` custom properties on `.editor-instance .milkdown`.
 
+11. **Underline** (GRO-2028, `src/editor/marks/underline.ts`): ProseMirror mark `underline` (`<u>` in the DOM). On disk it is obsidian-underline's inline HTML `<u>text</u>`: a `$remark` plugin wraps each mdast `html("<u>")` … `html("</u>")` pair (nearest match, any depth, inside any inline parent such as `**…**`) into an `underline` mdast node after parsing, and registers the remark-stringify handler that writes it back as `<u>` + children + `</u>` — so `a <u>b</u> c` round-trips byte-identically. Unmatched tags and every other inline HTML keep going through Milkdown's `html` atom node unchanged. Not a Crepe feature (allowlist untouched, no toolbar button).
+
 ## Keyboard (client)
 
 All bindings are `$shortcut` keymaps registered in `createCrepe()` with priority 100 (Crepe's own keymaps are 50), so they run first and fall through (`return false`) when they do not apply. `Mod` = ⌘ on macOS, Ctrl elsewhere (ProseMirror decides by `navigator.platform`).
@@ -83,6 +86,7 @@ All bindings are `$shortcut` keymaps registered in `createCrepe()` with priority
 | `Mod-Shift-u` | anywhere | fold every parent item (`foldAllOutline`, meta-only transaction, persisted via `mdapp.folds`) | GRO-2027 |
 | `Mod-Shift-i` | anywhere | unfold all (`unfoldAllOutline`) | GRO-2027 |
 | `Mod-Shift-x` | selection | toggle strikethrough (Obsidian binding; Crepe's `Mod-Alt-x` still works) | GRO-2027 |
+| `Mod-u` | selection | toggle underline (`<u>…</u>` on disk) | GRO-2028 `marks/underline.ts` |
 
 ## localStorage (client)
 
