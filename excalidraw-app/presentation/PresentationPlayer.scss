@@ -5,23 +5,6 @@
   outline: none;
   cursor: pointer;
 
-  &::before,
-  &::after {
-    position: absolute;
-    z-index: -1;
-    width: 50%;
-    height: 100%;
-    content: "";
-  }
-
-  &::before {
-    inset-inline-start: 0;
-  }
-
-  &::after {
-    inset-inline-end: 0;
-  }
-
   &__status {
     position: absolute;
     overflow: hidden;
