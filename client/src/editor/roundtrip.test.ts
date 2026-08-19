@@ -194,6 +194,10 @@ describe('locked editor rules (createCrepe)', () => {
     expect(out).not.toContain('<br />')
     expect(out).toContain('* # Part 1')
   })
+  it('ends with exactly one newline even when the trailing plugin appends an empty paragraph', async () => {
+    expect(await roundTrip('# H\n\n* a\n')).toBe('# H\n\n* a\n')
+    expect(await roundTrip('# H\n\n* a\n\n\n')).toBe('# H\n\n* a\n')
+  })
   it('un-escapes wikilinks and embeds on save', async () => {
     const out = await roundTrip('See [[Wiki Link]] and ![[embed.png]].\n')
     expect(out).toBe('See [[Wiki Link]] and ![[embed.png]].\n')

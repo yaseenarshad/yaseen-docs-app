@@ -78,5 +78,11 @@ export function setMarkdown(crepe: Crepe, markdown: string): void {
 }
 
 export function postProcessMarkdown(md: string): string {
-  return md.replace(/(!?)\\\[\\\[/g, '$1[[')
+  return (
+    md
+      .replace(/(!?)\\\[\\\[/g, '$1[[')
+      // Crepe's trailing plugin keeps an empty paragraph after a final heading/list/code
+      // block; remark would serialise it as an extra blank line. Contract: single final \n.
+      .replace(/\n{2,}$/, '\n')
+  )
 }
