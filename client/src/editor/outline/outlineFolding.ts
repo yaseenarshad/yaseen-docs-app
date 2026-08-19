@@ -3,9 +3,9 @@
  * `docs/outlineFolding.ts`; logic unchanged apart from always reporting the
  * resolved key set once on mount (so persisted keys that no longer resolve get pruned).
  *
- * Design: fold state lives ONLY in plugin state (collapsed list_item positions, mapped
- * through every transaction) + decorations. Toggling dispatches a metadata-only
- * transaction (`tr.setMeta(pluginKey, itemPos)`), so `tr.docChanged` is false, the
+ * Design: fold state lives ONLY in plugin state (the document's outline entries + the collapsed
+ * list_item positions, mapped through every transaction) + decorations. Toggling dispatches a
+ * metadata-only transaction (`tr.setMeta(pluginKey, itemPos)`), so `tr.docChanged` is false, the
  * listener plugin never fires `markdownUpdated`, and the markdown on disk is untouched.
  * Persistence is by stable fold key (see outlineFoldKeys.ts), not by position.
  */
@@ -13,17 +13,20 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { findNestedList } from './listNodes'
 import { getOutlineFoldKey } from './outlineFoldKeys'
 
 interface OutlineEntry {
   foldKey: string
   itemPos: number
   label: string
-  nestedList: ProseNode
   nestedListPos: number
+  nestedListEnd: number
 }
 
 interface OutlineFoldingState {
+  /** Every list_item that owns a nested list, in document order (recomputed per transaction). */
+  entries: readonly OutlineEntry[]
   collapsedItemPositions: ReadonlySet<number>
 }
 
@@ -43,38 +46,34 @@ const pluginKey = new PluginKey<OutlineFoldingState>('mdapp-outline-folding')
 export const isOutlineItemCollapsed = (state: EditorState, itemPos: number): boolean =>
   pluginKey.getState(state)?.collapsedItemPositions.has(itemPos) ?? false
 
-const LIST_NODE_NAMES = new Set(['bullet_list', 'ordered_list'])
-
-/** Every list_item that owns a nested list, in document order. */
 const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
   const entries: OutlineEntry[] = []
   const labelOccurrences = new Map<string, number>()
 
   doc.descendants((node, itemPos) => {
     if (node.type.name !== 'list_item') return true
-
-    let nestedList: ProseNode | null = null
-    let nestedListPos = -1
-    node.forEach((child, offset) => {
-      if (nestedList === null && LIST_NODE_NAMES.has(child.type.name)) {
-        nestedList = child
-        nestedListPos = itemPos + 1 + offset
-      }
-    })
-    if (nestedList === null) return true
+    const nested = findNestedList(node)
+    if (nested === null) return true
 
     const label = node.firstChild?.textContent.trim() || 'Untitled item'
     const occurrence = labelOccurrences.get(label) ?? 0
     labelOccurrences.set(label, occurrence + 1)
-    entries.push({ foldKey: getOutlineFoldKey(label, occurrence), itemPos, label, nestedList, nestedListPos })
+    const nestedListPos = itemPos + 1 + nested.offset
+    entries.push({
+      foldKey: getOutlineFoldKey(label, occurrence),
+      itemPos,
+      label,
+      nestedListPos,
+      nestedListEnd: nestedListPos + nested.list.nodeSize,
+    })
     return true
   })
 
   return entries
 }
 
-const getCollapsedKeys = (doc: ProseNode, collapsedItemPositions: ReadonlySet<number>): string[] =>
-  getOutlineEntries(doc)
+const getCollapsedKeys = ({ entries, collapsedItemPositions }: OutlineFoldingState): string[] =>
+  entries
     .filter(({ itemPos }) => collapsedItemPositions.has(itemPos))
     .map(({ foldKey }) => foldKey)
     .sort()
@@ -85,15 +84,18 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
       new Plugin<OutlineFoldingState>({
         key: pluginKey,
         state: {
-          init: (_config, state) => ({
-            collapsedItemPositions: new Set(
-              getOutlineEntries(state.doc)
-                .filter(({ foldKey }) => initialCollapsedKeys.has(foldKey))
-                .map(({ itemPos }) => itemPos),
-            ),
-          }),
+          init: (_config, state) => {
+            const entries = getOutlineEntries(state.doc)
+            return {
+              entries,
+              collapsedItemPositions: new Set(
+                entries.filter(({ foldKey }) => initialCollapsedKeys.has(foldKey)).map(({ itemPos }) => itemPos),
+              ),
+            }
+          },
           apply: (transaction, previousState, _oldState, newState) => {
-            const parentPositions = new Set(getOutlineEntries(newState.doc).map(({ itemPos }) => itemPos))
+            const entries = transaction.docChanged ? getOutlineEntries(newState.doc) : previousState.entries
+            const parentPositions = new Set(entries.map(({ itemPos }) => itemPos))
             const collapsedItemPositions = new Set<number>()
             previousState.collapsedItemPositions.forEach((position) => {
               const mappedPosition = transaction.mapping.map(position, 1)
@@ -105,7 +107,7 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
               if (collapsedItemPositions.has(toggledPosition)) collapsedItemPositions.delete(toggledPosition)
               else if (parentPositions.has(toggledPosition)) collapsedItemPositions.add(toggledPosition)
             }
-            return { collapsedItemPositions }
+            return { entries, collapsedItemPositions }
           },
         },
         props: {
@@ -114,7 +116,7 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
             if (!foldingState) return DecorationSet.empty
 
             const decorations: Decoration[] = []
-            getOutlineEntries(state.doc).forEach((entry) => {
+            foldingState.entries.forEach((entry) => {
               const collapsed = foldingState.collapsedItemPositions.has(entry.itemPos)
               decorations.push(
                 Decoration.widget(
@@ -154,7 +156,7 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
               )
               if (collapsed) {
                 decorations.push(
-                  Decoration.node(entry.nestedListPos, entry.nestedListPos + entry.nestedList.nodeSize, {
+                  Decoration.node(entry.nestedListPos, entry.nestedListEnd, {
                     [OUTLINE_FOLDED_ATTR]: 'true',
                   }),
                 )
@@ -168,7 +170,7 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
           const notify = () => {
             const foldingState = pluginKey.getState(view.state)
             if (!foldingState || !onCollapsedKeysChange) return
-            const keys = getCollapsedKeys(view.state.doc, foldingState.collapsedItemPositions)
+            const keys = getCollapsedKeys(foldingState)
             const serializedKeys = keys.join(' ')
             if (serializedKeys !== previousKeys) {
               previousKeys = serializedKeys

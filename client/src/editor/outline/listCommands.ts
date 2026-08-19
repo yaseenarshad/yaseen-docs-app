@@ -26,13 +26,12 @@
  */
 import type { Ctx } from '@milkdown/kit/ctx'
 import { listItemSchema, paragraphSchema } from '@milkdown/kit/preset/commonmark'
-import type { Node as ProseNode, NodeType, ResolvedPos } from '@milkdown/kit/prose/model'
+import type { NodeType, ResolvedPos } from '@milkdown/kit/prose/model'
 import { liftListItem, sinkListItem } from '@milkdown/kit/prose/schema-list'
 import { type Command, type EditorState, Selection, TextSelection } from '@milkdown/kit/prose/state'
 import { $shortcut } from '@milkdown/kit/utils'
+import { findNestedList } from './listNodes'
 import { isOutlineItemCollapsed } from './outlineFolding'
-
-const LIST_NODE_NAMES = new Set(['bullet_list', 'ordered_list'])
 
 /** Priority above Crepe's list/indent/base keymaps (default 50). */
 const PRIORITY = 100
@@ -48,14 +47,6 @@ const caretInFirstBlock = (state: EditorState, itemType: NodeType): ResolvedPos 
   const { $from, empty } = state.selection
   if (!empty || $from.depth < 2 || $from.node(-1).type !== itemType || $from.index(-1) !== 0) return null
   return $from
-}
-
-const findNestedList = (item: ProseNode): { list: ProseNode; offset: number } | null => {
-  let found: { list: ProseNode; offset: number } | null = null
-  item.forEach((child, offset) => {
-    if (found === null && LIST_NODE_NAMES.has(child.type.name)) found = { list: child, offset }
-  })
-  return found
 }
 
 const indentCommand = (itemType: NodeType): Command => (state, dispatch) => {
