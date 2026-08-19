@@ -180,7 +180,7 @@ const buildDecorations = (state: EditorState, itemPos: number, fileName: string)
         })
         return nav
       },
-      { side: -1, key: `outline-zoom-crumbs:${itemPos}:${crumbs.map((c) => c.label).join(' ')}` },
+      { side: -1, key: `outline-zoom-crumbs:${itemPos}:${crumbs.map((c) => c.label).join('\u0000')}` },
     ),
   )
   return decorations
