@@ -216,9 +216,8 @@ export const PresentationPlayer = ({
         return;
       }
 
-      // Every navigation lands on a single frame, so it is also the way out of
-      // overview — including the arrows pressed while zoomed out.
-      settleOverview();
+      // Navigating inside overview flies to the slide but stays in overview
+      // (D8): free roam, border on, no lock. Leaving overview is explicit.
       clearTransition();
       if (activeFrameIdRef.current) {
         const previousIndex = currentSlides.findIndex(
@@ -245,7 +244,7 @@ export const PresentationPlayer = ({
         reason,
       });
       applyViewport(next.frame.id, {
-        locked: true,
+        locked: !isOverviewRef.current,
         animation: { duration: PRESENTATION_TRANSITION_DURATION },
       });
       transitionTimerRef.current = window.setTimeout(() => {
@@ -267,7 +266,7 @@ export const PresentationPlayer = ({
         });
       }, PRESENTATION_TRANSITION_DURATION + 16);
     },
-    [applyViewport, clearTransition, publish, settleOverview],
+    [applyViewport, clearTransition, publish],
   );
 
   /**
@@ -353,10 +352,11 @@ export const PresentationPlayer = ({
     });
   }, [applyViewport]);
 
-  const leaveOverview = useCallback(
-    () => navigateTo(currentIndexRef.current, "overview-return"),
-    [navigateTo],
-  );
+  /** Out of overview: tool back, then re-fit and lock the slide we are on. */
+  const leaveOverview = useCallback(() => {
+    settleOverview();
+    navigateTo(currentIndexRef.current, "overview-return");
+  }, [navigateTo, settleOverview]);
 
   const toggleOverview = useCallback(
     () => (isOverview ? leaveOverview() : showOverview()),
@@ -631,11 +631,10 @@ export const PresentationPlayer = ({
       }}
     >
       <div className="presentation-player__status" aria-live="polite">
-        {isOverview
-          ? `Overview — ${slides.length} frames`
-          : `${isTransitioning ? "Moving to" : "Showing"} slide ${
-              currentIndex + 1
-            } of ${slides.length} — ${name}`}
+        {isOverview ? "Overview — " : ""}
+        {`${isTransitioning ? "Moving to" : "Showing"} slide ${
+          currentIndex + 1
+        } of ${slides.length} — ${name}`}
       </div>
       <div className="presentation-player__status" aria-live="polite">
         {toolsVisible ? "Tools shown" : "Tools hidden"}
