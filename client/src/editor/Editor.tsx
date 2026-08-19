@@ -11,6 +11,7 @@ import { SaveIndicator } from './SaveIndicator'
 import { useAutosave } from '../hooks/useAutosave'
 import { useFile } from '../hooks/useFile'
 import type { WatchSource } from '../hooks/useWatch'
+import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
 
 interface EditorProps {
@@ -56,7 +57,7 @@ function CrepeHost({ root, file, watch }: { root: string; file: FileResponse; wa
         initialCollapsedKeys: new Set(storage.getFolds(root, file.path)),
         onCollapsedKeysChange: (keys) => storage.setFolds(root, file.path, keys),
       },
-      zoom: { fileName: file.path.slice(file.path.lastIndexOf('/') + 1) },
+      zoom: { fileName: basename(file.path) },
     })
     let controller: ReturnType<typeof attach> | null = null
     let cancelled = false
