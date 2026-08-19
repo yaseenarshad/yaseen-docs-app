@@ -165,6 +165,9 @@ describe("PresentationPlayer", () => {
     expectSlide(1, 3);
 
     fireEvent.keyDown(document, { key: "Escape" });
+    expect(onExit).not.toHaveBeenCalled();
+
+    fireEvent.click(control("Exit presentation"));
     expect(api.setViewport).toHaveBeenLastCalledWith(null);
     expect(onExit).toHaveBeenCalledTimes(1);
   });
@@ -194,7 +197,7 @@ describe("PresentationPlayer", () => {
     fireEvent.click(control("Next slide (→)"));
     expectSlide(2, 3);
 
-    fireEvent.click(control("Exit presentation (Esc)"));
+    fireEvent.click(control("Exit presentation"));
     expect(onExit).toHaveBeenCalledTimes(1);
     expect(api.setViewport).toHaveBeenLastCalledWith(null);
     window.removeEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
@@ -264,7 +267,7 @@ describe("PresentationPlayer", () => {
       vi.mocked(api.updateFrameRendering).mock.invocationCallOrder[0],
     ).toBeLessThan(vi.mocked(api.setViewport).mock.invocationCallOrder[0]);
 
-    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(control("Exit presentation"));
 
     expect(api.updateFrameRendering).toHaveBeenLastCalledWith({
       outline: true,
@@ -277,7 +280,7 @@ describe("PresentationPlayer", () => {
     const { api } = createApi();
     render(<PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />);
 
-    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(control("Exit presentation"));
 
     expect(api.updateFrameRendering).toHaveBeenLastCalledWith({
       outline: false,
@@ -441,7 +444,7 @@ describe("PresentationPlayer", () => {
       "Next slide (→)",
       "Overview (⇧O)",
       "Show tools (⇧T)",
-      "Exit presentation (Esc)",
+      "Exit presentation",
     ]);
     // Tooltip and accessible name are the same string on every control.
     expect(buttons.map((button) => button.title)).toEqual(
@@ -561,7 +564,7 @@ describe("PresentationPlayer", () => {
     );
   });
 
-  it("returns to the slide on the first Escape from overview, exits on the next", () => {
+  it("returns to the slide on Escape from overview and never exits on Escape", () => {
     const { api } = createApi();
     const onExit = vi.fn();
     render(
@@ -573,15 +576,21 @@ describe("PresentationPlayer", () => {
     );
 
     fireEvent.keyDown(document, { key: "O", shiftKey: true });
+    expect(screen.getByRole("dialog")).toHaveClass(
+      "presentation-player--overview",
+    );
     fireEvent.keyDown(document, { key: "Escape" });
 
     expect(onExit).not.toHaveBeenCalled();
     expectSlide(2, 3);
+    expect(screen.getByRole("dialog")).not.toHaveClass(
+      "presentation-player--overview",
+    );
 
     fireEvent.keyDown(document, { key: "Escape" });
 
-    expect(onExit).toHaveBeenCalledTimes(1);
-    expect(api.setViewport).toHaveBeenLastCalledWith(null);
+    expect(onExit).not.toHaveBeenCalled();
+    expect(api.setViewport).not.toHaveBeenLastCalledWith(null);
   });
 
   it("presents the frame clicked in overview and ignores a miss", () => {
@@ -782,7 +791,7 @@ describe("PresentationPlayer", () => {
       offsets: { ui: true, right: 512 },
     });
 
-    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(control("Exit presentation"));
     expect(api.setViewport).toHaveBeenLastCalledWith(null);
 
     fireEvent(window, new Event("resize"));
