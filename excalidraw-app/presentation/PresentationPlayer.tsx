@@ -9,6 +9,7 @@ import {
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import type { SetViewportOptions } from "@excalidraw/excalidraw/viewport";
 
 import {
   applyFramesVisibility,
@@ -57,6 +58,10 @@ const PRESENTATION_RESIZE_DEBOUNCE = 100;
  * Excalidraw's text editor is a `textarea` and the chrome is full of inputs, so
  * the presentation shortcuts stand down while focus is inside one of them —
  * otherwise pressing an arrow (or Shift+T) would navigate instead of edit.
+ *
+ * Deliberately wider than `@excalidraw/common`'s `isWritableElement`: with the
+ * tools shown, focus can land on a colour swatch or a slider, where an arrow
+ * belongs to the control and not to the deck.
  */
 const isTextEntryTarget = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
@@ -97,7 +102,12 @@ export const PresentationPlayer = ({
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [isTransitioning, setIsTransitioning] = useState(true);
   const [toolsVisible, setToolsVisible] = useState(false);
-  const [overview, setOverview] = useState(false);
+  const [isOverview, setIsOverview] = useState(false);
+  // The scene subscription, the document-level key handler and the transition
+  // timer all outlive the render that created them, so the values they read
+  // are mirrored into refs. `currentFrameIdRef` is the slide we are showing or
+  // moving to; `activeFrameIdRef` is the one that has landed and published
+  // `active`, which is only the same once the transition finishes.
   const slidesRef = useRef(initialSlides);
   const currentIndexRef = useRef(initialIndex);
   const currentFrameIdRef = useRef<string | null>(null);
@@ -142,6 +152,29 @@ export const PresentationPlayer = ({
     }
   }, []);
 
+  /**
+   * The only way this component moves the camera. Every presentation view is
+   * the same call with a different target: fitted, offset by the camera
+   * reserve (GRO-1929 D6), and locked unless the tools have the canvas.
+   */
+  const applyViewport = useCallback(
+    (
+      target: SetViewportOptions["target"],
+      {
+        locked,
+        animation,
+      }: { locked: boolean; animation: SetViewportOptions["animation"] },
+    ) =>
+      excalidrawAPI.setViewport({
+        target,
+        fit: "contain",
+        animation,
+        offsets: getPresentationViewportOffsets(),
+        ...(locked ? { lock: PRESENTATION_VIEWPORT_LOCK } : {}),
+      }),
+    [excalidrawAPI],
+  );
+
   const navigateTo = useCallback(
     (requestedIndex: number, reason: string) => {
       const currentSlides = slidesRef.current;
@@ -159,7 +192,7 @@ export const PresentationPlayer = ({
 
       // Every navigation lands on a single frame, so it is also the way out of
       // overview — including the arrows pressed while zoomed out.
-      setOverview(false);
+      setIsOverview(false);
       clearTransition();
       if (activeFrameIdRef.current) {
         const previousIndex = currentSlides.findIndex(
@@ -185,12 +218,9 @@ export const PresentationPlayer = ({
         phase: "transitioning",
         reason,
       });
-      excalidrawAPI.setViewport({
-        target: next.frame.id,
-        fit: "contain",
+      applyViewport(next.frame.id, {
+        locked: true,
         animation: { duration: PRESENTATION_TRANSITION_DURATION },
-        lock: PRESENTATION_VIEWPORT_LOCK,
-        offsets: getPresentationViewportOffsets(),
       });
       transitionTimerRef.current = window.setTimeout(() => {
         if (
@@ -211,6 +241,22 @@ export const PresentationPlayer = ({
         });
       }, PRESENTATION_TRANSITION_DURATION + 16);
     },
+    [applyViewport, clearTransition, publish],
+  );
+
+  /**
+   * Everything that has to be undone whether the presenter left on purpose or
+   * the component was simply unmounted: the camera, the frame outlines the
+   * edit-mode preference owns, and the `ended` beat consumers wait for.
+   */
+  const endSession = useCallback(
+    (reason: string) => {
+      didExitRef.current = true;
+      clearTransition();
+      publish({ frameId: null, order: null, phase: "ended", reason });
+      excalidrawAPI.setViewport(null);
+      applyFramesVisibility(excalidrawAPI, readFramesVisiblePreference());
+    },
     [clearTransition, excalidrawAPI, publish],
   );
 
@@ -219,28 +265,18 @@ export const PresentationPlayer = ({
       if (didExitRef.current) {
         return;
       }
-      didExitRef.current = true;
-      clearTransition();
-      const currentFrameId = currentFrameIdRef.current;
-      if (currentFrameId) {
+      if (currentFrameIdRef.current) {
         publish({
-          frameId: currentFrameId,
+          frameId: currentFrameIdRef.current,
           order: currentIndexRef.current + 1,
           phase: "inactive",
           reason,
         });
       }
-      publish({
-        frameId: null,
-        order: null,
-        phase: "ended",
-        reason,
-      });
-      excalidrawAPI.setViewport(null);
-      applyFramesVisibility(excalidrawAPI, readFramesVisiblePreference());
+      endSession(reason);
       onExitRef.current();
     },
-    [clearTransition, excalidrawAPI, publish],
+    [endSession, publish],
   );
 
   const step = useCallback(
@@ -264,21 +300,18 @@ export const PresentationPlayer = ({
     // Otherwise an in-flight transition would land its `active` beat, and play
     // the slide's animation, while the deck is zoomed out.
     clearTransition();
-    setOverview(true);
+    setIsOverview(true);
     publish({
       frameId: currentFrameIdRef.current,
       order: currentIndexRef.current + 1,
       phase: "transitioning",
       reason: "overview",
     });
-    excalidrawAPI.setViewport({
-      target: deckViewportTarget(currentSlides),
-      fit: "contain",
+    applyViewport(deckViewportTarget(currentSlides), {
+      locked: true,
       animation: { duration: PRESENTATION_TRANSITION_DURATION },
-      lock: PRESENTATION_VIEWPORT_LOCK,
-      offsets: getPresentationViewportOffsets(),
     });
-  }, [clearTransition, excalidrawAPI, publish]);
+  }, [applyViewport, clearTransition, publish]);
 
   const leaveOverview = useCallback(
     () => navigateTo(currentIndexRef.current, "overview-return"),
@@ -286,8 +319,8 @@ export const PresentationPlayer = ({
   );
 
   const toggleOverview = useCallback(
-    () => (overview ? leaveOverview() : showOverview()),
-    [leaveOverview, overview, showOverview],
+    () => (isOverview ? leaveOverview() : showOverview()),
+    [isOverview, leaveOverview, showOverview],
   );
 
   /**
@@ -298,21 +331,15 @@ export const PresentationPlayer = ({
    */
   const refit = useCallback(
     ({ locked, animated }: { locked: boolean; animated: boolean }) => {
-      const target = overview
+      const target = isOverview
         ? deckViewportTarget(slidesRef.current)
         : currentFrameIdRef.current;
       if (!target || didExitRef.current) {
         return;
       }
-      excalidrawAPI.setViewport({
-        target,
-        fit: "contain",
-        animation: animated,
-        offsets: getPresentationViewportOffsets(),
-        ...(locked ? { lock: PRESENTATION_VIEWPORT_LOCK } : {}),
-      });
+      applyViewport(target, { locked, animation: animated });
     },
-    [excalidrawAPI, overview],
+    [applyViewport, isOverview],
   );
 
   /**
@@ -321,24 +348,17 @@ export const PresentationPlayer = ({
    * and the viewport is re-issued without the lock. Hiding them puts the lock
    * back. Navigation always re-locks, without touching this state.
    */
-  const applyToolsVisibility = useCallback(
-    (visible: boolean) => {
-      setToolsVisible(visible);
-      // Written straight to the DOM instead of from an effect so the
-      // chrome-hiding CSS has already resolved when `setViewport` measures
-      // `[data-viewport-ui]` for the `ui` half of its offsets.
-      document.body.classList.toggle(PRESENTATION_TOOLS_BODY_CLASS, visible);
-      // The reserve holds even with the tools out — only the lock is dropped,
-      // so the presenter can pan away from the left-hand fit if they want to.
-      refit({ locked: !visible, animated: true });
-    },
-    [refit],
-  );
-
-  const toggleTools = useCallback(
-    () => applyToolsVisibility(!toolsVisible),
-    [applyToolsVisibility, toolsVisible],
-  );
+  const toggleTools = useCallback(() => {
+    const visible = !toolsVisible;
+    setToolsVisible(visible);
+    // Written straight to the DOM instead of from an effect so the
+    // chrome-hiding CSS has already resolved when `setViewport` measures
+    // `[data-viewport-ui]` for the `ui` half of its offsets.
+    document.body.classList.toggle(PRESENTATION_TOOLS_BODY_CLASS, visible);
+    // The reserve holds even with the tools out — only the lock is dropped, so
+    // the presenter can pan away from the left-hand fit if they want to.
+    refit({ locked: !visible, animated: true });
+  }, [refit, toolsVisible]);
 
   useEffect(() => {
     const effectGeneration = ++effectGenerationRef.current;
@@ -350,31 +370,7 @@ export const PresentationPlayer = ({
     applyFramesVisibility(excalidrawAPI, false);
     navigateTo(initialIndex, "start");
 
-    const unsubscribe = excalidrawAPI.onChange(
-      (nextElements: readonly ExcalidrawElement[]) => {
-        const nextSlides = getOrderedPresentationFrames(nextElements);
-        const oldIndex = currentIndexRef.current;
-        const currentFrameId = currentFrameIdRef.current;
-        slidesRef.current = nextSlides;
-        setSlides(nextSlides);
-        if (nextSlides.length === 0) {
-          exit("all-frames-deleted");
-          return;
-        }
-        const survivingIndex = nextSlides.findIndex(
-          ({ frame }) => frame.id === currentFrameId,
-        );
-        if (survivingIndex >= 0) {
-          currentIndexRef.current = survivingIndex;
-          setCurrentIndex(survivingIndex);
-          return;
-        }
-        navigateTo(Math.min(oldIndex, nextSlides.length - 1), "frame-deleted");
-      },
-    );
-
     return () => {
-      unsubscribe();
       document.body.classList.remove(
         PRESENTATION_ACTIVE_BODY_CLASS,
         PRESENTATION_TOOLS_BODY_CLASS,
@@ -393,19 +389,38 @@ export const PresentationPlayer = ({
         ) {
           return;
         }
-        didExitRef.current = true;
-        clearTransition();
-        excalidrawAPI.setViewport(null);
-        applyFramesVisibility(excalidrawAPI, readFramesVisiblePreference());
-        publish({
-          frameId: null,
-          order: null,
-          phase: "ended",
-          reason: "unmounted",
-        });
+        endSession("unmounted");
       });
     };
-  }, [clearTransition, excalidrawAPI, exit, initialIndex, navigateTo, publish]);
+  }, [endSession, excalidrawAPI, initialIndex, navigateTo]);
+
+  // The deck is whatever the scene says it is: frames added, removed or
+  // reordered while presenting re-index the deck under the presenter, and the
+  // slide they are on survives by id rather than by position.
+  useEffect(
+    () =>
+      excalidrawAPI.onChange((nextElements: readonly ExcalidrawElement[]) => {
+        const nextSlides = getOrderedPresentationFrames(nextElements);
+        const oldIndex = currentIndexRef.current;
+        const currentFrameId = currentFrameIdRef.current;
+        slidesRef.current = nextSlides;
+        setSlides(nextSlides);
+        if (nextSlides.length === 0) {
+          exit("all-frames-deleted");
+          return;
+        }
+        const survivingIndex = nextSlides.findIndex(
+          ({ frame }) => frame.id === currentFrameId,
+        );
+        if (survivingIndex >= 0) {
+          currentIndexRef.current = survivingIndex;
+          setCurrentIndex(survivingIndex);
+          return;
+        }
+        navigateTo(Math.min(oldIndex, nextSlides.length - 1), "frame-deleted");
+      }),
+    [excalidrawAPI, exit, navigateTo],
+  );
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -431,7 +446,7 @@ export const PresentationPlayer = ({
       } else if (key === "Escape") {
         // The first Esc out of overview goes back to the slide you left; only
         // an Esc from a slide ends the presentation.
-        if (overview) {
+        if (isOverview) {
           leaveOverview();
         } else {
           exit("escape");
@@ -474,9 +489,9 @@ export const PresentationPlayer = ({
     return () => document.removeEventListener("keydown", handleKeyDown, true);
   }, [
     exit,
+    isOverview,
     leaveOverview,
     navigateTo,
-    overview,
     step,
     toggleOverview,
     toggleTools,
@@ -526,7 +541,7 @@ export const PresentationPlayer = ({
         if (toolsVisible || event.target !== event.currentTarget) {
           return;
         }
-        if (overview) {
+        if (isOverview) {
           // Zoomed out, a click means "present that frame". A miss stays in
           // overview: there is nothing else the gap between frames could mean.
           const index = findSlideIndexAtPoint(
@@ -546,7 +561,7 @@ export const PresentationPlayer = ({
       }}
     >
       <div className="presentation-player__status" aria-live="polite">
-        {overview
+        {isOverview
           ? `Overview — ${slides.length} frames`
           : `${isTransitioning ? "Moving to" : "Showing"} slide ${
               currentIndex + 1
@@ -555,10 +570,8 @@ export const PresentationPlayer = ({
       <div className="presentation-player__status" aria-live="polite">
         {toolsVisible ? "Tools shown" : "Tools hidden"}
       </div>
-      <div
-        className="presentation-player__controls"
-        onClick={(event) => event.stopPropagation()}
-      >
+      {/* No `stopPropagation`: the overlay only acts on its own clicks. */}
+      <div className="presentation-player__controls">
         <button
           type="button"
           className="presentation-player__previous"
@@ -579,8 +592,8 @@ export const PresentationPlayer = ({
         <span className="presentation-player__divider" aria-hidden="true" />
         <button
           type="button"
-          {...labelled(overview ? "Exit overview (⇧O)" : "Overview (⇧O)")}
-          aria-pressed={overview}
+          {...labelled(isOverview ? "Exit overview (⇧O)" : "Overview (⇧O)")}
+          aria-pressed={isOverview}
           disabled={slides.length < 2}
           onClick={toggleOverview}
         >
