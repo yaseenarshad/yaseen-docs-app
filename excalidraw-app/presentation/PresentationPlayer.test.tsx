@@ -121,9 +121,10 @@ describe("PresentationPlayer", () => {
       target: "two",
       fit: "contain",
       animation: { duration: PRESENTATION_TRANSITION_DURATION },
-      lock: { scroll: true, zoom: true, overscroll: false },
       offsets: cameraOffsets(),
     });
+    // Free-form (D9): the hand tool pans the canvas while presenting.
+    expect(api.setActiveTool).toHaveBeenLastCalledWith({ type: "hand" });
     expectSlide(2, 3);
     expect(lifecycle.at(-1)).toMatchObject({
       frameId: "two",
@@ -160,17 +161,23 @@ describe("PresentationPlayer", () => {
     expectSlide(1, 3);
     fireEvent.click(control("Next slide (→)"));
     expectSlide(2, 3);
-    fireEvent.click(screen.getByRole("dialog"), { clientX: 1 });
+    fireEvent.click(control("Previous slide (←)"));
     expectSlide(1, 3);
     fireEvent.keyDown(document, { key: "PageDown" });
     fireEvent.keyDown(document, { key: "ArrowLeft" });
     expectSlide(1, 3);
 
+    // Esc zooms out to the whole deck and never ends the presentation (D7).
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onExit).not.toHaveBeenCalled();
+    expect(api.setViewport).toHaveBeenLastCalledWith(
+      expect.objectContaining({ target: expect.any(Array) }),
+    );
+    expectSlide(1, 3);
 
     fireEvent.click(control("Exit presentation"));
     expect(api.setViewport).toHaveBeenLastCalledWith(null);
+    expect(api.setActiveTool).toHaveBeenLastCalledWith({ type: "selection" });
     expect(onExit).toHaveBeenCalledTimes(1);
   });
 
@@ -290,7 +297,7 @@ describe("PresentationPlayer", () => {
     });
   });
 
-  it("unlocks the viewport while tools are shown and re-locks when they are hidden", () => {
+  it("swaps hand/selection tool with the chrome and re-fits, never locking", () => {
     const { api } = createApi();
     render(
       <PresentationPlayer
@@ -303,6 +310,7 @@ describe("PresentationPlayer", () => {
     fireEvent.click(control("Show tools (⇧T)"));
 
     expect(document.body).toHaveClass("yaseendraw-presentation-tools");
+    expect(api.setActiveTool).toHaveBeenLastCalledWith({ type: "selection" });
     expect(api.setViewport).toHaveBeenLastCalledWith({
       target: "one",
       fit: "contain",
@@ -313,16 +321,16 @@ describe("PresentationPlayer", () => {
     fireEvent.click(control("Hide tools (⇧T)"));
 
     expect(document.body).not.toHaveClass("yaseendraw-presentation-tools");
+    expect(api.setActiveTool).toHaveBeenLastCalledWith({ type: "hand" });
     expect(api.setViewport).toHaveBeenLastCalledWith({
       target: "one",
       fit: "contain",
       animation: true,
       offsets: cameraOffsets(),
-      lock: { scroll: true, zoom: true, overscroll: false },
     });
   });
 
-  it("re-locks on navigation but leaves the tools shown", () => {
+  it("navigates with the tools shown and leaves them shown", () => {
     const { api } = createApi();
     render(
       <PresentationPlayer
@@ -337,10 +345,10 @@ describe("PresentationPlayer", () => {
 
     expectSlide(2, 3);
     expect(api.setViewport).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        target: "two",
-        lock: { scroll: true, zoom: true, overscroll: false },
-      }),
+      expect.objectContaining({ target: "two" }),
+    );
+    expect(api.setViewport).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ lock: expect.anything() }),
     );
     expect(document.body).toHaveClass("yaseendraw-presentation-tools");
     expect(control("Hide tools (⇧T)")).toBeVisible();
@@ -430,7 +438,7 @@ describe("PresentationPlayer", () => {
     expect(document.body).not.toHaveClass("yaseendraw-presentation-tools");
   });
 
-  it("renders five icon controls in tab order with no text labels", () => {
+  it("renders four icon controls in tab order with no text labels", () => {
     const { api } = createApi();
     const { container } = render(
       <PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />,
@@ -444,7 +452,6 @@ describe("PresentationPlayer", () => {
     expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
       "Previous slide (←)",
       "Next slide (→)",
-      "Overview (⇧O)",
       "Show tools (⇧T)",
       "Exit presentation",
     ]);
@@ -474,7 +481,7 @@ describe("PresentationPlayer", () => {
     expect(control("Next slide (→)")).toBeDisabled();
   });
 
-  it("zooms out to every frame in overview without changing the slide", () => {
+  it("zooms out to every frame on Escape without changing the slide", () => {
     const { api } = createApi();
     const lifecycle: PresentationFrameLifecycleDetail[] = [];
     const listener = (event: Event) =>
@@ -491,7 +498,7 @@ describe("PresentationPlayer", () => {
     );
     act(() => vi.advanceTimersByTime(PRESENTATION_TRANSITION_DURATION + 20));
 
-    fireEvent.click(control("Overview (⇧O)"));
+    fireEvent.keyDown(document, { key: "Escape" });
 
     expect(api.setViewport).toHaveBeenLastCalledWith({
       target: [
@@ -503,35 +510,24 @@ describe("PresentationPlayer", () => {
       animation: { duration: PRESENTATION_TRANSITION_DURATION },
       offsets: cameraOffsets(),
     });
-    // Free-form overview (D8): no lock, hand tool so dragging pans.
-    expect(api.setActiveTool).toHaveBeenLastCalledWith({ type: "hand" });
     expect(lifecycle.at(-1)).toMatchObject({
       frameId: "two",
       order: 2,
       phase: "transitioning",
-      reason: "overview",
+      reason: "deck",
     });
-    expect(screen.getByText(/^Overview — /)).toBeVisible();
-
-    fireEvent.click(control("Exit overview (⇧O)"));
-    expect(api.setActiveTool).toHaveBeenLastCalledWith({ type: "selection" });
-
     expectSlide(2, 3);
+
+    // ← → from the deck go to the neighbouring slide.
+    fireEvent.keyDown(document, { key: "ArrowRight" });
+    expectSlide(3, 3);
     expect(api.setViewport).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        target: "two",
-        lock: { scroll: true, zoom: true, overscroll: false },
-      }),
+      expect.objectContaining({ target: "three" }),
     );
-    expect(lifecycle.at(-1)).toMatchObject({
-      frameId: "two",
-      phase: "transitioning",
-      reason: "overview-return",
-    });
     window.removeEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
   });
 
-  it("keeps an in-flight transition from activating while zoomed out", () => {
+  it("keeps an in-flight transition from activating once zoomed out", () => {
     const { api } = createApi();
     const lifecycle: PresentationFrameLifecycleDetail[] = [];
     const listener = (event: Event) =>
@@ -541,14 +537,14 @@ describe("PresentationPlayer", () => {
     window.addEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
     render(<PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />);
 
-    fireEvent.keyDown(document, { key: "O", shiftKey: true });
+    fireEvent.keyDown(document, { key: "Escape" });
     act(() => vi.advanceTimersByTime(PRESENTATION_TRANSITION_DURATION + 20));
 
     expect(lifecycle.some((event) => event.phase === "active")).toBe(false);
     window.removeEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
   });
 
-  it("flies to the next slide on an arrow but stays in overview, unlocked", () => {
+  it("presents the frame double-clicked on the canvas and ignores a miss or single click", () => {
     const { api } = createApi();
     render(
       <PresentationPlayer
@@ -557,113 +553,29 @@ describe("PresentationPlayer", () => {
         onExit={vi.fn()}
       />,
     );
-
-    fireEvent.keyDown(document, { key: "O", shiftKey: true });
-    fireEvent.keyDown(document, { key: "ArrowRight" });
-
-    expectSlide(2, 3);
-    expect(control("Exit overview (⇧O)")).toBeVisible();
-    expect(screen.getByRole("dialog")).toHaveClass(
-      "presentation-player--overview",
-    );
-    expect(api.setViewport).toHaveBeenLastCalledWith(
-      expect.objectContaining({ target: "two" }),
-    );
-    expect(api.setViewport).toHaveBeenLastCalledWith(
-      expect.not.objectContaining({ lock: expect.anything() }),
-    );
-
-    // Leaving overview locks onto the slide we flew to.
-    fireEvent.click(control("Exit overview (⇧O)"));
-    expect(api.setActiveTool).toHaveBeenLastCalledWith({ type: "selection" });
-    expect(api.setViewport).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        target: "two",
-        lock: { scroll: true, zoom: true, overscroll: false },
-      }),
-    );
-    expect(screen.getByRole("dialog")).not.toHaveClass(
-      "presentation-player--overview",
-    );
-  });
-
-  it("re-fits the whole deck on Escape in overview and never exits on Escape", () => {
-    const { api } = createApi();
-    const onExit = vi.fn();
-    render(
-      <PresentationPlayer
-        excalidrawAPI={api}
-        initialFrameId="two"
-        onExit={onExit}
-      />,
-    );
-
-    fireEvent.keyDown(document, { key: "O", shiftKey: true });
-    expect(screen.getByRole("dialog")).toHaveClass(
-      "presentation-player--overview",
-    );
     fireEvent.keyDown(document, { key: "Escape" });
-
-    // Still in overview — Esc just snaps back to the full deck view.
-    expect(onExit).not.toHaveBeenCalled();
-    expect(screen.getByRole("dialog")).toHaveClass(
-      "presentation-player--overview",
-    );
-    expect(api.setViewport).toHaveBeenLastCalledWith(
-      expect.objectContaining({ target: expect.any(Array) }),
-    );
-    expect(api.setViewport).toHaveBeenLastCalledWith(
-      expect.not.objectContaining({ lock: expect.anything() }),
-    );
-
-    fireEvent.click(control("Exit overview (⇧O)"));
-    fireEvent.keyDown(document, { key: "Escape" });
-
-    expect(onExit).not.toHaveBeenCalled();
-    expect(api.setViewport).not.toHaveBeenLastCalledWith(null);
-  });
-
-  it("presents the frame double-clicked in overview and ignores a miss or single click", () => {
-    const { api } = createApi();
-    render(
-      <PresentationPlayer
-        excalidrawAPI={api}
-        initialFrameId="one"
-        onExit={vi.fn()}
-      />,
-    );
-    fireEvent.keyDown(document, { key: "O", shiftKey: true });
 
     // `frame("three", 3)` sits at x 6000..7280, y 3000..3720.
     // A single click pans (free-form); it must not present.
     fireEvent.click(document.body, { clientX: 6100, clientY: 3100 });
-    expect(screen.getByText(/^Overview — /)).toBeVisible();
+    expectSlide(1, 3);
 
     fireEvent.doubleClick(document.body, { clientX: 6100, clientY: 3100 });
 
     expectSlide(3, 3);
-    // Still overview: flew to the slide, no lock, border on.
-    expect(screen.getByRole("dialog")).toHaveClass(
-      "presentation-player--overview",
-    );
     expect(api.setViewport).toHaveBeenLastCalledWith(
       expect.objectContaining({ target: "three" }),
     );
-    expect(api.setViewport).toHaveBeenLastCalledWith(
-      expect.not.objectContaining({ lock: expect.anything() }),
-    );
 
-    // A miss does nothing: still overview, still on slide three.
+    // A miss does nothing.
     fireEvent.doubleClick(document.body, { clientX: 1, clientY: 1 });
-
-    expect(screen.getByText(/^Overview — /)).toBeVisible();
     expectSlide(3, 3);
     expect(api.setViewport).toHaveBeenLastCalledWith(
       expect.objectContaining({ target: "three" }),
     );
   });
 
-  it("publishes the normal slide change when a frame is double-clicked in overview", () => {
+  it("publishes the normal slide change when a frame is double-clicked", () => {
     const { api } = createApi();
     const lifecycle: PresentationFrameLifecycleDetail[] = [];
     const listener = (event: Event) =>
@@ -680,12 +592,11 @@ describe("PresentationPlayer", () => {
     );
     act(() => vi.advanceTimersByTime(PRESENTATION_TRANSITION_DURATION + 20));
 
-    fireEvent.keyDown(document, { key: "O", shiftKey: true });
     fireEvent.doubleClick(document.body, { clientX: 4100, clientY: 2100 });
     act(() => vi.advanceTimersByTime(PRESENTATION_TRANSITION_DURATION + 20));
 
     expect(
-      lifecycle.filter((event) => event.reason === "overview-dblclick"),
+      lifecycle.filter((event) => event.reason === "double-click"),
     ).toMatchObject([
       { frameId: "one", order: 1, phase: "inactive" },
       { frameId: "two", order: 2, phase: "transitioning" },
@@ -694,7 +605,7 @@ describe("PresentationPlayer", () => {
     window.removeEventListener(PRESENTATION_FRAME_LIFECYCLE_EVENT, listener);
   });
 
-  it("keeps the deck framed when the tools are toggled in overview", () => {
+  it("ignores a double-click while typing in a text editor", () => {
     const { api } = createApi();
     render(
       <PresentationPlayer
@@ -703,47 +614,13 @@ describe("PresentationPlayer", () => {
         onExit={vi.fn()}
       />,
     );
-    fireEvent.keyDown(document, { key: "O", shiftKey: true });
+    const editor = document.createElement("textarea");
+    document.body.appendChild(editor);
 
-    fireEvent.keyDown(document, { key: "T", shiftKey: true });
+    fireEvent.doubleClick(editor, { clientX: 6100, clientY: 3100 });
 
-    expect(api.setViewport).toHaveBeenLastCalledWith({
-      target: [
-        expect.objectContaining({ id: "one" }),
-        expect.objectContaining({ id: "two" }),
-        expect.objectContaining({ id: "three" }),
-      ],
-      fit: "contain",
-      animation: true,
-      offsets: cameraOffsets(),
-    });
-    expect(screen.getByText(/^Overview — /)).toBeVisible();
-  });
-
-  it("still presents on double-click in overview while tools are shown", () => {
-    const { api } = createApi();
-    render(
-      <PresentationPlayer
-        excalidrawAPI={api}
-        initialFrameId="one"
-        onExit={vi.fn()}
-      />,
-    );
-    fireEvent.keyDown(document, { key: "O", shiftKey: true });
-    fireEvent.keyDown(document, { key: "T", shiftKey: true });
-
-    fireEvent.doubleClick(document.body, { clientX: 6100, clientY: 3100 });
-
-    expectSlide(3, 3);
-  });
-
-  it("disables overview for a single-slide deck", () => {
-    const { api } = createApi(["only"]);
-    render(<PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />);
-
-    expect(control("Overview (⇧O)")).toBeDisabled();
-    expect(control("Previous slide (←)")).toBeDisabled();
-    expect(control("Next slide (→)")).toBeDisabled();
+    expectSlide(1, 3);
+    editor.remove();
   });
 
   it("toggles tools on Shift+T and leaves plain T to the text tool", () => {
@@ -760,25 +637,6 @@ describe("PresentationPlayer", () => {
 
     fireEvent.keyDown(document, { key: "T", shiftKey: true });
     expect(document.body).not.toHaveClass("yaseendraw-presentation-tools");
-  });
-
-  it("toggles overview on Shift+O and leaves plain o to the ellipse tool", () => {
-    const { api } = createApi();
-    render(<PresentationPlayer excalidrawAPI={api} onExit={vi.fn()} />);
-
-    fireEvent.keyDown(document, { key: "o" });
-
-    expect(control("Overview (⇧O)")).toBeVisible();
-
-    fireEvent.keyDown(document, { key: "O", shiftKey: true });
-    expect(control("Exit overview (⇧O)")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-
-    fireEvent.keyDown(document, { key: "O", shiftKey: true });
-    expectSlide(1, 3);
-    expect(control("Overview (⇧O)")).toHaveAttribute("aria-pressed", "false");
   });
 
   it("re-fits the slide with fresh offsets on resize, and stops once exited", () => {
@@ -806,19 +664,6 @@ describe("PresentationPlayer", () => {
       fit: "contain",
       animation: false,
       offsets: { ui: true, right: 512 },
-      lock: { scroll: true, zoom: true, overscroll: false },
-    });
-
-    // The lock state is whatever the presenter left it as — the reserve is not.
-    fireEvent.keyDown(document, { key: "T", shiftKey: true });
-    fireEvent(window, new Event("resize"));
-    act(() => vi.advanceTimersByTime(200));
-
-    expect(api.setViewport).toHaveBeenLastCalledWith({
-      target: "two",
-      fit: "contain",
-      animation: false,
-      offsets: { ui: true, right: 512 },
     });
 
     fireEvent.click(control("Exit presentation"));
@@ -827,33 +672,6 @@ describe("PresentationPlayer", () => {
     fireEvent(window, new Event("resize"));
     act(() => vi.advanceTimersByTime(200));
     expect(api.setViewport).toHaveBeenLastCalledWith(null);
-  });
-
-  it("re-fits the whole deck on resize while in overview", () => {
-    const { api } = createApi();
-    render(
-      <PresentationPlayer
-        excalidrawAPI={api}
-        initialFrameId="one"
-        onExit={vi.fn()}
-      />,
-    );
-    fireEvent.keyDown(document, { key: "O", shiftKey: true });
-
-    setWindowWidth(1600);
-    fireEvent(window, new Event("resize"));
-    act(() => vi.advanceTimersByTime(200));
-
-    expect(api.setViewport).toHaveBeenLastCalledWith({
-      target: [
-        expect.objectContaining({ id: "one" }),
-        expect.objectContaining({ id: "two" }),
-        expect.objectContaining({ id: "three" }),
-      ],
-      fit: "contain",
-      animation: false,
-      offsets: { ui: true, right: 512 },
-    });
   });
 
   it("restores frames when unmounted without an explicit exit", async () => {

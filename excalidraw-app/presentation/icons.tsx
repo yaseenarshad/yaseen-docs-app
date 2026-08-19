@@ -15,17 +15,6 @@ const presentationIconProps = {
   strokeLinejoin: "round",
 } as const;
 
-/** Four tiles: every slide at once. */
-export const OverviewIcon = createIcon(
-  <>
-    <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
-    <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" />
-    <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" />
-    <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" />
-  </>,
-  presentationIconProps,
-);
-
 /** Wrench: hand the canvas back to the presenter. */
 export const ToolsIcon = createIcon(
   <path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" />,
