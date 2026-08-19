@@ -5,6 +5,7 @@ import { ApiFailure } from './fs-utils'
 import { dirsRoute } from './routes/dirs'
 import { fileRoute } from './routes/file'
 import { treeRoute } from './routes/tree'
+import { watchRoute } from './routes/watch'
 
 const PORT = 3737
 const HOST = '127.0.0.1'
@@ -15,6 +16,7 @@ app.get('/api/health', (c) => c.json({ ok: true }))
 app.route('/', dirsRoute)
 app.route('/', treeRoute)
 app.route('/', fileRoute)
+app.route('/', watchRoute)
 
 app.onError((err, c) => {
   const f = err instanceof ApiFailure ? err : new ApiFailure(500, 'IO_ERROR', err.message)
