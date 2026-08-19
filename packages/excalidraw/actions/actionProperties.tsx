@@ -31,6 +31,7 @@ import {
   getStrokeWidthByKey,
   VECTOR_STROKE_WIDTH,
   normalizeVectorStrokeWidth,
+  getRelativeImageBorderWidth,
   reduceToCommonValue,
   invariant,
   FONT_SIZES,
@@ -400,11 +401,26 @@ export const actionChangeStrokeColor = register<
           elements,
           appState,
           (el) => {
-            return hasStrokeColor(el.type)
-              ? newElementWith(el, {
-                  strokeColor: value.currentItemStrokeColor,
-                })
-              : el;
+            if (!hasStrokeColor(el.type)) {
+              return el;
+            }
+            // First activation of an image border: size the width relative
+            // to the image (GRO-1545). Re-coloring a visible border keeps it.
+            const isImageBorderActivation =
+              isImageElement(el) &&
+              isTransparent(el.strokeColor) &&
+              !isTransparent(value.currentItemStrokeColor);
+            return newElementWith(el, {
+              strokeColor: value.currentItemStrokeColor,
+              ...(isImageBorderActivation
+                ? {
+                    strokeWidth: getRelativeImageBorderWidth(
+                      el.width,
+                      el.height,
+                    ),
+                  }
+                : null),
+            });
           },
           true,
         ),

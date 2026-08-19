@@ -136,6 +136,25 @@ describe("Crop an image", () => {
     expect(image.height).toBeLessThan(initialHeight);
   });
 
+  it("Cropping leaves the image border width unchanged", async () => {
+    const image = h.elements[0] as ExcalidrawImageElement;
+    h.app.scene.mutateElement(image, {
+      strokeWidth: 3,
+    });
+    const initialWidth = image.width;
+    const initialHeight = image.height;
+
+    const { naturalWidth, naturalHeight } =
+      generateRandomNaturalWidthAndHeight(image);
+
+    UI.crop(image, "w", naturalWidth, naturalHeight, [initialWidth / 2, 0]);
+    UI.crop(image, "n", naturalWidth, naturalHeight, [0, initialHeight / 2]);
+
+    expect(image.width).toBeLessThan(initialWidth);
+    expect(image.height).toBeLessThan(initialHeight);
+    expect(image.strokeWidth).toBe(3);
+  });
+
   it("Cropping has minimal sizes", async () => {
     const image = h.elements[0] as ExcalidrawImageElement;
     const initialWidth = image.width;

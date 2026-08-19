@@ -9427,7 +9427,7 @@ exports[`history > multiplayer undo/redo > should not let remote changes to inte
   "roundness": null,
   "strokeColor": "#1e1e1e",
   "strokeStyle": "solid",
-  "strokeWidth": 2,
+  "strokeWidth": 18,
   "type": "rectangle",
   "updated": 1,
   "version": 9,
@@ -9541,11 +9541,13 @@ exports[`history > multiplayer undo/redo > should not let remote changes to inte
         "id0": {
           "deleted": {
             "height": 90,
+            "strokeWidth": 18,
             "version": 9,
             "width": 90,
           },
           "inserted": {
             "height": 10,
+            "strokeWidth": 2,
             "version": 8,
             "width": 10,
           },

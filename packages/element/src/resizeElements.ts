@@ -12,6 +12,7 @@ import {
   SHIFT_LOCKING_ANGLE,
   rescalePoints,
   getFontString,
+  normalizeVectorStrokeWidth,
 } from "@excalidraw/common";
 
 import type { GlobalPoint } from "@excalidraw/math";
@@ -284,18 +285,17 @@ export const rescalePointsInElement = (
       }
     : {};
 
-export const getScaledElementRoundness = (
+/**
+ * Ratio between the shortest side of `element` and the shortest side of the
+ * `nextWidth` x `nextHeight` box, or `null` when either side is degenerate
+ * (non-finite or <= 0). Shared by the size-relative roundness and stroke
+ * width scaling so they agree on the guards.
+ */
+const getShortestSideRatio = (
   element: ExcalidrawElement,
   nextWidth: number,
   nextHeight: number,
-): ExcalidrawElement["roundness"] => {
-  if (
-    (element.type !== "rectangle" && element.type !== "image") ||
-    element.roundness?.value === undefined
-  ) {
-    return element.roundness;
-  }
-
+): number | null => {
   const previousShortestSide = Math.min(
     Math.abs(element.width),
     Math.abs(element.height),
@@ -308,18 +308,144 @@ export const getScaledElementRoundness = (
     previousShortestSide <= 0 ||
     nextShortestSide <= 0
   ) {
+    return null;
+  }
+
+  return nextShortestSide / previousShortestSide;
+};
+
+export const getScaledElementRoundness = (
+  element: ExcalidrawElement,
+  nextWidth: number,
+  nextHeight: number,
+): ExcalidrawElement["roundness"] => {
+  if (
+    (element.type !== "rectangle" && element.type !== "image") ||
+    element.roundness?.value === undefined
+  ) {
     return element.roundness;
   }
 
-  const value = normalizeCornerRadius(
-    element.roundness.value * (nextShortestSide / previousShortestSide),
-  );
+  const ratio = getShortestSideRatio(element, nextWidth, nextHeight);
+
+  if (ratio === null) {
+    return element.roundness;
+  }
+
+  const value = normalizeCornerRadius(element.roundness.value * ratio);
 
   if (value === element.roundness.value) {
     return element.roundness;
   }
 
   return value === 0 ? null : { ...element.roundness, value };
+};
+
+export type SizeRelativeResizeMode = "single" | "group";
+
+export type SizeRelativeResizeUpdates = Partial<
+  Pick<ExcalidrawElement, "roundness" | "strokeWidth">
+>;
+
+export type SizeRelativeResizeOptions = {
+  /** `"single"` for a single-element resize, `"group"` for multi/group. */
+  mode: SizeRelativeResizeMode;
+  /**
+   * Uniform scale factor of the whole selection (callers pass
+   * `min(scaleX, scaleY)`). Only meaningful in `"group"` mode; drives
+   * strokeWidth for line/arrow/freedraw whose own bbox is not a useful
+   * reference. `undefined` / non-finite / <= 0 → linear strokes unchanged.
+   */
+  groupScale?: number;
+};
+
+/**
+ * Stroke-width scaling eligibility table (GRO-1907 two-gesture rule):
+ *
+ * | type                                                | single            | group             |
+ * | --------------------------------------------------- | ----------------- | ----------------- |
+ * | rectangle / ellipse / diamond / image / iframe / embeddable | own shortest side | own shortest side |
+ * | line / arrow / freedraw                             | never             | opts.groupScale   |
+ * | text / frame / magicframe / selection               | never             | never             |
+ *
+ * Returns the factor to multiply `origElement.strokeWidth` by, or `null`
+ * when strokeWidth must not change.
+ */
+const getStrokeWidthScaleRatio = (
+  origElement: ExcalidrawElement,
+  nextWidth: number,
+  nextHeight: number,
+  opts: SizeRelativeResizeOptions,
+): number | null => {
+  switch (origElement.type) {
+    case "rectangle":
+    case "ellipse":
+    case "diamond":
+    case "image":
+    case "iframe":
+    case "embeddable":
+      return getShortestSideRatio(origElement, nextWidth, nextHeight);
+    case "line":
+    case "arrow":
+    case "freedraw": {
+      const { groupScale } = opts;
+      return opts.mode === "group" &&
+        groupScale !== undefined &&
+        Number.isFinite(groupScale) &&
+        groupScale > 0
+        ? groupScale
+        : null;
+    }
+    default:
+      return null;
+  }
+};
+
+/**
+ * Computes the size-relative property updates (roundness, strokeWidth) that
+ * should accompany a resize of `origElement` to `nextWidth` x `nextHeight`.
+ *
+ * Everything is derived from `origElement` (the resize-start snapshot), never
+ * from the live element, so repeated calls during a single drag are stable.
+ *
+ * Returns only the keys that actually change; returns `{}` when nothing does.
+ * See `getStrokeWidthScaleRatio` for the per-type strokeWidth rule.
+ */
+export const getSizeRelativeResizeUpdates = (
+  origElement: ExcalidrawElement,
+  nextWidth: number,
+  nextHeight: number,
+  opts: SizeRelativeResizeOptions,
+): SizeRelativeResizeUpdates => {
+  const updates: Mutable<SizeRelativeResizeUpdates> = {};
+
+  const roundness = getScaledElementRoundness(
+    origElement,
+    nextWidth,
+    nextHeight,
+  );
+  if (roundness !== origElement.roundness) {
+    updates.roundness = roundness;
+  }
+
+  if (origElement.strokeWidth > 0) {
+    const ratio = getStrokeWidthScaleRatio(
+      origElement,
+      nextWidth,
+      nextHeight,
+      opts,
+    );
+    if (ratio !== null) {
+      const strokeWidth = normalizeVectorStrokeWidth(
+        origElement.strokeWidth * ratio,
+      );
+      if (strokeWidth !== origElement.strokeWidth) {
+        updates.strokeWidth = strokeWidth;
+      }
+    }
+  }
+
+  return updates;
 };
 
 export const measureFontSizeFromWidth = (
@@ -919,19 +1045,18 @@ export const resizeSingleElement = (
     Number.isFinite(newOrigin.x) &&
     Number.isFinite(newOrigin.y)
   ) {
-    const scaledRoundness = getScaledElementRoundness(
+    const sizeRelativeUpdates = getSizeRelativeResizeUpdates(
       origElement,
       nextWidth,
       nextHeight,
+      { mode: "single" },
     );
     let updates: ElementUpdate<ExcalidrawElement> = {
       ...newOrigin,
       width: Math.abs(nextWidth),
       height: Math.abs(nextHeight),
       ...rescaledPoints,
-      ...(scaledRoundness !== origElement.roundness
-        ? { roundness: scaledRoundness }
-        : {}),
+      ...sizeRelativeUpdates,
     };
 
     if (isBindingElement(latestElement)) {
@@ -1389,6 +1514,7 @@ export const resizeMultipleElements = (
         points?: ExcalidrawLinearElement["points"];
         fontSize?: ExcalidrawTextElement["fontSize"];
         roundness?: ExcalidrawTextElement["roundness"];
+        strokeWidth?: ExcalidrawElement["strokeWidth"];
         scale?: ExcalidrawImageElement["scale"];
         boundTextFontSize?: ExcalidrawTextElement["fontSize"];
         startBinding?: ExcalidrawElbowArrowElement["startBinding"];
@@ -1434,10 +1560,13 @@ export const resizeMultipleElements = (
         ...rescaledPoints,
       };
 
-      const scaledRoundness = getScaledElementRoundness(orig, width, height);
-      if (scaledRoundness !== orig.roundness) {
-        update.roundness = scaledRoundness;
-      }
+      Object.assign(
+        update,
+        getSizeRelativeResizeUpdates(orig, width, height, {
+          mode: "group",
+          groupScale: Math.min(scaleX, scaleY),
+        }),
+      );
 
       if (isElbowArrow(orig)) {
         // Mirror fixed point binding for elbow arrows

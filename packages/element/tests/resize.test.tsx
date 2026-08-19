@@ -1,6 +1,6 @@
 import { pointFrom } from "@excalidraw/math";
 
-import { Excalidraw } from "@excalidraw/excalidraw";
+import { Excalidraw, restoreElements } from "@excalidraw/excalidraw";
 import {
   type Bounds,
   KEYS,
@@ -22,13 +22,18 @@ import {
 import type { LocalPoint } from "@excalidraw/math";
 
 import { isLinearElement } from "../src/typeChecks";
-import { resizeSingleElement } from "../src/resizeElements";
+import {
+  getSizeRelativeResizeUpdates,
+  resizeSingleElement,
+} from "../src/resizeElements";
 import { LinearElementEditor } from "../src/linearElementEditor";
+import { getBindingGap, updateBoundElements } from "../src/binding";
 import { getElementPointsCoords } from "../src/bounds";
 import { computeContainerDimensionForBoundText } from "../src/textElement";
 
 import type {
   ExcalidrawElbowArrowElement,
+  ExcalidrawElement,
   ExcalidrawFreeDrawElement,
   ExcalidrawLinearElement,
   NonDeleted,
@@ -91,6 +96,88 @@ describe("generic element", () => {
       height: 200,
       roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
     });
+  });
+
+  it("scales rectangle stroke width together with rounding on proportional resize", () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      width: 100,
+      height: 100,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 8 },
+      strokeWidth: 2,
+    });
+    API.setElements([rectangle]);
+
+    UI.resize(rectangle, "se", [100, 100]);
+
+    expect(rectangle).toMatchObject({
+      width: 200,
+      height: 200,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+      strokeWidth: 4,
+    });
+  });
+
+  it("keeps rectangle stroke width when only the longer side is stretched", () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      width: 200,
+      height: 100,
+      strokeWidth: 2,
+    });
+    API.setElements([rectangle]);
+
+    UI.resize(rectangle, "e", [200, 0]);
+
+    expect(rectangle.width).toBeCloseTo(400);
+    expect(rectangle.height).toBeCloseTo(100);
+    expect(rectangle.strokeWidth).toBe(2);
+  });
+
+  it("keeps a bound arrow attached and re-gapped after the rectangle is resized", () => {
+    const arrowId = "bound-arrow";
+    const rectangle = API.createElement({
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      strokeWidth: 2,
+      boundElements: [{ id: arrowId, type: "arrow" }],
+    });
+    // horizontal arrow coming in from the right, bound to the rect's east side
+    const arrow = API.createElement({
+      id: arrowId,
+      type: "arrow",
+      x: 300,
+      y: 50,
+      width: 190,
+      height: 0,
+      points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(-190, 0)],
+      endBinding: {
+        elementId: rectangle.id,
+        fixedPoint: [1, 0.5],
+        mode: "orbit",
+      },
+    });
+    API.setElements([rectangle, arrow]);
+    // settle the endpoint onto the binding gap before resizing
+    updateBoundElements(rectangle, h.app.scene);
+    const gapBefore = arrow.x + arrow.points[1][0] - rectangle.width;
+    expect(gapBefore).toBeCloseTo(getBindingGap(rectangle, { elbowed: false }));
+
+    UI.resize(rectangle, "se", [100, 100]);
+
+    expect(rectangle.width).toBeCloseTo(200);
+    expect(rectangle.strokeWidth).toBe(4);
+    expect(arrow.endBinding?.elementId).toBe(rectangle.id);
+    // arrow stroke is untouched by a single-element resize of its target
+    expect(arrow.strokeWidth).toBe(2);
+    // the gap grows by Δ(strokeWidth) / 2 since it is computed from the
+    // already-updated rectangle
+    const gapAfter = arrow.x + arrow.points[1][0] - rectangle.width;
+    expect(gapAfter).toBeCloseTo(getBindingGap(rectangle, { elbowed: false }));
+    expect(gapAfter - gapBefore).toBeCloseTo(1);
   });
 
   it("keeps explicit rectangle rounding when the shortest side is unchanged", () => {
@@ -210,6 +297,36 @@ describe("generic element", () => {
 
     expect(rectangle.roundness).toEqual({
       type: ROUNDNESS.ADAPTIVE_RADIUS,
+    });
+  });
+
+  it("scales restored value-less rectangle rounding like native shapes", () => {
+    const [rectangle] = restoreElements(
+      [
+        API.createElement({
+          type: "rectangle",
+          width: 100,
+          height: 100,
+          roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS },
+        }),
+      ],
+      null,
+    );
+    // 100x100 is below the adaptive cutoff (128px), so the rendered radius
+    // of 100 * 0.25 = 25 gets materialized on restore
+    expect(rectangle.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 25,
+    });
+    API.setElements([rectangle]);
+
+    UI.resize(rectangle, "se", [100, 100]);
+
+    expect(rectangle.width).toBeCloseTo(200);
+    expect(rectangle.height).toBeCloseTo(200);
+    expect(rectangle.roundness).toEqual({
+      type: ROUNDNESS.ADAPTIVE_RADIUS,
+      value: 50,
     });
   });
 
@@ -429,6 +546,18 @@ describe.each(["line", "freedraw"] as const)("%s element", (type) => {
     expect(element.angle).toBeCloseTo(0);
   });
 
+  it("keeps stroke width on a single bbox resize", async () => {
+    const element = UI.createElement(type, { points: points[type] });
+    const strokeWidth = element.strokeWidth;
+    expect(strokeWidth).toBeGreaterThan(0);
+
+    UI.resize(element, "se", [100, 100]);
+    expect(element.strokeWidth).toBe(strokeWidth);
+
+    UI.resize(element, "se", [100, 100], { shift: true });
+    expect(element.strokeWidth).toBe(strokeWidth);
+  });
+
   it("flips while resizing", async () => {
     const element = UI.createElement("freedraw", { points: points.freedraw });
     const bounds = getBoundsFromPoints(element);
@@ -617,6 +746,19 @@ describe("line element", () => {
 });
 
 describe("arrow element", () => {
+  it("keeps stroke width on a single bbox resize", () => {
+    // 3+ points so the arrow gets bbox transform handles
+    const arrow = UI.createElement("arrow", {
+      points: [pointFrom(0, 0), pointFrom(50, 50), pointFrom(100, 0)],
+    });
+    const strokeWidth = arrow.strokeWidth;
+    expect(strokeWidth).toBeGreaterThan(0);
+
+    UI.resize(arrow, "se", [100, 50]);
+    expect(arrow.width).toBeCloseTo(200);
+    expect(arrow.strokeWidth).toBe(strokeWidth);
+  });
+
   it("resizes with a label", async () => {
     const arrow = UI.createElement("arrow", {
       points: [
@@ -971,6 +1113,53 @@ describe("image element", () => {
       type: ROUNDNESS.ADAPTIVE_RADIUS,
       value: 8,
     });
+  });
+
+  it("scales image border width with proportional resize", () => {
+    const image = API.createElement({
+      type: "image",
+      width: 100,
+      height: 100,
+      strokeWidth: 2,
+    });
+    API.setElements([image]);
+
+    UI.resize(image, "se", [100, 100]);
+
+    expect(image.width).toBeCloseTo(200);
+    expect(image.height).toBeCloseTo(200);
+    expect(image.strokeWidth).toBe(4);
+  });
+
+  it("keeps image border width when only the longer side is stretched", () => {
+    const image = API.createElement({
+      type: "image",
+      width: 100,
+      height: 100,
+      strokeWidth: 2,
+    });
+    API.setElements([image]);
+
+    // shift unlocks the image aspect ratio so only the width changes
+    UI.resize(image, "e", [100, 0], { shift: true });
+
+    expect(image.width).toBeCloseTo(200);
+    expect(image.height).toBeCloseTo(100);
+    expect(image.strokeWidth).toBe(2);
+  });
+
+  it("keeps a zero image border width at zero while resizing", () => {
+    const image = API.createElement({
+      type: "image",
+      width: 100,
+      height: 100,
+      strokeWidth: 0,
+    });
+    API.setElements([image]);
+
+    UI.resize(image, "se", [100, 100]);
+
+    expect(image.strokeWidth).toBe(0);
   });
 
   it("resizes", async () => {
@@ -1517,6 +1706,118 @@ describe("multiple selection", () => {
     });
   });
 
+  it("scales image border width and rectangle stroke in a group resize", () => {
+    const image = API.createElement({
+      type: "image",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      strokeWidth: 2,
+    });
+    const rectangle = API.createElement({
+      type: "rectangle",
+      x: 0,
+      y: 100,
+      width: 100,
+      height: 100,
+      strokeWidth: 2,
+    });
+    API.setElements([image, rectangle]);
+
+    // selection is 100x200; moving the SE handle by [100, 200] doubles it
+    UI.resize([image, rectangle], "se", [100, 200]);
+
+    expect(image.width).toBeCloseTo(200);
+    expect(image.height).toBeCloseTo(200);
+    expect(image.strokeWidth).toBe(4);
+    expect(rectangle.width).toBeCloseTo(200);
+    expect(rectangle.strokeWidth).toBe(4);
+  });
+
+  it("doubles every stroke in a proportional group resize (rect + arrow + line)", () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      strokeWidth: 2,
+    });
+    const arrow = API.createElement({
+      type: "arrow",
+      x: 0,
+      y: 120,
+      width: 100,
+      height: 20,
+      strokeWidth: 4,
+      points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(100, 20)],
+    });
+    const line = API.createElement({
+      type: "line",
+      x: 0,
+      y: 160,
+      width: 100,
+      height: 40,
+      strokeWidth: 1,
+      points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(100, 40)],
+    });
+    API.setElements([rectangle, arrow, line]);
+
+    // selection is 100x200; moving SE by [100, 200] doubles both axes
+    UI.resize([rectangle, arrow, line], "se", [100, 200]);
+
+    expect(rectangle.width).toBeCloseTo(200);
+    expect(rectangle.strokeWidth).toBe(4);
+    expect(arrow.width).toBeCloseTo(200);
+    expect(arrow.strokeWidth).toBe(8);
+    expect(line.width).toBeCloseTo(200);
+    expect(line.strokeWidth).toBe(2);
+  });
+
+  it("keeps strokes on a width-only group stretch (groupScale = min = 1)", () => {
+    // wide rect so its shortest side (height) is the one that stays put
+    const rectangle = API.createElement({
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 50,
+      strokeWidth: 2,
+    });
+    const arrow = API.createElement({
+      type: "arrow",
+      x: 0,
+      y: 70,
+      width: 200,
+      height: 20,
+      strokeWidth: 4,
+      points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(200, 20)],
+    });
+    const line = API.createElement({
+      type: "line",
+      x: 0,
+      y: 100,
+      width: 200,
+      height: 40,
+      strokeWidth: 1,
+      points: [pointFrom<LocalPoint>(0, 0), pointFrom<LocalPoint>(200, 40)],
+    });
+    API.setElements([rectangle, arrow, line]);
+
+    // selection is 200x140; multi-selections only expose corner handles, so
+    // drag SE by [200, 0] (scaleX = 2, scaleY = 1 -> groupScale = 1)
+    UI.resize([rectangle, arrow, line], "se", [200, 0]);
+
+    expect(rectangle.width).toBeCloseTo(400);
+    expect(rectangle.height).toBeCloseTo(50);
+    expect(rectangle.strokeWidth).toBe(2);
+    expect(arrow.width).toBeCloseTo(400);
+    expect(arrow.strokeWidth).toBe(4);
+    expect(line.width).toBeCloseTo(400);
+    expect(line.strokeWidth).toBe(1);
+  });
+
   it("resizes from center", () => {
     const rectangle = UI.createElement("rectangle", {
       x: -200,
@@ -1658,5 +1959,450 @@ describe("multiple selection", () => {
     );
     expect(arrowLabel.angle).toEqual(0);
     expect(arrowLabel.fontSize).toBeCloseTo(20 * scaleY);
+  });
+});
+
+describe("getSizeRelativeResizeUpdates", () => {
+  it("returns {} for element types without size-relative roundness", () => {
+    const ellipse = API.createElement({
+      type: "ellipse",
+      width: 100,
+      height: 50,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+      strokeWidth: 0, // isolate roundness
+    });
+    expect(
+      getSizeRelativeResizeUpdates(ellipse, 200, 100, { mode: "single" }),
+    ).toEqual({});
+
+    const line = UI.createElement("line", {
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 50,
+    });
+    // groupScale 1 so linear strokeWidth scaling (covered below) stays out
+    expect(
+      getSizeRelativeResizeUpdates(line, 200, 100, {
+        mode: "group",
+        groupScale: 1,
+      }),
+    ).toEqual({});
+  });
+
+  it("returns {} when roundness is unchanged (identity resize)", () => {
+    const rect = API.createElement({
+      type: "rectangle",
+      width: 100,
+      height: 50,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+      strokeWidth: 0, // isolate roundness
+    });
+    expect(
+      getSizeRelativeResizeUpdates(rect, 100, 50, { mode: "single" }),
+    ).toEqual({});
+  });
+
+  it("returns {} when the element has no roundness value", () => {
+    const rect = API.createElement({
+      strokeWidth: 0, // isolate roundness
+      type: "rectangle",
+      width: 100,
+      height: 50,
+      roundness: null,
+    });
+    expect(
+      getSizeRelativeResizeUpdates(rect, 200, 100, { mode: "single" }),
+    ).toEqual({});
+  });
+
+  it("scales rectangle roundness by the shortest side in single mode", () => {
+    const rect = API.createElement({
+      type: "rectangle",
+      width: 100,
+      height: 50,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+      strokeWidth: 0, // isolate roundness
+    });
+    expect(
+      getSizeRelativeResizeUpdates(rect, 200, 100, { mode: "single" }),
+    ).toEqual({
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 32 },
+    });
+    // image behaves like rectangle (border scaling is covered separately)
+    const image = API.createElement({
+      type: "image",
+      width: 100,
+      height: 50,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+      strokeWidth: 0,
+    });
+    expect(
+      getSizeRelativeResizeUpdates(image, 100, 25, { mode: "single" }),
+    ).toEqual({
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 8 },
+    });
+  });
+
+  it("ignores groupScale for rectangles in group mode (uses shortest side)", () => {
+    const rect = API.createElement({
+      type: "rectangle",
+      width: 100,
+      height: 50,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+      strokeWidth: 0, // isolate roundness
+    });
+    expect(
+      getSizeRelativeResizeUpdates(rect, 200, 100, {
+        mode: "group",
+        groupScale: 10,
+      }),
+    ).toEqual({
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 32 },
+    });
+  });
+
+  it("returns {} for zero / NaN / non-finite next sizes", () => {
+    const rect = API.createElement({
+      type: "rectangle",
+      width: 100,
+      height: 50,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 16 },
+    });
+    expect(
+      getSizeRelativeResizeUpdates(rect, 0, 100, { mode: "single" }),
+    ).toEqual({});
+    expect(
+      getSizeRelativeResizeUpdates(rect, NaN, 100, { mode: "single" }),
+    ).toEqual({});
+    expect(
+      getSizeRelativeResizeUpdates(rect, 100, -0, { mode: "single" }),
+    ).toEqual({});
+    expect(
+      getSizeRelativeResizeUpdates(rect, Infinity, Infinity, {
+        mode: "single",
+      }),
+    ).toEqual({});
+  });
+
+  it("scales image strokeWidth by the shortest side in single mode", () => {
+    const image = API.createElement({
+      type: "image",
+      width: 200,
+      height: 100,
+      roundness: null,
+      strokeWidth: 2,
+    });
+    expect(
+      getSizeRelativeResizeUpdates(image, 400, 200, { mode: "single" }),
+    ).toEqual({ strokeWidth: 4 });
+    // only the longer side changes -> shortest side unchanged -> {}
+    expect(
+      getSizeRelativeResizeUpdates(image, 400, 100, { mode: "single" }),
+    ).toEqual({});
+    // shrink: rounds to 0.1 and clamps at the 0.5 minimum
+    expect(
+      getSizeRelativeResizeUpdates(image, 200, 10, { mode: "single" }),
+    ).toEqual({ strokeWidth: 0.5 });
+  });
+
+  it("scales image strokeWidth by its own shortest side in group mode", () => {
+    const image = API.createElement({
+      type: "image",
+      width: 200,
+      height: 100,
+      roundness: null,
+      strokeWidth: 2,
+    });
+    expect(
+      getSizeRelativeResizeUpdates(image, 400, 200, {
+        mode: "group",
+        groupScale: 10,
+      }),
+    ).toEqual({ strokeWidth: 4 });
+  });
+
+  it("returns both roundness and strokeWidth for an image", () => {
+    const image = API.createElement({
+      type: "image",
+      width: 100,
+      height: 100,
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 4 },
+      strokeWidth: 2,
+    });
+    expect(
+      getSizeRelativeResizeUpdates(image, 200, 200, { mode: "single" }),
+    ).toEqual({
+      roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 8 },
+      strokeWidth: 4,
+    });
+  });
+
+  it("does not scale a zero image strokeWidth", () => {
+    const image = API.createElement({
+      type: "image",
+      width: 100,
+      height: 100,
+      roundness: null,
+      strokeWidth: 0,
+    });
+    expect(
+      getSizeRelativeResizeUpdates(image, 200, 200, { mode: "single" }),
+    ).toEqual({});
+  });
+
+  describe("closed-shape strokeWidth (own shortest side, both modes)", () => {
+    it.each([
+      "rectangle",
+      "ellipse",
+      "diamond",
+      "iframe",
+      "embeddable",
+    ] as const)("%s: single ×2 doubles strokeWidth", (type) => {
+      const element = API.createElement({
+        type,
+        width: 100,
+        height: 50,
+        roundness: null,
+        strokeWidth: 2,
+      });
+      expect(
+        getSizeRelativeResizeUpdates(element, 200, 100, { mode: "single" }),
+      ).toEqual({ strokeWidth: 4 });
+    });
+
+    it("single stretch of the longer side only leaves strokeWidth unchanged", () => {
+      const rect = API.createElement({
+        type: "rectangle",
+        width: 100,
+        height: 50,
+        roundness: null,
+        strokeWidth: 2,
+      });
+      expect(
+        getSizeRelativeResizeUpdates(rect, 400, 50, { mode: "single" }),
+      ).toEqual({});
+    });
+
+    it("group mode uses the shape's own shortest side, not groupScale", () => {
+      const ellipse = API.createElement({
+        type: "ellipse",
+        width: 100,
+        height: 100,
+        strokeWidth: 2,
+      });
+      expect(
+        getSizeRelativeResizeUpdates(ellipse, 300, 300, {
+          mode: "group",
+          groupScale: 10,
+        }),
+      ).toEqual({ strokeWidth: 6 });
+      // width-only stretch in a group: shortest side (height) unchanged
+      expect(
+        getSizeRelativeResizeUpdates(ellipse, 300, 100, {
+          mode: "group",
+          groupScale: 1,
+        }),
+      ).toEqual({});
+    });
+
+    it("returns roundness and strokeWidth together for a rectangle", () => {
+      const rect = API.createElement({
+        type: "rectangle",
+        width: 100,
+        height: 100,
+        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 4 },
+        strokeWidth: 2,
+      });
+      expect(
+        getSizeRelativeResizeUpdates(rect, 200, 200, { mode: "single" }),
+      ).toEqual({
+        roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: 8 },
+        strokeWidth: 4,
+      });
+    });
+
+    it("normalizes scaled strokeWidth (0.5 floor, 100 cap, 0.1 rounding)", () => {
+      const rect = API.createElement({
+        type: "rectangle",
+        width: 100,
+        height: 100,
+        roundness: null,
+        strokeWidth: 2,
+      });
+      expect(
+        getSizeRelativeResizeUpdates(rect, 10, 10, { mode: "single" }),
+      ).toEqual({ strokeWidth: 0.5 });
+      expect(
+        getSizeRelativeResizeUpdates(rect, 10000, 10000, { mode: "single" }),
+      ).toEqual({ strokeWidth: 100 });
+      expect(
+        getSizeRelativeResizeUpdates(rect, 133, 133, { mode: "single" }),
+      ).toEqual({ strokeWidth: 2.7 });
+    });
+
+    it("does not scale a zero strokeWidth", () => {
+      const rect = API.createElement({
+        type: "rectangle",
+        width: 100,
+        height: 100,
+        roundness: null,
+        strokeWidth: 0,
+      });
+      expect(
+        getSizeRelativeResizeUpdates(rect, 200, 200, { mode: "single" }),
+      ).toEqual({});
+    });
+  });
+
+  describe("linear/freedraw strokeWidth (groupScale, group mode only)", () => {
+    const createLinearLike = (
+      type: "line" | "arrow" | "freedraw",
+      strokeWidth: number,
+    ) =>
+      type === "freedraw"
+        ? API.createElement({
+            type: "freedraw",
+            width: 100,
+            height: 50,
+            strokeWidth,
+            points: [
+              pointFrom<LocalPoint>(0, 0),
+              pointFrom<LocalPoint>(100, 50),
+            ],
+          })
+        : API.createElement({
+            type,
+            width: 100,
+            height: 50,
+            strokeWidth,
+            points: [
+              pointFrom<LocalPoint>(0, 0),
+              pointFrom<LocalPoint>(100, 50),
+            ],
+          });
+
+    it.each(["line", "arrow", "freedraw"] as const)(
+      "%s: single mode never touches strokeWidth",
+      (type) => {
+        const element = createLinearLike(type, 2);
+        expect(
+          getSizeRelativeResizeUpdates(element, 200, 100, { mode: "single" }),
+        ).toEqual({});
+        expect(
+          getSizeRelativeResizeUpdates(element, 400, 50, { mode: "single" }),
+        ).toEqual({});
+      },
+    );
+
+    it.each([
+      ["line", 2, 4],
+      ["arrow", 2, 4],
+      ["freedraw", 1, 2],
+    ] as const)(
+      "%s: group mode with groupScale 2 scales %s -> %s",
+      (type, from, to) => {
+        const element = createLinearLike(type, from);
+        expect(
+          getSizeRelativeResizeUpdates(element, 200, 100, {
+            mode: "group",
+            groupScale: 2,
+          }),
+        ).toEqual({ strokeWidth: to });
+      },
+    );
+
+    it("group mode ignores the element's own shortest side", () => {
+      const line = createLinearLike("line", 2);
+      // own shortest side ×4 but groupScale says ×2
+      expect(
+        getSizeRelativeResizeUpdates(line, 400, 200, {
+          mode: "group",
+          groupScale: 2,
+        }),
+      ).toEqual({ strokeWidth: 4 });
+    });
+
+    it("group mode with groupScale undefined / 1 / non-finite / <= 0 returns {}", () => {
+      const arrow = createLinearLike("arrow", 2);
+      expect(
+        getSizeRelativeResizeUpdates(arrow, 200, 100, { mode: "group" }),
+      ).toEqual({});
+      expect(
+        getSizeRelativeResizeUpdates(arrow, 200, 100, {
+          mode: "group",
+          groupScale: 1,
+        }),
+      ).toEqual({});
+      expect(
+        getSizeRelativeResizeUpdates(arrow, 200, 100, {
+          mode: "group",
+          groupScale: NaN,
+        }),
+      ).toEqual({});
+      expect(
+        getSizeRelativeResizeUpdates(arrow, 200, 100, {
+          mode: "group",
+          groupScale: 0,
+        }),
+      ).toEqual({});
+      expect(
+        getSizeRelativeResizeUpdates(arrow, 200, 100, {
+          mode: "group",
+          groupScale: -2,
+        }),
+      ).toEqual({});
+    });
+
+    it("does not scale a zero strokeWidth", () => {
+      const line = createLinearLike("line", 0);
+      expect(
+        getSizeRelativeResizeUpdates(line, 200, 100, {
+          mode: "group",
+          groupScale: 2,
+        }),
+      ).toEqual({});
+    });
+  });
+
+  it("never scales strokeWidth for text / frame / magicframe / selection", () => {
+    const text = API.createElement({
+      type: "text",
+      width: 100,
+      height: 50,
+      strokeWidth: 2,
+    });
+    const frame = API.createElement({
+      type: "frame",
+      width: 100,
+      height: 50,
+      strokeWidth: 2,
+    });
+    const magicframe = API.createElement({
+      type: "magicframe",
+      width: 100,
+      height: 50,
+      strokeWidth: 2,
+    });
+    const selection = {
+      ...API.createElement({
+        type: "rectangle",
+        width: 100,
+        height: 50,
+        strokeWidth: 2,
+      }),
+      type: "selection",
+    } as ExcalidrawElement;
+    for (const element of [text, frame, magicframe, selection]) {
+      expect(
+        getSizeRelativeResizeUpdates(element, 200, 100, { mode: "single" }),
+      ).toEqual({});
+      expect(
+        getSizeRelativeResizeUpdates(element, 200, 100, {
+          mode: "group",
+          groupScale: 2,
+        }),
+      ).toEqual({});
+    }
   });
 });

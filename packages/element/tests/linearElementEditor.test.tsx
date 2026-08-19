@@ -1399,7 +1399,10 @@ describe("Test Linear Elements", () => {
       mouse.downAt(rect.x, rect.y);
       mouse.moveTo(200, 0);
       mouse.upAt(200, 0);
-      expect(arrow.width).toBeCloseTo(204);
+      // the nw-handle drag doubles the rect's shortest side (200 -> 400), so
+      // its stroke scales 2 -> 4 and the bound arrow's gap grows by 1 (Δ/2)
+      expect(rect.strokeWidth).toBe(4);
+      expect(arrow.width).toBeCloseTo(203);
       expect(rect.x).toBe(200);
       expect(rect.y).toBe(0);
       expect(handleBindTextResizeSpy).toHaveBeenCalledWith(
@@ -1604,6 +1607,28 @@ describe("Test Linear Elements", () => {
       const tolerance = 0.01; // Small tolerance for floating point precision
 
       expect(angleDifference).toBeLessThan(tolerance);
+    });
+
+    it("never changes stroke width when dragging an endpoint", () => {
+      createTwoPointerLinearElement("line");
+      const line = h.elements[0] as ExcalidrawLinearElement;
+      const strokeWidth = line.strokeWidth;
+      expect(strokeWidth).toBeGreaterThan(0);
+      enterLineEditingMode(line);
+
+      const points = LinearElementEditor.getPointsGlobalCoordinates(
+        line,
+        arrayToMap(h.elements),
+      );
+      const startPoint = pointFrom<GlobalPoint>(points[1][0], points[1][1]);
+
+      // drag the endpoint far enough to triple the element's bbox
+      mouse.downAt(startPoint[0], startPoint[1]);
+      mouse.moveTo(startPoint[0] + 200, startPoint[1] + 200);
+      mouse.upAt(startPoint[0] + 200, startPoint[1] + 200);
+
+      expect(line.width).toBeGreaterThan(100);
+      expect(line.strokeWidth).toBe(strokeWidth);
     });
   });
 });
