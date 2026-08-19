@@ -8,10 +8,7 @@ import { Sidebar } from './sidebar/Sidebar'
 
 export function App() {
   const [root, setRoot] = useState<string | null>(storage.getRoot)
-  const [file, setFile] = useState<string | null>(() => {
-    const r = storage.getRoot()
-    return r === null ? null : storage.getLastFile(r)
-  })
+  const [file, setFile] = useState<string | null>(() => (root === null ? null : storage.getLastFile(root)))
   const [recent, setRecent] = useState<RecentRoots>(storage.getRecentRoots)
   const [pickerOpen, setPickerOpen] = useState(root === null)
   const watch = useWatch(root)
@@ -46,6 +43,7 @@ export function App() {
     <div className="app">
       {root !== null && (
         <Sidebar
+          key={root}
           root={root}
           activeFile={file}
           watch={watch}

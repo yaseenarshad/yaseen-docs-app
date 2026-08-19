@@ -2,9 +2,9 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import type { TreeResponse } from '@shared/types'
 import { api, ApiRequestError } from '../api'
 import type { WatchSource } from '../hooks/useWatch'
+import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { treeHasFile, treeReducer } from '../lib/treeState'
-import { basename } from './FolderPicker'
 import { Tree } from './Tree'
 
 interface SidebarProps {
@@ -19,6 +19,7 @@ interface SidebarProps {
   onFileMissing: () => void
 }
 
+/** Mounted with `key={root}` by App, so all state below is per root. */
 export function Sidebar({ root, activeFile, watch, onOpenFile, onPickFolder, onRootMissing, onFileMissing }: SidebarProps) {
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -37,16 +38,14 @@ export function Sidebar({ root, activeFile, watch, onOpenFile, onPickFolder, onR
     )
   }, [root, onRootMissing])
 
-  useEffect(() => {
-    dispatch({ type: 'replace', dirs: storage.getExpanded(root) })
-    refresh()
-  }, [root, refresh])
+  useEffect(() => refresh(), [refresh])
 
-  // Tree refresh on structural changes; `ready` also fires on SSE reconnect (missed events).
+  // Refresh on structural changes; `ready` also fires on every SSE (re)connect, covering missed events.
   useEffect(
     () =>
       watch.subscribe((ev) => {
-        if (ev.type === 'add' || ev.type === 'unlink' || ev.type === 'addDir' || ev.type === 'unlinkDir' || ev.type === 'ready') refresh()
+        if (ev.type === 'error') setError(ev.message)
+        else if (ev.type !== 'change') refresh()
       }),
     [watch, refresh],
   )
@@ -59,14 +58,14 @@ export function Sidebar({ root, activeFile, watch, onOpenFile, onPickFolder, onR
     if (activeFile !== null) dispatch({ type: 'expandTo', root, file: activeFile })
   }, [root, activeFile])
 
-  // Stored lastFile that no longer exists → drop it gracefully (first tree per root only, so a file
-  // deleted on disk while it is being edited stays open and is recreated by the next save).
-  const validatedRoot = useRef<string | null>(null)
+  // Stored lastFile that no longer exists → drop it (first tree only, so a file deleted on disk
+  // while it is being edited stays open and is recreated by the next save).
+  const validated = useRef(false)
   useEffect(() => {
-    if (tree === null || tree.root !== root || validatedRoot.current === root) return
-    validatedRoot.current = root
+    if (tree === null || validated.current) return
+    validated.current = true
     if (activeFile !== null && !treeHasFile(tree.tree, activeFile)) onFileMissing()
-  }, [tree, root, activeFile, onFileMissing])
+  }, [tree, activeFile, onFileMissing])
 
   return (
     <aside className="sidebar">
@@ -76,6 +75,7 @@ export function Sidebar({ root, activeFile, watch, onOpenFile, onPickFolder, onR
       </button>
       <div className="sidebar__body">
         {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}
+        {tree === null && error === null && <p className="sidebar__msg">Loading…</p>}
         {tree !== null && tree.tree.length === 0 && <p className="sidebar__msg">No markdown files here.</p>}
         {tree !== null && (
           <Tree

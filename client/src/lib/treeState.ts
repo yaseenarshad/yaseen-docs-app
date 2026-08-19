@@ -4,7 +4,6 @@ import type { TreeNode } from '@shared/types'
 export type TreeAction =
   | { type: 'toggle'; dir: string }
   | { type: 'expandTo'; root: string; file: string }
-  | { type: 'replace'; dirs: string[] }
 
 export function treeReducer(expanded: string[], action: TreeAction): string[] {
   switch (action.type) {
@@ -14,18 +13,15 @@ export function treeReducer(expanded: string[], action: TreeAction): string[] {
       const missing = ancestorDirs(action.root, action.file).filter((d) => !expanded.includes(d))
       return missing.length === 0 ? expanded : [...expanded, ...missing]
     }
-    case 'replace':
-      return action.dirs
   }
 }
 
 /** Directories strictly between `root` and `file` (root excluded), outermost first. */
 export function ancestorDirs(root: string, file: string): string[] {
-  const base = root.endsWith('/') ? root : `${root}/`
-  if (!file.startsWith(base)) return []
-  const parts = file.slice(base.length).split('/')
+  let cur = root.replace(/\/+$/, '')
+  if (!file.startsWith(`${cur}/`)) return []
+  const parts = file.slice(cur.length + 1).split('/')
   const dirs: string[] = []
-  let cur = root.endsWith('/') ? root.slice(0, -1) : root
   for (const part of parts.slice(0, -1)) {
     cur = `${cur}/${part}`
     dirs.push(cur)

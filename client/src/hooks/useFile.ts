@@ -4,7 +4,8 @@ import { api, ApiRequestError } from '../api'
 
 export type FileState =
   | { status: 'idle' }
-  | { status: 'loading'; path: string }
+  /** `prev` is the previously open file, kept on screen until the new one is ready (no blank flash). */
+  | { status: 'loading'; path: string; prev: FileResponse | null }
   | { status: 'ready'; path: string; file: FileResponse }
   | { status: 'error'; path: string; message: string }
 
@@ -17,7 +18,7 @@ export function useFile(path: string | null): FileState {
       return
     }
     let cancelled = false
-    setState({ status: 'loading', path })
+    setState((s) => ({ status: 'loading', path, prev: s.status === 'ready' ? s.file : s.status === 'loading' ? s.prev : null }))
     api.readFile(path).then(
       (file) => {
         if (!cancelled) setState({ status: 'ready', path, file })

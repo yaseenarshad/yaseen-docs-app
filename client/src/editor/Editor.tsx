@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { FileResponse } from '@shared/types'
 import { api } from '../api'
-import { createCrepe, getMarkdownForSave, setMarkdown } from './createCrepe'
+import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
 import { splitFrontmatter } from './frontmatter'
 import { SaveIndicator } from './SaveIndicator'
 import { useAutosave } from '../hooks/useAutosave'
@@ -15,11 +15,11 @@ interface EditorProps {
 
 export function Editor({ path, watch }: EditorProps) {
   const state = useFile(path)
-  const file = state.status === 'ready' ? state.file : null
+  const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   return (
     <section className="editor">
       {state.status === 'idle' && <p className="editor-msg">Select a file from the sidebar.</p>}
-      {state.status === 'loading' && <p className="editor-msg">Loading…</p>}
+      {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && <CrepeHost key={file.path} file={file} watch={watch} />}
     </section>
@@ -45,7 +45,9 @@ function CrepeHost({ file, watch }: { file: FileResponse; watch: WatchSource }) 
     let controller: ReturnType<typeof attach> | null = null
     let cancelled = false
     const ready = crepe.create().then(() => {
-      if (!cancelled) controller = attach(crepe, file.mtime, frontmatter)
+      if (cancelled) return
+      controller = attach(crepe, file.mtime, frontmatter)
+      focusEditor(crepe)
     })
 
     const reload = async () => {

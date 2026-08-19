@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Crepe } from '@milkdown/crepe'
 import { api, ApiRequestError } from '../api'
 import { getMarkdownForSave } from '../editor/createCrepe'
-import { joinFrontmatter } from '../editor/frontmatter'
 import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
 
 export interface AutosaveHandle {
@@ -23,18 +22,20 @@ export interface AutosaveHandle {
 export function useAutosave(path: string): AutosaveHandle {
   const [status, setStatus] = useState<SaveStatus>('saved')
   const [conflictMtime, setConflictMtime] = useState<number | null>(null)
-  const ref = useRef<{ autosave: Autosave; crepe: Crepe; frontmatter: string } | null>(null)
+  const ref = useRef<{ autosave: Autosave; crepe: Crepe } | null>(null)
+  /** Raw frontmatter block re-prepended on every save; updated when the file is reloaded from disk. */
+  const frontmatterRef = useRef('')
 
   const attach = useCallback(
     (crepe: Crepe, mtime: number, frontmatter: string) => {
-      const state = { crepe, frontmatter, autosave: null as unknown as Autosave }
-      state.autosave = new Autosave({
+      frontmatterRef.current = frontmatter
+      const autosave = new Autosave({
         markdown: getMarkdownForSave(crepe),
         mtime,
         delayMs: 500,
         save: async (content, expectedMtime, keepalive) => {
           try {
-            return await api.writeFile({ path, content: joinFrontmatter(state.frontmatter, content), expectedMtime }, keepalive)
+            return await api.writeFile({ path, content: frontmatterRef.current + content, expectedMtime }, keepalive)
           } catch (err) {
             if (err instanceof ApiRequestError && err.mtime !== undefined) throw new SaveConflict(err.mtime)
             throw err
@@ -43,10 +44,10 @@ export function useAutosave(path: string): AutosaveHandle {
         onStatus: setStatus,
         onConflict: setConflictMtime,
       })
-      ref.current = state
+      ref.current = { autosave, crepe }
       setStatus('saved')
       setConflictMtime(null)
-      return state.autosave
+      return autosave
     },
     [path],
   )
@@ -78,10 +79,8 @@ export function useAutosave(path: string): AutosaveHandle {
   }, [conflictMtime])
 
   const markReloaded = useCallback((crepe: Crepe, mtime: number, frontmatter: string) => {
-    const s = ref.current
-    if (s === null) return
-    s.frontmatter = frontmatter
-    s.autosave.reset(getMarkdownForSave(crepe), mtime)
+    frontmatterRef.current = frontmatter
+    ref.current?.autosave.reset(getMarkdownForSave(crepe), mtime)
     setConflictMtime(null)
   }, [])
 

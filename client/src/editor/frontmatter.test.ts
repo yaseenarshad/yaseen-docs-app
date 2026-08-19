@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { splitFrontmatter, joinFrontmatter } from './frontmatter'
+import { splitFrontmatter } from './frontmatter'
 
 describe('frontmatter split/join', () => {
   it('returns body unchanged when no frontmatter', () => {
@@ -15,7 +15,7 @@ describe('frontmatter split/join', () => {
     const r = splitFrontmatter(fm + body)
     expect(r.frontmatter).toBe(fm)
     expect(r.body).toBe(body)
-    expect(joinFrontmatter(r.frontmatter, r.body)).toBe(fm + body)
+    expect(r.frontmatter + r.body).toBe(fm + body)
   })
 
   it('handles CRLF and `...` terminator', () => {

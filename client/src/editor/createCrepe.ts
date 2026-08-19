@@ -10,7 +10,7 @@
  *  - Markdown out goes through `postProcessMarkdown()` which un-escapes
  *    `\[\[wikilink]]` / `!\[\[embed]]` that remark-stringify escapes.
  */
-import { Crepe, type CrepeConfig } from '@milkdown/crepe'
+import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
 import { Selection } from '@milkdown/kit/prose/state'
@@ -19,30 +19,22 @@ import { replaceAll } from '@milkdown/kit/utils'
 export interface CreateCrepeOptions {
   root: HTMLElement
   defaultValue?: string
-  /** Called (debounced by the caller) whenever the document changes. */
+  /** Called whenever the document changes (Crepe's listener debounces this ~200ms). */
   onMarkdownUpdated?: (markdown: string) => void
-  /** Widen list_item to `block+` (default true). */
-  outlineFriendlyListItems?: boolean
-  features?: CrepeConfig['features']
 }
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
   const crepe = new Crepe({
     root: opts.root,
     defaultValue: opts.defaultValue ?? '',
-    features: {
-      [Crepe.Feature.ImageBlock]: false,
-      ...opts.features,
-    },
+    features: { [Crepe.Feature.ImageBlock]: false },
   })
-  if (opts.outlineFriendlyListItems ?? true) {
-    crepe.editor.use(
-      // NB: extend the GFM task-item schema, not the commonmark base — extendSchema()
-      // always derives from the ORIGINAL schema, so extending listItemSchema directly
-      // would silently drop task-list checkbox support.
-      extendListItemSchemaForTask.extendSchema((prev) => (ctx) => ({ ...prev(ctx), content: 'block+' })),
-    )
-  }
+  crepe.editor.use(
+    // NB: extend the GFM task-item schema, not the commonmark base — extendSchema()
+    // always derives from the ORIGINAL schema, so extending listItemSchema directly
+    // would silently drop task-list checkbox support.
+    extendListItemSchemaForTask.extendSchema((prev) => (ctx) => ({ ...prev(ctx), content: 'block+' })),
+  )
   if (opts.onMarkdownUpdated) {
     const cb = opts.onMarkdownUpdated
     crepe.on((listener) => {
@@ -75,6 +67,11 @@ export function setMarkdown(crepe: Crepe, markdown: string): void {
     view.dispatch(view.state.tr.setSelection(sel))
     if (hadFocus) view.focus()
   })
+}
+
+/** Move keyboard focus into the document (e.g. right after opening a file from the sidebar). */
+export function focusEditor(crepe: Crepe): void {
+  crepe.editor.action((ctx) => ctx.get(editorViewCtx).focus())
 }
 
 export function postProcessMarkdown(md: string): string {

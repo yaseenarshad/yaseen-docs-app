@@ -1,14 +1,12 @@
 /**
- * GRO-1961 round-trip investigation.
- *
- * Loads real vault markdown (READ-ONLY) plus a synthetic fixture into Crepe
- * (jsdom), calls getMarkdown(), writes original + output into the scratchpad
- * dir and logs a diff summary. Assertions are on *stable* invariants (headings,
- * word content) — formatting drift is informational and reported in findings.
+ * Crepe round-trip (GRO-1961): a synthetic fixture plus, when present on this
+ * machine, a few real vault files (read-only) go through createCrepe() +
+ * getMarkdownForSave(). Formatting normalisation is accepted (CONTRACTS.md
+ * "Editor rules" 5); the assertions are on stable invariants: headings and words.
  */
 import { describe, it, expect } from 'vitest'
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
-import { join, basename } from 'node:path'
+import { readFileSync, existsSync } from 'node:fs'
+import { basename } from 'node:path'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
 import { splitFrontmatter } from './frontmatter'
 
@@ -20,10 +18,6 @@ const FILES = [
   `${VAULT}/How to Build Agents (for non-technical business owners)/Yaseen Dump.md`,
   `${VAULT}/How to Sell Agents (for non-technical business owners)/sources/Sequoia Article.md`,
 ]
-const OUT_DIR =
-  process.env.ROUNDTRIP_OUT ??
-  '/private/tmp/claude-501/-Users-yasin-Documents-GitHub-yaseen-milkdown/3ef20324-5f0a-430a-9aaa-d741e4d52a8a/scratchpad/roundtrip'
-
 const SYNTHETIC = `---
 title: Synthetic fixture
 tags: [a, b]
@@ -116,50 +110,15 @@ function words(md: string): string[] {
     .filter(Boolean)
 }
 
-function summarize(a: string, b: string) {
-  const la = a.split('\n')
-  const lb = b.split('\n')
-  const count = (lines: string[], re: RegExp) => lines.filter((l) => re.test(l)).length
-  return {
-    bytesIn: Buffer.byteLength(a),
-    bytesOut: Buffer.byteLength(b),
-    linesIn: la.length,
-    linesOut: lb.length,
-    identical: a === b,
-    dashBullets: [count(la, /^\s*-\s/), count(lb, /^\s*-\s/)],
-    starBullets: [count(la, /^\s*\*\s/), count(lb, /^\s*\*\s/)],
-    tabIndented: [count(la, /^\t/), count(lb, /^\t/)],
-    escapes: [(a.match(/\\[_[\]*#.]/g) ?? []).length, (b.match(/\\[_[\]*#.]/g) ?? []).length],
-    blankLines: [count(la, /^\s*$/), count(lb, /^\s*$/)],
-    endsWithNewline: [a.endsWith('\n'), b.endsWith('\n')],
-    trailingNewlines: [a.length - a.replace(/\n+$/, '').length, b.length - b.replace(/\n+$/, '').length],
-    headingsIn: headings(a).length,
-    headingsOut: headings(b).length,
-    wordsIn: words(a).length,
-    wordsOut: words(b).length,
-  }
-}
-
-describe('Crepe markdown round-trip (GRO-1961)', () => {
-  mkdirSync(OUT_DIR, { recursive: true })
-
+describe('Crepe markdown round-trip', () => {
   const cases: Array<[string, string]> = [['synthetic.md', SYNTHETIC]]
   for (const f of FILES) {
     if (existsSync(f)) cases.push([basename(f), readFileSync(f, 'utf8')])
   }
 
-  it.each(cases)('%s: headings + words preserved', async (name, original) => {
-    const { frontmatter, body } = splitFrontmatter(original)
+  it.each(cases)('%s: headings + words preserved', async (_name, original) => {
+    const { body } = splitFrontmatter(original)
     const out = await roundTrip(body)
-    const stem = name.replace(/\.md$/, '').replace(/[^\w.-]+/g, '_')
-    writeFileSync(join(OUT_DIR, `${stem}.in.md`), body)
-    writeFileSync(join(OUT_DIR, `${stem}.out.md`), out)
-    if (frontmatter) writeFileSync(join(OUT_DIR, `${stem}.frontmatter.txt`), frontmatter)
-
-    const s = summarize(body, out)
-    console.log(`[roundtrip] ${name}: ${JSON.stringify(s)}`)
-
-    // Stable invariants.
     expect(headings(out)).toEqual(headings(body))
     expect(words(out).join(' ')).toEqual(words(body).join(' '))
   })
@@ -167,11 +126,9 @@ describe('Crepe markdown round-trip (GRO-1961)', () => {
   it('synthetic: frontmatter-stripped body round-trips without the --- fence mangling', async () => {
     const { frontmatter, body } = splitFrontmatter(SYNTHETIC)
     expect(frontmatter.startsWith('---\n')).toBe(true)
-    const out = await roundTrip(body)
-    expect(out.startsWith('---')).toBe(false)
-    // If fed WITH frontmatter, Crepe turns it into hr + paragraph.
-    const outWithFm = await roundTrip(SYNTHETIC)
-    console.log(`[roundtrip] synthetic WITH frontmatter, first 80 chars: ${JSON.stringify(outWithFm.slice(0, 80))}`)
+    expect((await roundTrip(body)).startsWith('---')).toBe(false)
+    // Fed WITH frontmatter, Crepe turns the YAML block into a thematic break + paragraph.
+    expect((await roundTrip(SYNTHETIC)).startsWith('---\ntitle:')).toBe(false)
   })
 
   it('round-trip is idempotent (second pass === first pass)', async () => {

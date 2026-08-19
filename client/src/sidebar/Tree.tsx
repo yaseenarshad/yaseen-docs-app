@@ -1,4 +1,5 @@
 import type { TreeNode } from '@shared/types'
+import { stripExt } from '../lib/paths'
 
 interface TreeProps {
   nodes: TreeNode[]
@@ -52,5 +53,3 @@ export function Tree({ nodes, expanded, activeFile, onToggle, onOpenFile, depth 
     </ul>
   )
 }
-
-const stripExt = (name: string) => name.replace(/\.(md|markdown)$/i, '')

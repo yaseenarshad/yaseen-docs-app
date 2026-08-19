@@ -14,10 +14,6 @@ describe('treeReducer', () => {
     expect(next).toEqual(['/r/other', '/r/a', '/r/a/b'])
     expect(treeReducer(next, { type: 'expandTo', root: '/r', file: '/r/a/b/c.md' })).toBe(next)
   })
-
-  it('replace swaps the whole set', () => {
-    expect(treeReducer(['/r/a'], { type: 'replace', dirs: ['/r/z'] })).toEqual(['/r/z'])
-  })
 })
 
 describe('ancestorDirs', () => {

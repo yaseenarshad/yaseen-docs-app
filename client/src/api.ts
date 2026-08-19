@@ -32,17 +32,12 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   throw new ApiRequestError(res.status, err?.code ?? 'IO_ERROR', err?.message ?? res.statusText, mtime)
 }
 
-const q = (params: Record<string, string | undefined>) => {
-  const s = new URLSearchParams()
-  for (const [k, v] of Object.entries(params)) if (v !== undefined) s.set(k, v)
-  const str = s.toString()
-  return str === '' ? '' : `?${str}`
-}
+const enc = encodeURIComponent
 
 export const api = {
-  dirs: (path?: string) => request<DirsResponse>(`/api/dirs${q({ path })}`),
-  tree: (root: string) => request<TreeResponse>(`/api/tree${q({ root })}`),
-  readFile: (path: string) => request<FileResponse>(`/api/file${q({ path })}`),
+  dirs: (path?: string) => request<DirsResponse>(path === undefined ? '/api/dirs' : `/api/dirs?path=${enc(path)}`),
+  tree: (root: string) => request<TreeResponse>(`/api/tree?root=${enc(root)}`),
+  readFile: (path: string) => request<FileResponse>(`/api/file?path=${enc(path)}`),
   /** `keepalive` lets the PUT outlive the page (used by the beforeunload flush). */
   writeFile: (body: FileWriteRequest, keepalive = false) =>
     request<FileWriteResponse>('/api/file', {

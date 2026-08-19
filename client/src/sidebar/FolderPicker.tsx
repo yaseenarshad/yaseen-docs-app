@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { DirsResponse, RecentRoots } from '@shared/types'
 import { api, ApiRequestError } from '../api'
+import { basename } from '../lib/paths'
 
 interface FolderPickerProps {
   /** Directory to start browsing from; null → server default ($HOME). */
@@ -97,9 +98,4 @@ export function FolderPicker({ initialPath, recent, onOpen, onCancel }: FolderPi
       </div>
     </div>
   )
-}
-
-export function basename(p: string): string {
-  const trimmed = p.replace(/\/+$/, '')
-  return trimmed.slice(trimmed.lastIndexOf('/') + 1) || p
 }
