@@ -59,12 +59,19 @@ function CrepeHost({ file, watch }: { file: FileResponse; watch: WatchSource }) 
 
     const unsubscribe = watch.subscribe((ev) => {
       if (ev.type !== 'change' || ev.path !== file.path || controller === null) return
-      if (ev.mtime === controller.mtime) return // echo of our own PUT
-      // The listener plugin debounces markdownUpdated by 200ms, so pull the live content
-      // before deciding whether in-progress typing would be lost by a silent reload.
-      controller.update(getMarkdownForSave(crepe))
-      if (controller.dirty) reportConflict(ev.mtime)
-      else void reload()
+      const c = controller
+      // On slow filesystems (e.g. NFS vaults) the watcher event for our own PUT can arrive
+      // before the PUT response carries the new mtime; settle the in-flight save first so
+      // echo suppression compares against the mtime of the write that caused the event.
+      void c.settled().then(() => {
+        if (cancelled) return
+        if (ev.mtime === c.mtime) return // echo of our own PUT
+        // The listener plugin debounces markdownUpdated by 200ms, so pull the live content
+        // before deciding whether in-progress typing would be lost by a silent reload.
+        c.update(getMarkdownForSave(crepe))
+        if (c.dirty) reportConflict(ev.mtime)
+        else void reload()
+      })
     })
 
     return () => {

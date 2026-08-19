@@ -50,6 +50,15 @@ export class Autosave {
     return this.pending !== null || this.inflight !== null
   }
 
+  /**
+   * Resolves once no save is in flight. Watcher events for our own PUT can arrive
+   * before the PUT response (slow rename on network filesystems), so callers must
+   * wait for the in-flight save to settle before comparing mtimes for echo suppression.
+   */
+  settled(): Promise<void> {
+    return this.inflight ?? Promise.resolve()
+  }
+
   /** New editor content. Schedules a save when it differs from the baseline. */
   update(markdown: string): void {
     if (this.disposed) return

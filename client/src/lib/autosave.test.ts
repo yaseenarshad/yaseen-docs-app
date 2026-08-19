@@ -79,6 +79,22 @@ describe('Autosave', () => {
     expect(statuses).toEqual(['unsaved', 'saving', 'unsaved'])
   })
 
+  it('settled() resolves after the in-flight save so its mtime can be used for echo suppression', async () => {
+    let resolve!: (v: { mtime: number }) => void
+    const { a } = setup(() => new Promise((r) => (resolve = r)))
+    await a.settled() // nothing in flight: resolves immediately
+    a.update('a')
+    await vi.advanceTimersByTimeAsync(500)
+    expect(a.dirty).toBe(true)
+    let settledMtime: number | null = null
+    const waiting = a.settled().then(() => (settledMtime = a.mtime))
+    expect(settledMtime).toBeNull()
+    resolve({ mtime: 200 })
+    await waiting
+    expect(settledMtime).toBe(200)
+    expect(a.dirty).toBe(false)
+  })
+
   it('409 reports a conflict, pauses saving, and adopt() overwrites with the disk mtime', async () => {
     const responses: Array<() => Promise<{ mtime: number }>> = [
       () => Promise.reject(new SaveConflict(150)),
