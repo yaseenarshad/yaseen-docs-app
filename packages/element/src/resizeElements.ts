@@ -347,27 +347,75 @@ export type SizeRelativeResizeUpdates = Partial<
   Pick<ExcalidrawElement, "roundness" | "strokeWidth">
 >;
 
+export type SizeRelativeResizeOptions = {
+  /** `"single"` for a single-element resize, `"group"` for multi/group. */
+  mode: SizeRelativeResizeMode;
+  /**
+   * Uniform scale factor of the whole selection (callers pass
+   * `min(scaleX, scaleY)`). Only meaningful in `"group"` mode; drives
+   * strokeWidth for line/arrow/freedraw whose own bbox is not a useful
+   * reference. `undefined` / non-finite / <= 0 → linear strokes unchanged.
+   */
+  groupScale?: number;
+};
+
 /**
- * Computes the size-relative property updates (roundness, and in later
- * iterations strokeWidth) that should accompany a resize of `origElement`
- * to `nextWidth` x `nextHeight`.
+ * Stroke-width scaling eligibility table (GRO-1907 two-gesture rule):
+ *
+ * | type                                                | single            | group             |
+ * | --------------------------------------------------- | ----------------- | ----------------- |
+ * | rectangle / ellipse / diamond / image / iframe / embeddable | own shortest side | own shortest side |
+ * | line / arrow / freedraw                             | never             | opts.groupScale   |
+ * | text / frame / magicframe / selection               | never             | never             |
+ *
+ * Returns the factor to multiply `origElement.strokeWidth` by, or `null`
+ * when strokeWidth must not change.
+ */
+const getStrokeWidthScaleRatio = (
+  origElement: ExcalidrawElement,
+  nextWidth: number,
+  nextHeight: number,
+  opts: SizeRelativeResizeOptions,
+): number | null => {
+  switch (origElement.type) {
+    case "rectangle":
+    case "ellipse":
+    case "diamond":
+    case "image":
+    case "iframe":
+    case "embeddable":
+      return getShortestSideRatio(origElement, nextWidth, nextHeight);
+    case "line":
+    case "arrow":
+    case "freedraw": {
+      const { groupScale } = opts;
+      return opts.mode === "group" &&
+        groupScale !== undefined &&
+        Number.isFinite(groupScale) &&
+        groupScale > 0
+        ? groupScale
+        : null;
+    }
+    default:
+      return null;
+  }
+};
+
+/**
+ * Computes the size-relative property updates (roundness, strokeWidth) that
+ * should accompany a resize of `origElement` to `nextWidth` x `nextHeight`.
  *
  * Everything is derived from `origElement` (the resize-start snapshot), never
  * from the live element, so repeated calls during a single drag are stable.
  *
  * Returns only the keys that actually change; returns `{}` when nothing does.
- *
- * @param opts.mode `"single"` for a single-element resize, `"group"` for a
- *   multi-element / group resize.
- * @param opts.groupScale uniform factor for the whole selection; used by
- *   element types whose own shortest side is not meaningful
- *   (line/arrow/freedraw) — consumed by later children.
+ * See `getStrokeWidthScaleRatio` for the per-type strokeWidth rule.
  */
 export const getSizeRelativeResizeUpdates = (
   origElement: ExcalidrawElement,
   nextWidth: number,
   nextHeight: number,
-  opts: { mode: SizeRelativeResizeMode; groupScale?: number },
+  opts: SizeRelativeResizeOptions,
 ): SizeRelativeResizeUpdates => {
   const updates: Mutable<SizeRelativeResizeUpdates> = {};
 
@@ -380,12 +428,13 @@ export const getSizeRelativeResizeUpdates = (
     updates.roundness = roundness;
   }
 
-  // Image border width scales with the image's own shortest side in both
-  // single and group resizes (GRO-1545). Other element types are not yet
-  // size-relative (closed-shape + linear strokes via opts.groupScale are
-  // handled by later children).
-  if (origElement.type === "image" && origElement.strokeWidth > 0) {
-    const ratio = getShortestSideRatio(origElement, nextWidth, nextHeight);
+  if (origElement.strokeWidth > 0) {
+    const ratio = getStrokeWidthScaleRatio(
+      origElement,
+      nextWidth,
+      nextHeight,
+      opts,
+    );
     if (ratio !== null) {
       const strokeWidth = normalizeVectorStrokeWidth(
         origElement.strokeWidth * ratio,
@@ -1465,6 +1514,7 @@ export const resizeMultipleElements = (
         points?: ExcalidrawLinearElement["points"];
         fontSize?: ExcalidrawTextElement["fontSize"];
         roundness?: ExcalidrawTextElement["roundness"];
+        strokeWidth?: ExcalidrawElement["strokeWidth"];
         scale?: ExcalidrawImageElement["scale"];
         boundTextFontSize?: ExcalidrawTextElement["fontSize"];
         startBinding?: ExcalidrawElbowArrowElement["startBinding"];

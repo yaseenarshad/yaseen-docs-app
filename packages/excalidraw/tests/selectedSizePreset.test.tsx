@@ -166,6 +166,61 @@ describe("selected-element size presets", () => {
     },
   );
 
+  it("scales strokes with the selection (rect by its side, arrow by the group factor)", () => {
+    const rectangle = API.createElement({
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      strokeWidth: 2,
+    });
+    const arrow = API.createElement({
+      type: "arrow",
+      x: 0,
+      y: 150,
+      width: 100,
+      height: 50,
+      strokeWidth: 4,
+      points: [pointFrom(0, 0), pointFrom(50, 50), pointFrom(100, 0)],
+    });
+    API.setElements([rectangle, arrow]);
+    API.setSelectedElements([rectangle, arrow]);
+
+    // selection longest edge 200 -> preset "7" = 384, factor 1.92
+    Keyboard.keyPress("7");
+
+    const resizedRect = h.app.scene.getElement(rectangle.id)!;
+    const resizedArrow = h.app.scene.getElement(arrow.id)!;
+    expect(resizedRect.width).toBeCloseTo(192);
+    expect(resizedRect.strokeWidth).toBeCloseTo(3.8);
+    expect(resizedArrow.width).toBeCloseTo(192);
+    expect(resizedArrow.strokeWidth).toBeCloseTo(7.7);
+  });
+
+  it("scales a lone arrow's stroke (presets always resize as a group unit)", () => {
+    const arrow = API.createElement({
+      type: "arrow",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 50,
+      strokeWidth: 2,
+      points: [pointFrom(0, 0), pointFrom(50, 50), pointFrom(100, 0)],
+    });
+    API.setElements([arrow]);
+    API.setSelectedElements([arrow]);
+
+    // longest edge 100 -> preset "5" = 192, factor 1.92
+    Keyboard.keyPress("5");
+
+    const resized = h.app.scene.getElement(arrow.id)!;
+    expect(resized.width).toBeCloseTo(192);
+    // presets go through resizeMultipleElements (group semantics), so the
+    // arrow's stroke follows the uniform factor unlike a handle resize
+    expect(resized.strokeWidth).toBeCloseTo(3.8);
+  });
+
   it("preserves line/arrow point geometry and bindings while scaling their unit", () => {
     const start = API.createElement({
       type: "rectangle",
