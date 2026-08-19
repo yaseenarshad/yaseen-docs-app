@@ -4,6 +4,13 @@ import { fileURLToPath } from 'node:url'
 
 export default defineConfig({
   plugins: [react()],
+  // Crepe ships Vue (esm-bundler build) for its list-item / block views; without these
+  // compile-time flags Vue warns on every page load and cannot tree-shake.
+  define: {
+    __VUE_OPTIONS_API__: 'true',
+    __VUE_PROD_DEVTOOLS__: 'false',
+    __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'false',
+  },
   resolve: {
     alias: {
       '@shared': fileURLToPath(new URL('../shared', import.meta.url)),
