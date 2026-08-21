@@ -1,0 +1,31 @@
+import type { BridgeError } from '@shared/types'
+
+/** IPC channel names shared by main and preload. One place, so a typo cannot split them. */
+export const CH = {
+  fsTree: 'fs:tree',
+  fsRead: 'fs:read',
+  fsWrite: 'fs:write',
+  fsCreateDir: 'fs:create-dir',
+  fsCreateFile: 'fs:create-file',
+  dialogPickFolder: 'dialog:pick-folder',
+  watchSubscribe: 'watch:subscribe',
+  watchUnsubscribe: 'watch:unsubscribe',
+  watchEvent: 'watch:event',
+  stateGet: 'state:get',
+  stateSetSettings: 'state:set-settings',
+  stateSetSidebarCollapsed: 'state:set-sidebar-collapsed',
+  statePushRecent: 'state:push-recent',
+  stateSetFolder: 'state:set-folder',
+  stateSetFolds: 'state:set-folds',
+  stateChanged: 'state:changed',
+  windowIdentity: 'window:identity',
+  windowSetIdentity: 'window:set-identity',
+  windowOpen: 'window:open',
+  windowDuplicate: 'window:duplicate',
+} as const
+
+/**
+ * Every `ipcMain.handle` answers with an envelope: Electron serialises a thrown Error down to
+ * its message, so a structured `BridgeError` must travel as data. The preload unwraps it.
+ */
+export type Envelope<T> = { ok: true; value: T } | { ok: false; error: BridgeError }
