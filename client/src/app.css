@@ -141,6 +141,20 @@ button {
   margin-top: calc(var(--edit-block-gap, 4px) * 4);
 }
 
+/* Inside a bullet a heading is an outline row, not a document section (GRO-2071, Roam model):
+   uniform rhythm — the same gap padding as any block, no extra margin. The document-rhythm
+   margins above only apply to headings outside lists. bullets.css heading-row label sizes
+   mirror this padding — change one, change both. */
+.editor-instance .milkdown .ProseMirror li h1,
+.editor-instance .milkdown .ProseMirror li h2,
+.editor-instance .milkdown .ProseMirror li h3,
+.editor-instance .milkdown .ProseMirror li h4,
+.editor-instance .milkdown .ProseMirror li h5,
+.editor-instance .milkdown .ProseMirror li h6 {
+  margin-top: 0;
+  padding: var(--edit-block-gap, 4px) 0;
+}
+
 /* Crepe's reset pads `.milkdown .ProseMirror` by 60px 120px; the column above owns the gutters. */
 .editor-instance .milkdown .ProseMirror {
   padding: 16px 0;

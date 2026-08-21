@@ -19,49 +19,41 @@
   --list-marker-color: color-mix(in srgb, currentColor 78%, transparent);
 }
 
-/* Label row geometry. Crepe fixes the label row at 32px and aligns the `li` flex-start, so a row
-   whose first block is a heading (`* # Part 1`) draws its glyph above the heading: headings carry
-   their margin-top and a taller line box. Heading-first rows get the heading's margin as an
-   offset and its line box (app.css heading scale × 1.3 + Crepe's 2px padding) as the row height;
-   the chevron (outlineFolding.css) uses the same vars. Sizes are in px via the base font size so
-   they resolve the same on the label and on the smaller-font chevron.
-   Spacing settings (GRO-2024/GRO-2071): the normal row height derives from the line-height and
-   block-gap vars — Crepe's stock 32px IS 16px × 1.5 + 2 × 4px, so Default reproduces it exactly.
-   Heading offsets use the SAME calc as the heading margin-top rules in app.css (gap × 8/7/6/5/4/4)
-   so the glyph tracks the heading at every preset — change one, change both. */
+/* Label row geometry, Roam-uniform (GRO-2024/GRO-2071): every row — plain or heading-first
+   (`* # Part 1`) — starts at the row top with no offset, and its label height is the first
+   line's box: font size × line-height + 2 × block-gap padding. Paragraph rows use the
+   `--edit-line-height`/`--edit-block-gap` settings vars (Crepe's stock 32px IS 16px × 1.5 +
+   2 × 4px, so Default reproduces it exactly); heading-first rows use the app.css heading
+   scale × 1.3 and the SAME gap padding that app.css gives `li` headings — change one, change
+   both. The chevron (outlineFolding.css) reads the same vars. Sizes are in px via the base
+   font size so they resolve the same on the label and on the smaller-font chevron. */
 .editor-instance .milkdown .milkdown-list-item-block > li.list-item {
   --list-label-offset: 0px;
   --list-label-height: calc(var(--crepe-base-font-size) * var(--edit-line-height, 1.5) + 2 * var(--edit-block-gap, 4px));
 }
 
 .editor-instance .milkdown .milkdown-list-item-block > li.list-item:has(> .children > .content-dom > h1:is(:first-child, .outline-toggle + *)) {
-  --list-label-offset: calc(var(--edit-block-gap, 4px) * 8);
-  --list-label-height: calc(var(--crepe-base-font-size) * 1.802 * 1.3 + 4px);
+  --list-label-height: calc(var(--crepe-base-font-size) * 1.802 * 1.3 + 2 * var(--edit-block-gap, 4px));
 }
 
 .editor-instance .milkdown .milkdown-list-item-block > li.list-item:has(> .children > .content-dom > h2:is(:first-child, .outline-toggle + *)) {
-  --list-label-offset: calc(var(--edit-block-gap, 4px) * 7);
-  --list-label-height: calc(var(--crepe-base-font-size) * 1.602 * 1.3 + 4px);
+  --list-label-height: calc(var(--crepe-base-font-size) * 1.602 * 1.3 + 2 * var(--edit-block-gap, 4px));
 }
 
 .editor-instance .milkdown .milkdown-list-item-block > li.list-item:has(> .children > .content-dom > h3:is(:first-child, .outline-toggle + *)) {
-  --list-label-offset: calc(var(--edit-block-gap, 4px) * 6);
-  --list-label-height: calc(var(--crepe-base-font-size) * 1.424 * 1.3 + 4px);
+  --list-label-height: calc(var(--crepe-base-font-size) * 1.424 * 1.3 + 2 * var(--edit-block-gap, 4px));
 }
 
 .editor-instance .milkdown .milkdown-list-item-block > li.list-item:has(> .children > .content-dom > h4:is(:first-child, .outline-toggle + *)) {
-  --list-label-offset: calc(var(--edit-block-gap, 4px) * 5);
-  --list-label-height: calc(var(--crepe-base-font-size) * 1.266 * 1.3 + 4px);
+  --list-label-height: calc(var(--crepe-base-font-size) * 1.266 * 1.3 + 2 * var(--edit-block-gap, 4px));
 }
 
 .editor-instance .milkdown .milkdown-list-item-block > li.list-item:has(> .children > .content-dom > h5:is(:first-child, .outline-toggle + *)) {
-  --list-label-offset: calc(var(--edit-block-gap, 4px) * 4);
-  --list-label-height: calc(var(--crepe-base-font-size) * 1.125 * 1.3 + 4px);
+  --list-label-height: calc(var(--crepe-base-font-size) * 1.125 * 1.3 + 2 * var(--edit-block-gap, 4px));
 }
 
 .editor-instance .milkdown .milkdown-list-item-block > li.list-item:has(> .children > .content-dom > h6:is(:first-child, .outline-toggle + *)) {
-  --list-label-offset: calc(var(--edit-block-gap, 4px) * 4);
-  --list-label-height: calc(var(--crepe-base-font-size) * 1 * 1.3 + 4px);
+  --list-label-height: calc(var(--crepe-base-font-size) * 1 * 1.3 + 2 * var(--edit-block-gap, 4px));
 }
 
 /* One level = label gutter + `--list-label-gap`. Keep the gap, size the gutter. */
