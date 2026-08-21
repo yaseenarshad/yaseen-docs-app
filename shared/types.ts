@@ -14,7 +14,7 @@ export type ApiErrorCode =
   | 'NOT_FOUND' // path does not exist (404)
   | 'NOT_A_DIRECTORY' // expected a directory (400)
   | 'NOT_A_FILE' // expected a regular file (400)
-  | 'NOT_MARKDOWN' // file extension not in MARKDOWN_EXTENSIONS (400)
+  | 'UNSUPPORTED_EXTENSION' // file extension is neither markdown nor .base (400)
   | 'ALREADY_EXISTS' // create target already exists (409)
   | 'FORBIDDEN' // OS permission denied (403)
   | 'TOO_LARGE' // file exceeds MAX_FILE_BYTES (413)
@@ -32,6 +32,9 @@ export interface ApiError {
 }
 
 export const MARKDOWN_EXTENSIONS = ['.md', '.markdown'] as const
+/** Obsidian Bases files: YAML views over the vault's notes, first-class alongside markdown. */
+export const BASE_EXTENSIONS = ['.base'] as const
+export type FileKind = 'markdown' | 'base'
 export const MAX_FILE_BYTES = 10 * 1024 * 1024
 
 // ---------- GET /api/dirs?path=<abs|omitted> ----------
@@ -68,11 +71,13 @@ export type TreeNode =
       size: number
       /** mtime in epoch ms. */
       mtime: number
+      /** `markdown` for `.md`/`.markdown`, `base` for `.base` (see `shared/fileKind.ts`). */
+      kind: FileKind
     }
 
 export interface TreeResponse {
   root: string
-  /** Recursive tree of the root. Only `.md`/`.markdown` files are included; every directory shows, markdown or not (GRO-2022). Hidden (dot) entries and `node_modules` skipped. */
+  /** Recursive tree of the root. Only vault files (`.md`/`.markdown` → `kind: 'markdown'`, `.base` → `kind: 'base'`) are included; every directory shows, vault files or not (GRO-2022). Hidden (dot) entries and `node_modules` skipped. */
   tree: TreeNode[]
   /** Server time (epoch ms) when the tree was computed. */
   generatedAt: number
@@ -132,13 +137,17 @@ export interface CreateDirResponse {
 // ---------- POST /api/create-file  body: CreateFileRequest ----------
 
 export interface CreateFileRequest {
-  /** Absolute path of the markdown file to create (empty); its parent must exist. */
+  /**
+   * Absolute path of the file to create; its parent must exist. `.md`/`.markdown` are created
+   * empty; `.base` is seeded with the minimal valid base (`views:` + one table view named `Table`).
+   */
   path: string
 }
 
 export interface CreateFileResponse {
   path: string
   mtime: number
+  /** 0 for markdown; the seed's byte length for `.base`. */
   size: number
 }
 

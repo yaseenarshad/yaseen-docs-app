@@ -24,13 +24,20 @@ describe('GET /api/file', () => {
     expect(body.mtime).toBeGreaterThan(0)
   })
 
-  it('404 missing, 400 relative, 400 NOT_MARKDOWN, 400 NOT_A_FILE', async () => {
+  it('serves a .base file as raw text', async () => {
+    const res = await get(path.join(root, 'alpha', 'Topics.base'))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as FileResponse
+    expect(body.content).toBe('views:\n  - type: table\n    name: Table\n')
+  })
+
+  it('404 missing, 400 relative, 400 UNSUPPORTED_EXTENSION, 400 NOT_A_FILE', async () => {
     expect((await get(path.join(root, 'missing.md'))).status).toBe(404)
     expect((await get('rel.md')).status).toBe(400)
     const txt = await get(path.join(root, 'notes.txt'))
     expect(txt.status).toBe(400)
-    expect(await code(txt)).toBe('NOT_MARKDOWN')
-    expect(await code(await get(path.join(root, 'alpha')))).toBe('NOT_MARKDOWN')
+    expect(await code(txt)).toBe('UNSUPPORTED_EXTENSION')
+    expect(await code(await get(path.join(root, 'alpha')))).toBe('UNSUPPORTED_EXTENSION')
     await mkdir(path.join(root, 'folder.md'))
     const dir = await get(path.join(root, 'folder.md'))
     expect(dir.status).toBe(400)
@@ -54,11 +61,23 @@ describe('PUT /api/file', () => {
     expect((await readdir(path.join(root, 'alpha'))).filter((n) => n.includes('.tmp-'))).toEqual([])
   })
 
-  it('400 when content is not a string / body invalid / path relative / not markdown', async () => {
+  it('writes and reads back a .base file byte-identically', async () => {
+    const file = path.join(root, 'alpha', 'new.base')
+    const content = 'views:\n  - type: cards\n    name: Cards\nfilters:\n  and:\n    - file.hasTag("x")\n'
+    const res = await put({ path: file, content })
+    expect(res.status).toBe(200)
+    const w = (await res.json()) as FileWriteResponse
+    expect(w.size).toBe(Buffer.byteLength(content))
+    const r = (await (await get(file)).json()) as FileResponse
+    expect(r.content).toBe(content)
+    expect(r.mtime).toBe(w.mtime)
+  })
+
+  it('400 when content is not a string / body invalid / path relative / unsupported extension', async () => {
     expect((await put({ path: path.join(root, 'x.md'), content: 42 })).status).toBe(400)
     expect((await put({ path: path.join(root, 'x.md') })).status).toBe(400)
     expect((await put({ path: 'rel.md', content: '' })).status).toBe(400)
-    expect(await code(await put({ path: path.join(root, 'x.txt'), content: '' }))).toBe('NOT_MARKDOWN')
+    expect(await code(await put({ path: path.join(root, 'x.txt'), content: '' }))).toBe('UNSUPPORTED_EXTENSION')
     const bad = await app.request('/api/file', { method: 'PUT', body: '{not json' })
     expect(bad.status).toBe(400)
   })

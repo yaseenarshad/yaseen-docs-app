@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { stat } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { ApiError, CreateDirResponse, CreateFileResponse } from '@shared/types'
 import { app } from '../app'
@@ -49,10 +49,21 @@ describe('POST /api/create-file', () => {
     expect((await stat(p)).isFile()).toBe(true)
   })
 
-  it('400 NOT_MARKDOWN for other extensions', async () => {
+  it('creates a .base file seeded with the minimal valid base', async () => {
+    const p = path.join(root, 'NewFolder', 'Topics.base')
+    const seed = 'views:\n  - type: table\n    name: Table\n'
+    const res = await post('/api/create-file', { path: p })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as CreateFileResponse
+    expect(body.path).toBe(p)
+    expect(body.size).toBe(Buffer.byteLength(seed))
+    expect(await readFile(p, 'utf8')).toBe(seed)
+  })
+
+  it('400 UNSUPPORTED_EXTENSION for other extensions', async () => {
     const res = await post('/api/create-file', { path: path.join(root, 'note.txt') })
     expect(res.status).toBe(400)
-    expect(((await res.json()) as ApiError).error.code).toBe('NOT_MARKDOWN')
+    expect(((await res.json()) as ApiError).error.code).toBe('UNSUPPORTED_EXTENSION')
   })
 
   it('409 ALREADY_EXISTS and never overwrites', async () => {

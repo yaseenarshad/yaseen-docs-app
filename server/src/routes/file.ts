@@ -2,16 +2,16 @@ import { Hono } from 'hono'
 import { readFile, stat } from 'node:fs/promises'
 import type { FileResponse, FileWriteConflict, FileWriteResponse } from '@shared/types'
 import { MAX_FILE_BYTES } from '@shared/types'
-import { ApiFailure, atomicWrite, fsCall, isMarkdown, requireAbsPath } from '../fs-utils'
+import { ApiFailure, atomicWrite, fsCall, isVaultFile, requireAbsPath } from '../fs-utils'
 
-function requireMarkdown(p: string): void {
-  if (!isMarkdown(p)) throw new ApiFailure(400, 'NOT_MARKDOWN', 'only .md/.markdown files are served', p)
+function requireVaultFile(p: string): void {
+  if (!isVaultFile(p)) throw new ApiFailure(400, 'UNSUPPORTED_EXTENSION', 'only .md/.markdown/.base files are served', p)
 }
 
 export const fileRoute = new Hono()
   .get('/api/file', async (c) => {
     const p = requireAbsPath(c.req.query('path'), 'path')
-    requireMarkdown(p)
+    requireVaultFile(p)
     const body = await fsCall(p, async (): Promise<FileResponse> => {
       const st = await stat(p)
       if (!st.isFile()) throw new ApiFailure(400, 'NOT_A_FILE', 'expected a file', p)
@@ -25,7 +25,7 @@ export const fileRoute = new Hono()
     if (typeof raw !== 'object' || raw === null) throw new ApiFailure(400, 'BAD_REQUEST', 'body must be a JSON object')
     const { path, content, expectedMtime } = raw as Record<string, unknown>
     const p = requireAbsPath(path, 'path')
-    requireMarkdown(p)
+    requireVaultFile(p)
     if (typeof content !== 'string') throw new ApiFailure(400, 'BAD_REQUEST', "'content' must be a string", p)
     if (expectedMtime !== undefined && typeof expectedMtime !== 'number') {
       throw new ApiFailure(400, 'BAD_REQUEST', "'expectedMtime' must be a number", p)

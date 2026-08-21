@@ -3,7 +3,7 @@ import { readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { ApiErrorCode, DirEntry, TreeNode } from '@shared/types'
-import { MARKDOWN_EXTENSIONS } from '@shared/types'
+import { fileKind } from '@shared/fileKind'
 
 /** Thrown by routes/helpers; mapped to `{ error: { code, message, path } }` by `app.onError`. */
 export class ApiFailure extends Error {
@@ -33,8 +33,16 @@ export function requireAbsPath(p: unknown, param: string): string {
 }
 
 export function isMarkdown(name: string): boolean {
-  const ext = path.extname(name).toLowerCase()
-  return (MARKDOWN_EXTENSIONS as readonly string[]).includes(ext)
+  return fileKind(name) === 'markdown'
+}
+
+export function isBase(name: string): boolean {
+  return fileKind(name) === 'base'
+}
+
+/** Markdown or `.base` — the files the tree, watcher and file routes serve. */
+export function isVaultFile(name: string): boolean {
+  return fileKind(name) !== null
 }
 
 /** Dot-entries and node_modules are invisible to every endpoint. */
@@ -99,9 +107,10 @@ export async function listDirs(dir: string): Promise<DirEntry[]> {
 }
 
 /**
- * Recursive tree of markdown files under `dir`. Dirs first, then files, each sorted
- * case-insensitively; every dir shows even with no markdown beneath, so freshly created
- * folders are visible (GRO-2022 D1). Unreadable subdirs are skipped.
+ * Recursive tree of vault files (`.md`/`.markdown`/`.base`, each tagged with its `kind`) under
+ * `dir`. Dirs first, then files, each sorted case-insensitively; every dir shows even with no
+ * vault file beneath, so freshly created folders are visible (GRO-2022 D1). Unreadable subdirs
+ * are skipped.
  */
 export async function buildTree(dir: string): Promise<TreeNode[]> {
   const entries = await readdir(dir, { withFileTypes: true })
@@ -114,9 +123,11 @@ export async function buildTree(dir: string): Promise<TreeNode[]> {
       if (e.isDirectory()) {
         const children = await buildTree(full).catch(() => null)
         if (children !== null) dirs.push({ type: 'dir', name: e.name, path: full, children })
-      } else if (e.isFile() && isMarkdown(e.name)) {
+      } else if (e.isFile()) {
+        const kind = fileKind(e.name)
+        if (kind === null) return
         const st = await stat(full).catch(() => undefined)
-        if (st) files.push({ type: 'file', name: e.name, path: full, size: st.size, mtime: st.mtimeMs })
+        if (st) files.push({ type: 'file', name: e.name, path: full, size: st.size, mtime: st.mtimeMs, kind })
       }
     }),
   )

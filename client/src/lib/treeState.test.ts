@@ -26,8 +26,13 @@ describe('ancestorDirs', () => {
 
 describe('treeHasFile', () => {
   const tree: TreeNode[] = [
-    { type: 'dir', name: 'a', path: '/r/a', children: [{ type: 'file', name: 'x.md', path: '/r/a/x.md', size: 1, mtime: 1 }] },
-    { type: 'file', name: 'y.md', path: '/r/y.md', size: 1, mtime: 1 },
+    {
+      type: 'dir',
+      name: 'a',
+      path: '/r/a',
+      children: [{ type: 'file', name: 'x.md', path: '/r/a/x.md', size: 1, mtime: 1, kind: 'markdown' }],
+    },
+    { type: 'file', name: 'y.md', path: '/r/y.md', size: 1, mtime: 1, kind: 'markdown' },
   ]
   it('finds nested and top-level files only', () => {
     expect(treeHasFile(tree, '/r/a/x.md')).toBe(true)

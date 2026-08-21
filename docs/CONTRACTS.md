@@ -23,10 +23,12 @@ client/               Vite 7 + React 19 + TS, @milkdown/crepe 7.22.x  (127.0.0.1
   src/test-setup.ts           jsdom stubs (observers, Range rects, localStorage on Node >= 25)
 server/               Hono 4 + @hono/node-server, chokidar 4, run with tsx (port 3737, binds 127.0.0.1)
   src/app.ts                  Hono app + error mapping (tests import this); src/index.ts only listens
-  src/fs-utils.ts             ApiFailure, path/dir guards, listDirs, buildTree, atomicWrite
+  src/fs-utils.ts             ApiFailure, path/dir guards, listDirs, buildTree, atomicWrite, isMarkdown/isBase/isVaultFile
   src/watchers.ts             one shared chokidar watcher per root
-  src/routes/                 dirs, tree, file, pickFolder, watch (+ *.test.ts); src/test-fixture.ts builds a temp vault
+  src/routes/                 dirs, tree, file, create, pickFolder, watch (+ *.test.ts); src/test-fixture.ts builds a temp vault (markdown + one .base)
+  src/bases-fixture.ts        makeBasesFixture(): temp vault mirroring a real Obsidian Bases layout (Content Pillars/, 8 notes, 1 .base, pngs, .obsidian/types.json, .trash) — shared by every Bases test (+ bases-fixture.test.ts)
 shared/types.ts       shared TS types (alias @shared/* in both tsconfigs + vite)
+shared/fileKind.ts    fileKind(name): 'markdown' | 'base' | null — extension-based, case-insensitive (pure; used by server guards and client)
 docs/CONTRACTS.md     this file
 ```
 
@@ -36,20 +38,20 @@ Import from shared: `import type { TreeResponse } from '@shared/types'`.
 
 All paths are absolute POSIX paths. No jail — any absolute path is allowed.
 All errors: `{ error: { code, message, path? } }` with `ApiErrorCode` (see types) and HTTP status:
-`BAD_REQUEST`/`NOT_ABSOLUTE`/`NOT_A_DIRECTORY`/`NOT_A_FILE`/`NOT_MARKDOWN` → 400,
+`BAD_REQUEST`/`NOT_ABSOLUTE`/`NOT_A_DIRECTORY`/`NOT_A_FILE`/`UNSUPPORTED_EXTENSION` → 400,
 `FORBIDDEN` → 403, `NOT_FOUND` → 404, `CONFLICT`/`ALREADY_EXISTS` → 409, `TOO_LARGE` → 413, `IO_ERROR`/`PICKER_FAILED` → 500, `NOT_SUPPORTED` → 501.
 
 | Method | Path | Query / body | 200 response |
 |---|---|---|---|
 | GET | `/api/health` | – | `{ ok: true }` |
 | GET | `/api/dirs` | `?path=<abs>` (omitted → `$HOME`) | `DirsResponse` — child dirs only, no dotdirs, sorted case-insensitive; `parent` null at `/` |
-| GET | `/api/tree` | `?root=<abs>` | `TreeResponse` — recursive; only `.md`/`.markdown` files; every dir shows, markdown or not (GRO-2022); dot-entries and `node_modules` skipped; dirs before files, each sorted case-insensitive |
-| GET | `/api/file` | `?path=<abs>` | `FileResponse` — raw UTF-8 content incl. frontmatter; 413 if > 10 MiB |
-| PUT | `/api/file` | JSON `FileWriteRequest { path, content, expectedMtime? }` | `FileWriteResponse { path, mtime, size }` — atomic write (`<name>.tmp-<rand>` + `rename`); parent dir must exist; if `expectedMtime` given and the disk mtime differs → 409 `FileWriteConflict` and nothing written |
+| GET | `/api/tree` | `?root=<abs>` | `TreeResponse` — recursive; only vault files: `.md`/`.markdown` (`kind: 'markdown'`) and `.base` (`kind: 'base'`, GRO-2123); every dir shows, vault files or not (GRO-2022); dot-entries and `node_modules` skipped; dirs before files, each sorted case-insensitive |
+| GET | `/api/file` | `?path=<abs>` | `FileResponse` — raw UTF-8 content incl. frontmatter; `.md`/`.markdown`/`.base` only (else 400 `UNSUPPORTED_EXTENSION`); 413 if > 10 MiB |
+| PUT | `/api/file` | JSON `FileWriteRequest { path, content, expectedMtime? }` | `FileWriteResponse { path, mtime, size }` — `.md`/`.markdown`/`.base` only; atomic write (`<name>.tmp-<rand>` + `rename`); parent dir must exist; if `expectedMtime` given and the disk mtime differs → 409 `FileWriteConflict` and nothing written |
 | POST | `/api/create-dir` | JSON `CreateDirRequest { path }` | `CreateDirResponse { path }` — parent must exist (else 404); target exists → 409 `ALREADY_EXISTS` |
-| POST | `/api/create-file` | JSON `CreateFileRequest { path }` | `CreateFileResponse { path, mtime, size }` — empty `.md`/`.markdown` only (else 400 `NOT_MARKDOWN`); `wx` write, never overwrites: exists → 409 `ALREADY_EXISTS` |
+| POST | `/api/create-file` | JSON `CreateFileRequest { path }` | `CreateFileResponse { path, mtime, size }` — `.md`/`.markdown` created empty, `.base` seeded with exactly `views:\n  - type: table\n    name: Table\n` (else 400 `UNSUPPORTED_EXTENSION`); `wx` write, never overwrites: exists → 409 `ALREADY_EXISTS` |
 | POST | `/api/pick-folder` | – | `PickFolderResponse` — macOS only: runs `osascript` (`choose folder`, System Events activated, 5 min timeout) and blocks until the Finder dialog closes. Picked → `{ path }` (no trailing `/`); dismissed → `{ cancelled: true }`; osascript failure → 500 `PICKER_FAILED`; non-macOS → 501 `NOT_SUPPORTED` |
-| GET | `/api/watch` | `?root=<abs>` | SSE stream of `WatchEvent`: `event: <type>\ndata: <json>\n\n`; first event `ready`; `: ping` comment every 25 s; chokidar with `ignoreInitial: true`, `awaitWriteFinish: { stabilityThreshold: 200 }`, ignores dot-entries and `node_modules`, only `.md`/`.markdown` file events (+ dir add/unlink) |
+| GET | `/api/watch` | `?root=<abs>` | SSE stream of `WatchEvent`: `event: <type>\ndata: <json>\n\n`; first event `ready`; `: ping` comment every 25 s; chokidar with `ignoreInitial: true`, `awaitWriteFinish: { stabilityThreshold: 200 }`, ignores dot-entries and `node_modules`, only `.md`/`.markdown`/`.base` file events (+ dir add/unlink) |
 
 Notes
 - Folder picking (client): "change" / first launch call `POST /api/pick-folder` first; `{ path }` → set root + push to recents, `{ cancelled }` → nothing, any failure (501 or otherwise) → the in-app `FolderPicker` modal (the `/api/dirs` browser) as fallback. One native dialog in flight at a time; the trigger button is disabled meanwhile.

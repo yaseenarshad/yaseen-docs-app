@@ -123,7 +123,23 @@ describe('GET /api/watch', () => {
     expect(await a.next()).toEqual({ type: 'unlink', path: file })
   })
 
-  it('ignores non-markdown and dot-entries; reports new directories', async () => {
+  it('add / change / unlink for a .base file, with mtime', async () => {
+    const a = await openWatch(root)
+    await a.next()
+    const file = path.join(root, 'alpha', 'watched.base')
+    await writeFile(file, 'views: []\n')
+    const add = await a.next()
+    expect(add).toMatchObject({ type: 'add', path: file })
+    expect((add as { mtime: number }).mtime).toBeGreaterThan(0)
+
+    await writeFile(file, 'views:\n  - type: table\n    name: Table\n')
+    expect(await a.next()).toMatchObject({ type: 'change', path: file })
+
+    await rm(file)
+    expect(await a.next()).toEqual({ type: 'unlink', path: file })
+  })
+
+  it('ignores non-vault files and dot-entries; reports new directories', async () => {
     const a = await openWatch(root)
     await a.next()
     await writeFile(path.join(root, 'alpha', 'ignored.txt'), 'x')

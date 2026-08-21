@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-/** Creates a temp vault and returns its root; caller removes it via `cleanup`. */
+/** Creates a temp vault (markdown + one `.base`) and returns its root; caller removes it via `cleanup`. */
 export async function makeFixture(): Promise<{ root: string; cleanup: () => Promise<void> }> {
   const root = await mkdtemp(path.join(tmpdir(), 'mdapp-'))
   await mkdir(path.join(root, 'Zeta', 'inner'), { recursive: true })
@@ -20,6 +20,7 @@ export async function makeFixture(): Promise<{ root: string; cleanup: () => Prom
     writeFile(path.join(root, 'Zeta', 'inner', 'deep.md'), 'deep'),
     writeFile(path.join(root, 'Zeta', 'z.markdown'), 'z'),
     writeFile(path.join(root, 'alpha', 'a.md'), 'a'),
+    writeFile(path.join(root, 'alpha', 'Topics.base'), 'views:\n  - type: table\n    name: Table\n'),
     writeFile(path.join(root, 'assets-only', 'img.png'), 'png'),
     writeFile(path.join(root, '.obsidian', 'workspace.md'), 'ws'),
     writeFile(path.join(root, 'node_modules', 'pkg', 'README.md'), 'readme'),

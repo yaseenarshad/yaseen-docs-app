@@ -3,7 +3,7 @@ import type { TreeNode } from '@shared/types'
 import { entryPath, targetDirFor, validateEntryName } from './createEntry'
 
 const dir = (path: string): TreeNode => ({ type: 'dir', name: path.split('/').pop()!, path, children: [] })
-const file = (path: string): TreeNode => ({ type: 'file', name: path.split('/').pop()!, path, size: 0, mtime: 1 })
+const file = (path: string): TreeNode => ({ type: 'file', name: path.split('/').pop()!, path, size: 0, mtime: 1, kind: 'markdown' })
 
 describe('validateEntryName', () => {
   it('accepts plain names', () => {
