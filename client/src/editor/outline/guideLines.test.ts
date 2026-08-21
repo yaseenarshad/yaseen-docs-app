@@ -3,9 +3,9 @@
  * cover the TS wiring — a mousedown whose `clientX` falls in the strip left of a nested list
  * (only reachable through the strip pseudo, whose hits target the list element) folds / unfolds
  * the parent items ALONGSIDE the line (the list's direct children that have children) via the
- * GRO-2011 plugin — never the line's owner — without moving the caret or touching the markdown. jsdom rects are all
- * zeros and `font-size` is empty, so the strip centre resolves from the 16px fallback:
- * 0 - (2.15 * 16 / 2 + 5) = -22.2.
+ * GRO-2011 plugin — never the line's owner — without moving the caret or touching the markdown.
+ * jsdom rects are all zeros and `font-size` is empty, so the strip centre resolves from the 16px
+ * fallback: 0 - (2.15 * 16 / 2 + 5) = -22.2.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -100,10 +100,25 @@ describe('guide lines: click → fold', () => {
     expect(folded(root)).toHaveLength(0)
   })
 
-  it('Mod-z right after the click reverts the whole click as one step', async () => {
+  it('undoLastFold right after the click reverts the whole click as one step (Mod-z binding: hotkeys.test.ts)', async () => {
     const { crepe, root } = await mount()
     foldItemOf(crepe, root, 'Child A')
     mouse(nestedListOf(root, 'Parent'), 'mousedown', STRIP_X)
+    expect(foldedLabels(root)).toEqual(['Child A', 'Child B'])
+    expect(pressUndo(crepe)).toBe(true)
+    expect(foldedLabels(root)).toEqual(['Child A'])
+  })
+
+  it('a plugin-appended doc change (Crepe trailing paragraph) keeps the click revertible, positions mapped', async () => {
+    const { crepe, root } = await mount()
+    foldItemOf(crepe, root, 'Child A')
+    mouse(nestedListOf(root, 'Parent'), 'mousedown', STRIP_X)
+    crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      // Insert inside Parent's text so every remembered child position shifts; flagged like a
+      // plugin-appended transaction (prosemirror-history expects the meta to be a Transaction).
+      view.dispatch(view.state.tr.insertText('zz', 3).setMeta('appendedTransaction', view.state.tr))
+    })
     expect(foldedLabels(root)).toEqual(['Child A', 'Child B'])
     expect(pressUndo(crepe)).toBe(true)
     expect(foldedLabels(root)).toEqual(['Child A'])

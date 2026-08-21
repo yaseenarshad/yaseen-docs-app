@@ -55,7 +55,7 @@ export const OUTLINE_FOLDED_ATTR = 'data-outline-folded'
 /** Shared across instances: a PluginKey only identifies the plugin within one EditorState. */
 const pluginKey = new PluginKey<OutlineFoldingState>('mdapp-outline-folding')
 
-/** Transaction meta understood by the plugin: toggle one item (by position), fold/unfold every parent, or revert the latest fold. */
+/** Transaction meta understood by the plugin: toggle one item (by position), fold/unfold every parent, fold/unfold an explicit set (`FoldSetMeta`), or revert the latest fold. */
 type FoldMeta = number | 'fold-all' | 'unfold-all' | 'undo-fold' | FoldSetMeta
 /** Guide-line click (GRO-2107): fold (`collapsed: true`) or unfold every parent item in `set` at once. */
 interface FoldSetMeta {
@@ -80,7 +80,7 @@ const foldAllCommand = (meta: 'fold-all' | 'unfold-all'): Command => (state, dis
   return true
 }
 
-/** Toggle the fold of the parent list_item at `itemPos` (GRO-2030 guide-line click); metadata-only. */
+/** Toggle the fold of the parent list_item at `itemPos`; metadata-only (programmatic toggle — the chevron and the guide line have their own paths). */
 export const toggleOutlineFold = (itemPos: number): Command => (state, dispatch) => {
   const foldingState = pluginKey.getState(state)
   if (!foldingState) return false
@@ -269,6 +269,7 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
               else if (parentPositions.has(meta)) collapsedItemPositions.add(meta)
               lastToggle = { kind: 'toggle', itemPos: meta }
             } else if (typeof meta === 'object') {
+              // FoldSetMeta (never null: meta is either absent, a string, a number or the set object).
               const previousCollapsed = new Set(collapsedItemPositions)
               for (const pos of meta.set) {
                 if (meta.collapsed && parentPositions.has(pos)) collapsedItemPositions.add(pos)
