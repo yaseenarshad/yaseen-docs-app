@@ -124,3 +124,33 @@ All bindings are `$shortcut` keymaps registered in `createCrepe()` with priority
 | `mdapp.settings` | `SettingsState` | `{ "lineSpacing": 1.5, "blockGap": 4, "bulletThreading": true, "threadWidth": 2, "threadColor": null }` — app-global editor settings (GRO-2024 spacing as CSS vars; GRO-2094 threading as `data-threading="on|off"` on `.app`; GRO-2109 `threadWidth` 1/2/3 → `--thread-width`, `threadColor` `#rrggbb` or null → `--thread-color`, absent = app accent); missing/invalid fields fall back to `DEFAULT_SETTINGS` field-by-field, so pre-threading stores read as threading ON, 2px, accent |
 
 All JSON values parsed defensively (invalid → treated as absent).
+
+## Bases modules
+
+### Property index (GRO-2127 contract, GRO-2128 server index)
+
+The query engine behind `.base` views reads notes through `IndexRecord`, never the filesystem. Transport: bridge method `index(root)` (Desktop D10), **no HTTP route** — `server/src/vaultIndex/` is transport-agnostic (no `hono`, no `electron` import; tests call `getIndex` directly) so it moves, not rewrites, into the Electron main process.
+
+Files: `shared/types.ts` (`IndexRecord`, `IndexResponse`), `shared/frontmatter.ts` (`splitFrontmatter` — moved from the client, which re-exports it — and `parseFrontmatter`), `server/src/vaultIndex/scan.ts` (`scanFile` + pure `extractTags` / `extractLinks` / `extractEmbeds`), `server/src/vaultIndex/registry.ts` (`getIndex`, cache + watcher), `server/src/vaultIndex/index.ts` (barrel), `client/src/bases/testRecords.ts` (`TEST_RECORDS`).
+
+`IndexResponse { root, records: IndexRecord[], generatedAt }` — `records` is every `.md`/`.markdown` file under `root` (dot-entries and `node_modules` skipped, exactly like `/api/tree`), sorted by path. `.base` files, images and everything else are never records.
+
+| `IndexRecord` field | Value |
+|---|---|
+| `path` | absolute |
+| `name` / `basename` / `ext` | `VSL-v1.md` / `VSL-v1` / `md` (`md` or `markdown`, lower-case, no dot) |
+| `folder` | root-relative, `/` separators, `''` at the root (`Content Pillars/1. Agentic Agency`) |
+| `size` / `mtime` / `ctime` | bytes / mtime ms / birthtime ms (ctime ms where the platform has no birthtime) |
+| `properties` | frontmatter parsed with yaml's default **core** schema: `null`/booleans/numbers typed, dates stay strings (`date: 2026-08-01` → `'2026-08-01'`), `pillar: null` is present with value `null`. `{}` when there is no frontmatter, the block is not a map, or YAML fails — the latter two also set `frontmatterError` (one-line yaml message or `frontmatter is not a map`). Files over `MAX_FILE_BYTES` are stat-only (`{}`, empty lists, no error). |
+| `tags` | frontmatter `tags`/`tag` (list → each string item; string → split on commas/whitespace; non-strings ignored; leading `#` stripped) followed by inline `#tags` in order of appearance. Inline rule: `#` preceded by start of text, whitespace or one of `( [ , ;`, then `[A-Za-z0-9_/-]+` with at least one non-digit (`#123` is not a tag), case preserved, nested `a/b` kept whole. Never inside fenced code (``` or ~~~), inline code spans or `http(s)://…` runs. De-duplicated, first appearance wins. |
+| `links` | `[[target]]` targets with `\|alias`, `#heading` and `#^block` stripped and trimmed — frontmatter string values (top-level and inside lists) that are exactly `[[…]]` first, then the body. Embeds are excluded. De-duplicated. |
+| `embeds` | `![[target]]` targets from the body, same stripping, de-duplicated. |
+
+Tags, links and embeds share one code-stripping pre-pass (`stripCode` in `scan.ts`): nothing inside a fenced code block (``` or ~~~) or an inline code span counts, matching Obsidian's metadata cache; `http(s)://…` runs are additionally ignored for tags only. Frontmatter values are never code-stripped.
+
+`TEST_RECORDS` (`client/src/bases/testRecords.ts`) is the 8-note `bases-fixture` as records rooted at `/vault` with `size`/`ctime`/`mtime` zeroed; `server/src/vaultIndex/registry.test.ts` deep-equals the live scan to it, so client query tests and the server index are pinned to one truth.
+
+Cache lifecycle (`getIndex(root)`):
+1. First call: walk the root (`isSkipped` pruning, markdown only, 32 reads in flight), `scanFile` each file, keep a `Map<path, IndexRecord>`; concurrent first calls for one root share the single scan. A missing / non-directory root rejects with the same `ApiFailure` codes as the HTTP routes (`NOT_FOUND`, `NOT_A_DIRECTORY`, `FORBIDDEN`).
+2. The root's shared chokidar watcher (`watchers.subscribe`) keeps the map live: `add`/`change` on a markdown path → re-`scanFile` and replace (a file that vanishes before the scan is dropped), `unlink` → delete, `unlinkDir` → delete every record under it; `addDir`/`ready`/`error` are no-ops. No rescan is ever needed.
+3. Every call returns the map sorted by path with a fresh `generatedAt` and resets a 10-minute idle timer; on expiry the watcher subscription is released and the map dropped (the next call rescans). Test hooks: `_evictAll()`, `_setIdleMs(ms?)`.

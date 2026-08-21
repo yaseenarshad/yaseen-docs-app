@@ -83,6 +83,43 @@ export interface TreeResponse {
   generatedAt: number
 }
 
+// ---------- Bases property index (GRO-2127; bridge method index(root) once the Desktop bridge exists) ----------
+
+/** One markdown note as the Bases query engine sees it. `.base` files are never records. */
+export interface IndexRecord {
+  /** Absolute path. */
+  path: string
+  /** File name with extension. */
+  name: string
+  /** File name without extension. */
+  basename: string
+  /** Root-relative folder, '/' separators, '' at the root. */
+  folder: string
+  /** 'md' | 'markdown' (no dot). */
+  ext: string
+  size: number
+  /** birthtime ms (ctime ms when the platform has no birthtime). */
+  ctime: number
+  mtime: number
+  /** Parsed frontmatter; {} when absent or invalid (then `frontmatterError` is set). YAML core schema: dates stay strings. */
+  properties: Record<string, unknown>
+  frontmatterError?: string
+  /** Frontmatter `tags`/`tag` + inline `#tags`; no leading '#'; nested 'a/b' kept; de-duplicated, order of first appearance. */
+  tags: string[]
+  /** `[[target]]` targets (`|alias` and `#heading` stripped) from body + frontmatter string values; embeds excluded. */
+  links: string[]
+  /** `![[target]]` targets. */
+  embeds: string[]
+}
+
+export interface IndexResponse {
+  root: string
+  /** Every markdown note under `root` (dot-entries and `node_modules` skipped), sorted by path. */
+  records: IndexRecord[]
+  /** Server time (epoch ms) when this snapshot was taken. */
+  generatedAt: number
+}
+
 // ---------- GET /api/file?path=<abs> ----------
 
 export interface FileResponse {
