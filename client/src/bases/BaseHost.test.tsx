@@ -112,10 +112,26 @@ async function pastDebounce(): Promise<void> {
   })
 }
 
+/** useAutosave registers on the close/quit flush handshake (GRO-2160); this fake bridge slice captures it. */
+let flushListeners: Array<() => Promise<void> | void> = []
 beforeEach(() => {
   vi.useFakeTimers()
   writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 99, size: body.content.length }))
   indexFn.mockResolvedValue({ root: '/vault', records: [record('/vault/a.md'), record('/vault/b.md')], generatedAt: 1 })
+  Object.defineProperty(window, 'yaseenDocs', {
+    value: {
+      window: {
+        onFlush: (l: () => Promise<void> | void) => {
+          flushListeners.push(l)
+          return () => {
+            flushListeners = flushListeners.filter((x) => x !== l)
+          }
+        },
+      },
+    },
+    configurable: true,
+    writable: true,
+  })
 })
 
 afterEach(() => {
@@ -124,6 +140,8 @@ afterEach(() => {
   container?.remove()
   container = null
   listeners = []
+  flushListeners = []
+  delete (window as unknown as Record<string, unknown>).yaseenDocs
   vi.clearAllMocks()
   vi.useRealTimers()
 })
@@ -220,6 +238,19 @@ describe('BaseHost', () => {
     expect(tabNames(el)).toEqual(['Fixed'])
     expect(writeFile).not.toHaveBeenCalled()
     await pastDebounce()
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    expect(writeFile.mock.calls[0]?.[0]).toEqual({ path: PATH, content: FIXED, expectedMtime: 1 })
+    expect(el.querySelector('.save-indicator')?.textContent).toBe('Saved')
+  })
+
+  it('the app:flush handshake (GRO-2160) saves pending edits before the debounce elapses', async () => {
+    const el = mount(INVALID)
+    typeRaw(el, FIXED)
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(flushListeners).toHaveLength(1)
+    await act(async () => {
+      await Promise.all(flushListeners.map(async (l) => l()))
+    })
     expect(writeFile).toHaveBeenCalledTimes(1)
     expect(writeFile.mock.calls[0]?.[0]).toEqual({ path: PATH, content: FIXED, expectedMtime: 1 })
     expect(el.querySelector('.save-indicator')?.textContent).toBe('Saved')

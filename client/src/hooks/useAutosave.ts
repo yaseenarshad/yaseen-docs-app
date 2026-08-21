@@ -19,7 +19,7 @@ export interface AutosaveHandle {
   reportConflict: (diskMtime: number) => void
 }
 
-/** Owns the Autosave controller for one open file (`path`): debounce, flush on unmount/beforeunload. */
+/** Owns the Autosave controller for one open file (`path`): debounce, flush on unmount and window close. */
 export function useAutosave(path: string): AutosaveHandle {
   const [status, setStatus] = useState<SaveStatus>('saved')
   const [conflictMtime, setConflictMtime] = useState<number | null>(null)
@@ -62,10 +62,15 @@ export function useAutosave(path: string): AutosaveHandle {
   }, [])
 
   useEffect(() => {
-    // Best effort on reload; the close handshake (GRO-2158, B2) is what guarantees the last save.
-    window.addEventListener('beforeunload', flushNow)
+    // The close/quit handshake (GRO-2160): main holds the window open until this settles (5s cap in main).
+    const offFlush = window.yaseenDocs.window.onFlush(async () => {
+      const s = ref.current
+      if (s === null) return
+      s.autosave.update(s.getContent())
+      await s.autosave.flush()
+    })
     return () => {
-      window.removeEventListener('beforeunload', flushNow)
+      offFlush()
       flushNow()
       ref.current?.autosave.dispose()
       ref.current = null

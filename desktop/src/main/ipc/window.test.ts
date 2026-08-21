@@ -27,16 +27,20 @@ const entry: WindowEntry = { id: 'w1', root: '/v', file: '/v/a.md', bounds }
 let dir: string
 let store: Store
 let unregister: () => void
+/** The manager slice the IPC layer drives: the real registry, spies for the plumbing. */
+let manager: { idFor: typeof windows.idFor; openWindow: ReturnType<typeof vi.fn>; duplicateWindow: ReturnType<typeof vi.fn>; handleFlushed: ReturnType<typeof vi.fn> }
 /** `event.sender` stand-ins: webContents 1 is registered as window w1, webContents 9 is unknown. */
 const sender = { id: 1 }
 const stranger = { id: 9 }
 beforeEach(async () => {
   vi.mocked(ipcMain.handle).mockClear()
+  vi.mocked(ipcMain.on).mockClear()
   dir = await mkdtemp(path.join(tmpdir(), 'yd-window-ipc-'))
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  registerWindowIpc(store, windows)
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), handleFlushed: vi.fn() }
+  registerWindowIpc(store, manager)
 })
 afterEach(async () => {
   unregister()
@@ -90,14 +94,29 @@ describe('registerWindowIpc', () => {
     expect(await registered(CH.windowSetIdentity)({ sender }, { root: '/v' })).toEqual(bad('NOT_FOUND'))
   })
 
-  it('window:open and window:duplicate reject IO_ERROR until GRO-2160/2167', async () => {
-    expect(await registered(CH.windowOpen)({ sender }, { root: '/v', file: null })).toEqual({
-      ok: false,
-      error: { code: 'IO_ERROR', message: 'not implemented until GRO-2160/2167' },
-    })
-    expect(await registered(CH.windowDuplicate)({ sender })).toEqual({
-      ok: false,
-      error: { code: 'IO_ERROR', message: 'not implemented until GRO-2160/2167' },
-    })
+  it('window:open validates the options and hands them to the manager (absent paths read as null)', async () => {
+    expect(await registered(CH.windowOpen)({ sender }, { root: '/v', file: '/v/a.md' })).toEqual(ok(undefined))
+    expect(manager.openWindow).toHaveBeenCalledWith({ root: '/v', file: '/v/a.md' })
+    expect(await registered(CH.windowOpen)({ sender }, {})).toEqual(ok(undefined))
+    expect(manager.openWindow).toHaveBeenCalledWith({ root: null, file: null })
+    expect(await registered(CH.windowOpen)({ sender }, 'nope')).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.windowOpen)({ sender }, { root: 5 })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.windowOpen)({ sender }, { root: 'rel' })).toEqual(bad('NOT_ABSOLUTE'))
+    expect(manager.openWindow).toHaveBeenCalledTimes(2)
+  })
+
+  it('window:duplicate hands the caller entry to the manager; unknown callers are rejected', async () => {
+    expect(await registered(CH.windowDuplicate)({ sender })).toEqual(ok(undefined))
+    expect(manager.duplicateWindow).toHaveBeenCalledWith(entry)
+    expect(await registered(CH.windowDuplicate)({ sender: stranger })).toEqual(bad('BAD_REQUEST'))
+    expect(manager.duplicateWindow).toHaveBeenCalledTimes(1)
+  })
+
+  it('app:flushed routes the renderer ack to the manager by sender', () => {
+    const call = vi.mocked(ipcMain.on).mock.calls.find(([ch]) => ch === CH.appFlushed)
+    expect(call).toBeDefined()
+    const handler = call?.[1] as unknown as (e: { sender: { id: number } }) => void
+    handler({ sender })
+    expect(manager.handleFlushed).toHaveBeenCalledWith(sender)
   })
 })

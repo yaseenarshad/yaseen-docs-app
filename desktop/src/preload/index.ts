@@ -9,6 +9,16 @@ async function call<T>(channel: string, ...args: unknown[]): Promise<T> {
   throw env.error
 }
 
+/**
+ * The close/quit flush handshake (GRO-2160): main sends `app:flush` and holds the window until
+ * `app:flushed` comes back. Every registered listener is awaited (none registered — e.g. the
+ * Welcome window — acks at once); a rejection still acks, main's 5s cap is the only other out.
+ */
+const flushListeners = new Set<() => Promise<void> | void>()
+ipcRenderer.on(CH.appFlush, () => {
+  void Promise.allSettled([...flushListeners].map(async (listener) => listener())).then(() => ipcRenderer.send(CH.appFlushed))
+})
+
 const api: YaseenDocsApi = {
   tree: (root) => call(CH.fsTree, root),
   readFile: (path) => call(CH.fsRead, path),
@@ -47,6 +57,12 @@ const api: YaseenDocsApi = {
     setIdentity: (patch) => call(CH.windowSetIdentity, patch),
     open: (opts) => call(CH.windowOpen, opts),
     duplicate: () => call(CH.windowDuplicate),
+    onFlush: (listener) => {
+      flushListeners.add(listener)
+      return () => {
+        flushListeners.delete(listener)
+      }
+    },
   },
 }
 

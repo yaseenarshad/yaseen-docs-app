@@ -1,9 +1,9 @@
-import type { IpcMainInvokeEvent } from 'electron'
+import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import type { WindowEntry, WindowIdentity } from '@shared/types'
 import { CH } from '../../channels'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import type { Store } from '../store'
-import type { WindowRegistry } from '../windows'
+import type { WindowManagerIpc } from '../windows'
 import { handle, handleWithEvent } from './envelope'
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -17,12 +17,12 @@ function optionalPath(raw: Record<string, unknown>, key: 'root' | 'file'): strin
 }
 
 /**
- * The `window.*` half of `window.yaseenDocs` (GRO-2159: identity only). The caller is resolved
- * through the registry (`webContents.id` → window id) and answered from `AppState.windows`.
- * `open` / `duplicate` stay registered so the preload's promise rejects cleanly until
- * GRO-2160 / GRO-2167 implement them.
+ * The `window.*` half of `window.yaseenDocs`. The caller is resolved through the registry
+ * (`webContents.id` → window id) and answered from `AppState.windows`. `open` / `duplicate`
+ * are D6 plumbing into the window manager (GRO-2160; the gestures land in D-), and
+ * `app:flushed` is the renderer's half of the close/quit flush handshake.
  */
-export function registerWindowIpc(store: Store, windows: WindowRegistry): void {
+export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void {
   const entryFor = (e: IpcMainInvokeEvent): WindowEntry => {
     const id = windows.idFor(e.sender)
     if (id === undefined) throw new BridgeFailure('BAD_REQUEST', 'sender is not a registered window')
@@ -48,9 +48,15 @@ export function registerWindowIpc(store: Store, windows: WindowRegistry): void {
     })
   })
 
-  const notYet = async (): Promise<never> => {
-    throw new BridgeFailure('IO_ERROR', 'not implemented until GRO-2160/2167')
-  }
-  handle(CH.windowOpen, notYet)
-  handle(CH.windowDuplicate, notYet)
+  handle(CH.windowOpen, async (opts: unknown) => {
+    if (!isRecord(opts)) throw new BridgeFailure('BAD_REQUEST', 'options must be an object')
+    windows.openWindow({ root: optionalPath(opts, 'root') ?? null, file: optionalPath(opts, 'file') ?? null })
+  })
+
+  handleWithEvent(CH.windowDuplicate, async (e) => {
+    windows.duplicateWindow(entryFor(e))
+  })
+
+  // The renderer's ack in the flush handshake (fire-and-forget send, so no envelope).
+  ipcMain.on(CH.appFlushed, (e) => windows.handleFlushed(e.sender))
 }
