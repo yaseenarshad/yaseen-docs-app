@@ -247,3 +247,113 @@ export const DEFAULT_SETTINGS: SettingsState = {
   threadWidth: 2,
   threadColor: null,
 }
+
+// ---------- App state (main-owned `yaseendocs.json`, D9 — GRO-2159) ----------
+
+export interface WindowBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** One open window; restored on relaunch (GRO-2160). `root` null = Welcome screen. */
+export interface WindowEntry {
+  id: string
+  root: string | null
+  file: string | null
+  bounds: WindowBounds
+}
+
+/** View state that only means something inside that folder (today's mdapp.expanded / lastFile / folds). */
+export interface FolderState {
+  expanded: string[]
+  lastFile: string | null
+  /** file → collapsed outline fold keys (max MAX_FOLD_KEYS_PER_FILE). Never written to the markdown. */
+  folds: Record<string, string[]>
+}
+
+/**
+ * The whole persisted app state — one user-global JSON file, owned by the main process
+ * (`~/Library/Application Support/Yaseen Docs/yaseendocs.json`). Settings are global so
+ * they apply to every folder and travel to another machine by copying this one file.
+ */
+export interface AppState {
+  version: 1
+  settings: SettingsState
+  sidebarCollapsed: boolean
+  /** Most-recent first, max 10, de-duplicated. */
+  recents: RecentRoots
+  windows: WindowEntry[]
+  folders: Record<string, FolderState>
+}
+
+// ---------- Bridge: `window.yaseenDocs` (locked in GRO-2153, Desktop A1) ----------
+
+/**
+ * Every bridge promise rejects with a plain object satisfying `BridgeError` (the preload
+ * unwraps the IPC envelope; `client/src/api.ts` wraps it in `ApiRequestError`). Same codes
+ * and meanings as the HTTP era; `CONFLICT` carries the current on-disk `mtime`.
+ */
+export interface BridgeError {
+  code: ApiErrorCode | 'CONFLICT'
+  message: string
+  path?: string
+  mtime?: number
+}
+
+export interface WindowIdentity {
+  id: string
+  root: string | null
+  file: string | null
+}
+
+export interface OpenWindowOptions {
+  root: string | null
+  file: string | null
+}
+
+/** Targeted mutators (not a generic patch) so several windows never lose each other's writes. */
+export interface StateApi {
+  get(): Promise<AppState>
+  setSettings(settings: SettingsState): Promise<void>
+  setSidebarCollapsed(collapsed: boolean): Promise<void>
+  /** Prepend to recents (de-duplicated, capped). */
+  pushRecent(path: string): Promise<void>
+  /** Merge into `folders[root]`; missing root entries are created with defaults. */
+  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile'>>): Promise<void>
+  /** Replace the fold keys for one file; an empty list removes the entry. */
+  setFolds(root: string, file: string, keys: readonly string[]): Promise<void>
+  /** Fired in every window after any change; returns an unsubscribe. */
+  onChange(listener: (state: AppState) => void): () => void
+}
+
+export interface WindowApi {
+  /** Who am I: main answers from `AppState.windows` by the `?win=<id>` in the window's URL. */
+  identity(): Promise<WindowIdentity>
+  /** Record this window's current folder/file (the window manager persists it). */
+  setIdentity(patch: Partial<Pick<WindowIdentity, 'root' | 'file'>>): Promise<void>
+  open(opts: OpenWindowOptions): Promise<void>
+  /** `⌘⇧N`: same folder, same file, new window (GRO-2167). */
+  duplicate(): Promise<void>
+}
+
+/**
+ * The single typed surface the renderer uses for everything outside the DOM, installed by
+ * the preload as `window.yaseenDocs` (`contextBridge`, `ipcMain.handle` on the main side).
+ * Request/response shapes are the HTTP-era ones above, unchanged. Bases (GRO-2097) adds its
+ * methods here (e.g. `index(root)`) — additive only.
+ */
+export interface YaseenDocsApi {
+  tree(root: string): Promise<TreeResponse>
+  readFile(path: string): Promise<FileResponse>
+  writeFile(req: FileWriteRequest): Promise<FileWriteResponse>
+  createDir(path: string): Promise<CreateDirResponse>
+  createFile(path: string): Promise<CreateFileResponse>
+  /** Native open-directory dialog parented to the calling window (GRO-2163). */
+  pickFolder(): Promise<PickFolderResponse>
+  /** One chokidar watcher per root in main, shared by every window; late joiners get `ready` at once. */
+  watch(root: string, listener: (ev: WatchEvent) => void): () => void
+  state: StateApi
+  window: WindowApi
+}
