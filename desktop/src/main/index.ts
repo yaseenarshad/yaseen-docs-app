@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu, net, protocol } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { registerIpc } from './ipc'
 
 // Before anything reads app.getPath('userData'): the workspace is named "desktop", the app is not.
 app.setName('Yaseen Docs')
@@ -37,6 +38,7 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'fileMenu' }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }]),
   )
+  registerIpc()
   createWindow()
 })
 
