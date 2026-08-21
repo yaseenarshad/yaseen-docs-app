@@ -35,6 +35,8 @@ export interface BaseView {
   imageFit?: string
   imageAspectRatio?: string | number
   indentProperties?: boolean
+  markerStyle?: string
+  propertySeparator?: string
   [extra: string]: unknown
 }
 

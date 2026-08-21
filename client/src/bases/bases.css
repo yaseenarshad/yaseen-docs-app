@@ -829,6 +829,113 @@
   text-overflow: ellipsis;
 }
 
+/* ---------- list (4F) ---------- */
+
+.base-list {
+  flex: 1;
+  min-height: 0;
+  margin-top: 8px;
+  overflow-y: auto;
+}
+
+.base-list__items {
+  margin: 0;
+  padding: 4px 0 2px;
+  list-style: none;
+}
+
+.base-list__group {
+  margin-top: 8px;
+}
+
+.base-list__group .base-group {
+  padding: 2px 0 4px;
+}
+
+.base-list__item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 3px 2px;
+  font-size: 13px;
+}
+
+.base-list__marker {
+  flex: none;
+  min-width: 14px;
+  color: var(--fg-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.base-list__body {
+  min-width: 0;
+}
+
+.base-list__line {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.base-list__title {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--accent);
+  text-align: left;
+  text-overflow: ellipsis;
+}
+
+.base-list__title:hover {
+  text-decoration: underline;
+}
+
+.base-list__primary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.base-list__inline {
+  overflow: hidden;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+}
+
+.base-list__prop {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-top: 2px;
+  padding-left: 14px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.base-list__prop-name {
+  flex: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.base-list__prop-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* the Properties menu's List section (markerStyle / indentProperties / propertySeparator) */
+.base-list-settings {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.base-list-settings .base-input {
+  width: 56px;
+}
+
 /* ---------- raw-YAML fallback (GRO-2125) ---------- */
 
 .base-error {

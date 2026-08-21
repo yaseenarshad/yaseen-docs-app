@@ -5,6 +5,7 @@ import { propertyKeys, propertyLabel } from '../engine'
 import type { Mutate } from './FilterMenu'
 import { canonicalKey } from './filterRows'
 import { PencilIcon } from './icons'
+import { markerStyleOf } from './ListView'
 import { allPropertyKeys } from './properties'
 import { TextField } from './TextField'
 
@@ -28,6 +29,9 @@ function entryKey(def: BaseDefinition, key: string): string {
 /**
  * Properties menu (GRO-2135): shown ⇄ hidden checklist (writes `view.order`, `file.name`
  * always shown), up/down to reorder, pencil to set `def.properties[key].displayName`.
+ * List views (4F, GRO-2140) get a trailing "List" section for how those properties display —
+ * `markerStyle` / `indentProperties` / `propertySeparator`, one write per change, the default
+ * value DELETES the key (like SortMenu clearing `sort` / `groupBy`).
  */
 export function PropertiesMenu({ def, view, viewIndex, records, onUpdate }: PropertiesMenuProps) {
   const [editing, setEditing] = useState<string | null>(null)
@@ -109,6 +113,54 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate }: Prop
           )
         })}
       </ul>
+      {view.type === 'list' && (
+        <>
+          <p className="base-menu__label">List</p>
+          <div className="base-list-settings">
+            <select
+              className="base-select"
+              aria-label="Marker style"
+              value={markerStyleOf(view)}
+              onChange={(e) =>
+                onUpdate((d) => {
+                  if (e.target.value === 'bullet') delete d.views[viewIndex].markerStyle
+                  else d.views[viewIndex].markerStyle = e.target.value
+                })
+              }
+            >
+              <option value="bullet">Bullet</option>
+              <option value="number">Number</option>
+              <option value="none">None</option>
+            </select>
+            <label className="base-menu__toggle">
+              <input
+                type="checkbox"
+                aria-label="Indent properties"
+                checked={view.indentProperties === true}
+                onChange={(e) =>
+                  onUpdate((d) => {
+                    if (e.target.checked) d.views[viewIndex].indentProperties = true
+                    else delete d.views[viewIndex].indentProperties
+                  })
+                }
+              />
+              Indent properties
+            </label>
+            <TextField
+              className="base-input"
+              aria-label="Property separator"
+              placeholder=", "
+              value={typeof view.propertySeparator === 'string' ? view.propertySeparator : ''}
+              onCommit={(sep) =>
+                onUpdate((d) => {
+                  if (sep === '' || sep === ', ') delete d.views[viewIndex].propertySeparator
+                  else d.views[viewIndex].propertySeparator = sep
+                })
+              }
+            />
+          </div>
+        </>
+      )}
     </div>
   )
 }

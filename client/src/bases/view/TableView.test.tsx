@@ -129,8 +129,8 @@ function manyRecords(n = 600): IndexRecord[] {
 // ---------- tests ----------
 
 describe('table structure', () => {
-  it('a table view renders columns from order; not-yet-built view types keep the placeholder list', () => {
-    const { el } = mount(`${TYPED_BASE}  - type: list\n    name: L\n`)
+  it('a table view renders columns from order; unknown view types keep the placeholder list', () => {
+    const { el } = mount(`${TYPED_BASE}  - type: bogus\n    name: L\n`)
     expect(headers(el)).toEqual(['file.name', 'priority', 'published', 'tags', 'related', 'formula.nope'])
     expect(bodyRows(el)).toHaveLength(8)
     expect(links(el)[0]).toBe('Agentic Agency.md')
