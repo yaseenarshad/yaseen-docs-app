@@ -178,6 +178,13 @@ button {
   display: none;
 }
 
+/* Over a guide-line strip or a fold chevron the handle yields (GRO-2081, blockHandleGate.ts):
+   pointer-events off so the click lands on the affordance beneath. */
+.editor-instance .milkdown .milkdown-block-handle.mdapp-handle-muted {
+  pointer-events: none;
+  opacity: 0 !important;
+}
+
 .editor-msg {
   margin: 48px auto;
   color: var(--fg-muted);

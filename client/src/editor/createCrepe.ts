@@ -32,6 +32,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
 import { Selection } from '@milkdown/kit/prose/state'
 import { replaceAll } from '@milkdown/kit/utils'
+import { blockHandleGate } from './blockHandleGate'
 import { features } from './featureConfig'
 import { listItemRoundTrip, normalizeEmptyItems, stripEmptyTaskBreaks } from './listItemRoundTrip'
 import { underline } from './marks/underline'
@@ -70,6 +71,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createOutlineFolding(opts.folding))
   crepe.editor.use(createOutlineZoom(opts.zoom ?? { fileName: 'Untitled' }))
   crepe.editor.use(guideLines)
+  crepe.editor.use(blockHandleGate)
   crepe.editor.use(multiBlockDrag)
   crepe.editor.use(outlinerKeymap)
   crepe.editor.use(obsidianHotkeys)
