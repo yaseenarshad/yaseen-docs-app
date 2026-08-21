@@ -1,4 +1,4 @@
-import { parse } from 'yaml'
+import { type Document, isMap, parse, parseDocument } from 'yaml'
 
 /**
  * Frontmatter handling rule (locked in GRO-1961):
@@ -47,4 +47,77 @@ export function parseFrontmatter(frontmatter: string): { properties: Record<stri
   if (value === null || value === undefined) return { properties: {} }
   if (typeof value !== 'object' || Array.isArray(value)) return { properties: {}, error: 'frontmatter is not a map' }
   return { properties: value as Record<string, unknown> }
+}
+
+/** Thrown instead of writing when a note's frontmatter is not valid YAML, or is not a map (GRO-2141). */
+export class FrontmatterWriteError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'FrontmatterWriteError'
+  }
+}
+
+/**
+ * `---\n---\n`: the empty block left behind when the last key is deleted. `FM_RE` needs a
+ * line between the fences, so it does not match — recognised here so a second write lands
+ * inside the block instead of prepending another one (GRO-2141).
+ */
+const EMPTY_BLOCK_RE = /^---[ \t]*\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/
+/** Captures the closing fence so `...` survives a rewrite. */
+const TERMINATOR_RE = /(?:^|\r?\n)(---|\.\.\.)[ \t]*(?:\r?\n)?$/
+
+/** Same options as `serializeBase`: no folding, no `[ 1, 2 ]` padding. */
+const YAML_OUT = { lineWidth: 0, flowCollectionPadding: false } as const
+
+/**
+ * Set (or delete, when `value === undefined`) ONE frontmatter key in a whole file's
+ * content, touching nothing else: comments, key order, quoting style and the body
+ * are preserved byte-for-byte (GRO-2141, ruling D4).
+ *
+ * Values go in as YAML natively (strings, numbers, booleans, null, arrays, plain objects);
+ * a `Date` is out of scope — callers pass ISO strings.
+ */
+export function setFrontmatterProperty(content: string, key: string, value: unknown): string {
+  const { frontmatter, body } = splitBlock(content)
+
+  if (frontmatter === '') {
+    if (value === undefined) return content
+    const doc = parseDocument('')
+    doc.setIn([key], value)
+    return `---\n${doc.toString(YAML_OUT)}---\n${body}`
+  }
+
+  const eol = frontmatter.includes('\r\n') ? '\r\n' : '\n'
+  const terminator = TERMINATOR_RE.exec(frontmatter)?.[1] ?? '---'
+  const trailingEol = /\r?\n$/.test(frontmatter) ? eol : ''
+
+  const doc = parseDocument(frontmatter.replace(OPEN_FENCE_RE, '').replace(CLOSE_FENCE_RE, ''))
+  const err = doc.errors[0]
+  if (err) throw new FrontmatterWriteError(`frontmatter is not valid YAML: ${err.message}`)
+  if (doc.contents !== null && !isMap(doc.contents)) throw new FrontmatterWriteError('frontmatter is not a map')
+
+  if (value === undefined) {
+    if (!doc.hasIn([key])) return content
+    doc.deleteIn([key])
+  } else {
+    doc.setIn([key], value)
+  }
+
+  const yaml = serializeInner(doc)
+  return `---${eol}${eol === '\r\n' ? yaml.replace(/\n/g, '\r\n') : yaml}${terminator}${trailingEol}${body}`
+}
+
+/** `splitFrontmatter`, plus the empty `---\n---\n` block it does not recognise. */
+function splitBlock(content: string): SplitMarkdown {
+  const split = splitFrontmatter(content)
+  if (split.frontmatter !== '') return split
+  const m = EMPTY_BLOCK_RE.exec(content)
+  if (!m) return split
+  return { frontmatter: m[0], body: content.slice(m[0].length) }
+}
+
+/** An emptied map serialises as `{}`; we want the block to just be empty instead. */
+function serializeInner(doc: Document): string {
+  if (isMap(doc.contents) && doc.contents.items.length === 0) return ''
+  return doc.toString(YAML_OUT)
 }
