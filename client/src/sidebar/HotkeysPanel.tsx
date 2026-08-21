@@ -13,6 +13,7 @@ export interface HotkeyEntry {
 }
 
 export const HOTKEYS: readonly HotkeyEntry[] = [
+  { keys: '⌘↑ / ⌘↓', label: 'Fold / unfold the bullet at the caret' },
   { keys: '⌘⇧U', label: 'Fold all bullets' },
   { keys: '⌘⇧I', label: 'Unfold all bullets' },
   { keys: '⌘Z', label: 'Undo — also reverts the latest fold' },

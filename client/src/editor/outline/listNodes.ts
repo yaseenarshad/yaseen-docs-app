@@ -1,5 +1,5 @@
-/** List node helpers shared by the folding plugin and the outliner keymap. */
-import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+/** List node helpers shared by the folding plugin, zoom and the outliner keymap. */
+import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
 
 export const LIST_NODE_NAMES: ReadonlySet<string> = new Set(['bullet_list', 'ordered_list'])
 
@@ -20,3 +20,18 @@ export const findNestedLists = (item: ProseNode): NestedList[] => {
 
 /** The first nested list owned by a list_item, or null for a leaf item. */
 export const findNestedList = (item: ProseNode): NestedList | null => findNestedLists(item)[0] ?? null
+
+/** Positions of the list_item ancestors of `$pos` (outermost first); `$pos` itself may sit inside an item. */
+export const ancestorItemPositions = ($pos: ResolvedPos): number[] => {
+  const positions: number[] = []
+  for (let depth = 1; depth <= $pos.depth; depth++) {
+    if ($pos.node(depth).type.name === 'list_item') positions.push($pos.before(depth))
+  }
+  return positions
+}
+
+/** Position of the innermost list_item containing `$pos`, or null outside lists. */
+export const innermostItemPos = ($pos: ResolvedPos): number | null => {
+  const positions = ancestorItemPositions($pos)
+  return positions.length > 0 ? positions[positions.length - 1] : null
+}

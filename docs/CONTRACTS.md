@@ -89,6 +89,7 @@ All bindings are `$shortcut` keymaps registered in `createCrepe()` with priority
 | `Enter` | empty item (no children) | outdent; at level 1 leaves the list as a paragraph | GRO-2012 |
 | `Backspace` | start of an item's first block | join into the previous paragraph / parent item; empty parent: children take its place; non-empty parent: no-op | GRO-2012 |
 | `Mod-Enter` | list item(s) whose first block touches the selection | cycle bullet → `[ ]` → `[x]` → bullet, each item from its own state; outside lists falls through (table exit / CodeMirror exit keep theirs) | GRO-2027 `hotkeys.ts` |
+| `Mod-ArrowUp` / `Mod-ArrowDown` | caret in a list item | fold / unfold that item (`setOutlineFoldAtSelection`, same meta-only transaction as the chevron — persisted, ⌘Z-revertible); leaf or already in that state = consumed no-op; outside lists falls through to the native document-start/end jump | GRO-2092 `hotkeys.ts` |
 | `Mod-Shift-u` | anywhere | fold every parent item (`foldAllOutline`, meta-only transaction, persisted via `mdapp.folds`) | GRO-2027 |
 | `Mod-Shift-i` | anywhere | unfold all (`unfoldAllOutline`) | GRO-2027 |
 | `Mod-z` | a fold was the latest action (no doc change since) | revert that fold (single toggle, or the exact pre-fold-all/unfold-all set); otherwise falls through to history's undo. Plugin-appended transactions (e.g. Crepe's trailing paragraph) don't break eligibility | GRO-2075 `outlineFolding.ts` |

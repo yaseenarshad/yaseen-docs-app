@@ -15,7 +15,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { findNestedLists } from './listNodes'
+import { findNestedLists, innermostItemPos } from './listNodes'
 import { getOutlineFoldKey } from './outlineFoldKeys'
 
 interface OutlineEntry {
@@ -75,6 +75,23 @@ export const toggleOutlineFold = (itemPos: number): Command => (state, dispatch)
   const isParent = foldingState.entries.some((entry) => entry.itemPos === itemPos)
   if (!isParent && !foldingState.collapsedItemPositions.has(itemPos)) return false
   dispatch?.(state.tr.setMeta(pluginKey, itemPos))
+  return true
+}
+
+/**
+ * ⌘↑ / ⌘↓ (GRO-2092): fold (`collapsed: true`) or unfold the caret's innermost list_item. Inside a
+ * list the key is always consumed — leaf or already in that state is a no-op — so ⌘↑ never flings
+ * the caret to the top of the document mid-outline; outside lists it declines and the browser's
+ * native document jump runs.
+ */
+export const setOutlineFoldAtSelection = (collapsed: boolean): Command => (state, dispatch) => {
+  const foldingState = pluginKey.getState(state)
+  const itemPos = innermostItemPos(state.selection.$from)
+  if (!foldingState || itemPos === null) return false
+  const isParent = foldingState.entries.some((entry) => entry.itemPos === itemPos)
+  if (isParent && foldingState.collapsedItemPositions.has(itemPos) !== collapsed) {
+    dispatch?.(state.tr.setMeta(pluginKey, itemPos))
+  }
   return true
 }
 

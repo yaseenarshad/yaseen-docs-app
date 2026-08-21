@@ -20,10 +20,11 @@
  * move the item out of the visible subtree).
  */
 import type { Ctx } from '@milkdown/kit/ctx'
-import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
+import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey, Selection } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
+import { ancestorItemPositions, innermostItemPos } from './listNodes'
 
 export interface ZoomOptions {
   /** Shown as the first breadcrumb; clicking it zooms out fully. */
@@ -60,20 +61,8 @@ const itemLabel = (item: ProseNode): string => {
   return text.length > LABEL_MAX_CHARS ? `${text.slice(0, LABEL_MAX_CHARS - 1).trimEnd()}…` : text
 }
 
-/** Positions of the list_item ancestors of `$pos` (outermost first); `$pos` itself may sit inside an item. */
-const ancestorItemPositions = ($pos: ResolvedPos): number[] => {
-  const positions: number[] = []
-  for (let depth = 1; depth <= $pos.depth; depth++) {
-    if (isListItem($pos.node(depth))) positions.push($pos.before(depth))
-  }
-  return positions
-}
-
 /** Position of the innermost list_item containing the selection head, or null outside lists. */
-const itemAtSelection = (state: EditorState): number | null => {
-  const positions = ancestorItemPositions(state.selection.$from)
-  return positions.length > 0 ? positions[positions.length - 1] : null
-}
+const itemAtSelection = (state: EditorState): number | null => innermostItemPos(state.selection.$from)
 
 /** Zoom into the list_item at `itemPos`; moves the caret into it if the selection was outside. */
 const zoomTo = (itemPos: ZoomMeta): Command => (state, dispatch) => {

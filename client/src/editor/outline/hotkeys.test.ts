@@ -39,17 +39,19 @@ afterEach(async () => {
 /** ProseMirror resolves `Mod` from `navigator.platform` (jsdom: not mac → Ctrl). */
 const IS_MAC = /Mac/.test(navigator.platform)
 
-type Key = 'Mod-Enter' | 'Mod-Shift-u' | 'Mod-Shift-i' | 'Mod-Shift-x' | 'Mod-z'
+type Key = 'Mod-Enter' | 'Mod-Shift-u' | 'Mod-Shift-i' | 'Mod-Shift-x' | 'Mod-z' | 'Mod-ArrowUp' | 'Mod-ArrowDown'
 
 function press(crepe: Crepe, key: Key): boolean {
   return crepe.editor.action((ctx) => {
     const view = ctx.get(editorViewCtx)
     const shift = key.includes('Shift')
     const letter = key.slice(key.lastIndexOf('-') + 1)
+    // Named keys (Enter, ArrowUp, …) pass through as-is; letters become Key<X> + char code.
+    const named = letter.length > 1
     const init: KeyboardEventInit & { keyCode?: number } = {
-      key: letter === 'Enter' ? 'Enter' : letter.toUpperCase(),
-      code: letter === 'Enter' ? 'Enter' : `Key${letter.toUpperCase()}`,
-      keyCode: letter === 'Enter' ? 13 : letter.toUpperCase().charCodeAt(0),
+      key: named ? letter : letter.toUpperCase(),
+      code: named ? letter : `Key${letter.toUpperCase()}`,
+      keyCode: letter === 'Enter' ? 13 : letter === 'ArrowUp' ? 38 : letter === 'ArrowDown' ? 40 : letter.toUpperCase().charCodeAt(0),
       ...(IS_MAC ? { metaKey: true } : { ctrlKey: true }),
       shiftKey: shift,
       bubbles: true,
@@ -181,5 +183,45 @@ describe('Mod-Shift-x (strikethrough)', () => {
     expect(md(crepe)).toBe('* ~~L1 a~~\n')
     expect(press(crepe, 'Mod-Shift-x')).toBe(true)
     expect(md(crepe)).toBe('* L1 a\n')
+  })
+})
+
+describe('Mod-ArrowUp / Mod-ArrowDown (fold / unfold the caret item, GRO-2092)', () => {
+  it('folds and unfolds the caret item through the fold plugin; markdown and markdownUpdated untouched', async () => {
+    const onMarkdownUpdated = vi.fn()
+    const { crepe, root } = await mount(OUTLINE, { onMarkdownUpdated })
+    await new Promise((r) => setTimeout(r, 300)) // Crepe's mount-time normalisation fires once; not ours
+    onMarkdownUpdated.mockClear()
+    const before = md(crepe)
+    caretIn(crepe, 'L2 a')
+    expect(press(crepe, 'Mod-ArrowUp')).toBe(true)
+    expect(folded(root)).toBe(1)
+    expect(press(crepe, 'Mod-ArrowUp')).toBe(true) // already folded: consumed no-op, never a doc jump
+    expect(folded(root)).toBe(1)
+    expect(press(crepe, 'Mod-ArrowDown')).toBe(true)
+    expect(folded(root)).toBe(0)
+    expect(md(crepe)).toBe(before)
+    await new Promise((r) => setTimeout(r, 300))
+    expect(onMarkdownUpdated).not.toHaveBeenCalled()
+  })
+
+  it('is a consumed no-op on a leaf and falls through outside lists (native doc jump keeps working)', async () => {
+    const { crepe, root } = await mount(`Intro\n\n${OUTLINE}`)
+    caretIn(crepe, 'L3 a')
+    expect(press(crepe, 'Mod-ArrowUp')).toBe(true)
+    expect(press(crepe, 'Mod-ArrowDown')).toBe(true)
+    expect(folded(root)).toBe(0)
+    caretIn(crepe, 'Intro')
+    expect(press(crepe, 'Mod-ArrowUp')).toBe(false)
+    expect(press(crepe, 'Mod-ArrowDown')).toBe(false)
+  })
+
+  it('Mod-z right after Mod-ArrowUp reverts that fold (GRO-2075 path)', async () => {
+    const { crepe, root } = await mount()
+    caretIn(crepe, 'L1 a')
+    press(crepe, 'Mod-ArrowUp')
+    expect(folded(root)).toBe(1)
+    expect(press(crepe, 'Mod-z')).toBe(true)
+    expect(folded(root)).toBe(0)
   })
 })
