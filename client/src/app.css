@@ -195,18 +195,82 @@ button {
   color: var(--danger);
 }
 
-/* Shown instead of the editor while no folder is open (native dialog first, modal as fallback). */
-.landing {
+/* ---------- welcome (C2, GRO-2164): shown while this window has no folder ---------- */
+
+.welcome {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 20px;
+  width: min(440px, 90%);
   margin: auto;
-  padding-bottom: 10vh;
+  padding-bottom: 8vh;
 }
 
-.landing .editor-msg {
-  margin: 0 0 12px;
+.welcome__title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.welcome__empty {
+  margin: 0;
+  color: var(--fg-muted);
+}
+
+.welcome__recents {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One recent folder: name + last-opened on the first line, full path beneath. */
+.welcome__recent {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1px 12px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.welcome__recent:hover:not(:disabled) {
+  background: var(--bg-side);
+}
+
+.welcome__recent:disabled {
+  cursor: default;
+}
+
+.welcome__recent-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.welcome__recent-when {
+  align-self: center;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.welcome__recent-when--missing {
+  color: var(--danger);
+}
+
+.welcome__recent-path {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------- save indicator ---------- */

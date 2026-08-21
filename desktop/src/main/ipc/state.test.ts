@@ -51,7 +51,7 @@ describe('registerStateIpc', () => {
   it('registers every state channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual(
-      [CH.stateGet, CH.stateSetSettings, CH.stateSetSidebarCollapsed, CH.statePushRecent, CH.stateSetFolder, CH.stateSetFolds, CH.stateSetBaseGroups].sort(),
+      [CH.stateGet, CH.stateSetSettings, CH.stateSetSidebarCollapsed, CH.statePushRecent, CH.stateRemoveRecent, CH.stateSetFolder, CH.stateSetFolds, CH.stateSetBaseGroups].sort(),
     )
   })
 
@@ -81,6 +81,17 @@ describe('registerStateIpc', () => {
     expect(store.get().recents.map((r) => r.path)).toEqual(['/v'])
     expect(await registered(CH.statePushRecent)({ sender }, 'v')).toEqual(bad('NOT_ABSOLUTE'))
     expect(await registered(CH.statePushRecent)({ sender }, undefined)).toEqual(bad('BAD_REQUEST'))
+  })
+
+  it('state:remove-recent needs an absolute path and drops the entry (unknown path is a no-op)', async () => {
+    store.pushRecent('/v', 1)
+    store.pushRecent('/w', 2)
+    expect(await registered(CH.stateRemoveRecent)({ sender }, '/v')).toEqual(ok(undefined))
+    expect(store.get().recents.map((r) => r.path)).toEqual(['/w'])
+    expect(await registered(CH.stateRemoveRecent)({ sender }, '/gone')).toEqual(ok(undefined))
+    expect(store.get().recents.map((r) => r.path)).toEqual(['/w'])
+    expect(await registered(CH.stateRemoveRecent)({ sender }, 'v')).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await registered(CH.stateRemoveRecent)({ sender }, undefined)).toEqual(bad('BAD_REQUEST'))
   })
 
   it('state:set-folder checks the root and the patch shape', async () => {

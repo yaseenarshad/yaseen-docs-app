@@ -157,11 +157,12 @@ afterEach(async () => {
 
 const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', file: '/vaults/notes/a.md', bounds: { x: 0, y: 0, width: 800, height: 600 } }
 
-function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }) {
+function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, dirExists: (p: string) => boolean = () => true) {
   const windows = { idFor: vi.fn(), openWindow: vi.fn(), duplicateWindow: vi.fn() }
   const host: MenuHost = {
     focusedWebContents: () => focused,
     openExternal: vi.fn(),
+    dirExists,
   }
   const handlers = createMenuHandlers(store, { ...windows, idFor: (wc: { id: number }) => (wc.id === 7 ? 'w1' : undefined) }, host)
   return { handlers, windows, host }
@@ -204,6 +205,16 @@ describe('createMenuHandlers', () => {
     expect(windows.openWindow).toHaveBeenCalledWith({ root: '/vaults/work', file: null })
     expect(wc.send).not.toHaveBeenCalled()
     expect(store.get().recents[0]?.path).toBe('/vaults/work')
+  })
+
+  it('openRecent beside (⌥) on a dead folder prunes the MRU entry and opens nothing (GRO-2211)', () => {
+    store.pushRecent('/vaults/gone')
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers, windows } = makeHandlers(wc, (p) => p !== '/vaults/gone')
+    handlers.openRecent('/vaults/gone', true)
+    expect(windows.openWindow).not.toHaveBeenCalled()
+    expect(wc.send).not.toHaveBeenCalled()
+    expect(store.get().recents.some((r) => r.path === '/vaults/gone')).toBe(false)
   })
 
   it('toggleSidebar flips the global setting in the store', () => {

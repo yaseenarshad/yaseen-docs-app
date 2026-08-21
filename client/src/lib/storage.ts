@@ -85,6 +85,12 @@ export const storage = {
     return next
   },
 
+  /** Drop a dead folder from the MRU (its directory vanished on disk, C2 — GRO-2164). */
+  removeRecentRoot(path: string): void {
+    state = { ...state, recents: state.recents.filter((r) => r.path !== path) }
+    send('state.removeRecent', () => window.yaseenDocs.state.removeRecent(path))
+  },
+
   getExpanded: (root: string): string[] => folderOf(root).expanded,
   setExpanded(root: string, dirs: string[]): void {
     patchFolder(root, { expanded: dirs })

@@ -45,6 +45,7 @@ const api: YaseenDocsApi = {
     setSettings: (settings) => call(CH.stateSetSettings, settings),
     setSidebarCollapsed: (collapsed) => call(CH.stateSetSidebarCollapsed, collapsed),
     pushRecent: (path) => call(CH.statePushRecent, path),
+    removeRecent: (path) => call(CH.stateRemoveRecent, path),
     setFolder: (root, patch) => call(CH.stateSetFolder, root, patch),
     setFolds: (root, file, keys) => call(CH.stateSetFolds, root, file, [...keys]),
     setBaseGroups: (root, key, collapsed) => call(CH.stateSetBaseGroups, root, key, [...collapsed]),

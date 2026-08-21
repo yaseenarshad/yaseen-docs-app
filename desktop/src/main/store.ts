@@ -29,6 +29,7 @@ export interface Store {
   setSettings(settings: SettingsState): void
   setSidebarCollapsed(collapsed: boolean): void
   pushRecent(path: string, now?: number): void
+  removeRecent(path: string): void
   setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile'>>): void
   setFolds(root: string, file: string, keys: readonly string[]): void
   setBaseGroups(root: string, key: string, collapsed: readonly string[]): void
@@ -219,6 +220,11 @@ export function createStore(filePath: string): Store {
 
     pushRecent(path, now = Date.now()) {
       commit({ ...state, recents: addRecentRoot(state.recents, path, now) })
+    },
+
+    removeRecent(path) {
+      if (!state.recents.some((r) => r.path === path)) return
+      commit({ ...state, recents: state.recents.filter((r) => r.path !== path) })
     },
 
     setFolder(root, patch) {

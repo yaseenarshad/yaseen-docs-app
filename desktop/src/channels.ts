@@ -17,6 +17,7 @@ export const CH = {
   stateSetSettings: 'state:set-settings',
   stateSetSidebarCollapsed: 'state:set-sidebar-collapsed',
   statePushRecent: 'state:push-recent',
+  stateRemoveRecent: 'state:remove-recent',
   stateSetFolder: 'state:set-folder',
   stateSetFolds: 'state:set-folds',
   stateSetBaseGroups: 'state:set-base-groups',

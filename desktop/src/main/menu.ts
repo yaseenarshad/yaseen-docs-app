@@ -90,6 +90,8 @@ export interface MenuHost {
   /** The focused window's webContents; undefined when no app window has focus. */
   focusedWebContents(): { id: number; send(channel: string, ...args: unknown[]): void } | undefined
   openExternal(url: string): void
+  /** Whether `path` exists as a directory — open-beside probes before touching the MRU (GRO-2211). */
+  dirExists(path: string): boolean
 }
 
 type MenuWindows = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow'>
@@ -111,6 +113,12 @@ export function createMenuHandlers(store: Store, windows: MenuWindows, host: Men
     },
     openRecent(path, beside) {
       if (beside) {
+        // Beside never passes through the renderer's validating openRoot, so probe here too:
+        // a dead folder is pruned from the MRU (mirrors the Welcome/in-place path) and opens nothing.
+        if (!host.dirExists(path)) {
+          store.removeRecent(path)
+          return
+        }
         // The renderer bumps the MRU when it opens in place; opening beside never lands there, so bump here.
         store.pushRecent(path)
         windows.openWindow({ root: path, file: null })

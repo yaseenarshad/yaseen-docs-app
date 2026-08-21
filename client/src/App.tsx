@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import type { SettingsState } from '@shared/types'
+import { api, ApiRequestError } from './api'
 import { Editor } from './editor/Editor'
 import { useMenuEvents } from './hooks/useMenuEvents'
 import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
 import { storage } from './lib/storage'
 import { fileHash, hashFilePath } from './lib/urlHash'
+import { windowTitle } from './lib/windowTitle'
 import { Sidebar, SidebarPanelIcon } from './sidebar/Sidebar'
+import { Welcome } from './Welcome'
 
 /** Reflect the open file in the URL (GRO-2069); replaceState keeps Back sane. */
 function syncHash(path: string | null): void {
@@ -60,13 +63,34 @@ export function App() {
   // later changes sync through openFile/openRoot themselves.
   useEffect(() => syncHash(file), [])
 
-  const openRoot = useCallback((path: string) => {
+  // The OS window title mirrors what is open (C3, GRO-2165); Electron follows document.title.
+  useEffect(() => {
+    document.title = windowTitle(root, file)
+  }, [root, file])
+
+  /**
+   * Switch this window to `path` in place (C3, GRO-2165). Resolves false — and drops the dead
+   * MRU entry — when the folder is gone on disk (C2), leaving the window as it is; any other
+   * probe failure still switches, and the sidebar surfaces the error.
+   */
+  const openRoot = useCallback(async (path: string): Promise<boolean> => {
+    try {
+      await api.tree(path)
+    } catch (err) {
+      if (err instanceof ApiRequestError && (err.code === 'NOT_FOUND' || err.code === 'NOT_A_DIRECTORY')) {
+        storage.removeRecentRoot(path)
+        return false
+      }
+    }
     storage.setRoot(path)
     storage.pushRecentRoot(path)
     setRoot(path)
     const nextFile = storage.getLastFile(path)
+    // Record the restored file on the window entry too (D6): setRoot just cleared it.
+    if (nextFile !== null) storage.setLastFile(path, nextFile)
     setFile(nextFile)
     syncHash(nextFile)
+    return true
   }, [])
 
   const openFile = useCallback(
@@ -90,11 +114,6 @@ export function App() {
     syncHash(null)
   }, [])
   const onFileMissing = useCallback(() => openFile(null), [openFile])
-
-  // First launch (or lost root): offer a folder straight away.
-  useEffect(() => {
-    if (root === null) pick()
-  }, [root, pick])
 
   return (
     <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'}>
@@ -121,12 +140,8 @@ export function App() {
       )}
       {root === null ? (
         <section className="editor">
-          <div className="landing">
-            <p className="editor-msg">{picking ? 'Choose a folder in the dialog…' : 'No folder open.'}</p>
-            <button type="button" className="btn btn--primary" disabled={picking} onClick={pick}>
-              Open folder…
-            </button>
-          </div>
+          {/* No dialog opens by itself (C2, GRO-2164): the Welcome screen offers recents + Open folder…. */}
+          <Welcome recents={storage.getRecentRoots()} onOpenRecent={openRoot} onPickFolder={pick} picking={picking} />
         </section>
       ) : (
         <Editor root={root} path={file} watch={watch} onOpenFile={openFile} />
