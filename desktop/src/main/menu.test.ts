@@ -1,0 +1,251 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import type { MenuItemConstructorOptions } from 'electron'
+import type { RecentRoots, WindowEntry } from '@shared/types'
+import { CH } from '../channels'
+import { createStore, type Store } from './store'
+import { HELP_URL, buildMenuTemplate, createMenuHandlers, subscribeMenuRebuild, type MenuHandlers, type MenuHost } from './menu'
+
+// ---------- buildMenuTemplate (pure) ----------
+
+const noopHandlers = (): MenuHandlers => ({
+  newWindow: vi.fn(),
+  openFolder: vi.fn(),
+  openRecent: vi.fn(),
+  toggleSidebar: vi.fn(),
+  openHelp: vi.fn(),
+})
+
+const RECENTS: RecentRoots = [
+  { path: '/vaults/notes', lastOpened: 3 },
+  { path: '/vaults/work', lastOpened: 2 },
+  { path: '/vaults/old', lastOpened: 1 },
+]
+
+function build(recents: RecentRoots = RECENTS, isDev = false, handlers: MenuHandlers = noopHandlers()) {
+  return buildMenuTemplate({ recents, isDev }, handlers)
+}
+
+function menuOf(template: MenuItemConstructorOptions[], label: string): MenuItemConstructorOptions[] {
+  const top = template.find((m) => m.label === label)
+  expect(top, label).toBeDefined()
+  return top?.submenu as MenuItemConstructorOptions[]
+}
+
+/** Fires a template item's click the way Electron does (menuItem, window, KeyboardEvent). */
+function click(item: MenuItemConstructorOptions | undefined, event: { altKey?: boolean } = {}): void {
+  expect(item?.click).toBeTypeOf('function')
+  item?.click?.(undefined as never, undefined, event as never)
+}
+
+describe('buildMenuTemplate', () => {
+  it('has the six menus in order', () => {
+    expect(build().map((m) => m.label)).toEqual(['Yaseen Docs', 'File', 'Edit', 'View', 'Window', 'Help'])
+  })
+
+  it('App menu: About and Quit roles', () => {
+    const roles = menuOf(build(), 'Yaseen Docs').map((i) => i.role ?? i.type)
+    expect(roles).toEqual(['about', 'separator', 'quit'])
+  })
+
+  it('File menu: New Window ⌘⇧N, Open Folder… ⌘⇧O, Open Recent, Close Window ⌘W', () => {
+    const handlers = noopHandlers()
+    const file = menuOf(build(RECENTS, false, handlers), 'File')
+
+    const newWindow = file.find((i) => i.label === 'New Window')
+    expect(newWindow?.accelerator).toBe('CmdOrCtrl+Shift+N')
+    click(newWindow)
+    expect(handlers.newWindow).toHaveBeenCalledTimes(1)
+
+    const openFolder = file.find((i) => i.label === 'Open Folder…')
+    expect(openFolder?.accelerator).toBe('CmdOrCtrl+Shift+O')
+    click(openFolder)
+    expect(handlers.openFolder).toHaveBeenCalledTimes(1)
+
+    expect(file.find((i) => i.label === 'Open Recent')).toBeDefined()
+
+    const close = file.find((i) => i.label === 'Close Window')
+    expect(close?.role).toBe('close')
+    expect(close?.accelerator).toBe('CmdOrCtrl+W')
+  })
+
+  it('Open Recent lists recents in MRU order; plain click opens in place, ⌥-click beside', () => {
+    const handlers = noopHandlers()
+    const file = menuOf(build(RECENTS, false, handlers), 'File')
+    const recent = file.find((i) => i.label === 'Open Recent')?.submenu as MenuItemConstructorOptions[]
+    expect(recent.map((i) => i.label)).toEqual(['/vaults/notes', '/vaults/work', '/vaults/old'])
+
+    click(recent[1])
+    expect(handlers.openRecent).toHaveBeenLastCalledWith('/vaults/work', false)
+    click(recent[0], { altKey: true })
+    expect(handlers.openRecent).toHaveBeenLastCalledWith('/vaults/notes', true)
+  })
+
+  it('a programmatic click (menuItem.click(), no event — Playwright) opens in place, not a crash', () => {
+    const handlers = noopHandlers()
+    const file = menuOf(build(RECENTS, false, handlers), 'File')
+    const recent = file.find((i) => i.label === 'Open Recent')?.submenu as MenuItemConstructorOptions[]
+    recent[0].click?.(undefined as never, undefined, undefined as never)
+    expect(handlers.openRecent).toHaveBeenCalledWith('/vaults/notes', false)
+  })
+
+  it('Open Recent with no recents shows one disabled placeholder', () => {
+    const file = menuOf(build([]), 'File')
+    const recent = file.find((i) => i.label === 'Open Recent')?.submenu as MenuItemConstructorOptions[]
+    expect(recent).toEqual([{ label: 'No Recent Folders', enabled: false }])
+  })
+
+  it('Edit menu is exactly the Electron roles', () => {
+    const roles = menuOf(build(), 'Edit').map((i) => i.role ?? i.type)
+    expect(roles).toEqual(['undo', 'redo', 'separator', 'cut', 'copy', 'paste', 'selectAll'])
+  })
+
+  it('View menu: Toggle Sidebar, Reload, zoom roles; Toggle DevTools only in dev', () => {
+    const handlers = noopHandlers()
+    const view = menuOf(build(RECENTS, false, handlers), 'View')
+    expect(view.map((i) => i.role).filter(Boolean)).toEqual(['reload', 'resetZoom', 'zoomIn', 'zoomOut'])
+    const toggle = view.find((i) => i.label === 'Toggle Sidebar')
+    click(toggle)
+    expect(handlers.toggleSidebar).toHaveBeenCalledTimes(1)
+
+    const dev = menuOf(build(RECENTS, true), 'View')
+    expect(dev.map((i) => i.role).filter(Boolean)).toEqual(['reload', 'toggleDevTools', 'resetZoom', 'zoomIn', 'zoomOut'])
+  })
+
+  it('Window menu: role window (macOS window list) with minimize / zoom / front', () => {
+    const top = build().find((m) => m.label === 'Window')
+    expect(top?.role).toBe('window')
+    const roles = (top?.submenu as MenuItemConstructorOptions[]).map((i) => i.role ?? i.type)
+    expect(roles).toEqual(['minimize', 'zoom', 'separator', 'front'])
+  })
+
+  it('Help menu: role help, GitHub link item', () => {
+    const handlers = noopHandlers()
+    const template = build(RECENTS, false, handlers)
+    const top = template.find((m) => m.label === 'Help')
+    expect(top?.role).toBe('help')
+    const github = (top?.submenu as MenuItemConstructorOptions[]).find((i) => i.label === 'Yaseen Docs on GitHub')
+    click(github)
+    expect(handlers.openHelp).toHaveBeenCalledTimes(1)
+  })
+
+  it('actionable items carry stable ids so a live check can drive them', () => {
+    const file = menuOf(build(), 'File')
+    expect(file.find((i) => i.label === 'New Window')?.id).toBe('menu.file.new-window')
+    expect(file.find((i) => i.label === 'Open Folder…')?.id).toBe('menu.file.open-folder')
+    const recent = file.find((i) => i.label === 'Open Recent')?.submenu as MenuItemConstructorOptions[]
+    expect(recent.map((i) => i.id)).toEqual(['menu.file.open-recent.0', 'menu.file.open-recent.1', 'menu.file.open-recent.2'])
+    expect(menuOf(build(), 'View').find((i) => i.label === 'Toggle Sidebar')?.id).toBe('menu.view.toggle-sidebar')
+    expect((build().find((m) => m.label === 'Help')?.submenu as MenuItemConstructorOptions[])[0].id).toBe('menu.help.github')
+  })
+})
+
+// ---------- createMenuHandlers, against fakes ----------
+
+let dir: string
+let store: Store
+beforeEach(async () => {
+  dir = await mkdtemp(path.join(tmpdir(), 'yd-menu-'))
+  store = createStore(path.join(dir, 'yaseendocs.json'))
+})
+afterEach(async () => {
+  await store.flush()
+  await rm(dir, { recursive: true, force: true })
+})
+
+const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', file: '/vaults/notes/a.md', bounds: { x: 0, y: 0, width: 800, height: 600 } }
+
+function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }) {
+  const windows = { idFor: vi.fn(), openWindow: vi.fn(), duplicateWindow: vi.fn() }
+  const host: MenuHost = {
+    focusedWebContents: () => focused,
+    openExternal: vi.fn(),
+  }
+  const handlers = createMenuHandlers(store, { ...windows, idFor: (wc: { id: number }) => (wc.id === 7 ? 'w1' : undefined) }, host)
+  return { handlers, windows, host }
+}
+
+describe('createMenuHandlers', () => {
+  it('newWindow duplicates the focused window entry', () => {
+    store.upsertWindow(ENTRY)
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers, windows } = makeHandlers(wc)
+    handlers.newWindow()
+    expect(windows.duplicateWindow).toHaveBeenCalledWith(ENTRY)
+  })
+
+  it('newWindow with no focused window is a no-op', () => {
+    const { handlers, windows } = makeHandlers(undefined)
+    handlers.newWindow()
+    expect(windows.duplicateWindow).not.toHaveBeenCalled()
+  })
+
+  it('openFolder tells the focused renderer to run its pick-folder flow', () => {
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers } = makeHandlers(wc)
+    handlers.openFolder()
+    expect(wc.send).toHaveBeenCalledWith(CH.menuOpenFolder)
+  })
+
+  it('openRecent in place sends the path to the focused renderer', () => {
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers, windows } = makeHandlers(wc)
+    handlers.openRecent('/vaults/work', false)
+    expect(wc.send).toHaveBeenCalledWith(CH.menuOpenRoot, '/vaults/work')
+    expect(windows.openWindow).not.toHaveBeenCalled()
+  })
+
+  it('openRecent beside (⌥) opens a new window on the root and bumps the MRU', () => {
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers, windows } = makeHandlers(wc)
+    handlers.openRecent('/vaults/work', true)
+    expect(windows.openWindow).toHaveBeenCalledWith({ root: '/vaults/work', file: null })
+    expect(wc.send).not.toHaveBeenCalled()
+    expect(store.get().recents[0]?.path).toBe('/vaults/work')
+  })
+
+  it('toggleSidebar flips the global setting in the store', () => {
+    const { handlers } = makeHandlers(undefined)
+    handlers.toggleSidebar()
+    expect(store.get().sidebarCollapsed).toBe(true)
+    handlers.toggleSidebar()
+    expect(store.get().sidebarCollapsed).toBe(false)
+  })
+
+  it('openHelp opens the repo README', () => {
+    const { handlers, host } = makeHandlers(undefined)
+    handlers.openHelp()
+    expect(host.openExternal).toHaveBeenCalledWith(HELP_URL)
+    expect(HELP_URL).toBe('https://github.com/yaseenarshad/yaseen-milkdown#readme')
+  })
+})
+
+// ---------- subscribeMenuRebuild ----------
+
+describe('subscribeMenuRebuild', () => {
+  it('rebuilds when recents change, not on other writes', () => {
+    const rebuild = vi.fn()
+    subscribeMenuRebuild(store, rebuild)
+
+    store.setSidebarCollapsed(true)
+    store.setSettings(store.get().settings)
+    store.upsertWindow(ENTRY)
+    store.setFolder('/vaults/notes', { lastFile: null })
+    expect(rebuild).not.toHaveBeenCalled()
+
+    store.pushRecent('/vaults/notes')
+    expect(rebuild).toHaveBeenCalledTimes(1)
+    store.pushRecent('/vaults/work')
+    expect(rebuild).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns an unsubscribe', () => {
+    const rebuild = vi.fn()
+    const off = subscribeMenuRebuild(store, rebuild)
+    off()
+    store.pushRecent('/vaults/notes')
+    expect(rebuild).not.toHaveBeenCalled()
+  })
+})

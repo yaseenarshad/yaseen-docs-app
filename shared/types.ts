@@ -322,6 +322,17 @@ export interface WindowApi {
 }
 
 /**
+ * Menu gestures from the main process (B3, GRO-2161): the renderer owns root switching at
+ * runtime, so File › Open Folder… / Open Recent land on the focused window's renderer.
+ */
+export interface MenuApi {
+  /** File › Open Folder… (⌘⇧O) targeted this window: run the pick-folder flow. Returns an unsubscribe. */
+  onOpenFolder(listener: () => void): () => void
+  /** File › Open Recent chose `path` for this window: switch the root in place. Returns an unsubscribe. */
+  onOpenRoot(listener: (path: string) => void): () => void
+}
+
+/**
  * The single typed surface the renderer uses for everything outside the DOM, installed by
  * the preload as `window.yaseenDocs` (`contextBridge`, `ipcMain.handle` on the main side).
  * Request/response shapes are the ones above. Bases (GRO-2097) adds its methods here
@@ -341,4 +352,5 @@ export interface YaseenDocsApi {
   watch(root: string, listener: (ev: WatchEvent) => void): () => void
   state: StateApi
   window: WindowApi
+  menu: MenuApi
 }

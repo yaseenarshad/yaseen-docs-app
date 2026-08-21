@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import type { SettingsState } from '@shared/types'
 import { Editor } from './editor/Editor'
+import { useMenuEvents } from './hooks/useMenuEvents'
 import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
 import { storage } from './lib/storage'
@@ -78,6 +79,9 @@ export function App() {
   )
 
   const { pick, picking } = usePickFolder({ onPicked: openRoot })
+
+  // File › Open Folder… / Open Recent (GRO-2161) reuse the same flows as the in-app buttons.
+  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openRoot })
 
   const onRootMissing = useCallback(() => {
     storage.setRoot(null)

@@ -64,6 +64,19 @@ const api: YaseenDocsApi = {
       }
     },
   },
+  // Menu gestures (GRO-2161): main sends these to the focused window only.
+  menu: {
+    onOpenFolder: (listener) => {
+      const on = () => listener()
+      ipcRenderer.on(CH.menuOpenFolder, on)
+      return () => ipcRenderer.removeListener(CH.menuOpenFolder, on)
+    },
+    onOpenRoot: (listener) => {
+      const on = (_e: unknown, path: string) => listener(path)
+      ipcRenderer.on(CH.menuOpenRoot, on)
+      return () => ipcRenderer.removeListener(CH.menuOpenRoot, on)
+    },
+  },
 }
 
 contextBridge.exposeInMainWorld('yaseenDocs', api)

@@ -1,8 +1,9 @@
-import { app, BrowserWindow, Menu, net, protocol, screen } from 'electron'
+import { app, BrowserWindow, Menu, net, protocol, screen, shell } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { WindowEntry } from '@shared/types'
 import { registerIpc } from './ipc'
+import { buildMenuTemplate, createMenuHandlers, subscribeMenuRebuild } from './menu'
 import { createStore } from './store'
 import { createWindowManager } from './windows'
 
@@ -55,10 +56,15 @@ app.whenReady().then(() => {
     const file = join(RENDERER_DIR, pathname === '/' ? 'index.html' : pathname)
     return net.fetch(pathToFileURL(file).toString())
   })
-  // Role-only menu until GRO-2161 (B3) builds the real one; the Edit roles are what make ⌘C/⌘V/⌘Z work.
-  Menu.setApplicationMenu(
-    Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'fileMenu' }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }]),
-  )
+  // Menu bar (B3, GRO-2161): the template is pure (menu.ts); only this apply layer touches Menu.
+  const handlers = createMenuHandlers(store, manager, {
+    focusedWebContents: () => BrowserWindow.getFocusedWindow()?.webContents,
+    openExternal: (url) => void shell.openExternal(url),
+  })
+  const applyMenu = (): void =>
+    Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate({ recents: store.get().recents, isDev: !app.isPackaged }, handlers)))
+  applyMenu()
+  subscribeMenuRebuild(store, applyMenu)
   registerIpc(store, manager)
   manager.restoreAll()
 })
