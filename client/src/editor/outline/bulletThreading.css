@@ -4,6 +4,8 @@
    line: the line centre is `--list-indent / 2 + --list-label-gap / 2` left of the nested list's
    (= the item's) left edge; rows are `--list-label-offset` + `--list-label-height` (headings
    included). `li.list-item` is already `position: relative` (outlineFolding.css).
+   Colour is the app accent (`--accent`, app.css — the sidebar/active-option indigo): Crepe's frame
+   theme has `--crepe-color-primary: #333`, which reads as plain black, not as a highlight.
    `pointer-events: none` on the pseudo is REQUIRED: a pseudo hit-tests as its element, and the
    guide-line click-to-fold (guideLines.ts) only recognises the strip when the event target is the
    UL — a clickable li::before on top of it would silently break fold-by-line on the thread path. */
@@ -14,7 +16,7 @@
   bottom: 0;
   left: calc(-1 * (var(--list-indent) / 2 + var(--list-label-gap) / 2) - 1px);
   width: 0;
-  border-left: 2px solid var(--crepe-color-primary);
+  border-left: 2px solid var(--accent, var(--crepe-color-primary));
   pointer-events: none;
 }
 
@@ -25,12 +27,12 @@
   height: calc(var(--list-label-offset, 0px) + var(--list-label-height, 32px) / 2 + 1px);
   /* line → glyph left edge: half indent + half gap (to the item edge) + half the gutter − half the glyph */
   width: calc(var(--list-indent) / 2 + var(--list-label-gap) / 2 + (var(--list-indent) - var(--list-label-gap)) / 2 - var(--list-bullet-size) / 2 - 2px);
-  border-bottom: 2px solid var(--crepe-color-primary);
+  border-bottom: 2px solid var(--accent, var(--crepe-color-primary));
   border-bottom-left-radius: 6px;
 }
 
 /* Glyphs on the path take the accent. Set on the label wrapper, NOT the item: the marker var is
    inherited, and setting it on the item would recolour every nested bullet below. */
 .app[data-threading='on'] .editor-instance .milkdown .milkdown-list-item-block.outline-thread-node > li.list-item > .label-wrapper {
-  --list-marker-color: var(--crepe-color-primary);
+  --list-marker-color: var(--accent, var(--crepe-color-primary));
 }
