@@ -1,6 +1,8 @@
 import type {
   ApiError,
   ApiErrorCode,
+  CreateDirResponse,
+  CreateFileResponse,
   DirsResponse,
   FileResponse,
   FileWriteConflict,
@@ -40,6 +42,18 @@ export const api = {
   tree: (root: string) => request<TreeResponse>(`/api/tree?root=${enc(root)}`),
   /** Native Finder dialog; resolves when the user picks or cancels. 501 NOT_SUPPORTED off macOS. */
   pickFolder: () => request<PickFolderResponse>('/api/pick-folder', { method: 'POST' }),
+  createDir: (path: string) =>
+    request<CreateDirResponse>('/api/create-dir', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path }),
+    }),
+  createFile: (path: string) =>
+    request<CreateFileResponse>('/api/create-file', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path }),
+    }),
   readFile: (path: string) => request<FileResponse>(`/api/file?path=${enc(path)}`),
   /** `keepalive` lets the PUT outlive the page (used by the beforeunload flush). */
   writeFile: (body: FileWriteRequest, keepalive = false) =>

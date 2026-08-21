@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
-import type { TreeResponse } from '@shared/types'
+import type { TreeNode, TreeResponse } from '@shared/types'
 import { api, ApiRequestError } from '../api'
 import type { WatchSource } from '../hooks/useWatch'
 import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { treeHasFile, treeReducer } from '../lib/treeState'
-import { Tree } from './Tree'
+import { ContextMenu } from './ContextMenu'
+import { entryPath, targetDirFor } from './createEntry'
+import { Tree, type PendingCreate } from './Tree'
 
 interface SidebarProps {
   root: string
@@ -48,6 +50,8 @@ export function Sidebar({
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [expanded, dispatch] = useReducer(treeReducer, root, storage.getExpanded)
+  const [menu, setMenu] = useState<{ x: number; y: number; targetDir: string } | null>(null)
+  const [creating, setCreating] = useState<{ kind: 'file' | 'dir'; parentDir: string } | null>(null)
 
   const refresh = useCallback(() => {
     api.tree(root).then(
@@ -91,6 +95,46 @@ export function Sidebar({
     if (activeFile !== null && !treeHasFile(tree.tree, activeFile)) onFileMissing()
   }, [tree, activeFile, onFileMissing])
 
+  // ---- New note / new folder (GRO-2022): right-click menu → inline name input ----
+
+  const openMenu = useCallback(
+    (node: TreeNode | null, e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setMenu({ x: e.clientX, y: e.clientY, targetDir: targetDirFor(node, root) })
+    },
+    [root],
+  )
+
+  const startCreate = useCallback(
+    (kind: 'file' | 'dir') => {
+      if (menu === null) return
+      // The input renders inside the target dir's children, so that dir must be open.
+      if (menu.targetDir !== root) dispatch({ type: 'expandTo', root, file: `${menu.targetDir}/x` })
+      setCreating({ kind, parentDir: menu.targetDir })
+      setMenu(null)
+    },
+    [menu, root],
+  )
+
+  const submitCreate = useCallback(
+    async (name: string) => {
+      if (creating === null) return
+      const p = entryPath(creating.parentDir, name, creating.kind)
+      if (creating.kind === 'dir') await api.createDir(p)
+      else await api.createFile(p)
+      setCreating(null)
+      refresh()
+      if (creating.kind === 'file') onOpenFile(p)
+    },
+    [creating, refresh, onOpenFile],
+  )
+
+  const cancelCreate = useCallback(() => setCreating(null), [])
+
+  const pending: PendingCreate | null =
+    creating === null ? null : { ...creating, onSubmit: submitCreate, onCancel: cancelCreate }
+
   return (
     <aside className="sidebar">
       <div className="sidebar__header">
@@ -102,20 +146,34 @@ export function Sidebar({
           <SidebarPanelIcon />
         </button>
       </div>
-      <div className="sidebar__body">
+      <div className="sidebar__body" onContextMenu={(e) => openMenu(null, e)}>
         {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}
         {tree === null && error === null && <p className="sidebar__msg">Loading…</p>}
-        {tree !== null && tree.tree.length === 0 && <p className="sidebar__msg">No markdown files here.</p>}
+        {tree !== null && tree.tree.length === 0 && pending === null && (
+          <p className="sidebar__msg">No markdown files here.</p>
+        )}
         {tree !== null && (
           <Tree
             nodes={tree.tree}
+            dirPath={root}
             expanded={new Set(expanded)}
             activeFile={activeFile}
             onToggle={(dir) => dispatch({ type: 'toggle', dir })}
             onOpenFile={onOpenFile}
+            onNodeContextMenu={openMenu}
+            pending={pending}
           />
         )}
       </div>
+      {menu !== null && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onNewNote={() => startCreate('file')}
+          onNewFolder={() => startCreate('dir')}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </aside>
   )
 }
