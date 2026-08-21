@@ -1,6 +1,6 @@
 /**
- * List guide lines — click to fold (GRO-2030, obsidian-outliner `listLines` +
- * `listLineAction: toggle-folding`).
+ * List guide lines — click to fold (GRO-2030, obsidian-outliner `listLines`; click semantics
+ * re-ruled in GRO-2107: a click acts on the bullets ALONGSIDE the line, not on its owner).
  *
  * The line itself is pure CSS (guideLines.css): a `::before` strip on every nested
  * `ul`/`ol`, absolutely positioned in the parent item's gutter so the 1px line runs under the
@@ -8,16 +8,17 @@
  * pointer over the strip targets the list element at a `clientX` LEFT of its border box —
  * that is the whole detection: no extra DOM, no layout shift, chevron and glyph (separate
  * elements) are never involved. This plugin turns those strip hits into behaviour:
- *  - mousedown → toggle the GRO-2011 fold of the item owning the list (meta-only transaction,
- *    markdown untouched) and swallow the event so the caret never moves;
+ *  - mousedown → fold / unfold the parent items directly inside the list (`toggleOutlineFoldChildren`,
+ *    GRO-2107; meta-only transaction, markdown untouched) and swallow the event so the caret
+ *    never moves — the list's owner folds only via its chevron, ⌘↑ or the line one level up;
  *  - mousemove/mouseleave → `outline-guide-hover` on the list, so ONLY strip hover highlights
  *    the line (CSS `ul:hover::before` would light up while merely editing text inside).
  */
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { LIST_NODE_NAMES } from './listNodes'
-import { toggleOutlineFold } from './outlineFolding'
+import { isListItem, LIST_NODE_NAMES } from './listNodes'
+import { toggleOutlineFoldChildren } from './outlineFolding'
 
 export const GUIDE_HOVER_CLASS = 'outline-guide-hover'
 
@@ -42,11 +43,11 @@ const stripHit = (view: EditorView, event: MouseEvent): HTMLElement | null => {
   return Math.abs(event.clientX - centre) <= STRIP_HALF_WIDTH ? target : null
 }
 
-/** Position of the list_item owning the nested list rendered as `list`, or null. */
-const owningItemPos = (view: EditorView, list: HTMLElement): number | null => {
+/** Document position of the nested list rendered as `list` (its owner must be a list_item), or null. */
+const nestedListPos = (view: EditorView, list: HTMLElement): number | null => {
   const $pos = view.state.doc.resolve(view.posAtDOM(list, 0))
   if ($pos.depth < 2 || !LIST_NODE_NAMES.has($pos.parent.type.name)) return null
-  return $pos.node($pos.depth - 1).type.name === 'list_item' ? $pos.before($pos.depth - 1) : null
+  return isListItem($pos.node($pos.depth - 1)) ? $pos.before($pos.depth) : null
 }
 
 export const guideLines = $prose(
@@ -65,11 +66,12 @@ export const guideLines = $prose(
           mousedown: (view, event) => {
             const list = stripHit(view, event)
             if (list === null) return false
-            const itemPos = owningItemPos(view, list)
-            if (itemPos === null) return false
-            // Swallow the event BEFORE toggling: the caret must not move and no text may select.
+            const listPos = nestedListPos(view, list)
+            if (listPos === null) return false
+            // Swallow the event BEFORE toggling: the caret must not move and no text may select —
+            // also when the line's bullets are all leaves and there is nothing to fold.
             event.preventDefault()
-            toggleOutlineFold(itemPos)(view.state, view.dispatch)
+            toggleOutlineFoldChildren(listPos)(view.state, view.dispatch)
             return true
           },
           mousemove: (view, event) => {

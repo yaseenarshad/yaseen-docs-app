@@ -1,8 +1,9 @@
 /**
- * List guide lines (GRO-2030): the line is CSS-only, so these tests cover the TS wiring —
- * a mousedown whose `clientX` falls in the strip left of a nested list (only reachable through
- * the strip pseudo, whose hits target the list element) toggles the parent's fold via the
- * GRO-2011 plugin, without moving the caret or touching the markdown. jsdom rects are all
+ * List guide lines (GRO-2030, click semantics GRO-2107): the line is CSS-only, so these tests
+ * cover the TS wiring — a mousedown whose `clientX` falls in the strip left of a nested list
+ * (only reachable through the strip pseudo, whose hits target the list element) folds / unfolds
+ * the parent items ALONGSIDE the line (the list's direct children that have children) via the
+ * GRO-2011 plugin — never the line's owner — without moving the caret or touching the markdown. jsdom rects are all
  * zeros and `font-size` is empty, so the strip centre resolves from the 16px fallback:
  * 0 - (2.15 * 16 / 2 + 5) = -22.2.
  */
@@ -12,11 +13,14 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { GUIDE_HOVER_CLASS } from './guideLines'
-import { OUTLINE_FOLDED_ATTR } from './outlineFolding'
+import { OUTLINE_FOLDED_ATTR, toggleOutlineFold, undoLastFold } from './outlineFolding'
 
 const OUTLINE = `* Parent
-  * Child
-    * Grandchild
+  * Child A
+    * Grandchild A
+  * Child B
+    * Grandchild B
+  * Leaf child
 * Leaf
 `
 
@@ -55,25 +59,54 @@ const mouse = (el: HTMLElement, type: string, clientX: number) =>
   el.dispatchEvent(new MouseEvent(type, { clientX, bubbles: true, cancelable: true }))
 
 const folded = (root: HTMLElement) => root.querySelectorAll(`[${OUTLINE_FOLDED_ATTR}="true"]`)
+/** Labels of the items whose nested list is folded, in document order. */
+const foldedLabels = (root: HTMLElement): string[] =>
+  [...folded(root)].map((ul) => ul.closest('li.list-item')?.querySelector(':scope > .children > .content-dom > p')?.textContent ?? '?')
+const pressUndo = (crepe: Crepe): boolean =>
+  crepe.editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx)
+    return undoLastFold(view.state, view.dispatch)
+  })
+const foldItemOf = (crepe: Crepe, root: HTMLElement, label: string) =>
+  crepe.editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx)
+    const li = nestedListOf(root, label).closest('li.list-item') as HTMLElement
+    const $pos = view.state.doc.resolve(view.posAtDOM(li, 0))
+    toggleOutlineFold($pos.before($pos.depth))(view.state, view.dispatch)
+  })
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 describe('guide lines: click → fold', () => {
-  it('mousedown in the strip folds the owning parent, again unfolds', async () => {
+  it('mousedown in the strip folds the parent items alongside the line (not its owner); again unfolds them', async () => {
     const { root } = await mount()
     const list = nestedListOf(root, 'Parent')
     expect(mouse(list, 'mousedown', STRIP_X)).toBe(false) // preventDefault called → caret untouched
-    expect(folded(root)).toHaveLength(1)
-    expect(nestedListOf(root, 'Parent').getAttribute(OUTLINE_FOLDED_ATTR)).toBe('true')
+    expect(foldedLabels(root)).toEqual(['Child A', 'Child B']) // Parent and Leaf child untouched
     mouse(nestedListOf(root, 'Parent'), 'mousedown', STRIP_X)
     expect(folded(root)).toHaveLength(0)
   })
 
-  it('folds only the clicked level: the strip of a deeper list folds its own parent', async () => {
+  it('any alongside item expanded → collapse all of them', async () => {
+    const { crepe, root } = await mount()
+    foldItemOf(crepe, root, 'Child A')
+    expect(foldedLabels(root)).toEqual(['Child A'])
+    mouse(nestedListOf(root, 'Parent'), 'mousedown', STRIP_X)
+    expect(foldedLabels(root)).toEqual(['Child A', 'Child B'])
+  })
+
+  it('a line whose bullets are all leaves does nothing but still swallows the click', async () => {
     const { root } = await mount()
-    mouse(nestedListOf(root, 'Child'), 'mousedown', STRIP_X)
-    expect(folded(root)).toHaveLength(1)
-    expect(nestedListOf(root, 'Child').getAttribute(OUTLINE_FOLDED_ATTR)).toBe('true')
-    expect(nestedListOf(root, 'Parent').hasAttribute(OUTLINE_FOLDED_ATTR)).toBe(false)
+    expect(mouse(nestedListOf(root, 'Child A'), 'mousedown', STRIP_X)).toBe(false)
+    expect(folded(root)).toHaveLength(0)
+  })
+
+  it('Mod-z right after the click reverts the whole click as one step', async () => {
+    const { crepe, root } = await mount()
+    foldItemOf(crepe, root, 'Child A')
+    mouse(nestedListOf(root, 'Parent'), 'mousedown', STRIP_X)
+    expect(foldedLabels(root)).toEqual(['Child A', 'Child B'])
+    expect(pressUndo(crepe)).toBe(true)
+    expect(foldedLabels(root)).toEqual(['Child A'])
   })
 
   it('mousedown on the list but outside the strip falls through', async () => {
@@ -112,7 +145,7 @@ describe('guide lines: click → fold', () => {
     onMarkdownUpdated.mockClear()
     const md = getMarkdownForSave(crepe)
     mouse(nestedListOf(root, 'Parent'), 'mousedown', STRIP_X)
-    mouse(nestedListOf(root, 'Child'), 'mousedown', STRIP_X)
+    mouse(nestedListOf(root, 'Child A'), 'mousedown', STRIP_X)
     await sleep(400)
     expect(onMarkdownUpdated).not.toHaveBeenCalled()
     expect(getMarkdownForSave(crepe)).toBe(md)

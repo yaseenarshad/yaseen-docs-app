@@ -17,7 +17,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { findNestedLists, innermostItemPos, itemLabelText } from './listNodes'
+import { findNestedLists, innermostItemPos, itemLabelText, LIST_NODE_NAMES } from './listNodes'
 import { getOutlineFoldKey } from './outlineFoldKeys'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
@@ -56,7 +56,12 @@ export const OUTLINE_FOLDED_ATTR = 'data-outline-folded'
 const pluginKey = new PluginKey<OutlineFoldingState>('mdapp-outline-folding')
 
 /** Transaction meta understood by the plugin: toggle one item (by position), fold/unfold every parent, or revert the latest fold. */
-type FoldMeta = number | 'fold-all' | 'unfold-all' | 'undo-fold'
+type FoldMeta = number | 'fold-all' | 'unfold-all' | 'undo-fold' | FoldSetMeta
+/** Guide-line click (GRO-2107): fold (`collapsed: true`) or unfold every parent item in `set` at once. */
+interface FoldSetMeta {
+  set: readonly number[]
+  collapsed: boolean
+}
 
 /** Every fold transaction: the plugin meta plus the shared view-action stamp (zoom.ts watches for it). */
 const foldTransaction = (state: EditorState, meta: FoldMeta) =>
@@ -99,6 +104,27 @@ export const setOutlineFoldAtSelection = (collapsed: boolean): Command => (state
   if (isParent && foldingState.collapsedItemPositions.has(itemPos) !== collapsed) {
     dispatch?.(foldTransaction(state, itemPos))
   }
+  return true
+}
+
+/**
+ * Guide-line click (GRO-2107): fold / unfold the parent items DIRECTLY inside the list at
+ * `listPos` — the bullets the line runs alongside — never the list's owner. Any of them expanded →
+ * collapse all of them, else expand all. Leaves are skipped; an all-leaf list declines.
+ */
+export const toggleOutlineFoldChildren = (listPos: number): Command => (state, dispatch) => {
+  const foldingState = pluginKey.getState(state)
+  const list = state.doc.nodeAt(listPos)
+  if (!foldingState || !list || !LIST_NODE_NAMES.has(list.type.name)) return false
+  const parents = new Set(foldingState.entries.map((entry) => entry.itemPos))
+  const set: number[] = []
+  list.forEach((_child, offset) => {
+    const pos = listPos + 1 + offset
+    if (parents.has(pos)) set.push(pos)
+  })
+  if (set.length === 0) return false
+  const collapsed = set.some((pos) => !foldingState.collapsedItemPositions.has(pos))
+  dispatch?.(foldTransaction(state, { set, collapsed }))
   return true
 }
 
@@ -242,6 +268,13 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
               if (collapsedItemPositions.has(meta)) collapsedItemPositions.delete(meta)
               else if (parentPositions.has(meta)) collapsedItemPositions.add(meta)
               lastToggle = { kind: 'toggle', itemPos: meta }
+            } else if (typeof meta === 'object') {
+              const previousCollapsed = new Set(collapsedItemPositions)
+              for (const pos of meta.set) {
+                if (meta.collapsed && parentPositions.has(pos)) collapsedItemPositions.add(pos)
+                else if (!meta.collapsed) collapsedItemPositions.delete(pos)
+              }
+              lastToggle = { kind: 'set', previousCollapsed }
             }
             return { entries, collapsedItemPositions, lastToggle }
           },
