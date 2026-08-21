@@ -70,6 +70,16 @@ describe('storage', () => {
     expect(storage.getFolds('/r2', '/r2/a.md')).toHaveLength(MAX_FOLD_KEYS_PER_FILE)
   })
 
+  it('sidebarCollapsed defaults to false, round-trips, and clears the key when false', () => {
+    expect(storage.getSidebarCollapsed()).toBe(false)
+    storage.setSidebarCollapsed(true)
+    expect(storage.getSidebarCollapsed()).toBe(true)
+    expect(localStorage.getItem(LS_KEYS.sidebarCollapsed)).toBe('true')
+    storage.setSidebarCollapsed(false)
+    expect(storage.getSidebarCollapsed()).toBe(false)
+    expect(localStorage.getItem(LS_KEYS.sidebarCollapsed)).toBeNull()
+  })
+
   it('treats invalid JSON / wrong shapes as absent', () => {
     localStorage.setItem(LS_KEYS.recentRoots, '{not json')
     localStorage.setItem(LS_KEYS.expanded, JSON.stringify({ '/r': 'nope' }))

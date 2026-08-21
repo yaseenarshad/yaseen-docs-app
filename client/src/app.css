@@ -245,14 +245,48 @@ button {
   user-select: none;
 }
 
+.sidebar__header {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+}
+
 .sidebar__root {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  padding: 12px 14px 10px;
-  border-bottom: 1px solid var(--border);
+  padding: 12px 4px 10px 14px;
   text-align: left;
+}
+
+/* Collapse (in the header) and reopen (floating, GRO-2023) share the panel icon. */
+.sidebar__collapse {
+  flex: none;
+  padding: 0 10px;
+  color: var(--fg-muted);
+}
+
+.sidebar__collapse:hover {
+  color: var(--fg);
+  background: #eeeef0;
+}
+
+.sidebar-reopen {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 10;
+  padding: 6px;
+  border-radius: 6px;
+  color: var(--fg-muted);
+}
+
+.sidebar-reopen:hover {
+  color: var(--fg);
+  background: var(--bg-side);
 }
 
 .sidebar__root:hover {

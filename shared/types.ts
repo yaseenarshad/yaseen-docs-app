@@ -163,6 +163,8 @@ export const LS_KEYS = {
   lastFile: 'mdapp.lastFile',
   /** JSON FoldState */
   folds: 'mdapp.folds',
+  /** 'true' when the sidebar is collapsed; absent = expanded (GRO-2023) */
+  sidebarCollapsed: 'mdapp.sidebarCollapsed',
 } as const
 
 /** mdapp.recentRoots — most-recent first, max 10, de-duplicated. */

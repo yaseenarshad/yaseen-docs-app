@@ -5,14 +5,22 @@ import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
 import { storage } from './lib/storage'
 import { FolderPicker } from './sidebar/FolderPicker'
-import { Sidebar } from './sidebar/Sidebar'
+import { Sidebar, SidebarPanelIcon } from './sidebar/Sidebar'
 
 export function App() {
   const [root, setRoot] = useState<string | null>(storage.getRoot)
   const [file, setFile] = useState<string | null>(() => (root === null ? null : storage.getLastFile(root)))
   const [recent, setRecent] = useState<RecentRoots>(storage.getRecentRoots)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const watch = useWatch(root)
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((collapsed) => {
+      storage.setSidebarCollapsed(!collapsed)
+      return !collapsed
+    })
+  }, [])
 
   const openRoot = useCallback((path: string) => {
     storage.setRoot(path)
@@ -48,7 +56,7 @@ export function App() {
 
   return (
     <div className="app">
-      {root !== null && (
+      {root !== null && !sidebarCollapsed && (
         <Sidebar
           key={root}
           root={root}
@@ -57,9 +65,15 @@ export function App() {
           onOpenFile={openFile}
           onPickFolder={pick}
           pickDisabled={picking}
+          onCollapse={toggleSidebar}
           onRootMissing={onRootMissing}
           onFileMissing={onFileMissing}
         />
+      )}
+      {root !== null && sidebarCollapsed && (
+        <button type="button" className="sidebar-reopen" onClick={toggleSidebar} title="Show sidebar" aria-label="Show sidebar">
+          <SidebarPanelIcon />
+        </button>
       )}
       {root === null ? (
         <section className="editor">

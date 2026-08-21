@@ -15,10 +15,22 @@ interface SidebarProps {
   onPickFolder: () => void
   /** True while the native folder dialog is open; the "change" button is disabled meanwhile. */
   pickDisabled: boolean
+  /** Hide the sidebar (GRO-2023); App renders the floating reopen button while hidden. */
+  onCollapse: () => void
   /** The stored root could not be read (e.g. deleted); parent decides what to do. */
   onRootMissing: () => void
   /** The restored last file is not in the tree any more (checked once per root). */
   onFileMissing: () => void
+}
+
+/** Panel-left pictogram shared by the collapse and reopen buttons (GRO-2023). */
+export function SidebarPanelIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
+      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+      <line x1="5.75" y1="2.5" x2="5.75" y2="13.5" />
+    </svg>
+  )
 }
 
 /** Mounted with `key={root}` by App, so all state below is per root. */
@@ -29,6 +41,7 @@ export function Sidebar({
   onOpenFile,
   onPickFolder,
   pickDisabled,
+  onCollapse,
   onRootMissing,
   onFileMissing,
 }: SidebarProps) {
@@ -80,10 +93,15 @@ export function Sidebar({
 
   return (
     <aside className="sidebar">
-      <button type="button" className="sidebar__root" onClick={onPickFolder} disabled={pickDisabled} title={root}>
-        <span className="sidebar__root-name">{basename(root)}</span>
-        <span className="sidebar__root-hint">change</span>
-      </button>
+      <div className="sidebar__header">
+        <button type="button" className="sidebar__root" onClick={onPickFolder} disabled={pickDisabled} title={root}>
+          <span className="sidebar__root-name">{basename(root)}</span>
+          <span className="sidebar__root-hint">change</span>
+        </button>
+        <button type="button" className="sidebar__collapse" onClick={onCollapse} title="Hide sidebar" aria-label="Hide sidebar">
+          <SidebarPanelIcon />
+        </button>
+      </div>
       <div className="sidebar__body">
         {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}
         {tree === null && error === null && <p className="sidebar__msg">Loading…</p>}

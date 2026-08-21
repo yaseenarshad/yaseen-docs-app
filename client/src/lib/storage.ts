@@ -65,6 +65,12 @@ export const storage = {
     writeJson(LS_KEYS.lastFile, state)
   },
 
+  getSidebarCollapsed: (): boolean => localStorage.getItem(LS_KEYS.sidebarCollapsed) === 'true',
+  setSidebarCollapsed(collapsed: boolean): void {
+    if (collapsed) localStorage.setItem(LS_KEYS.sidebarCollapsed, 'true')
+    else localStorage.removeItem(LS_KEYS.sidebarCollapsed)
+  },
+
   getFolds: (root: string, file: string): string[] => (readJson(LS_KEYS.folds, isFoldState) ?? {})[root]?.[file] ?? [],
   /** Replace the fold keys for one file; an empty list removes the entry (keys the plugin no longer reports are dropped). */
   setFolds(root: string, file: string, keys: readonly string[]): void {
