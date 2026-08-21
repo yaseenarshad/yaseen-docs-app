@@ -71,6 +71,18 @@ views:
       direction: DESC
 `
 
+/** Our board extension (4D, GRO-2138): `type: board` + `cardSize` are ours and round-trip untouched. */
+const BOARD_SINK = `views:
+  - type: board
+    name: Kanban
+    order:
+      - file.name
+      - status
+    groupBy:
+      property: status
+    cardSize: small
+`
+
 /** Multiset difference of lines: those only in `a` (removed) and only in `b` (added), in order. */
 function lineDiff(a: string, b: string): { removed: string[]; added: string[] } {
   const la = a.split('\n')
@@ -88,6 +100,7 @@ describe('parseBase / serializeBase round-trip', () => {
   it.each([
     ['yasin', YASIN_BASE],
     ['kitchen sink', KITCHEN_SINK],
+    ['board', BOARD_SINK],
   ])('%s fixture serialises byte-for-byte', (_name, text) => {
     expect(serializeBase(parseBase(text))).toBe(text)
   })
@@ -127,6 +140,13 @@ describe('parseBase def', () => {
       and: ['file.ext == "md"', { or: ['file.folder == "PF2 - Cronos/NPCs"', 'file.folder == "PF2 - Cronos/PCs"'] }],
     })
     expect(def.views[0].columnSize).toEqual({ 'file.name': 140, 'note.aliases': 75 })
+  })
+
+  it('our board extension parses as a typed view', () => {
+    const { def } = parseBase(BOARD_SINK)
+    expect(def.views[0].type).toBe('board')
+    expect(def.views[0].cardSize).toBe('small')
+    expect(def.views[0].groupBy).toEqual({ property: 'status' })
   })
 
   it('keeps unknown keys at the top level and inside views', () => {

@@ -1,6 +1,6 @@
 import type { BaseDefinition, BaseView } from '../baseFile'
 import { type Row, propertyLabel } from '../engine'
-import { FileValue, LinkValue, type Value, render } from '../expr'
+import { ErrorValue, FileValue, LinkValue, type Value, render } from '../expr'
 import { summarize } from '../summaries'
 import { canonicalKey } from './filterRows'
 
@@ -34,6 +34,20 @@ export function chip(v: Value, key?: number) {
       {text}
     </span>
   )
+}
+
+/** Typed cell body (shared by table cells and board cards): error chip, read-only checkbox (editing is 5B), chips for lists/links, `render()` for the rest. */
+export function cellContent(v: Value) {
+  if (v instanceof ErrorValue)
+    return (
+      <span className="base-table__chip base-table__chip--error" title={v.message}>
+        #ERROR
+      </span>
+    )
+  if (typeof v === 'boolean') return <input type="checkbox" checked={v} disabled readOnly />
+  if (Array.isArray(v)) return v.map((item, i) => chip(item, i))
+  if (v instanceof LinkValue || v instanceof FileValue) return chip(v)
+  return render(v)
 }
 
 /** The group value by type: chips for lists and links/files, `render()` for the rest. */

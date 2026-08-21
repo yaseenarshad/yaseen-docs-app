@@ -662,6 +662,92 @@
   color: var(--fg-muted);
 }
 
+/* ---------- board (4D) ---------- */
+
+.base-board {
+  display: flex;
+  flex: 1;
+  gap: 10px;
+  align-items: flex-start;
+  min-height: 0;
+  margin-top: 8px;
+  padding-bottom: 8px;
+  overflow: auto;
+}
+
+.base-board__col {
+  flex: none;
+  width: var(--base-board-col-w, 280px);
+  padding: 6px;
+  background: var(--bg-side);
+  border-radius: 8px;
+}
+
+.base-board__col .base-group {
+  padding: 2px 4px 6px;
+}
+
+.base-board__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.base-board__card {
+  padding: 7px 10px;
+  font-size: 13px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.base-board__title {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--accent);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.base-board__title:hover {
+  text-decoration: underline;
+}
+
+.base-board__prop {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-top: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.base-board__prop-name {
+  flex: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.base-board__prop-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.base-board__hint {
+  margin: 48px auto;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.base-board__hint p {
+  margin: 0 0 10px;
+}
+
 /* ---------- raw-YAML fallback (GRO-2125) ---------- */
 
 .base-error {

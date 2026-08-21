@@ -2,11 +2,11 @@ import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type Mous
 import type { IndexRecord } from '@shared/types'
 import type { BaseDefinition, BaseView } from '../baseFile'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
-import { ErrorValue, FileValue, LinkValue, type Value, render, typeOf } from '../expr'
+import { type Value, render, typeOf } from '../expr'
 import { BUILTIN_SUMMARIES, summarize } from '../summaries'
 import type { Mutate } from './FilterMenu'
 import { canonicalKey } from './filterRows'
-import { GroupHeader, chip, groupKeyOf, summaryKindOf } from './GroupHeader'
+import { GroupHeader, cellContent, groupKeyOf, summaryKindOf } from './GroupHeader'
 import { Popover } from './Popover'
 
 export interface TableViewProps {
@@ -37,20 +37,6 @@ const FALLBACK_VIEWPORT = 600
 
 /** One display line: a group header row, or a data row with its `data-cell` row index (data rows only). */
 type Line = { header: Group; gk: string } | { row: Row; r: number }
-
-/** Typed cell body: error chip, read-only checkbox (editing is 5B), chips for lists/links, `render()` for the rest. */
-function cellContent(v: Value) {
-  if (v instanceof ErrorValue)
-    return (
-      <span className="base-table__chip base-table__chip--error" title={v.message}>
-        #ERROR
-      </span>
-    )
-  if (typeof v === 'boolean') return <input type="checkbox" checked={v} disabled readOnly />
-  if (Array.isArray(v)) return v.map((item, i) => chip(item, i))
-  if (v instanceof LinkValue || v instanceof FileValue) return chip(v)
-  return render(v)
-}
 
 /**
  * Table view (GRO-2136): sticky header with drag-to-resize columns (`view.columnSize`, written on

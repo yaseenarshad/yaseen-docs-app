@@ -4,6 +4,7 @@ import { storage } from '../lib/storage'
 import { type BaseDefinition, type ParsedBase, parseBase, serializeBase, updateBase } from './baseFile'
 import { type Row, propertyKeys, runView } from './engine'
 import { render } from './expr'
+import { BoardView } from './view/BoardView'
 import { canonicalKey } from './view/filterRows'
 import { TableView } from './view/TableView'
 import { Toolbar } from './view/Toolbar'
@@ -27,8 +28,9 @@ export interface BaseViewProps {
 /**
  * One `.base` in the main pane (GRO-2135): the toolbar (view switcher, filter / sort /
  * properties menus, search, count) over the body — the real table for `type: table` (GRO-2136),
- * a placeholder row list for every other view type (they land in later units). Only the active
- * tab and the search text are component state — everything else is the file.
+ * the board for `type: board` (4D, GRO-2138), a placeholder row list for every other view type
+ * (they land in later units). Only the active tab and the search text are component state —
+ * everything else is the file.
  */
 export function BaseView({ parsed, onChange, root, thisFile, records, indexStatus, indexError, onOpenFile }: BaseViewProps) {
   const [active, setActive] = useState(0)
@@ -140,6 +142,18 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           viewIndex={index}
           records={records}
           rows={rows}
+          groups={groups}
+          collapsed={collapsed}
+          onToggleGroup={onToggleGroup}
+          onUpdate={update}
+          onOpenFile={onOpenFile}
+        />
+      ) : view.type === 'board' ? (
+        <BoardView
+          def={def}
+          view={view}
+          viewIndex={index}
+          records={records}
           groups={groups}
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
