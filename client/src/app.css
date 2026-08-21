@@ -134,6 +134,12 @@ button {
   overflow-x: auto;
 }
 
+/* The block handle's plus is noise — Enter at line end does the same (GRO-2025).
+   First .operation-item is the plus, last is the 6-dot drag handle (Crepe renders exactly two). */
+.editor-instance .milkdown .milkdown-block-handle .operation-item:first-child {
+  display: none;
+}
+
 .editor-msg {
   margin: 48px auto;
   color: var(--fg-muted);
