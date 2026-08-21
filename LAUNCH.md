@@ -10,8 +10,8 @@ npm run dev
 ```
 
 - `npm run dev` runs `electron-vite dev` in `desktop/`: it builds main + preload, serves the renderer with HMR and launches the Electron app — one command, one window. There is no browser mode and no server to start.
-- The app remembers the last folder/file in `localStorage` (`mdapp.root`, `mdapp.lastFile`, …) of the Electron window. Yasin's vault is `$HOME/yaseen-os/yaseen-machine-content` (the username part of `$HOME` differs per machine — resolve it, don't hardcode). If it opens the wrong folder, click **change** in the sidebar header, or set `localStorage.mdapp.root` from the devtools console and reload.
-- Folder picking is the native open-directory dialog (`window.yaseenDocs.pickFolder()`), which pops up on Yasin's screen; in an agent session set `localStorage.mdapp.root` instead of clicking **change**.
+- The app remembers its windows (folder + file each), per-folder view state and the global settings in `~/Library/Application Support/Yaseen Docs/yaseendocs.json` (`--user-data-dir=<dir>` relocates it; schema in `docs/CONTRACTS.md` "App state"). Yasin's vault is `$HOME/yaseen-os/yaseen-machine-content` (the username part of `$HOME` differs per machine — resolve it, don't hardcode). If it opens the wrong folder, click **change** in the sidebar header, or run `window.yaseenDocs.window.setIdentity({ root: '<abs path>', file: null })` from the devtools console and reload.
+- Folder picking is the native open-directory dialog (`window.yaseenDocs.pickFolder()`), which pops up on Yasin's screen; in an agent session seed `<user-data-dir>/yaseendocs.json` with a `windows[]` entry (`{ id, root, file, bounds }`) before launch, or call `window.yaseenDocs.window.setIdentity({ root, file: null })` and reload, instead of clicking **change**.
 - A built app can be driven headlessly with Playwright's `_electron.launch({ args: ['desktop/out/main/index.js', '--user-data-dir=<tmp>'] })` after `npm run build`.
 
 ## Verify

@@ -22,6 +22,16 @@ export function App() {
   const [settings, setSettings] = useState(storage.getSettings)
   const watch = useWatch(root)
 
+  // Settings and the sidebar toggle are global (D9): a change made in another window lands here live.
+  useEffect(
+    () =>
+      storage.subscribe(() => {
+        setSettings(storage.getSettings())
+        setSidebarCollapsed(storage.getSidebarCollapsed())
+      }),
+    [],
+  )
+
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed((collapsed) => {
       storage.setSidebarCollapsed(!collapsed)

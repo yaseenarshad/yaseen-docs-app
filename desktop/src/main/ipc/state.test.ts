@@ -1,0 +1,127 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { BrowserWindow, ipcMain } from 'electron'
+import { DEFAULT_SETTINGS } from '@shared/types'
+import { CH, type Envelope } from '../../channels'
+import { createStore, type Store } from '../store'
+import { registerStateIpc } from './state'
+
+vi.mock('electron', () => ({
+  ipcMain: { handle: vi.fn(), on: vi.fn() },
+  BrowserWindow: { getAllWindows: vi.fn(() => []) },
+}))
+
+type Handler = (event: unknown, ...args: unknown[]) => Promise<Envelope<unknown>>
+
+function registered(channel: string): Handler {
+  const call = vi.mocked(ipcMain.handle).mock.calls.find(([ch]) => ch === channel)
+  if (call === undefined) throw new Error(`no handler registered for ${channel}`)
+  return call[1] as unknown as Handler
+}
+
+const ok = (value: unknown) => ({ ok: true, value })
+const bad = (code: string) => expect.objectContaining({ ok: false, error: expect.objectContaining({ code }) })
+
+/** A `BrowserWindow` stand-in: only what the broadcaster touches. */
+function fakeWindow(opts: { destroyed?: boolean; wcDestroyed?: boolean } = {}) {
+  return {
+    isDestroyed: () => opts.destroyed === true,
+    webContents: { isDestroyed: () => opts.wcDestroyed === true, send: vi.fn() },
+  }
+}
+
+let dir: string
+let store: Store
+const sender = { id: 1 }
+beforeEach(async () => {
+  vi.mocked(ipcMain.handle).mockClear()
+  vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([])
+  dir = await mkdtemp(path.join(tmpdir(), 'yd-state-ipc-'))
+  store = createStore(path.join(dir, 'yaseendocs.json'))
+  registerStateIpc(store)
+})
+afterEach(async () => {
+  await store.flush()
+  await rm(dir, { recursive: true, force: true })
+})
+
+describe('registerStateIpc', () => {
+  it('registers every state channel the preload invokes (and nothing else)', () => {
+    const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
+    expect(channels).toEqual(
+      [CH.stateGet, CH.stateSetSettings, CH.stateSetSidebarCollapsed, CH.statePushRecent, CH.stateSetFolder, CH.stateSetFolds].sort(),
+    )
+  })
+
+  it('state:get answers the current state', async () => {
+    expect(await registered(CH.stateGet)({ sender })).toEqual(ok(store.get()))
+  })
+
+  it('state:set-settings takes a complete valid SettingsState and rejects anything else as BAD_REQUEST', async () => {
+    const next = { ...DEFAULT_SETTINGS, lineSpacing: 2, threadColor: '#00aaff' }
+    expect(await registered(CH.stateSetSettings)({ sender }, next)).toEqual(ok(undefined))
+    expect(store.get().settings).toEqual(next)
+    expect(await registered(CH.stateSetSettings)({ sender }, { ...DEFAULT_SETTINGS, lineSpacing: 'big' })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.stateSetSettings)({ sender }, { lineSpacing: 1 })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.stateSetSettings)({ sender }, 'nope')).toEqual(bad('BAD_REQUEST'))
+    expect(store.get().settings).toEqual(next)
+  })
+
+  it('state:set-sidebar-collapsed only takes a boolean', async () => {
+    expect(await registered(CH.stateSetSidebarCollapsed)({ sender }, true)).toEqual(ok(undefined))
+    expect(store.get().sidebarCollapsed).toBe(true)
+    expect(await registered(CH.stateSetSidebarCollapsed)({ sender }, 'true')).toEqual(bad('BAD_REQUEST'))
+    expect(store.get().sidebarCollapsed).toBe(true)
+  })
+
+  it('state:push-recent needs an absolute path', async () => {
+    expect(await registered(CH.statePushRecent)({ sender }, '/v')).toEqual(ok(undefined))
+    expect(store.get().recents.map((r) => r.path)).toEqual(['/v'])
+    expect(await registered(CH.statePushRecent)({ sender }, 'v')).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await registered(CH.statePushRecent)({ sender }, undefined)).toEqual(bad('BAD_REQUEST'))
+  })
+
+  it('state:set-folder checks the root and the patch shape', async () => {
+    expect(await registered(CH.stateSetFolder)({ sender }, '/v', { expanded: ['/v/sub'], lastFile: '/v/a.md' })).toEqual(ok(undefined))
+    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: '/v/a.md', folds: {} })
+    expect(await registered(CH.stateSetFolder)({ sender }, '/v', { lastFile: null })).toEqual(ok(undefined))
+    expect(store.get().folders['/v'].lastFile).toBeNull()
+    expect(await registered(CH.stateSetFolder)({ sender }, 'v', {})).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await registered(CH.stateSetFolder)({ sender }, '/v', 'nope')).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.stateSetFolder)({ sender }, '/v', { expanded: 'nope' })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.stateSetFolder)({ sender }, '/v', { expanded: [1] })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.stateSetFolder)({ sender }, '/v', { lastFile: 5 })).toEqual(bad('BAD_REQUEST'))
+    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {} })
+  })
+
+  it('state:set-folds checks root, file and keys', async () => {
+    expect(await registered(CH.stateSetFolds)({ sender }, '/v', '/v/a.md', ['k1'])).toEqual(ok(undefined))
+    expect(store.get().folders['/v'].folds).toEqual({ '/v/a.md': ['k1'] })
+    expect(await registered(CH.stateSetFolds)({ sender }, '/v', 'a.md', ['k1'])).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await registered(CH.stateSetFolds)({ sender }, '/v', '/v/a.md', 'k1')).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.stateSetFolds)({ sender }, '/v', '/v/a.md', [1])).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.stateSetFolds)({ sender }, '/v', '/v/a.md', [])).toEqual(ok(undefined))
+    expect(store.get().folders['/v'].folds).toEqual({})
+  })
+
+  it('broadcasts state:changed with the new state to every live window, skipping destroyed ones', async () => {
+    const live = fakeWindow()
+    const gone = fakeWindow({ destroyed: true })
+    const halfGone = fakeWindow({ wcDestroyed: true })
+    const other = fakeWindow()
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([live, gone, halfGone, other] as unknown as BrowserWindow[])
+    await registered(CH.stateSetSidebarCollapsed)({ sender }, true)
+    expect(live.webContents.send).toHaveBeenCalledTimes(1)
+    expect(live.webContents.send).toHaveBeenCalledWith(CH.stateChanged, store.get())
+    expect(other.webContents.send).toHaveBeenCalledWith(CH.stateChanged, store.get())
+    expect(gone.webContents.send).not.toHaveBeenCalled()
+    expect(halfGone.webContents.send).not.toHaveBeenCalled()
+    // Direct store mutations (the window manager's upserts) broadcast too.
+    store.removeWindow('nope') // no change → no broadcast
+    expect(live.webContents.send).toHaveBeenCalledTimes(1)
+    store.pushRecent('/v', 1)
+    expect(live.webContents.send).toHaveBeenCalledTimes(2)
+  })
+})

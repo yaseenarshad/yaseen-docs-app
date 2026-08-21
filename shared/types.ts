@@ -182,44 +182,17 @@ export type WatchEvent =
   | { type: 'unlinkDir'; path: string }
   | { type: 'error'; message: string }
 
-// ---------- localStorage (client only) ----------
+// ---------- App state (main-owned `yaseendocs.json`, D9 — GRO-2159) ----------
 
-export const LS_KEYS = {
-  /** string: absolute path of the currently open root folder */
-  root: 'mdapp.root',
-  /** JSON RecentRoots */
-  recentRoots: 'mdapp.recentRoots',
-  /** JSON ExpandedState */
-  expanded: 'mdapp.expanded',
-  /** JSON LastFileState */
-  lastFile: 'mdapp.lastFile',
-  /** JSON FoldState */
-  folds: 'mdapp.folds',
-  /** 'true' when the sidebar is collapsed; absent = expanded (GRO-2023) */
-  sidebarCollapsed: 'mdapp.sidebarCollapsed',
-  /** JSON SettingsState (GRO-2024) */
-  settings: 'mdapp.settings',
-} as const
-
-/** mdapp.recentRoots — most-recent first, max 10, de-duplicated. */
+/** `AppState.recents` — most-recent first, max MAX_RECENT_ROOTS, de-duplicated. */
 export type RecentRoots = Array<{ path: string; lastOpened: number }>
+export const MAX_RECENT_ROOTS = 10
 
-/** mdapp.expanded — keyed by root path; value is the list of expanded dir paths under that root. */
-export type ExpandedState = Record<string, string[]>
-
-/** mdapp.lastFile — keyed by root path; value is the absolute path of the last opened file. */
-export type LastFileState = Record<string, string>
-
-/**
- * mdapp.folds — keyed by root path, then by absolute file path; value is the list of collapsed
- * outline fold keys (see client `outlineFoldKeys.ts`), max MAX_FOLD_KEYS_PER_FILE. Files with no
- * folds are removed from the map. Never written to the markdown on disk.
- */
-export type FoldState = Record<string, Record<string, string[]>>
+/** Collapsed outline fold keys per file (see client `outlineFoldKeys.ts`) are capped at this many. */
 export const MAX_FOLD_KEYS_PER_FILE = 500
 
 /**
- * mdapp.settings — app-global editor preferences (GRO-2024). Applied as CSS custom
+ * `AppState.settings` — app-global editor preferences (GRO-2024). Applied as CSS custom
  * properties on the app container; never written into the markdown on disk.
  */
 export interface SettingsState {
@@ -246,8 +219,6 @@ export const DEFAULT_SETTINGS: SettingsState = {
   threadColor: null,
 }
 
-// ---------- App state (main-owned `yaseendocs.json`, D9 — GRO-2159) ----------
-
 export interface WindowBounds {
   x: number
   y: number
@@ -263,7 +234,7 @@ export interface WindowEntry {
   bounds: WindowBounds
 }
 
-/** View state that only means something inside that folder (today's mdapp.expanded / lastFile / folds). */
+/** View state that only means something inside that folder (the retired localStorage mdapp.expanded / lastFile / folds). */
 export interface FolderState {
   expanded: string[]
   lastFile: string | null
@@ -284,6 +255,15 @@ export interface AppState {
   recents: RecentRoots
   windows: WindowEntry[]
   folders: Record<string, FolderState>
+}
+
+/** A fresh default state (a factory, so no caller can mutate a shared constant). */
+export function defaultAppState(): AppState {
+  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarCollapsed: false, recents: [], windows: [], folders: {} }
+}
+
+export function defaultFolderState(): FolderState {
+  return { expanded: [], lastFile: null, folds: {} }
 }
 
 // ---------- Bridge: `window.yaseenDocs` (locked in GRO-2153, Desktop A1) ----------
