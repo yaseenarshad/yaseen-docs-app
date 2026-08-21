@@ -1,14 +1,23 @@
-import { app, BrowserWindow, Menu, net, protocol } from 'electron'
-import { randomUUID } from 'node:crypto'
+import { app, BrowserWindow, Menu, net, protocol, screen } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { WindowEntry } from '@shared/types'
 import { registerIpc } from './ipc'
 import { createStore } from './store'
-import * as windows from './windows'
+import { createWindowManager } from './windows'
 
 // Before anything reads app.getPath('userData'): the workspace is named "desktop", the app is not.
 app.setName('Yaseen Docs')
+
+/** One running instance (GRO-2160): a second launch just focuses the first (argv routing is E1's). */
+const isPrimaryInstance = app.requestSingleInstanceLock()
+if (!isPrimaryInstance) app.quit()
+app.on('second-instance', () => {
+  const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
+  if (win === undefined) return
+  if (win.isMinimized()) win.restore()
+  win.focus()
+})
 
 // Privileged scheme: `standard` gives a real origin (history API, relative URLs), `secure` treats it
 // like https. VS Code (vscode-file://) and Obsidian (app://obsidian.md) do the same.
@@ -19,28 +28,28 @@ const RENDERER_DIR = join(__dirname, '../renderer')
 /** One user-global state file (D9, GRO-2159): `~/Library/Application Support/Yaseen Docs/yaseendocs.json`. */
 const store = createStore(join(app.getPath('userData'), 'yaseendocs.json'))
 
-/** Set by `before-quit`: windows closing as part of a quit keep their state entry so relaunch restores them. */
-let quitting = false
-
-/** Loads `<renderer>?win=<id>` so the renderer can ask `window.identity()` who it is. */
-function createWindow(entry: WindowEntry): BrowserWindow {
-  const win = new BrowserWindow({
-    ...entry.bounds,
-    webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
-  })
-  const unregister = windows.register(win, entry.id)
-  win.on('closed', () => {
-    unregister()
-    // The last window closing quits the app (`window-all-closed` below), so that is a quit too.
-    if (!quitting && BrowserWindow.getAllWindows().length > 0) store.removeWindow(entry.id)
-  })
-  const url = new URL(process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html')
-  url.searchParams.set('win', entry.id)
-  void win.loadURL(url.toString())
-  return win
-}
+/** Window lifecycle (GRO-2160) lives in windows.ts; this host is its Electron-only half. */
+const manager = createWindowManager(store, {
+  create(entry: WindowEntry) {
+    const win = new BrowserWindow({
+      ...entry.bounds,
+      webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+    })
+    // `<renderer>?win=<id>` so the renderer can ask `window.identity()` who it is.
+    const url = new URL(process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html')
+    url.searchParams.set('win', entry.id)
+    void win.loadURL(url.toString())
+    return win
+  },
+  // Primary first: clampBounds keeps the earliest work area when a window is fully off-screen.
+  workAreas() {
+    const primary = screen.getPrimaryDisplay()
+    return [primary, ...screen.getAllDisplays().filter((d) => d.id !== primary.id)].map((d) => d.workArea)
+  },
+})
 
 app.whenReady().then(() => {
+  if (!isPrimaryInstance) return
   protocol.handle('app', (req) => {
     const { pathname } = new URL(req.url)
     const file = join(RENDERER_DIR, pathname === '/' ? 'index.html' : pathname)
@@ -50,29 +59,21 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'fileMenu' }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }]),
   )
-  registerIpc(store)
-  // First launch: one window on the Welcome screen. Otherwise every window from the last session (GRO-2160 adds bounds clamping / restore polish).
-  let entries = store.get().windows
-  if (entries.length === 0) {
-    entries = [{ id: randomUUID(), root: null, file: null, bounds: { x: 100, y: 100, width: 1200, height: 800 } }]
-    store.upsertWindow(entries[0])
-  }
-  entries.forEach(createWindow)
+  registerIpc(store, manager)
+  manager.restoreAll()
 })
 
-app.on('before-quit', () => {
-  quitting = true
-})
-
-// The debounced write may still be pending: hold the quit until the state is on disk, then exit for real.
-let flushed = false
-app.on('will-quit', (event) => {
-  if (flushed) return
+// Quit: flush every renderer sequentially (5s cap each, `windows[]` kept so relaunch restores them),
+// write the pending state, then exit for real — `app.exit` re-runs no quit events.
+let quitting = false
+app.on('before-quit', (event) => {
   event.preventDefault()
-  void store.flush().finally(() => {
-    flushed = true
-    app.exit(0)
-  })
+  if (quitting) return
+  quitting = true
+  void manager
+    .flushAllForQuit()
+    .then(() => store.flush())
+    .finally(() => app.exit(0))
 })
 
 // Obsidian quits when its last window closes (its main.js `window-all-closed` handler); so do we.

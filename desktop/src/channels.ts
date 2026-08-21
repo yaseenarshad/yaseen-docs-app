@@ -23,6 +23,8 @@ export const CH = {
   windowSetIdentity: 'window:set-identity',
   windowOpen: 'window:open',
   windowDuplicate: 'window:duplicate',
+  appFlush: 'app:flush',
+  appFlushed: 'app:flushed',
 } as const
 
 /**

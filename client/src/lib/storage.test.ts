@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS, MAX_FOLD_KEYS_PER_FILE, defaultAppState, type AppState, type WindowIdentity } from '@shared/types'
 import { addRecentRoot, storage } from './storage'
+import { hashFilePath } from './urlHash'
 
 /** A fake `window.yaseenDocs` with just the state / window halves the storage module talks to. */
 function installBridge(state: AppState, identity: WindowIdentity) {
@@ -148,6 +149,31 @@ describe('storage', () => {
     expect(storage.getLastFile('/r1')).toBeNull()
     expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/r1', { lastFile: null })
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ file: null })
+  })
+
+  it('getFile is the window identity file: set by setLastFile, cleared when the root changes', () => {
+    expect(storage.getFile()).toBeNull()
+    storage.setRoot('/v')
+    storage.setLastFile('/v', '/v/b.md')
+    expect(storage.getFile()).toBe('/v/b.md')
+    storage.setRoot('/other')
+    expect(storage.getFile()).toBeNull()
+  })
+
+  /** The App boot expression (App.tsx): `hashFilePath(hash) ?? storage.getFile() ?? storage.getLastFile(root)`. */
+  const bootFile = (hash: string, root: string) => hashFilePath(hash) ?? storage.getFile() ?? storage.getLastFile(root)
+
+  it('boot precedence (GRO-2160): identity file wins over the folder lastFile, a pasted hash beats both', async () => {
+    // Two windows on the same folder: w2 restored on b.md while the folder's lastFile is a.md.
+    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {} } } }
+    b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/b.md' })
+    await storage.init()
+    expect(bootFile('', '/v')).toBe('/v/b.md')
+    expect(bootFile('#/v/c.md', '/v')).toBe('/v/c.md')
+    // A fresh window on the folder (identity file null) still falls back to the folder's lastFile.
+    b = installBridge(seeded, { id: 'w3', root: '/v', file: null })
+    await storage.init()
+    expect(bootFile('', '/v')).toBe('/v/a.md')
   })
 
   it('folds are keyed by root then file, capped, and pruned when empty', () => {

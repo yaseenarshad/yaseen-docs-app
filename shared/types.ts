@@ -314,6 +314,11 @@ export interface WindowApi {
   open(opts: OpenWindowOptions): Promise<void>
   /** `⌘⇧N`: same folder, same file, new window (GRO-2167). */
   duplicate(): Promise<void>
+  /**
+   * The close/quit flush handshake (GRO-2160): main is about to close this window and holds it
+   * until every registered listener settled (hard 5s cap in main). Returns an unsubscribe.
+   */
+  onFlush(listener: () => Promise<void> | void): () => void
 }
 
 /**

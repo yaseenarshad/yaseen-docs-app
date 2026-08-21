@@ -1,13 +1,24 @@
 /**
- * Which `AppState.windows` entry a renderer belongs to, keyed by `webContents.id`, so IPC
- * handlers can resolve their caller (`window.identity()` etc.). Main registers every window it
- * creates; the registry deliberately knows nothing about Electron beyond the id.
+ * The window manager (GRO-2160): creates windows from `AppState.windows`, keeps their bounds
+ * current, restores them all on launch, and never lets one die with unsaved edits (the
+ * `app:flush` → `app:flushed` handshake). Electron-free — `main/index.ts` injects the
+ * `BrowserWindow` factory and display geometry as a `WindowHost` — so everything here runs
+ * under vitest with fakes.
  */
+import { randomUUID } from 'node:crypto'
+import type { OpenWindowOptions, WindowBounds, WindowEntry } from '@shared/types'
+import { CH } from '../channels'
+import type { Store } from './store'
 
 export interface WindowLike {
   webContents: { id: number }
 }
 
+/**
+ * Which `AppState.windows` entry a renderer belongs to, keyed by `webContents.id`, so IPC
+ * handlers can resolve their caller (`window.identity()` etc.). The registry deliberately
+ * knows nothing about Electron beyond the id.
+ */
 export interface WindowRegistry {
   idFor(webContents: { id: number }): string | undefined
 }
@@ -25,4 +36,230 @@ export function register(win: WindowLike, id: string): () => void {
 
 export function idFor(webContents: { id: number }): string | undefined {
   return byWebContents.get(webContents.id)
+}
+
+/** A hung save can never block close or quit: the flush handshake gives up after this long. */
+export const FLUSH_TIMEOUT_MS = 5000
+/** `move`/`resize` fire for every pixel of a drag; one store commit (= one `state:changed` broadcast) per burst. */
+export const BOUNDS_DEBOUNCE_MS = 250
+/** `duplicateWindow` offsets the copy so it does not sit exactly on its source. */
+export const WINDOW_CASCADE_PX = 24
+
+const DEFAULT_BOUNDS: WindowBounds = { x: 100, y: 100, width: 1200, height: 800 }
+
+/** The slice of `BrowserWindow` the manager drives; a test fake implements it in a few lines. */
+export interface ManagedWindow {
+  webContents: { id: number; send(channel: string): void }
+  getBounds(): WindowBounds
+  isDestroyed(): boolean
+  /** Like Electron's: destroys without emitting `close` (`closed` still fires). */
+  destroy(): void
+  on(event: 'move' | 'resize' | 'closed', listener: () => void): unknown
+  on(event: 'close', listener: (e: { preventDefault(): void }) => void): unknown
+}
+
+/** The Electron-only half, injected by `main/index.ts`: window construction and display geometry. */
+export interface WindowHost {
+  /** Builds the `BrowserWindow` at `entry.bounds` and loads `<renderer>?win=<entry.id>`. */
+  create(entry: WindowEntry): ManagedWindow
+  /** Every display's workArea, primary first (`clampBounds` keeps the earliest area on ties). */
+  workAreas(): WindowBounds[]
+}
+
+export interface WindowManager extends WindowRegistry {
+  /** One window per stored entry, bounds clamped; an empty state seeds a single Welcome window (D3). */
+  restoreAll(): void
+  /** D6 plumbing: an independent window on `root`/`file` (the gestures land in D-). */
+  openWindow(opts: OpenWindowOptions): void
+  /** D6 plumbing: same folder + file as `from`, cascaded bounds, fresh id (the ⌘⇧N gesture is GRO-2167). */
+  duplicateWindow(from: WindowEntry): void
+  /** `app:flushed` arrived from this renderer (wired in `ipc/window.ts`). */
+  handleFlushed(sender: { id: number }): void
+  /** `before-quit`: handshake every window sequentially; `windows[]` is kept so relaunch restores them. */
+  flushAllForQuit(): Promise<void>
+}
+
+/** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'handleFlushed'>
+
+// ---------- bounds clamping (pure) ----------
+
+const overlapArea = (a: WindowBounds, b: WindowBounds): number => {
+  const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
+  const h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
+  return w > 0 && h > 0 ? w * h : 0
+}
+
+const centreDistanceSq = (a: WindowBounds, b: WindowBounds): number => {
+  const dx = a.x + a.width / 2 - (b.x + b.width / 2)
+  const dy = a.y + a.height / 2 - (b.y + b.height / 2)
+  return dx * dx + dy * dy
+}
+
+/**
+ * Restored bounds must land on a display that still exists: the window goes fully inside the
+ * work area it overlaps most (fully off-screen → the nearest one; ties keep the earliest, so
+ * callers pass the primary first), shrunk to fit if oversized. No work areas at all leaves
+ * the bounds alone (nothing to clamp against).
+ */
+export function clampBounds(bounds: WindowBounds, workAreas: readonly WindowBounds[]): WindowBounds {
+  if (workAreas.length === 0) return bounds
+  let area = workAreas[0]
+  let best = overlapArea(bounds, area)
+  for (const wa of workAreas) {
+    const o = overlapArea(bounds, wa)
+    if (o > best) {
+      area = wa
+      best = o
+    }
+  }
+  if (best === 0) area = workAreas.reduce((a, b) => (centreDistanceSq(bounds, b) < centreDistanceSq(bounds, a) ? b : a))
+  const width = Math.min(bounds.width, area.width)
+  const height = Math.min(bounds.height, area.height)
+  return {
+    x: Math.min(Math.max(bounds.x, area.x), area.x + area.width - width),
+    y: Math.min(Math.max(bounds.y, area.y), area.y + area.height - height),
+    width,
+    height,
+  }
+}
+
+const sameBounds = (a: WindowBounds, b: WindowBounds): boolean => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
+
+// ---------- the manager ----------
+
+export function createWindowManager(store: Store, host: WindowHost): WindowManager {
+  /** Live windows by state entry id (dropped again in `closed`). */
+  const live = new Map<string, ManagedWindow>()
+  /** In-flight flush handshakes by `webContents.id`; `settle` answers ack and timeout alike. */
+  const pendingFlush = new Map<number, { done: Promise<void>; settle: () => void }>()
+  /** Windows closing as part of the quit keep their state entry so relaunch restores them. */
+  let quitting = false
+
+  const entryOf = (id: string): WindowEntry | undefined => store.get().windows.find((w) => w.id === id)
+
+  /**
+   * One handshake: send `app:flush`, resolve on `handleFlushed` from the same renderer or after
+   * FLUSH_TIMEOUT_MS. A second request while one is pending joins it (a close racing the quit).
+   */
+  const flushRenderer = (win: ManagedWindow): Promise<void> => {
+    const wcId = win.webContents.id
+    const pending = pendingFlush.get(wcId)
+    if (pending !== undefined) return pending.done
+    let resolve!: () => void
+    const done = new Promise<void>((r) => {
+      resolve = r
+    })
+    const timer = setTimeout(settle, FLUSH_TIMEOUT_MS)
+    function settle(): void {
+      clearTimeout(timer)
+      pendingFlush.delete(wcId)
+      resolve()
+    }
+    pendingFlush.set(wcId, { done, settle })
+    win.webContents.send(CH.appFlush)
+    return done
+  }
+
+  /** Patch only `bounds` onto the entry as it is NOW (the renderer may have changed root/file since). */
+  const commitBounds = (id: string, win: ManagedWindow): void => {
+    const entry = entryOf(id)
+    if (entry === undefined || win.isDestroyed()) return
+    const bounds = win.getBounds()
+    if (!sameBounds(bounds, entry.bounds)) store.upsertWindow({ ...entry, bounds })
+  }
+
+  const attach = (entry: WindowEntry): void => {
+    const win = host.create(entry)
+    const { id } = entry
+    const unregister = register(win, id)
+    live.set(id, win)
+
+    let boundsTimer: ReturnType<typeof setTimeout> | null = null
+    const cancelBoundsTimer = (): void => {
+      if (boundsTimer !== null) {
+        clearTimeout(boundsTimer)
+        boundsTimer = null
+      }
+    }
+    const scheduleBounds = (): void => {
+      cancelBoundsTimer()
+      boundsTimer = setTimeout(() => {
+        boundsTimer = null
+        commitBounds(id, win)
+      }, BOUNDS_DEBOUNCE_MS)
+    }
+    win.on('move', scheduleBounds)
+    win.on('resize', scheduleBounds)
+
+    /** `close` is always intercepted: the window only goes away via `destroy()` after its flush. */
+    let closing = false
+    win.on('close', (e) => {
+      e.preventDefault()
+      if (closing || quitting) return // its handshake is already running (or the quit sequence owns it)
+      closing = true
+      cancelBoundsTimer()
+      commitBounds(id, win)
+      void flushRenderer(win).then(() => {
+        if (!win.isDestroyed()) win.destroy()
+      })
+    })
+
+    win.on('closed', () => {
+      cancelBoundsTimer()
+      unregister()
+      live.delete(id)
+      // A user close forgets the window; the LAST one closing quits the app (`window-all-closed`), so that is a quit too.
+      if (!quitting && live.size > 0) store.removeWindow(id)
+    })
+  }
+
+  const open = (entry: WindowEntry): void => {
+    store.upsertWindow(entry)
+    attach(entry)
+  }
+
+  return {
+    idFor,
+
+    restoreAll() {
+      let entries = store.get().windows
+      if (entries.length === 0) {
+        // First launch: one window on the Welcome screen (root null; the screen itself is C2).
+        const first: WindowEntry = { id: randomUUID(), root: null, file: null, bounds: { ...DEFAULT_BOUNDS } }
+        store.upsertWindow(first)
+        entries = [first]
+      }
+      const areas = host.workAreas()
+      for (const entry of entries) {
+        const bounds = clampBounds(entry.bounds, areas)
+        const next = sameBounds(bounds, entry.bounds) ? entry : { ...entry, bounds }
+        if (next !== entry) store.upsertWindow(next)
+        attach(next)
+      }
+    },
+
+    openWindow(opts) {
+      open({ id: randomUUID(), root: opts.root, file: opts.file, bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
+    },
+
+    duplicateWindow(from) {
+      const cascaded = { ...from.bounds, x: from.bounds.x + WINDOW_CASCADE_PX, y: from.bounds.y + WINDOW_CASCADE_PX }
+      open({ id: randomUUID(), root: from.root, file: from.file, bounds: clampBounds(cascaded, host.workAreas()) })
+    },
+
+    handleFlushed(sender) {
+      pendingFlush.get(sender.id)?.settle()
+    },
+
+    async flushAllForQuit() {
+      quitting = true
+      for (const [id, win] of [...live]) {
+        if (win.isDestroyed()) continue
+        commitBounds(id, win)
+        await flushRenderer(win)
+        if (!win.isDestroyed()) win.destroy()
+      }
+    },
+  }
 }

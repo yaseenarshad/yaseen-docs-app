@@ -14,9 +14,10 @@ function syncHash(path: string | null): void {
 
 export function App() {
   const [root, setRoot] = useState<string | null>(storage.getRoot)
-  // A pasted `#/abs/path.md` URL wins over the remembered last file (GRO-2069).
+  // A pasted `#/abs/path.md` URL wins (GRO-2069), then this window's restored file (GRO-2160),
+  // then the folder's remembered last file (a fresh window on the folder).
   const [file, setFile] = useState<string | null>(() =>
-    root === null ? null : (hashFilePath(location.hash) ?? storage.getLastFile(root)),
+    root === null ? null : (hashFilePath(location.hash) ?? storage.getFile() ?? storage.getLastFile(root)),
   )
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const [settings, setSettings] = useState(storage.getSettings)

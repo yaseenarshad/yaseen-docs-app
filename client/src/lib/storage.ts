@@ -90,6 +90,9 @@ export const storage = {
     send('state.setFolder', () => window.yaseenDocs.state.setFolder(root, { expanded: dirs }))
   },
 
+  /** The window identity records what is open now: THIS window's restored file, not the folder's shared lastFile (GRO-2160). */
+  getFile: (): string | null => identity.file,
+
   getLastFile: (root: string): string | null => folderOf(root).lastFile,
   /** The folder remembers its last file for the next time it is opened; the window identity records what is open now. */
   setLastFile(root: string, file: string | null): void {
