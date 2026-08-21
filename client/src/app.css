@@ -106,29 +106,39 @@ button {
   line-height: 1.3;
 }
 
+/* Heading margins scale with the block-gap setting (GRO-2071): Crepe's stock margins
+   (32/28/24/20/16/16px) are exactly 8/7/6/5/4/4 × the 4px default gap, so the Default
+   preset is pixel-identical to Crepe. bullets.css derives its heading-row label offsets
+   from the same calc — change one, change both. */
 .editor-instance .milkdown .ProseMirror h1 {
   font-size: 1.802em;
   font-weight: 700;
+  margin-top: calc(var(--edit-block-gap, 4px) * 8);
 }
 
 .editor-instance .milkdown .ProseMirror h2 {
   font-size: 1.602em;
+  margin-top: calc(var(--edit-block-gap, 4px) * 7);
 }
 
 .editor-instance .milkdown .ProseMirror h3 {
   font-size: 1.424em;
+  margin-top: calc(var(--edit-block-gap, 4px) * 6);
 }
 
 .editor-instance .milkdown .ProseMirror h4 {
   font-size: 1.266em;
+  margin-top: calc(var(--edit-block-gap, 4px) * 5);
 }
 
 .editor-instance .milkdown .ProseMirror h5 {
   font-size: 1.125em;
+  margin-top: calc(var(--edit-block-gap, 4px) * 4);
 }
 
 .editor-instance .milkdown .ProseMirror h6 {
   font-size: 1em;
+  margin-top: calc(var(--edit-block-gap, 4px) * 4);
 }
 
 /* Crepe's reset pads `.milkdown .ProseMirror` by 60px 120px; the column above owns the gutters. */
