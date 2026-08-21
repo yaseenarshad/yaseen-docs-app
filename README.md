@@ -33,9 +33,15 @@ Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Edit
 - **Marks**: `⌘U` toggles underline (stored as `<u>text</u>`, like obsidian-underline), `⌘⇧X` toggles strikethrough.
 - **Zoom**: click a bullet's glyph (or `⌘.` at the caret) to zoom into that subtree, Workflowy-style; breadcrumbs at the top zoom back out (`⌘⇧.` = out one level). View-only — the file is never touched.
 - **Guide lines**: nested lists draw a vertical line under their parent's glyph; clicking a line folds/unfolds that parent (caret stays put).
-- **Look**: ● ○ ■ bullet glyphs by depth and Obsidian's default typography (system font, 16px, Obsidian heading scale).
+- **Drag**: the 6-dot handle moves a block; with several blocks highlighted, grabbing a handle inside the highlight moves them all together (drop position controls nesting depth).
+- **Look**: ● ○ ■ bullet glyphs by depth and Obsidian's default typography (system font, 16px, Obsidian heading scale). Line spacing and the gap between blocks are adjustable from the settings cog (bottom-left); stored locally, never in the files.
 - **Round-trip**: the first real edit rewrites the file in remark's normalised form (bullet markers, 2-space indent, …); empty items are written as a bare `*` / `* [ ]`. Typing without changes never writes.
+
+## Sidebar
+
+- **Create**: right-click a folder, a file, or the blank space under the tree → "New note" / "New folder"; name it inline (Enter confirms, Esc cancels). Notes get `.md` automatically and open at once; nothing is ever overwritten.
+- **Collapse**: the panel icon in the header hides the sidebar (a floating button on the left edge brings it back); the choice survives reload.
 
 ## Out of scope
 
-Wikilinks / embeds / tags (kept as plain text, not resolved), creating / renaming / deleting files or folders, and an Electron or other desktop shell. The server has no path jail: anything under your user account can be read or written, so keep it on localhost.
+Wikilinks / embeds / tags (kept as plain text, not resolved), renaming / deleting / moving files or folders, and an Electron or other desktop shell. The server has no path jail: anything under your user account can be read or written, so keep it on localhost.

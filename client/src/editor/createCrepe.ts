@@ -24,6 +24,8 @@
  *    glyph click / Mod-. / Mod-Shift-. ; never a document change.
  *  - List guide lines (GRO-2030, `outline/guideLines.ts` + `.css`): CSS vertical lines on nested
  *    lists; clicking a line toggles the parent's fold (meta-only, same as the chevron).
+ *  - Multi-block drag (GRO-2019, `multiBlockDrag.ts`): handle-drag inside a multi-block
+ *    selection moves the whole selection; single-block drag stays Crepe's.
  */
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'

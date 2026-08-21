@@ -115,7 +115,8 @@ export function Sidebar({
   const startCreate = useCallback(
     (kind: 'file' | 'dir') => {
       if (menu === null) return
-      // The input renders inside the target dir's children, so that dir must be open.
+      // The input renders inside the target dir's children, so that dir must be open;
+      // expandTo opens every dir ABOVE the given path, so a synthetic child opens targetDir itself.
       if (menu.targetDir !== root) dispatch({ type: 'expandTo', root, file: `${menu.targetDir}/x` })
       setCreating({ kind, parentDir: menu.targetDir })
       setMenu(null)

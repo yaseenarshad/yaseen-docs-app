@@ -97,6 +97,8 @@ All bindings are `$shortcut` keymaps registered in `createCrepe()` with priority
 | `Mod-Shift-.` | while zoomed | zoom out one level (parent item, or fully at top level); not zoomed falls through | GRO-2029 |
 | `Shift-Tab` / `Mod-[` | while zoomed, on the zoomed item or a direct child | no-op (lifting would escape the zoomed subtree); everywhere else outdents as usual | GRO-2029 |
 
+13. **Multi-block drag** (GRO-2019, `src/editor/multiBlockDrag.ts`, registered in `createCrepe()`): dragging the block handle while a multi-block selection contains the grabbed block moves the WHOLE selection. A document-capture mousedown expands the selection to whole sibling blocks (`expandedBlockRange`: deepest level containing both ends — sibling `list_item`s inside a nested list, not the outer list) and suppresses Crepe's single-block selection replacement; a capture dragstart hands ProseMirror a fully CLOSED slice (an open slice would splice into the target paragraph) via `dataTransfer` + `view.dragging`; after the drop an `appendTransaction` (on `uiEvent: 'drop'`) deletes the merged empty shell the move-deletion leaves at the origin, walking up wrappers it was the only child of. Drop X-position controls nesting depth (ProseMirror `dropPoint`). A grab OUTSIDE the selection never arms the plugin — Crepe's single-block drag is untouched. Folded parents drag with their hidden children.
+
 ## localStorage (client)
 
 | Key | Type | Shape |
@@ -106,5 +108,7 @@ All bindings are `$shortcut` keymaps registered in `createCrepe()` with priority
 | `mdapp.expanded` | `ExpandedState` | `{ "/Users/yasin/notes": ["/Users/yasin/notes/sub", ...] }` |
 | `mdapp.lastFile` | `LastFileState` | `{ "/Users/yasin/notes": "/Users/yasin/notes/a.md" }` |
 | `mdapp.folds` | `FoldState` | `{ "/Users/yasin/notes": { "/Users/yasin/notes/a.md": ["1fpm2d0:0", ...] } }` — collapsed outline fold keys per root + file (max 500/file; empty lists removed). Never written to disk. |
+| `mdapp.sidebarCollapsed` | `'true'` | present (`'true'`) when the sidebar is collapsed; absent = expanded (GRO-2023) |
+| `mdapp.settings` | `SettingsState` | `{ "lineSpacing": 1.5, "blockGap": 4 }` — app-global editor spacing (GRO-2024); applied as CSS vars, missing/invalid fields fall back to `DEFAULT_SETTINGS` field-by-field |
 
 All JSON values parsed defensively (invalid → treated as absent).
