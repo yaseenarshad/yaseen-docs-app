@@ -191,6 +191,9 @@ export const MAX_RECENT_ROOTS = 10
 /** Collapsed outline fold keys per file (see client `outlineFoldKeys.ts`) are capped at this many. */
 export const MAX_FOLD_KEYS_PER_FILE = 500
 
+/** Collapsed group keys per base view (Bases 4C, GRO-2137) are capped at this many. */
+export const MAX_COLLAPSED_GROUP_KEYS = 200
+
 /**
  * `AppState.settings` — app-global editor preferences (GRO-2024). Applied as CSS custom
  * properties on the app container; never written into the markdown on disk.
@@ -240,6 +243,8 @@ export interface FolderState {
   lastFile: string | null
   /** file → collapsed outline fold keys (max MAX_FOLD_KEYS_PER_FILE). Never written to the markdown. */
   folds: Record<string, string[]>
+  /** `<basePath>::<viewName>` → collapsed group keys (max MAX_COLLAPSED_GROUP_KEYS). Never written to the `.base` file (GRO-2137). */
+  baseGroups: Record<string, string[]>
 }
 
 /**
@@ -263,7 +268,7 @@ export function defaultAppState(): AppState {
 }
 
 export function defaultFolderState(): FolderState {
-  return { expanded: [], lastFile: null, folds: {} }
+  return { expanded: [], lastFile: null, folds: {}, baseGroups: {} }
 }
 
 // ---------- Bridge: `window.yaseenDocs` (locked in GRO-2153, Desktop A1) ----------
@@ -302,6 +307,8 @@ export interface StateApi {
   setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile'>>): Promise<void>
   /** Replace the fold keys for one file; an empty list removes the entry. */
   setFolds(root: string, file: string, keys: readonly string[]): Promise<void>
+  /** Replace the collapsed group keys for one base view (`<basePath>::<viewName>`); an empty list removes the entry. */
+  setBaseGroups(root: string, key: string, collapsed: readonly string[]): Promise<void>
   /** Fired in every window after any change; returns an unsubscribe. */
   onChange(listener: (state: AppState) => void): () => void
 }

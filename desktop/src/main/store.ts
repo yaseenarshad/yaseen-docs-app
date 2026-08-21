@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname } from 'node:path'
 import {
   DEFAULT_SETTINGS,
+  MAX_COLLAPSED_GROUP_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
   MAX_RECENT_ROOTS,
   THREAD_WIDTHS,
@@ -30,6 +31,7 @@ export interface Store {
   pushRecent(path: string, now?: number): void
   setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile'>>): void
   setFolds(root: string, file: string, keys: readonly string[]): void
+  setBaseGroups(root: string, key: string, collapsed: readonly string[]): void
   upsertWindow(entry: WindowEntry): void
   removeWindow(id: string): void
   onChange(listener: (state: AppState) => void): () => void
@@ -91,11 +93,12 @@ function sanitizeWindows(raw: unknown): WindowEntry[] {
   return out
 }
 
-function sanitizeFolds(raw: unknown): Record<string, string[]> {
+/** Shared by `folds` and `baseGroups`: key → non-empty string list, junk dropped, each list capped. */
+function sanitizeKeyLists(raw: unknown, cap: number): Record<string, string[]> {
   if (!isRecord(raw)) return {}
   const out: Record<string, string[]> = {}
-  for (const [file, keys] of Object.entries(raw)) {
-    if (isStringArray(keys) && keys.length > 0) out[file] = keys.slice(0, MAX_FOLD_KEYS_PER_FILE)
+  for (const [key, keys] of Object.entries(raw)) {
+    if (isStringArray(keys) && keys.length > 0) out[key] = keys.slice(0, cap)
   }
   return out
 }
@@ -105,7 +108,8 @@ function sanitizeFolder(raw: unknown): FolderState | null {
   return {
     expanded: isStringArray(raw.expanded) ? raw.expanded : [],
     lastFile: typeof raw.lastFile === 'string' ? raw.lastFile : null,
-    folds: sanitizeFolds(raw.folds),
+    folds: sanitizeKeyLists(raw.folds, MAX_FOLD_KEYS_PER_FILE),
+    baseGroups: sanitizeKeyLists(raw.baseGroups, MAX_COLLAPSED_GROUP_KEYS),
   }
 }
 
@@ -233,6 +237,14 @@ export function createStore(filePath: string): Store {
       if (keys.length === 0) delete folds[file]
       else folds[file] = keys.slice(0, MAX_FOLD_KEYS_PER_FILE)
       commit({ ...state, folders: { ...state.folders, [root]: { ...cur, folds } } })
+    },
+
+    setBaseGroups(root, key, collapsed) {
+      const cur = folderOf(root)
+      const baseGroups = { ...cur.baseGroups }
+      if (collapsed.length === 0) delete baseGroups[key]
+      else baseGroups[key] = collapsed.slice(0, MAX_COLLAPSED_GROUP_KEYS)
+      commit({ ...state, folders: { ...state.folders, [root]: { ...cur, baseGroups } } })
     },
 
     upsertWindow(entry) {

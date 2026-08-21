@@ -46,6 +46,7 @@ const api: YaseenDocsApi = {
     pushRecent: (path) => call(CH.statePushRecent, path),
     setFolder: (root, patch) => call(CH.stateSetFolder, root, patch),
     setFolds: (root, file, keys) => call(CH.stateSetFolds, root, file, [...keys]),
+    setBaseGroups: (root, key, collapsed) => call(CH.stateSetBaseGroups, root, key, [...collapsed]),
     onChange: (listener) => {
       const on = (_e: unknown, state: AppState) => listener(state)
       ipcRenderer.on(CH.stateChanged, on)

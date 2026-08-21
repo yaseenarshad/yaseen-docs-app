@@ -1,4 +1,5 @@
 import {
+  MAX_COLLAPSED_GROUP_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
   MAX_RECENT_ROOTS,
   defaultAppState,
@@ -123,5 +124,16 @@ export const storage = {
     else folds[file] = keys.slice(0, MAX_FOLD_KEYS_PER_FILE)
     patchFolder(root, { folds })
     send('state.setFolds', () => window.yaseenDocs.state.setFolds(root, file, keys))
+  },
+
+  /** Collapsed group keys for one base view; `key` is `<basePath>::<viewName>` (Bases 4C, GRO-2137). */
+  getBaseGroups: (root: string, key: string): string[] => folderOf(root).baseGroups[key] ?? [],
+  /** Replace the collapsed group keys for one base view; an empty list removes the entry. Never written to the `.base` file. */
+  setBaseGroups(root: string, key: string, collapsed: readonly string[]): void {
+    const baseGroups = { ...folderOf(root).baseGroups }
+    if (collapsed.length === 0) delete baseGroups[key]
+    else baseGroups[key] = collapsed.slice(0, MAX_COLLAPSED_GROUP_KEYS)
+    patchFolder(root, { baseGroups })
+    send('state.setBaseGroups', () => window.yaseenDocs.state.setBaseGroups(root, key, collapsed))
   },
 }

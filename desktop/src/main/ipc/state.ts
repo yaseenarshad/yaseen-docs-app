@@ -54,5 +54,11 @@ export function registerStateIpc(store: Store): void {
     if (!isStringArray(keys)) throw new BridgeFailure('BAD_REQUEST', "'keys' must be a string array")
     store.setFolds(r, f, keys)
   })
+  handle(CH.stateSetBaseGroups, async (root: unknown, key: unknown, collapsed: unknown) => {
+    const r = requireAbsPath(root, 'root')
+    if (typeof key !== 'string' || key === '') throw new BridgeFailure('BAD_REQUEST', "'key' must be a non-empty string")
+    if (!isStringArray(collapsed)) throw new BridgeFailure('BAD_REQUEST', "'collapsed' must be a string array")
+    store.setBaseGroups(r, key, collapsed)
+  })
   store.onChange(broadcast)
 }

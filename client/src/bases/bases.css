@@ -604,6 +604,64 @@
   border: none;
 }
 
+/* ---------- grouped table (4C) ---------- */
+
+.base-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.base-group__toggle {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 2px;
+  color: var(--fg-muted);
+  border-radius: 4px;
+}
+
+.base-group__toggle:hover {
+  color: var(--fg);
+  background: var(--bg-side);
+}
+
+.base-group__toggle svg {
+  transition: transform 120ms ease;
+}
+
+.base-group__toggle[aria-expanded='false'] svg {
+  transform: rotate(-90deg);
+}
+
+.base-group__value {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.base-group__value--none {
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+
+.base-group__count {
+  color: var(--fg-muted);
+}
+
+.base-group__summary {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+}
+
+.base-group__summary-kind {
+  color: var(--fg-muted);
+}
+
 /* ---------- raw-YAML fallback (GRO-2125) ---------- */
 
 .base-error {

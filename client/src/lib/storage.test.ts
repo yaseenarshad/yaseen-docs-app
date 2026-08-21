@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_SETTINGS, MAX_FOLD_KEYS_PER_FILE, defaultAppState, type AppState, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, defaultAppState, type AppState, type WindowIdentity } from '@shared/types'
 import { addRecentRoot, storage } from './storage'
 import { hashFilePath } from './urlHash'
 
@@ -14,6 +14,7 @@ function installBridge(state: AppState, identity: WindowIdentity) {
       pushRecent: vi.fn(async () => undefined),
       setFolder: vi.fn(async () => undefined),
       setFolds: vi.fn(async () => undefined),
+      setBaseGroups: vi.fn(async () => undefined),
       onChange: vi.fn((l: (s: AppState) => void) => {
         listener = l
         return () => {
@@ -66,7 +67,7 @@ describe('storage.init', () => {
       settings: { ...DEFAULT_SETTINGS, lineSpacing: 2 },
       sidebarCollapsed: true,
       recents: [{ path: '/v', lastOpened: 5 }],
-      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] } } },
+      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.base::T': ['v:idea'] } } },
     }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md' })
     await storage.init()
@@ -80,6 +81,7 @@ describe('storage.init', () => {
     expect(storage.getExpanded('/v')).toEqual(['/v/sub'])
     expect(storage.getLastFile('/v')).toBe('/v/a.md')
     expect(storage.getFolds('/v', '/v/a.md')).toEqual(['k1'])
+    expect(storage.getBaseGroups('/v', '/v/b.base::T')).toEqual(['v:idea'])
   })
 
   it('reads fall back to defaults before init / when the bridge is unavailable', async () => {
@@ -91,6 +93,7 @@ describe('storage.init', () => {
     expect(fresh.getExpanded('/r')).toEqual([])
     expect(fresh.getLastFile('/r')).toBeNull()
     expect(fresh.getFolds('/r', '/r/a.md')).toEqual([])
+    expect(fresh.getBaseGroups('/r', '/r/a.base::T')).toEqual([])
     expect(fresh.getSidebarCollapsed()).toBe(false)
     expect(fresh.getSettings()).toEqual(DEFAULT_SETTINGS)
     await expect(fresh.init()).rejects.toBeDefined()
@@ -165,7 +168,7 @@ describe('storage', () => {
 
   it('boot precedence (GRO-2160): identity file wins over the folder lastFile, a pasted hash beats both', async () => {
     // Two windows on the same folder: w2 restored on b.md while the folder's lastFile is a.md.
-    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {} } } }
+    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {} } } }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/b.md' })
     await storage.init()
     expect(bootFile('', '/v')).toBe('/v/b.md')
@@ -198,6 +201,25 @@ describe('storage', () => {
     expect(b.bridge.state.setFolds).toHaveBeenLastCalledWith('/r2', '/r2/a.md', many)
   })
 
+  it('base group collapse state is keyed by root then base::view, capped, and pruned when empty', () => {
+    expect(storage.getBaseGroups('/r1', '/r1/a.base::T')).toEqual([])
+    storage.setBaseGroups('/r1', '/r1/a.base::T', ['v:idea', '∅'])
+    storage.setBaseGroups('/r2', '/r2/a.base::T', ['v:x'])
+    expect(storage.getBaseGroups('/r1', '/r1/a.base::T')).toEqual(['v:idea', '∅'])
+    expect(storage.getBaseGroups('/r2', '/r1/a.base::T')).toEqual([])
+    expect(b.bridge.state.setBaseGroups).toHaveBeenCalledWith('/r1', '/r1/a.base::T', ['v:idea', '∅'])
+    // Replacing with the live set drops keys no longer collapsed.
+    storage.setBaseGroups('/r1', '/r1/a.base::T', ['∅'])
+    expect(storage.getBaseGroups('/r1', '/r1/a.base::T')).toEqual(['∅'])
+    storage.setBaseGroups('/r1', '/r1/a.base::T', [])
+    expect(storage.getBaseGroups('/r1', '/r1/a.base::T')).toEqual([])
+    expect(b.bridge.state.setBaseGroups).toHaveBeenLastCalledWith('/r1', '/r1/a.base::T', [])
+    const many = Array.from({ length: MAX_COLLAPSED_GROUP_KEYS + 50 }, (_, i) => `v:${i}`)
+    storage.setBaseGroups('/r2', '/r2/a.base::T', many)
+    expect(storage.getBaseGroups('/r2', '/r2/a.base::T')).toHaveLength(MAX_COLLAPSED_GROUP_KEYS)
+    expect(b.bridge.state.setBaseGroups).toHaveBeenLastCalledWith('/r2', '/r2/a.base::T', many)
+  })
+
   it('sidebarCollapsed defaults to false and round-trips through the bridge', () => {
     expect(storage.getSidebarCollapsed()).toBe(false)
     storage.setSidebarCollapsed(true)
@@ -223,7 +245,7 @@ describe('storage', () => {
       ...defaultAppState(),
       settings: { ...DEFAULT_SETTINGS, threadWidth: 3 },
       sidebarCollapsed: true,
-      folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] } } },
+      folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {} } },
     }
     b.emit(next)
     expect(seen).toHaveBeenCalledTimes(1)

@@ -47,6 +47,7 @@ function mount(text = YASIN_BASE, props: Partial<BaseViewProps> = {}) {
         <BaseView
           parsed={parsed}
           onChange={onChange}
+          root={null}
           thisFile={null}
           records={TEST_RECORDS}
           indexStatus="ready"

@@ -123,6 +123,7 @@ export function BaseHost({ root, file, watch, onOpenFile }: BaseHostProps) {
           <BaseView
             parsed={mode.parsed}
             onChange={onViewChange}
+            root={root}
             thisFile={file.path}
             records={index.records}
             indexStatus={index.status}

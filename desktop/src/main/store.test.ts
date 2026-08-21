@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, defaultAppState, type AppState, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, defaultAppState, type AppState, type WindowEntry } from '@shared/types'
 import { addRecentRoot, createStore } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
@@ -61,7 +61,7 @@ describe('createStore: loading', () => {
       sidebarCollapsed: true,
       recents: [{ path: '/v', lastOpened: 5 }],
       windows: [win('w1', { root: '/v', file: '/v/a.md' })],
-      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] } } },
+      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.base::T': ['v:idea'] } } },
     }
     await seed(state)
     expect(createStore(file).get()).toEqual(state)
@@ -129,14 +129,30 @@ describe('createStore: loading', () => {
       }),
     )
     const { folders } = createStore(file).get()
-    expect(folders['/a']).toEqual({ expanded: [], lastFile: null, folds: { '/a/x.md': ['k'] } })
+    expect(folders['/a']).toEqual({ expanded: [], lastFile: null, folds: { '/a/x.md': ['k'] }, baseGroups: {} })
     expect(folders['/b']).toBeUndefined()
     expect(folders['/c'].expanded).toEqual(['/c/sub'])
     expect(folders['/c'].lastFile).toBe('/c/a.md')
     expect(folders['/c'].folds['/c/a.md']).toHaveLength(MAX_FOLD_KEYS_PER_FILE)
-    expect(folders['/d']).toEqual({ expanded: [], lastFile: null, folds: {} })
+    expect(folders['/d']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {} })
     await seed(valid({ folders: [] }))
     expect(createStore(file).get().folders).toEqual({})
+  })
+
+  it('folders: junk baseGroups are dropped and capped; an old file without the field reads as {}', async () => {
+    await seed(
+      valid({
+        folders: {
+          '/a': { expanded: [], lastFile: null, folds: {}, baseGroups: { '/a/x.base::T': ['v:idea'], '/a/y.base::T': 'nope', '/a/z.base::T': [1, 2] } },
+          '/b': { expanded: [], lastFile: null, folds: {} }, // pre-4C file: no baseGroups
+          '/c': { expanded: [], lastFile: null, folds: {}, baseGroups: { '/c/x.base::T': Array.from({ length: MAX_COLLAPSED_GROUP_KEYS + 5 }, (_, i) => `v:${i}`) } },
+        },
+      }),
+    )
+    const { folders } = createStore(file).get()
+    expect(folders['/a'].baseGroups).toEqual({ '/a/x.base::T': ['v:idea'] })
+    expect(folders['/b']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {} })
+    expect(folders['/c'].baseGroups['/c/x.base::T']).toHaveLength(MAX_COLLAPSED_GROUP_KEYS)
   })
 
   it('unknown top-level keys are dropped', async () => {
@@ -197,13 +213,13 @@ describe('createStore: mutations', () => {
   it('setFolder creates the entry with defaults, merges the patch and ignores unknown keys', () => {
     const store = createStore(file)
     store.setFolder('/r1', { expanded: ['/r1/a'] })
-    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {} })
+    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {}, baseGroups: {} })
     store.setFolder('/r1', { lastFile: '/r1/a/x.md' })
-    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: '/r1/a/x.md', folds: {} })
+    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: '/r1/a/x.md', folds: {}, baseGroups: {} })
     store.setFolder('/r1', { lastFile: null, folds: { '/r1/a.md': ['k'] } } as never)
-    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {} })
+    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {}, baseGroups: {} })
     store.setFolder('/r2', {})
-    expect(store.get().folders['/r2']).toEqual({ expanded: [], lastFile: null, folds: {} })
+    expect(store.get().folders['/r2']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {} })
   })
 
   it('setFolds is keyed by root then file, capped, and an empty list removes the file entry but keeps the folder', () => {
@@ -211,15 +227,30 @@ describe('createStore: mutations', () => {
     store.setFolds('/r1', '/r1/a.md', ['k1', 'k2'])
     store.setFolds('/r1', '/r1/b.md', ['k3'])
     store.setFolds('/r2', '/r2/a.md', ['k4'])
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: { '/r1/a.md': ['k1', 'k2'], '/r1/b.md': ['k3'] } })
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: { '/r1/a.md': ['k1', 'k2'], '/r1/b.md': ['k3'] }, baseGroups: {} })
     store.setFolds('/r1', '/r1/a.md', ['k2']) // the live set replaces, never merges
     expect(store.get().folders['/r1'].folds['/r1/a.md']).toEqual(['k2'])
     store.setFolder('/r1', { lastFile: '/r1/a.md' })
     store.setFolds('/r1', '/r1/a.md', [])
     store.setFolds('/r1', '/r1/b.md', [])
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: '/r1/a.md', folds: {} })
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: '/r1/a.md', folds: {}, baseGroups: {} })
     store.setFolds('/r2', '/r2/a.md', Array.from({ length: MAX_FOLD_KEYS_PER_FILE + 50 }, (_, i) => `k${i}`))
     expect(store.get().folders['/r2'].folds['/r2/a.md']).toHaveLength(MAX_FOLD_KEYS_PER_FILE)
+  })
+
+  it('setBaseGroups is keyed by root then base::view, capped, and an empty list removes the entry but keeps the folder', () => {
+    const store = createStore(file)
+    store.setBaseGroups('/r1', '/r1/a.base::T', ['v:idea', 'v:done'])
+    store.setBaseGroups('/r1', '/r1/a.base::T 2', ['∅'])
+    store.setBaseGroups('/r2', '/r2/a.base::T', ['v:x'])
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: { '/r1/a.base::T': ['v:idea', 'v:done'], '/r1/a.base::T 2': ['∅'] } })
+    store.setBaseGroups('/r1', '/r1/a.base::T', ['v:done']) // the live set replaces, never merges
+    expect(store.get().folders['/r1'].baseGroups['/r1/a.base::T']).toEqual(['v:done'])
+    store.setBaseGroups('/r1', '/r1/a.base::T', [])
+    store.setBaseGroups('/r1', '/r1/a.base::T 2', [])
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {} })
+    store.setBaseGroups('/r2', '/r2/a.base::T', Array.from({ length: MAX_COLLAPSED_GROUP_KEYS + 50 }, (_, i) => `v:${i}`))
+    expect(store.get().folders['/r2'].baseGroups['/r2/a.base::T']).toHaveLength(MAX_COLLAPSED_GROUP_KEYS)
   })
 
   it('upsertWindow replaces by id or appends; removeWindow drops by id', () => {

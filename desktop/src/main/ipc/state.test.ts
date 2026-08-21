@@ -51,7 +51,7 @@ describe('registerStateIpc', () => {
   it('registers every state channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual(
-      [CH.stateGet, CH.stateSetSettings, CH.stateSetSidebarCollapsed, CH.statePushRecent, CH.stateSetFolder, CH.stateSetFolds].sort(),
+      [CH.stateGet, CH.stateSetSettings, CH.stateSetSidebarCollapsed, CH.statePushRecent, CH.stateSetFolder, CH.stateSetFolds, CH.stateSetBaseGroups].sort(),
     )
   })
 
@@ -85,7 +85,7 @@ describe('registerStateIpc', () => {
 
   it('state:set-folder checks the root and the patch shape', async () => {
     expect(await registered(CH.stateSetFolder)({ sender }, '/v', { expanded: ['/v/sub'], lastFile: '/v/a.md' })).toEqual(ok(undefined))
-    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: '/v/a.md', folds: {} })
+    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: '/v/a.md', folds: {}, baseGroups: {} })
     expect(await registered(CH.stateSetFolder)({ sender }, '/v', { lastFile: null })).toEqual(ok(undefined))
     expect(store.get().folders['/v'].lastFile).toBeNull()
     expect(await registered(CH.stateSetFolder)({ sender }, 'v', {})).toEqual(bad('NOT_ABSOLUTE'))
@@ -93,7 +93,7 @@ describe('registerStateIpc', () => {
     expect(await registered(CH.stateSetFolder)({ sender }, '/v', { expanded: 'nope' })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CH.stateSetFolder)({ sender }, '/v', { expanded: [1] })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CH.stateSetFolder)({ sender }, '/v', { lastFile: 5 })).toEqual(bad('BAD_REQUEST'))
-    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {} })
+    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {} })
   })
 
   it('state:set-folds checks root, file and keys', async () => {
@@ -104,6 +104,18 @@ describe('registerStateIpc', () => {
     expect(await registered(CH.stateSetFolds)({ sender }, '/v', '/v/a.md', [1])).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CH.stateSetFolds)({ sender }, '/v', '/v/a.md', [])).toEqual(ok(undefined))
     expect(store.get().folders['/v'].folds).toEqual({})
+  })
+
+  it('state:set-base-groups checks root, key and collapsed', async () => {
+    expect(await registered(CH.stateSetBaseGroups)({ sender }, '/v', '/v/a.base::T', ['v:idea'])).toEqual(ok(undefined))
+    expect(store.get().folders['/v'].baseGroups).toEqual({ '/v/a.base::T': ['v:idea'] })
+    expect(await registered(CH.stateSetBaseGroups)({ sender }, 'v', '/v/a.base::T', ['v:idea'])).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await registered(CH.stateSetBaseGroups)({ sender }, '/v', 5, ['v:idea'])).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.stateSetBaseGroups)({ sender }, '/v', '', ['v:idea'])).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.stateSetBaseGroups)({ sender }, '/v', '/v/a.base::T', 'v:idea')).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.stateSetBaseGroups)({ sender }, '/v', '/v/a.base::T', [1])).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.stateSetBaseGroups)({ sender }, '/v', '/v/a.base::T', [])).toEqual(ok(undefined))
+    expect(store.get().folders['/v'].baseGroups).toEqual({})
   })
 
   it('broadcasts state:changed with the new state to every live window, skipping destroyed ones', async () => {

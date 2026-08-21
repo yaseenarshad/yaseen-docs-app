@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
+import { storage } from '../lib/storage'
 import { type BaseDefinition, type ParsedBase, parseBase, serializeBase, updateBase } from './baseFile'
-import { propertyKeys, runView } from './engine'
+import { type Row, propertyKeys, runView } from './engine'
 import { render } from './expr'
 import { canonicalKey } from './view/filterRows'
 import { TableView } from './view/TableView'
@@ -11,6 +12,8 @@ export interface BaseViewProps {
   parsed: ParsedBase
   /** Every config change arrives here as `updateBase(parsed, …)`; BaseHost turns it into autosave. */
   onChange: (next: ParsedBase) => void
+  /** Vault root, keying view state persisted OUTSIDE the file (collapsed groups, GRO-2137); null = session-only. */
+  root: string | null
   /** Absolute path of the open `.base`, for `this.file` in filters/formulas; null when unknown. */
   thisFile: string | null
   /** The vault index the views query; `[]` until `indexStatus` is ready (fed by `useIndex`, GRO-2129). */
@@ -27,9 +30,11 @@ export interface BaseViewProps {
  * a placeholder row list for every other view type (they land in later units). Only the active
  * tab and the search text are component state — everything else is the file.
  */
-export function BaseView({ parsed, onChange, thisFile, records, indexStatus, indexError, onOpenFile }: BaseViewProps) {
+export function BaseView({ parsed, onChange, root, thisFile, records, indexStatus, indexError, onOpenFile }: BaseViewProps) {
   const [active, setActive] = useState(0)
   const [search, setSearch] = useState<string | null>(null)
+  /** Collapsed group keys per view, seeded from the store; a toggle replaces the entry here AND writes through storage. */
+  const [collapsedByKey, setCollapsedByKey] = useState<Record<string, string[]>>({})
   const { def } = parsed
   const views = def.views
   const index = Math.max(0, Math.min(active, views.length - 1))
@@ -55,9 +60,22 @@ export function BaseView({ parsed, onChange, thisFile, records, indexStatus, ind
   }
 
   const needle = (search ?? '').trim().toLowerCase()
-  const rows = needle
-    ? result.rows.filter((r) => Object.values(r.values).some((v) => render(v).toLowerCase().includes(needle)))
-    : result.rows
+  const matches = (r: Row) => Object.values(r.values).some((v) => render(v).toLowerCase().includes(needle))
+  const rows = needle ? result.rows.filter(matches) : result.rows
+  // Search filters WITHIN each group; a group with no matching rows disappears (4C, GRO-2137).
+  const groups = result.groups === null ? null : needle ? result.groups.map((g) => ({ ...g, rows: g.rows.filter(matches) })).filter((g) => g.rows.length > 0) : result.groups
+
+  // Collapse state lives per `<basePath>::<viewName>` in the main-owned store — NEVER in the .base
+  // file, so toggling can not touch autosave. Session-only (keyed by view index) when paths are unknown.
+  const groupsKey = thisFile === null ? null : `${thisFile}::${view.name}`
+  const collapseKey = groupsKey ?? `#${index}`
+  const collapsed = collapsedByKey[collapseKey] ?? (root !== null && groupsKey !== null ? storage.getBaseGroups(root, groupsKey) : [])
+  const onToggleGroup = (key: string) => {
+    const next = collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key]
+    setCollapsedByKey((m) => ({ ...m, [collapseKey]: next }))
+    if (root !== null && groupsKey !== null) storage.setBaseGroups(root, groupsKey, next)
+  }
+
   const keys = propertyKeys(def, view, records)
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const rest = keys.filter((k) => k !== nameKey)
@@ -116,7 +134,18 @@ export function BaseView({ parsed, onChange, thisFile, records, indexStatus, ind
           Could not load the vault index: {indexError}
         </p>
       ) : view.type === 'table' ? (
-        <TableView def={def} view={view} viewIndex={index} records={records} rows={rows} onUpdate={update} onOpenFile={onOpenFile} />
+        <TableView
+          def={def}
+          view={view}
+          viewIndex={index}
+          records={records}
+          rows={rows}
+          groups={groups}
+          collapsed={collapsed}
+          onToggleGroup={onToggleGroup}
+          onUpdate={update}
+          onOpenFile={onOpenFile}
+        />
       ) : (
         <ul className="base-rows">
           {rows.map((row) => (

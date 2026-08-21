@@ -18,6 +18,7 @@ export const CH = {
   statePushRecent: 'state:push-recent',
   stateSetFolder: 'state:set-folder',
   stateSetFolds: 'state:set-folds',
+  stateSetBaseGroups: 'state:set-base-groups',
   stateChanged: 'state:changed',
   windowIdentity: 'window:identity',
   windowSetIdentity: 'window:set-identity',
