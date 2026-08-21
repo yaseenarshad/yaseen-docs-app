@@ -82,8 +82,8 @@ describe('storage', () => {
 
   it('settings default, round-trip, and merge partial/invalid stored values', () => {
     expect(storage.getSettings()).toEqual(DEFAULT_SETTINGS)
-    storage.setSettings({ lineSpacing: 2.0, blockGap: 12 })
-    expect(storage.getSettings()).toEqual({ lineSpacing: 2.0, blockGap: 12 })
+    storage.setSettings({ lineSpacing: 2.0, blockGap: 12, bulletThreading: false })
+    expect(storage.getSettings()).toEqual({ lineSpacing: 2.0, blockGap: 12, bulletThreading: false })
     // Unknown / partial shapes fall back field-by-field to defaults.
     localStorage.setItem(LS_KEYS.settings, JSON.stringify({ lineSpacing: 1.15 }))
     expect(storage.getSettings()).toEqual({ ...DEFAULT_SETTINGS, lineSpacing: 1.15 })
@@ -91,6 +91,16 @@ describe('storage', () => {
     expect(storage.getSettings()).toEqual({ ...DEFAULT_SETTINGS, blockGap: 8 })
     localStorage.setItem(LS_KEYS.settings, '{broken')
     expect(storage.getSettings()).toEqual(DEFAULT_SETTINGS)
+  })
+
+  it('bulletThreading (GRO-2094) defaults ON for old localStorage shapes and only honours booleans', () => {
+    expect(DEFAULT_SETTINGS.bulletThreading).toBe(true)
+    localStorage.setItem(LS_KEYS.settings, JSON.stringify({ lineSpacing: 1.5, blockGap: 4 })) // pre-GRO-2094 shape
+    expect(storage.getSettings().bulletThreading).toBe(true)
+    localStorage.setItem(LS_KEYS.settings, JSON.stringify({ bulletThreading: false }))
+    expect(storage.getSettings()).toEqual({ ...DEFAULT_SETTINGS, bulletThreading: false })
+    localStorage.setItem(LS_KEYS.settings, JSON.stringify({ bulletThreading: 'off' }))
+    expect(storage.getSettings().bulletThreading).toBe(true)
   })
 
   it('treats invalid JSON / wrong shapes as absent', () => {

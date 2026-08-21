@@ -73,6 +73,7 @@ export const storage = {
     return {
       lineSpacing: typeof raw.lineSpacing === 'number' ? raw.lineSpacing : DEFAULT_SETTINGS.lineSpacing,
       blockGap: typeof raw.blockGap === 'number' ? raw.blockGap : DEFAULT_SETTINGS.blockGap,
+      bulletThreading: typeof raw.bulletThreading === 'boolean' ? raw.bulletThreading : DEFAULT_SETTINGS.bulletThreading,
     }
   },
   setSettings(settings: SettingsState): void {

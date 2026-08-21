@@ -104,6 +104,7 @@ All bindings are `$shortcut` keymaps registered in `createCrepe()` with priority
 15. **Hotkey reference** (GRO-2067, `src/sidebar/HotkeysPanel.tsx`): the keyboard button beside the settings cog lists every binding from the exported `HOTKEYS`/`MOUSE_TIPS` lists — update them together with any keymap change (`HotkeysPanel.test.ts` pins the set).
 16. **URL** (GRO-2069, `src/lib/urlHash.ts`): the open file is mirrored as `#/abs/path.md` via `history.replaceState` (never pushState); on boot a hash file wins over `mdapp.lastFile` and may live OUTSIDE the current root (the sidebar's stale-file validation skips out-of-root paths). No file → no hash.
 
+17. **Bullet threading** (GRO-2094, `src/editor/outline/bulletThreading.ts` + `.css`): view-only decorations derived from `selection.$from` on every update — `outline-thread-node` on each list_item on the root → caret path (glyph takes `--crepe-color-primary` via `--list-marker-color` on its `.label-wrapper`), and inside each NESTED list on the path `outline-thread-seg` on items 0…pathIndex plus `outline-thread-stop` on the path child (segment cut at its glyph centre, elbow into the bullet). Top-level lists have no guide line and get no segments (Logseq-identical). 2px accent `li::before` at the guide-line x with `pointer-events: none` (a pseudo hit-tests as its element; guide-line click-to-fold needs the UL as target). No state, no persistence, never `markdownUpdated`. Drawn only under `.app[data-threading='on']` — the settings-cog "Bullet threading" row (default On, `mdapp.settings.bulletThreading`).
 ## localStorage (client)
 
 | Key | Type | Shape |
@@ -114,6 +115,6 @@ All bindings are `$shortcut` keymaps registered in `createCrepe()` with priority
 | `mdapp.lastFile` | `LastFileState` | `{ "/Users/yasin/notes": "/Users/yasin/notes/a.md" }` |
 | `mdapp.folds` | `FoldState` | `{ "/Users/yasin/notes": { "/Users/yasin/notes/a.md": ["1fpm2d0:0", ...] } }` — collapsed outline fold keys per root + file (max 500/file; empty lists removed). Never written to disk. |
 | `mdapp.sidebarCollapsed` | `'true'` | present (`'true'`) when the sidebar is collapsed; absent = expanded (GRO-2023) |
-| `mdapp.settings` | `SettingsState` | `{ "lineSpacing": 1.5, "blockGap": 4 }` — app-global editor spacing (GRO-2024); applied as CSS vars, missing/invalid fields fall back to `DEFAULT_SETTINGS` field-by-field |
+| `mdapp.settings` | `SettingsState` | `{ "lineSpacing": 1.5, "blockGap": 4, "bulletThreading": true }` — app-global editor settings (GRO-2024 spacing as CSS vars; GRO-2094 threading as `data-threading="on|off"` on `.app`); missing/invalid fields fall back to `DEFAULT_SETTINGS` field-by-field, so pre-threading stores read as threading ON |
 
 All JSON values parsed defensively (invalid → treated as absent).

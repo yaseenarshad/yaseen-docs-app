@@ -220,7 +220,9 @@ export interface SettingsState {
   lineSpacing: number
   /** Vertical padding above and below each block, px (spacing between blocks = 2×). */
   blockGap: number
+  /** Accent the root → caret bullet path (GRO-2094). View-only; never written into the file. */
+  bulletThreading: boolean
 }
 
-/** Matches the app's pre-settings look (Crepe: line-height 1.5, block padding 4px). */
-export const DEFAULT_SETTINGS: SettingsState = { lineSpacing: 1.5, blockGap: 4 }
+/** Matches the app's pre-settings look (Crepe: line-height 1.5, block padding 4px); threading on. */
+export const DEFAULT_SETTINGS: SettingsState = { lineSpacing: 1.5, blockGap: 4, bulletThreading: true }

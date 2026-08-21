@@ -14,6 +14,11 @@ const BLOCK_GAP_PRESETS: Array<{ label: string; value: number }> = [
   { label: 'Relaxed', value: 8 },
   { label: 'Spacious', value: 12 },
 ]
+/** Bullet threading on/off (GRO-2094); the editor reads it as `data-threading` on `.app`. */
+const THREADING_OPTIONS: Array<{ label: string; value: boolean }> = [
+  { label: 'Off', value: false },
+  { label: 'On', value: true },
+]
 
 interface SettingsCogProps {
   settings: SettingsState
@@ -66,6 +71,19 @@ export function SettingsCog({ settings, onChange }: SettingsCogProps) {
                 type="button"
                 className={`settings__option${settings.blockGap === value ? ' settings__option--active' : ''}`}
                 onClick={() => onChange({ ...settings, blockGap: value })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="settings__label">Bullet threading</p>
+          <div className="settings__row">
+            {THREADING_OPTIONS.map(({ label, value }) => (
+              <button
+                key={label}
+                type="button"
+                className={`settings__option${settings.bulletThreading === value ? ' settings__option--active' : ''}`}
+                onClick={() => onChange({ ...settings, bulletThreading: value })}
               >
                 {label}
               </button>

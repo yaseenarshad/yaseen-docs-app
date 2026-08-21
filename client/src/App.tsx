@@ -38,6 +38,7 @@ export function App() {
   }, [])
 
   // Editor spacing settings land as CSS custom properties; app.css consumes them (GRO-2024).
+  // Bullet threading is a CSS gate too (`data-threading`, bulletThreading.css) — no editor remount.
   const settingsVars = {
     '--edit-line-height': settings.lineSpacing,
     '--edit-block-gap': `${settings.blockGap}px`,
@@ -84,7 +85,7 @@ export function App() {
   }, [root, pick])
 
   return (
-    <div className="app" style={settingsVars}>
+    <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'}>
       {root !== null && !sidebarCollapsed && (
         <Sidebar
           key={root}
