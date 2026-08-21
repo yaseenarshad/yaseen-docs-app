@@ -8,6 +8,8 @@
  * metadata-only transaction (`tr.setMeta(pluginKey, itemPos)`), so `tr.docChanged` is false, the
  * listener plugin never fires `markdownUpdated`, and the markdown on disk is untouched.
  * Persistence is by stable fold key (see outlineFoldKeys.ts), not by position.
+ * ⌘Z panic-undo (GRO-2075): the state also remembers the most recent fold action while it is
+ * the latest USER action; `undoLastFold` (bound to Mod-z in hotkeys.ts) reverts exactly that.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'

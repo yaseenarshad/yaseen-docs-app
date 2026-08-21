@@ -91,6 +91,7 @@ All bindings are `$shortcut` keymaps registered in `createCrepe()` with priority
 | `Mod-Enter` | list item(s) whose first block touches the selection | cycle bullet → `[ ]` → `[x]` → bullet, each item from its own state; outside lists falls through (table exit / CodeMirror exit keep theirs) | GRO-2027 `hotkeys.ts` |
 | `Mod-Shift-u` | anywhere | fold every parent item (`foldAllOutline`, meta-only transaction, persisted via `mdapp.folds`) | GRO-2027 |
 | `Mod-Shift-i` | anywhere | unfold all (`unfoldAllOutline`) | GRO-2027 |
+| `Mod-z` | a fold was the latest action (no doc change since) | revert that fold (single toggle, or the exact pre-fold-all/unfold-all set); otherwise falls through to history's undo. Plugin-appended transactions (e.g. Crepe's trailing paragraph) don't break eligibility | GRO-2075 `outlineFolding.ts` |
 | `Mod-Shift-x` | selection | toggle strikethrough (Obsidian binding; Crepe's `Mod-Alt-x` still works) | GRO-2027 |
 | `Mod-u` | selection | toggle underline (`<u>…</u>` on disk) | GRO-2028 `marks/underline.ts` |
 | `Mod-.` | caret in a list item | zoom into that item (view-only; breadcrumbs appear); outside lists falls through | GRO-2029 `outline/zoom.ts` |
@@ -98,6 +99,9 @@ All bindings are `$shortcut` keymaps registered in `createCrepe()` with priority
 | `Shift-Tab` / `Mod-[` | while zoomed, on the zoomed item or a direct child | no-op (lifting would escape the zoomed subtree); everywhere else outdents as usual | GRO-2029 |
 
 13. **Multi-block drag** (GRO-2019, `src/editor/multiBlockDrag.ts`, registered in `createCrepe()`): dragging the block handle while a multi-block selection contains the grabbed block moves the WHOLE selection. A document-capture mousedown expands the selection to whole sibling blocks (`expandedBlockRange`: deepest level containing both ends — sibling `list_item`s inside a nested list, not the outer list) and suppresses Crepe's single-block selection replacement; a capture dragstart hands ProseMirror a fully CLOSED slice (an open slice would splice into the target paragraph) via `dataTransfer` + `view.dragging`; after the drop an `appendTransaction` (on `uiEvent: 'drop'`) deletes the merged empty shell the move-deletion leaves at the origin, walking up wrappers it was the only child of. Drop X-position controls nesting depth (ProseMirror `dropPoint`). A grab OUTSIDE the selection never arms the plugin — Crepe's single-block drag is untouched. Folded parents drag with their hidden children.
+14. **Block handle gate** (GRO-2081, `src/editor/blockHandleGate.ts`): while the pointer is inside a guide-line strip band or a fold chevron's box, `.milkdown-block-handle` gets `mdapp-handle-muted` (pointer-events none + invisible) so those clicks land; muting pauses during drags. Band geometry is imported from `guideLines.ts` — one source of truth. Crepe's `blockHandle.shouldShow` config is typed upstream but never consumed; do not reach for it.
+15. **Hotkey reference** (GRO-2067, `src/sidebar/HotkeysPanel.tsx`): the keyboard button beside the settings cog lists every binding from the exported `HOTKEYS`/`MOUSE_TIPS` lists — update them together with any keymap change (`HotkeysPanel.test.ts` pins the set).
+16. **URL** (GRO-2069, `src/lib/urlHash.ts`): the open file is mirrored as `#/abs/path.md` via `history.replaceState` (never pushState); on boot a hash file wins over `mdapp.lastFile` and may live OUTSIDE the current root (the sidebar's stale-file validation skips out-of-root paths). No file → no hash.
 
 ## localStorage (client)
 

@@ -17,7 +17,7 @@ sh scripts/dev.sh
 ## Verify
 
 ```bash
-npm test          # vitest suite, client jsdom + server node (138 tests as of GRO-2063)
+npm test          # vitest suite, client jsdom + server node
 npm run typecheck
 npm run build
 ```

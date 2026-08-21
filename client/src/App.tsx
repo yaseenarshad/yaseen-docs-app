@@ -43,8 +43,9 @@ export function App() {
     '--edit-block-gap': `${settings.blockGap}px`,
   } as CSSProperties
 
-  // The restored-from-storage file also shows in the URL from the start.
-  useEffect(() => syncHash(file), []) // eslint-disable-line react-hooks/exhaustive-deps -- mount only
+  // Mount only: the restored-from-storage file also shows in the URL from the start;
+  // later changes sync through openFile/openRoot themselves.
+  useEffect(() => syncHash(file), [])
 
   const openRoot = useCallback((path: string) => {
     storage.setRoot(path)
