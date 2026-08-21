@@ -413,7 +413,7 @@
   flex: 1;
 }
 
-/* ---------- body (4A placeholder rows; the table lands in 4B) ---------- */
+/* ---------- body (placeholder rows for non-table views; their real bodies land in later units) ---------- */
 
 .base-view__pending {
   margin: 48px auto;
@@ -457,6 +457,151 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---------- table (4B) ---------- */
+
+.base-table-wrap {
+  flex: 1;
+  min-height: 0;
+  margin-top: 8px;
+  overflow: auto;
+}
+
+.base-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-size: 13px;
+}
+
+.base-table th,
+.base-table td {
+  padding: 3px 8px;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+
+.base-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  font-weight: 600;
+  color: var(--fg-muted);
+  background: var(--bg);
+}
+
+.base-table tbody td {
+  height: var(--base-table-row-h, 28px);
+}
+
+.base-table tbody td:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.base-table td.base-table__cell--num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.base-table__link {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--accent);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.base-table__link:hover {
+  text-decoration: underline;
+}
+
+.base-table__resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  z-index: 1;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.base-table__resize:hover {
+  background: var(--accent-soft);
+}
+
+.base-table__chip {
+  display: inline-block;
+  max-width: 100%;
+  margin-right: 4px;
+  padding: 0 7px;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--fg-muted);
+  background: var(--bg-side);
+  border-radius: 9px;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.base-table__chip--link {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.base-table__chip--error {
+  color: #fff;
+  background: var(--danger);
+}
+
+.base-table tfoot td {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 0;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  border-bottom: none;
+}
+
+.base-table__summary-btn {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  min-height: 24px;
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--fg);
+  text-align: left;
+}
+
+.base-table__summary-btn:hover {
+  background: var(--bg-side);
+}
+
+.base-table__summary-kind {
+  color: var(--fg-muted);
+}
+
+.base-table__summary-pop {
+  top: auto;
+  right: auto;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 140px;
+  padding: 4px;
+}
+
+.base-table__spacer td {
+  padding: 0;
+  border: none;
 }
 
 /* ---------- raw-YAML fallback (GRO-2125) ---------- */

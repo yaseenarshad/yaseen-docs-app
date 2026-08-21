@@ -1,0 +1,238 @@
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useRef, useState } from 'react'
+import type { IndexRecord } from '@shared/types'
+import type { BaseDefinition, BaseView } from '../baseFile'
+import { type Row, propertyKeys, propertyLabel } from '../engine'
+import { ErrorValue, FileValue, LinkValue, type Value, render, typeOf } from '../expr'
+import { BUILTIN_SUMMARIES, summarize } from '../summaries'
+import type { Mutate } from './FilterMenu'
+import { canonicalKey } from './filterRows'
+import { Popover } from './Popover'
+
+export interface TableViewProps {
+  def: BaseDefinition
+  view: BaseView
+  viewIndex: number
+  records: readonly IndexRecord[]
+  /** Post-search rows from BaseView; the summary row recomputes over exactly these. */
+  rows: readonly Row[]
+  onUpdate: Mutate
+  onOpenFile: (path: string) => void
+}
+
+const DEFAULT_WIDTH = 150
+const MIN_WIDTH = 60
+/** `view.rowHeight` presets (Obsidian's names); the value feeds `--base-table-row-h` AND the windowing maths. */
+const ROW_HEIGHTS: Record<string, number> = { short: 28, medium: 44, tall: 68 }
+/** Above this many rows only a scroll-positioned slice is mounted, padded by spacer rows. */
+const WINDOW_AT = 500
+const OVERSCAN = 10
+/** jsdom and the pre-measure first render have no viewport height; assume one screen. */
+const FALLBACK_VIEWPORT = 600
+
+/** One value inside a list / link cell. */
+function chip(v: Value, key?: number) {
+  const link = v instanceof LinkValue || v instanceof FileValue
+  const text = v instanceof LinkValue ? v.display ?? v.target : v instanceof FileValue ? v.record.basename : render(v)
+  return (
+    <span key={key} className={`base-table__chip${link ? ' base-table__chip--link' : ''}`} title={text}>
+      {text}
+    </span>
+  )
+}
+
+/** Typed cell body: error chip, read-only checkbox (editing is 5B), chips for lists/links, `render()` for the rest. */
+function cellContent(v: Value) {
+  if (v instanceof ErrorValue)
+    return (
+      <span className="base-table__chip base-table__chip--error" title={v.message}>
+        #ERROR
+      </span>
+    )
+  if (typeof v === 'boolean') return <input type="checkbox" checked={v} disabled readOnly />
+  if (Array.isArray(v)) return v.map((item, i) => chip(item, i))
+  if (v instanceof LinkValue || v instanceof FileValue) return chip(v)
+  return render(v)
+}
+
+/**
+ * Table view (GRO-2136): sticky header with drag-to-resize columns (`view.columnSize`, written on
+ * mouseup), typed cells, the `file.name` cell opening the note, a pinned summary row with a
+ * click-to-pick kind per column (`view.summaries`), arrow-key cell navigation and windowing above
+ * `WINDOW_AT` rows. Rows are rendered from one flat slice so 4C can interleave group header rows.
+ */
+export function TableView({ def, view, viewIndex, records, rows, onUpdate, onOpenFile }: TableViewProps) {
+  const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
+  const [summaryFor, setSummaryFor] = useState<string | null>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  const keys = propertyKeys(def, view, records)
+  const nameCol = keys.findIndex((k) => canonicalKey(k) === 'file.name')
+  const rowH = ROW_HEIGHTS[view.rowHeight ?? ''] ?? ROW_HEIGHTS.short
+  const widthOf = (key: string) => (drag?.key === key ? drag.width : view.columnSize?.[key] ?? DEFAULT_WIDTH)
+
+  // windowing: mount only the slice around the scroll position, spacer rows keep the scrollbar honest
+  const windowed = rows.length > WINDOW_AT
+  const viewH = wrapRef.current?.clientHeight || FALLBACK_VIEWPORT
+  const first = windowed ? Math.max(0, Math.min(rows.length - 1, Math.floor(scrollTop / rowH) - OVERSCAN)) : 0
+  const count = windowed ? Math.min(rows.length - first, Math.ceil(viewH / rowH) + 2 * OVERSCAN) : rows.length
+  const visible = rows.slice(first, first + count)
+
+  const startResize = (key: string) => (e: ReactMouseEvent) => {
+    e.preventDefault()
+    const start = widthOf(key)
+    const x0 = e.clientX
+    let width = start
+    const move = (ev: MouseEvent) => {
+      width = Math.max(MIN_WIDTH, start + ev.clientX - x0)
+      setDrag({ key, width })
+    }
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      setDrag(null)
+      if (width !== start)
+        onUpdate((d) => {
+          d.views[viewIndex].columnSize = { ...d.views[viewIndex].columnSize, [key]: width }
+        })
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+
+  /** The stored kind for a column, whichever key form (`priority` / `note.priority`) the file uses. */
+  const summaryKind = (key: string): string | undefined => {
+    const s = view.summaries
+    if (s === undefined) return undefined
+    const k = Object.keys(s).find((x) => canonicalKey(x) === canonicalKey(key))
+    return k !== undefined && typeof s[k] === 'string' ? s[k] : undefined
+  }
+  const setSummary = (key: string, kind: string | null) =>
+    onUpdate((d) => {
+      const v = d.views[viewIndex]
+      const s = { ...v.summaries }
+      for (const k of Object.keys(s)) if (canonicalKey(k) === canonicalKey(key)) delete s[k]
+      if (kind !== null) s[key] = kind
+      if (Object.keys(s).length) v.summaries = s
+      else delete v.summaries
+    })
+
+  /** Arrow keys move between body cells (`data-cell="row:col"`); Enter on the name column opens the note. */
+  const onKeyDown = (e: ReactKeyboardEvent) => {
+    const at = (e.target as HTMLElement).dataset.cell
+    if (at === undefined) return
+    const [r, c] = at.split(':').map(Number)
+    if (e.key === 'Enter') {
+      if (c === nameCol && rows[r]) onOpenFile(rows[r].record.path)
+      return
+    }
+    const move = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key]
+    if (move === undefined) return
+    e.preventDefault()
+    const nr = Math.max(0, Math.min(rows.length - 1, r + move[0]))
+    const nc = Math.max(0, Math.min(keys.length - 1, c + move[1]))
+    wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${nr}:${nc}"]`)?.focus()
+  }
+
+  const spacer = (at: string, h: number) => (
+    <tr key={at} className="base-table__spacer" aria-hidden style={{ height: h }}>
+      <td colSpan={keys.length} />
+    </tr>
+  )
+
+  return (
+    <div ref={wrapRef} className="base-table-wrap" onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}>
+      <table
+        className="base-table"
+        style={{ width: keys.reduce((w, k) => w + widthOf(k), 0), '--base-table-row-h': `${rowH}px` } as CSSProperties}
+        onKeyDown={onKeyDown}
+      >
+        <thead>
+          <tr>
+            {keys.map((key) => (
+              <th key={key} scope="col" style={{ width: widthOf(key) }}>
+                {propertyLabel(def, key)}
+                <span className="base-table__resize" aria-hidden onMouseDown={startResize(key)} />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {first > 0 && spacer('top', first * rowH)}
+          {visible.map((row, i) => {
+            const r = first + i
+            return (
+              <tr key={row.record.path}>
+                {keys.map((key, c) => {
+                  const v = row.values[key]
+                  return (
+                    <td
+                      key={key}
+                      className={typeOf(v) === 'number' ? 'base-table__cell--num' : undefined}
+                      tabIndex={r === first && c === 0 ? 0 : -1}
+                      data-cell={`${r}:${c}`}
+                    >
+                      {c === nameCol ? (
+                        <button type="button" className="base-table__link" onClick={() => onOpenFile(row.record.path)}>
+                          {render(v)}
+                        </button>
+                      ) : (
+                        cellContent(v)
+                      )}
+                    </td>
+                  )
+                })}
+              </tr>
+            )
+          })}
+          {windowed && rows.length - first - count > 0 && spacer('bottom', (rows.length - first - count) * rowH)}
+        </tbody>
+        <tfoot>
+          <tr>
+            {keys.map((key) => {
+              const label = propertyLabel(def, key)
+              const kind = summaryKind(key)
+              return (
+                <td key={key} className="base-table__summary">
+                  <button
+                    type="button"
+                    className="base-table__summary-btn"
+                    aria-label={`Summarize ${label}`}
+                    aria-haspopup="dialog"
+                    aria-expanded={summaryFor === key}
+                    onClick={() => setSummaryFor(summaryFor === key ? null : key)}
+                  >
+                    {kind !== undefined && (
+                      <>
+                        <span className="base-table__summary-kind">{kind}</span>
+                        <span>{render(summarize(kind, rows.map((r) => r.values[key]), def.summaries))}</span>
+                      </>
+                    )}
+                  </button>
+                  {summaryFor === key && (
+                    <Popover label={`${label} summary`} className="base-table__summary-pop" onClose={() => setSummaryFor(null)}>
+                      {['None', ...BUILTIN_SUMMARIES, ...Object.keys(def.summaries ?? {})].map((k) => (
+                        <button
+                          key={k}
+                          type="button"
+                          className="base-popover__item"
+                          aria-pressed={k === (kind ?? 'None')}
+                          onClick={() => {
+                            setSummary(key, k === 'None' ? null : k)
+                            setSummaryFor(null)
+                          }}
+                        >
+                          {k}
+                        </button>
+                      ))}
+                    </Popover>
+                  )}
+                </td>
+              )
+            })}
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}

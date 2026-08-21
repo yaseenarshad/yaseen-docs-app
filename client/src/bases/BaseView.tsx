@@ -4,6 +4,7 @@ import { type BaseDefinition, type ParsedBase, parseBase, serializeBase, updateB
 import { propertyKeys, runView } from './engine'
 import { render } from './expr'
 import { canonicalKey } from './view/filterRows'
+import { TableView } from './view/TableView'
 import { Toolbar } from './view/Toolbar'
 
 export interface BaseViewProps {
@@ -22,8 +23,8 @@ export interface BaseViewProps {
 
 /**
  * One `.base` in the main pane (GRO-2135): the toolbar (view switcher, filter / sort /
- * properties menus, search, count) over a placeholder row list that proves the chain
- * toolbar → `updateBase` → `runView`; 4B replaces the list with the table. Only the active
+ * properties menus, search, count) over the body — the real table for `type: table` (GRO-2136),
+ * a placeholder row list for every other view type (they land in later units). Only the active
  * tab and the search text are component state — everything else is the file.
  */
 export function BaseView({ parsed, onChange, thisFile, records, indexStatus, indexError, onOpenFile }: BaseViewProps) {
@@ -114,6 +115,8 @@ export function BaseView({ parsed, onChange, thisFile, records, indexStatus, ind
         <p className="base-view__error" role="alert">
           Could not load the vault index: {indexError}
         </p>
+      ) : view.type === 'table' ? (
+        <TableView def={def} view={view} viewIndex={index} records={records} rows={rows} onUpdate={update} onOpenFile={onOpenFile} />
       ) : (
         <ul className="base-rows">
           {rows.map((row) => (

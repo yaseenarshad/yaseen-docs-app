@@ -112,7 +112,8 @@ function type(el: HTMLInputElement, text: string): void {
 
 const tabs = (el: ParentNode): string[] => [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent ?? '')
 const selected = (el: ParentNode): string | undefined => [...el.querySelectorAll('[role="tab"]')].find((t) => t.getAttribute('aria-selected') === 'true')?.textContent ?? undefined
-const rows = (el: ParentNode): string[] => [...el.querySelectorAll('.base-row__link')].map((b) => b.textContent ?? '')
+/** Note links in the body: the table's name cells (4B) or the placeholder list of other view types. */
+const rows = (el: ParentNode): string[] => [...el.querySelectorAll('.base-table__link, .base-row__link')].map((b) => b.textContent ?? '')
 const count = (el: ParentNode): string => q(el, '.base-toolbar__count').textContent ?? ''
 const openMenu = (el: ParentNode, label: string): HTMLElement => {
   click(byLabel(el, label))
@@ -122,7 +123,7 @@ const openMenu = (el: ParentNode, label: string): HTMLElement => {
 // ---------- tests ----------
 
 describe('view switcher', () => {
-  it('renders the tabs, count and the placeholder rows of the active view', () => {
+  it('renders the tabs, count and the rows of the active view', () => {
     const { el, onChange } = mount()
     expect(tabs(el)).toEqual(['Table', 'View', 'View 2'])
     expect(selected(el)).toBe('Table')
@@ -328,7 +329,7 @@ describe('properties menu', () => {
     click(byLabel(pop, 'Show status'))
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().views[0].order).toEqual(['file.name', 'note.status'])
-    expect(q(el, '.base-row .base-row__values').textContent).toBe('idea')
+    expect(q(el, '[data-cell="0:1"]').textContent).toBe('idea')
     click(byLabel(pop, 'Show status'))
     expect(def().views[0].order).toEqual(['file.name'])
   })
@@ -385,10 +386,11 @@ describe('search, count and body', () => {
     expect(count(el)).toBe('3 / 8 items')
   })
 
-  it('row links open the note; other order values render dot-separated', () => {
+  it('row links open the note; the other order values are the row cells (4B)', () => {
     const { el, onOpenFile } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.status\n      - note.priority\n')
-    expect(q(el, '.base-row .base-row__values').textContent).toBe('idea · 2')
-    click(q(el, '.base-row__link'))
+    expect(q(el, '[data-cell="0:1"]').textContent).toBe('idea')
+    expect(q(el, '[data-cell="0:2"]').textContent).toBe('2')
+    click(q(el, '.base-table__link'))
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
   })
 

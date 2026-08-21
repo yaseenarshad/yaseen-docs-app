@@ -148,7 +148,7 @@ describe('BaseHost', () => {
     })
     expect(indexFn).toHaveBeenCalledWith('/vault')
     expect(el.querySelector('.base-view__pending')).toBeNull()
-    expect([...el.querySelectorAll('.base-row__link')].map((b) => b.textContent)).toEqual(['a.md', 'b.md'])
+    expect([...el.querySelectorAll('.base-table__link')].map((b) => b.textContent)).toEqual(['a.md', 'b.md'])
     expect(el.querySelector('.base-toolbar__count')?.textContent).toBe('2 items')
   })
 
