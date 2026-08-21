@@ -1,10 +1,11 @@
 import type { TreeNode } from '@shared/types'
 import { stripExt } from '../lib/paths'
 import { CreateInline } from './CreateInline'
+import type { EntryKind } from './createEntry'
 
-/** Inline "New note"/"New folder" input pending inside the tree (GRO-2022). */
+/** Inline "New note"/"New base"/"New folder" input pending inside the tree (GRO-2022, GRO-2126). */
 export interface PendingCreate {
-  kind: 'file' | 'dir'
+  kind: EntryKind
   /** Absolute path of the directory the entry is created in. */
   parentDir: string
   onSubmit: (name: string) => Promise<void>
@@ -25,6 +26,17 @@ interface TreeProps {
   depth?: number
 }
 
+/** 2×2 grid marking a `.base` row (GRO-2126); same stroke weight as `SidebarPanelIcon`. */
+function BaseGlyph() {
+  return (
+    <svg className="tree__glyph" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
+      <rect x="1.5" y="1.5" width="9" height="9" rx="1" />
+      <line x1="6" y1="1.5" x2="6" y2="10.5" />
+      <line x1="1.5" y1="6" x2="10.5" y2="6" />
+    </svg>
+  )
+}
+
 export function Tree({
   nodes,
   dirPath,
@@ -43,7 +55,7 @@ export function Tree({
         <li>
           <CreateInline
             kind={pending.kind}
-            indent={8 + depth * 14 + (pending.kind === 'file' ? 14 : 0)}
+            indent={8 + depth * 14 + (pending.kind === 'dir' ? 0 : 14)}
             onSubmit={pending.onSubmit}
             onCancel={pending.onCancel}
           />
@@ -68,12 +80,13 @@ export function Tree({
           <li key={node.path} role="treeitem" aria-selected={node.path === activeFile}>
             <button
               type="button"
-              className={`tree__row tree__row--file${node.path === activeFile ? ' tree__row--active' : ''}`}
+              className={`tree__row tree__row--file${node.kind === 'base' ? ' tree__row--base' : ''}${node.path === activeFile ? ' tree__row--active' : ''}`}
               style={{ paddingLeft: 8 + depth * 14 + 14 }}
               onClick={() => onOpenFile(node.path)}
               onContextMenu={(e) => onNodeContextMenu(node, e)}
               title={node.path}
             >
+              {node.kind === 'base' && <BaseGlyph />}
               <span className="tree__label">{stripExt(node.name)}</span>
             </button>
           </li>

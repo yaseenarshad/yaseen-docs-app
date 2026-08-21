@@ -614,6 +614,19 @@ button {
   top: 0;
 }
 
+/* 2×2 grid before a `.base` row's label (GRO-2126); muted like the chevron, accent when active. */
+.tree__glyph {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-right: 2px;
+  color: var(--fg-muted);
+}
+
+.tree__row--active .tree__glyph {
+  color: inherit;
+}
+
 /* ---------- folder picker ---------- */
 
 .modal-backdrop {

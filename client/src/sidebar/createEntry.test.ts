@@ -29,9 +29,20 @@ describe('entryPath', () => {
     expect(entryPath('/r', 'note.MARKDOWN', 'file')).toBe('/r/note.MARKDOWN')
   })
 
+  it('appends .base to base names without the extension (GRO-2126)', () => {
+    expect(entryPath('/r', 'Tasks', 'base')).toBe('/r/Tasks.base')
+    expect(entryPath('/r', 'Tasks.md', 'base')).toBe('/r/Tasks.md.base')
+  })
+
+  it('keeps an existing .base extension, case-insensitive', () => {
+    expect(entryPath('/r', 'Tasks.base', 'base')).toBe('/r/Tasks.base')
+    expect(entryPath('/r', 'Tasks.BASE', 'base')).toBe('/r/Tasks.BASE')
+  })
+
   it('uses dir names as-is and trims whitespace', () => {
     expect(entryPath('/r', 'Folder', 'dir')).toBe('/r/Folder')
     expect(entryPath('/r', '  note ', 'file')).toBe('/r/note.md')
+    expect(entryPath('/r', '  Tasks ', 'base')).toBe('/r/Tasks.base')
   })
 })
 

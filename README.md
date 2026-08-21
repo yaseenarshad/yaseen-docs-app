@@ -42,7 +42,7 @@ Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Edit
 
 ## Sidebar
 
-- **Create**: right-click a folder, a file, or the blank space under the tree → "New note" / "New folder"; name it inline (Enter confirms, Esc cancels). Notes get `.md` automatically and open at once; nothing is ever overwritten.
+- **Create**: right-click a folder, a file, or the blank space under the tree → "New note" / "New base" / "New folder"; name it inline (Enter confirms, Esc cancels). Notes get `.md` automatically and open at once; "New base" creates an Obsidian-compatible `.base` file (seeded with one table view) that opens in the base view; nothing is ever overwritten.
 - **Collapse**: the panel icon in the header hides the sidebar (a floating button on the left edge brings it back); the choice survives reload.
 - **Paths**: the open file shows in the URL as `#/absolute/path.md` — paste that URL to reopen the exact file; right-click any row for "Copy path".
 

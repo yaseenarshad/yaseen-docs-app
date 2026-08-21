@@ -6,7 +6,7 @@ import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { treeHasFile, treeReducer } from '../lib/treeState'
 import { ContextMenu } from './ContextMenu'
-import { entryPath, targetDirFor } from './createEntry'
+import { entryPath, targetDirFor, type EntryKind } from './createEntry'
 import { HotkeysButton } from './HotkeysPanel'
 import { SettingsCog } from './SettingsPanel'
 import { Tree, type PendingCreate } from './Tree'
@@ -58,7 +58,7 @@ export function Sidebar({
   const [error, setError] = useState<string | null>(null)
   const [expanded, dispatch] = useReducer(treeReducer, root, storage.getExpanded)
   const [menu, setMenu] = useState<{ x: number; y: number; targetDir: string; copyPath: string | null } | null>(null)
-  const [creating, setCreating] = useState<{ kind: 'file' | 'dir'; parentDir: string } | null>(null)
+  const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string } | null>(null)
 
   const refresh = useCallback(() => {
     api.tree(root).then(
@@ -104,7 +104,7 @@ export function Sidebar({
       onFileMissing()
   }, [tree, activeFile, root, onFileMissing])
 
-  // ---- New note / new folder (GRO-2022): right-click menu → inline name input ----
+  // ---- New note / new base / new folder (GRO-2022, GRO-2126): right-click menu → inline name input ----
 
   const openMenu = useCallback(
     (node: TreeNode | null, e: React.MouseEvent) => {
@@ -116,7 +116,7 @@ export function Sidebar({
   )
 
   const startCreate = useCallback(
-    (kind: 'file' | 'dir') => {
+    (kind: EntryKind) => {
       if (menu === null) return
       // The input renders inside the target dir's children, so that dir must be open;
       // expandTo opens every dir ABOVE the given path, so a synthetic child opens targetDir itself.
@@ -131,11 +131,13 @@ export function Sidebar({
     async (name: string) => {
       if (creating === null) return
       const p = entryPath(creating.parentDir, name, creating.kind)
+      // Notes and bases both go through create-file; the server seeds `.base` with a minimal view.
       if (creating.kind === 'dir') await api.createDir(p)
       else await api.createFile(p)
       setCreating(null)
       refresh()
-      if (creating.kind === 'file') onOpenFile(p)
+      // The main pane picks the editor or the base host from the opened path's extension.
+      if (creating.kind !== 'dir') onOpenFile(p)
     },
     [creating, refresh, onOpenFile],
   )
@@ -160,7 +162,7 @@ export function Sidebar({
         {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}
         {tree === null && error === null && <p className="sidebar__msg">Loading…</p>}
         {tree !== null && tree.tree.length === 0 && pending === null && (
-          <p className="sidebar__msg">No markdown files here.</p>
+          <p className="sidebar__msg">No notes here.</p>
         )}
         {tree !== null && (
           <Tree
@@ -185,6 +187,7 @@ export function Sidebar({
           y={menu.y}
           copyPath={menu.copyPath}
           onNewNote={() => startCreate('file')}
+          onNewBase={() => startCreate('base')}
           onNewFolder={() => startCreate('dir')}
           onClose={() => setMenu(null)}
         />

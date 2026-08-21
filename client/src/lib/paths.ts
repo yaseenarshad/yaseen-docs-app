@@ -4,5 +4,5 @@ export function basename(p: string): string {
   return trimmed.slice(trimmed.lastIndexOf('/') + 1) || p
 }
 
-/** File name without its markdown extension. */
-export const stripExt = (name: string) => name.replace(/\.(md|markdown)$/i, '')
+/** File name without its vault extension (`.md` / `.markdown` / `.base`, GRO-2126). */
+export const stripExt = (name: string) => name.replace(/\.(md|markdown|base)$/i, '')

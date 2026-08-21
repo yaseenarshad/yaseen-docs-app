@@ -1,8 +1,11 @@
 import { useRef, useState } from 'react'
-import { validateEntryName } from './createEntry'
+import { validateEntryName, type EntryKind } from './createEntry'
+
+/** Placeholder per entry kind; the extension is implied (added by `entryPath`). */
+const PLACEHOLDER: Record<EntryKind, string> = { file: 'New note', base: 'New base', dir: 'New folder' }
 
 interface CreateInlineProps {
-  kind: 'file' | 'dir'
+  kind: EntryKind
   /** Left padding so the input lines up with rows at its depth. */
   indent: number
   /** Called with the validated, non-empty name; rejects with a message to keep editing. */
@@ -37,7 +40,7 @@ export function CreateInline({ kind, indent, onSubmit, onCancel }: CreateInlineP
       <input
         autoFocus
         className={`create-inline__input${error !== null ? ' create-inline__input--error' : ''}`}
-        placeholder={kind === 'file' ? 'New note' : 'New folder'}
+        placeholder={PLACEHOLDER[kind]}
         spellCheck={false}
         onKeyDown={(e) => {
           if (e.key === 'Enter') void submit(e.currentTarget.value)

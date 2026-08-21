@@ -6,12 +6,14 @@ interface ContextMenuProps {
   /** Absolute path of the right-clicked row (file or folder); null for blank space (GRO-2069). */
   copyPath: string | null
   onNewNote: () => void
+  /** Create an Obsidian-compatible `.base` file (GRO-2126). */
+  onNewBase: () => void
   onNewFolder: () => void
   onClose: () => void
 }
 
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, onNewNote, onNewFolder, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, copyPath, onNewNote, onNewBase, onNewFolder, onClose }: ContextMenuProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -45,6 +47,9 @@ export function ContextMenu({ x, y, copyPath, onNewNote, onNewFolder, onClose }:
         )}
         <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewNote}>
           New note
+        </button>
+        <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewBase}>
+          New base
         </button>
         <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewFolder}>
           New folder

@@ -1,10 +1,13 @@
 /**
- * Pure logic behind the sidebar's "New note" / "New folder" flow (GRO-2022):
+ * Pure logic behind the sidebar's "New note" / "New base" / "New folder" flow (GRO-2022, GRO-2126):
  * name validation, target-directory resolution, and final path building.
  * The UI (context menu + inline input) lives in Sidebar/Tree; the server
- * enforces the same rules again (absolute path, markdown extension, no overwrite).
+ * enforces the same rules again (absolute path, vault extension, no overwrite).
  */
 import type { TreeNode } from '@shared/types'
+
+/** What the inline input creates: a markdown note, a folder, or an Obsidian `.base` file (GRO-2126). */
+export type EntryKind = 'file' | 'dir' | 'base'
 
 /** Human-readable reason the name is unusable, or null when fine. Callers trim first via entryPath. */
 export function validateEntryName(name: string): string | null {
@@ -15,10 +18,11 @@ export function validateEntryName(name: string): string | null {
   return null
 }
 
-/** Absolute path for the new entry; file names get `.md` unless already markdown. */
-export function entryPath(parentDir: string, name: string, kind: 'file' | 'dir'): string {
+/** Absolute path for the new entry; notes get `.md` unless already markdown, bases `.base` unless already present. */
+export function entryPath(parentDir: string, name: string, kind: EntryKind): string {
   let final = name.trim()
   if (kind === 'file' && !/\.(md|markdown)$/i.test(final)) final += '.md'
+  else if (kind === 'base' && !/\.base$/i.test(final)) final += '.base'
   return `${parentDir}/${final}`
 }
 
