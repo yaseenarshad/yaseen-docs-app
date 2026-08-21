@@ -1,9 +1,9 @@
 import { parseDuration, parseIsoDate, startOfDay } from './dates'
 import { ArgError, toNumber } from './ops'
-import { DateValue, DurationValue, ErrorValue, FileValue, LinkValue, type Value, render, stripBrackets, typeOf } from './values'
+import { DateValue, DurationValue, ErrorValue, FileValue, LinkValue, type Scope, type Value, render, stripBrackets, typeOf } from './values'
 
-/** Global functions (GRO-2131). `if` is lazy and lives in the evaluator. */
-export type GlobalFn = (args: Value[]) => Value
+/** Global functions (GRO-2131). `if` is lazy and lives in the evaluator; `scope` carries the resolver (GRO-2132). */
+export type GlobalFn = (args: Value[], scope: Scope) => Value
 
 const arg = (args: Value[], i: number): Value => args[i] ?? null
 
@@ -59,7 +59,14 @@ export const FUNCTIONS: Record<string, GlobalFn> = {
     if (target instanceof FileValue) return new LinkValue(target.record.basename, display)
     throw new ArgError(`link() expects a string, got ${typeOf(target)}`)
   },
-  file: () => new ErrorValue('file() needs an index'),
+  file: (args, { resolve }) => {
+    const v = arg(args, 0)
+    if (!resolve) return new ErrorValue('file() needs an index')
+    if (v instanceof FileValue) return v
+    const target = v instanceof LinkValue ? v.target : typeof v === 'string' ? v : null
+    if (target === null) throw new ArgError(`file() expects a path, got ${typeOf(v)}`)
+    return resolve(target)
+  },
   list: args => {
     const v = arg(args, 0)
     return v === null ? [] : Array.isArray(v) ? v : [v]

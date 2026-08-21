@@ -57,7 +57,7 @@ class Evaluator {
         if (e.op === '||') return isTruthy(left) ? left : this.eval(e.right, locals)
         const right = this.eval(e.right, locals)
         if (right instanceof ErrorValue) return right
-        return binaryOp(e.op, left, right)
+        return binaryOp(e.op, left, right, this.scope.resolve)
       }
     }
   }
@@ -85,6 +85,8 @@ class Evaluator {
       case 'note': return fromYaml(this.scope.note)
       case 'formula': return new ErrorValue('formula needs a name: formula.<name>')
     }
+    const extra = this.scope.extra
+    if (extra && hasOwn(extra, name)) return extra[name]
     if (hasFunction(name)) return new ErrorValue(`${name} is a function; call it as ${name}()`)
     return this.prop(name)
   }
@@ -148,7 +150,7 @@ class Evaluator {
     if (!hasFunction(e.name)) return new ErrorValue(`unknown function ${e.name}`)
     const args = this.evalArgs(e.args, locals)
     if (args instanceof ErrorValue) return args
-    return guard(() => FUNCTIONS[e.name](args))
+    return guard(() => FUNCTIONS[e.name](args, this.scope))
   }
 
   private method(e: Extract<Expr, { type: 'method' }>, locals: Locals): Value {
@@ -161,7 +163,7 @@ class Evaluator {
     if (Array.isArray(recv) && LAMBDA_METHODS.has(e.name)) return this.lambda(recv, e, locals)
     const args = this.evalArgs(e.args, locals)
     if (args instanceof ErrorValue) return args
-    return guard(() => callMethod(recv, e.name, args))
+    return guard(() => callMethod(recv, e.name, args, this.scope))
   }
 
   /** `filter/map/reduce`: the first argument is an expression run with `value`, `index` (and `acc`) bound. */

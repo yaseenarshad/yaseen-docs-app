@@ -56,7 +56,16 @@ export interface Scope {
   file: FileValue | null
   formulas: Record<string, string>
   this: FileValue | null
+  /**
+   * Link target / path → note in the engine's record set (GRO-2132). Absent: `file()` and
+   * `asFile()` are ErrorValues and link matching stays textual.
+   */
+  resolve?: Resolver
+  /** Extra identifiers consulted before note properties, e.g. `values` in custom summaries (GRO-2134). */
+  extra?: Record<string, Value>
 }
+
+export type Resolver = (target: string) => FileValue | null
 
 export type ValueType =
   | 'string' | 'number' | 'boolean' | 'null'
@@ -113,8 +122,26 @@ export function linkTargetsMatch(a: string, b: string): boolean {
 
 const isPrimitive = (v: Value) => v === null || typeof v !== 'object'
 
-/** Deep equality; primitives compare loosely like JS `==`, links by target, dates by ms. */
-export function equals(a: Value, b: Value): boolean {
+/** Link, path string or file → the note it names, or null when unresolved / not link-like. */
+function resolveSide(v: Value, resolve: Resolver): FileValue | null {
+  if (v instanceof FileValue) return v
+  if (v instanceof LinkValue) return resolve(v.target)
+  return typeof v === 'string' ? resolve(stripBrackets(v)) : null
+}
+
+/** Link `==` through the resolver (GRO-2132): both sides resolve → same path; otherwise undefined = fall back to text. */
+function resolvedEquals(a: Value, b: Value, resolve: Resolver): boolean | undefined {
+  const fa = resolveSide(a, resolve)
+  const fb = fa && resolveSide(b, resolve)
+  return fa && fb ? fa.record.path === fb.record.path : undefined
+}
+
+/** Deep equality; primitives compare loosely like JS `==`, links by target (by resolved path when `resolve` is given), dates by ms. */
+export function equals(a: Value, b: Value, resolve?: Resolver): boolean {
+  if (resolve && (a instanceof LinkValue || b instanceof LinkValue)) {
+    const r = resolvedEquals(a, b, resolve)
+    if (r !== undefined) return r
+  }
   const ta = typeOf(a)
   const tb = typeOf(b)
   if (a instanceof LinkValue && typeof b === 'string') return linkTargetsMatch(a.target, b)

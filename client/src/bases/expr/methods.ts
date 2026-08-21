@@ -1,12 +1,12 @@
 import { formatDate, relativeDate, startOfDay } from './dates'
 import { ArgError } from './ops'
 import {
-  DateValue, DurationValue, ErrorValue, FileValue, type FileRecordLike, LinkValue, RegexValue, type Value, type ValueType,
+  DateValue, DurationValue, ErrorValue, FileValue, type FileRecordLike, LinkValue, RegexValue, type Scope, type Value, type ValueType,
   equals, fromYaml, isEmpty, isTruthy, linkTargetsMatch, render, stripBrackets, typeOf,
 } from './values'
 
-/** Fields and type methods (GRO-2131). `filter/map/reduce` are special-cased in the evaluator. */
-type Method<T> = (recv: T, args: Value[]) => Value
+/** Fields and type methods (GRO-2131). `filter/map/reduce` are special-cased in the evaluator; `scope` carries the resolver (GRO-2132). */
+type Method<T> = (recv: T, args: Value[], scope: Scope) => Value
 type Table<T> = Record<string, Method<T>>
 
 const needNumber = (fn: string, v: Value | undefined): number => {
@@ -119,6 +119,18 @@ function compareNatural(a: Value, b: Value): number {
 
 const flatten = (l: Value[]): Value[] => l.flatMap(v => (Array.isArray(v) ? flatten(v) : [v]))
 
+/** Numeric list helpers (GRO-2132): non-numbers are ignored, no numbers → null. */
+const numbers = (l: Value[]): number[] => l.filter((v): v is number => typeof v === 'number')
+const numeric = (fn: (ns: number[]) => number) => (l: Value[]): Value => {
+  const ns = numbers(l)
+  return ns.length ? fn(ns) : null
+}
+const median = (ns: number[]): number => {
+  const s = [...ns].sort((a, b) => a - b)
+  const mid = s.length >> 1
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
+}
+
 const LIST: Table<Value[]> = {
   contains: (l, [x]) => l.some(v => equals(v, x ?? null)),
   containsAll: (l, xs) => xs.every(x => l.some(v => equals(v, x))),
@@ -129,6 +141,11 @@ const LIST: Table<Value[]> = {
   slice: (l, [a, b]) => l.slice(needNumber('slice', a), optNumber('slice', b)),
   sort: l => [...l].sort(compareNatural),
   unique: l => l.filter((v, i) => l.findIndex(u => equals(u, v)) === i),
+  sum: numeric(ns => ns.reduce((a, b) => a + b, 0)),
+  mean: numeric(ns => ns.reduce((a, b) => a + b, 0) / ns.length),
+  median: numeric(median),
+  min: numeric(ns => Math.min(...ns)),
+  max: numeric(ns => Math.max(...ns)),
 }
 
 const OBJECT: Table<{ [k: string]: Value }> = {
@@ -137,8 +154,12 @@ const OBJECT: Table<{ [k: string]: Value }> = {
 }
 
 const LINK: Table<LinkValue> = {
-  asFile: () => new ErrorValue('asFile() needs an index'),
-  linksTo: (l, [f]) => f instanceof FileValue && linkTargetsMatch(l.target, f.record.path),
+  asFile: (l, _args, { resolve }) => (resolve ? resolve(l.target) : new ErrorValue('asFile() needs an index')),
+  linksTo: (l, [f], { resolve }) => {
+    if (!(f instanceof FileValue)) return false
+    const got = resolve?.(l.target)
+    return got ? got.record.path === f.record.path : linkTargetsMatch(l.target, f.record.path)
+  },
 }
 
 const trimSlashes = (s: string) => s.replace(/^\/+|\/+$/g, '')
@@ -154,9 +175,14 @@ const FILE: Table<FileValue> = {
         return h === want || h.startsWith(`${want}/`)
       })
     }),
-  hasLink: (f, [t]) => {
+  /** With a resolver, a link that resolves is compared by path; unresolved targets/links fall back to text. */
+  hasLink: (f, [t], { resolve }) => {
     const target = t instanceof FileValue ? t.record.path : t instanceof LinkValue ? t.target : stripBrackets(needString('hasLink', t))
-    return f.record.links.some(l => linkTargetsMatch(l, target))
+    const want = resolve ? (t instanceof FileValue ? t : resolve(target)) : null
+    return f.record.links.some(l => {
+      const got = want && resolve!(l)
+      return got ? got.record.path === want.record.path : linkTargetsMatch(l, target)
+    })
   },
   inFolder: (f, [dir]) => {
     const want = trimSlashes(needString('inFolder', dir))
@@ -185,11 +211,11 @@ const METHODS: Partial<Record<ValueType, Table<never>>> = {
 }
 
 /** Dispatches `recv.name(args)` by runtime type; null receivers yield null for non-universal methods. */
-export function callMethod(recv: Value, name: string, args: Value[]): Value {
-  if (Object.hasOwn(ANY, name)) return ANY[name](recv, args)
+export function callMethod(recv: Value, name: string, args: Value[], scope: Scope): Value {
+  if (Object.hasOwn(ANY, name)) return ANY[name](recv, args, scope)
   if (recv === null) return null
   const type = typeOf(recv)
   const table = METHODS[type] as Table<Value> | undefined
   if (!table || !Object.hasOwn(table, name)) return new ErrorValue(`unknown method ${name} on ${type}`)
-  return table[name](recv, args)
+  return table[name](recv, args, scope)
 }

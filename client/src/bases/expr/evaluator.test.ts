@@ -547,3 +547,88 @@ describe('never throws', () => {
     expect(err(ev('"A".lower()'))).toMatch(/kaboom/)
   })
 })
+
+describe('numeric list helpers (GRO-2132)', () => {
+  it('sum, mean, median, min, max ignore non-numbers; empty gives null', () => {
+    expect(ev('[1, 2, 3].sum()')).toBe(6)
+    expect(ev('[1, "x", null, 3].sum()')).toBe(4)
+    expect(ev('[1, 2, 3, 4].mean()')).toBe(2.5)
+    expect(ev('[3, 1, 2].median()')).toBe(2)
+    expect(ev('[4, 1, 3, 2].median()')).toBe(2.5)
+    expect(ev('[3, 1, 2].min()')).toBe(1)
+    expect(ev('[3, 1, 2].max()')).toBe(3)
+    expect(ev('[].sum()')).toBe(null)
+    expect(ev('["a"].mean()')).toBe(null)
+    expect(ev('[].median()')).toBe(null)
+    expect(ev('[].min()')).toBe(null)
+    expect(ev('[].max()')).toBe(null)
+    expect(ev('[1.234, 2.345].mean().round(2)')).toBe(1.79)
+  })
+})
+
+describe('scope.extra (GRO-2134)', () => {
+  it('extra identifiers win over note properties and read as bare names', () => {
+    const s = scope({ values: 'from-note' }, { extra: { values: [1, 2, 3] } })
+    expect(ev('values.sum()', s)).toBe(6)
+    expect(ev('values', s)).toEqual([1, 2, 3])
+    expect(ev('note.values', s)).toBe('from-note')
+    expect(ev('values', scope({ values: 'from-note' }))).toBe('from-note')
+  })
+})
+
+describe('file resolution (GRO-2132)', () => {
+  const mk = (path: string, links: string[] = []): FileRecordLike => {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+    return { ...record, path: `/v/${path}`, name, basename: name.replace(/\.md$/, ''), folder, links, tags: [], embeds: [] }
+  }
+  const notes = [mk('A/Foo.md', ['Foo', 'B/Foo']), mk('B/Foo.md'), mk('Bar.md', ['A/Foo'])].map(r => new FileValue(r))
+  /** Minimal resolver: absolute path, root-relative (± .md), else first basename match. */
+  const resolve = (target: string): FileValue | null => {
+    const key = target.replace(/^\[\[|\]\]$/g, '').replace(/\.md$/, '').replace(/^\/+/, '')
+    return (
+      notes.find(f => f.record.path === target) ??
+      notes.find(f => `${f.record.folder}/${f.record.basename}`.replace(/^\//, '') === key) ??
+      notes.find(f => f.record.basename === key) ??
+      null
+    )
+  }
+  const rs = (file: FileValue, extra: Partial<Scope> = {}): Scope => scope({}, { file, resolve, ...extra })
+
+  it('file(path) and link.asFile() resolve through the scope resolver', () => {
+    expect(ev('file("A/Foo").name', rs(notes[2]))).toBe('Foo.md')
+    expect(ev('file("A/Foo.md").path', rs(notes[2]))).toBe('/v/A/Foo.md')
+    expect(ev('file("/v/B/Foo.md").folder', rs(notes[2]))).toBe('B')
+    expect(ev('file("Foo").path', rs(notes[2]))).toBe('/v/A/Foo.md')
+    expect(ev('file("Nope")', rs(notes[2]))).toBe(null)
+    expect(ev('file(link("Bar")).basename', rs(notes[2]))).toBe('Bar')
+    expect(ev('link("B/Foo").asFile().path', rs(notes[2]))).toBe('/v/B/Foo.md')
+    expect(ev('link("Nope").asFile()', rs(notes[2]))).toBe(null)
+    expect(ev('file("A/Foo") == file', rs(notes[0]))).toBe(true)
+    expect(err(ev('file("A/Foo")'))).toMatch(/needs an index/)
+    expect(err(ev('link("A").asFile()'))).toMatch(/needs an index/)
+  })
+
+  it('hasLink / linksTo / link equality compare resolved paths, falling back to text when unresolved', () => {
+    // A/Foo links to "Foo" (→ A/Foo itself) and "B/Foo"; textual matching would also accept "Other/Foo".
+    expect(ev('file.hasLink("B/Foo")', rs(notes[0]))).toBe(true)
+    expect(ev('file.hasLink("A/Foo")', rs(notes[0]))).toBe(true)
+    expect(ev('file.hasLink("Bar")', rs(notes[0]))).toBe(false)
+    expect(ev('file.hasLink("Other/Foo")', rs(notes[0]))).toBe(true) // unresolved target → textual fallback
+    expect(ev('file.hasLink(this)', rs(notes[0], { this: notes[1] }))).toBe(true)
+    expect(ev('file.hasLink(this)', rs(notes[2], { this: notes[1] }))).toBe(false) // Bar links A/Foo, not B/Foo
+    expect(ev('file.hasLink(this)', rs(notes[2], { this: notes[0] }))).toBe(true)
+    expect(ev('link("Foo").linksTo(this)', rs(notes[2], { this: notes[0] }))).toBe(true)
+    expect(ev('link("Foo").linksTo(this)', rs(notes[2], { this: notes[1] }))).toBe(false)
+    expect(ev('link("B/Foo").linksTo(this)', rs(notes[2], { this: notes[1] }))).toBe(true)
+    expect(ev('link("Foo") == link("A/Foo")', rs(notes[2]))).toBe(true)
+    expect(ev('link("Foo") == link("B/Foo")', rs(notes[2]))).toBe(false)
+    expect(ev('link("Foo") != link("B/Foo")', rs(notes[2]))).toBe(true)
+    expect(ev('link("B/Foo") == "B/Foo.md"', rs(notes[2]))).toBe(true)
+    expect(ev('link("Foo") == file', rs(notes[0]))).toBe(true)
+    expect(ev('link("Foo") == file', rs(notes[1]))).toBe(false)
+    expect(ev('link("Ghost") == "Ghost"', rs(notes[2]))).toBe(true) // neither side resolves → textual
+    expect(ev('link("Foo") == "B/Foo"')).toBe(true) // no resolver → textual (bare basename matches a path)
+    expect(ev('link("Foo") == "B/Foo"', rs(notes[2]))).toBe(false) // resolver: A/Foo vs B/Foo
+  })
+})

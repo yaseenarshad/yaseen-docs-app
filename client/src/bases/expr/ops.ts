@@ -1,5 +1,5 @@
 import type { BinaryOp } from './ast'
-import { DateValue, DurationValue, ErrorValue, type Value, equals, render, typeOf } from './values'
+import { DateValue, DurationValue, ErrorValue, type Resolver, type Value, equals, render, typeOf } from './values'
 
 /** Thrown by builtins on a bad argument; the evaluator turns it into an ErrorValue. */
 export class ArgError extends Error {}
@@ -74,14 +74,14 @@ function compare(op: '<' | '>' | '<=' | '>=', a: Value, b: Value): Value {
   }
 }
 
-/** Every non-short-circuit binary operator; operands are already evaluated and error-free. */
-export function binaryOp(op: Exclude<BinaryOp, '&&' | '||'>, a: Value, b: Value): Value {
+/** Every non-short-circuit binary operator; operands are already evaluated and error-free. `resolve` tightens link equality (GRO-2132). */
+export function binaryOp(op: Exclude<BinaryOp, '&&' | '||'>, a: Value, b: Value, resolve?: Resolver): Value {
   switch (op) {
     case '+': return add(a, b)
     case '-': return subtract(a, b)
     case '*': case '/': case '%': return arith(op, a, b)
-    case '==': return equals(a, b)
-    case '!=': return !equals(a, b)
+    case '==': return equals(a, b, resolve)
+    case '!=': return !equals(a, b, resolve)
     default: return compare(op, a, b)
   }
 }
