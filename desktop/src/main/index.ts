@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Menu, net, protocol, screen, shell } from 'electron'
+import { statSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { WindowEntry } from '@shared/types'
@@ -60,6 +61,13 @@ app.whenReady().then(() => {
   const handlers = createMenuHandlers(store, manager, {
     focusedWebContents: () => BrowserWindow.getFocusedWindow()?.webContents,
     openExternal: (url) => void shell.openExternal(url),
+    dirExists: (path) => {
+      try {
+        return statSync(path).isDirectory()
+      } catch {
+        return false
+      }
+    },
   })
   const applyMenu = (): void =>
     Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate({ recents: store.get().recents, isDev: !app.isPackaged }, handlers)))
