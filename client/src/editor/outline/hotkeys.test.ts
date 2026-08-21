@@ -39,7 +39,7 @@ afterEach(async () => {
 /** ProseMirror resolves `Mod` from `navigator.platform` (jsdom: not mac → Ctrl). */
 const IS_MAC = /Mac/.test(navigator.platform)
 
-type Key = 'Mod-Enter' | 'Mod-Shift-u' | 'Mod-Shift-i' | 'Mod-Shift-x'
+type Key = 'Mod-Enter' | 'Mod-Shift-u' | 'Mod-Shift-i' | 'Mod-Shift-x' | 'Mod-z'
 
 function press(crepe: Crepe, key: Key): boolean {
   return crepe.editor.action((ctx) => {
@@ -154,6 +154,22 @@ describe('Mod-Shift-u / Mod-Shift-i (fold all / unfold all)', () => {
     const { crepe } = await mount('* a\n* b\n')
     caretIn(crepe, 'a')
     expect(press(crepe, 'Mod-Shift-u')).toBe(false)
+  })
+})
+
+describe('Mod-z (fold panic-undo, GRO-2075)', () => {
+  it('reverts the latest fold and leaves the markdown alone; history keeps Mod-z otherwise', async () => {
+    const { crepe, root } = await mount(OUTLINE)
+    caretIn(crepe, 'L1 b')
+    expect(press(crepe, 'Mod-Shift-u')).toBe(true)
+    expect(folded(root)).toBe(2)
+    // Our binding outranks history's: the fold reverts, the document does not.
+    expect(press(crepe, 'Mod-z')).toBe(true)
+    expect(folded(root)).toBe(0)
+    expect(md(crepe)).toBe(OUTLINE)
+    // Single step: the next Mod-z is history's again and cannot re-touch folds.
+    press(crepe, 'Mod-z')
+    expect(folded(root)).toBe(0)
   })
 })
 

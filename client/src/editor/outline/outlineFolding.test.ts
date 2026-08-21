@@ -8,7 +8,7 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { Autosave } from '../../lib/autosave'
-import { OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
+import { foldAllOutline, OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS, undoLastFold } from './outlineFolding'
 import { getOutlineFoldKey } from './outlineFoldKeys'
 
 const OUTLINE = `* Parent
@@ -172,5 +172,65 @@ describe('outline folding', () => {
     expect(save).toHaveBeenCalledTimes(1)
     // The surviving fold is still in place after the edit (positions re-mapped).
     expect(toggleFor(root, 'Ordered parent').getAttribute('aria-expanded')).toBe('false')
+  })
+})
+
+describe('panic-undo (GRO-2075)', () => {
+  const runUndoFold = (crepe: Crepe): boolean =>
+    crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      return undoLastFold(view.state, view.dispatch)
+    })
+
+  it('reverts the most recent toggle, once', async () => {
+    const { crepe, root } = await mount({ defaultValue: OUTLINE })
+    toggleFor(root, 'Parent').click()
+    expect(folded(root).length).toBeGreaterThan(0)
+    expect(runUndoFold(crepe)).toBe(true)
+    expect(folded(root).length).toBe(0)
+    // Single-step: a second undo has nothing eligible and falls through to normal undo.
+    expect(runUndoFold(crepe)).toBe(false)
+  })
+
+  it('returns false when no fold happened (normal undo runs)', async () => {
+    const { crepe } = await mount({ defaultValue: OUTLINE })
+    expect(runUndoFold(crepe)).toBe(false)
+  })
+
+  it('a document change after the fold clears eligibility and keeps the fold', async () => {
+    const { crepe, root } = await mount({ defaultValue: OUTLINE })
+    toggleFor(root, 'Parent').click()
+    crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(view.state.tr.insertText('!', 1 + 1 + 1 + 'Parent'.length))
+    })
+    expect(runUndoFold(crepe)).toBe(false)
+    expect(folded(root).length).toBeGreaterThan(0)
+  })
+
+  it('reverts fold-all to the exact previous fold set', async () => {
+    const { crepe, root } = await mount({ defaultValue: OUTLINE })
+    toggleFor(root, 'Child').click()
+    const before = folded(root).length
+    expect(before).toBeGreaterThan(0)
+    crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      foldAllOutline(view.state, view.dispatch)
+    })
+    expect(folded(root).length).toBeGreaterThan(before)
+    expect(runUndoFold(crepe)).toBe(true)
+    // Back to exactly the pre-fold-all state: Child folded, everything else open.
+    expect(folded(root).length).toBe(before)
+    expect(toggleFor(root, 'Child').getAttribute('aria-expanded')).toBe('false')
+    expect(toggleFor(root, 'Parent').getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('reverting an unfold re-folds it', async () => {
+    const { crepe, root } = await mount({ defaultValue: OUTLINE })
+    toggleFor(root, 'Parent').click()
+    toggleFor(root, 'Parent').click()
+    expect(folded(root).length).toBe(0)
+    expect(runUndoFold(crepe)).toBe(true)
+    expect(folded(root).length).toBeGreaterThan(0)
   })
 })

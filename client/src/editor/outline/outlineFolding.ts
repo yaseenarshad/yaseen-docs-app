@@ -24,10 +24,18 @@ interface OutlineEntry {
   nestedListRanges: readonly { from: number; to: number }[]
 }
 
+/** The most recent fold action while it is still the latest action (GRO-2075 panic-undo). */
+type LastToggle =
+  | { kind: 'toggle'; itemPos: number }
+  /** fold-all / unfold-all: the collapsed set as it was right before the action. */
+  | { kind: 'set'; previousCollapsed: ReadonlySet<number> }
+
 interface OutlineFoldingState {
   /** Every list_item that owns a nested list, in document order (recomputed per transaction). */
   entries: readonly OutlineEntry[]
   collapsedItemPositions: ReadonlySet<number>
+  /** Cleared by any document change: ⌘Z only reverts a fold that is the latest action. */
+  lastToggle: LastToggle | null
 }
 
 export interface OutlineFoldingOptions {
@@ -42,8 +50,8 @@ export const OUTLINE_FOLDED_ATTR = 'data-outline-folded'
 /** Shared across instances: a PluginKey only identifies the plugin within one EditorState. */
 const pluginKey = new PluginKey<OutlineFoldingState>('mdapp-outline-folding')
 
-/** Transaction meta understood by the plugin: toggle one item (by position) or fold/unfold every parent. */
-type FoldMeta = number | 'fold-all' | 'unfold-all'
+/** Transaction meta understood by the plugin: toggle one item (by position), fold/unfold every parent, or revert the latest fold. */
+type FoldMeta = number | 'fold-all' | 'unfold-all' | 'undo-fold'
 
 /** Whether the list_item starting at `itemPos` is currently folded (false when the plugin is absent). */
 export const isOutlineItemCollapsed = (state: EditorState, itemPos: number): boolean =>
@@ -72,6 +80,16 @@ export const toggleOutlineFold = (itemPos: number): Command => (state, dispatch)
 export const foldAllOutline: Command = foldAllCommand('fold-all')
 /** Expand every parent item (GRO-2027 `Mod-Shift-i`). */
 export const unfoldAllOutline: Command = foldAllCommand('unfold-all')
+
+/**
+ * ⌘Z panic-undo (GRO-2075): revert the most recent fold action iff no document change
+ * happened after it; returns false otherwise so ProseMirror's own undo runs.
+ */
+export const undoLastFold: Command = (state, dispatch) => {
+  if (!pluginKey.getState(state)?.lastToggle) return false
+  dispatch?.(state.tr.setMeta(pluginKey, 'undo-fold'))
+  return true
+}
 
 const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
   const entries: OutlineEntry[] = []
@@ -119,6 +137,7 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
               collapsedItemPositions: new Set(
                 entries.filter(({ foldKey }) => initialCollapsedKeys.has(foldKey)).map(({ itemPos }) => itemPos),
               ),
+              lastToggle: null,
             }
           },
           apply: (transaction, previousState, _oldState, newState) => {
@@ -130,14 +149,52 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
               if (parentPositions.has(mappedPosition)) collapsedItemPositions.add(mappedPosition)
             })
 
+            // A fold is only ⌘Z-revertible while it is the latest USER action. Plugin-appended
+            // transactions (e.g. Crepe's trailing paragraph) are not user actions: they keep the
+            // pending fold alive, with positions mapped through their doc change.
+            const appended = transaction.getMeta('appendedTransaction') !== undefined
+            let lastToggle = previousState.lastToggle
+            if (transaction.docChanged && !appended) lastToggle = null
+            else if (transaction.docChanged && lastToggle !== null) {
+              lastToggle =
+                lastToggle.kind === 'toggle'
+                  ? { kind: 'toggle', itemPos: transaction.mapping.map(lastToggle.itemPos, 1) }
+                  : {
+                      kind: 'set',
+                      previousCollapsed: new Set(
+                        [...lastToggle.previousCollapsed].map((p) => transaction.mapping.map(p, 1)),
+                      ),
+                    }
+            }
+
             const meta: FoldMeta | undefined = transaction.getMeta(pluginKey)
-            if (meta === 'fold-all') return { entries, collapsedItemPositions: parentPositions }
-            if (meta === 'unfold-all') return { entries, collapsedItemPositions: new Set() }
+            if (meta === 'fold-all')
+              return {
+                entries,
+                collapsedItemPositions: parentPositions,
+                lastToggle: { kind: 'set', previousCollapsed: collapsedItemPositions },
+              }
+            if (meta === 'unfold-all')
+              return {
+                entries,
+                collapsedItemPositions: new Set(),
+                lastToggle: { kind: 'set', previousCollapsed: collapsedItemPositions },
+              }
+            if (meta === 'undo-fold' && lastToggle !== null) {
+              if (lastToggle.kind === 'set') {
+                const restored = new Set([...lastToggle.previousCollapsed].filter((p) => parentPositions.has(p)))
+                return { entries, collapsedItemPositions: restored, lastToggle: null }
+              }
+              if (collapsedItemPositions.has(lastToggle.itemPos)) collapsedItemPositions.delete(lastToggle.itemPos)
+              else if (parentPositions.has(lastToggle.itemPos)) collapsedItemPositions.add(lastToggle.itemPos)
+              return { entries, collapsedItemPositions, lastToggle: null }
+            }
             if (typeof meta === 'number') {
               if (collapsedItemPositions.has(meta)) collapsedItemPositions.delete(meta)
               else if (parentPositions.has(meta)) collapsedItemPositions.add(meta)
+              lastToggle = { kind: 'toggle', itemPos: meta }
             }
-            return { entries, collapsedItemPositions }
+            return { entries, collapsedItemPositions, lastToggle }
           },
         },
         props: {

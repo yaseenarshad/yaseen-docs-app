@@ -155,9 +155,14 @@ button {
   padding: var(--edit-block-gap, 4px) 0;
 }
 
-/* Crepe's reset pads `.milkdown .ProseMirror` by 60px 120px; the column above owns the gutters. */
+/* Crepe's reset pads `.milkdown .ProseMirror` by 60px 120px; the column above owns the gutters.
+   overflow must stay visible (GRO-2078): a TOP-LEVEL item's fold chevron (`.outline-toggle`,
+   left: -18px) hangs outside the ProseMirror box — `overflow: hidden` clipped it into an
+   invisible, unclickable ghost, stranding any folded top-level bullet. Wide blocks are already
+   contained per-block (tables/code below), so nothing else needs the clip. */
 .editor-instance .milkdown .ProseMirror {
   padding: 16px 0;
+  overflow: visible;
 }
 
 /* Wide blocks scroll inside the column instead of widening it. */

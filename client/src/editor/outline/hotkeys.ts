@@ -11,6 +11,8 @@
  *                  meta API (`foldAllOutline` / `unfoldAllOutline`), so the plugin stays the single
  *                  owner of fold state and persistence goes through `onCollapsedKeysChange`.
  *  - `Mod-Shift-x` toggle strikethrough (Obsidian); Crepe's own `Mod-Alt-x` keeps working.
+ *  - `Mod-z`       fold panic-undo (GRO-2075): reverts the most recent fold iff it is the latest
+ *                  action; declines otherwise, so history's own `Mod-z` handles content undo.
  *
  * Registered with priority 100 (above Crepe's 50), like `listCommands.ts`.
  */
@@ -21,7 +23,7 @@ import { toggleStrikethroughCommand } from '@milkdown/kit/preset/gfm'
 import type { NodeType } from '@milkdown/kit/prose/model'
 import type { Command, EditorState } from '@milkdown/kit/prose/state'
 import { $shortcut } from '@milkdown/kit/utils'
-import { foldAllOutline, unfoldAllOutline } from './outlineFolding'
+import { foldAllOutline, undoLastFold, unfoldAllOutline } from './outlineFolding'
 
 /** Priority above Crepe's list/table/base keymaps (default 50). */
 const PRIORITY = 100
@@ -71,6 +73,7 @@ export const obsidianHotkeys = $shortcut((ctx: Ctx) => {
     CycleTask: { key: 'Mod-Enter', priority: PRIORITY, onRun: () => cycleTaskCommand(itemType) },
     FoldAll: { key: 'Mod-Shift-u', priority: PRIORITY, onRun: () => foldAllOutline },
     UnfoldAll: { key: 'Mod-Shift-i', priority: PRIORITY, onRun: () => unfoldAllOutline },
+    UndoFold: { key: 'Mod-z', priority: PRIORITY, onRun: () => undoLastFold },
     Strikethrough: { key: 'Mod-Shift-x', priority: PRIORITY, onRun: () => strike },
   }
 })
