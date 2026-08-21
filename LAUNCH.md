@@ -5,22 +5,24 @@ Local markdown editor: Vite + React + Milkdown Crepe client, Hono file server. S
 ## Launch (do this when asked to "run it" / "open localhost")
 
 ```bash
-/opt/homebrew/bin/npm install && /opt/homebrew/bin/npm run dev
+sh scripts/dev.sh
 ```
 
-- Use full Homebrew paths (`/opt/homebrew/bin/npm`) — the agent shell has no Homebrew in PATH.
+- `scripts/dev.sh` is machine-agnostic: it resolves npm wherever it lives (PATH, Homebrew ARM/Intel, Volta, nvm, fnm — agent shells often lack npm in PATH), runs `npm install` if `node_modules` is missing, then `npm run dev`. If npm is already on your PATH, plain `npm run dev` works too — a `predev` hook auto-installs deps when `node_modules` is missing.
 - `npm run dev` starts both: client on `http://127.0.0.1:5173`, server on `127.0.0.1:3737`. Open the client URL.
-- In Claude Code, prefer the browser preview tool: `preview_start` with name `milkdown-dev` (config in `.claude/launch.json`). It starts the dev server and opens the tab.
-- The app remembers the last folder/file in `localStorage` (`mdapp.root`, `mdapp.lastFile`, …). Yasin's vault is `/Users/yasin/yaseen-os/yaseen-machine-content`. If it opens the wrong folder, click **change** in the sidebar header, or set `localStorage.mdapp.root` and reload.
+- In Claude Code, prefer the browser preview tool: `preview_start` with name `milkdown-dev` (config in `.claude/launch.json`). It runs `npm run dev` resolved via PATH — the preview launcher inherits the user's login PATH, and its sandbox blocks raw shells (`sh script.sh` fails with "Operation not permitted"), so the config must call npm directly, not `scripts/dev.sh`.
+- The app remembers the last folder/file in `localStorage` (`mdapp.root`, `mdapp.lastFile`, …). Yasin's vault is `$HOME/yaseen-os/yaseen-machine-content` (the username part of `$HOME` differs per machine — resolve it, don't hardcode). If it opens the wrong folder, click **change** in the sidebar header, or set `localStorage.mdapp.root` and reload.
 - Folder picking uses the native macOS Finder dialog (`POST /api/pick-folder` → `osascript`); the in-app folder browser only appears as a fallback when the native dialog is unavailable. In an agent session the Finder dialog pops up on Yasin's screen, so set `localStorage.mdapp.root` instead of clicking **change**.
 
 ## Verify
 
 ```bash
-/opt/homebrew/bin/npm test          # 89 vitest tests (client jsdom + server node)
-/opt/homebrew/bin/npm run typecheck
-/opt/homebrew/bin/npm run build
+npm test          # 89 vitest tests (client jsdom + server node)
+npm run typecheck
+npm run build
 ```
+
+- If `npm` isn't in the shell's PATH (agent shells often lack it), resolve it the way `scripts/dev.sh` does — e.g. `/opt/homebrew/bin/npm` (ARM mac), `/usr/local/bin/npm` (Intel mac), or the Volta/nvm/fnm install under `$HOME`.
 
 ## Gotchas
 

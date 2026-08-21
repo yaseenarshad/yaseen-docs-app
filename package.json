@@ -8,6 +8,7 @@
     "server"
   ],
   "scripts": {
+    "predev": "node -e \"require('fs').existsSync('node_modules/.bin/concurrently')||require('child_process').execSync('npm install',{stdio:'inherit'})\"",
     "dev": "concurrently -n server,client -c blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w client",
     "typecheck": "tsc -p client/tsconfig.json --noEmit && tsc -p server/tsconfig.json --noEmit && tsc -p shared/tsconfig.json --noEmit",
