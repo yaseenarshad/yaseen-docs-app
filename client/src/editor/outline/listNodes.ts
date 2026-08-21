@@ -3,6 +3,11 @@ import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
 
 export const LIST_NODE_NAMES: ReadonlySet<string> = new Set(['bullet_list', 'ordered_list'])
 
+export const isListItem = (node: ProseNode | null | undefined): node is ProseNode => node?.type.name === 'list_item'
+
+/** First-block text of a list item — the label behind fold keys, zoom keys and breadcrumbs alike. */
+export const itemLabelText = (item: ProseNode): string => item.firstChild?.textContent.trim() || 'Untitled item'
+
 export interface NestedList {
   list: ProseNode
   /** Offset of the list inside the item (`itemPos + 1 + offset` is its document position). */
@@ -25,7 +30,7 @@ export const findNestedList = (item: ProseNode): NestedList | null => findNested
 export const ancestorItemPositions = ($pos: ResolvedPos): number[] => {
   const positions: number[] = []
   for (let depth = 1; depth <= $pos.depth; depth++) {
-    if ($pos.node(depth).type.name === 'list_item') positions.push($pos.before(depth))
+    if (isListItem($pos.node(depth))) positions.push($pos.before(depth))
   }
   return positions
 }

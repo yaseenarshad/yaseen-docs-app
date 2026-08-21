@@ -40,6 +40,7 @@ afterEach(async () => {
 const IS_MAC = /Mac/.test(navigator.platform)
 
 type Key = 'Mod-Enter' | 'Mod-Shift-u' | 'Mod-Shift-i' | 'Mod-Shift-x' | 'Mod-z' | 'Mod-ArrowUp' | 'Mod-ArrowDown'
+const NAMED_KEY_CODES: Record<string, number> = { Enter: 13, ArrowUp: 38, ArrowDown: 40 }
 
 function press(crepe: Crepe, key: Key): boolean {
   return crepe.editor.action((ctx) => {
@@ -51,7 +52,7 @@ function press(crepe: Crepe, key: Key): boolean {
     const init: KeyboardEventInit & { keyCode?: number } = {
       key: named ? letter : letter.toUpperCase(),
       code: named ? letter : `Key${letter.toUpperCase()}`,
-      keyCode: letter === 'Enter' ? 13 : letter === 'ArrowUp' ? 38 : letter === 'ArrowDown' ? 40 : letter.toUpperCase().charCodeAt(0),
+      keyCode: NAMED_KEY_CODES[letter] ?? letter.toUpperCase().charCodeAt(0),
       ...(IS_MAC ? { metaKey: true } : { ctrlKey: true }),
       shiftKey: shift,
       bubbles: true,

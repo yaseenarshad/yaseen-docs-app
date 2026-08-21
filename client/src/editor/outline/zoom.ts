@@ -35,7 +35,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey, Selection } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
-import { ancestorItemPositions, innermostItemPos } from './listNodes'
+import { ancestorItemPositions, innermostItemPos, isListItem, itemLabelText } from './listNodes'
 import { getOutlineFoldKey } from './outlineFoldKeys'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
@@ -49,12 +49,15 @@ interface ZoomState {
   itemPos: number | null
   /** Breadcrumb root and the `file` stamped on history entries (so another file's entries are ignored). */
   fileName: string
-  /** Level before the latest zoom change, while that change is still the latest view action (⌘Z). */
-  lastZoom: ZoomMeta | undefined
+  /**
+   * ⌘Z target: the level before the latest zoom change, kept while that change is still the latest
+   * view action. `undefined` = nothing to revert; `null` = revert to zoomed-out.
+   */
+  undoLevel: ZoomLevel | undefined
 }
 
-/** Transaction meta: zoom to the list_item at this position, or `null` to zoom out fully. */
-type ZoomMeta = number | null
+/** A zoom level: position of the zoomed list_item, or `null` = zoomed out. Also the plugin's transaction meta. */
+type ZoomLevel = number | null
 /** Set on the ⌘Z revert transaction: it consumes the pending undo instead of creating a new one. */
 const UNDO_META = 'mdapp-outline-zoom-undo'
 
@@ -76,14 +79,14 @@ const PRIORITY = 100
 
 const pluginKey = new PluginKey<ZoomState>('mdapp-outline-zoom')
 
-const isListItem = (node: ProseNode | null | undefined): node is ProseNode => node?.type.name === 'list_item'
-
 /** Position of the zoomed list_item (null when not zoomed or when the plugin is absent). */
 export const getZoomedItemPos = (state: EditorState): number | null => pluginKey.getState(state)?.itemPos ?? null
 
 /**
  * Walk every list_item in document order with its zoom key — fold-key scheme, but the occurrence
  * index counts ALL items (fold keys only count parents), so this is a separate key space.
+ * `visit` returning true ends the visits (the underlying `descendants` still iterates, skipping
+ * children — fine at document scale).
  */
 const eachItemKey = (doc: ProseNode, visit: (pos: number, key: string) => boolean): void => {
   const occurrences = new Map<string, number>()
@@ -91,7 +94,7 @@ const eachItemKey = (doc: ProseNode, visit: (pos: number, key: string) => boolea
   doc.descendants((node, pos) => {
     if (stop) return false
     if (!isListItem(node)) return true
-    const label = node.firstChild?.textContent.trim() || 'Untitled item'
+    const label = itemLabelText(node)
     const occurrence = occurrences.get(label) ?? 0
     occurrences.set(label, occurrence + 1)
     if (visit(pos, getOutlineFoldKey(label, occurrence))) stop = true
@@ -129,9 +132,9 @@ const readZoomEntry = (state: unknown): ZoomHistoryEntry | null => {
   return typeof file === 'string' && (typeof key === 'string' || key === null) ? { file, key } : null
 }
 
-/** First-block text of a list item, trimmed and truncated for the breadcrumb. */
+/** Breadcrumb label: the item's first-block text, truncated. */
 const itemLabel = (item: ProseNode): string => {
-  const text = item.firstChild?.textContent.trim() || 'Untitled item'
+  const text = itemLabelText(item)
   return text.length > LABEL_MAX_CHARS ? `${text.slice(0, LABEL_MAX_CHARS - 1).trimEnd()}…` : text
 }
 
@@ -143,7 +146,7 @@ const itemAtSelection = (state: EditorState): number | null => innermostItemPos(
  * selection was outside. Every user-driven zoom change pushes a history entry; `fromHistory`
  * (popstate) restores a level without pushing another.
  */
-const zoomTo = (itemPos: ZoomMeta, { fromHistory = false, isUndo = false } = {}): Command => (state, dispatch) => {
+const zoomTo = (itemPos: ZoomLevel, { fromHistory = false, isUndo = false } = {}): Command => (state, dispatch) => {
   const zoom = pluginKey.getState(state)
   if (!zoom || zoom.itemPos === itemPos) return false
   if (itemPos !== null && !isListItem(state.doc.nodeAt(itemPos))) return false
@@ -172,9 +175,9 @@ const zoomTo = (itemPos: ZoomMeta, { fromHistory = false, isUndo = false } = {})
  * zoom change (history entry pushed, so Back returns to the zoomed view) and consumes the undo.
  */
 export const undoLastZoom: Command = (state, dispatch) => {
-  const lastZoom = pluginKey.getState(state)?.lastZoom
-  if (lastZoom === undefined) return false
-  return zoomTo(lastZoom, { isUndo: true })(state, dispatch)
+  const undoLevel = pluginKey.getState(state)?.undoLevel
+  if (undoLevel === undefined) return false
+  return zoomTo(undoLevel, { isUndo: true })(state, dispatch)
 }
 
 /** `Mod-.`: zoom into the item at the caret. */
@@ -203,7 +206,7 @@ const blockEscapingLift: Command = (state) => {
   return index >= 0 && positions.length - index <= 2
 }
 
-const crumbButton = (view: EditorView, label: string, target: ZoomMeta, current: boolean): HTMLButtonElement => {
+const crumbButton = (view: EditorView, label: string, target: ZoomLevel, current: boolean): HTMLButtonElement => {
   const button = document.createElement('button')
   button.type = 'button'
   button.className = ZOOM_CRUMB_CLASS
@@ -225,7 +228,7 @@ const buildDecorations = (state: EditorState, itemPos: number, fileName: string)
   const zoomed = $item.nodeAfter
   const decorations: Decoration[] = []
   if (!isListItem(zoomed)) return decorations
-  const crumbs: Array<{ label: string; target: ZoomMeta }> = [{ label: fileName, target: null }]
+  const crumbs: Array<{ label: string; target: ZoomLevel }> = [{ label: fileName, target: null }]
 
   // Walk the containers on the path root → zoomed item; hide every child that is off the path.
   for (let depth = 0; depth <= $item.depth; depth++) {
@@ -288,30 +291,30 @@ export const createOutlineZoom = ({ fileName }: ZoomOptions) =>
       new Plugin<ZoomState>({
         key: pluginKey,
         state: {
-          init: () => ({ itemPos: null, fileName, lastZoom: undefined }),
+          init: () => ({ itemPos: null, fileName, undoLevel: undefined }),
           apply: (transaction, previous, _oldState, newState) => {
-            const meta: ZoomMeta | undefined = transaction.getMeta(pluginKey)
+            const meta: ZoomLevel | undefined = transaction.getMeta(pluginKey)
             if (meta !== undefined) {
               // ⌘Z-revertible while it is the latest view action; the revert itself consumes it.
-              return { ...previous, itemPos: meta, lastZoom: transaction.getMeta(UNDO_META) ? undefined : previous.itemPos }
+              return { ...previous, itemPos: meta, undoLevel: transaction.getMeta(UNDO_META) ? undefined : previous.itemPos }
             }
-            let { itemPos, lastZoom } = previous
+            let { itemPos, undoLevel } = previous
             // A fold is the newer view action now: ⌘Z belongs to it (viewActions.ts).
-            if (transaction.getMeta(VIEW_ACTION_META) === 'fold') lastZoom = undefined
+            if (transaction.getMeta(VIEW_ACTION_META) === 'fold') undoLevel = undefined
             if (transaction.docChanged) {
               // User edits hand ⌘Z back to history; plugin-appended transactions (Crepe's trailing
               // paragraph) are not user actions and only map the remembered position.
-              if (transaction.getMeta('appendedTransaction') === undefined) lastZoom = undefined
-              else if (typeof lastZoom === 'number') {
-                const mappedLast = transaction.mapping.mapResult(lastZoom, 1)
-                lastZoom = !mappedLast.deleted && isListItem(newState.doc.nodeAt(mappedLast.pos)) ? mappedLast.pos : undefined
+              if (transaction.getMeta('appendedTransaction') === undefined) undoLevel = undefined
+              else if (typeof undoLevel === 'number') {
+                const mappedLast = transaction.mapping.mapResult(undoLevel, 1)
+                undoLevel = !mappedLast.deleted && isListItem(newState.doc.nodeAt(mappedLast.pos)) ? mappedLast.pos : undefined
               }
               if (itemPos !== null) {
                 const mapped = transaction.mapping.mapResult(itemPos, 1)
                 itemPos = !mapped.deleted && isListItem(newState.doc.nodeAt(mapped.pos)) ? mapped.pos : null
               }
             }
-            return itemPos === previous.itemPos && lastZoom === previous.lastZoom ? previous : { ...previous, itemPos, lastZoom }
+            return itemPos === previous.itemPos && undoLevel === previous.undoLevel ? previous : { ...previous, itemPos, undoLevel }
           },
         },
         view: (view) => {
@@ -319,7 +322,7 @@ export const createOutlineZoom = ({ fileName }: ZoomOptions) =>
           // file switch) are ignored; the original page entry (no zoom state) means zoomed out.
           const onPopState = (event: PopStateEvent) => {
             const entry = readZoomEntry(event.state)
-            if (entry !== null && entry.file !== fileName) return
+            if (entry !== null && entry.file !== pluginKey.getState(view.state)?.fileName) return
             const target = entry?.key == null ? null : itemPosForZoomKey(view.state.doc, entry.key)
             zoomTo(target, { fromHistory: true })(view.state, view.dispatch)
           }

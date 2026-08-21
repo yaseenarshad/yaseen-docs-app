@@ -17,6 +17,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { isListItem } from './listNodes'
 
 export const THREAD_NODE_CLASS = 'outline-thread-node'
 export const THREAD_SEG_CLASS = 'outline-thread-seg'
@@ -24,9 +25,7 @@ export const THREAD_STOP_CLASS = 'outline-thread-stop'
 
 const pluginKey = new PluginKey('mdapp-bullet-threading')
 
-const isListItem = (node: ProseNode | null | undefined): boolean => node?.type.name === 'list_item'
-
-/** One decoration per block: ProseMirror would keep several, but one class list is easier to assert on. */
+/** One decoration per block with the merged class list (several per range would work too; one keeps tests plain). */
 const buildDecorations = (state: EditorState): Decoration[] => {
   const $from = state.selection.$from
   const classes = new Map<number, { node: ProseNode; names: Set<string> }>()

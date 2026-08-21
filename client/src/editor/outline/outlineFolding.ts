@@ -17,7 +17,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { findNestedLists, innermostItemPos } from './listNodes'
+import { findNestedLists, innermostItemPos, itemLabelText } from './listNodes'
 import { getOutlineFoldKey } from './outlineFoldKeys'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
@@ -147,7 +147,7 @@ const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
     const nestedLists = findNestedLists(node)
     if (nestedLists.length === 0) return true
 
-    const label = node.firstChild?.textContent.trim() || 'Untitled item'
+    const label = itemLabelText(node)
     const occurrence = labelOccurrences.get(label) ?? 0
     labelOccurrences.set(label, occurrence + 1)
     entries.push({
