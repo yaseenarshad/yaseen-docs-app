@@ -1,0 +1,30 @@
+{
+  "name": "desktop",
+  "private": true,
+  "author": "Yasin Arshad",
+  "version": "0.1.0",
+  "description": "Yaseen Docs — Electron shell (main + preload); the renderer is ../client",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "pack": "electron-builder --dir --mac --arm64"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "electron": "43.4.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0"
+  },
+  "build": {
+    "appId": "com.yasinarshad.yaseendocs",
+    "productName": "Yaseen Docs",
+    "directories": { "output": "dist-app" },
+    "files": ["out/**"],
+    "mac": { "target": ["dir"], "identity": null, "category": "public.app-category.productivity" }
+  }
+}

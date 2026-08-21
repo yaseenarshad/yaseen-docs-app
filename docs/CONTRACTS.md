@@ -35,7 +35,26 @@ docs/CONTRACTS.md     this file
 
 Import from shared: `import type { TreeResponse } from '@shared/types'`.
 
+## Bridge API (`window.yaseenDocs`, locked in GRO-2153 — Desktop A1)
+
+The desktop app has no HTTP server (GRO-2095 D2): the renderer is sandboxed and calls the typed bridge the preload installs; `ipcMain.handle` answers from the main process. Shapes are the HTTP-era types below, unchanged. Every method rejects with a `BridgeError { code, message, path?, mtime? }` (same codes as the HTTP table; `CONFLICT` carries the disk mtime); `client/src/api.ts` wraps it in `ApiRequestError`. The HTTP table is kept until GRO-2157 (A5) deletes the server; until then the bridge rows map 1:1 onto it.
+
+| Bridge | Replaces | Notes |
+|---|---|---|
+| `tree(root)` | `GET /api/tree` | same `TreeResponse` |
+| `readFile(path)` | `GET /api/file` | same `FileResponse` |
+| `writeFile(req)` | `PUT /api/file` | `FileWriteRequest` incl. `expectedMtime`; mismatch → rejects `CONFLICT` with `mtime` |
+| `createDir(path)` / `createFile(path)` | `POST /api/create-dir` / `create-file` | same results and `ALREADY_EXISTS` semantics |
+| `pickFolder()` | `POST /api/pick-folder` | Electron `dialog.showOpenDialog` parented to the window (GRO-2163); osascript and the `/api/dirs` browser are deleted there |
+| `watch(root, listener) → unsubscribe` | `GET /api/watch` (SSE) | one chokidar per root in main shared by all windows; `ready` to late joiners; no ping |
+| `state.get/setSettings/setSidebarCollapsed/pushRecent/setFolder/setFolds/onChange` | localStorage `mdapp.*` | `AppState` in the main-owned `yaseendocs.json` (GRO-2159, D9); targeted mutators so windows never clobber each other |
+| `window.identity/setIdentity/open/duplicate` | – | window identity from `?win=<id>` (GRO-2160/2164); `duplicate` = `⌘⇧N` (GRO-2167) |
+
+Bases (GRO-2097) adds its methods to `YaseenDocsApi` additively (e.g. `index(root)`), never routes.
+
 ## HTTP API (server, base `http://127.0.0.1:3737`)
+
+_Removed in GRO-2157 (Desktop A5) together with the server; kept here until then._
 
 All paths are absolute POSIX paths. No jail — any absolute path is allowed.
 All errors: `{ error: { code, message, path? } }` with `ApiErrorCode` (see types) and HTTP status:
