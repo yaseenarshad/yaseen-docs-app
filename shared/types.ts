@@ -320,6 +320,8 @@ export interface StateApi {
   setSidebarCollapsed(collapsed: boolean): Promise<void>
   /** Prepend to recents (de-duplicated, capped). */
   pushRecent(path: string): Promise<void>
+  /** Drop a folder from recents (its directory vanished on disk, C2 — GRO-2164); unknown path is a no-op. */
+  removeRecent(path: string): Promise<void>
   /** Merge into `folders[root]`; missing root entries are created with defaults. */
   setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile'>>): Promise<void>
   /** Replace the fold keys for one file; an empty list removes the entry. */

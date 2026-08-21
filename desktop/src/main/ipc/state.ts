@@ -45,6 +45,9 @@ export function registerStateIpc(store: Store): void {
   handle(CH.statePushRecent, async (path: unknown) => {
     store.pushRecent(requireAbsPath(path, 'path'))
   })
+  handle(CH.stateRemoveRecent, async (path: unknown) => {
+    store.removeRecent(requireAbsPath(path, 'path'))
+  })
   handle(CH.stateSetFolder, async (root: unknown, patch: unknown) => {
     store.setFolder(requireAbsPath(root, 'root'), requireFolderPatch(patch))
   })

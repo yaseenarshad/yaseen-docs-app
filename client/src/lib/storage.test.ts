@@ -12,6 +12,7 @@ function installBridge(state: AppState, identity: WindowIdentity) {
       setSettings: vi.fn(async () => undefined),
       setSidebarCollapsed: vi.fn(async () => undefined),
       pushRecent: vi.fn(async () => undefined),
+      removeRecent: vi.fn(async () => undefined),
       setFolder: vi.fn(async () => undefined),
       setFolds: vi.fn(async () => undefined),
       setBaseGroups: vi.fn(async () => undefined),
@@ -130,6 +131,14 @@ describe('storage', () => {
       { path: '/a', lastOpened: 5 },
     ])
     expect(b.bridge.state.pushRecent.mock.calls).toEqual([['/a'], ['/b']])
+  })
+
+  it('removeRecentRoot drops the entry from the cache and sends the removal over the bridge', () => {
+    storage.pushRecentRoot('/a', 5)
+    storage.pushRecentRoot('/b', 6)
+    storage.removeRecentRoot('/a')
+    expect(storage.getRecentRoots()).toEqual([{ path: '/b', lastOpened: 6 }])
+    expect(b.bridge.state.removeRecent).toHaveBeenCalledWith('/a')
   })
 
   it('expanded and lastFile are keyed by root; lastFile also updates the window identity', () => {

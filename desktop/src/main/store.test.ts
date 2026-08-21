@@ -210,6 +210,20 @@ describe('createStore: mutations', () => {
     expect(store.get().recents[0].lastOpened).toBeGreaterThan(0)
   })
 
+  it('removeRecent drops the entry; removing an unknown path changes (and notifies) nothing', () => {
+    const store = createStore(file)
+    const seen: AppState[] = []
+    store.onChange((s) => seen.push(s))
+    store.pushRecent('/a', 1)
+    store.pushRecent('/b', 2)
+    store.removeRecent('/a')
+    expect(store.get().recents).toEqual([{ path: '/b', lastOpened: 2 }])
+    expect(seen).toHaveLength(3)
+    store.removeRecent('/gone') // no change → no notification
+    expect(seen).toHaveLength(3)
+    expect(store.get().recents).toEqual([{ path: '/b', lastOpened: 2 }])
+  })
+
   it('setFolder creates the entry with defaults, merges the patch and ignores unknown keys', () => {
     const store = createStore(file)
     store.setFolder('/r1', { expanded: ['/r1/a'] })
