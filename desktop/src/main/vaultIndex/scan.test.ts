@@ -3,7 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parseFrontmatter } from '@shared/frontmatter'
 import { MAX_FILE_BYTES } from '@shared/types'
-import { makeBasesFixture } from '../bases-fixture'
+import { makeBasesFixture } from '../fs/basesFixture'
 import { extractEmbeds, extractLinks, extractTags, scanFile } from './index'
 
 describe('parseFrontmatter', () => {

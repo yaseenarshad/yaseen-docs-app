@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { IndexRecord } from '@shared/types'
-import { TEST_RECORDS } from '../../../client/src/bases/testRecords'
-import { makeBasesFixture } from '../bases-fixture'
-import { activeWatcherRoots } from '../watchers'
+import { TEST_RECORDS } from '../../../../client/src/bases/testRecords'
+import { makeBasesFixture } from '../fs/basesFixture'
+import { activeWatcherRoots } from '../fs/watchers'
 import { _evictAll, _setIdleMs, getIndex } from './index'
 
 const until = async (pred: () => Promise<boolean> | boolean, ms = 3000) => {
