@@ -120,7 +120,7 @@ export function App() {
           </div>
         </section>
       ) : (
-        <Editor root={root} path={file} watch={watch} />
+        <Editor root={root} path={file} watch={watch} onOpenFile={openFile} />
       )}
       {pickerOpen && (
         <FolderPicker initialPath={root} recent={recent} onOpen={openRoot} onCancel={root === null ? undefined : closePicker} />

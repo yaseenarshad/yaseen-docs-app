@@ -19,6 +19,7 @@ import { api } from '../api'
 
 const readFile = vi.mocked(api.readFile)
 const writeFile = vi.mocked(api.writeFile)
+const openFile = vi.fn()
 
 // React's act() refuses to run outside a test renderer unless this flag is set.
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -63,12 +64,12 @@ function mount(content: string, mtime = 1): HTMLElement {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<BaseHost root="/vault" file={file} watch={watch} />))
+  act(() => root?.render(<BaseHost root="/vault" file={file} watch={watch} onOpenFile={openFile} />))
   return container
 }
 
 function tabNames(el: HTMLElement): string[] {
-  return [...el.querySelectorAll('.base-view__tabs [role="tab"]')].map((t) => t.textContent ?? '')
+  return [...el.querySelectorAll('.base-tabs [role="tab"]')].map((t) => t.textContent ?? '')
 }
 
 /** Types into the textarea the way a user would: native value setter + bubbling `input` (React's value tracker). */
@@ -118,7 +119,25 @@ describe('BaseHost', () => {
     expect(tabs[0]?.getAttribute('aria-selected')).toBe('true')
     expect(tabs[1]?.getAttribute('aria-selected')).toBe('false')
     expect(el.querySelector('.base-raw')).toBeNull()
-    expect(el.querySelector('.base-view__placeholder')?.textContent).toContain('3 views')
+    // No index is wired yet (2C): the body is the pending notice over an empty result.
+    expect(el.querySelector('.base-view__pending')?.textContent).toContain('Waiting for the vault index')
+    expect(el.querySelector('.base-toolbar__count')?.textContent).toBe('0 items')
+  })
+
+  it('a toolbar change (adding a view) goes through onChange into one PUT of the new YAML after the debounce', async () => {
+    const el = mount(FIXTURE)
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Add view"]')?.click())
+    expect(tabNames(el)).toEqual(['Table', 'View', 'View 2', 'Table 4'])
+    expect(el.querySelectorAll('[role="tab"]')[3]?.getAttribute('aria-selected')).toBe('true')
+    expect(writeFile).not.toHaveBeenCalled()
+    await pastDebounce()
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    expect(writeFile.mock.calls[0]?.[0]).toEqual({
+      path: PATH,
+      content: `${FIXTURE}  - type: table\n    name: Table 4\n`,
+      expectedMtime: 1,
+    })
+    expect(el.querySelector('.save-indicator')?.textContent).toBe('Saved')
   })
 
   it('clicking a tab switches the selected one (view-only, no write)', async () => {
@@ -233,7 +252,7 @@ describe('BaseHost', () => {
     act(() =>
       root?.render(
         <StrictMode>
-          <BaseHost root="/vault" file={file} watch={watch} />
+          <BaseHost root="/vault" file={file} watch={watch} onOpenFile={openFile} />
         </StrictMode>,
       ),
     )

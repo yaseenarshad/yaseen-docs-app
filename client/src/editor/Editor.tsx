@@ -22,9 +22,11 @@ interface EditorProps {
   root: string
   path: string | null
   watch: WatchSource
+  /** Bases open their row links through this (GRO-2135); App passes `openFile`. */
+  onOpenFile: (path: string) => void
 }
 
-export function Editor({ root, path, watch }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile }: EditorProps) {
   const state = useFile(path)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   return (
@@ -34,7 +36,7 @@ export function Editor({ root, path, watch }: EditorProps) {
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null &&
         (fileKind(file.path) === 'base' ? (
-          <BaseHost key={file.path} root={root} file={file} watch={watch} />
+          <BaseHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} />
         ) : (
           <CrepeHost key={file.path} root={root} file={file} watch={watch} />
         ))}
