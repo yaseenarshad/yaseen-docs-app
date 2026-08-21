@@ -57,7 +57,7 @@ export function Sidebar({
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [expanded, dispatch] = useReducer(treeReducer, root, storage.getExpanded)
-  const [menu, setMenu] = useState<{ x: number; y: number; targetDir: string; copyPath: string | null } | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; targetDir: string; copyPath: string | null; newWindowPath: string | null } | null>(null)
   const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string } | null>(null)
 
   const refresh = useCallback(() => {
@@ -110,7 +110,21 @@ export function Sidebar({
     (node: TreeNode | null, e: React.MouseEvent) => {
       e.preventDefault()
       e.stopPropagation()
-      setMenu({ x: e.clientX, y: e.clientY, targetDir: targetDirFor(node, root), copyPath: node?.path ?? null })
+      setMenu({
+        x: e.clientX,
+        y: e.clientY,
+        targetDir: targetDirFor(node, root),
+        copyPath: node?.path ?? null,
+        newWindowPath: node?.type === 'file' ? node.path : null,
+      })
+    },
+    [root],
+  )
+
+  /** ⌘-click / "Open in new window" (D2, GRO-2168): a fresh window on {root, file}; this one untouched. */
+  const openFileNewWindow = useCallback(
+    (path: string) => {
+      window.yaseenDocs.window.open({ root, file: path }).catch((err: unknown) => console.error('[sidebar] window.open failed:', err))
     },
     [root],
   )
@@ -172,6 +186,7 @@ export function Sidebar({
             activeFile={activeFile}
             onToggle={(dir) => dispatch({ type: 'toggle', dir })}
             onOpenFile={onOpenFile}
+            onOpenFileNewWindow={openFileNewWindow}
             onNodeContextMenu={openMenu}
             pending={pending}
           />
@@ -186,6 +201,8 @@ export function Sidebar({
           x={menu.x}
           y={menu.y}
           copyPath={menu.copyPath}
+          newWindowPath={menu.newWindowPath}
+          onOpenNewWindow={openFileNewWindow}
           onNewNote={() => startCreate('file')}
           onNewBase={() => startCreate('base')}
           onNewFolder={() => startCreate('dir')}

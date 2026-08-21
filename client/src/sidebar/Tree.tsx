@@ -20,6 +20,8 @@ interface TreeProps {
   activeFile: string | null
   onToggle: (dir: string) => void
   onOpenFile: (path: string) => void
+  /** ⌘-click on a file row (D2, GRO-2168): open it in a new window; this window stays put. */
+  onOpenFileNewWindow: (path: string) => void
   /** Right-click on a row; blank-space right-clicks are handled by the sidebar body. */
   onNodeContextMenu: (node: TreeNode, e: React.MouseEvent) => void
   pending: PendingCreate | null
@@ -44,11 +46,12 @@ export function Tree({
   activeFile,
   onToggle,
   onOpenFile,
+  onOpenFileNewWindow,
   onNodeContextMenu,
   pending,
   depth = 0,
 }: TreeProps) {
-  const recurse = { expanded, activeFile, onToggle, onOpenFile, onNodeContextMenu, pending }
+  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileNewWindow, onNodeContextMenu, pending }
   return (
     <ul className="tree" role={depth === 0 ? 'tree' : 'group'}>
       {pending !== null && pending.parentDir === dirPath && (
@@ -82,7 +85,7 @@ export function Tree({
               type="button"
               className={`tree__row tree__row--file${node.kind === 'base' ? ' tree__row--base' : ''}${node.path === activeFile ? ' tree__row--active' : ''}`}
               style={{ paddingLeft: 8 + depth * 14 + 14 }}
-              onClick={() => onOpenFile(node.path)}
+              onClick={(e) => (e.metaKey ? onOpenFileNewWindow(node.path) : onOpenFile(node.path))}
               onContextMenu={(e) => onNodeContextMenu(node, e)}
               title={node.path}
             >

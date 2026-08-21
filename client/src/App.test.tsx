@@ -165,6 +165,14 @@ describe('App openRoot (C3, GRO-2165)', () => {
   })
 })
 
+describe('App boot on a window entry with a file (D2, GRO-2168)', () => {
+  it('the entry file wins over the folder lastFile: a ⌘-click window opens on the clicked file', async () => {
+    const state = withFolder(defaultAppState(), '/v', '/v/last.md')
+    const { el } = await mount(state, { id: 'w2', root: '/v', file: '/v/picked.md' })
+    expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('/v/picked.md')
+  })
+})
+
 describe('App window title (C3, GRO-2165)', () => {
   it('is "<file> — <folder>" with a file open, the folder alone without one, the app name on Welcome', async () => {
     const state = withFolder(defaultAppState(), '/vaults/w', '/vaults/w/Note.md')
