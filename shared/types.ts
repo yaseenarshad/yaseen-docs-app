@@ -222,7 +222,19 @@ export interface SettingsState {
   blockGap: number
   /** Accent the root → caret bullet path (GRO-2094). View-only; never written into the file. */
   bulletThreading: boolean
+  /** Thread line width in px: 1 | 2 | 3, like logseq-bullet-threading (GRO-2109). */
+  threadWidth: number
+  /** Custom thread colour as `#rrggbb`, or null = the app accent (GRO-2109). */
+  threadColor: string | null
 }
 
-/** Matches the app's pre-settings look (Crepe: line-height 1.5, block padding 4px); threading on. */
-export const DEFAULT_SETTINGS: SettingsState = { lineSpacing: 1.5, blockGap: 4, bulletThreading: true }
+export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
+
+/** Matches the app's pre-settings look (Crepe: line-height 1.5, block padding 4px); threading on, 2px, accent. */
+export const DEFAULT_SETTINGS: SettingsState = {
+  lineSpacing: 1.5,
+  blockGap: 4,
+  bulletThreading: true,
+  threadWidth: 2,
+  threadColor: null,
+}

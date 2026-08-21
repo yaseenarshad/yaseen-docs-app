@@ -82,8 +82,8 @@ describe('storage', () => {
 
   it('settings default, round-trip, and merge partial/invalid stored values', () => {
     expect(storage.getSettings()).toEqual(DEFAULT_SETTINGS)
-    storage.setSettings({ lineSpacing: 2.0, blockGap: 12, bulletThreading: false })
-    expect(storage.getSettings()).toEqual({ lineSpacing: 2.0, blockGap: 12, bulletThreading: false })
+    storage.setSettings({ ...DEFAULT_SETTINGS, lineSpacing: 2.0, blockGap: 12, bulletThreading: false })
+    expect(storage.getSettings()).toEqual({ ...DEFAULT_SETTINGS, lineSpacing: 2.0, blockGap: 12, bulletThreading: false })
     // Unknown / partial shapes fall back field-by-field to defaults.
     localStorage.setItem(LS_KEYS.settings, JSON.stringify({ lineSpacing: 1.15 }))
     expect(storage.getSettings()).toEqual({ ...DEFAULT_SETTINGS, lineSpacing: 1.15 })
@@ -101,6 +101,19 @@ describe('storage', () => {
     expect(storage.getSettings()).toEqual({ ...DEFAULT_SETTINGS, bulletThreading: false })
     localStorage.setItem(LS_KEYS.settings, JSON.stringify({ bulletThreading: 'off' }))
     expect(storage.getSettings().bulletThreading).toBe(true)
+  })
+
+  it('thread width (1|2|3) and colour (#rrggbb | null) default and reject junk (GRO-2109)', () => {
+    expect(DEFAULT_SETTINGS.threadWidth).toBe(2)
+    expect(DEFAULT_SETTINGS.threadColor).toBeNull()
+    localStorage.setItem(LS_KEYS.settings, JSON.stringify({ threadWidth: 3, threadColor: '#ff0000' }))
+    expect(storage.getSettings()).toEqual({ ...DEFAULT_SETTINGS, threadWidth: 3, threadColor: '#ff0000' })
+    localStorage.setItem(LS_KEYS.settings, JSON.stringify({ threadWidth: 5, threadColor: 'red' }))
+    expect(storage.getSettings()).toEqual(DEFAULT_SETTINGS)
+    localStorage.setItem(LS_KEYS.settings, JSON.stringify({ threadWidth: 'thick', threadColor: null }))
+    expect(storage.getSettings()).toEqual(DEFAULT_SETTINGS)
+    storage.setSettings({ ...DEFAULT_SETTINGS, threadWidth: 1, threadColor: '#00AAff' })
+    expect(storage.getSettings()).toEqual({ ...DEFAULT_SETTINGS, threadWidth: 1, threadColor: '#00AAff' })
   })
 
   it('treats invalid JSON / wrong shapes as absent', () => {

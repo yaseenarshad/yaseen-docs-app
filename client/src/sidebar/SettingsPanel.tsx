@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { SettingsState } from '@shared/types'
+import { THREAD_WIDTHS, type SettingsState } from '@shared/types'
 
 /** Google-Docs-style presets (GRO-2024 D4). blockGap is per-side padding: visual gap = 2×. */
 const LINE_SPACING_PRESETS: Array<{ label: string; value: number }> = [
@@ -14,6 +14,8 @@ const BLOCK_GAP_PRESETS: Array<{ label: string; value: number }> = [
   { label: 'Relaxed', value: 8 },
   { label: 'Spacious', value: 12 },
 ]
+/** Shown in the colour swatch while the thread uses the app accent (`--accent` in app.css). */
+const DEFAULT_THREAD_SWATCH = '#5b6cff'
 /** Bullet threading on/off (GRO-2094); the editor reads it as `data-threading` on `.app`. */
 const THREADING_OPTIONS: Array<{ label: string; value: boolean }> = [
   { label: 'Off', value: false },
@@ -88,6 +90,37 @@ export function SettingsCog({ settings, onChange }: SettingsCogProps) {
                 {label}
               </button>
             ))}
+          </div>
+          <p className="settings__label">Thread width</p>
+          <div className="settings__row">
+            {THREAD_WIDTHS.map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={`settings__option${settings.threadWidth === value ? ' settings__option--active' : ''}`}
+                onClick={() => onChange({ ...settings, threadWidth: value })}
+              >
+                {value}px
+              </button>
+            ))}
+          </div>
+          <p className="settings__label">Thread colour</p>
+          <div className="settings__row">
+            <input
+              type="color"
+              className="settings__color"
+              aria-label="Thread colour"
+              value={settings.threadColor ?? DEFAULT_THREAD_SWATCH}
+              onChange={(e) => onChange({ ...settings, threadColor: e.target.value })}
+            />
+            <button
+              type="button"
+              className={`settings__option${settings.threadColor === null ? ' settings__option--active' : ''}`}
+              disabled={settings.threadColor === null}
+              onClick={() => onChange({ ...settings, threadColor: null })}
+            >
+              Default
+            </button>
           </div>
         </div>
       )}

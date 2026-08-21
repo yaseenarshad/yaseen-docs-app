@@ -42,6 +42,9 @@ export function App() {
   const settingsVars = {
     '--edit-line-height': settings.lineSpacing,
     '--edit-block-gap': `${settings.blockGap}px`,
+    '--thread-width': `${settings.threadWidth}px`,
+    // Absent → bulletThreading.css falls back to the app accent.
+    ...(settings.threadColor !== null ? { '--thread-color': settings.threadColor } : {}),
   } as CSSProperties
 
   // Mount only: the restored-from-storage file also shows in the URL from the start;

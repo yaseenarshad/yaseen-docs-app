@@ -7,6 +7,7 @@ import {
   type LastFileState,
   type RecentRoots,
   type SettingsState,
+  THREAD_WIDTHS,
 } from '@shared/types'
 
 const MAX_RECENT = 10
@@ -74,6 +75,8 @@ export const storage = {
       lineSpacing: typeof raw.lineSpacing === 'number' ? raw.lineSpacing : DEFAULT_SETTINGS.lineSpacing,
       blockGap: typeof raw.blockGap === 'number' ? raw.blockGap : DEFAULT_SETTINGS.blockGap,
       bulletThreading: typeof raw.bulletThreading === 'boolean' ? raw.bulletThreading : DEFAULT_SETTINGS.bulletThreading,
+      threadWidth: typeof raw.threadWidth === 'number' && THREAD_WIDTHS.includes(raw.threadWidth) ? raw.threadWidth : DEFAULT_SETTINGS.threadWidth,
+      threadColor: typeof raw.threadColor === 'string' && /^#[0-9a-f]{6}$/i.test(raw.threadColor) ? raw.threadColor : DEFAULT_SETTINGS.threadColor,
     }
   },
   setSettings(settings: SettingsState): void {

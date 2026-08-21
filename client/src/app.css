@@ -472,6 +472,16 @@ button {
   background: var(--accent-soft);
 }
 
+.settings__color {
+  width: 34px;
+  height: 24px;
+  padding: 0 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  cursor: pointer;
+}
+
 .settings__option--active {
   border-color: var(--accent);
   background: var(--accent-soft);
