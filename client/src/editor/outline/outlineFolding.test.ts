@@ -234,3 +234,18 @@ describe('panic-undo (GRO-2075)', () => {
     expect(folded(root).length).toBeGreaterThan(0)
   })
 })
+
+describe('chevron rendering (GRO-2093)', () => {
+  it('renders an SVG chevron (no text glyph) in both states', async () => {
+    const { root } = await mount({ defaultValue: OUTLINE })
+    const expanded = toggleFor(root, 'Parent')
+    expect(expanded.querySelector('svg')).not.toBeNull()
+    expect(expanded.textContent).toBe('')
+
+    expanded.click()
+    const collapsed = toggleFor(root, 'Parent') // widget re-renders on toggle
+    expect(collapsed.getAttribute('aria-expanded')).toBe('false')
+    expect(collapsed.querySelector('svg')).not.toBeNull()
+    expect(collapsed.textContent).toBe('')
+  })
+})

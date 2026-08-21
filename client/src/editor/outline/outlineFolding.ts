@@ -93,6 +93,27 @@ export const undoLastFold: Command = (state, dispatch) => {
   return true
 }
 
+/**
+ * Chevron glyph (GRO-2093): one stroked SVG (chevron-down), sized by `--fold-chevron-size` and
+ * rotated -90° by CSS when collapsed, so the 18px widget box — and with it the guide-line strip
+ * and block-handle-gate geometry — never changes.
+ */
+const chevronSvg = (): SVGSVGElement => {
+  const ns = 'http://www.w3.org/2000/svg'
+  const svg = document.createElementNS(ns, 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('fill', 'none')
+  svg.setAttribute('stroke', 'currentColor')
+  svg.setAttribute('stroke-width', '2')
+  svg.setAttribute('stroke-linecap', 'round')
+  svg.setAttribute('stroke-linejoin', 'round')
+  svg.setAttribute('aria-hidden', 'true')
+  const path = document.createElementNS(ns, 'path')
+  path.setAttribute('d', 'M6 9l6 6 6-6')
+  svg.appendChild(path)
+  return svg
+}
+
 const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
   const entries: OutlineEntry[] = []
   const labelOccurrences = new Map<string, number>()
@@ -217,7 +238,7 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
                     button.dataset.outlineFoldKey = entry.foldKey
                     button.setAttribute('aria-expanded', String(!collapsed))
                     button.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${entry.label}`)
-                    button.textContent = collapsed ? '▸' : '▾'
+                    button.replaceChildren(chevronSvg())
                     const toggle = () => view.dispatch(view.state.tr.setMeta(pluginKey, entry.itemPos))
                     // Keep the caret where it is: the toggle must not steal focus or move the selection.
                     button.addEventListener('mousedown', (event) => event.preventDefault())

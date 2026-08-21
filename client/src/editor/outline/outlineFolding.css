@@ -1,6 +1,6 @@
-/* Fold chevron (GRO-2011): rendered by a ProseMirror widget decoration at the start of a
-   parent list_item's content (`li.list-item > .children > .content-dom`), then pulled into
-   the gutter left of the bullet. Row geometry (`--list-label-offset/height`) comes from
+/* Fold chevron (GRO-2011, SVG since GRO-2093): rendered by a ProseMirror widget decoration at the
+   start of a parent list_item's content (`li.list-item > .children > .content-dom`), then pulled
+   into the gutter left of the bullet. Row geometry (`--list-label-offset/height`) comes from
    bullets.css so the chevron stays centred on the same line as the glyph, headings included. */
 .milkdown .milkdown-list-item-block li.list-item {
   position: relative;
@@ -17,10 +17,9 @@
   border-radius: 4px;
   background: transparent;
   color: var(--crepe-color-outline);
-  font: inherit;
-  font-size: 0.85em;
-  line-height: 1;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.12s;
@@ -40,6 +39,17 @@
 .outline-toggle:focus-visible {
   outline: 2px solid var(--crepe-color-primary);
   outline-offset: 1px;
+}
+
+/* GRO-2093: one SVG, ~2x the old text glyph; collapsed = rotated, never a second glyph. */
+.outline-toggle svg {
+  width: var(--fold-chevron-size, 14px);
+  height: var(--fold-chevron-size, 14px);
+  transition: transform 0.12s;
+}
+
+.outline-toggle[aria-expanded='false'] svg {
+  transform: rotate(-90deg);
 }
 
 [data-outline-folded='true'] {
