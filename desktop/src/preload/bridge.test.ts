@@ -8,7 +8,7 @@ vi.mock('electron', () => ({
 }))
 
 /** Compile-time exhaustive: adding a method to the contract without listing it here fails typecheck. */
-const TOP: readonly (keyof YaseenDocsApi)[] = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'pickFolder', 'watch', 'state', 'window']
+const TOP: readonly (keyof YaseenDocsApi)[] = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'pickFolder', 'watch', 'state', 'window']
 const STATE: readonly (keyof StateApi)[] = ['get', 'setSettings', 'setSidebarCollapsed', 'pushRecent', 'setFolder', 'setFolds', 'onChange']
 const WINDOW: readonly (keyof WindowApi)[] = ['identity', 'setIdentity', 'open', 'duplicate']
 type Exhaustive<T, K extends readonly (keyof T)[]> = Exclude<keyof T, K[number]> extends never ? true : never

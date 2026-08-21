@@ -392,11 +392,17 @@ describe('search, count and body', () => {
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
   })
 
-  it('indexStatus pending shows the waiting notice instead of rows', () => {
+  it('indexStatus pending shows the loading notice instead of rows', () => {
     const { el } = mount(YASIN_BASE, { records: [], indexStatus: 'pending' })
-    expect(q(el, '.base-view__pending').textContent).toBe('Waiting for the vault index (desktop bridge pending)')
+    expect(q(el, '.base-view__pending').textContent).toBe('Loading the vault index…')
     expect(el.querySelector('.base-row')).toBeNull()
     expect(count(el)).toBe('0 items')
+  })
+
+  it('indexStatus error shows the failure with its message instead of rows', () => {
+    const { el } = mount(YASIN_BASE, { records: [], indexStatus: 'error', indexError: 'bridge gone' })
+    expect(q(el, '.base-view__error').textContent).toBe('Could not load the vault index: bridge gone')
+    expect(el.querySelector('.base-row')).toBeNull()
   })
 })
 

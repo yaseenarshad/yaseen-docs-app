@@ -1,8 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import path from 'node:path'
 import { ipcMain } from 'electron'
+import type { IndexResponse } from '@shared/types'
 import { CH, type Envelope } from '../../channels'
 import { makeFixture } from '../fs/testFixture'
+import { _evictAll } from '../vaultIndex'
 import { registerFsIpc } from './fs'
 
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn(), on: vi.fn() } }))
@@ -18,13 +20,16 @@ function registered(channel: string): Handler {
 let root: string
 let cleanup: () => Promise<void>
 beforeAll(async () => ({ root, cleanup } = await makeFixture()))
-afterAll(() => cleanup())
+afterAll(async () => {
+  _evictAll()
+  await cleanup()
+})
 
 describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc()
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsRead, CH.fsTree, CH.fsWrite].sort())
+    expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsIndex, CH.fsRead, CH.fsTree, CH.fsWrite].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
@@ -37,5 +42,15 @@ describe('registerFsIpc', () => {
       ok: false,
       error: { code: 'NOT_FOUND', message: 'path does not exist', path: missing },
     })
+  })
+
+  it('fs:index answers the vault index for the root: markdown records only (GRO-2129)', async () => {
+    const res = await registered(CH.fsIndex)({ sender: {} }, root)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error('expected ok')
+    const value = res.value as IndexResponse
+    expect(value.root).toBe(root)
+    expect(value.records.length).toBeGreaterThan(0)
+    expect(value.records.every((r) => r.ext === 'md' || r.ext === 'markdown')).toBe(true)
   })
 })

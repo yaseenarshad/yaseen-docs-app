@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { FileResponse, IndexRecord } from '@shared/types'
+import type { FileResponse } from '@shared/types'
 import { api } from '../api'
 import { SaveIndicator } from '../editor/SaveIndicator'
 import { useAutosave } from '../hooks/useAutosave'
@@ -7,6 +7,7 @@ import type { WatchSource } from '../hooks/useWatch'
 import type { Autosave } from '../lib/autosave'
 import { BaseParseError, parseBase, serializeBase, type ParsedBase } from './baseFile'
 import { BaseView } from './BaseView'
+import { useIndex } from './useIndex'
 import './bases.css'
 
 /** View mode when the file parses; raw-textarea fallback (with the parse error) when it does not. */
@@ -30,9 +31,6 @@ function describeError(err: BaseParseError): string {
   return err.line === undefined ? first : `${err.line}:${err.col ?? 1} ${first}`
 }
 
-/** No index yet: 2C wires `useIndex`; until then the views query nothing and show the pending notice (GRO-2135). */
-const NO_RECORDS: IndexRecord[] = []
-
 interface BaseHostProps {
   root: string
   file: FileResponse
@@ -47,7 +45,8 @@ interface BaseHostProps {
  * Opening a file and doing nothing never writes: the autosave baseline is the first
  * `contentOf()` and only content that differs from it is ever saved.
  */
-export function BaseHost({ file, watch, onOpenFile }: BaseHostProps) {
+export function BaseHost({ root, file, watch, onOpenFile }: BaseHostProps) {
+  const index = useIndex(root, watch)
   const [mode, setMode] = useState<BaseMode>(() => load(file.content))
   const modeRef = useRef(mode)
   const controllerRef = useRef<Autosave | null>(null)
@@ -125,8 +124,9 @@ export function BaseHost({ file, watch, onOpenFile }: BaseHostProps) {
             parsed={mode.parsed}
             onChange={onViewChange}
             thisFile={file.path}
-            records={NO_RECORDS}
-            indexStatus="pending"
+            records={index.records}
+            indexStatus={index.status}
+            indexError={index.error ?? undefined}
             onOpenFile={onOpenFile}
           />
         ) : (

@@ -6,20 +6,36 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { FileResponse, WatchEvent } from '@shared/types'
+import type { FileResponse, IndexRecord, WatchEvent } from '@shared/types'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
 import { BaseHost } from './BaseHost'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { readFile: vi.fn(), writeFile: vi.fn() },
+  api: { readFile: vi.fn(), writeFile: vi.fn(), index: vi.fn() },
 }))
 
 import { api } from '../api'
 
 const readFile = vi.mocked(api.readFile)
 const writeFile = vi.mocked(api.writeFile)
+const indexFn = vi.mocked(api.index)
 const openFile = vi.fn()
+
+const record = (path: string): IndexRecord => ({
+  path,
+  name: path.slice(path.lastIndexOf('/') + 1),
+  basename: path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, ''),
+  folder: '',
+  ext: 'md',
+  size: 1,
+  ctime: 1,
+  mtime: 1,
+  properties: {},
+  tags: [],
+  links: [],
+  embeds: [],
+})
 
 // React's act() refuses to run outside a test renderer unless this flag is set.
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -99,6 +115,7 @@ async function pastDebounce(): Promise<void> {
 beforeEach(() => {
   vi.useFakeTimers()
   writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 99, size: body.content.length }))
+  indexFn.mockResolvedValue({ root: '/vault', records: [record('/vault/a.md'), record('/vault/b.md')], generatedAt: 1 })
 })
 
 afterEach(() => {
@@ -119,9 +136,30 @@ describe('BaseHost', () => {
     expect(tabs[0]?.getAttribute('aria-selected')).toBe('true')
     expect(tabs[1]?.getAttribute('aria-selected')).toBe('false')
     expect(el.querySelector('.base-raw')).toBeNull()
-    // No index is wired yet (2C): the body is the pending notice over an empty result.
-    expect(el.querySelector('.base-view__pending')?.textContent).toContain('Waiting for the vault index')
+    // The index fetch has not resolved yet: the body is the pending notice over an empty result.
+    expect(el.querySelector('.base-view__pending')).not.toBeNull()
     expect(el.querySelector('.base-toolbar__count')?.textContent).toBe('0 items')
+  })
+
+  it('feeds the fetched vault index into the view: rows and count appear once the index resolves (GRO-2129)', async () => {
+    const el = mount(FIXTURE)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(indexFn).toHaveBeenCalledWith('/vault')
+    expect(el.querySelector('.base-view__pending')).toBeNull()
+    expect([...el.querySelectorAll('.base-row__link')].map((b) => b.textContent)).toEqual(['a.md', 'b.md'])
+    expect(el.querySelector('.base-toolbar__count')?.textContent).toBe('2 items')
+  })
+
+  it('a failed index fetch shows the error state instead of rows (GRO-2129)', async () => {
+    indexFn.mockRejectedValue(new Error('bridge gone'))
+    const el = mount(FIXTURE)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(el.querySelector('.base-view__error')?.textContent).toContain('bridge gone')
+    expect(el.querySelector('.base-rows')).toBeNull()
   })
 
   it('a toolbar change (adding a view) goes through onChange into one PUT of the new YAML after the debounce', async () => {
@@ -244,7 +282,7 @@ describe('BaseHost', () => {
     expect(writeFile.mock.calls[0]?.[0]).toEqual({ path: PATH, content: FIXED, expectedMtime: 2 })
   })
 
-  it('survives StrictMode double-mount: one watcher subscription, one PUT, no write on open', async () => {
+  it('survives StrictMode double-mount: one watcher subscription per consumer, one PUT, no write on open', async () => {
     const file: FileResponse = { path: PATH, content: INVALID, mtime: 1, size: INVALID.length }
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -256,7 +294,8 @@ describe('BaseHost', () => {
         </StrictMode>,
       ),
     )
-    expect(listeners).toHaveLength(1)
+    // Two subscribers on the fan-out: BaseHost's reload watcher and useIndex's refetch watcher.
+    expect(listeners).toHaveLength(2)
     await pastDebounce()
     expect(writeFile).not.toHaveBeenCalled()
     typeRaw(container, FIXED)

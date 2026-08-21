@@ -12,9 +12,11 @@ export interface BaseViewProps {
   onChange: (next: ParsedBase) => void
   /** Absolute path of the open `.base`, for `this.file` in filters/formulas; null when unknown. */
   thisFile: string | null
-  /** The vault index the views query; `[]` while `indexStatus` is pending (GRO-2135; wired by 2C). */
+  /** The vault index the views query; `[]` until `indexStatus` is ready (fed by `useIndex`, GRO-2129). */
   records: IndexRecord[]
-  indexStatus: 'pending' | 'ready'
+  indexStatus: 'pending' | 'ready' | 'error'
+  /** The fetch failure shown when `indexStatus` is 'error'. */
+  indexError?: string
   onOpenFile: (path: string) => void
 }
 
@@ -24,7 +26,7 @@ export interface BaseViewProps {
  * toolbar → `updateBase` → `runView`; 4B replaces the list with the table. Only the active
  * tab and the search text are component state — everything else is the file.
  */
-export function BaseView({ parsed, onChange, thisFile, records, indexStatus, onOpenFile }: BaseViewProps) {
+export function BaseView({ parsed, onChange, thisFile, records, indexStatus, indexError, onOpenFile }: BaseViewProps) {
   const [active, setActive] = useState(0)
   const [search, setSearch] = useState<string | null>(null)
   const { def } = parsed
@@ -107,7 +109,11 @@ export function BaseView({ parsed, onChange, thisFile, records, indexStatus, onO
         tabs={tabs}
       />
       {indexStatus === 'pending' ? (
-        <p className="base-view__pending">Waiting for the vault index (desktop bridge pending)</p>
+        <p className="base-view__pending">Loading the vault index…</p>
+      ) : indexStatus === 'error' ? (
+        <p className="base-view__error" role="alert">
+          Could not load the vault index: {indexError}
+        </p>
       ) : (
         <ul className="base-rows">
           {rows.map((row) => (

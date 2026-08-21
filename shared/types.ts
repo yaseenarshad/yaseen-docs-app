@@ -328,6 +328,8 @@ export interface YaseenDocsApi {
   writeFile(req: FileWriteRequest): Promise<FileWriteResponse>
   createDir(path: string): Promise<CreateDirResponse>
   createFile(path: string): Promise<CreateFileResponse>
+  /** Bases property index for `root` (GRO-2129): full scan on first call, watcher-incremental after. */
+  index(root: string): Promise<IndexResponse>
   /** Native open-directory dialog parented to the calling window (GRO-2163). */
   pickFolder(): Promise<PickFolderResponse>
   /** One chokidar watcher per root in main, shared by every window; late joiners get `ready` at once. */

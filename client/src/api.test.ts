@@ -10,6 +10,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     writeFile: vi.fn(),
     createDir: vi.fn(),
     createFile: vi.fn(),
+    index: vi.fn(),
     pickFolder: vi.fn(),
     watch: vi.fn(),
     state: vi.fn(),
@@ -41,6 +42,9 @@ describe('api', () => {
     expect(bridge.readFile).toHaveBeenCalledWith('/v/a.md')
     expect(bridge.createDir).toHaveBeenCalledWith('/v/d')
     expect(bridge.createFile).toHaveBeenCalledWith('/v/n.md')
+    bridge.index.mockResolvedValue({ root: '/v', records: [], generatedAt: 4 })
+    await expect(api.index('/v')).resolves.toEqual({ root: '/v', records: [], generatedAt: 4 })
+    expect(bridge.index).toHaveBeenCalledWith('/v')
   })
 
   it('a rejected plain BridgeError becomes a thrown ApiRequestError with code / message / path / mtime', async () => {

@@ -6,6 +6,7 @@ import type {
   FileResponse,
   FileWriteRequest,
   FileWriteResponse,
+  IndexResponse,
   PickFolderResponse,
   TreeResponse,
 } from '@shared/types'
@@ -46,6 +47,8 @@ export const api = {
   writeFile: (body: FileWriteRequest) => call<FileWriteResponse>(() => window.yaseenDocs.writeFile(body)),
   createDir: (path: string) => call<CreateDirResponse>(() => window.yaseenDocs.createDir(path)),
   createFile: (path: string) => call<CreateFileResponse>(() => window.yaseenDocs.createFile(path)),
+  /** Bases property index for `root` (GRO-2129). */
+  index: (root: string) => call<IndexResponse>(() => window.yaseenDocs.index(root)),
   /** Native open-directory dialog parented to this window; resolves when the user picks or cancels. */
   pickFolder: () => call<PickFolderResponse>(() => window.yaseenDocs.pickFolder()),
 }

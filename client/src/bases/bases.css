@@ -421,6 +421,12 @@
   text-align: center;
 }
 
+.base-view__error {
+  margin: 48px auto;
+  color: var(--danger);
+  text-align: center;
+}
+
 .base-rows {
   margin: 0;
   padding: 8px 0 0;
