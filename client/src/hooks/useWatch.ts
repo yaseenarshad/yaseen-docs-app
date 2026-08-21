@@ -7,12 +7,10 @@ export interface WatchSource {
   subscribe: (listener: WatchListener) => () => void
 }
 
-const EVENT_TYPES: WatchEvent['type'][] = ['ready', 'add', 'change', 'unlink', 'addDir', 'unlinkDir', 'error']
-
 /**
- * One EventSource on `/api/watch?root=` per root; fans events out to subscribers.
- * EventSource reconnects by itself; every (re)connect yields a `ready` event, which
- * subscribers use to refetch state they may have missed.
+ * One bridge `watch(root)` subscription per root; fans events out to subscribers. Main owns the
+ * chokidar watcher and sends `ready` once the subscription is live, which subscribers use to
+ * refetch state they may have missed.
  */
 export function useWatch(root: string | null): WatchSource {
   const listeners = useRef(new Set<WatchListener>())
@@ -29,16 +27,7 @@ export function useWatch(root: string | null): WatchSource {
   )
   useEffect(() => {
     if (root === null) return
-    const es = new EventSource(`/api/watch?root=${encodeURIComponent(root)}`)
-    const onMessage = (e: Event) => {
-      // EventSource fires its own plain `error` Event on connection loss (it then reconnects);
-      // only server frames are MessageEvents with JSON data.
-      if (!(e instanceof MessageEvent)) return
-      const ev = JSON.parse(e.data as string) as WatchEvent
-      listeners.current.forEach((l) => l(ev))
-    }
-    EVENT_TYPES.forEach((t) => es.addEventListener(t, onMessage))
-    return () => es.close()
+    return window.yaseenDocs.watch(root, (ev) => listeners.current.forEach((l) => l(ev)))
   }, [root])
   return source
 }

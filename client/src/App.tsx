@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react'
-import type { RecentRoots, SettingsState } from '@shared/types'
+import type { SettingsState } from '@shared/types'
 import { Editor } from './editor/Editor'
 import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
 import { storage } from './lib/storage'
 import { fileHash, hashFilePath } from './lib/urlHash'
-import { FolderPicker } from './sidebar/FolderPicker'
 import { Sidebar, SidebarPanelIcon } from './sidebar/Sidebar'
 
 /** Reflect the open file in the URL (GRO-2069); replaceState keeps Back sane. */
@@ -19,11 +18,19 @@ export function App() {
   const [file, setFile] = useState<string | null>(() =>
     root === null ? null : (hashFilePath(location.hash) ?? storage.getLastFile(root)),
   )
-  const [recent, setRecent] = useState<RecentRoots>(storage.getRecentRoots)
-  const [pickerOpen, setPickerOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const [settings, setSettings] = useState(storage.getSettings)
   const watch = useWatch(root)
+
+  // Settings and the sidebar toggle are global (D9): a change made in another window lands here live.
+  useEffect(
+    () =>
+      storage.subscribe(() => {
+        setSettings(storage.getSettings())
+        setSidebarCollapsed(storage.getSidebarCollapsed())
+      }),
+    [],
+  )
 
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed((collapsed) => {
@@ -53,12 +60,11 @@ export function App() {
 
   const openRoot = useCallback((path: string) => {
     storage.setRoot(path)
-    setRecent(storage.pushRecentRoot(path))
+    storage.pushRecentRoot(path)
     setRoot(path)
     const nextFile = storage.getLastFile(path)
     setFile(nextFile)
     syncHash(nextFile)
-    setPickerOpen(false)
   }, [])
 
   const openFile = useCallback(
@@ -70,9 +76,7 @@ export function App() {
     [root],
   )
 
-  const openPicker = useCallback(() => setPickerOpen(true), [])
-  const closePicker = useCallback(() => setPickerOpen(false), [])
-  const { pick, picking } = usePickFolder({ onPicked: openRoot, onFallback: openPicker })
+  const { pick, picking } = usePickFolder({ onPicked: openRoot })
 
   const onRootMissing = useCallback(() => {
     storage.setRoot(null)
@@ -113,7 +117,7 @@ export function App() {
       {root === null ? (
         <section className="editor">
           <div className="landing">
-            <p className="editor-msg">{picking ? 'Choose a folder in the Finder dialog…' : 'No folder open.'}</p>
+            <p className="editor-msg">{picking ? 'Choose a folder in the dialog…' : 'No folder open.'}</p>
             <button type="button" className="btn btn--primary" disabled={picking} onClick={pick}>
               Open folder…
             </button>
@@ -121,9 +125,6 @@ export function App() {
         </section>
       ) : (
         <Editor root={root} path={file} watch={watch} onOpenFile={openFile} />
-      )}
-      {pickerOpen && (
-        <FolderPicker initialPath={root} recent={recent} onOpen={openRoot} onCancel={root === null ? undefined : closePicker} />
       )}
     </div>
   )

@@ -2,7 +2,7 @@ import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { MAX_FILE_BYTES, type IndexRecord } from '@shared/types'
-import { fsCall } from '../fs-utils'
+import { fsCall } from '../fs/fsUtils'
 
 /** De-duplicates keeping first appearance. */
 const unique = (items: string[]): string[] => [...new Set(items)]

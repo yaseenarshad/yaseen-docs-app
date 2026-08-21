@@ -24,7 +24,7 @@ export interface AutosaveOptions {
   markdown: string
   /** mtime of the baseline. */
   mtime: number
-  save: (content: string, expectedMtime: number, keepalive: boolean) => Promise<{ mtime: number }>
+  save: (content: string, expectedMtime: number) => Promise<{ mtime: number }>
   onStatus: (status: SaveStatus) => void
   onConflict: (diskMtime: number) => void
   delayMs?: number
@@ -78,14 +78,14 @@ export class Autosave {
   }
 
   /** Save pending content now (awaits any in-flight save first). */
-  async flush(keepalive = false): Promise<void> {
+  async flush(): Promise<void> {
     this.clearTimer()
     if (this.inflight !== null) await this.inflight
     if (this.pending === null || this.blocked) return
     const content = this.pending
     this.pending = null
     this.setStatus('saving')
-    this.inflight = this.opts.save(content, this.mtime, keepalive).then(
+    this.inflight = this.opts.save(content, this.mtime).then(
       (res) => {
         this.mtime = res.mtime
         this.baseline = content

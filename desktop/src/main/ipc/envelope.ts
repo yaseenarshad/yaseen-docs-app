@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import type { BridgeError } from '@shared/types'
 import type { Envelope } from '../../channels'
 import { BridgeFailure } from '../fs/fsUtils'
@@ -16,14 +16,20 @@ export function toBridgeError(err: unknown): BridgeError {
 
 /**
  * `ipcMain.handle` with the envelope the preload unwraps: Electron strips custom props from a
- * thrown Error, so a structured `BridgeError` has to travel as a resolved value.
+ * thrown Error, so a structured `BridgeError` has to travel as a resolved value. `fn` gets the
+ * invoke event first (for handlers that need the calling window, e.g. the folder dialog).
  */
-export function handle<A extends unknown[], T>(channel: string, fn: (...args: A) => Promise<T>): void {
-  ipcMain.handle(channel, async (_e, ...args: unknown[]): Promise<Envelope<T>> => {
+export function handleWithEvent<A extends unknown[], T>(channel: string, fn: (e: IpcMainInvokeEvent, ...args: A) => Promise<T>): void {
+  ipcMain.handle(channel, async (e, ...args: unknown[]): Promise<Envelope<T>> => {
     try {
-      return { ok: true, value: await fn(...(args as A)) }
+      return { ok: true, value: await fn(e, ...(args as A)) }
     } catch (err) {
       return { ok: false, error: toBridgeError(err) }
     }
   })
+}
+
+/** `handleWithEvent` for the common case: the handler only needs the renderer's arguments. */
+export function handle<A extends unknown[], T>(channel: string, fn: (...args: A) => Promise<T>): void {
+  handleWithEvent(channel, (_e, ...args: A) => fn(...args))
 }

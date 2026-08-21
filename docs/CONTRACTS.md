@@ -2,34 +2,39 @@
 
 Source of truth for types: [`shared/types.ts`](../shared/types.ts). This file is the prose companion.
 
-## Repo layout / scripts / ports
+## Repo layout / scripts
 
 ```
-package.json          npm workspaces: client, server. Root scripts:
-                        dev        concurrently: server (tsx watch, cwd server/) + client (vite)
-                        build      vite build (client/dist); the server runs from source via tsx
-                        typecheck  tsc -p client && tsc -p server && tsc -p shared
-                        test       vitest run  (projects: client=jsdom, server=node)
-client/               Vite 7 + React 19 + TS, @milkdown/crepe 7.22.x  (127.0.0.1:5173, strict port)
-                        vite proxy: /api -> http://127.0.0.1:3737
-  src/App.tsx                 root/file/picker state; Sidebar is keyed by root
-  src/api.ts                  typed fetch wrappers + ApiRequestError
+package.json          npm workspaces: client, desktop. Root scripts:
+                        dev        electron-vite dev (cwd desktop/): builds main + preload, serves the renderer with HMR, launches Electron
+                        build      electron-vite build → desktop/out/{main,preload,renderer}
+                        typecheck  tsc -p client && tsc -p shared && tsc -p desktop
+                        test       vitest run  (projects: client=jsdom, desktop=node)
+client/               The renderer: React 19 + TS, @milkdown/crepe 7.22.x. No scripts of its own — electron-vite (desktop/electron.vite.config.ts) builds it with ./index.html as the entry
+  src/App.tsx                 root/file state (root = this window's identity); Sidebar is keyed by root; follows storage.subscribe so settings / sidebar changes from other windows land live
+  src/api.ts                  `api` = the fs half of window.yaseenDocs with bridge rejections wrapped in ApiRequestError (+ test)
+  src/bridge.d.ts             `window.yaseenDocs: YaseenDocsApi` (installed by desktop/src/preload)
   src/bases/                  baseFile (1B: parseBase/serializeBase/updateBase over a yaml Document, unknown keys + comments preserved), BaseHost (main-pane host for `.base`: autosave + conflict bar + raw-YAML fallback), BaseView (4A view chrome + placeholder row list, see "View chrome"), view/ (toolbar, menus, filterRows), bases.css (+ tests)
   src/editor/                 Editor (Crepe host + conflict bar; `.base` paths mount BaseHost instead), createCrepe (locked factory, see "Editor rules"), featureConfig (Crepe feature allowlist + guard test), listItemRoundTrip (empty-item round trip), frontmatter, SaveIndicator
   src/editor/marks/           underline (mark: Mod-u ↔ `<u>…</u>` inline HTML, $remark + $markSchema + $shortcut) (+ test)
   src/editor/outline/         outlineFolding ($prose plugin: collapsible parent bullets) + outlineFoldKeys + outlineFolding.css, listCommands (outliner keymap), hotkeys (Obsidian hotkeys), zoom + zoom.css (zoom into a bullet), guideLines + guideLines.css (click-to-fold guide lines), listNodes (shared helpers), bullets.css (depth glyphs) (+ tests)
-  src/hooks/                  useFile (load), useAutosave (debounce/flush/conflict), useWatch (one EventSource per root, fan-out), usePickFolder (native dialog → modal fallback)
-  src/lib/                    pure logic with unit tests: autosave state machine, storage (localStorage), treeState, paths
-  src/sidebar/                Sidebar, Tree, FolderPicker
-  src/test-setup.ts           jsdom stubs (observers, Range rects, localStorage on Node >= 25)
-server/               Hono 4 + @hono/node-server, chokidar 4, run with tsx (port 3737, binds 127.0.0.1)
-  src/app.ts                  Hono app + error mapping (tests import this); src/index.ts only listens
-  src/fs-utils.ts             ApiFailure, path/dir guards, listDirs, buildTree, atomicWrite, isMarkdown/isBase/isVaultFile
-  src/watchers.ts             one shared chokidar watcher per root
-  src/routes/                 dirs, tree, file, create, pickFolder, watch (+ *.test.ts); src/test-fixture.ts builds a temp vault (markdown + one .base)
-  src/bases-fixture.ts        makeBasesFixture(): temp vault mirroring a real Obsidian Bases layout (Content Pillars/, 8 notes, 1 .base, pngs, .obsidian/types.json, .trash) — shared by every Bases test (+ bases-fixture.test.ts)
-shared/types.ts       shared TS types (alias @shared/* in both tsconfigs + vite)
-shared/fileKind.ts    fileKind(name): 'markdown' | 'base' | null — extension-based, case-insensitive (pure; used by server guards and client)
+  src/hooks/                  useFile (load), useAutosave (debounce/flush/conflict), useWatch (one bridge watch() per root, fan-out), usePickFolder (native dialog)
+  src/lib/                    pure logic with unit tests: autosave state machine, storage (bridge-backed in-memory cache of the main-owned app state + window identity; init() before the first render, subscribe() for live changes), treeState, paths
+  src/sidebar/                Sidebar, Tree
+  src/test-setup.ts           jsdom stubs (observers, Range rects)
+desktop/              Electron 43 shell (electron-vite 5, electron-builder): main + preload; the renderer is ../client
+  electron.vite.config.ts     the three builds (main, preload, renderer rooted at ../client); @shared alias for all of them
+  src/channels.ts             IPC channel names (CH) + the Envelope every ipcMain.handle answers with
+  src/preload/index.ts        installs window.yaseenDocs over contextBridge; unwraps envelopes into BridgeError rejections (+ bridge.test.ts: contract completeness)
+  src/main/index.ts           bootstrap: app:// protocol serving out/renderer, role-only menu, the store (userData/yaseendocs.json), registerIpc(store), one BrowserWindow per AppState.windows entry (`?win=<id>`), store.flush() on quit
+  src/main/store.ts           createStore(filePath): the yaseendocs.json store — sync load with field-by-field validation (corrupt → .corrupt-<epoch> + defaults), targeted mutators, onChange, debounced atomic write, flush() (+ test)
+  src/main/windows.ts         webContents.id → window id registry (register / idFor) so IPC handlers know their caller
+  src/main/ipc/               envelope (handle / handleWithEvent + BridgeError mapping), fs (tree/read/write/create), dialog (pick-folder), watch (subscriptions per sender), state (AppState mutators + state:changed broadcast to every window), window (identity / set-identity; open / duplicate reject until GRO-2160/2167) (+ tests)
+  src/main/fs/                fsUtils (BridgeFailure, path/dir guards, buildTree, atomicWrite, isMarkdown/isBase/isVaultFile), tree, file, create, watchers (one shared chokidar per root) (+ tests)
+  src/main/fs/testFixture.ts  makeFixture(): temp vault (markdown + one .base) for tests; failure(), until()
+  src/main/fs/basesFixture.ts makeBasesFixture(): temp vault mirroring a real Obsidian Bases layout (Content Pillars/, 8 notes, 1 .base, pngs, .obsidian/types.json, .trash) — shared by every Bases test (+ basesFixture.test.ts)
+shared/types.ts       shared TS types (alias @shared/* in every tsconfig and build)
+shared/fileKind.ts    fileKind(name): 'markdown' | 'base' | null — extension-based, case-insensitive (pure; used by the main-process guards and the client)
 docs/CONTRACTS.md     this file
 ```
 
@@ -37,47 +42,26 @@ Import from shared: `import type { TreeResponse } from '@shared/types'`.
 
 ## Bridge API (`window.yaseenDocs`, locked in GRO-2153 — Desktop A1)
 
-The desktop app has no HTTP server (GRO-2095 D2): the renderer is sandboxed and calls the typed bridge the preload installs; `ipcMain.handle` answers from the main process. Shapes are the HTTP-era types below, unchanged. Every method rejects with a `BridgeError { code, message, path?, mtime? }` (same codes as the HTTP table; `CONFLICT` carries the disk mtime); `client/src/api.ts` wraps it in `ApiRequestError`. The HTTP table is kept until GRO-2157 (A5) deletes the server; until then the bridge rows map 1:1 onto it.
+The desktop app has no HTTP server (GRO-2095 D2): the renderer is sandboxed and calls the typed bridge the preload installs; `ipcMain.handle` answers from the main process (GRO-2157 deleted the server and every HTTP path). All paths are absolute POSIX paths; no jail — any absolute path is allowed. Every method rejects with a plain `BridgeError { code, message, path?, mtime? }` (`ApiErrorCode` in `shared/types.ts`, plus `CONFLICT` which carries the disk mtime); `client/src/api.ts` wraps it in `ApiRequestError` (same fields) so the renderer can `instanceof` it.
 
-| Bridge | Replaces | Notes |
-|---|---|---|
-| `tree(root)` | `GET /api/tree` | same `TreeResponse` |
-| `readFile(path)` | `GET /api/file` | same `FileResponse` |
-| `writeFile(req)` | `PUT /api/file` | `FileWriteRequest` incl. `expectedMtime`; mismatch → rejects `CONFLICT` with `mtime` |
-| `createDir(path)` / `createFile(path)` | `POST /api/create-dir` / `create-file` | same results and `ALREADY_EXISTS` semantics |
-| `pickFolder()` | `POST /api/pick-folder` | Electron `dialog.showOpenDialog` parented to the window (GRO-2163); osascript and the `/api/dirs` browser are deleted there |
-| `watch(root, listener) → unsubscribe` | `GET /api/watch` (SSE) | one chokidar per root in main shared by all windows; `ready` to late joiners; no ping |
-| `state.get/setSettings/setSidebarCollapsed/pushRecent/setFolder/setFolds/onChange` | localStorage `mdapp.*` | `AppState` in the main-owned `yaseendocs.json` (GRO-2159, D9); targeted mutators so windows never clobber each other |
-| `window.identity/setIdentity/open/duplicate` | – | window identity from `?win=<id>` (GRO-2160/2164); `duplicate` = `⌘⇧N` (GRO-2167) |
+| Bridge | Notes |
+|---|---|
+| `tree(root)` | `TreeResponse` — recursive; only vault files: `.md`/`.markdown` (`kind: 'markdown'`) and `.base` (`kind: 'base'`, GRO-2123); every dir shows, vault files or not (GRO-2022); dot-entries and `node_modules` skipped; dirs before files, each sorted case-insensitive. Missing / not a dir → `NOT_FOUND` / `NOT_A_DIRECTORY` |
+| `readFile(path)` | `FileResponse` — raw UTF-8 content incl. frontmatter; `.md`/`.markdown`/`.base` only (else `UNSUPPORTED_EXTENSION`); `TOO_LARGE` above 10 MiB |
+| `writeFile({ path, content, expectedMtime? })` | `FileWriteResponse { path, mtime, size }` — vault files only; atomic write (`<name>.tmp-<rand>` + `rename`); parent dir must exist; if `expectedMtime` is given and the disk mtime differs → rejects `CONFLICT` with the disk `mtime` and nothing is written |
+| `createDir(path)` / `createFile(path)` | `CreateDirResponse { path }` / `CreateFileResponse { path, mtime, size }` — parent must exist (else `NOT_FOUND`); `.md`/`.markdown` created empty, `.base` seeded with exactly `views:\n  - type: table\n    name: Table\n` (else `UNSUPPORTED_EXTENSION`); `wx` write, never overwrites: exists → `ALREADY_EXISTS` |
+| `pickFolder()` | `PickFolderResponse` — Electron `dialog.showOpenDialog` (`openDirectory` + `createDirectory`) parented to the calling window (`desktop/src/main/ipc/dialog.ts`). Picked → `{ path }` (no trailing `/`); dismissed → `{ cancelled: true }`; dialog failure → `PICKER_FAILED` |
+| `watch(root, listener) → unsubscribe` | `WatchEvent`s: first `ready` (at once for late joiners of an already-watched root), then `add` / `change` / `unlink` (+ `mtime`) for vault files and `addDir` / `unlinkDir`; a bad root yields one `error` event and no subscription. One chokidar per root in main shared by every window (`ignoreInitial: true`, `awaitWriteFinish: { stabilityThreshold: 200 }`, ignores dot-entries and `node_modules`); a window going away drops its subscriptions |
+| `state.get/setSettings/setSidebarCollapsed/pushRecent/setFolder/setFolds/onChange` | `AppState` in the main-owned `yaseendocs.json` (GRO-2159, D9; replaces localStorage `mdapp.*`); targeted mutators so windows never clobber each other |
+| `window.identity/setIdentity/open/duplicate` | window identity from `?win=<id>` (GRO-2159, see "App state"); `open` (GRO-2160) and `duplicate` = `⌘⇧N` (GRO-2167) reject `IO_ERROR` until then |
 
 Bases (GRO-2097) adds its methods to `YaseenDocsApi` additively (e.g. `index(root)`), never routes.
 
-## HTTP API (server, base `http://127.0.0.1:3737`)
-
-_Removed in GRO-2157 (Desktop A5) together with the server; kept here until then._
-
-All paths are absolute POSIX paths. No jail — any absolute path is allowed.
-All errors: `{ error: { code, message, path? } }` with `ApiErrorCode` (see types) and HTTP status:
-`BAD_REQUEST`/`NOT_ABSOLUTE`/`NOT_A_DIRECTORY`/`NOT_A_FILE`/`UNSUPPORTED_EXTENSION` → 400,
-`FORBIDDEN` → 403, `NOT_FOUND` → 404, `CONFLICT`/`ALREADY_EXISTS` → 409, `TOO_LARGE` → 413, `IO_ERROR`/`PICKER_FAILED` → 500, `NOT_SUPPORTED` → 501.
-
-| Method | Path | Query / body | 200 response |
-|---|---|---|---|
-| GET | `/api/health` | – | `{ ok: true }` |
-| GET | `/api/dirs` | `?path=<abs>` (omitted → `$HOME`) | `DirsResponse` — child dirs only, no dotdirs, sorted case-insensitive; `parent` null at `/` |
-| GET | `/api/tree` | `?root=<abs>` | `TreeResponse` — recursive; only vault files: `.md`/`.markdown` (`kind: 'markdown'`) and `.base` (`kind: 'base'`, GRO-2123); every dir shows, vault files or not (GRO-2022); dot-entries and `node_modules` skipped; dirs before files, each sorted case-insensitive |
-| GET | `/api/file` | `?path=<abs>` | `FileResponse` — raw UTF-8 content incl. frontmatter; `.md`/`.markdown`/`.base` only (else 400 `UNSUPPORTED_EXTENSION`); 413 if > 10 MiB |
-| PUT | `/api/file` | JSON `FileWriteRequest { path, content, expectedMtime? }` | `FileWriteResponse { path, mtime, size }` — `.md`/`.markdown`/`.base` only; atomic write (`<name>.tmp-<rand>` + `rename`); parent dir must exist; if `expectedMtime` given and the disk mtime differs → 409 `FileWriteConflict` and nothing written |
-| POST | `/api/create-dir` | JSON `CreateDirRequest { path }` | `CreateDirResponse { path }` — parent must exist (else 404); target exists → 409 `ALREADY_EXISTS` |
-| POST | `/api/create-file` | JSON `CreateFileRequest { path }` | `CreateFileResponse { path, mtime, size }` — `.md`/`.markdown` created empty, `.base` seeded with exactly `views:\n  - type: table\n    name: Table\n` (else 400 `UNSUPPORTED_EXTENSION`); `wx` write, never overwrites: exists → 409 `ALREADY_EXISTS` |
-| POST | `/api/pick-folder` | – | `PickFolderResponse` — macOS only: runs `osascript` (`choose folder`, System Events activated, 5 min timeout) and blocks until the Finder dialog closes. Picked → `{ path }` (no trailing `/`); dismissed → `{ cancelled: true }`; osascript failure → 500 `PICKER_FAILED`; non-macOS → 501 `NOT_SUPPORTED` |
-| GET | `/api/watch` | `?root=<abs>` | SSE stream of `WatchEvent`: `event: <type>\ndata: <json>\n\n`; first event `ready`; `: ping` comment every 25 s; chokidar with `ignoreInitial: true`, `awaitWriteFinish: { stabilityThreshold: 200 }`, ignores dot-entries and `node_modules`, only `.md`/`.markdown`/`.base` file events (+ dir add/unlink) |
-
 Notes
-- Folder picking (client): "change" / first launch call `POST /api/pick-folder` first; `{ path }` → set root + push to recents, `{ cancelled }` → nothing, any failure (501 or otherwise) → the in-app `FolderPicker` modal (the `/api/dirs` browser) as fallback. One native dialog in flight at a time; the trigger button is disabled meanwhile.
-- Server writes trigger `change` events on the watcher; client must ignore events for a path whose mtime equals the mtime it just received from its own PUT (echo suppression).
-- Auto-save: client debounces 500 ms after last `markdownUpdated`, also flushes on file switch / window `beforeunload`. Only content that differs from the last loaded/saved markdown is saved (Crepe's first serialisation is a normalised rewrite and is never written on its own).
-- Server tests run chokidar with `CHOKIDAR_USEPOLLING=1` (see `server/vitest.config.ts`): on macOS libuv starts the FSEvents stream asynchronously, so a write right after `ready` can be missed; polling makes the tests deterministic.
+- Folder picking (client, `usePickFolder`): "change" / first launch call `pickFolder()`; `{ path }` → set root + push to recents, `{ cancelled }` or a rejection → nothing. One dialog in flight at a time; the trigger button is disabled meanwhile. There is no in-app folder browser.
+- Main-process writes trigger `change` events on the watcher; the client must ignore events for a path whose mtime equals the mtime it just received from its own `writeFile` (echo suppression).
+- Auto-save: client debounces 500 ms after last `markdownUpdated`, also flushes on file switch / window `beforeunload` (best effort; the close handshake of GRO-2158 is what guarantees the last save). Only content that differs from the last loaded/saved markdown is saved (Crepe's first serialisation is a normalised rewrite and is never written on its own).
+- Desktop tests run chokidar with `CHOKIDAR_USEPOLLING=1` (see `desktop/vitest.config.ts`): on macOS libuv starts the FSEvents stream asynchronously, so a write right after `ready` can be missed; polling makes the tests deterministic.
 
 ## Editor rules (client)
 
@@ -112,7 +96,7 @@ All bindings are `$shortcut` keymaps registered in `createCrepe()` with priority
 | `Backspace` | start of an item's first block | join into the previous paragraph / parent item; empty parent: children take its place; non-empty parent: no-op | GRO-2012 |
 | `Mod-Enter` | list item(s) whose first block touches the selection | cycle bullet → `[ ]` → `[x]` → bullet, each item from its own state; outside lists falls through (table exit / CodeMirror exit keep theirs) | GRO-2027 `hotkeys.ts` |
 | `Mod-ArrowUp` / `Mod-ArrowDown` | caret in a list item | fold / unfold that item (`setOutlineFoldAtSelection`, same meta-only transaction as the chevron — persisted, ⌘Z-revertible); leaf or already in that state = consumed no-op; outside lists falls through to the native document-start/end jump | GRO-2092 `hotkeys.ts` |
-| `Mod-Shift-u` | anywhere | fold every parent item (`foldAllOutline`, meta-only transaction, persisted via `mdapp.folds`) | GRO-2027 |
+| `Mod-Shift-u` | anywhere | fold every parent item (`foldAllOutline`, meta-only transaction, persisted via the app state's `folders[root].folds`) | GRO-2027 |
 | `Mod-Shift-i` | anywhere | unfold all (`unfoldAllOutline`) | GRO-2027 |
 | `Mod-z` | a fold or a zoom was the latest VIEW action (no doc change since) | revert exactly that one step — a fold (single toggle, or the exact pre-fold-all/unfold-all set) or a zoom (back to the previous level; pushes a history entry). Fold and zoom transactions carry `VIEW_ACTION_META` (`viewActions.ts`); each plugin drops its pending undo when the other kind fires, so only the latest is revertible. Otherwise falls through to history's undo. Plugin-appended transactions (e.g. Crepe's trailing paragraph) don't break eligibility | GRO-2075 `outlineFolding.ts`, GRO-2091 `zoom.ts` |
 | `Mod-Shift-x` | selection | toggle strikethrough (Obsidian binding; Crepe's `Mod-Alt-x` still works) | GRO-2027 |
@@ -124,25 +108,30 @@ All bindings are `$shortcut` keymaps registered in `createCrepe()` with priority
 14. **Multi-block drag** (GRO-2019, `src/editor/multiBlockDrag.ts`, registered in `createCrepe()`): dragging the block handle while a multi-block selection contains the grabbed block moves the WHOLE selection. A document-capture mousedown expands the selection to whole sibling blocks (`expandedBlockRange`: deepest level containing both ends — sibling `list_item`s inside a nested list, not the outer list) and suppresses Crepe's single-block selection replacement; a capture dragstart hands ProseMirror a fully CLOSED slice (an open slice would splice into the target paragraph) via `dataTransfer` + `view.dragging`; after the drop an `appendTransaction` (on `uiEvent: 'drop'`) deletes the merged empty shell the move-deletion leaves at the origin, walking up wrappers it was the only child of. Drop X-position controls nesting depth (ProseMirror `dropPoint`). A grab OUTSIDE the selection never arms the plugin — Crepe's single-block drag is untouched. Folded parents drag with their hidden children.
 15. **Block handle gate** (GRO-2081, `src/editor/blockHandleGate.ts`): while the pointer is inside a guide-line strip band or a fold chevron's box, `.milkdown-block-handle` gets `mdapp-handle-muted` (pointer-events none + invisible) so those clicks land; muting pauses during drags. Band geometry is imported from `guideLines.ts` — one source of truth. Crepe's `blockHandle.shouldShow` config is typed upstream but never consumed; do not reach for it.
 16. **Hotkey reference** (GRO-2067, `src/sidebar/HotkeysPanel.tsx`): the keyboard button beside the settings cog lists every binding from the exported `HOTKEYS`/`MOUSE_TIPS` lists — update them together with any keymap change (`HotkeysPanel.test.ts` pins the set).
-17. **URL** (GRO-2069, `src/lib/urlHash.ts`): the open file is mirrored as `#/abs/path.md` via `history.replaceState` (never pushState); on boot a hash file wins over `mdapp.lastFile` and may live OUTSIDE the current root (the sidebar's stale-file validation skips out-of-root paths). No file → no hash.
+17. **URL** (GRO-2069, `src/lib/urlHash.ts`): the open file is mirrored as `#/abs/path.md` via `history.replaceState` (never pushState); on boot a hash file wins over the folder's remembered `lastFile` and may live OUTSIDE the current root (the sidebar's stale-file validation skips out-of-root paths). No file → no hash.
 
-18. **Bullet threading** (GRO-2094, `src/editor/outline/bulletThreading.ts` + `.css`): view-only decorations derived from `selection.$from` on every update — `outline-thread-node` on each list_item on the root → caret path (glyph takes the app accent `--accent` via `--list-marker-color` on its `.label-wrapper`; Crepe's frame `--crepe-color-primary` is #333 and would read as black), and inside each NESTED list on the path `outline-thread-seg` on items 0…pathIndex plus `outline-thread-stop` on the path child (segment cut at its glyph centre, elbow into the bullet). Top-level lists have no guide line and get no segments (Logseq-identical). 2px `--accent` `li::before` at the guide-line x with `pointer-events: none` (a pseudo hit-tests as its element; guide-line click-to-fold needs the UL as target). No state, no persistence, never `markdownUpdated`. Drawn only under `.app[data-threading='on']` — the settings-cog "Bullet threading" row (default On, `mdapp.settings.bulletThreading`); the cog's "Thread width" (1/2/3px) and "Thread colour" (picker + Default = accent) rows feed `--thread-width` / `--thread-color` (GRO-2109). Caret semantics: the path is that of `selection.$from` — a NodeSelection on an item threads to its parent, a multi-item range threads the first item.
+18. **Bullet threading** (GRO-2094, `src/editor/outline/bulletThreading.ts` + `.css`): view-only decorations derived from `selection.$from` on every update — `outline-thread-node` on each list_item on the root → caret path (glyph takes the app accent `--accent` via `--list-marker-color` on its `.label-wrapper`; Crepe's frame `--crepe-color-primary` is #333 and would read as black), and inside each NESTED list on the path `outline-thread-seg` on items 0…pathIndex plus `outline-thread-stop` on the path child (segment cut at its glyph centre, elbow into the bullet). Top-level lists have no guide line and get no segments (Logseq-identical). 2px `--accent` `li::before` at the guide-line x with `pointer-events: none` (a pseudo hit-tests as its element; guide-line click-to-fold needs the UL as target). No state, no persistence, never `markdownUpdated`. Drawn only under `.app[data-threading='on']` — the settings-cog "Bullet threading" row (default On, `settings.bulletThreading` in the app state); the cog's "Thread width" (1/2/3px) and "Thread colour" (picker + Default = accent) rows feed `--thread-width` / `--thread-color` (GRO-2109). Caret semantics: the path is that of `selection.$from` — a NodeSelection on an item threads to its parent, a multi-item range threads the first item.
 
 19. **Base files** (GRO-2125, `src/bases/BaseHost.tsx`): `Editor` switches on `fileKind(file.path)` — `'base'` mounts `BaseHost`, everything else `CrepeHost`; both are keyed by path and share `useAutosave` / `SaveIndicator` / the conflict bar, so the autosave, echo-suppression and 409 rules above apply unchanged. Frontmatter is ALWAYS `''` for a base (the whole file is the YAML document; nothing is split off or re-prepended). On mount `parseBase(content)` → **view mode** (`BaseView`: the 4A view chrome, see "View chrome (GRO-2135)"; the table body lands in 4B) or, on `BaseParseError` (YAML error or missing/ill-typed `views`), **raw mode**: the error line (`.base-error`, `line:col` prefixed when the parser located it) above a `<textarea class="base-raw">` holding the file byte-for-byte; every keystroke is re-parsed and the first valid text flips back to view mode (same autosave controller, only its content source changes). Disk content is whatever the current mode yields: `serializeBase(parsed)` in view mode, the textarea text in raw mode. External `change` events reload into whichever mode the fresh content parses to, or show the conflict bar when dirty. Invariant: **opening a base and doing nothing never writes** — the autosave baseline is the first serialisation and only content that differs from it is saved (`BaseHost.test.tsx` pins this for both modes). 1B normalisation note: `yaml`'s `indentSeq` is document-global, so a hand-written file mixing sequence-indent styles (`- ` flush with its key in one place, indented in another) is re-indented to one style on its first REAL save; Obsidian-written files round-trip byte-identically (comments, blank lines, flow/block style and unknown keys included).
 
-## localStorage (client)
+## App state (`yaseendocs.json`, main-owned — GRO-2159, D9)
 
-| Key | Type | Shape |
+One user-global JSON file owned by the main process: `app.getPath('userData')/yaseendocs.json` = `~/Library/Application Support/Yaseen Docs/yaseendocs.json` (`app.setName('Yaseen Docs')` runs before anything reads userData; `--user-data-dir=<dir>` relocates it, which is how the Playwright checks seed state). `localStorage` is not used at all. The renderer never touches the file: it reads a cache (`client/src/lib/storage.ts`, filled by `storage.init()` before the first render) and writes through the targeted `state.*` mutators; `desktop/src/main/store.ts` owns the file. Nothing here is ever written into the vault or the markdown.
+
+| Key | Shape | Rules |
 |---|---|---|
-| `mdapp.root` | string | `"/Users/yasin/notes"` |
-| `mdapp.recentRoots` | `RecentRoots` | `[{ "path": "/Users/yasin/notes", "lastOpened": 1755600000000 }]` — most recent first, max 10, de-duped |
-| `mdapp.expanded` | `ExpandedState` | `{ "/Users/yasin/notes": ["/Users/yasin/notes/sub", ...] }` |
-| `mdapp.lastFile` | `LastFileState` | `{ "/Users/yasin/notes": "/Users/yasin/notes/a.md" }` |
-| `mdapp.folds` | `FoldState` | `{ "/Users/yasin/notes": { "/Users/yasin/notes/a.md": ["1fpm2d0:0", ...] } }` — collapsed outline fold keys per root + file (max 500/file; empty lists removed). Never written to disk. |
-| `mdapp.sidebarCollapsed` | `'true'` | present (`'true'`) when the sidebar is collapsed; absent = expanded (GRO-2023) |
-| `mdapp.settings` | `SettingsState` | `{ "lineSpacing": 1.5, "blockGap": 4, "bulletThreading": true, "threadWidth": 2, "threadColor": null }` — app-global editor settings (GRO-2024 spacing as CSS vars; GRO-2094 threading as `data-threading="on|off"` on `.app`; GRO-2109 `threadWidth` 1/2/3 → `--thread-width`, `threadColor` `#rrggbb` or null → `--thread-color`, absent = app accent); missing/invalid fields fall back to `DEFAULT_SETTINGS` field-by-field, so pre-threading stores read as threading ON, 2px, accent |
+| `version` | `1` | anything else → the file is treated as corrupt (see below) |
+| `settings` | `SettingsState` `{ lineSpacing, blockGap, bulletThreading, threadWidth, threadColor }` | global: one value for every folder and window; validated field by field on load (`threadWidth` ∈ 1/2/3, `threadColor` `#rrggbb` or null), an invalid field falls back to `DEFAULT_SETTINGS`; `setSettings` takes a complete valid object (else `BAD_REQUEST`) |
+| `sidebarCollapsed` | `boolean` | global; non-boolean → `false` |
+| `recents` | `RecentRoots` `[{ path, lastOpened }]` | most-recent first, de-duplicated by path, max 10 (`pushRecent(path)`, absolute path); wrong shape → `[]` |
+| `windows` | `WindowEntry[]` `{ id, root, file, bounds: { x, y, width, height } }` | one entry per open window, reopened on relaunch (bounds applied as stored; clamping/restore polish is GRO-2160); malformed or duplicate-id entries dropped on load; `upsertWindow` replaces by id or appends; an entry is removed when its window closes — unless the app is quitting (⌘Q, or the last window closing, which quits), so relaunch restores the same windows |
+| `folders[root]` | `FolderState` `{ expanded: string[], lastFile: string \| null, folds: { [file]: string[] } }` | per folder; `setFolder(root, { expanded?, lastFile? })` merges and creates the entry with defaults when missing (other keys ignored); `setFolds(root, file, keys)` replaces one file's collapsed outline fold keys (max 500; an empty list removes the file entry, the folder entry stays); invalid fold lists dropped on load |
 
-All JSON values parsed defensively (invalid → treated as absent).
+Write semantics: every mutation updates memory, notifies `onChange` listeners synchronously and schedules one debounced (150 ms) atomic write (`<file>.tmp-<rand>` + rename, pretty-printed JSON, parent dir created on demand); `flush()` writes at once and `will-quit` holds the quit until it lands (`event.preventDefault()` + `app.exit(0)`), so nothing is lost on ⌘Q. A file that is unparsable, not an object or not `version: 1` is moved to `yaseendocs.json.corrupt-<epoch>` and the defaults are used — the bad file is never overwritten silently. Unknown top-level keys are dropped on load.
+
+Live broadcast: after any change — from any window, or from main itself (window upserts) — every live `BrowserWindow` gets `state:changed` with the whole new state; the preload surfaces it as `state.onChange`, the client cache replaces itself and `storage.subscribe` listeners fire (`App` re-reads settings and `sidebarCollapsed`). A window's own writes update its cache optimistically and do not fire its subscribers until the echo arrives.
+
+Per-window identity: main loads each window as `<renderer>?win=<id>` and keeps a `webContents.id → window id` registry (`desktop/src/main/windows.ts`). `window.identity()` answers `{ id, root, file }` from `windows[]` for the calling window (`BAD_REQUEST` for an unregistered sender, `NOT_FOUND` once the entry is gone); `window.setIdentity({ root?, file? })` merges into that entry (absolute paths or null; `id` and `bounds` cannot be changed this way). On the client, `storage.getRoot()` IS the identity's root; `setRoot` also clears `file` when the root changes; `setLastFile(root, file)` records both the folder's `lastFile` (for the next time that folder opens) and the window's `file` (what is open now). `window.open` / `window.duplicate` reject `IO_ERROR` until GRO-2160 / GRO-2167.
 
 ## Bases modules
 

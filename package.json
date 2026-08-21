@@ -5,19 +5,16 @@
   "description": "Yaseen Docs: local markdown editor as an Electron desktop app (React + Milkdown Crepe renderer, main-process file layer)",
   "workspaces": [
     "client",
-    "server",
     "desktop"
   ],
   "scripts": {
-    "predev": "node -e \"require('fs').existsSync('node_modules/.bin/concurrently')||require('child_process').execSync('npm install',{stdio:'inherit'})\"",
-    "dev": "concurrently -n server,desktop -c blue,green \"npm run dev -w server\" \"npm run dev -w desktop\"",
+    "dev": "npm run dev -w desktop",
     "build": "npm run build -w desktop",
-    "typecheck": "tsc -p client/tsconfig.json --noEmit && tsc -p server/tsconfig.json --noEmit && tsc -p shared/tsconfig.json --noEmit && tsc -p desktop/tsconfig.json --noEmit",
+    "typecheck": "tsc -p client/tsconfig.json --noEmit && tsc -p shared/tsconfig.json --noEmit && tsc -p desktop/tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "concurrently": "^10.0.5",
     "jsdom": "^30.0.1",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"

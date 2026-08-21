@@ -31,7 +31,7 @@ async function onSubscribe(e: IpcMainEvent, msg: unknown): Promise<void> {
     dir = requireAbsPath(root, 'root')
     await requireDir(dir)
   } catch (err) {
-    // A bad root is the whole answer: one error event, no subscription (the HTTP era's 400/404).
+    // A bad root is the whole answer: one error event, no subscription.
     send({ type: 'error', message: toBridgeFailure(err, String(root)).message })
     return
   }

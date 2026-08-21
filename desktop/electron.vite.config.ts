@@ -28,7 +28,5 @@ export default defineConfig({
     },
     resolve: { alias: { '@shared': shared } },
     build: { outDir: resolve(here, 'out/renderer'), rollupOptions: { input: resolve(client, 'index.html') } },
-    // Spike/A2–A4 only: the client still fetches /api until A5 lands.
-    server: { proxy: { '/api': 'http://127.0.0.1:3737' } },
   },
 })

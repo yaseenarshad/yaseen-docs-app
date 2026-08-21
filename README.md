@@ -1,33 +1,31 @@
 # yaseen-milkdown
 
-A local markdown editor for a folder of notes (e.g. an Obsidian vault): a Vite + React client running [Milkdown Crepe](https://milkdown.dev/) in the browser, and a small Hono server that reads and writes files on this machine over HTTP. Pick a folder, browse its `.md` files in the sidebar, edit WYSIWYG, and changes are saved back to disk (debounced, atomic). Files changed outside the app (another editor, sync) are reloaded live; if you have unsaved edits you get a Reload / Keep mine choice. YAML frontmatter is preserved byte-for-byte.
+Yaseen Docs — a local markdown editor for a folder of notes (e.g. an Obsidian vault), as an Electron desktop app: a React renderer running [Milkdown Crepe](https://milkdown.dev/), and a main process that reads and writes the files on this machine (the renderer only ever talks to the `window.yaseenDocs` bridge). Pick a folder, browse its `.md` files in the sidebar, edit WYSIWYG, and changes are saved back to disk (debounced, atomic). Files changed outside the app (another editor, sync) are reloaded live; if you have unsaved edits you get a Reload / Keep mine choice. YAML frontmatter is preserved byte-for-byte.
 
 ## Requirements
 
-Node.js 20.19 or newer (22+ recommended), npm. macOS/Linux paths.
+Node.js 20.19 or newer (22+ recommended), npm, macOS (the packaged app targets macOS arm64; the dev build runs wherever Electron does).
 
 ## Run
 
 ```sh
 npm install
-npm run dev
+npm run dev      # launches the Electron app with HMR
 ```
 
 See `LAUNCH.md` for the full launch recipe.
 
-Open <http://127.0.0.1:5173> (or <http://localhost:5173>). The server listens on `127.0.0.1:3737`; the client proxies `/api` to it.
-
 ```sh
-npm test         # unit + API tests (vitest)
+npm test         # unit tests (vitest: client jsdom + desktop node)
 npm run typecheck
-npm run build    # client production build into client/dist
+npm run build    # electron-vite build into desktop/out
 ```
 
 ## Editing
 
 Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Editor rules" and "Keyboard" for the exact semantics:
 
-- **Fold**: parent bullets get a chevron; collapsed state is remembered per file in `localStorage` only — the markdown on disk (and its mtime) is never touched by folding. `⌘↑` / `⌘↓` fold / unfold the bullet at the caret (Logseq's defaults; a no-op on leaves, native document jump outside lists), — if they do nothing at all, a browser extension owns the key: check `chrome://extensions/shortcuts` (GRO-2092 found "Controls for Instagram Videos" holding ⌘↑/⌘↓), `⌘⇧U` folds every parent, `⌘⇧I` unfolds all, and `⌘Z` right after a fold reverts it (folds older than the latest action stay put; `⌘Z` is normal text undo otherwise).
+- **Fold**: parent bullets get a chevron; collapsed state is remembered per file in the app state file (`~/Library/Application Support/Yaseen Docs/yaseendocs.json`) only — the markdown on disk (and its mtime) is never touched by folding. `⌘↑` / `⌘↓` fold / unfold the bullet at the caret (Logseq's defaults; a no-op on leaves, native document jump outside lists), — if they do nothing at all, a browser extension owns the key: check `chrome://extensions/shortcuts` (GRO-2092 found "Controls for Instagram Videos" holding ⌘↑/⌘↓), `⌘⇧U` folds every parent, `⌘⇧I` unfolds all, and `⌘Z` right after a fold reverts it (folds older than the latest action stay put; `⌘Z` is normal text undo otherwise).
 - **Bullet threading** (Roam / Logseq "bullet paths"): the lines from each nested list's top down to the bullet at the caret, and the bullets on that path, take the accent colour and stop at the active bullet. View-only; the settings cog has on/off (default on), width 1/2/3px and a custom colour (Default = the app accent).
 - **Keys**: `Tab` indents (no-op on a first sibling), `Shift-Tab` outdents (level 1 → paragraph), `Enter` at the end of a parent creates its first child, `Enter` on an empty item outdents, `Backspace` at the start of an item joins it into the previous line.
 - **Tasks**: `⌘Enter` cycles the item(s) under the selection: bullet → `[ ]` → `[x]` → bullet.
@@ -37,7 +35,7 @@ Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Edit
 - **Bullet markers**: `-`, `*` and `+` are the same bullet — bullets at the same indent are siblings whatever marker each uses (unified on load; saved as `*` like before).
 - **Guide lines**: nested lists draw a vertical line under their parent's glyph; clicking a line folds/unfolds the bullets alongside it (every child with children — Roam's "collapse children"), never the parent itself (caret stays put).
 - **Drag**: the 6-dot handle moves a block; with several blocks highlighted, grabbing a handle inside the highlight moves them all together (drop position controls nesting depth). Over a guide line or a fold chevron the handle yields, so those clicks always land.
-- **Look**: ● ○ ■ bullet glyphs by depth and Obsidian's default typography (system font, 16px, Obsidian heading scale). Line spacing and the gap between blocks are adjustable from the settings cog (bottom-left); stored locally, never in the files. The keyboard button next to the cog lists every hotkey.
+- **Look**: ● ○ ■ bullet glyphs by depth and Obsidian's default typography (system font, 16px, Obsidian heading scale). Line spacing and the gap between blocks are adjustable from the settings cog (bottom-left); stored locally in `~/Library/Application Support/Yaseen Docs/yaseendocs.json` (global: every window follows a change live), never in the files. The keyboard button next to the cog lists every hotkey.
 - **Round-trip**: the first real edit rewrites the file in remark's normalised form (bullet markers, 2-space indent, …); empty items are written as a bare `*` / `* [ ]`. Typing without changes never writes.
 
 ## Sidebar
@@ -48,4 +46,4 @@ Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Edit
 
 ## Out of scope
 
-Wikilinks / embeds / tags (kept as plain text, not resolved), renaming / deleting / moving files or folders, and an Electron or other desktop shell. The server has no path jail: anything under your user account can be read or written, so keep it on localhost.
+Wikilinks / embeds / tags (kept as plain text, not resolved), and renaming / deleting / moving files or folders. There is no browser mode: the app runs only inside Electron. The file layer has no path jail: anything under your user account can be read or written.

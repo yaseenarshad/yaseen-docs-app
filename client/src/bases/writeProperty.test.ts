@@ -19,7 +19,7 @@ const writeFile = vi.mocked(api.writeFile)
 const PATH = '/vault/Deep Work.md'
 
 const file = (content: string, mtime: number) => ({ path: PATH, content, mtime, size: content.length })
-const conflict = (mtime: number) => new ApiRequestError(409, 'CONFLICT', 'file changed on disk', mtime)
+const conflict = (mtime: number) => new ApiRequestError('CONFLICT', 'file changed on disk', mtime)
 
 beforeEach(() => {
   readFile.mockReset()
@@ -77,7 +77,7 @@ describe('writeProperty', () => {
 
   it('rethrows a non-CONFLICT api error without retrying', async () => {
     readFile.mockResolvedValue(file('---\nstatus: draft\n---\nBody\n', 100))
-    writeFile.mockRejectedValue(new ApiRequestError(500, 'IO_ERROR', 'disk on fire'))
+    writeFile.mockRejectedValue(new ApiRequestError('IO_ERROR', 'disk on fire'))
 
     await expect(writeProperty(PATH, 'status', 'done')).rejects.toBeInstanceOf(ApiRequestError)
 

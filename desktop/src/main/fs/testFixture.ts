@@ -29,7 +29,7 @@ export async function makeFixture(): Promise<{ root: string; cleanup: () => Prom
   return { root, cleanup: () => rm(root, { recursive: true, force: true }) }
 }
 
-/** The `BridgeFailure` a promise rejects with (the test's replacement for an HTTP status). */
+/** The `BridgeFailure` a promise rejects with. */
 export async function failure(p: Promise<unknown>): Promise<BridgeFailure> {
   try {
     await p

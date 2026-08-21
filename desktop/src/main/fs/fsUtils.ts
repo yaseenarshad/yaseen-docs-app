@@ -6,7 +6,7 @@ import { fileKind } from '@shared/fileKind'
 
 /**
  * Thrown by the fs layer; `ipc/envelope.ts` turns it into the `BridgeError` the renderer sees.
- * Same codes as the HTTP era's `ApiFailure` minus the status — the bridge has no HTTP to map to.
+ * Carries a `BridgeError` code plus the optional `path` / `mtime` the renderer shows.
  */
 export class BridgeFailure extends Error {
   readonly path?: string

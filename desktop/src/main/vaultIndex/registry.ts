@@ -1,8 +1,8 @@
 import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import type { IndexRecord, IndexResponse, WatchEvent } from '@shared/types'
-import { fsCall, isMarkdown, isSkipped } from '../fs-utils'
-import { subscribe } from '../watchers'
+import { fsCall, isMarkdown, isSkipped } from '../fs/fsUtils'
+import { subscribe } from '../fs/watchers'
 import { scanFile } from './scan'
 
 interface Entry {

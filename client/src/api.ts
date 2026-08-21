@@ -1,66 +1,51 @@
 import type {
-  ApiError,
   ApiErrorCode,
+  BridgeError,
   CreateDirResponse,
   CreateFileResponse,
-  DirsResponse,
   FileResponse,
-  FileWriteConflict,
   FileWriteRequest,
   FileWriteResponse,
   PickFolderResponse,
   TreeResponse,
 } from '@shared/types'
 
-/** Typed failure from the local server (see docs/CONTRACTS.md "HTTP API"). */
+/** Typed failure from the main process (see docs/CONTRACTS.md "Bridge API"). */
 export class ApiRequestError extends Error {
   constructor(
-    readonly status: number,
     readonly code: ApiErrorCode | 'CONFLICT',
     message: string,
-    /** Current on-disk mtime, only present on 409 CONFLICT. */
+    /** Current on-disk mtime, only present on CONFLICT. */
     readonly mtime?: number,
+    /** The offending path, when the main process attributed the failure to one. */
+    readonly path?: string,
   ) {
     super(message)
     this.name = 'ApiRequestError'
   }
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init)
-  if (res.ok) return (await res.json()) as T
-  const body = (await res.json().catch(() => undefined)) as ApiError | FileWriteConflict | undefined
-  const err = body?.error
-  const mtime = err !== undefined && 'mtime' in err ? err.mtime : undefined
-  throw new ApiRequestError(res.status, err?.code ?? 'IO_ERROR', err?.message ?? res.statusText, mtime)
+function isBridgeError(err: unknown): err is BridgeError {
+  return typeof err === 'object' && err !== null && typeof (err as BridgeError).code === 'string' && typeof (err as BridgeError).message === 'string'
 }
 
-const enc = encodeURIComponent
+/** The bridge rejects with a plain `BridgeError` object (no prototype survives IPC); give it a class. */
+async function call<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn()
+  } catch (err) {
+    if (isBridgeError(err)) throw new ApiRequestError(err.code, err.message, err.mtime, err.path)
+    throw new ApiRequestError('IO_ERROR', err instanceof Error ? err.message : String(err))
+  }
+}
 
+/** The fs half of `window.yaseenDocs`, with rejections wrapped in `ApiRequestError`. */
 export const api = {
-  dirs: (path?: string) => request<DirsResponse>(path === undefined ? '/api/dirs' : `/api/dirs?path=${enc(path)}`),
-  tree: (root: string) => request<TreeResponse>(`/api/tree?root=${enc(root)}`),
-  /** Native Finder dialog; resolves when the user picks or cancels. 501 NOT_SUPPORTED off macOS. */
-  pickFolder: () => request<PickFolderResponse>('/api/pick-folder', { method: 'POST' }),
-  createDir: (path: string) =>
-    request<CreateDirResponse>('/api/create-dir', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ path }),
-    }),
-  createFile: (path: string) =>
-    request<CreateFileResponse>('/api/create-file', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ path }),
-    }),
-  readFile: (path: string) => request<FileResponse>(`/api/file?path=${enc(path)}`),
-  /** `keepalive` lets the PUT outlive the page (used by the beforeunload flush). */
-  writeFile: (body: FileWriteRequest, keepalive = false) =>
-    request<FileWriteResponse>('/api/file', {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-      keepalive,
-    }),
+  tree: (root: string) => call<TreeResponse>(() => window.yaseenDocs.tree(root)),
+  readFile: (path: string) => call<FileResponse>(() => window.yaseenDocs.readFile(path)),
+  writeFile: (body: FileWriteRequest) => call<FileWriteResponse>(() => window.yaseenDocs.writeFile(body)),
+  createDir: (path: string) => call<CreateDirResponse>(() => window.yaseenDocs.createDir(path)),
+  createFile: (path: string) => call<CreateFileResponse>(() => window.yaseenDocs.createFile(path)),
+  /** Native open-directory dialog parented to this window; resolves when the user picks or cancels. */
+  pickFolder: () => call<PickFolderResponse>(() => window.yaseenDocs.pickFolder()),
 }
