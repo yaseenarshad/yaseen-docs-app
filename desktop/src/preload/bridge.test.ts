@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { StateApi, WindowApi, YaseenDocsApi } from '@shared/types'
+import type { MenuApi, StateApi, WindowApi, YaseenDocsApi } from '@shared/types'
 import { CH } from '../channels'
 
 const exposed: Record<string, unknown> = {}
@@ -9,14 +9,16 @@ vi.mock('electron', () => ({
 }))
 
 /** Compile-time exhaustive: adding a method to the contract without listing it here fails typecheck. */
-const TOP: readonly (keyof YaseenDocsApi)[] = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'pickFolder', 'watch', 'state', 'window']
+const TOP: readonly (keyof YaseenDocsApi)[] = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'pickFolder', 'watch', 'state', 'window', 'menu']
 const STATE: readonly (keyof StateApi)[] = ['get', 'setSettings', 'setSidebarCollapsed', 'pushRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange']
 const WINDOW: readonly (keyof WindowApi)[] = ['identity', 'setIdentity', 'open', 'duplicate', 'onFlush']
+const MENU: readonly (keyof MenuApi)[] = ['onOpenFolder', 'onOpenRoot']
 type Exhaustive<T, K extends readonly (keyof T)[]> = Exclude<keyof T, K[number]> extends never ? true : never
 const _top: Exhaustive<YaseenDocsApi, typeof TOP> = true
 const _state: Exhaustive<StateApi, typeof STATE> = true
 const _window: Exhaustive<WindowApi, typeof WINDOW> = true
-void [_top, _state, _window]
+const _menu: Exhaustive<MenuApi, typeof MENU> = true
+void [_top, _state, _window, _menu]
 
 describe('preload bridge', () => {
   it('installs window.yaseenDocs with every contract method', async () => {
@@ -26,6 +28,22 @@ describe('preload bridge', () => {
     for (const k of TOP) expect(api[k], k).toBeDefined()
     for (const k of STATE) expect(typeof api.state[k], `state.${k}`).toBe('function')
     for (const k of WINDOW) expect(typeof api.window[k], `window.${k}`).toBe('function')
+    for (const k of MENU) expect(typeof api.menu[k], `menu.${k}`).toBe('function')
+  })
+
+  it('forwards menu:open-root paths to the listener and unsubscribes cleanly (GRO-2161)', async () => {
+    const { ipcRenderer } = await import('electron')
+    const { bridge } = await import('./index')
+    const listener = vi.fn()
+    const off = bridge.menu.onOpenRoot(listener)
+    const calls = vi.mocked(ipcRenderer.on).mock.calls.filter(([ch]) => ch === CH.menuOpenRoot)
+    const call = calls[calls.length - 1]
+    expect(call).toBeDefined()
+    const emit = call?.[1] as unknown as (e: unknown, path: string) => void
+    emit(undefined, '/vaults/notes')
+    expect(listener).toHaveBeenCalledWith('/vaults/notes')
+    off()
+    expect(vi.mocked(ipcRenderer.removeListener).mock.calls.some(([ch, l]) => ch === CH.menuOpenRoot && l === emit)).toBe(true)
   })
 
   it('rejects with the plain BridgeError when main answers an error envelope', async () => {

@@ -24,6 +24,8 @@ export const CH = {
   windowSetIdentity: 'window:set-identity',
   windowOpen: 'window:open',
   windowDuplicate: 'window:duplicate',
+  menuOpenFolder: 'menu:open-folder',
+  menuOpenRoot: 'menu:open-root',
   appFlush: 'app:flush',
   appFlushed: 'app:flushed',
 } as const
