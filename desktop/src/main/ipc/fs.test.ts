@@ -29,7 +29,7 @@ describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc()
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsIndex, CH.fsRead, CH.fsTree, CH.fsWrite].sort())
+    expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsIndex, CH.fsRead, CH.fsReadAsset, CH.fsTree, CH.fsWrite].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
@@ -42,6 +42,18 @@ describe('registerFsIpc', () => {
       ok: false,
       error: { code: 'NOT_FOUND', message: 'path does not exist', path: missing },
     })
+  })
+
+  it('fs:read-asset answers a local image as base64 + mime, errors as a BridgeError envelope (GRO-2139)', async () => {
+    const ok = await registered(CH.fsReadAsset)({ sender: {} }, root, 'img.png')
+    expect(ok.ok).toBe(true)
+    if (!ok.ok) throw new Error('expected ok')
+    const value = ok.value as { path: string; mime: string; data: string; size: number }
+    expect(value.path).toBe(path.join(root, 'assets-only', 'img.png'))
+    expect(value.mime).toBe('image/png')
+    expect(Buffer.from(value.data, 'base64').toString('utf8')).toBe('png')
+    const missing = await registered(CH.fsReadAsset)({ sender: {} }, root, 'missing.png')
+    expect(missing).toEqual({ ok: false, error: { code: 'NOT_FOUND', message: 'no asset with this name under the root', path: 'missing.png' } })
   })
 
   it('fs:index answers the vault index for the root: markdown records only (GRO-2129)', async () => {

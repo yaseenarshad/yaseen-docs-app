@@ -103,6 +103,22 @@ export interface FileResponse {
   size: number
 }
 
+// ---------- readAsset(root, ref) (Bases 4E, GRO-2139 — Desktop D10: bridge method, never a route) ----------
+
+/** Allowed image extensions for `readAsset` (no dot); anything else rejects `UNSUPPORTED_EXTENSION`. */
+export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp'] as const
+
+export interface AssetResponse {
+  /** Absolute path the ref resolved to. */
+  path: string
+  /** Mime type derived from the extension. */
+  mime: string
+  /** The file's bytes, base64-encoded (the renderer builds a `data:` URL). */
+  data: string
+  /** Byte size; capped at MAX_FILE_BYTES (above → `TOO_LARGE`). */
+  size: number
+}
+
 // ---------- writeFile(req) ----------
 
 export interface FileWriteRequest {
@@ -353,6 +369,12 @@ export interface YaseenDocsApi {
   createFile(path: string): Promise<CreateFileResponse>
   /** Bases property index for `root` (GRO-2129): full scan on first call, watcher-incremental after. */
   index(root: string): Promise<IndexResponse>
+  /**
+   * Local image for the cards view (GRO-2139): `ref` is a wikilink target or path (`|alias` /
+   * `#heading` stripped) — root-relative when it has a `/`, else Obsidian's shortest-path rule
+   * (case-insensitive basename, first match in a deterministic walk). Images only (IMAGE_EXTENSIONS).
+   */
+  readAsset(root: string, ref: string): Promise<AssetResponse>
   /** Native open-directory dialog parented to the calling window (GRO-2163). */
   pickFolder(): Promise<PickFolderResponse>
   /** One chokidar watcher per root in main, shared by every window; late joiners get `ready` at once. */

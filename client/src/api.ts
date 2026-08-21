@@ -1,5 +1,6 @@
 import type {
   ApiErrorCode,
+  AssetResponse,
   BridgeError,
   CreateDirResponse,
   CreateFileResponse,
@@ -49,6 +50,8 @@ export const api = {
   createFile: (path: string) => call<CreateFileResponse>(() => window.yaseenDocs.createFile(path)),
   /** Bases property index for `root` (GRO-2129). */
   index: (root: string) => call<IndexResponse>(() => window.yaseenDocs.index(root)),
+  /** Local image under `root` for a cards cover (GRO-2139); `ref` = wikilink target or path. */
+  readAsset: (root: string, ref: string) => call<AssetResponse>(() => window.yaseenDocs.readAsset(root, ref)),
   /** Native open-directory dialog parented to this window; resolves when the user picks or cancels. */
   pickFolder: () => call<PickFolderResponse>(() => window.yaseenDocs.pickFolder()),
 }

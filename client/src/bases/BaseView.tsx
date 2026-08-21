@@ -5,6 +5,7 @@ import { type BaseDefinition, type ParsedBase, parseBase, serializeBase, updateB
 import { type Row, propertyKeys, runView } from './engine'
 import { render } from './expr'
 import { BoardView } from './view/BoardView'
+import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/filterRows'
 import { TableView } from './view/TableView'
 import { Toolbar } from './view/Toolbar'
@@ -28,9 +29,9 @@ export interface BaseViewProps {
 /**
  * One `.base` in the main pane (GRO-2135): the toolbar (view switcher, filter / sort /
  * properties menus, search, count) over the body — the real table for `type: table` (GRO-2136),
- * the board for `type: board` (4D, GRO-2138), a placeholder row list for every other view type
- * (they land in later units). Only the active tab and the search text are component state —
- * everything else is the file.
+ * the board for `type: board` (4D, GRO-2138), the card grid for `type: cards` (4E, GRO-2139),
+ * a placeholder row list for every other view type (`list` lands in 4F). Only the active tab
+ * and the search text are component state — everything else is the file.
  */
 export function BaseView({ parsed, onChange, root, thisFile, records, indexStatus, indexError, onOpenFile }: BaseViewProps) {
   const [active, setActive] = useState(0)
@@ -158,6 +159,18 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
           onUpdate={update}
+          onOpenFile={onOpenFile}
+        />
+      ) : view.type === 'cards' ? (
+        <CardsView
+          def={def}
+          view={view}
+          root={root}
+          records={records}
+          rows={rows}
+          groups={groups}
+          collapsed={collapsed}
+          onToggleGroup={onToggleGroup}
           onOpenFile={onOpenFile}
         />
       ) : (

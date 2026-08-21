@@ -129,14 +129,14 @@ function manyRecords(n = 600): IndexRecord[] {
 // ---------- tests ----------
 
 describe('table structure', () => {
-  it('a table view renders columns from order; other view types keep the placeholder list', () => {
-    const { el } = mount(`${TYPED_BASE}  - type: cards\n    name: C\n`)
+  it('a table view renders columns from order; not-yet-built view types keep the placeholder list', () => {
+    const { el } = mount(`${TYPED_BASE}  - type: list\n    name: L\n`)
     expect(headers(el)).toEqual(['file.name', 'priority', 'published', 'tags', 'related', 'formula.nope'])
     expect(bodyRows(el)).toHaveLength(8)
     expect(links(el)[0]).toBe('Agentic Agency.md')
     expect(el.querySelector('.base-rows')).toBeNull()
 
-    click(byText(el, '[role="tab"]', 'C'))
+    click(byText(el, '[role="tab"]', 'L'))
     expect(el.querySelector('.base-table')).toBeNull()
     expect(el.querySelectorAll('.base-row')).toHaveLength(8)
   })

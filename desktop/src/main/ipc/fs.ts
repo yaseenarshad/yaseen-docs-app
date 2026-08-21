@@ -1,4 +1,5 @@
 import { CH } from '../../channels'
+import { readAsset } from '../fs/assets'
 import { createDir, createFile } from '../fs/create'
 import { readFile, writeFile } from '../fs/file'
 import { tree } from '../fs/tree'
@@ -13,4 +14,5 @@ export function registerFsIpc(): void {
   handle(CH.fsCreateDir, createDir)
   handle(CH.fsCreateFile, createFile)
   handle(CH.fsIndex, getIndex)
+  handle(CH.fsReadAsset, readAsset)
 }

@@ -3,6 +3,7 @@ import type { IndexRecord } from '@shared/types'
 import type { BaseDefinition, BaseView } from '../baseFile'
 import { type Group, propertyKeys, propertyLabel } from '../engine'
 import { render } from '../expr'
+import { cardWidth } from './cardWidth'
 import type { Mutate } from './FilterMenu'
 import { canonicalKey } from './filterRows'
 import { GroupHeader, cellContent, groupKeyOf } from './GroupHeader'
@@ -22,16 +23,14 @@ export interface BoardViewProps {
   onOpenFile: (path: string) => void
 }
 
-/** `view.cardSize` presets → column width px (GRO-2119 locked design); anything else = medium. */
-const CARD_WIDTHS: Record<string, number> = { small: 220, medium: 280, large: 340 }
-
 /**
  * Board view (4D, GRO-2138): `type: board` — OUR schema extension — renders the engine's groups
  * as kanban columns on one horizontally scrolling row. Each column is the shared `GroupHeader`
  * content (chevron, typed value, count, per-column summaries over the SHOWN cards) over the
  * group's cards: `file.name` as the title button → `onOpenFile`, then the view's other `order`
  * properties as small label/value rows typed like table cells. Column width follows `cardSize`
- * (small 220 / medium 280 / large 340, default medium). Collapsing a column hides its cards and
+ * (shared `cardWidth`: a number = px, presets small 220 / medium 280 / large 340, default
+ * medium). Collapsing a column hides its cards and
  * keeps the header — same persisted state as the table's groups, never the `.base` file. Without
  * `groupBy` a centered hint's "Group by…" button writes the first non-file property through the
  * file (opening the Sort popover remotely would mean lifting Toolbar's menu state; one write is
@@ -61,7 +60,7 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
   const keys = propertyKeys(def, view, records)
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const rest = keys.filter((k) => k !== nameKey)
-  const width = CARD_WIDTHS[String(view.cardSize)] ?? CARD_WIDTHS.medium
+  const width = cardWidth(view.cardSize)
 
   return (
     <div className="base-board" style={{ '--base-board-col-w': `${width}px` } as CSSProperties}>

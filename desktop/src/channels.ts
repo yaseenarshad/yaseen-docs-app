@@ -8,6 +8,7 @@ export const CH = {
   fsCreateDir: 'fs:create-dir',
   fsCreateFile: 'fs:create-file',
   fsIndex: 'fs:index',
+  fsReadAsset: 'fs:read-asset',
   dialogPickFolder: 'dialog:pick-folder',
   watchSubscribe: 'watch:subscribe',
   watchUnsubscribe: 'watch:unsubscribe',

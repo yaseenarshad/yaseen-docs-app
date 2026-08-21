@@ -59,8 +59,8 @@ export function extractTags(props: Record<string, unknown>, body: string): strin
 const WIKILINK_RE = /(!?)\[\[([^[\]]*)\]\]/g
 const EXACT_WIKILINK_RE = /^\[\[([^[\]]*)\]\]$/
 
-/** `target|alias` → `target`, `target#heading` / `target#^block` → `target`, trimmed. */
-function linkTarget(inner: string): string {
+/** `target|alias` → `target`, `target#heading` / `target#^block` → `target`, trimmed. Shared with `fs/assets.ts` (readAsset refs). */
+export function linkTarget(inner: string): string {
   return inner.split('|')[0].split('#')[0].trim()
 }
 

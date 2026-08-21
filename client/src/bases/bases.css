@@ -748,6 +748,87 @@
   margin: 0 0 10px;
 }
 
+/* ---------- cards (4E) ---------- */
+
+.base-cards {
+  flex: 1;
+  min-height: 0;
+  margin-top: 8px;
+  overflow-y: auto;
+}
+
+.base-cards__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--base-card-w, 280px), 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 8px 0 2px;
+  list-style: none;
+}
+
+.base-cards__group {
+  margin-top: 8px;
+}
+
+.base-cards__group .base-group {
+  padding: 2px 0 4px;
+}
+
+.base-card {
+  overflow: hidden;
+  font-size: 13px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.base-card__cover {
+  display: block;
+  width: 100%;
+  aspect-ratio: var(--base-card-ratio, 1);
+  object-fit: var(--base-card-fit, cover);
+  background: var(--bg-side);
+  border-bottom: 1px solid var(--border);
+}
+
+.base-card__body {
+  padding: 7px 10px;
+}
+
+.base-card__title {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--accent);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.base-card__title:hover {
+  text-decoration: underline;
+}
+
+.base-card__prop {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-top: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.base-card__prop-name {
+  flex: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.base-card__prop-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ---------- raw-YAML fallback (GRO-2125) ---------- */
 
 .base-error {

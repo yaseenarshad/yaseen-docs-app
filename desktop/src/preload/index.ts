@@ -26,6 +26,7 @@ const api: YaseenDocsApi = {
   createDir: (path) => call(CH.fsCreateDir, path),
   createFile: (path) => call(CH.fsCreateFile, path),
   index: (root) => call(CH.fsIndex, root),
+  readAsset: (root, ref) => call(CH.fsReadAsset, root, ref),
   pickFolder: () => call(CH.dialogPickFolder),
   watch: (root, listener) => {
     const id = crypto.randomUUID()
