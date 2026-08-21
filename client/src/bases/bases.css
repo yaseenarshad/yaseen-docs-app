@@ -1,0 +1,76 @@
+/* Bases main pane (GRO-2125): view tabs + placeholder, and the raw-YAML fallback. */
+
+.base-host {
+  display: flex;
+  flex-direction: column;
+}
+
+.base-view,
+.base-raw-wrap {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 32px 48px 120px;
+}
+
+.base-view__tabs {
+  display: flex;
+  gap: 4px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.base-view__tab {
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg-muted);
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.base-view__tab:hover {
+  background: var(--bg-side);
+}
+
+.base-view__tab[aria-selected='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.base-view__placeholder {
+  margin: 48px auto;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.base-error {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.base-raw {
+  flex: 1;
+  width: 100%;
+  min-height: 320px;
+  padding: 12px;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  resize: none;
+  tab-size: 2;
+}
+
+.base-raw:focus {
+  outline: none;
+  border-color: var(--accent);
+}

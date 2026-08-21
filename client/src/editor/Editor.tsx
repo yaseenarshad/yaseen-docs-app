@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
+import { fileKind } from '@shared/fileKind'
 import type { FileResponse } from '@shared/types'
 import { api } from '../api'
+import { BaseHost } from '../bases/BaseHost'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
 import './outline/outlineFolding.css'
 import './outline/bullets.css'
@@ -30,7 +32,12 @@ export function Editor({ root, path, watch }: EditorProps) {
       {state.status === 'idle' && <p className="editor-msg">Select a file from the sidebar.</p>}
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
-      {file !== null && <CrepeHost key={file.path} root={root} file={file} watch={watch} />}
+      {file !== null &&
+        (fileKind(file.path) === 'base' ? (
+          <BaseHost key={file.path} root={root} file={file} watch={watch} />
+        ) : (
+          <CrepeHost key={file.path} root={root} file={file} watch={watch} />
+        ))}
     </section>
   )
 }
