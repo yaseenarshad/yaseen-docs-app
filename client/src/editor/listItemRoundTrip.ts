@@ -20,6 +20,8 @@
  *     checkbox.
  *  4. save: `stripEmptyTaskBreaks()` turns `* [ ] <br />` back into `* [ ]` — `<br />` never
  *     reaches the disk, and 3 restores the checkbox on the next load.
+ *  5. load (GRO-2112): `unifySiblingMarkers()` makes `-` / `*` / `+` siblings at one indent share a
+ *     marker so they parse as ONE list (see its docblock).
  */
 import { paragraphSchema } from '@milkdown/kit/preset/commonmark'
 import type { Node as MdNode } from '@milkdown/kit/transformer'
@@ -75,7 +77,44 @@ const EMPTY_TASK_ITEM_BREAK = new RegExp(String.raw`^(${MARKER} \[[ xX]\]) <br /
 
 /** Before parsing: `* <br />` → bare marker; empty task `* [ ]` → `* [ ] <br />` (keeps the checkbox). */
 export const normalizeEmptyItems = (markdown: string): string =>
-  markdown.replace(LEGACY_EMPTY_ITEM, '$1').replace(EMPTY_TASK_ITEM, '$1 <br />')
+  unifySiblingMarkers(markdown.replace(LEGACY_EMPTY_ITEM, '$1').replace(EMPTY_TASK_ITEM, '$1 <br />'))
+
+const BULLET_LINE = /^(\s*)([-*+])(\s)/
+const FENCE_LINE = /^\s*(```|~~~)/
+
+/**
+ * Mixed-marker siblings (GRO-2112): `-`, `*` and `+` are the same bullet. To CommonMark a marker
+ * change starts a NEW list, so `* a` then `- b` at one indent become two sibling lists (two guide
+ * lines, folding / line click / drag each seeing half the children). Outliners treat indentation
+ * as the structure, so on load every bullet takes the marker of the previous bullet at its indent
+ * (tabs = 4 spaces). Deeper indents are forgotten when a shallower bullet appears; a blank line or
+ * an unindented non-bullet line resets everything; fenced code is skipped; ordered items are not
+ * bullets. Save already normalises markers (CONTRACTS rule 6), so nothing on disk is lost.
+ */
+export const unifySiblingMarkers = (markdown: string): string => {
+  const markerAtIndent = new Map<number, string>()
+  let inFence = false
+  return markdown
+    .split('\n')
+    .map((line) => {
+      if (FENCE_LINE.test(line)) {
+        inFence = !inFence
+        return line
+      }
+      if (inFence) return line
+      const match = BULLET_LINE.exec(line)
+      if (match === null) {
+        if (!/^\s/.test(line)) markerAtIndent.clear()
+        return line
+      }
+      const indent = match[1].replace(/\t/g, '    ').length
+      for (const deeper of [...markerAtIndent.keys()]) if (deeper > indent) markerAtIndent.delete(deeper)
+      const marker = markerAtIndent.get(indent) ?? match[2]
+      markerAtIndent.set(indent, marker)
+      return marker === match[2] ? line : `${match[1]}${marker}${line.slice(match[1].length + 1)}`
+    })
+    .join('\n')
+}
 
 /** Before writing: `* [ ] <br />` (Milkdown's empty task) → `* [ ]`. */
 export const stripEmptyTaskBreaks = (markdown: string): string => markdown.replace(EMPTY_TASK_ITEM_BREAK, '$1')

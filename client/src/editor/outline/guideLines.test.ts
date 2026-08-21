@@ -166,3 +166,29 @@ describe('guide lines: click → fold', () => {
     expect(getMarkdownForSave(crepe)).toBe(md)
   })
 })
+
+describe('mixed markers are one list (GRO-2112)', () => {
+  const MIXED = `* P
+  * a
+    * x
+  - b
+    * y
+`
+  it('loads -/* siblings as ONE nested list: one guide line, one chevron, line click folds both', async () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: MIXED })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    const p = [...root.querySelectorAll<HTMLElement>('li.list-item')].find(
+      (el) => el.querySelector(':scope > .children > .content-dom > p')?.textContent === 'P',
+    ) as HTMLElement
+    const lists = p.querySelectorAll(':scope > .children > .content-dom > ul')
+    expect(lists).toHaveLength(1)
+    expect(lists[0].querySelectorAll(':scope > .milkdown-list-item-block')).toHaveLength(2)
+    expect(p.querySelectorAll(':scope > .children > .content-dom > .outline-toggle')).toHaveLength(1)
+    mouse(lists[0] as HTMLElement, 'mousedown', STRIP_X)
+    expect(foldedLabels(root)).toEqual(['a', 'b'])
+    expect(getMarkdownForSave(crepe)).toBe('* P\n  * a\n    * x\n  * b\n    * y\n')
+  })
+})

@@ -81,10 +81,10 @@ describe('outline folding', () => {
     expect(toggleFor(root, 'Parent').getAttribute('aria-expanded')).toBe('true')
   })
 
-  it('folds every sibling nested list of a mixed-marker parent (GRO-2031)', async () => {
-    // Obsidian vaults mix `*` and `-` markers at one indent level; remark parses them
-    // as sibling lists inside the same list_item, and folding must hide them all.
-    const MIXED = `* Parent\n  * Star child\n  - Dash child one\n  - Dash child two\n* Leaf\n`
+  it('folds every sibling nested list of a parent that owns several (GRO-2031)', async () => {
+    // Mixed bullet markers unify on load since GRO-2112, so sibling lists inside one list_item
+    // now only arise from a bullet list followed by an ordered list; folding must hide them all.
+    const MIXED = `* Parent\n  * Star child\n  1. Ordered child one\n  2. Ordered child two\n* Leaf\n`
     const { crepe, root } = await mount({ defaultValue: MIXED })
     const before = getMarkdownForSave(crepe)
 
@@ -94,8 +94,8 @@ describe('outline folding', () => {
     expect(hidden).toHaveLength(2)
     const hiddenText = [...hidden].map((el) => el.textContent).join(' ')
     expect(hiddenText).toContain('Star child')
-    expect(hiddenText).toContain('Dash child one')
-    expect(hiddenText).toContain('Dash child two')
+    expect(hiddenText).toContain('Ordered child one')
+    expect(hiddenText).toContain('Ordered child two')
     expect(hiddenText).not.toContain('Leaf')
     expect(getMarkdownForSave(crepe)).toBe(before)
 
