@@ -7,6 +7,7 @@ import { storage } from '../lib/storage'
 import { treeHasFile, treeReducer } from '../lib/treeState'
 import { ContextMenu } from './ContextMenu'
 import { entryPath, targetDirFor } from './createEntry'
+import { HotkeysButton } from './HotkeysPanel'
 import { SettingsCog } from './SettingsPanel'
 import { Tree, type PendingCreate } from './Tree'
 
@@ -174,6 +175,7 @@ export function Sidebar({
       </div>
       <div className="sidebar__footer">
         <SettingsCog settings={settings} onChange={onChangeSettings} />
+        <HotkeysButton />
       </div>
       {menu !== null && (
         <ContextMenu
