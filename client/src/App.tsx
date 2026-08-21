@@ -4,12 +4,21 @@ import { Editor } from './editor/Editor'
 import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
 import { storage } from './lib/storage'
+import { fileHash, hashFilePath } from './lib/urlHash'
 import { FolderPicker } from './sidebar/FolderPicker'
 import { Sidebar, SidebarPanelIcon } from './sidebar/Sidebar'
 
+/** Reflect the open file in the URL (GRO-2069); replaceState keeps Back sane. */
+function syncHash(path: string | null): void {
+  history.replaceState(null, '', fileHash(path) || location.pathname + location.search)
+}
+
 export function App() {
   const [root, setRoot] = useState<string | null>(storage.getRoot)
-  const [file, setFile] = useState<string | null>(() => (root === null ? null : storage.getLastFile(root)))
+  // A pasted `#/abs/path.md` URL wins over the remembered last file (GRO-2069).
+  const [file, setFile] = useState<string | null>(() =>
+    root === null ? null : (hashFilePath(location.hash) ?? storage.getLastFile(root)),
+  )
   const [recent, setRecent] = useState<RecentRoots>(storage.getRecentRoots)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
@@ -34,11 +43,16 @@ export function App() {
     '--edit-block-gap': `${settings.blockGap}px`,
   } as CSSProperties
 
+  // The restored-from-storage file also shows in the URL from the start.
+  useEffect(() => syncHash(file), []) // eslint-disable-line react-hooks/exhaustive-deps -- mount only
+
   const openRoot = useCallback((path: string) => {
     storage.setRoot(path)
     setRecent(storage.pushRecentRoot(path))
     setRoot(path)
-    setFile(storage.getLastFile(path))
+    const nextFile = storage.getLastFile(path)
+    setFile(nextFile)
+    syncHash(nextFile)
     setPickerOpen(false)
   }, [])
 
@@ -46,6 +60,7 @@ export function App() {
     (path: string | null) => {
       if (root !== null) storage.setLastFile(root, path)
       setFile(path)
+      syncHash(path)
     },
     [root],
   )
@@ -58,6 +73,7 @@ export function App() {
     storage.setRoot(null)
     setRoot(null)
     setFile(null)
+    syncHash(null)
   }, [])
   const onFileMissing = useCallback(() => openFile(null), [openFile])
 

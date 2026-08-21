@@ -57,7 +57,7 @@ export function Sidebar({
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [expanded, dispatch] = useReducer(treeReducer, root, storage.getExpanded)
-  const [menu, setMenu] = useState<{ x: number; y: number; targetDir: string } | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; targetDir: string; copyPath: string | null } | null>(null)
   const [creating, setCreating] = useState<{ kind: 'file' | 'dir'; parentDir: string } | null>(null)
 
   const refresh = useCallback(() => {
@@ -94,13 +94,15 @@ export function Sidebar({
   }, [root, activeFile])
 
   // Stored lastFile that no longer exists → drop it (first tree only, so a file deleted on disk
-  // while it is being edited stays open and is recreated by the next save).
+  // while it is being edited stays open and is recreated by the next save). Files OUTSIDE the
+  // root (opened via a pasted `#/abs/path.md` URL, GRO-2069) are never in the tree — skip them.
   const validated = useRef(false)
   useEffect(() => {
     if (tree === null || validated.current) return
     validated.current = true
-    if (activeFile !== null && !treeHasFile(tree.tree, activeFile)) onFileMissing()
-  }, [tree, activeFile, onFileMissing])
+    if (activeFile !== null && activeFile.startsWith(`${root.replace(/\/+$/, '')}/`) && !treeHasFile(tree.tree, activeFile))
+      onFileMissing()
+  }, [tree, activeFile, root, onFileMissing])
 
   // ---- New note / new folder (GRO-2022): right-click menu → inline name input ----
 
@@ -108,7 +110,7 @@ export function Sidebar({
     (node: TreeNode | null, e: React.MouseEvent) => {
       e.preventDefault()
       e.stopPropagation()
-      setMenu({ x: e.clientX, y: e.clientY, targetDir: targetDirFor(node, root) })
+      setMenu({ x: e.clientX, y: e.clientY, targetDir: targetDirFor(node, root), copyPath: node?.path ?? null })
     },
     [root],
   )
@@ -181,6 +183,7 @@ export function Sidebar({
         <ContextMenu
           x={menu.x}
           y={menu.y}
+          copyPath={menu.copyPath}
           onNewNote={() => startCreate('file')}
           onNewFolder={() => startCreate('dir')}
           onClose={() => setMenu(null)}
