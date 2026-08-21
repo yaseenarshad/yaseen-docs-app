@@ -64,7 +64,7 @@ function CrepeHost({ root, file, watch }: { root: string; file: FileResponse; wa
     let cancelled = false
     const ready = crepe.create().then(() => {
       if (cancelled) return
-      controller = attach(crepe, file.mtime, frontmatter)
+      controller = attach(() => getMarkdownForSave(crepe), file.mtime, frontmatter)
       focusEditor(crepe)
     })
 
@@ -73,7 +73,7 @@ function CrepeHost({ root, file, watch }: { root: string; file: FileResponse; wa
       if (cancelled) return
       const split = splitFrontmatter(fresh.content)
       setMarkdown(crepe, split.body)
-      markReloaded(crepe, fresh.mtime, split.frontmatter)
+      markReloaded(() => getMarkdownForSave(crepe), fresh.mtime, split.frontmatter)
     }
     reloadRef.current = () => void reload()
 

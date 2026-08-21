@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Crepe } from '@milkdown/crepe'
 import { api, ApiRequestError } from '../api'
-import { getMarkdownForSave } from '../editor/createCrepe'
 import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
 
 export interface AutosaveHandle {
   status: SaveStatus
   /** Disk mtime reported by a 409 / watcher while the editor had unsaved changes; null when no conflict. */
   conflictMtime: number | null
-  /** Attach to a created Crepe instance; returns the Autosave controller. */
-  attach: (crepe: Crepe, mtime: number, frontmatter: string) => Autosave
+  /**
+   * Start autosaving; returns the Autosave controller. `getContent` returns the current body
+   * markdown (without frontmatter) and is re-read on every flush so nothing in flight is lost.
+   */
+  attach: (getContent: () => string, mtime: number, frontmatter: string) => Autosave
   /** Overwrite the on-disk version with the editor content. */
   keepMine: () => void
-  /** Called after the editor content was replaced from disk. */
-  markReloaded: (crepe: Crepe, mtime: number, frontmatter: string) => void
+  /** Called after the editor content was replaced from disk; `getContent` returns the reloaded body. */
+  markReloaded: (getContent: () => string, mtime: number, frontmatter: string) => void
   /** Report an external change detected by the watcher while dirty. */
   reportConflict: (diskMtime: number) => void
 }
@@ -22,15 +23,15 @@ export interface AutosaveHandle {
 export function useAutosave(path: string): AutosaveHandle {
   const [status, setStatus] = useState<SaveStatus>('saved')
   const [conflictMtime, setConflictMtime] = useState<number | null>(null)
-  const ref = useRef<{ autosave: Autosave; crepe: Crepe } | null>(null)
+  const ref = useRef<{ autosave: Autosave; getContent: () => string } | null>(null)
   /** Raw frontmatter block re-prepended on every save; updated when the file is reloaded from disk. */
   const frontmatterRef = useRef('')
 
   const attach = useCallback(
-    (crepe: Crepe, mtime: number, frontmatter: string) => {
+    (getContent: () => string, mtime: number, frontmatter: string) => {
       frontmatterRef.current = frontmatter
       const autosave = new Autosave({
-        markdown: getMarkdownForSave(crepe),
+        markdown: getContent(),
         mtime,
         delayMs: 500,
         save: async (content, expectedMtime, keepalive) => {
@@ -44,7 +45,7 @@ export function useAutosave(path: string): AutosaveHandle {
         onStatus: setStatus,
         onConflict: setConflictMtime,
       })
-      ref.current = { autosave, crepe }
+      ref.current = { autosave, getContent }
       setStatus('saved')
       setConflictMtime(null)
       return autosave
@@ -56,7 +57,7 @@ export function useAutosave(path: string): AutosaveHandle {
     const s = ref.current
     if (s === null) return
     // The listener plugin debounces markdownUpdated by 200ms; pull the live content so nothing is lost.
-    s.autosave.update(getMarkdownForSave(s.crepe))
+    s.autosave.update(s.getContent())
     void s.autosave.flush(keepalive)
   }, [])
 
@@ -78,9 +79,9 @@ export function useAutosave(path: string): AutosaveHandle {
     void s.autosave.adopt(conflictMtime)
   }, [conflictMtime])
 
-  const markReloaded = useCallback((crepe: Crepe, mtime: number, frontmatter: string) => {
+  const markReloaded = useCallback((getContent: () => string, mtime: number, frontmatter: string) => {
     frontmatterRef.current = frontmatter
-    ref.current?.autosave.reset(getMarkdownForSave(crepe), mtime)
+    ref.current?.autosave.reset(getContent(), mtime)
     setConflictMtime(null)
   }, [])
 
