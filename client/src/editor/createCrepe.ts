@@ -33,6 +33,7 @@ import { replaceAll } from '@milkdown/kit/utils'
 import { features } from './featureConfig'
 import { listItemRoundTrip, normalizeEmptyItems, stripEmptyTaskBreaks } from './listItemRoundTrip'
 import { underline } from './marks/underline'
+import { multiBlockDrag } from './multiBlockDrag'
 import { guideLines } from './outline/guideLines'
 import { obsidianHotkeys } from './outline/hotkeys'
 import { outlinerKeymap } from './outline/listCommands'
@@ -67,6 +68,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createOutlineFolding(opts.folding))
   crepe.editor.use(createOutlineZoom(opts.zoom ?? { fileName: 'Untitled' }))
   crepe.editor.use(guideLines)
+  crepe.editor.use(multiBlockDrag)
   crepe.editor.use(outlinerKeymap)
   crepe.editor.use(obsidianHotkeys)
   crepe.editor.use(zoomKeymap)
