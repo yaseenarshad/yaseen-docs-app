@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ipcMain } from 'electron'
 import type { Envelope } from '../../channels'
 import { BridgeFailure } from '../fs/fsUtils'
-import { handle, toBridgeError } from './envelope'
+import { handle, handleWithEvent, toBridgeError } from './envelope'
 
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn(), on: vi.fn() } }))
 
@@ -40,6 +40,23 @@ describe('handle', () => {
       throw new Error('boom')
     })
     expect(await registered('t:boom')({ sender: {} })).toEqual({ ok: false, error: { code: 'IO_ERROR', message: 'boom' } })
+  })
+})
+
+describe('handleWithEvent', () => {
+  it('passes the invoke event first, then the args, and wraps the result like handle', async () => {
+    const fn = vi.fn(async (e: unknown, a: string) => `${(e as { sender: { id: number } }).sender.id}:${a}`)
+    handleWithEvent('t:event', fn)
+    const event = { sender: { id: 7 } }
+    expect(await registered('t:event')(event, 'x')).toEqual({ ok: true, value: '7:x' })
+    expect(fn).toHaveBeenCalledWith(event, 'x')
+  })
+
+  it('maps a thrown BridgeFailure to an error envelope too', async () => {
+    handleWithEvent('t:event-fail', async () => {
+      throw new BridgeFailure('PICKER_FAILED', 'no display')
+    })
+    expect(await registered('t:event-fail')({ sender: {} })).toEqual({ ok: false, error: { code: 'PICKER_FAILED', message: 'no display' } })
   })
 })
 

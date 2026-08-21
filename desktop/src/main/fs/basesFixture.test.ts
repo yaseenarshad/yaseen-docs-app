@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import type { TreeNode, TreeResponse } from '@shared/types'
-import { app } from './app'
-import { makeBasesFixture } from './bases-fixture'
+import type { TreeNode } from '@shared/types'
+import { makeBasesFixture } from './basesFixture'
+import { tree } from './tree'
 
 let root: string
 let cleanup: () => Promise<void>
@@ -13,10 +13,8 @@ const files = (nodes: TreeNode[]): FileNode[] => nodes.flatMap((n) => (n.type ==
 const dirs = (nodes: TreeNode[]): string[] => nodes.flatMap((n) => (n.type === 'dir' ? [n.name, ...dirs(n.children)] : []))
 
 describe('bases fixture', () => {
-  it('exposes 8 markdown files and 1 base through /api/tree; pngs, .trash and .obsidian hidden', async () => {
-    const res = await app.request(`/api/tree?root=${encodeURIComponent(root)}`)
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as TreeResponse
+  it('exposes 8 markdown files and 1 base through tree(); pngs, .trash and .obsidian hidden', async () => {
+    const body = await tree(root)
     const all = files(body.tree)
     expect(all.filter((f) => f.kind === 'markdown')).toHaveLength(8)
     expect(all.filter((f) => f.kind === 'base').map((f) => f.name)).toEqual(['Content Topics DB.base'])

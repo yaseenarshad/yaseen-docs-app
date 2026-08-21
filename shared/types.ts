@@ -1,35 +1,25 @@
 /**
- * Shared client/server contracts for the local markdown editor.
- * Locked in GRO-1961 — see docs/CONTRACTS.md for the prose version.
+ * Shared renderer/main contracts for Yaseen Docs (locked in GRO-1961, bridge in GRO-2153) —
+ * see docs/CONTRACTS.md for the prose version.
  *
- * All paths are ABSOLUTE, POSIX-style (`/Users/...`). The server imposes no
+ * All paths are ABSOLUTE, POSIX-style (`/Users/...`). The main process imposes no
  * jail: any absolute path on the machine may be read or written.
  */
 
 // ---------- Errors ----------
 
 export type ApiErrorCode =
-  | 'BAD_REQUEST' // missing/invalid query or body (400)
-  | 'NOT_ABSOLUTE' // path is not absolute (400)
-  | 'NOT_FOUND' // path does not exist (404)
-  | 'NOT_A_DIRECTORY' // expected a directory (400)
-  | 'NOT_A_FILE' // expected a regular file (400)
-  | 'UNSUPPORTED_EXTENSION' // file extension is neither markdown nor .base (400)
-  | 'ALREADY_EXISTS' // create target already exists (409)
-  | 'FORBIDDEN' // OS permission denied (403)
-  | 'TOO_LARGE' // file exceeds MAX_FILE_BYTES (413)
-  | 'IO_ERROR' // any other fs error (500)
-  | 'PICKER_FAILED' // native folder dialog could not be run (500)
-  | 'NOT_SUPPORTED' // endpoint not available on this platform (501)
-
-export interface ApiError {
-  error: {
-    code: ApiErrorCode
-    message: string
-    /** The offending path, when relevant. */
-    path?: string
-  }
-}
+  | 'BAD_REQUEST' // missing/invalid argument
+  | 'NOT_ABSOLUTE' // path is not absolute
+  | 'NOT_FOUND' // path does not exist
+  | 'NOT_A_DIRECTORY' // expected a directory
+  | 'NOT_A_FILE' // expected a regular file
+  | 'UNSUPPORTED_EXTENSION' // file extension is neither markdown nor .base
+  | 'ALREADY_EXISTS' // create target already exists
+  | 'FORBIDDEN' // OS permission denied
+  | 'TOO_LARGE' // file exceeds MAX_FILE_BYTES
+  | 'IO_ERROR' // any other fs error
+  | 'PICKER_FAILED' // native folder dialog could not be run
 
 export const MARKDOWN_EXTENSIONS = ['.md', '.markdown'] as const
 /** Obsidian Bases files: YAML views over the vault's notes, first-class alongside markdown. */
@@ -37,24 +27,7 @@ export const BASE_EXTENSIONS = ['.base'] as const
 export type FileKind = 'markdown' | 'base'
 export const MAX_FILE_BYTES = 10 * 1024 * 1024
 
-// ---------- GET /api/dirs?path=<abs|omitted> ----------
-
-export interface DirEntry {
-  name: string
-  /** Absolute path of this directory. */
-  path: string
-}
-
-export interface DirsResponse {
-  /** Absolute path that was listed (defaults to the user's home dir when `path` omitted). */
-  path: string
-  /** Absolute path of the parent, or null at filesystem root. */
-  parent: string | null
-  /** Immediate child directories only (files excluded), sorted case-insensitively. Hidden (dot) dirs excluded. */
-  dirs: DirEntry[]
-}
-
-// ---------- GET /api/tree?root=<abs> ----------
+// ---------- tree(root) ----------
 
 export type TreeNode =
   | {
@@ -79,7 +52,7 @@ export interface TreeResponse {
   root: string
   /** Recursive tree of the root. Only vault files (`.md`/`.markdown` → `kind: 'markdown'`, `.base` → `kind: 'base'`) are included; every directory shows, vault files or not (GRO-2022). Hidden (dot) entries and `node_modules` skipped. */
   tree: TreeNode[]
-  /** Server time (epoch ms) when the tree was computed. */
+  /** Main-process time (epoch ms) when the tree was computed. */
   generatedAt: number
 }
 
@@ -120,7 +93,7 @@ export interface IndexResponse {
   generatedAt: number
 }
 
-// ---------- GET /api/file?path=<abs> ----------
+// ---------- readFile(path) ----------
 
 export interface FileResponse {
   path: string
@@ -130,16 +103,16 @@ export interface FileResponse {
   size: number
 }
 
-// ---------- PUT /api/file  body: FileWriteRequest ----------
+// ---------- writeFile(req) ----------
 
 export interface FileWriteRequest {
   path: string
   /** Full file contents to write (frontmatter already re-prepended by client). Written atomically (tmp + rename). */
   content: string
   /**
-   * Optional optimistic-concurrency guard: the mtime the client last read.
-   * If provided and the file's current mtime is newer, server responds 409 CONFLICT
-   * (see FileWriteConflict) and does NOT write.
+   * Optional optimistic-concurrency guard: the mtime the renderer last read.
+   * If provided and the file's current mtime differs, the call rejects with a
+   * `BridgeError` whose code is `CONFLICT` (carrying the disk `mtime`) and does NOT write.
    */
   expectedMtime?: number
 }
@@ -150,17 +123,7 @@ export interface FileWriteResponse {
   size: number
 }
 
-export interface FileWriteConflict {
-  error: {
-    code: 'CONFLICT'
-    message: string
-    path: string
-    /** Current mtime on disk. */
-    mtime: number
-  }
-}
-
-// ---------- POST /api/create-dir  body: CreateDirRequest ----------
+// ---------- createDir(path) ----------
 
 export interface CreateDirRequest {
   /** Absolute path of the directory to create; its parent must exist. */
@@ -171,7 +134,7 @@ export interface CreateDirResponse {
   path: string
 }
 
-// ---------- POST /api/create-file  body: CreateFileRequest ----------
+// ---------- createFile(path) ----------
 
 export interface CreateFileRequest {
   /**
@@ -188,12 +151,11 @@ export interface CreateFileResponse {
   size: number
 }
 
-// ---------- POST /api/pick-folder ----------
+// ---------- pickFolder() ----------
 
 /**
- * Opens the native macOS Finder "choose folder" dialog (osascript) and blocks until the user
- * picks a folder or cancels (5 min timeout). Non-macOS → 501 NOT_SUPPORTED; client falls back
- * to the in-app FolderPicker. Dialog failure → 500 PICKER_FAILED.
+ * Opens Electron's native open-directory dialog, parented to the calling window, and resolves
+ * once the user picks a folder or cancels. Dialog failure → rejects `PICKER_FAILED`.
  */
 export type PickFolderResponse =
   | {
@@ -205,12 +167,11 @@ export type PickFolderResponse =
       cancelled: true
     }
 
-// ---------- GET /api/watch?root=<abs>  (Server-Sent Events) ----------
+// ---------- watch(root, listener) ----------
 
 /**
- * SSE stream. Each message is `event: <WatchEvent['type']>` + `data: <JSON WatchEvent>`.
- * A `ready` event is sent once the watcher has completed its initial scan.
- * Server sends a `: ping` comment every 25s to keep the connection alive.
+ * Delivered to the listener for as long as the subscription lives. A `ready` event is sent
+ * once the watcher has completed its initial scan (at once for late joiners of a shared root).
  */
 export type WatchEvent =
   | { type: 'ready'; root: string }
@@ -329,8 +290,8 @@ export interface AppState {
 
 /**
  * Every bridge promise rejects with a plain object satisfying `BridgeError` (the preload
- * unwraps the IPC envelope; `client/src/api.ts` wraps it in `ApiRequestError`). Same codes
- * and meanings as the HTTP era; `CONFLICT` carries the current on-disk `mtime`.
+ * unwraps the IPC envelope; `client/src/api.ts` wraps it in `ApiRequestError`).
+ * `CONFLICT` carries the current on-disk `mtime`.
  */
 export interface BridgeError {
   code: ApiErrorCode | 'CONFLICT'
@@ -378,8 +339,8 @@ export interface WindowApi {
 /**
  * The single typed surface the renderer uses for everything outside the DOM, installed by
  * the preload as `window.yaseenDocs` (`contextBridge`, `ipcMain.handle` on the main side).
- * Request/response shapes are the HTTP-era ones above, unchanged. Bases (GRO-2097) adds its
- * methods here (e.g. `index(root)`) — additive only.
+ * Request/response shapes are the ones above. Bases (GRO-2097) adds its methods here
+ * (e.g. `index(root)`) — additive only.
  */
 export interface YaseenDocsApi {
   tree(root: string): Promise<TreeResponse>

@@ -4,7 +4,7 @@ import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
 
 export interface AutosaveHandle {
   status: SaveStatus
-  /** Disk mtime reported by a 409 / watcher while the editor had unsaved changes; null when no conflict. */
+  /** Disk mtime reported by a CONFLICT / watcher while the editor had unsaved changes; null when no conflict. */
   conflictMtime: number | null
   /**
    * Start autosaving; returns the Autosave controller. `getContent` returns the current body
@@ -34,9 +34,9 @@ export function useAutosave(path: string): AutosaveHandle {
         markdown: getContent(),
         mtime,
         delayMs: 500,
-        save: async (content, expectedMtime, keepalive) => {
+        save: async (content, expectedMtime) => {
           try {
-            return await api.writeFile({ path, content: frontmatterRef.current + content, expectedMtime }, keepalive)
+            return await api.writeFile({ path, content: frontmatterRef.current + content, expectedMtime })
           } catch (err) {
             if (err instanceof ApiRequestError && err.mtime !== undefined) throw new SaveConflict(err.mtime)
             throw err
@@ -53,20 +53,20 @@ export function useAutosave(path: string): AutosaveHandle {
     [path],
   )
 
-  const flushNow = useCallback((keepalive: boolean) => {
+  const flushNow = useCallback(() => {
     const s = ref.current
     if (s === null) return
     // The listener plugin debounces markdownUpdated by 200ms; pull the live content so nothing is lost.
     s.autosave.update(s.getContent())
-    void s.autosave.flush(keepalive)
+    void s.autosave.flush()
   }, [])
 
   useEffect(() => {
-    const onUnload = () => flushNow(true)
-    window.addEventListener('beforeunload', onUnload)
+    // Best effort on reload; the close handshake (GRO-2158, B2) is what guarantees the last save.
+    window.addEventListener('beforeunload', flushNow)
     return () => {
-      window.removeEventListener('beforeunload', onUnload)
-      flushNow(false)
+      window.removeEventListener('beforeunload', flushNow)
+      flushNow()
       ref.current?.autosave.dispose()
       ref.current = null
     }

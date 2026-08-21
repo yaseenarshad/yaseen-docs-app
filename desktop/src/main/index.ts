@@ -25,12 +25,7 @@ function createWindow(): BrowserWindow {
 
 app.whenReady().then(() => {
   protocol.handle('app', (req) => {
-    const { pathname, search } = new URL(req.url)
-    // Until GRO-2157 (A5) the client still talks HTTP: forward /api to the Hono server in prod mode
-    // (dev mode goes through the electron-vite proxy). Deleted with the server.
-    if (pathname.startsWith('/api/')) {
-      return net.fetch(`http://127.0.0.1:3737${pathname}${search}`, { method: req.method, headers: req.headers, body: req.body, duplex: 'half' } as RequestInit)
-    }
+    const { pathname } = new URL(req.url)
     const file = join(RENDERER_DIR, pathname === '/' ? 'index.html' : pathname)
     return net.fetch(pathToFileURL(file).toString())
   })

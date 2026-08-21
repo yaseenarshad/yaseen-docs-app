@@ -3,7 +3,7 @@ import type { FileResponse, FileWriteRequest, FileWriteResponse } from '@shared/
 import { MAX_FILE_BYTES } from '@shared/types'
 import { BridgeFailure, atomicWrite, fsCall, requireAbsPath, requireVaultFile } from './fsUtils'
 
-/** `window.yaseenDocs.readFile(path)` — the HTTP era's `GET /api/file`. */
+/** `window.yaseenDocs.readFile(path)`: raw UTF-8 content of a vault file, frontmatter included. */
 export async function readFile(path: string): Promise<FileResponse> {
   const p = requireAbsPath(path, 'path')
   requireVaultFile(p)
@@ -16,7 +16,7 @@ export async function readFile(path: string): Promise<FileResponse> {
 }
 
 /**
- * `window.yaseenDocs.writeFile(req)` — the HTTP era's `PUT /api/file`. Atomic (tmp + rename),
+ * `window.yaseenDocs.writeFile(req)`. Atomic (tmp + rename),
  * parent dir must exist. With `expectedMtime`, a newer file on disk rejects `CONFLICT` carrying
  * the current mtime and nothing is written. The request crosses IPC from a sandboxed renderer,
  * so its shape is checked like a request body, not trusted from the type.

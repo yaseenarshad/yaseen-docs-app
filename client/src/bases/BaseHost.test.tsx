@@ -25,7 +25,7 @@ const writeFile = vi.mocked(api.writeFile)
 
 const PATH = '/vault/Content Pillars/Content Topics DB.base'
 
-/** `Content Topics DB.base` from `server/src/bases-fixture.ts`, verbatim. */
+/** `Content Topics DB.base` from `desktop/src/main/fs/basesFixture.ts`, verbatim. */
 const FIXTURE = `views:
   - type: table
     name: Table

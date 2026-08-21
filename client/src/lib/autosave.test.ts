@@ -39,7 +39,7 @@ describe('Autosave', () => {
     expect(a.dirty).toBe(true)
     await vi.advanceTimersByTimeAsync(200)
     expect(save).toHaveBeenCalledTimes(1)
-    expect(save).toHaveBeenCalledWith('ab', 100, false)
+    expect(save).toHaveBeenCalledWith('ab', 100)
     expect(a.mtime).toBe(200)
     expect(a.dirty).toBe(false)
     expect(statuses).toEqual(['unsaved', 'saving', 'saved'])
@@ -58,11 +58,11 @@ describe('Autosave', () => {
     let n = 0
     const { a, save } = setup(async () => ({ mtime: 200 + ++n }))
     a.update('a')
-    await a.flush(true)
-    expect(save).toHaveBeenCalledWith('a', 100, true)
+    await a.flush()
+    expect(save).toHaveBeenCalledWith('a', 100)
     a.update('b')
     await a.flush()
-    expect(save).toHaveBeenLastCalledWith('b', 201, false)
+    expect(save).toHaveBeenLastCalledWith('b', 201)
     expect(a.mtime).toBe(202)
   })
 
@@ -95,7 +95,7 @@ describe('Autosave', () => {
     expect(a.dirty).toBe(false)
   })
 
-  it('409 reports a conflict, pauses saving, and adopt() overwrites with the disk mtime', async () => {
+  it('CONFLICT reports a conflict, pauses saving, and adopt() overwrites with the disk mtime', async () => {
     const responses: Array<() => Promise<{ mtime: number }>> = [
       () => Promise.reject(new SaveConflict(150)),
       () => Promise.resolve({ mtime: 300 }),
@@ -110,7 +110,7 @@ describe('Autosave', () => {
     await vi.advanceTimersByTimeAsync(2000)
     expect(save).toHaveBeenCalledTimes(1)
     await a.adopt(150)
-    expect(save).toHaveBeenLastCalledWith('ab', 150, false)
+    expect(save).toHaveBeenLastCalledWith('ab', 150)
     expect(a.mtime).toBe(300)
     expect(a.dirty).toBe(false)
   })
@@ -126,7 +126,7 @@ describe('Autosave', () => {
     expect(save).toHaveBeenCalledTimes(1)
   })
 
-  it('network error keeps content pending and reports error; next update retries', async () => {
+  it('a non-conflict failure keeps content pending and reports error; next update retries', async () => {
     const responses: Array<() => Promise<{ mtime: number }>> = [
       () => Promise.reject(new Error('boom')),
       () => Promise.resolve({ mtime: 300 }),
