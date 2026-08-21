@@ -14,6 +14,12 @@
  * fires `markdownUpdated`, the file on disk is untouched and fold state is unaffected. Zoom is not
  * persisted: switching files remounts the editor and therefore clears it.
  *
+ * Browser history (GRO-2091 A): every zoom change pushes one in-memory history entry
+ * (`{ [ZOOM_HISTORY_KEY]: { file, key } }`, URL untouched — the 2-arg `pushState`, since an empty
+ * URL argument would resolve away the `#/path.md` hash) and `popstate` restores that level, so
+ * Back / Forward walk zoom levels. Keys are the fold-key scheme (first-block text + occurrence)
+ * counted over ALL list items; entries of another file are ignored, an unresolvable key zooms out.
+ *
  * Triggers: click on the bullet glyph (`.label-wrapper`; task checkboxes keep toggling instead),
  * `Mod-.` = zoom into the item at the caret, `Mod-Shift-.` = zoom out one level. While zoomed,
  * `Shift-Tab` / `Mod-[` on the zoomed item or one of its direct children is a no-op (lifting would
@@ -25,6 +31,7 @@ import { type Command, type EditorState, Plugin, PluginKey, Selection } from '@m
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { ancestorItemPositions, innermostItemPos } from './listNodes'
+import { getOutlineFoldKey } from './outlineFoldKeys'
 
 export interface ZoomOptions {
   /** Shown as the first breadcrumb; clicking it zooms out fully. */
@@ -34,6 +41,8 @@ export interface ZoomOptions {
 interface ZoomState {
   /** Position of the zoomed list_item, or null when not zoomed. */
   itemPos: number | null
+  /** Breadcrumb root and the `file` stamped on history entries (so another file's entries are ignored). */
+  fileName: string
 }
 
 /** Transaction meta: zoom to the list_item at this position, or `null` to zoom out fully. */
@@ -43,6 +52,13 @@ export const ZOOM_HIDDEN_CLASS = 'outline-zoom-hidden'
 export const ZOOM_ANCESTOR_CLASS = 'outline-zoom-ancestor'
 export const ZOOM_CRUMBS_CLASS = 'outline-zoom-crumbs'
 export const ZOOM_CRUMB_CLASS = 'outline-zoom-crumb'
+/** Property on `history.state` carrying `{ file, key }` (`key` null = zoomed out) for this file. */
+export const ZOOM_HISTORY_KEY = 'mdappZoom'
+
+interface ZoomHistoryEntry {
+  file: string
+  key: string | null
+}
 
 const LABEL_MAX_CHARS = 40
 /** Priority above Crepe's keymaps (50), like `listCommands.ts` / `hotkeys.ts`. */
@@ -55,6 +71,54 @@ const isListItem = (node: ProseNode | null | undefined): node is ProseNode => no
 /** Position of the zoomed list_item (null when not zoomed or when the plugin is absent). */
 export const getZoomedItemPos = (state: EditorState): number | null => pluginKey.getState(state)?.itemPos ?? null
 
+/**
+ * Walk every list_item in document order with its zoom key — fold-key scheme, but the occurrence
+ * index counts ALL items (fold keys only count parents), so this is a separate key space.
+ */
+const eachItemKey = (doc: ProseNode, visit: (pos: number, key: string) => boolean): void => {
+  const occurrences = new Map<string, number>()
+  let stop = false
+  doc.descendants((node, pos) => {
+    if (stop) return false
+    if (!isListItem(node)) return true
+    const label = node.firstChild?.textContent.trim() || 'Untitled item'
+    const occurrence = occurrences.get(label) ?? 0
+    occurrences.set(label, occurrence + 1)
+    if (visit(pos, getOutlineFoldKey(label, occurrence))) stop = true
+    return !stop
+  })
+}
+
+/** Position-independent key of the list_item at `itemPos` (null when there is no item there). */
+export const zoomKeyAt = (doc: ProseNode, itemPos: number): string | null => {
+  let found: string | null = null
+  eachItemKey(doc, (pos, key) => {
+    if (pos !== itemPos) return false
+    found = key
+    return true
+  })
+  return found
+}
+
+/** Position of the list_item with zoom key `key`, or null when it no longer exists. */
+export const itemPosForZoomKey = (doc: ProseNode, key: string): number | null => {
+  let found: number | null = null
+  eachItemKey(doc, (pos, itemKey) => {
+    if (itemKey !== key) return false
+    found = pos
+    return true
+  })
+  return found
+}
+
+const readZoomEntry = (state: unknown): ZoomHistoryEntry | null => {
+  if (typeof state !== 'object' || state === null) return null
+  const entry = (state as Record<string, unknown>)[ZOOM_HISTORY_KEY]
+  if (typeof entry !== 'object' || entry === null) return null
+  const { file, key } = entry as Record<string, unknown>
+  return typeof file === 'string' && (typeof key === 'string' || key === null) ? { file, key } : null
+}
+
 /** First-block text of a list item, trimmed and truncated for the breadcrumb. */
 const itemLabel = (item: ProseNode): string => {
   const text = item.firstChild?.textContent.trim() || 'Untitled item'
@@ -64,8 +128,12 @@ const itemLabel = (item: ProseNode): string => {
 /** Position of the innermost list_item containing the selection head, or null outside lists. */
 const itemAtSelection = (state: EditorState): number | null => innermostItemPos(state.selection.$from)
 
-/** Zoom into the list_item at `itemPos`; moves the caret into it if the selection was outside. */
-const zoomTo = (itemPos: ZoomMeta): Command => (state, dispatch) => {
+/**
+ * Zoom into the list_item at `itemPos` (null = zoom out fully); moves the caret into it if the
+ * selection was outside. Every user-driven zoom change pushes a history entry; `fromHistory`
+ * (popstate) restores a level without pushing another.
+ */
+const zoomTo = (itemPos: ZoomMeta, { fromHistory = false } = {}): Command => (state, dispatch) => {
   const zoom = pluginKey.getState(state)
   if (!zoom || zoom.itemPos === itemPos) return false
   if (itemPos !== null && !isListItem(state.doc.nodeAt(itemPos))) return false
@@ -76,6 +144,11 @@ const zoomTo = (itemPos: ZoomMeta): Command => (state, dispatch) => {
       const { from, to } = state.selection
       const inside = item !== null && from >= itemPos && to <= itemPos + item.nodeSize
       if (!inside) tr.setSelection(Selection.near(tr.doc.resolve(itemPos + 1), 1))
+    }
+    if (!fromHistory) {
+      const entry: ZoomHistoryEntry = { file: zoom.fileName, key: itemPos === null ? null : zoomKeyAt(state.doc, itemPos) }
+      // No URL argument: an empty string would resolve against the document and drop `#/path.md`.
+      history.pushState({ [ZOOM_HISTORY_KEY]: entry }, '')
     }
     dispatch(tr.scrollIntoView())
   }
@@ -193,15 +266,27 @@ export const createOutlineZoom = ({ fileName }: ZoomOptions) =>
       new Plugin<ZoomState>({
         key: pluginKey,
         state: {
-          init: () => ({ itemPos: null }),
+          init: () => ({ itemPos: null, fileName }),
           apply: (transaction, previous, _oldState, newState) => {
             const meta: ZoomMeta | undefined = transaction.getMeta(pluginKey)
-            if (meta !== undefined) return { itemPos: meta }
+            if (meta !== undefined) return { ...previous, itemPos: meta }
             if (previous.itemPos === null || !transaction.docChanged) return previous
             const mapped = transaction.mapping.mapResult(previous.itemPos, 1)
-            if (mapped.deleted || !isListItem(newState.doc.nodeAt(mapped.pos))) return { itemPos: null }
-            return { itemPos: mapped.pos }
+            if (mapped.deleted || !isListItem(newState.doc.nodeAt(mapped.pos))) return { ...previous, itemPos: null }
+            return { ...previous, itemPos: mapped.pos }
           },
+        },
+        view: (view) => {
+          // Back / Forward: restore the entry's level. Entries of another file (left behind by a
+          // file switch) are ignored; the original page entry (no zoom state) means zoomed out.
+          const onPopState = (event: PopStateEvent) => {
+            const entry = readZoomEntry(event.state)
+            if (entry !== null && entry.file !== fileName) return
+            const target = entry?.key == null ? null : itemPosForZoomKey(view.state.doc, entry.key)
+            zoomTo(target, { fromHistory: true })(view.state, view.dispatch)
+          }
+          window.addEventListener('popstate', onPopState)
+          return { destroy: () => window.removeEventListener('popstate', onPopState) }
         },
         props: {
           decorations: (state) => {

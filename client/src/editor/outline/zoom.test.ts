@@ -9,7 +9,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
-import { getZoomedItemPos, ZOOM_ANCESTOR_CLASS, ZOOM_CRUMB_CLASS, ZOOM_CRUMBS_CLASS, ZOOM_HIDDEN_CLASS } from './zoom'
+import { getZoomedItemPos, itemPosForZoomKey, ZOOM_ANCESTOR_CLASS, ZOOM_CRUMB_CLASS, ZOOM_CRUMBS_CLASS, ZOOM_HIDDEN_CLASS, ZOOM_HISTORY_KEY, zoomKeyAt } from './zoom'
 
 const OUTLINE = `Intro paragraph
 
@@ -302,5 +302,84 @@ describe('zoom into a bullet', () => {
     await sleep(400)
     expect(onMarkdownUpdated).not.toHaveBeenCalled()
     expect(getMarkdownForSave(crepe)).toBe(md)
+  })
+})
+
+describe('browser history: Back / Forward walk zoom levels (GRO-2091 A)', () => {
+  const popTo = (state: unknown) => window.dispatchEvent(new PopStateEvent('popstate', { state }))
+  const entry = () => (history.state as Record<string, unknown> | null)?.[ZOOM_HISTORY_KEY] as { file: string; key: string | null } | undefined
+
+  it('pushes one in-memory entry per zoom change (file + key) and leaves the URL hash alone', async () => {
+    history.replaceState(null, '', '#/vault/notes.md')
+    const { crepe, root } = await mount()
+    const length0 = history.length
+    clickGlyph(root, 'L2 a')
+    expect(history.length).toBe(length0 + 1)
+    expect(entry()).toEqual({ file: 'notes.md', key: expect.any(String) })
+    expect(location.hash).toBe('#/vault/notes.md')
+    const l2Entry = history.state
+    clickGlyph(root, 'L3 a')
+    expect(history.length).toBe(length0 + 2)
+    expect(entry()?.key).not.toBe(l2Entry[ZOOM_HISTORY_KEY].key)
+    // Zooming out (file crumb) is a zoom change too, so Back can return to the zoomed view.
+    clickCrumb(root, 'notes.md')
+    expect(zoomedPos(crepe)).toBeNull()
+    expect(history.length).toBe(length0 + 3)
+    expect(entry()).toEqual({ file: 'notes.md', key: null })
+    expect(location.hash).toBe('#/vault/notes.md')
+  })
+
+  it('popstate restores the entry\'s level without pushing; entries without zoom state zoom out', async () => {
+    const { crepe, root } = await mount()
+    clickGlyph(root, 'L2 a')
+    const l2Entry = history.state
+    clickGlyph(root, 'L3 a')
+    const length = history.length
+    popTo(l2Entry) // Back
+    expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
+    expect(history.length).toBe(length)
+    popTo(null) // Back to the original page entry
+    expect(zoomedPos(crepe)).toBeNull()
+    popTo(l2Entry) // Forward
+    expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
+    expect(history.length).toBe(length)
+  })
+
+  it('ignores entries of another file and zooms out on a key that no longer resolves', async () => {
+    const { crepe, root } = await mount()
+    clickGlyph(root, 'L2 a')
+    popTo({ [ZOOM_HISTORY_KEY]: { file: 'other.md', key: 'deadbeef:0' } })
+    expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
+    popTo({ [ZOOM_HISTORY_KEY]: { file: 'notes.md', key: 'deadbeef:0' } })
+    expect(zoomedPos(crepe)).toBeNull()
+  })
+
+  it('zoom keys are label + occurrence over ALL items, so same-labelled items stay distinct', async () => {
+    const { crepe } = await mount('* Same\n  * Child\n* Same\n')
+    crepe.editor.action((ctx) => {
+      const doc = ctx.get(editorViewCtx).state.doc
+      const first = posOf(crepe, 'Same') - 2
+      const positions: number[] = []
+      doc.descendants((node, pos) => {
+        if (node.type.name === 'list_item' && node.firstChild?.textContent === 'Same') positions.push(pos)
+        return true
+      })
+      expect(positions).toHaveLength(2)
+      expect(positions[0]).toBe(first)
+      const keys = positions.map((pos) => zoomKeyAt(doc, pos))
+      expect(keys[0]).not.toBe(keys[1])
+      expect(keys.map((key) => itemPosForZoomKey(doc, key as string))).toEqual(positions)
+      expect(zoomKeyAt(doc, 0)).toBeNull() // not a list_item
+    })
+  })
+
+  it('removes its popstate listener on destroy (one editor per file; the next file registers its own)', async () => {
+    const { crepe, root } = await mount()
+    const removed = vi.spyOn(window, 'removeEventListener')
+    await crepe.destroy()
+    mounted.splice(0)
+    root.remove()
+    expect(removed).toHaveBeenCalledWith('popstate', expect.any(Function))
+    removed.mockRestore()
   })
 })
