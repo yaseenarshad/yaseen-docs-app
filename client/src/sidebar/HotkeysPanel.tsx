@@ -16,7 +16,7 @@ export const HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘↑ / ⌘↓', label: 'Fold / unfold the bullet at the caret' },
   { keys: '⌘⇧U', label: 'Fold all bullets' },
   { keys: '⌘⇧I', label: 'Unfold all bullets' },
-  { keys: '⌘Z', label: 'Undo — also reverts the latest fold' },
+  { keys: '⌘Z', label: 'Undo — also reverts the latest fold or zoom' },
   { keys: '⌘⇧Z', label: 'Redo' },
   { keys: '⌘.', label: 'Zoom into the bullet at the caret' },
   { keys: '⌘⇧.', label: 'Zoom out one level' },

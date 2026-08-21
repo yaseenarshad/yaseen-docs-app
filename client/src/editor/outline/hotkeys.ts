@@ -15,7 +15,8 @@
  *                  native ⌘↑/⌘↓ document jump still works in prose.
  *  - `Mod-Shift-x` toggle strikethrough (Obsidian); Crepe's own `Mod-Alt-x` keeps working.
  *  - `Mod-z`       fold panic-undo (GRO-2075): reverts the most recent fold iff it is the latest
- *                  action; declines otherwise, so history's own `Mod-z` handles content undo.
+ *                  VIEW action (a zoom after it takes over, GRO-2091 B); declines otherwise, so
+ *                  zoom.ts's zoom undo and then history's own `Mod-z` get the key.
  *
  * Registered with priority 100 (above Crepe's 50), like `listCommands.ts`.
  */

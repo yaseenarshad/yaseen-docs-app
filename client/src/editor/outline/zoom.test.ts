@@ -42,7 +42,7 @@ afterEach(async () => {
 /** ProseMirror resolves `Mod` from `navigator.platform` (jsdom: not mac → Ctrl). */
 const IS_MAC = /Mac/.test(navigator.platform)
 
-type Key = 'Mod-.' | 'Mod-Shift-.' | 'Shift-Tab' | 'Enter'
+type Key = 'Mod-.' | 'Mod-Shift-.' | 'Shift-Tab' | 'Enter' | 'Mod-z'
 
 function press(crepe: Crepe, key: Key): boolean {
   return crepe.editor.action((ctx) => {
@@ -52,11 +52,11 @@ function press(crepe: Crepe, key: Key): boolean {
     // Real keyboards shift `.` into `>`: `Mod-Shift-.` arrives as key '>' + keyCode 190 and
     // prosemirror-keymap resolves it from the keyCode. key '.' would take pm-keymap's
     // "without Shift" fallback and hit `Mod-.` instead, which browsers never do.
-    const name = key.endsWith('.') ? (shift ? '>' : '.') : key.endsWith('Tab') ? 'Tab' : 'Enter'
+    const name = key.endsWith('.') ? (shift ? '>' : '.') : key.endsWith('Tab') ? 'Tab' : key === 'Mod-z' ? 'z' : 'Enter'
     const init: KeyboardEventInit & { keyCode?: number } = {
       key: name,
-      code: key.endsWith('.') ? 'Period' : name,
-      keyCode: key.endsWith('.') ? 190 : name === 'Tab' ? 9 : 13,
+      code: key.endsWith('.') ? 'Period' : name === 'z' ? 'KeyZ' : name,
+      keyCode: key.endsWith('.') ? 190 : name === 'Tab' ? 9 : name === 'z' ? 90 : 13,
       ...(mod ? (IS_MAC ? { metaKey: true } : { ctrlKey: true }) : {}),
       shiftKey: shift,
       bubbles: true,
@@ -381,5 +381,70 @@ describe('browser history: Back / Forward walk zoom levels (GRO-2091 A)', () => 
     root.remove()
     expect(removed).toHaveBeenCalledWith('popstate', expect.any(Function))
     removed.mockRestore()
+  })
+})
+
+describe('Mod-z reverts the latest zoom; folds and zooms share one latest-view-action rule (GRO-2091 B)', () => {
+  const foldToggle = (root: HTMLElement, label: string) => {
+    const button = root.querySelector<HTMLButtonElement>(`.${OUTLINE_TOGGLE_CLASS}[aria-label="Collapse ${label}"]`)
+    if (!button) throw new Error(`no toggle for "${label}"`)
+    button.click()
+  }
+  const foldedCount = (root: HTMLElement) => root.querySelectorAll(`[${OUTLINE_FOLDED_ATTR}="true"]`).length
+
+  it('reverts the latest zoom change once (single step) and pushes a history entry for it', async () => {
+    const { crepe, root } = await mount()
+    clickGlyph(root, 'L2 a')
+    clickGlyph(root, 'L3 a')
+    const length = history.length
+    expect(press(crepe, 'Mod-z')).toBe(true)
+    expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
+    expect(history.length).toBe(length + 1) // Back returns to the zoomed view
+    press(crepe, 'Mod-z') // eligibility consumed: history's undo (nothing to undo), zoom stays
+    expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
+  })
+
+  it('a document edit after the zoom hands Mod-z back to history: text undone, zoom kept', async () => {
+    const { crepe, root } = await mount()
+    clickGlyph(root, 'L2 a')
+    caretIn(crepe, 'L2 a')
+    typeText(crepe, 'XYZ')
+    expect(getMarkdownForSave(crepe)).toContain('L2 aXYZ')
+    press(crepe, 'Mod-z')
+    expect(getMarkdownForSave(crepe)).not.toContain('XYZ')
+    expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
+  })
+
+  it('fold then zoom: Mod-z reverts the zoom and keeps the fold', async () => {
+    const { crepe, root } = await mount()
+    foldToggle(root, 'L2 a')
+    expect(foldedCount(root)).toBe(1)
+    clickGlyph(root, 'L1 a')
+    expect(press(crepe, 'Mod-z')).toBe(true)
+    expect(zoomedPos(crepe)).toBeNull()
+    expect(foldedCount(root)).toBe(1)
+  })
+
+  it('zoom then fold: Mod-z reverts the fold and keeps the zoom; the next Mod-z is history\'s', async () => {
+    const { crepe, root } = await mount()
+    clickGlyph(root, 'L1 a')
+    foldToggle(root, 'L2 a')
+    expect(foldedCount(root)).toBe(1)
+    expect(press(crepe, 'Mod-z')).toBe(true)
+    expect(foldedCount(root)).toBe(0)
+    expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L1 a') - 2)
+    press(crepe, 'Mod-z')
+    expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L1 a') - 2) // the zoom was no longer the latest view action
+  })
+
+  it('a Back-restored level counts as the latest view action too', async () => {
+    const { crepe, root } = await mount()
+    clickGlyph(root, 'L2 a')
+    const l2Entry = history.state
+    clickGlyph(root, 'L3 a')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: l2Entry }))
+    expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
+    expect(press(crepe, 'Mod-z')).toBe(true)
+    expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L3 a') - 2)
   })
 })

@@ -20,6 +20,11 @@
  * Back / Forward walk zoom levels. Keys are the fold-key scheme (first-block text + occurrence)
  * counted over ALL list items; entries of another file are ignored, an unresolvable key zooms out.
  *
+ * ⌘Z panic-undo (GRO-2091 B, same rule as folds in GRO-2075): the state remembers the level
+ * before the latest zoom change while that change is the latest VIEW action — cleared by a user
+ * document change (plugin-appended transactions excepted) or by a fold (viewActions.ts stamp).
+ * `undoLastZoom` (Mod-z, priority 100) reverts exactly that one step and declines otherwise.
+ *
  * Triggers: click on the bullet glyph (`.label-wrapper`; task checkboxes keep toggling instead),
  * `Mod-.` = zoom into the item at the caret, `Mod-Shift-.` = zoom out one level. While zoomed,
  * `Shift-Tab` / `Mod-[` on the zoomed item or one of its direct children is a no-op (lifting would
@@ -32,6 +37,7 @@ import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { ancestorItemPositions, innermostItemPos } from './listNodes'
 import { getOutlineFoldKey } from './outlineFoldKeys'
+import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 export interface ZoomOptions {
   /** Shown as the first breadcrumb; clicking it zooms out fully. */
@@ -43,10 +49,14 @@ interface ZoomState {
   itemPos: number | null
   /** Breadcrumb root and the `file` stamped on history entries (so another file's entries are ignored). */
   fileName: string
+  /** Level before the latest zoom change, while that change is still the latest view action (⌘Z). */
+  lastZoom: ZoomMeta | undefined
 }
 
 /** Transaction meta: zoom to the list_item at this position, or `null` to zoom out fully. */
 type ZoomMeta = number | null
+/** Set on the ⌘Z revert transaction: it consumes the pending undo instead of creating a new one. */
+const UNDO_META = 'mdapp-outline-zoom-undo'
 
 export const ZOOM_HIDDEN_CLASS = 'outline-zoom-hidden'
 export const ZOOM_ANCESTOR_CLASS = 'outline-zoom-ancestor'
@@ -133,12 +143,13 @@ const itemAtSelection = (state: EditorState): number | null => innermostItemPos(
  * selection was outside. Every user-driven zoom change pushes a history entry; `fromHistory`
  * (popstate) restores a level without pushing another.
  */
-const zoomTo = (itemPos: ZoomMeta, { fromHistory = false } = {}): Command => (state, dispatch) => {
+const zoomTo = (itemPos: ZoomMeta, { fromHistory = false, isUndo = false } = {}): Command => (state, dispatch) => {
   const zoom = pluginKey.getState(state)
   if (!zoom || zoom.itemPos === itemPos) return false
   if (itemPos !== null && !isListItem(state.doc.nodeAt(itemPos))) return false
   if (dispatch) {
-    const tr = state.tr.setMeta(pluginKey, itemPos)
+    const tr = state.tr.setMeta(pluginKey, itemPos).setMeta(VIEW_ACTION_META, 'zoom' satisfies ViewAction)
+    if (isUndo) tr.setMeta(UNDO_META, true)
     if (itemPos !== null) {
       const item = state.doc.nodeAt(itemPos)
       const { from, to } = state.selection
@@ -153,6 +164,17 @@ const zoomTo = (itemPos: ZoomMeta, { fromHistory = false } = {}): Command => (st
     dispatch(tr.scrollIntoView())
   }
   return true
+}
+
+/**
+ * `Mod-z` (GRO-2091 B): revert the latest zoom change iff it is still the latest view action;
+ * declines otherwise so the fold undo / ProseMirror history get the key. The revert is itself a
+ * zoom change (history entry pushed, so Back returns to the zoomed view) and consumes the undo.
+ */
+export const undoLastZoom: Command = (state, dispatch) => {
+  const lastZoom = pluginKey.getState(state)?.lastZoom
+  if (lastZoom === undefined) return false
+  return zoomTo(lastZoom, { isUndo: true })(state, dispatch)
 }
 
 /** `Mod-.`: zoom into the item at the caret. */
@@ -266,14 +288,30 @@ export const createOutlineZoom = ({ fileName }: ZoomOptions) =>
       new Plugin<ZoomState>({
         key: pluginKey,
         state: {
-          init: () => ({ itemPos: null, fileName }),
+          init: () => ({ itemPos: null, fileName, lastZoom: undefined }),
           apply: (transaction, previous, _oldState, newState) => {
             const meta: ZoomMeta | undefined = transaction.getMeta(pluginKey)
-            if (meta !== undefined) return { ...previous, itemPos: meta }
-            if (previous.itemPos === null || !transaction.docChanged) return previous
-            const mapped = transaction.mapping.mapResult(previous.itemPos, 1)
-            if (mapped.deleted || !isListItem(newState.doc.nodeAt(mapped.pos))) return { ...previous, itemPos: null }
-            return { ...previous, itemPos: mapped.pos }
+            if (meta !== undefined) {
+              // ⌘Z-revertible while it is the latest view action; the revert itself consumes it.
+              return { ...previous, itemPos: meta, lastZoom: transaction.getMeta(UNDO_META) ? undefined : previous.itemPos }
+            }
+            let { itemPos, lastZoom } = previous
+            // A fold is the newer view action now: ⌘Z belongs to it (viewActions.ts).
+            if (transaction.getMeta(VIEW_ACTION_META) === 'fold') lastZoom = undefined
+            if (transaction.docChanged) {
+              // User edits hand ⌘Z back to history; plugin-appended transactions (Crepe's trailing
+              // paragraph) are not user actions and only map the remembered position.
+              if (transaction.getMeta('appendedTransaction') === undefined) lastZoom = undefined
+              else if (typeof lastZoom === 'number') {
+                const mappedLast = transaction.mapping.mapResult(lastZoom, 1)
+                lastZoom = !mappedLast.deleted && isListItem(newState.doc.nodeAt(mappedLast.pos)) ? mappedLast.pos : undefined
+              }
+              if (itemPos !== null) {
+                const mapped = transaction.mapping.mapResult(itemPos, 1)
+                itemPos = !mapped.deleted && isListItem(newState.doc.nodeAt(mapped.pos)) ? mapped.pos : null
+              }
+            }
+            return itemPos === previous.itemPos && lastZoom === previous.lastZoom ? previous : { ...previous, itemPos, lastZoom }
           },
         },
         view: (view) => {
@@ -307,9 +345,10 @@ export const createOutlineZoom = ({ fileName }: ZoomOptions) =>
       }),
   )
 
-/** Keymap: `Mod-.` / `Mod-Shift-.` plus the escape guard; register with `editor.use(zoomKeymap)`. */
+/** Keymap: `Mod-.` / `Mod-Shift-.` / `Mod-z` (zoom panic-undo) plus the escape guard; register with `editor.use(zoomKeymap)`. */
 export const zoomKeymap = $shortcut((_ctx: Ctx) => ({
   ZoomIn: { key: 'Mod-.', priority: PRIORITY, onRun: () => zoomIntoSelection },
+  UndoZoom: { key: 'Mod-z', priority: PRIORITY, onRun: () => undoLastZoom },
   ZoomOut: { key: 'Mod-Shift-.', priority: PRIORITY, onRun: () => zoomOutOneLevel },
   ZoomLiftGuardTab: { key: 'Shift-Tab', priority: PRIORITY, onRun: () => blockEscapingLift },
   ZoomLiftGuardBracket: { key: 'Mod-[', priority: PRIORITY, onRun: () => blockEscapingLift },

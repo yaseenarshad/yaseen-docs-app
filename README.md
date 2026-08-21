@@ -28,7 +28,7 @@ npm run build    # client production build into client/dist
 Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Editor rules" and "Keyboard" for the exact semantics:
 
 - **Fold**: parent bullets get a chevron; collapsed state is remembered per file in `localStorage` only — the markdown on disk (and its mtime) is never touched by folding. `⌘↑` / `⌘↓` fold / unfold the bullet at the caret (Logseq's defaults; a no-op on leaves, native document jump outside lists), `⌘⇧U` folds every parent, `⌘⇧I` unfolds all, and `⌘Z` right after a fold reverts it (folds older than the latest action stay put; `⌘Z` is normal text undo otherwise).
-- **Zoom history**: every zoom in/out is a browser history entry (URL unchanged), so Back returns to the level you were at before an accidental zoom and Forward re-zooms.
+- **Zoom history**: every zoom in/out is a browser history entry (URL unchanged), so Back returns to the level you were at before an accidental zoom and Forward re-zooms. `⌘Z` right after a zoom reverts it too — `⌘Z` always reverts the single latest view action, fold or zoom, and is normal text undo otherwise.
 - **Bullet threading** (Roam / Logseq "bullet paths"): the lines from each list's top down to the bullet at the caret, and the bullets on that path, take the accent colour and stop at the active bullet. View-only; toggle it in the settings cog (on by default).
 - **Keys**: `Tab` indents (no-op on a first sibling), `Shift-Tab` outdents (level 1 → paragraph), `Enter` at the end of a parent creates its first child, `Enter` on an empty item outdents, `Backspace` at the start of an item joins it into the previous line.
 - **Tasks**: `⌘Enter` cycles the item(s) under the selection: bullet → `[ ]` → `[x]` → bullet.

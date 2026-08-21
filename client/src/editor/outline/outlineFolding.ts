@@ -10,6 +10,8 @@
  * Persistence is by stable fold key (see outlineFoldKeys.ts), not by position.
  * ⌘Z panic-undo (GRO-2075): the state also remembers the most recent fold action while it is
  * the latest USER action; `undoLastFold` (bound to Mod-z in hotkeys.ts) reverts exactly that.
+ * A zoom (zoom.ts) is a view action too: it clears the pending fold undo (GRO-2091 B, see
+ * viewActions.ts), so ⌘Z always reverts the single latest view action of either kind.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
@@ -17,6 +19,7 @@ import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { findNestedLists, innermostItemPos } from './listNodes'
 import { getOutlineFoldKey } from './outlineFoldKeys'
+import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 interface OutlineEntry {
   foldKey: string
@@ -55,6 +58,10 @@ const pluginKey = new PluginKey<OutlineFoldingState>('mdapp-outline-folding')
 /** Transaction meta understood by the plugin: toggle one item (by position), fold/unfold every parent, or revert the latest fold. */
 type FoldMeta = number | 'fold-all' | 'unfold-all' | 'undo-fold'
 
+/** Every fold transaction: the plugin meta plus the shared view-action stamp (zoom.ts watches for it). */
+const foldTransaction = (state: EditorState, meta: FoldMeta) =>
+  state.tr.setMeta(pluginKey, meta).setMeta(VIEW_ACTION_META, 'fold' satisfies ViewAction)
+
 /** Whether the list_item starting at `itemPos` is currently folded (false when the plugin is absent). */
 export const isOutlineItemCollapsed = (state: EditorState, itemPos: number): boolean =>
   pluginKey.getState(state)?.collapsedItemPositions.has(itemPos) ?? false
@@ -64,7 +71,7 @@ const foldAllCommand = (meta: 'fold-all' | 'unfold-all'): Command => (state, dis
   if (!foldingState || foldingState.entries.length === 0) return false
   const allCollapsed = foldingState.entries.every(({ itemPos }) => foldingState.collapsedItemPositions.has(itemPos))
   if (meta === 'fold-all' ? allCollapsed : foldingState.collapsedItemPositions.size === 0) return false
-  dispatch?.(state.tr.setMeta(pluginKey, meta))
+  dispatch?.(foldTransaction(state, meta))
   return true
 }
 
@@ -74,7 +81,7 @@ export const toggleOutlineFold = (itemPos: number): Command => (state, dispatch)
   if (!foldingState) return false
   const isParent = foldingState.entries.some((entry) => entry.itemPos === itemPos)
   if (!isParent && !foldingState.collapsedItemPositions.has(itemPos)) return false
-  dispatch?.(state.tr.setMeta(pluginKey, itemPos))
+  dispatch?.(foldTransaction(state, itemPos))
   return true
 }
 
@@ -90,7 +97,7 @@ export const setOutlineFoldAtSelection = (collapsed: boolean): Command => (state
   if (!foldingState || itemPos === null) return false
   const isParent = foldingState.entries.some((entry) => entry.itemPos === itemPos)
   if (isParent && foldingState.collapsedItemPositions.has(itemPos) !== collapsed) {
-    dispatch?.(state.tr.setMeta(pluginKey, itemPos))
+    dispatch?.(foldTransaction(state, itemPos))
   }
   return true
 }
@@ -106,7 +113,7 @@ export const unfoldAllOutline: Command = foldAllCommand('unfold-all')
  */
 export const undoLastFold: Command = (state, dispatch) => {
   if (!pluginKey.getState(state)?.lastToggle) return false
-  dispatch?.(state.tr.setMeta(pluginKey, 'undo-fold'))
+  dispatch?.(foldTransaction(state, 'undo-fold'))
   return true
 }
 
@@ -195,6 +202,8 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
             const appended = transaction.getMeta('appendedTransaction') !== undefined
             let lastToggle = previousState.lastToggle
             if (transaction.docChanged && !appended) lastToggle = null
+            // A zoom is the newer view action now (GRO-2091 B): ⌘Z belongs to it, not to this fold.
+            else if (transaction.getMeta(VIEW_ACTION_META) === 'zoom') lastToggle = null
             else if (transaction.docChanged && lastToggle !== null) {
               lastToggle =
                 lastToggle.kind === 'toggle'
@@ -256,7 +265,7 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
                     button.setAttribute('aria-expanded', String(!collapsed))
                     button.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${entry.label}`)
                     button.replaceChildren(chevronSvg())
-                    const toggle = () => view.dispatch(view.state.tr.setMeta(pluginKey, entry.itemPos))
+                    const toggle = () => view.dispatch(foldTransaction(view.state, entry.itemPos))
                     // Keep the caret where it is: the toggle must not steal focus or move the selection.
                     button.addEventListener('mousedown', (event) => event.preventDefault())
                     button.addEventListener('click', (event) => {
