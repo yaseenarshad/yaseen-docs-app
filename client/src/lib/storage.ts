@@ -1,10 +1,12 @@
 import {
+  DEFAULT_SETTINGS,
   LS_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
   type ExpandedState,
   type FoldState,
   type LastFileState,
   type RecentRoots,
+  type SettingsState,
 } from '@shared/types'
 
 const MAX_RECENT = 10
@@ -63,6 +65,18 @@ export const storage = {
     if (file === null) delete state[root]
     else state[root] = file
     writeJson(LS_KEYS.lastFile, state)
+  },
+
+  /** Stored settings merged field-by-field over defaults, so partial/stale shapes stay usable. */
+  getSettings(): SettingsState {
+    const raw = readJson(LS_KEYS.settings, isRecord) ?? {}
+    return {
+      lineSpacing: typeof raw.lineSpacing === 'number' ? raw.lineSpacing : DEFAULT_SETTINGS.lineSpacing,
+      blockGap: typeof raw.blockGap === 'number' ? raw.blockGap : DEFAULT_SETTINGS.blockGap,
+    }
+  },
+  setSettings(settings: SettingsState): void {
+    writeJson(LS_KEYS.settings, settings)
   },
 
   getSidebarCollapsed: (): boolean => localStorage.getItem(LS_KEYS.sidebarCollapsed) === 'true',

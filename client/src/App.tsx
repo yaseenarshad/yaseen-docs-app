@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { RecentRoots } from '@shared/types'
+import { useCallback, useEffect, useState, type CSSProperties } from 'react'
+import type { RecentRoots, SettingsState } from '@shared/types'
 import { Editor } from './editor/Editor'
 import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
@@ -13,6 +13,7 @@ export function App() {
   const [recent, setRecent] = useState<RecentRoots>(storage.getRecentRoots)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
+  const [settings, setSettings] = useState(storage.getSettings)
   const watch = useWatch(root)
 
   const toggleSidebar = useCallback(() => {
@@ -21,6 +22,17 @@ export function App() {
       return !collapsed
     })
   }, [])
+
+  const changeSettings = useCallback((next: SettingsState) => {
+    storage.setSettings(next)
+    setSettings(next)
+  }, [])
+
+  // Editor spacing settings land as CSS custom properties; app.css consumes them (GRO-2024).
+  const settingsVars = {
+    '--edit-line-height': settings.lineSpacing,
+    '--edit-block-gap': `${settings.blockGap}px`,
+  } as CSSProperties
 
   const openRoot = useCallback((path: string) => {
     storage.setRoot(path)
@@ -55,7 +67,7 @@ export function App() {
   }, [root, pick])
 
   return (
-    <div className="app">
+    <div className="app" style={settingsVars}>
       {root !== null && !sidebarCollapsed && (
         <Sidebar
           key={root}
@@ -66,6 +78,8 @@ export function App() {
           onPickFolder={pick}
           pickDisabled={picking}
           onCollapse={toggleSidebar}
+          settings={settings}
+          onChangeSettings={changeSettings}
           onRootMissing={onRootMissing}
           onFileMissing={onFileMissing}
         />

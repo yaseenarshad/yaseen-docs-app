@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
-import type { TreeNode, TreeResponse } from '@shared/types'
+import type { SettingsState, TreeNode, TreeResponse } from '@shared/types'
 import { api, ApiRequestError } from '../api'
 import type { WatchSource } from '../hooks/useWatch'
 import { basename } from '../lib/paths'
@@ -7,6 +7,7 @@ import { storage } from '../lib/storage'
 import { treeHasFile, treeReducer } from '../lib/treeState'
 import { ContextMenu } from './ContextMenu'
 import { entryPath, targetDirFor } from './createEntry'
+import { SettingsCog } from './SettingsPanel'
 import { Tree, type PendingCreate } from './Tree'
 
 interface SidebarProps {
@@ -19,6 +20,9 @@ interface SidebarProps {
   pickDisabled: boolean
   /** Hide the sidebar (GRO-2023); App renders the floating reopen button while hidden. */
   onCollapse: () => void
+  /** Editor spacing preferences shown in the footer cog (GRO-2024); App owns and applies them. */
+  settings: SettingsState
+  onChangeSettings: (next: SettingsState) => void
   /** The stored root could not be read (e.g. deleted); parent decides what to do. */
   onRootMissing: () => void
   /** The restored last file is not in the tree any more (checked once per root). */
@@ -44,6 +48,8 @@ export function Sidebar({
   onPickFolder,
   pickDisabled,
   onCollapse,
+  settings,
+  onChangeSettings,
   onRootMissing,
   onFileMissing,
 }: SidebarProps) {
@@ -164,6 +170,9 @@ export function Sidebar({
             pending={pending}
           />
         )}
+      </div>
+      <div className="sidebar__footer">
+        <SettingsCog settings={settings} onChange={onChangeSettings} />
       </div>
       {menu !== null && (
         <ContextMenu

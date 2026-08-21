@@ -190,6 +190,8 @@ export const LS_KEYS = {
   folds: 'mdapp.folds',
   /** 'true' when the sidebar is collapsed; absent = expanded (GRO-2023) */
   sidebarCollapsed: 'mdapp.sidebarCollapsed',
+  /** JSON SettingsState (GRO-2024) */
+  settings: 'mdapp.settings',
 } as const
 
 /** mdapp.recentRoots — most-recent first, max 10, de-duplicated. */
@@ -208,3 +210,17 @@ export type LastFileState = Record<string, string>
  */
 export type FoldState = Record<string, Record<string, string[]>>
 export const MAX_FOLD_KEYS_PER_FILE = 500
+
+/**
+ * mdapp.settings — app-global editor preferences (GRO-2024). Applied as CSS custom
+ * properties on the app container; never written into the markdown on disk.
+ */
+export interface SettingsState {
+  /** Line height within a block (Google-Docs-style presets). */
+  lineSpacing: number
+  /** Vertical padding above and below each block, px (spacing between blocks = 2×). */
+  blockGap: number
+}
+
+/** Matches the app's pre-settings look (Crepe: line-height 1.5, block padding 4px). */
+export const DEFAULT_SETTINGS: SettingsState = { lineSpacing: 1.5, blockGap: 4 }

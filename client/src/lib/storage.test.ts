@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { LS_KEYS, MAX_FOLD_KEYS_PER_FILE } from '@shared/types'
+import { DEFAULT_SETTINGS, LS_KEYS, MAX_FOLD_KEYS_PER_FILE } from '@shared/types'
 import { addRecentRoot, storage } from './storage'
 
 beforeEach(() => localStorage.clear())
@@ -78,6 +78,19 @@ describe('storage', () => {
     storage.setSidebarCollapsed(false)
     expect(storage.getSidebarCollapsed()).toBe(false)
     expect(localStorage.getItem(LS_KEYS.sidebarCollapsed)).toBeNull()
+  })
+
+  it('settings default, round-trip, and merge partial/invalid stored values', () => {
+    expect(storage.getSettings()).toEqual(DEFAULT_SETTINGS)
+    storage.setSettings({ lineSpacing: 2.0, blockGap: 12 })
+    expect(storage.getSettings()).toEqual({ lineSpacing: 2.0, blockGap: 12 })
+    // Unknown / partial shapes fall back field-by-field to defaults.
+    localStorage.setItem(LS_KEYS.settings, JSON.stringify({ lineSpacing: 1.15 }))
+    expect(storage.getSettings()).toEqual({ ...DEFAULT_SETTINGS, lineSpacing: 1.15 })
+    localStorage.setItem(LS_KEYS.settings, JSON.stringify({ lineSpacing: 'big', blockGap: 8 }))
+    expect(storage.getSettings()).toEqual({ ...DEFAULT_SETTINGS, blockGap: 8 })
+    localStorage.setItem(LS_KEYS.settings, '{broken')
+    expect(storage.getSettings()).toEqual(DEFAULT_SETTINGS)
   })
 
   it('treats invalid JSON / wrong shapes as absent', () => {

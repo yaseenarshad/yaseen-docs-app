@@ -78,13 +78,21 @@ button {
 }
 
 /* Obsidian default typography (GRO-2009): system font stack, 16px / 1.5 body, Obsidian heading scale.
-   Overrides Crepe's frame theme (Rubik/Noto Serif → serif fallback) via its own custom properties. */
+   Overrides Crepe's frame theme (Rubik/Noto Serif → serif fallback) via its own custom properties.
+   Line height and block gap come from the settings panel via App's CSS vars (GRO-2024). */
 .editor-instance .milkdown {
   --crepe-base-font-size: 16px;
   --crepe-font-default: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --crepe-font-title: var(--crepe-font-default);
   --crepe-font-code: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  line-height: 1.5;
+  line-height: var(--edit-line-height, 1.5);
+}
+
+/* Crepe's reset gives paragraphs line-height 1.5 and 4px vertical padding; the padding is
+   what reads as "space between blocks" (lists included — each bullet's text is a paragraph). */
+.editor-instance .milkdown .ProseMirror p {
+  line-height: var(--edit-line-height, 1.5);
+  padding: var(--edit-block-gap, 4px) 0;
 }
 
 .editor-instance .milkdown .ProseMirror h1,
@@ -325,6 +333,79 @@ button {
 
 .sidebar__msg--error {
   color: var(--danger);
+}
+
+/* ---------- settings (GRO-2024) ---------- */
+
+.sidebar__footer {
+  flex: none;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
+}
+
+.settings {
+  position: relative;
+}
+
+.settings__cog {
+  display: flex;
+  padding: 5px;
+  border-radius: 6px;
+  color: var(--fg-muted);
+}
+
+.settings__cog:hover,
+.settings__cog[aria-expanded='true'] {
+  color: var(--fg);
+  background: #eeeef0;
+}
+
+.settings__panel {
+  position: absolute;
+  bottom: 34px;
+  left: 0;
+  width: 220px;
+  padding: 10px 12px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 30;
+}
+
+.settings__label {
+  margin: 8px 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+.settings__label:first-child {
+  margin-top: 0;
+}
+
+.settings__row {
+  display: flex;
+  gap: 4px;
+}
+
+.settings__option {
+  flex: 1;
+  padding: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--fg);
+}
+
+.settings__option:hover {
+  background: var(--accent-soft);
+}
+
+.settings__option--active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 /* ---------- context menu + inline create (GRO-2022) ---------- */
