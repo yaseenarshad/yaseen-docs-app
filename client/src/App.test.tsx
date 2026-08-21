@@ -134,6 +134,49 @@ describe('App on a null root (C2, GRO-2164)', () => {
   })
 })
 
+describe('App openRoot (C3, GRO-2165)', () => {
+  it('File › Open Recent switches the window in place: sidebar re-keyed, file ← the folder\'s lastFile, hash synced, entry updated', async () => {
+    const state = withFolder(defaultAppState(), '/w', '/w/b.md')
+    const { bridge, el, emitOpenRoot } = await mount(state, { id: 'w1', root: '/v', file: null })
+    await act(async () => emitOpenRoot('/w'))
+    expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/w')
+    expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('/w/b.md')
+    expect(location.hash).toBe('#/w/b.md')
+    expect(bridge.state.pushRecent).toHaveBeenCalledWith('/w')
+    // The window entry records the switch (D6): root first (file cleared), then the restored file.
+    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null }], [{ file: '/w/b.md' }]])
+  })
+
+  it('switching to a folder with no remembered last file leaves no file open', async () => {
+    const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null })
+    await act(async () => emitOpenRoot('/w'))
+    expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('')
+    expect(location.hash).toBe('')
+    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null }]])
+  })
+
+  it('a dead recent chosen from the menu drops the MRU entry and leaves the window on its folder', async () => {
+    const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null })
+    bridge.tree.mockRejectedValue({ code: 'NOT_FOUND', message: 'path does not exist' })
+    await act(async () => emitOpenRoot('/gone'))
+    expect(bridge.state.removeRecent).toHaveBeenCalledWith('/gone')
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+    expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')
+  })
+})
+
+describe('App window title (C3, GRO-2165)', () => {
+  it('is "<file> — <folder>" with a file open, the folder alone without one, the app name on Welcome', async () => {
+    const state = withFolder(defaultAppState(), '/vaults/w', '/vaults/w/Note.md')
+    const { emitOpenRoot } = await mount(state, { id: 'w1', root: null, file: null })
+    expect(document.title).toBe('Yaseen Docs')
+    await act(async () => emitOpenRoot('/vaults/w'))
+    expect(document.title).toBe('Note — w')
+    await act(async () => emitOpenRoot('/vaults/empty'))
+    expect(document.title).toBe('empty')
+  })
+})
+
 describe('App root-missing (C2, GRO-2164)', () => {
   it('the open folder vanishing on disk drops the window to the Welcome screen', async () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null })

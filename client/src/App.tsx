@@ -7,6 +7,7 @@ import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
 import { storage } from './lib/storage'
 import { fileHash, hashFilePath } from './lib/urlHash'
+import { windowTitle } from './lib/windowTitle'
 import { Sidebar, SidebarPanelIcon } from './sidebar/Sidebar'
 import { Welcome } from './Welcome'
 
@@ -62,6 +63,11 @@ export function App() {
   // later changes sync through openFile/openRoot themselves.
   useEffect(() => syncHash(file), [])
 
+  // The OS window title mirrors what is open (C3, GRO-2165); Electron follows document.title.
+  useEffect(() => {
+    document.title = windowTitle(root, file)
+  }, [root, file])
+
   /**
    * Switch this window to `path` in place (C3, GRO-2165). Resolves false — and drops the dead
    * MRU entry — when the folder is gone on disk (C2), leaving the window as it is; any other
@@ -80,6 +86,8 @@ export function App() {
     storage.pushRecentRoot(path)
     setRoot(path)
     const nextFile = storage.getLastFile(path)
+    // Record the restored file on the window entry too (D6): setRoot just cleared it.
+    if (nextFile !== null) storage.setLastFile(path, nextFile)
     setFile(nextFile)
     syncHash(nextFile)
     return true

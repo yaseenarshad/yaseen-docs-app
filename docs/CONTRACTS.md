@@ -11,7 +11,8 @@ package.json          npm workspaces: client, desktop. Root scripts:
                         typecheck  tsc -p client && tsc -p shared && tsc -p desktop
                         test       vitest run  (projects: client=jsdom, desktop=node)
 client/               The renderer: React 19 + TS, @milkdown/crepe 7.22.x. No scripts of its own — electron-vite (desktop/electron.vite.config.ts) builds it with ./index.html as the entry
-  src/App.tsx                 root/file state (root = this window's identity); Sidebar is keyed by root; follows storage.subscribe so settings / sidebar changes from other windows land live
+  src/App.tsx                 root/file state (root = this window's identity); Sidebar is keyed by root; follows storage.subscribe so settings / sidebar changes from other windows land live; a null root renders Welcome — no auto-dialog (C2); document.title = windowTitle(root, file) (C3)
+  src/Welcome.tsx             the Welcome screen (C2, GRO-2164): app name, recents as one-click rows (dead folder → "Folder not found" + MRU drop), Open folder… (+ test)
   src/api.ts                  `api` = the fs half of window.yaseenDocs with bridge rejections wrapped in ApiRequestError (+ test)
   src/bridge.d.ts             `window.yaseenDocs: YaseenDocsApi` (installed by desktop/src/preload)
   src/bases/                  baseFile (1B: parseBase/serializeBase/updateBase over a yaml Document, unknown keys + comments preserved), BaseHost (main-pane host for `.base`: autosave + conflict bar + raw-YAML fallback), BaseView (4A view chrome; 4B table for `type: table`, 4D board, 4E cards, placeholder row list for other view types, see "View chrome"), useIndex (2C: the vault index over the bridge, watch-driven refetch), view/ (toolbar, menus, filterRows, TableView, BoardView, CardsView, cardWidth, GroupHeader), bases.css (+ tests)
@@ -19,7 +20,7 @@ client/               The renderer: React 19 + TS, @milkdown/crepe 7.22.x. No sc
   src/editor/marks/           underline (mark: Mod-u ↔ `<u>…</u>` inline HTML, $remark + $markSchema + $shortcut) (+ test)
   src/editor/outline/         outlineFolding ($prose plugin: collapsible parent bullets) + outlineFoldKeys + outlineFolding.css, listCommands (outliner keymap), hotkeys (Obsidian hotkeys), zoom + zoom.css (zoom into a bullet), guideLines + guideLines.css (click-to-fold guide lines), listNodes (shared helpers), bullets.css (depth glyphs) (+ tests)
   src/hooks/                  useFile (load), useAutosave (debounce/flush/conflict), useWatch (one bridge watch() per root, fan-out), usePickFolder (native dialog)
-  src/lib/                    pure logic with unit tests: autosave state machine, storage (bridge-backed in-memory cache of the main-owned app state + window identity; init() before the first render, subscribe() for live changes), treeState, paths
+  src/lib/                    pure logic with unit tests: autosave state machine, storage (bridge-backed in-memory cache of the main-owned app state + window identity; init() before the first render, subscribe() for live changes), treeState, paths, windowTitle
   src/sidebar/                Sidebar, Tree
   src/test-setup.ts           jsdom stubs (observers, Range rects)
 desktop/              Electron 43 shell (electron-vite 5, electron-builder): main + preload; the renderer is ../client
