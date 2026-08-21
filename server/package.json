@@ -10,7 +10,8 @@
   "dependencies": {
     "@hono/node-server": "^1.19.17",
     "chokidar": "^4.0.3",
-    "hono": "^4.13.3"
+    "hono": "^4.13.3",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
