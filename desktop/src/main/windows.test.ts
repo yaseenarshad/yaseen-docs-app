@@ -297,4 +297,25 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     expect(entry.bounds).toEqual({ x: 100 + WINDOW_CASCADE_PX, y: 100 + WINDOW_CASCADE_PX, width: 800, height: 600 })
     expect(store.get().windows).toContainEqual(entry)
   })
+
+  it('duplicating a Welcome window keeps root and file null — Welcome → Welcome (⌘⇧N, GRO-2167)', () => {
+    const from: WindowEntry = { id: 'w1', root: null, file: null, bounds: { x: 100, y: 100, width: 800, height: 600 } }
+    store.upsertWindow(from)
+    const { host, created } = makeHost()
+    createWindowManager(store, host).duplicateWindow(from)
+    expect(created).toHaveLength(1)
+    expect(created[0].entry.id).not.toBe('w1')
+    expect(created[0].entry.root).toBeNull()
+    expect(created[0].entry.file).toBeNull()
+    expect(store.get().windows.map((w) => w.id)).toEqual(['w1', created[0].entry.id])
+  })
+
+  it('the cascade is clamped: duplicating a window at the display edge stays fully on-screen (GRO-2167)', () => {
+    // Bottom-right corner of the 1440×900 area: the +24/+24 cascade would hang off the display.
+    const from: WindowEntry = { id: 'w1', root: '/v', file: null, bounds: { x: 640, y: 300, width: 800, height: 600 } }
+    store.upsertWindow(from)
+    const { host, created } = makeHost()
+    createWindowManager(store, host).duplicateWindow(from)
+    expect(created[0].entry.bounds).toEqual({ x: 640, y: 300, width: 800, height: 600 })
+  })
 })
