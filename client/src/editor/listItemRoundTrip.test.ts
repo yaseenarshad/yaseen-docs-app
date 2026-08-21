@@ -22,11 +22,23 @@ describe('unifySiblingMarkers (GRO-2112)', () => {
     // `- y` is the first bullet of q's NEW nested list: it keeps its own marker.
     expect(unifySiblingMarkers('* p\n  * x\n* q\n  - y\n')).toBe('* p\n  * x\n* q\n  - y\n')
     expect(unifySiblingMarkers('* a\n\n- b\n')).toBe('* a\n\n- b\n')
-    expect(unifySiblingMarkers('* a\nparagraph\n- b\n')).toBe('* a\nparagraph\n- b\n')
+    // Lazy continuation: no blank line → `lazy` belongs to `a`, so `b` is still a's sibling.
+    expect(unifySiblingMarkers('* a\nlazy text\n- b\n')).toBe('* a\nlazy text\n* b\n')
+  })
+
+  it('treats bare empty markers as bullets and never touches thematic breaks', () => {
+    expect(unifySiblingMarkers('*\n- b\n')).toBe('*\n* b\n')
+    expect(unifySiblingMarkers('- <br />\n* b\n')).toBe('- <br />\n- b\n')
+    expect(unifySiblingMarkers('* a\n- - -\n* b\n')).toBe('* a\n- - -\n* b\n')
+    expect(unifySiblingMarkers('* a\n  - - -\n  * b\n')).toBe('* a\n  - - -\n  * b\n')
+    // The break itself is untouched; `b` inheriting `*` is harmless — remark ends the list at `***` anyway.
+    expect(unifySiblingMarkers('* a\n***\n- b\n')).toBe('* a\n***\n* b\n')
   })
 
   it('leaves ordered lists, fenced code and non-list text alone', () => {
-    expect(unifySiblingMarkers('1. a\n2) b\n* c\n')).toBe('1. a\n2) b\n* c\n')
+    // Ordered lines are not bullets: they neither take nor give a marker; `- y` / `- b` still
+    // follow the bullets at their indent (CommonMark splits the lists around `1.` regardless).
+    expect(unifySiblingMarkers('* a\n  1. x\n  - y\n- b\n')).toBe('* a\n  1. x\n  - y\n* b\n')
     const fenced = '* a\n```md\n- not a bullet\n* nor this\n```\n- b\n'
     expect(unifySiblingMarkers(fenced)).toBe('* a\n```md\n- not a bullet\n* nor this\n```\n* b\n')
     expect(unifySiblingMarkers('*emphasis* not a bullet\n-- dashes\n')).toBe('*emphasis* not a bullet\n-- dashes\n')

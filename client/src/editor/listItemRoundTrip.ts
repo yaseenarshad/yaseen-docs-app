@@ -5,7 +5,7 @@
  * as the start of an HTML block that runs to the next blank line, so the item's nested
  * children became literal text. Obsidian writes an empty bullet as a bare marker.
  *
- * Four pieces, all schema/remark/text-level (no Milkdown fork):
+ * Five pieces, all schema/remark/text-level (no Milkdown fork):
  *  1. serialise: an empty paragraph that STARTS a list item is emitted as an empty mdast
  *     paragraph → bare marker (`*`, `1.`); other empty paragraphs keep `<br />`. Inside Milkdown
  *     an empty TASK item stays `* [ ] <br />` (remark drops the checkbox from `* [ ]`, and `[ ]`
@@ -79,7 +79,10 @@ const EMPTY_TASK_ITEM_BREAK = new RegExp(String.raw`^(${MARKER} \[[ xX]\]) <br /
 export const normalizeEmptyItems = (markdown: string): string =>
   unifySiblingMarkers(markdown.replace(LEGACY_EMPTY_ITEM, '$1').replace(EMPTY_TASK_ITEM, '$1 <br />'))
 
-const BULLET_LINE = /^(\s*)([-*+])(\s)/
+/** A bullet line, including a bare empty marker (`*` / `-` alone, what rule 8 writes). */
+const BULLET_LINE = /^(\s*)([-*+])(?:\s|$)/
+/** `- - -` / `* * *` / `***`: a thematic break, which would otherwise pass as a bullet. */
+const THEMATIC_BREAK = /^\s*([-*_])(?:[ \t]*\1){2,}[ \t]*\r?$/
 const FENCE_LINE = /^\s*(```|~~~)/
 
 /**
@@ -87,9 +90,12 @@ const FENCE_LINE = /^\s*(```|~~~)/
  * change starts a NEW list, so `* a` then `- b` at one indent become two sibling lists (two guide
  * lines, folding / line click / drag each seeing half the children). Outliners treat indentation
  * as the structure, so on load every bullet takes the marker of the previous bullet at its indent
- * (tabs = 4 spaces). Deeper indents are forgotten when a shallower bullet appears; a blank line or
- * an unindented non-bullet line resets everything; fenced code is skipped; ordered items are not
- * bullets. Save already normalises markers (CONTRACTS rule 6), so nothing on disk is lost.
+ * (tabs = 4 spaces). Deeper indents are forgotten when a shallower bullet appears; a blank line
+ * resets everything (`* a`, blank, `- b` stays two lists — Obsidian shows the same); non-bullet
+ * lines never reset, since a lazy continuation keeps the list going and anything that really ends
+ * it (heading, fence, thematic break) makes remark split the lists whatever the marker; fenced
+ * code and thematic breaks are skipped; ordered items are not bullets. Save already normalises
+ * markers (CONTRACTS rule 6), so nothing on disk is lost.
  */
 export const unifySiblingMarkers = (markdown: string): string => {
   const markerAtIndent = new Map<number, string>()
@@ -101,10 +107,10 @@ export const unifySiblingMarkers = (markdown: string): string => {
         inFence = !inFence
         return line
       }
-      if (inFence) return line
+      if (inFence || THEMATIC_BREAK.test(line)) return line
       const match = BULLET_LINE.exec(line)
       if (match === null) {
-        if (!/^\s/.test(line)) markerAtIndent.clear()
+        if (line.trim() === '') markerAtIndent.clear()
         return line
       }
       const indent = match[1].replace(/\t/g, '    ').length
