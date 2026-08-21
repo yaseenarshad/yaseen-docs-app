@@ -155,7 +155,8 @@ export interface CreateFileResponse {
 
 /**
  * Opens Electron's native open-directory dialog, parented to the calling window, and resolves
- * once the user picks a folder or cancels. Dialog failure → rejects `PICKER_FAILED`.
+ * once the user picks a folder or cancels. Dialog failure → rejects `PICKER_FAILED`. One dialog
+ * in flight per window: a call while that window's dialog is open resolves `{ cancelled: true }`.
  */
 export type PickFolderResponse =
   | {
