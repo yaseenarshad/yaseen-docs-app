@@ -15,17 +15,20 @@ const flatten = (nodes: TreeNode[]): string[] =>
   nodes.flatMap((n) => (n.type === 'dir' ? [n.path, ...flatten(n.children)] : [n.path]))
 
 describe('GET /api/tree', () => {
-  it('returns dirs first then files, case-insensitive, only markdown, pruned', async () => {
+  it('returns dirs first then files, case-insensitive, only markdown files, all dirs shown', async () => {
     const res = await get(root)
     expect(res.status).toBe(200)
     const body = (await res.json()) as TreeResponse
     expect(body.root).toBe(root)
     expect(typeof body.generatedAt).toBe('number')
-    // Empty (no files) and assets-only (no markdown) pruned; dirs before files
-    expect(names(body.tree)).toEqual(['alpha', 'Zeta', 'A.md', 'b.md'])
-    const zeta = body.tree[1]
+    // Every dir shows, markdown or not (GRO-2022 D1): Empty and assets-only included, files still md-only
+    expect(names(body.tree)).toEqual(['alpha', 'assets-only', 'Empty', 'Zeta', 'A.md', 'b.md'])
+    const zeta = body.tree[3]
     if (zeta.type !== 'dir') throw new Error('expected dir')
     expect(names(zeta.children)).toEqual(['inner', 'z.markdown'])
+    const assetsOnly = body.tree[1]
+    if (assetsOnly.type !== 'dir') throw new Error('expected dir')
+    expect(assetsOnly.children).toEqual([])
     const all = flatten(body.tree)
     expect(all).not.toContain(path.join(root, 'notes.txt'))
     expect(all.some((p) => p.includes('.obsidian') || p.includes('.git') || p.includes('node_modules'))).toBe(false)

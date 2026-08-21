@@ -15,6 +15,7 @@ export type ApiErrorCode =
   | 'NOT_A_DIRECTORY' // expected a directory (400)
   | 'NOT_A_FILE' // expected a regular file (400)
   | 'NOT_MARKDOWN' // file extension not in MARKDOWN_EXTENSIONS (400)
+  | 'ALREADY_EXISTS' // create target already exists (409)
   | 'FORBIDDEN' // OS permission denied (403)
   | 'TOO_LARGE' // file exceeds MAX_FILE_BYTES (413)
   | 'IO_ERROR' // any other fs error (500)
@@ -71,7 +72,7 @@ export type TreeNode =
 
 export interface TreeResponse {
   root: string
-  /** Recursive tree of the root. Only `.md`/`.markdown` files are included; dirs with no markdown anywhere below are pruned. Hidden (dot) entries and `node_modules` skipped. */
+  /** Recursive tree of the root. Only `.md`/`.markdown` files are included; every directory shows, markdown or not (GRO-2022). Hidden (dot) entries and `node_modules` skipped. */
   tree: TreeNode[]
   /** Server time (epoch ms) when the tree was computed. */
   generatedAt: number
@@ -115,6 +116,30 @@ export interface FileWriteConflict {
     /** Current mtime on disk. */
     mtime: number
   }
+}
+
+// ---------- POST /api/create-dir  body: CreateDirRequest ----------
+
+export interface CreateDirRequest {
+  /** Absolute path of the directory to create; its parent must exist. */
+  path: string
+}
+
+export interface CreateDirResponse {
+  path: string
+}
+
+// ---------- POST /api/create-file  body: CreateFileRequest ----------
+
+export interface CreateFileRequest {
+  /** Absolute path of the markdown file to create (empty); its parent must exist. */
+  path: string
+}
+
+export interface CreateFileResponse {
+  path: string
+  mtime: number
+  size: number
 }
 
 // ---------- POST /api/pick-folder ----------

@@ -61,6 +61,8 @@ export function toApiFailure(err: unknown, p: string): ApiFailure {
       return new ApiFailure(403, 'FORBIDDEN', 'permission denied', p)
     case 'ENOTDIR':
       return new ApiFailure(400, 'NOT_A_DIRECTORY', 'expected a directory', p)
+    case 'EEXIST':
+      return new ApiFailure(409, 'ALREADY_EXISTS', 'path already exists', p)
     case 'EISDIR':
       return new ApiFailure(400, 'NOT_A_FILE', 'expected a file', p)
     default:
@@ -98,7 +100,8 @@ export async function listDirs(dir: string): Promise<DirEntry[]> {
 
 /**
  * Recursive tree of markdown files under `dir`. Dirs first, then files, each sorted
- * case-insensitively; dirs with no markdown beneath are pruned. Unreadable subdirs are skipped.
+ * case-insensitively; every dir shows even with no markdown beneath, so freshly created
+ * folders are visible (GRO-2022 D1). Unreadable subdirs are skipped.
  */
 export async function buildTree(dir: string): Promise<TreeNode[]> {
   const entries = await readdir(dir, { withFileTypes: true })
@@ -109,8 +112,8 @@ export async function buildTree(dir: string): Promise<TreeNode[]> {
       if (isSkipped(e.name)) return
       const full = path.join(dir, e.name)
       if (e.isDirectory()) {
-        const children = await buildTree(full).catch(() => [])
-        if (children.length > 0) dirs.push({ type: 'dir', name: e.name, path: full, children })
+        const children = await buildTree(full).catch(() => null)
+        if (children !== null) dirs.push({ type: 'dir', name: e.name, path: full, children })
       } else if (e.isFile() && isMarkdown(e.name)) {
         const st = await stat(full).catch(() => undefined)
         if (st) files.push({ type: 'file', name: e.name, path: full, size: st.size, mtime: st.mtimeMs })

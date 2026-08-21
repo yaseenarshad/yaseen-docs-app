@@ -37,15 +37,17 @@ Import from shared: `import type { TreeResponse } from '@shared/types'`.
 All paths are absolute POSIX paths. No jail — any absolute path is allowed.
 All errors: `{ error: { code, message, path? } }` with `ApiErrorCode` (see types) and HTTP status:
 `BAD_REQUEST`/`NOT_ABSOLUTE`/`NOT_A_DIRECTORY`/`NOT_A_FILE`/`NOT_MARKDOWN` → 400,
-`FORBIDDEN` → 403, `NOT_FOUND` → 404, `CONFLICT` → 409, `TOO_LARGE` → 413, `IO_ERROR`/`PICKER_FAILED` → 500, `NOT_SUPPORTED` → 501.
+`FORBIDDEN` → 403, `NOT_FOUND` → 404, `CONFLICT`/`ALREADY_EXISTS` → 409, `TOO_LARGE` → 413, `IO_ERROR`/`PICKER_FAILED` → 500, `NOT_SUPPORTED` → 501.
 
 | Method | Path | Query / body | 200 response |
 |---|---|---|---|
 | GET | `/api/health` | – | `{ ok: true }` |
 | GET | `/api/dirs` | `?path=<abs>` (omitted → `$HOME`) | `DirsResponse` — child dirs only, no dotdirs, sorted case-insensitive; `parent` null at `/` |
-| GET | `/api/tree` | `?root=<abs>` | `TreeResponse` — recursive; only `.md`/`.markdown` files; dirs without markdown below are pruned; dot-entries and `node_modules` skipped; dirs before files, each sorted case-insensitive |
+| GET | `/api/tree` | `?root=<abs>` | `TreeResponse` — recursive; only `.md`/`.markdown` files; every dir shows, markdown or not (GRO-2022); dot-entries and `node_modules` skipped; dirs before files, each sorted case-insensitive |
 | GET | `/api/file` | `?path=<abs>` | `FileResponse` — raw UTF-8 content incl. frontmatter; 413 if > 10 MiB |
 | PUT | `/api/file` | JSON `FileWriteRequest { path, content, expectedMtime? }` | `FileWriteResponse { path, mtime, size }` — atomic write (`<name>.tmp-<rand>` + `rename`); parent dir must exist; if `expectedMtime` given and the disk mtime differs → 409 `FileWriteConflict` and nothing written |
+| POST | `/api/create-dir` | JSON `CreateDirRequest { path }` | `CreateDirResponse { path }` — parent must exist (else 404); target exists → 409 `ALREADY_EXISTS` |
+| POST | `/api/create-file` | JSON `CreateFileRequest { path }` | `CreateFileResponse { path, mtime, size }` — empty `.md`/`.markdown` only (else 400 `NOT_MARKDOWN`); `wx` write, never overwrites: exists → 409 `ALREADY_EXISTS` |
 | POST | `/api/pick-folder` | – | `PickFolderResponse` — macOS only: runs `osascript` (`choose folder`, System Events activated, 5 min timeout) and blocks until the Finder dialog closes. Picked → `{ path }` (no trailing `/`); dismissed → `{ cancelled: true }`; osascript failure → 500 `PICKER_FAILED`; non-macOS → 501 `NOT_SUPPORTED` |
 | GET | `/api/watch` | `?root=<abs>` | SSE stream of `WatchEvent`: `event: <type>\ndata: <json>\n\n`; first event `ready`; `: ping` comment every 25 s; chokidar with `ignoreInitial: true`, `awaitWriteFinish: { stabilityThreshold: 200 }`, ignores dot-entries and `node_modules`, only `.md`/`.markdown` file events (+ dir add/unlink) |
 
