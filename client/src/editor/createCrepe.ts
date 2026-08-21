@@ -26,6 +26,8 @@
  *    lists; clicking a line toggles the parent's fold (meta-only, same as the chevron).
  *  - Multi-block drag (GRO-2019, `multiBlockDrag.ts`): handle-drag inside a multi-block
  *    selection moves the whole selection; single-block drag stays Crepe's.
+ *  - Bullet threading (GRO-2094, `outline/bulletThreading.ts` + `.css`): root → caret path
+ *    decorations (accent line + glyphs, stops at the active bullet); CSS-gated by the settings cog.
  */
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -33,6 +35,7 @@ import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
 import { Selection } from '@milkdown/kit/prose/state'
 import { replaceAll } from '@milkdown/kit/utils'
 import { blockHandleGate } from './blockHandleGate'
+import { bulletThreading } from './outline/bulletThreading'
 import { features } from './featureConfig'
 import { listItemRoundTrip, normalizeEmptyItems, stripEmptyTaskBreaks } from './listItemRoundTrip'
 import { underline } from './marks/underline'
@@ -71,6 +74,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createOutlineFolding(opts.folding))
   crepe.editor.use(createOutlineZoom(opts.zoom ?? { fileName: 'Untitled' }))
   crepe.editor.use(guideLines)
+  crepe.editor.use(bulletThreading)
   crepe.editor.use(blockHandleGate)
   crepe.editor.use(multiBlockDrag)
   crepe.editor.use(outlinerKeymap)

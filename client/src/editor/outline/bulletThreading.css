@@ -1,0 +1,36 @@
+/* Bullet threading (GRO-2094). Classes come from bulletThreading.ts decorations on the list-item
+   blocks; everything here is drawing. Gated by `data-threading` on `.app` (settings cog, default
+   on). Geometry reuses bullets.css / guideLines.css vars so the thread sits exactly on the guide
+   line: the line centre is `--list-indent / 2 + --list-label-gap / 2` left of the nested list's
+   (= the item's) left edge; rows are `--list-label-offset` + `--list-label-height` (headings
+   included). `li.list-item` is already `position: relative` (outlineFolding.css).
+   `pointer-events: none` on the pseudo is REQUIRED: a pseudo hit-tests as its element, and the
+   guide-line click-to-fold (guideLines.ts) only recognises the strip when the event target is the
+   UL — a clickable li::before on top of it would silently break fold-by-line on the thread path. */
+.app[data-threading='on'] .editor-instance .milkdown .milkdown-list-item-block.outline-thread-seg > li.list-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * (var(--list-indent) / 2 + var(--list-label-gap) / 2) - 1px);
+  width: 0;
+  border-left: 2px solid var(--crepe-color-primary);
+  pointer-events: none;
+}
+
+/* The path child: cut the segment at the glyph centre and turn it into the bullet with an elbow. */
+.app[data-threading='on'] .editor-instance .milkdown .milkdown-list-item-block.outline-thread-stop > li.list-item::before {
+  bottom: auto;
+  box-sizing: border-box;
+  height: calc(var(--list-label-offset, 0px) + var(--list-label-height, 32px) / 2 + 1px);
+  /* line → glyph left edge: half indent + half gap (to the item edge) + half the gutter − half the glyph */
+  width: calc(var(--list-indent) / 2 + var(--list-label-gap) / 2 + (var(--list-indent) - var(--list-label-gap)) / 2 - var(--list-bullet-size) / 2 - 2px);
+  border-bottom: 2px solid var(--crepe-color-primary);
+  border-bottom-left-radius: 6px;
+}
+
+/* Glyphs on the path take the accent. Set on the label wrapper, NOT the item: the marker var is
+   inherited, and setting it on the item would recolour every nested bullet below. */
+.app[data-threading='on'] .editor-instance .milkdown .milkdown-list-item-block.outline-thread-node > li.list-item > .label-wrapper {
+  --list-marker-color: var(--crepe-color-primary);
+}
