@@ -30,6 +30,9 @@ export const CH = {
   menuOpenRoot: 'menu:open-root',
   linkOpenFile: 'link:open-file',
   linkNotice: 'link:notice',
+  vaultConfigRead: 'vaultConfig:read',
+  vaultConfigWrite: 'vaultConfig:write',
+  vaultConfigChanged: 'vaultConfig:changed',
   appFlush: 'app:flush',
   appFlushed: 'app:flushed',
 } as const

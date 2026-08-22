@@ -290,6 +290,33 @@ export function defaultFolderState(): FolderState {
   return { expanded: [], lastFile: null, folds: {}, baseGroups: {} }
 }
 
+// ---------- Vault-local config (`<root>/.yaseendocs/`, Desktop J — GRO-2188) ----------
+
+/**
+ * Pushed to every window after a config file under `<root>/.yaseendocs/` changes — an own
+ * `vaultConfig.write` or an external edit (sync tools). Renderers filter by their own root,
+ * the same posture as `state:changed`, and re-read the named file.
+ */
+export interface VaultConfigChange {
+  root: string
+  /** Config file name inside `.yaseendocs/`, e.g. `types.json`. */
+  name: string
+}
+
+/**
+ * Per-vault config in `<root>/.yaseendocs/` — the Obsidian-`.obsidian/` analogue: travels with
+ * the folder. Created lazily on first write; reading never creates it. The folder is invisible
+ * everywhere (tree/sidebar, vault index, shared watcher).
+ */
+export interface VaultConfigApi {
+  /** Parsed `<root>/.yaseendocs/<name>`, or null when the folder/file is missing or the JSON is malformed. */
+  read(root: string, name: string): Promise<unknown>
+  /** Creates `.yaseendocs/` on first write; atomic tmp+rename; pretty-printed JSON. `name` must be a plain `<stem>.json`. */
+  write(root: string, name: string, value: unknown): Promise<void>
+  /** Fired in every window after any vault's config change; returns an unsubscribe. */
+  onChange(listener: (change: VaultConfigChange) => void): () => void
+}
+
 // ---------- Bridge: `window.yaseenDocs` (locked in GRO-2153, Desktop A1) ----------
 
 /**
@@ -399,4 +426,6 @@ export interface YaseenDocsApi {
   window: WindowApi
   menu: MenuApi
   link: LinkApi
+  /** Vault-local config in `<root>/.yaseendocs/` (Desktop J, GRO-2188). */
+  vaultConfig: VaultConfigApi
 }
