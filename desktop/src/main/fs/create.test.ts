@@ -67,3 +67,43 @@ describe('createFile', () => {
     expect(await code(createFile(undefined as never))).toBe('BAD_REQUEST')
   })
 })
+
+describe('createFile with content (Bible B, GRO-2202)', () => {
+  it('creates a markdown file with the given content in the same atomic wx write', async () => {
+    const p = path.join(root, 'NewFolder', 'KPI.md')
+    const content = '---\npage_type: kpi\nunit:\n---\n'
+    const body = await createFile({ path: p, content })
+    expect(body.path).toBe(p)
+    expect(body.size).toBe(Buffer.byteLength(content))
+    expect(await readFile(p, 'utf8')).toBe(content)
+  })
+
+  it('content wins over the .base seed (starter bases, R5)', async () => {
+    const p = path.join(root, 'NewFolder', 'All KPIs.base')
+    const content = 'filters:\n  and:\n    - page_type == "kpi"\nviews:\n  - type: table\n    name: Table\n'
+    await createFile({ path: p, content })
+    expect(await readFile(p, 'utf8')).toBe(content)
+  })
+
+  it('the object form without content keeps the defaults (md empty, .base seeded)', async () => {
+    const md = path.join(root, 'NewFolder', 'plain.md')
+    expect((await createFile({ path: md })).size).toBe(0)
+    const base = path.join(root, 'NewFolder', 'Plain.base')
+    await createFile({ path: base })
+    expect(await readFile(base, 'utf8')).toBe('views:\n  - type: table\n    name: Table\n')
+  })
+
+  it('ALREADY_EXISTS with content never overwrites', async () => {
+    const existing = path.join(root, 'A.md')
+    const before = await readFile(existing, 'utf8')
+    expect(await code(createFile({ path: existing, content: 'clobber' }))).toBe('ALREADY_EXISTS')
+    expect(await readFile(existing, 'utf8')).toBe(before)
+  })
+
+  it("BAD_REQUEST for a non-string content; path guards still apply to the object form", async () => {
+    expect(await code(createFile({ path: path.join(root, 'x.md'), content: 42 as never }))).toBe('BAD_REQUEST')
+    expect(await code(createFile({ content: 'x' } as never))).toBe('BAD_REQUEST')
+    expect(await code(createFile({ path: 'rel.md', content: 'x' }))).toBe('NOT_ABSOLUTE')
+    expect(await code(createFile({ path: path.join(root, 'x.txt'), content: 'x' }))).toBe('UNSUPPORTED_EXTENSION')
+  })
+})

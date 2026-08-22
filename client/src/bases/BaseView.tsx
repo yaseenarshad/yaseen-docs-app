@@ -6,6 +6,7 @@ import { type Group, type Row, propertyKeys, runView } from './engine'
 import { render } from './expr'
 import { createNewNote, deriveSeed, targetFolder, untitledName } from './newNote'
 import { pinnedType } from './relation'
+import { newEntityParts } from './scaffold'
 import { writeProperty } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
@@ -136,6 +137,8 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
   // The toolbar's "New" / a group header's "+" (5D, GRO-2144): a note pre-filled to satisfy this
   // view — filter-derived seed, plus the group's raw value when created inside a group — created
   // over the bridge and opened only once the create lands; a failure shows the alert instead.
+  // Bible B convergence (GRO-2202): a view pinned to a REGISTERED type upgrades the pre-fill to
+  // the full registry scaffold (scaffold ← template ← filter seed, page_type forced last).
   const onNewNote = (group: Group | null) => {
     const seed = deriveSeed(def, view)
     const groupKey = dragKey(view)
@@ -151,9 +154,12 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
     const taken = new Set(records.filter((r) => r.path.slice(0, r.path.lastIndexOf('/')) === folder).map((r) => r.basename))
     const path = `${folder}/${untitledName(taken)}.md`
     setCreateError(null)
-    createNewNote(path, seed.properties)
-      .then(() => onOpenFile(path))
-      .catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
+    const typeDef = pinned === null ? undefined : registry?.types[pinned]
+    const create =
+      pinned !== null && typeDef !== undefined && root !== null
+        ? newEntityParts(root, pinned, typeDef, seed.properties).then(({ properties, body }) => createNewNote(path, properties, body))
+        : createNewNote(path, seed.properties)
+    create.then(() => onOpenFile(path)).catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
   }
 
   const keys = propertyKeys(def, view, records)

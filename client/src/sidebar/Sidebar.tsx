@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type { SettingsState, TreeNode, TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
+import { createNewNote } from '../bases/newNote'
+import { ensureFolder, newEntityParts, typeLabel } from '../bases/scaffold'
+import { useRegistry } from '../bases/useRegistry'
 import type { WatchSource } from '../hooks/useWatch'
 import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
@@ -8,6 +11,7 @@ import { treeHasFile, treeReducer } from '../lib/treeState'
 import { ContextMenu } from './ContextMenu'
 import { entryPath, targetDirFor, type EntryKind } from './createEntry'
 import { HotkeysButton } from './HotkeysPanel'
+import { NewTypeDialog } from './NewTypeDialog'
 import { SettingsCog } from './SettingsPanel'
 import { Tree, type PendingCreate } from './Tree'
 
@@ -58,7 +62,13 @@ export function Sidebar({
   const [error, setError] = useState<string | null>(null)
   const [expanded, dispatch] = useReducer(treeReducer, root, storage.getExpanded)
   const [menu, setMenu] = useState<{ x: number; y: number; targetDir: string; copyPath: string | null; filePath: string | null } | null>(null)
-  const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string } | null>(null)
+  const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string; type?: string; label?: string } | null>(null)
+  const [newTypeOpen, setNewTypeOpen] = useState(false)
+
+  // The vault's type registry (Bible B, GRO-2202): feeds the "New ▸" submenu; an empty (or
+  // unreadable) registry renders NO extra menu items — the Round 9 Q1 locked behavior.
+  const reg = useRegistry(root).registry
+  const newTypes = useMemo(() => Object.entries(reg?.types ?? {}).map(([name, def]) => ({ name, label: typeLabel(name, def) })), [reg])
 
   const refresh = useCallback(() => {
     api.tree(root).then(
@@ -142,9 +152,33 @@ export function Sidebar({
     [menu, root],
   )
 
+  /** "New ▸ <type>" (GRO-2202): the input shows where the click was; the page may land in the registry folder. */
+  const startCreateTyped = useCallback(
+    (type: string) => {
+      if (menu === null) return
+      if (menu.targetDir !== root) dispatch({ type: 'expandTo', root, file: `${menu.targetDir}/x` })
+      setCreating({ kind: 'file', parentDir: menu.targetDir, type, label: newTypes.find((t) => t.name === type)?.label ?? type })
+      setMenu(null)
+    },
+    [menu, root, newTypes],
+  )
+
   const submitCreate = useCallback(
     async (name: string) => {
       if (creating === null) return
+      // A typed create (GRO-2202): registry folder ?? the right-clicked dir, scaffold from the
+      // registry (+ template), all in one atomic content-at-create call — ALREADY_EXISTS fails loudly.
+      if (creating.type !== undefined) {
+        const def = reg?.types[creating.type] ?? { properties: {} }
+        const dir = def.folder === undefined ? creating.parentDir : await ensureFolder(root, def.folder)
+        const p = entryPath(dir, name, 'file')
+        const { properties, body } = await newEntityParts(root, creating.type, def)
+        await createNewNote(p, properties, body)
+        setCreating(null)
+        refresh()
+        onOpenFile(p)
+        return
+      }
       const p = entryPath(creating.parentDir, name, creating.kind)
       // Notes and bases both go through createFile; the main process seeds `.base` with a minimal view.
       if (creating.kind === 'dir') await api.createDir(p)
@@ -154,13 +188,21 @@ export function Sidebar({
       // The main pane picks the editor or the base host from the opened path's extension.
       if (creating.kind !== 'dir') onOpenFile(p)
     },
-    [creating, refresh, onOpenFile],
+    [creating, reg, root, refresh, onOpenFile],
   )
 
   const cancelCreate = useCallback(() => setCreating(null), [])
 
   const pending: PendingCreate | null =
-    creating === null ? null : { ...creating, onSubmit: submitCreate, onCancel: cancelCreate }
+    creating === null
+      ? null
+      : {
+          kind: creating.kind,
+          parentDir: creating.parentDir,
+          placeholder: creating.type === undefined ? undefined : `New ${creating.label ?? creating.type}`,
+          onSubmit: submitCreate,
+          onCancel: cancelCreate,
+        }
 
   return (
     <aside className="sidebar">
@@ -205,12 +247,19 @@ export function Sidebar({
           copyLinkPath={menu.filePath}
           newWindowPath={menu.filePath}
           onOpenNewWindow={openFileNewWindow}
+          newTypes={newTypes}
+          onNewTyped={startCreateTyped}
+          onNewType={() => {
+            setMenu(null)
+            setNewTypeOpen(true)
+          }}
           onNewNote={() => startCreate('file')}
           onNewBase={() => startCreate('base')}
           onNewFolder={() => startCreate('dir')}
           onClose={() => setMenu(null)}
         />
       )}
+      {newTypeOpen && <NewTypeDialog root={root} onClose={() => setNewTypeOpen(false)} onCreated={refresh} />}
     </aside>
   )
 }

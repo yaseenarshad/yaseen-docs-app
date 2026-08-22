@@ -81,6 +81,11 @@ function installBridge(state: AppState, identity: WindowIdentity) {
         return () => linkNotice.delete(l)
       }),
     },
+    // Empty registry (GRO-2202): the sidebar reads it for "New ▸"; empty = no menu change.
+    registry: {
+      get: vi.fn(async (r: string) => ({ root: r, version: 1, types: {}, properties: {} })),
+      onChange: vi.fn(() => () => undefined),
+    },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return {

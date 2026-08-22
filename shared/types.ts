@@ -148,12 +148,23 @@ export interface CreateDirResponse {
   path: string
 }
 
-// ---------- createFile(path) ----------
+// ---------- createFile(req) ----------
+
+/**
+ * `createFile` takes the bare path or `{ path, content }` (Bible B, GRO-2202): when `content`
+ * is given it lands in the same atomic `wx` write — content-at-create, so scaffolded pages and
+ * starter bases keep the never-overwrite guarantee without a create-then-write race.
+ */
+export interface CreateFileRequest {
+  path: string
+  /** Initial file contents; omitted → '' for markdown, the minimal table-view seed for `.base`. */
+  content?: string
+}
 
 export interface CreateFileResponse {
   path: string
   mtime: number
-  /** 0 for markdown; the seed's byte length for `.base`. */
+  /** The created file's byte length (0 for an empty markdown create). */
   size: number
 }
 
@@ -469,7 +480,7 @@ export interface YaseenDocsApi {
   readFile(path: string): Promise<FileResponse>
   writeFile(req: FileWriteRequest): Promise<FileWriteResponse>
   createDir(path: string): Promise<CreateDirResponse>
-  createFile(path: string): Promise<CreateFileResponse>
+  createFile(req: string | CreateFileRequest): Promise<CreateFileResponse>
   /** Bases property index for `root` (GRO-2129): full scan on first call, watcher-incremental after. */
   index(root: string): Promise<IndexResponse>
   /**

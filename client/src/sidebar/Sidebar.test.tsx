@@ -23,6 +23,11 @@ function installBridge() {
     tree: vi.fn(async (root: string) => ({ root, tree: TREE, generatedAt: 1 })),
     state: { setFolder: vi.fn(async () => undefined) },
     window: { open: vi.fn(async () => undefined) },
+    // Empty registry (GRO-2202): the sidebar reads it for "New ▸"; empty = no menu change.
+    registry: {
+      get: vi.fn(async (root: string) => ({ root, version: 1, types: {}, properties: {} })),
+      onChange: vi.fn(() => () => undefined),
+    },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return bridge

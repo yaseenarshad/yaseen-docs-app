@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { fileLink } from '@shared/links'
 
 interface ContextMenuProps {
@@ -11,6 +11,15 @@ interface ContextMenuProps {
   /** Absolute path of the right-clicked FILE row; null (folders, blank space) hides "Open in new window" (D2, GRO-2168). */
   newWindowPath: string | null
   onOpenNewWindow: (path: string) => void
+  /**
+   * Registered types for the "New ▸" submenu (Bible B, GRO-2202 — Round 9 Q1 LOCKED): one item
+   * per type + "New type…" at the bottom; [] renders NOTHING — an empty registry changes the
+   * menu not at all.
+   */
+  newTypes: Array<{ name: string; label: string }>
+  onNewTyped: (type: string) => void
+  /** "New type…": schema entry + starter base in one action (Round 9 record). */
+  onNewType: () => void
   onNewNote: () => void
   /** Create an Obsidian-compatible `.base` file (GRO-2126). */
   onNewBase: () => void
@@ -19,7 +28,8 @@ interface ContextMenuProps {
 }
 
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, onNewNote, onNewBase, onNewFolder, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, newTypes, onNewTyped, onNewType, onNewNote, onNewBase, onNewFolder, onClose }: ContextMenuProps) {
+  const [subOpen, setSubOpen] = useState(false)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -76,6 +86,35 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
           >
             Copy link
           </button>
+        )}
+        {newTypes.length > 0 && (
+          <div className="ctx-menu__group" onMouseEnter={() => setSubOpen(true)} onMouseLeave={() => setSubOpen(false)}>
+            <button
+              type="button"
+              className="ctx-menu__item ctx-menu__item--sub"
+              role="menuitem"
+              aria-haspopup="menu"
+              aria-expanded={subOpen}
+              onClick={() => setSubOpen((o) => !o)}
+            >
+              New
+              <span className="ctx-menu__sub-arrow" aria-hidden="true">
+                ▸
+              </span>
+            </button>
+            {subOpen && (
+              <div className="ctx-submenu" role="menu">
+                {newTypes.map((t) => (
+                  <button key={t.name} type="button" className="ctx-menu__item" role="menuitem" onClick={() => onNewTyped(t.name)}>
+                    New {t.label}
+                  </button>
+                ))}
+                <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewType}>
+                  New type…
+                </button>
+              </div>
+            )}
+          </div>
         )}
         <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewNote}>
           New note

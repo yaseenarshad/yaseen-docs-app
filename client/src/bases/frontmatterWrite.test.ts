@@ -4,7 +4,7 @@
  * Lives under client/src so vitest collects it; the module itself is in shared/.
  */
 import { describe, expect, it } from 'vitest'
-import { FrontmatterWriteError, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { buildFrontmatter, FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 
 const NOTE = `---
 # how this note is filed
@@ -139,5 +139,24 @@ tags: [focus, books]
 
   it('throws FrontmatterWriteError when the frontmatter is not a map', () => {
     expect(() => setFrontmatterProperty('---\n- a\n- b\n---\nBody\n', 'status', 'done')).toThrow(FrontmatterWriteError)
+  })
+})
+
+describe('buildFrontmatter (Bible B, GRO-2202)', () => {
+  it('builds one fenced block with native YAML types, {} → empty string', () => {
+    expect(buildFrontmatter({})).toBe('')
+    expect(buildFrontmatter({ status: 'idea', priority: 2, published: false })).toBe('---\nstatus: idea\npriority: 2\npublished: false\n---\n')
+    expect(buildFrontmatter({ tags: ['agentic'] })).toBe('---\ntags:\n  - agentic\n---\n')
+  })
+
+  it('null prints Obsidian-style empty (`key:`), an empty list as `key: []`', () => {
+    expect(buildFrontmatter({ page_type: 'kpi', funnel_stages: [], kpi_category: null, unit: null })).toBe(
+      '---\npage_type: kpi\nfunnel_stages: []\nkpi_category:\nunit:\n---\n',
+    )
+  })
+
+  it('round-trips through parseFrontmatter (nulls stay null)', () => {
+    const block = buildFrontmatter({ page_type: 'problem', parent: null, kpis_impacted: [] })
+    expect(parseFrontmatter(splitFrontmatter(`${block}Body\n`).frontmatter).properties).toEqual({ page_type: 'problem', parent: null, kpis_impacted: [] })
   })
 })

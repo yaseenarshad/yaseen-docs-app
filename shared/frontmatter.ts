@@ -108,3 +108,17 @@ function serializeInner(doc: Document): string {
   if (isMap(doc.contents) && doc.contents.items.length === 0) return ''
   return doc.toString(YAML_OUT)
 }
+
+/**
+ * A whole frontmatter block built from scratch (5D seeds, new-entity scaffolds — GRO-2144,
+ * Bible B GRO-2202): fences included, `{}` → ''. Values serialize through the same Document
+ * API and options as `setFrontmatterProperty`; `null` prints Obsidian-style empty (`key:`),
+ * not `key: null` — the shape the registry scaffold wants for empty scalar properties.
+ */
+export function buildFrontmatter(properties: Record<string, unknown>): string {
+  const entries = Object.entries(properties)
+  if (entries.length === 0) return ''
+  const doc = parseDocument('')
+  for (const [key, value] of entries) doc.setIn([key], value)
+  return `---\n${doc.toString({ ...YAML_OUT, nullStr: '' })}---\n`
+}
