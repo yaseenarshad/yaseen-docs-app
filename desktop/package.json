@@ -7,9 +7,7 @@
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "preview": "electron-vite preview",
-    "pack": "electron-builder --dir --mac --arm64"
+    "build": "electron-vite build"
   },
   "dependencies": {
     "chokidar": "^4.0.3"

@@ -143,24 +143,11 @@ export interface FileWriteResponse {
 
 // ---------- createDir(path) ----------
 
-export interface CreateDirRequest {
-  /** Absolute path of the directory to create; its parent must exist. */
-  path: string
-}
-
 export interface CreateDirResponse {
   path: string
 }
 
 // ---------- createFile(path) ----------
-
-export interface CreateFileRequest {
-  /**
-   * Absolute path of the file to create; its parent must exist. `.md`/`.markdown` are created
-   * empty; `.base` is seeded with the minimal valid base (`views:` + one table view named `Table`).
-   */
-  path: string
-}
 
 export interface CreateFileResponse {
   path: string

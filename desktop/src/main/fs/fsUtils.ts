@@ -23,7 +23,7 @@ export class BridgeFailure extends Error {
   }
 }
 
-export function isSafeAbsPath(p: unknown): p is string {
+function isSafeAbsPath(p: unknown): p is string {
   return typeof p === 'string' && path.isAbsolute(p) && !p.includes('\0')
 }
 
@@ -40,10 +40,6 @@ export function requireAbsPath(p: unknown, param: string): string {
 
 export function isMarkdown(name: string): boolean {
   return fileKind(name) === 'markdown'
-}
-
-export function isBase(name: string): boolean {
-  return fileKind(name) === 'base'
 }
 
 /** Markdown or `.base` — the files the tree, watcher and file calls serve. */
