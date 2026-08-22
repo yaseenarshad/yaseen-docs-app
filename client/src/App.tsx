@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import type { SettingsState } from '@shared/types'
 import { api, ApiRequestError } from './api'
 import { Editor } from './editor/Editor'
+import { useLinkEvents } from './hooks/useLinkEvents'
 import { useMenuEvents } from './hooks/useMenuEvents'
 import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
@@ -15,6 +16,9 @@ import { Welcome } from './Welcome'
 function syncHash(path: string | null): void {
   history.replaceState(null, '', fileHash(path) || location.pathname + location.search)
 }
+
+/** A can't-open-link notice (E1, GRO-2171) dismisses itself after this long. */
+export const LINK_NOTICE_MS = 4000
 
 export function App() {
   const [root, setRoot] = useState<string | null>(storage.getRoot)
@@ -107,6 +111,16 @@ export function App() {
   // File › Open Folder… / Open Recent (GRO-2161) reuse the same flows as the in-app buttons.
   useMenuEvents({ onOpenFolder: pick, onOpenRoot: openRoot })
 
+  // Deep links (E1, GRO-2171): a routed link opens its file exactly like a sidebar click;
+  // a link that could not open shows a transient notice — unobtrusive, never a dialog.
+  const [notice, setNotice] = useState<string | null>(null)
+  useEffect(() => {
+    if (notice === null) return
+    const timer = setTimeout(() => setNotice(null), LINK_NOTICE_MS)
+    return () => clearTimeout(timer)
+  }, [notice])
+  useLinkEvents({ onOpenFile: openFile, onNotice: setNotice })
+
   const onRootMissing = useCallback(() => {
     storage.setRoot(null)
     setRoot(null)
@@ -117,6 +131,11 @@ export function App() {
 
   return (
     <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'}>
+      {notice !== null && (
+        <div className="link-notice" role="status">
+          {notice}
+        </div>
+      )}
       {root !== null && !sidebarCollapsed && (
         <Sidebar
           key={root}

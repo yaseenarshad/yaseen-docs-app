@@ -342,6 +342,27 @@ button {
   background: #fff;
 }
 
+/* ---------- link notice (E1): a can't-open-link toast, self-dismissing ---------- */
+
+.link-notice {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  max-width: 70vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: #6b4e00;
+  background: #fff7df;
+  border: 1px solid #f1e2ad;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
+}
+
 /* ---------- sidebar ---------- */
 
 .sidebar {

@@ -361,6 +361,17 @@ export interface MenuApi {
 }
 
 /**
+ * Deep links (E1, GRO-2171): main parses a `yaseendocs://` URL (`shared/links.ts`) and routes
+ * it to the best window; these are the pushes the routed-to renderer receives.
+ */
+export interface LinkApi {
+  /** A link resolved to this window: open `path` (guaranteed inside this window's root). Returns an unsubscribe. */
+  onOpenFile(listener: (path: string) => void): () => void
+  /** A link could not be opened (bad URL, not markdown, missing file): show `message` unobtrusively. Returns an unsubscribe. */
+  onNotice(listener: (message: string) => void): () => void
+}
+
+/**
  * The single typed surface the renderer uses for everything outside the DOM, installed by
  * the preload as `window.yaseenDocs` (`contextBridge`, `ipcMain.handle` on the main side).
  * Request/response shapes are the ones above. Bases (GRO-2097) adds its methods here
@@ -387,4 +398,5 @@ export interface YaseenDocsApi {
   state: StateApi
   window: WindowApi
   menu: MenuApi
+  link: LinkApi
 }

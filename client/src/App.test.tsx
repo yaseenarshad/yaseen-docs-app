@@ -30,13 +30,15 @@ vi.mock('./sidebar/Sidebar', () => ({
   },
 }))
 
-import { App } from './App'
+import { App, LINK_NOTICE_MS } from './App'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 /** The full `window.yaseenDocs` surface the App tree touches, all observable. */
 function installBridge(state: AppState, identity: WindowIdentity) {
   const menuOpenRoot = new Set<(path: string) => void>()
+  const linkOpenFile = new Set<(path: string) => void>()
+  const linkNotice = new Set<(message: string) => void>()
   const bridge = {
     tree: vi.fn(async (root: string) => ({ root, tree: [], generatedAt: 1 })),
     pickFolder: vi.fn(async () => ({ cancelled: true as const })),
@@ -66,9 +68,24 @@ function installBridge(state: AppState, identity: WindowIdentity) {
         return () => menuOpenRoot.delete(l)
       }),
     },
+    link: {
+      onOpenFile: vi.fn((l: (path: string) => void) => {
+        linkOpenFile.add(l)
+        return () => linkOpenFile.delete(l)
+      }),
+      onNotice: vi.fn((l: (message: string) => void) => {
+        linkNotice.add(l)
+        return () => linkNotice.delete(l)
+      }),
+    },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
-  return { bridge, emitOpenRoot: (path: string) => menuOpenRoot.forEach((l) => l(path)) }
+  return {
+    bridge,
+    emitOpenRoot: (path: string) => menuOpenRoot.forEach((l) => l(path)),
+    emitLinkOpenFile: (path: string) => linkOpenFile.forEach((l) => l(path)),
+    emitLinkNotice: (message: string) => linkNotice.forEach((l) => l(message)),
+  }
 }
 
 let root: Root | null = null
@@ -182,6 +199,30 @@ describe('App window title (C3, GRO-2165)', () => {
     expect(document.title).toBe('Note — w')
     await act(async () => emitOpenRoot('/vaults/empty'))
     expect(document.title).toBe('empty')
+  })
+})
+
+describe('App deep links (E1, GRO-2171)', () => {
+  it('link:open-file selects the file through the same path as a sidebar click: editor, hash, identity', async () => {
+    const { bridge, el, emitLinkOpenFile } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null })
+    await act(async () => emitLinkOpenFile('/v/sub/linked.md'))
+    expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('/v/sub/linked.md')
+    expect(location.hash).toBe('#/v/sub/linked.md')
+    expect(bridge.state.setFolder).toHaveBeenCalledWith('/v', { lastFile: '/v/sub/linked.md' })
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ file: '/v/sub/linked.md' })
+  })
+
+  it('link:notice shows the transient banner, which dismisses itself after LINK_NOTICE_MS', async () => {
+    const { el, emitLinkNotice } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null })
+    vi.useFakeTimers()
+    try {
+      act(() => emitLinkNotice("Can't open /v/a.txt: not a markdown file"))
+      expect(el.querySelector('.link-notice')?.textContent).toBe("Can't open /v/a.txt: not a markdown file")
+      act(() => vi.advanceTimersByTime(LINK_NOTICE_MS))
+      expect(el.querySelector('.link-notice')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
