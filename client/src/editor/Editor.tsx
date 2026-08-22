@@ -9,6 +9,7 @@ import { BaseCodeBlock } from './baseCodeBlock/BaseCodeBlock'
 import { createBaseEmbedRegistry, type BaseEmbedSlot } from './baseEmbed/baseEmbedPlugin'
 import { BaseEmbed } from './baseEmbed/BaseEmbed'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
+import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import './outline/outlineFolding.css'
 import './outline/bullets.css'
@@ -32,9 +33,11 @@ interface EditorProps {
   onOpenFile: (path: string) => void
   /** Wikilink resolve source (GRO-2190): App owns ONE per window, fed by WikilinkIndexBridge. */
   wikilinks?: WikilinkResolveSource
+  /** `[[` picker candidates (GRO-2191): same ownership and feed as `wikilinks`. */
+  wikilinkCandidates?: WikilinkCandidateSource
 }
 
-export function Editor({ root, path, watch, onOpenFile, wikilinks }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, wikilinks, wikilinkCandidates }: EditorProps) {
   const state = useFile(path)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   return (
@@ -46,7 +49,7 @@ export function Editor({ root, path, watch, onOpenFile, wikilinks }: EditorProps
         (fileKind(file.path) === 'base' ? (
           <BaseHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} />
         ) : (
-          <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} wikilinks={wikilinks} />
+          <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} />
         ))}
     </section>
   )
@@ -59,12 +62,14 @@ function CrepeHost({
   watch,
   onOpenFile,
   wikilinks,
+  wikilinkCandidates,
 }: {
   root: string
   file: FileResponse
   watch: WatchSource
   onOpenFile: (path: string) => void
   wikilinks?: WikilinkResolveSource
+  wikilinkCandidates?: WikilinkCandidateSource
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const autosave = useAutosave(file.path)
@@ -109,8 +114,9 @@ function CrepeHost({
       zoom: { fileName: basename(file.path) },
       baseEmbeds: embedRegistry,
       baseCodeBlocks: codeRegistry,
-      // Stable per window (App-owned): index updates flow INSIDE the source, never remounting us.
+      // Stable per window (App-owned): index updates flow INSIDE the sources, never remounting us.
       wikilinks,
+      wikilinkCandidates,
     })
     let controller: ReturnType<typeof attach> | null = null
     let cancelled = false
@@ -156,7 +162,7 @@ function CrepeHost({
       unsubscribe()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, embedRegistry, codeRegistry, wikilinks])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, embedRegistry, codeRegistry, wikilinks, wikilinkCandidates])
 
   return (
     <>

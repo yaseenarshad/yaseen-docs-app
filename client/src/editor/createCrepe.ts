@@ -39,6 +39,11 @@
  *    live-preview style via inline decorations only (brackets hidden, alias/heading display,
  *    caret-adjacency reveal, resolved/unresolved via `opts.wikilinks`) — never a schema or
  *    serializer change, round-trip byte-identical. No click handling (Links C owns that).
+ *  - Wikilink picker (GRO-2191, `wikilink/wikilinkPicker.ts`): typing `[[` opens the vault-wide
+ *    suggestion popup (candidates via `opts.wikilinkCandidates`); Enter/click inserts plain
+ *    `[[name]]` text. Its keymap MUST be `use`d before `outlinerKeymap`: both bind Enter at
+ *    priority 100 and equal priorities run in addition order — the picker wins while open and
+ *    declines (falls through) while closed.
  */
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -58,6 +63,7 @@ import { obsidianHotkeys } from './outline/hotkeys'
 import { outlinerKeymap } from './outline/listCommands'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { createOutlineZoom, zoomKeymap, type ZoomOptions } from './outline/zoom'
+import { createWikilinkPicker, createWikilinkCandidateSource, wikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { createWikilink, createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 
 export interface CreateCrepeOptions {
@@ -75,6 +81,8 @@ export interface CreateCrepeOptions {
   baseCodeBlocks?: BaseCodeBlockRegistry
   /** Wikilink resolve source (GRO-2190): App keeps it fed from the vault index. Defaults to a never-updated source (all links render resolved). */
   wikilinks?: WikilinkResolveSource
+  /** `[[` picker candidates (GRO-2191): App keeps it fed from the vault index. Defaults to a never-updated source (empty picker — only Create rows). */
+  wikilinkCandidates?: WikilinkCandidateSource
 }
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
@@ -98,8 +106,12 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createBaseEmbed(opts.baseEmbeds ?? createBaseEmbedRegistry()))
   crepe.editor.use(createBaseCodeBlock(opts.baseCodeBlocks ?? createBaseCodeBlockRegistry()))
   crepe.editor.use(createWikilink(opts.wikilinks ?? createWikilinkResolveSource()))
+  crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource()))
   crepe.editor.use(blockHandleGate)
   crepe.editor.use(multiBlockDrag)
+  // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs
+  // equal priorities in addition order — an OPEN [[ picker takes Enter, closed falls through.
+  crepe.editor.use(wikilinkPickerKeymap)
   crepe.editor.use(outlinerKeymap)
   crepe.editor.use(obsidianHotkeys)
   crepe.editor.use(zoomKeymap)

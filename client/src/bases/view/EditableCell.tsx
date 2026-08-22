@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { matchLinkNames, trailingLinkFragment } from '../../links/completion'
 import { type EditorKind } from '../editorType'
 import { type Value, fromYaml } from '../expr'
 import { writeProperty } from '../writeProperty'
@@ -168,9 +169,8 @@ function ChipsEditor({ initial, label, basenames, onCommit, onDone }: ChipsEdito
   const done = useRef(false)
   const dirty = useRef(false)
 
-  const fragment = basenames === undefined ? null : /\[\[([^[\]]*)$/.exec(text)?.[1].toLowerCase() ?? null
-  const matches =
-    fragment === null ? [] : (basenames ?? []).filter((b) => b.toLowerCase().includes(fragment)).slice(0, MAX_SUGGESTIONS)
+  const fragment = basenames === undefined ? null : trailingLinkFragment(text)
+  const matches = fragment === null ? [] : matchLinkNames(basenames ?? [], fragment)
 
   const change = (next: string[]) => {
     dirty.current = true
@@ -283,20 +283,18 @@ interface LinkEditorProps {
   onDone: () => void
 }
 
-const MAX_SUGGESTIONS = 8
-
 /**
- * Link editor: a text input whose unclosed trailing `[[fragment` offers index basenames;
- * ArrowUp/Down pick, Enter completes to `[[basename]]` (then Enter again commits the string).
+ * Link editor: a text input whose unclosed trailing `[[fragment` offers index basenames
+ * (through the shared matcher, `links/completion.ts` — GRO-2191); ArrowUp/Down pick, Enter
+ * completes to `[[basename]]` (then Enter again commits the string).
  */
 function LinkEditor({ initial, basenames, label, onCommit, onDone }: LinkEditorProps) {
   const [text, setText] = useState(initial)
   const [sel, setSel] = useState(0)
   const done = useRef(false)
 
-  const fragment = /\[\[([^[\]]*)$/.exec(text)?.[1].toLowerCase() ?? null
-  const matches =
-    fragment === null ? [] : basenames.filter((b) => b.toLowerCase().includes(fragment)).slice(0, MAX_SUGGESTIONS)
+  const fragment = trailingLinkFragment(text)
+  const matches = fragment === null ? [] : matchLinkNames(basenames, fragment)
 
   const finish = (commit: boolean) => {
     if (done.current) return

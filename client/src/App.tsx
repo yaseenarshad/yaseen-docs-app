@@ -3,6 +3,7 @@ import type { SettingsState } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
+import { createWikilinkCandidateSource } from './editor/wikilink/wikilinkPicker'
 import { createWikilinkResolveSource } from './editor/wikilink/wikilinkPlugin'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
 import { useLinkEvents } from './hooks/useLinkEvents'
@@ -37,8 +38,10 @@ export function App() {
   const watch = useWatch(root)
   // Wikilinks (Links A, GRO-2190): ONE resolve source per window — a stable object every
   // editor's wikilink plugin subscribes to; WikilinkIndexBridge (below) keeps it fed from the
-  // vault index, so index changes restyle links live without any editor remounting.
+  // vault index, so index changes restyle links live without any editor remounting. The `[[`
+  // picker's candidate source (Links B, GRO-2191) works exactly the same way.
   const [wikilinks] = useState(createWikilinkResolveSource)
+  const [wikilinkCandidates] = useState(createWikilinkCandidateSource)
 
   // Settings and the sidebar toggle are global (D9): a change made in another window lands here live.
   useEffect(
@@ -181,17 +184,17 @@ export function App() {
         </section>
       ) : (
         <div className="workspace">
-          <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} />
+          <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} candidates={wikilinkCandidates} />
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
           <TabBar tabs={tabs} active={file} onActivate={activate} onClose={closeTab} onMove={moveTab} />
           <div className="tabstack">
-            {mounted.length === 0 && <Editor root={root} path={null} watch={watch} onOpenFile={openCurrent} wikilinks={wikilinks} />}
+            {mounted.length === 0 && <Editor root={root} path={null} watch={watch} onOpenFile={openCurrent} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility — see tabs.css
               // for why display:none would lose scroll positions.
               <div key={path} className={path === file ? 'tabstack__layer' : 'tabstack__layer tabstack__layer--hidden'}>
-                <Editor root={root} path={path} watch={watch} onOpenFile={openCurrent} wikilinks={wikilinks} />
+                <Editor root={root} path={path} watch={watch} onOpenFile={openCurrent} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} />
               </div>
             ))}
           </div>

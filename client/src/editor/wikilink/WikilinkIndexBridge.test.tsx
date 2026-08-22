@@ -1,14 +1,17 @@
 /**
- * WikilinkIndexBridge (Links A, GRO-2190): the App-level glue that keeps the wikilink resolve
- * source fed from `useIndex`. The bridge is mocked like useIndex.test.tsx; asserted here: the
- * source stays untouched until the index is READY, resolves basenames to absolute paths once it
- * is, and swaps in a fresh resolver after a watch-driven refetch (which notifies subscribers).
+ * WikilinkIndexBridge (Links A, GRO-2190 + Links B, GRO-2191): the App-level glue that keeps
+ * the wikilink resolve source AND the `[[` picker's candidate source fed from `useIndex`. The
+ * bridge is mocked like useIndex.test.tsx; asserted here: the sources stay untouched until the
+ * index is READY, resolve/candidate contents once it is (candidates as shortest unambiguous
+ * names — duplicates folder-disambiguated), and fresh contents after a watch-driven refetch
+ * (which notifies subscribers).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord, IndexResponse, WatchEvent } from '@shared/types'
 import type { WatchListener, WatchSource } from '../../hooks/useWatch'
+import { createWikilinkCandidateSource, type MutableWikilinkCandidateSource } from './wikilinkPicker'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from './wikilinkPlugin'
 import { WikilinkIndexBridge } from './WikilinkIndexBridge'
 
@@ -48,6 +51,7 @@ let root: Root | null = null
 let container: HTMLElement | null = null
 let listeners: WatchListener[] = []
 let source: MutableWikilinkResolveSource
+let candidates: MutableWikilinkCandidateSource
 
 const watch: WatchSource = {
   subscribe: (l) => {
@@ -62,7 +66,7 @@ function mount(): void {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<WikilinkIndexBridge root="/vault" watch={watch} source={source} />))
+  act(() => root?.render(<WikilinkIndexBridge root="/vault" watch={watch} source={source} candidates={candidates} />))
 }
 
 async function flush(): Promise<void> {
@@ -81,6 +85,7 @@ async function emitPastDebounce(ev: WatchEvent): Promise<void> {
 beforeEach(() => {
   vi.useFakeTimers()
   source = createWikilinkResolveSource()
+  candidates = createWikilinkCandidateSource()
   indexFn.mockResolvedValue(response('/vault/Note.md', '/vault/deep/Other.md'))
 })
 
@@ -123,5 +128,19 @@ describe('WikilinkIndexBridge', () => {
     indexFn.mockRejectedValue(new Error('boom'))
     await emitPastDebounce({ type: 'change', path: '/vault/Note.md', mtime: 2 })
     expect(source.resolve?.('Note')).toBe('/vault/Note.md')
+  })
+
+  it('feeds the picker candidate source too: shortest names, duplicates folder-disambiguated (GRO-2191)', async () => {
+    indexFn.mockResolvedValue(response('/vault/Note.md', '/vault/deep/Note.md', '/vault/deep/Other.md'))
+    mount()
+    expect(candidates.candidates).toEqual([]) // pending: nothing yet
+    await flush()
+    expect(candidates.candidates).toEqual(['Note', 'deep/Note', 'Other'])
+    const wake = vi.fn()
+    candidates.subscribe(wake)
+    indexFn.mockResolvedValue(response('/vault/Note.md', '/vault/New.md'))
+    await emitPastDebounce({ type: 'add', path: '/vault/New.md', mtime: 2 })
+    expect(wake).toHaveBeenCalled()
+    expect(candidates.candidates).toEqual(['Note', 'New'])
   })
 })
