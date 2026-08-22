@@ -31,6 +31,8 @@ produces `desktop/dist-app/mac-arm64/Yaseen Docs.app` and `desktop/dist-app/Yase
 
 ## Sharing it
 
+Every packaged version's `.dmg` is downloadable from the repo's [Releases page](https://github.com/yaseenarshad/yaseen-milkdown/releases) — no build toolchain needed on the installing machine (repo access required while the repo is private; otherwise send the dmg directly).
+
 The app is ad-hoc signed, not notarized, so on someone else's Mac (macOS 15) the first open is blocked with "Apple could not verify…". Once: open **System Settings › Privacy & Security**, scroll to the blocked-app notice, click **Open Anyway**, and confirm. After that it opens normally.
 
 ## Editing

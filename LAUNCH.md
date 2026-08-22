@@ -28,6 +28,7 @@ open "desktop/dist-app/Yaseen Docs-0.1.0-arm64.dmg"
 ```
 
 - On another Mac the first open is blocked by Gatekeeper (the app is not notarized): System Settings › Privacy & Security › **Open Anyway**, once. See `README.md` "Sharing it".
+- No toolchain on the target machine? Download the `.dmg` from the repo's [Releases page](https://github.com/yaseenarshad/yaseen-milkdown/releases) instead of building (releases are tagged at the exact verified build commit; repo access required while private).
 
 ## App state — where it lives, how to reset it
 
