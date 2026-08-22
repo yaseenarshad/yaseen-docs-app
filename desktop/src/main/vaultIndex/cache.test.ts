@@ -1,9 +1,19 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import type { IndexRecord } from '@shared/types'
-import { _resetIndexCache, _setPersistDebounceMs, flushIndexCache, initIndexCache, loadIndexCache, schedulePersist } from './cache'
+import { MAX_FILE_BYTES, type IndexRecord } from '@shared/types'
+import {
+  CACHE_VERSION,
+  _gcDone,
+  _resetIndexCache,
+  _setPersistDebounceMs,
+  flushIndexCache,
+  initIndexCache,
+  loadIndexCache,
+  schedulePersist,
+} from './cache'
+import { scanFile } from './scan'
 
 const until = async (pred: () => Promise<boolean> | boolean, ms = 3000) => {
   const t0 = Date.now()
@@ -161,5 +171,111 @@ describe('index cache: a bad file never throws, only degrades', () => {
   it("another root's payload at this filename → miss (not this vault's cache)", async () => {
     await writeFile(file, JSON.stringify({ version: 1, root: '/elsewhere', records: [] }))
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'miss' })
+  })
+})
+
+describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
+  // THE RULE this test enforces: a cached snapshot written under old semantics must never be read
+  // as if it had new semantics. Any change to IndexRecord's shape or to the scanner's extraction
+  // behaviour must bump CACHE_VERSION so every old snapshot degrades to one full rescan.
+  const BUMP_MSG =
+    'The cached snapshot shape or the scanner extraction semantics changed. ' +
+    'Bump CACHE_VERSION in vaultIndex/cache.ts and re-pin FINGERPRINT in this test — ' +
+    'discard IS the migration (a version mismatch costs one full rescan, never a converter).'
+
+  /** Exercises every extraction rule the cache would freeze: frontmatter parsing, tag/link/embed extraction, code stripping, URL skipping. */
+  const CANONICAL_NOTE = [
+    '---',
+    'title: Canonical',
+    'count: 3',
+    'list: [x, y]',
+    "tags: [alpha, '#beta']",
+    'link: "[[Ref|shown]]"',
+    '---',
+    '',
+    'Inline #gamma and #tag/nested here, plus https://example.test/#not-a-tag',
+    'Body [[Note One|alias]] then [[Note Two#heading]] then ![[img.png]]',
+    '`#code and [[in-code]]` stay out',
+    '```',
+    '#fenced-out and [[fenced-link]]',
+    '```',
+    '',
+  ].join('\n')
+
+  const FINGERPRINT = {
+    cacheVersion: 1,
+    maxFileBytes: 10 * 1024 * 1024,
+    /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
+    recordKeys: ['basename', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'links', 'mtime', 'name', 'path', 'properties', 'size', 'tags'],
+    extraction: {
+      properties: { title: 'Canonical', count: 3, list: ['x', 'y'], tags: ['alpha', '#beta'], link: '[[Ref|shown]]' },
+      tags: ['alpha', 'beta', 'gamma', 'tag/nested'],
+      links: ['Ref', 'Note One', 'Note Two'],
+      embeds: ['img.png'],
+    },
+  }
+
+  it('the snapshot shape + extraction semantics fingerprint matches CACHE_VERSION', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'mdapp-cache-version-pin-'))
+    try {
+      const canonical = path.join(root, 'canonical.md')
+      const broken = path.join(root, 'broken.md')
+      await writeFile(canonical, CANONICAL_NOTE)
+      await writeFile(broken, '---\nstatus: [unclosed\n---\nBody after broken frontmatter.\n')
+      const record = await scanFile(root, canonical)
+      const errored = await scanFile(root, broken)
+      expect(errored.frontmatterError, BUMP_MSG).toBeDefined()
+      const actual = {
+        cacheVersion: CACHE_VERSION,
+        maxFileBytes: MAX_FILE_BYTES,
+        recordKeys: [...new Set([...Object.keys(record), ...Object.keys(errored)])].sort(),
+        extraction: { properties: record.properties, tags: record.tags, links: record.links, embeds: record.embeds },
+      }
+      expect(actual, BUMP_MSG).toEqual(FINGERPRINT)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('index cache: init-time GC (GRO-2230)', () => {
+  let dir: string
+  beforeAll(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'mdapp-index-cache-gc-'))
+  })
+  afterAll(async () => {
+    _resetIndexCache()
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('re-init deletes files older than the TTL (tmp leftovers included); a swept root is a plain miss; fresh files survive', async () => {
+    _resetIndexCache()
+    initIndexCache(dir)
+    await _gcDone()
+    // A real stale cache: persist a root, then backdate its file and a fake crashed-write leftover.
+    schedulePersist('/gc/stale', asMap(record('/gc/stale/a.md')))
+    await flushIndexCache()
+    const staleFile = await cacheFileIn(dir)
+    const tmpLeftover = `${staleFile}.tmp-deadbeef`
+    await writeFile(tmpLeftover, 'half a write')
+    const old = new Date(Date.now() - 91 * 24 * 60 * 60 * 1000)
+    await utimes(staleFile, old, old)
+    await utimes(tmpLeftover, old, old)
+    // A fresh cache that must survive the sweep.
+    schedulePersist('/gc/fresh', asMap(record('/gc/fresh/a.md')))
+    await flushIndexCache()
+    expect((await readdir(dir)).length).toBe(3)
+    initIndexCache(dir) // relaunch: the init sweep runs again
+    await _gcDone()
+    expect((await readdir(dir)).filter((f) => f.endsWith('.json'))).toHaveLength(1)
+    expect((await readdir(dir)).some((f) => f.includes('.tmp-'))).toBe(false)
+    expect((await loadIndexCache('/gc/stale')).status).toBe('miss') // self-healing: just one full rescan
+    expect((await loadIndexCache('/gc/fresh')).status).toBe('hit')
+  })
+
+  it('a cache dir that does not exist yet (first launch) makes the sweep a silent no-op', async () => {
+    _resetIndexCache()
+    initIndexCache(path.join(dir, 'never-created'))
+    await expect(_gcDone()).resolves.toBeUndefined()
   })
 })

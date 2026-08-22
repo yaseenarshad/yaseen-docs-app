@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { makeBasesFixture } from '../fs/basesFixture'
@@ -118,5 +118,124 @@ describe('getIndex + persistent cache (GRO-2228/2229)', () => {
     expect(getColdStartDiff(root)).toBeUndefined()
     await flushIndexCache()
     expect((await loadIndexCache(root)).status).toBe('hit')
+  })
+})
+
+describe('stale-cache torture (GRO-2230): heavy offline mutation, cache-assisted == from-scratch', () => {
+  let root: string
+  let cleanup: () => Promise<void>
+  let cacheDir: string
+  beforeAll(async () => {
+    ;({ root, cleanup } = await makeBasesFixture())
+    cacheDir = await mkdtemp(path.join(tmpdir(), 'mdapp-index-cache-torture-'))
+    initIndexCache(cacheDir)
+  })
+  afterAll(async () => {
+    _evictAll()
+    _resetIndexCache()
+    await cleanup()
+    await rm(cacheDir, { recursive: true, force: true })
+  })
+
+  it('adds/edits/deletes/renames + an rsync-style same-mtime write: the assisted result deep-equals a no-cache full scan', async () => {
+    const T0 = 1_700_000_000_000
+    const pillars = path.join(root, 'Content Pillars')
+    const agentic = path.join(pillars, '1. Agentic Agency')
+    const creator = path.join(pillars, '2. Creator Economy')
+    const pinned = path.join(pillars, 'List of Topics.md') // the same-mtime-different-size victim
+    const levels = path.join(agentic, 'The Levels of an Agency.md') // the same-size-different-mtime victim
+    const vsl = path.join(root, 'VSL-v1.md')
+    const agenticOld = path.join(agentic, 'Agentic Agency.md')
+    const agenticNew = path.join(agentic, 'Agentic Agency v2.md')
+    const creatorOld = path.join(creator, 'Creator Economy.md')
+    const creatorNew = path.join(root, 'Creator Economy Moved.md') // cross-directory rename
+    const gold = path.join(creator, 'The Gold In Your Archive.md')
+    const born = path.join(root, 'Born Offline.md')
+    const fresh = path.join(pillars, '5. New Pillar', 'Fresh.md')
+    await utimes(pinned, new Date(T0), new Date(T0)) // whole-ms mtime so the restore below round-trips exactly
+
+    // Cold build writes the cache, then evict: from here the vault mutates with nothing watching.
+    await getIndex(root)
+    _evictAll()
+    await flushIndexCache()
+    const cached = (await loadIndexCache(root)).records!
+    expect(cached.get(pinned)!.mtime).toBe(T0)
+
+    await writeFile(vsl, '---\nstatus: archived\ntags: [torture]\n---\n\nRewritten offline, much longer than it ever was before.\n')
+    await rm(gold)
+    await rename(agenticOld, agenticNew)
+    await rename(creatorOld, creatorNew)
+    await writeFile(born, '# New\n#offline [[VSL-v1]]\n')
+    await mkdir(path.join(pillars, '5. New Pillar'))
+    await writeFile(fresh, '---\npillar: New\n---\n\nFresh note in a folder born offline.\n')
+    // Same size, new content (mtime is the only tell):
+    const levelsBase = '# Levels rewritten offline\n\n#same-size\n'
+    await writeFile(levels, levelsBase + '.'.repeat(cached.get(levels)!.size - levelsBase.length))
+    expect((await stat(levels)).size).toBe(cached.get(levels)!.size)
+    // Same mtime, new content (size is the only tell — the rsync/mtime-restore case):
+    await writeFile(pinned, 'Pillars #pillars\n\n* [[Agentic Agency v2]]\n* [[Creator Economy Moved]]\n* [[Born Offline]]\n')
+    await utimes(pinned, new Date(T0), new Date(T0))
+    expect((await stat(pinned)).mtimeMs).toBe(T0)
+    expect((await stat(pinned)).size).not.toBe(cached.get(pinned)!.size)
+
+    // Cache-assisted rebuild: a warm hit that must nonetheless see every mutation.
+    vi.mocked(scanFile).mockClear()
+    const assisted = await getIndex(root)
+    const diff = getColdStartDiff(root)!
+    expect(diff.cacheStatus).toBe('hit')
+    expect(diff.changed).toEqual([levels, pinned, vsl].sort())
+    expect(diff.added.map((a) => a.path)).toEqual([agenticNew, creatorNew, born, fresh].sort())
+    expect(diff.removed.map((r) => r.path)).toEqual([agenticOld, creatorOld, gold].sort())
+    // The GRO-2242 rename signal: the moved file's on-disk (size, mtime) matches the cached stats of the file that vanished.
+    const rem = diff.removed.find((r) => r.path === agenticOld)!
+    const add = diff.added.find((a) => a.path === agenticNew)!
+    expect([add.size, add.mtime]).toEqual([rem.size, rem.mtime])
+    // Only the mutated files were rescanned; the untouched ones rode the cache.
+    expect(vi.mocked(scanFile).mock.calls.map((c) => c[1]).sort()).toEqual([levels, pinned, vsl, agenticNew, creatorNew, born, fresh].sort())
+
+    // The truth: a from-scratch scan with the cache disabled entirely.
+    _evictAll()
+    _resetIndexCache() // cacheDir gone → loadIndexCache is a guaranteed miss → plain scanAll
+    const scratch = await getIndex(root)
+    expect(getColdStartDiff(root)!.cacheStatus).toBe('miss')
+    expect(assisted.records).toHaveLength(9) // 8 originals − 1 deleted − 2 rename sources + 2 rename targets + 2 adds
+    expect(assisted.records).toEqual(scratch.records)
+  })
+})
+
+describe('types.json is never cached (GRO-2230)', () => {
+  let root: string
+  let cleanup: () => Promise<void>
+  let cacheDir: string
+  beforeAll(async () => {
+    ;({ root, cleanup } = await makeBasesFixture())
+    cacheDir = await mkdtemp(path.join(tmpdir(), 'mdapp-index-cache-types-'))
+    initIndexCache(cacheDir)
+  })
+  afterAll(async () => {
+    _evictAll()
+    _resetIndexCache()
+    await cleanup()
+    await rm(cacheDir, { recursive: true, force: true })
+  })
+
+  it('a types.json change lands on the next getIndex under a full warm hit — no invalidation, nothing was cached', async () => {
+    const first = await getIndex(root)
+    expect(first.types).toEqual({ date: 'date', published: 'checkbox' })
+    _evictAll()
+    await flushIndexCache()
+    // The persisted payload is version/root/records and nothing else — types never enter it.
+    const files = (await readdir(cacheDir)).filter((f) => f.endsWith('.json'))
+    expect(files).toHaveLength(1)
+    const payload: unknown = JSON.parse(await readFile(path.join(cacheDir, files[0]), 'utf8'))
+    expect(Object.keys(payload as object).sort()).toEqual(['records', 'root', 'version'])
+
+    await writeFile(path.join(root, '.obsidian', 'types.json'), '{"types":{"date":"date","published":"checkbox","views":"number"}}')
+    vi.mocked(scanFile).mockClear()
+    const warm = await getIndex(root)
+    expect(scanFile).not.toHaveBeenCalled() // every record reused: a full warm hit…
+    expect(getColdStartDiff(root)).toMatchObject({ cacheStatus: 'hit', added: [], removed: [], changed: [] }) // …with zero invalidation…
+    expect(warm.types).toEqual({ date: 'date', published: 'checkbox', views: 'number' }) // …and the fresh types anyway
+    expect(warm.records).toEqual(first.records)
   })
 })

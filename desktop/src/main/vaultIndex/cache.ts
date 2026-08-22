@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import type { IndexRecord } from '@shared/types'
 import { atomicWrite } from '../fs/fsUtils'
@@ -16,9 +16,24 @@ import { atomicWrite } from '../fs/fsUtils'
  * its path + mtime + size match a fresh stat (D2), so a stale cache cannot produce wrong data.
  */
 
-const CACHE_VERSION = 1
+/**
+ * RULE (GRO-2230): any change to `IndexRecord`'s shape or to the scanner's extraction semantics
+ * MUST bump this constant — an old snapshot must never be read as if it had the new semantics.
+ * Discard IS the migration: a version mismatch degrades to one full rescan, never a converter.
+ * The fingerprint pin in `cache.test.ts` fails on such changes until the bump lands here.
+ */
+export const CACHE_VERSION = 1
 /** Trailing debounce per root; bursts (a big paste, a sync tool landing) coalesce into one write. */
 const PERSIST_DEBOUNCE_MS = 5000
+/**
+ * GC (GRO-2230): cache files for vaults never reopened would otherwise accumulate forever, so
+ * `initIndexCache` sweeps the dir once — ANY file (cache JSONs and crashed `.tmp-` leftovers
+ * alike) whose mtime is older than this is deleted. Generous on purpose: every vault open
+ * refreshes its file's mtime (build success schedules a persist), so only truly abandoned entries
+ * age out, and a wrongly deleted cache is self-healing — it costs exactly one full rescan.
+ * Deliberately minimal: no size caps, no LRU, no registry.
+ */
+const GC_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000
 
 export type IndexCacheStatus = 'hit' | 'miss' | 'corrupt' | 'version-mismatch'
 
@@ -35,9 +50,37 @@ const pending = new Map<string, { timer: NodeJS.Timeout; records: Map<string, In
 /** Per-root write chains so two atomic writes for one root can never land out of order. */
 const chains = new Map<string, Promise<void>>()
 
-/** Remembers the cache dir (created lazily on first write). Call once at startup, before any persist. */
+/** In-flight init GC sweep; `_gcDone()` exposes it to tests. */
+let gcSweep: Promise<void> = Promise.resolve()
+
+/**
+ * Remembers the cache dir (created lazily on first write) and kicks the GC sweep (fire-and-forget;
+ * see GC_MAX_AGE_MS). Call once at startup, before any persist.
+ */
 export function initIndexCache(dir: string): void {
   cacheDir = dir
+  gcSweep = gc(dir)
+}
+
+/** Deletes every cache-dir file older than GC_MAX_AGE_MS. Never throws: a missing dir is a fresh install, a per-file race is a no-op. */
+async function gc(dir: string): Promise<void> {
+  let names: string[]
+  try {
+    names = await readdir(dir)
+  } catch {
+    return
+  }
+  const cutoff = Date.now() - GC_MAX_AGE_MS
+  await Promise.all(
+    names.map(async (name) => {
+      const file = path.join(dir, name)
+      try {
+        if ((await stat(file)).mtimeMs < cutoff) await unlink(file)
+      } catch {
+        // stat/unlink raced or failed — a leftover file is exactly what the next sweep is for
+      }
+    }),
+  )
 }
 
 function cacheFile(dir: string, root: string): string {
@@ -79,6 +122,12 @@ function isCachedRecord(v: unknown): v is IndexRecord {
  * `miss` (no dir/file, or the file holds another root's payload — a hash-prefix collision or a
  * copied cache dir is simply not this vault's cache), `corrupt` (unparsable / wrong shape /
  * a malformed record), `version-mismatch` (a numeric `version` ≠ CACHE_VERSION).
+ *
+ * Forensics (GRO-2230, deliberate contrast with `store.ts`, which moves a corrupt state file
+ * aside as `.corrupt-<epoch>` before defaulting): a corrupt cache file is ignored IN PLACE and
+ * simply overwritten by the next persist. The cache is derived data — the vault it was scanned
+ * from is the source of truth — so a corrupt copy holds nothing worth preserving, and moving it
+ * aside would only accumulate junk files the GC would then have to know about.
  */
 export async function loadIndexCache(root: string): Promise<IndexCacheLoad> {
   if (cacheDir === null) return { records: null, status: 'miss' }
@@ -167,6 +216,12 @@ export function _resetIndexCache(): void {
   pending.clear()
   chains.clear()
   cacheDir = null
+  gcSweep = Promise.resolve()
+}
+
+/** Test hook: resolves when the `initIndexCache` GC sweep has finished. */
+export function _gcDone(): Promise<void> {
+  return gcSweep
 }
 
 /** Test hook: the per-root persist debounce (omit to restore the 5 s default). */
