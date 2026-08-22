@@ -240,4 +240,27 @@ describe('New type… (Round 9 Q2/Q3)', () => {
     expect(bridge.registry.setType).not.toHaveBeenCalled()
     expect(bridge.createFile).not.toHaveBeenCalled()
   })
+
+  it('a failing registry write (e.g. INVALID_CONFIG) surfaces in the dialog, which stays open with Create re-enabled', async () => {
+    const { bridge, el } = await mount(KPI_TYPES)
+    bridge.registry.setType.mockRejectedValue({ code: 'INVALID_CONFIG', message: 'types.json is unreadable and will not be overwritten' })
+    await createFunnelStage(el)
+
+    expect(dialog(el)).not.toBeNull()
+    expect(el.querySelector('.type-dialog [role="alert"]')?.textContent).toContain('unreadable')
+    expect(dialogButton(el, 'Create').disabled).toBe(false)
+    expect(bridge.createFile).not.toHaveBeenCalled()
+  })
+
+  it('Enter in a dialog field submits (CreateInline parity)', async () => {
+    const { bridge, el } = await mount(KPI_TYPES)
+    openBlankMenu(el)
+    await click(itemByLabel(el, 'New'))
+    await click(itemByLabel(el, 'New type…'))
+    setValue(dialogInput(el, 'Type name'), 'role')
+    await act(async () => void dialogInput(el, 'Type name').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+
+    expect(bridge.registry.setType).toHaveBeenCalledWith('/v', 'role', { displayName: 'Role', pluralName: 'Roles', properties: {} })
+    expect(dialog(el)).toBeNull()
+  })
 })

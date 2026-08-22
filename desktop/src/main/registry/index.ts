@@ -1,5 +1,5 @@
 import type { RegistryPropertyDef, RegistryPropertyKind, RegistryResponse, RegistryScope, RegistryTypeDef } from '@shared/types'
-import { REGISTRY_PROPERTY_KINDS } from '@shared/types'
+import { REGISTRY_PROPERTY_KINDS, REGISTRY_PROPERTY_NAME, REGISTRY_TYPE_NAME } from '@shared/types'
 import { BridgeFailure, requireAbsPath, requireDir } from '../fs/fsUtils'
 import { readConfigDetailed, subscribeConfig, writeConfig } from '../vaultConfig'
 
@@ -23,23 +23,20 @@ import { readConfigDetailed, subscribeConfig, writeConfig } from '../vaultConfig
 
 export const REGISTRY_FILE = 'types.json'
 
-const TYPE_NAME = /^[a-z][a-z0-9-]*$/
-const PROPERTY_NAME = /^[a-z][a-z0-9_]*$/
-
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 // ---------- input validation (strict at the IPC boundary: a write is config, not content) ----------
 
 function requireTypeName(name: unknown): string {
-  if (typeof name !== 'string' || !TYPE_NAME.test(name)) {
-    throw new BridgeFailure('BAD_REQUEST', `type names are kebab-case (${String(TYPE_NAME)})`, { path: String(name) })
+  if (typeof name !== 'string' || !REGISTRY_TYPE_NAME.test(name)) {
+    throw new BridgeFailure('BAD_REQUEST', `type names are kebab-case (${String(REGISTRY_TYPE_NAME)})`, { path: String(name) })
   }
   return name
 }
 
 function requirePropertyName(name: unknown): string {
-  if (typeof name !== 'string' || !PROPERTY_NAME.test(name)) {
-    throw new BridgeFailure('BAD_REQUEST', `property names are snake_case (${String(PROPERTY_NAME)})`, { path: String(name) })
+  if (typeof name !== 'string' || !REGISTRY_PROPERTY_NAME.test(name)) {
+    throw new BridgeFailure('BAD_REQUEST', `property names are snake_case (${String(REGISTRY_PROPERTY_NAME)})`, { path: String(name) })
   }
   if (name === 'page_type') {
     throw new BridgeFailure('BAD_REQUEST', "'page_type' is the identity property and is never a declared one")

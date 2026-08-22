@@ -8,14 +8,18 @@ vi.mock('electron', () => ({
   ipcRenderer: { invoke: vi.fn(), on: vi.fn(), send: vi.fn(), removeListener: vi.fn() },
 }))
 
-/** Compile-time exhaustive: adding a method to the contract without listing it here fails typecheck. */
-const TOP: readonly (keyof YaseenDocsApi)[] = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'readAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'vaultConfig', 'registry']
-const STATE: readonly (keyof StateApi)[] = ['get', 'setSettings', 'setSidebarCollapsed', 'pushRecent', 'removeRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange']
-const WINDOW: readonly (keyof WindowApi)[] = ['identity', 'setIdentity', 'open', 'duplicate', 'onFlush']
-const MENU: readonly (keyof MenuApi)[] = ['onOpenFolder', 'onOpenRoot']
-const LINK: readonly (keyof LinkApi)[] = ['onOpenFile', 'onNotice']
-const VAULT_CONFIG: readonly (keyof VaultConfigApi)[] = ['read', 'write', 'onChange']
-const REGISTRY: readonly (keyof RegistryApi)[] = ['get', 'setType', 'removeType', 'setProperty', 'removeProperty', 'onChange']
+/**
+ * Compile-time exhaustive: adding a method to the contract without listing it here fails
+ * typecheck. `as const satisfies` keeps each tuple's literal type (a plain `readonly (keyof T)[]`
+ * annotation would widen it and make `Exhaustive<>` vacuous) while still rejecting typos.
+ */
+const TOP = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'readAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'vaultConfig', 'registry'] as const satisfies readonly (keyof YaseenDocsApi)[]
+const STATE = ['get', 'setSettings', 'setSidebarCollapsed', 'pushRecent', 'removeRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange'] as const satisfies readonly (keyof StateApi)[]
+const WINDOW = ['identity', 'setIdentity', 'open', 'duplicate', 'onFlush'] as const satisfies readonly (keyof WindowApi)[]
+const MENU = ['onOpenFolder', 'onOpenRoot'] as const satisfies readonly (keyof MenuApi)[]
+const LINK = ['onOpenFile', 'onNotice'] as const satisfies readonly (keyof LinkApi)[]
+const VAULT_CONFIG = ['read', 'write', 'onChange'] as const satisfies readonly (keyof VaultConfigApi)[]
+const REGISTRY = ['get', 'setType', 'removeType', 'setProperty', 'removeProperty', 'onChange'] as const satisfies readonly (keyof RegistryApi)[]
 type Exhaustive<T, K extends readonly (keyof T)[]> = Exclude<keyof T, K[number]> extends never ? true : never
 const _top: Exhaustive<YaseenDocsApi, typeof TOP> = true
 const _state: Exhaustive<StateApi, typeof STATE> = true

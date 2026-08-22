@@ -113,6 +113,14 @@ describe('applyTemplate', () => {
     })
   })
 
+  it('a template whose frontmatter is not valid YAML contributes body only — the scaffold survives (report-never-block)', () => {
+    const template = '---\nkpi_category: [unclosed\n---\nBody survives.\n'
+    expect(applyTemplate('kpi', KPI, template)).toEqual({
+      properties: { page_type: 'kpi', funnel_stages: [], kpi_category: null, unit: null },
+      body: 'Body survives.\n',
+    })
+  })
+
   it('a template with no frontmatter contributes body only', () => {
     expect(applyTemplate('industry', { properties: {} }, 'Just prose.\n')).toEqual({
       properties: { page_type: 'industry' },

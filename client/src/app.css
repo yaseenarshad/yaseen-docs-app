@@ -663,13 +663,19 @@ button {
 .ctx-submenu {
   position: absolute;
   left: 100%;
-  top: -5px;
+  top: -5px; /* SUB_TOP in ContextMenu.tsx */
   min-width: 150px;
   padding: 4px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Near the right viewport edge the submenu flips to the menu's left (GRO-2204). */
+.ctx-submenu--left {
+  left: auto;
+  right: 100%;
 }
 
 .type-dialog__overlay {

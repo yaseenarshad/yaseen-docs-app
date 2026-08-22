@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { REGISTRY_PROPERTY_KINDS, type RegistryPropertyDef, type RegistryPropertyKind } from '@shared/types'
+import { REGISTRY_PROPERTY_KINDS, REGISTRY_PROPERTY_NAME, REGISTRY_TYPE_NAME, type RegistryPropertyDef, type RegistryPropertyKind } from '@shared/types'
 import { createType } from '../bases/scaffold'
 import { validateEntryName } from './createEntry'
 
@@ -7,11 +7,9 @@ import { validateEntryName } from './createEntry'
  * "New type…" (Bible B, GRO-2202): the deliberate database-feel moment — name the type, pick
  * its properties (name + kind + optional link target), and one Create lands the registry entry
  * AND the starter `All <plural>.base` at the vault root (Round 9 record; Q3: NO template stub).
- * The grammars mirror the registry boundary (R2.2), which enforces them again.
+ * The shared grammars are checked here for friendly messages; the registry boundary (R2.2)
+ * enforces them again.
  */
-
-const TYPE_NAME = /^[a-z][a-z0-9-]*$/
-const PROPERTY_NAME = /^[a-z][a-z0-9_]*$/
 
 /** 'funnel-stage' → 'Funnel Stage'; the dialog derives display names until overridden. */
 export function deriveDisplayName(name: string): string {
@@ -60,7 +58,7 @@ export function NewTypeDialog({ root, onClose, onCreated }: NewTypeDialogProps) 
   const submit = async () => {
     if (busy) return
     const typeName = name.trim()
-    if (!TYPE_NAME.test(typeName)) {
+    if (!REGISTRY_TYPE_NAME.test(typeName)) {
       setError('Type names are kebab-case: lowercase letters, digits and "-" (e.g. funnel-stage)')
       return
     }
@@ -68,7 +66,7 @@ export function NewTypeDialog({ root, onClose, onCreated }: NewTypeDialogProps) 
     for (const row of rows) {
       const propName = row.name.trim()
       if (propName === '') continue // an untouched row is just skipped
-      if (!PROPERTY_NAME.test(propName) || propName === 'page_type') {
+      if (!REGISTRY_PROPERTY_NAME.test(propName) || propName === 'page_type') {
         setError(`"${propName}" is not a valid property name (snake_case; page_type is the identity and never declared)`)
         return
       }
@@ -96,7 +94,19 @@ export function NewTypeDialog({ root, onClose, onCreated }: NewTypeDialogProps) 
 
   return (
     <div className="type-dialog__overlay" onMouseDown={onClose}>
-      <div className="type-dialog" role="dialog" aria-label="New type" onMouseDown={(e) => e.stopPropagation()}>
+      <div
+        className="type-dialog"
+        role="dialog"
+        aria-label="New type"
+        onMouseDown={(e) => e.stopPropagation()}
+        // Enter in any text field submits (CreateInline parity); buttons and selects keep their native Enter.
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+            e.preventDefault()
+            void submit()
+          }
+        }}
+      >
         <p className="type-dialog__title">New type</p>
         <label className="type-dialog__label" htmlFor="type-dialog-name">
           Type name

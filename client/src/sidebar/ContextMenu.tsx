@@ -1,5 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { fileLink } from '@shared/links'
+
+/** The submenu's CSS `top: -5px`, needed to compute its viewport overflow. */
+const SUB_TOP = -5
 
 interface ContextMenuProps {
   x: number
@@ -38,6 +41,32 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  // Viewport clamping (GRO-2204): render at the cursor, then measure and pull the menu back
+  // inside the window; the submenu flips left / slides up instead of spilling off an edge.
+  const menuRef = useRef<HTMLDivElement>(null)
+  const groupRef = useRef<HTMLDivElement>(null)
+  const subRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState({ left: x, top: y })
+  const [sub, setSub] = useState({ flip: false, up: 0 })
+
+  useLayoutEffect(() => {
+    const el = menuRef.current
+    if (el === null) return
+    const r = el.getBoundingClientRect()
+    setPos({ left: Math.max(0, Math.min(x, window.innerWidth - r.width)), top: Math.max(0, Math.min(y, window.innerHeight - r.height)) })
+  }, [x, y])
+
+  useLayoutEffect(() => {
+    if (!subOpen) return
+    const group = groupRef.current
+    const el = subRef.current
+    if (group === null || el === null) return
+    const g = group.getBoundingClientRect()
+    const s = el.getBoundingClientRect()
+    const overflow = g.top + SUB_TOP + s.height - window.innerHeight
+    setSub({ flip: g.right + s.width > window.innerWidth, up: Math.max(0, Math.min(overflow, g.top + SUB_TOP)) })
+  }, [subOpen, pos])
+
   return (
     <div
       className="ctx-overlay"
@@ -47,7 +76,7 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
         onClose()
       }}
     >
-      <div className="ctx-menu" style={{ left: x, top: y }} onMouseDown={(e) => e.stopPropagation()} role="menu">
+      <div ref={menuRef} className="ctx-menu" style={{ left: pos.left, top: pos.top }} onMouseDown={(e) => e.stopPropagation()} role="menu">
         {newWindowPath !== null && (
           <button
             type="button"
@@ -88,7 +117,7 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
           </button>
         )}
         {newTypes.length > 0 && (
-          <div className="ctx-menu__group" onMouseEnter={() => setSubOpen(true)} onMouseLeave={() => setSubOpen(false)}>
+          <div ref={groupRef} className="ctx-menu__group" onMouseEnter={() => setSubOpen(true)} onMouseLeave={() => setSubOpen(false)}>
             <button
               type="button"
               className="ctx-menu__item ctx-menu__item--sub"
@@ -103,7 +132,7 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
               </span>
             </button>
             {subOpen && (
-              <div className="ctx-submenu" role="menu">
+              <div ref={subRef} className={`ctx-submenu${sub.flip ? ' ctx-submenu--left' : ''}`} style={sub.up > 0 ? { top: SUB_TOP - sub.up } : undefined} role="menu">
                 {newTypes.map((t) => (
                   <button key={t.name} type="button" className="ctx-menu__item" role="menuitem" onClick={() => onNewTyped(t.name)}>
                     New {t.label}

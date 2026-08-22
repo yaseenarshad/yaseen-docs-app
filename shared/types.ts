@@ -337,6 +337,14 @@ export interface VaultConfigApi {
 export const REGISTRY_PROPERTY_KINDS = ['text', 'number', 'date', 'checkbox', 'list', 'link', 'multi-link'] as const
 export type RegistryPropertyKind = (typeof REGISTRY_PROPERTY_KINDS)[number]
 
+/**
+ * Name grammars (GRO-2200 R4): types kebab-case, properties snake_case. Enforced at the
+ * registry write boundary (`desktop/src/main/registry/`) and mirrored client-side
+ * (`NewTypeDialog`) — one definition so the two can never drift.
+ */
+export const REGISTRY_TYPE_NAME = /^[a-z][a-z0-9-]*$/
+export const REGISTRY_PROPERTY_NAME = /^[a-z][a-z0-9_]*$/
+
 export interface RegistryPropertyDef {
   kind: RegistryPropertyKind
   /** link/multi-link only: constrain the picker to pages whose page_type equals this type name. */

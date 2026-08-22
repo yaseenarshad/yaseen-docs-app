@@ -6,14 +6,15 @@ import type { RegistryApi, RegistryResponse } from '@shared/types'
  * stub stays as the tests' stand-in for `window.yaseenDocs.registry` (same interface, same
  * semantics): `get` on an untouched root resolves `{ types: {}, properties: {} }` — empty,
  * never an error, and never creates state (lazy-creation is the bridge's rule too); the first
- * mutation creates the per-root store (a `{type}` scope creates the type entry on demand),
- * bumps `version` and fires every `onChange` listener with a fresh snapshot.
+ * mutation creates the per-root store (a `{type}` scope creates the type entry on demand) and
+ * fires every `onChange` listener with a fresh snapshot. `version` is the constant 1, exactly
+ * like the real bridge (the types.json format version, never a mutation counter — GRO-2204).
  */
 
 const stores = new Map<string, RegistryResponse>()
 const listeners = new Set<(registry: RegistryResponse) => void>()
 
-const empty = (root: string): RegistryResponse => ({ root, version: 0, types: {}, properties: {} })
+const empty = (root: string): RegistryResponse => ({ root, version: 1, types: {}, properties: {} })
 
 function store(root: string): RegistryResponse {
   let s = stores.get(root)
@@ -25,7 +26,6 @@ function store(root: string): RegistryResponse {
 }
 
 function changed(s: RegistryResponse): void {
-  s.version++
   const snapshot = structuredClone(s)
   for (const listener of listeners) listener(snapshot)
 }
