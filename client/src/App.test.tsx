@@ -125,7 +125,7 @@ afterEach(() => {
 
 describe('App on a null root (C2, GRO-2164)', () => {
   it('boots to the Welcome screen with the recents and never auto-opens the folder dialog', async () => {
-    const { bridge, el } = await mount({ ...defaultAppState(), recents: [recent('/vaults/notes')] }, { id: 'w1', root: null, file: null })
+    const { bridge, el } = await mount({ ...defaultAppState(), recents: [recent('/vaults/notes')] }, { id: 'w1', root: null, file: null, tabs: [] })
     expect(el.querySelector('.welcome__title')?.textContent).toBe('Yaseen Docs')
     expect([...el.querySelectorAll('.welcome__recent-path')].map((s) => s.textContent)).toEqual(['/vaults/notes'])
     expect(bridge.pickFolder).not.toHaveBeenCalled()
@@ -135,7 +135,7 @@ describe('App on a null root (C2, GRO-2164)', () => {
 
   it('clicking a live recent opens that folder in place, on its remembered last file', async () => {
     const state = withFolder({ ...defaultAppState(), recents: [recent('/vaults/notes')] }, '/vaults/notes', '/vaults/notes/a.md')
-    const { bridge, el } = await mount(state, { id: 'w1', root: null, file: null })
+    const { bridge, el } = await mount(state, { id: 'w1', root: null, file: null, tabs: [] })
     await act(async () => el.querySelector<HTMLButtonElement>('.welcome__recent')?.click())
     expect(el.querySelector('.welcome')).toBeNull()
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/vaults/notes')
@@ -145,7 +145,7 @@ describe('App on a null root (C2, GRO-2164)', () => {
   })
 
   it('clicking a dead recent marks the row, drops the MRU entry and does not switch the window', async () => {
-    const { bridge, el } = await mount({ ...defaultAppState(), recents: [recent('/vaults/gone')] }, { id: 'w1', root: null, file: null })
+    const { bridge, el } = await mount({ ...defaultAppState(), recents: [recent('/vaults/gone')] }, { id: 'w1', root: null, file: null, tabs: [] })
     bridge.tree.mockRejectedValue({ code: 'NOT_FOUND', message: 'path does not exist' })
     await act(async () => el.querySelector<HTMLButtonElement>('.welcome__recent')?.click())
     expect(bridge.state.removeRecent).toHaveBeenCalledWith('/vaults/gone')
@@ -159,7 +159,7 @@ describe('App on a null root (C2, GRO-2164)', () => {
 describe('App openRoot (C3, GRO-2165)', () => {
   it('File › Open Recent switches the window in place: sidebar re-keyed, file ← the folder\'s lastFile, hash synced, entry updated', async () => {
     const state = withFolder(defaultAppState(), '/w', '/w/b.md')
-    const { bridge, el, emitOpenRoot } = await mount(state, { id: 'w1', root: '/v', file: null })
+    const { bridge, el, emitOpenRoot } = await mount(state, { id: 'w1', root: '/v', file: null, tabs: [] })
     await act(async () => emitOpenRoot('/w'))
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/w')
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('/w/b.md')
@@ -170,7 +170,7 @@ describe('App openRoot (C3, GRO-2165)', () => {
   })
 
   it('switching to a folder with no remembered last file leaves no file open', async () => {
-    const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null })
+    const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     await act(async () => emitOpenRoot('/w'))
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('')
     expect(location.hash).toBe('')
@@ -178,7 +178,7 @@ describe('App openRoot (C3, GRO-2165)', () => {
   })
 
   it('a dead recent chosen from the menu drops the MRU entry and leaves the window on its folder', async () => {
-    const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null })
+    const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     bridge.tree.mockRejectedValue({ code: 'NOT_FOUND', message: 'path does not exist' })
     await act(async () => emitOpenRoot('/gone'))
     expect(bridge.state.removeRecent).toHaveBeenCalledWith('/gone')
@@ -190,7 +190,7 @@ describe('App openRoot (C3, GRO-2165)', () => {
 describe('App boot on a window entry with a file (D2, GRO-2168)', () => {
   it('the entry file wins over the folder lastFile: a ⌘-click window opens on the clicked file', async () => {
     const state = withFolder(defaultAppState(), '/v', '/v/last.md')
-    const { el } = await mount(state, { id: 'w2', root: '/v', file: '/v/picked.md' })
+    const { el } = await mount(state, { id: 'w2', root: '/v', file: '/v/picked.md', tabs: ['/v/picked.md'] })
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('/v/picked.md')
   })
 })
@@ -198,7 +198,7 @@ describe('App boot on a window entry with a file (D2, GRO-2168)', () => {
 describe('App window title (C3, GRO-2165)', () => {
   it('is "<file> — <folder>" with a file open, the folder alone without one, the app name on Welcome', async () => {
     const state = withFolder(defaultAppState(), '/vaults/w', '/vaults/w/Note.md')
-    const { emitOpenRoot } = await mount(state, { id: 'w1', root: null, file: null })
+    const { emitOpenRoot } = await mount(state, { id: 'w1', root: null, file: null, tabs: [] })
     expect(document.title).toBe('Yaseen Docs')
     await act(async () => emitOpenRoot('/vaults/w'))
     expect(document.title).toBe('Note — w')
@@ -209,7 +209,7 @@ describe('App window title (C3, GRO-2165)', () => {
 
 describe('App deep links (E1, GRO-2171)', () => {
   it('link:open-file selects the file through the same path as a sidebar click: editor, hash, identity', async () => {
-    const { bridge, el, emitLinkOpenFile } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null })
+    const { bridge, el, emitLinkOpenFile } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     await act(async () => emitLinkOpenFile('/v/sub/linked.md'))
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('/v/sub/linked.md')
     expect(location.hash).toBe('#/v/sub/linked.md')
@@ -218,7 +218,7 @@ describe('App deep links (E1, GRO-2171)', () => {
   })
 
   it('link:notice shows the transient banner, which dismisses itself after LINK_NOTICE_MS', async () => {
-    const { el, emitLinkNotice } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null })
+    const { el, emitLinkNotice } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     vi.useFakeTimers()
     try {
       act(() => emitLinkNotice("Can't open /v/a.txt: not a markdown file"))
@@ -233,14 +233,14 @@ describe('App deep links (E1, GRO-2171)', () => {
 
 describe('App appearance (Desktop K, GRO-2218)', () => {
   it('defaults to System, which reads as light here (jsdom has no matchMedia): data-theme + light Crepe vars on <html>/head', async () => {
-    await mount(defaultAppState(), { id: 'w1', root: '/v', file: null })
+    await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     expect(document.documentElement.dataset.theme).toBe('light')
     expect(document.getElementById(CREPE_THEME_STYLE_ID)?.textContent).toBe(frameLight)
   })
 
   it('a stored Dark setting themes the very first render: data-theme="dark" and the dark Crepe frame vars', async () => {
     const state: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, theme: 'dark' } }
-    await mount(state, { id: 'w1', root: '/v', file: null })
+    await mount(state, { id: 'w1', root: '/v', file: null, tabs: [] })
     expect(document.documentElement.dataset.theme).toBe('dark')
     expect(document.getElementById(CREPE_THEME_STYLE_ID)?.textContent).toBe(frameDark)
   })
@@ -248,7 +248,7 @@ describe('App appearance (Desktop K, GRO-2218)', () => {
 
 describe('App root-missing (C2, GRO-2164)', () => {
   it('the open folder vanishing on disk drops the window to the Welcome screen', async () => {
-    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null })
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')
     expect(el.querySelector('.welcome')).toBeNull()
     act(() => captured.sidebar?.onRootMissing())

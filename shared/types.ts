@@ -248,11 +248,22 @@ export interface WindowBounds {
   height: number
 }
 
-/** One open window; restored on relaunch (GRO-2160). `root` null = Welcome screen. */
+/**
+ * One open window; restored on relaunch (GRO-2160). `root` null = Welcome screen.
+ *
+ * Tabs (GRO-2232): `tabs` is every open file as absolute paths, de-duplicated, ordered
+ * left→right; `file` doubles as the ACTIVE tab — there is no separate activeTab field.
+ * Invariants: `file ∈ tabs` whenever `file` is non-null, and `tabs: []` ⇔ `file: null`
+ * (the no-tabs state). Deliberately additive within `AppState.version` 1 — bumping the
+ * version would make `sanitizeState` treat every existing store file as corrupt. An old
+ * build's field-by-field sanitizer silently drops the unknown `tabs` key and falls back
+ * to `file` (graceful downgrade); this build repairs a missing `tabs` from `file`.
+ */
 export interface WindowEntry {
   id: string
   root: string | null
   file: string | null
+  tabs: string[]
   bounds: WindowBounds
 }
 
@@ -395,6 +406,8 @@ export interface WindowIdentity {
   id: string
   root: string | null
   file: string | null
+  /** Open tabs left→right (GRO-2232); `file` is the active one (same invariants as `WindowEntry.tabs`). */
+  tabs: string[]
 }
 
 export interface OpenWindowOptions {
@@ -424,11 +437,20 @@ export interface StateApi {
 export interface WindowApi {
   /** Who am I: main answers from `AppState.windows` by the `?win=<id>` in the window's URL. */
   identity(): Promise<WindowIdentity>
-  /** Record this window's current folder/file (the window manager persists it). */
-  setIdentity(patch: Partial<Pick<WindowIdentity, 'root' | 'file'>>): Promise<void>
+  /**
+   * Record this window's current folder/file/tabs (the window manager persists it). Main
+   * re-enforces the tabs invariant against the entry as written (GRO-2232): a non-null `file`
+   * missing from `tabs` is prepended; `file: null` clears `tabs`.
+   */
+  setIdentity(patch: Partial<Pick<WindowIdentity, 'root' | 'file' | 'tabs'>>): Promise<void>
   open(opts: OpenWindowOptions): Promise<void>
   /** `⌘⇧N`: same folder, same file, new window (GRO-2167). */
   duplicate(): Promise<void>
+  /**
+   * Close THIS window through the REAL close path — main calls the managed window's `close()`,
+   * so the close/flush handshake runs; never a bare destroy (GRO-2232, e.g. closing the last tab).
+   */
+  closeSelf(): Promise<void>
   /**
    * The close/quit flush handshake (GRO-2160): main is about to close this window and holds it
    * until every registered listener settled (hard 5s cap in main). Returns an unsubscribe.
@@ -445,6 +467,12 @@ export interface MenuApi {
   onOpenFolder(listener: () => void): () => void
   /** File › Open Recent chose `path` for this window: switch the root in place. Returns an unsubscribe. */
   onOpenRoot(listener: (path: string) => void): () => void
+  /** File › Close Tab (⌘W) targeted this window: close the active tab (GRO-2232). Returns an unsubscribe. */
+  onCloseTab(listener: () => void): () => void
+  /** Window › Next Tab (⌃Tab / ⌘⇧]) targeted this window: activate the tab to the right (GRO-2232). Returns an unsubscribe. */
+  onNextTab(listener: () => void): () => void
+  /** Window › Previous Tab (⌃⇧Tab / ⌘⇧[) targeted this window: activate the tab to the left (GRO-2232). Returns an unsubscribe. */
+  onPrevTab(listener: () => void): () => void
 }
 
 /**

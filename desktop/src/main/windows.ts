@@ -57,6 +57,8 @@ export interface ManagedWindow {
   isMinimized(): boolean
   restore(): void
   focus(): void
+  /** Like Electron's: emits `close` first — the manager intercepts it to run the flush handshake. */
+  close(): void
   /** Like Electron's: destroys without emitting `close` (`closed` still fires). */
   destroy(): void
   on(event: 'move' | 'resize' | 'closed', listener: () => void): unknown
@@ -80,6 +82,12 @@ export interface WindowManager extends WindowRegistry {
   openWindow(opts: OpenWindowOptions): void
   /** D6 plumbing: same folder + file as `from`, cascaded bounds, fresh id (the ⌘⇧N gesture is GRO-2167). */
   duplicateWindow(from: WindowEntry): void
+  /**
+   * `window:close-self` (GRO-2232, e.g. ⌘W on the last tab): the REAL `close()` on the live
+   * window — the `close` interception above runs the flush handshake — NEVER a bare destroy.
+   * No live window for `id` (mid-close race) is a no-op.
+   */
+  closeWindow(id: string): void
   /** A `yaseendocs://` link resolved to `path` (E1, GRO-2171): validate, then `resolveLinkTarget` routes it. */
   routeToFile(path: string, rootOverride?: string | null): void
   /** The unobtrusive can't-open surface (E1): restore + focus a live window, send `link:notice`. Never a dialog. */
@@ -91,7 +99,7 @@ export interface WindowManager extends WindowRegistry {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'handleFlushed'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'closeWindow' | 'handleFlushed'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -272,7 +280,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   }
 
   const openWindow = (opts: OpenWindowOptions): void => {
-    open({ id: randomUUID(), root: opts.root, file: opts.file, bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
+    open({ id: randomUUID(), root: opts.root, file: opts.file, tabs: opts.file === null ? [] : [opts.file], bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
   }
 
   const focusWindow = (win: ManagedWindow): void => {
@@ -295,7 +303,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       let entries = store.get().windows
       if (entries.length === 0) {
         // First launch: one window on the Welcome screen (root null; the screen itself is C2).
-        const first: WindowEntry = { id: randomUUID(), root: null, file: null, bounds: { ...DEFAULT_BOUNDS } }
+        const first: WindowEntry = { id: randomUUID(), root: null, file: null, tabs: [], bounds: { ...DEFAULT_BOUNDS } }
         store.upsertWindow(first)
         entries = [first]
       }
@@ -312,7 +320,13 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
 
     duplicateWindow(from) {
       const cascaded = { ...from.bounds, x: from.bounds.x + WINDOW_CASCADE_PX, y: from.bounds.y + WINDOW_CASCADE_PX }
-      open({ id: randomUUID(), root: from.root, file: from.file, bounds: clampBounds(cascaded, host.workAreas()) })
+      // The copy carries the whole tab set (GRO-2232): same folder, same file, same tabs — `from` already satisfies the invariant.
+      open({ id: randomUUID(), root: from.root, file: from.file, tabs: [...from.tabs], bounds: clampBounds(cascaded, host.workAreas()) })
+    },
+
+    closeWindow(id) {
+      const win = live.get(id)
+      if (win !== undefined && !win.isDestroyed()) win.close()
     },
 
     routeToFile(path, rootOverride) {

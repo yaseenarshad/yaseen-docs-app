@@ -28,7 +28,7 @@ afterEach(async () => {
 const seed = (v: unknown) => writeFile(file, typeof v === 'string' ? v : JSON.stringify(v))
 const onDisk = async (): Promise<AppState> => JSON.parse(await readFile(file, 'utf8')) as AppState
 const bounds = { x: 1, y: 2, width: 300, height: 200 }
-const win = (id: string, extra: Partial<WindowEntry> = {}): WindowEntry => ({ id, root: null, file: null, bounds, ...extra })
+const win = (id: string, extra: Partial<WindowEntry> = {}): WindowEntry => ({ id, root: null, file: null, tabs: [], bounds, ...extra })
 /** A seed with every field valid, to vary one field at a time. */
 const valid = (over: Record<string, unknown> = {}) => ({ ...defaultAppState(), ...over })
 
@@ -60,7 +60,7 @@ describe('createStore: loading', () => {
       settings: { ...DEFAULT_SETTINGS, lineSpacing: 2, threadColor: '#00aaff' },
       sidebarCollapsed: true,
       recents: [{ path: '/v', lastOpened: 5 }],
-      windows: [win('w1', { root: '/v', file: '/v/a.md' })],
+      windows: [win('w1', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })],
       folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.base::T': ['v:idea'] } } },
     }
     await seed(state)
@@ -128,6 +128,33 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().windows).toEqual([win('ok', { root: '/v' })])
     await seed(valid({ windows: 'nope' }))
     expect(createStore(file).get().windows).toEqual([])
+  })
+
+  // Tabs (GRO-2232) are additive within version 1: an old build's sanitizer drops the unknown
+  // `tabs` key and keeps using `file` (graceful downgrade); this build repairs the other way.
+  it('tabs: a legacy entry without the key repairs from file ([file], or [] when file is null)', async () => {
+    const legacy = (id: string, file: string | null) => ({ id, root: '/v', file, bounds })
+    await seed(valid({ windows: [legacy('w1', '/v/a.md'), legacy('w2', null)] }))
+    const windows = createStore(file).get().windows
+    expect(windows[0].tabs).toEqual(['/v/a.md'])
+    expect(windows[1].tabs).toEqual([])
+  })
+
+  it('tabs: junk elements (non-strings, relative paths) drop; duplicates de-dupe keeping the first; order survives', async () => {
+    await seed(valid({ windows: [win('w1', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md', 5, 'rel.md', '/v/b.md', '/v/a.md', null, '/v/b.md'] as never })] }))
+    expect(createStore(file).get().windows[0].tabs).toEqual(['/v/a.md', '/v/b.md'])
+  })
+
+  it('tabs: a non-null file missing from tabs is prepended (file IS the active tab)', async () => {
+    await seed(valid({ windows: [win('w1', { root: '/v', file: '/v/a.md', tabs: ['/v/b.md', '/v/c.md'] })] }))
+    expect(createStore(file).get().windows[0].tabs).toEqual(['/v/a.md', '/v/b.md', '/v/c.md'])
+  })
+
+  it('tabs: a null file clears the list (tabs [] ⇔ file null) and a non-array reads as the repair path', async () => {
+    await seed(valid({ windows: [win('w1', { root: '/v', file: null, tabs: ['/v/orphan.md'] })] }))
+    expect(createStore(file).get().windows[0].tabs).toEqual([])
+    await seed(valid({ windows: [win('w1', { root: '/v', file: '/v/a.md', tabs: 'nope' as never })] }))
+    expect(createStore(file).get().windows[0].tabs).toEqual(['/v/a.md'])
   })
 
   it('folders: each folder entry falls back field by field; junk folds are dropped and capped', async () => {

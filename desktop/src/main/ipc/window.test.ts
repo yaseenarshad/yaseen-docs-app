@@ -22,13 +22,19 @@ function registered(channel: string): Handler {
 const ok = (value: unknown) => ({ ok: true, value })
 const bad = (code: string) => expect.objectContaining({ ok: false, error: expect.objectContaining({ code }) })
 const bounds = { x: 10, y: 20, width: 800, height: 600 }
-const entry: WindowEntry = { id: 'w1', root: '/v', file: '/v/a.md', bounds }
+const entry: WindowEntry = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], bounds }
 
 let dir: string
 let store: Store
 let unregister: () => void
 /** The manager slice the IPC layer drives: the real registry, spies for the plumbing. */
-let manager: { idFor: typeof windows.idFor; openWindow: ReturnType<typeof vi.fn>; duplicateWindow: ReturnType<typeof vi.fn>; handleFlushed: ReturnType<typeof vi.fn> }
+let manager: {
+  idFor: typeof windows.idFor
+  openWindow: ReturnType<typeof vi.fn>
+  duplicateWindow: ReturnType<typeof vi.fn>
+  closeWindow: ReturnType<typeof vi.fn>
+  handleFlushed: ReturnType<typeof vi.fn>
+}
 /** `event.sender` stand-ins: webContents 1 is registered as window w1, webContents 9 is unknown. */
 const sender = { id: 1 }
 const stranger = { id: 9 }
@@ -39,7 +45,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), handleFlushed: vi.fn() }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), closeWindow: vi.fn(), handleFlushed: vi.fn() }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {
@@ -61,11 +67,11 @@ describe('windows registry', () => {
 describe('registerWindowIpc', () => {
   it('registers every window channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CH.windowIdentity, CH.windowSetIdentity, CH.windowOpen, CH.windowDuplicate].sort())
+    expect(channels).toEqual([CH.windowIdentity, CH.windowSetIdentity, CH.windowOpen, CH.windowDuplicate, CH.windowCloseSelf].sort())
   })
 
-  it('window:identity answers { id, root, file } for a registered sender', async () => {
-    expect(await registered(CH.windowIdentity)({ sender })).toEqual(ok({ id: 'w1', root: '/v', file: '/v/a.md' }))
+  it('window:identity answers { id, root, file, tabs } for a registered sender', async () => {
+    expect(await registered(CH.windowIdentity)({ sender })).toEqual(ok({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }))
   })
 
   it('window:identity rejects an unregistered sender (BAD_REQUEST) and a window the state no longer has (NOT_FOUND)', async () => {
@@ -74,14 +80,40 @@ describe('registerWindowIpc', () => {
     expect(await registered(CH.windowIdentity)({ sender })).toEqual(bad('NOT_FOUND'))
   })
 
-  it('window:set-identity merges root / file into the entry, keeping id and bounds', async () => {
+  it('window:set-identity merges root / file into the entry, keeping id and bounds; tabs follow the invariant', async () => {
+    // file → null clears tabs (tabs [] ⇔ file null); a new file not in tabs is prepended.
     expect(await registered(CH.windowSetIdentity)({ sender }, { root: '/other', file: null })).toEqual(ok(undefined))
-    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', file: null, bounds }])
+    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', file: null, tabs: [], bounds }])
     expect(await registered(CH.windowSetIdentity)({ sender }, { file: '/other/b.md' })).toEqual(ok(undefined))
-    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', file: '/other/b.md', bounds }])
+    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', file: '/other/b.md', tabs: ['/other/b.md'], bounds }])
     // Unknown keys cannot touch id / bounds.
     expect(await registered(CH.windowSetIdentity)({ sender }, { id: 'hijack', bounds: { x: 0, y: 0, width: 1, height: 1 } })).toEqual(ok(undefined))
-    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', file: '/other/b.md', bounds }])
+    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', file: '/other/b.md', tabs: ['/other/b.md'], bounds }])
+  })
+
+  it('window:set-identity accepts a tabs patch: de-duplicated, and the active file is prepended when missing (GRO-2232)', async () => {
+    expect(await registered(CH.windowSetIdentity)({ sender }, { tabs: ['/v/a.md', '/v/b.md', '/v/a.md'] })).toEqual(ok(undefined))
+    expect(store.get().windows[0].tabs).toEqual(['/v/a.md', '/v/b.md'])
+    // The invariant holds on the entry AS WRITTEN: a tabs patch missing the untouched active file repairs by prepending.
+    expect(await registered(CH.windowSetIdentity)({ sender }, { tabs: ['/v/b.md', '/v/c.md'] })).toEqual(ok(undefined))
+    expect(store.get().windows[0].tabs).toEqual(['/v/a.md', '/v/b.md', '/v/c.md'])
+    // file and tabs patched together: the new file leads.
+    expect(await registered(CH.windowSetIdentity)({ sender }, { file: '/v/b.md', tabs: ['/v/b.md', '/v/c.md'] })).toEqual(ok(undefined))
+    expect(store.get().windows[0]).toEqual({ id: 'w1', root: '/v', file: '/v/b.md', tabs: ['/v/b.md', '/v/c.md'], bounds })
+  })
+
+  it('window:set-identity rejects the whole call on any bad tabs element, leaving the entry untouched', async () => {
+    expect(await registered(CH.windowSetIdentity)({ sender }, { tabs: 'nope' })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.windowSetIdentity)({ sender }, { tabs: ['/v/a.md', 'rel.md'] })).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await registered(CH.windowSetIdentity)({ sender }, { tabs: ['/v/a.md', 5] })).toEqual(bad('NOT_ABSOLUTE'))
+    expect(store.get().windows).toEqual([entry])
+  })
+
+  it('window:close-self hands the caller id to the manager (real close path); unknown callers are rejected', async () => {
+    expect(await registered(CH.windowCloseSelf)({ sender })).toEqual(ok(undefined))
+    expect(manager.closeWindow).toHaveBeenCalledWith('w1')
+    expect(await registered(CH.windowCloseSelf)({ sender: stranger })).toEqual(bad('BAD_REQUEST'))
+    expect(manager.closeWindow).toHaveBeenCalledTimes(1)
   })
 
   it('window:set-identity validates the patch', async () => {

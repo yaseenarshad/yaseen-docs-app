@@ -21,6 +21,12 @@ export interface MenuHandlers {
   openFolder(): void
   /** File › Open Recent › item: in place in the focused window; `beside` (⌥-click) in a new one. */
   openRecent(path: string, beside: boolean): void
+  /** File › Close Tab (⌘W, GRO-2232): the focused window's renderer closes its active tab. */
+  closeTab(): void
+  /** Window › Next Tab (⌃Tab / ⌘⇧], GRO-2232): the focused window's renderer activates the tab to the right. */
+  nextTab(): void
+  /** Window › Previous Tab (⌃⇧Tab / ⌘⇧[, GRO-2232): the focused window's renderer activates the tab to the left. */
+  prevTab(): void
   /** View › Toggle Sidebar: global setting (D9); `state:changed` re-renders every window. */
   toggleSidebar(): void
   openHelp(): void
@@ -70,7 +76,11 @@ export function buildMenuTemplate({ recents, isDev }: MenuInputs, handlers: Menu
         { id: 'menu.file.open-folder', label: 'Open Folder…', accelerator: 'CmdOrCtrl+Shift+O', click: () => handlers.openFolder() },
         { id: 'menu.file.open-recent', label: 'Open Recent', submenu: recentItems },
         { type: 'separator' },
-        { role: 'close', label: 'Close Window', accelerator: 'CmdOrCtrl+W' },
+        // ⌘W is Close Tab (GRO-2232, locked): the renderer owns tab state, so the gesture goes to
+        // the focused window's renderer. Close Window moves to ⌘⇧W and keeps `role: 'close'` — the
+        // OS close that windows.ts intercepts for the flush handshake.
+        { id: 'menu.file.close-tab', label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: () => handlers.closeTab() },
+        { id: 'menu.file.close-window', role: 'close', label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W' },
       ],
     },
     {
@@ -91,7 +101,23 @@ export function buildMenuTemplate({ recents, isDev }: MenuInputs, handlers: Menu
       ],
     },
     // Top-level role `window` marks this submenu as macOS's Windows menu, so the OS appends the window list.
-    { label: 'Window', role: 'window', submenu: [{ role: 'minimize' }, { role: 'zoom' }, { type: 'separator' }, { role: 'front' }] },
+    {
+      label: 'Window',
+      role: 'window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        { type: 'separator' },
+        // Tab switching (GRO-2232): the visible pair carries the macOS-conventional ⌃Tab / ⌃⇧Tab;
+        // hidden duplicates carry the ⌘⇧] / ⌘⇧[ equivalents (`acceleratorWorksWhenHidden`, macOS).
+        { id: 'menu.window.next-tab', label: 'Next Tab', accelerator: 'Control+Tab', click: () => handlers.nextTab() },
+        { id: 'menu.window.prev-tab', label: 'Previous Tab', accelerator: 'Control+Shift+Tab', click: () => handlers.prevTab() },
+        { id: 'menu.window.next-tab-alt', label: 'Next Tab', accelerator: 'CmdOrCtrl+Shift+]', visible: false, acceleratorWorksWhenHidden: true, click: () => handlers.nextTab() },
+        { id: 'menu.window.prev-tab-alt', label: 'Previous Tab', accelerator: 'CmdOrCtrl+Shift+[', visible: false, acceleratorWorksWhenHidden: true, click: () => handlers.prevTab() },
+        { type: 'separator' },
+        { role: 'front' },
+      ],
+    },
     { label: 'Help', role: 'help', submenu: [{ id: 'menu.help.github', label: 'Yaseen Docs on GitHub', click: () => handlers.openHelp() }] },
   ]
 }
@@ -136,6 +162,15 @@ export function createMenuHandlers(store: Store, windows: MenuWindows, host: Men
         return
       }
       host.focusedWebContents()?.send(CH.menuOpenRoot, path)
+    },
+    closeTab() {
+      host.focusedWebContents()?.send(CH.menuCloseTab)
+    },
+    nextTab() {
+      host.focusedWebContents()?.send(CH.menuNextTab)
+    },
+    prevTab() {
+      host.focusedWebContents()?.send(CH.menuPrevTab)
     },
     toggleSidebar() {
       store.setSidebarCollapsed(!store.get().sidebarCollapsed)

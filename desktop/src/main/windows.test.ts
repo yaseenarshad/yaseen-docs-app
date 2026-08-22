@@ -140,8 +140,8 @@ afterEach(async () => {
 
 /** Two stored windows, restored: the common close/quit fixture. */
 function seedTwo() {
-  store.upsertWindow({ id: 'w1', root: '/v', file: '/v/a.md', bounds: { x: 10, y: 10, width: 800, height: 600 } })
-  store.upsertWindow({ id: 'w2', root: null, file: null, bounds: { x: 40, y: 40, width: 800, height: 600 } })
+  store.upsertWindow({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], bounds: { x: 10, y: 10, width: 800, height: 600 } })
+  store.upsertWindow({ id: 'w2', root: null, file: null, tabs: [], bounds: { x: 40, y: 40, width: 800, height: 600 } })
   const { host, created } = makeHost()
   const manager = createWindowManager(store, host)
   manager.restoreAll()
@@ -155,12 +155,13 @@ describe('createWindowManager: restore', () => {
     expect(created).toHaveLength(1)
     expect(created[0].entry.root).toBeNull()
     expect(created[0].entry.file).toBeNull()
+    expect(created[0].entry.tabs).toEqual([])
     expect(store.get().windows).toEqual([created[0].entry])
   })
 
   it('restores every stored entry, clamping lost bounds back onto a display and persisting the clamp', () => {
-    store.upsertWindow({ id: 'w1', root: '/v', file: '/v/a.md', bounds: { x: 10, y: 10, width: 800, height: 600 } })
-    store.upsertWindow({ id: 'w2', root: null, file: null, bounds: { x: 9000, y: 9000, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w2', root: null, file: null, tabs: [], bounds: { x: 9000, y: 9000, width: 800, height: 600 } })
     const { host, created } = makeHost()
     createWindowManager(store, host).restoreAll()
     expect(created.map((c) => c.entry.id)).toEqual(['w1', 'w2'])
@@ -177,7 +178,7 @@ describe('createWindowManager: restore', () => {
 
 describe('createWindowManager: bounds', () => {
   it('saves moved/resized bounds once per burst (debounced), onto the entry as it is now', () => {
-    store.upsertWindow({ id: 'w1', root: null, file: null, bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w1', root: null, file: null, tabs: [], bounds: { x: 10, y: 10, width: 800, height: 600 } })
     const { host, created } = makeHost()
     createWindowManager(store, host).restoreAll()
     const win = created[0].win
@@ -192,7 +193,7 @@ describe('createWindowManager: bounds', () => {
     expect(changes).toBe(0)
     vi.advanceTimersByTime(BOUNDS_DEBOUNCE_MS)
     expect(changes).toBe(1)
-    expect(store.get().windows[0]).toEqual({ id: 'w1', root: '/v', file: null, bounds: { x: 50, y: 60, width: 900, height: 700 } })
+    expect(store.get().windows[0]).toEqual({ id: 'w1', root: '/v', file: null, tabs: [], bounds: { x: 50, y: 60, width: 900, height: 700 } })
   })
 })
 
@@ -210,7 +211,7 @@ describe('createWindowManager: close', () => {
   })
 
   it('the last window keeps its entry (its close is the quit) and saves its final bounds', async () => {
-    store.upsertWindow({ id: 'w1', root: '/v', file: null, bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w1', root: '/v', file: null, tabs: [], bounds: { x: 10, y: 10, width: 800, height: 600 } })
     const { host, created } = makeHost()
     const manager = createWindowManager(store, host)
     manager.restoreAll()
@@ -220,7 +221,7 @@ describe('createWindowManager: close', () => {
     manager.handleFlushed(win.webContents)
     await vi.advanceTimersByTimeAsync(0)
     expect(win.isDestroyed()).toBe(true)
-    expect(store.get().windows).toEqual([{ id: 'w1', root: '/v', file: null, bounds: { x: 200, y: 100, width: 800, height: 600 } }])
+    expect(store.get().windows).toEqual([{ id: 'w1', root: '/v', file: null, tabs: [], bounds: { x: 200, y: 100, width: 800, height: 600 } }])
   })
 
   it('a hung renderer cannot block close: the handshake times out after FLUSH_TIMEOUT_MS', async () => {
@@ -238,6 +239,30 @@ describe('createWindowManager: close', () => {
     w1.close()
     expect(w1.flushCount()).toBe(1)
     expect(w1.isDestroyed()).toBe(false)
+  })
+
+  it('closeWindow (window:close-self, GRO-2232) runs the REAL close path: flush handshake, then destroy and drop', async () => {
+    const { manager, w1 } = seedTwo()
+    manager.closeWindow('w1')
+    expect(w1.flushCount()).toBe(1)
+    expect(w1.isDestroyed()).toBe(false) // never a bare destroy — the handshake holds the window
+    manager.handleFlushed(w1.webContents)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(w1.isDestroyed()).toBe(true)
+    expect(store.get().windows.map((w) => w.id)).toEqual(['w2'])
+  })
+
+  it('closeWindow on an unknown or already-destroyed id is a no-op (mid-close race)', async () => {
+    const { manager, w1, w2 } = seedTwo()
+    manager.closeWindow('nope')
+    expect(w1.flushCount()).toBe(0)
+    expect(w2.flushCount()).toBe(0)
+    w1.close()
+    manager.handleFlushed(w1.webContents)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(w1.isDestroyed()).toBe(true)
+    manager.closeWindow('w1') // gone: nothing to close, nothing thrown
+    expect(w1.flushCount()).toBe(1)
   })
 })
 
@@ -297,11 +322,12 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     expect(created).toHaveLength(1)
     expect(created[0].entry.root).toBe('/v')
     expect(created[0].entry.file).toBe('/v/a.md')
+    expect(created[0].entry.tabs).toEqual(['/v/a.md']) // the opened file is the one tab (GRO-2232)
     expect(store.get().windows).toEqual([created[0].entry])
   })
 
-  it('duplicateWindow copies folder + file into a fresh entry, cascaded off the source', () => {
-    const from: WindowEntry = { id: 'w1', root: '/v', file: '/v/a.md', bounds: { x: 100, y: 100, width: 800, height: 600 } }
+  it('duplicateWindow copies folder + file + the whole tab set into a fresh entry, cascaded off the source', () => {
+    const from: WindowEntry = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], bounds: { x: 100, y: 100, width: 800, height: 600 } }
     store.upsertWindow(from)
     const { host, created } = makeHost()
     createWindowManager(store, host).duplicateWindow(from)
@@ -310,12 +336,13 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     expect(entry.id).not.toBe('w1')
     expect(entry.root).toBe('/v')
     expect(entry.file).toBe('/v/a.md')
+    expect(entry.tabs).toEqual(['/v/a.md', '/v/b.md']) // the copy carries every tab, not just the active file (GRO-2232)
     expect(entry.bounds).toEqual({ x: 100 + WINDOW_CASCADE_PX, y: 100 + WINDOW_CASCADE_PX, width: 800, height: 600 })
     expect(store.get().windows).toContainEqual(entry)
   })
 
   it('duplicating a Welcome window keeps root and file null — Welcome → Welcome (⌘⇧N, GRO-2167)', () => {
-    const from: WindowEntry = { id: 'w1', root: null, file: null, bounds: { x: 100, y: 100, width: 800, height: 600 } }
+    const from: WindowEntry = { id: 'w1', root: null, file: null, tabs: [], bounds: { x: 100, y: 100, width: 800, height: 600 } }
     store.upsertWindow(from)
     const { host, created } = makeHost()
     createWindowManager(store, host).duplicateWindow(from)
@@ -328,7 +355,7 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
 
   it('the cascade is clamped: duplicating a window at the display edge stays fully on-screen (GRO-2167)', () => {
     // Bottom-right corner of the 1440×900 area: the +24/+24 cascade would hang off the display.
-    const from: WindowEntry = { id: 'w1', root: '/v', file: null, bounds: { x: 640, y: 300, width: 800, height: 600 } }
+    const from: WindowEntry = { id: 'w1', root: '/v', file: null, tabs: [], bounds: { x: 640, y: 300, width: 800, height: 600 } }
     store.upsertWindow(from)
     const { host, created } = makeHost()
     createWindowManager(store, host).duplicateWindow(from)
@@ -339,7 +366,7 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
 // ---------- deep-link routing (E1, GRO-2171) ----------
 
 describe('resolveLinkTarget (pure)', () => {
-  const win = (id: string, root: string | null): WindowEntry => ({ id, root, file: null, bounds: { x: 0, y: 0, width: 800, height: 600 } })
+  const win = (id: string, root: string | null): WindowEntry => ({ id, root, file: null, tabs: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
   const recents = (...paths: string[]): RecentRoots => paths.map((path, i) => ({ path, lastOpened: 100 - i }))
 
   it('picks the open window whose root contains the path (root = dirname included)', () => {
@@ -389,8 +416,8 @@ describe('resolveLinkTarget (pure)', () => {
 describe('createWindowManager: routeToFile (E1)', () => {
   /** One folder window on /v plus a Welcome window — the routing fixture. */
   function seedRouting(exists: (path: string) => boolean = () => true) {
-    store.upsertWindow({ id: 'w1', root: '/v', file: null, bounds: { x: 10, y: 10, width: 800, height: 600 } })
-    store.upsertWindow({ id: 'w2', root: null, file: null, bounds: { x: 40, y: 40, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w1', root: '/v', file: null, tabs: [], bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w2', root: null, file: null, tabs: [], bounds: { x: 40, y: 40, width: 800, height: 600 } })
     const { host, created } = makeHost([AREA], exists)
     const manager = createWindowManager(store, host)
     manager.restoreAll()
@@ -443,7 +470,7 @@ describe('createWindowManager: routeToFile (E1)', () => {
   it('a stored entry with no live window (mid-close race) falls back to a fresh window on that entry root', () => {
     const { manager, created } = seedRouting()
     // The entry exists in the state but was never attached — its window is already gone.
-    store.upsertWindow({ id: 'w3', root: '/v/deeper', file: null, bounds: { x: 20, y: 20, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w3', root: '/v/deeper', file: null, tabs: [], bounds: { x: 20, y: 20, width: 800, height: 600 } })
     manager.routeToFile('/v/deeper/n.md') // most specific root wins → resolves to the dead w3
     expect(created).toHaveLength(3)
     expect(created[2].entry.id).not.toBe('w3') // a fresh window, not a resurrection of the dead entry

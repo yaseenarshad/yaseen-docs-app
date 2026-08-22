@@ -87,11 +87,11 @@ describe('registerRegistryIpc', () => {
 
   it('subscribes one config watcher per open-vault root and drops it when the last window leaves', async () => {
     expect(activeConfigWatcherRoots()).toEqual([])
-    store.upsertWindow({ id: 'w1', root: vault, file: null, bounds })
+    store.upsertWindow({ id: 'w1', root: vault, file: null, tabs: [], bounds })
     expect(activeConfigWatcherRoots()).toEqual([vault])
-    store.upsertWindow({ id: 'w2', root: vault, file: null, bounds })
+    store.upsertWindow({ id: 'w2', root: vault, file: null, tabs: [], bounds })
     expect(activeConfigWatcherRoots()).toEqual([vault]) // shared, not doubled
-    store.upsertWindow({ id: 'w3', root: null, file: null, bounds }) // Welcome window: no root, no watcher
+    store.upsertWindow({ id: 'w3', root: null, file: null, tabs: [], bounds }) // Welcome window: no root, no watcher
     expect(activeConfigWatcherRoots()).toEqual([vault])
     store.removeWindow('w1')
     expect(activeConfigWatcherRoots()).toEqual([vault])
@@ -103,7 +103,7 @@ describe('registerRegistryIpc', () => {
     const a = fakeWindow()
     const b = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([a, b] as unknown as BrowserWindow[])
-    store.upsertWindow({ id: 'w1', root: vault, file: null, bounds })
+    store.upsertWindow({ id: 'w1', root: vault, file: null, tabs: [], bounds })
     a.webContents.send.mockClear()
     b.webContents.send.mockClear()
 

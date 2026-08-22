@@ -104,7 +104,7 @@ export async function copyVault(src: string): Promise<string> {
 export function seededState(vault: string, file: string | null, opts: { expanded?: string[] } = {}): AppState {
   const state = defaultAppState()
   state.recents = [{ path: vault, lastOpened: Date.now() }]
-  state.windows = [{ id: 'w1', root: vault, file, bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
+  state.windows = [{ id: 'w1', root: vault, file, tabs: file === null ? [] : [file], bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
   state.folders = { [vault]: { expanded: opts.expanded ?? [], lastFile: file, folds: {}, baseGroups: {} } }
   return state
 }
@@ -135,6 +135,7 @@ export function multiWindowState(wins: SeedWindow[], recentRoots: string[]): App
     id: w.id,
     root: w.root,
     file: w.file,
+    tabs: w.file === null ? [] : [w.file],
     bounds: w.bounds ?? { x: 60 + i * 40, y: 60 + i * 30, width: 1000, height: 700 },
   }))
   for (const w of wins) {

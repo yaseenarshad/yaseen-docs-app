@@ -38,7 +38,7 @@ const flushMicrotasks = () => new Promise((r) => setTimeout(r, 0))
 
 let b: ReturnType<typeof installBridge>
 beforeEach(async () => {
-  b = installBridge(defaultAppState(), { id: 'w1', root: null, file: null })
+  b = installBridge(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] })
   await storage.init()
 })
 afterEach(() => {
@@ -70,7 +70,7 @@ describe('storage.init', () => {
       recents: [{ path: '/v', lastOpened: 5 }],
       folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.base::T': ['v:idea'] } } },
     }
-    b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md' })
+    b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
     await storage.init()
     expect(b.bridge.state.get).toHaveBeenCalledTimes(1)
     expect(b.bridge.window.identity).toHaveBeenCalledTimes(1)
@@ -102,7 +102,7 @@ describe('storage.init', () => {
 
   it('re-initialising drops the previous change subscription', async () => {
     const first = b
-    b = installBridge(defaultAppState(), { id: 'w1', root: null, file: null })
+    b = installBridge(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] })
     await storage.init()
     expect(first.hasListener()).toBe(false)
     expect(b.hasListener()).toBe(true)
@@ -178,12 +178,12 @@ describe('storage', () => {
   it('boot precedence (GRO-2160): identity file wins over the folder lastFile, a pasted hash beats both', async () => {
     // Two windows on the same folder: w2 restored on b.md while the folder's lastFile is a.md.
     const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {} } } }
-    b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/b.md' })
+    b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/b.md', tabs: ['/v/b.md'] })
     await storage.init()
     expect(bootFile('', '/v')).toBe('/v/b.md')
     expect(bootFile('#/v/c.md', '/v')).toBe('/v/c.md')
     // A fresh window on the folder (identity file null) still falls back to the folder's lastFile.
-    b = installBridge(seeded, { id: 'w3', root: '/v', file: null })
+    b = installBridge(seeded, { id: 'w3', root: '/v', file: null, tabs: [] })
     await storage.init()
     expect(bootFile('', '/v')).toBe('/v/a.md')
   })

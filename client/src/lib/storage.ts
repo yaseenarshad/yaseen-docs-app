@@ -20,7 +20,7 @@ import {
  */
 
 let state: AppState = defaultAppState()
-let identity: WindowIdentity = { id: '', root: null, file: null }
+let identity: WindowIdentity = { id: '', root: null, file: null, tabs: [] }
 let unsubscribe: (() => void) | null = null
 const listeners = new Set<() => void>()
 

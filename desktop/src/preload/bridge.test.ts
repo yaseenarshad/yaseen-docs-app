@@ -11,8 +11,8 @@ vi.mock('electron', () => ({
 /** Compile-time exhaustive: adding a method to the contract without listing it here fails typecheck. */
 const TOP: readonly (keyof YaseenDocsApi)[] = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'readAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'vaultConfig', 'registry']
 const STATE: readonly (keyof StateApi)[] = ['get', 'setSettings', 'setSidebarCollapsed', 'pushRecent', 'removeRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange']
-const WINDOW: readonly (keyof WindowApi)[] = ['identity', 'setIdentity', 'open', 'duplicate', 'onFlush']
-const MENU: readonly (keyof MenuApi)[] = ['onOpenFolder', 'onOpenRoot']
+const WINDOW: readonly (keyof WindowApi)[] = ['identity', 'setIdentity', 'open', 'duplicate', 'closeSelf', 'onFlush']
+const MENU: readonly (keyof MenuApi)[] = ['onOpenFolder', 'onOpenRoot', 'onCloseTab', 'onNextTab', 'onPrevTab']
 const LINK: readonly (keyof LinkApi)[] = ['onOpenFile', 'onNotice']
 const VAULT_CONFIG: readonly (keyof VaultConfigApi)[] = ['read', 'write', 'onChange']
 const REGISTRY: readonly (keyof RegistryApi)[] = ['get', 'setType', 'removeType', 'setProperty', 'removeProperty', 'onChange']
@@ -53,6 +53,29 @@ describe('preload bridge', () => {
     expect(listener).toHaveBeenCalledWith('/vaults/notes/a.md')
     off()
     expect(vi.mocked(ipcRenderer.removeListener).mock.calls.some(([ch, l]) => ch === CH.linkOpenFile && l === emit)).toBe(true)
+  })
+
+  it('window.closeSelf invokes window:close-self (GRO-2232)', async () => {
+    const { ipcRenderer } = await import('electron')
+    vi.mocked(ipcRenderer.invoke).mockResolvedValueOnce({ ok: true, value: undefined })
+    const { bridge } = await import('./index')
+    await bridge.window.closeSelf()
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.windowCloseSelf)
+  })
+
+  it('forwards menu:close-tab to the listener and unsubscribes cleanly (GRO-2232)', async () => {
+    const { ipcRenderer } = await import('electron')
+    const { bridge } = await import('./index')
+    const listener = vi.fn()
+    const off = bridge.menu.onCloseTab(listener)
+    const calls = vi.mocked(ipcRenderer.on).mock.calls.filter(([ch]) => ch === CH.menuCloseTab)
+    const call = calls[calls.length - 1]
+    expect(call).toBeDefined()
+    const emit = call?.[1] as unknown as (e: unknown) => void
+    emit(undefined)
+    expect(listener).toHaveBeenCalledTimes(1)
+    off()
+    expect(vi.mocked(ipcRenderer.removeListener).mock.calls.some(([ch, l]) => ch === CH.menuCloseTab && l === emit)).toBe(true)
   })
 
   it('forwards menu:open-root paths to the listener and unsubscribes cleanly (GRO-2161)', async () => {

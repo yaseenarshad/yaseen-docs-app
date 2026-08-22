@@ -65,6 +65,7 @@ const api: YaseenDocsApi = {
     setIdentity: (patch) => call(CH.windowSetIdentity, patch),
     open: (opts) => call(CH.windowOpen, opts),
     duplicate: () => call(CH.windowDuplicate),
+    closeSelf: () => call(CH.windowCloseSelf),
     onFlush: (listener) => {
       flushListeners.add(listener)
       return () => {
@@ -72,10 +73,13 @@ const api: YaseenDocsApi = {
       }
     },
   },
-  // Menu gestures (GRO-2161): main sends these to the focused window only.
+  // Menu gestures (GRO-2161; tabs GRO-2232): main sends these to the focused window only.
   menu: {
     onOpenFolder: on<void>(CH.menuOpenFolder),
     onOpenRoot: on<string>(CH.menuOpenRoot),
+    onCloseTab: on<void>(CH.menuCloseTab),
+    onNextTab: on<void>(CH.menuNextTab),
+    onPrevTab: on<void>(CH.menuPrevTab),
   },
   // Deep links (E1, GRO-2171): main routes a yaseendocs:// URL to the best window.
   link: {

@@ -14,6 +14,9 @@ const noopHandlers = (): MenuHandlers => ({
   newWindow: vi.fn(),
   openFolder: vi.fn(),
   openRecent: vi.fn(),
+  closeTab: vi.fn(),
+  nextTab: vi.fn(),
+  prevTab: vi.fn(),
   toggleSidebar: vi.fn(),
   openHelp: vi.fn(),
 })
@@ -50,7 +53,7 @@ describe('buildMenuTemplate', () => {
     expect(roles).toEqual(['about', 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit'])
   })
 
-  it('File menu: New Window ⌘⇧N, Open Folder… ⌘⇧O, Open Recent, Close Window ⌘W', () => {
+  it('File menu: New Window ⌘⇧N, Open Folder… ⌘⇧O, Open Recent, Close Tab ⌘W, Close Window ⌘⇧W', () => {
     const handlers = noopHandlers()
     const file = menuOf(build(RECENTS, false, handlers), 'File')
 
@@ -66,9 +69,17 @@ describe('buildMenuTemplate', () => {
 
     expect(file.find((i) => i.label === 'Open Recent')).toBeDefined()
 
+    // ⌘W is Close Tab (GRO-2232, locked): a click item into the focused renderer, NOT the role.
+    const closeTab = file.find((i) => i.label === 'Close Tab')
+    expect(closeTab?.accelerator).toBe('CmdOrCtrl+W')
+    expect(closeTab?.role).toBeUndefined()
+    click(closeTab)
+    expect(handlers.closeTab).toHaveBeenCalledTimes(1)
+
+    // Close Window keeps role close (the flush-handshake OS close) on ⌘⇧W.
     const close = file.find((i) => i.label === 'Close Window')
     expect(close?.role).toBe('close')
-    expect(close?.accelerator).toBe('CmdOrCtrl+W')
+    expect(close?.accelerator).toBe('CmdOrCtrl+Shift+W')
   })
 
   it('Open Recent lists recents in MRU order; plain click opens in place, ⌥-click beside', () => {
@@ -114,11 +125,55 @@ describe('buildMenuTemplate', () => {
     expect(dev.map((i) => i.role).filter(Boolean)).toEqual(['reload', 'toggleDevTools', 'resetZoom', 'zoomIn', 'zoomOut'])
   })
 
-  it('Window menu: role window (macOS window list) with minimize / zoom / front', () => {
-    const top = build().find((m) => m.label === 'Window')
+  it('Window menu: role window (macOS window list) with minimize / zoom, the tab-switching items, front', () => {
+    const handlers = noopHandlers()
+    const top = build(RECENTS, false, handlers).find((m) => m.label === 'Window')
     expect(top?.role).toBe('window')
-    const roles = (top?.submenu as MenuItemConstructorOptions[]).map((i) => i.role ?? i.type)
-    expect(roles).toEqual(['minimize', 'zoom', 'separator', 'front'])
+    const items = top?.submenu as MenuItemConstructorOptions[]
+    expect(items.map((i) => i.role ?? i.id ?? i.type)).toEqual([
+      'minimize',
+      'zoom',
+      'separator',
+      'menu.window.next-tab',
+      'menu.window.prev-tab',
+      'menu.window.next-tab-alt',
+      'menu.window.prev-tab-alt',
+      'separator',
+      'front',
+    ])
+  })
+
+  it('tab switching (GRO-2232): ⌃Tab / ⌃⇧Tab on the visible pair; hidden ⌘⇧] / ⌘⇧[ duplicates still fire', () => {
+    const handlers = noopHandlers()
+    const items = menuOf(build(RECENTS, false, handlers), 'Window')
+    const byId = (id: string) => items.find((i) => i.id === id)
+
+    const next = byId('menu.window.next-tab')
+    expect(next?.label).toBe('Next Tab')
+    expect(next?.accelerator).toBe('Control+Tab')
+    click(next)
+    expect(handlers.nextTab).toHaveBeenCalledTimes(1)
+
+    const prev = byId('menu.window.prev-tab')
+    expect(prev?.label).toBe('Previous Tab')
+    expect(prev?.accelerator).toBe('Control+Shift+Tab')
+    click(prev)
+    expect(handlers.prevTab).toHaveBeenCalledTimes(1)
+
+    // The second accelerator pair rides hidden duplicates (acceleratorWorksWhenHidden, macOS).
+    const nextAlt = byId('menu.window.next-tab-alt')
+    expect(nextAlt?.accelerator).toBe('CmdOrCtrl+Shift+]')
+    expect(nextAlt?.visible).toBe(false)
+    expect(nextAlt?.acceleratorWorksWhenHidden).toBe(true)
+    click(nextAlt)
+    expect(handlers.nextTab).toHaveBeenCalledTimes(2)
+
+    const prevAlt = byId('menu.window.prev-tab-alt')
+    expect(prevAlt?.accelerator).toBe('CmdOrCtrl+Shift+[')
+    expect(prevAlt?.visible).toBe(false)
+    expect(prevAlt?.acceleratorWorksWhenHidden).toBe(true)
+    click(prevAlt)
+    expect(handlers.prevTab).toHaveBeenCalledTimes(2)
   })
 
   it('Help menu: role help, GitHub link item', () => {
@@ -135,6 +190,8 @@ describe('buildMenuTemplate', () => {
     const file = menuOf(build(), 'File')
     expect(file.find((i) => i.label === 'New Window')?.id).toBe('menu.file.new-window')
     expect(file.find((i) => i.label === 'Open Folder…')?.id).toBe('menu.file.open-folder')
+    expect(file.find((i) => i.label === 'Close Tab')?.id).toBe('menu.file.close-tab')
+    expect(file.find((i) => i.label === 'Close Window')?.id).toBe('menu.file.close-window')
     const recent = file.find((i) => i.label === 'Open Recent')?.submenu as MenuItemConstructorOptions[]
     expect(recent.map((i) => i.id)).toEqual(['menu.file.open-recent.0', 'menu.file.open-recent.1', 'menu.file.open-recent.2'])
     expect(menuOf(build(), 'View').find((i) => i.label === 'Toggle Sidebar')?.id).toBe('menu.view.toggle-sidebar')
@@ -155,7 +212,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', file: '/vaults/notes/a.md', bounds: { x: 0, y: 0, width: 800, height: 600 } }
+const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', file: '/vaults/notes/a.md', tabs: ['/vaults/notes/a.md'], bounds: { x: 0, y: 0, width: 800, height: 600 } }
 
 function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, dirExists: (p: string) => boolean = () => true) {
   const windows = { idFor: vi.fn(), openWindow: vi.fn(), duplicateWindow: vi.fn() }
@@ -215,6 +272,25 @@ describe('createMenuHandlers', () => {
     expect(windows.openWindow).not.toHaveBeenCalled()
     expect(wc.send).not.toHaveBeenCalled()
     expect(store.get().recents.some((r) => r.path === '/vaults/gone')).toBe(false)
+  })
+
+  it('closeTab / nextTab / prevTab go to the focused renderer only (GRO-2232); no focused window is a no-op', () => {
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers } = makeHandlers(wc)
+    handlers.closeTab()
+    expect(wc.send).toHaveBeenLastCalledWith(CH.menuCloseTab)
+    handlers.nextTab()
+    expect(wc.send).toHaveBeenLastCalledWith(CH.menuNextTab)
+    handlers.prevTab()
+    expect(wc.send).toHaveBeenLastCalledWith(CH.menuPrevTab)
+    expect(wc.send).toHaveBeenCalledTimes(3)
+
+    const { handlers: unfocused } = makeHandlers(undefined)
+    expect(() => {
+      unfocused.closeTab()
+      unfocused.nextTab()
+      unfocused.prevTab()
+    }).not.toThrow()
   })
 
   it('toggleSidebar flips the global setting in the store', () => {

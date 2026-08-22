@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, renameSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { dirname, isAbsolute } from 'node:path'
 import {
   DEFAULT_SETTINGS,
   MAX_COLLAPSED_GROUP_KEYS,
@@ -84,8 +84,28 @@ export const isSettings = (v: unknown): v is SettingsState => isRecord(v) && SET
 export const isWindowBounds = (v: unknown): v is WindowBounds =>
   isRecord(v) && isFiniteNumber(v.x) && isFiniteNumber(v.y) && isFiniteNumber(v.width) && isFiniteNumber(v.height)
 
+/** Core v1 shape; `tabs` (GRO-2232) is additive-within-v1 and repaired separately, so legacy entries still pass. */
 export const isWindowEntry = (v: unknown): v is WindowEntry =>
   isRecord(v) && typeof v.id === 'string' && isStringOrNull(v.root) && isStringOrNull(v.file) && isWindowBounds(v.bounds)
+
+/**
+ * The tabs invariant (GRO-2232), shared by the loader and the IPC boundary (`ipc/window.ts`):
+ * de-duplicates preserving first occurrence, prepends a non-null `file` that is missing —
+ * `file` IS the active tab, so a legacy entry without `tabs` becomes `[file]` — and clears
+ * the list when `file` is null (`tabs: []` ⇔ `file: null`).
+ */
+export function normalizeTabs(tabs: readonly string[], file: string | null): string[] {
+  if (file === null) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const t of tabs) {
+    if (seen.has(t)) continue
+    seen.add(t)
+    out.push(t)
+  }
+  if (!seen.has(file)) out.unshift(file)
+  return out
+}
 
 function sanitizeWindows(raw: unknown): WindowEntry[] {
   if (!Array.isArray(raw)) return []
@@ -94,7 +114,10 @@ function sanitizeWindows(raw: unknown): WindowEntry[] {
   for (const w of raw) {
     if (!isWindowEntry(w) || seen.has(w.id)) continue
     seen.add(w.id)
-    out.push({ id: w.id, root: w.root, file: w.file, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
+    // Junk `tabs` elements (non-strings, relative paths) drop; a missing/invalid list repairs from `file`.
+    const rawTabs: unknown = (w as { tabs?: unknown }).tabs
+    const tabs = normalizeTabs(Array.isArray(rawTabs) ? rawTabs.filter((t): t is string => typeof t === 'string' && isAbsolute(t)) : [], w.file)
+    out.push({ id: w.id, root: w.root, file: w.file, tabs, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
   }
   return out
 }
