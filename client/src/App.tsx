@@ -9,9 +9,11 @@ import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
 import { storage } from './lib/storage'
 import { resolveTheme, useSystemPrefersDark } from './lib/theme'
-import { fileHash, hashFilePath } from './lib/urlHash'
+import { fileHash } from './lib/urlHash'
 import { windowTitle } from './lib/windowTitle'
 import { Sidebar, SidebarPanelIcon } from './sidebar/Sidebar'
+import { TabBar } from './tabs/TabBar'
+import { useTabs } from './tabs/useTabs'
 import { Welcome } from './Welcome'
 
 /** Reflect the open file in the URL (GRO-2069); replaceState keeps Back sane. */
@@ -24,11 +26,10 @@ export const LINK_NOTICE_MS = 4000
 
 export function App() {
   const [root, setRoot] = useState<string | null>(storage.getRoot)
-  // A pasted `#/abs/path.md` URL wins (GRO-2069), then this window's restored file (GRO-2160),
-  // then the folder's remembered last file (a fresh window on the folder).
-  const [file, setFile] = useState<string | null>(() =>
-    root === null ? null : (hashFilePath(location.hash) ?? storage.getFile() ?? storage.getLastFile(root)),
-  )
+  // Tabs (I2, GRO-2234): the renderer-owned tab model, seeded from the boot identity snapshot
+  // (a pasted `#/abs/path.md` URL wins as the active tab — bootTabs). The ACTIVE tab is this
+  // window's `file`: title, URL hash and the sidebar highlight all follow it.
+  const { tabs, active: file, mounted, openCurrent, activate, close: closeTab, closeActive, next: nextTab, prev: prevTab, reset: resetTabs } = useTabs(root)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const [settings, setSettings] = useState(storage.getSettings)
   const watch = useWatch(root)
@@ -76,9 +77,9 @@ export function App() {
     ...(settings.threadColor !== null ? { '--thread-color': settings.threadColor } : {}),
   } as CSSProperties
 
-  // Mount only: the restored-from-storage file also shows in the URL from the start;
-  // later changes sync through openFile/openRoot themselves.
-  useEffect(() => syncHash(file), [])
+  // The URL hash mirrors the ACTIVE tab (GRO-2069; rule 17: on boot the hash already won as
+  // the active tab in bootTabs, so this first run is a no-op re-write of the same hash).
+  useEffect(() => syncHash(file), [file])
 
   // The OS window title mirrors what is open (C3, GRO-2165); Electron follows document.title.
   useEffect(() => {
@@ -99,32 +100,28 @@ export function App() {
         return false
       }
     }
-    storage.setRoot(path)
+    storage.setRoot(path) // ONE identity write: { root, file: null, tabs: [] } (Tabs rule 13)
     storage.pushRecentRoot(path)
     setRoot(path)
-    const nextFile = storage.getLastFile(path)
-    // Record the restored file on the window entry too (D6): setRoot just cleared it.
-    if (nextFile !== null) storage.setLastFile(path, nextFile)
-    setFile(nextFile)
-    syncHash(nextFile)
+    // The folder's remembered file becomes the sole restored tab (D6); reset mirrors it down.
+    resetTabs(path, storage.getLastFile(path))
     return true
-  }, [])
-
-  const openFile = useCallback(
-    (path: string | null) => {
-      if (root !== null) storage.setLastFile(root, path)
-      setFile(path)
-      syncHash(path)
-    },
-    [root],
-  )
+  }, [resetTabs])
 
   const { pick, picking } = usePickFolder({ onPicked: openRoot })
 
-  // File › Open Folder… / Open Recent (GRO-2161) reuse the same flows as the in-app buttons.
-  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openRoot })
+  // ⌘W ladder (Tabs rule 7): close the active tab; with zero tabs open (incl. Welcome) close
+  // the WINDOW through the real close path so the close/flush handshake runs.
+  const closeTabOrWindow = useCallback(() => {
+    if (!closeActive()) void window.yaseenDocs.window.closeSelf()
+  }, [closeActive])
 
-  // Deep links (E1, GRO-2171): a routed link opens its file exactly like a sidebar click;
+  // File › Open Folder… / Open Recent (GRO-2161) reuse the same flows as the in-app buttons;
+  // File › Close Tab and Window › Next/Previous Tab (GRO-2232) drive the tab model.
+  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openRoot, onCloseTab: closeTabOrWindow, onNextTab: nextTab, onPrevTab: prevTab })
+
+  // Deep links (E1, GRO-2171): a routed link behaves like a sidebar click (Tabs rule 10) —
+  // it activates the file's tab when already open, else opens it in the CURRENT tab;
   // a link that could not open shows a transient notice — unobtrusive, never a dialog.
   const [notice, setNotice] = useState<string | null>(null)
   useEffect(() => {
@@ -132,15 +129,15 @@ export function App() {
     const timer = setTimeout(() => setNotice(null), LINK_NOTICE_MS)
     return () => clearTimeout(timer)
   }, [notice])
-  useLinkEvents({ onOpenFile: openFile, onNotice: setNotice })
+  useLinkEvents({ onOpenFile: openCurrent, onNotice: setNotice })
 
   const onRootMissing = useCallback(() => {
-    storage.setRoot(null)
+    storage.setRoot(null) // one identity write: { root: null, file: null, tabs: [] }
     setRoot(null)
-    setFile(null)
-    syncHash(null)
-  }, [])
-  const onFileMissing = useCallback(() => openFile(null), [openFile])
+    resetTabs(null, null)
+  }, [resetTabs])
+  // The ACTIVE file vanished on disk: close its tab, ⌘W-style (a neighbour takes over).
+  const onFileMissing = useCallback(() => void closeActive(), [closeActive])
 
   return (
     <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'}>
@@ -155,7 +152,7 @@ export function App() {
           root={root}
           activeFile={file}
           watch={watch}
-          onOpenFile={openFile}
+          onOpenFile={openCurrent}
           onPickFolder={pick}
           pickDisabled={picking}
           onCollapse={toggleSidebar}
@@ -176,7 +173,21 @@ export function App() {
           <Welcome recents={storage.getRecentRoots()} onOpenRecent={openRoot} onPickFolder={pick} picking={picking} />
         </section>
       ) : (
-        <Editor root={root} path={file} watch={watch} onOpenFile={openFile} />
+        <div className="workspace">
+          {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
+          <TabBar tabs={tabs} active={file} onActivate={activate} onClose={closeTab} />
+          <div className="tabstack">
+            {mounted.length === 0 && <Editor root={root} path={null} watch={watch} onOpenFile={openCurrent} />}
+            {mounted.map((path) => (
+              // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
+              // survive a switch (rule 6); inactive layers hide via visibility — see tabs.css
+              // for why display:none would lose scroll positions.
+              <div key={path} className={path === file ? 'tabstack__layer' : 'tabstack__layer tabstack__layer--hidden'}>
+                <Editor root={root} path={path} watch={watch} onOpenFile={openCurrent} />
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   )

@@ -76,6 +76,8 @@ describe('storage.init', () => {
     expect(b.bridge.window.identity).toHaveBeenCalledTimes(1)
     expect(b.hasListener()).toBe(true)
     expect(storage.getRoot()).toBe('/v')
+    expect(storage.getFile()).toBe('/v/a.md')
+    expect(storage.getTabs()).toEqual(['/v/a.md'])
     expect(storage.getSettings()).toEqual({ ...DEFAULT_SETTINGS, lineSpacing: 2 })
     expect(storage.getSidebarCollapsed()).toBe(true)
     expect(storage.getRecentRoots()).toEqual([{ path: '/v', lastOpened: 5 }])
@@ -90,6 +92,7 @@ describe('storage.init', () => {
     delete (window as unknown as Record<string, unknown>).yaseenDocs
     const fresh = (await import('./storage')).storage
     expect(fresh.getRoot()).toBeNull()
+    expect(fresh.getTabs()).toEqual([])
     expect(fresh.getRecentRoots()).toEqual([])
     expect(fresh.getExpanded('/r')).toEqual([])
     expect(fresh.getLastFile('/r')).toBeNull()
@@ -110,17 +113,21 @@ describe('storage.init', () => {
 })
 
 describe('storage', () => {
-  it('root is the window identity; changing it clears the file, re-setting it keeps the file', () => {
+  it('root is the window identity; changing it clears the file AND tabs in one write, re-setting it keeps them', () => {
     expect(storage.getRoot()).toBeNull()
     storage.setRoot('/notes')
     expect(storage.getRoot()).toBe('/notes')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes', file: null })
-    storage.setLastFile('/notes', '/notes/a.md')
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes', file: null, tabs: [] })
+    storage.setTabs('/notes', ['/notes/a.md'], '/notes/a.md')
     storage.setRoot('/notes')
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes' })
+    expect(storage.getFile()).toBe('/notes/a.md')
+    expect(storage.getTabs()).toEqual(['/notes/a.md'])
     storage.setRoot(null)
     expect(storage.getRoot()).toBeNull()
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [] })
+    expect(storage.getFile()).toBeNull()
+    expect(storage.getTabs()).toEqual([])
   })
 
   it('recent roots are MRU in the cache and pushed through the bridge', () => {
@@ -141,7 +148,7 @@ describe('storage', () => {
     expect(b.bridge.state.removeRecent).toHaveBeenCalledWith('/a')
   })
 
-  it('expanded and lastFile are keyed by root; lastFile also updates the window identity', () => {
+  it('expanded and lastFile are keyed by root; setTabs records lastFile AND one {tabs, file} identity write (GRO-2234)', () => {
     storage.setExpanded('/r1', ['/r1/a'])
     storage.setExpanded('/r2', ['/r2/b'])
     expect(storage.getExpanded('/r1')).toEqual(['/r1/a'])
@@ -151,28 +158,40 @@ describe('storage', () => {
       ['/r1', { expanded: ['/r1/a'] }],
       ['/r2', { expanded: ['/r2/b'] }],
     ])
-    storage.setLastFile('/r1', '/r1/a/x.md')
+    storage.setTabs('/r1', ['/r1/a/x.md', '/r1/y.md'], '/r1/a/x.md')
     expect(storage.getLastFile('/r1')).toBe('/r1/a/x.md')
     expect(storage.getLastFile('/r2')).toBeNull()
     expect(storage.getExpanded('/r1')).toEqual(['/r1/a']) // the other folder fields survive
     expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/r1', { lastFile: '/r1/a/x.md' })
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ file: '/r1/a/x.md' })
-    storage.setLastFile('/r1', null)
+    // ONE explicit write carries BOTH halves — never the legacy { file }-only patch, whose
+    // main-side normalization would prepend the file into tabs on its own.
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/r1/a/x.md', '/r1/y.md'], file: '/r1/a/x.md' })
+    storage.setTabs('/r1', [], null)
     expect(storage.getLastFile('/r1')).toBeNull()
     expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/r1', { lastFile: null })
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ file: null })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: [], file: null })
   })
 
-  it('getFile is the window identity file: set by setLastFile, cleared when the root changes', () => {
+  it('setTabs on a null root (no folder to remember into) updates the identity only', () => {
+    storage.setTabs(null, ['/x/a.md'], '/x/a.md')
+    expect(storage.getFile()).toBe('/x/a.md')
+    expect(storage.getTabs()).toEqual(['/x/a.md'])
+    expect(b.bridge.state.setFolder).not.toHaveBeenCalled()
+    expect(b.bridge.window.setIdentity).toHaveBeenCalledWith({ tabs: ['/x/a.md'], file: '/x/a.md' })
+  })
+
+  it('getFile/getTabs are the window identity: set by setTabs, cleared when the root changes', () => {
     expect(storage.getFile()).toBeNull()
     storage.setRoot('/v')
-    storage.setLastFile('/v', '/v/b.md')
+    storage.setTabs('/v', ['/v/b.md', '/v/c.md'], '/v/b.md')
     expect(storage.getFile()).toBe('/v/b.md')
+    expect(storage.getTabs()).toEqual(['/v/b.md', '/v/c.md'])
     storage.setRoot('/other')
     expect(storage.getFile()).toBeNull()
+    expect(storage.getTabs()).toEqual([])
   })
 
-  /** The App boot expression (App.tsx): `hashFilePath(hash) ?? storage.getFile() ?? storage.getLastFile(root)`. */
+  /** The boot expression (tabs/useTabs.ts bootTabs): `hashFilePath(hash) ?? storage.getFile() ?? storage.getLastFile(root)`. */
   const bootFile = (hash: string, root: string) => hashFilePath(hash) ?? storage.getFile() ?? storage.getLastFile(root)
 
   it('boot precedence (GRO-2160): identity file wins over the folder lastFile, a pasted hash beats both', async () => {

@@ -1,6 +1,7 @@
 /**
- * useMenuEvents (GRO-2161): the renderer's half of the File › Open Folder… / Open Recent
- * menu gestures — subscribed on mount, unsubscribed on unmount, latest callbacks win.
+ * useMenuEvents (GRO-2161, tabs GRO-2232): the renderer's half of the File › Open Folder… /
+ * Open Recent / Close Tab and Window › Next/Previous Tab menu gestures — subscribed on
+ * mount, unsubscribed on unmount, latest callbacks win.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -12,28 +13,44 @@ import { useMenuEvents } from './useMenuEvents'
 function installBridge() {
   const openFolderListeners = new Set<() => void>()
   const openRootListeners = new Set<(path: string) => void>()
+  const closeTabListeners = new Set<() => void>()
+  const nextTabListeners = new Set<() => void>()
+  const prevTabListeners = new Set<() => void>()
+  const sub = <T,>(set: Set<T>) =>
+    vi.fn((l: T) => {
+      set.add(l)
+      return () => set.delete(l)
+    })
   const bridge = {
     menu: {
-      onOpenFolder: vi.fn((l: () => void) => {
-        openFolderListeners.add(l)
-        return () => openFolderListeners.delete(l)
-      }),
-      onOpenRoot: vi.fn((l: (path: string) => void) => {
-        openRootListeners.add(l)
-        return () => openRootListeners.delete(l)
-      }),
+      onOpenFolder: sub(openFolderListeners),
+      onOpenRoot: sub(openRootListeners),
+      onCloseTab: sub(closeTabListeners),
+      onNextTab: sub(nextTabListeners),
+      onPrevTab: sub(prevTabListeners),
     },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return {
     emitOpenFolder: () => openFolderListeners.forEach((l) => l()),
     emitOpenRoot: (path: string) => openRootListeners.forEach((l) => l(path)),
-    count: () => openFolderListeners.size + openRootListeners.size,
+    emitCloseTab: () => closeTabListeners.forEach((l) => l()),
+    emitNextTab: () => nextTabListeners.forEach((l) => l()),
+    emitPrevTab: () => prevTabListeners.forEach((l) => l()),
+    count: () => openFolderListeners.size + openRootListeners.size + closeTabListeners.size + nextTabListeners.size + prevTabListeners.size,
   }
 }
 
-function Probe({ onOpenFolder, onOpenRoot }: { onOpenFolder: () => void; onOpenRoot: (path: string) => void }) {
-  useMenuEvents({ onOpenFolder, onOpenRoot })
+interface ProbeProps {
+  onOpenFolder: () => void
+  onOpenRoot: (path: string) => void
+  onCloseTab: () => void
+  onNextTab: () => void
+  onPrevTab: () => void
+}
+
+function Probe(props: ProbeProps) {
+  useMenuEvents(props)
   return null
 }
 
@@ -47,15 +64,20 @@ afterEach(() => {
 describe('useMenuEvents', () => {
   it('routes menu gestures to the callbacks and unsubscribes on unmount', () => {
     const b = installBridge()
-    const onOpenFolder = vi.fn()
-    const onOpenRoot = vi.fn()
+    const handlers = { onOpenFolder: vi.fn(), onOpenRoot: vi.fn(), onCloseTab: vi.fn(), onNextTab: vi.fn(), onPrevTab: vi.fn() }
     root = createRoot(document.createElement('div'))
-    act(() => root?.render(<Probe onOpenFolder={onOpenFolder} onOpenRoot={onOpenRoot} />))
+    act(() => root?.render(<Probe {...handlers} />))
 
     act(() => b.emitOpenFolder())
-    expect(onOpenFolder).toHaveBeenCalledTimes(1)
+    expect(handlers.onOpenFolder).toHaveBeenCalledTimes(1)
     act(() => b.emitOpenRoot('/vaults/notes'))
-    expect(onOpenRoot).toHaveBeenCalledWith('/vaults/notes')
+    expect(handlers.onOpenRoot).toHaveBeenCalledWith('/vaults/notes')
+    act(() => b.emitCloseTab())
+    expect(handlers.onCloseTab).toHaveBeenCalledTimes(1)
+    act(() => b.emitNextTab())
+    expect(handlers.onNextTab).toHaveBeenCalledTimes(1)
+    act(() => b.emitPrevTab())
+    expect(handlers.onPrevTab).toHaveBeenCalledTimes(1)
 
     act(() => root?.unmount())
     root = null

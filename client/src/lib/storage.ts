@@ -65,9 +65,9 @@ export const storage = {
   },
 
   getRoot: (): string | null => identity.root,
-  /** Changing the root also clears this window's file; re-setting the same root keeps it. */
+  /** Changing the root clears this window's file AND tab list in the same write (Tabs rule 13, GRO-2234); re-setting the same root keeps them. */
   setRoot(root: string | null): void {
-    const patch = root === identity.root ? { root } : { root, file: null }
+    const patch = root === identity.root ? { root } : { root, file: null, tabs: [] as string[] }
     identity = { ...identity, ...patch }
     send('window.setIdentity', () => window.yaseenDocs.window.setIdentity(patch))
   },
@@ -95,13 +95,25 @@ export const storage = {
   /** The window identity records what is open now: THIS window's restored file, not the folder's shared lastFile (GRO-2160). */
   getFile: (): string | null => identity.file,
 
+  /** Valid AT BOOT only (like `getFile`): the renderer owns tab state after boot (Tabs I2, GRO-2234). */
+  getTabs: (): string[] => identity.tabs,
+
   getLastFile: (root: string): string | null => folderOf(root).lastFile,
-  /** The folder remembers its last file for the next time it is opened; the window identity records what is open now. */
-  setLastFile(root: string, file: string | null): void {
-    patchFolder(root, { lastFile: file })
-    identity = { ...identity, file }
-    send('state.setFolder', () => window.yaseenDocs.state.setFolder(root, { lastFile: file }))
-    send('window.setIdentity', () => window.yaseenDocs.window.setIdentity({ file }))
+
+  /**
+   * Tabs (I2, GRO-2234): every tab-state change lands as ONE explicit identity write carrying
+   * BOTH `tabs` and the active `file` — never a `{ file }`-only patch, whose main-side
+   * normalization would prepend the file into `tabs` on its own (the legacy pre-tabs path).
+   * The active file is also the folder's remembered lastFile for the next window on it; a
+   * null `root` (nothing to remember into) skips the folder half.
+   */
+  setTabs(root: string | null, tabs: readonly string[], file: string | null): void {
+    identity = { ...identity, file, tabs: [...tabs] }
+    if (root !== null) {
+      patchFolder(root, { lastFile: file })
+      send('state.setFolder', () => window.yaseenDocs.state.setFolder(root, { lastFile: file }))
+    }
+    send('window.setIdentity', () => window.yaseenDocs.window.setIdentity({ tabs: [...tabs], file }))
   },
 
   /** Already validated field-by-field by the main process on load (`desktop/src/main/store.ts`). */

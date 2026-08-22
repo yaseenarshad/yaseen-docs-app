@@ -1,0 +1,106 @@
+/* Window tab strip + per-tab editor stack (Tabs I2, GRO-2234). Owned by TabBar.tsx (the
+   feature-CSS convention); .workspace/.tabstack are rendered by App around it. Follows the
+   ViewTabs look (bases.css): an underline-active tablist on the app theme tokens. */
+
+/* The editor half of the app row: tab strip on top, editor stack below. */
+.workspace {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tabbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  padding: 4px 8px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  /* Overflow = plain horizontal scroll for v1 (shrink-to-min + scroll polish is I3). */
+  overflow-x: auto;
+}
+
+.tabbar__tab {
+  display: flex;
+  align-items: center;
+  flex: none;
+  min-width: 0;
+  border-bottom: 2px solid transparent;
+}
+
+.tabbar__tab--active {
+  border-bottom-color: var(--accent);
+}
+
+.tabbar__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 2px 4px 8px;
+  font-size: 13px;
+  color: var(--fg-muted);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.tabbar__btn:hover {
+  background: var(--bg-side);
+}
+
+.tabbar__btn[aria-selected='true'] {
+  color: var(--fg);
+}
+
+.tabbar__glyph {
+  flex: none;
+}
+
+.tabbar__close {
+  padding: 2px 4px;
+  margin-right: 4px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--fg-muted);
+  border-radius: 4px;
+  /* Shown on hover/active only (the ViewTabs affordance pattern); visibility (not display)
+     so the tab never changes width when the ✕ appears. */
+  visibility: hidden;
+}
+
+.tabbar__tab:hover .tabbar__close,
+.tabbar__tab--active .tabbar__close {
+  visibility: visible;
+}
+
+.tabbar__close:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+/* One layer per VISITED tab, all mounted, only the active one visible (GRO-2234 rule 6).
+   Hidden layers use visibility:hidden, NEVER display:none: Chromium resets a scroller's
+   scrollTop once it sits in a display:none subtree, so switching back would lose each tab's
+   scroll position. visibility keeps layout alive — scroll offset, selection and undo history
+   all survive a switch — while still making the hidden layer unfocusable and hit-test
+   invisible. Layers stack absolutely so every editor owns the same box. */
+.tabstack {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tabstack__layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tabstack__layer--hidden {
+  visibility: hidden;
+}
