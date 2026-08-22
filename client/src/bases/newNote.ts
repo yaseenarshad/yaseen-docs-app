@@ -38,8 +38,8 @@ function literalOf(e: Expr): string | number | boolean | undefined {
 
 const trimSlashes = (s: string): string => s.replace(/^\/+|\/+$/g, '')
 
-/** And-reachable leaf expressions of a filter tree (`or`/`not` subtrees skipped entirely). */
-function andLeaves(node: FilterNode | undefined, out: string[]): void {
+/** And-reachable leaf expressions of a filter tree (`or`/`not` subtrees skipped entirely). Shared with 5E's pinned-type detection (`relation.ts`). */
+export function andLeaves(node: FilterNode | undefined, out: string[]): void {
   if (node === undefined || node === null) return
   if (typeof node === 'string') {
     out.push(node)

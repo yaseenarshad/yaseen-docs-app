@@ -12,7 +12,13 @@ import { BaseHost } from './BaseHost'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { readFile: vi.fn(), writeFile: vi.fn(), index: vi.fn() },
+  api: {
+    readFile: vi.fn(),
+    writeFile: vi.fn(),
+    index: vi.fn(),
+    // The swapped useRegistry (GRO-2201): an empty ready registry, like an untouched vault.
+    registry: { get: vi.fn(async (root: string) => ({ root, version: 1, types: {}, properties: {} })), onChange: vi.fn(() => () => undefined) },
+  },
 }))
 
 import { api } from '../api'

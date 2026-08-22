@@ -1,7 +1,9 @@
 /**
- * `useRegistry` (Bible A, GRO-2201): one `api.registry.get(root)` fetch per root, replaced live
- * by `registry:changed` broadcasts for that root. The bridge is mocked; the onChange listeners
- * are captured so tests can push broadcasts.
+ * `useRegistry` (5E GRO-2217 ↔ Bible A GRO-2201; contract GRO-2120 comment 73479ea3 §2): one
+ * `registry.get(root)` fetch per root, live-replaced by `registry:changed` broadcasts for that
+ * root. Public surface is exactly `{ status, registry, error }`. The bridge (`api.registry`, the
+ * swapped source) is mocked; the onChange listeners are captured so tests can push broadcasts.
+ * Stub-backed component integration lives in `view/RelationColumn.test.tsx`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -78,15 +80,14 @@ afterEach(() => {
 })
 
 describe('useRegistry', () => {
-  it('is pending on mount, then ready with the fetched registry', async () => {
-    getFn.mockResolvedValue(response('/vault', { types: { kpi: { properties: {} } } }))
+  it('is pending on mount, then ready with the fetched registry — an untouched vault is empty, never an error', async () => {
     mount()
     expect(state.status).toBe('pending')
     expect(state.registry).toBeNull()
     await flush()
     expect(getFn).toHaveBeenCalledWith('/vault')
     expect(state.status).toBe('ready')
-    expect(state.registry?.types.kpi).toEqual({ properties: {} })
+    expect(state.registry).toEqual({ root: '/vault', version: 1, types: {}, properties: {} })
     expect(state.error).toBeNull()
   })
 
@@ -98,9 +99,8 @@ describe('useRegistry', () => {
     expect(state.error).toBe('bridge gone')
     expect(state.registry).toBeNull()
 
-    getFn.mockResolvedValue(response('/vault', { error: 'types.json is not valid JSON: x' }))
-    rerender('/other') // any root change refetches
     getFn.mockResolvedValue(response('/other', { error: 'types.json is not valid JSON: x' }))
+    rerender('/other')
     await flush()
     expect(state.status).toBe('ready') // degraded, not failed: registry.error carries the string
     expect(state.registry?.error).toContain('not valid JSON')

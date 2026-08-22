@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback, useState } from 'react'
-import type { IndexRecord } from '@shared/types'
+import type { IndexRecord, RegistryResponse } from '@shared/types'
 import type { BaseDefinition, BaseView } from '../baseFile'
 import type { EngineError } from '../engine'
 import { FilterMenu, type Mutate } from './FilterMenu'
@@ -28,6 +28,10 @@ export interface ToolbarProps {
   /** Create a note satisfying this view and open it (5D, GRO-2144). */
   onNew: () => void
   tabs: ViewTabsProps
+  /** Relation columns (5E, GRO-2217): vault root, the view's pinned type and the registry, for the Properties menu. */
+  root?: string | null
+  pinned?: string | null
+  registry?: RegistryResponse | null
 }
 
 /** `8 items`, or `1 / 8 items` when search or limit reduce what the body shows. */
@@ -35,7 +39,7 @@ export const countLabel = (shown: number, total: number): string =>
   shown === total ? `${total} item${total === 1 ? '' : 's'}` : `${shown} / ${total} items`
 
 /** View chrome (GRO-2135): tabs on the left; Filter / Sort / Properties / Search buttons and the count on the right. */
-export function Toolbar({ def, view, viewIndex, records, errors, shown, total, search, onSearch, onUpdate, onNew, tabs }: ToolbarProps) {
+export function Toolbar({ def, view, viewIndex, records, errors, shown, total, search, onSearch, onUpdate, onNew, tabs, root = null, pinned = null, registry = null }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
   const close = useCallback(() => setOpen(null), [])
   const filters = countRules(def.filters) + countRules(view.filters)
@@ -86,7 +90,7 @@ export function Toolbar({ def, view, viewIndex, records, errors, shown, total, s
           'Properties',
           <PropertiesIcon />,
           0,
-          <PropertiesMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} />,
+          <PropertiesMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} root={root} pinned={pinned} registry={registry} />,
         )}
         <div className="base-toolbar__search">
           <button

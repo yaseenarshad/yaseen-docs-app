@@ -325,7 +325,7 @@ export interface VaultConfigApi {
   onChange(listener: (change: VaultConfigChange) => void): () => void
 }
 
-// ---------- Type & property registry (`<root>/.yaseendocs/types.json`, Bible A — GRO-2201) ----------
+// ---------- Type & property registry (`<root>/.yaseendocs/types.json` — contract locked on GRO-2120, bridge Bible A GRO-2201) ----------
 
 /**
  * The editor set that exists (5B's `EditorKind`) plus the link/multi-link split. An unknown
@@ -336,7 +336,7 @@ export type RegistryPropertyKind = (typeof REGISTRY_PROPERTY_KINDS)[number]
 
 export interface RegistryPropertyDef {
   kind: RegistryPropertyKind
-  /** link/multi-link only: constrain the picker to pages whose page_type equals this. */
+  /** link/multi-link only: constrain the picker to pages whose page_type equals this type name. */
   target?: string
   /** Metadata for the future validation report (report-never-block: gates nothing in v1). */
   required?: boolean
@@ -355,7 +355,7 @@ export interface RegistryResponse {
   /** The file's `version` (1 when the file is absent or unusable). >1 = readable, not mutable. */
   version: number
   types: Record<string, RegistryTypeDef>
-  /** Vault-wide (untyped) property declarations. */
+  /** Vault-wide declarations for columns made outside a typed base — see the GRO-2120 contract §4. */
   properties: Record<string, RegistryPropertyDef>
   /** Set when types.json exists but is unusable; types/properties are then {}. */
   error?: string
@@ -365,6 +365,7 @@ export interface RegistryResponse {
 export type RegistryScope = { type: string } | 'vault'
 
 /**
+ * The registry surface delivered as `window.yaseenDocs.registry` (GRO-2120 contract §2).
  * Targeted mutators, never a whole-file PUT — the `StateApi` anti-clobber principle. Every
  * mutation is a serialised read-modify-write that preserves unknown fields at every level.
  * Type names must match `^[a-z][a-z0-9-]*$`, property names `^[a-z][a-z0-9_]*$`; `page_type`
