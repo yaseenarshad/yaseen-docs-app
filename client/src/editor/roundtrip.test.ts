@@ -178,4 +178,16 @@ describe('locked editor rules (createCrepe)', () => {
     const out = await roundTrip('See [[Wiki Link]] and ![[embed.png]].\n')
     expect(out).toBe('See [[Wiki Link]] and ![[embed.png]].\n')
   })
+  it('wikilink variants round-trip byte-identically (decoration-only rendering, GRO-2190)', async () => {
+    const cases = [
+      'See [[a|b]] with an alias.\n',
+      'See [[a#h]] with a heading.\n',
+      'See [[a#^block]] with a block ref.\n',
+      'Adjacent [[a]][[b]] links.\n',
+      '**see [[a]]**\n',
+      'Unicode [[Café Notes/Über plan]] with spaces.\n',
+      'An unclosed [[ stays literal.\n',
+    ]
+    for (const md of cases) expect(await roundTrip(md)).toBe(md)
+  })
 })

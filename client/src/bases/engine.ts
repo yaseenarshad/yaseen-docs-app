@@ -68,20 +68,23 @@ const normalise = (s: string) => s.replace(/^\/+|\/+$/g, '').replace(/\.(md|mark
 
 /**
  * Link target → note: absolute path, root-relative path (with or without `.md` / leading slash),
- * else bare basename (first match in the given order — pass path-sorted files for Obsidian's
- * shortest-path rule). Case-insensitive; `[[…]]`, `|alias` and `#heading` are stripped.
+ * else bare basename — duplicates resolve to the SHALLOWEST folder (Obsidian's shortest-path
+ * rule, GRO-2190), equal depth to the first in the given (path-sorted) order. Case-insensitive;
+ * `[[…]]`, `|alias` and `#heading` are stripped.
  */
 export function makeResolver(files: readonly FileValue[], root?: string): Resolver {
   const byPath = new Map<string, FileValue>()
   const byRel = new Map<string, FileValue>()
-  const byBase = new Map<string, FileValue>()
+  const byBase = new Map<string, { file: FileValue; depth: number }>()
   for (const f of files) {
     const r = f.record
     byPath.set(r.path.toLowerCase(), f)
     const rel = normalise(r.folder ? `${r.folder}/${r.basename}` : r.basename)
     if (!byRel.has(rel)) byRel.set(rel, f)
     const base = r.basename.toLowerCase()
-    if (!byBase.has(base)) byBase.set(base, f)
+    const depth = r.folder === '' ? 0 : r.folder.split('/').length
+    const prev = byBase.get(base)
+    if (prev === undefined || depth < prev.depth) byBase.set(base, { file: f, depth })
   }
   const rootKey = root ? `${root.replace(/\/+$/, '').toLowerCase()}/` : null
   const cache = new Map<string, FileValue | null>()
@@ -94,12 +97,38 @@ export function makeResolver(files: readonly FileValue[], root?: string): Resolv
       found = byPath.get(key) ?? null
       if (!found) {
         const rel = normalise(rootKey && key.startsWith(rootKey) ? key.slice(rootKey.length) : key)
-        found = byRel.get(rel) ?? (rel.includes('/') ? null : byBase.get(rel) ?? null)
+        found = byRel.get(rel) ?? (rel.includes('/') ? null : byBase.get(rel)?.file ?? null)
       }
     }
     cache.set(target, found)
     return found
   }
+}
+
+/** FileValue wrappers per records array identity — `runView` and `resolverFor` share the instances. */
+const filesCache = new WeakMap<readonly IndexRecord[], FileValue[]>()
+
+function fileValuesFor(records: readonly IndexRecord[]): FileValue[] {
+  let files = filesCache.get(records)
+  if (files === undefined) filesCache.set(records, (files = records.map(r => new FileValue(r))))
+  return files
+}
+
+const resolverCache = new WeakMap<readonly IndexRecord[], Map<string, Resolver>>()
+
+/**
+ * Memoized `makeResolver` per records array identity (and per root): `runView` and the editor's
+ * wikilink decorations (GRO-2190) both resolve on every run/render, so one index snapshot must
+ * not rebuild the lookup maps each time. A refetched index is a NEW array and gets a fresh
+ * resolver; the WeakMap lets dropped snapshots be collected. The per-instance target cache
+ * inside `makeResolver` is unchanged.
+ */
+export function resolverFor(records: readonly IndexRecord[], root?: string): Resolver {
+  let byRoot = resolverCache.get(records)
+  if (byRoot === undefined) resolverCache.set(records, (byRoot = new Map()))
+  let resolver = byRoot.get(root ?? '')
+  if (resolver === undefined) byRoot.set(root ?? '', (resolver = makeResolver(fileValuesFor(records), root)))
+  return resolver
 }
 
 // ---------- filters ----------
@@ -243,8 +272,8 @@ export function runView(def: BaseDefinition, view: BaseView, records: readonly I
   const errors: EngineError[] = []
   const viewIndex = def.views.indexOf(view)
   const viewWhere = viewIndex >= 0 ? `views[${viewIndex}]` : 'view'
-  const files = records.map(r => new FileValue(r))
-  const resolve = makeResolver(files, opts.root)
+  const files = fileValuesFor(records)
+  const resolve = resolverFor(records, opts.root)
   const thisFile = opts.thisFile ? files.find(f => f.record.path === opts.thisFile) ?? null : null
   const formulas = def.formulas ?? {}
   const baseFilter = compileFilter(def.filters, 'filters', errors)

@@ -9,6 +9,7 @@ import { BaseCodeBlock } from './baseCodeBlock/BaseCodeBlock'
 import { createBaseEmbedRegistry, type BaseEmbedSlot } from './baseEmbed/baseEmbedPlugin'
 import { BaseEmbed } from './baseEmbed/BaseEmbed'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
+import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import './outline/outlineFolding.css'
 import './outline/bullets.css'
 import './outline/zoom.css'
@@ -29,9 +30,11 @@ interface EditorProps {
   watch: WatchSource
   /** Bases open their row links through this (GRO-2135); App passes `openFile`. */
   onOpenFile: (path: string) => void
+  /** Wikilink resolve source (GRO-2190): App owns ONE per window, fed by WikilinkIndexBridge. */
+  wikilinks?: WikilinkResolveSource
 }
 
-export function Editor({ root, path, watch, onOpenFile }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, wikilinks }: EditorProps) {
   const state = useFile(path)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   return (
@@ -43,14 +46,26 @@ export function Editor({ root, path, watch, onOpenFile }: EditorProps) {
         (fileKind(file.path) === 'base' ? (
           <BaseHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} />
         ) : (
-          <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} />
+          <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} wikilinks={wikilinks} />
         ))}
     </section>
   )
 }
 
 /** Mounts exactly one Crepe instance for `file`; remounted (via `key`) when the path changes. */
-function CrepeHost({ root, file, watch, onOpenFile }: { root: string; file: FileResponse; watch: WatchSource; onOpenFile: (path: string) => void }) {
+function CrepeHost({
+  root,
+  file,
+  watch,
+  onOpenFile,
+  wikilinks,
+}: {
+  root: string
+  file: FileResponse
+  watch: WatchSource
+  onOpenFile: (path: string) => void
+  wikilinks?: WikilinkResolveSource
+}) {
   const hostRef = useRef<HTMLDivElement>(null)
   const autosave = useAutosave(file.path)
   const { attach, markReloaded, reportConflict, absorbFrontmatterOnly } = autosave
@@ -94,6 +109,8 @@ function CrepeHost({ root, file, watch, onOpenFile }: { root: string; file: File
       zoom: { fileName: basename(file.path) },
       baseEmbeds: embedRegistry,
       baseCodeBlocks: codeRegistry,
+      // Stable per window (App-owned): index updates flow INSIDE the source, never remounting us.
+      wikilinks,
     })
     let controller: ReturnType<typeof attach> | null = null
     let cancelled = false
@@ -139,7 +156,7 @@ function CrepeHost({ root, file, watch, onOpenFile }: { root: string; file: File
       unsubscribe()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, embedRegistry, codeRegistry])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, embedRegistry, codeRegistry, wikilinks])
 
   return (
     <>

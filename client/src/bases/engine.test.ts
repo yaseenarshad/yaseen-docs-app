@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { type BaseDefinition, type BaseView, type FilterNode, parseBase } from './baseFile'
-import { type ViewResult, makeResolver, propertyKeys, propertyLabel, runView } from './engine'
+import { type ViewResult, makeResolver, propertyKeys, propertyLabel, resolverFor, runView } from './engine'
 import { DateValue, ErrorValue, FileValue } from './expr'
 import { TEST_RECORDS } from './testRecords'
 
@@ -286,13 +286,35 @@ describe('makeResolver (GRO-2132)', () => {
     expect(resolve('')).toBe(null)
   })
 
-  it('duplicate basenames resolve to the first in path order', () => {
+  it('duplicate basenames resolve to the shallowest folder; equal depth → first in the given order (GRO-2190)', () => {
     const dup = [
       { ...TEST_RECORDS[0], path: '/vault/b/Dup.md', basename: 'Dup', folder: 'b' },
       { ...TEST_RECORDS[0], path: '/vault/a/Dup.md', basename: 'Dup', folder: 'a' },
     ].map(r => new FileValue(r))
-    expect(makeResolver(dup)('Dup')?.record.path).toBe('/vault/b/Dup.md')
-    expect(makeResolver(dup)('a/Dup')?.record.path).toBe('/vault/a/Dup.md')
+    expect(makeResolver(dup)('Dup')?.record.path).toBe('/vault/b/Dup.md') // equal depth: first given wins
+    expect(makeResolver(dup)('a/Dup')?.record.path).toBe('/vault/a/Dup.md') // a path is never ambiguous
+    // a shallower LATER file beats a deeper earlier one (Obsidian's shortest-path rule)
+    const deep = [
+      { ...TEST_RECORDS[0], path: '/vault/a/b/Dup.md', basename: 'Dup', folder: 'a/b' },
+      { ...TEST_RECORDS[0], path: '/vault/z/Dup.md', basename: 'Dup', folder: 'z' },
+    ].map(r => new FileValue(r))
+    expect(makeResolver(deep)('Dup')?.record.path).toBe('/vault/z/Dup.md')
+    expect(makeResolver(deep)('a/b/Dup')?.record.path).toBe('/vault/a/b/Dup.md')
+    // the vault root is depth 0 and beats any folder
+    const withRoot = [
+      { ...TEST_RECORDS[0], path: '/vault/a/Dup.md', basename: 'Dup', folder: 'a' },
+      { ...TEST_RECORDS[0], path: '/vault/Dup.md', basename: 'Dup', folder: '' },
+    ].map(r => new FileValue(r))
+    expect(makeResolver(withRoot)('Dup')?.record.path).toBe('/vault/Dup.md')
+  })
+
+  it('resolverFor memoizes per records array identity and per root (GRO-2190)', () => {
+    const r1 = resolverFor(TEST_RECORDS, '/vault')
+    expect(resolverFor(TEST_RECORDS, '/vault')).toBe(r1)
+    expect(resolverFor(TEST_RECORDS)).not.toBe(r1) // another root key → its own resolver
+    expect(resolverFor([...TEST_RECORDS], '/vault')).not.toBe(r1) // a new snapshot → a fresh resolver
+    expect(r1('Agentic Agency')?.record.path).toBe(AGENTIC)
+    expect(r1(AGENTIC)?.record.path).toBe(AGENTIC)
   })
 })
 

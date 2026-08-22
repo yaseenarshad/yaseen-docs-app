@@ -54,6 +54,8 @@ function installBridge(state: AppState, identity: WindowIdentity) {
     })
   const bridge = {
     tree: vi.fn(async (root: string) => ({ root, tree: [], generatedAt: 1 })),
+    // Empty index (GRO-2190): WikilinkIndexBridge reads it for wikilink resolution.
+    index: vi.fn(async (root: string) => ({ root, records: [], generatedAt: 1 })),
     pickFolder: vi.fn(async () => ({ cancelled: true as const })),
     watch: vi.fn(() => () => undefined),
     state: {
@@ -123,6 +125,8 @@ async function mount(state: AppState, identity: WindowIdentity) {
   document.body.appendChild(container)
   root = createRoot(container)
   act(() => root?.render(<StrictMode><App /></StrictMode>))
+  // Settle in-flight bridge fetches (WikilinkIndexBridge's index read) inside act.
+  await act(async () => {})
   return { ...b, el: container }
 }
 

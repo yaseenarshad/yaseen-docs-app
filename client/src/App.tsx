@@ -3,6 +3,8 @@ import type { SettingsState } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
+import { createWikilinkResolveSource } from './editor/wikilink/wikilinkPlugin'
+import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
 import { useLinkEvents } from './hooks/useLinkEvents'
 import { useMenuEvents } from './hooks/useMenuEvents'
 import { usePickFolder } from './hooks/usePickFolder'
@@ -33,6 +35,10 @@ export function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const [settings, setSettings] = useState(storage.getSettings)
   const watch = useWatch(root)
+  // Wikilinks (Links A, GRO-2190): ONE resolve source per window — a stable object every
+  // editor's wikilink plugin subscribes to; WikilinkIndexBridge (below) keeps it fed from the
+  // vault index, so index changes restyle links live without any editor remounting.
+  const [wikilinks] = useState(createWikilinkResolveSource)
 
   // Settings and the sidebar toggle are global (D9): a change made in another window lands here live.
   useEffect(
@@ -175,16 +181,17 @@ export function App() {
         </section>
       ) : (
         <div className="workspace">
+          <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} />
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
           <TabBar tabs={tabs} active={file} onActivate={activate} onClose={closeTab} onMove={moveTab} />
           <div className="tabstack">
-            {mounted.length === 0 && <Editor root={root} path={null} watch={watch} onOpenFile={openCurrent} />}
+            {mounted.length === 0 && <Editor root={root} path={null} watch={watch} onOpenFile={openCurrent} wikilinks={wikilinks} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility — see tabs.css
               // for why display:none would lose scroll positions.
               <div key={path} className={path === file ? 'tabstack__layer' : 'tabstack__layer tabstack__layer--hidden'}>
-                <Editor root={root} path={path} watch={watch} onOpenFile={openCurrent} />
+                <Editor root={root} path={path} watch={watch} onOpenFile={openCurrent} wikilinks={wikilinks} />
               </div>
             ))}
           </div>

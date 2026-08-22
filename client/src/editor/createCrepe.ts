@@ -35,6 +35,10 @@
  *    for `code_block` — `language === 'base'` gets a registry slot (CrepeHost portals
  *    `<BaseCodeBlock>`), every other language delegates to Crepe's stock CodeMirror block.
  *    No schema/serializer change: the block's exact text round-trips byte-identically.
+ *  - Wikilinks (GRO-2190, `wikilink/wikilinkPlugin.ts`): `[[target]]` renders Obsidian
+ *    live-preview style via inline decorations only (brackets hidden, alias/heading display,
+ *    caret-adjacency reveal, resolved/unresolved via `opts.wikilinks`) — never a schema or
+ *    serializer change, round-trip byte-identical. No click handling (Links C owns that).
  */
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -54,6 +58,7 @@ import { obsidianHotkeys } from './outline/hotkeys'
 import { outlinerKeymap } from './outline/listCommands'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { createOutlineZoom, zoomKeymap, type ZoomOptions } from './outline/zoom'
+import { createWikilink, createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 
 export interface CreateCrepeOptions {
   root: HTMLElement
@@ -68,6 +73,8 @@ export interface CreateCrepeOptions {
   baseEmbeds?: BaseEmbedRegistry
   /** `base` code block slots (GRO-2146): the host portals `<BaseCodeBlock>` into them. Defaults to a private registry. */
   baseCodeBlocks?: BaseCodeBlockRegistry
+  /** Wikilink resolve source (GRO-2190): App keeps it fed from the vault index. Defaults to a never-updated source (all links render resolved). */
+  wikilinks?: WikilinkResolveSource
 }
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
@@ -90,6 +97,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(bulletThreading)
   crepe.editor.use(createBaseEmbed(opts.baseEmbeds ?? createBaseEmbedRegistry()))
   crepe.editor.use(createBaseCodeBlock(opts.baseCodeBlocks ?? createBaseCodeBlockRegistry()))
+  crepe.editor.use(createWikilink(opts.wikilinks ?? createWikilinkResolveSource()))
   crepe.editor.use(blockHandleGate)
   crepe.editor.use(multiBlockDrag)
   crepe.editor.use(outlinerKeymap)
