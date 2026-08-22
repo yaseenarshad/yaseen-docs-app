@@ -13,6 +13,7 @@ import { type PendingMove, applyMoves, dragKey } from './view/groupDrag'
 import { ListView } from './view/ListView'
 import { TableView } from './view/TableView'
 import { Toolbar } from './view/Toolbar'
+import { ViewTabs } from './view/ViewTabs'
 
 export interface BaseViewProps {
   parsed: ParsedBase
@@ -30,6 +31,10 @@ export interface BaseViewProps {
   /** Assigned property types from `.obsidian/types.json`, for cell editor inference (5B, GRO-2142). */
   types?: Record<string, string>
   onOpenFile: (path: string) => void
+  /** Read-only chrome for embeds (6A, GRO-2145): view switcher only — no toolbar menus, New, cell editing or drag. */
+  readOnly?: boolean
+  /** Initial view by name (case-insensitive; `![[X.base#View]]`); unknown or absent → the first view. */
+  initialView?: string
 }
 
 /**
@@ -39,8 +44,10 @@ export interface BaseViewProps {
  * the list for `type: list` (4F, GRO-2140), a placeholder row list for unknown view types.
  * Only the active tab and the search text are component state — everything else is the file.
  */
-export function BaseView({ parsed, onChange, root, thisFile, records, indexStatus, indexError, types, onOpenFile }: BaseViewProps) {
-  const [active, setActive] = useState(0)
+export function BaseView({ parsed, onChange, root, thisFile, records, indexStatus, indexError, types, onOpenFile, readOnly = false, initialView }: BaseViewProps) {
+  const [active, setActive] = useState(() =>
+    initialView === undefined ? 0 : Math.max(0, parsed.def.views.findIndex((v) => v.name.toLowerCase() === initialView.toLowerCase())),
+  )
   const [search, setSearch] = useState<string | null>(null)
   /** Collapsed group keys per view, seeded from the store; a toggle replaces the entry here AND writes through storage. */
   const [collapsedByKey, setCollapsedByKey] = useState<Record<string, string[]>>({})
@@ -76,10 +83,15 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
     return (
       <div className="base-view">
         <p className="base-view__pending">
-          This base has no views.{' '}
-          <button type="button" className="base-menu__action" onClick={() => update((d) => d.views.push({ type: 'table', name: 'Table 1' }))}>
-            Add view
-          </button>
+          This base has no views.
+          {!readOnly && (
+            <>
+              {' '}
+              <button type="button" className="base-menu__action" onClick={() => update((d) => d.views.push({ type: 'table', name: 'Table 1' }))}>
+                Add view
+              </button>
+            </>
+          )}
         </p>
       </div>
     )
@@ -177,20 +189,27 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
 
   return (
     <div className="base-view">
-      <Toolbar
-        def={def}
-        view={view}
-        viewIndex={index}
-        records={records}
-        errors={result.errors}
-        shown={rows.length}
-        total={result.total}
-        search={search}
-        onSearch={setSearch}
-        onUpdate={update}
-        onNew={() => onNewNote(null)}
-        tabs={tabs}
-      />
+      {readOnly ? (
+        // Read-only chrome (6A, GRO-2145): the view switcher only — no menus, search or New.
+        <div className="base-toolbar">
+          <ViewTabs {...tabs} readOnly />
+        </div>
+      ) : (
+        <Toolbar
+          def={def}
+          view={view}
+          viewIndex={index}
+          records={records}
+          errors={result.errors}
+          shown={rows.length}
+          total={result.total}
+          search={search}
+          onSearch={setSearch}
+          onUpdate={update}
+          onNew={() => onNewNote(null)}
+          tabs={tabs}
+        />
+      )}
       {createError !== null && (
         <p className="base-view__error" role="alert">
           Could not create note: {createError}
@@ -216,8 +235,9 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           onOpenFile={onOpenFile}
           onMoveToGroup={onMoveToGroup}
           moveError={moveError}
-          onNewInGroup={onNewNote}
+          onNewInGroup={readOnly ? undefined : onNewNote}
           types={types}
+          readOnly={readOnly}
         />
       ) : view.type === 'board' ? (
         <BoardView
@@ -232,7 +252,8 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           onOpenFile={onOpenFile}
           onMoveToGroup={onMoveToGroup}
           moveError={moveError}
-          onNewInGroup={onNewNote}
+          onNewInGroup={readOnly ? undefined : onNewNote}
+          readOnly={readOnly}
         />
       ) : view.type === 'cards' ? (
         <CardsView
@@ -245,8 +266,9 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
           onOpenFile={onOpenFile}
-          onNewInGroup={onNewNote}
+          onNewInGroup={readOnly ? undefined : onNewNote}
           types={types}
+          readOnly={readOnly}
         />
       ) : view.type === 'list' ? (
         <ListView
@@ -258,8 +280,9 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
           onOpenFile={onOpenFile}
-          onNewInGroup={onNewNote}
+          onNewInGroup={readOnly ? undefined : onNewNote}
           types={types}
+          readOnly={readOnly}
         />
       ) : (
         <ul className="base-rows">

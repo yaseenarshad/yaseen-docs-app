@@ -34,6 +34,8 @@ export interface TableViewProps {
   onNewInGroup?: (group: Group) => void
   /** Assigned property types from `.obsidian/types.json`, for editor inference (5B, GRO-2142). */
   types?: Record<string, string>
+  /** Embed chrome (6A, GRO-2145): no cell editing, no column resize, no summary picking, no drag. */
+  readOnly?: boolean
 }
 
 const DEFAULT_WIDTH = 150
@@ -62,10 +64,10 @@ type Line = { header: Group; gk: string } | { row: Row; r: number; g: Group | nu
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup, types }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup, types, readOnly = false }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
-  // Row drag between sections (5C, GRO-2143); disabled without groups.
-  const dnd = useGroupDrag(groups === null ? null : dragKey(view), onMoveToGroup)
+  // Row drag between sections (5C, GRO-2143); disabled without groups, and in read-only embeds.
+  const dnd = useGroupDrag(groups === null || readOnly ? null : dragKey(view), onMoveToGroup)
   const [summaryFor, setSummaryFor] = useState<string | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -176,7 +178,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             {keys.map((key) => (
               <th key={key} scope="col" style={{ width: widthOf(key) }}>
                 {propertyLabel(def, key)}
-                <span className="base-table__resize" aria-hidden onMouseDown={startResize(key)} />
+                {!readOnly && <span className="base-table__resize" aria-hidden onMouseDown={startResize(key)} />}
               </th>
             ))}
           </tr>
@@ -229,7 +231,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                             </span>
                           )}
                         </>
-                      ) : bares[c] !== null ? (
+                      ) : bares[c] !== null && !readOnly ? (
                         <EditableCell
                           path={line.row.record.path}
                           propKey={bares[c]}
@@ -255,6 +257,17 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
               {keys.map((key) => {
                 const label = propertyLabel(def, key)
                 const kind = summaryKindOf(view, key)
+                if (readOnly)
+                  return (
+                    <td key={key} className="base-table__summary">
+                      {kind !== undefined && (
+                        <span className="base-table__summary-btn">
+                          <span className="base-table__summary-kind">{kind}</span>
+                          <span>{render(summarize(kind, rows.map((r) => r.values[key]), def.summaries))}</span>
+                        </span>
+                      )}
+                    </td>
+                  )
                 return (
                   <td key={key} className="base-table__summary">
                     <button

@@ -26,6 +26,8 @@ export interface CardsViewProps {
   onOpenFile: (path: string) => void
   /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. */
   onNewInGroup?: (group: Group) => void
+  /** Embed chrome (6A, GRO-2145): no inline property editing. */
+  readOnly?: boolean
   /** Assigned property types from `.obsidian/types.json`, for editor inference (5B, GRO-2142). */
   types?: Record<string, string>
 }
@@ -113,7 +115,7 @@ function CardCover({ root, cover }: { root: string | null; cover: Cover }) {
  * `.base` file); search narrows cards and drops empty groups. Note-property rows edit inline
  * through `EditableCell` (5B, GRO-2142); a lightbox stays out of scope.
  */
-export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, types }: CardsViewProps) {
+export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, types, readOnly = false }: CardsViewProps) {
   const keys = propertyKeys(def, view, records)
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const rest = keys.filter((k) => k !== nameKey)
@@ -145,7 +147,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
                 <div key={key} className="base-card__prop">
                   <span className="base-card__prop-name">{propertyLabel(def, key)}</span>
                   <span className="base-card__prop-value">
-                    {bare === null ? (
+                    {bare === null || readOnly ? (
                       cellContent(row.values[key])
                     ) : (
                       <EditableCell

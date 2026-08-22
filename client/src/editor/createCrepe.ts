@@ -28,12 +28,16 @@
  *    selection moves the whole selection; single-block drag stays Crepe's.
  *  - Bullet threading (GRO-2094, `outline/bulletThreading.ts` + `.css`): root → caret path
  *    decorations (accent line + glyphs, stops at the active bullet); CSS-gated by the settings cog.
+ *  - Base embeds (GRO-2145, `baseEmbed/baseEmbedPlugin.ts`): a paragraph with exactly one `![[X.base]]`
+ *    gets a widget decoration slot (never a schema change — the text round-trips byte-identically);
+ *    CrepeHost portals `<BaseEmbed>` into the slots via the registry in `opts.baseEmbeds`.
  */
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
 import { Selection } from '@milkdown/kit/prose/state'
 import { replaceAll } from '@milkdown/kit/utils'
+import { createBaseEmbed, createBaseEmbedRegistry, type BaseEmbedRegistry } from './baseEmbed/baseEmbedPlugin'
 import { blockHandleGate } from './blockHandleGate'
 import { bulletThreading } from './outline/bulletThreading'
 import { features } from './featureConfig'
@@ -55,6 +59,8 @@ export interface CreateCrepeOptions {
   folding?: OutlineFoldingOptions
   /** Zoom into a bullet (GRO-2029); `fileName` is the root breadcrumb. Defaults to an unnamed file. */
   zoom?: ZoomOptions
+  /** Base embed slots (GRO-2145): the host portals `<BaseEmbed>` into them. Defaults to a private registry. */
+  baseEmbeds?: BaseEmbedRegistry
 }
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
@@ -75,6 +81,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createOutlineZoom(opts.zoom ?? { fileName: 'Untitled' }))
   crepe.editor.use(guideLines)
   crepe.editor.use(bulletThreading)
+  crepe.editor.use(createBaseEmbed(opts.baseEmbeds ?? createBaseEmbedRegistry()))
   crepe.editor.use(blockHandleGate)
   crepe.editor.use(multiBlockDrag)
   crepe.editor.use(outlinerKeymap)

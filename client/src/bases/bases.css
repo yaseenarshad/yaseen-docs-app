@@ -1082,3 +1082,30 @@
   outline: none;
   border-color: var(--accent);
 }
+
+/* ---------- base embeds in the editor (6A, GRO-2145) ---------- */
+
+/* The widget slot the plugin owns; `<BaseEmbed>` portals into it. Not editable, not part of the text flow. */
+.base-embed {
+  margin: 8px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  max-height: 420px;
+  overflow: auto;
+  user-select: text;
+}
+
+.base-embed .base-view {
+  min-height: 0;
+}
+
+.base-embed__msg {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.base-embed__msg--missing {
+  color: var(--danger);
+}

@@ -21,6 +21,8 @@ export interface ListViewProps {
   onOpenFile: (path: string) => void
   /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. */
   onNewInGroup?: (group: Group) => void
+  /** Embed chrome (6A, GRO-2145): no inline property editing. */
+  readOnly?: boolean
   /** Assigned property types from `.obsidian/types.json`, for editor inference (5B, GRO-2142). */
   types?: Record<string, string>
 }
@@ -50,7 +52,7 @@ const separatorOf = (view: BaseView): string => (typeof view.propertySeparator =
  * (when not file.name) and the indented property rows edit inline through `EditableCell`
  * (5B, GRO-2142); the joined inline string stays read-only.
  */
-export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, types }: ListViewProps) {
+export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, types, readOnly = false }: ListViewProps) {
   const keys = propertyKeys(def, view, records)
   const primary: string | undefined = keys[0]
   const rest = keys.slice(1)
@@ -65,7 +67,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
   const basenames = records.map((r) => r.basename)
   const editable = (row: Row, key: string) => {
     const bare = bareOf(key)
-    if (bare === null) return cellContent(row.values[key])
+    if (bare === null || readOnly) return cellContent(row.values[key])
     return (
       <EditableCell
         path={row.record.path}

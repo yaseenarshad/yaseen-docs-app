@@ -28,6 +28,8 @@ export interface BoardViewProps {
   moveError: { path: string; message: string } | null
   /** Create a note seeded with a column's group value (5D, GRO-2144); absent → no "+" on headers. */
   onNewInGroup?: (group: Group) => void
+  /** Embed chrome (6A, GRO-2145): no drag between columns. */
+  readOnly?: boolean
 }
 
 /**
@@ -46,8 +48,8 @@ export interface BoardViewProps {
  * dashed placeholder, the own column is never a target, Esc cancels — and a failed move's
  * card carries an inline error chip. Images are 4E.
  */
-export function BoardView({ def, view, viewIndex, records, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup }: BoardViewProps) {
-  const dnd = useGroupDrag(dragKey(view), onMoveToGroup)
+export function BoardView({ def, view, viewIndex, records, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup, readOnly = false }: BoardViewProps) {
+  const dnd = useGroupDrag(readOnly ? null : dragKey(view), onMoveToGroup)
   if (groups === null) {
     const fallback = allPropertyKeys(def, view, records).find((k) => !canonicalKey(k).startsWith('file.')) ?? 'file.folder'
     return (

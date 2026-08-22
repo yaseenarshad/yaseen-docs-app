@@ -1,8 +1,11 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { fileKind } from '@shared/fileKind'
 import type { FileResponse } from '@shared/types'
 import { api } from '../api'
 import { BaseHost } from '../bases/BaseHost'
+import { createBaseEmbedRegistry, type BaseEmbedSlot } from './baseEmbed/baseEmbedPlugin'
+import { BaseEmbed } from './baseEmbed/BaseEmbed'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
 import './outline/outlineFolding.css'
 import './outline/bullets.css'
@@ -38,18 +41,28 @@ export function Editor({ root, path, watch, onOpenFile }: EditorProps) {
         (fileKind(file.path) === 'base' ? (
           <BaseHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} />
         ) : (
-          <CrepeHost key={file.path} root={root} file={file} watch={watch} />
+          <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} />
         ))}
     </section>
   )
 }
 
 /** Mounts exactly one Crepe instance for `file`; remounted (via `key`) when the path changes. */
-function CrepeHost({ root, file, watch }: { root: string; file: FileResponse; watch: WatchSource }) {
+function CrepeHost({ root, file, watch, onOpenFile }: { root: string; file: FileResponse; watch: WatchSource; onOpenFile: (path: string) => void }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const autosave = useAutosave(file.path)
   const { attach, markReloaded, reportConflict, absorbFrontmatterOnly } = autosave
   const reloadRef = useRef<() => void>(() => {})
+
+  // Base embeds (6A, GRO-2145): the plugin keeps one widget slot per `![[X.base]]` paragraph;
+  // React stays the owner of what renders inside — a portal per slot, keyed so typing around
+  // the embed never remounts it.
+  const [embedRegistry] = useState(createBaseEmbedRegistry)
+  const [embedSlots, setEmbedSlots] = useState<readonly BaseEmbedSlot[]>([])
+  useEffect(() => {
+    setEmbedSlots(embedRegistry.list())
+    return embedRegistry.subscribe(() => setEmbedSlots(embedRegistry.list()))
+  }, [embedRegistry])
 
   useEffect(() => {
     const host = hostRef.current
@@ -68,6 +81,7 @@ function CrepeHost({ root, file, watch }: { root: string; file: FileResponse; wa
         onCollapsedKeysChange: (keys) => storage.setFolds(root, file.path, keys),
       },
       zoom: { fileName: basename(file.path) },
+      baseEmbeds: embedRegistry,
     })
     let controller: ReturnType<typeof attach> | null = null
     let cancelled = false
@@ -113,7 +127,7 @@ function CrepeHost({ root, file, watch }: { root: string; file: FileResponse; wa
       unsubscribe()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, embedRegistry])
 
   return (
     <>
@@ -130,6 +144,21 @@ function CrepeHost({ root, file, watch }: { root: string; file: FileResponse; wa
         </div>
       )}
       <div className="editor-host" ref={hostRef} />
+      {embedSlots.map((slot) =>
+        createPortal(
+          <BaseEmbed
+            key={slot.key}
+            root={root}
+            watch={watch}
+            thisFile={file.path}
+            target={slot.target}
+            viewName={slot.viewName}
+            onOpenFile={onOpenFile}
+          />,
+          slot.dom,
+          slot.key,
+        ),
+      )}
     </>
   )
 }
