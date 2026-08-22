@@ -44,6 +44,7 @@ ls "$HOME/Library/Application Support/Yaseen Docs/"
 
 ```bash
 npm test          # vitest suite: client (jsdom) + desktop (node)
+npm run e2e       # Playwright-Electron smoke suite (desktop/e2e/, ~10 s): builds, then drives the real app against a fixture-vault copy + temp user-data-dir; step screenshots land in desktop/e2e/artifacts/
 npm run typecheck
 npm run build     # electron-vite build → desktop/out
 ```
