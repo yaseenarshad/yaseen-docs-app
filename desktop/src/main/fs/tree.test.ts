@@ -33,6 +33,8 @@ describe('tree', () => {
     expect(all).not.toContain(path.join(root, 'notes.txt'))
     expect(all.some((p) => p.includes('.obsidian') || p.includes('.git') || p.includes('node_modules'))).toBe(false)
     expect(all).not.toContain(path.join(root, '.hidden.md'))
+    // `.yaseendocs/` (vault-local config, GRO-2188) never reaches the tree — the sidebar renders the tree as-is.
+    expect(all.some((p) => p.includes('.yaseendocs'))).toBe(false)
   })
 
   it('file nodes carry size, mtime and kind', async () => {

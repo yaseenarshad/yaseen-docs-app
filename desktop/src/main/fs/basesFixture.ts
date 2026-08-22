@@ -15,7 +15,7 @@ export async function makeBasesFixture(): Promise<{ root: string; cleanup: () =>
   const trust = path.join(pillars, '3. Trust Economy & Paid Ads')
   const tech = path.join(pillars, '4. Tech & Silicon Valley')
   await Promise.all(
-    [agentic, creator, trust, tech, path.join(root, '.obsidian'), path.join(root, '.trash')].map((d) =>
+    [agentic, creator, trust, tech, path.join(root, '.obsidian'), path.join(root, '.yaseendocs'), path.join(root, '.trash')].map((d) =>
       mkdir(d, { recursive: true }),
     ),
   )
@@ -66,6 +66,7 @@ export async function makeBasesFixture(): Promise<{ root: string; cleanup: () =>
     writeFile(path.join(pillars, 'chart.png'), png),
     writeFile(path.join(root, 'VSL-v1.md'), '---\nstatus: published\npillar: null\n---\n\nVideo sales letter, version one.\n'),
     writeFile(path.join(root, '.obsidian', 'types.json'), '{"types":{"date":"date","published":"checkbox"}}'),
+    writeFile(path.join(root, '.yaseendocs', 'types.json'), '{"version":1}'),
     writeFile(path.join(root, '.trash', 'Untitled.md'), 'trash'),
   ])
   return { root, cleanup: () => rm(root, { recursive: true, force: true }) }

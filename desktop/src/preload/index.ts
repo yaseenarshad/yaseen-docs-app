@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppState, WatchEvent, YaseenDocsApi } from '@shared/types'
+import type { AppState, VaultConfigChange, WatchEvent, YaseenDocsApi } from '@shared/types'
 import { CH, type Envelope } from '../channels'
 
 /** invoke + unwrap: resolves the value or rejects with the plain `BridgeError` object. */
@@ -91,6 +91,16 @@ const api: YaseenDocsApi = {
       const on = (_e: unknown, message: string) => listener(message)
       ipcRenderer.on(CH.linkNotice, on)
       return () => ipcRenderer.removeListener(CH.linkNotice, on)
+    },
+  },
+  // Vault-local config in `<root>/.yaseendocs/` (Desktop J, GRO-2188).
+  vaultConfig: {
+    read: (root, name) => call(CH.vaultConfigRead, root, name),
+    write: (root, name, value) => call(CH.vaultConfigWrite, root, name, value),
+    onChange: (listener) => {
+      const on = (_e: unknown, change: VaultConfigChange) => listener(change)
+      ipcRenderer.on(CH.vaultConfigChanged, on)
+      return () => ipcRenderer.removeListener(CH.vaultConfigChanged, on)
     },
   },
 }

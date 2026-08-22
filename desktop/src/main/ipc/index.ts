@@ -3,6 +3,7 @@ import type { WindowManagerIpc } from '../windows'
 import { registerDialogIpc } from './dialog'
 import { registerFsIpc } from './fs'
 import { registerStateIpc } from './state'
+import { registerVaultConfigIpc } from './vaultConfig'
 import { registerWatchIpc } from './watch'
 import { registerWindowIpc } from './window'
 
@@ -12,5 +13,6 @@ export function registerIpc(store: Store, windows: WindowManagerIpc): void {
   registerDialogIpc()
   registerWatchIpc()
   registerStateIpc(store)
+  registerVaultConfigIpc(store)
   registerWindowIpc(store, windows)
 }
