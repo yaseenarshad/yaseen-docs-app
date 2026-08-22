@@ -13,7 +13,7 @@ import { entryPath, renamedPath, targetDirFor, type EntryKind } from './createEn
 import { HotkeysButton } from './HotkeysPanel'
 import { NewTypeDialog } from './NewTypeDialog'
 import { SettingsCog } from './SettingsPanel'
-import { Tree, type PendingCreate, type PendingRename } from './Tree'
+import { Tree, type PendingCreate, type PendingRename, type TreeFileMove } from './Tree'
 
 interface SidebarProps {
   root: string
@@ -35,9 +35,11 @@ interface SidebarProps {
   /** The restored last file is not in the tree any more (checked once per root). */
   onFileMissing: () => void
   /**
-   * Context-menu "Rename" committed (Links E1, GRO-2194): App orchestrates flush → index
-   * snapshot → `fs:rename` → link rewrites, and routes ANY failure to the passive notice —
-   * this promise never rejects, so the inline input just closes.
+   * Context-menu "Rename" committed (files E1 GRO-2194, folders E1b GRO-2241) — and the
+   * drag-a-file-onto-a-folder move (E1b) lands here too, as a plain old→new rename: App
+   * orchestrates flush → index/tree snapshots → `fs:rename` → link rewrites, and routes ANY
+   * failure to the passive notice — this promise never rejects, so the inline input just
+   * closes.
    */
   onRenameFile: (oldPath: string, newPath: string) => Promise<void>
 }
@@ -73,8 +75,11 @@ export function Sidebar({
   const [expanded, dispatch] = useReducer(treeReducer, root, storage.getExpanded)
   const [menu, setMenu] = useState<{ x: number; y: number; targetDir: string; copyPath: string | null; filePath: string | null } | null>(null)
   const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string; type?: string; label?: string } | null>(null)
-  const [renamingPath, setRenamingPath] = useState<string | null>(null)
+  const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir' } | null>(null)
   const [newTypeOpen, setNewTypeOpen] = useState(false)
+  // File drag-to-move (E1b, GRO-2241): the dragged file row + the highlighted drop target.
+  const [dragging, setDragging] = useState<string | null>(null)
+  const [dropDir, setDropDir] = useState<string | null>(null)
 
   // The vault's type registry (Bible B, GRO-2202): feeds the "New ▸" submenu — always present;
   // an empty (or unreadable) registry collapses it to "New type…" (Round 10 Q4, GRO-2226).
@@ -232,23 +237,52 @@ export function Sidebar({
 
   const cancelCreate = useCallback(() => setCreating(null), [])
 
-  // ---- Rename (Links E1, GRO-2194): context menu "Rename" → inline input over the row ----
+  // ---- Rename (files E1 GRO-2194, folders E1b GRO-2241): context menu "Rename" → inline input over the row ----
 
   const submitRename = useCallback(
     async (name: string) => {
-      if (renamingPath === null) return
-      const target = renamedPath(renamingPath, name)
-      setRenamingPath(null)
-      if (target === renamingPath) return // same name = no-op
+      if (renamingEntry === null) return
+      const target = renamedPath(renamingEntry.path, name, renamingEntry.kind)
+      setRenamingEntry(null)
+      if (target === renamingEntry.path) return // same name = no-op
       // App owns the whole flow (and routes failures to the passive notice — never a dialog);
       // the tree row follows via the watcher's unlink+add refresh.
-      await onRenameFile(renamingPath, target)
+      await onRenameFile(renamingEntry.path, target)
     },
-    [renamingPath, onRenameFile],
+    [renamingEntry, onRenameFile],
   )
 
   const renaming: PendingRename | null =
-    renamingPath === null ? null : { path: renamingPath, onSubmit: submitRename, onCancel: () => setRenamingPath(null) }
+    renamingEntry === null ? null : { path: renamingEntry.path, onSubmit: submitRename, onCancel: () => setRenamingEntry(null) }
+
+  // ---- File drag-to-move (E1b, GRO-2241): drop a FILE row on a folder row or the root header ----
+
+  const dropOnDir = useCallback(
+    (dir: string) => {
+      const path = dragging
+      setDragging(null)
+      setDropDir(null)
+      if (path === null) return
+      const target = `${dir}/${basename(path)}`
+      if (target === path) return // dropped into its own folder: nothing to do
+      // The SAME rename flow as the context menu — never-overwrite and every failure as a
+      // passive notice come with it; link updates and the tab remap ride the same pipeline.
+      void onRenameFile(path, target)
+    },
+    [dragging, onRenameFile],
+  )
+
+  const fileMove: TreeFileMove = {
+    dragging,
+    dropDir,
+    start: setDragging,
+    end: () => {
+      setDragging(null)
+      setDropDir(null)
+    },
+    hover: setDropDir,
+    drop: dropOnDir,
+  }
 
   const pending: PendingCreate | null =
     creating === null
@@ -263,7 +297,23 @@ export function Sidebar({
 
   return (
     <aside className="sidebar">
-      <div className="sidebar__header">
+      {/* The root header doubles as the "move to the vault root" drop target (E1b). */}
+      <div
+        className={`sidebar__header${dropDir === root ? ' sidebar__header--drop' : ''}`}
+        onDragOver={(e) => {
+          if (dragging === null) return
+          e.preventDefault()
+          if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+          if (dropDir !== root) setDropDir(root)
+        }}
+        onDragLeave={() => {
+          if (dropDir === root) setDropDir(null)
+        }}
+        onDrop={(e) => {
+          e.preventDefault()
+          dropOnDir(root)
+        }}
+      >
         <button type="button" className="sidebar__root" onClick={onPickFolder} disabled={pickDisabled} title={root}>
           <span className="sidebar__root-name">{basename(root)}</span>
           <span className="sidebar__root-hint">change</span>
@@ -290,6 +340,7 @@ export function Sidebar({
             onNodeContextMenu={openMenu}
             pending={pending}
             renaming={renaming}
+            move={fileMove}
           />
         )}
       </div>
@@ -305,8 +356,8 @@ export function Sidebar({
           copyLinkPath={menu.filePath}
           newWindowPath={menu.filePath}
           onOpenNewWindow={openFileNewWindow}
-          renamePath={menu.filePath}
-          onRename={setRenamingPath}
+          renamePath={menu.copyPath}
+          onRename={(path) => setRenamingEntry({ path, kind: menu.filePath !== null ? 'file' : 'dir' })}
           newTypes={newTypes}
           onNewTyped={startCreateTyped}
           onNewType={() => {

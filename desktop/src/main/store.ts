@@ -42,9 +42,12 @@ export interface Store {
   upsertWindow(entry: WindowEntry): void
   removeWindow(id: string): void
   /**
-   * Repair every stored reference to a just-renamed FILE (Links E1, GRO-2194): window
-   * `file`/`tabs` (through `normalizeTabs`), each folder's `lastFile`, fold keys, and
-   * baseGroups keys (`<basePath>::<view>`). One commit; a no-op when nothing references it.
+   * Repair every stored reference to a just-renamed file OR directory (Links E1 GRO-2194,
+   * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`), recents, each
+   * folder-state key and its `expanded`/`lastFile`/fold keys/baseGroups keys
+   * (`<basePath>::<view>`). A dir remaps by prefix — everything at or under it follows,
+   * including a window ROOTED at the renamed folder. One commit; a no-op when nothing
+   * references it.
    */
   renamePath(oldPath: string, newPath: string): void
   onChange(listener: (state: AppState) => void): () => void
@@ -298,40 +301,48 @@ export function createStore(filePath: string): Store {
     },
 
     renamePath(oldPath, newPath) {
+      // E1b (GRO-2241): `oldPath` may be a DIRECTORY — every stored path AT or UNDER it
+      // follows: window roots (a subfolder opened as a vault!), files and tabs, recents,
+      // each folder-state KEY plus its expanded dirs, lastFile, fold keys and baseGroups
+      // keys. For a FILE rename the prefix branch is inert (nothing is ever stored under a
+      // file path), so ONE mapping serves both kinds — and it is still one commit, one
+      // notify, a no-op when nothing references the path.
       let changed = false
-      const windows = state.windows.map((w) => {
-        if (w.file !== oldPath && !w.tabs.includes(oldPath)) return w
+      const prefix = `${oldPath}/`
+      const remap = (p: string): string => {
+        if (p !== oldPath && !p.startsWith(prefix)) return p
         changed = true
-        const nextFile = w.file === oldPath ? newPath : w.file
-        return { ...w, file: nextFile, tabs: normalizeTabs(w.tabs.map((t) => (t === oldPath ? newPath : t)), nextFile) }
-      })
-      const remapKeys = (lists: Record<string, string[]>, hit: (key: string) => string | null): Record<string, string[]> => {
-        const out: Record<string, string[]> = {}
-        for (const [key, value] of Object.entries(lists)) {
-          const next = hit(key)
-          if (next !== null) changed = true
-          out[next ?? key] = value
-        }
-        return out
+        return newPath + p.slice(oldPath.length)
       }
+      // A baseGroups key is `<basePath>::<view>` — the exact-file half needs its own test.
       const baseGroupPrefix = `${oldPath}::`
+      const remapBaseGroupKey = (key: string): string => {
+        if (!key.startsWith(baseGroupPrefix)) return remap(key)
+        changed = true
+        return newPath + key.slice(oldPath.length)
+      }
+      const remapKeys = (lists: Record<string, string[]>, remapKey: (key: string) => string): Record<string, string[]> =>
+        Object.fromEntries(Object.entries(lists).map(([key, value]) => [remapKey(key), value]))
+      const windows = state.windows.map((w) => {
+        const root = w.root === null ? null : remap(w.root)
+        const file = w.file === null ? null : remap(w.file)
+        return { ...w, root, file, tabs: normalizeTabs(w.tabs.map(remap), file) }
+      })
+      const recents = state.recents.map((r) => ({ ...r, path: remap(r.path) }))
       const folders = Object.fromEntries(
-        Object.entries(state.folders).map(([root, folder]) => {
-          const lastFile = folder.lastFile === oldPath ? newPath : folder.lastFile
-          if (lastFile !== folder.lastFile) changed = true
-          return [
-            root,
-            {
-              ...folder,
-              lastFile,
-              folds: remapKeys(folder.folds, (key) => (key === oldPath ? newPath : null)),
-              baseGroups: remapKeys(folder.baseGroups, (key) => (key.startsWith(baseGroupPrefix) ? `${newPath}${key.slice(oldPath.length)}` : null)),
-            },
-          ]
-        }),
+        Object.entries(state.folders).map(([root, folder]) => [
+          remap(root),
+          {
+            ...folder,
+            expanded: folder.expanded.map(remap),
+            lastFile: folder.lastFile === null ? null : remap(folder.lastFile),
+            folds: remapKeys(folder.folds, remap),
+            baseGroups: remapKeys(folder.baseGroups, remapBaseGroupKey),
+          },
+        ]),
       )
       if (!changed) return
-      commit({ ...state, windows, folders })
+      commit({ ...state, windows, recents, folders })
     },
 
     onChange(listener) {

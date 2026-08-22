@@ -14,7 +14,7 @@ interface ContextMenuProps {
   /** Absolute path of the right-clicked FILE row; null (folders, blank space) hides "Open in new window" (D2, GRO-2168). */
   newWindowPath: string | null
   onOpenNewWindow: (path: string) => void
-  /** Absolute path of the right-clicked FILE row; null (folders, blank space) hides "Rename" (Links E1, GRO-2194 — folder rename is E1b). */
+  /** Absolute path of the right-clicked row — FILE (Links E1, GRO-2194) or FOLDER (E1b, GRO-2241); null (blank space) hides "Rename". */
   renamePath: string | null
   onRename: (path: string) => void
   /**

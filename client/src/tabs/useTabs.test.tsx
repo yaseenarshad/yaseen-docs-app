@@ -209,6 +209,30 @@ describe('tabsReducer', () => {
       expect(next.mounted).toEqual(['/v/new.md'])
     })
   })
+
+  describe('rename-dir (Links E1b, GRO-2241: every tab under a renamed folder follows by prefix)', () => {
+    it('remaps every tab under the old prefix in place — slots, activation and the mounted set follow', () => {
+      const s = state(['/v/Old/a.md', '/v/x.md', '/v/Old/deep/b.md'], '/v/Old/a.md', ['/v/x.md', '/v/Old/a.md'])
+      expect(tabsReducer(s, { type: 'rename-dir', oldPath: '/v/Old', newPath: '/v/New' })).toEqual({
+        tabs: ['/v/New/a.md', '/v/x.md', '/v/New/deep/b.md'],
+        active: '/v/New/a.md',
+        mounted: ['/v/x.md', '/v/New/a.md'],
+      })
+    })
+
+    it('is a no-op (same state object — no identity mirror) when nothing is open under the folder', () => {
+      const s = state(['/v/x.md', '/v/Older/a.md'], '/v/x.md') // `/v/Older` is NOT under `/v/Old` — prefix means `/v/Old/`
+      expect(tabsReducer(s, { type: 'rename-dir', oldPath: '/v/Old', newPath: '/v/New' })).toBe(s)
+    })
+
+    it('drops a remapped tab whose target path is somehow already open (dedupe), keeping activation sane', () => {
+      const s = state(['/v/Old/a.md', '/v/New/a.md'], '/v/Old/a.md', ['/v/Old/a.md'])
+      const next = tabsReducer(s, { type: 'rename-dir', oldPath: '/v/Old', newPath: '/v/New' })
+      expect(next.tabs).toEqual(['/v/New/a.md'])
+      expect(next.active).toBe('/v/New/a.md')
+      expect(next.mounted).toEqual(['/v/New/a.md'])
+    })
+  })
 })
 
 /** A fake `window.yaseenDocs` with just the surface storage touches (the storage.test.ts pattern). */

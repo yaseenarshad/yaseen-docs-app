@@ -159,6 +159,51 @@ describe('Sidebar copy link (E3, GRO-2173)', () => {
   })
 })
 
+describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
+  /** Drag events bubble like the real thing; jsdom has no DragEvent, the handlers guard `dataTransfer` (the TabBar idiom). */
+  const fire = (target: Element | null | undefined, type: string) =>
+    act(() => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true })))
+  const dirRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.tree__row--dir')
+
+  it('a FOLDER row\'s context menu offers "Rename"; committing routes old→new (no extension logic) through onRenameFile', async () => {
+    const { props, el } = await mount()
+    act(() => void dirRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Rename')?.click())
+    const input = el.querySelector<HTMLInputElement>('.create-inline__input')
+    expect(input?.value).toBe('sub') // the raw folder name — no extension stripping for dirs
+    act(() => {
+      input!.value = 'archive'
+      input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    await act(async () => undefined)
+    expect(props.onRenameFile).toHaveBeenCalledWith('/v/sub', '/v/archive')
+  })
+
+  it('dragging a file row onto a folder row moves it there (onRenameFile old→new parent); the target highlights while hovered', async () => {
+    const { props, el } = await mount()
+    fire(fileRow(el), 'dragstart')
+    fire(dirRow(el), 'dragover')
+    expect(dirRow(el)?.classList.contains('tree__row--drop')).toBe(true)
+    fire(dirRow(el), 'drop')
+    expect(props.onRenameFile).toHaveBeenCalledWith('/v/a.md', '/v/sub/a.md')
+    expect(el.querySelector('.tree__row--drop')).toBeNull() // drag state cleared
+  })
+
+  it('dropping on the ROOT HEADER targets the vault root — a no-op for a file already there; dragend abandons cleanly', async () => {
+    const { props, el } = await mount()
+    const header = el.querySelector<HTMLElement>('.sidebar__header')
+    fire(fileRow(el), 'dragstart')
+    fire(header, 'dragover')
+    expect(header?.classList.contains('sidebar__header--drop')).toBe(true)
+    fire(header, 'drop')
+    expect(props.onRenameFile).not.toHaveBeenCalled() // `/v/a.md` already lives at the root
+    fire(fileRow(el), 'dragstart')
+    fire(fileRow(el), 'dragend')
+    fire(dirRow(el), 'drop')
+    expect(props.onRenameFile).not.toHaveBeenCalled() // an abandoned drag drops nothing
+  })
+})
+
 describe('Sidebar stale tab activation (I3, GRO-2235)', () => {
   it('activating a file the tree does not show probes a FRESH tree and fires onFileMissing when it is really gone', async () => {
     const { bridge, props, rerender } = await mount({ activeFile: '/v/a.md' })

@@ -55,7 +55,7 @@ export const api = {
   writeFile: (body: FileWriteRequest) => call<FileWriteResponse>(() => window.yaseenDocs.writeFile(body)),
   createDir: (path: string) => call<CreateDirResponse>(() => window.yaseenDocs.createDir(path)),
   createFile: (req: string | CreateFileRequest) => call<CreateFileResponse>(() => window.yaseenDocs.createFile(req)),
-  /** In-app FILE rename, same dir, kind unchanged; never overwrites (Links E1, GRO-2194). */
+  /** In-app rename: file rename/move or folder rename, never overwrites (Links E1 GRO-2194, E1b GRO-2241). */
   rename: (req: RenameFileRequest) => call<RenameFileResponse>(() => window.yaseenDocs.file.rename(req)),
   /** Bases property index for `root` (GRO-2129). */
   index: (root: string) => call<IndexResponse>(() => window.yaseenDocs.index(root)),

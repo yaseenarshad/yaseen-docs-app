@@ -383,6 +383,63 @@ describe('createStore: mutations', () => {
       expect(store.get().windows).toEqual([win('w1', { root: '/v', file: '/v/x.md', tabs: ['/v/x.md'] })])
     })
   })
+
+  describe('renamePath with a DIRECTORY (Links E1b, GRO-2241: prefix repair)', () => {
+    const OLD = '/v/Old'
+    const NEW = '/v/New'
+
+    it('remaps every window path at or under the dir — file, tabs, and a window ROOTED at (or under) it — in one commit', () => {
+      const store = createStore(file)
+      store.upsertWindow(win('w1', { root: '/v', file: `${OLD}/a.md`, tabs: [`${OLD}/a.md`, '/v/x.md', `${OLD}/deep/b.md`] }))
+      store.upsertWindow(win('w2', { root: OLD, file: `${OLD}/a.md`, tabs: [`${OLD}/a.md`] })) // the subfolder opened as a vault
+      store.upsertWindow(win('w3', { root: `${OLD}/deep`, file: null, tabs: [] }))
+      store.upsertWindow(win('w4', { root: '/other', file: '/other/a.md', tabs: ['/other/a.md'] }))
+      const seen: AppState[] = []
+      store.onChange((s) => seen.push(s))
+      store.renamePath(OLD, NEW)
+      expect(seen).toHaveLength(1) // ONE commit, one notify, for the whole repair
+      expect(store.get().windows).toEqual([
+        win('w1', { root: '/v', file: `${NEW}/a.md`, tabs: [`${NEW}/a.md`, '/v/x.md', `${NEW}/deep/b.md`] }),
+        win('w2', { root: NEW, file: `${NEW}/a.md`, tabs: [`${NEW}/a.md`] }),
+        win('w3', { root: `${NEW}/deep`, file: null, tabs: [] }),
+        win('w4', { root: '/other', file: '/other/a.md', tabs: ['/other/a.md'] }),
+      ])
+    })
+
+    it('remaps folder state under the dir: lastFile, expanded dirs, fold keys, baseGroups keys — and the folder-state KEY of a root at/under it', () => {
+      const store = createStore(file)
+      store.setFolder('/v', { lastFile: `${OLD}/a.md`, expanded: [OLD, `${OLD}/deep`, '/v/other'] })
+      store.setFolds('/v', `${OLD}/a.md`, ['k1'])
+      store.setFolds('/v', '/v/x.md', ['k2'])
+      store.setBaseGroups('/v', `${OLD}/T.base::Table`, ['g1'])
+      store.setFolder(OLD, { lastFile: `${OLD}/a.md` }) // the subfolder's own folder-state entry (it was opened as a root)
+      store.renamePath(OLD, NEW)
+      expect(store.get().folders['/v']).toEqual({
+        lastFile: `${NEW}/a.md`,
+        expanded: [NEW, `${NEW}/deep`, '/v/other'],
+        folds: { [`${NEW}/a.md`]: ['k1'], '/v/x.md': ['k2'] },
+        baseGroups: { [`${NEW}/T.base::Table`]: ['g1'] },
+      })
+      expect(store.get().folders[OLD]).toBeUndefined()
+      expect(store.get().folders[NEW]).toEqual({ lastFile: `${NEW}/a.md`, expanded: [], folds: {}, baseGroups: {} })
+    })
+
+    it('remaps a recents entry at or under the dir (a subfolder that was opened as a vault)', () => {
+      const store = createStore(file)
+      store.pushRecent('/other', 1)
+      store.pushRecent(OLD, 2)
+      store.renamePath(OLD, NEW)
+      expect(store.get().recents.map((r) => r.path)).toEqual([NEW, '/other'])
+    })
+
+    it('a FILE rename never trips the prefix branch (nothing is stored under a file path)', () => {
+      const store = createStore(file)
+      store.upsertWindow(win('w1', { root: '/v', file: '/v/B.md', tabs: ['/v/B.md', '/v/B.md.md'] }))
+      store.renamePath('/v/B.md', '/v/C.md')
+      // `/v/B.md.md` does NOT start with `/v/B.md/` — only the exact match moved.
+      expect(store.get().windows[0].tabs).toEqual(['/v/C.md', '/v/B.md.md'])
+    })
+  })
 })
 
 describe('createStore: persistence', () => {

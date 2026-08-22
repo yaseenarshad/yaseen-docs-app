@@ -18,6 +18,10 @@
  * Residual race, accepted: a save already IN FLIGHT over IPC when the rename lands cannot
  * be recalled; `writeFile` recreates the old path in that sub-millisecond window. The
  * systematic paths (debounced saves, unmount flush, close flush) are all covered above.
+ *
+ * E1b (GRO-2241) extends the same discipline to FOLDER renames: `flushRenamedDir` runs the
+ * pre-rename flush for every mounted editor under the dir, and `carryEditorsAcrossDirRename`
+ * runs the capture/retire/stash step once per affected open path.
  */
 
 /** What a mounted editor's autosave exposes to the rename flow (registered by `useAutosave`). */
@@ -51,6 +55,27 @@ export function registerRenameContinuity(path: string, handle: RenameContinuityH
 /** Flush the editor open at `path`, if any — the pre-rename step (a) and the pre-rewrite step. */
 export function flushRenamedPath(path: string): Promise<void> {
   return handles.get(path)?.flush() ?? Promise.resolve()
+}
+
+/**
+ * The pre-rename step (a) for a FOLDER (E1b, GRO-2241): every mounted editor UNDER `dir`
+ * flushes, so each buffer is on disk and travels with its file. No editors there → no-op.
+ */
+export function flushRenamedDir(dir: string): Promise<void> {
+  const prefix = `${dir}/`
+  return Promise.all([...handles].filter(([path]) => path.startsWith(prefix)).map(([, handle]) => handle.flush())).then(() => undefined)
+}
+
+/**
+ * The `file:renamed` kind-`dir` step (E1b), run BEFORE the prefix tab remap: every editor
+ * under the old dir is carried to ITS new path — same capture/retire/stash discipline as
+ * `carryEditorAcrossRename`, once per affected open path.
+ */
+export function carryEditorsAcrossDirRename(oldDir: string, newDir: string): void {
+  const prefix = `${oldDir}/`
+  for (const path of [...handles.keys()]) {
+    if (path.startsWith(prefix)) carryEditorAcrossRename(path, newDir + path.slice(oldDir.length))
+  }
 }
 
 /**

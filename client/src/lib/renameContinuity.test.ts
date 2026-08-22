@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   _resetRenameContinuity,
   carryEditorAcrossRename,
+  carryEditorsAcrossDirRename,
+  flushRenamedDir,
   flushRenamedPath,
   registerRenameContinuity,
   takeRenameBuffer,
@@ -53,5 +55,38 @@ describe('renameContinuity (Links E1, GRO-2194)', () => {
     carryEditorAcrossRename('/v/a.md', '/v/b.md')
     expect(second.retire).toHaveBeenCalledTimes(1)
     expect(first.retire).not.toHaveBeenCalled()
+  })
+})
+
+describe('renameContinuity for a FOLDER rename (Links E1b, GRO-2241)', () => {
+  it('flushRenamedDir flushes every mounted editor UNDER the dir — and only those', async () => {
+    const inside = handle()
+    const deep = handle()
+    const outside = handle()
+    const prefixCousin = handle()
+    registerRenameContinuity('/v/Old/a.md', inside)
+    registerRenameContinuity('/v/Old/deep/b.md', deep)
+    registerRenameContinuity('/v/x.md', outside)
+    registerRenameContinuity('/v/Older/c.md', prefixCousin) // `/v/Older` is NOT under `/v/Old`
+    await flushRenamedDir('/v/Old')
+    expect(inside.flush).toHaveBeenCalledTimes(1)
+    expect(deep.flush).toHaveBeenCalledTimes(1)
+    expect(outside.flush).not.toHaveBeenCalled()
+    expect(prefixCousin.flush).not.toHaveBeenCalled()
+  })
+
+  it('carryEditorsAcrossDirRename carries each editor under the dir to ITS new path (dirty stashed, all retired)', () => {
+    const dirty = handle({ capture: vi.fn(() => ({ frontmatter: '', body: 'dirty' })) })
+    const clean = handle()
+    const outside = handle()
+    registerRenameContinuity('/v/Old/a.md', dirty)
+    registerRenameContinuity('/v/Old/deep/b.md', clean)
+    registerRenameContinuity('/v/x.md', outside)
+    carryEditorsAcrossDirRename('/v/Old', '/v/New')
+    expect(dirty.retire).toHaveBeenCalledTimes(1)
+    expect(clean.retire).toHaveBeenCalledTimes(1)
+    expect(outside.retire).not.toHaveBeenCalled()
+    expect(takeRenameBuffer('/v/New/a.md')).toEqual({ frontmatter: '', body: 'dirty' })
+    expect(takeRenameBuffer('/v/New/deep/b.md')).toBeNull() // clean: nothing stashed
   })
 })

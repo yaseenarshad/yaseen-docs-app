@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { renameFile } from './rename'
 import { failure, makeFixture } from './testFixture'
@@ -15,7 +15,7 @@ describe('renameFile (Links E1, GRO-2194)', () => {
   it('renames a markdown file in place and returns both paths', async () => {
     const oldPath = path.join(root, 'Zeta', 'z.markdown')
     const newPath = path.join(root, 'Zeta', 'zed.markdown')
-    expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath })
+    expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
     expect(await readFile(newPath, 'utf8')).toBe('z')
     await expect(stat(oldPath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
@@ -23,11 +23,11 @@ describe('renameFile (Links E1, GRO-2194)', () => {
   it('renames a .base file (kind unchanged) and allows md ↔ markdown within the markdown kind', async () => {
     const oldBase = path.join(root, 'alpha', 'Topics.base')
     const newBase = path.join(root, 'alpha', 'Areas.base')
-    expect(await renameFile({ oldPath: oldBase, newPath: newBase })).toEqual({ oldPath: oldBase, newPath: newBase })
+    expect(await renameFile({ oldPath: oldBase, newPath: newBase })).toEqual({ oldPath: oldBase, newPath: newBase, kind: 'file' })
     // .md → .markdown stays within the markdown kind (the kind is what is UNCHANGED).
     const oldMd = path.join(root, 'alpha', 'a.md')
     const newMd = path.join(root, 'alpha', 'ay.markdown')
-    expect(await renameFile({ oldPath: oldMd, newPath: newMd })).toEqual({ oldPath: oldMd, newPath: newMd })
+    expect(await renameFile({ oldPath: oldMd, newPath: newMd })).toEqual({ oldPath: oldMd, newPath: newMd, kind: 'file' })
   })
 
   it('ALREADY_EXISTS when the target exists — never overwrites', async () => {
@@ -44,12 +44,11 @@ describe('renameFile (Links E1, GRO-2194)', () => {
     const oldPath = path.join(root, 'CaseOnly.md')
     await writeFile(oldPath, 'case')
     const newPath = path.join(root, 'caseonly.md')
-    expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath })
+    expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
     expect(await readFile(newPath, 'utf8')).toBe('case')
   })
 
-  it('BAD_REQUEST when the parent directory differs (E1b lifts this) or the kind changes', async () => {
-    expect(await code(renameFile({ oldPath: path.join(root, 'b.md'), newPath: path.join(root, 'Empty', 'b.md') }))).toBe('BAD_REQUEST')
+  it('BAD_REQUEST when the kind changes or old and new path are the same', async () => {
     expect(await code(renameFile({ oldPath: path.join(root, 'b.md'), newPath: path.join(root, 'b.base') }))).toBe('BAD_REQUEST')
     expect(await code(renameFile({ oldPath: path.join(root, 'b.md'), newPath: path.join(root, 'b.md') }))).toBe('BAD_REQUEST') // same path
   })
@@ -61,5 +60,50 @@ describe('renameFile (Links E1, GRO-2194)', () => {
     expect(await code(renameFile({ oldPath: 'relative.md', newPath: path.join(root, 'other.md') }))).toBe('NOT_ABSOLUTE')
     expect(await code(renameFile(undefined))).toBe('BAD_REQUEST')
     expect(await code(renameFile({ oldPath: path.join(root, 'b.md') }))).toBe('BAD_REQUEST')
+  })
+})
+
+describe('renameFile (Links E1b, GRO-2241: cross-directory file move + folder rename)', () => {
+  it('moves a file into another EXISTING folder (E1 same-parent guard lifted)', async () => {
+    const oldPath = path.join(root, 'b.md')
+    const newPath = path.join(root, 'Empty', 'b.md')
+    expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
+    expect(await readFile(newPath, 'utf8')).toBe('# b\n')
+    await expect(stat(oldPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('NOT_FOUND (attributed to the parent) when the target folder does not exist — never a mkdir', async () => {
+    const oldPath = path.join(root, 'Empty', 'b.md') // moved there by the test above
+    const err = await failure(renameFile({ oldPath, newPath: path.join(root, 'nope', 'b.md') }))
+    expect(err.code).toBe('NOT_FOUND')
+    expect(err.path).toBe(path.join(root, 'nope'))
+    expect(await readFile(oldPath, 'utf8')).toBe('# b\n') // source untouched
+    await expect(stat(path.join(root, 'nope'))).rejects.toMatchObject({ code: 'ENOENT' }) // nothing was created
+  })
+
+  it('renames a folder (kind: dir); extension rules do not apply to directories', async () => {
+    await mkdir(path.join(root, 'Movable'), { recursive: true })
+    await writeFile(path.join(root, 'Movable', 'note.md'), 'inside')
+    const oldPath = path.join(root, 'Movable')
+    const newPath = path.join(root, 'Moved')
+    expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'dir' })
+    expect(await readFile(path.join(newPath, 'note.md'), 'utf8')).toBe('inside')
+    await expect(stat(oldPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('never overwrites an existing folder (ALREADY_EXISTS), but allows a case-only dir rename (same inode)', async () => {
+    const err = await failure(renameFile({ oldPath: path.join(root, 'Moved'), newPath: path.join(root, 'Empty') }))
+    expect(err.code).toBe('ALREADY_EXISTS')
+    expect(err.path).toBe(path.join(root, 'Empty'))
+    const oldPath = path.join(root, 'Moved')
+    const newPath = path.join(root, 'moved')
+    expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'dir' })
+  })
+
+  it('BAD_REQUEST for dot-directories (source or target — invisible infrastructure) and for moving a folder inside itself', async () => {
+    expect(await code(renameFile({ oldPath: path.join(root, '.yaseendocs'), newPath: path.join(root, 'visible') }))).toBe('BAD_REQUEST')
+    expect(await code(renameFile({ oldPath: path.join(root, 'moved'), newPath: path.join(root, '.hidden-dir') }))).toBe('BAD_REQUEST')
+    expect(await code(renameFile({ oldPath: path.join(root, 'moved'), newPath: path.join(root, 'moved', 'inner') }))).toBe('BAD_REQUEST')
+    await expect(stat(path.join(root, '.yaseendocs'))).resolves.toBeDefined() // nothing moved
   })
 })

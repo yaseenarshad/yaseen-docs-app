@@ -47,9 +47,13 @@ afterAll(async () => {
   await rm(storeDir, { recursive: true, force: true })
 })
 
+/** Sender → window id registry fake (E1b root guard); tests point `senderWinId` at a store entry. */
+let senderWinId: string | undefined
+const registry = { idFor: () => senderWinId }
+
 describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
-    registerFsIpc(store)
+    registerFsIpc(store, registry)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsIndex, CH.fsRead, CH.fsReadAsset, CH.fsRename, CH.fsTree, CH.fsWrite].sort())
   })
@@ -96,13 +100,35 @@ describe('registerFsIpc', () => {
     const w = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
     const res = await registered(CH.fsRename)({ sender: {} }, { oldPath, newPath })
-    expect(res).toEqual({ ok: true, value: { oldPath, newPath } })
+    expect(res).toEqual({ ok: true, value: { oldPath, newPath, kind: 'file' } })
     expect(await readFile(newPath, 'utf8')).toBe('# b\n')
     // Store repaired in the SAME handler: window file/tabs and the folder's lastFile follow.
     expect(store.get().windows.find((win) => win.id === 'w1')).toMatchObject({ file: newPath, tabs: [newPath] })
     expect(store.get().folders[root].lastFile).toBe(newPath)
-    // Every live window got the push.
-    expect(w.webContents.send).toHaveBeenCalledWith(CH.fileRenamed, { oldPath, newPath })
+    // Every live window got the push (kind included — a `dir` push remaps by prefix, E1b).
+    expect(w.webContents.send).toHaveBeenCalledWith(CH.fileRenamed, { oldPath, newPath, kind: 'file' })
+  })
+
+  it('fs:rename refuses the calling window\'s own vault root (E1b, GRO-2241) but allows another window\'s subfolder root', async () => {
+    const sub = path.join(root, 'Zeta')
+    store.upsertWindow({ id: 'w-sub', root: sub, file: null, tabs: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    const w = fakeWindow()
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+    // The caller's OWN root: refused, nothing moves, nothing broadcast.
+    senderWinId = 'w-sub'
+    expect(await registered(CH.fsRename)({ sender: {} }, { oldPath: sub, newPath: path.join(root, 'Zeta2') })).toEqual({
+      ok: false,
+      error: { code: 'BAD_REQUEST', message: 'the vault root itself cannot be renamed', path: sub },
+    })
+    expect(w.webContents.send).not.toHaveBeenCalled()
+    // The same dir renamed from a window rooted ABOVE it: allowed, and the sub-rooted
+    // window's `WindowEntry.root` is repaired by the same handler.
+    senderWinId = 'w1'
+    const newPath = path.join(root, 'Zeta2')
+    const res = await registered(CH.fsRename)({ sender: {} }, { oldPath: sub, newPath })
+    expect(res).toEqual({ ok: true, value: { oldPath: sub, newPath, kind: 'dir' } })
+    expect(store.get().windows.find((win) => win.id === 'w-sub')?.root).toBe(newPath)
+    expect(w.webContents.send).toHaveBeenCalledWith(CH.fileRenamed, { oldPath: sub, newPath, kind: 'dir' })
   })
 
   it('fs:rename failure answers a BridgeError envelope, repairs nothing and broadcasts nothing', async () => {

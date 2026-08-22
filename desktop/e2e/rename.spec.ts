@@ -5,11 +5,18 @@
  * preserved), the open tab follows in place (label + window title), the summary notice
  * shows, and clicking the rewritten link navigates to the renamed file. A rename onto an
  * existing name is DECLINED with a passive notice — never-overwrite, never a dialog.
+ *
+ * Links E1b (GRO-2241, steps 5+): folder rename via the folder row's context menu — the
+ * PATHED link in a referencing note rewrites on disk while the bare link stays
+ * BYTE-IDENTICAL (the LOCKED rule), and the open tab under the folder follows by prefix;
+ * drag-a-file-row-onto-a-folder moves it (bare link unchanged, pathed link rewritten);
+ * a folder rename onto an existing folder is DECLINED with the same passive notice.
+ *
  * Same harness as links.spec.ts (temp `--user-data-dir`, COPY of a generated fixture
  * vault, `rename-` step screenshots); serial by design — each step continues the last.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
@@ -27,6 +34,9 @@ test.describe.configure({ mode: 'serial' })
 /** Seeded on top of the fixture vault: A references B three ways; C blocks a rename onto it. */
 const A_BODY = 'a-hub-body'
 const B_BODY = 'b-note-body'
+/** E1b seeds: Docs/N is referenced by R (pathed + bare); Target/M by S (pathed + bare). */
+const N_BODY = 'n-note-body'
+const M_BODY = 'm-note-body'
 
 let userData: string
 let vaultSrc: string
@@ -39,6 +49,7 @@ const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="tr
 /** The VISIBLE editor — hidden per-tab layers keep their own `.ProseMirror` mounted. */
 const editorOf = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden) .ProseMirror')
 const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
+const dirRow = (w: Page, label: string) => w.locator('.tree__row--dir').filter({ hasText: new RegExp(`^${label}$`) })
 
 /** Right-click `label`'s row and drive the context menu's Rename into the inline input. */
 async function startRename(w: Page, label: string): Promise<void> {
@@ -47,14 +58,27 @@ async function startRename(w: Page, label: string): Promise<void> {
   await expect(w.locator('.create-inline__input')).toHaveValue(label)
 }
 
+/** The folder-row variant (E1b): prefilled with the RAW folder name. */
+async function startRenameDir(w: Page, label: string): Promise<void> {
+  await dirRow(w, label).click({ button: 'right' })
+  await w.locator('.ctx-menu [role="menuitem"]', { hasText: 'Rename' }).click()
+  await expect(w.locator('.create-inline__input')).toHaveValue(label)
+}
+
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'rename-userdata-'))
   vaultSrc = await buildFixtureVault()
   vault = await copyVault(vaultSrc)
+  await mkdir(path.join(vault, 'Docs'), { recursive: true })
+  await mkdir(path.join(vault, 'Target'), { recursive: true })
   await Promise.all([
     writeFile(path.join(vault, 'A.md'), `# A\n\n${A_BODY}\n\nSee [[B]] and [[B|Bee]] here.\n\n![[B]]\n`),
     writeFile(path.join(vault, 'B.md'), `# B\n\n${B_BODY}\n`),
     writeFile(path.join(vault, 'C.md'), '# C\n\nc-note-body\n'),
+    writeFile(path.join(vault, 'Docs', 'N.md'), `# N\n\n${N_BODY}\n`),
+    writeFile(path.join(vault, 'R.md'), '# R\n\nSee [[Docs/N]] and [[N]] here.\n'),
+    writeFile(path.join(vault, 'Target', 'M.md'), `# M\n\n${M_BODY}\n`),
+    writeFile(path.join(vault, 'S.md'), '# S\n\nSee [[Target/M]] and [[M]] here.\n'),
   ])
 })
 
@@ -64,6 +88,13 @@ test.afterAll(async () => {
     [userData, vaultSrc, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })),
   )
 })
+
+/**
+ * Poll-friendly read: `expect.poll` ABORTS on a thrown error (no retry), and right after
+ * Enter the rename pipeline (flush → index+tree snapshots → fs:rename → rewrites) is still
+ * in flight — so a not-yet-existing file must read as '' and keep the poll polling.
+ */
+const readWhenReady = (p: string) => readFile(p, 'utf8').catch(() => '')
 
 test('step 1 — rename B via the context menu: disk file renamed, tab and title follow, summary notice shows', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'B.md')) })
@@ -77,7 +108,7 @@ test('step 1 — rename B via the context menu: disk file renamed, tab and title
   await win.keyboard.press('Enter')
 
   // Disk: the file moved, content intact; nothing remains at the old path.
-  await expect.poll(() => readFile(path.join(vault, 'B2.md'), 'utf8')).toContain(B_BODY)
+  await expect.poll(() => readWhenReady(path.join(vault, 'B2.md'))).toContain(B_BODY)
   await expect(readFile(path.join(vault, 'B.md'), 'utf8')).rejects.toThrow()
   // The open tab follows IN PLACE — label, editor content and the window title.
   await expect(activeTab(win)).toHaveText('B2')
@@ -117,5 +148,59 @@ test('step 4 — renaming onto an existing name is DECLINED with a passive notic
   expect(await readFile(path.join(vault, 'C.md'), 'utf8')).toContain('c-note-body')
   await expect(fileRow(win, 'A')).toBeVisible()
   await shoot(win, 'rename-04-decline-notice')
+  await quitApp(app)
+})
+
+// ---------- E1b (GRO-2241): folder rename + drag-move, fresh launch on the same vault ----------
+
+test('step 5 — folder rename via its context menu: disk moves, PATHED link rewritten, bare link BYTE-IDENTICAL, open tab follows', async () => {
+  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, 'Docs', 'N.md')) })
+  win = await appWindow(app, 'w1')
+  await expect(editorOf(win)).toContainText(N_BODY)
+  await expect(tabsOf(win)).toHaveText(['N'])
+
+  await startRenameDir(win, 'Docs')
+  await shoot(win, 'rename-05-folder-inline-input')
+  await win.locator('.create-inline__input').fill('Notes')
+  await win.keyboard.press('Enter')
+
+  // Disk: the folder moved with its file; nothing remains at the old path.
+  await expect.poll(() => readWhenReady(path.join(vault, 'Notes', 'N.md'))).toContain(N_BODY)
+  await expect(readFile(path.join(vault, 'Docs', 'N.md'), 'utf8')).rejects.toThrow()
+  // R.md pinned WHOLE: the pathed link rewrote, the bare [[N]] is byte-identical (LOCKED).
+  await expect.poll(() => readWhenReady(path.join(vault, 'R.md'))).toBe('# R\n\nSee [[Notes/N]] and [[N]] here.\n')
+  // The open tab under the folder followed by prefix — same label, NEW path — and the
+  // window still works (editor alive, title tracks the active tab).
+  await expect(activeTab(win)).toHaveText('N')
+  await expect(activeTab(win)).toHaveAttribute('title', path.join(vault, 'Notes', 'N.md'))
+  await expect(editorOf(win)).toContainText(N_BODY)
+  await expect.poll(() => win.title()).toContain('N')
+  await expect(win.locator('.link-notice')).toHaveText('Updated links in 1 note')
+  await shoot(win, 'rename-06-folder-renamed')
+})
+
+test('step 6 — drag a file row onto a folder row: the file moves there, bare link unchanged, pathed link rewritten', async () => {
+  await dirRow(win, 'Target').click() // expand to reveal M
+  await expect(fileRow(win, 'M')).toBeVisible()
+  await fileRow(win, 'M').dragTo(dirRow(win, 'Notes'))
+
+  await expect.poll(() => readWhenReady(path.join(vault, 'Notes', 'M.md'))).toContain(M_BODY)
+  await expect(readFile(path.join(vault, 'Target', 'M.md'), 'utf8')).rejects.toThrow()
+  // S.md pinned WHOLE: [[Target/M]] → [[Notes/M]]; the bare [[M]] still resolves — unchanged.
+  await expect.poll(() => readWhenReady(path.join(vault, 'S.md'))).toBe('# S\n\nSee [[Notes/M]] and [[M]] here.\n')
+  await expect(win.locator('.link-notice')).toHaveText('Updated links in 1 note')
+  await shoot(win, 'rename-07-drag-move')
+})
+
+test('step 7 — renaming a folder onto an EXISTING folder is DECLINED with a passive notice; nothing moves', async () => {
+  await startRenameDir(win, 'Target')
+  await win.locator('.create-inline__input').fill('Notes')
+  await win.keyboard.press('Enter')
+  await expect(win.locator('.link-notice')).toHaveText('Can\'t rename: "Notes" already exists')
+  // Both folders untouched.
+  expect((await stat(path.join(vault, 'Target'))).isDirectory()).toBe(true)
+  expect(await readFile(path.join(vault, 'Notes', 'N.md'), 'utf8')).toContain(N_BODY)
+  await expect(dirRow(win, 'Target')).toBeVisible()
+  await shoot(win, 'rename-08-folder-decline')
   await quitApp(app)
 })

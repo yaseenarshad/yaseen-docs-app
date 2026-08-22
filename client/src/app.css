@@ -907,6 +907,14 @@ button {
   background: var(--accent-soft);
 }
 
+/* Drag-a-file-onto-a-folder (E1b, GRO-2241): the hovered drop target — dir row or root header. */
+.tree__row--drop,
+.sidebar__header--drop {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  border-radius: 4px;
+}
+
 .tree__label {
   overflow: hidden;
   text-overflow: ellipsis;

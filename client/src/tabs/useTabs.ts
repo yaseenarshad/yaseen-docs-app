@@ -37,6 +37,7 @@ export type TabsAction =
   | { type: 'cycle'; dir: 1 | -1 } // ⌃Tab / ⌃⇧Tab: wraparound, plain left→right order
   | { type: 'reset'; tabs: string[]; active: string | null } // boot + root switch: replace wholesale, normalizing
   | { type: 'rename'; oldPath: string; newPath: string } // in-app rename (Links E1, GRO-2194): the open tab follows the file in place
+  | { type: 'rename-dir'; oldPath: string; newPath: string } // in-app FOLDER rename (Links E1b, GRO-2241): every tab under the prefix follows in place
 
 const EMPTY: TabsState = { tabs: [], active: null, mounted: [] }
 
@@ -118,6 +119,25 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       const active = s.active === a.oldPath ? a.newPath : s.active
       return { tabs, active, mounted: active !== null && !mounted.includes(active) && tabs.includes(active) ? [...mounted, active] : mounted }
     }
+    case 'rename-dir': {
+      // A FOLDER moved (E1b): every tab under `oldPath/` follows by prefix, each in its own
+      // slot; activation and the mounted set remap with them. A remapped tab landing on a
+      // path that was ALREADY open is dropped — the de-dup invariant wins (same rule as
+      // `rename`); the old prefix itself can never be a tab (tabs are files, not dirs).
+      const prefix = `${a.oldPath}/`
+      if (a.oldPath === a.newPath || !s.tabs.some((t) => t.startsWith(prefix))) return s
+      const remap = (t: string) => (t.startsWith(prefix) ? a.newPath + t.slice(a.oldPath.length) : t)
+      const existing = new Set(s.tabs)
+      const tabs: string[] = []
+      for (const t of s.tabs) {
+        const m = remap(t)
+        if (m !== t && (existing.has(m) || tabs.includes(m))) continue
+        tabs.push(m)
+      }
+      const mounted = [...new Set(s.mounted.map(remap))].filter((t) => tabs.includes(t))
+      const active = s.active === null ? null : remap(s.active)
+      return { tabs, active, mounted: active !== null && !mounted.includes(active) && tabs.includes(active) ? [...mounted, active] : mounted }
+    }
   }
 }
 
@@ -153,6 +173,13 @@ export interface UseTabs extends TabsState {
   reset: (nextRoot: string | null, file: string | null) => void
   /** An in-app rename landed (`file:renamed`, Links E1): remap the open tab in place; no-op when absent. */
   renamePath: (oldPath: string, newPath: string) => void
+  /**
+   * A FOLDER rename landed (`file:renamed` kind `dir`, Links E1b — GRO-2241): remap every
+   * tab under the old prefix in place. `nextRoot` overrides the mirror's root when THIS
+   * window's own root moved with the folder (a subfolder opened as a vault) — the mirror's
+   * lastFile write then lands under the repaired root, not a stale entry.
+   */
+  renameDirPath: (oldPath: string, newPath: string, nextRoot?: string) => void
 }
 
 export function useTabs(root: string | null): UseTabs {
@@ -196,6 +223,11 @@ export function useTabs(root: string | null): UseTabs {
     [dispatch],
   )
   const renamePath = useCallback((oldPath: string, newPath: string) => dispatch({ type: 'rename', oldPath, newPath }), [dispatch])
+  const renameDirPath = useCallback(
+    (oldPath: string, newPath: string, nextRoot?: string) =>
+      dispatch({ type: 'rename-dir', oldPath, newPath }, nextRoot !== undefined ? { root: nextRoot } : undefined),
+    [dispatch],
+  )
 
-  return { ...state, openCurrent, openNew, openBackground, activate, close, move, closeActive, next, prev, reset, renamePath }
+  return { ...state, openCurrent, openNew, openBackground, activate, close, move, closeActive, next, prev, reset, renamePath, renameDirPath }
 }

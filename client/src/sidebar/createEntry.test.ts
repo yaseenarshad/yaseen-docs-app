@@ -73,4 +73,10 @@ describe('renamedPath (Links E1, GRO-2194)', () => {
     expect(renamedPath('/r/B.md', 'B')).toBe('/r/B.md')
     expect(renamedPath('/r/T.base', 'T')).toBe('/r/T.base')
   })
+
+  it('a DIRECTORY renames with no extension logic at all (E1b, GRO-2241)', () => {
+    expect(renamedPath('/r/sub/Old', 'New', 'dir')).toBe('/r/sub/New')
+    expect(renamedPath('/r/Old', ' Notes.md ', 'dir')).toBe('/r/Notes.md') // a folder may be NAMED like a file
+    expect(renamedPath('/r/Old', 'Old', 'dir')).toBe('/r/Old') // unchanged → caller no-op
+  })
 })

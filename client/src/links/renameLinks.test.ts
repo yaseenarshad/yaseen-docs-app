@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { IndexRecord } from '@shared/types'
+import type { IndexRecord, TreeNode } from '@shared/types'
 import {
   maskCode,
   renamedTarget,
@@ -32,6 +32,11 @@ describe('rewriteInner / renamedTarget (form + suffix + alias preservation)', ()
     expect(rewriteInner(' B ', resolvesB, toC)).toBe('C')
     expect(rewriteInner('Other', resolvesB, toC)).toBeNull()
     expect(rewriteInner('#same-file', resolvesB, toC)).toBeNull()
+  })
+
+  it('a match whose target text would not change is left untouched — byte-identical, padding included (E1b pin)', () => {
+    expect(rewriteInner('B', () => true, (t) => t)).toBeNull()
+    expect(rewriteInner(' B |Bee', () => true, (t) => t)).toBeNull() // padding survives because the match is never spliced
   })
 
   it('bare stays bare, pathed stays root-relative, an explicit extension stays explicit', () => {
@@ -167,5 +172,145 @@ describe('updateLinksAfterRename', () => {
     const summary = await updateLinksAfterRename({ root, oldPath: '/v/Sub/B.md', newPath: '/v/Sub/C.md', records })
     expect(summary).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[B]] and [[Sub/C]]\n')
+  })
+
+  it('a same-directory rename whose NEW name is shadowed by another file escalates the bare link to the pathed form', async () => {
+    const files = { '/v/A.md': { content: '[[B]]\n', mtime: 1 } }
+    installBridge(files)
+    // Rename Sub/B → Sub/C while a root-level C exists: a bare [[C]] would resolve to /v/C.md,
+    // so the rewrite goes pathed — resolution decides the FORM too, not just the target.
+    const records = [
+      rec('/v/A.md', { links: ['B'] }),
+      rec('/v/C.md'),
+      rec('/v/Sub/B.md', { folder: 'Sub' }),
+    ]
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/Sub/B.md', newPath: '/v/Sub/C.md', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('[[Sub/C]]\n')
+  })
+})
+
+// ---------- E1b (GRO-2241): folder rename + cross-directory move ----------
+
+describe('updateLinksAfterRename with kind: dir (folder rename, E1b)', () => {
+  const root = '/v'
+
+  it('rewrites PATHED links/embeds into the folder; bare links stay BYTE-IDENTICAL (LOCKED — padding and all)', async () => {
+    const files = { '/v/A.md': { content: 'See [[Old/B]] and [[ B ]] and [[B|Bee]] and ![[Old/B]].\n', mtime: 1 } }
+    installBridge(files)
+    const records = [
+      rec('/v/A.md', { links: ['Old/B', 'B'], embeds: ['Old/B'] }),
+      rec('/v/Old/B.md', { folder: 'Old' }),
+    ]
+    const summary = await updateLinksAfterRename({ root, oldPath: '/v/Old', newPath: '/v/New', kind: 'dir', records })
+    expect(summary).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('See [[New/B]] and [[ B ]] and [[B|Bee]] and ![[New/B]].\n')
+  })
+
+  it('records under the folder RELOCATE: a referencing note inside the renamed folder is read/written at its NEW path', async () => {
+    const files = { '/v/New/inner.md': { content: 'link [[Old/B]]\n', mtime: 1 } }
+    installBridge(files)
+    const records = [
+      rec('/v/Old/inner.md', { folder: 'Old', links: ['Old/B'] }),
+      rec('/v/Old/B.md', { folder: 'Old' }),
+    ]
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/Old', newPath: '/v/New', kind: 'dir', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/New/inner.md'].content).toBe('link [[New/B]]\n')
+  })
+
+  it('a pathed link to a file OUTSIDE the folder (and a prefix-cousin folder) is untouched', async () => {
+    const files = { '/v/A.md': { content: '[[Sub/x]] and [[Older/y]]\n', mtime: 1 } }
+    installBridge(files)
+    const records = [
+      rec('/v/A.md', { links: ['Sub/x', 'Older/y'] }),
+      rec('/v/Sub/x.md', { folder: 'Sub' }),
+      rec('/v/Older/y.md', { folder: 'Older' }), // `/v/Older` is NOT under `/v/Old`
+    ]
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/Old', newPath: '/v/New', kind: 'dir', records })).toEqual({ updated: 0, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('[[Sub/x]] and [[Older/y]]\n')
+  })
+})
+
+describe('updateLinksAfterRename across a cross-directory file MOVE (E1b)', () => {
+  const root = '/v'
+
+  it('a bare link stays BYTE-IDENTICAL when the bare name still resolves to the moved file (pin)', async () => {
+    const files = { '/v/A.md': { content: 'See [[ B ]] and [[Old/B]].\n', mtime: 1 } }
+    installBridge(files)
+    const records = [rec('/v/A.md', { links: ['B', 'Old/B'] }), rec('/v/Old/B.md', { folder: 'Old' })]
+    const summary = await updateLinksAfterRename({ root, oldPath: '/v/Old/B.md', newPath: '/v/New/B.md', records })
+    expect(summary).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('See [[ B ]] and [[New/B]].\n') // padding intact — never spliced
+  })
+
+  it('a bare link ESCALATES to the pathed form when the move hands the bare name to another file (pin)', async () => {
+    // B moves deeper than the duplicate Sub/B: the shallowest rule now picks Sub/B for [[B]].
+    const files = { '/v/A.md': { content: '[[B]] here\n', mtime: 1 } }
+    installBridge(files)
+    const records = [
+      rec('/v/A.md', { links: ['B'] }),
+      rec('/v/B.md'),
+      rec('/v/Sub/B.md', { folder: 'Sub' }),
+    ]
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/B.md', newPath: '/v/Deep/er/B.md', records })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('[[Deep/er/B]] here\n')
+  })
+})
+
+// ---------- E1b: `.base` embeds resolve over the TREE (resolveBasePath), never the index ----------
+
+const tfile = (path: string, kind: 'markdown' | 'base' = 'base'): TreeNode => ({
+  type: 'file',
+  name: path.slice(path.lastIndexOf('/') + 1),
+  path,
+  size: 0,
+  mtime: 0,
+  kind,
+})
+const tdir = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
+
+describe('updateLinksAfterRename and `.base` embeds (E1b)', () => {
+  const root = '/v'
+
+  it('folder rename: a PATHED base embed rewrites through the tree; a bare one stays byte-identical (dir rule)', async () => {
+    const files = { '/v/A.md': { content: '![[Old/T.base]] and ![[T.base]]\n', mtime: 1 } }
+    installBridge(files)
+    const records = [rec('/v/A.md', { embeds: ['Old/T.base', 'T.base'] })]
+    const tree = [tdir('/v/Old', [tfile('/v/Old/T.base')])]
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/Old', newPath: '/v/New', kind: 'dir', records, tree })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('![[New/T.base]] and ![[T.base]]\n')
+  })
+
+  it('moving a `.base`: a bare embed stays byte-identical while the name is UNIQUE; a duplicate name escalates it to pathed', async () => {
+    // Unique name: bare survives the move untouched.
+    const filesA = { '/v/A.md': { content: '![[T.base]]\n', mtime: 1 } }
+    installBridge(filesA)
+    const treeA = [tdir('/v/Sub', []), tfile('/v/T.base')]
+    const recordsA = [rec('/v/A.md', { embeds: ['T.base'] })]
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/T.base', newPath: '/v/Sub/T.base', records: recordsA, tree: treeA })).toEqual({ updated: 0, skipped: 0 })
+    expect(filesA['/v/A.md'].content).toBe('![[T.base]]\n')
+    // A second U.base exists: the bare form is no longer unambiguous — rewrite to the pathed form.
+    const filesB = { '/v/B.md': { content: '![[U.base]]\n', mtime: 1 } }
+    installBridge(filesB)
+    const treeB = [tdir('/v/Deep', [tfile('/v/Deep/U.base')]), tdir('/v/Sub', []), tfile('/v/U.base')]
+    const recordsB = [rec('/v/B.md', { embeds: ['U.base'] })]
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/U.base', newPath: '/v/Sub/U.base', records: recordsB, tree: treeB })).toEqual({ updated: 1, skipped: 0 })
+    expect(filesB['/v/B.md'].content).toBe('![[Sub/U.base]]\n')
+  })
+
+  it('renaming a `.base` in place rewrites its embeds too (closed E1 gap: the index never carried .base records)', async () => {
+    const files = { '/v/A.md': { content: '![[T.base]] and ![[T.base#View]]\n', mtime: 1 } }
+    installBridge(files)
+    const records = [rec('/v/A.md', { embeds: ['T.base'] })]
+    const tree = [tfile('/v/T.base')]
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/T.base', newPath: '/v/U.base', records, tree })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('![[U.base]] and ![[U.base#View]]\n')
+  })
+
+  it('without a tree snapshot base embeds are left alone (conservative — never a guessed rewrite)', async () => {
+    const files = { '/v/A.md': { content: '![[T.base]]\n', mtime: 1 } }
+    installBridge(files)
+    const records = [rec('/v/A.md', { embeds: ['T.base'] })]
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/T.base', newPath: '/v/U.base', records })).toEqual({ updated: 0, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('![[T.base]]\n')
   })
 })

@@ -168,14 +168,17 @@ export interface CreateFileResponse {
   size: number
 }
 
-// ---------- file.rename(req) (Links E1, GRO-2194) ----------
+// ---------- file.rename(req) (Links E1 + E1b, GRO-2194 / GRO-2241) ----------
 
 /**
- * In-app FILE rename, same directory, extension kind unchanged (md↔md, base↔base) — E1b
- * (folder rename + cross-directory move) lifts those restrictions later. Never overwrites:
- * an existing target rejects `ALREADY_EXISTS`. The same handler repairs every stored path
- * reference (window files/tabs, folder lastFile, fold keys, base-group keys) and pushes
- * `file:renamed` to every window.
+ * In-app rename/move. Files rename in place or move between folders (extension KIND
+ * unchanged: md↔md, base↔base); directories rename/move too (`kind: 'dir'` in the
+ * response — no extension rules, dot-dirs and the calling window's own vault root are
+ * refused `BAD_REQUEST`). The target's parent must already exist (`NOT_FOUND` — never a
+ * mkdir). Never overwrites: an existing target rejects `ALREADY_EXISTS`. The same handler
+ * repairs every stored path reference — for a dir, everything at or UNDER it: window
+ * roots/files/tabs, recents, folder-state keys and their expanded/lastFile/fold/base-group
+ * entries — and pushes `file:renamed` to every window.
  */
 export interface RenameFileRequest {
   oldPath: string
@@ -185,12 +188,15 @@ export interface RenameFileRequest {
 export interface RenameFileResponse {
   oldPath: string
   newPath: string
+  /** What moved: a single file, or a directory (E1b — renderers then remap by prefix). */
+  kind: 'file' | 'dir'
 }
 
-/** Pushed to EVERY window after a successful in-app rename; renderers remap their own tabs. */
+/** Pushed to EVERY window after a successful in-app rename; renderers remap their own tabs (a `dir` event remaps every tab under the old prefix). */
 export interface FileRenamedEvent {
   oldPath: string
   newPath: string
+  kind: 'file' | 'dir'
 }
 
 // ---------- pickFolder() ----------
