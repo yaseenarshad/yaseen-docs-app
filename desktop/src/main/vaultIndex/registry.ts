@@ -3,16 +3,19 @@ import path from 'node:path'
 import type { IndexRecord, IndexResponse, WatchEvent } from '@shared/types'
 import { fsCall, isMarkdown, isSkipped } from '../fs/fsUtils'
 import { subscribe } from '../fs/watchers'
+import { loadIndexCache, schedulePersist } from './cache'
+import { reconcile, type ColdStartDiff } from './reconcile'
 import { scanFile } from './scan'
 
 interface Entry {
   records: Map<string, IndexRecord>
   unsubscribe: () => void
   idle?: NodeJS.Timeout
+  /** What the cold-start reconcile found (GRO-2223); dropped with the entry on idle eviction. */
+  coldDiff?: ColdStartDiff
 }
 
 const DEFAULT_IDLE_MS = 10 * 60 * 1000
-const SCAN_CONCURRENCY = 32
 
 /** One live index per root, kept fresh by the shared watcher; dropped after `idleMs` without a `getIndex`. */
 const entries = new Map<string, Entry>()
@@ -33,37 +36,26 @@ async function walk(dir: string, out: string[]): Promise<void> {
   )
 }
 
-/** Scans `files` with at most SCAN_CONCURRENCY reads in flight; files that fail to scan are left out. */
-async function scanAll(root: string, files: string[]): Promise<Map<string, IndexRecord>> {
-  const records = new Map<string, IndexRecord>()
-  let next = 0
-  const worker = async () => {
-    while (next < files.length) {
-      const file = files[next++]
-      const record = await scanFile(root, file).catch(() => null)
-      if (record !== null) records.set(file, record)
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(SCAN_CONCURRENCY, files.length) }, worker))
-  return records
-}
-
 function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
   switch (ev.type) {
     case 'add':
     case 'change':
       if (!isMarkdown(ev.path)) return
-      void scanFile(root, ev.path).then(
-        (record) => entry.records.set(ev.path, record),
-        () => entry.records.delete(ev.path),
-      )
+      void scanFile(root, ev.path)
+        .then(
+          (record) => entry.records.set(ev.path, record),
+          () => entry.records.delete(ev.path),
+        )
+        .finally(() => schedulePersist(root, entry.records))
       return
     case 'unlink':
       entry.records.delete(ev.path)
+      schedulePersist(root, entry.records)
       return
     case 'unlinkDir': {
       const prefix = ev.path + path.sep
       for (const p of entry.records.keys()) if (p.startsWith(prefix)) entry.records.delete(p)
+      schedulePersist(root, entry.records)
       return
     }
     default:
@@ -92,16 +84,25 @@ async function readTypes(root: string): Promise<Record<string, string> | undefin
 async function build(root: string): Promise<Entry> {
   const entry: Entry = { records: new Map(), unsubscribe: () => undefined }
   const files: string[] = []
-  await fsCall(root, () => walk(root, files))
+  // Persistent cache (GRO-2223): loaded BEFORE subscribing, overlapped with the walk — the cache
+  // lives in userData, never the vault, so the watcher ordering below does not apply to it, and
+  // reading it early keeps the multi-MB read ahead of the chokidar initial scan that floods the
+  // fs threadpool on subscribe.
+  const [cached] = await Promise.all([loadIndexCache(root), fsCall(root, () => walk(root, files))])
   // Subscribe before reading so a write that lands mid-scan is re-scanned rather than lost.
   entry.unsubscribe = subscribe(root, (ev) => onEvent(root, entry, ev))
   try {
-    entry.records = await scanAll(root, files)
+    // Reuse records the D2 stat sweep validates, rescan the rest. Any cache failure comes back
+    // as a non-hit load and reconcile degrades to today's full scan.
+    const { records, diff } = await reconcile(root, files, cached)
+    entry.records = records
+    entry.coldDiff = diff
   } catch (err) {
     entry.unsubscribe()
     throw err
   }
   entries.set(root, entry)
+  schedulePersist(root, entry.records)
   return entry
 }
 
@@ -109,6 +110,8 @@ function evict(root: string): void {
   const entry = entries.get(root)
   if (entry === undefined) return
   clearTimeout(entry.idle)
+  // Flush-ish: one last persist so an evicted index leaves a fresh cache behind (GRO-2223).
+  schedulePersist(root, entry.records)
   entry.unsubscribe()
   entries.delete(root)
 }
@@ -138,6 +141,16 @@ export async function getIndex(root: string): Promise<IndexResponse> {
   const records = [...entry.records.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
   const types = await readTypes(root)
   return { root, records, generatedAt: Date.now(), ...(types !== undefined && { types }) }
+}
+
+/**
+ * The cold-start reconcile diff for `root` (GRO-2223) — the E1c rename-detection consumer
+ * (GRO-2242) reads it after the first `getIndex`. Undefined before the first build and again
+ * once idle eviction drops the entry. Trust `added`/`removed`/`changed` only when
+ * `cacheStatus === 'hit'`: on any other status there was no before-snapshot and they are empty.
+ */
+export function getColdStartDiff(root: string): ColdStartDiff | undefined {
+  return entries.get(root)?.coldDiff
 }
 
 /** Test hook: drops every cached index and its watcher subscription. */

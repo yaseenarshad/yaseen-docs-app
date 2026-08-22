@@ -9,6 +9,7 @@ import { createLinkQueue } from './linkQueue'
 import { buildMenuTemplate, createMenuHandlers, subscribeMenuRebuild } from './menu'
 import { createStore } from './store'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
+import { flushIndexCache, initIndexCache } from './vaultIndex'
 import { createWindowManager } from './windows'
 
 // Before anything reads app.getPath('userData'): the workspace is named "desktop", the app is not.
@@ -67,6 +68,9 @@ const RENDERER_DIR = join(__dirname, '../renderer')
 
 /** One user-global state file (D9, GRO-2159): `~/Library/Application Support/Yaseen Docs/yaseendocs.json`. */
 const store = createStore(join(app.getPath('userData'), 'yaseendocs.json'))
+
+/** Persistent vault-index cache (GRO-2223 D1): one JSON per vault under userData, never in the vault. */
+initIndexCache(join(app.getPath('userData'), 'index-cache'))
 
 /** Window lifecycle (GRO-2160) lives in windows.ts; this host is its Electron-only half. */
 const manager = createWindowManager(store, {
@@ -140,7 +144,7 @@ app.on('before-quit', (event) => {
   quitting = true
   void manager
     .flushAllForQuit()
-    .then(() => store.flush())
+    .then(() => Promise.all([store.flush(), flushIndexCache()]))
     .finally(() => app.exit(0))
 })
 
