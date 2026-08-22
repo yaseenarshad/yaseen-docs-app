@@ -38,7 +38,12 @@
  *  - Wikilinks (GRO-2190, `wikilink/wikilinkPlugin.ts`): `[[target]]` renders Obsidian
  *    live-preview style via inline decorations only (brackets hidden, alias/heading display,
  *    caret-adjacency reveal, resolved/unresolved via `opts.wikilinks`) — never a schema or
- *    serializer change, round-trip byte-identical. No click handling (Links C owns that).
+ *    serializer change, round-trip byte-identical.
+ *  - Wikilink click navigation (GRO-2192, `wikilink/wikilinkClick.ts`): MOUSEDOWN on a
+ *    collapsed `.wikilink` span navigates (plain → current tab, ⌘ → background tab,
+ *    unresolved → create-then-open via `createFromLink`) and preventDefaults so the caret
+ *    never lands in the match (no raw-text flash); revealed raw text stays editable.
+ *    Registered only when `opts.wikilinkNav` provides the handlers.
  *  - Wikilink picker (GRO-2191, `wikilink/wikilinkPicker.ts`): typing `[[` opens the vault-wide
  *    suggestion popup (candidates via `opts.wikilinkCandidates`); Enter/click inserts plain
  *    `[[name]]` text. Its keymap MUST be `use`d before `outlinerKeymap`: both bind Enter at
@@ -63,6 +68,7 @@ import { obsidianHotkeys } from './outline/hotkeys'
 import { outlinerKeymap } from './outline/listCommands'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { createOutlineZoom, zoomKeymap, type ZoomOptions } from './outline/zoom'
+import { createWikilinkClick, type WikilinkNav } from './wikilink/wikilinkClick'
 import { createWikilinkPicker, createWikilinkCandidateSource, wikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { createWikilink, createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 
@@ -83,6 +89,8 @@ export interface CreateCrepeOptions {
   wikilinks?: WikilinkResolveSource
   /** `[[` picker candidates (GRO-2191): App keeps it fed from the vault index. Defaults to a never-updated source (empty picker — only Create rows). */
   wikilinkCandidates?: WikilinkCandidateSource
+  /** Wikilink click navigation (GRO-2192): tabs API + create-on-click handlers. Absent → links render but clicks fall through to plain editing (the click plugin is not registered). */
+  wikilinkNav?: WikilinkNav
 }
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
@@ -105,7 +113,10 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(bulletThreading)
   crepe.editor.use(createBaseEmbed(opts.baseEmbeds ?? createBaseEmbedRegistry()))
   crepe.editor.use(createBaseCodeBlock(opts.baseCodeBlocks ?? createBaseCodeBlockRegistry()))
-  crepe.editor.use(createWikilink(opts.wikilinks ?? createWikilinkResolveSource()))
+  // ONE resolve source instance feeds both the decorations and the click plugin's routing.
+  const wikilinks = opts.wikilinks ?? createWikilinkResolveSource()
+  crepe.editor.use(createWikilink(wikilinks))
+  if (opts.wikilinkNav !== undefined) crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav))
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource()))
   crepe.editor.use(blockHandleGate)
   crepe.editor.use(multiBlockDrag)

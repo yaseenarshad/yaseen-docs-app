@@ -1,0 +1,102 @@
+/**
+ * Click navigation on wiki links (Links C, GRO-2192) — the interaction layer over Links A's
+ * decorations (`wikilinkPlugin.ts`), wired through `createCrepe({ wikilinkNav })`.
+ *
+ * MOUSEDOWN, not click: a plain click's default mousedown would set the caret inside the
+ * match, and the adjacency rule would flip the decoration into its revealed raw form — the
+ * text would flash to `[[raw]]` before any navigation. Acting on mousedown and calling
+ * `preventDefault()` keeps the caret and focus exactly where they were: the collapsed link
+ * never reveals, and a ⌘ background open leaves the document's focused/unfocused state
+ * untouched. This is the Obsidian live-preview model, matched exactly: click NAVIGATES; to
+ * EDIT the link text you place the caret adjacent (click outside, arrow in) and edit the
+ * raw syntax — which is why a click on REVEALED raw text never navigates: a revealed match
+ * has no `.wikilink` decoration span, so this handler ignores it (normal caret placement).
+ *
+ * Gestures: plain click → open in the CURRENT tab (`nav.openCurrent` — an already-open path
+ * activates its tab, tabs dedupe); ⌘(meta)-click → NEW BACKGROUND tab (`nav.openBackground`
+ * — appended, never activated, never focused; an already-open path is a no-op). An
+ * UNRESOLVED link is created first (`createFromLink` — vault-root default, LOCKED; the
+ * location setting is C2-, GRO-2240), then opened by the same gesture; failures surface via
+ * `nav.onNotice` (App's passive link-notice), never a dialog. `[[#h]]` (same-file, empty
+ * target) is a no-op — the heading jump is GRO-2239. Alt-/Shift-/Ctrl-modified clicks keep
+ * their defaults (future gestures, context menus).
+ */
+import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { $prose } from '@milkdown/kit/utils'
+import { createFromLink } from './createFromLink'
+import { WIKILINK_CLASS, WIKILINK_RE, eachPlainRun, linkPageName, type WikilinkResolveSource } from './wikilinkPlugin'
+
+/** How clicks leave the editor: App threads this window's tabs API + notice setter (via Editor). */
+export interface WikilinkNav {
+  /** Vault root — where an unresolved link's page is created (C2-, GRO-2240 will thread a setting instead). */
+  root: string
+  /** Plain click: open in the CURRENT tab (already-open → activates its tab). */
+  openCurrent: (path: string) => void
+  /** ⌘-click: append a background tab (already-open → no-op; focus never moves). */
+  openBackground: (path: string) => void
+  /** Create failure: the passive in-window notice (App's link-notice style), never a dialog. */
+  onNotice: (message: string) => void
+}
+
+const wikilinkClickKey = new PluginKey('mdapp-wikilink-click')
+
+/**
+ * The raw inner text of the wikilink match covering `pos`, or null. Re-runs the decoration
+ * pass's own scan (plain runs of the block, embeds skipped) so a hit here is exactly a match
+ * the plugin decorated — code and `![[…]]` embeds can never navigate.
+ */
+export function wikilinkInnerAt(doc: ProseNode, pos: number): string | null {
+  const $pos = doc.resolve(pos)
+  const block = $pos.parent
+  if (!block.isTextblock) return null
+  let found: string | null = null
+  eachPlainRun(block, $pos.start(), (text, runPos) => {
+    for (const m of text.matchAll(WIKILINK_RE)) {
+      if (m[1] === '!') continue
+      const from = runPos + m.index
+      if (pos >= from && pos < from + m[0].length) found = m[2]
+    }
+  })
+  return found
+}
+
+export function createWikilinkClick(source: WikilinkResolveSource, nav: WikilinkNav) {
+  return $prose(
+    () =>
+      new Plugin({
+        key: wikilinkClickKey,
+        props: {
+          handleDOMEvents: {
+            mousedown: (view, event) => {
+              if (event.button !== 0 || event.altKey || event.shiftKey || event.ctrlKey) return false
+              if (!(event.target instanceof Element)) return false
+              const span = event.target.closest(`.${WIKILINK_CLASS}`)
+              // A `.wikilink` span exists ONLY while the match is collapsed (the adjacency rule
+              // drops every decoration of a revealed match) — raw text falls through to editing.
+              if (span === null || !view.dom.contains(span)) return false
+              const inner = wikilinkInnerAt(view.state.doc, view.posAtDOM(span, 0))
+              if (inner === null) return false
+              // From here the gesture is ours: no caret placement, no focus change, no reveal.
+              event.preventDefault()
+              const page = linkPageName(inner)
+              if (page === '') return true // same-file [[#h]] — the heading jump is GRO-2239, not this unit
+              const open = event.metaKey ? nav.openBackground : nav.openCurrent
+              const resolve = source.resolve
+              // Pre-index window: every link renders resolved but nothing can be resolved yet;
+              // creating here could shadow an existing note, so the click is swallowed whole.
+              if (resolve === null) return true
+              const path = resolve(page)
+              if (path !== null) open(path)
+              else
+                void createFromLink(nav.root, inner).then((result) => {
+                  if (result.status === 'error') nav.onNotice(result.message)
+                  else if (result.status !== 'noop') open(result.path)
+                })
+              return true
+            },
+          },
+        },
+      }),
+  )
+}

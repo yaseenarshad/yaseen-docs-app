@@ -31,13 +31,20 @@ interface EditorProps {
   watch: WatchSource
   /** Bases open their row links through this (GRO-2135); App passes `openFile`. */
   onOpenFile: (path: string) => void
+  /**
+   * ⌘-click on an editor wiki link (Links C, GRO-2192) opens a background tab; App passes
+   * the tabs API's `openBackground`. Absent → wiki-link clicks stay plain editing.
+   */
+  onOpenFileBackground?: (path: string) => void
+  /** Wiki-link create failures surface here (passive link-notice style); App passes `setNotice`. */
+  onNotice?: (message: string) => void
   /** Wikilink resolve source (GRO-2190): App owns ONE per window, fed by WikilinkIndexBridge. */
   wikilinks?: WikilinkResolveSource
   /** `[[` picker candidates (GRO-2191): same ownership and feed as `wikilinks`. */
   wikilinkCandidates?: WikilinkCandidateSource
 }
 
-export function Editor({ root, path, watch, onOpenFile, wikilinks, wikilinkCandidates }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileBackground, onNotice, wikilinks, wikilinkCandidates }: EditorProps) {
   const state = useFile(path)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   return (
@@ -49,7 +56,7 @@ export function Editor({ root, path, watch, onOpenFile, wikilinks, wikilinkCandi
         (fileKind(file.path) === 'base' ? (
           <BaseHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} />
         ) : (
-          <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} />
+          <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} />
         ))}
     </section>
   )
@@ -61,6 +68,8 @@ function CrepeHost({
   file,
   watch,
   onOpenFile,
+  onOpenFileBackground,
+  onNotice,
   wikilinks,
   wikilinkCandidates,
 }: {
@@ -68,6 +77,8 @@ function CrepeHost({
   file: FileResponse
   watch: WatchSource
   onOpenFile: (path: string) => void
+  onOpenFileBackground?: (path: string) => void
+  onNotice?: (message: string) => void
   wikilinks?: WikilinkResolveSource
   wikilinkCandidates?: WikilinkCandidateSource
 }) {
@@ -117,6 +128,13 @@ function CrepeHost({
       // Stable per window (App-owned): index updates flow INSIDE the sources, never remounting us.
       wikilinks,
       wikilinkCandidates,
+      // Wiki-link click navigation (Links C, GRO-2192): plain click → current tab, ⌘ → background
+      // tab, unresolved → create at the vault root then open. Wired only when App threads the
+      // background opener — mounts without it keep clicks as plain editing.
+      wikilinkNav:
+        onOpenFileBackground === undefined
+          ? undefined
+          : { root, openCurrent: onOpenFile, openBackground: onOpenFileBackground, onNotice: onNotice ?? (() => undefined) },
     })
     let controller: ReturnType<typeof attach> | null = null
     let cancelled = false
@@ -162,7 +180,7 @@ function CrepeHost({
       unsubscribe()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, embedRegistry, codeRegistry, wikilinks, wikilinkCandidates])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, embedRegistry, codeRegistry, wikilinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice])
 
   return (
     <>

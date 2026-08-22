@@ -50,7 +50,10 @@ export const MOUSE_TIPS: readonly HotkeyEntry[] = [
   { keys: 'Click chevron', label: 'Fold / unfold that bullet' },
   { keys: 'Drag 6 dots', label: 'Move block — a multi-block selection moves together' },
   { keys: '/', label: 'Block menu, in an empty paragraph' },
-  { keys: '⌘-click file', label: 'Open that sidebar file in a background tab' },
+  // Links C (GRO-2192): the editor's [[wiki link]] click model; the ⌘-click line is SHARED
+  // with the sidebar's I3 gesture — one convention, one tip.
+  { keys: 'Click link', label: 'Open that wiki link in the current tab — a missing note is created first' },
+  { keys: '⌘-click file or link', label: 'Open it in a background tab' },
   { keys: 'Right-click file', label: 'Open in new window, Copy path / link, New note…' },
 ]
 

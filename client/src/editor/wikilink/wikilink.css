@@ -1,7 +1,8 @@
 /*
  * Wikilink rendering (Links A, GRO-2190) — classes applied by wikilinkPlugin.ts.
  *
- * NO pointer cursor and NO hover affordance here: Links C (click navigation) owns interaction.
+ * A collapsed link is CLICKABLE (Links C, GRO-2192, wikilinkClick.ts navigates on mousedown),
+ * hence the pointer cursor; revealed raw text carries no class, so it keeps the text cursor.
  * Hiding is `display: none` on TEXT SPANS inside a line (the tabs-layer scroll caveat is about
  * hiding whole layers, not inline spans); the caret never has to cross hidden text because the
  * plugin reveals the whole match while the selection touches its boundaries.
@@ -9,6 +10,7 @@
 
 .wikilink {
   color: var(--accent);
+  cursor: pointer;
 }
 
 /* Target not in the vault index — dimmed, Obsidian-style. */

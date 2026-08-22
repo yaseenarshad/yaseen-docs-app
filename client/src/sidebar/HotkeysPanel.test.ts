@@ -30,9 +30,13 @@ describe('HOTKEYS source of truth', () => {
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘⇧W')?.label).toMatch(/close window/i)
   })
 
-  it('the sidebar mouse tips carry the I3 ⌘-click ruling: background tab on ⌘-click, new window on right-click', () => {
+  it('the mouse tips carry the I3 + Links C click rulings: link click = current tab (create-on-missing), shared ⌘-click = background tab, right-click = new window', () => {
     const byKeys = (keys: string) => MOUSE_TIPS.find((t) => t.keys === keys)
-    expect(byKeys('⌘-click file')?.label).toMatch(/background tab/i)
+    // GRO-2192: editor wiki links — click opens in the current tab, an unresolved link creates first.
+    expect(byKeys('Click link')?.label).toMatch(/current tab/i)
+    expect(byKeys('Click link')?.label).toMatch(/created/i)
+    // ONE shared ⌘-click convention: sidebar file rows (I3) AND editor wiki links (Links C).
+    expect(byKeys('⌘-click file or link')?.label).toMatch(/background tab/i)
     expect(byKeys('Right-click file')?.label).toMatch(/new window/i)
   })
 

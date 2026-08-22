@@ -9,9 +9,10 @@
  *  - `[[target|alias]]` hides `target|` and shows only the alias,
  *  - `[[target#heading]]` shows `target > heading` (the `#` is hidden; each post-`#` segment
  *    carries `wikilink__sub`, whose CSS `::before` draws the ` > ` separator),
- *  - visible segments get `wikilink` (accent), plus `wikilink--unresolved` (dimmed) when the
- *    resolve source cannot find the target. NO pointer cursor and NO click handlers here —
- *    Links C (click navigation) adds interaction on top of these decorations.
+ *  - visible segments get `wikilink` (accent + pointer cursor), plus `wikilink--unresolved`
+ *    (dimmed) when the resolve source cannot find the target. Click handling lives in the
+ *    sibling `wikilinkClick.ts` (Links C, GRO-2192), which navigates on mousedown over these
+ *    decorated spans; this plugin stays decoration-only.
  *
  * Caret inside or immediately adjacent (selection overlapping the match, boundaries INCLUSIVE):
  * that match's decorations drop entirely — raw `[[syntax]]` is visible and editable. This is
@@ -75,16 +76,26 @@ export function createWikilinkResolveSource(): MutableWikilinkResolveSource {
 }
 
 /** Non-embed wiki links; inner brackets are unrepresentable (same shape as the index's WIKILINK_RE). */
-const WIKILINK_RE = /(!?)\[\[([^[\]]+)\]\]/g
+export const WIKILINK_RE = /(!?)\[\[([^[\]]+)\]\]/g
+
+/**
+ * The page-name half of a raw `[[inner]]` text: `|alias` and `#heading` / `#^block` stripped,
+ * trimmed. '' for the same-file `[[#h]]` form. The ONE strip shared by the decorations below,
+ * click navigation and create-on-click (`wikilinkClick.ts` / `createFromLink.ts`, Links C).
+ */
+export function linkPageName(inner: string): string {
+  return inner.split('|')[0].split('#')[0].trim()
+}
 
 const wikilinkKey = new PluginKey<DecorationSet>('mdapp-wikilink')
 
 /**
  * Calls `cb` for every maximal run of plain text (consecutive text children WITHOUT the
  * inlineCode mark) in `block`. Adjacent text children are contiguous in document positions,
- * so `runPos + offset-in-run` addresses any character of the run.
+ * so `runPos + offset-in-run` addresses any character of the run. Exported for
+ * `wikilinkClick.ts`, which re-finds the clicked match over the same runs.
  */
-function eachPlainRun(block: ProseNode, base: number, cb: (text: string, runPos: number) => void): void {
+export function eachPlainRun(block: ProseNode, base: number, cb: (text: string, runPos: number) => void): void {
   let text = ''
   let start = -1
   block.forEach((child, offset) => {
@@ -107,7 +118,7 @@ function hide(out: Decoration[], from: number, to: number): void {
 
 /** Decorations for one collapsed match: `[[inner]]` starting at `start`. */
 function decorate(out: Decoration[], start: number, inner: string, resolve: ResolveLink | null): void {
-  const target = inner.split('|')[0].split('#')[0].trim()
+  const target = linkPageName(inner)
   // An empty target ([[#heading]]) is a same-file link: always resolved.
   const resolved = resolve === null || target === '' || resolve(target) !== null
   const cls = resolved ? WIKILINK_CLASS : `${WIKILINK_CLASS} ${WIKILINK_UNRESOLVED_CLASS}`
