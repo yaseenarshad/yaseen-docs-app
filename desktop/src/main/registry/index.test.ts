@@ -152,6 +152,28 @@ describe('setType', () => {
     expect(await readdir(root)).toEqual([])
   })
 
+  it("rejects a 'folder' outside the grammar — '..', absolute, drive-like, backslash, NUL, dot-segments, empty — and writes nothing (GRO-2226 fold-in)", async () => {
+    const root = await makeRoot()
+    for (const bad of ['..', 'a/../b', '/abs', 'C:', 'C:/x', 'c:\\x', 'a\\b', 'a\0b', '.yaseendocs/templates', './a', 'a/', 'a//b', '']) {
+      expect((await failure(setType(root, 'kpi', { folder: bad }))).code).toBe('BAD_REQUEST')
+    }
+    expect(await readdir(root)).toEqual([]) // no dotfolder from rejected mutations
+  })
+
+  it("accepts nested root-relative folders (spaces and mid-segment dots included) and round-trips them into types.json", async () => {
+    const root = await makeRoot()
+    await setType(root, 'kpi', { folder: 'Content Pillars/1. Agentic Agency' })
+    expect((await getRegistry(root)).types.kpi?.folder).toBe('Content Pillars/1. Agentic Agency')
+  })
+
+  it("a STORED folder outside the grammar still reads (report-don't-block — use sites treat it as absent, GRO-2226)", async () => {
+    const root = await makeRoot()
+    await seed(root, { version: 1, types: { kpi: { folder: '../outside', properties: {} } } })
+    const reg = await getRegistry(root)
+    expect(reg.error).toBeUndefined()
+    expect(reg.types.kpi?.folder).toBe('../outside')
+  })
+
   it('ignores unknown keys in the incoming def (they never reach disk)', async () => {
     const root = await makeRoot()
     await setType(root, 'kpi', { displayName: 'KPI', future: true } as never)

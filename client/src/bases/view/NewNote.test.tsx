@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { IndexRecord } from '@shared/types'
+import type { IndexRecord, RegistryResponse } from '@shared/types'
 import { parseBase, type ParsedBase } from '../baseFile'
 import { BaseView, type BaseViewProps } from '../BaseView'
 import { TEST_RECORDS } from '../testRecords'
@@ -197,6 +197,128 @@ describe('toolbar New', () => {
 
     expect(q(el, '[role="alert"]').textContent).toContain('disk full')
     expect(onOpenFile).not.toHaveBeenCalled()
+  })
+})
+
+describe('registry scaffold upgrade (Bible B, GRO-2202)', () => {
+  const KPI_TABLE = `filters:
+  and:
+    - page_type == "kpi"
+views:
+  - type: table
+    name: T
+    order:
+      - file.name
+`
+
+  const REGISTRY: RegistryResponse = {
+    root: '/vault',
+    version: 1,
+    properties: {},
+    types: {
+      kpi: {
+        displayName: 'KPI',
+        pluralName: 'KPIs',
+        properties: {
+          funnel_stages: { kind: 'multi-link', target: 'funnel-stage' },
+          kpi_category: { kind: 'text' },
+          unit: { kind: 'text' },
+        },
+      },
+    },
+  }
+
+  /** The template read and on-demand folder creation ride the real api; stub just those bridge surfaces. */
+  function installReadFile(template: string | null) {
+    const readFile = vi.fn(async (path: string) => {
+      if (template === null) throw { code: 'NOT_FOUND', message: 'path does not exist' }
+      return { path, content: template, mtime: 1, size: template.length }
+    })
+    const createDir = vi.fn(async (path: string) => ({ path }))
+    Object.defineProperty(window, 'yaseenDocs', { value: { readFile, createDir }, configurable: true, writable: true })
+    return { readFile, createDir }
+  }
+
+  afterEach(() => {
+    delete (window as unknown as Record<string, unknown>).yaseenDocs
+  })
+
+  it('a view pinned to a REGISTERED type creates the full registry scaffold (page_type + declared properties, empty)', async () => {
+    const { readFile } = installReadFile(null)
+    const { el, onOpenFile } = mount(KPI_TABLE, { registry: REGISTRY })
+
+    click(byLabel(el, 'New note'))
+    await flush()
+
+    expect(readFile).toHaveBeenCalledWith('/vault/.yaseendocs/templates/kpi.md')
+    expect(create).toHaveBeenCalledWith('/vault/Bases/Untitled.md', { page_type: 'kpi', funnel_stages: [], kpi_category: null, unit: null }, '')
+    expect(onOpenFile).toHaveBeenCalledWith('/vault/Bases/Untitled.md')
+  })
+
+  it('a template overrides scaffold values key-by-key and contributes the body', async () => {
+    installReadFile('---\nkpi_category: leading\n---\nStart here.\n')
+    const { el } = mount(KPI_TABLE, { registry: REGISTRY })
+
+    click(byLabel(el, 'New note'))
+    await flush()
+
+    expect(create).toHaveBeenCalledWith(
+      '/vault/Bases/Untitled.md',
+      { page_type: 'kpi', funnel_stages: [], kpi_category: 'leading', unit: null },
+      'Start here.\n',
+    )
+  })
+
+  it('a pinned but UNREGISTERED type keeps the plain filter-derived seed', async () => {
+    const { readFile } = installReadFile(null)
+    const { el } = mount(KPI_TABLE, { registry: { ...REGISTRY, types: {} } })
+
+    click(byLabel(el, 'New note'))
+    await flush()
+
+    expect(readFile).not.toHaveBeenCalled()
+    expect(create).toHaveBeenCalledWith('/vault/Bases/Untitled.md', { page_type: 'kpi' })
+  })
+
+  describe('folder-consistent New (Round 10 Q5, GRO-2226)', () => {
+    /** Same registry, with the KPI type declaring a folder — the sidebar rule now applies here too. */
+    const withFolder = (folder: string): RegistryResponse => ({ ...REGISTRY, types: { kpi: { ...REGISTRY.types.kpi, folder } } })
+
+    it('a REGISTERED pinned type with a folder lands the page in the registry folder, created on demand (sidebar parity)', async () => {
+      const { createDir } = installReadFile(null)
+      const { el, onOpenFile } = mount(KPI_TABLE, { registry: withFolder('kpis') })
+
+      click(byLabel(el, 'New note'))
+      await flush()
+
+      expect(createDir).toHaveBeenCalledWith('/vault/kpis')
+      expect(create).toHaveBeenCalledWith('/vault/kpis/Untitled.md', { page_type: 'kpi', funnel_stages: [], kpi_category: null, unit: null }, '')
+      expect(onOpenFile).toHaveBeenCalledWith('/vault/kpis/Untitled.md')
+    })
+
+    it('a hand-edited folder outside the grammar is treated as absent — current placement, no dir created', async () => {
+      const { createDir } = installReadFile(null)
+      const { el } = mount(KPI_TABLE, { registry: withFolder('../outside') })
+
+      click(byLabel(el, 'New note'))
+      await flush()
+
+      expect(createDir).not.toHaveBeenCalled()
+      expect(create).toHaveBeenCalledWith('/vault/Bases/Untitled.md', { page_type: 'kpi', funnel_stages: [], kpi_category: null, unit: null }, '')
+    })
+
+    it('the registry folder wins over a view inFolder filter (the locked `folder ?? current placement` rule)', async () => {
+      const { createDir } = installReadFile(null)
+      const { el } = mount(`${KPI_TABLE}    filters:\n      and:\n        - page_type == "kpi"\n        - file.inFolder("Content Pillars")\n`, {
+        registry: withFolder('kpis'),
+      })
+
+      click(byLabel(el, 'New note'))
+      await flush()
+
+      expect(createDir).toHaveBeenCalledWith('/vault/kpis')
+      expect(create).toHaveBeenCalledWith('/vault/kpis/Untitled.md', { page_type: 'kpi', funnel_stages: [], kpi_category: null, unit: null }, '')
+    })
   })
 })
 

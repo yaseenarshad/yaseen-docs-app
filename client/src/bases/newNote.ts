@@ -1,4 +1,4 @@
-import { setFrontmatterProperty } from '@shared/frontmatter'
+import { buildFrontmatter } from '@shared/frontmatter'
 import { api } from '../api'
 import type { BaseDefinition, BaseView, FilterNode } from './baseFile'
 import { type Expr, compile } from './expr'
@@ -93,18 +93,17 @@ export function targetFolder(seedFolder: string | null, root: string | null, thi
   return root
 }
 
-/** The created file's whole content: one frontmatter block carrying the seed, no body; '' for an empty seed. */
+/** One frontmatter block carrying the seed, no body; '' for an empty seed (null values print `key:`). */
 export function seedContent(properties: Record<string, unknown>): string {
-  return Object.entries(properties).reduce((content, [key, value]) => setFrontmatterProperty(content, key, value), '')
+  return buildFrontmatter(properties)
 }
 
 /**
- * Create the note over the bridge, then write the seed frontmatter through the 5A write path
- * (`createFile` takes only a path — markdown is created empty — so the seed rides one
- * `writeFile` keyed to the created mtime). Failures propagate; the caller opens nothing.
+ * Create the note over the bridge in ONE atomic call: `CreateFileRequest.content` (Bible B,
+ * GRO-2202) keeps the `wx` never-overwrite guarantee without a create-then-write race. `body`
+ * lands after the frontmatter block (template bodies, R3). Failures propagate; the caller
+ * opens nothing.
  */
-export async function createNewNote(path: string, properties: Record<string, unknown>): Promise<void> {
-  const created = await api.createFile(path)
-  const content = seedContent(properties)
-  if (content !== '') await api.writeFile({ path, content, expectedMtime: created.mtime })
+export async function createNewNote(path: string, properties: Record<string, unknown>, body = ''): Promise<void> {
+  await api.createFile({ path, content: seedContent(properties) + body })
 }

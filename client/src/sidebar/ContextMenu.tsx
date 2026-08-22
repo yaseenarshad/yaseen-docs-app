@@ -1,5 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { fileLink } from '@shared/links'
+
+/** The submenu's CSS `top: -5px`, needed to compute its viewport overflow. */
+const SUB_TOP = -5
 
 interface ContextMenuProps {
   x: number
@@ -11,6 +14,17 @@ interface ContextMenuProps {
   /** Absolute path of the right-clicked FILE row; null (folders, blank space) hides "Open in new window" (D2, GRO-2168). */
   newWindowPath: string | null
   onOpenNewWindow: (path: string) => void
+  /**
+   * Registered types for the "New ▸" submenu (Bible B, GRO-2202; Round 10 Q4 LOCKED, GRO-2226):
+   * one item per type + "New type…" at the bottom. The submenu is ALWAYS present — [] collapses
+   * it to the single "New type…" item, the fresh-vault bootstrap entry (supersedes the Round 9
+   * Q1 "empty registry → no menu change" wording; the lazy rule still guarantees nothing is
+   * created by merely seeing it).
+   */
+  newTypes: Array<{ name: string; label: string }>
+  onNewTyped: (type: string) => void
+  /** "New type…": schema entry + starter base in one action (Round 9 record). */
+  onNewType: () => void
   onNewNote: () => void
   /** Create an Obsidian-compatible `.base` file (GRO-2126). */
   onNewBase: () => void
@@ -19,7 +33,8 @@ interface ContextMenuProps {
 }
 
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, onNewNote, onNewBase, onNewFolder, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, newTypes, onNewTyped, onNewType, onNewNote, onNewBase, onNewFolder, onClose }: ContextMenuProps) {
+  const [subOpen, setSubOpen] = useState(false)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -27,6 +42,32 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
+
+  // Viewport clamping (GRO-2204): render at the cursor, then measure and pull the menu back
+  // inside the window; the submenu flips left / slides up instead of spilling off an edge.
+  const menuRef = useRef<HTMLDivElement>(null)
+  const groupRef = useRef<HTMLDivElement>(null)
+  const subRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState({ left: x, top: y })
+  const [sub, setSub] = useState({ flip: false, up: 0 })
+
+  useLayoutEffect(() => {
+    const el = menuRef.current
+    if (el === null) return
+    const r = el.getBoundingClientRect()
+    setPos({ left: Math.max(0, Math.min(x, window.innerWidth - r.width)), top: Math.max(0, Math.min(y, window.innerHeight - r.height)) })
+  }, [x, y])
+
+  useLayoutEffect(() => {
+    if (!subOpen) return
+    const group = groupRef.current
+    const el = subRef.current
+    if (group === null || el === null) return
+    const g = group.getBoundingClientRect()
+    const s = el.getBoundingClientRect()
+    const overflow = g.top + SUB_TOP + s.height - window.innerHeight
+    setSub({ flip: g.right + s.width > window.innerWidth, up: Math.max(0, Math.min(overflow, g.top + SUB_TOP)) })
+  }, [subOpen, pos])
 
   return (
     <div
@@ -37,7 +78,7 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
         onClose()
       }}
     >
-      <div className="ctx-menu" style={{ left: x, top: y }} onMouseDown={(e) => e.stopPropagation()} role="menu">
+      <div ref={menuRef} className="ctx-menu" style={{ left: pos.left, top: pos.top }} onMouseDown={(e) => e.stopPropagation()} role="menu">
         {newWindowPath !== null && (
           <button
             type="button"
@@ -77,6 +118,34 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
             Copy link
           </button>
         )}
+        {/* Always present (Round 10 Q4, GRO-2226): an empty registry collapses it to "New type…". */}
+        <div ref={groupRef} className="ctx-menu__group" onMouseEnter={() => setSubOpen(true)} onMouseLeave={() => setSubOpen(false)}>
+          <button
+            type="button"
+            className="ctx-menu__item ctx-menu__item--sub"
+            role="menuitem"
+            aria-haspopup="menu"
+            aria-expanded={subOpen}
+            onClick={() => setSubOpen((o) => !o)}
+          >
+            New
+            <span className="ctx-menu__sub-arrow" aria-hidden="true">
+              ▸
+            </span>
+          </button>
+          {subOpen && (
+            <div ref={subRef} className={`ctx-submenu${sub.flip ? ' ctx-submenu--left' : ''}`} style={sub.up > 0 ? { top: SUB_TOP - sub.up } : undefined} role="menu">
+              {newTypes.map((t) => (
+                <button key={t.name} type="button" className="ctx-menu__item" role="menuitem" onClick={() => onNewTyped(t.name)}>
+                  New {t.label}
+                </button>
+              ))}
+              <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewType}>
+                New type…
+              </button>
+            </div>
+          )}
+        </div>
         <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewNote}>
           New note
         </button>

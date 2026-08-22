@@ -8,13 +8,15 @@ interface CreateInlineProps {
   kind: EntryKind
   /** Left padding so the input lines up with rows at its depth. */
   indent: number
+  /** Overrides the kind placeholder — "New KPI" for a typed create (Bible B, GRO-2202). */
+  placeholder?: string
   /** Called with the validated, non-empty name; rejects with a message to keep editing. */
   onSubmit: (name: string) => Promise<void>
   onCancel: () => void
 }
 
 /** VS Code-style inline name input rendered inside the tree (GRO-2022 D2). */
-export function CreateInline({ kind, indent, onSubmit, onCancel }: CreateInlineProps) {
+export function CreateInline({ kind, indent, placeholder, onSubmit, onCancel }: CreateInlineProps) {
   const [error, setError] = useState<string | null>(null)
   const submitting = useRef(false)
 
@@ -40,7 +42,7 @@ export function CreateInline({ kind, indent, onSubmit, onCancel }: CreateInlineP
       <input
         autoFocus
         className={`create-inline__input${error !== null ? ' create-inline__input--error' : ''}`}
-        placeholder={PLACEHOLDER[kind]}
+        placeholder={placeholder ?? PLACEHOLDER[kind]}
         spellCheck={false}
         onKeyDown={(e) => {
           if (e.key === 'Enter') void submit(e.currentTarget.value)

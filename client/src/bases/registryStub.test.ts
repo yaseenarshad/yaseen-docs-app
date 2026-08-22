@@ -1,9 +1,9 @@
 /**
  * In-memory `RegistryApi` stub (5E, GRO-2217; contract GRO-2120 comment 73479ea3 §3/§6):
  * `get` on an untouched root resolves empty — never an error — and never creates state;
- * mutations are targeted (a `{type}` scope creates the type entry on demand), bump `version`
- * and fire every `onChange` listener with a fresh snapshot. GRO-2201 swaps this for the real
- * `.yaseendocs/types.json` bridge behind the same interface.
+ * mutations are targeted (a `{type}` scope creates the type entry on demand) and fire every
+ * `onChange` listener with a fresh snapshot. `version` is the constant 1, matching the real
+ * `.yaseendocs/types.json` bridge this stub stands in for (GRO-2201 swap; GRO-2204 alignment).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { registryStub, resetRegistryStub } from './registryStub'
@@ -12,7 +12,7 @@ afterEach(() => resetRegistryStub())
 
 describe('get', () => {
   it('an untouched root resolves { types: {}, properties: {} } — empty, not an error (§3)', async () => {
-    await expect(registryStub.get('/vault')).resolves.toEqual({ root: '/vault', version: 0, types: {}, properties: {} })
+    await expect(registryStub.get('/vault')).resolves.toEqual({ root: '/vault', version: 1, types: {}, properties: {} })
   })
 
   it('roots are independent', async () => {
@@ -30,7 +30,7 @@ describe('get', () => {
 })
 
 describe('setProperty', () => {
-  it("scope 'vault' stores the def under properties and bumps version", async () => {
+  it("scope 'vault' stores the def under properties; version stays the bridge's constant 1", async () => {
     await registryStub.setProperty('/vault', 'vault', 'owner', { kind: 'link', target: 'person' })
     const res = await registryStub.get('/vault')
     expect(res.properties.owner).toEqual({ kind: 'link', target: 'person' })
@@ -49,7 +49,7 @@ describe('setProperty', () => {
     await registryStub.setProperty('/vault', 'vault', 'x', { kind: 'multi-link', target: 'b' })
     const res = await registryStub.get('/vault')
     expect(res.properties.x).toEqual({ kind: 'multi-link', target: 'b' })
-    expect(res.version).toBe(2)
+    expect(res.version).toBe(1)
   })
 })
 

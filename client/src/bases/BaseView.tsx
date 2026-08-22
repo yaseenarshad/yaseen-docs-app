@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { IndexRecord, RegistryResponse } from '@shared/types'
+import type { IndexRecord, RegistryResponse, RegistryTypeDef } from '@shared/types'
 import { storage } from '../lib/storage'
 import { type BaseDefinition, type ParsedBase, parseBase, serializeBase, updateBase } from './baseFile'
 import { type Group, type Row, propertyKeys, runView } from './engine'
 import { render } from './expr'
 import { createNewNote, deriveSeed, targetFolder, untitledName } from './newNote'
 import { pinnedType } from './relation'
+import { ensureFolder, newEntityParts, usableFolder } from './scaffold'
 import { writeProperty } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
@@ -136,6 +137,11 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
   // The toolbar's "New" / a group header's "+" (5D, GRO-2144): a note pre-filled to satisfy this
   // view — filter-derived seed, plus the group's raw value when created inside a group — created
   // over the bridge and opened only once the create lands; a failure shows the alert instead.
+  // Bible B convergence (GRO-2202): a view pinned to a REGISTERED type upgrades the pre-fill to
+  // the full registry scaffold (scaffold ← template ← filter seed, page_type forced last).
+  // Folder-consistent New (Round 10 Q5, GRO-2226): a registered pinned type with a usable
+  // `folder` lands the page THERE, created on demand — the sidebar submenu's exact rule
+  // (`folder ?? current placement`); an invalid stored folder is treated as absent.
   const onNewNote = (group: Group | null) => {
     const seed = deriveSeed(def, view)
     const groupKey = dragKey(view)
@@ -143,7 +149,13 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
       const raw = group.key === null ? undefined : group.rows[0]?.record.properties[groupKey]
       if (raw !== undefined) seed.properties[groupKey] = raw
     }
-    const folder = targetFolder(seed.folder, root, thisFile)
+    const typeDef = pinned === null ? undefined : registry?.types[pinned]
+    let regFolder: string | null = null
+    let folder = targetFolder(seed.folder, root, thisFile)
+    if (typeDef !== undefined && root !== null) {
+      regFolder = usableFolder(typeDef)
+      if (regFolder !== null) folder = `${root}/${regFolder}`
+    }
     if (folder === null) {
       setCreateError('the vault root is not known yet')
       return
@@ -151,9 +163,15 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
     const taken = new Set(records.filter((r) => r.path.slice(0, r.path.lastIndexOf('/')) === folder).map((r) => r.basename))
     const path = `${folder}/${untitledName(taken)}.md`
     setCreateError(null)
-    createNewNote(path, seed.properties)
-      .then(() => onOpenFile(path))
-      .catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
+    /** Typed create: registry folder on demand → scaffold (+ template) → one atomic create. */
+    const createScaffolded = async (vaultRoot: string, type: string, typeSchema: RegistryTypeDef): Promise<void> => {
+      if (regFolder !== null) await ensureFolder(vaultRoot, regFolder)
+      const { properties, body } = await newEntityParts(vaultRoot, type, typeSchema, seed.properties)
+      await createNewNote(path, properties, body)
+    }
+    const create =
+      pinned !== null && typeDef !== undefined && root !== null ? createScaffolded(root, pinned, typeDef) : createNewNote(path, seed.properties)
+    create.then(() => onOpenFile(path)).catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
   }
 
   const keys = propertyKeys(def, view, records)

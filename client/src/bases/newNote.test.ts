@@ -1,8 +1,8 @@
 /**
  * "New" note derivation (5D, GRO-2144), pure over the view's filter AST: equality filters and
  * `file.hasTag` become seed frontmatter (YAML types preserved), a single `file.inFolder`
- * names the target folder, `Untitled` names de-duplicate, and `createNewNote` goes create →
- * seed-write over the bridge (`api` mocked, same as writeProperty.test.ts).
+ * names the target folder, `Untitled` names de-duplicate, and `createNewNote` creates in one
+ * atomic content-at-create call (Bible B, GRO-2202; `api` mocked, same as writeProperty.test.ts).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BaseDefinition, BaseView, FilterNode } from './baseFile'
@@ -103,35 +103,42 @@ describe('seedContent', () => {
     expect(seedContent({})).toBe('')
   })
 
-  it('writes one frontmatter block with native YAML types', () => {
+  it('writes one frontmatter block with native YAML types; null prints `key:`', () => {
     expect(seedContent({ status: 'idea', priority: 2 })).toBe('---\nstatus: idea\npriority: 2\n---\n')
     expect(seedContent({ tags: ['agentic'] })).toBe('---\ntags:\n  - agentic\n---\n')
+    expect(seedContent({ unit: null })).toBe('---\nunit:\n---\n')
   })
 })
 
 describe('createNewNote', () => {
-  it('creates, then writes the seed frontmatter with the created mtime', async () => {
-    createFile.mockResolvedValue({ path: '/v/Untitled.md', mtime: 5, size: 0 })
-    writeFile.mockResolvedValue({ path: '/v/Untitled.md', mtime: 6, size: 20 })
+  it('creates the note in ONE atomic content-at-create call (GRO-2202), never a follow-up write', async () => {
+    createFile.mockResolvedValue({ path: '/v/Untitled.md', mtime: 5, size: 20 })
 
     await createNewNote('/v/Untitled.md', { status: 'idea' })
 
-    expect(createFile).toHaveBeenCalledWith('/v/Untitled.md')
-    expect(writeFile).toHaveBeenCalledWith({ path: '/v/Untitled.md', content: '---\nstatus: idea\n---\n', expectedMtime: 5 })
+    expect(createFile).toHaveBeenCalledWith({ path: '/v/Untitled.md', content: '---\nstatus: idea\n---\n' })
+    expect(writeFile).not.toHaveBeenCalled()
   })
 
-  it('skips the write for an empty seed', async () => {
+  it('an empty seed creates an empty file', async () => {
     createFile.mockResolvedValue({ path: '/v/Untitled.md', mtime: 5, size: 0 })
 
     await createNewNote('/v/Untitled.md', {})
 
-    expect(writeFile).not.toHaveBeenCalled()
+    expect(createFile).toHaveBeenCalledWith({ path: '/v/Untitled.md', content: '' })
   })
 
-  it('propagates a create failure without writing', async () => {
+  it('a body lands after the frontmatter block (template bodies, R3)', async () => {
+    createFile.mockResolvedValue({ path: '/v/Untitled.md', mtime: 5, size: 40 })
+
+    await createNewNote('/v/Untitled.md', { page_type: 'kpi' }, '# Notes\n')
+
+    expect(createFile).toHaveBeenCalledWith({ path: '/v/Untitled.md', content: '---\npage_type: kpi\n---\n# Notes\n' })
+  })
+
+  it('propagates a create failure', async () => {
     createFile.mockRejectedValue(new Error('parent folder does not exist'))
 
     await expect(createNewNote('/v/Untitled.md', { status: 'idea' })).rejects.toThrow('parent folder does not exist')
-    expect(writeFile).not.toHaveBeenCalled()
   })
 })

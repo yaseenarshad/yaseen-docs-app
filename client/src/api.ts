@@ -3,6 +3,7 @@ import type {
   AssetResponse,
   BridgeError,
   CreateDirResponse,
+  CreateFileRequest,
   CreateFileResponse,
   FileResponse,
   FileWriteRequest,
@@ -51,7 +52,7 @@ export const api = {
   readFile: (path: string) => call<FileResponse>(() => window.yaseenDocs.readFile(path)),
   writeFile: (body: FileWriteRequest) => call<FileWriteResponse>(() => window.yaseenDocs.writeFile(body)),
   createDir: (path: string) => call<CreateDirResponse>(() => window.yaseenDocs.createDir(path)),
-  createFile: (path: string) => call<CreateFileResponse>(() => window.yaseenDocs.createFile(path)),
+  createFile: (req: string | CreateFileRequest) => call<CreateFileResponse>(() => window.yaseenDocs.createFile(req)),
   /** Bases property index for `root` (GRO-2129). */
   index: (root: string) => call<IndexResponse>(() => window.yaseenDocs.index(root)),
   /** Local image under `root` for a cards cover (GRO-2139); `ref` = wikilink target or path. */

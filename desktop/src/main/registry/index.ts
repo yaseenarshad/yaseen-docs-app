@@ -1,5 +1,5 @@
 import type { RegistryPropertyDef, RegistryPropertyKind, RegistryResponse, RegistryScope, RegistryTypeDef } from '@shared/types'
-import { REGISTRY_PROPERTY_KINDS } from '@shared/types'
+import { REGISTRY_FOLDER, REGISTRY_PROPERTY_KINDS, REGISTRY_PROPERTY_NAME, REGISTRY_TYPE_NAME } from '@shared/types'
 import { BridgeFailure, requireAbsPath, requireDir } from '../fs/fsUtils'
 import { readConfigDetailed, subscribeConfig, writeConfig } from '../vaultConfig'
 
@@ -23,23 +23,20 @@ import { readConfigDetailed, subscribeConfig, writeConfig } from '../vaultConfig
 
 export const REGISTRY_FILE = 'types.json'
 
-const TYPE_NAME = /^[a-z][a-z0-9-]*$/
-const PROPERTY_NAME = /^[a-z][a-z0-9_]*$/
-
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 // ---------- input validation (strict at the IPC boundary: a write is config, not content) ----------
 
 function requireTypeName(name: unknown): string {
-  if (typeof name !== 'string' || !TYPE_NAME.test(name)) {
-    throw new BridgeFailure('BAD_REQUEST', `type names are kebab-case (${String(TYPE_NAME)})`, { path: String(name) })
+  if (typeof name !== 'string' || !REGISTRY_TYPE_NAME.test(name)) {
+    throw new BridgeFailure('BAD_REQUEST', `type names are kebab-case (${String(REGISTRY_TYPE_NAME)})`, { path: String(name) })
   }
   return name
 }
 
 function requirePropertyName(name: unknown): string {
-  if (typeof name !== 'string' || !PROPERTY_NAME.test(name)) {
-    throw new BridgeFailure('BAD_REQUEST', `property names are snake_case (${String(PROPERTY_NAME)})`, { path: String(name) })
+  if (typeof name !== 'string' || !REGISTRY_PROPERTY_NAME.test(name)) {
+    throw new BridgeFailure('BAD_REQUEST', `property names are snake_case (${String(REGISTRY_PROPERTY_NAME)})`, { path: String(name) })
   }
   if (name === 'page_type') {
     throw new BridgeFailure('BAD_REQUEST', "'page_type' is the identity property and is never a declared one")
@@ -80,6 +77,12 @@ function requireTypePatch(raw: unknown): Partial<RegistryTypeDef> {
       if (typeof value !== 'string') throw new BridgeFailure('BAD_REQUEST', `'${key}' must be a string`)
       patch[key] = value
     }
+  }
+  // GRO-2226 fold-in: 'folder' aims typed-create, so an incoming value must stay inside the
+  // vault — no '..', no absolute or drive-like paths, no backslashes/NUL, no dot-segments.
+  // Stored values are NOT re-validated on read (report-don't-block; use sites skip bad ones).
+  if (patch.folder !== undefined && !REGISTRY_FOLDER.test(patch.folder)) {
+    throw new BridgeFailure('BAD_REQUEST', `'folder' must be a root-relative '/'-separated path with no '..', absolute/drive prefix, backslash or dot-segments (${String(REGISTRY_FOLDER)})`)
   }
   if (raw.properties !== undefined) {
     if (!isRecord(raw.properties)) throw new BridgeFailure('BAD_REQUEST', "'properties' must be an object")
