@@ -33,6 +33,7 @@ export type TabsAction =
   | { type: 'open-background'; path: string } // append at the end, do NOT activate (no-op when already open)
   | { type: 'activate'; path: string } // tab-strip click
   | { type: 'close'; path: string } // ✕ / ⌘W: the active tab closes to its right neighbour, else left
+  | { type: 'move'; from: number; to: number } // drag-to-reorder (I3): the tab at `from` lands at final index `to`
   | { type: 'cycle'; dir: 1 | -1 } // ⌃Tab / ⌃⇧Tab: wraparound, plain left→right order
   | { type: 'reset'; tabs: string[]; active: string | null } // boot + root switch: replace wholesale, normalizing
 
@@ -84,6 +85,15 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       const heir = s.tabs[i + 1] ?? s.tabs[i - 1] ?? null
       return heir === null ? { ...rest, active: null } : withActive({ ...rest, active: null }, heir)
     }
+    case 'move': {
+      // Reorder only: `active` and `mounted` are untouched — dragging never activates a tab.
+      const to = Math.max(0, Math.min(a.to, s.tabs.length - 1))
+      if (a.from < 0 || a.from >= s.tabs.length || a.from === to) return s
+      const tabs = [...s.tabs]
+      const [moved] = tabs.splice(a.from, 1)
+      tabs.splice(to, 0, moved)
+      return { ...s, tabs }
+    }
     case 'cycle': {
       if (s.active === null || s.tabs.length < 2) return s
       const i = s.tabs.indexOf(s.active)
@@ -114,12 +124,14 @@ export function bootTabs(root: string | null): TabsState {
 export interface UseTabs extends TabsState {
   /** Rule 11: sidebar single-click, inline-create, Bases row links, base embeds, deep links. */
   openCurrent: (path: string) => void
-  /** Rule 5 (call sites arrive with I3's ⌘-click swap): append at the end + activate. */
+  /** Rule 5: append at the end + activate. No shipped gesture yet — I3's ⌘-click ruling landed on openBackground. */
   openNew: (path: string) => void
   /** Rule 5: append at the end without activating (and so without stealing focus). */
   openBackground: (path: string) => void
   activate: (path: string) => void
   close: (path: string) => void
+  /** Drag-to-reorder (I3): the tab at `from` lands at final index `to`; activation untouched. */
+  move: (from: number, to: number) => void
   /** ⌘W: closes the active tab; false when there is none (App escalates to `closeSelf`). */
   closeActive: () => boolean
   next: () => void
@@ -151,6 +163,7 @@ export function useTabs(root: string | null): UseTabs {
   const openBackground = useCallback((path: string) => dispatch({ type: 'open-background', path }), [dispatch])
   const activate = useCallback((path: string) => dispatch({ type: 'activate', path }), [dispatch])
   const close = useCallback((path: string) => dispatch({ type: 'close', path }), [dispatch])
+  const move = useCallback((from: number, to: number) => dispatch({ type: 'move', from, to }), [dispatch])
   const closeActive = useCallback((): boolean => {
     const active = stateRef.current.active
     if (active === null) return false
@@ -168,5 +181,5 @@ export function useTabs(root: string | null): UseTabs {
     [dispatch],
   )
 
-  return { ...state, openCurrent, openNew, openBackground, activate, close, closeActive, next, prev, reset }
+  return { ...state, openCurrent, openNew, openBackground, activate, close, move, closeActive, next, prev, reset }
 }

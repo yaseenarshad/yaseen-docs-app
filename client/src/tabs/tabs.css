@@ -19,15 +19,18 @@
   padding: 4px 8px 0;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
-  /* Overflow = plain horizontal scroll for v1 (shrink-to-min + scroll polish is I3). */
+  /* Overflow (I3): tabs shrink to their floor first, then the strip scrolls (Obsidian-like);
+     TabBar scrolls the ACTIVE tab into view on activation. */
   overflow-x: auto;
 }
 
 .tabbar__tab {
   display: flex;
   align-items: center;
-  flex: none;
-  min-width: 0;
+  /* Shrink as the strip fills, down to the ~120px floor; long names ellipsize under the cap. */
+  flex: 0 1 auto;
+  min-width: 120px;
+  max-width: 200px;
   border-bottom: 2px solid transparent;
 }
 
@@ -35,15 +38,36 @@
   border-bottom-color: var(--accent);
 }
 
+/* Drag-to-reorder (I3): the grabbed tab dims; the drop slot draws an accent edge on the tab
+   it would land before (or after the LAST tab for the end slot) — box-shadow, no layout shift. */
+.tabbar__tab--dragging {
+  opacity: 0.5;
+}
+
+.tabbar__tab--insert-before {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.tabbar__tab--insert-after {
+  box-shadow: inset -2px 0 0 var(--accent);
+}
+
 .tabbar__btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  flex: 1;
+  min-width: 0;
   padding: 4px 2px 4px 8px;
   font-size: 13px;
   color: var(--fg-muted);
   border-radius: 4px;
   white-space: nowrap;
+}
+
+.tabbar__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tabbar__btn:hover {

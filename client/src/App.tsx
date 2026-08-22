@@ -29,7 +29,7 @@ export function App() {
   // Tabs (I2, GRO-2234): the renderer-owned tab model, seeded from the boot identity snapshot
   // (a pasted `#/abs/path.md` URL wins as the active tab — bootTabs). The ACTIVE tab is this
   // window's `file`: title, URL hash and the sidebar highlight all follow it.
-  const { tabs, active: file, mounted, openCurrent, activate, close: closeTab, closeActive, next: nextTab, prev: prevTab, reset: resetTabs } = useTabs(root)
+  const { tabs, active: file, mounted, openCurrent, openBackground, activate, close: closeTab, move: moveTab, closeActive, next: nextTab, prev: prevTab, reset: resetTabs } = useTabs(root)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const [settings, setSettings] = useState(storage.getSettings)
   const watch = useWatch(root)
@@ -153,6 +153,7 @@ export function App() {
           activeFile={file}
           watch={watch}
           onOpenFile={openCurrent}
+          onOpenFileBackground={openBackground}
           onPickFolder={pick}
           pickDisabled={picking}
           onCollapse={toggleSidebar}
@@ -175,7 +176,7 @@ export function App() {
       ) : (
         <div className="workspace">
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
-          <TabBar tabs={tabs} active={file} onActivate={activate} onClose={closeTab} />
+          <TabBar tabs={tabs} active={file} onActivate={activate} onClose={closeTab} onMove={moveTab} />
           <div className="tabstack">
             {mounted.length === 0 && <Editor root={root} path={null} watch={watch} onOpenFile={openCurrent} />}
             {mounted.map((path) => (

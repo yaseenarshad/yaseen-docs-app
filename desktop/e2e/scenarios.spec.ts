@@ -135,16 +135,27 @@ test('scenario 2 — external edit while B is dirty raises the conflict bar; Rel
   await shoot(winB, 'g3-02b-reload-resolved')
 })
 
-test('scenario 3 — ⌘-click on a sidebar file opens it in a new window', async () => {
-  // The REAL gesture (Tree.tsx: metaKey click on a file row → openFileNewWindow).
+test('scenario 3 — ⌘-click on a sidebar file opens a BACKGROUND TAB; the context menu still opens a new window', async () => {
+  // The REAL gesture (Tree.tsx: metaKey click on a file row → openBackground — I3, GRO-2235).
   await winA.locator('.tree__row--file', { hasText: 'Ideas' }).click({ modifiers: ['Meta'] })
+  // A background tab in THIS window: the strip gains a tab, activation unchanged, NO new window.
+  await expect(winA.locator('.tabbar [role="tab"]')).toHaveCount(2)
+  await expect(winA.locator('.tabbar [role="tab"][aria-selected="true"]')).toHaveText('Welcome note')
+  await expect(winA.locator('.tree__row--active')).toContainText('Welcome note')
+  expect(await windowCount(app)).toBe(2)
+  await shoot(winA, 'g3-03a-cmd-click-background-tab')
+
+  // "Open in new window" lives on the context menu alone (the LOCKED I3 ruling): the row's
+  // right-click item opens an independent window on {root, file} — the pre-I3 assertion set.
+  await winA.locator('.tree__row--file', { hasText: 'Ideas' }).click({ button: 'right' })
+  await winA.locator('.ctx-menu__item', { hasText: 'Open in new window' }).click()
   const winC = await extraWindow(app, ['w1', winBId])
   expect(await windowCount(app)).toBe(3)
   await expect(winC.locator('.ProseMirror')).toContainText(IDEAS_BODY)
   await expect.poll(() => winC.title()).toBe(titleOf(vaultA, path.join(vaultA, 'Ideas.md')))
-  // The origin window stayed put: same active file, untouched.
-  await expect(winA.locator('.tree__row--active')).toContainText('Welcome note')
-  await shoot(winC, 'g3-03-cmd-click-new-window')
+  // The origin window stayed put: same active file/tab, untouched.
+  await expect(winA.locator('.tabbar [role="tab"][aria-selected="true"]')).toHaveText('Welcome note')
+  await shoot(winC, 'g3-03b-context-menu-new-window')
 })
 
 test('scenario 6 — relaunch restores all three windows with their roots and files', async () => {

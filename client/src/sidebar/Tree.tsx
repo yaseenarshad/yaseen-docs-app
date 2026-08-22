@@ -22,18 +22,21 @@ interface TreeProps {
   activeFile: string | null
   onToggle: (dir: string) => void
   onOpenFile: (path: string) => void
-  /** ⌘-click on a file row (D2, GRO-2168): open it in a new window; this window stays put. */
-  onOpenFileNewWindow: (path: string) => void
+  /**
+   * ⌘-click on a file row (I3 LOCKED ruling, GRO-2235): open it in a background tab of THIS
+   * window — activation stays put. "Open in new window" lives on the context menu (D2).
+   */
+  onOpenFileBackground: (path: string) => void
   /** Right-click on a row; blank-space right-clicks are handled by the sidebar body. */
   onNodeContextMenu: (node: TreeNode, e: React.MouseEvent) => void
   pending: PendingCreate | null
   depth?: number
 }
 
-/** 2×2 grid marking a `.base` row (GRO-2126); same stroke weight as `SidebarPanelIcon`. */
-function BaseGlyph() {
+/** 2×2 grid marking a `.base` row (GRO-2126) or tab (I3 shares it with the TabBar); same stroke weight as `SidebarPanelIcon`. */
+export function BaseGlyph({ className }: { className: string }) {
   return (
-    <svg className="tree__glyph" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
+    <svg className={className} width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
       <rect x="1.5" y="1.5" width="9" height="9" rx="1" />
       <line x1="6" y1="1.5" x2="6" y2="10.5" />
       <line x1="1.5" y1="6" x2="10.5" y2="6" />
@@ -48,12 +51,12 @@ export function Tree({
   activeFile,
   onToggle,
   onOpenFile,
-  onOpenFileNewWindow,
+  onOpenFileBackground,
   onNodeContextMenu,
   pending,
   depth = 0,
 }: TreeProps) {
-  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileNewWindow, onNodeContextMenu, pending }
+  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onNodeContextMenu, pending }
   return (
     <ul className="tree" role={depth === 0 ? 'tree' : 'group'}>
       {pending !== null && pending.parentDir === dirPath && (
@@ -88,11 +91,11 @@ export function Tree({
               type="button"
               className={`tree__row tree__row--file${node.kind === 'base' ? ' tree__row--base' : ''}${node.path === activeFile ? ' tree__row--active' : ''}`}
               style={{ paddingLeft: 8 + depth * 14 + 14 }}
-              onClick={(e) => (e.metaKey ? onOpenFileNewWindow(node.path) : onOpenFile(node.path))}
+              onClick={(e) => (e.metaKey ? onOpenFileBackground(node.path) : onOpenFile(node.path))}
               onContextMenu={(e) => onNodeContextMenu(node, e)}
               title={node.path}
             >
-              {node.kind === 'base' && <BaseGlyph />}
+              {node.kind === 'base' && <BaseGlyph className="tree__glyph" />}
               <span className="tree__label">{stripExt(node.name)}</span>
             </button>
           </li>

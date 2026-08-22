@@ -1,7 +1,8 @@
 /**
- * The window tab strip (Tabs I2, GRO-2234): tablist semantics per the ViewTabs pattern,
- * extension-stripped labels with full-path tooltips, the `.base` glyph, and the three
- * close affordances (✕, middle-click) vs activation.
+ * The window tab strip (Tabs I2/I3, GRO-2234/2235): tablist semantics per the ViewTabs
+ * pattern, extension-stripped labels with full-path tooltips, the `.base` glyph, the close
+ * affordances (✕, middle-click) vs activation, drag-to-reorder with the insertion indicator,
+ * and the active tab scrolled into view on activation.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -29,7 +30,7 @@ afterEach(() => {
 })
 
 describe('TabBar', () => {
-  const noop = { onActivate: vi.fn(), onClose: vi.fn() }
+  const noop = { onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn() }
 
   it('renders a labelled tablist: one role=tab per path, extension-stripped label, full path as tooltip', () => {
     const el = mount({ tabs: ['/v/Note.md', '/v/sub/Plan.markdown'], active: '/v/Note.md', ...noop })
@@ -56,7 +57,7 @@ describe('TabBar', () => {
   it('clicking a tab activates it; the ✕ (labelled per file) closes it without activating', () => {
     const onActivate = vi.fn()
     const onClose = vi.fn()
-    const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', onActivate, onClose })
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', onActivate, onClose, onMove: vi.fn() })
     act(() => el.querySelectorAll<HTMLButtonElement>('[role="tab"]')[1]?.click())
     expect(onActivate).toHaveBeenCalledWith('/v/b.md')
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Close b"]')?.click())
@@ -66,7 +67,7 @@ describe('TabBar', () => {
 
   it('middle-click closes a tab (the browser-tab convention); other aux buttons do nothing', () => {
     const onClose = vi.fn()
-    const el = mount({ tabs: ['/v/a.md'], active: '/v/a.md', onActivate: vi.fn(), onClose })
+    const el = mount({ tabs: ['/v/a.md'], active: '/v/a.md', onActivate: vi.fn(), onClose, onMove: vi.fn() })
     const tab = el.querySelector<HTMLButtonElement>('[role="tab"]')
     act(() => void tab?.dispatchEvent(new MouseEvent('auxclick', { button: 1, bubbles: true })))
     expect(onClose).toHaveBeenCalledWith('/v/a.md')
@@ -78,5 +79,66 @@ describe('TabBar', () => {
     const el = mount({ tabs: [], active: null, ...noop })
     expect(el.querySelector('.tabbar')).not.toBeNull()
     expect(el.querySelectorAll('[role="tab"]')).toHaveLength(0)
+  })
+})
+
+describe('TabBar drag-to-reorder (I3, GRO-2235)', () => {
+  const TABS = ['/v/a.md', '/v/b.md', '/v/c.md']
+  const tabAt = (el: HTMLElement, i: number) => [...el.querySelectorAll<HTMLElement>('.tabbar__tab')][i]
+  /**
+   * Drag events bubble like the real thing; jsdom has no DragEvent, the handlers guard
+   * `dataTransfer` (the groupDrag idiom). jsdom rects are all-zero, so the before/after
+   * midpoint test reduces to the sign of clientX: negative = before the tab, else after.
+   */
+  const fire = (target: Element, type: string, clientX = 0) =>
+    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX })))
+
+  it('dropping past a tab\'s midpoint calls onMove with the final index; grab and indicator classes mark the drag', () => {
+    const onMove = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove })
+    fire(tabAt(el, 0), 'dragstart')
+    expect(tabAt(el, 0).classList.contains('tabbar__tab--dragging')).toBe(true)
+    fire(tabAt(el, 2), 'dragover', 5) // right half of c → the end slot: the last tab marks --insert-after
+    expect(tabAt(el, 2).classList.contains('tabbar__tab--insert-after')).toBe(true)
+    fire(tabAt(el, 2), 'drop', 5)
+    expect(onMove).toHaveBeenCalledWith(0, 2) // a lands last
+    expect(el.querySelector('.tabbar__tab--dragging')).toBeNull() // drag state cleared
+  })
+
+  it('dropping on a tab\'s left half inserts BEFORE it (--insert-before on that tab)', () => {
+    const onMove = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove })
+    fire(tabAt(el, 0), 'dragstart')
+    fire(tabAt(el, 2), 'dragover', -5)
+    expect(tabAt(el, 2).classList.contains('tabbar__tab--insert-before')).toBe(true)
+    fire(tabAt(el, 2), 'drop', -5)
+    expect(onMove).toHaveBeenCalledWith(0, 1) // before c, after the grab point shifted one left
+  })
+
+  it('dropping back on the grabbed slot is a no-op; dragend clears an abandoned drag', () => {
+    const onMove = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove })
+    fire(tabAt(el, 1), 'dragstart')
+    fire(tabAt(el, 1), 'drop', -5) // before itself = its own slot
+    expect(onMove).not.toHaveBeenCalled()
+    fire(tabAt(el, 1), 'dragstart')
+    fire(tabAt(el, 1), 'dragend')
+    expect(el.querySelector('.tabbar__tab--dragging')).toBeNull()
+  })
+})
+
+describe('TabBar keeps the active tab in view (I3 overflow polish)', () => {
+  it('activation scrolls the ACTIVE tab into view when scrollIntoView exists (jsdom lacks it: the ?. guard is every other test here)', () => {
+    const spy = vi.fn()
+    ;(HTMLElement.prototype as unknown as Record<string, unknown>).scrollIntoView = spy
+    try {
+      mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn() })
+      act(() => root?.render(<TabBar tabs={['/v/a.md', '/v/b.md']} active="/v/b.md" onActivate={vi.fn()} onClose={vi.fn()} onMove={vi.fn()} />))
+      const activeTab = spy.mock.contexts.at(-1) as HTMLElement
+      expect(activeTab.classList.contains('tabbar__tab--active')).toBe(true)
+      expect(activeTab.querySelector('[role="tab"]')?.textContent).toBe('b')
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollIntoView
+    }
   })
 })

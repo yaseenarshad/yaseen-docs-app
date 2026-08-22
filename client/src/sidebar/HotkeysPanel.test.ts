@@ -18,12 +18,22 @@ describe('HOTKEYS source of truth', () => {
     }
   })
 
-  it('covers the window shortcuts from the application menu (B3) plus the open-beside tip', () => {
+  it('covers the window & tab shortcuts from the application menu (B3 + Tabs) plus the open-beside tip', () => {
     const keys = WINDOW_HOTKEYS.map((h) => h.keys)
-    // ⌘⇧N / ⌘⇧O / ⌘W live in the menu (menu.ts, GRO-2161); ⌥-click Open Recent = open beside (GRO-2211).
-    for (const expected of ['⌘⇧N', '⌘⇧O', '⌘W', '⌥ Open Recent']) {
+    // ⌘⇧N / ⌘⇧O / ⌘W (Close Tab) / ⌘⇧W (Close Window) and the tab-switch pairs live in the
+    // menu (menu.ts, GRO-2161/2232); ⌥-click Open Recent = open beside (GRO-2211).
+    for (const expected of ['⌘⇧N', '⌘⇧O', '⌘W', '⌘⇧W', '⌃Tab / ⌃⇧Tab', '⌘⇧] / ⌘⇧[', '⌥ Open Recent']) {
       expect(keys).toContain(expected)
     }
+    // The ⌘W ladder swap (GRO-2232, locked): ⌘W closes the TAB, ⌘⇧W the window — never the reverse.
+    expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘W')?.label).toMatch(/close tab/i)
+    expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘⇧W')?.label).toMatch(/close window/i)
+  })
+
+  it('the sidebar mouse tips carry the I3 ⌘-click ruling: background tab on ⌘-click, new window on right-click', () => {
+    const byKeys = (keys: string) => MOUSE_TIPS.find((t) => t.keys === keys)
+    expect(byKeys('⌘-click file')?.label).toMatch(/background tab/i)
+    expect(byKeys('Right-click file')?.label).toMatch(/new window/i)
   })
 
   it('every entry is renderable (non-empty keys and label)', () => {

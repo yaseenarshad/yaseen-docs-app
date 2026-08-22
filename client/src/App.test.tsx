@@ -17,6 +17,7 @@ interface SidebarStubProps {
   root: string
   activeFile: string | null
   onOpenFile: (path: string) => void
+  onOpenFileBackground: (path: string) => void
   onRootMissing: () => void
   onFileMissing: () => void
 }
@@ -301,6 +302,26 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(el.querySelector('.tabbar')).not.toBeNull()
     expect(stripLabels(el)).toEqual([])
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('')
+  })
+
+  it('the sidebar ⌘-click path (I3, GRO-2235) opens a BACKGROUND tab: appended, not activated, not mounted', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    act(() => captured.sidebar?.onOpenFileBackground('/v/b.md'))
+    expect(stripLabels(el)).toEqual(['a', 'b'])
+    expect(activeLabel(el)).toBe('a') // activation (and so focus) never moves
+    expect(layers(el)).toEqual([['/v/a.md', false]]) // b's editor lazy-mounts on first activation
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/a.md' })
+  })
+
+  it('dragging a tab reorders the strip through the reducer and mirrors ONE {tabs, file} write (I3)', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })
+    const [tabA, tabB] = [...el.querySelectorAll<HTMLElement>('.tabbar__tab')]
+    // jsdom rects are all-zero: clientX 5 lands past b's midpoint — a moves to the end.
+    act(() => void tabA.dispatchEvent(new MouseEvent('dragstart', { bubbles: true, cancelable: true })))
+    act(() => void tabB.dispatchEvent(new MouseEvent('drop', { bubbles: true, cancelable: true, clientX: 5 })))
+    expect(stripLabels(el)).toEqual(['b', 'a'])
+    expect(activeLabel(el)).toBe('a') // reorder never activates
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/b.md', '/v/a.md'], file: '/v/a.md' })
   })
 
   it('a sidebar click opens in the CURRENT tab: the active tab is replaced in place and its editor unmounts (rule 4)', async () => {

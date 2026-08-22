@@ -64,6 +64,7 @@ async function mount(types: RegistryResponse['types'] = {}, over: Partial<Sideba
     activeFile: null,
     watch: { subscribe: () => () => undefined },
     onOpenFile: vi.fn(),
+    onOpenFileBackground: vi.fn(),
     onPickFolder: vi.fn(),
     pickDisabled: false,
     onCollapse: vi.fn(),

@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { fileKind } from '@shared/fileKind'
 import { basename, stripExt } from '../lib/paths'
+import { BaseGlyph } from '../sidebar/Tree'
 import './tabs.css'
 
 export interface TabBarProps {
@@ -9,33 +11,100 @@ export interface TabBarProps {
   active: string | null
   onActivate: (path: string) => void
   onClose: (path: string) => void
+  /** Drag-to-reorder (I3, GRO-2235): the tab at `from` lands at final index `to`. */
+  onMove: (from: number, to: number) => void
 }
 
-/** The sidebar Tree's 2×2 `.base` glyph, mirrored here (Tree.tsx keeps it private; touching Tree is I3 territory). */
-function BaseGlyph() {
-  return (
-    <svg className="tabbar__glyph" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
-      <rect x="1.5" y="1.5" width="9" height="9" rx="1" />
-      <line x1="6" y1="1.5" x2="6" y2="10.5" />
-      <line x1="1.5" y1="6" x2="10.5" y2="6" />
-    </svg>
-  )
+/** In-flight drag state: the grabbed tab's index + the hovered insertion slot (0…tabs.length). */
+interface DragState {
+  from: number
+  over: number | null
 }
 
 /**
- * The window tab strip (Tabs I2, GRO-2234): one tab per open file, ViewTabs' tablist
+ * The window tab strip (Tabs I2/I3, GRO-2234/2235): one tab per open file, ViewTabs' tablist
  * semantics (role=tab, aria-selected, active underline). Labels are basenames without the
- * vault extension; the full path lives in the title tooltip. Presentational only — all
- * state changes go through the `useTabs` callbacks.
+ * vault extension; the full path lives in the title tooltip. Tabs reorder by HTML5 drag (the
+ * groupDrag idiom: `dataTransfer` guarded — jsdom's synthetic drags have none) with an accent
+ * insertion indicator; the strip scrolls when full and keeps the ACTIVE tab in view.
+ * Presentational only — all state changes go through the `useTabs` callbacks.
  */
-export function TabBar({ tabs, active, onActivate, onClose }: TabBarProps) {
+export function TabBar({ tabs, active, onActivate, onClose, onMove }: TabBarProps) {
+  const [drag, setDrag] = useState<DragState | null>(null)
+  const activeRef = useRef<HTMLDivElement | null>(null)
+
+  // Overflow polish (I3): tabs shrink to a floor and the strip scrolls, so scroll the active
+  // tab fully into view on every activation. jsdom has no scrollIntoView — hence the `?.()`.
+  useEffect(() => {
+    activeRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [active])
+
+  /** The insertion slot a pointer at `clientX` over tab `i` means: before (i) or after (i+1) it. */
+  const insertionAt = (e: DragEvent, i: number): number => {
+    const r = e.currentTarget.getBoundingClientRect()
+    return e.clientX < r.left + r.width / 2 ? i : i + 1
+  }
+
+  const drop = (insertion: number): void => {
+    if (drag === null) return
+    setDrag(null)
+    // The slot is an index in the WITH-dragged-tab list; past the grab point it shifts one left.
+    const to = insertion > drag.from ? insertion - 1 : insertion
+    if (to !== drag.from) onMove(drag.from, to)
+  }
+
   return (
-    <div className="tabbar" role="tablist" aria-label="Open files">
-      {tabs.map((path) => {
+    <div
+      className="tabbar"
+      role="tablist"
+      aria-label="Open files"
+      onDragOver={(e) => {
+        // The empty strip tail: only direct hits — tab hovers are handled (and marked) per tab.
+        if (drag === null || e.target !== e.currentTarget) return
+        e.preventDefault()
+        if (drag.over !== tabs.length) setDrag({ ...drag, over: tabs.length })
+      }}
+      onDrop={(e) => {
+        if (drag === null || e.target !== e.currentTarget) return
+        e.preventDefault()
+        drop(tabs.length)
+      }}
+    >
+      {tabs.map((path, i) => {
         const isActive = path === active
         const label = stripExt(basename(path))
+        const cls = ['tabbar__tab']
+        if (isActive) cls.push('tabbar__tab--active')
+        if (drag !== null && drag.from === i) cls.push('tabbar__tab--dragging')
+        // The insertion indicator: an accent edge on the tab the drop would land before —
+        // or after the LAST tab for the end slot.
+        if (drag?.over === i) cls.push('tabbar__tab--insert-before')
+        if (drag !== null && drag.over === tabs.length && i === tabs.length - 1) cls.push('tabbar__tab--insert-after')
         return (
-          <div key={path} className={isActive ? 'tabbar__tab tabbar__tab--active' : 'tabbar__tab'}>
+          <div
+            key={path}
+            ref={isActive ? activeRef : undefined}
+            className={cls.join(' ')}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer?.setData('text/plain', path)
+              if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+              setDrag({ from: i, over: null })
+            }}
+            onDragEnd={() => setDrag(null)}
+            onDragOver={(e) => {
+              if (drag === null) return
+              e.preventDefault()
+              if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+              const over = insertionAt(e, i)
+              if (drag.over !== over) setDrag({ ...drag, over })
+            }}
+            onDrop={(e) => {
+              if (drag === null) return
+              e.preventDefault()
+              drop(insertionAt(e, i))
+            }}
+          >
             <button
               type="button"
               role="tab"
@@ -48,7 +117,7 @@ export function TabBar({ tabs, active, onActivate, onClose }: TabBarProps) {
                 if (e.button === 1) onClose(path)
               }}
             >
-              {fileKind(path) === 'base' && <BaseGlyph />}
+              {fileKind(path) === 'base' && <BaseGlyph className="tabbar__glyph" />}
               <span className="tabbar__label">{label}</span>
             </button>
             <button type="button" className="tabbar__close" aria-label={`Close ${label}`} title={`Close ${label}`} onClick={() => onClose(path)}>

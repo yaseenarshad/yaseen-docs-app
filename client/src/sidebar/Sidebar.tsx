@@ -20,6 +20,8 @@ interface SidebarProps {
   activeFile: string | null
   watch: WatchSource
   onOpenFile: (path: string) => void
+  /** ⌘-click on a file row (I3 LOCKED ruling, GRO-2235): open in a background tab; App passes `useTabs`' openBackground. */
+  onOpenFileBackground: (path: string) => void
   onPickFolder: () => void
   /** True while the native folder dialog is open; the "change" button is disabled meanwhile. */
   pickDisabled: boolean
@@ -50,6 +52,7 @@ export function Sidebar({
   activeFile,
   watch,
   onOpenFile,
+  onOpenFileBackground,
   onPickFolder,
   pickDisabled,
   onCollapse,
@@ -114,6 +117,32 @@ export function Sidebar({
       onFileMissing()
   }, [tree, activeFile, root, onFileMissing])
 
+  // A stale tab ACTIVATED after its file vanished on disk (I3, GRO-2235): when the activation
+  // CHANGES to an in-root file the cached tree does not show, confirm against a FRESH tree —
+  // the inline-create flow activates a just-created file before `refresh()` lands, so the
+  // cached tree can be behind — and close it through the same onFileMissing path. A file
+  // deleted WHILE it is the active editor stays open (no activation change — recreated by the
+  // next save), and background tabs are never probed (out of scope, noted in GRO-2235).
+  const lastActive = useRef(activeFile)
+  const treeRef = useRef(tree)
+  treeRef.current = tree
+  useEffect(() => {
+    if (activeFile === lastActive.current) return
+    lastActive.current = activeFile
+    if (activeFile === null || !activeFile.startsWith(`${root.replace(/\/+$/, '')}/`)) return
+    if (treeRef.current !== null && treeHasFile(treeRef.current.tree, activeFile)) return
+    let cancelled = false // the activation moved on (or the sidebar unmounted): the probe's verdict is stale
+    api.tree(root).then(
+      (res) => {
+        if (!cancelled && !treeHasFile(res.tree, activeFile)) onFileMissing()
+      },
+      () => undefined, // a root-level failure is refresh()'s problem, not this probe's
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [activeFile, root, onFileMissing])
+
   // ---- New note / new base / new folder (GRO-2022, GRO-2126): right-click menu → inline name input ----
 
   const openMenu = useCallback(
@@ -132,7 +161,7 @@ export function Sidebar({
     [root],
   )
 
-  /** ⌘-click / "Open in new window" (D2, GRO-2168): a fresh window on {root, file}; this one untouched. */
+  /** Context menu "Open in new window" (D2, GRO-2168): a fresh window on {root, file}; this one untouched. (⌘-click opens a background tab instead since I3.) */
   const openFileNewWindow = useCallback(
     (path: string) => {
       window.yaseenDocs.window.open({ root, file: path }).catch((err: unknown) => console.error('[sidebar] window.open failed:', err))
@@ -231,7 +260,7 @@ export function Sidebar({
             activeFile={activeFile}
             onToggle={(dir) => dispatch({ type: 'toggle', dir })}
             onOpenFile={onOpenFile}
-            onOpenFileNewWindow={openFileNewWindow}
+            onOpenFileBackground={onOpenFileBackground}
             onNodeContextMenu={openMenu}
             pending={pending}
           />

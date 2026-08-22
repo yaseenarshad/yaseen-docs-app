@@ -33,11 +33,14 @@ export const BASES_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: 'Esc', label: 'Cancel a card drag' },
 ]
 
-/** App-menu window shortcuts (B3, GRO-2161) + the Open Recent open-beside gesture (GRO-2211). */
+/** App-menu window & tab shortcuts (B3 GRO-2161, Tabs GRO-2232/2235) + the Open Recent open-beside gesture (GRO-2211). */
 export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
-  { keys: '⌘⇧N', label: 'New window — same folder and file' },
+  { keys: '⌘⇧N', label: 'New window — same folder and tabs' },
   { keys: '⌘⇧O', label: 'Open folder…' },
-  { keys: '⌘W', label: 'Close window' },
+  { keys: '⌘W', label: 'Close tab — on the last tab it empties the window, then closes it' },
+  { keys: '⌘⇧W', label: 'Close window' },
+  { keys: '⌃Tab / ⌃⇧Tab', label: 'Next / previous tab' },
+  { keys: '⌘⇧] / ⌘⇧[', label: 'Next / previous tab' },
   { keys: '⌥ Open Recent', label: '⌥-click a recent folder to open it in a new window' },
 ]
 
@@ -47,6 +50,8 @@ export const MOUSE_TIPS: readonly HotkeyEntry[] = [
   { keys: 'Click chevron', label: 'Fold / unfold that bullet' },
   { keys: 'Drag 6 dots', label: 'Move block — a multi-block selection moves together' },
   { keys: '/', label: 'Block menu, in an empty paragraph' },
+  { keys: '⌘-click file', label: 'Open that sidebar file in a background tab' },
+  { keys: 'Right-click file', label: 'Open in new window, Copy path / link, New note…' },
 ]
 
 /** Keyboard button pinned to the sidebar footer; opens the hotkey reference above it. */

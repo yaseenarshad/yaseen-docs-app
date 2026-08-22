@@ -126,6 +126,24 @@ describe('tabsReducer', () => {
     })
   })
 
+  describe('move (I3 drag-to-reorder, GRO-2235)', () => {
+    const abc = state(['/v/a.md', '/v/b.md', '/v/c.md'], '/v/b.md')
+
+    it('moves the tab at `from` to final index `to`; active and mounted are untouched', () => {
+      expect(tabsReducer(abc, { type: 'move', from: 0, to: 2 })).toEqual(state(['/v/b.md', '/v/c.md', '/v/a.md'], '/v/b.md'))
+      expect(tabsReducer(abc, { type: 'move', from: 2, to: 0 })).toEqual(state(['/v/c.md', '/v/a.md', '/v/b.md'], '/v/b.md'))
+      const withMounts = state(['/v/a.md', '/v/b.md'], '/v/b.md', ['/v/a.md', '/v/b.md'])
+      expect(tabsReducer(withMounts, { type: 'move', from: 1, to: 0 }).mounted).toEqual(['/v/a.md', '/v/b.md'])
+    })
+
+    it('the same slot, an out-of-range `from`, or a `to` clamped back onto `from` are no-ops (same object)', () => {
+      expect(tabsReducer(abc, { type: 'move', from: 1, to: 1 })).toBe(abc)
+      expect(tabsReducer(abc, { type: 'move', from: 3, to: 0 })).toBe(abc)
+      expect(tabsReducer(abc, { type: 'move', from: -1, to: 0 })).toBe(abc)
+      expect(tabsReducer(abc, { type: 'move', from: 2, to: 99 })).toBe(abc) // clamped to the last slot — its own
+    })
+  })
+
   describe('cycle (rule 9: wraparound, plain left→right order)', () => {
     const abc = state(['/v/a.md', '/v/b.md', '/v/c.md'], '/v/c.md')
 
@@ -261,6 +279,17 @@ describe('useTabs mirror (the GRO-2232 gotcha: ONE explicit {tabs, file} write p
     act(() => latest.prev()) // one tab: nothing to cycle
     act(() => latest.close('/v/zzz.md')) // unknown
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
+  })
+
+  it('move mirrors the reorder as ONE {tabs, file} write with the active file unchanged; a no-op move mirrors nothing', () => {
+    act(() => latest.openCurrent('/v/a.md'))
+    act(() => latest.openBackground('/v/b.md'))
+    const writes = bridge.window.setIdentity.mock.calls.length
+    act(() => latest.move(0, 1))
+    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/b.md', '/v/a.md'], file: '/v/a.md' })
+    act(() => latest.move(1, 1))
+    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
   })
 
   it('closeActive reports whether there was a tab to close (false → App escalates to closeSelf)', () => {
