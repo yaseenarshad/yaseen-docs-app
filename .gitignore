@@ -5,3 +5,4 @@ desktop/dist-app/
 .DS_Store
 *.log
 .claude/*
+desktop/e2e/artifacts/
