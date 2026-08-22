@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { LinkApi, MenuApi, StateApi, VaultConfigApi, WindowApi, YaseenDocsApi } from '@shared/types'
+import type { LinkApi, MenuApi, StateApi, VaultConfigApi, WatchEvent, WindowApi, YaseenDocsApi } from '@shared/types'
 import { CH } from '../channels'
 
 const exposed: Record<string, unknown> = {}
@@ -65,6 +65,48 @@ describe('preload bridge', () => {
     expect(listener).toHaveBeenCalledWith('/vaults/notes')
     off()
     expect(vi.mocked(ipcRenderer.removeListener).mock.calls.some(([ch, l]) => ch === CH.menuOpenRoot && l === emit)).toBe(true)
+  })
+
+  it('watch() multiplexes by subscription id: each listener gets only its own events; unsubscribe removes the listener and sends watch:unsubscribe', async () => {
+    const { ipcRenderer } = await import('electron')
+    const { bridge } = await import('./index')
+    vi.mocked(ipcRenderer.send).mockClear()
+    const a = vi.fn()
+    const b = vi.fn()
+    const offA = bridge.watch('/vault/a', a)
+    const offB = bridge.watch('/vault/b', b)
+    const subs = vi.mocked(ipcRenderer.send).mock.calls.filter(([ch]) => ch === CH.watchSubscribe)
+    expect(subs).toHaveLength(2)
+    const idA = (subs[0][1] as { id: string; root: string }).id
+    const idB = (subs[1][1] as { id: string; root: string }).id
+    expect(idA).not.toBe(idB)
+    expect((subs[0][1] as { root: string }).root).toBe('/vault/a')
+    expect((subs[1][1] as { root: string }).root).toBe('/vault/b')
+    type WatchHandler = (e: unknown, msg: { id: string; ev: WatchEvent }) => void
+    const handlers = vi
+      .mocked(ipcRenderer.on)
+      .mock.calls.filter(([ch]) => ch === CH.watchEvent)
+      .map((c) => c[1] as unknown as WatchHandler)
+      .slice(-2) // this test's two subscriptions (the module accumulates across tests)
+    // Main fans every event out to every renderer listener on watch:event; the id filters them.
+    const evA: WatchEvent = { type: 'change', path: '/vault/a/x.md', mtime: 1 }
+    const evB: WatchEvent = { type: 'unlink', path: '/vault/b/y.md' }
+    for (const h of handlers) h(undefined, { id: idA, ev: evA })
+    for (const h of handlers) h(undefined, { id: idB, ev: evB })
+    expect(a).toHaveBeenCalledTimes(1)
+    expect(a).toHaveBeenCalledWith(evA)
+    expect(b).toHaveBeenCalledTimes(1)
+    expect(b).toHaveBeenCalledWith(evB)
+    // Unsubscribe A: its watch:event listener is removed and main is told to drop the subscription.
+    vi.mocked(ipcRenderer.send).mockClear()
+    offA()
+    expect(vi.mocked(ipcRenderer.removeListener).mock.calls.some(([ch, l]) => ch === CH.watchEvent && l === (handlers[0] as unknown))).toBe(true)
+    expect(ipcRenderer.send).toHaveBeenCalledWith(CH.watchUnsubscribe, idA)
+    // B is untouched by A's unsubscribe.
+    for (const h of handlers) h(undefined, { id: idB, ev: evB })
+    expect(b).toHaveBeenCalledTimes(2)
+    offB()
+    expect(ipcRenderer.send).toHaveBeenCalledWith(CH.watchUnsubscribe, idB)
   })
 
   it('rejects with the plain BridgeError when main answers an error envelope', async () => {
