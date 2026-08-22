@@ -1,12 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import { storage } from '../lib/storage'
 import { type BaseDefinition, type ParsedBase, parseBase, serializeBase, updateBase } from './baseFile'
 import { type Row, propertyKeys, runView } from './engine'
 import { render } from './expr'
+import { writeProperty } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/filterRows'
+import { type PendingMove, applyMoves, dragKey } from './view/groupDrag'
 import { ListView } from './view/ListView'
 import { TableView } from './view/TableView'
 import { Toolbar } from './view/Toolbar'
@@ -41,6 +43,9 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
   const [search, setSearch] = useState<string | null>(null)
   /** Collapsed group keys per view, seeded from the store; a toggle replaces the entry here AND writes through storage. */
   const [collapsedByKey, setCollapsedByKey] = useState<Record<string, string[]>>({})
+  /** Optimistic group moves (5C, GRO-2143) keyed by path, patched into the records the engine sees. */
+  const [moves, setMoves] = useState<Record<string, PendingMove>>({})
+  const [moveError, setMoveError] = useState<{ path: string; message: string } | null>(null)
   const { def } = parsed
   const views = def.views
   const index = Math.max(0, Math.min(active, views.length - 1))
@@ -50,7 +55,20 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
   // through text keeps comments and rebuilds proper nodes.
   const update = (mutate: (def: BaseDefinition) => void) => onChange(parseBase(serializeBase(updateBase(parsed, mutate))))
 
-  const result = useMemo(() => (view ? runView(def, view, records, { thisFile }) : null), [def, view, records, thisFile])
+  // 5B's clearing discipline: a pending move holds until the index refetch moves that key off the
+  // raw it had at commit time (our write landing, or a concurrent writer winning) — never before.
+  useEffect(() => {
+    setMoves((m) => {
+      const kept = Object.entries(m).filter(([path, mv]) => {
+        const raw = records.find((r) => r.path === path)?.properties[mv.key]
+        return JSON.stringify(raw ?? null) === JSON.stringify(mv.prevRaw ?? null)
+      })
+      return kept.length === Object.keys(m).length ? m : Object.fromEntries(kept)
+    })
+  }, [records])
+
+  const shown = useMemo(() => (Object.keys(moves).length === 0 ? records : applyMoves(records, moves)), [records, moves])
+  const result = useMemo(() => (view ? runView(def, view, shown, { thisFile }) : null), [def, view, shown, thisFile])
 
   if (view === undefined || result === null) {
     return (
@@ -80,6 +98,20 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
     const next = collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key]
     setCollapsedByKey((m) => ({ ...m, [collapseKey]: next }))
     if (root !== null && groupsKey !== null) storage.setBaseGroups(root, groupsKey, next)
+  }
+
+  // A drop on a board column / table section (5C, GRO-2143): optimistic move now, one-key write
+  // through 5A; a failed write drops the move (the card snaps back) and flags the card instead.
+  const onMoveToGroup = (path: string, value: unknown) => {
+    const key = dragKey(view)
+    if (key === null) return
+    const prevRaw = records.find((r) => r.path === path)?.properties[key]
+    setMoveError(null)
+    setMoves((m) => ({ ...m, [path]: { key, value, prevRaw } }))
+    writeProperty(path, key, value).catch((err: unknown) => {
+      setMoves((m) => Object.fromEntries(Object.entries(m).filter(([p]) => p !== path)))
+      setMoveError({ path, message: err instanceof Error ? err.message : String(err) })
+    })
   }
 
   const keys = propertyKeys(def, view, records)
@@ -144,13 +176,15 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           def={def}
           view={view}
           viewIndex={index}
-          records={records}
+          records={shown}
           rows={rows}
           groups={groups}
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
           onUpdate={update}
           onOpenFile={onOpenFile}
+          onMoveToGroup={onMoveToGroup}
+          moveError={moveError}
           types={types}
         />
       ) : view.type === 'board' ? (
@@ -158,12 +192,14 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           def={def}
           view={view}
           viewIndex={index}
-          records={records}
+          records={shown}
           groups={groups}
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
           onUpdate={update}
           onOpenFile={onOpenFile}
+          onMoveToGroup={onMoveToGroup}
+          moveError={moveError}
         />
       ) : view.type === 'cards' ? (
         <CardsView

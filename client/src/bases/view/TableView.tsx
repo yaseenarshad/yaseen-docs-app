@@ -9,6 +9,7 @@ import { EditableCell } from './EditableCell'
 import type { Mutate } from './FilterMenu'
 import { canonicalKey } from './filterRows'
 import { GroupHeader, cellContent, groupKeyOf, summaryKindOf } from './GroupHeader'
+import { dragKey, useGroupDrag } from './groupDrag'
 import { Popover } from './Popover'
 
 export interface TableViewProps {
@@ -25,6 +26,10 @@ export interface TableViewProps {
   onToggleGroup: (key: string) => void
   onUpdate: Mutate
   onOpenFile: (path: string) => void
+  /** A drop on another section: `groupBy.property = value` (undefined deletes) via BaseView (5C, GRO-2143). */
+  onMoveToGroup: (path: string, value: unknown) => void
+  /** The last failed move, flagged inline on its row. */
+  moveError: { path: string; message: string } | null
   /** Assigned property types from `.obsidian/types.json`, for editor inference (5B, GRO-2142). */
   types?: Record<string, string>
 }
@@ -39,8 +44,8 @@ const OVERSCAN = 10
 /** jsdom and the pre-measure first render have no viewport height; assume one screen. */
 const FALLBACK_VIEWPORT = 600
 
-/** One display line: a group header row, or a data row with its `data-cell` row index (data rows only). */
-type Line = { header: Group; gk: string } | { row: Row; r: number }
+/** One display line: a group header row, or a data row with its `data-cell` row index (data rows only) and its group (null when ungrouped). */
+type Line = { header: Group; gk: string } | { row: Row; r: number; g: Group | null }
 
 /**
  * Table view (GRO-2136): sticky header with drag-to-resize columns (`view.columnSize`, written on
@@ -51,10 +56,14 @@ type Line = { header: Group; gk: string } | { row: Row; r: number }
  * tbody slice: one full-width `GroupHeader` row per group (its height = the data row height so the
  * spacer maths holds), collapsed sections keep the header and drop the rows, the total summary row
  * moves into the group headers, and `data-cell` indices count DATA rows only so arrow keys skip
- * headers seamlessly.
+ * headers seamlessly. Grouped rows drag between sections (5C, GRO-2143): dropping on another
+ * section's header or rows writes the group property through `onMoveToGroup`, the hovered
+ * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, types }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, types }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
+  // Row drag between sections (5C, GRO-2143); disabled without groups.
+  const dnd = useGroupDrag(groups === null ? null : dragKey(view), onMoveToGroup)
   const [summaryFor, setSummaryFor] = useState<string | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -75,12 +84,12 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   /** Visible data rows in display order; `data-cell` row indices index into this. */
   const flat: Row[] = []
   if (groups === null) {
-    for (const row of rows) lines.push({ row, r: flat.push(row) - 1 })
+    for (const row of rows) lines.push({ row, r: flat.push(row) - 1, g: null })
   } else {
     for (const g of groups) {
       const gk = groupKeyOf(g.key)
       lines.push({ header: g, gk })
-      if (!collapsedSet.has(gk)) for (const row of g.rows) lines.push({ row, r: flat.push(row) - 1 })
+      if (!collapsedSet.has(gk)) for (const row of g.rows) lines.push({ row, r: flat.push(row) - 1, g })
     }
   }
 
@@ -174,7 +183,11 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           {first > 0 && spacer('top', first * rowH)}
           {visible.map((line) =>
             'header' in line ? (
-              <tr key={`group:${line.gk}`} className="base-table__group">
+              <tr
+                key={`group:${line.gk}`}
+                className={`base-table__group${dnd.over === line.gk ? ' base-table__group--drop' : ''}`}
+                {...dnd.target(line.header)}
+              >
                 <td colSpan={keys.length}>
                   <GroupHeader
                     def={def}
@@ -188,7 +201,11 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 </td>
               </tr>
             ) : (
-              <tr key={line.row.record.path}>
+              <tr
+                key={line.row.record.path}
+                className={line.g !== null && dnd.over === groupKeyOf(line.g.key) ? 'base-table__row--drop' : undefined}
+                {...(line.g === null ? {} : { ...dnd.source(line.row.record.path, groupKeyOf(line.g.key)), ...dnd.target(line.g) })}
+              >
                 {keys.map((key, c) => {
                   const v = line.row.values[key]
                   return (
@@ -199,9 +216,16 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                       data-cell={`${line.r}:${c}`}
                     >
                       {c === nameCol ? (
-                        <button type="button" className="base-table__link" onClick={() => onOpenFile(line.row.record.path)}>
-                          {render(v)}
-                        </button>
+                        <>
+                          <button type="button" className="base-table__link" onClick={() => onOpenFile(line.row.record.path)}>
+                            {render(v)}
+                          </button>
+                          {moveError?.path === line.row.record.path && (
+                            <span className="base-table__chip base-table__chip--error base-drag__error" role="alert" title={moveError.message}>
+                              Move failed
+                            </span>
+                          )}
+                        </>
                       ) : bares[c] !== null ? (
                         <EditableCell
                           path={line.row.record.path}

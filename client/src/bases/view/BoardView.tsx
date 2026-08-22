@@ -7,6 +7,7 @@ import { cardWidth } from './cardWidth'
 import type { Mutate } from './FilterMenu'
 import { canonicalKey } from './filterRows'
 import { GroupHeader, cellContent, groupKeyOf } from './GroupHeader'
+import { dragKey, useGroupDrag } from './groupDrag'
 import { allPropertyKeys } from './properties'
 
 export interface BoardViewProps {
@@ -21,6 +22,10 @@ export interface BoardViewProps {
   onToggleGroup: (key: string) => void
   onUpdate: Mutate
   onOpenFile: (path: string) => void
+  /** A drop on another column: `groupBy.property = value` (undefined deletes) via BaseView (5C, GRO-2143). */
+  onMoveToGroup: (path: string, value: unknown) => void
+  /** The last failed move, flagged inline on its card. */
+  moveError: { path: string; message: string } | null
 }
 
 /**
@@ -34,9 +39,13 @@ export interface BoardViewProps {
  * keeps the header — same persisted state as the table's groups, never the `.base` file. Without
  * `groupBy` a centered hint's "Group by…" button writes the first non-file property through the
  * file (opening the Sort popover remotely would mean lifting Toolbar's menu state; one write is
- * simpler and the Sort menu can change it after). Drag between columns is 5C, images 4E.
+ * simpler and the Sort menu can change it after). Dragging a card to another column (5C,
+ * GRO-2143) writes the group property through `onMoveToGroup` — the hovered column shows a
+ * dashed placeholder, the own column is never a target, Esc cancels — and a failed move's
+ * card carries an inline error chip. Images are 4E.
  */
-export function BoardView({ def, view, viewIndex, records, groups, collapsed, onToggleGroup, onUpdate, onOpenFile }: BoardViewProps) {
+export function BoardView({ def, view, viewIndex, records, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError }: BoardViewProps) {
+  const dnd = useGroupDrag(dragKey(view), onMoveToGroup)
   if (groups === null) {
     const fallback = allPropertyKeys(def, view, records).find((k) => !canonicalKey(k).startsWith('file.')) ?? 'file.folder'
     return (
@@ -67,16 +76,26 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
       {groups.map((g) => {
         const gk = groupKeyOf(g.key)
         const isCollapsed = collapsed.includes(gk)
+        const isOver = dnd.over === gk
         return (
-          <section key={gk} className="base-board__col">
+          <section key={gk} className={`base-board__col${isOver ? ' base-board__col--drop' : ''}`} {...dnd.target(g)}>
             <GroupHeader def={def} view={view} columns={keys} groupKey={g.key} rows={g.rows} collapsed={isCollapsed} onToggle={() => onToggleGroup(gk)} />
             {!isCollapsed && (
               <ul className="base-board__cards">
                 {g.rows.map((row) => (
-                  <li key={row.record.path} className="base-board__card">
+                  <li
+                    key={row.record.path}
+                    className={`base-board__card${dnd.drag?.path === row.record.path ? ' base-board__card--drag' : ''}`}
+                    {...dnd.source(row.record.path, gk)}
+                  >
                     <button type="button" className="base-board__title" onClick={() => onOpenFile(row.record.path)}>
                       {nameKey === undefined ? row.record.name : render(row.values[nameKey])}
                     </button>
+                    {moveError?.path === row.record.path && (
+                      <span className="base-table__chip base-table__chip--error base-drag__error" role="alert" title={moveError.message}>
+                        Move failed
+                      </span>
+                    )}
                     {rest.map((key) => (
                       <div key={key} className="base-board__prop">
                         <span className="base-board__prop-name">{propertyLabel(def, key)}</span>
@@ -85,6 +104,7 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
                     ))}
                   </li>
                 ))}
+                {isOver && <li className="base-board__placeholder" aria-hidden />}
               </ul>
             )}
           </section>

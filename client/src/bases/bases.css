@@ -748,6 +748,37 @@
   margin: 0 0 10px;
 }
 
+/* ---------- drag between groups (5C) ---------- */
+
+.base-board__card[draggable='true'] {
+  cursor: grab;
+}
+
+.base-board__card--drag {
+  opacity: 0.4;
+}
+
+.base-board__col--drop {
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+}
+
+.base-board__placeholder {
+  height: 34px;
+  border: 1px dashed var(--accent);
+  border-radius: 6px;
+  opacity: 0.5;
+}
+
+.base-table__group--drop td,
+.base-table__row--drop td {
+  background: var(--accent-soft);
+}
+
+.base-drag__error {
+  margin-left: 6px;
+}
+
 /* ---------- cards (4E) ---------- */
 
 .base-cards {
