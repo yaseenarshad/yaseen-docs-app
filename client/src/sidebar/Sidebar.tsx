@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import type { SettingsState, TreeNode, TreeResponse } from '@shared/types'
-import { api, ApiRequestError } from '../api'
+import { api, BridgeRequestError } from '../api'
 import type { WatchSource } from '../hooks/useWatch'
 import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
@@ -67,15 +67,15 @@ export function Sidebar({
         setError(null)
       },
       (err: unknown) => {
-        if (err instanceof ApiRequestError && (err.code === 'NOT_FOUND' || err.code === 'NOT_A_DIRECTORY')) onRootMissing()
-        else setError(err instanceof ApiRequestError ? err.message : 'Failed to load folder')
+        if (err instanceof BridgeRequestError && (err.code === 'NOT_FOUND' || err.code === 'NOT_A_DIRECTORY')) onRootMissing()
+        else setError(err instanceof BridgeRequestError ? err.message : 'Failed to load folder')
       },
     )
   }, [root, onRootMissing])
 
   useEffect(() => refresh(), [refresh])
 
-  // Refresh on structural changes; `ready` also fires on every SSE (re)connect, covering missed events.
+  // Refresh on structural changes; `ready` also fires on every watch (re)subscription, covering missed events.
   useEffect(
     () =>
       watch.subscribe((ev) => {
@@ -146,7 +146,7 @@ export function Sidebar({
     async (name: string) => {
       if (creating === null) return
       const p = entryPath(creating.parentDir, name, creating.kind)
-      // Notes and bases both go through create-file; the server seeds `.base` with a minimal view.
+      // Notes and bases both go through createFile; the main process seeds `.base` with a minimal view.
       if (creating.kind === 'dir') await api.createDir(p)
       else await api.createFile(p)
       setCreating(null)

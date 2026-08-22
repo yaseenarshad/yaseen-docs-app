@@ -3,7 +3,7 @@ import type { IndexRecord } from '@shared/types'
 /**
  * The 8 notes of `desktop/src/main/fs/basesFixture.ts` as `getIndex()` records, rooted at `/vault`, with
  * size/ctime/mtime zeroed (GRO-2128). `registry.test.ts` deep-equals the real scan to this list,
- * so client-side Bases tests and the server index share one truth. Sorted by path.
+ * so client-side Bases tests and the main-process index share one truth. Sorted by path.
  */
 export const TEST_RECORDS: IndexRecord[] = [
   {

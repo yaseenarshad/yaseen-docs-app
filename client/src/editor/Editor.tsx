@@ -14,7 +14,7 @@ import './outline/bullets.css'
 import './outline/zoom.css'
 import './outline/guideLines.css'
 import './outline/bulletThreading.css'
-import { splitFrontmatter } from './frontmatter'
+import { splitFrontmatter } from '@shared/frontmatter'
 import { SaveIndicator } from './SaveIndicator'
 import { useAutosave } from '../hooks/useAutosave'
 import { useFile } from '../hooks/useFile'
@@ -115,12 +115,12 @@ function CrepeHost({ root, file, watch, onOpenFile }: { root: string; file: File
     const unsubscribe = watch.subscribe((ev) => {
       if (ev.type !== 'change' || ev.path !== file.path || controller === null) return
       const c = controller
-      // On slow filesystems (e.g. NFS vaults) the watcher event for our own PUT can arrive
-      // before the PUT response carries the new mtime; settle the in-flight save first so
-      // echo suppression compares against the mtime of the write that caused the event.
+      // On slow filesystems (e.g. NFS vaults) the watcher event for our own write can arrive
+      // before the `writeFile` response carries the new mtime; settle the in-flight save first
+      // so echo suppression compares against the mtime of the write that caused the event.
       void c.settled().then(async () => {
         if (cancelled) return
-        if (ev.mtime === c.mtime) return // echo of our own PUT
+        if (ev.mtime === c.mtime) return // echo of our own write
         // A base's property write (GRO-2141) rewrites only the frontmatter block; absorb it
         // silently so unsaved body edits and the caret survive (GRO-2186).
         const fresh = await api.readFile(file.path)

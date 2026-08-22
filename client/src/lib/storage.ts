@@ -1,7 +1,7 @@
 import {
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
-  MAX_RECENT_ROOTS,
+  addRecentRoot,
   defaultAppState,
   defaultFolderState,
   type AppState,
@@ -23,11 +23,6 @@ let state: AppState = defaultAppState()
 let identity: WindowIdentity = { id: '', root: null, file: null }
 let unsubscribe: (() => void) | null = null
 const listeners = new Set<() => void>()
-
-/** Pure: prepend `path` to the MRU list, de-duplicated, capped. */
-export function addRecentRoot(list: RecentRoots, path: string, now: number): RecentRoots {
-  return [{ path, lastOpened: now }, ...list.filter((r) => r.path !== path)].slice(0, MAX_RECENT_ROOTS)
-}
 
 /** Issues one bridge call at once without awaiting it; a rejection (or a missing bridge) is logged, never thrown. */
 function send(what: string, call: () => Promise<void>): void {

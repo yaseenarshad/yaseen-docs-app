@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { YaseenDocsApi } from '@shared/types'
-import { api, ApiRequestError } from './api'
+import { api, BridgeRequestError } from './api'
 
 /** A minimal `window.yaseenDocs` stub: only the methods the client `api` delegates to. */
 function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn> } {
@@ -55,16 +55,16 @@ describe('api', () => {
     expect(bridge.readAsset).toHaveBeenCalledWith('/v', 'pic.png')
   })
 
-  it('a rejected plain BridgeError becomes a thrown ApiRequestError with code / message / path / mtime', async () => {
+  it('a rejected plain BridgeError becomes a thrown BridgeRequestError with code / message / path / mtime', async () => {
     bridge.writeFile.mockRejectedValue({ code: 'CONFLICT', message: 'newer on disk', path: '/v/a.md', mtime: 42 })
     const err = await api.writeFile({ path: '/v/a.md', content: '' }).catch((e: unknown) => e)
-    expect(err).toBeInstanceOf(ApiRequestError)
-    const e = err as ApiRequestError
+    expect(err).toBeInstanceOf(BridgeRequestError)
+    const e = err as BridgeRequestError
     expect(e.code).toBe('CONFLICT')
     expect(e.message).toBe('newer on disk')
     expect(e.path).toBe('/v/a.md')
     expect(e.mtime).toBe(42)
-    expect(e.name).toBe('ApiRequestError')
+    expect(e.name).toBe('BridgeRequestError')
     expect('status' in e).toBe(false)
   })
 
@@ -77,15 +77,15 @@ describe('api', () => {
     await api.registry.setProperty('/v', { type: 'kpi' }, 'unit', { kind: 'text' })
     expect(registry.setProperty).toHaveBeenCalledWith('/v', { type: 'kpi' }, 'unit', { kind: 'text' })
     registry.setType.mockRejectedValue({ code: 'INVALID_CONFIG', message: 'types.json is unreadable' })
-    const err = (await api.registry.setType('/v', 'kpi', {}).catch((e: unknown) => e)) as ApiRequestError
-    expect(err).toBeInstanceOf(ApiRequestError)
+    const err = (await api.registry.setType('/v', 'kpi', {}).catch((e: unknown) => e)) as BridgeRequestError
+    expect(err).toBeInstanceOf(BridgeRequestError)
     expect(err.code).toBe('INVALID_CONFIG')
   })
 
   it('a BridgeError without path / mtime leaves those fields undefined', async () => {
     bridge.readFile.mockRejectedValue({ code: 'NOT_FOUND', message: 'path does not exist' })
-    const err = (await api.readFile('/v/missing.md').catch((e: unknown) => e)) as ApiRequestError
-    expect(err).toBeInstanceOf(ApiRequestError)
+    const err = (await api.readFile('/v/missing.md').catch((e: unknown) => e)) as BridgeRequestError
+    expect(err).toBeInstanceOf(BridgeRequestError)
     expect(err.code).toBe('NOT_FOUND')
     expect(err.mtime).toBeUndefined()
     expect(err.path).toBeUndefined()
@@ -93,8 +93,8 @@ describe('api', () => {
 
   it('anything that is not a BridgeError is wrapped as IO_ERROR with its message', async () => {
     bridge.tree.mockRejectedValue(new Error('ipc gone'))
-    const err = (await api.tree('/v').catch((e: unknown) => e)) as ApiRequestError
-    expect(err).toBeInstanceOf(ApiRequestError)
+    const err = (await api.tree('/v').catch((e: unknown) => e)) as BridgeRequestError
+    expect(err).toBeInstanceOf(BridgeRequestError)
     expect(err.code).toBe('IO_ERROR')
     expect(err.message).toBe('ipc gone')
   })

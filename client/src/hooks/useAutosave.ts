@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { splitFrontmatter } from '@shared/frontmatter'
-import { api, ApiRequestError } from '../api'
+import { api, BridgeRequestError } from '../api'
 import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
 
 export interface AutosaveHandle {
@@ -52,7 +52,7 @@ export function useAutosave(path: string): AutosaveHandle {
             diskBodyRef.current = content
             return res
           } catch (err) {
-            if (err instanceof ApiRequestError && err.mtime !== undefined) throw new SaveConflict(err.mtime)
+            if (err instanceof BridgeRequestError && err.mtime !== undefined) throw new SaveConflict(err.mtime)
             throw err
           }
         },

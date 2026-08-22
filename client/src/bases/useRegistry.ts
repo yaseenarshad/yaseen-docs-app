@@ -12,7 +12,7 @@ import { api } from '../api'
 
 /**
  * The swap point (contract §6), now SWAPPED (GRO-2201): the real `.yaseendocs/types.json`
- * bridge (`window.yaseenDocs.registry`, `ApiRequestError`-wrapped via `api`) replaced 5E's
+ * bridge (`window.yaseenDocs.registry`, `BridgeRequestError`-wrapped via `api`) replaced 5E's
  * in-memory stub. Tests fake the bridge by installing `registryStub` as
  * `window.yaseenDocs.registry` — the stub implements this same interface.
  */

@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 /**
  * Hotkey reference (GRO-2067 Q4): keyboard-icon button beside the settings cog; the popover
  * lists every binding from this single source-of-truth list. When a keymap changes anywhere
- * (hotkeys.ts, zoom.ts, marks/underline.ts, listCommands.ts, bases/view/*), update HOTKEYS
- * (or BASES_HOTKEYS) with it —
+ * (hotkeys.ts, zoom.ts, marks/underline.ts, listCommands.ts, bases/view/*, the application
+ * menu in desktop/src/main/menu.ts), update HOTKEYS (or BASES_HOTKEYS / WINDOW_HOTKEYS) with it —
  * HotkeysPanel.test.ts pins the expected set so drift fails loudly.
  * Reuses the settings popover classes (SettingsPanel.tsx / app.css) for placement and look.
  */
@@ -31,6 +31,14 @@ export const BASES_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '↑ ↓ ← →', label: 'Move between table cells — Enter opens the note or edits the cell' },
   { keys: '⏎ / Esc', label: 'Commit / cancel a cell edit' },
   { keys: 'Esc', label: 'Cancel a card drag' },
+]
+
+/** App-menu window shortcuts (B3, GRO-2161) + the Open Recent open-beside gesture (GRO-2211). */
+export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
+  { keys: '⌘⇧N', label: 'New window — same folder and file' },
+  { keys: '⌘⇧O', label: 'Open folder…' },
+  { keys: '⌘W', label: 'Close window' },
+  { keys: '⌥ Open Recent', label: '⌥-click a recent folder to open it in a new window' },
 ]
 
 export const MOUSE_TIPS: readonly HotkeyEntry[] = [
@@ -78,6 +86,15 @@ export function HotkeysButton() {
           <p className="settings__label">Bases</p>
           <dl className="hotkeys__list">
             {BASES_HOTKEYS.map(({ keys, label }) => (
+              <div key={keys} className="hotkeys__row">
+                <dt className="hotkeys__keys">{keys}</dt>
+                <dd className="hotkeys__label">{label}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="settings__label">Window</p>
+          <dl className="hotkeys__list">
+            {WINDOW_HOTKEYS.map(({ keys, label }) => (
               <div key={keys} className="hotkeys__row">
                 <dt className="hotkeys__keys">{keys}</dt>
                 <dd className="hotkeys__label">{label}</dd>

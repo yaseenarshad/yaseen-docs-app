@@ -8,7 +8,7 @@
 
 // ---------- Errors ----------
 
-export type ApiErrorCode =
+export type BridgeErrorCode =
   | 'BAD_REQUEST' // missing/invalid argument
   | 'NOT_ABSOLUTE' // path is not absolute
   | 'NOT_FOUND' // path does not exist
@@ -57,7 +57,7 @@ export interface TreeResponse {
   generatedAt: number
 }
 
-// ---------- Bases property index (GRO-2127; bridge method index(root) once the Desktop bridge exists) ----------
+// ---------- Bases property index (GRO-2127; bridge method index(root) — Desktop D10) ----------
 
 /** One markdown note as the Bases query engine sees it. `.base` files are never records. */
 export interface IndexRecord {
@@ -90,7 +90,7 @@ export interface IndexResponse {
   root: string
   /** Every markdown note under `root` (dot-entries and `node_modules` skipped), sorted by path. */
   records: IndexRecord[]
-  /** Server time (epoch ms) when this snapshot was taken. */
+  /** Main-process time (epoch ms) when this snapshot was taken. */
   generatedAt: number
   /** Assigned property types from `.obsidian/types.json` (5B, GRO-2142); absent when the vault has none. */
   types?: Record<string, string>
@@ -144,24 +144,11 @@ export interface FileWriteResponse {
 
 // ---------- createDir(path) ----------
 
-export interface CreateDirRequest {
-  /** Absolute path of the directory to create; its parent must exist. */
-  path: string
-}
-
 export interface CreateDirResponse {
   path: string
 }
 
 // ---------- createFile(path) ----------
-
-export interface CreateFileRequest {
-  /**
-   * Absolute path of the file to create; its parent must exist. `.md`/`.markdown` are created
-   * empty; `.base` is seeded with the minimal valid base (`views:` + one table view named `Table`).
-   */
-  path: string
-}
 
 export interface CreateFileResponse {
   path: string
@@ -207,6 +194,11 @@ export type WatchEvent =
 /** `AppState.recents` — most-recent first, max MAX_RECENT_ROOTS, de-duplicated. */
 export type RecentRoots = Array<{ path: string; lastOpened: number }>
 export const MAX_RECENT_ROOTS = 10
+
+/** Pure: prepend `path` to the MRU list, de-duplicated, capped — shared by the client cache and the main store. */
+export function addRecentRoot(list: RecentRoots, path: string, now: number): RecentRoots {
+  return [{ path, lastOpened: now }, ...list.filter((r) => r.path !== path)].slice(0, MAX_RECENT_ROOTS)
+}
 
 /** Collapsed outline fold keys per file (see client `outlineFoldKeys.ts`) are capped at this many. */
 export const MAX_FOLD_KEYS_PER_FILE = 500
@@ -389,11 +381,11 @@ export interface RegistryApi {
 
 /**
  * Every bridge promise rejects with a plain object satisfying `BridgeError` (the preload
- * unwraps the IPC envelope; `client/src/api.ts` wraps it in `ApiRequestError`).
+ * unwraps the IPC envelope; `client/src/api.ts` wraps it in `BridgeRequestError`).
  * `CONFLICT` carries the current on-disk `mtime`.
  */
 export interface BridgeError {
-  code: ApiErrorCode | 'CONFLICT'
+  code: BridgeErrorCode | 'CONFLICT'
   message: string
   path?: string
   mtime?: number

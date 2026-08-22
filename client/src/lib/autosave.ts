@@ -6,8 +6,8 @@
  *  - only content that differs from the last saved/loaded markdown is dirty
  *    (Crepe's first serialisation is a normalised rewrite — never save it);
  *  - save `delayMs` after the last change, with `expectedMtime` = mtime of the
- *    last read/write; a 409 is reported via `onConflict` and saving pauses
- *    until `reset()` (reload) or `adopt()` (overwrite);
+ *    last read/write; a CONFLICT rejection is reported via `onConflict` and
+ *    saving pauses until `reset()` (reload) or `adopt()` (overwrite);
  *  - `flush()` saves immediately (file switch / beforeunload).
  */
 export type SaveStatus = 'saved' | 'unsaved' | 'saving' | 'error'
@@ -51,9 +51,9 @@ export class Autosave {
   }
 
   /**
-   * Resolves once no save is in flight. Watcher events for our own PUT can arrive
-   * before the PUT response (slow rename on network filesystems), so callers must
-   * wait for the in-flight save to settle before comparing mtimes for echo suppression.
+   * Resolves once no save is in flight. Watcher events for our own write can arrive
+   * before the `writeFile` response (slow rename on network filesystems), so callers
+   * must wait for the in-flight save to settle before comparing mtimes for echo suppression.
    */
   settled(): Promise<void> {
     return this.inflight ?? Promise.resolve()

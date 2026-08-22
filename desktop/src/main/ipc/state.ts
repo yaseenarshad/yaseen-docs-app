@@ -1,12 +1,9 @@
-import { BrowserWindow } from 'electron'
-import type { AppState, FolderState } from '@shared/types'
+import type { FolderState } from '@shared/types'
 import { CH } from '../../channels'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
-import { isSettings, type Store } from '../store'
+import { isRecord, isSettings, isStringArray, type Store } from '../store'
+import { broadcastAll } from './broadcast'
 import { handle } from './envelope'
-
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
-const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string')
 
 /** The patch crosses IPC from a sandboxed renderer: only `expanded` / `lastFile`, each type-checked. */
 function requireFolderPatch(raw: unknown): Partial<Pick<FolderState, 'expanded' | 'lastFile'>> {
@@ -21,14 +18,6 @@ function requireFolderPatch(raw: unknown): Partial<Pick<FolderState, 'expanded' 
     patch.lastFile = raw.lastFile
   }
   return patch
-}
-
-/** Every live window gets the new state (`state.onChange` in the renderer), whichever window changed it. */
-function broadcast(state: AppState): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed() || win.webContents.isDestroyed()) continue
-    win.webContents.send(CH.stateChanged, state)
-  }
 }
 
 /** The `state.*` half of `window.yaseenDocs` over the main-owned store (GRO-2159). */
@@ -63,5 +52,6 @@ export function registerStateIpc(store: Store): void {
     if (!isStringArray(collapsed)) throw new BridgeFailure('BAD_REQUEST', "'collapsed' must be a string array")
     store.setBaseGroups(r, key, collapsed)
   })
-  store.onChange(broadcast)
+  // Every live window gets the new state (`state.onChange` in the renderer), whichever window changed it.
+  store.onChange((state) => broadcastAll(CH.stateChanged, state))
 }

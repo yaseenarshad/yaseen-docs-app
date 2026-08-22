@@ -50,7 +50,18 @@ export function buildMenuTemplate({ recents, isDev }: MenuInputs, handlers: Menu
         }))
   return [
     // macOS titles the first menu with the running app's name; the label only matters off-mac.
-    { label: 'Yaseen Docs', submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'quit' }] },
+    {
+      label: 'Yaseen Docs',
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
     {
       label: 'File',
       submenu: [

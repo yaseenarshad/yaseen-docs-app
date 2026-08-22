@@ -9,6 +9,15 @@ async function call<T>(channel: string, ...args: unknown[]): Promise<T> {
   throw env.error
 }
 
+/** One main→renderer push channel as a subscribe function: `on(listener)` returns the unsubscribe. */
+function on<T>(channel: string): (listener: (payload: T) => void) => () => void {
+  return (listener) => {
+    const handler = (_e: unknown, payload: T) => listener(payload)
+    ipcRenderer.on(channel, handler)
+    return () => ipcRenderer.removeListener(channel, handler)
+  }
+}
+
 /**
  * The close/quit flush handshake (GRO-2160): main sends `app:flush` and holds the window until
  * `app:flushed` comes back. Every registered listener is awaited (none registered — e.g. the
@@ -49,11 +58,7 @@ const api: YaseenDocsApi = {
     setFolder: (root, patch) => call(CH.stateSetFolder, root, patch),
     setFolds: (root, file, keys) => call(CH.stateSetFolds, root, file, [...keys]),
     setBaseGroups: (root, key, collapsed) => call(CH.stateSetBaseGroups, root, key, [...collapsed]),
-    onChange: (listener) => {
-      const on = (_e: unknown, state: AppState) => listener(state)
-      ipcRenderer.on(CH.stateChanged, on)
-      return () => ipcRenderer.removeListener(CH.stateChanged, on)
-    },
+    onChange: on<AppState>(CH.stateChanged),
   },
   window: {
     identity: () => call(CH.windowIdentity),
@@ -69,29 +74,13 @@ const api: YaseenDocsApi = {
   },
   // Menu gestures (GRO-2161): main sends these to the focused window only.
   menu: {
-    onOpenFolder: (listener) => {
-      const on = () => listener()
-      ipcRenderer.on(CH.menuOpenFolder, on)
-      return () => ipcRenderer.removeListener(CH.menuOpenFolder, on)
-    },
-    onOpenRoot: (listener) => {
-      const on = (_e: unknown, path: string) => listener(path)
-      ipcRenderer.on(CH.menuOpenRoot, on)
-      return () => ipcRenderer.removeListener(CH.menuOpenRoot, on)
-    },
+    onOpenFolder: on<void>(CH.menuOpenFolder),
+    onOpenRoot: on<string>(CH.menuOpenRoot),
   },
   // Deep links (E1, GRO-2171): main routes a yaseendocs:// URL to the best window.
   link: {
-    onOpenFile: (listener) => {
-      const on = (_e: unknown, path: string) => listener(path)
-      ipcRenderer.on(CH.linkOpenFile, on)
-      return () => ipcRenderer.removeListener(CH.linkOpenFile, on)
-    },
-    onNotice: (listener) => {
-      const on = (_e: unknown, message: string) => listener(message)
-      ipcRenderer.on(CH.linkNotice, on)
-      return () => ipcRenderer.removeListener(CH.linkNotice, on)
-    },
+    onOpenFile: on<string>(CH.linkOpenFile),
+    onNotice: on<string>(CH.linkNotice),
   },
   // Type & property registry over `.yaseendocs/types.json` (Bible A, GRO-2201).
   registry: {
@@ -110,11 +99,7 @@ const api: YaseenDocsApi = {
   vaultConfig: {
     read: (root, name) => call(CH.vaultConfigRead, root, name),
     write: (root, name, value) => call(CH.vaultConfigWrite, root, name, value),
-    onChange: (listener) => {
-      const on = (_e: unknown, change: VaultConfigChange) => listener(change)
-      ipcRenderer.on(CH.vaultConfigChanged, on)
-      return () => ipcRenderer.removeListener(CH.vaultConfigChanged, on)
-    },
+    onChange: on<VaultConfigChange>(CH.vaultConfigChanged),
   },
 }
 

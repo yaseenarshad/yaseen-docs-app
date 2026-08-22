@@ -99,7 +99,7 @@ function extractBody(props: Record<string, unknown>, body: string): Pick<IndexRe
 
 /**
  * Builds the index record for one markdown file under `root` (GRO-2128): stat + read + frontmatter
- * parse + tag/link extraction. Files over MAX_FILE_BYTES get metadata only. fs errors surface as ApiFailure.
+ * parse + tag/link extraction. Files over MAX_FILE_BYTES get metadata only. fs errors surface as BridgeFailure.
  */
 export async function scanFile(root: string, absPath: string): Promise<IndexRecord> {
   const st = await fsCall(absPath, () => stat(absPath))

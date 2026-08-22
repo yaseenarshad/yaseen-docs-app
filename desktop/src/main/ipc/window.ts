@@ -2,11 +2,9 @@ import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import type { WindowEntry, WindowIdentity } from '@shared/types'
 import { CH } from '../../channels'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
-import type { Store } from '../store'
+import { isRecord, type Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
 import { handle, handleWithEvent } from './envelope'
-
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 /** `root` / `file` in the patch: absent (untouched), null, or an absolute path. */
 function optionalPath(raw: Record<string, unknown>, key: 'root' | 'file'): string | null | undefined {

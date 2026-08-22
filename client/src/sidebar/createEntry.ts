@@ -1,7 +1,7 @@
 /**
  * Pure logic behind the sidebar's "New note" / "New base" / "New folder" flow (GRO-2022, GRO-2126):
  * name validation, target-directory resolution, and final path building.
- * The UI (context menu + inline input) lives in Sidebar/Tree; the server
+ * The UI (context menu + inline input) lives in Sidebar/Tree; the main process
  * enforces the same rules again (absolute path, vault extension, no overwrite).
  */
 import type { TreeNode } from '@shared/types'

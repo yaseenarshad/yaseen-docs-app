@@ -1,6 +1,6 @@
 /**
  * BaseHost (GRO-2125): a `.base` in the main pane, mounted with react-dom in jsdom.
- * `api` is mocked so every PUT / GET is observable; the watcher is a fake `WatchSource`
+ * `api` is mocked so every write / read is observable; the watcher is a fake `WatchSource`
  * whose subscribers are captured so tests can push `change` events by hand.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -186,7 +186,7 @@ describe('BaseHost', () => {
     expect(el.querySelector('.base-rows')).toBeNull()
   })
 
-  it('a toolbar change (adding a view) goes through onChange into one PUT of the new YAML after the debounce', async () => {
+  it('a toolbar change (adding a view) goes through onChange into one bridge write of the new YAML after the debounce', async () => {
     const el = mount(FIXTURE)
     act(() => el.querySelector<HTMLButtonElement>('[aria-label="Add view"]')?.click())
     expect(tabNames(el)).toEqual(['Table', 'View', 'View 2', 'Table 4'])
@@ -262,7 +262,7 @@ describe('BaseHost', () => {
     expect(el.querySelector('.save-indicator')?.textContent).toBe('Saved')
   })
 
-  it('ignores the watcher echo of its own PUT', async () => {
+  it('ignores the watcher echo of its own write', async () => {
     const el = mount(INVALID)
     typeRaw(el, FIXED)
     await pastDebounce()
@@ -319,7 +319,7 @@ describe('BaseHost', () => {
     expect(writeFile.mock.calls[0]?.[0]).toEqual({ path: PATH, content: FIXED, expectedMtime: 2 })
   })
 
-  it('survives StrictMode double-mount: one watcher subscription per consumer, one PUT, no write on open', async () => {
+  it('survives StrictMode double-mount: one watcher subscription per consumer, one save, no write on open', async () => {
     const file: FileResponse = { path: PATH, content: INVALID, mtime: 1, size: INVALID.length }
     container = document.createElement('div')
     document.body.appendChild(container)

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useState, type CSSProperties } from 'react'
 import type { SettingsState } from '@shared/types'
-import { api, ApiRequestError } from './api'
+import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
 import { useLinkEvents } from './hooks/useLinkEvents'
@@ -94,7 +94,7 @@ export function App() {
     try {
       await api.tree(path)
     } catch (err) {
-      if (err instanceof ApiRequestError && (err.code === 'NOT_FOUND' || err.code === 'NOT_A_DIRECTORY')) {
+      if (err instanceof BridgeRequestError && (err.code === 'NOT_FOUND' || err.code === 'NOT_A_DIRECTORY')) {
         storage.removeRecentRoot(path)
         return false
       }

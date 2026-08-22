@@ -12,7 +12,7 @@ import { type Document, isMap, parse, parseDocument } from 'yaml'
  * last key leaves behind, GRO-2216), terminated by a line that is exactly
  * `---` (or `...`).
  *
- * Shared with the server's Bases index (GRO-2127), which parses the block via `parseFrontmatter`.
+ * Shared with the main process's Bases index (GRO-2127), which parses the block via `parseFrontmatter`.
  */
 export interface SplitMarkdown {
   /** The raw frontmatter block including both `---` fences and trailing newline; '' if none. */

@@ -28,6 +28,7 @@ open "desktop/dist-app/Yaseen Docs-0.1.0-arm64.dmg"
 ```
 
 - On another Mac the first open is blocked by Gatekeeper (the app is not notarized): System Settings › Privacy & Security › **Open Anyway**, once. See `README.md` "Sharing it".
+- No toolchain on the target machine? Download the `.dmg` from the repo's [Releases page](https://github.com/yaseenarshad/yaseen-milkdown/releases) instead of building (releases are tagged at the exact verified build commit; repo access required while private).
 
 ## App state — where it lives, how to reset it
 
@@ -53,7 +54,7 @@ npm run build     # electron-vite build → desktop/out
 
 ### Agent note: live checks
 
-The preview tool is gone — there is no browser mode and no URL to point one at. Verify through Playwright-Electron scripts under `node_modules/.verify/` (gitignored throwaways), always launched with a temp `--user-data-dir` so the real app state is never touched; seed `<user-data-dir>/yaseendocs.json` to skip the native folder dialog (see the existing scripts there for the pattern). A minimal smoke check against the dev build (run `npm run build` first):
+The preview tool is gone — there is no browser mode and no URL to point one at. Verify through Playwright-Electron, always launched with a temp `--user-data-dir` so the real app state is never touched; seed `<user-data-dir>/yaseendocs.json` to skip the native folder dialog (see `desktop/e2e/helpers.ts` — `launchApp` + `seedState` — for the pattern; one-off throwaway scripts go under `node_modules/.verify/`, gitignored). A minimal smoke check against the dev build (run `npm run build` first):
 
 ```bash
 node --input-type=module -e '
@@ -68,7 +69,7 @@ console.log("window title:", await win.title())
 await app.close()'
 ```
 
-The packaged app is driven the same way with `executablePath: 'desktop/dist-app/mac-arm64/Yaseen Docs.app/Contents/MacOS/Yaseen Docs'` instead of `args[0]` (see `node_modules/.verify/f1.mjs`).
+The packaged app is driven the same way with `executablePath: 'desktop/dist-app/mac-arm64/Yaseen Docs.app/Contents/MacOS/Yaseen Docs'` instead of `args[0]` (same launch pattern as `desktop/e2e/helpers.ts`, swapping the entry for the bundle's binary).
 
 ## Gotchas
 

@@ -440,6 +440,17 @@ describe('createWindowManager: routeToFile (E1)', () => {
     expect(created).toHaveLength(2)
   })
 
+  it('a stored entry with no live window (mid-close race) falls back to a fresh window on that entry root', () => {
+    const { manager, created } = seedRouting()
+    // The entry exists in the state but was never attached — its window is already gone.
+    store.upsertWindow({ id: 'w3', root: '/v/deeper', file: null, bounds: { x: 20, y: 20, width: 800, height: 600 } })
+    manager.routeToFile('/v/deeper/n.md') // most specific root wins → resolves to the dead w3
+    expect(created).toHaveLength(3)
+    expect(created[2].entry.id).not.toBe('w3') // a fresh window, not a resurrection of the dead entry
+    expect(created[2].entry.root).toBe('/v/deeper')
+    expect(created[2].entry.file).toBe('/v/deeper/n.md')
+  })
+
   it('a non-markdown path opens nothing: a live window is focused and told to show a notice (no dialog)', () => {
     const { manager, created, w1 } = seedRouting()
     manager.routeToFile('/v/archive.zip')

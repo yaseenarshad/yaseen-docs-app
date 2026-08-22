@@ -2,7 +2,7 @@
  * CrepeHost external-change handling (GRO-2186): a property write from a base (GRO-2141)
  * rewrites only the frontmatter block on disk; the open editor must absorb it silently —
  * no replaceAll, no conflict bar, unsaved body edits kept. Mounted with react-dom in jsdom;
- * `api` is mocked so every GET / PUT is observable, `./createCrepe` is replaced by a fake
+ * `api` is mocked so every read / write is observable, `./createCrepe` is replaced by a fake
  * whose markdown state the tests drive by hand (the real editor is covered by
  * roundtrip.test.ts / the outline suites), and the watcher is a fake `WatchSource` whose
  * subscribers are captured so tests can push `change` events by hand.

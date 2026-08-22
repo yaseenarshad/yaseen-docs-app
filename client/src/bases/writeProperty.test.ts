@@ -11,7 +11,7 @@ vi.mock('../api', async (importOriginal) => ({
   api: { readFile: vi.fn(), writeFile: vi.fn() },
 }))
 
-import { ApiRequestError, api } from '../api'
+import { BridgeRequestError, api } from '../api'
 
 const readFile = vi.mocked(api.readFile)
 const writeFile = vi.mocked(api.writeFile)
@@ -19,7 +19,7 @@ const writeFile = vi.mocked(api.writeFile)
 const PATH = '/vault/Deep Work.md'
 
 const file = (content: string, mtime: number) => ({ path: PATH, content, mtime, size: content.length })
-const conflict = (mtime: number) => new ApiRequestError('CONFLICT', 'file changed on disk', mtime)
+const conflict = (mtime: number) => new BridgeRequestError('CONFLICT', 'file changed on disk', mtime)
 
 beforeEach(() => {
   readFile.mockReset()
@@ -70,16 +70,16 @@ describe('writeProperty', () => {
     readFile.mockResolvedValue(file('---\nstatus: draft\n---\nBody\n', 100))
     writeFile.mockRejectedValue(conflict(150))
 
-    await expect(writeProperty(PATH, 'status', 'done')).rejects.toBeInstanceOf(ApiRequestError)
+    await expect(writeProperty(PATH, 'status', 'done')).rejects.toBeInstanceOf(BridgeRequestError)
 
     expect(writeFile).toHaveBeenCalledTimes(2)
   })
 
   it('rethrows a non-CONFLICT api error without retrying', async () => {
     readFile.mockResolvedValue(file('---\nstatus: draft\n---\nBody\n', 100))
-    writeFile.mockRejectedValue(new ApiRequestError('IO_ERROR', 'disk on fire'))
+    writeFile.mockRejectedValue(new BridgeRequestError('IO_ERROR', 'disk on fire'))
 
-    await expect(writeProperty(PATH, 'status', 'done')).rejects.toBeInstanceOf(ApiRequestError)
+    await expect(writeProperty(PATH, 'status', 'done')).rejects.toBeInstanceOf(BridgeRequestError)
 
     expect(writeFile).toHaveBeenCalledTimes(1)
     expect(readFile).toHaveBeenCalledTimes(1)

@@ -3,8 +3,8 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, defaultAppState, type AppState, type WindowEntry } from '@shared/types'
-import { addRecentRoot, createStore } from './store'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, addRecentRoot, defaultAppState, type AppState, type WindowEntry } from '@shared/types'
+import { createStore } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
 vi.mock('node:fs/promises', async (importOriginal) => {
