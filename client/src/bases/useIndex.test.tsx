@@ -31,6 +31,7 @@ const rec = (path: string): IndexRecord => ({
   ctime: 1,
   mtime: 1,
   properties: {},
+  aliases: [],
   tags: [],
   links: [],
   embeds: [],

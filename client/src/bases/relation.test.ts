@@ -69,6 +69,7 @@ const rec = (basename: string, properties: Record<string, unknown>): IndexRecord
   ctime: 0,
   mtime: 0,
   properties,
+  aliases: [],
   tags: [],
   links: [],
   embeds: [],

@@ -136,6 +136,7 @@ function manyRecords(n = 600): IndexRecord[] {
       ctime: 0,
       mtime: 0,
       properties: { g: i % 2 ? 'odd' : 'even' },
+      aliases: [],
       tags: [],
       links: [],
       embeds: [],

@@ -6,4 +6,4 @@
 export { flushIndexCache, initIndexCache } from './cache'
 export type { ColdStartDiff } from './reconcile'
 export { _evictAll, _setIdleMs, getColdStartDiff, getIndex } from './registry'
-export { extractEmbeds, extractLinks, extractTags, scanFile } from './scan'
+export { extractAliases, extractEmbeds, extractLinks, extractTags, scanFile } from './scan'

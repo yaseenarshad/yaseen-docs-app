@@ -3,9 +3,11 @@
  * the rendered `.wikilink` decoration spans. Plain click opens in the CURRENT tab (an
  * already-open file's tab is activated, never duplicated), ⌘-click appends a BACKGROUND tab
  * (activation and the visible editor stay put), and a click on an UNRESOLVED link CREATES the
- * page at the vault root and opens it. Same harness as tabs.spec.ts (temp `--user-data-dir`,
- * COPY of a generated fixture vault, `links-` step screenshots); serial by design — each step
- * continues the previous state.
+ * page at the vault root and opens it. Steps 6-7 add Links E2 (GRO-2214): a page declaring
+ * frontmatter `aliases` is reachable by them — `[[CAC]]` renders RESOLVED and opens the aliased
+ * page, and typing `[[cac` in the picker inserts the piped `[[Metrics|CAC]]` on disk.
+ * Same harness as tabs.spec.ts (temp `--user-data-dir`, COPY of a generated fixture vault,
+ * `links-` step screenshots); serial by design — each step continues the previous state.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -32,6 +34,10 @@ const IDEAS_BODY = 'synthetic-idea-body'
 const ROADMAP_BODY = 'synthetic-roadmap-body'
 /** The unresolved link's target — no such file until step 5 creates it. */
 const FRESH = 'Fresh note'
+/** The aliased page (E2): `Metrics.md` declares `aliases: [CAC]`, so `[[CAC]]` reaches it. */
+const METRICS_FILE = 'Metrics.md'
+const METRICS_BODY = 'synthetic-metrics-body'
+const ALIAS = 'CAC'
 
 let userData: string
 let vaultSrc: string
@@ -50,8 +56,13 @@ test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'links-userdata-'))
   vaultSrc = await buildFixtureVault()
   vault = await copyVault(vaultSrc)
-  // The hub: two resolved links (Roadmap lives in Projects/ — bare-basename resolution) and one unresolved.
-  await writeFile(path.join(vault, HUB_FILE), `# Hub\n\n${HUB_BODY}\n\nGo [[Ideas]] or [[Roadmap]] or [[${FRESH}]] now.\n`)
+  // The hub: three resolved links (Roadmap lives in Projects/ — bare-basename resolution; CAC is
+  // an ALIAS of Metrics.md — E2) and one unresolved.
+  await writeFile(
+    path.join(vault, HUB_FILE),
+    `# Hub\n\n${HUB_BODY}\n\nGo [[Ideas]] or [[Roadmap]] or [[${ALIAS}]] or [[${FRESH}]] now.\n`,
+  )
+  await writeFile(path.join(vault, METRICS_FILE), `---\naliases: [${ALIAS}]\n---\n\n${METRICS_BODY}\n`)
 })
 
 test.afterAll(async () => {
@@ -116,5 +127,32 @@ test('step 5 — click an UNRESOLVED link: the note is created at the vault root
   // …and the file exists ON DISK at the vault root (the locked default location), empty.
   await expect.poll(() => readFile(path.join(vault, `${FRESH}.md`), 'utf8')).toBe('')
   await shoot(win, 'links-05-create-on-click')
+})
+
+test('step 6 — an ALIAS-form link renders resolved and opens the aliased page (E2)', async () => {
+  await win.locator('.tree__row--file', { hasText: 'Links hub' }).click()
+  await expect(editorOf(win)).toContainText(HUB_BODY)
+  await expect(win.locator('.wikilink--unresolved')).toHaveText(FRESH) // index gate: only Fresh note dims
+  await expect(linkIn(win, ALIAS)).not.toHaveClass(/wikilink--unresolved/) // `[[CAC]]` found Metrics.md
+  await linkIn(win, ALIAS).click()
+  await expect(activeTab(win)).toHaveText('Metrics')
+  await expect(editorOf(win)).toContainText(METRICS_BODY)
+  await shoot(win, 'links-06-alias-resolved')
+})
+
+test('step 7 — the picker suggests the page by alias and inserts the PIPED form on disk (E2)', async () => {
+  await win.locator('.tree__row--file', { hasText: 'Links hub' }).click()
+  await expect(editorOf(win)).toContainText(HUB_BODY)
+  // Type at the end of the hub's link paragraph (never Enter — see smoke.spec step 3).
+  await editorOf(win).getByText(HUB_BODY).click()
+  await win.keyboard.press('End')
+  await win.keyboard.type(' [[cac', { delay: 15 })
+  const suggestion = win.locator('.wikilink-picker [role="option"]')
+  await expect(suggestion).toHaveText([`${ALIAS} — Metrics`]) // alias row, disambiguated by page name
+  await shoot(win, 'links-07-alias-suggestion')
+  await win.keyboard.press('Enter')
+  await expect
+    .poll(async () => (await readFile(path.join(vault, HUB_FILE), 'utf8')).includes(`[[Metrics|${ALIAS}]]`), { timeout: 10_000 })
+    .toBe(true)
   await quitApp(app)
 })

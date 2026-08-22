@@ -4,8 +4,10 @@
  * workspace (so `root` is always a real folder) — cheaper than a per-editor `useIndex` now
  * that every visited tab keeps its editor mounted. Each ready index snapshot swaps a memoized
  * resolver (`resolverFor`: same records array identity → same resolver) into the resolve
- * source and the snapshot's `linkCandidates` (shortest unambiguous names) into the candidate
- * source; both pokes make every subscribed editor recompute (decorations / picker rows). The
+ * source and the snapshot's `linkCandidates` (shortest unambiguous names + one piped row per
+ * frontmatter alias, Links E2 GRO-2214) into the candidate source; both pokes make every
+ * subscribed editor recompute (decorations / picker rows). Aliases need no wiring of their own:
+ * the resolver and the candidates carry them, so decorations, clicks and the picker all see them. The
  * editors never remount on index changes: the source OBJECTS stay stable, only their contents
  * are replaced.
  */
@@ -22,7 +24,7 @@ export interface WikilinkIndexBridgeProps {
   root: string
   watch: WatchSource
   source: MutableWikilinkResolveSource
-  /** The `[[` picker's candidate names (GRO-2191), fed from the same ready snapshots. */
+  /** The `[[` picker's candidates (GRO-2191), fed from the same ready snapshots. */
   candidates?: MutableWikilinkCandidateSource
   /**
    * Every READY snapshot, verbatim (Links E1c, GRO-2242): the external-rename detector diffs

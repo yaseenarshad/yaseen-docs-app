@@ -42,6 +42,7 @@ export interface FileRecordLike {
   ctime: number
   mtime: number
   properties: Record<string, unknown>
+  aliases: string[]
   tags: string[]
   links: string[]
   embeds: string[]

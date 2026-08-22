@@ -19,6 +19,7 @@ const record = (properties: Record<string, unknown>, i = 0): IndexRecord => ({
   ctime: 0,
   mtime: 0,
   properties,
+  aliases: [],
   tags: [],
   links: [],
   embeds: [],

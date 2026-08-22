@@ -13,7 +13,9 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import type { IndexRecord } from '@shared/types'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
+import { linkCandidates, nameCandidate } from '../../links/completion'
 import { WIKILINK_CLASS } from './wikilinkPlugin'
 import {
   WIKILINK_PICKER_CLASS,
@@ -33,9 +35,10 @@ async function mount(markdown: string, candidates: MutableWikilinkCandidateSourc
   return { crepe, root }
 }
 
+/** Plain-name candidates (E2, GRO-2214 made candidates rows, not strings — see `aliasSource`). */
 function source(...names: string[]): MutableWikilinkCandidateSource {
   const s = createWikilinkCandidateSource()
-  s.update(names)
+  s.update(names.map(nameCandidate))
   return s
 }
 
@@ -136,7 +139,7 @@ describe('wikilink picker: open / filter (GRO-2191)', () => {
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[')
     expect(rows()).toEqual(['Alpha'])
-    s.update(['Alpha', 'Beta'])
+    s.update(['Alpha', 'Beta'].map(nameCandidate))
     expect(rows()).toEqual(['Alpha', 'Beta'])
   })
 
@@ -252,6 +255,83 @@ describe('wikilink picker: create-new row', () => {
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[  ')
     expect(rows()).toEqual([])
+  })
+})
+
+describe('wikilink picker: frontmatter aliases (Links E2, GRO-2214)', () => {
+  /** One index record under `/vault`, with its frontmatter aliases. */
+  const rec = (path: string, aliases: string[] = []): IndexRecord => {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    const folder = path.slice('/vault/'.length, path.lastIndexOf('/'))
+    return {
+      path,
+      name,
+      basename: name.replace(/\.md$/, ''),
+      folder: path.indexOf('/', '/vault/'.length) === -1 ? '' : folder,
+      ext: 'md',
+      size: 1,
+      ctime: 1,
+      mtime: 1,
+      properties: {},
+      aliases,
+      tags: [],
+      links: [],
+      embeds: [],
+    }
+  }
+
+  /** The REAL pipeline: index records → `linkCandidates` → the picker's source. */
+  function indexSource(...records: IndexRecord[]): MutableWikilinkCandidateSource {
+    const s = createWikilinkCandidateSource()
+    s.update(linkCandidates(records))
+    return s
+  }
+
+  const CAC = rec('/vault/Customer Acquisition Cost.md', ['CAC'])
+
+  it('typing an alias suggests the page, disambiguated by its name', async () => {
+    const { crepe } = await mount('X\n', indexSource(CAC, rec('/vault/Ideas.md')))
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, '[[cac')
+    await tick()
+    expect(rows()).toEqual(['CAC — Customer Acquisition Cost'])
+    expect(popup()?.dataset.show).toBe('true')
+  })
+
+  it('Enter on an alias row inserts the PIPED form; the note still inserts bare under its own name', async () => {
+    const { crepe } = await mount('X\n', indexSource(CAC))
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, '[[cac')
+    expect(press(crepe, 'Enter')).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe('X[[Customer Acquisition Cost|CAC]]\n')
+
+    const second = await mount('Y\n', indexSource(CAC))
+    caret(second.crepe, posOf(second.crepe, 'Y', 1))
+    type(second.crepe, '[[customer')
+    expect(rows()).toEqual(['Customer Acquisition Cost'])
+    press(second.crepe, 'Enter')
+    expect(getMarkdownForSave(second.crepe)).toBe('Y[[Customer Acquisition Cost]]\n')
+  })
+
+  it('the piped insert renders through the A- decorations as the alias alone', async () => {
+    const { crepe, root } = await mount('X\n', indexSource(CAC))
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, '[[cac')
+    press(crepe, 'Enter')
+    caret(crepe, posOf(crepe, 'X'))
+    expect(Array.from(root.querySelectorAll(`.${WIKILINK_CLASS}`)).map((el) => el.textContent)).toEqual(['CAC'])
+  })
+
+  it('two pages claiming one alias offer both rows, told apart by the page name', async () => {
+    const source = indexSource(CAC, rec('/vault/costs/CAC Model.md', ['CAC']))
+    const { crepe } = await mount('X\n', source)
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, '[[CAC')
+    expect(rows()).toEqual(['CAC — Customer Acquisition Cost', 'CAC Model', 'CAC — CAC Model'])
+    press(crepe, 'ArrowDown')
+    press(crepe, 'ArrowDown')
+    press(crepe, 'Enter')
+    expect(getMarkdownForSave(crepe)).toBe('X[[CAC Model|CAC]]\n')
   })
 })
 

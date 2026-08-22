@@ -20,6 +20,7 @@ function record(i: number): FileRecordLike {
     ctime: 1_700_000_000_000 + i,
     mtime: 1_750_000_000_000 + i * 1000,
     properties: {},
+    aliases: [],
     tags: ['book', `genre/${i % 5}`],
     links: [`Note ${i + 1}`],
     embeds: [],

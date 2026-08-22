@@ -308,13 +308,79 @@ describe('makeResolver (GRO-2132)', () => {
     expect(makeResolver(withRoot)('Dup')?.record.path).toBe('/vault/Dup.md')
   })
 
-  it('resolverFor memoizes per records array identity and per root (GRO-2190)', () => {
+  it('resolverFor memoizes per records array identity, per root and per alias mode (GRO-2190, GRO-2214)', () => {
     const r1 = resolverFor(TEST_RECORDS, '/vault')
     expect(resolverFor(TEST_RECORDS, '/vault')).toBe(r1)
     expect(resolverFor(TEST_RECORDS)).not.toBe(r1) // another root key → its own resolver
+    expect(resolverFor(TEST_RECORDS, '/vault', { aliases: false })).not.toBe(r1) // name-only → its own
     expect(resolverFor([...TEST_RECORDS], '/vault')).not.toBe(r1) // a new snapshot → a fresh resolver
     expect(r1('Agentic Agency')?.record.path).toBe(AGENTIC)
     expect(r1(AGENTIC)?.record.path).toBe(AGENTIC)
+  })
+})
+
+describe('makeResolver: frontmatter aliases (Links E2, GRO-2214)', () => {
+  /** `Costs/Customer Acquisition Cost.md` answers to `CAC`; `Attribution.md` has none. */
+  const aliased = (over: Partial<IndexRecord> = {}): IndexRecord => ({
+    ...TEST_RECORDS[0],
+    path: '/vault/Costs/Customer Acquisition Cost.md',
+    name: 'Customer Acquisition Cost.md',
+    basename: 'Customer Acquisition Cost',
+    folder: 'Costs',
+    aliases: ['CAC', 'Acquisition Cost'],
+    ...over,
+  })
+  const resolve = (records: IndexRecord[]) => makeResolver(records.map(r => new FileValue(r)), '/vault')
+
+  it('an alias resolves to its note, case-insensitively, with `[[…]]` / `|alias` / `#heading` stripped', () => {
+    const r = resolve([aliased()])
+    const path = '/vault/Costs/Customer Acquisition Cost.md'
+    expect(r('CAC')?.record.path).toBe(path)
+    expect(r('cac')?.record.path).toBe(path)
+    expect(r('[[CAC]]')?.record.path).toBe(path)
+    expect(r('CAC|shown')?.record.path).toBe(path)
+    expect(r('CAC#Heading')?.record.path).toBe(path)
+    expect(r('Acquisition Cost')?.record.path).toBe(path)
+    expect(r('Customer Acquisition Cost')?.record.path).toBe(path) // the real name still resolves
+    expect(r('Costs/CAC')).toBe(null) // an alias is a NAME: it never joins a folder path
+  })
+
+  it('a real name ALWAYS beats an alias, whatever their depths', () => {
+    const named = { ...TEST_RECORDS[0], path: '/vault/deep/deeper/CAC.md', name: 'CAC.md', basename: 'CAC', folder: 'deep/deeper' }
+    // The aliased note sits shallower (Costs/) and comes first — the basename map still wins.
+    expect(resolve([aliased(), named])('CAC')?.record.path).toBe('/vault/deep/deeper/CAC.md')
+    expect(resolve([named, aliased()])('CAC')?.record.path).toBe('/vault/deep/deeper/CAC.md')
+    // …and the root-relative path form of the named note is unaffected too.
+    expect(resolve([aliased(), named])('deep/deeper/CAC')?.record.path).toBe('/vault/deep/deeper/CAC.md')
+  })
+
+  it('two notes claiming one alias: shallowest wins; equal depth → first in path order', () => {
+    const deep = aliased({ path: '/vault/a/b/Deep.md', name: 'Deep.md', basename: 'Deep', folder: 'a/b', aliases: ['CAC'] })
+    const shallow = aliased({ path: '/vault/z/Shallow.md', name: 'Shallow.md', basename: 'Shallow', folder: 'z', aliases: ['CAC'] })
+    expect(resolve([deep, shallow])('CAC')?.record.path).toBe('/vault/z/Shallow.md') // a later shallower file wins
+    const first = aliased({ path: '/vault/a/First.md', name: 'First.md', basename: 'First', folder: 'a', aliases: ['CAC'] })
+    const second = aliased({ path: '/vault/b/Second.md', name: 'Second.md', basename: 'Second', folder: 'b', aliases: ['CAC'] })
+    expect(resolve([first, second])('CAC')?.record.path).toBe('/vault/a/First.md')
+  })
+
+  it('`{ aliases: false }` builds the NAME-ONLY resolver the rename engine probes with', () => {
+    const files = [aliased()].map(r => new FileValue(r))
+    expect(makeResolver(files, '/vault', { aliases: false })('CAC')).toBe(null)
+    expect(makeResolver(files, '/vault', { aliases: false })('Customer Acquisition Cost')?.record.basename).toBe('Customer Acquisition Cost')
+  })
+
+  it('aliases reach every resolver consumer for free — `file.hasLink` sees them', () => {
+    const hub = { ...TEST_RECORDS[0], path: '/vault/Hub.md', name: 'Hub.md', basename: 'Hub', folder: '', links: ['CAC'] }
+    const records = [hub, aliased()]
+    // The hub links `[[CAC]]`; asked about the aliased note's REAL name, hasLink compares
+    // RESOLVED paths — both sides land on the same note through the fourth map.
+    const hasLink = (arg: string): string[] => {
+      const view: BaseView = { type: 'table', name: 'T', filters: `file.hasLink("${arg}")` }
+      return names(runView({ views: [view] }, view, records, { root: '/vault' }))
+    }
+    expect(hasLink('Customer Acquisition Cost')).toEqual(['Hub'])
+    expect(hasLink('CAC')).toEqual(['Hub'])
+    expect(hasLink('Attribution')).toEqual([])
   })
 })
 
@@ -330,6 +396,7 @@ describe('perf (GRO-2133)', () => {
       ctime: 1_700_000_000_000 + i,
       mtime: 1_750_000_000_000 + i * 1000,
       properties: { status: i % 3 ? 'todo' : 'done', price: i % 50, title: `Note ${i}`, due: '2026-08-01', tags: ['a', 'b'] },
+      aliases: [],
       tags: ['book', `genre/${i % 5}`],
       links: [`Note ${i + 1}`],
       embeds: [],

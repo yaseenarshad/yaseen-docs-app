@@ -86,7 +86,7 @@ function rec(path: string, over: Partial<IndexRecord> = {}): IndexRecord {
   const name = path.slice(path.lastIndexOf('/') + 1)
   const basename = name.replace(/\.(md|markdown)$/i, '')
   const folder = path.slice('/v/'.length, path.lastIndexOf('/')).replace(/\/$/, '')
-  return { path, name, basename, folder: folder === name ? '' : folder, ext: 'md', size: 0, ctime: 0, mtime: 0, properties: {}, tags: [], links: [], embeds: [], ...over }
+  return { path, name, basename, folder: folder === name ? '' : folder, ext: 'md', size: 0, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
 }
 
 function installBridge(files: Record<string, { content: string; mtime: number }>) {
@@ -173,6 +173,27 @@ describe('updateLinksAfterRename', () => {
     const summary = await updateLinksAfterRename({ root, oldPath: '/v/Sub/B.md', newPath: '/v/Sub/C.md', records })
     expect(summary).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[B]] and [[Sub/C]]\n')
+  })
+
+  it('an ALIAS-form link to the renamed file stays BYTE-IDENTICAL; its name forms still rewrite (E2, GRO-2214)', async () => {
+    const files = { '/v/A.md': { content: 'See [[CAC]] and [[ CAC |shown]] and [[B]].\n', mtime: 1 } }
+    installBridge(files)
+    // B.md answers to `CAC` through frontmatter aliases: `[[CAC]]` keeps pointing at it after
+    // the rename (the alias moves with the file), so only the NAME form is rewritten.
+    const records = [rec('/v/A.md', { links: ['CAC', 'B'] }), rec('/v/B.md', { aliases: ['CAC'] })]
+    expect(countLinkReferences({ root, oldPath, records })).toBe(1)
+    expect(await updateLinksAfterRename({ root, oldPath, newPath, records })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('See [[CAC]] and [[ CAC |shown]] and [[C]].\n')
+  })
+
+  it('a note referencing the renamed file ONLY by alias is not in the referencing set at all (no read, no write)', async () => {
+    const files = { '/v/A.md': { content: 'Only [[CAC]].\n', mtime: 1 } }
+    const bridge = installBridge(files)
+    const records = [rec('/v/A.md', { links: ['CAC'] }), rec('/v/B.md', { aliases: ['CAC'] })]
+    expect(countLinkReferences({ root, oldPath, records })).toBe(0) // the banner's N and the rewrite agree
+    expect(await updateLinksAfterRename({ root, oldPath, newPath, records })).toEqual({ updated: 0, skipped: 0 })
+    expect(bridge.readFile).not.toHaveBeenCalled()
+    expect(files['/v/A.md'].content).toBe('Only [[CAC]].\n')
   })
 
   it('a same-directory rename whose NEW name is shadowed by another file escalates the bare link to the pathed form', async () => {

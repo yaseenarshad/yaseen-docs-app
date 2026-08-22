@@ -26,8 +26,11 @@
  *    (`wikilinkPicker.test.ts` pins it).
  *
  * Matching is the shared `links/completion.ts` (one matcher with the Bases cell editors —
- * locked ruling): case-insensitive substring, cap 8. When nothing matches a non-empty
- * fragment, a single "Create" row inserts `[[typed text]]` as-is — a link to a
+ * locked ruling): case-insensitive substring, cap 8. A note with frontmatter aliases (E2,
+ * GRO-2214) is offered twice — under its name (inserting `[[Name]]`) and under each alias,
+ * which READS `CAC — Customer Acquisition Cost` and INSERTS the piped `[[Customer Acquisition
+ * Cost|CAC]]`, so the link targets the note and displays the alias. When nothing matches a
+ * non-empty fragment, a single "Create" row inserts `[[typed text]]` as-is — a link to a
  * not-yet-existing page; creation itself is Links C's unit. A `|` in the fragment is alias
  * entry: the popup closes and typing continues as plain text. Code is excluded like the
  * decorations: no picker inside `code_block` or inline-`code` text.
@@ -37,28 +40,28 @@ import { Plugin, PluginKey, TextSelection, type Command } from '@milkdown/kit/pr
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { SlashProvider } from '@milkdown/kit/plugin/slash'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
-import { matchLinkNames, trailingLinkFragment } from '../../links/completion'
+import { matchLinkCandidates, trailingLinkFragment, type LinkCandidate } from '../../links/completion'
 import './wikilinkPicker.css'
 
 export const WIKILINK_PICKER_CLASS = 'wikilink-picker'
 export const WIKILINK_PICKER_ITEM_CLASS = 'wikilink-picker__item'
 export const WIKILINK_PICKER_CREATE_CLASS = 'wikilink-picker__item--create'
 
-/** How the vault's candidate names reach the picker; see `createWikilinkCandidateSource`. */
+/** How the vault's candidates reach the picker; see `createWikilinkCandidateSource`. */
 export interface WikilinkCandidateSource {
-  /** Shortest unambiguous link names (`linkCandidates`); `[]` until the index first loads. */
-  readonly candidates: readonly string[]
+  /** Shortest unambiguous names + alias rows (`linkCandidates`); `[]` until the index first loads. */
+  readonly candidates: readonly LinkCandidate[]
   /** Wakes subscribed editors (row recompute) whenever `candidates` is swapped. */
   subscribe(listener: () => void): () => void
 }
 
 export interface MutableWikilinkCandidateSource extends WikilinkCandidateSource {
   /** Swap in a fresh candidate list (index refetch) and notify every subscribed editor. */
-  update(candidates: readonly string[]): void
+  update(candidates: readonly LinkCandidate[]): void
 }
 
 export function createWikilinkCandidateSource(): MutableWikilinkCandidateSource {
-  let current: readonly string[] = []
+  let current: readonly LinkCandidate[] = []
   const listeners = new Set<() => void>()
   return {
     get candidates() {
@@ -77,8 +80,13 @@ export function createWikilinkCandidateSource(): MutableWikilinkCandidateSource 
   }
 }
 
-/** One popup row: insert `[[insert]]`; `create` rows show as Create "…" (nothing matched). */
+/**
+ * One popup row: shows `label`, inserts `[[insert]]` — the two differ for an alias row, which
+ * reads `CAC — Customer Acquisition Cost` and inserts the piped `[[Customer Acquisition
+ * Cost|CAC]]` (E2, GRO-2214). `create` rows show as Create "…" (nothing matched).
+ */
 interface PickerRow {
+  label: string
   insert: string
   create: boolean
 }
@@ -119,10 +127,10 @@ function findContext(state: EditorState): { from: number; to: number; fragment: 
 }
 
 /** Matches through the shared matcher; a non-empty fragment nothing matches offers Create. */
-function rowsFor(fragment: string, candidates: readonly string[]): PickerRow[] {
-  const matches = matchLinkNames(candidates, fragment)
-  if (matches.length > 0) return matches.map((insert) => ({ insert, create: false }))
-  return fragment.trim() === '' ? [] : [{ insert: fragment, create: true }]
+function rowsFor(fragment: string, candidates: readonly LinkCandidate[]): PickerRow[] {
+  const matches = matchLinkCandidates(candidates, fragment)
+  if (matches.length > 0) return matches.map(({ label, insert }) => ({ label, insert, create: false }))
+  return fragment.trim() === '' ? [] : [{ label: fragment, insert: fragment, create: true }]
 }
 
 function compute(state: EditorState, prev: PickerState | null, tr: Transaction | null, source: WikilinkCandidateSource): PickerState {
@@ -205,7 +213,7 @@ function buildPopup(view: EditorView): { element: HTMLElement; render: (session:
       item.setAttribute('role', 'option')
       item.className = row.create ? `${WIKILINK_PICKER_ITEM_CLASS} ${WIKILINK_PICKER_CREATE_CLASS}` : WIKILINK_PICKER_ITEM_CLASS
       item.setAttribute('aria-selected', String(i === session.selected))
-      item.textContent = row.create ? `Create "${row.insert}"` : row.insert
+      item.textContent = row.create ? `Create "${row.label}"` : row.label
       item.addEventListener('mousedown', (e) => e.preventDefault())
       item.addEventListener('click', () => {
         // Re-read the live session: the state may have moved between render and click.

@@ -3,8 +3,8 @@
  * the wikilink resolve source AND the `[[` picker's candidate source fed from `useIndex`. The
  * bridge is mocked like useIndex.test.tsx; asserted here: the sources stay untouched until the
  * index is READY, resolve/candidate contents once it is (candidates as shortest unambiguous
- * names — duplicates folder-disambiguated), and fresh contents after a watch-driven refetch
- * (which notifies subscribers).
+ * names — duplicates folder-disambiguated — plus frontmatter alias rows, GRO-2214), and fresh
+ * contents after a watch-driven refetch (which notifies subscribers).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -26,7 +26,7 @@ const indexFn = vi.mocked(api.index)
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-const rec = (path: string): IndexRecord => {
+const rec = (path: string, aliases: string[] = []): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
   const folder = path.slice('/vault/'.length, path.lastIndexOf('/')).replace(/^\/+/, '')
   return {
@@ -39,13 +39,14 @@ const rec = (path: string): IndexRecord => {
     ctime: 1,
     mtime: 1,
     properties: {},
+    aliases,
     tags: [],
     links: [],
     embeds: [],
   }
 }
 
-const response = (...paths: string[]): IndexResponse => ({ root: '/vault', records: paths.map(rec), generatedAt: 1 })
+const response = (...paths: string[]): IndexResponse => ({ root: '/vault', records: paths.map((p) => rec(p)), generatedAt: 1 })
 
 let root: Root | null = null
 let container: HTMLElement | null = null
@@ -135,12 +136,37 @@ describe('WikilinkIndexBridge', () => {
     mount()
     expect(candidates.candidates).toEqual([]) // pending: nothing yet
     await flush()
-    expect(candidates.candidates).toEqual(['Note', 'deep/Note', 'Other'])
+    // Candidates are rows, not strings, since E2 (GRO-2214) — the inserted text is the pin.
+    expect(candidates.candidates.map((c) => c.insert)).toEqual(['Note', 'deep/Note', 'Other'])
     const wake = vi.fn()
     candidates.subscribe(wake)
     indexFn.mockResolvedValue(response('/vault/Note.md', '/vault/New.md'))
     await emitPastDebounce({ type: 'add', path: '/vault/New.md', mtime: 2 })
     expect(wake).toHaveBeenCalled()
-    expect(candidates.candidates).toEqual(['Note', 'New'])
+    expect(candidates.candidates.map((c) => c.insert)).toEqual(['Note', 'New'])
+  })
+
+  it('aliases ride the same feed: the resolver dims nothing for `[[CAC]]` and the picker offers a piped row (E2, GRO-2214)', async () => {
+    indexFn.mockResolvedValue({
+      root: '/vault',
+      records: [rec('/vault/Customer Acquisition Cost.md', ['CAC'])],
+      generatedAt: 1,
+    })
+    mount()
+    await flush()
+    // The decorations resolve through THIS function, so an alias-form link renders resolved.
+    expect(source.resolve?.('CAC')).toBe('/vault/Customer Acquisition Cost.md')
+    expect(source.resolve?.('cac')).toBe('/vault/Customer Acquisition Cost.md')
+    expect(source.resolve?.('Nope')).toBeNull()
+    expect(candidates.candidates.map((c) => c.label)).toEqual([
+      'Customer Acquisition Cost',
+      'CAC — Customer Acquisition Cost',
+    ])
+
+    // Dropping the alias from the frontmatter unresolves `[[CAC]]` again on the next snapshot.
+    indexFn.mockResolvedValue({ root: '/vault', records: [rec('/vault/Customer Acquisition Cost.md')], generatedAt: 2 })
+    await emitPastDebounce({ type: 'change', path: '/vault/Customer Acquisition Cost.md', mtime: 2 })
+    expect(source.resolve?.('CAC')).toBeNull()
+    expect(candidates.candidates.map((c) => c.label)).toEqual(['Customer Acquisition Cost'])
   })
 })

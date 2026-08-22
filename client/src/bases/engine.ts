@@ -66,25 +66,41 @@ const NO_VALUE = 'No value'
 
 const normalise = (s: string) => s.replace(/^\/+|\/+$/g, '').replace(/\.(md|markdown)$/, '').toLowerCase()
 
+/** `makeResolver` / `resolverFor` knobs; every field is optional and defaults to today's behaviour. */
+export interface ResolverOptions {
+  /**
+   * Consult frontmatter `aliases` (default true, E2 GRO-2214). `false` builds a NAME-ONLY
+   * resolver — the rename engine's referencing-set probe (`links/renameLinks.ts`), which must
+   * not treat an alias-form link as a reference to rewrite: the alias lives in the moved file's
+   * own frontmatter and travels with it.
+   */
+  aliases?: boolean
+}
+
 /**
  * Link target → note: absolute path, root-relative path (with or without `.md` / leading slash),
- * else bare basename — duplicates resolve to the SHALLOWEST folder (Obsidian's shortest-path
- * rule, GRO-2190), equal depth to the first in the given (path-sorted) order. Case-insensitive;
- * `[[…]]`, `|alias` and `#heading` are stripped.
+ * bare basename — duplicates resolve to the SHALLOWEST folder (Obsidian's shortest-path rule,
+ * GRO-2190), equal depth to the first in the given (path-sorted) order — and finally a
+ * frontmatter ALIAS (E2, GRO-2214), by the same shallowest-then-first rule, so a real name
+ * always beats an alias. Case-insensitive; `[[…]]`, `|alias` and `#heading` are stripped.
  */
-export function makeResolver(files: readonly FileValue[], root?: string): Resolver {
+export function makeResolver(files: readonly FileValue[], root?: string, opts: ResolverOptions = {}): Resolver {
   const byPath = new Map<string, FileValue>()
   const byRel = new Map<string, FileValue>()
   const byBase = new Map<string, { file: FileValue; depth: number }>()
+  const byAlias = new Map<string, { file: FileValue; depth: number }>()
+  const shallowest = (map: Map<string, { file: FileValue; depth: number }>, key: string, file: FileValue, depth: number) => {
+    const prev = map.get(key)
+    if (prev === undefined || depth < prev.depth) map.set(key, { file, depth })
+  }
   for (const f of files) {
     const r = f.record
     byPath.set(r.path.toLowerCase(), f)
     const rel = normalise(r.folder ? `${r.folder}/${r.basename}` : r.basename)
     if (!byRel.has(rel)) byRel.set(rel, f)
-    const base = r.basename.toLowerCase()
     const depth = r.folder === '' ? 0 : r.folder.split('/').length
-    const prev = byBase.get(base)
-    if (prev === undefined || depth < prev.depth) byBase.set(base, { file: f, depth })
+    shallowest(byBase, r.basename.toLowerCase(), f, depth)
+    if (opts.aliases !== false) for (const alias of r.aliases) shallowest(byAlias, alias.toLowerCase(), f, depth)
   }
   const rootKey = root ? `${root.replace(/\/+$/, '').toLowerCase()}/` : null
   const cache = new Map<string, FileValue | null>()
@@ -99,6 +115,8 @@ export function makeResolver(files: readonly FileValue[], root?: string): Resolv
         const rel = normalise(rootKey && key.startsWith(rootKey) ? key.slice(rootKey.length) : key)
         found = byRel.get(rel) ?? (rel.includes('/') ? null : byBase.get(rel)?.file ?? null)
       }
+      // Aliases last: a page named `CAC` always wins the target `CAC` over one merely aliased so.
+      if (!found) found = byAlias.get(key)?.file ?? null
     }
     cache.set(target, found)
     return found
@@ -117,17 +135,18 @@ function fileValuesFor(records: readonly IndexRecord[]): FileValue[] {
 const resolverCache = new WeakMap<readonly IndexRecord[], Map<string, Resolver>>()
 
 /**
- * Memoized `makeResolver` per records array identity (and per root): `runView` and the editor's
- * wikilink decorations (GRO-2190) both resolve on every run/render, so one index snapshot must
- * not rebuild the lookup maps each time. A refetched index is a NEW array and gets a fresh
- * resolver; the WeakMap lets dropped snapshots be collected. The per-instance target cache
- * inside `makeResolver` is unchanged.
+ * Memoized `makeResolver` per records array identity (and per root, per alias mode): `runView`
+ * and the editor's wikilink decorations (GRO-2190) both resolve on every run/render, so one
+ * index snapshot must not rebuild the lookup maps each time. A refetched index is a NEW array
+ * and gets a fresh resolver; the WeakMap lets dropped snapshots be collected. The per-instance
+ * target cache inside `makeResolver` is unchanged.
  */
-export function resolverFor(records: readonly IndexRecord[], root?: string): Resolver {
+export function resolverFor(records: readonly IndexRecord[], root?: string, opts: ResolverOptions = {}): Resolver {
   let byRoot = resolverCache.get(records)
   if (byRoot === undefined) resolverCache.set(records, (byRoot = new Map()))
-  let resolver = byRoot.get(root ?? '')
-  if (resolver === undefined) byRoot.set(root ?? '', (resolver = makeResolver(fileValuesFor(records), root)))
+  const key = `${opts.aliases === false ? 'names:' : ''}${root ?? ''}`
+  let resolver = byRoot.get(key)
+  if (resolver === undefined) byRoot.set(key, (resolver = makeResolver(fileValuesFor(records), root, opts)))
   return resolver
 }
 

@@ -4,7 +4,7 @@ import path from 'node:path'
 import { parseFrontmatter } from '@shared/frontmatter'
 import { MAX_FILE_BYTES } from '@shared/types'
 import { makeBasesFixture } from '../fs/basesFixture'
-import { extractEmbeds, extractLinks, extractTags, scanFile } from './index'
+import { extractAliases, extractEmbeds, extractLinks, extractTags, scanFile } from './index'
 
 describe('parseFrontmatter', () => {
   it('parses a YAML map; core schema keeps dates as strings', () => {
@@ -68,6 +68,24 @@ describe('extractTags', () => {
   })
 })
 
+describe('extractAliases (GRO-2214)', () => {
+  it('list items are trimmed; empties and non-strings dropped; de-duplicated', () => {
+    expect(extractAliases({ aliases: [' CAC ', '', 'Acquisition Cost', 7, null, 'CAC'] })).toEqual(['CAC', 'Acquisition Cost'])
+  })
+
+  it('a scalar string is ONE alias — never comma-split, unlike `tags`', () => {
+    expect(extractAliases({ aliases: 'Customer Acquisition Cost, CAC' })).toEqual(['Customer Acquisition Cost, CAC'])
+    expect(extractAliases({ aliases: '  CAC  ' })).toEqual(['CAC'])
+  })
+
+  it('absent, empty or non-string `aliases` → []; only that key is read', () => {
+    expect(extractAliases({})).toEqual([])
+    expect(extractAliases({ aliases: [] })).toEqual([])
+    expect(extractAliases({ aliases: 42 })).toEqual([])
+    expect(extractAliases({ alias: 'CAC' })).toEqual([]) // `alias` singular is not the key (Obsidian's is `aliases`)
+  })
+})
+
 describe('extractLinks / extractEmbeds', () => {
   it('strips alias, heading and block refs; trims', () => {
     expect(extractLinks({}, '[[A|alias]] [[B#Heading]] [[C#^blk]] [[ D ]]')).toEqual(['A', 'B', 'C', 'D'])
@@ -81,6 +99,14 @@ describe('extractLinks / extractEmbeds', () => {
 
   it('frontmatter string values (top-level and in lists) matching exactly [[…]] count as links', () => {
     expect(extractLinks({ related: '[[X]]', list: ['[[Y|y]]', 'plain', 7], note: 'see [[Z]]' }, '')).toEqual(['X', 'Y'])
+  })
+
+  it('`aliases` values are NEVER links, whatever they look like (GRO-2214)', () => {
+    // A `[[X]]`-shaped alias stays an alias literally named `[[X]]` (extractAliases strips
+    // nothing) — it just never becomes an outgoing link of this note.
+    expect(extractLinks({ aliases: ['[[X]]', 'CAC'], related: '[[Y]]' }, '')).toEqual(['Y'])
+    expect(extractLinks({ aliases: '[[X]]' }, '')).toEqual([])
+    expect(extractAliases({ aliases: ['[[X]]'] })).toEqual(['[[X]]'])
   })
 
   it('de-duplicates: frontmatter first, then first appearance', () => {
@@ -156,12 +182,20 @@ describe('scanFile', () => {
     expect(r.tags).toEqual(['creator'])
   })
 
+  it('frontmatter `aliases` land on the record and stay out of its links (GRO-2214)', async () => {
+    const aliased = path.join(root, 'aliased.md')
+    await writeFile(aliased, '---\naliases: [CAC, "Cost of Acquisition"]\nrelated: "[[Attribution]]"\n---\nBody [[Ideas]].\n')
+    const r = await scanFile(root, aliased)
+    expect(r.aliases).toEqual(['CAC', 'Cost of Acquisition'])
+    expect(r.links).toEqual(['Attribution', 'Ideas'])
+  })
+
   it('files over MAX_FILE_BYTES → metadata only', async () => {
     const big = path.join(root, 'big.md')
     await writeFile(big, '---\na: 1\n---\n#tag [[x]]\n' + 'x'.repeat(MAX_FILE_BYTES))
     const r = await scanFile(root, big)
     expect(r.size).toBeGreaterThan(MAX_FILE_BYTES)
-    expect(r).toMatchObject({ name: 'big.md', properties: {}, tags: [], links: [], embeds: [] })
+    expect(r).toMatchObject({ name: 'big.md', properties: {}, aliases: [], tags: [], links: [], embeds: [] })
   })
 
   it('missing file → BridgeFailure NOT_FOUND', async () => {

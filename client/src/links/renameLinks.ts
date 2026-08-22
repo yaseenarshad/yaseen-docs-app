@@ -36,6 +36,9 @@
  *  - `.base` embeds: a bare `![[X.base]]` stays only while the (new) name is UNIQUE in the
  *    tree — with a duplicate the rewrite goes pathed (conservative stand-in for a post-move
  *    BFS, correct in both cases).
+ *  - ALIAS-form links (E2, GRO-2214): `[[CAC]]` pointing at a note through its frontmatter
+ *    `aliases` is NEVER rewritten — the alias travels with the file, so it still resolves
+ *    afterwards. The referencing-set probe therefore resolves BY NAME ONLY (`makeResolves`).
  */
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import type { IndexRecord, TreeNode } from '@shared/types'
@@ -206,7 +209,11 @@ function makeResolves({ root, oldPath, kind, records, tree }: { root: string; ol
   resolveTargetPath: (t: string) => string | null
   isBaseTarget: (t: string) => boolean
 } {
-  const resolver = resolverFor(records, root)
+  // NAME-ONLY resolution (E2, GRO-2214): an alias-form link (`[[CAC]]`) does resolve to the
+  // moved file through the shared resolver, but it must stay BYTE-IDENTICAL — the alias lives
+  // in that file's own frontmatter and travels with it, so it keeps pointing there. Building
+  // the probe without the alias map keeps the dry-run count and the rewrite agreeing on that.
+  const resolver = resolverFor(records, root, { aliases: false })
   const prefix = `${oldPath}/`
   const isMoved = kind === 'dir' ? (p: string) => p.startsWith(prefix) : (p: string) => p === oldPath
   const isBaseTarget = (t: string) => /\.base$/i.test(t)

@@ -78,6 +78,13 @@ export interface IndexRecord {
   /** Parsed frontmatter; {} when absent or invalid (then `frontmatterError` is set). YAML core schema: dates stay strings. */
   properties: Record<string, unknown>
   frontmatterError?: string
+  /**
+   * Frontmatter `aliases`: extra NAMES this note answers to (Links E2, GRO-2214). List items, or
+   * a scalar string as ONE alias (never comma-split, unlike `tags`); trimmed, empties and
+   * non-strings dropped, de-duplicated. Resolved after path/root-relative/basename, so a real
+   * name always wins. Alias values are never outgoing `links`.
+   */
+  aliases: string[]
   /** Frontmatter `tags`/`tag` + inline `#tags`; no leading '#'; nested 'a/b' kept; de-duplicated, order of first appearance. */
   tags: string[]
   /** `[[target]]` targets (`|alias` and `#heading` stripped) from body + frontmatter string values; embeds excluded. */

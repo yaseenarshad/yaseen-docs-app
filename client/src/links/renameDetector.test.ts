@@ -59,7 +59,7 @@ function rec(path: string, over: Partial<IndexRecord> = {}): IndexRecord {
   const basename = name.replace(/\.(md|markdown)$/i, '')
   const rel = path.startsWith('/v/') ? path.slice('/v/'.length) : path
   const folder = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : ''
-  return { path, name, basename, folder, ext: 'md', size: 7, ctime: 1, mtime: 100, properties: {}, tags: [], links: [], embeds: [], ...over }
+  return { path, name, basename, folder, ext: 'md', size: 7, ctime: 1, mtime: 100, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
 }
 
 describe('diffRecords (consecutive index snapshots → the cold-diff shape)', () => {

@@ -22,6 +22,25 @@ function frontmatterTags(props: Record<string, unknown>): string[] {
   return out
 }
 
+/** The frontmatter key holding a note's extra names — read by `extractAliases`, SKIPPED by `extractLinks`. */
+const ALIASES_KEY = 'aliases'
+
+/**
+ * Frontmatter `aliases` (GRO-2214): every list item, or a scalar string as ONE alias — Obsidian's
+ * rule, and the deliberate contrast with `tags` above (a name may contain commas and spaces, so
+ * nothing is split). Trimmed, empties and non-strings dropped, de-duplicated.
+ */
+export function extractAliases(props: Record<string, unknown>): string[] {
+  const v = props[ALIASES_KEY]
+  const out: string[] = []
+  for (const item of Array.isArray(v) ? v : [v]) {
+    if (typeof item !== 'string') continue
+    const alias = item.trim()
+    if (alias !== '') out.push(alias)
+  }
+  return unique(out)
+}
+
 const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/
 const CODE_SPAN_RE = /(`+)[\s\S]*?\1/g
 const URL_RE = /https?:\/\/\S+/g
@@ -74,10 +93,15 @@ function bodyWikilinks(body: string, embed: boolean): string[] {
   return out
 }
 
-/** Frontmatter string values (top-level and inside lists) that are exactly `[[…]]`, then body `[[links]]` outside code; embeds excluded. */
+/**
+ * Frontmatter string values (top-level and inside lists) that are exactly `[[…]]`, then body
+ * `[[links]]` outside code; embeds excluded. `aliases` is skipped whatever it holds (GRO-2214):
+ * its values are this note's own NAMES, never outgoing links.
+ */
 export function extractLinks(props: Record<string, unknown>, body: string): string[] {
   const out: string[] = []
-  for (const v of Object.values(props)) {
+  for (const [key, v] of Object.entries(props)) {
+    if (key === ALIASES_KEY) continue
     for (const item of Array.isArray(v) ? v : [v]) {
       const m = typeof item === 'string' ? EXACT_WIKILINK_RE.exec(item.trim()) : null
       if (m === null) continue
@@ -93,8 +117,8 @@ export function extractEmbeds(body: string): string[] {
   return unique(bodyWikilinks(body, true))
 }
 
-function extractBody(props: Record<string, unknown>, body: string): Pick<IndexRecord, 'tags' | 'links' | 'embeds'> {
-  return { tags: extractTags(props, body), links: extractLinks(props, body), embeds: extractEmbeds(body) }
+function extractBody(props: Record<string, unknown>, body: string): Pick<IndexRecord, 'aliases' | 'tags' | 'links' | 'embeds'> {
+  return { aliases: extractAliases(props), tags: extractTags(props, body), links: extractLinks(props, body), embeds: extractEmbeds(body) }
 }
 
 /**
@@ -115,6 +139,7 @@ export async function scanFile(root: string, absPath: string): Promise<IndexReco
     ctime: st.birthtimeMs > 0 ? st.birthtimeMs : st.ctimeMs,
     mtime: st.mtimeMs,
     properties: {},
+    aliases: [],
     tags: [],
     links: [],
     embeds: [],

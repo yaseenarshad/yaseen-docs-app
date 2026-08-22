@@ -13,6 +13,7 @@ const record: FileRecordLike = {
   ctime: new Date(2026, 0, 1).getTime(),
   mtime: new Date(2026, 7, 1, 12).getTime(),
   properties: { status: 'todo', tags: ['School/Math', 'book'] },
+  aliases: [],
   tags: ['School/Math', 'book'],
   links: ['Textbook', 'People/Alice'],
   embeds: ['cover.png'],

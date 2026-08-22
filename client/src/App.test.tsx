@@ -469,7 +469,7 @@ describe('App tabs (I2, GRO-2234)', () => {
 describe('App external-rename banner (Links E1c, GRO-2242)', () => {
   const record = (path: string, over: Partial<IndexRecord> = {}): IndexRecord => {
     const name = path.slice(path.lastIndexOf('/') + 1)
-    return { path, name, basename: name.replace(/\.md$/i, ''), folder: '', ext: 'md', size: 7, ctime: 1, mtime: 100, properties: {}, tags: [], links: [], embeds: [], ...over }
+    return { path, name, basename: name.replace(/\.md$/i, ''), folder: '', ext: 'md', size: 7, ctime: 1, mtime: 100, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
   }
   /** A references B; B2 is the externally renamed B — the post-rename index snapshot. */
   const records = [record('/v/A.md', { links: ['B'], size: 20, mtime: 5 }), record('/v/B2.md')]

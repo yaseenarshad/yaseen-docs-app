@@ -35,6 +35,7 @@ const record = (p: string, over: Partial<IndexRecord> = {}): IndexRecord => {
     ctime: 1000,
     mtime: 2000.5,
     properties: { status: 'idea', priority: 2, pillar: null },
+    aliases: ['A short name'],
     tags: ['a', 'a/b'],
     links: ['B'],
     embeds: [],
@@ -92,7 +93,7 @@ describe('index cache: write / load round trip', () => {
     const cacheDir = path.join(dir, 'index-cache')
     expect((await readdir(cacheDir)).some((f) => f.includes('.tmp-'))).toBe(false)
     const parsed: unknown = JSON.parse(await readFile(await cacheFileIn(cacheDir), 'utf8'))
-    expect(parsed).toMatchObject({ version: 1, root: '/vault' })
+    expect(parsed).toMatchObject({ version: CACHE_VERSION, root: '/vault' })
   })
 
   it('debounce coalesces bursts per root: one trailing write with the latest records', async () => {
@@ -208,26 +209,26 @@ describe('index cache: a bad file never throws, only degrades', () => {
   })
 
   it('non-object payloads → corrupt', async () => {
-    for (const body of ['[]', '"str"', 'null', '{"version":1,"root":"/vault","records":{}}']) {
+    for (const body of ['[]', '"str"', 'null', `{"version":${CACHE_VERSION},"root":"/vault","records":{}}`]) {
       await writeFile(file, body)
       expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'corrupt' })
     }
   })
 
   it('a malformed record element poisons the whole file → corrupt', async () => {
-    await writeFile(file, JSON.stringify({ version: 1, root: '/vault', records: [record('/vault/a.md'), { path: 5 }] }))
+    await writeFile(file, JSON.stringify({ version: CACHE_VERSION, root: '/vault', records: [record('/vault/a.md'), { path: 5 }] }))
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'corrupt' })
-    await writeFile(file, JSON.stringify({ version: 1, root: '/vault', records: [{ ...record('/vault/a.md'), tags: 'oops' }] }))
+    await writeFile(file, JSON.stringify({ version: CACHE_VERSION, root: '/vault', records: [{ ...record('/vault/a.md'), tags: 'oops' }] }))
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'corrupt' })
   })
 
   it('another version → version-mismatch', async () => {
-    await writeFile(file, JSON.stringify({ version: 2, root: '/vault', records: [] }))
+    await writeFile(file, JSON.stringify({ version: CACHE_VERSION + 1, root: '/vault', records: [] }))
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
   })
 
   it("another root's payload at this filename → miss (not this vault's cache)", async () => {
-    await writeFile(file, JSON.stringify({ version: 1, root: '/elsewhere', records: [] }))
+    await writeFile(file, JSON.stringify({ version: CACHE_VERSION, root: '/elsewhere', records: [] }))
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'miss' })
   })
 })
@@ -249,6 +250,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
     'list: [x, y]',
     "tags: [alpha, '#beta']",
     'link: "[[Ref|shown]]"',
+    "aliases: [Canon, ' Spaced Alias ', '[[Not A Link]]']",
     '---',
     '',
     'Inline #gamma and #tag/nested here, plus https://example.test/#not-a-tag',
@@ -261,13 +263,22 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
   ].join('\n')
 
   const FINGERPRINT = {
-    cacheVersion: 1,
+    cacheVersion: 2,
     maxFileBytes: 10 * 1024 * 1024,
     /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
-    recordKeys: ['basename', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'links', 'mtime', 'name', 'path', 'properties', 'size', 'tags'],
+    recordKeys: ['aliases', 'basename', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'links', 'mtime', 'name', 'path', 'properties', 'size', 'tags'],
     extraction: {
-      properties: { title: 'Canonical', count: 3, list: ['x', 'y'], tags: ['alpha', '#beta'], link: '[[Ref|shown]]' },
+      properties: {
+        title: 'Canonical',
+        count: 3,
+        list: ['x', 'y'],
+        tags: ['alpha', '#beta'],
+        link: '[[Ref|shown]]',
+        aliases: ['Canon', ' Spaced Alias ', '[[Not A Link]]'],
+      },
+      aliases: ['Canon', 'Spaced Alias', '[[Not A Link]]'],
       tags: ['alpha', 'beta', 'gamma', 'tag/nested'],
+      // `[[Not A Link]]` sits under `aliases`, so it is a NAME, never an outgoing link (GRO-2214).
       links: ['Ref', 'Note One', 'Note Two'],
       embeds: ['img.png'],
     },
@@ -287,7 +298,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
         cacheVersion: CACHE_VERSION,
         maxFileBytes: MAX_FILE_BYTES,
         recordKeys: [...new Set([...Object.keys(record), ...Object.keys(errored)])].sort(),
-        extraction: { properties: record.properties, tags: record.tags, links: record.links, embeds: record.embeds },
+        extraction: { properties: record.properties, aliases: record.aliases, tags: record.tags, links: record.links, embeds: record.embeds },
       }
       expect(actual, BUMP_MSG).toEqual(FINGERPRINT)
     } finally {
