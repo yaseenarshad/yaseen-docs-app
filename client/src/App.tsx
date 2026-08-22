@@ -11,6 +11,9 @@ import { useLinkEvents } from './hooks/useLinkEvents'
 import { useMenuEvents } from './hooks/useMenuEvents'
 import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
+import { renameNotice, updateLinksAfterRename } from './links/renameLinks'
+import { basename } from './lib/paths'
+import { carryEditorAcrossRename, flushRenamedPath } from './lib/renameContinuity'
 import { storage } from './lib/storage'
 import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
@@ -33,7 +36,7 @@ export function App() {
   // Tabs (I2, GRO-2234): the renderer-owned tab model, seeded from the boot identity snapshot
   // (a pasted `#/abs/path.md` URL wins as the active tab — bootTabs). The ACTIVE tab is this
   // window's `file`: title, URL hash and the sidebar highlight all follow it.
-  const { tabs, active: file, mounted, openCurrent, openBackground, activate, close: closeTab, move: moveTab, closeActive, next: nextTab, prev: prevTab, reset: resetTabs } = useTabs(root)
+  const { tabs, active: file, mounted, openCurrent, openBackground, activate, close: closeTab, move: moveTab, closeActive, next: nextTab, prev: prevTab, reset: resetTabs, renamePath: renameTabPath } = useTabs(root)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const [settings, setSettings] = useState(storage.getSettings)
   const watch = useWatch(root)
@@ -154,6 +157,50 @@ export function App() {
   }, [notice])
   useLinkEvents({ onOpenFile: openCurrent, onNotice: setNotice })
 
+  // In-app rename (Links E1, GRO-2194). `file:renamed` reaches EVERY window (originator
+  // included): BEFORE the tab remap unmounts the old-path editor, a dirty buffer is carried
+  // into the new path and the old controller retired (no flush to the old path — see
+  // lib/renameContinuity.ts); then the tab follows in place, and title/URL-hash track the
+  // active tab through the existing effects above.
+  useEffect(
+    () =>
+      window.yaseenDocs.file.onRenamed(({ oldPath, newPath }) => {
+        carryEditorAcrossRename(oldPath, newPath)
+        renameTabPath(oldPath, newPath)
+      }),
+    [renameTabPath],
+  )
+
+  /**
+   * The sidebar's Rename commit (Links E1): flush our own buffer for the file, snapshot the
+   * index BEFORE the rename (afterwards the old name no longer resolves), rename, then
+   * rewrite every referencing note through the shared-resolver engine. All failures land in
+   * the passive notice — never a dialog, never a rejection back into the inline input.
+   */
+  const renameFile = useCallback(
+    async (oldPath: string, newPath: string): Promise<void> => {
+      const r = root
+      if (r === null) return
+      await flushRenamedPath(oldPath) // (a) our own unsaved buffer travels WITH the file
+      let records: Awaited<ReturnType<typeof api.index>>['records'] = []
+      try {
+        records = (await api.index(r)).records
+      } catch {
+        records = [] // no index snapshot → the rename still runs, links just stay as they are
+      }
+      try {
+        await api.rename({ oldPath, newPath })
+      } catch (err) {
+        const exists = err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS'
+        setNotice(exists ? `Can't rename: "${basename(newPath)}" already exists` : `Can't rename: ${err instanceof Error ? err.message : String(err)}`)
+        return
+      }
+      const summary = await updateLinksAfterRename({ root: r, oldPath, newPath, records })
+      if (summary.updated > 0 || summary.skipped > 0) setNotice(renameNotice(summary))
+    },
+    [root],
+  )
+
   const onRootMissing = useCallback(() => {
     storage.setRoot(null) // one identity write: { root: null, file: null, tabs: [] }
     setRoot(null)
@@ -184,6 +231,7 @@ export function App() {
           onChangeSettings={changeSettings}
           onRootMissing={onRootMissing}
           onFileMissing={onFileMissing}
+          onRenameFile={renameFile}
         />
       )}
       {root !== null && sidebarCollapsed && (

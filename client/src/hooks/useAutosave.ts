@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { api, BridgeRequestError } from '../api'
 import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
+import { registerRenameContinuity } from '../lib/renameContinuity'
 
 export interface AutosaveHandle {
   status: SaveStatus
@@ -37,6 +38,12 @@ export function useAutosave(path: string): AutosaveHandle {
   const frontmatterRef = useRef('')
   /** Body bytes as last read from / written to disk — the comparison key for frontmatter-only changes (GRO-2186). */
   const diskBodyRef = useRef('')
+  /**
+   * `path` was renamed away under this editor (Links E1, GRO-2194): a retired controller
+   * never writes again — the unmount/close flushes become no-ops, so the buffer captured by
+   * `carryEditorAcrossRename` cannot ALSO resurrect the old file on unmount.
+   */
+  const retiredRef = useRef(false)
 
   const attach = useCallback(
     (getContent: () => string, mtime: number, frontmatter: string, diskBody: string) => {
@@ -69,7 +76,7 @@ export function useAutosave(path: string): AutosaveHandle {
 
   const flushNow = useCallback(() => {
     const s = ref.current
-    if (s === null) return
+    if (s === null || retiredRef.current) return
     // The listener plugin debounces markdownUpdated by 200ms; pull the live content so nothing is lost.
     s.autosave.update(s.getContent())
     void s.autosave.flush()
@@ -79,7 +86,7 @@ export function useAutosave(path: string): AutosaveHandle {
     // The close/quit handshake (GRO-2160): main holds the window open until this settles (5s cap in main).
     const offFlush = window.yaseenDocs.window.onFlush(async () => {
       const s = ref.current
-      if (s === null) return
+      if (s === null || retiredRef.current) return
       s.autosave.update(s.getContent())
       await s.autosave.flush()
     })
@@ -90,6 +97,32 @@ export function useAutosave(path: string): AutosaveHandle {
       ref.current = null
     }
   }, [flushNow])
+
+  // The rename-continuity handle (Links E1, GRO-2194): App's flows flush/capture/retire this
+  // editor by PATH — see lib/renameContinuity.ts for the whole dirty-buffer carry design.
+  useEffect(
+    () =>
+      registerRenameContinuity(path, {
+        flush: async () => {
+          const s = ref.current
+          if (s === null || retiredRef.current) return
+          s.autosave.update(s.getContent())
+          await s.autosave.flush()
+        },
+        capture: () => {
+          const s = ref.current
+          if (s === null || retiredRef.current) return null
+          const body = s.getContent()
+          s.autosave.update(body) // the listener debounce may still hold the latest keystrokes
+          return s.autosave.dirty ? { frontmatter: frontmatterRef.current, body } : null
+        },
+        retire: () => {
+          retiredRef.current = true
+          ref.current?.autosave.dispose()
+        },
+      }),
+    [path],
+  )
 
   const keepMine = useCallback(() => {
     const s = ref.current

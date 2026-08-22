@@ -36,6 +36,7 @@ export type TabsAction =
   | { type: 'move'; from: number; to: number } // drag-to-reorder (I3): the tab at `from` lands at final index `to`
   | { type: 'cycle'; dir: 1 | -1 } // ⌃Tab / ⌃⇧Tab: wraparound, plain left→right order
   | { type: 'reset'; tabs: string[]; active: string | null } // boot + root switch: replace wholesale, normalizing
+  | { type: 'rename'; oldPath: string; newPath: string } // in-app rename (Links E1, GRO-2194): the open tab follows the file in place
 
 const EMPTY: TabsState = { tabs: [], active: null, mounted: [] }
 
@@ -105,6 +106,18 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       // An active file missing from the list is PREPENDED — main's own normalization order.
       return { tabs: tabs.includes(a.active) ? tabs : [a.active, ...tabs], active: a.active, mounted: [a.active] }
     }
+    case 'rename': {
+      // The tab follows its renamed file IN PLACE (Links E1): same slot, activation and the
+      // mounted set remapped with it. Should the new path somehow already be open (a stale
+      // tab), the old one is dropped instead — the de-dup invariant wins.
+      if (a.oldPath === a.newPath || !s.tabs.includes(a.oldPath)) return s
+      const hasNew = s.tabs.includes(a.newPath)
+      const remap = (t: string) => (t === a.oldPath ? a.newPath : t)
+      const tabs = hasNew ? s.tabs.filter((t) => t !== a.oldPath) : s.tabs.map(remap)
+      const mounted = [...new Set(hasNew ? s.mounted.filter((t) => t !== a.oldPath) : s.mounted.map(remap))]
+      const active = s.active === a.oldPath ? a.newPath : s.active
+      return { tabs, active, mounted: active !== null && !mounted.includes(active) && tabs.includes(active) ? [...mounted, active] : mounted }
+    }
   }
 }
 
@@ -138,6 +151,8 @@ export interface UseTabs extends TabsState {
   prev: () => void
   /** The root switched to `nextRoot` (rule 13): replace the list with the restored file, or nothing. */
   reset: (nextRoot: string | null, file: string | null) => void
+  /** An in-app rename landed (`file:renamed`, Links E1): remap the open tab in place; no-op when absent. */
+  renamePath: (oldPath: string, newPath: string) => void
 }
 
 export function useTabs(root: string | null): UseTabs {
@@ -180,6 +195,7 @@ export function useTabs(root: string | null): UseTabs {
       dispatch({ type: 'reset', tabs: [], active: file }, { root: nextRoot, mirror: file !== null }),
     [dispatch],
   )
+  const renamePath = useCallback((oldPath: string, newPath: string) => dispatch({ type: 'rename', oldPath, newPath }), [dispatch])
 
-  return { ...state, openCurrent, openNew, openBackground, activate, close, move, closeActive, next, prev, reset }
+  return { ...state, openCurrent, openNew, openBackground, activate, close, move, closeActive, next, prev, reset, renamePath }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
-import { entryPath, targetDirFor, validateEntryName } from './createEntry'
+import { entryPath, renamedPath, targetDirFor, validateEntryName } from './createEntry'
 
 const dir = (path: string): TreeNode => ({ type: 'dir', name: path.split('/').pop()!, path, children: [] })
 const file = (path: string): TreeNode => ({ type: 'file', name: path.split('/').pop()!, path, size: 0, mtime: 1, kind: 'markdown' })
@@ -51,5 +51,26 @@ describe('targetDirFor', () => {
     expect(targetDirFor(dir('/r/sub'), '/r')).toBe('/r/sub')
     expect(targetDirFor(file('/r/sub/a.md'), '/r')).toBe('/r/sub')
     expect(targetDirFor(null, '/r')).toBe('/r')
+  })
+})
+
+describe('renamedPath (Links E1, GRO-2194)', () => {
+  it('same parent dir; the OLD file extension re-appends when none of the same kind is typed', () => {
+    expect(renamedPath('/r/sub/B.md', 'C')).toBe('/r/sub/C.md')
+    expect(renamedPath('/r/sub/B.markdown', 'C')).toBe('/r/sub/C.markdown')
+    expect(renamedPath('/r/T.base', 'U')).toBe('/r/U.base')
+    expect(renamedPath('/r/B.md', '  C  ')).toBe('/r/C.md')
+  })
+
+  it('a typed extension of the same kind is kept as typed', () => {
+    expect(renamedPath('/r/B.md', 'C.md')).toBe('/r/C.md')
+    expect(renamedPath('/r/B.markdown', 'C.md')).toBe('/r/C.md')
+    expect(renamedPath('/r/T.base', 'U.base')).toBe('/r/U.base')
+    expect(renamedPath('/r/B.md', 'C.MD')).toBe('/r/C.MD')
+  })
+
+  it('an unchanged name round-trips to the same path (the caller treats it as a no-op)', () => {
+    expect(renamedPath('/r/B.md', 'B')).toBe('/r/B.md')
+    expect(renamedPath('/r/T.base', 'T')).toBe('/r/T.base')
   })
 })

@@ -22,6 +22,7 @@ import { useAutosave } from '../hooks/useAutosave'
 import { useFile } from '../hooks/useFile'
 import type { WatchSource } from '../hooks/useWatch'
 import { basename } from '../lib/paths'
+import { takeRenameBuffer } from '../lib/renameContinuity'
 import { storage } from '../lib/storage'
 
 interface EditorProps {
@@ -150,6 +151,14 @@ function CrepeHost({
     const ready = crepe.create().then(() => {
       if (cancelled) return
       controller = attach(() => getMarkdownForSave(crepe), file.mtime, frontmatter, body)
+      // An in-app rename carried another window's (or this window's) DIRTY buffer into this
+      // path (Links E1, GRO-2194): apply it OVER the fresh disk baseline as an unsaved
+      // change, so autosave writes it to the NEW path — the buffer survives the rename.
+      const buf = takeRenameBuffer(file.path)
+      if (buf !== null && buf.body !== body) {
+        setMarkdown(crepe, buf.body)
+        controller.update(getMarkdownForSave(crepe))
+      }
       focusEditor(crepe)
     })
 

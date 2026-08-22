@@ -168,6 +168,31 @@ export interface CreateFileResponse {
   size: number
 }
 
+// ---------- file.rename(req) (Links E1, GRO-2194) ----------
+
+/**
+ * In-app FILE rename, same directory, extension kind unchanged (md↔md, base↔base) — E1b
+ * (folder rename + cross-directory move) lifts those restrictions later. Never overwrites:
+ * an existing target rejects `ALREADY_EXISTS`. The same handler repairs every stored path
+ * reference (window files/tabs, folder lastFile, fold keys, base-group keys) and pushes
+ * `file:renamed` to every window.
+ */
+export interface RenameFileRequest {
+  oldPath: string
+  newPath: string
+}
+
+export interface RenameFileResponse {
+  oldPath: string
+  newPath: string
+}
+
+/** Pushed to EVERY window after a successful in-app rename; renderers remap their own tabs. */
+export interface FileRenamedEvent {
+  oldPath: string
+  newPath: string
+}
+
 // ---------- pickFolder() ----------
 
 /**
@@ -523,6 +548,18 @@ export interface MenuApi {
 }
 
 /**
+ * File lifecycle beyond create/write (Links E1, GRO-2194): in-app rename with automatic
+ * link updates. `rename` is the invoke; `onRenamed` is the push every window receives after
+ * ANY successful rename (its own included), used to remap open tabs to the new path.
+ */
+export interface FileApi {
+  /** Same-directory FILE rename, extension kind unchanged; never overwrites (`ALREADY_EXISTS`). */
+  rename(req: RenameFileRequest): Promise<RenameFileResponse>
+  /** Fired in every window after a successful rename; returns an unsubscribe. */
+  onRenamed(listener: (ev: FileRenamedEvent) => void): () => void
+}
+
+/**
  * Deep links (E1, GRO-2171): main parses a `yaseendocs://` URL (`shared/links.ts`) and routes
  * it to the best window; these are the pushes the routed-to renderer receives.
  */
@@ -561,6 +598,8 @@ export interface YaseenDocsApi {
   window: WindowApi
   menu: MenuApi
   link: LinkApi
+  /** In-app file rename + the renamed push (Links E1, GRO-2194). */
+  file: FileApi
   /** Vault-local config in `<root>/.yaseendocs/` (Desktop J, GRO-2188). */
   vaultConfig: VaultConfigApi
   /** Type & property registry over `.yaseendocs/types.json` (Bible A, GRO-2201). */

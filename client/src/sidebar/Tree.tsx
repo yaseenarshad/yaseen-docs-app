@@ -2,6 +2,7 @@ import type { TreeNode } from '@shared/types'
 import { stripExt } from '../lib/paths'
 import { CreateInline } from './CreateInline'
 import type { EntryKind } from './createEntry'
+import { RenameInline } from './RenameInline'
 
 /** Inline "New note"/"New base"/"New folder" input pending inside the tree (GRO-2022, GRO-2126). */
 export interface PendingCreate {
@@ -10,6 +11,14 @@ export interface PendingCreate {
   parentDir: string
   /** "New KPI" for a typed create (Bible B, GRO-2202); absent → the kind placeholder. */
   placeholder?: string
+  onSubmit: (name: string) => Promise<void>
+  onCancel: () => void
+}
+
+/** Inline rename replacing one FILE row's label (Links E1, GRO-2194). */
+export interface PendingRename {
+  /** Absolute path of the file row being renamed. */
+  path: string
   onSubmit: (name: string) => Promise<void>
   onCancel: () => void
 }
@@ -30,6 +39,8 @@ interface TreeProps {
   /** Right-click on a row; blank-space right-clicks are handled by the sidebar body. */
   onNodeContextMenu: (node: TreeNode, e: React.MouseEvent) => void
   pending: PendingCreate | null
+  /** The one file row currently renamed inline (Links E1); null when none. */
+  renaming: PendingRename | null
   depth?: number
 }
 
@@ -54,9 +65,10 @@ export function Tree({
   onOpenFileBackground,
   onNodeContextMenu,
   pending,
+  renaming,
   depth = 0,
 }: TreeProps) {
-  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onNodeContextMenu, pending }
+  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onNodeContextMenu, pending, renaming }
   return (
     <ul className="tree" role={depth === 0 ? 'tree' : 'group'}>
       {pending !== null && pending.parentDir === dirPath && (
@@ -84,6 +96,12 @@ export function Tree({
               <span className="tree__label">{node.name}</span>
             </button>
             {expanded.has(node.path) && <Tree nodes={node.children} dirPath={node.path} depth={depth + 1} {...recurse} />}
+          </li>
+        ) : renaming !== null && renaming.path === node.path ? (
+          // Inline rename (Links E1, GRO-2194): the input replaces the row, prefilled with
+          // the name minus its extension (the extension re-appends on commit).
+          <li key={node.path} role="treeitem">
+            <RenameInline initial={stripExt(node.name)} indent={8 + depth * 14 + 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
           </li>
         ) : (
           <li key={node.path} role="treeitem" aria-selected={node.path === activeFile}>

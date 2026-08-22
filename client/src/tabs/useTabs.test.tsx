@@ -180,6 +180,35 @@ describe('tabsReducer', () => {
       expect(next.mounted).toEqual(['/v/b.md'])
     })
   })
+
+  describe('rename (Links E1, GRO-2194: an open tab follows its renamed file)', () => {
+    it('remaps the tab in place — slot, activation and the mounted set all follow', () => {
+      const s = state(['/v/old.md', '/v/x.md'], '/v/old.md', ['/v/x.md', '/v/old.md'])
+      expect(tabsReducer(s, { type: 'rename', oldPath: '/v/old.md', newPath: '/v/new.md' })).toEqual({
+        tabs: ['/v/new.md', '/v/x.md'],
+        active: '/v/new.md',
+        mounted: ['/v/x.md', '/v/new.md'],
+      })
+    })
+
+    it('remaps a background tab without touching activation', () => {
+      const s = state(['/v/x.md', '/v/old.md'], '/v/x.md')
+      expect(tabsReducer(s, { type: 'rename', oldPath: '/v/old.md', newPath: '/v/new.md' })).toEqual(state(['/v/x.md', '/v/new.md'], '/v/x.md'))
+    })
+
+    it('is a no-op (same state object — no identity mirror) when the old path is not open', () => {
+      const s = state(['/v/x.md'], '/v/x.md')
+      expect(tabsReducer(s, { type: 'rename', oldPath: '/v/old.md', newPath: '/v/new.md' })).toBe(s)
+    })
+
+    it('drops the old tab when the new path is somehow already open (dedupe), keeping activation sane', () => {
+      const s = state(['/v/old.md', '/v/new.md'], '/v/old.md', ['/v/old.md'])
+      const next = tabsReducer(s, { type: 'rename', oldPath: '/v/old.md', newPath: '/v/new.md' })
+      expect(next.tabs).toEqual(['/v/new.md'])
+      expect(next.active).toBe('/v/new.md')
+      expect(next.mounted).toEqual(['/v/new.md'])
+    })
+  })
 })
 
 /** A fake `window.yaseenDocs` with just the surface storage touches (the storage.test.ts pattern). */

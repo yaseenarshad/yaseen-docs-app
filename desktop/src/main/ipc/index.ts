@@ -10,7 +10,7 @@ import { registerWindowIpc } from './window'
 
 /** Every `ipcMain` handler the preload's bridge invokes; call once before the first window loads. */
 export function registerIpc(store: Store, windows: WindowManagerIpc): void {
-  registerFsIpc()
+  registerFsIpc(store)
   registerDialogIpc()
   registerWatchIpc()
   registerStateIpc(store)

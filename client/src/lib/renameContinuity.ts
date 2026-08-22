@@ -1,0 +1,79 @@
+/**
+ * Editor continuity across an in-app rename (Links E1, GRO-2194). Editors are keyed by
+ * path, so remapping a tab old→new REMOUNTS its editor — and the unmount flush would write
+ * the old buffer back to the OLD path, resurrecting the file the rename just removed.
+ *
+ * The design, pinned:
+ *  - every `useAutosave` registers a per-path handle here (one editor per path per window);
+ *  - the ORIGINATING window awaits `flushRenamedPath(oldPath)` BEFORE invoking `fs:rename`,
+ *    so its own buffer is on disk and travels with the file;
+ *  - EVERY window's `file:renamed` handler calls `carryEditorAcrossRename(old, new)` BEFORE
+ *    remapping its tabs: a DIRTY buffer is captured and stashed under the NEW path, and the
+ *    old handle is RETIRED — its unmount flush becomes a no-op, so nothing can write to the
+ *    old path (no resurrection);
+ *  - the editor mounting at the new path takes the stashed buffer (`takeRenameBuffer`) and
+ *    applies it as an UNSAVED change over the freshly read file — the buffer survives into
+ *    the new path and autosave writes it there (no silent loss).
+ *
+ * Residual race, accepted: a save already IN FLIGHT over IPC when the rename lands cannot
+ * be recalled; `writeFile` recreates the old path in that sub-millisecond window. The
+ * systematic paths (debounced saves, unmount flush, close flush) are all covered above.
+ */
+
+/** What a mounted editor's autosave exposes to the rename flow (registered by `useAutosave`). */
+export interface RenameContinuityHandle {
+  /** Push the live content through autosave and resolve once it is on disk (or blocked). */
+  flush(): Promise<void>
+  /** The live buffer when it differs from the last saved/loaded content; null when clean. */
+  capture(): RenameBuffer | null
+  /** Stop this editor writing ever again (pending drops, unmount flush becomes a no-op). */
+  retire(): void
+}
+
+export interface RenameBuffer {
+  /** Raw frontmatter block as `useAutosave` holds it ('' for a `.base`). */
+  frontmatter: string
+  /** Editor body (for a `.base`: the whole raw content). */
+  body: string
+}
+
+const handles = new Map<string, RenameContinuityHandle>()
+const buffers = new Map<string, RenameBuffer>()
+
+/** One handle per open path per window (tabs de-duplicate); returns the unregister. */
+export function registerRenameContinuity(path: string, handle: RenameContinuityHandle): () => void {
+  handles.set(path, handle)
+  return () => {
+    if (handles.get(path) === handle) handles.delete(path)
+  }
+}
+
+/** Flush the editor open at `path`, if any — the pre-rename step (a) and the pre-rewrite step. */
+export function flushRenamedPath(path: string): Promise<void> {
+  return handles.get(path)?.flush() ?? Promise.resolve()
+}
+
+/**
+ * The `file:renamed` step, run BEFORE the tab remap unmounts the old editor: capture a dirty
+ * buffer into the new path's stash and retire the old handle. No editor at `oldPath` → no-op.
+ */
+export function carryEditorAcrossRename(oldPath: string, newPath: string): void {
+  const handle = handles.get(oldPath)
+  if (handle === undefined) return
+  const buffer = handle.capture()
+  handle.retire()
+  if (buffer !== null) buffers.set(newPath, buffer)
+}
+
+/** Consume the stashed buffer for a freshly mounting editor at `path`; null when none. */
+export function takeRenameBuffer(path: string): RenameBuffer | null {
+  const buffer = buffers.get(path) ?? null
+  buffers.delete(path)
+  return buffer
+}
+
+/** Test hook. */
+export function _resetRenameContinuity(): void {
+  handles.clear()
+  buffers.clear()
+}

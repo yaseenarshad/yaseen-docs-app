@@ -47,6 +47,7 @@ function installBridge(state: AppState, identity: WindowIdentity) {
   const menuPrevTab = new Set<() => void>()
   const linkOpenFile = new Set<(path: string) => void>()
   const linkNotice = new Set<(message: string) => void>()
+  const fileRenamed = new Set<(ev: { oldPath: string; newPath: string }) => void>()
   const menuSub = (set: Set<() => void>) =>
     vi.fn((l: () => void) => {
       set.add(l)
@@ -97,6 +98,14 @@ function installBridge(state: AppState, identity: WindowIdentity) {
         return () => linkNotice.delete(l)
       }),
     },
+    // In-app rename (Links E1, GRO-2194): App subscribes to the renamed push on mount.
+    file: {
+      rename: vi.fn(async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => ({ oldPath, newPath })),
+      onRenamed: vi.fn((l: (ev: { oldPath: string; newPath: string }) => void) => {
+        fileRenamed.add(l)
+        return () => fileRenamed.delete(l)
+      }),
+    },
     // Empty registry (GRO-2202): the sidebar reads it for "New ▸"; empty = no menu change.
     registry: {
       get: vi.fn(async (r: string) => ({ root: r, version: 1, types: {}, properties: {} })),
@@ -112,6 +121,7 @@ function installBridge(state: AppState, identity: WindowIdentity) {
     emitPrevTab: () => menuPrevTab.forEach((l) => l()),
     emitLinkOpenFile: (path: string) => linkOpenFile.forEach((l) => l(path)),
     emitLinkNotice: (message: string) => linkNotice.forEach((l) => l(message)),
+    emitFileRenamed: (oldPath: string, newPath: string) => fileRenamed.forEach((l) => l({ oldPath, newPath })),
   }
 }
 
@@ -257,6 +267,28 @@ describe('App deep links (E1, GRO-2171)', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('App rename push (Links E1, GRO-2194)', () => {
+  it('file:renamed remaps the active tab in place: strip label, editor, hash, title and ONE identity mirror', async () => {
+    const { bridge, el, emitFileRenamed } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/B.md', tabs: ['/v/B.md', '/v/x.md'] })
+    vi.mocked(bridge.window.setIdentity).mockClear()
+    await act(async () => emitFileRenamed('/v/B.md', '/v/C.md'))
+    expect([...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)).toEqual(['C', 'x'])
+    expect(el.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('C')
+    expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('/v/C.md')
+    expect(location.hash).toBe('#/v/C.md')
+    expect(document.title).toBe('C — v')
+    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ tabs: ['/v/C.md', '/v/x.md'], file: '/v/C.md' })
+  })
+
+  it('a rename of a file this window does not show changes nothing (no identity write)', async () => {
+    const { bridge, emitFileRenamed } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/x.md', tabs: ['/v/x.md'] })
+    vi.mocked(bridge.window.setIdentity).mockClear()
+    await act(async () => emitFileRenamed('/other/B.md', '/other/C.md'))
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
   })
 })
 

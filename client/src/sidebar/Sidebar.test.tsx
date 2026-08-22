@@ -60,6 +60,7 @@ async function mount(over: Partial<SidebarProps> = {}) {
     onChangeSettings: vi.fn(),
     onRootMissing: vi.fn(),
     onFileMissing: vi.fn(),
+    onRenameFile: vi.fn(async () => undefined),
     ...over,
   }
   await act(async () => root?.render(<StrictMode><Sidebar {...props} /></StrictMode>))

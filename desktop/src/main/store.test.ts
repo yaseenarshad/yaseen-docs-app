@@ -334,6 +334,55 @@ describe('createStore: mutations', () => {
     store.removeWindow('nope')
     expect(store.get().windows).toEqual([win('w2', { root: '/v' })])
   })
+
+  describe('renamePath (Links E1, GRO-2194: the store repair after an in-app rename)', () => {
+    const OLD = '/v/B.md'
+    const NEW = '/v/C.md'
+
+    it('remaps window file and tabs (through normalizeTabs) in every affected window', () => {
+      const store = createStore(file)
+      store.upsertWindow(win('w1', { root: '/v', file: OLD, tabs: [OLD, '/v/x.md'] }))
+      store.upsertWindow(win('w2', { root: '/v', file: '/v/x.md', tabs: ['/v/x.md', OLD] }))
+      store.upsertWindow(win('w3', { root: '/other', file: '/other/a.md', tabs: ['/other/a.md'] }))
+      store.renamePath(OLD, NEW)
+      expect(store.get().windows).toEqual([
+        win('w1', { root: '/v', file: NEW, tabs: [NEW, '/v/x.md'] }),
+        win('w2', { root: '/v', file: '/v/x.md', tabs: ['/v/x.md', NEW] }),
+        win('w3', { root: '/other', file: '/other/a.md', tabs: ['/other/a.md'] }),
+      ])
+    })
+
+    it('de-duplicates when the new path was somehow already a tab (normalizeTabs invariant)', () => {
+      const store = createStore(file)
+      store.upsertWindow(win('w1', { root: '/v', file: OLD, tabs: [OLD, NEW] }))
+      store.renamePath(OLD, NEW)
+      expect(store.get().windows[0].tabs).toEqual([NEW])
+      expect(store.get().windows[0].file).toBe(NEW)
+    })
+
+    it('remaps folders: lastFile, fold keys and baseGroups keys (base rename)', () => {
+      const store = createStore(file)
+      store.setFolder('/v', { lastFile: OLD })
+      store.setFolds('/v', OLD, ['k1'])
+      store.setFolds('/v', '/v/x.md', ['k2'])
+      store.setBaseGroups('/v', '/v/T.base::Table', ['g1'])
+      store.renamePath(OLD, NEW)
+      expect(store.get().folders['/v'].lastFile).toBe(NEW)
+      expect(store.get().folders['/v'].folds).toEqual({ [NEW]: ['k1'], '/v/x.md': ['k2'] })
+      store.renamePath('/v/T.base', '/v/U.base')
+      expect(store.get().folders['/v'].baseGroups).toEqual({ '/v/U.base::Table': ['g1'] })
+    })
+
+    it('a rename nothing references changes (and notifies) nothing', () => {
+      const store = createStore(file)
+      store.upsertWindow(win('w1', { root: '/v', file: '/v/x.md', tabs: ['/v/x.md'] }))
+      const seen: AppState[] = []
+      store.onChange((s) => seen.push(s))
+      store.renamePath('/v/unreferenced.md', '/v/other.md')
+      expect(seen).toHaveLength(0)
+      expect(store.get().windows).toEqual([win('w1', { root: '/v', file: '/v/x.md', tabs: ['/v/x.md'] })])
+    })
+  })
 })
 
 describe('createStore: persistence', () => {

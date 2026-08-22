@@ -32,3 +32,20 @@ export function targetDirFor(node: TreeNode | null, root: string): string {
   if (node.type === 'dir') return node.path
   return node.path.slice(0, node.path.lastIndexOf('/'))
 }
+
+/**
+ * Absolute path for the sidebar's inline rename (Links E1, GRO-2194): same parent directory,
+ * `entryPath`'s extension re-append idiom against the OLD file's kind — a typed extension of
+ * the same kind is kept, anything else gets the old file's own extension appended. Same-dir
+ * only, like the fs guard (E1b lifts it).
+ */
+export function renamedPath(oldPath: string, newName: string): string {
+  const dir = oldPath.slice(0, oldPath.lastIndexOf('/'))
+  let final = newName.trim()
+  if (/\.base$/i.test(oldPath)) {
+    if (!/\.base$/i.test(final)) final += '.base'
+  } else if (!/\.(md|markdown)$/i.test(final)) {
+    final += oldPath.slice(oldPath.lastIndexOf('.'))
+  }
+  return `${dir}/${final}`
+}

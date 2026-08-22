@@ -9,11 +9,11 @@ import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { treeHasFile, treeReducer } from '../lib/treeState'
 import { ContextMenu } from './ContextMenu'
-import { entryPath, targetDirFor, type EntryKind } from './createEntry'
+import { entryPath, renamedPath, targetDirFor, type EntryKind } from './createEntry'
 import { HotkeysButton } from './HotkeysPanel'
 import { NewTypeDialog } from './NewTypeDialog'
 import { SettingsCog } from './SettingsPanel'
-import { Tree, type PendingCreate } from './Tree'
+import { Tree, type PendingCreate, type PendingRename } from './Tree'
 
 interface SidebarProps {
   root: string
@@ -34,6 +34,12 @@ interface SidebarProps {
   onRootMissing: () => void
   /** The restored last file is not in the tree any more (checked once per root). */
   onFileMissing: () => void
+  /**
+   * Context-menu "Rename" committed (Links E1, GRO-2194): App orchestrates flush → index
+   * snapshot → `fs:rename` → link rewrites, and routes ANY failure to the passive notice —
+   * this promise never rejects, so the inline input just closes.
+   */
+  onRenameFile: (oldPath: string, newPath: string) => Promise<void>
 }
 
 /** Panel-left pictogram shared by the collapse and reopen buttons (GRO-2023). */
@@ -60,12 +66,14 @@ export function Sidebar({
   onChangeSettings,
   onRootMissing,
   onFileMissing,
+  onRenameFile,
 }: SidebarProps) {
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [expanded, dispatch] = useReducer(treeReducer, root, storage.getExpanded)
   const [menu, setMenu] = useState<{ x: number; y: number; targetDir: string; copyPath: string | null; filePath: string | null } | null>(null)
   const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string; type?: string; label?: string } | null>(null)
+  const [renamingPath, setRenamingPath] = useState<string | null>(null)
   const [newTypeOpen, setNewTypeOpen] = useState(false)
 
   // The vault's type registry (Bible B, GRO-2202): feeds the "New ▸" submenu — always present;
@@ -224,6 +232,24 @@ export function Sidebar({
 
   const cancelCreate = useCallback(() => setCreating(null), [])
 
+  // ---- Rename (Links E1, GRO-2194): context menu "Rename" → inline input over the row ----
+
+  const submitRename = useCallback(
+    async (name: string) => {
+      if (renamingPath === null) return
+      const target = renamedPath(renamingPath, name)
+      setRenamingPath(null)
+      if (target === renamingPath) return // same name = no-op
+      // App owns the whole flow (and routes failures to the passive notice — never a dialog);
+      // the tree row follows via the watcher's unlink+add refresh.
+      await onRenameFile(renamingPath, target)
+    },
+    [renamingPath, onRenameFile],
+  )
+
+  const renaming: PendingRename | null =
+    renamingPath === null ? null : { path: renamingPath, onSubmit: submitRename, onCancel: () => setRenamingPath(null) }
+
   const pending: PendingCreate | null =
     creating === null
       ? null
@@ -263,6 +289,7 @@ export function Sidebar({
             onOpenFileBackground={onOpenFileBackground}
             onNodeContextMenu={openMenu}
             pending={pending}
+            renaming={renaming}
           />
         )}
       </div>
@@ -278,6 +305,8 @@ export function Sidebar({
           copyLinkPath={menu.filePath}
           newWindowPath={menu.filePath}
           onOpenNewWindow={openFileNewWindow}
+          renamePath={menu.filePath}
+          onRename={setRenamingPath}
           newTypes={newTypes}
           onNewTyped={startCreateTyped}
           onNewType={() => {

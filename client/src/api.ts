@@ -14,6 +14,8 @@ import type {
   RegistryResponse,
   RegistryScope,
   RegistryTypeDef,
+  RenameFileRequest,
+  RenameFileResponse,
   TreeResponse,
 } from '@shared/types'
 
@@ -53,6 +55,8 @@ export const api = {
   writeFile: (body: FileWriteRequest) => call<FileWriteResponse>(() => window.yaseenDocs.writeFile(body)),
   createDir: (path: string) => call<CreateDirResponse>(() => window.yaseenDocs.createDir(path)),
   createFile: (req: string | CreateFileRequest) => call<CreateFileResponse>(() => window.yaseenDocs.createFile(req)),
+  /** In-app FILE rename, same dir, kind unchanged; never overwrites (Links E1, GRO-2194). */
+  rename: (req: RenameFileRequest) => call<RenameFileResponse>(() => window.yaseenDocs.file.rename(req)),
   /** Bases property index for `root` (GRO-2129). */
   index: (root: string) => call<IndexResponse>(() => window.yaseenDocs.index(root)),
   /** Local image under `root` for a cards cover (GRO-2139); `ref` = wikilink target or path. */

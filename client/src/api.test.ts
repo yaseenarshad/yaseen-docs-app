@@ -18,6 +18,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     window: vi.fn(),
     menu: vi.fn(),
     link: vi.fn(),
+    file: vi.fn(),
     vaultConfig: vi.fn(),
     registry: vi.fn(),
   }
@@ -53,6 +54,19 @@ describe('api', () => {
     bridge.readAsset.mockResolvedValue({ path: '/v/pic.png', mime: 'image/png', data: 'aGk=', size: 2 })
     await expect(api.readAsset('/v', 'pic.png')).resolves.toEqual({ path: '/v/pic.png', mime: 'image/png', data: 'aGk=', size: 2 })
     expect(bridge.readAsset).toHaveBeenCalledWith('/v', 'pic.png')
+  })
+
+  it('rename delegates to file.rename and wraps ALREADY_EXISTS like every other code (Links E1, GRO-2194)', async () => {
+    const file = { rename: vi.fn(), onRenamed: vi.fn() }
+    Object.defineProperty(window.yaseenDocs, 'file', { value: file, configurable: true })
+    file.rename.mockResolvedValue({ oldPath: '/v/a.md', newPath: '/v/b.md' })
+    await expect(api.rename({ oldPath: '/v/a.md', newPath: '/v/b.md' })).resolves.toEqual({ oldPath: '/v/a.md', newPath: '/v/b.md' })
+    expect(file.rename).toHaveBeenCalledWith({ oldPath: '/v/a.md', newPath: '/v/b.md' })
+    file.rename.mockRejectedValue({ code: 'ALREADY_EXISTS', message: 'a file with this name already exists', path: '/v/b.md' })
+    const err = (await api.rename({ oldPath: '/v/a.md', newPath: '/v/b.md' }).catch((e: unknown) => e)) as BridgeRequestError
+    expect(err).toBeInstanceOf(BridgeRequestError)
+    expect(err.code).toBe('ALREADY_EXISTS')
+    expect(err.path).toBe('/v/b.md')
   })
 
   it('a rejected plain BridgeError becomes a thrown BridgeRequestError with code / message / path / mtime', async () => {

@@ -5,6 +5,7 @@ import { SaveIndicator } from '../editor/SaveIndicator'
 import { useAutosave } from '../hooks/useAutosave'
 import type { WatchSource } from '../hooks/useWatch'
 import type { Autosave } from '../lib/autosave'
+import { takeRenameBuffer } from '../lib/renameContinuity'
 import { BaseParseError, parseBase, serializeBase, type ParsedBase } from './baseFile'
 import { BaseView } from './BaseView'
 import { useIndex } from './useIndex'
@@ -65,6 +66,15 @@ export function BaseHost({ root, file, watch, onOpenFile }: BaseHostProps) {
     const controller = attach(() => contentOf(modeRef.current), file.mtime, '', file.content)
     controllerRef.current = controller
     let cancelled = false
+
+    // An in-app rename carried a DIRTY buffer into this path (Links E1, GRO-2194): apply it
+    // over the fresh disk baseline as an unsaved change, exactly like CrepeHost.
+    const buf = takeRenameBuffer(file.path)
+    if (buf !== null && buf.body !== contentOf(modeRef.current)) {
+      const next = load(buf.body)
+      setModeNow(next)
+      controller.update(contentOf(next))
+    }
 
     const reload = async () => {
       const fresh = await api.readFile(file.path)

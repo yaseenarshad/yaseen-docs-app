@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { LinkApi, MenuApi, RegistryApi, StateApi, VaultConfigApi, WatchEvent, WindowApi, YaseenDocsApi } from '@shared/types'
+import type { FileApi, LinkApi, MenuApi, RegistryApi, StateApi, VaultConfigApi, WatchEvent, WindowApi, YaseenDocsApi } from '@shared/types'
 import { CH } from '../channels'
 
 const exposed: Record<string, unknown> = {}
@@ -13,11 +13,12 @@ vi.mock('electron', () => ({
  * typecheck. `as const satisfies` keeps each tuple's literal type (a plain `readonly (keyof T)[]`
  * annotation would widen it and make `Exhaustive<>` vacuous) while still rejecting typos.
  */
-const TOP = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'readAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'vaultConfig', 'registry'] as const satisfies readonly (keyof YaseenDocsApi)[]
+const TOP = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'readAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'file', 'vaultConfig', 'registry'] as const satisfies readonly (keyof YaseenDocsApi)[]
 const STATE = ['get', 'setSettings', 'setSidebarCollapsed', 'pushRecent', 'removeRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange'] as const satisfies readonly (keyof StateApi)[]
 const WINDOW = ['identity', 'setIdentity', 'open', 'duplicate', 'closeSelf', 'onFlush'] as const satisfies readonly (keyof WindowApi)[]
 const MENU = ['onOpenFolder', 'onOpenRoot', 'onCloseTab', 'onNextTab', 'onPrevTab'] as const satisfies readonly (keyof MenuApi)[]
 const LINK = ['onOpenFile', 'onNotice'] as const satisfies readonly (keyof LinkApi)[]
+const FILE = ['rename', 'onRenamed'] as const satisfies readonly (keyof FileApi)[]
 const VAULT_CONFIG = ['read', 'write', 'onChange'] as const satisfies readonly (keyof VaultConfigApi)[]
 const REGISTRY = ['get', 'setType', 'removeType', 'setProperty', 'removeProperty', 'onChange'] as const satisfies readonly (keyof RegistryApi)[]
 type Exhaustive<T, K extends readonly (keyof T)[]> = Exclude<keyof T, K[number]> extends never ? true : never
@@ -26,9 +27,10 @@ const _state: Exhaustive<StateApi, typeof STATE> = true
 const _window: Exhaustive<WindowApi, typeof WINDOW> = true
 const _menu: Exhaustive<MenuApi, typeof MENU> = true
 const _link: Exhaustive<LinkApi, typeof LINK> = true
+const _file: Exhaustive<FileApi, typeof FILE> = true
 const _vaultConfig: Exhaustive<VaultConfigApi, typeof VAULT_CONFIG> = true
 const _registry: Exhaustive<RegistryApi, typeof REGISTRY> = true
-void [_top, _state, _window, _menu, _link, _vaultConfig, _registry]
+void [_top, _state, _window, _menu, _link, _file, _vaultConfig, _registry]
 
 describe('preload bridge', () => {
   it('installs window.yaseenDocs with every contract method', async () => {
@@ -40,6 +42,7 @@ describe('preload bridge', () => {
     for (const k of WINDOW) expect(typeof api.window[k], `window.${k}`).toBe('function')
     for (const k of MENU) expect(typeof api.menu[k], `menu.${k}`).toBe('function')
     for (const k of LINK) expect(typeof api.link[k], `link.${k}`).toBe('function')
+    for (const k of FILE) expect(typeof api.file[k], `file.${k}`).toBe('function')
     for (const k of VAULT_CONFIG) expect(typeof api.vaultConfig[k], `vaultConfig.${k}`).toBe('function')
     for (const k of REGISTRY) expect(typeof api.registry[k], `registry.${k}`).toBe('function')
   })
@@ -57,6 +60,29 @@ describe('preload bridge', () => {
     expect(listener).toHaveBeenCalledWith('/vaults/notes/a.md')
     off()
     expect(vi.mocked(ipcRenderer.removeListener).mock.calls.some(([ch, l]) => ch === CH.linkOpenFile && l === emit)).toBe(true)
+  })
+
+  it('forwards file:renamed payloads to the listener and unsubscribes cleanly (Links E1, GRO-2194)', async () => {
+    const { ipcRenderer } = await import('electron')
+    const { bridge } = await import('./index')
+    const listener = vi.fn()
+    const off = bridge.file.onRenamed(listener)
+    const calls = vi.mocked(ipcRenderer.on).mock.calls.filter(([ch]) => ch === CH.fileRenamed)
+    const call = calls[calls.length - 1]
+    expect(call).toBeDefined()
+    const emit = call?.[1] as unknown as (e: unknown, ev: { oldPath: string; newPath: string }) => void
+    emit(undefined, { oldPath: '/vaults/notes/a.md', newPath: '/vaults/notes/b.md' })
+    expect(listener).toHaveBeenCalledWith({ oldPath: '/vaults/notes/a.md', newPath: '/vaults/notes/b.md' })
+    off()
+    expect(vi.mocked(ipcRenderer.removeListener).mock.calls.some(([ch, l]) => ch === CH.fileRenamed && l === emit)).toBe(true)
+  })
+
+  it('file.rename invokes fs:rename with the request (Links E1, GRO-2194)', async () => {
+    const { ipcRenderer } = await import('electron')
+    vi.mocked(ipcRenderer.invoke).mockResolvedValueOnce({ ok: true, value: { oldPath: '/v/a.md', newPath: '/v/b.md' } })
+    const { bridge } = await import('./index')
+    await expect(bridge.file.rename({ oldPath: '/v/a.md', newPath: '/v/b.md' })).resolves.toEqual({ oldPath: '/v/a.md', newPath: '/v/b.md' })
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.fsRename, { oldPath: '/v/a.md', newPath: '/v/b.md' })
   })
 
   it('window.closeSelf invokes window:close-self (GRO-2232)', async () => {

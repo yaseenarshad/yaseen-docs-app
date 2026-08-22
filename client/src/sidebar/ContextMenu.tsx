@@ -14,6 +14,9 @@ interface ContextMenuProps {
   /** Absolute path of the right-clicked FILE row; null (folders, blank space) hides "Open in new window" (D2, GRO-2168). */
   newWindowPath: string | null
   onOpenNewWindow: (path: string) => void
+  /** Absolute path of the right-clicked FILE row; null (folders, blank space) hides "Rename" (Links E1, GRO-2194 — folder rename is E1b). */
+  renamePath: string | null
+  onRename: (path: string) => void
   /**
    * Registered types for the "New ▸" submenu (Bible B, GRO-2202; Round 10 Q4 LOCKED, GRO-2226):
    * one item per type + "New type…" at the bottom. The submenu is ALWAYS present — [] collapses
@@ -33,7 +36,7 @@ interface ContextMenuProps {
 }
 
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, newTypes, onNewTyped, onNewType, onNewNote, onNewBase, onNewFolder, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, renamePath, onRename, newTypes, onNewTyped, onNewType, onNewNote, onNewBase, onNewFolder, onClose }: ContextMenuProps) {
   const [subOpen, setSubOpen] = useState(false)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -90,6 +93,19 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
             }}
           >
             Open in new window
+          </button>
+        )}
+        {renamePath !== null && (
+          <button
+            type="button"
+            className="ctx-menu__item"
+            role="menuitem"
+            onClick={() => {
+              onRename(renamePath)
+              onClose()
+            }}
+          >
+            Rename
           </button>
         )}
         {copyPath !== null && (

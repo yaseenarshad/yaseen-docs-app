@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppState, RegistryResponse, VaultConfigChange, WatchEvent, YaseenDocsApi } from '@shared/types'
+import type { AppState, FileRenamedEvent, RegistryResponse, VaultConfigChange, WatchEvent, YaseenDocsApi } from '@shared/types'
 import { CH, type Envelope } from '../channels'
 
 /** invoke + unwrap: resolves the value or rejects with the plain `BridgeError` object. */
@@ -85,6 +85,11 @@ const api: YaseenDocsApi = {
   link: {
     onOpenFile: on<string>(CH.linkOpenFile),
     onNotice: on<string>(CH.linkNotice),
+  },
+  // In-app rename (Links E1, GRO-2194): the invoke plus the renamed push every window gets.
+  file: {
+    rename: (req) => call(CH.fsRename, req),
+    onRenamed: on<FileRenamedEvent>(CH.fileRenamed),
   },
   // Type & property registry over `.yaseendocs/types.json` (Bible A, GRO-2201).
   registry: {

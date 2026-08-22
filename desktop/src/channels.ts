@@ -9,6 +9,8 @@ export const CH = {
   fsCreateFile: 'fs:create-file',
   fsIndex: 'fs:index',
   fsReadAsset: 'fs:read-asset',
+  fsRename: 'fs:rename',
+  fileRenamed: 'file:renamed',
   dialogPickFolder: 'dialog:pick-folder',
   watchSubscribe: 'watch:subscribe',
   watchUnsubscribe: 'watch:unsubscribe',
