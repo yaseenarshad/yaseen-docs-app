@@ -29,4 +29,22 @@ describe('frontmatter split/join', () => {
     const md = '---\na: 1\nno end'
     expect(splitFrontmatter(md).frontmatter).toBe('')
   })
+
+  it('recognises an empty block (GRO-2216)', () => {
+    const r = splitFrontmatter('---\n---\nbody')
+    expect(r.frontmatter).toBe('---\n---\n')
+    expect(r.body).toBe('body')
+  })
+
+  it('recognises an empty CRLF block (GRO-2216)', () => {
+    const r = splitFrontmatter('---\r\n---\r\nbody')
+    expect(r.frontmatter).toBe('---\r\n---\r\n')
+    expect(r.body).toBe('body')
+  })
+
+  it('recognises an empty block with no body (GRO-2216)', () => {
+    const r = splitFrontmatter('---\n---\n')
+    expect(r.frontmatter).toBe('---\n---\n')
+    expect(r.body).toBe('')
+  })
 })

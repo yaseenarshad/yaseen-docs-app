@@ -89,6 +89,11 @@ tags: [focus, books]
     expect(setFrontmatterProperty('---\n---\nBody\n', 'status', 'draft')).toBe('---\nstatus: draft\n---\nBody\n')
   })
 
+  it('the empty block left by a delete splits as frontmatter, body clean (GRO-2216)', () => {
+    const out = setFrontmatterProperty('---\nstatus: draft\n---\nBody\n', 'status', undefined)
+    expect(splitFrontmatter(out)).toEqual({ frontmatter: '---\n---\n', body: 'Body\n' })
+  })
+
   it('creates a block when the file has no frontmatter', () => {
     expect(setFrontmatterProperty('# Title\n\nBody\n', 'status', 'draft')).toBe('---\nstatus: draft\n---\n# Title\n\nBody\n')
   })

@@ -249,3 +249,25 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
     expect(writeFile.mock.calls[0]?.[0]).toEqual({ path: PATH, content: `${fm2Crlf}edited\r\n`, expectedMtime: 2 })
   })
 })
+
+describe('CrepeHost empty frontmatter block (GRO-2216)', () => {
+  const EMPTY_FM = '---\n---\n'
+
+  it('loading a file with an empty block: the fences never reach the editor body', async () => {
+    await mount(EMPTY_FM + BODY)
+    expect(crepe().md).toBe(BODY)
+  })
+
+  it('absorbs a delete-last-key property write while dirty: body edits kept, no conflict bar', async () => {
+    const el = await mount(FM + BODY)
+    type('# Hello\n\nunsaved edit\n')
+    diskHas(EMPTY_FM + BODY, 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+    expect(setMarkdownMock).not.toHaveBeenCalled()
+    expect(crepe().md).toBe('# Hello\n\nunsaved edit\n')
+    await pastDebounce()
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    expect(writeFile.mock.calls[0]?.[0]).toEqual({ path: PATH, content: `${EMPTY_FM}# Hello\n\nunsaved edit\n`, expectedMtime: 2 })
+  })
+})

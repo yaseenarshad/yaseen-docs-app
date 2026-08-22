@@ -8,7 +8,9 @@ import { type Document, isMap, parse, parseDocument } from 'yaml'
  * re-prepends it byte-identically on save (`frontmatter + body`).
  *
  * A frontmatter block is: file starts with `---\n` (or `---\r\n`), followed by
- * any lines, terminated by a line that is exactly `---` (or `...`).
+ * any lines (possibly none — `---\n---\n` is the empty block a delete of the
+ * last key leaves behind, GRO-2216), terminated by a line that is exactly
+ * `---` (or `...`).
  *
  * Shared with the server's Bases index (GRO-2127), which parses the block via `parseFrontmatter`.
  */
@@ -19,7 +21,7 @@ export interface SplitMarkdown {
   body: string
 }
 
-const FM_RE = /^(---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$))/
+const FM_RE = /^(---\r?\n(?:[\s\S]*?\r?\n)?(?:---|\.\.\.)[ \t]*(?:\r?\n|$))/
 
 export function splitFrontmatter(markdown: string): SplitMarkdown {
   const m = FM_RE.exec(markdown)
@@ -57,12 +59,6 @@ export class FrontmatterWriteError extends Error {
   }
 }
 
-/**
- * `---\n---\n`: the empty block left behind when the last key is deleted. `FM_RE` needs a
- * line between the fences, so it does not match — recognised here so a second write lands
- * inside the block instead of prepending another one (GRO-2141).
- */
-const EMPTY_BLOCK_RE = /^---[ \t]*\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/
 /** Captures the closing fence so `...` survives a rewrite. */
 const TERMINATOR_RE = /(?:^|\r?\n)(---|\.\.\.)[ \t]*(?:\r?\n)?$/
 
@@ -78,7 +74,7 @@ const YAML_OUT = { lineWidth: 0, flowCollectionPadding: false } as const
  * a `Date` is out of scope — callers pass ISO strings.
  */
 export function setFrontmatterProperty(content: string, key: string, value: unknown): string {
-  const { frontmatter, body } = splitBlock(content)
+  const { frontmatter, body } = splitFrontmatter(content)
 
   if (frontmatter === '') {
     if (value === undefined) return content
@@ -105,15 +101,6 @@ export function setFrontmatterProperty(content: string, key: string, value: unkn
 
   const yaml = serializeInner(doc)
   return `---${eol}${eol === '\r\n' ? yaml.replace(/\n/g, '\r\n') : yaml}${terminator}${trailingEol}${body}`
-}
-
-/** `splitFrontmatter`, plus the empty `---\n---\n` block it does not recognise. */
-function splitBlock(content: string): SplitMarkdown {
-  const split = splitFrontmatter(content)
-  if (split.frontmatter !== '') return split
-  const m = EMPTY_BLOCK_RE.exec(content)
-  if (!m) return split
-  return { frontmatter: m[0], body: content.slice(m[0].length) }
 }
 
 /** An emptied map serialises as `{}`; we want the block to just be empty instead. */
