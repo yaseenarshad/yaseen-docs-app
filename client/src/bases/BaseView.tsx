@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import { storage } from '../lib/storage'
 import { type BaseDefinition, type ParsedBase, parseBase, serializeBase, updateBase } from './baseFile'
-import { type Row, propertyKeys, runView } from './engine'
+import { type Group, type Row, propertyKeys, runView } from './engine'
 import { render } from './expr'
+import { createNewNote, deriveSeed, targetFolder, untitledName } from './newNote'
 import { writeProperty } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
@@ -46,6 +47,7 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
   /** Optimistic group moves (5C, GRO-2143) keyed by path, patched into the records the engine sees. */
   const [moves, setMoves] = useState<Record<string, PendingMove>>({})
   const [moveError, setMoveError] = useState<{ path: string; message: string } | null>(null)
+  const [createError, setCreateError] = useState<string | null>(null)
   const { def } = parsed
   const views = def.views
   const index = Math.max(0, Math.min(active, views.length - 1))
@@ -114,6 +116,29 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
     })
   }
 
+  // The toolbar's "New" / a group header's "+" (5D, GRO-2144): a note pre-filled to satisfy this
+  // view — filter-derived seed, plus the group's raw value when created inside a group — created
+  // over the bridge and opened only once the create lands; a failure shows the alert instead.
+  const onNewNote = (group: Group | null) => {
+    const seed = deriveSeed(def, view)
+    const groupKey = dragKey(view)
+    if (group !== null && groupKey !== null) {
+      const raw = group.key === null ? undefined : group.rows[0]?.record.properties[groupKey]
+      if (raw !== undefined) seed.properties[groupKey] = raw
+    }
+    const folder = targetFolder(seed.folder, root, thisFile)
+    if (folder === null) {
+      setCreateError('the vault root is not known yet')
+      return
+    }
+    const taken = new Set(records.filter((r) => r.path.slice(0, r.path.lastIndexOf('/')) === folder).map((r) => r.basename))
+    const path = `${folder}/${untitledName(taken)}.md`
+    setCreateError(null)
+    createNewNote(path, seed.properties)
+      .then(() => onOpenFile(path))
+      .catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
+  }
+
   const keys = propertyKeys(def, view, records)
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const rest = keys.filter((k) => k !== nameKey)
@@ -163,8 +188,14 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
         search={search}
         onSearch={setSearch}
         onUpdate={update}
+        onNew={() => onNewNote(null)}
         tabs={tabs}
       />
+      {createError !== null && (
+        <p className="base-view__error" role="alert">
+          Could not create note: {createError}
+        </p>
+      )}
       {indexStatus === 'pending' ? (
         <p className="base-view__pending">Loading the vault index…</p>
       ) : indexStatus === 'error' ? (
@@ -185,6 +216,7 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           onOpenFile={onOpenFile}
           onMoveToGroup={onMoveToGroup}
           moveError={moveError}
+          onNewInGroup={onNewNote}
           types={types}
         />
       ) : view.type === 'board' ? (
@@ -200,6 +232,7 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           onOpenFile={onOpenFile}
           onMoveToGroup={onMoveToGroup}
           moveError={moveError}
+          onNewInGroup={onNewNote}
         />
       ) : view.type === 'cards' ? (
         <CardsView
@@ -212,6 +245,7 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
           onOpenFile={onOpenFile}
+          onNewInGroup={onNewNote}
           types={types}
         />
       ) : view.type === 'list' ? (
@@ -224,6 +258,7 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
           onOpenFile={onOpenFile}
+          onNewInGroup={onNewNote}
           types={types}
         />
       ) : (

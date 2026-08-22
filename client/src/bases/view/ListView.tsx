@@ -19,6 +19,8 @@ export interface ListViewProps {
   collapsed: readonly string[]
   onToggleGroup: (key: string) => void
   onOpenFile: (path: string) => void
+  /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. */
+  onNewInGroup?: (group: Group) => void
   /** Assigned property types from `.obsidian/types.json`, for editor inference (5B, GRO-2142). */
   types?: Record<string, string>
 }
@@ -48,7 +50,7 @@ const separatorOf = (view: BaseView): string => (typeof view.propertySeparator =
  * (when not file.name) and the indented property rows edit inline through `EditableCell`
  * (5B, GRO-2142); the joined inline string stays read-only.
  */
-export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, types }: ListViewProps) {
+export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, types }: ListViewProps) {
   const keys = propertyKeys(def, view, records)
   const primary: string | undefined = keys[0]
   const rest = keys.slice(1)
@@ -124,7 +126,16 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
             const isCollapsed = collapsed.includes(gk)
             return (
               <section key={gk} className="base-list__group">
-                <GroupHeader def={def} view={view} columns={keys} groupKey={g.key} rows={g.rows} collapsed={isCollapsed} onToggle={() => onToggleGroup(gk)} />
+                <GroupHeader
+                  def={def}
+                  view={view}
+                  columns={keys}
+                  groupKey={g.key}
+                  rows={g.rows}
+                  collapsed={isCollapsed}
+                  onToggle={() => onToggleGroup(gk)}
+                  onNew={onNewInGroup === undefined ? undefined : () => onNewInGroup(g)}
+                />
                 {!isCollapsed && items(g.rows)}
               </section>
             )

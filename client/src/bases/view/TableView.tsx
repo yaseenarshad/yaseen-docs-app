@@ -30,6 +30,8 @@ export interface TableViewProps {
   onMoveToGroup: (path: string, value: unknown) => void
   /** The last failed move, flagged inline on its row. */
   moveError: { path: string; message: string } | null
+  /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. */
+  onNewInGroup?: (group: Group) => void
   /** Assigned property types from `.obsidian/types.json`, for editor inference (5B, GRO-2142). */
   types?: Record<string, string>
 }
@@ -60,7 +62,7 @@ type Line = { header: Group; gk: string } | { row: Row; r: number; g: Group | nu
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, types }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup, types }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   // Row drag between sections (5C, GRO-2143); disabled without groups.
   const dnd = useGroupDrag(groups === null ? null : dragKey(view), onMoveToGroup)
@@ -197,6 +199,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     rows={line.header.rows}
                     collapsed={collapsedSet.has(line.gk)}
                     onToggle={() => onToggleGroup(line.gk)}
+                    onNew={onNewInGroup === undefined ? undefined : () => onNewInGroup(line.header)}
                   />
                 </td>
               </tr>

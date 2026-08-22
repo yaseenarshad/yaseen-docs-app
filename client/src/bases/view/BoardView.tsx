@@ -26,6 +26,8 @@ export interface BoardViewProps {
   onMoveToGroup: (path: string, value: unknown) => void
   /** The last failed move, flagged inline on its card. */
   moveError: { path: string; message: string } | null
+  /** Create a note seeded with a column's group value (5D, GRO-2144); absent → no "+" on headers. */
+  onNewInGroup?: (group: Group) => void
 }
 
 /**
@@ -44,7 +46,7 @@ export interface BoardViewProps {
  * dashed placeholder, the own column is never a target, Esc cancels — and a failed move's
  * card carries an inline error chip. Images are 4E.
  */
-export function BoardView({ def, view, viewIndex, records, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError }: BoardViewProps) {
+export function BoardView({ def, view, viewIndex, records, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup }: BoardViewProps) {
   const dnd = useGroupDrag(dragKey(view), onMoveToGroup)
   if (groups === null) {
     const fallback = allPropertyKeys(def, view, records).find((k) => !canonicalKey(k).startsWith('file.')) ?? 'file.folder'
@@ -79,7 +81,16 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
         const isOver = dnd.over === gk
         return (
           <section key={gk} className={`base-board__col${isOver ? ' base-board__col--drop' : ''}`} {...dnd.target(g)}>
-            <GroupHeader def={def} view={view} columns={keys} groupKey={g.key} rows={g.rows} collapsed={isCollapsed} onToggle={() => onToggleGroup(gk)} />
+            <GroupHeader
+              def={def}
+              view={view}
+              columns={keys}
+              groupKey={g.key}
+              rows={g.rows}
+              collapsed={isCollapsed}
+              onToggle={() => onToggleGroup(gk)}
+              onNew={onNewInGroup === undefined ? undefined : () => onNewInGroup(g)}
+            />
             {!isCollapsed && (
               <ul className="base-board__cards">
                 {g.rows.map((row) => (

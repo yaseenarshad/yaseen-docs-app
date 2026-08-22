@@ -14,6 +14,12 @@ const svg = {
   'aria-hidden': true,
 }
 
+export const PlusIcon = () => (
+  <svg {...svg}>
+    <path d="M8 3v10M3 8h10" />
+  </svg>
+)
+
 export const FilterIcon = () => (
   <svg {...svg}>
     <path d="M2 3.5h12L9.5 8.8v4.2l-3 1.5V8.8z" />

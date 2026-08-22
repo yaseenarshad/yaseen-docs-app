@@ -4,7 +4,7 @@ import type { BaseDefinition, BaseView } from '../baseFile'
 import type { EngineError } from '../engine'
 import { FilterMenu, type Mutate } from './FilterMenu'
 import { countRules } from './filterRows'
-import { FilterIcon, PropertiesIcon, SearchIcon, SortIcon } from './icons'
+import { FilterIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon } from './icons'
 import { Popover } from './Popover'
 import { PropertiesMenu } from './PropertiesMenu'
 import { SortMenu } from './SortMenu'
@@ -25,6 +25,8 @@ export interface ToolbarProps {
   search: string | null
   onSearch: (next: string | null) => void
   onUpdate: Mutate
+  /** Create a note satisfying this view and open it (5D, GRO-2144). */
+  onNew: () => void
   tabs: ViewTabsProps
 }
 
@@ -33,7 +35,7 @@ export const countLabel = (shown: number, total: number): string =>
   shown === total ? `${total} item${total === 1 ? '' : 's'}` : `${shown} / ${total} items`
 
 /** View chrome (GRO-2135): tabs on the left; Filter / Sort / Properties / Search buttons and the count on the right. */
-export function Toolbar({ def, view, viewIndex, records, errors, shown, total, search, onSearch, onUpdate, tabs }: ToolbarProps) {
+export function Toolbar({ def, view, viewIndex, records, errors, shown, total, search, onSearch, onUpdate, onNew, tabs }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
   const close = useCallback(() => setOpen(null), [])
   const filters = countRules(def.filters) + countRules(view.filters)
@@ -66,6 +68,10 @@ export function Toolbar({ def, view, viewIndex, records, errors, shown, total, s
     <div className="base-toolbar">
       <ViewTabs {...tabs} />
       <div className="base-toolbar__actions">
+        <button type="button" className="base-toolbar__btn base-toolbar__new" aria-label="New note" title="New note" onClick={onNew}>
+          <PlusIcon />
+          New
+        </button>
         {button(
           'filter',
           'Filter',

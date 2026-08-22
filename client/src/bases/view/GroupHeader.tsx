@@ -68,9 +68,11 @@ export interface GroupHeaderProps {
   rows: readonly Row[]
   collapsed: boolean
   onToggle: () => void
+  /** Create a note in this group (5D, GRO-2144); absent → no "+" affordance. */
+  onNew?: () => void
 }
 
-export function GroupHeader({ def, view, columns, groupKey, rows, collapsed, onToggle }: GroupHeaderProps) {
+export function GroupHeader({ def, view, columns, groupKey, rows, collapsed, onToggle, onNew }: GroupHeaderProps) {
   const label = groupKey === null ? 'No value' : render(groupKey)
   return (
     <div className="base-group">
@@ -83,6 +85,13 @@ export function GroupHeader({ def, view, columns, groupKey, rows, collapsed, onT
         {groupKey === null ? 'No value' : groupValue(groupKey)}
       </span>
       <span className="base-group__count">{rows.length}</span>
+      {onNew !== undefined && (
+        <button type="button" className="base-group__new" aria-label={`New note in group ${label}`} title="New note" onClick={onNew}>
+          <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M8 3v10M3 8h10" />
+          </svg>
+        </button>
+      )}
       {columns.map((key) => {
         const kind = summaryKindOf(view, key)
         if (kind === undefined) return null
