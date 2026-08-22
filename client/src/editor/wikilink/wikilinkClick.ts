@@ -15,11 +15,12 @@
  * Gestures: plain click → open in the CURRENT tab (`nav.openCurrent` — an already-open path
  * activates its tab, tabs dedupe); ⌘(meta)-click → NEW BACKGROUND tab (`nav.openBackground`
  * — appended, never activated, never focused; an already-open path is a no-op). An
- * UNRESOLVED link is created first (`createFromLink` — vault-root default, LOCKED; the
- * location setting is C2-, GRO-2240), then opened by the same gesture; failures surface via
- * `nav.onNotice` (App's passive link-notice), never a dialog. `[[#h]]` (same-file, empty
- * target) is a no-op — the heading jump is GRO-2239. Alt-/Shift-/Ctrl-modified clicks keep
- * their defaults (future gestures, context menus).
+ * UNRESOLVED link is created first (`createFromLink` — bare targets under `nav.createBase()`,
+ * the Files & Links "default location for new notes" setting read at CLICK time; C2-,
+ * GRO-2240), then opened by the same gesture; failures surface via `nav.onNotice` (App's
+ * passive link-notice), never a dialog. `[[#h]]` (same-file, empty target) is a no-op — the
+ * heading jump is GRO-2239. Alt-/Shift-/Ctrl-modified clicks keep their defaults (future
+ * gestures, context menus).
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
@@ -29,8 +30,16 @@ import { WIKILINK_CLASS, WIKILINK_RE, eachPlainRun, linkPageName, type WikilinkR
 
 /** How clicks leave the editor: App threads this window's tabs API + notice setter (via Editor). */
 export interface WikilinkNav {
-  /** Vault root — where an unresolved link's page is created (C2-, GRO-2240 will thread a setting instead). */
+  /** Vault root — every created path is built under it. */
   root: string
+  /**
+   * Root-relative folder where a BARE unresolved link creates its page ('' = the vault
+   * root). A getter, called at CLICK time: App derives it from the "default location for
+   * new notes" setting + the ACTIVE tab (`newNoteBase`, C2- GRO-2240) behind a STABLE
+   * identity, so settings/tab changes land live without remounting any editor. Pathed
+   * targets (`[[Sub/Page]]`) ignore it — see `planLinkCreation`.
+   */
+  createBase: () => string
   /** Plain click: open in the CURRENT tab (already-open → activates its tab). */
   openCurrent: (path: string) => void
   /** ⌘-click: append a background tab (already-open → no-op; focus never moves). */
@@ -89,7 +98,7 @@ export function createWikilinkClick(source: WikilinkResolveSource, nav: Wikilink
               const path = resolve(page)
               if (path !== null) open(path)
               else
-                void createFromLink(nav.root, inner).then((result) => {
+                void createFromLink(nav.root, inner, nav.createBase()).then((result) => {
                   if (result.status === 'error') nav.onNotice(result.message)
                   else if (result.status !== 'noop') open(result.path)
                 })

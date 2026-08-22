@@ -38,13 +38,19 @@ interface EditorProps {
   onOpenFileBackground?: (path: string) => void
   /** Wiki-link create failures surface here (passive link-notice style); App passes `setNotice`. */
   onNotice?: (message: string) => void
+  /**
+   * Root-relative folder where a bare unresolved `[[link]]` creates its page (C2-, GRO-2240);
+   * App passes a STABLE getter over the Files & Links setting + the active tab (`newNoteBase`).
+   * Absent → the vault root, exactly the setting's default.
+   */
+  createBase?: () => string
   /** Wikilink resolve source (GRO-2190): App owns ONE per window, fed by WikilinkIndexBridge. */
   wikilinks?: WikilinkResolveSource
   /** `[[` picker candidates (GRO-2191): same ownership and feed as `wikilinks`. */
   wikilinkCandidates?: WikilinkCandidateSource
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileBackground, onNotice, wikilinks, wikilinkCandidates }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileBackground, onNotice, createBase, wikilinks, wikilinkCandidates }: EditorProps) {
   const state = useFile(path)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   return (
@@ -56,7 +62,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileBackground, on
         (fileKind(file.path) === 'base' ? (
           <BaseHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} />
         ) : (
-          <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} />
+          <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} />
         ))}
     </section>
   )
@@ -70,6 +76,7 @@ function CrepeHost({
   onOpenFile,
   onOpenFileBackground,
   onNotice,
+  createBase,
   wikilinks,
   wikilinkCandidates,
 }: {
@@ -79,6 +86,7 @@ function CrepeHost({
   onOpenFile: (path: string) => void
   onOpenFileBackground?: (path: string) => void
   onNotice?: (message: string) => void
+  createBase?: () => string
   wikilinks?: WikilinkResolveSource
   wikilinkCandidates?: WikilinkCandidateSource
 }) {
@@ -129,12 +137,13 @@ function CrepeHost({
       wikilinks,
       wikilinkCandidates,
       // Wiki-link click navigation (Links C, GRO-2192): plain click → current tab, ⌘ → background
-      // tab, unresolved → create at the vault root then open. Wired only when App threads the
-      // background opener — mounts without it keep clicks as plain editing.
+      // tab, unresolved → create (bare targets under App's createBase getter — the Files & Links
+      // location setting, C2- GRO-2240; absent → the vault root) then open. Wired only when App
+      // threads the background opener — mounts without it keep clicks as plain editing.
       wikilinkNav:
         onOpenFileBackground === undefined
           ? undefined
-          : { root, openCurrent: onOpenFile, openBackground: onOpenFileBackground, onNotice: onNotice ?? (() => undefined) },
+          : { root, createBase: createBase ?? (() => ''), openCurrent: onOpenFile, openBackground: onOpenFileBackground, onNotice: onNotice ?? (() => undefined) },
     })
     let controller: ReturnType<typeof attach> | null = null
     let cancelled = false
@@ -180,7 +189,7 @@ function CrepeHost({
       unsubscribe()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, embedRegistry, codeRegistry, wikilinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, embedRegistry, codeRegistry, wikilinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, createBase])
 
   return (
     <>

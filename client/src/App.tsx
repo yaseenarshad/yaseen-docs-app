@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import type { SettingsState } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
+import { newNoteBase } from './editor/wikilink/createFromLink'
 import { createWikilinkCandidateSource } from './editor/wikilink/wikilinkPicker'
 import { createWikilinkResolveSource } from './editor/wikilink/wikilinkPlugin'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
@@ -63,6 +64,19 @@ export function App() {
   const changeSettings = useCallback((next: SettingsState) => {
     storage.setSettings(next)
     setSettings(next)
+  }, [])
+
+  // Files & Links (C2-, GRO-2240): where a bare unresolved [[link]] creates its page — the
+  // "default location for new notes" setting resolved against this window's root + ACTIVE tab.
+  // A ref-backed getter: the value recomputes at CLICK time from whatever settings/tab are
+  // current (settings changes broadcast via storage.subscribe land in `settings` above), while
+  // the callback identity stays stable — it sits in CrepeHost's effect deps, and a new identity
+  // would remount every open editor.
+  const createBaseInputs = useRef({ settings, root, file })
+  createBaseInputs.current = { settings, root, file }
+  const createBase = useCallback(() => {
+    const { settings: s, root: r, file: f } = createBaseInputs.current
+    return r === null ? '' : newNoteBase(s, r, f)
   }, [])
 
   // Appearance (Desktop K, GRO-2218): `system` tracks the OS live; explicit values win.
@@ -188,14 +202,14 @@ export function App() {
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
           <TabBar tabs={tabs} active={file} onActivate={activate} onClose={closeTab} onMove={moveTab} />
           <div className="tabstack">
-            {mounted.length === 0 && <Editor root={root} path={null} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} />}
+            {mounted.length === 0 && <Editor root={root} path={null} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility — see tabs.css
               // for why display:none would lose scroll positions.
               <div key={path} className={path === file ? 'tabstack__layer' : 'tabstack__layer tabstack__layer--hidden'}>
                 {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → openCurrent, ⌘ → openBackground; create failures land in the link-notice. */}
-                <Editor root={root} path={path} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} />
+                <Editor root={root} path={path} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} />
               </div>
             ))}
           </div>

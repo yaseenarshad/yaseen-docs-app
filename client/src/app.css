@@ -611,6 +611,50 @@ button {
   color: var(--accent);
 }
 
+/* Section heading inside the panel — Files & Links (Links C2-, GRO-2240). */
+.settings__section {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+/* Stacked option column for long labels (the new-note location control). */
+.settings__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings__stack .settings__option {
+  padding: 4px 8px;
+  text-align: left;
+}
+
+/* The root-relative folder input under "In the folder specified below". */
+.settings__input {
+  width: 100%;
+  margin-top: 6px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font: inherit;
+  font-size: 11px;
+  background: var(--bg);
+  color: var(--fg);
+  outline: none;
+}
+
+.settings__input:focus {
+  border-color: var(--accent);
+}
+
+.settings__input--error {
+  border-color: var(--danger);
+}
+
 /* ---------- context menu + inline create (GRO-2022) ---------- */
 
 .ctx-overlay {

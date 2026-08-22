@@ -5,15 +5,18 @@
  * strips inside the resolver, creation must strip here); an empty result (`[[#h]]`, the
  * same-file form) is a no-op.
  *
- * Location ruling (LOCKED): a bare target creates at the VAULT ROOT — Obsidian's default.
- * The "default location for new notes" setting is C2- (GRO-2240); when it lands it threads
- * a folder into `planLinkCreation` instead of this hardcoded root. A pathed target
- * (`[[Sub/Page]]`) is root-relative; missing parent folders are created level by level
- * (`ensureFolder` — the bridge's `createDir` does not recurse). `.md` is appended unless
- * the name is already markdown (mirrors the sidebar's `entryPath`). Races are benign:
- * `ALREADY_EXISTS` means someone created the page first — just open it. Invalid names and
- * create failures come back as `error` for the caller's passive notice (App's link-notice).
+ * Location ruling (LOCKED, C2- GRO-2240): a BARE target creates under `base` — the
+ * root-relative folder App computes from the "default location for new notes" setting via
+ * `newNoteBase` ('' = the vault root, which is also Obsidian's and the setting's default).
+ * A pathed target (`[[Sub/Page]]`, `[[/Page]]`) is an explicit aim and stays root-relative
+ * whatever the setting (Obsidian's behavior); missing parent folders — the base included —
+ * are created level by level (`ensureFolder` — the bridge's `createDir` does not recurse).
+ * `.md` is appended unless the name is already markdown (mirrors the sidebar's `entryPath`).
+ * Races are benign: `ALREADY_EXISTS` means someone created the page first — just open it.
+ * Invalid names and create failures come back as `error` for the caller's passive notice
+ * (App's link-notice).
  */
+import type { SettingsState } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
 import { ensureFolder } from '../../bases/scaffold'
 import { validateEntryName } from '../../sidebar/createEntry'
@@ -28,16 +31,36 @@ export type CreateFromLinkResult =
   | { status: 'error'; message: string }
 
 /**
- * Pure path planning for `target` (already stripped): root-relative folder ('' = the vault
- * root — the LOCKED default location, see module doc) + the absolute `.md` path, or a
- * human-readable error. Each `/`-segment passes the sidebar's `validateEntryName` rules.
+ * The root-relative base folder where a BARE unresolved `[[link]]` creates its page
+ * (C2-, GRO-2240) — pure, computed by App from the Files & Links setting + the ACTIVE tab:
+ * `'root'` → '' (the vault root); `'current'` → the active file's folder, falling back to
+ * the root with no open file (or one outside the vault); `'folder'` → `newNoteFolder`
+ * (validated at the settings boundary; junk still fails safe in `planLinkCreation`).
  */
-export function planLinkCreation(root: string, target: string): { folder: string; path: string } | { error: string } {
-  const segments = target.replace(/^\/+/, '').split('/').map((s) => s.trim())
+export function newNoteBase(settings: Pick<SettingsState, 'newNoteLocation' | 'newNoteFolder'>, root: string, activeFile: string | null): string {
+  if (settings.newNoteLocation === 'folder') return settings.newNoteFolder
+  if (settings.newNoteLocation === 'current' && activeFile !== null && activeFile.startsWith(`${root}/`)) {
+    const rel = activeFile.slice(root.length + 1)
+    const cut = rel.lastIndexOf('/')
+    return cut === -1 ? '' : rel.slice(0, cut)
+  }
+  return ''
+}
+
+/**
+ * Pure path planning for `target` (already stripped): root-relative folder ('' = the vault
+ * root) + the absolute `.md` path, or a human-readable error. A BARE target lands under
+ * `base` (see `newNoteBase`); a PATHED one ignores it — an explicit path is an explicit
+ * aim (module doc). Each `/`-segment — base segments included — passes the sidebar's
+ * `validateEntryName` rules; errors name the full effective path.
+ */
+export function planLinkCreation(root: string, target: string, base = ''): { folder: string; path: string } | { error: string } {
+  const effective = base !== '' && !target.includes('/') ? `${base}/${target}` : target
+  const segments = effective.replace(/^\/+/, '').split('/').map((s) => s.trim())
   for (const segment of segments) {
-    if (segment === '') return { error: `Can't create "${target}": empty name` }
+    if (segment === '') return { error: `Can't create "${effective}": empty name` }
     const reason = validateEntryName(segment)
-    if (reason !== null) return { error: `Can't create "${target}": ${reason}` }
+    if (reason !== null) return { error: `Can't create "${effective}": ${reason}` }
   }
   const last = segments[segments.length - 1]
   const name = /\.(md|markdown)$/i.test(last) ? last : `${last}.md`
@@ -45,11 +68,11 @@ export function planLinkCreation(root: string, target: string): { folder: string
   return { folder, path: `${root}/${folder === '' ? '' : `${folder}/`}${name}` }
 }
 
-/** Create the page behind raw `[[inner]]` under `root` and resolve where to open (see module doc). */
-export async function createFromLink(root: string, inner: string): Promise<CreateFromLinkResult> {
+/** Create the page behind raw `[[inner]]` under `root` — bare targets under `base` — and resolve where to open (see module doc). */
+export async function createFromLink(root: string, inner: string, base = ''): Promise<CreateFromLinkResult> {
   const target = linkPageName(inner)
   if (target === '') return { status: 'noop' }
-  const planned = planLinkCreation(root, target)
+  const planned = planLinkCreation(root, target, base)
   if ('error' in planned) return { status: 'error', message: planned.error }
   try {
     if (planned.folder !== '') await ensureFolder(root, planned.folder)

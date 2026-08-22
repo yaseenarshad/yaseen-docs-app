@@ -95,6 +95,22 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings.theme).toBe('system')
   })
 
+  it('newNoteLocation/newNoteFolder: a pre-C2 file without the keys sanitizes to root + ""; junk falls back (GRO-2240)', async () => {
+    // A pre-C2 yaseendocs.json: every field but the Files & Links pair — missing fields just gain their defaults.
+    const { newNoteLocation: _loc, newNoteFolder: _folder, ...preC2Settings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: preC2Settings }))
+    expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, newNoteLocation: 'folder', newNoteFolder: 'Notes/Inbox' } }))
+    expect(createStore(file).get().settings).toEqual({ ...DEFAULT_SETTINGS, newNoteLocation: 'folder', newNoteFolder: 'Notes/Inbox' })
+    // Junk location, absolute / dot-dot / trailing-slash folders: each field falls back alone.
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, newNoteLocation: 'desktop', newNoteFolder: 5 } }))
+    expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
+    for (const bad of ['/abs', 'a/../b', 'a//b', 'Notes/']) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, newNoteFolder: bad } }))
+      expect(createStore(file).get().settings.newNoteFolder).toBe('')
+    }
+  })
+
   it('sidebarCollapsed only honours booleans', async () => {
     await seed(valid({ sidebarCollapsed: 'true' }))
     expect(createStore(file).get().sidebarCollapsed).toBe(false)

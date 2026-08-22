@@ -3,9 +3,10 @@
  * real mousedown events on the rendered `.wikilink` spans. Pinned here: navigation happens on
  * MOUSEDOWN with the default prevented (no caret in the match, no raw-text flash — editing
  * stays keyboard/adjacency-only), plain click → `openCurrent`, ⌘-click → `openBackground`,
- * an unresolved link creates its page first (vault-root default) and then opens by the same
- * gesture, `[[#h]]` no-ops, revealed raw text and alt/shift/ctrl-modified clicks fall through
- * to plain editing, and failures land in `onNotice` — never a dialog.
+ * an unresolved link creates its page first (bare targets under `nav.createBase()` — the
+ * Files & Links location setting, C2- GRO-2240; '' = the vault root, the default) and then
+ * opens by the same gesture, `[[#h]]` no-ops, revealed raw text and alt/shift/ctrl-modified
+ * clicks fall through to plain editing, and failures land in `onNotice` — never a dialog.
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -29,6 +30,7 @@ const createFile = vi.mocked(api.createFile)
 
 interface NavMocks {
   root: string
+  createBase: () => string
   openCurrent: Mock
   openBackground: Mock
   onNotice: Mock
@@ -39,10 +41,10 @@ const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 /** Resolver used across the suite: only 'Known' exists, at /vault/Known.md. */
 const resolveKnown = (target: string) => (target === 'Known' ? '/vault/Known.md' : null)
 
-async function mount(markdown: string, resolve?: (target: string) => string | null) {
+async function mount(markdown: string, resolve?: (target: string) => string | null, createBase: () => string = () => '') {
   const source = createWikilinkResolveSource()
   if (resolve !== undefined) source.update(resolve)
-  const nav: NavMocks = { root: '/vault', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() }
+  const nav: NavMocks = { root: '/vault', createBase, openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() }
   const root = document.createElement('div')
   document.body.appendChild(root)
   const crepe = createCrepe({ root, defaultValue: markdown, wikilinks: source, wikilinkNav: nav })
@@ -147,6 +149,25 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith('/vault/Sub/Page.md'))
     expect(createDir).toHaveBeenCalledWith('/vault/Sub')
     expect(createFile).toHaveBeenCalledWith('/vault/Sub/Page.md')
+  })
+
+  it("a bare target creates under nav.createBase() — the Files & Links setting's folder, read at CLICK time (C2-, GRO-2240)", async () => {
+    let base = 'Notes/Inbox'
+    const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown, () => base)
+    mousedown(linkSpan(root, 'Missing'))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith('/vault/Notes/Inbox/Missing.md'))
+    expect(createDir.mock.calls.map((c) => c[0])).toEqual(['/vault/Notes', '/vault/Notes/Inbox'])
+    // The getter is live: a settings change lands on the NEXT click without any remount.
+    base = ''
+    mousedown(linkSpan(root, 'Missing'))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith('/vault/Missing.md'))
+  })
+
+  it('a PATHED target stays root-relative whatever the base — an explicit path is an explicit aim (Obsidian)', async () => {
+    const { root, nav } = await mount('go [[Sub/Page]] now\n', () => null, () => 'Notes')
+    mousedown(linkSpan(root, 'Sub/Page'))
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith('/vault/Sub/Page.md'))
+    expect(createDir.mock.calls.map((c) => c[0])).toEqual(['/vault/Sub'])
   })
 
   it('ALREADY_EXISTS (creation race) still opens the page — the race is benign', async () => {

@@ -5,13 +5,16 @@ import {
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
   MAX_RECENT_ROOTS,
+  NEW_NOTE_LOCATIONS,
   THEMES,
   THREAD_WIDTHS,
   addRecentRoot,
   defaultAppState,
   defaultFolderState,
+  isValidNewNoteFolder,
   type AppState,
   type FolderState,
+  type NewNoteLocation,
   type RecentRoots,
   type SettingsState,
   type Theme,
@@ -64,6 +67,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   threadWidth: (v): v is number => isFiniteNumber(v) && THREAD_WIDTHS.includes(v),
   threadColor: (v): v is string | null => v === null || isHexColour(v),
   theme: (v): v is Theme => typeof v === 'string' && (THEMES as readonly string[]).includes(v),
+  newNoteLocation: (v): v is NewNoteLocation => typeof v === 'string' && (NEW_NOTE_LOCATIONS as readonly string[]).includes(v),
+  newNoteFolder: (v): v is string => typeof v === 'string' && isValidNewNoteFolder(v),
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 

@@ -1,13 +1,15 @@
 /**
  * Create-on-click for unresolved wiki links (Links C, GRO-2192): `planLinkCreation`'s pure
- * path rules (vault-root default — LOCKED, the location setting is C2- GRO-2240 — pathed
- * targets root-relative, `.md` appended like the sidebar's `entryPath`, per-segment name
- * validation) and `createFromLink`'s bridge flow (parent dirs level by level, benign
+ * path rules (base folder for BARE targets from the "default location for new notes"
+ * setting — C2-, GRO-2240 — pathed targets always root-relative, `.md` appended like the
+ * sidebar's `entryPath`, per-segment name validation), `newNoteBase`'s setting → base
+ * mapping, and `createFromLink`'s bridge flow (parent dirs level by level, benign
  * ALREADY_EXISTS races, failures as messages for the passive notice — never a dialog).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { DEFAULT_SETTINGS } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
-import { createFromLink, planLinkCreation } from './createFromLink'
+import { createFromLink, newNoteBase, planLinkCreation } from './createFromLink'
 
 vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
@@ -58,6 +60,45 @@ describe('planLinkCreation (pure path rules)', () => {
     expect(planLinkCreation('/vault', 'a/.git/b')).toEqual({ error: 'Can\'t create "a/.git/b": Names starting with "." are hidden' })
     expect(planLinkCreation('/vault', 'bad\0name')).toEqual({ error: 'Can\'t create "bad\0name": Name contains an invalid character' })
   })
+
+  it('a BARE target lands under the base folder from the location setting (C2-, GRO-2240)', () => {
+    expect(planLinkCreation('/vault', 'Page', 'Notes')).toEqual({ folder: 'Notes', path: '/vault/Notes/Page.md' })
+    expect(planLinkCreation('/vault', 'Page', 'Notes/Inbox')).toEqual({ folder: 'Notes/Inbox', path: '/vault/Notes/Inbox/Page.md' })
+    expect(planLinkCreation('/vault', 'Page', '')).toEqual({ folder: '', path: '/vault/Page.md' })
+  })
+
+  it('a PATHED target ignores the base: an explicit path is an explicit aim, root-relative (Obsidian)', () => {
+    expect(planLinkCreation('/vault', 'Sub/Page', 'Notes')).toEqual({ folder: 'Sub', path: '/vault/Sub/Page.md' })
+    // A leading slash is the explicit vault-root form — pathed, so the base never applies.
+    expect(planLinkCreation('/vault', '/Page', 'Notes')).toEqual({ folder: '', path: '/vault/Page.md' })
+  })
+
+  it('base segments pass the same name rules; the error names the full effective path', () => {
+    expect(planLinkCreation('/vault', 'Page', '.drafts')).toEqual({ error: 'Can\'t create ".drafts/Page": Names starting with "." are hidden' })
+  })
+})
+
+describe('newNoteBase (setting → base folder for bare targets, C2- GRO-2240)', () => {
+  const at = (newNoteLocation: 'root' | 'current' | 'folder', newNoteFolder = '') => ({ ...DEFAULT_SETTINGS, newNoteLocation, newNoteFolder })
+
+  it("'root' (the default) is the vault root, whatever the active file", () => {
+    expect(newNoteBase(at('root'), '/vault', '/vault/Sub/Note.md')).toBe('')
+  })
+
+  it("'current' is the ACTIVE file's folder, root-relative; a top-level file means the root", () => {
+    expect(newNoteBase(at('current'), '/vault', '/vault/Sub/Deep/Note.md')).toBe('Sub/Deep')
+    expect(newNoteBase(at('current'), '/vault', '/vault/Note.md')).toBe('')
+  })
+
+  it("'current' falls back to the root with no open file, or a file outside the vault", () => {
+    expect(newNoteBase(at('current'), '/vault', null)).toBe('')
+    expect(newNoteBase(at('current'), '/vault', '/elsewhere/Note.md')).toBe('')
+  })
+
+  it("'folder' is the configured root-relative folder ('' = the root); the active file is irrelevant", () => {
+    expect(newNoteBase(at('folder', 'Notes/Inbox'), '/vault', null)).toBe('Notes/Inbox')
+    expect(newNoteBase(at('folder'), '/vault', '/vault/Sub/Note.md')).toBe('')
+  })
 })
 
 describe('createFromLink (bridge flow)', () => {
@@ -104,5 +145,16 @@ describe('createFromLink (bridge flow)', () => {
       status: 'error',
       message: 'Can\'t create "Page": disk on fire',
     })
+  })
+
+  it('a bare target with a base creates the base folders level by level, then the file (C2-, GRO-2240)', async () => {
+    await expect(createFromLink('/vault', 'Page', 'Notes/Inbox')).resolves.toEqual({ status: 'created', path: '/vault/Notes/Inbox/Page.md' })
+    expect(createDir.mock.calls.map((c) => c[0])).toEqual(['/vault/Notes', '/vault/Notes/Inbox'])
+    expect(createFile).toHaveBeenCalledWith('/vault/Notes/Inbox/Page.md')
+  })
+
+  it('a pathed target keeps root-relative creation even with a base (explicit aim wins)', async () => {
+    await expect(createFromLink('/vault', 'Sub/Page', 'Notes')).resolves.toEqual({ status: 'created', path: '/vault/Sub/Page.md' })
+    expect(createDir.mock.calls.map((c) => c[0])).toEqual(['/vault/Sub'])
   })
 })

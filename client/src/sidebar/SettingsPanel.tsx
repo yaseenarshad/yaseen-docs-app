@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { THREAD_WIDTHS, type SettingsState, type Theme } from '@shared/types'
+import { THREAD_WIDTHS, isValidNewNoteFolder, type NewNoteLocation, type SettingsState, type Theme } from '@shared/types'
 
 /** Obsidian's Appearance control and order (Desktop K, GRO-2218); App resolves and applies it. */
 const THEME_OPTIONS: Array<{ label: string; value: Theme }> = [
@@ -28,16 +28,51 @@ const THREADING_OPTIONS: Array<{ label: string; value: boolean }> = [
   { label: 'Off', value: false },
   { label: 'On', value: true },
 ]
+/**
+ * Obsidian's "Default location for new notes" options and order (Files & Links, Links C2- —
+ * GRO-2240): drives where clicking a bare unresolved [[link]] creates its page. The labels
+ * are long, so they stack (settings__stack) instead of sharing an option row.
+ */
+const NEW_NOTE_LOCATION_OPTIONS: Array<{ label: string; value: NewNoteLocation }> = [
+  { label: 'Vault folder', value: 'root' },
+  { label: 'Same folder as current file', value: 'current' },
+  { label: 'In the folder specified below', value: 'folder' },
+]
 
 interface SettingsCogProps {
   settings: SettingsState
   onChange: (next: SettingsState) => void
 }
 
-/** Cog pinned to the sidebar footer; opens the settings popover above it (GRO-2024). */
+/**
+ * Cog pinned to the sidebar footer; opens the settings popover above it (GRO-2024).
+ * Sections: Appearance/spacing/threading rows, then Files & Links (C2-, GRO-2240) — the
+ * rollup home for Obsidian-modeled file/link settings; today: default location for new notes.
+ */
 export function SettingsCog({ settings, onChange }: SettingsCogProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+
+  // The folder input is draft + commit (Enter/blur), CreateInline-style: an invalid path —
+  // absolute, `..`/`.`/empty segments — keeps the STORED value and marks the input; the typed
+  // text stays for fixing up. An external settings change (another window) resets the draft.
+  const [folderDraft, setFolderDraft] = useState(settings.newNoteFolder)
+  const [folderInvalid, setFolderInvalid] = useState(false)
+  useEffect(() => {
+    setFolderDraft(settings.newNoteFolder)
+    setFolderInvalid(false)
+  }, [settings.newNoteFolder])
+
+  const commitFolder = (raw: string) => {
+    const value = raw.trim()
+    if (!isValidNewNoteFolder(value)) {
+      setFolderInvalid(true)
+      return
+    }
+    setFolderInvalid(false)
+    setFolderDraft(value)
+    if (value !== settings.newNoteFolder) onChange({ ...settings, newNoteFolder: value })
+  }
 
   useEffect(() => {
     if (!open) return
@@ -142,6 +177,39 @@ export function SettingsCog({ settings, onChange }: SettingsCogProps) {
               Default
             </button>
           </div>
+          <p className="settings__section">Files &amp; Links</p>
+          <p className="settings__label">Default location for new notes</p>
+          <div className="settings__stack">
+            {NEW_NOTE_LOCATION_OPTIONS.map(({ label, value }) => (
+              <button
+                key={value}
+                type="button"
+                className={`settings__option${settings.newNoteLocation === value ? ' settings__option--active' : ''}`}
+                onClick={() => onChange({ ...settings, newNoteLocation: value })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {settings.newNoteLocation === 'folder' && (
+            <input
+              type="text"
+              className={`settings__input${folderInvalid ? ' settings__input--error' : ''}`}
+              aria-label="Folder to create new notes in"
+              aria-invalid={folderInvalid}
+              placeholder="Example: folder 1/folder 2"
+              spellCheck={false}
+              value={folderDraft}
+              onChange={(e) => {
+                setFolderDraft(e.target.value)
+                setFolderInvalid(false)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitFolder(e.currentTarget.value)
+              }}
+              onBlur={(e) => commitFolder(e.target.value)}
+            />
+          )}
         </div>
       )}
       <button

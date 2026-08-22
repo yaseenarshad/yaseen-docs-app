@@ -234,6 +234,10 @@ export interface SettingsState {
   threadColor: string | null
   /** Appearance (Desktop K, GRO-2218): explicit values win; `system` tracks the OS live. */
   theme: Theme
+  /** Files & Links (Links C2-, GRO-2240): where a BARE unresolved `[[link]]` creates its page. */
+  newNoteLocation: NewNoteLocation
+  /** Root-relative folder for `newNoteLocation: 'folder'` ('' = the vault root); ignored otherwise. Interpreted per-vault against each window's root. */
+  newNoteFolder: string
 }
 
 export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
@@ -241,6 +245,18 @@ export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
 /** Obsidian's Appearance vocabulary and order — also exactly Electron's `nativeTheme.themeSource`. */
 export type Theme = 'system' | 'light' | 'dark'
 export const THEMES: readonly Theme[] = ['system', 'light', 'dark']
+
+/**
+ * Obsidian's "Default location for new notes" options and order (Links C2-, GRO-2240):
+ * vault folder · same folder as current file · the folder named in `newNoteFolder`.
+ */
+export type NewNoteLocation = 'root' | 'current' | 'folder'
+export const NEW_NOTE_LOCATIONS: readonly NewNoteLocation[] = ['root', 'current', 'folder']
+
+/** Valid `newNoteFolder`: '' (the vault root) or root-relative — no leading/trailing `/`, no empty, `.` or `..` segments. */
+export function isValidNewNoteFolder(v: string): boolean {
+  return v === '' || v.split('/').every((s) => s.trim() !== '' && s.trim() !== '.' && s.trim() !== '..')
+}
 
 /** Matches the app's pre-settings look (Crepe: line-height 1.5, block padding 4px); threading on, 2px, accent. */
 export const DEFAULT_SETTINGS: SettingsState = {
@@ -250,6 +266,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   threadWidth: 2,
   threadColor: null,
   theme: 'system',
+  newNoteLocation: 'root',
+  newNoteFolder: '',
 }
 
 export interface WindowBounds {
