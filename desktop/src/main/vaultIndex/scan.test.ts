@@ -164,7 +164,7 @@ describe('scanFile', () => {
     expect(r).toMatchObject({ name: 'big.md', properties: {}, tags: [], links: [], embeds: [] })
   })
 
-  it('missing file → ApiFailure NOT_FOUND', async () => {
+  it('missing file → BridgeFailure NOT_FOUND', async () => {
     await expect(scanFile(root, path.join(root, 'nope.md'))).rejects.toMatchObject({ code: 'NOT_FOUND' })
   })
 })

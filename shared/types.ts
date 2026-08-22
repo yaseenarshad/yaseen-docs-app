@@ -56,7 +56,7 @@ export interface TreeResponse {
   generatedAt: number
 }
 
-// ---------- Bases property index (GRO-2127; bridge method index(root) once the Desktop bridge exists) ----------
+// ---------- Bases property index (GRO-2127; bridge method index(root) — Desktop D10) ----------
 
 /** One markdown note as the Bases query engine sees it. `.base` files are never records. */
 export interface IndexRecord {
@@ -89,7 +89,7 @@ export interface IndexResponse {
   root: string
   /** Every markdown note under `root` (dot-entries and `node_modules` skipped), sorted by path. */
   records: IndexRecord[]
-  /** Server time (epoch ms) when this snapshot was taken. */
+  /** Main-process time (epoch ms) when this snapshot was taken. */
   generatedAt: number
   /** Assigned property types from `.obsidian/types.json` (5B, GRO-2142); absent when the vault has none. */
   types?: Record<string, string>

@@ -80,7 +80,7 @@ export function BaseHost({ root, file, watch, onOpenFile }: BaseHostProps) {
       // of the write that caused the event (see CrepeHost).
       void controller.settled().then(() => {
         if (cancelled) return
-        if (ev.mtime === controller.mtime) return // echo of our own PUT
+        if (ev.mtime === controller.mtime) return // echo of our own write
         controller.update(contentOf(modeRef.current))
         if (controller.dirty) reportConflict(ev.mtime)
         else void reload()

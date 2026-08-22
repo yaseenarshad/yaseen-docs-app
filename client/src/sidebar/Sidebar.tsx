@@ -75,7 +75,7 @@ export function Sidebar({
 
   useEffect(() => refresh(), [refresh])
 
-  // Refresh on structural changes; `ready` also fires on every SSE (re)connect, covering missed events.
+  // Refresh on structural changes; `ready` also fires on every watch (re)subscription, covering missed events.
   useEffect(
     () =>
       watch.subscribe((ev) => {
@@ -146,7 +146,7 @@ export function Sidebar({
     async (name: string) => {
       if (creating === null) return
       const p = entryPath(creating.parentDir, name, creating.kind)
-      // Notes and bases both go through create-file; the server seeds `.base` with a minimal view.
+      // Notes and bases both go through createFile; the main process seeds `.base` with a minimal view.
       if (creating.kind === 'dir') await api.createDir(p)
       else await api.createFile(p)
       setCreating(null)

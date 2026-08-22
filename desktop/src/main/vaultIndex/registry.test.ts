@@ -69,7 +69,7 @@ describe('getIndex: cold scan', () => {
     expect(activeWatcherRoots()).toContain(root)
   })
 
-  it('bad roots fail with an ApiFailure', async () => {
+  it('bad roots fail with an BridgeFailure', async () => {
     await expect(getIndex(path.join(root, 'nope'))).rejects.toMatchObject({ code: 'NOT_FOUND' })
     await expect(getIndex(path.join(root, 'VSL-v1.md'))).rejects.toMatchObject({ code: 'NOT_A_DIRECTORY' })
   })
