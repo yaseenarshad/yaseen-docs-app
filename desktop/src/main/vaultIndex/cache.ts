@@ -157,12 +157,20 @@ export async function loadIndexCache(root: string): Promise<IndexCacheLoad> {
   return { records, status: 'hit' }
 }
 
-/** True when `v` holds a non-finite number anywhere — YAML `.inf`/`.nan` frontmatter, which JSON cannot round-trip. */
-function hasNonFinite(v: unknown): boolean {
+/**
+ * True when `v` cannot round-trip through JSON: a non-finite number (YAML `.inf`/`.nan`) or a
+ * self-referential alias cycle (`a: &x\n  b: *x` — the yaml parser builds a genuinely cyclic
+ * object, which `JSON.stringify` throws on) anywhere inside it. `stack` is the ancestor chain,
+ * so shared-but-acyclic aliases are NOT flagged — stringify just duplicates those.
+ */
+function cannotRoundTrip(v: unknown, stack = new Set<object>()): boolean {
   if (typeof v === 'number') return !Number.isFinite(v)
-  if (Array.isArray(v)) return v.some(hasNonFinite)
-  if (typeof v === 'object' && v !== null) return Object.values(v).some(hasNonFinite)
-  return false
+  if (typeof v !== 'object' || v === null) return false
+  if (stack.has(v)) return true
+  stack.add(v)
+  const bad = (Array.isArray(v) ? v : Object.values(v)).some((x) => cannotRoundTrip(x, stack))
+  stack.delete(v)
+  return bad
 }
 
 /** Serialises + atomically writes `records` for `root` NOW, appended to the root's write chain. Errors log, never throw. */
@@ -172,8 +180,9 @@ function write(root: string, records: Map<string, IndexRecord>): Promise<void> {
   const chain = (chains.get(root) ?? Promise.resolve())
     .then(async () => {
       // Serialise inside the chain: the map is live, so the freshest state wins. Records whose
-      // frontmatter carries non-finite numbers are left out — they just rescan on the next start.
-      const body = JSON.stringify({ version: CACHE_VERSION, root, records: [...records.values()].filter((r) => !hasNonFinite(r.properties)) })
+      // frontmatter cannot round-trip through JSON (non-finite numbers, alias cycles) are left
+      // out — they just rescan on the next start; the rest of the vault still caches.
+      const body = JSON.stringify({ version: CACHE_VERSION, root, records: [...records.values()].filter((r) => !cannotRoundTrip(r.properties)) })
       await mkdir(dir, { recursive: true })
       await atomicWrite(cacheFile(dir, root), body)
     })

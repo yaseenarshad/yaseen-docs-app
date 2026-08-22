@@ -82,6 +82,8 @@ export async function reconcile(
   // (~660 ms at 10k notes vs ~27 ms sync, GRO-2229 bench). statSync bypasses the pool entirely;
   // the one-time ~27 ms loop block at vault open matches the main process's existing sync fs use
   // (store load, link routing). A null entry is a failed stat (→ that file drops, like scanAll).
+  // If the residual ~25 ms warm-band gap ever matters, the recorded levers are a
+  // UV_THREADPOOL_SIZE bump or a sync walk (GRO-2223 evidence comment) — deliberately not done.
   const stats = new Map<string, Stats | null>()
   for (const file of files) {
     if (!cachedRecords.has(file)) continue

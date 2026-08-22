@@ -1,6 +1,6 @@
 /**
  * Bases property index (GRO-2127 / GRO-2128). Transport-agnostic: no Hono, no Electron — the
- * caller (today: tests; later: the Desktop bridge's `index(root)`) invokes `getIndex` directly.
+ * Desktop bridge (`ipc/fs.ts`, GRO-2129) and tests invoke `getIndex` directly.
  * The persistent cache (GRO-2223) is Electron-free too: `main/index.ts` injects the dir.
  */
 export { flushIndexCache, initIndexCache } from './cache'

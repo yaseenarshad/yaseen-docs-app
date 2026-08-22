@@ -5,6 +5,10 @@
  * in-memory entry and its watcher subscription, exactly what idle eviction does). Runs are
  * interleaved across vaults round-robin so machine noise spreads evenly across sizes.
  *
+ * NOTE (post GRO-2228/2229): `getIndex` now consults the persistent cache, but `initIndexCache`
+ * is deliberately never called here — the cache dir stays uninjected, every load is a guaranteed
+ * miss, and each run stays a TRUE cold scan. Call `initIndexCache` first to bench warm starts.
+ *
  * After the timed runs, three supplementary sweeps per vault bound the warm-start floor a
  * persistent cache could reach: walk-only (readdir), walk + stat (the D2 path+mtime+size
  * validation pass), and JSON stringify/parse of the records (the cache round trip).
@@ -19,7 +23,7 @@ import { _evictAll, getIndex } from '../../src/main/vaultIndex'
 const args = process.argv.slice(2)
 const runsIdx = args.indexOf('--runs')
 const RUNS = runsIdx >= 0 ? Number(args[runsIdx + 1]) : 5
-const vaults = args.filter((a, i) => !a.startsWith('--') && i !== runsIdx + 1)
+const vaults = args.filter((a, i) => !a.startsWith('--') && !(runsIdx >= 0 && i === runsIdx + 1))
 if (vaults.length === 0 || !Number.isInteger(RUNS) || RUNS < 1) {
   console.error('usage: npx tsx --tsconfig desktop/tsconfig.json desktop/e2e/fixtures/benchIndex.ts <vaultDir...> [--runs 5]')
   process.exit(1)

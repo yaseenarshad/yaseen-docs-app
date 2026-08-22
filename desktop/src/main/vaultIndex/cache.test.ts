@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -126,6 +126,64 @@ describe('index cache: write / load round trip', () => {
     const load = await loadIndexCache('/nf')
     expect(load.status).toBe('hit')
     expect([...load.records!.keys()]).toEqual(['/nf/ok.md'])
+  })
+
+  it('cyclic frontmatter (self-referential YAML alias) excludes that record; shared acyclic aliases persist', async () => {
+    // `a: &x\n  b: *x` really parses to a cyclic object (yaml pkg) — JSON.stringify would throw.
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    const shared = ['x'] // `a: &s [x]` + `b: *s`: shared but acyclic — stringify just duplicates it
+    const ok = record('/cyc/ok.md', { properties: { a: shared, b: shared } })
+    const bad = record('/cyc/bad.md', { properties: cyclic })
+    schedulePersist('/cyc', asMap(ok, bad))
+    await flushIndexCache()
+    const load = await loadIndexCache('/cyc')
+    expect(load.status).toBe('hit')
+    expect([...load.records!.keys()]).toEqual(['/cyc/ok.md'])
+    expect(load.records!.get('/cyc/ok.md')?.properties).toEqual({ a: ['x'], b: ['x'] })
+  })
+
+  it('per-root write chain: a flush issued before the previous one settles still lands last', async () => {
+    _setPersistDebounceMs(60_000)
+    schedulePersist('/order', asMap(record('/order/a.md', { size: 1 })))
+    const first = flushIndexCache() // starts write 1 — deliberately not awaited yet
+    schedulePersist('/order', asMap(record('/order/a.md', { size: 2 })))
+    const second = flushIndexCache() // chains write 2 behind the in-flight write 1
+    await Promise.all([first, second])
+    expect((await loadIndexCache('/order')).records!.get('/order/a.md')?.size).toBe(2)
+  })
+})
+
+describe('index cache: a failed write logs and never rejects; the chain recovers', () => {
+  let base: string
+  beforeAll(async () => {
+    base = await mkdtemp(path.join(tmpdir(), 'mdapp-index-cache-fail-'))
+  })
+  afterAll(async () => {
+    _resetIndexCache()
+    await rm(base, { recursive: true, force: true })
+  })
+
+  it('a FILE occupying the cache-dir path fails the write (logged, flush resolves); removing it heals the next persist', async () => {
+    const blocked = path.join(base, 'blocked')
+    await writeFile(blocked, 'occupies the dir path') // mkdir -p will now fail
+    _resetIndexCache()
+    initIndexCache(blocked)
+    await _gcDone() // readdir on a file → caught, silent no-op
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      schedulePersist('/heal', asMap(record('/heal/a.md')))
+      await expect(flushIndexCache()).resolves.toBeUndefined() // never rejects
+      expect(error).toHaveBeenCalledTimes(1)
+      expect((await loadIndexCache('/heal')).status).toBe('miss')
+      await rm(blocked) // obstruction gone — the chain must not stay poisoned
+      schedulePersist('/heal', asMap(record('/heal/a.md')))
+      await flushIndexCache()
+      expect(error).toHaveBeenCalledTimes(1) // no second failure
+      expect((await loadIndexCache('/heal')).status).toBe('hit')
+    } finally {
+      error.mockRestore()
+    }
   })
 })
 

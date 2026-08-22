@@ -89,6 +89,9 @@ async function build(root: string): Promise<Entry> {
   // reading it early keeps the multi-MB read ahead of the chokidar initial scan that floods the
   // fs threadpool on subscribe.
   const [cached] = await Promise.all([loadIndexCache(root), fsCall(root, () => walk(root, files))])
+  // A corrupt cache is an anomaly worth one line (vaultConfig idiom); `miss` and
+  // `version-mismatch` are expected states (first open / semantics bump) and stay silent.
+  if (cached.status === 'corrupt') console.warn(`[index-cache] cache for ${root} is corrupt; ignoring it and rescanning`)
   // Subscribe before reading so a write that lands mid-scan is re-scanned rather than lost.
   entry.unsubscribe = subscribe(root, (ev) => onEvent(root, entry, ev))
   try {

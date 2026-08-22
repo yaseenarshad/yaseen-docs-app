@@ -119,6 +119,26 @@ describe('getIndex + persistent cache (GRO-2228/2229)', () => {
     await flushIndexCache()
     expect((await loadIndexCache(root)).status).toBe('hit')
   })
+
+  it('a corrupt cache file degrades to a full rescan with one console.warn; coldDiff says corrupt', async () => {
+    const cold = await getIndex(root)
+    _evictAll()
+    await flushIndexCache()
+    const files = (await readdir(cacheDir)).filter((f) => f.endsWith('.json'))
+    expect(files).toHaveLength(1)
+    await writeFile(path.join(cacheDir, files[0]), 'not json {{{')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      vi.mocked(scanFile).mockClear()
+      const res = await getIndex(root)
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(res.records).toEqual(cold.records) // the full rescan, same truth
+      expect(scanFile).toHaveBeenCalledTimes(res.records.length) // every file re-read
+      expect(getColdStartDiff(root)).toMatchObject({ cacheStatus: 'corrupt', added: [], removed: [], changed: [] })
+    } finally {
+      warn.mockRestore()
+    }
+  })
 })
 
 describe('stale-cache torture (GRO-2230): heavy offline mutation, cache-assisted == from-scratch', () => {
