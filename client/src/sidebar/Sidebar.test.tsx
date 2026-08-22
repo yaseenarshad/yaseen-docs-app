@@ -110,3 +110,37 @@ describe('Sidebar open in new window (D2, GRO-2168)', () => {
     expect(itemByLabel(el, 'New note')).toBeDefined()
   })
 })
+
+describe('Sidebar copy link (E3, GRO-2173)', () => {
+  /** jsdom has no navigator.clipboard; the menu items call writeText, so stub just that. */
+  function installClipboard() {
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    return writeText
+  }
+
+  it('the file row context menu offers "Copy link" next to "Copy path"; it puts the yaseendocs:// link on the clipboard and closes', async () => {
+    const writeText = installClipboard()
+    const { el } = await mount()
+    act(() => void fileRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    const labels = menuItems(el).map((b) => b.textContent)
+    expect(labels.indexOf('Copy link')).toBe(labels.indexOf('Copy path') + 1)
+    act(() => itemByLabel(el, 'Copy link')?.click())
+    // The exact fileLink('/v/a.md') bytes — the link main's parseFileLink round-trips (links.test.ts).
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(writeText).toHaveBeenCalledWith('yaseendocs:///v/a.md')
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('folder rows and blank space get no "Copy link" (a folder link would only fail the markdown guard)', async () => {
+    installClipboard()
+    const { el } = await mount()
+    act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
+    expect(itemByLabel(el, 'Copy path')).toBeDefined()
+    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
+    expect(itemByLabel(el, 'New note')).toBeDefined()
+  })
+})

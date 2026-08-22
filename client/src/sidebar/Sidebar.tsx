@@ -57,7 +57,7 @@ export function Sidebar({
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [expanded, dispatch] = useReducer(treeReducer, root, storage.getExpanded)
-  const [menu, setMenu] = useState<{ x: number; y: number; targetDir: string; copyPath: string | null; newWindowPath: string | null } | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; targetDir: string; copyPath: string | null; filePath: string | null } | null>(null)
   const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string } | null>(null)
 
   const refresh = useCallback(() => {
@@ -115,7 +115,8 @@ export function Sidebar({
         y: e.clientY,
         targetDir: targetDirFor(node, root),
         copyPath: node?.path ?? null,
-        newWindowPath: node?.type === 'file' ? node.path : null,
+        // FILE rows only: feeds both "Copy link" (E3, GRO-2173) and "Open in new window" (D2).
+        filePath: node?.type === 'file' ? node.path : null,
       })
     },
     [root],
@@ -201,7 +202,8 @@ export function Sidebar({
           x={menu.x}
           y={menu.y}
           copyPath={menu.copyPath}
-          newWindowPath={menu.newWindowPath}
+          copyLinkPath={menu.filePath}
+          newWindowPath={menu.filePath}
           onOpenNewWindow={openFileNewWindow}
           onNewNote={() => startCreate('file')}
           onNewBase={() => startCreate('base')}
