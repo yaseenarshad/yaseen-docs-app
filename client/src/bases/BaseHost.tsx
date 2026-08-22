@@ -128,6 +128,7 @@ export function BaseHost({ root, file, watch, onOpenFile }: BaseHostProps) {
             records={index.records}
             indexStatus={index.status}
             indexError={index.error ?? undefined}
+            types={index.types}
             onOpenFile={onOpenFile}
           />
         ) : (

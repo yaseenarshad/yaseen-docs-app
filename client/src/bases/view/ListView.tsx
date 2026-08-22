@@ -2,6 +2,8 @@ import type { IndexRecord } from '@shared/types'
 import type { BaseDefinition, BaseView } from '../baseFile'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
 import { render } from '../expr'
+import { cellEditor, columnTyping } from '../editorType'
+import { EditableCell } from './EditableCell'
 import { canonicalKey } from './filterRows'
 import { GroupHeader, cellContent, groupKeyOf } from './GroupHeader'
 
@@ -17,6 +19,8 @@ export interface ListViewProps {
   collapsed: readonly string[]
   onToggleGroup: (key: string) => void
   onOpenFile: (path: string) => void
+  /** Assigned property types from `.obsidian/types.json`, for editor inference (5B, GRO-2142). */
+  types?: Record<string, string>
 }
 
 export type MarkerStyle = 'bullet' | 'number' | 'none'
@@ -40,9 +44,11 @@ const separatorOf = (view: BaseView): string => (typeof view.propertySeparator =
  * ordinal within its list — restarting per group). Grouped results render 4C sections (the
  * shared `GroupHeader` over each group's own list) with the SAME persisted collapse state as
  * the table/board/cards (never the `.base` file); search narrows items and drops empty groups.
- * The three config keys are edited in the Properties menu (list views only). Editing is 5B+.
+ * The three config keys are edited in the Properties menu (list views only). The primary line
+ * (when not file.name) and the indented property rows edit inline through `EditableCell`
+ * (5B, GRO-2142); the joined inline string stays read-only.
  */
-export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile }: ListViewProps) {
+export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, types }: ListViewProps) {
   const keys = propertyKeys(def, view, records)
   const primary: string | undefined = keys[0]
   const rest = keys.slice(1)
@@ -50,6 +56,25 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
   const marker = markerStyleOf(view)
   const indent = view.indentProperties === true
   const separator = separatorOf(view)
+  // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows
+  const rowRecords = rows.map((r) => r.record)
+  const bareOf = (key: string) => (canonicalKey(key).startsWith('note.') ? canonicalKey(key).slice(5) : null)
+  const typings = new Map(keys.map((k) => [k, columnTyping(k, rowRecords, types)]))
+  const basenames = records.map((r) => r.basename)
+  const editable = (row: Row, key: string) => {
+    const bare = bareOf(key)
+    if (bare === null) return cellContent(row.values[key])
+    return (
+      <EditableCell
+        path={row.record.path}
+        propKey={bare}
+        raw={row.record.properties[bare]}
+        value={row.values[key]}
+        editor={cellEditor(row.record.properties[bare], typings.get(key) ?? null)}
+        basenames={basenames}
+      />
+    )
+  }
 
   const items = (shown: readonly Row[]) => (
     <ul className="base-list__items">
@@ -69,7 +94,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
                     {primary === undefined ? row.record.name : render(row.values[primary])}
                   </button>
                 ) : (
-                  <span className="base-list__primary">{cellContent(row.values[primary])}</span>
+                  <span className="base-list__primary">{editable(row, primary)}</span>
                 )}
                 {inline !== '' && <span className="base-list__inline">{inline}</span>}
               </div>
@@ -78,7 +103,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
                   {rest.map((key) => (
                     <div key={key} className="base-list__prop">
                       <span className="base-list__prop-name">{propertyLabel(def, key)}</span>
-                      <span className="base-list__prop-value">{cellContent(row.values[key])}</span>
+                      <span className="base-list__prop-value">{editable(row, key)}</span>
                     </div>
                   ))}
                 </div>

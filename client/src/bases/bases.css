@@ -936,6 +936,76 @@
   width: 56px;
 }
 
+/* ---------- inline cell editors (5B, GRO-2142) ---------- */
+
+.base-cell-edit {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+/* the display is a button so it can be clicked/focused, but looks like plain cell content */
+.base-cell-edit__display {
+  display: inline-block;
+  max-width: 100%;
+  min-width: 12px;
+  min-height: 1em;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  background: none;
+  border: 0;
+  cursor: text;
+}
+
+.base-cell-edit__input {
+  width: 100%;
+  min-width: 60px;
+  font-size: 12px;
+}
+
+.base-cell-edit__chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  align-items: center;
+  max-width: 100%;
+}
+
+.base-cell-edit__chips .base-cell-edit__input {
+  width: auto;
+  flex: 1;
+}
+
+.base-cell-edit__chip-x {
+  padding: 0 0 0 3px;
+  font-size: 11px;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.base-cell-edit__link {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
+/* completion popover under the link input (reuses .base-popover) */
+.base-cell-edit__complete {
+  top: calc(100% + 2px);
+  left: 0;
+  right: auto;
+  min-width: 160px;
+  padding: 4px;
+}
+
+.base-cell-edit__error {
+  margin-left: 4px;
+}
+
 /* ---------- raw-YAML fallback (GRO-2125) ---------- */
 
 .base-error {

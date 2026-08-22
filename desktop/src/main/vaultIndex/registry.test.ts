@@ -125,6 +125,30 @@ describe('getIndex: incremental updates from the watcher', () => {
   })
 })
 
+describe('getIndex: .obsidian/types.json (5B, GRO-2142)', () => {
+  let root: string
+  let cleanup: () => Promise<void>
+  beforeAll(async () => ({ root, cleanup } = await makeBasesFixture()))
+  afterAll(async () => {
+    _evictAll()
+    await cleanup()
+  })
+
+  it('surfaces the assigned types map on the response', async () => {
+    expect((await getIndex(root)).types).toEqual({ date: 'date', published: 'checkbox' })
+  })
+
+  it('drops non-string assignments; a missing or malformed file leaves types absent', async () => {
+    const file = path.join(root, '.obsidian', 'types.json')
+    await writeFile(file, '{"types":{"date":"date","n":5}}')
+    expect((await getIndex(root)).types).toEqual({ date: 'date' })
+    await writeFile(file, 'not json')
+    expect((await getIndex(root)).types).toBeUndefined()
+    await rm(file)
+    expect((await getIndex(root)).types).toBeUndefined()
+  })
+})
+
 describe('getIndex: idle eviction', () => {
   let root: string
   let cleanup: () => Promise<void>

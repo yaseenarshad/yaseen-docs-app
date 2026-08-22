@@ -91,6 +91,8 @@ export interface IndexResponse {
   records: IndexRecord[]
   /** Server time (epoch ms) when this snapshot was taken. */
   generatedAt: number
+  /** Assigned property types from `.obsidian/types.json` (5B, GRO-2142); absent when the vault has none. */
+  types?: Record<string, string>
 }
 
 // ---------- readFile(path) ----------

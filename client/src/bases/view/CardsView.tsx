@@ -4,7 +4,9 @@ import { api } from '../../api'
 import type { BaseDefinition, BaseView } from '../baseFile'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
 import { render } from '../expr'
+import { cellEditor, columnTyping } from '../editorType'
 import { cardWidth } from './cardWidth'
+import { EditableCell } from './EditableCell'
 import { canonicalKey } from './filterRows'
 import { GroupHeader, cellContent, groupKeyOf } from './GroupHeader'
 
@@ -22,6 +24,8 @@ export interface CardsViewProps {
   collapsed: readonly string[]
   onToggleGroup: (key: string) => void
   onOpenFile: (path: string) => void
+  /** Assigned property types from `.obsidian/types.json`, for editor inference (5B, GRO-2142). */
+  types?: Record<string, string>
 }
 
 // ---------- covers ----------
@@ -104,13 +108,18 @@ function CardCover({ root, cover }: { root: string | null; cover: Cover }) {
  * `imageFit` (cover|contain) and `imageAspectRatio` (number, default 1:1) land as CSS custom
  * properties on the grid. Grouped results render 4C sections — the shared `GroupHeader` over
  * each group's grid, with the SAME persisted collapse state as the table/board (never the
- * `.base` file); search narrows cards and drops empty groups. Editing and a lightbox are out
- * of scope (5B+).
+ * `.base` file); search narrows cards and drops empty groups. Note-property rows edit inline
+ * through `EditableCell` (5B, GRO-2142); a lightbox stays out of scope.
  */
-export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile }: CardsViewProps) {
+export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, types }: CardsViewProps) {
   const keys = propertyKeys(def, view, records)
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const rest = keys.filter((k) => k !== nameKey)
+  // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows
+  const rowRecords = rows.map((r) => r.record)
+  const bares = new Map(rest.map((k) => [k, canonicalKey(k).startsWith('note.') ? canonicalKey(k).slice(5) : null]))
+  const typings = new Map(rest.map((k) => [k, columnTyping(k, rowRecords, types)]))
+  const basenames = records.map((r) => r.basename)
   const imageKey = typeof view.image === 'string' && view.image.trim() !== '' ? view.image : null
   const ratio = Number(view.imageAspectRatio)
   const style = {
@@ -128,12 +137,28 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
             <button type="button" className="base-card__title" onClick={() => onOpenFile(row.record.path)}>
               {nameKey === undefined ? row.record.name : render(row.values[nameKey])}
             </button>
-            {rest.map((key) => (
-              <div key={key} className="base-card__prop">
-                <span className="base-card__prop-name">{propertyLabel(def, key)}</span>
-                <span className="base-card__prop-value">{cellContent(row.values[key])}</span>
-              </div>
-            ))}
+            {rest.map((key) => {
+              const bare = bares.get(key) ?? null
+              return (
+                <div key={key} className="base-card__prop">
+                  <span className="base-card__prop-name">{propertyLabel(def, key)}</span>
+                  <span className="base-card__prop-value">
+                    {bare === null ? (
+                      cellContent(row.values[key])
+                    ) : (
+                      <EditableCell
+                        path={row.record.path}
+                        propKey={bare}
+                        raw={row.record.properties[bare]}
+                        value={row.values[key]}
+                        editor={cellEditor(row.record.properties[bare], typings.get(key) ?? null)}
+                        basenames={basenames}
+                      />
+                    )}
+                  </span>
+                </div>
+              )
+            })}
           </div>
         </li>
       ))}

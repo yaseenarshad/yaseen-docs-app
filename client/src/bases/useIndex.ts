@@ -10,6 +10,8 @@ export interface IndexState {
   status: IndexStatus
   /** `[]` until the first fetch resolves (and after a failed one). */
   records: IndexRecord[]
+  /** Assigned property types from `.obsidian/types.json` (5B, GRO-2142); undefined when absent. */
+  types: Record<string, string> | undefined
   /** Fetch failure message; null unless `status` is 'error'. */
   error: string | null
   /** Refetch immediately, skipping the debounce. */
@@ -42,6 +44,7 @@ function touchesIndex(ev: WatchEvent): boolean {
 export function useIndex(root: string, watch: WatchSource): IndexState {
   const [status, setStatus] = useState<IndexStatus>('pending')
   const [records, setRecords] = useState<IndexRecord[]>([])
+  const [types, setTypes] = useState<Record<string, string> | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
   // Bumped on every fetch and on unmount/root change: only the latest fetch may commit.
   const generation = useRef(0)
@@ -53,6 +56,7 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
       (res) => {
         if (gen !== generation.current) return
         setRecords(res.records)
+        setTypes(res.types)
         setStatus('ready')
         setError(null)
       },
@@ -67,6 +71,7 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
   useEffect(() => {
     setStatus('pending')
     setRecords([])
+    setTypes(undefined)
     setError(null)
     refresh()
     const unsubscribe = watch.subscribe((ev) => {
@@ -85,5 +90,5 @@ export function useIndex(root: string, watch: WatchSource): IndexState {
     }
   }, [watch, refresh])
 
-  return { status, records, error, refresh }
+  return { status, records, types, error, refresh }
 }

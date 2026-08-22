@@ -4,6 +4,8 @@ import type { BaseDefinition, BaseView } from '../baseFile'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
 import { type Value, render, typeOf } from '../expr'
 import { BUILTIN_SUMMARIES, summarize } from '../summaries'
+import { cellEditor, columnTyping } from '../editorType'
+import { EditableCell } from './EditableCell'
 import type { Mutate } from './FilterMenu'
 import { canonicalKey } from './filterRows'
 import { GroupHeader, cellContent, groupKeyOf, summaryKindOf } from './GroupHeader'
@@ -23,6 +25,8 @@ export interface TableViewProps {
   onToggleGroup: (key: string) => void
   onUpdate: Mutate
   onOpenFile: (path: string) => void
+  /** Assigned property types from `.obsidian/types.json`, for editor inference (5B, GRO-2142). */
+  types?: Record<string, string>
 }
 
 const DEFAULT_WIDTH = 150
@@ -42,13 +46,14 @@ type Line = { header: Group; gk: string } | { row: Row; r: number }
  * Table view (GRO-2136): sticky header with drag-to-resize columns (`view.columnSize`, written on
  * mouseup), typed cells, the `file.name` cell opening the note, a pinned summary row with a
  * click-to-pick kind per column (`view.summaries`), arrow-key cell navigation and windowing above
- * `WINDOW_AT` lines. With `groupBy` (4C, GRO-2137) the groups render as sections in the same flat
+ * `WINDOW_AT` lines. Note-property cells edit inline (5B, GRO-2142): `EditableCell` per cell,
+ * opened by click or Enter, typed by `cellEditor` over the view's rows + `.obsidian/types.json`. With `groupBy` (4C, GRO-2137) the groups render as sections in the same flat
  * tbody slice: one full-width `GroupHeader` row per group (its height = the data row height so the
  * spacer maths holds), collapsed sections keep the header and drop the rows, the total summary row
  * moves into the group headers, and `data-cell` indices count DATA rows only so arrow keys skip
  * headers seamlessly.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, types }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   const [summaryFor, setSummaryFor] = useState<string | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
@@ -56,6 +61,11 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
 
   const keys = propertyKeys(def, view, records)
   const nameCol = keys.findIndex((k) => canonicalKey(k) === 'file.name')
+  // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows
+  const rowRecords = rows.map((r) => r.record)
+  const bares = keys.map((k) => (canonicalKey(k).startsWith('note.') ? canonicalKey(k).slice(5) : null))
+  const typings = keys.map((k) => columnTyping(k, rowRecords, types))
+  const basenames = records.map((r) => r.basename)
   const rowH = ROW_HEIGHTS[view.rowHeight ?? ''] ?? ROW_HEIGHTS.short
   const widthOf = (key: string) => (drag?.key === key ? drag.width : view.columnSize?.[key] ?? DEFAULT_WIDTH)
 
@@ -121,7 +131,12 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     if (at === undefined) return
     const [r, c] = at.split(':').map(Number)
     if (e.key === 'Enter') {
-      if (c === nameCol && flat[r]) onOpenFile(flat[r].record.path)
+      if (c === nameCol) {
+        if (flat[r]) onOpenFile(flat[r].record.path)
+      } else {
+        // start editing (or toggle the checkbox) exactly like a click on the cell (5B, GRO-2142)
+        ;(e.target as HTMLElement).querySelector<HTMLElement>('[data-edit]')?.click()
+      }
       return
     }
     const move = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key]
@@ -187,6 +202,15 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                         <button type="button" className="base-table__link" onClick={() => onOpenFile(line.row.record.path)}>
                           {render(v)}
                         </button>
+                      ) : bares[c] !== null ? (
+                        <EditableCell
+                          path={line.row.record.path}
+                          propKey={bares[c]}
+                          raw={line.row.record.properties[bares[c]]}
+                          value={v}
+                          editor={cellEditor(line.row.record.properties[bares[c]], typings[c])}
+                          basenames={basenames}
+                        />
                       ) : (
                         cellContent(v)
                       )}

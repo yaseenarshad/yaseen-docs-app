@@ -1,4 +1,4 @@
-import { readdir } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import type { IndexRecord, IndexResponse, WatchEvent } from '@shared/types'
 import { fsCall, isMarkdown, isSkipped } from '../fs/fsUtils'
@@ -71,6 +71,24 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
   }
 }
 
+/**
+ * Assigned property types from `.obsidian/types.json` (5B, GRO-2142), read fresh per call —
+ * the file is tiny and the watcher skips dot-dirs. Missing/malformed file → undefined;
+ * non-string assignments are dropped.
+ */
+async function readTypes(root: string): Promise<Record<string, string> | undefined> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(path.join(root, '.obsidian', 'types.json'), 'utf8'))
+    const types = (parsed as { types?: unknown } | null)?.types
+    if (types === null || typeof types !== 'object' || Array.isArray(types)) return undefined
+    const out: Record<string, string> = {}
+    for (const [k, v] of Object.entries(types as Record<string, unknown>)) if (typeof v === 'string') out[k] = v
+    return out
+  } catch {
+    return undefined
+  }
+}
+
 async function build(root: string): Promise<Entry> {
   const entry: Entry = { records: new Map(), unsubscribe: () => undefined }
   const files: string[] = []
@@ -118,7 +136,8 @@ export async function getIndex(root: string): Promise<IndexResponse> {
   }
   touch(root, entry)
   const records = [...entry.records.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-  return { root, records, generatedAt: Date.now() }
+  const types = await readTypes(root)
+  return { root, records, generatedAt: Date.now(), ...(types !== undefined && { types }) }
 }
 
 /** Test hook: drops every cached index and its watcher subscription. */

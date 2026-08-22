@@ -8,7 +8,7 @@ interface TextFieldProps {
   onDone?: () => void
   className?: string
   placeholder?: string
-  type?: 'text' | 'date'
+  type?: 'text' | 'date' | 'number'
   inputMode?: 'decimal'
   autoFocus?: boolean
   'aria-label'?: string

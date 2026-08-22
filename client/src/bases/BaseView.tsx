@@ -24,6 +24,8 @@ export interface BaseViewProps {
   indexStatus: 'pending' | 'ready' | 'error'
   /** The fetch failure shown when `indexStatus` is 'error'. */
   indexError?: string
+  /** Assigned property types from `.obsidian/types.json`, for cell editor inference (5B, GRO-2142). */
+  types?: Record<string, string>
   onOpenFile: (path: string) => void
 }
 
@@ -34,7 +36,7 @@ export interface BaseViewProps {
  * the list for `type: list` (4F, GRO-2140), a placeholder row list for unknown view types.
  * Only the active tab and the search text are component state — everything else is the file.
  */
-export function BaseView({ parsed, onChange, root, thisFile, records, indexStatus, indexError, onOpenFile }: BaseViewProps) {
+export function BaseView({ parsed, onChange, root, thisFile, records, indexStatus, indexError, types, onOpenFile }: BaseViewProps) {
   const [active, setActive] = useState(0)
   const [search, setSearch] = useState<string | null>(null)
   /** Collapsed group keys per view, seeded from the store; a toggle replaces the entry here AND writes through storage. */
@@ -149,6 +151,7 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           onToggleGroup={onToggleGroup}
           onUpdate={update}
           onOpenFile={onOpenFile}
+          types={types}
         />
       ) : view.type === 'board' ? (
         <BoardView
@@ -173,6 +176,7 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
           onOpenFile={onOpenFile}
+          types={types}
         />
       ) : view.type === 'list' ? (
         <ListView
@@ -184,6 +188,7 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
           onOpenFile={onOpenFile}
+          types={types}
         />
       ) : (
         <ul className="base-rows">

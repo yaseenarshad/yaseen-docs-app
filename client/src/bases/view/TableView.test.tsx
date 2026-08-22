@@ -157,10 +157,10 @@ describe('cells by type', () => {
     expect(num.textContent).toBe('2')
     expect(num.className).toContain('base-table__cell--num')
 
-    // checkbox (published: false / true), read-only
+    // checkbox (published: false / true), live editor (5B, GRO-2142)
     const off = q<HTMLInputElement>(cells(agentic)[2], 'input[type="checkbox"]')
     expect(off.checked).toBe(false)
-    expect(off.disabled).toBe(true)
+    expect(off.disabled).toBe(false)
     expect(q<HTMLInputElement>(cells(creator)[2], 'input[type="checkbox"]').checked).toBe(true)
 
     // list (tags) as chips
@@ -273,12 +273,13 @@ describe('keyboard navigation', () => {
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/The Levels of an Agency.md')
   })
 
-  it('Enter on a non-name cell does nothing', () => {
+  it('Enter on a non-name cell starts editing instead of opening (5B, GRO-2142)', () => {
     const { el, onOpenFile } = mount(TYPED_BASE)
     const cell = q<HTMLElement>(el, '[data-cell="0:1"]')
     act(() => cell.focus())
     press(cell, 'Enter')
     expect(onOpenFile).not.toHaveBeenCalled()
+    expect(cell.querySelector('input')).not.toBeNull()
   })
 })
 
