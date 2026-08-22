@@ -53,6 +53,13 @@ export const PencilIcon = () => (
   </svg>
 )
 
+/** Chain link, for the relation-column editor (5E, GRO-2217). */
+export const RelationIcon = () => (
+  <svg {...svg}>
+    <path d="M6.5 9.5 9.5 6.5M7.8 4.6l1.5-1.5a2.3 2.3 0 0 1 3.6 3.6l-1.5 1.5M8.2 11.4l-1.5 1.5a2.3 2.3 0 0 1-3.6-3.6l1.5-1.5" />
+  </svg>
+)
+
 const TYPE_GLYPHS: Record<string, ReactElement> = {
   table: (
     <>

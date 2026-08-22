@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { IndexRecord } from '@shared/types'
+import type { IndexRecord, RegistryResponse } from '@shared/types'
 import { storage } from '../lib/storage'
 import { type BaseDefinition, type ParsedBase, parseBase, serializeBase, updateBase } from './baseFile'
 import { type Group, type Row, propertyKeys, runView } from './engine'
 import { render } from './expr'
 import { createNewNote, deriveSeed, targetFolder, untitledName } from './newNote'
+import { pinnedType } from './relation'
 import { writeProperty } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
@@ -30,6 +31,8 @@ export interface BaseViewProps {
   indexError?: string
   /** Assigned property types from `.obsidian/types.json`, for cell editor inference (5B, GRO-2142). */
   types?: Record<string, string>
+  /** The vault's type registry (5E, GRO-2217; `useRegistry`); null/absent until fetched. Ranks above `types` for editor inference. */
+  registry?: RegistryResponse | null
   onOpenFile: (path: string) => void
   /** Read-only chrome for embeds (6A, GRO-2145): view switcher only — no toolbar menus, New, cell editing or drag. */
   readOnly?: boolean
@@ -44,7 +47,7 @@ export interface BaseViewProps {
  * the list for `type: list` (4F, GRO-2140), a placeholder row list for unknown view types.
  * Only the active tab and the search text are component state — everything else is the file.
  */
-export function BaseView({ parsed, onChange, root, thisFile, records, indexStatus, indexError, types, onOpenFile, readOnly = false, initialView }: BaseViewProps) {
+export function BaseView({ parsed, onChange, root, thisFile, records, indexStatus, indexError, types, registry = null, onOpenFile, readOnly = false, initialView }: BaseViewProps) {
   const [active, setActive] = useState(() =>
     initialView === undefined ? 0 : Math.max(0, parsed.def.views.findIndex((v) => v.name.toLowerCase() === initialView.toLowerCase())),
   )
@@ -78,6 +81,8 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
 
   const shown = useMemo(() => (Object.keys(moves).length === 0 ? records : applyMoves(records, moves)), [records, moves])
   const result = useMemo(() => (view ? runView(def, view, shown, { thisFile }) : null), [def, view, shown, thisFile])
+  // The type this view pins (5E, GRO-2217): scopes relation declarations and type-scoped registry typing.
+  const pinned = useMemo(() => (view === undefined ? null : pinnedType(def, view)), [def, view])
 
   if (view === undefined || result === null) {
     return (
@@ -208,11 +213,19 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           onUpdate={update}
           onNew={() => onNewNote(null)}
           tabs={tabs}
+          root={root}
+          pinned={pinned}
+          registry={registry}
         />
       )}
       {createError !== null && (
         <p className="base-view__error" role="alert">
           Could not create note: {createError}
+        </p>
+      )}
+      {registry?.error !== undefined && (
+        <p className="base-view__error" role="alert">
+          Could not load the type registry: {registry.error}
         </p>
       )}
       {indexStatus === 'pending' ? (
@@ -237,6 +250,8 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           moveError={moveError}
           onNewInGroup={readOnly ? undefined : onNewNote}
           types={types}
+          registry={registry}
+          pinned={pinned}
           readOnly={readOnly}
         />
       ) : view.type === 'board' ? (
@@ -268,6 +283,8 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           onOpenFile={onOpenFile}
           onNewInGroup={readOnly ? undefined : onNewNote}
           types={types}
+          registry={registry}
+          pinned={pinned}
           readOnly={readOnly}
         />
       ) : view.type === 'list' ? (
@@ -282,6 +299,8 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           onOpenFile={onOpenFile}
           onNewInGroup={readOnly ? undefined : onNewNote}
           types={types}
+          registry={registry}
+          pinned={pinned}
           readOnly={readOnly}
         />
       ) : (

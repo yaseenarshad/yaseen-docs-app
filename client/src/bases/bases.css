@@ -397,6 +397,31 @@
   align-items: center;
   gap: 6px;
   padding: 3px 0;
+  flex-wrap: wrap;
+}
+
+/* Relation editor for one column (5E, GRO-2217): a full-width row under the property. */
+.base-relation {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0 2px 22px;
+  flex-wrap: wrap;
+}
+
+.base-relation__target {
+  width: 110px;
+}
+
+.base-relation__dest {
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.base-relation__error {
+  font-size: 11px;
+  color: var(--danger);
 }
 
 .base-prop__name {

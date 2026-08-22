@@ -109,10 +109,11 @@ export function EditableCell({ path, propKey, raw, value, editor, basenames }: E
           </button>
           {failure}
         </>
-      ) : editor === 'list' ? (
+      ) : editor === 'list' || editor === 'multi-link' ? (
         <ChipsEditor
           initial={Array.isArray(current) ? current.map(String) : text === '' ? [] : [text]}
           label={label}
+          basenames={editor === 'multi-link' ? basenames : undefined}
           onCommit={commit}
           onDone={close}
         />
@@ -146,6 +147,8 @@ export function EditableCell({ path, propKey, raw, value, editor, basenames }: E
 interface ChipsEditorProps {
   initial: string[]
   label: string
+  /** Present for multi-link (5E, GRO-2217): an unclosed trailing `[[fragment` offers these basenames, like LinkEditor. */
+  basenames?: readonly string[]
   /** The whole list, once, on commit (Enter with an empty input, or blur out of the editor). */
   onCommit: (next: string[]) => void
   onDone: () => void
@@ -155,12 +158,19 @@ interface ChipsEditorProps {
  * List/tags chip editor: Enter adds the typed chip, empty Enter or blur commits, Esc cancels.
  * An untouched editor (no chip added/removed, no pending text) never commits: the seed
  * stringifies `initial`, so a no-op commit would rewrite a numeric list as strings.
+ * With `basenames` (a multi-link relation column) the input completes `[[…]]` exactly like
+ * LinkEditor — Enter picks the highlighted suggestion first, then adds the chip.
  */
-function ChipsEditor({ initial, label, onCommit, onDone }: ChipsEditorProps) {
+function ChipsEditor({ initial, label, basenames, onCommit, onDone }: ChipsEditorProps) {
   const [items, setItems] = useState(initial)
   const [text, setText] = useState('')
+  const [sel, setSel] = useState(0)
   const done = useRef(false)
   const dirty = useRef(false)
+
+  const fragment = basenames === undefined ? null : /\[\[([^[\]]*)$/.exec(text)?.[1].toLowerCase() ?? null
+  const matches =
+    fragment === null ? [] : (basenames ?? []).filter((b) => b.toLowerCase().includes(fragment)).slice(0, MAX_SUGGESTIONS)
 
   const change = (next: string[]) => {
     dirty.current = true
@@ -172,6 +182,11 @@ function ChipsEditor({ initial, label, onCommit, onDone }: ChipsEditorProps) {
     done.current = true
     if (commit && (dirty.current || text.trim() !== '')) onCommit(text.trim() === '' ? items : [...items, text.trim()])
     onDone()
+  }
+
+  const pick = (name: string) => {
+    setText(text.replace(/\[\[[^[\]]*$/, `[[${name}]]`))
+    setSel(0)
   }
 
   return (
@@ -205,8 +220,28 @@ function ChipsEditor({ initial, label, onCommit, onDone }: ChipsEditorProps) {
         autoFocus
         aria-label={label}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value)
+          setSel(0)
+        }}
         onKeyDown={(e) => {
+          if (matches.length > 0) {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault()
+              setSel((sel + 1) % matches.length)
+              return
+            }
+            if (e.key === 'ArrowUp') {
+              e.preventDefault()
+              setSel((sel + matches.length - 1) % matches.length)
+              return
+            }
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              pick(matches[sel])
+              return
+            }
+          }
           if (e.key === 'Enter') {
             e.preventDefault()
             if (text.trim() === '') finish(true)
@@ -219,6 +254,23 @@ function ChipsEditor({ initial, label, onCommit, onDone }: ChipsEditorProps) {
           }
         }}
       />
+      {matches.length > 0 && (
+        <span className="base-popover base-cell-edit__complete" role="listbox" aria-label={`${label} suggestions`}>
+          {matches.map((name, i) => (
+            <button
+              key={name}
+              type="button"
+              role="option"
+              aria-selected={i === sel}
+              className="base-popover__item"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => pick(name)}
+            >
+              {name}
+            </button>
+          ))}
+        </span>
+      )}
     </span>
   )
 }

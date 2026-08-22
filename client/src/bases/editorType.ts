@@ -1,19 +1,21 @@
-import type { IndexRecord } from '@shared/types'
+import type { IndexRecord, RegistryPropertyKind, RegistryResponse } from '@shared/types'
 import { canonicalKey } from './view/filterRows'
 
 /**
- * Editor type inference for inline cell editors (5B, GRO-2142). Locked precedence: an explicit
- * `.obsidian/types.json` assignment wins over any inference from values; otherwise the note's
- * own YAML value decides; a note without the key borrows the dominant value type across the
- * view's records; text is the final fallback. `file.*` and `formula.*` never get an editor.
- * The per-column halves (assignment + dominance) are computed once per render via
- * `columnTyping`; `cellEditor` adds the per-note value on top.
+ * Editor type inference for inline cell editors (5B, GRO-2142). Locked precedence, as amended
+ * by the 5E relation contract (GRO-2120 comment 1f28abb4 §5): a registry declaration on the
+ * view's pinned type wins, then a vault-wide registry declaration, then an explicit
+ * `.obsidian/types.json` assignment (an imported artifact ranks below the vault's own schema);
+ * otherwise the note's own YAML value decides; a note without the key borrows the dominant
+ * value type across the view's records; text is the final fallback. `file.*` and `formula.*`
+ * never get an editor. The per-column halves are computed once per render via `columnTyping`;
+ * `cellEditor` adds the per-note value on top.
  */
 
-export type EditorKind = 'text' | 'number' | 'checkbox' | 'date' | 'list' | 'link'
+export type EditorKind = 'text' | 'number' | 'checkbox' | 'date' | 'list' | 'link' | 'multi-link'
 
-/** Per-column typing facts; null = the column is read-only (`file.*` / `formula.*`). */
-export type ColumnTyping = { assigned: EditorKind | null; dominant: EditorKind | null } | null
+/** Per-column typing facts; null = the column is read-only (`file.*` / `formula.*`). `target` rides along from a registry link/multi-link declaration to constrain the picker. */
+export type ColumnTyping = { assigned: EditorKind | null; dominant: EditorKind | null; target?: string } | null
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}([T ].*)?$/
 const WIKILINK = /^\[\[[^[\]]+\]\]$/
@@ -58,17 +60,37 @@ function dominantKind(records: readonly IndexRecord[], bare: string): EditorKind
   return best
 }
 
-/** The column-wide typing facts for `key` over the view's records + assigned types. */
+/** `RegistryPropertyKind` → editor, 1:1 (contract §5; `multi-link` is the chips editor with link suggestions). */
+const REGISTRY_KIND: Record<RegistryPropertyKind, EditorKind> = {
+  text: 'text',
+  number: 'number',
+  date: 'date',
+  checkbox: 'checkbox',
+  list: 'list',
+  link: 'link',
+  'multi-link': 'multi-link',
+}
+
+/**
+ * The column-wide typing facts for `key` over the view's records, the registry (5E) and the
+ * assigned `.obsidian/types.json` types. `pinned` is the view's pinned type (`pinnedType`);
+ * only then do type-scoped registry declarations apply.
+ */
 export function columnTyping(
   key: string,
   records: readonly IndexRecord[],
   types: Record<string, string> | undefined,
+  registry?: RegistryResponse | null,
+  pinned?: string | null,
 ): ColumnTyping {
   const c = canonicalKey(key)
   if (!c.startsWith('note.')) return null
   const bare = c.slice(5)
+  const dominant = dominantKind(records, bare)
+  const declared = (pinned != null ? registry?.types[pinned]?.properties[bare] : undefined) ?? registry?.properties[bare]
+  if (declared !== undefined) return { assigned: REGISTRY_KIND[declared.kind], dominant, target: declared.target }
   const name = types?.[bare]
-  return { assigned: (name !== undefined ? ASSIGNED[name] : undefined) ?? null, dominant: dominantKind(records, bare) }
+  return { assigned: (name !== undefined ? ASSIGNED[name] : undefined) ?? null, dominant }
 }
 
 /** The editor for one cell; null = read-only. */

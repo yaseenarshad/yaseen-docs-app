@@ -317,6 +317,51 @@ export interface VaultConfigApi {
   onChange(listener: (change: VaultConfigChange) => void): () => void
 }
 
+// ---------- Type registry (`<root>/.yaseendocs/types.json` — contract locked on GRO-2120, bridge GRO-2201) ----------
+
+export type RegistryPropertyKind = 'text' | 'number' | 'date' | 'checkbox' | 'list' | 'link' | 'multi-link'
+
+export interface RegistryPropertyDef {
+  kind: RegistryPropertyKind
+  /** link/multi-link only: constrain the picker to pages whose page_type equals this type name. */
+  target?: string
+  required?: boolean
+}
+
+export interface RegistryTypeDef {
+  displayName?: string
+  pluralName?: string
+  folder?: string
+  properties: Record<string, RegistryPropertyDef>
+}
+
+export interface RegistryResponse {
+  root: string
+  version: number
+  types: Record<string, RegistryTypeDef>
+  /** Vault-wide declarations for columns made outside a typed base — see the GRO-2120 contract §4. */
+  properties: Record<string, RegistryPropertyDef>
+  /** Set when .yaseendocs/types.json exists but is unusable; types/properties are then {}. */
+  error?: string
+}
+
+export type RegistryScope = { type: string } | 'vault'
+
+/**
+ * The registry surface GRO-2201 delivers as `window.yaseenDocs.registry` (contract §2).
+ * Targeted mutators, same anti-clobber rationale as `StateApi`. Until the bridge lands the
+ * client consumes an in-memory stub behind this same interface (`client/src/bases/registryStub.ts`).
+ */
+export interface RegistryApi {
+  get(root: string): Promise<RegistryResponse>
+  setType(root: string, name: string, def: Partial<RegistryTypeDef>): Promise<void>
+  removeType(root: string, name: string): Promise<void>
+  setProperty(root: string, scope: RegistryScope, name: string, def: RegistryPropertyDef): Promise<void>
+  removeProperty(root: string, scope: RegistryScope, name: string): Promise<void>
+  /** Fired in every window of that root after any change (in-app or external edit of types.json). */
+  onChange(listener: (registry: RegistryResponse) => void): () => void
+}
+
 // ---------- Bridge: `window.yaseenDocs` (locked in GRO-2153, Desktop A1) ----------
 
 /**
