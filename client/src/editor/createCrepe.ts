@@ -31,12 +31,17 @@
  *  - Base embeds (GRO-2145, `baseEmbed/baseEmbedPlugin.ts`): a paragraph with exactly one `![[X.base]]`
  *    gets a widget decoration slot (never a schema change — the text round-trips byte-identically);
  *    CrepeHost portals `<BaseEmbed>` into the slots via the registry in `opts.baseEmbeds`.
+ *  - `base` code blocks (GRO-2146, `baseCodeBlock/baseCodeBlockView.ts`): a `$view` replacement
+ *    for `code_block` — `language === 'base'` gets a registry slot (CrepeHost portals
+ *    `<BaseCodeBlock>`), every other language delegates to Crepe's stock CodeMirror block.
+ *    No schema/serializer change: the block's exact text round-trips byte-identically.
  */
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
 import { Selection } from '@milkdown/kit/prose/state'
 import { replaceAll } from '@milkdown/kit/utils'
+import { createBaseCodeBlock, createBaseCodeBlockRegistry, type BaseCodeBlockRegistry } from './baseCodeBlock/baseCodeBlockView'
 import { createBaseEmbed, createBaseEmbedRegistry, type BaseEmbedRegistry } from './baseEmbed/baseEmbedPlugin'
 import { blockHandleGate } from './blockHandleGate'
 import { bulletThreading } from './outline/bulletThreading'
@@ -61,6 +66,8 @@ export interface CreateCrepeOptions {
   zoom?: ZoomOptions
   /** Base embed slots (GRO-2145): the host portals `<BaseEmbed>` into them. Defaults to a private registry. */
   baseEmbeds?: BaseEmbedRegistry
+  /** `base` code block slots (GRO-2146): the host portals `<BaseCodeBlock>` into them. Defaults to a private registry. */
+  baseCodeBlocks?: BaseCodeBlockRegistry
 }
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
@@ -82,6 +89,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(guideLines)
   crepe.editor.use(bulletThreading)
   crepe.editor.use(createBaseEmbed(opts.baseEmbeds ?? createBaseEmbedRegistry()))
+  crepe.editor.use(createBaseCodeBlock(opts.baseCodeBlocks ?? createBaseCodeBlockRegistry()))
   crepe.editor.use(blockHandleGate)
   crepe.editor.use(multiBlockDrag)
   crepe.editor.use(outlinerKeymap)

@@ -1109,3 +1109,70 @@
 .base-embed__msg--missing {
   color: var(--danger);
 }
+
+/* ---------- `base` code blocks rendered inline (6B, GRO-2146) ---------- */
+
+/* The node view's slot; `<BaseCodeBlock>` portals into it. Not editable, not part of the text flow. */
+.base-code-block {
+  margin: 8px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  max-height: 420px;
+  overflow: auto;
+  user-select: text;
+}
+
+.base-code-block .base-view {
+  min-height: 0;
+}
+
+.base-code-block__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.base-code-block__lang {
+  font-size: 11px;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.base-code-block__toggle {
+  font-size: 12px;
+  color: var(--fg-muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.base-code-block__toggle:hover {
+  color: var(--fg);
+}
+
+.base-code-block__source {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+.base-code-block__error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger);
+}

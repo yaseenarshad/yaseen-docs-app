@@ -4,6 +4,8 @@ import { fileKind } from '@shared/fileKind'
 import type { FileResponse } from '@shared/types'
 import { api } from '../api'
 import { BaseHost } from '../bases/BaseHost'
+import { createBaseCodeBlockRegistry, type BaseCodeBlockSlot } from './baseCodeBlock/baseCodeBlockView'
+import { BaseCodeBlock } from './baseCodeBlock/BaseCodeBlock'
 import { createBaseEmbedRegistry, type BaseEmbedSlot } from './baseEmbed/baseEmbedPlugin'
 import { BaseEmbed } from './baseEmbed/BaseEmbed'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
@@ -64,6 +66,15 @@ function CrepeHost({ root, file, watch, onOpenFile }: { root: string; file: File
     return embedRegistry.subscribe(() => setEmbedSlots(embedRegistry.list()))
   }, [embedRegistry])
 
+  // `base` code blocks (6B, GRO-2146): same pattern — the node view keeps one slot per
+  // ```base fence; a portal per slot renders <BaseCodeBlock> over the block's own YAML.
+  const [codeRegistry] = useState(createBaseCodeBlockRegistry)
+  const [codeSlots, setCodeSlots] = useState<readonly BaseCodeBlockSlot[]>([])
+  useEffect(() => {
+    setCodeSlots(codeRegistry.list())
+    return codeRegistry.subscribe(() => setCodeSlots(codeRegistry.list()))
+  }, [codeRegistry])
+
   useEffect(() => {
     const host = hostRef.current
     if (host === null) return
@@ -82,6 +93,7 @@ function CrepeHost({ root, file, watch, onOpenFile }: { root: string; file: File
       },
       zoom: { fileName: basename(file.path) },
       baseEmbeds: embedRegistry,
+      baseCodeBlocks: codeRegistry,
     })
     let controller: ReturnType<typeof attach> | null = null
     let cancelled = false
@@ -127,7 +139,7 @@ function CrepeHost({ root, file, watch, onOpenFile }: { root: string; file: File
       unsubscribe()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, embedRegistry])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, embedRegistry, codeRegistry])
 
   return (
     <>
@@ -153,6 +165,21 @@ function CrepeHost({ root, file, watch, onOpenFile }: { root: string; file: File
             thisFile={file.path}
             target={slot.target}
             viewName={slot.viewName}
+            onOpenFile={onOpenFile}
+          />,
+          slot.dom,
+          slot.key,
+        ),
+      )}
+      {codeSlots.map((slot) =>
+        createPortal(
+          <BaseCodeBlock
+            key={slot.key}
+            root={root}
+            watch={watch}
+            thisFile={file.path}
+            text={slot.text}
+            onCommit={slot.commit}
             onOpenFile={onOpenFile}
           />,
           slot.dom,
