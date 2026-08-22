@@ -2,8 +2,10 @@ import { app, BrowserWindow, Menu, net, protocol, screen, shell } from 'electron
 import { statSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { parseFileLink } from '@shared/links'
 import type { WindowEntry } from '@shared/types'
 import { registerIpc } from './ipc'
+import { createLinkQueue } from './linkQueue'
 import { buildMenuTemplate, createMenuHandlers, subscribeMenuRebuild } from './menu'
 import { createStore } from './store'
 import { createWindowManager } from './windows'
@@ -11,14 +13,40 @@ import { createWindowManager } from './windows'
 // Before anything reads app.getPath('userData'): the workspace is named "desktop", the app is not.
 app.setName('Yaseen Docs')
 
-/** One running instance (GRO-2160): a second launch just focuses the first (argv routing is E1's). */
+/** One running instance (GRO-2160): a second launch focuses the first; a link in its argv routes (E1). */
 const isPrimaryInstance = app.requestSingleInstanceLock()
 if (!isPrimaryInstance) app.quit()
-app.on('second-instance', () => {
+app.on('second-instance', (_event, argv) => {
+  // Windows/Linux deliver a clicked yaseendocs:// link as an argv entry of the second launch.
+  const urls = argv.filter((arg) => arg.startsWith('yaseendocs://'))
+  if (urls.length > 0) {
+    for (const url of urls) links.push(url)
+    return // routing focuses (or opens) the right window itself
+  }
   const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
   if (win === undefined) return
   if (win.isMinimized()) win.restore()
   win.focus()
+})
+
+// Deep links (E1, GRO-2171): the packaged bundle's `protocols` Info.plist entry is F1's job.
+app.setAsDefaultProtocolClient('yaseendocs')
+
+/** A parsed link routes to the best window; a bad one gets the unobtrusive notice, never a dialog. */
+function handleLink(url: string): void {
+  const parsed = parseFileLink(url)
+  if (parsed === null) {
+    manager.linkNotice(`Can't open link: ${url}`)
+    return
+  }
+  manager.routeToFile(parsed.path, parsed.root)
+}
+
+/** macOS fires `open-url` before `ready` on cold start: queue until `restoreAll()` ran, then flush. */
+const links = createLinkQueue(handleLink)
+app.on('open-url', (event, url) => {
+  event.preventDefault()
+  links.push(url)
 })
 
 // Privileged scheme: `standard` gives a real origin (history API, relative URLs), `secure` treats it
@@ -48,6 +76,13 @@ const manager = createWindowManager(store, {
     const primary = screen.getPrimaryDisplay()
     return [primary, ...screen.getAllDisplays().filter((d) => d.id !== primary.id)].map((d) => d.workArea)
   },
+  exists(path) {
+    try {
+      return statSync(path).isFile()
+    } catch {
+      return false
+    }
+  },
 })
 
 app.whenReady().then(() => {
@@ -75,6 +110,7 @@ app.whenReady().then(() => {
   subscribeMenuRebuild(store, applyMenu)
   registerIpc(store, manager)
   manager.restoreAll()
+  links.flush()
 })
 
 // Quit: flush every renderer sequentially (5s cap each, `windows[]` kept so relaunch restores them),

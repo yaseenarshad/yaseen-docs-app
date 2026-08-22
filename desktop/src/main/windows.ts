@@ -6,7 +6,9 @@
  * under vitest with fakes.
  */
 import { randomUUID } from 'node:crypto'
-import type { OpenWindowOptions, WindowBounds, WindowEntry } from '@shared/types'
+import { posix } from 'node:path'
+import { fileKind } from '@shared/fileKind'
+import type { OpenWindowOptions, RecentRoots, WindowBounds, WindowEntry } from '@shared/types'
 import { CH } from '../channels'
 import type { Store } from './store'
 
@@ -49,9 +51,12 @@ const DEFAULT_BOUNDS: WindowBounds = { x: 100, y: 100, width: 1200, height: 800 
 
 /** The slice of `BrowserWindow` the manager drives; a test fake implements it in a few lines. */
 export interface ManagedWindow {
-  webContents: { id: number; send(channel: string): void }
+  webContents: { id: number; send(channel: string, ...args: unknown[]): void }
   getBounds(): WindowBounds
   isDestroyed(): boolean
+  isMinimized(): boolean
+  restore(): void
+  focus(): void
   /** Like Electron's: destroys without emitting `close` (`closed` still fires). */
   destroy(): void
   on(event: 'move' | 'resize' | 'closed', listener: () => void): unknown
@@ -64,6 +69,8 @@ export interface WindowHost {
   create(entry: WindowEntry): ManagedWindow
   /** Every display's workArea, primary first (`clampBounds` keeps the earliest area on ties). */
   workAreas(): WindowBounds[]
+  /** Whether `path` exists as a regular file — `routeToFile` (E1) probes before opening anything. */
+  exists(path: string): boolean
 }
 
 export interface WindowManager extends WindowRegistry {
@@ -73,6 +80,10 @@ export interface WindowManager extends WindowRegistry {
   openWindow(opts: OpenWindowOptions): void
   /** D6 plumbing: same folder + file as `from`, cascaded bounds, fresh id (the ⌘⇧N gesture is GRO-2167). */
   duplicateWindow(from: WindowEntry): void
+  /** A `yaseendocs://` link resolved to `path` (E1, GRO-2171): validate, then `resolveLinkTarget` routes it. */
+  routeToFile(path: string, rootOverride?: string | null): void
+  /** The unobtrusive can't-open surface (E1): restore + focus a live window, send `link:notice`. Never a dialog. */
+  linkNotice(message: string): void
   /** `app:flushed` arrived from this renderer (wired in `ipc/window.ts`). */
   handleFlushed(sender: { id: number }): void
   /** `before-quit`: handshake every window sequentially; `windows[]` is kept so relaunch restores them. */
@@ -125,6 +136,47 @@ export function clampBounds(bounds: WindowBounds, workAreas: readonly WindowBoun
 }
 
 const sameBounds = (a: WindowBounds, b: WindowBounds): boolean => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
+
+// ---------- deep-link routing (pure, E1 GRO-2171) ----------
+
+export type LinkTarget = { kind: 'existing'; id: string } | { kind: 'new'; root: string; file: string }
+
+/** Trailing slash off (never off `/` itself), so `/v` and `/v/` name the same root. */
+const stripSlash = (p: string): string => (p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p)
+
+/** `root` is an ancestor directory of `path` (or its dirname) — by segment, so `/a/b` never contains `/a/bc/x.md`. */
+const rootContains = (root: string, path: string): boolean => {
+  const r = stripSlash(root)
+  return path.startsWith(r === '/' ? '/' : r + '/') && path.length > r.length + 1
+}
+
+/**
+ * Where a `yaseendocs://` link to `path` should land: (1) the open window whose root contains
+ * it — most specific root wins, ties keep the first in `windows[]`, Welcome windows never match;
+ * (2) a new window on the most recent `recents` folder containing it (the list is already
+ * most-recent-first); (3) a new window on the file's parent folder. A containing `rootOverride`
+ * pins the effective root instead: the open window on exactly that root, else a new window there.
+ */
+export function resolveLinkTarget(
+  path: string,
+  windows: readonly WindowEntry[],
+  recents: RecentRoots,
+  rootOverride?: string | null,
+): LinkTarget {
+  if (rootOverride != null && rootContains(rootOverride, path)) {
+    const exact = windows.find((w) => w.root !== null && stripSlash(w.root) === stripSlash(rootOverride))
+    return exact === undefined ? { kind: 'new', root: rootOverride, file: path } : { kind: 'existing', id: exact.id }
+  }
+  let best: { id: string; rootLength: number } | undefined
+  for (const w of windows) {
+    if (w.root === null || !rootContains(w.root, path)) continue
+    if (best === undefined || w.root.length > best.rootLength) best = { id: w.id, rootLength: w.root.length }
+  }
+  if (best !== undefined) return { kind: 'existing', id: best.id }
+  const recent = recents.find((r) => rootContains(r.path, path))
+  if (recent !== undefined) return { kind: 'new', root: recent.path, file: path }
+  return { kind: 'new', root: posix.dirname(path), file: path }
+}
 
 // ---------- the manager ----------
 
@@ -219,6 +271,23 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     attach(entry)
   }
 
+  const openWindow = (opts: OpenWindowOptions): void => {
+    open({ id: randomUUID(), root: opts.root, file: opts.file, bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
+  }
+
+  const focusWindow = (win: ManagedWindow): void => {
+    if (win.isMinimized()) win.restore()
+    win.focus()
+  }
+
+  /** E1: restore + focus a live window and hand it the can't-open message. No live window → nothing to say it in. */
+  const linkNotice = (message: string): void => {
+    const win = [...live.values()].find((w) => !w.isDestroyed())
+    if (win === undefined) return
+    focusWindow(win)
+    win.webContents.send(CH.linkNotice, message)
+  }
+
   return {
     idFor,
 
@@ -239,14 +308,41 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       }
     },
 
-    openWindow(opts) {
-      open({ id: randomUUID(), root: opts.root, file: opts.file, bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
-    },
+    openWindow,
 
     duplicateWindow(from) {
       const cascaded = { ...from.bounds, x: from.bounds.x + WINDOW_CASCADE_PX, y: from.bounds.y + WINDOW_CASCADE_PX }
       open({ id: randomUUID(), root: from.root, file: from.file, bounds: clampBounds(cascaded, host.workAreas()) })
     },
+
+    routeToFile(path, rootOverride) {
+      // Validate first (E1): markdown only, and the file must exist. Anything off → notice, never a dialog.
+      if (fileKind(path) !== 'markdown') {
+        linkNotice(`Can't open ${path}: not a markdown file`)
+        return
+      }
+      if (!host.exists(path)) {
+        linkNotice(`Can't open ${path}: file not found`)
+        return
+      }
+      const state = store.get()
+      const target = resolveLinkTarget(path, state.windows, state.recents, rootOverride)
+      if (target.kind === 'new') {
+        openWindow({ root: target.root, file: target.file })
+        return
+      }
+      const win = live.get(target.id)
+      if (win === undefined || win.isDestroyed()) {
+        // A stored entry with no live window (mid-close race): fall back to a fresh window on its root.
+        const entry = state.windows.find((w) => w.id === target.id)
+        openWindow({ root: entry?.root ?? posix.dirname(path), file: path })
+        return
+      }
+      focusWindow(win)
+      win.webContents.send(CH.linkOpenFile, path)
+    },
+
+    linkNotice,
 
     handleFlushed(sender) {
       pendingFlush.get(sender.id)?.settle()

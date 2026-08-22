@@ -80,6 +80,19 @@ const api: YaseenDocsApi = {
       return () => ipcRenderer.removeListener(CH.menuOpenRoot, on)
     },
   },
+  // Deep links (E1, GRO-2171): main routes a yaseendocs:// URL to the best window.
+  link: {
+    onOpenFile: (listener) => {
+      const on = (_e: unknown, path: string) => listener(path)
+      ipcRenderer.on(CH.linkOpenFile, on)
+      return () => ipcRenderer.removeListener(CH.linkOpenFile, on)
+    },
+    onNotice: (listener) => {
+      const on = (_e: unknown, message: string) => listener(message)
+      ipcRenderer.on(CH.linkNotice, on)
+      return () => ipcRenderer.removeListener(CH.linkNotice, on)
+    },
+  },
 }
 
 contextBridge.exposeInMainWorld('yaseenDocs', api)

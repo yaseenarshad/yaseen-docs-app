@@ -28,6 +28,8 @@ export const CH = {
   windowDuplicate: 'window:duplicate',
   menuOpenFolder: 'menu:open-folder',
   menuOpenRoot: 'menu:open-root',
+  linkOpenFile: 'link:open-file',
+  linkNotice: 'link:notice',
   appFlush: 'app:flush',
   appFlushed: 'app:flushed',
 } as const

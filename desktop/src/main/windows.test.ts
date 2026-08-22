@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import type { WindowBounds, WindowEntry } from '@shared/types'
+import type { RecentRoots, WindowBounds, WindowEntry } from '@shared/types'
 import { CH } from '../channels'
 import { createStore, type Store } from './store'
 import {
@@ -11,6 +11,7 @@ import {
   WINDOW_CASCADE_PX,
   clampBounds,
   createWindowManager,
+  resolveLinkTarget,
   type ManagedWindow,
   type WindowHost,
 } from './windows'
@@ -61,8 +62,19 @@ let nextWebContentsId = 100
 class FakeWindow {
   webContents = { id: nextWebContentsId++, send: vi.fn() }
   destroyed = false
+  minimized = false
+  focusCount = 0
   private listeners = new Map<string, Array<(...args: unknown[]) => void>>()
   constructor(public bounds: WindowBounds) {}
+  focus(): void {
+    this.focusCount++
+  }
+  isMinimized(): boolean {
+    return this.minimized
+  }
+  restore(): void {
+    this.minimized = false
+  }
   on(event: string, listener: (...args: unknown[]) => void): this {
     const list = this.listeners.get(event) ?? []
     list.push(listener)
@@ -96,7 +108,10 @@ class FakeWindow {
 
 const AREA: WindowBounds = { x: 0, y: 0, width: 1440, height: 900 }
 
-function makeHost(areas: WindowBounds[] = [AREA]): { host: WindowHost; created: Array<{ entry: WindowEntry; win: FakeWindow }> } {
+function makeHost(
+  areas: WindowBounds[] = [AREA],
+  exists: (path: string) => boolean = () => true,
+): { host: WindowHost; created: Array<{ entry: WindowEntry; win: FakeWindow }> } {
   const created: Array<{ entry: WindowEntry; win: FakeWindow }> = []
   const host: WindowHost = {
     create(entry) {
@@ -105,6 +120,7 @@ function makeHost(areas: WindowBounds[] = [AREA]): { host: WindowHost; created: 
       return win as ManagedWindow
     },
     workAreas: () => areas,
+    exists,
   }
   return { host, created }
 }
@@ -317,5 +333,138 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     const { host, created } = makeHost()
     createWindowManager(store, host).duplicateWindow(from)
     expect(created[0].entry.bounds).toEqual({ x: 640, y: 300, width: 800, height: 600 })
+  })
+})
+
+// ---------- deep-link routing (E1, GRO-2171) ----------
+
+describe('resolveLinkTarget (pure)', () => {
+  const win = (id: string, root: string | null): WindowEntry => ({ id, root, file: null, bounds: { x: 0, y: 0, width: 800, height: 600 } })
+  const recents = (...paths: string[]): RecentRoots => paths.map((path, i) => ({ path, lastOpened: 100 - i }))
+
+  it('picks the open window whose root contains the path (root = dirname included)', () => {
+    expect(resolveLinkTarget('/v/a.md', [win('w1', '/v')], [])).toEqual({ kind: 'existing', id: 'w1' })
+    expect(resolveLinkTarget('/v/sub/deep/a.md', [win('w1', '/v')], [])).toEqual({ kind: 'existing', id: 'w1' })
+  })
+
+  it('containment is by path segment: /a/b does not contain /a/bc/x.md', () => {
+    expect(resolveLinkTarget('/a/bc/x.md', [win('w1', '/a/b')], [])).toEqual({ kind: 'new', root: '/a/bc', file: '/a/bc/x.md' })
+  })
+
+  it('the most specific (longest) containing root wins; a tie keeps the first in windows[]', () => {
+    const windows = [win('w1', '/v'), win('w2', '/v/sub'), win('w3', '/v/sub')]
+    expect(resolveLinkTarget('/v/sub/a.md', windows, [])).toEqual({ kind: 'existing', id: 'w2' })
+  })
+
+  it('Welcome windows (root null) are never targets', () => {
+    expect(resolveLinkTarget('/v/a.md', [win('w1', null)], [])).toEqual({ kind: 'new', root: '/v', file: '/v/a.md' })
+  })
+
+  it('no containing window: the first (most recent) recents entry containing the path roots a new window', () => {
+    const target = resolveLinkTarget('/w/sub/b.md', [win('w1', '/v')], recents('/other', '/w', '/w/sub'))
+    expect(target).toEqual({ kind: 'new', root: '/w', file: '/w/sub/b.md' })
+  })
+
+  it('nothing contains the path: a new window rooted at its parent folder', () => {
+    expect(resolveLinkTarget('/elsewhere/deep/c.md', [win('w1', '/v')], recents('/w'))).toEqual({
+      kind: 'new',
+      root: '/elsewhere/deep',
+      file: '/elsewhere/deep/c.md',
+    })
+  })
+
+  it('a containing rootOverride wins: the open window on exactly that root first, else a new window there', () => {
+    const windows = [win('w1', '/v'), win('w2', '/v/sub')]
+    // Without the override, the more specific /v/sub would win; the override pins /v.
+    expect(resolveLinkTarget('/v/sub/a.md', windows, [], '/v')).toEqual({ kind: 'existing', id: 'w1' })
+    expect(resolveLinkTarget('/v/sub/a.md', [], [], '/v')).toEqual({ kind: 'new', root: '/v', file: '/v/sub/a.md' })
+  })
+
+  it('a rootOverride that does not contain the path is ignored', () => {
+    expect(resolveLinkTarget('/v/a.md', [win('w1', '/v')], [], '/w')).toEqual({ kind: 'existing', id: 'w1' })
+    expect(resolveLinkTarget('/v/a.md', [], [], null)).toEqual({ kind: 'new', root: '/v', file: '/v/a.md' })
+  })
+})
+
+describe('createWindowManager: routeToFile (E1)', () => {
+  /** One folder window on /v plus a Welcome window — the routing fixture. */
+  function seedRouting(exists: (path: string) => boolean = () => true) {
+    store.upsertWindow({ id: 'w1', root: '/v', file: null, bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w2', root: null, file: null, bounds: { x: 40, y: 40, width: 800, height: 600 } })
+    const { host, created } = makeHost([AREA], exists)
+    const manager = createWindowManager(store, host)
+    manager.restoreAll()
+    return { manager, created, w1: created[0].win, w2: created[1].win }
+  }
+
+  const sentOn = (win: FakeWindow, channel: string) => win.webContents.send.mock.calls.filter(([ch]) => ch === channel)
+
+  it('routes into the containing open window: restored if minimized, focused, sent link:open-file with the path', () => {
+    const { manager, created, w1 } = seedRouting()
+    w1.minimized = true
+    manager.routeToFile('/v/sub/a.md')
+    expect(w1.isMinimized()).toBe(false)
+    expect(w1.focusCount).toBe(1)
+    expect(w1.webContents.send).toHaveBeenCalledWith(CH.linkOpenFile, '/v/sub/a.md')
+    expect(created).toHaveLength(2) // no new window
+  })
+
+  it('.markdown and upper-case extensions route too', () => {
+    const { manager, w1 } = seedRouting()
+    manager.routeToFile('/v/A.MARKDOWN')
+    expect(w1.webContents.send).toHaveBeenCalledWith(CH.linkOpenFile, '/v/A.MARKDOWN')
+  })
+
+  it('no containing window: a new window on the most recent recents folder containing the file, persisted', () => {
+    const { manager, created } = seedRouting()
+    store.pushRecent('/w', 1)
+    manager.routeToFile('/w/sub/b.md')
+    expect(created).toHaveLength(3)
+    expect(created[2].entry.root).toBe('/w')
+    expect(created[2].entry.file).toBe('/w/sub/b.md')
+    expect(store.get().windows).toContainEqual(created[2].entry)
+  })
+
+  it('nothing matches: a new window rooted at the file parent folder', () => {
+    const { manager, created } = seedRouting()
+    manager.routeToFile('/elsewhere/deep/c.md')
+    expect(created).toHaveLength(3)
+    expect(created[2].entry.root).toBe('/elsewhere/deep')
+    expect(created[2].entry.file).toBe('/elsewhere/deep/c.md')
+  })
+
+  it('a rootOverride routes into the open window on exactly that root', () => {
+    const { manager, created, w1 } = seedRouting()
+    manager.routeToFile('/v/sub/a.md', '/v')
+    expect(w1.webContents.send).toHaveBeenCalledWith(CH.linkOpenFile, '/v/sub/a.md')
+    expect(created).toHaveLength(2)
+  })
+
+  it('a non-markdown path opens nothing: a live window is focused and told to show a notice (no dialog)', () => {
+    const { manager, created, w1 } = seedRouting()
+    manager.routeToFile('/v/archive.zip')
+    expect(created).toHaveLength(2)
+    expect(w1.focusCount).toBe(1)
+    const notices = sentOn(w1, CH.linkNotice)
+    expect(notices).toHaveLength(1)
+    expect(typeof notices[0][1]).toBe('string')
+    expect(sentOn(w1, CH.linkOpenFile)).toHaveLength(0)
+  })
+
+  it('a missing file (host.exists false) gets the same notice: no window, no dialog', () => {
+    const { manager, created, w1 } = seedRouting(() => false)
+    manager.routeToFile('/v/gone.md')
+    expect(created).toHaveLength(2)
+    expect(sentOn(w1, CH.linkNotice)).toHaveLength(1)
+    expect(sentOn(w1, CH.linkOpenFile)).toHaveLength(0)
+  })
+
+  it('linkNotice (the parse-failure path) restores + focuses a live window and delivers the message', () => {
+    const { manager, w1 } = seedRouting()
+    w1.minimized = true
+    manager.linkNotice("Can't open link")
+    expect(w1.isMinimized()).toBe(false)
+    expect(w1.focusCount).toBe(1)
+    expect(w1.webContents.send).toHaveBeenCalledWith(CH.linkNotice, "Can't open link")
   })
 })
