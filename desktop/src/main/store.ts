@@ -7,6 +7,7 @@ import {
   MAX_RECENT_ROOTS,
   THEMES,
   THREAD_WIDTHS,
+  addRecentRoot,
   defaultAppState,
   defaultFolderState,
   type AppState,
@@ -138,11 +139,6 @@ function sanitizeState(raw: unknown): AppState | null {
     windows: sanitizeWindows(raw.windows),
     folders: sanitizeFolders(raw.folders),
   }
-}
-
-/** Pure: prepend `path` to the MRU list, de-duplicated, capped. */
-export function addRecentRoot(list: RecentRoots, path: string, now: number): RecentRoots {
-  return [{ path, lastOpened: now }, ...list.filter((r) => r.path !== path)].slice(0, MAX_RECENT_ROOTS)
 }
 
 // ---------- loading ----------

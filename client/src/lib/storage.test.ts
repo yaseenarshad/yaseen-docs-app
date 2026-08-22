@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, defaultAppState, type AppState, type WindowIdentity } from '@shared/types'
-import { addRecentRoot, storage } from './storage'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, addRecentRoot, defaultAppState, type AppState, type WindowIdentity } from '@shared/types'
+import { storage } from './storage'
 import { hashFilePath } from './urlHash'
 
 /** A fake `window.yaseenDocs` with just the state / window halves the storage module talks to. */

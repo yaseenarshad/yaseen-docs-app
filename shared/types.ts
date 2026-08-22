@@ -194,6 +194,11 @@ export type WatchEvent =
 export type RecentRoots = Array<{ path: string; lastOpened: number }>
 export const MAX_RECENT_ROOTS = 10
 
+/** Pure: prepend `path` to the MRU list, de-duplicated, capped — shared by the client cache and the main store. */
+export function addRecentRoot(list: RecentRoots, path: string, now: number): RecentRoots {
+  return [{ path, lastOpened: now }, ...list.filter((r) => r.path !== path)].slice(0, MAX_RECENT_ROOTS)
+}
+
 /** Collapsed outline fold keys per file (see client `outlineFoldKeys.ts`) are capped at this many. */
 export const MAX_FOLD_KEYS_PER_FILE = 500
 
