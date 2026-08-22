@@ -21,6 +21,7 @@ import {
   templatePath,
   typeLabel,
   typePlural,
+  usableFolder,
 } from './scaffold'
 
 vi.mock('../api', async (importOriginal) => ({
@@ -219,6 +220,20 @@ describe('createType', () => {
 
     await expect(createType('/v', 'kpi', KPI)).rejects.toThrow('unreadable')
     expect(createFile).not.toHaveBeenCalled()
+  })
+})
+
+describe('usableFolder (GRO-2226: report-don\'t-block at use time)', () => {
+  it('passes a stored folder inside the grammar through; absent → null', () => {
+    expect(usableFolder({ folder: 'kpis', properties: {} })).toBe('kpis')
+    expect(usableFolder({ folder: 'Content Pillars/1. Agentic Agency', properties: {} })).toBe('Content Pillars/1. Agentic Agency')
+    expect(usableFolder({ properties: {} })).toBeNull()
+  })
+
+  it('a hand-edited folder outside the grammar reads as absent — never a refusal to use the vault', () => {
+    for (const bad of ['..', 'a/../b', '/abs', 'C:/x', 'a\\b', 'a\0b', '.yaseendocs/templates', './a', 'a/', '']) {
+      expect(usableFolder({ folder: bad, properties: {} })).toBeNull()
+    }
   })
 })
 

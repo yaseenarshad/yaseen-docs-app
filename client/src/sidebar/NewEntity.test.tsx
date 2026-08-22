@@ -1,9 +1,11 @@
 /**
- * Sidebar "New ▸ <type>" + "New type…" (Bible B, GRO-2202; Round 9 Q1–Q3 LOCKED): a vault with
- * an EMPTY registry sees no menu change at all; registered types grow a "New ▸" submenu whose
- * items create a page scaffolded from the registry (registry folder ?? the right-clicked dir,
- * created on demand; ALREADY_EXISTS fails loudly in the inline input); "New type…" is one
- * action — registry entry + starter `All <plural>.base` at the vault root, idempotently.
+ * Sidebar "New ▸ <type>" + "New type…" (Bible B, GRO-2202; Round 9 Q1–Q3 LOCKED; Round 10 Q4/Q5
+ * per GRO-2226): the "New ▸" submenu is ALWAYS present — an EMPTY registry collapses it to the
+ * single "New type…" item (the fresh-vault bootstrap entry); registered types each get an item
+ * that creates a page scaffolded from the registry (usable registry folder ?? the right-clicked
+ * dir, created on demand; ALREADY_EXISTS fails loudly in the inline input); "New type…" is one
+ * action — registry entry (optional folder from the dialog's field) + starter `All <plural>.base`
+ * at the vault root, idempotently.
  * Real Sidebar/Tree/ContextMenu/NewTypeDialog against the jsdom bridge stub (Sidebar.test.tsx pattern).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -109,11 +111,21 @@ async function submitInline(el: HTMLElement, name: string) {
   await act(async () => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
 }
 
-describe('New ▸ submenu (Round 9 Q1)', () => {
-  it('an EMPTY registry changes the context menu not at all', async () => {
-    const { el } = await mount({})
+describe('New ▸ submenu (Round 9 Q1, amended by Round 10 Q4)', () => {
+  // Round 10 Q4 (GRO-2226, LOCKED 2026-08-22) formally superseded the Round 9 Q1 wording this
+  // test used to pin ("empty registry → zero menu change"): the submenu is now ALWAYS present
+  // so a fresh vault can create its first type from the UI.
+  it('an EMPTY registry collapses "New ▸" to the single "New type…" item; merely seeing it creates nothing (lazy rule)', async () => {
+    const { bridge, el } = await mount({})
     openBlankMenu(el)
-    expect(menuItems(el).map((b) => b.textContent)).toEqual(['New note', 'New base', 'New folder'])
+    expect(menuItems(el).map((b) => b.textContent?.replace('▸', '').trim())).toEqual(['New', 'New note', 'New base', 'New folder'])
+    await click(itemByLabel(el, 'New'))
+    const sub = [...(el.querySelector('.ctx-submenu')?.querySelectorAll('.ctx-menu__item') ?? [])].map((b) => b.textContent)
+    expect(sub).toEqual(['New type…'])
+    // Lazy rule untouched: opening the menu and submenu never creates .yaseendocs/ or any file.
+    expect(bridge.registry.setType).not.toHaveBeenCalled()
+    expect(bridge.createFile).not.toHaveBeenCalled()
+    expect(bridge.createDir).not.toHaveBeenCalled()
   })
 
   it('registered types grow "New ▸": one item per type (displayName ?? key) + "New type…" at the bottom', async () => {
@@ -153,6 +165,18 @@ describe('New <type> (scaffolded page)', () => {
     expect(bridge.createFile).toHaveBeenCalledWith({ path: '/v/kpis/CAC.md', content: '---\npage_type: kpi\nunit:\n---\n' })
   })
 
+  it('a hand-edited folder outside the grammar is treated as absent at use time — click target, no dir created (GRO-2226)', async () => {
+    const types: RegistryResponse['types'] = { kpi: { ...KPI_TYPES.kpi, folder: '../outside' } }
+    const { bridge, el } = await mount(types)
+    openBlankMenu(el)
+    await click(itemByLabel(el, 'New'))
+    await click(itemByLabel(el, 'New KPI'))
+    await submitInline(el, 'CAC')
+
+    expect(bridge.createDir).not.toHaveBeenCalled()
+    expect(bridge.createFile).toHaveBeenCalledWith({ path: '/v/CAC.md', content: '---\npage_type: kpi\nunit:\n---\n' })
+  })
+
   it('a template body and defaults ride the scaffold', async () => {
     const { bridge, el } = await mount(KPI_TYPES)
     bridge.readFile.mockResolvedValue({ path: '/v/.yaseendocs/templates/kpi.md', content: '---\nunit: "%"\n---\nHow to measure.\n', mtime: 1, size: 1 })
@@ -178,7 +202,7 @@ describe('New <type> (scaffolded page)', () => {
   })
 })
 
-describe('New type… (Round 9 Q2/Q3)', () => {
+describe('New type… (Round 9 Q2/Q3 + Round 10 Q4/Q5, GRO-2226)', () => {
   const dialog = (el: HTMLElement) => el.querySelector<HTMLElement>('.type-dialog')
   const dialogInput = (el: HTMLElement, label: string) => {
     const input = el.querySelector<HTMLInputElement>(`.type-dialog [aria-label="${label}"]`)
@@ -217,6 +241,54 @@ describe('New type… (Round 9 Q2/Q3)', () => {
       content: starterBase('funnel-stage', { properties: { order: { kind: 'number' } } }),
     })
     expect(dialog(el)).toBeNull()
+  })
+
+  it('bootstrap acceptance (Round 10 Q4): a FRESH vault creates its first type end-to-end through the collapsed submenu', async () => {
+    const { bridge, el } = await mount({}) // empty registry — the pre-Round-10 menu had no path to this dialog
+    await createFunnelStage(el)
+
+    expect(bridge.registry.setType).toHaveBeenCalledWith('/v', 'funnel-stage', {
+      displayName: 'Funnel Stage',
+      pluralName: 'Funnel Stages',
+      properties: { order: { kind: 'number' } },
+    })
+    expect(bridge.createFile).toHaveBeenCalledWith({
+      path: '/v/All Funnel Stages.base',
+      content: starterBase('funnel-stage', { properties: { order: { kind: 'number' } } }),
+    })
+    expect(dialog(el)).toBeNull()
+  })
+
+  it('the optional folder field rides into the registry def (blank — the default — writes no folder key, pinned by the tests above)', async () => {
+    const { bridge, el } = await mount(KPI_TYPES)
+    openBlankMenu(el)
+    await click(itemByLabel(el, 'New'))
+    await click(itemByLabel(el, 'New type…'))
+    setValue(dialogInput(el, 'Type name'), 'campaign')
+    setValue(dialogInput(el, 'Folder'), 'campaigns/active')
+    await click(dialogButton(el, 'Create'))
+
+    expect(bridge.registry.setType).toHaveBeenCalledWith('/v', 'campaign', {
+      displayName: 'Campaign',
+      pluralName: 'Campaigns',
+      folder: 'campaigns/active',
+      properties: {},
+    })
+  })
+
+  it('a folder outside the grammar ("..", absolute, backslash, dot-segment) is rejected in the dialog, nothing written', async () => {
+    const { bridge, el } = await mount(KPI_TYPES)
+    openBlankMenu(el)
+    await click(itemByLabel(el, 'New'))
+    await click(itemByLabel(el, 'New type…'))
+    setValue(dialogInput(el, 'Type name'), 'campaign')
+    for (const bad of ['../up', '/abs', 'a\\b', '.yaseendocs/x']) {
+      setValue(dialogInput(el, 'Folder'), bad)
+      await click(dialogButton(el, 'Create'))
+      expect(el.querySelector('.type-dialog [role="alert"]')?.textContent).toContain('root-relative')
+    }
+    expect(bridge.registry.setType).not.toHaveBeenCalled()
+    expect(bridge.createFile).not.toHaveBeenCalled()
   })
 
   it('an existing starter base skips silently (idempotent, never overwrites)', async () => {

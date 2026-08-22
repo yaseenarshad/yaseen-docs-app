@@ -1,4 +1,4 @@
-import type { RegistryTypeDef } from '@shared/types'
+import { REGISTRY_FOLDER, type RegistryTypeDef } from '@shared/types'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { api, BridgeRequestError } from '../api'
 import { registry } from './useRegistry'
@@ -120,6 +120,17 @@ export async function createType(root: string, name: string, def: RegistryTypeDe
   } catch (err) {
     if (!(err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS')) throw err
   }
+}
+
+/**
+ * A type's `folder` for typed-create, or null when absent OR invalid at rest (GRO-2226): a
+ * stored folder outside `REGISTRY_FOLDER` (hand-edited '..', absolute, backslash or dot-segment
+ * paths) is treated as absent at USE time — report-don't-block, the vault always keeps working;
+ * only the write boundary rejects. Every typed-create surface (sidebar "New ▸ <type>", the
+ * base toolbar's + New) resolves the target dir through this one helper so they can never drift.
+ */
+export function usableFolder(def: RegistryTypeDef): string | null {
+  return def.folder !== undefined && REGISTRY_FOLDER.test(def.folder) ? def.folder : null
 }
 
 /** Create `<root>/<folder>` level by level (existing levels tolerated); resolves the absolute dir. */

@@ -15,9 +15,11 @@ interface ContextMenuProps {
   newWindowPath: string | null
   onOpenNewWindow: (path: string) => void
   /**
-   * Registered types for the "New ▸" submenu (Bible B, GRO-2202 — Round 9 Q1 LOCKED): one item
-   * per type + "New type…" at the bottom; [] renders NOTHING — an empty registry changes the
-   * menu not at all.
+   * Registered types for the "New ▸" submenu (Bible B, GRO-2202; Round 10 Q4 LOCKED, GRO-2226):
+   * one item per type + "New type…" at the bottom. The submenu is ALWAYS present — [] collapses
+   * it to the single "New type…" item, the fresh-vault bootstrap entry (supersedes the Round 9
+   * Q1 "empty registry → no menu change" wording; the lazy rule still guarantees nothing is
+   * created by merely seeing it).
    */
   newTypes: Array<{ name: string; label: string }>
   onNewTyped: (type: string) => void
@@ -116,35 +118,34 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
             Copy link
           </button>
         )}
-        {newTypes.length > 0 && (
-          <div ref={groupRef} className="ctx-menu__group" onMouseEnter={() => setSubOpen(true)} onMouseLeave={() => setSubOpen(false)}>
-            <button
-              type="button"
-              className="ctx-menu__item ctx-menu__item--sub"
-              role="menuitem"
-              aria-haspopup="menu"
-              aria-expanded={subOpen}
-              onClick={() => setSubOpen((o) => !o)}
-            >
-              New
-              <span className="ctx-menu__sub-arrow" aria-hidden="true">
-                ▸
-              </span>
-            </button>
-            {subOpen && (
-              <div ref={subRef} className={`ctx-submenu${sub.flip ? ' ctx-submenu--left' : ''}`} style={sub.up > 0 ? { top: SUB_TOP - sub.up } : undefined} role="menu">
-                {newTypes.map((t) => (
-                  <button key={t.name} type="button" className="ctx-menu__item" role="menuitem" onClick={() => onNewTyped(t.name)}>
-                    New {t.label}
-                  </button>
-                ))}
-                <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewType}>
-                  New type…
+        {/* Always present (Round 10 Q4, GRO-2226): an empty registry collapses it to "New type…". */}
+        <div ref={groupRef} className="ctx-menu__group" onMouseEnter={() => setSubOpen(true)} onMouseLeave={() => setSubOpen(false)}>
+          <button
+            type="button"
+            className="ctx-menu__item ctx-menu__item--sub"
+            role="menuitem"
+            aria-haspopup="menu"
+            aria-expanded={subOpen}
+            onClick={() => setSubOpen((o) => !o)}
+          >
+            New
+            <span className="ctx-menu__sub-arrow" aria-hidden="true">
+              ▸
+            </span>
+          </button>
+          {subOpen && (
+            <div ref={subRef} className={`ctx-submenu${sub.flip ? ' ctx-submenu--left' : ''}`} style={sub.up > 0 ? { top: SUB_TOP - sub.up } : undefined} role="menu">
+              {newTypes.map((t) => (
+                <button key={t.name} type="button" className="ctx-menu__item" role="menuitem" onClick={() => onNewTyped(t.name)}>
+                  New {t.label}
                 </button>
-              </div>
-            )}
-          </div>
-        )}
+              ))}
+              <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewType}>
+                New type…
+              </button>
+            </div>
+          )}
+        </div>
         <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewNote}>
           New note
         </button>

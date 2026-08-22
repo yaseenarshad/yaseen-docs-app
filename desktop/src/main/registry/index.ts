@@ -1,5 +1,5 @@
 import type { RegistryPropertyDef, RegistryPropertyKind, RegistryResponse, RegistryScope, RegistryTypeDef } from '@shared/types'
-import { REGISTRY_PROPERTY_KINDS, REGISTRY_PROPERTY_NAME, REGISTRY_TYPE_NAME } from '@shared/types'
+import { REGISTRY_FOLDER, REGISTRY_PROPERTY_KINDS, REGISTRY_PROPERTY_NAME, REGISTRY_TYPE_NAME } from '@shared/types'
 import { BridgeFailure, requireAbsPath, requireDir } from '../fs/fsUtils'
 import { readConfigDetailed, subscribeConfig, writeConfig } from '../vaultConfig'
 
@@ -77,6 +77,12 @@ function requireTypePatch(raw: unknown): Partial<RegistryTypeDef> {
       if (typeof value !== 'string') throw new BridgeFailure('BAD_REQUEST', `'${key}' must be a string`)
       patch[key] = value
     }
+  }
+  // GRO-2226 fold-in: 'folder' aims typed-create, so an incoming value must stay inside the
+  // vault — no '..', no absolute or drive-like paths, no backslashes/NUL, no dot-segments.
+  // Stored values are NOT re-validated on read (report-don't-block; use sites skip bad ones).
+  if (patch.folder !== undefined && !REGISTRY_FOLDER.test(patch.folder)) {
+    throw new BridgeFailure('BAD_REQUEST', `'folder' must be a root-relative '/'-separated path with no '..', absolute/drive prefix, backslash or dot-segments (${String(REGISTRY_FOLDER)})`)
   }
   if (raw.properties !== undefined) {
     if (!isRecord(raw.properties)) throw new BridgeFailure('BAD_REQUEST', "'properties' must be an object")

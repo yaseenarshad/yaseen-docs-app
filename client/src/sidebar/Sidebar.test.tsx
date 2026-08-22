@@ -23,7 +23,8 @@ function installBridge() {
     tree: vi.fn(async (root: string) => ({ root, tree: TREE, generatedAt: 1 })),
     state: { setFolder: vi.fn(async () => undefined) },
     window: { open: vi.fn(async () => undefined) },
-    // Empty registry (GRO-2202): the sidebar reads it for "New ▸"; empty = no menu change.
+    // Empty registry (GRO-2202; Round 10 Q4, GRO-2226): the sidebar reads it for "New ▸",
+    // which is always present — empty collapses it to the single "New type…" item.
     registry: {
       get: vi.fn(async (root: string) => ({ root, version: 1, types: {}, properties: {} })),
       onChange: vi.fn(() => () => undefined),

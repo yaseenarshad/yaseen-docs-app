@@ -345,6 +345,16 @@ export type RegistryPropertyKind = (typeof REGISTRY_PROPERTY_KINDS)[number]
 export const REGISTRY_TYPE_NAME = /^[a-z][a-z0-9-]*$/
 export const REGISTRY_PROPERTY_NAME = /^[a-z][a-z0-9_]*$/
 
+/**
+ * Registry `folder` grammar (GRO-2226, GRO-2204 audit fold-in): root-relative, '/'-separated
+ * plain segments — no leading '/', no drive-like prefix, no '\' or NUL, and no '..' or other
+ * leading-dot segments (dotfolders are invisible to the tree; '..' could aim typed-create
+ * outside the vault). Enforced at the registry write boundary (`BAD_REQUEST`) and mirrored in
+ * `NewTypeDialog`. A STORED folder outside this grammar still reads — report-don't-block: use
+ * sites treat it as absent (`usableFolder`), a vault is never refused over it.
+ */
+export const REGISTRY_FOLDER = /^(?![A-Za-z]:)[^\\\0/.][^\\\0/]*(?:\/[^\\\0/.][^\\\0/]*)*$/
+
 export interface RegistryPropertyDef {
   kind: RegistryPropertyKind
   /** link/multi-link only: constrain the picker to pages whose page_type equals this type name. */
@@ -356,7 +366,7 @@ export interface RegistryPropertyDef {
 export interface RegistryTypeDef {
   displayName?: string
   pluralName?: string
-  /** Root-relative folder for new entities of this type. Browsing sugar only — never enforced. */
+  /** Root-relative folder for new entities of this type (REGISTRY_FOLDER at the write boundary). Browsing sugar only — never enforced. */
   folder?: string
   properties: Record<string, RegistryPropertyDef>
 }

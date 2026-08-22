@@ -1,14 +1,23 @@
 import { useEffect, useState } from 'react'
-import { REGISTRY_PROPERTY_KINDS, REGISTRY_PROPERTY_NAME, REGISTRY_TYPE_NAME, type RegistryPropertyDef, type RegistryPropertyKind } from '@shared/types'
+import {
+  REGISTRY_FOLDER,
+  REGISTRY_PROPERTY_KINDS,
+  REGISTRY_PROPERTY_NAME,
+  REGISTRY_TYPE_NAME,
+  type RegistryPropertyDef,
+  type RegistryPropertyKind,
+  type RegistryTypeDef,
+} from '@shared/types'
 import { createType } from '../bases/scaffold'
 import { validateEntryName } from './createEntry'
 
 /**
  * "New type…" (Bible B, GRO-2202): the deliberate database-feel moment — name the type, pick
- * its properties (name + kind + optional link target), and one Create lands the registry entry
- * AND the starter `All <plural>.base` at the vault root (Round 9 record; Q3: NO template stub).
- * The shared grammars are checked here for friendly messages; the registry boundary (R2.2)
- * enforces them again.
+ * its properties (name + kind + optional link target) and an optional folder (Round 10 Q5,
+ * GRO-2226: root-relative browsing sugar; blank writes no `folder` key), and one Create lands
+ * the registry entry AND the starter `All <plural>.base` at the vault root (Round 9 record;
+ * Q3: NO template stub). The shared grammars are checked here for friendly messages; the
+ * registry boundary (R2.2, folder per GRO-2226) enforces them again.
  */
 
 /** 'funnel-stage' → 'Funnel Stage'; the dialog derives display names until overridden. */
@@ -38,6 +47,7 @@ export function NewTypeDialog({ root, onClose, onCreated }: NewTypeDialogProps) 
   /** null = derived from the type name; a string once the user overrides. */
   const [display, setDisplay] = useState<string | null>(null)
   const [plural, setPlural] = useState<string | null>(null)
+  const [folder, setFolder] = useState('')
   const [rows, setRows] = useState<PropertyRow[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -80,10 +90,19 @@ export function NewTypeDialog({ root, onClose, onCreated }: NewTypeDialogProps) 
       setError(`Plural name: ${invalidPlural}`)
       return
     }
+    // Optional folder (Round 10 Q5, GRO-2226): blank writes no key; a value must be inside the
+    // shared grammar — the registry boundary rejects the same shapes with BAD_REQUEST.
+    const folderName = folder.trim()
+    if (folderName !== '' && !REGISTRY_FOLDER.test(folderName)) {
+      setError('Folder is a root-relative path like "kpis" or "kpis/active" — no leading "/" or drive letter, no "..", no backslashes, no dot-segments')
+      return
+    }
     setError(null)
     setBusy(true)
     try {
-      await createType(root, typeName, { displayName: shownDisplay.trim(), pluralName, properties })
+      const def: RegistryTypeDef = { displayName: shownDisplay.trim(), pluralName, properties }
+      if (folderName !== '') def.folder = folderName
+      await createType(root, typeName, def)
       onCreated()
       onClose()
     } catch (err) {
@@ -142,6 +161,18 @@ export function NewTypeDialog({ root, onClose, onCreated }: NewTypeDialogProps) 
           spellCheck={false}
           value={shownPlural}
           onChange={(e) => setPlural(e.target.value)}
+        />
+        <label className="type-dialog__label" htmlFor="type-dialog-folder">
+          Folder (optional)
+        </label>
+        <input
+          id="type-dialog-folder"
+          className="type-dialog__input"
+          aria-label="Folder"
+          placeholder="kpis"
+          spellCheck={false}
+          value={folder}
+          onChange={(e) => setFolder(e.target.value)}
         />
         <p className="type-dialog__label">Properties</p>
         {rows.map((row, i) => (

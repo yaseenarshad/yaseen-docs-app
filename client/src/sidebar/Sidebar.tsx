@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import type { SettingsState, TreeNode, TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { createNewNote } from '../bases/newNote'
-import { ensureFolder, newEntityParts, typeLabel } from '../bases/scaffold'
+import { ensureFolder, newEntityParts, typeLabel, usableFolder } from '../bases/scaffold'
 import { useRegistry } from '../bases/useRegistry'
 import type { WatchSource } from '../hooks/useWatch'
 import { basename } from '../lib/paths'
@@ -65,8 +65,8 @@ export function Sidebar({
   const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string; type?: string; label?: string } | null>(null)
   const [newTypeOpen, setNewTypeOpen] = useState(false)
 
-  // The vault's type registry (Bible B, GRO-2202): feeds the "New ▸" submenu; an empty (or
-  // unreadable) registry renders NO extra menu items — the Round 9 Q1 locked behavior.
+  // The vault's type registry (Bible B, GRO-2202): feeds the "New ▸" submenu — always present;
+  // an empty (or unreadable) registry collapses it to "New type…" (Round 10 Q4, GRO-2226).
   const reg = useRegistry(root).registry
   const newTypes = useMemo(() => Object.entries(reg?.types ?? {}).map(([name, def]) => ({ name, label: typeLabel(name, def) })), [reg])
 
@@ -166,11 +166,13 @@ export function Sidebar({
   const submitCreate = useCallback(
     async (name: string) => {
       if (creating === null) return
-      // A typed create (GRO-2202): registry folder ?? the right-clicked dir, scaffold from the
-      // registry (+ template), all in one atomic content-at-create call — ALREADY_EXISTS fails loudly.
+      // A typed create (GRO-2202): usable registry folder ?? the right-clicked dir (an invalid
+      // stored folder is treated as absent — GRO-2226), scaffold from the registry (+ template),
+      // all in one atomic content-at-create call — ALREADY_EXISTS fails loudly.
       if (creating.type !== undefined) {
         const def = reg?.types[creating.type] ?? { properties: {} }
-        const dir = def.folder === undefined ? creating.parentDir : await ensureFolder(root, def.folder)
+        const folder = usableFolder(def)
+        const dir = folder === null ? creating.parentDir : await ensureFolder(root, folder)
         const p = entryPath(dir, name, 'file')
         const { properties, body } = await newEntityParts(root, creating.type, def)
         await createNewNote(p, properties, body)
