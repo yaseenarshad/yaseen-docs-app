@@ -45,9 +45,9 @@ describe('buildMenuTemplate', () => {
     expect(build().map((m) => m.label)).toEqual(['Yaseen Docs', 'File', 'Edit', 'View', 'Window', 'Help'])
   })
 
-  it('App menu: About and Quit roles', () => {
+  it('App menu: About, the standard Hide roles, and Quit', () => {
     const roles = menuOf(build(), 'Yaseen Docs').map((i) => i.role ?? i.type)
-    expect(roles).toEqual(['about', 'separator', 'quit'])
+    expect(roles).toEqual(['about', 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit'])
   })
 
   it('File menu: New Window ⌘⇧N, Open Folder… ⌘⇧O, Open Recent, Close Window ⌘W', () => {
