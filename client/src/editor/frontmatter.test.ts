@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { splitFrontmatter } from './frontmatter'
+import { splitFrontmatter } from '@shared/frontmatter'
 
 describe('frontmatter split/join', () => {
   it('returns body unchanged when no frontmatter', () => {

@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync } from 'node:fs'
 import { basename } from 'node:path'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
-import { splitFrontmatter } from './frontmatter'
+import { splitFrontmatter } from '@shared/frontmatter'
 
 const VAULT =
   '/Users/yasin/yaseen-os/yaseen-machine-content/Content Pillars/1. Agentic Agency'
