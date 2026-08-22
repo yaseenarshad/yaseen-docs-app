@@ -1,20 +1,15 @@
-import { BrowserWindow } from 'electron'
 import type { AppState, VaultConfigChange } from '@shared/types'
 import { CH } from '../../channels'
 import type { Store } from '../store'
 import { readConfig, subscribeConfig, writeConfig } from '../vaultConfig'
+import { broadcastAll } from './broadcast'
 import { handle } from './envelope'
 
 /** Main's own subscription per open-vault root; dropped when the last window on that root goes. */
 const subs = new Map<string, () => void>()
 
 /** Every live window gets the change; renderers filter by their own root (same posture as `state:changed`). */
-function broadcast(change: VaultConfigChange): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed() || win.webContents.isDestroyed()) continue
-    win.webContents.send(CH.vaultConfigChanged, change)
-  }
-}
+const broadcast = (change: VaultConfigChange): void => broadcastAll(CH.vaultConfigChanged, change)
 
 /** The open-vault roots are `AppState.windows` (null = Welcome); one `subscribeConfig` each, no more. */
 function syncSubscriptions(state: AppState): void {
