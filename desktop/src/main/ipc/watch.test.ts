@@ -96,6 +96,35 @@ describe('watch IPC', () => {
     await until(() => activeWatcherRoots().length === 0)
   })
 
+  it('two windows on one root (GRO-2169): one chokidar, a save reaches both as `change`; one window closing leaves the other live, the last closing disposes the watcher', async () => {
+    const a = makeSender()
+    const b = makeSender()
+    await subscribeAs(a, 'win-a', root)
+    await subscribeAs(b, 'win-b', root)
+    await until(() => sent(a).length >= 1 && sent(b).length >= 1)
+    expect(activeWatcherRoots()).toEqual([root])
+
+    // Window A saves the file both windows have open → the shared watcher emits one `change` to each.
+    const file = path.join(root, 'alpha', 'a.md')
+    await writeFile(file, 'saved by window A')
+    const change = (s: Sender) => sent(s).filter((m) => m.ev.type === 'change')
+    await until(() => change(a).length >= 1 && change(b).length >= 1)
+    expect(change(a)).toEqual([{ id: 'win-a', ev: { type: 'change', path: file, mtime: expect.any(Number) } }])
+    expect(change(b)).toEqual([{ id: 'win-b', ev: { type: 'change', path: file, mtime: expect.any(Number) } }])
+
+    // Window A closes: B stays subscribed to the still-alive watcher and keeps receiving events.
+    destroy(a)
+    expect(activeWatcherRoots()).toEqual([root])
+    const aBefore = sent(a).length
+    await writeFile(file, 'saved again, window A gone')
+    await until(() => change(b).length >= 2)
+    expect(sent(a).length).toBe(aBefore)
+
+    // The LAST window closing disposes the watcher.
+    destroy(b)
+    await until(() => activeWatcherRoots().length === 0)
+  })
+
   it('a bad root answers one error event and subscribes nothing', async () => {
     const s = makeSender()
     await subscribeAs(s, 'rel', root.slice(1))
