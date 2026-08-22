@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto'
 import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { defaultAppState, type AppState } from '../../shared/types'
+import { defaultAppState, type AppState, type WindowBounds } from '../../shared/types'
 
 export const REPO_ROOT = path.resolve(__dirname, '..', '..')
 export const MAIN_ENTRY = path.join(REPO_ROOT, 'desktop', 'out', 'main', 'index.js')
@@ -111,6 +111,97 @@ export function seededState(vault: string, file: string | null, opts: { expanded
 
 export async function readState(userData: string): Promise<AppState> {
   return JSON.parse(await readFile(path.join(userData, 'yaseendocs.json'), 'utf8')) as AppState
+}
+
+// ---------- multi-window seeds & gestures (G3, GRO-2180) ----------
+
+/** One `windows[]` entry for `multiWindowState`; bounds cascade from a default when omitted. */
+export interface SeedWindow {
+  id: string
+  root: string
+  file: string | null
+  bounds?: WindowBounds
+}
+
+/**
+ * `seededState` for several windows (possibly on several roots): one `windows[]` entry per
+ * seed, a `folders` entry per distinct root, `recents` exactly as given (most-recent first).
+ */
+export function multiWindowState(wins: SeedWindow[], recentRoots: string[]): AppState {
+  const state = defaultAppState()
+  const now = Date.now()
+  state.recents = recentRoots.map((p, i) => ({ path: p, lastOpened: now - i }))
+  state.windows = wins.map((w, i) => ({
+    id: w.id,
+    root: w.root,
+    file: w.file,
+    bounds: w.bounds ?? { x: 60 + i * 40, y: 60 + i * 30, width: 1000, height: 700 },
+  }))
+  for (const w of wins) {
+    state.folders[w.root] ??= { expanded: [], lastFile: w.file, folds: {}, baseGroups: {} }
+  }
+  return state
+}
+
+/** The `?win=<id>` a window was created with (null for a page the manager did not create). */
+export const winParam = (page: Page): string | null => new URL(page.url()).searchParams.get('win')
+
+/** Waits for a window whose `?win=` id is NOT in `known` — how tests catch a freshly created window. */
+export async function extraWindow(app: ElectronApplication, known: readonly string[], timeout = 15_000): Promise<Page> {
+  const t0 = Date.now()
+  for (;;) {
+    const page = app.windows().find((p) => {
+      const id = winParam(p)
+      return id !== null && !known.includes(id)
+    })
+    if (page !== undefined) return page
+    if (Date.now() - t0 > timeout) throw new Error(`no window beyond [${known.join(', ')}] appeared within ${timeout}ms`)
+    await new Promise((r) => setTimeout(r, 100))
+  }
+}
+
+/**
+ * Drives a menu item by its stable id — the REAL user path for menu gestures (menu.ts assigns
+ * ids for exactly this). `focusWinId` focuses that window first, so handlers that resolve the
+ * focused window (File › New Window reads `BrowserWindow.getFocusedWindow()`) see the right one.
+ */
+export async function clickMenuItem(app: ElectronApplication, itemId: string, focusWinId?: string): Promise<void> {
+  await app.evaluate(
+    ({ Menu, BrowserWindow }, arg) => {
+      if (arg.focusWinId !== undefined) {
+        BrowserWindow.getAllWindows()
+          .find((w) => w.webContents.getURL().includes(`win=${arg.focusWinId}`))
+          ?.focus()
+      }
+      const item = Menu.getApplicationMenu()?.getMenuItemById(arg.itemId)
+      if (item == null) throw new Error(`no menu item with id ${arg.itemId}`)
+      item.click()
+    },
+    { itemId, focusWinId },
+  )
+}
+
+/** Replays macOS's `open-url` (a clicked `yaseendocs://` link) on the running app — the E1 entry point. */
+export async function emitOpenUrl(app: ElectronApplication, url: string): Promise<void> {
+  await app.evaluate(({ app: electronApp }, u) => {
+    electronApp.emit('open-url', { preventDefault: () => undefined }, u)
+  }, url)
+}
+
+/** Replays macOS's `open-file` (Finder "Open With") — E2 rides the same link pipeline as E1. */
+export async function emitOpenFile(app: ElectronApplication, filePath: string): Promise<void> {
+  await app.evaluate(({ app: electronApp }, p) => {
+    electronApp.emit('open-file', { preventDefault: () => undefined }, p)
+  }, filePath)
+}
+
+/** Closes the window of state entry `winId` through the REAL close path (flush handshake included). */
+export async function closeWindow(app: ElectronApplication, winId: string): Promise<void> {
+  await app.evaluate(({ BrowserWindow }, id) => {
+    BrowserWindow.getAllWindows()
+      .find((w) => w.webContents.getURL().includes(`win=${id}`))
+      ?.close()
+  }, winId)
 }
 
 // ---------- evidence ----------
