@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { FileResponse } from '@shared/types'
-import { api, ApiRequestError } from '../api'
+import { api, BridgeRequestError } from '../api'
 
 export type FileState =
   | { status: 'idle' }
@@ -25,7 +25,7 @@ export function useFile(path: string | null): FileState {
       },
       (err: unknown) => {
         if (cancelled) return
-        const message = err instanceof ApiRequestError ? `${err.code}: ${err.message}` : 'Failed to load file'
+        const message = err instanceof BridgeRequestError ? `${err.code}: ${err.message}` : 'Failed to load file'
         setState({ status: 'error', path, message })
       },
     )

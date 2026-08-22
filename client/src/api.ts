@@ -1,5 +1,5 @@
 import type {
-  ApiErrorCode,
+  BridgeErrorCode,
   AssetResponse,
   BridgeError,
   CreateDirResponse,
@@ -13,9 +13,9 @@ import type {
 } from '@shared/types'
 
 /** Typed failure from the main process (see docs/CONTRACTS.md "Bridge API"). */
-export class ApiRequestError extends Error {
+export class BridgeRequestError extends Error {
   constructor(
-    readonly code: ApiErrorCode | 'CONFLICT',
+    readonly code: BridgeErrorCode | 'CONFLICT',
     message: string,
     /** Current on-disk mtime, only present on CONFLICT. */
     readonly mtime?: number,
@@ -23,7 +23,7 @@ export class ApiRequestError extends Error {
     readonly path?: string,
   ) {
     super(message)
-    this.name = 'ApiRequestError'
+    this.name = 'BridgeRequestError'
   }
 }
 
@@ -36,12 +36,12 @@ async function call<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn()
   } catch (err) {
-    if (isBridgeError(err)) throw new ApiRequestError(err.code, err.message, err.mtime, err.path)
-    throw new ApiRequestError('IO_ERROR', err instanceof Error ? err.message : String(err))
+    if (isBridgeError(err)) throw new BridgeRequestError(err.code, err.message, err.mtime, err.path)
+    throw new BridgeRequestError('IO_ERROR', err instanceof Error ? err.message : String(err))
   }
 }
 
-/** The fs half of `window.yaseenDocs`, with rejections wrapped in `ApiRequestError`. */
+/** The fs half of `window.yaseenDocs`, with rejections wrapped in `BridgeRequestError`. */
 export const api = {
   tree: (root: string) => call<TreeResponse>(() => window.yaseenDocs.tree(root)),
   readFile: (path: string) => call<FileResponse>(() => window.yaseenDocs.readFile(path)),

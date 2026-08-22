@@ -8,7 +8,7 @@
 
 // ---------- Errors ----------
 
-export type ApiErrorCode =
+export type BridgeErrorCode =
   | 'BAD_REQUEST' // missing/invalid argument
   | 'NOT_ABSOLUTE' // path is not absolute
   | 'NOT_FOUND' // path does not exist
@@ -365,11 +365,11 @@ export interface RegistryApi {
 
 /**
  * Every bridge promise rejects with a plain object satisfying `BridgeError` (the preload
- * unwraps the IPC envelope; `client/src/api.ts` wraps it in `ApiRequestError`).
+ * unwraps the IPC envelope; `client/src/api.ts` wraps it in `BridgeRequestError`).
  * `CONFLICT` carries the current on-disk `mtime`.
  */
 export interface BridgeError {
-  code: ApiErrorCode | 'CONFLICT'
+  code: BridgeErrorCode | 'CONFLICT'
   message: string
   path?: string
   mtime?: number

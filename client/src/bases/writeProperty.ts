@@ -1,5 +1,5 @@
 import { setFrontmatterProperty } from '@shared/frontmatter'
-import { ApiRequestError, api } from '../api'
+import { BridgeRequestError, api } from '../api'
 
 /**
  * Change one frontmatter key of a note on disk (GRO-2141). Reads the current bytes,
@@ -18,7 +18,7 @@ export async function writeProperty(path: string, key: string, value: unknown): 
   try {
     return { mtime: (await api.writeFile({ path, content, expectedMtime: file.mtime })).mtime }
   } catch (err) {
-    if (!(err instanceof ApiRequestError) || err.code !== 'CONFLICT') throw err
+    if (!(err instanceof BridgeRequestError) || err.code !== 'CONFLICT') throw err
     const fresh = await api.readFile(path)
     const merged = setFrontmatterProperty(fresh.content, key, value)
     // A second conflict throws: two racing writers means something else is fighting us.

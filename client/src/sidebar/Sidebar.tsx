@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import type { SettingsState, TreeNode, TreeResponse } from '@shared/types'
-import { api, ApiRequestError } from '../api'
+import { api, BridgeRequestError } from '../api'
 import type { WatchSource } from '../hooks/useWatch'
 import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
@@ -67,8 +67,8 @@ export function Sidebar({
         setError(null)
       },
       (err: unknown) => {
-        if (err instanceof ApiRequestError && (err.code === 'NOT_FOUND' || err.code === 'NOT_A_DIRECTORY')) onRootMissing()
-        else setError(err instanceof ApiRequestError ? err.message : 'Failed to load folder')
+        if (err instanceof BridgeRequestError && (err.code === 'NOT_FOUND' || err.code === 'NOT_A_DIRECTORY')) onRootMissing()
+        else setError(err instanceof BridgeRequestError ? err.message : 'Failed to load folder')
       },
     )
   }, [root, onRootMissing])
