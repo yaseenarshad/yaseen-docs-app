@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppState, VaultConfigChange, WatchEvent, YaseenDocsApi } from '@shared/types'
+import type { AppState, RegistryResponse, VaultConfigChange, WatchEvent, YaseenDocsApi } from '@shared/types'
 import { CH, type Envelope } from '../channels'
 
 /** invoke + unwrap: resolves the value or rejects with the plain `BridgeError` object. */
@@ -91,6 +91,19 @@ const api: YaseenDocsApi = {
       const on = (_e: unknown, message: string) => listener(message)
       ipcRenderer.on(CH.linkNotice, on)
       return () => ipcRenderer.removeListener(CH.linkNotice, on)
+    },
+  },
+  // Type & property registry over `.yaseendocs/types.json` (Bible A, GRO-2201).
+  registry: {
+    get: (root) => call(CH.registryGet, root),
+    setType: (root, name, def) => call(CH.registrySetType, root, name, def),
+    removeType: (root, name) => call(CH.registryRemoveType, root, name),
+    setProperty: (root, scope, name, def) => call(CH.registrySetProperty, root, scope, name, def),
+    removeProperty: (root, scope, name) => call(CH.registryRemoveProperty, root, scope, name),
+    onChange: (listener) => {
+      const on = (_e: unknown, msg: { root: string; registry: RegistryResponse }) => listener(msg.registry)
+      ipcRenderer.on(CH.registryChanged, on)
+      return () => ipcRenderer.removeListener(CH.registryChanged, on)
     },
   },
   // Vault-local config in `<root>/.yaseendocs/` (Desktop J, GRO-2188).

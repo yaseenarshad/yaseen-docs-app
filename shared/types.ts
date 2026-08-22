@@ -20,6 +20,7 @@ export type ApiErrorCode =
   | 'TOO_LARGE' // file exceeds MAX_FILE_BYTES
   | 'IO_ERROR' // any other fs error
   | 'PICKER_FAILED' // native folder dialog could not be run
+  | 'INVALID_CONFIG' // a vault config file (e.g. .yaseendocs/types.json) is unusable; the mutation is refused, the file never touched
 
 export const MARKDOWN_EXTENSIONS = ['.md', '.markdown'] as const
 /** Obsidian Bases files: YAML views over the vault's notes, first-class alongside markdown. */
@@ -324,6 +325,65 @@ export interface VaultConfigApi {
   onChange(listener: (change: VaultConfigChange) => void): () => void
 }
 
+// ---------- Type & property registry (`<root>/.yaseendocs/types.json`, Bible A — GRO-2201) ----------
+
+/**
+ * The editor set that exists (5B's `EditorKind`) plus the link/multi-link split. An unknown
+ * `kind` string on disk is preserved there and read back as `text` (forward compat).
+ */
+export const REGISTRY_PROPERTY_KINDS = ['text', 'number', 'date', 'checkbox', 'list', 'link', 'multi-link'] as const
+export type RegistryPropertyKind = (typeof REGISTRY_PROPERTY_KINDS)[number]
+
+export interface RegistryPropertyDef {
+  kind: RegistryPropertyKind
+  /** link/multi-link only: constrain the picker to pages whose page_type equals this. */
+  target?: string
+  /** Metadata for the future validation report (report-never-block: gates nothing in v1). */
+  required?: boolean
+}
+
+export interface RegistryTypeDef {
+  displayName?: string
+  pluralName?: string
+  /** Root-relative folder for new entities of this type. Browsing sugar only — never enforced. */
+  folder?: string
+  properties: Record<string, RegistryPropertyDef>
+}
+
+export interface RegistryResponse {
+  root: string
+  /** The file's `version` (1 when the file is absent or unusable). >1 = readable, not mutable. */
+  version: number
+  types: Record<string, RegistryTypeDef>
+  /** Vault-wide (untyped) property declarations. */
+  properties: Record<string, RegistryPropertyDef>
+  /** Set when types.json exists but is unusable; types/properties are then {}. */
+  error?: string
+}
+
+/** Where a property definition lives: a type's schema, or the vault-wide map. */
+export type RegistryScope = { type: string } | 'vault'
+
+/**
+ * Targeted mutators, never a whole-file PUT — the `StateApi` anti-clobber principle. Every
+ * mutation is a serialised read-modify-write that preserves unknown fields at every level.
+ * Type names must match `^[a-z][a-z0-9-]*$`, property names `^[a-z][a-z0-9_]*$`; `page_type`
+ * is the identity property, never a declared one (→ `BAD_REQUEST`). A corrupt or newer-versioned
+ * types.json rejects every mutation with `INVALID_CONFIG` and is never overwritten or moved aside.
+ */
+export interface RegistryApi {
+  /** Empty registry (no error) when .yaseendocs/types.json does not exist; never creates anything. */
+  get(root: string): Promise<RegistryResponse>
+  /** Upsert a type (merge: absent fields keep their stored values; properties replaces whole-map only when given). */
+  setType(root: string, name: string, def: Partial<RegistryTypeDef>): Promise<void>
+  removeType(root: string, name: string): Promise<void>
+  /** Upsert one property def in a type's schema or the vault-wide map. Creates the dotfolder/file/type entry on demand. */
+  setProperty(root: string, scope: RegistryScope, name: string, def: RegistryPropertyDef): Promise<void>
+  removeProperty(root: string, scope: RegistryScope, name: string): Promise<void>
+  /** Fired in every window of that root after any change, internal or external. Returns an unsubscribe. */
+  onChange(listener: (registry: RegistryResponse) => void): () => void
+}
+
 // ---------- Bridge: `window.yaseenDocs` (locked in GRO-2153, Desktop A1) ----------
 
 /**
@@ -435,4 +495,6 @@ export interface YaseenDocsApi {
   link: LinkApi
   /** Vault-local config in `<root>/.yaseendocs/` (Desktop J, GRO-2188). */
   vaultConfig: VaultConfigApi
+  /** Type & property registry over `.yaseendocs/types.json` (Bible A, GRO-2201). */
+  registry: RegistryApi
 }

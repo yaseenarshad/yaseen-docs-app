@@ -33,6 +33,12 @@ export const CH = {
   vaultConfigRead: 'vaultConfig:read',
   vaultConfigWrite: 'vaultConfig:write',
   vaultConfigChanged: 'vaultConfig:changed',
+  registryGet: 'registry:get',
+  registrySetType: 'registry:set-type',
+  registryRemoveType: 'registry:remove-type',
+  registrySetProperty: 'registry:set-property',
+  registryRemoveProperty: 'registry:remove-property',
+  registryChanged: 'registry:changed',
   appFlush: 'app:flush',
   appFlushed: 'app:flushed',
 } as const

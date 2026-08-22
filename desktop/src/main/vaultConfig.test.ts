@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { VaultConfigChange } from '@shared/types'
 import { failure, until } from './fs/testFixture'
-import { activeConfigWatcherRoots, readConfig, subscribeConfig, VAULT_CONFIG_DIR, writeConfig } from './vaultConfig'
+import { activeConfigWatcherRoots, readConfig, readConfigDetailed, subscribeConfig, VAULT_CONFIG_DIR, writeConfig } from './vaultConfig'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -58,6 +58,29 @@ describe('readConfig', () => {
     expect((await failure(readConfig(root, '../up.json'))).code).toBe('BAD_REQUEST')
     expect((await failure(readConfig(root, 'a.txt'))).code).toBe('UNSUPPORTED_EXTENSION')
     expect((await failure(readConfig(root, '.json'))).code).toBe('UNSUPPORTED_EXTENSION')
+  })
+})
+
+describe('readConfigDetailed', () => {
+  it('distinguishes absent from malformed without warning (the registry corrupt semantics need it)', async () => {
+    const root = await makeRoot()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    expect(await readConfigDetailed(root, 'types.json')).toEqual({ state: 'absent' })
+    expect(await readdir(root)).toEqual([]) // detailed reading NEVER creates .yaseendocs either
+    await writeConfig(root, 'types.json', { version: 1 })
+    expect(await readConfigDetailed(root, 'types.json')).toEqual({ state: 'ok', value: { version: 1 } })
+    await writeFile(path.join(root, VAULT_CONFIG_DIR, 'types.json'), '{not json')
+    const res = await readConfigDetailed(root, 'types.json')
+    expect(res.state).toBe('malformed')
+    if (res.state === 'malformed') expect(res.error).toContain('JSON')
+    expect(warn).not.toHaveBeenCalled() // the caller owns the reporting, unlike readConfig
+  })
+
+  it('rejects the same bad roots and names as readConfig', async () => {
+    const root = await makeRoot()
+    expect((await failure(readConfigDetailed('rel', 'a.json'))).code).toBe('NOT_ABSOLUTE')
+    expect((await failure(readConfigDetailed(root, 'a/b.json'))).code).toBe('BAD_REQUEST')
+    expect((await failure(readConfigDetailed(root, 'a.txt'))).code).toBe('UNSUPPORTED_EXTENSION')
   })
 })
 

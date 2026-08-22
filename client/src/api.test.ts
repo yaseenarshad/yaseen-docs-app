@@ -19,6 +19,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     menu: vi.fn(),
     link: vi.fn(),
     vaultConfig: vi.fn(),
+    registry: vi.fn(),
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return bridge
@@ -65,6 +66,20 @@ describe('api', () => {
     expect(e.mtime).toBe(42)
     expect(e.name).toBe('ApiRequestError')
     expect('status' in e).toBe(false)
+  })
+
+  it('registry calls delegate and wrap INVALID_CONFIG like every other code (Bible A, GRO-2201)', async () => {
+    const registry = { get: vi.fn(), setType: vi.fn(), removeType: vi.fn(), setProperty: vi.fn(), removeProperty: vi.fn(), onChange: vi.fn() }
+    Object.defineProperty(window.yaseenDocs, 'registry', { value: registry, configurable: true })
+    registry.get.mockResolvedValue({ root: '/v', version: 1, types: {}, properties: {} })
+    await expect(api.registry.get('/v')).resolves.toEqual({ root: '/v', version: 1, types: {}, properties: {} })
+    expect(registry.get).toHaveBeenCalledWith('/v')
+    await api.registry.setProperty('/v', { type: 'kpi' }, 'unit', { kind: 'text' })
+    expect(registry.setProperty).toHaveBeenCalledWith('/v', { type: 'kpi' }, 'unit', { kind: 'text' })
+    registry.setType.mockRejectedValue({ code: 'INVALID_CONFIG', message: 'types.json is unreadable' })
+    const err = (await api.registry.setType('/v', 'kpi', {}).catch((e: unknown) => e)) as ApiRequestError
+    expect(err).toBeInstanceOf(ApiRequestError)
+    expect(err.code).toBe('INVALID_CONFIG')
   })
 
   it('a BridgeError without path / mtime leaves those fields undefined', async () => {

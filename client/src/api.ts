@@ -9,6 +9,10 @@ import type {
   FileWriteResponse,
   IndexResponse,
   PickFolderResponse,
+  RegistryPropertyDef,
+  RegistryResponse,
+  RegistryScope,
+  RegistryTypeDef,
   TreeResponse,
 } from '@shared/types'
 
@@ -54,4 +58,13 @@ export const api = {
   readAsset: (root: string, ref: string) => call<AssetResponse>(() => window.yaseenDocs.readAsset(root, ref)),
   /** Native open-directory dialog parented to this window; resolves when the user picks or cancels. */
   pickFolder: () => call<PickFolderResponse>(() => window.yaseenDocs.pickFolder()),
+  /** Type & property registry over `.yaseendocs/types.json` (Bible A, GRO-2201); consumed via `useRegistry`. */
+  registry: {
+    get: (root: string) => call<RegistryResponse>(() => window.yaseenDocs.registry.get(root)),
+    setType: (root: string, name: string, def: Partial<RegistryTypeDef>) => call<void>(() => window.yaseenDocs.registry.setType(root, name, def)),
+    removeType: (root: string, name: string) => call<void>(() => window.yaseenDocs.registry.removeType(root, name)),
+    setProperty: (root: string, scope: RegistryScope, name: string, def: RegistryPropertyDef) => call<void>(() => window.yaseenDocs.registry.setProperty(root, scope, name, def)),
+    removeProperty: (root: string, scope: RegistryScope, name: string) => call<void>(() => window.yaseenDocs.registry.removeProperty(root, scope, name)),
+    onChange: (listener: (registry: RegistryResponse) => void) => window.yaseenDocs.registry.onChange(listener),
+  },
 }

@@ -65,8 +65,15 @@ function requireConfigName(name: unknown): string {
   return name
 }
 
-/** Parsed `<root>/.yaseendocs/<name>`, or null when missing or malformed. NEVER creates the folder. */
-export async function readConfig(root: string, name: string): Promise<unknown> {
+export type ConfigRead = { state: 'absent' } | { state: 'ok'; value: unknown } | { state: 'malformed'; error: string; file: string }
+
+/**
+ * Like `readConfig`, but distinguishes a missing file from malformed JSON and leaves the
+ * reporting to the caller — the registry's corrupt-file semantics need the difference
+ * (GRO-2201: absent → empty registry, malformed → error surfaced, mutations refused).
+ * NEVER creates the folder.
+ */
+export async function readConfigDetailed(root: string, name: string): Promise<ConfigRead> {
   const dir = requireAbsPath(root, 'root')
   const file = path.join(dir, VAULT_CONFIG_DIR, requireConfigName(name))
   let raw: string
@@ -74,16 +81,23 @@ export async function readConfig(root: string, name: string): Promise<unknown> {
     raw = await readFile(file, 'utf8')
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code
-    if (code === 'ENOENT' || code === 'ENOTDIR') return null
+    if (code === 'ENOENT' || code === 'ENOTDIR') return { state: 'absent' }
     throw toBridgeFailure(err, file)
   }
   try {
-    return JSON.parse(raw) as unknown
+    return { state: 'ok', value: JSON.parse(raw) as unknown }
   } catch (err) {
-    // Malformed config (half-synced file, hand edit) must not throw across IPC: warn once, act as absent.
-    console.warn(`[vaultConfig] ${file} is not valid JSON: ${String(err)}`)
-    return null
+    return { state: 'malformed', error: String(err), file }
   }
+}
+
+/** Parsed `<root>/.yaseendocs/<name>`, or null when missing or malformed. NEVER creates the folder. */
+export async function readConfig(root: string, name: string): Promise<unknown> {
+  const res = await readConfigDetailed(root, name)
+  if (res.state === 'ok') return res.value
+  // Malformed config (half-synced file, hand edit) must not throw across IPC: warn once, act as absent.
+  if (res.state === 'malformed') console.warn(`[vaultConfig] ${res.file} is not valid JSON: ${res.error}`)
+  return null
 }
 
 /** `mkdir -p` the dotfolder lazily, then an atomic pretty-printed write; own subscribers notified synchronously. */

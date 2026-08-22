@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { LinkApi, MenuApi, StateApi, VaultConfigApi, WindowApi, YaseenDocsApi } from '@shared/types'
+import type { LinkApi, MenuApi, RegistryApi, StateApi, VaultConfigApi, WindowApi, YaseenDocsApi } from '@shared/types'
 import { CH } from '../channels'
 
 const exposed: Record<string, unknown> = {}
@@ -9,12 +9,13 @@ vi.mock('electron', () => ({
 }))
 
 /** Compile-time exhaustive: adding a method to the contract without listing it here fails typecheck. */
-const TOP: readonly (keyof YaseenDocsApi)[] = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'readAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'vaultConfig']
+const TOP: readonly (keyof YaseenDocsApi)[] = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'readAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'vaultConfig', 'registry']
 const STATE: readonly (keyof StateApi)[] = ['get', 'setSettings', 'setSidebarCollapsed', 'pushRecent', 'removeRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange']
 const WINDOW: readonly (keyof WindowApi)[] = ['identity', 'setIdentity', 'open', 'duplicate', 'onFlush']
 const MENU: readonly (keyof MenuApi)[] = ['onOpenFolder', 'onOpenRoot']
 const LINK: readonly (keyof LinkApi)[] = ['onOpenFile', 'onNotice']
 const VAULT_CONFIG: readonly (keyof VaultConfigApi)[] = ['read', 'write', 'onChange']
+const REGISTRY: readonly (keyof RegistryApi)[] = ['get', 'setType', 'removeType', 'setProperty', 'removeProperty', 'onChange']
 type Exhaustive<T, K extends readonly (keyof T)[]> = Exclude<keyof T, K[number]> extends never ? true : never
 const _top: Exhaustive<YaseenDocsApi, typeof TOP> = true
 const _state: Exhaustive<StateApi, typeof STATE> = true
@@ -22,7 +23,8 @@ const _window: Exhaustive<WindowApi, typeof WINDOW> = true
 const _menu: Exhaustive<MenuApi, typeof MENU> = true
 const _link: Exhaustive<LinkApi, typeof LINK> = true
 const _vaultConfig: Exhaustive<VaultConfigApi, typeof VAULT_CONFIG> = true
-void [_top, _state, _window, _menu, _link, _vaultConfig]
+const _registry: Exhaustive<RegistryApi, typeof REGISTRY> = true
+void [_top, _state, _window, _menu, _link, _vaultConfig, _registry]
 
 describe('preload bridge', () => {
   it('installs window.yaseenDocs with every contract method', async () => {
@@ -35,6 +37,7 @@ describe('preload bridge', () => {
     for (const k of MENU) expect(typeof api.menu[k], `menu.${k}`).toBe('function')
     for (const k of LINK) expect(typeof api.link[k], `link.${k}`).toBe('function')
     for (const k of VAULT_CONFIG) expect(typeof api.vaultConfig[k], `vaultConfig.${k}`).toBe('function')
+    for (const k of REGISTRY) expect(typeof api.registry[k], `registry.${k}`).toBe('function')
   })
 
   it('forwards link:open-file paths to the listener and unsubscribes cleanly (E1, GRO-2171)', async () => {
