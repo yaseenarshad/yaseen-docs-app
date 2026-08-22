@@ -82,6 +82,19 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
   })
 
+  it('theme: an old settings object without the key sanitizes to system; junk falls back too (GRO-2218)', async () => {
+    // A pre-K yaseendocs.json: every field but `theme` — the missing field must default, not corrupt the file.
+    const { theme: _omitted, ...preThemeSettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: preThemeSettings }))
+    expect(createStore(file).get().settings.theme).toBe('system')
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 'dark' } }))
+    expect(createStore(file).get().settings.theme).toBe('dark')
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 'blue' } }))
+    expect(createStore(file).get().settings.theme).toBe('system')
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 2 } }))
+    expect(createStore(file).get().settings.theme).toBe('system')
+  })
+
   it('sidebarCollapsed only honours booleans', async () => {
     await seed(valid({ sidebarCollapsed: 'true' }))
     expect(createStore(file).get().sidebarCollapsed).toBe(false)
