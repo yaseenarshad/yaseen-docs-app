@@ -62,3 +62,41 @@ export async function renameFile(req: unknown): Promise<RenameFileResponse> {
     return { oldPath: oldP, newPath: newP, kind }
   })
 }
+
+/**
+ * Validate a rename that ALREADY happened on disk (Links E1c, GRO-2242): an external mover beat
+ * us to the filesystem, the user confirmed the detected hypothesis, and the caller (ipc/fs.ts)
+ * wants to reuse E1's downstream — store repair + the `file:renamed` push — without touching the
+ * disk. Mirrors `renameFile`'s posture MINUS the rename itself: `newPath` must EXIST (its stat
+ * derives `kind`), `oldPath` must NOT (a live old path means the hypothesis was wrong — refuse,
+ * never guess), and the extension-kind / dot-name rules match `renameFile`, so a repair can never
+ * claim a transition the real rename would have refused. No vault-root guard: nothing moves, and
+ * a window rooted at an externally renamed folder is exactly what the store repair heals.
+ */
+export async function repairRename(req: unknown): Promise<RenameFileResponse> {
+  if (typeof req !== 'object' || req === null) throw new BridgeFailure('BAD_REQUEST', 'request must be an object')
+  const { oldPath, newPath } = req as Record<string, unknown>
+  const oldP = requireAbsPath(oldPath, 'oldPath')
+  const newP = requireAbsPath(newPath, 'newPath')
+  if (oldP === newP) throw new BridgeFailure('BAD_REQUEST', 'the new path is the same as the old one', { path: newP })
+  return fsCall(newP, async () => {
+    const dst = await stat(newP) // missing → ENOENT → NOT_FOUND: nothing actually landed at the new path
+    const kind = dst.isDirectory() ? ('dir' as const) : ('file' as const)
+    if (kind === 'dir') {
+      if (path.basename(oldP).startsWith('.') || path.basename(newP).startsWith('.')) {
+        throw new BridgeFailure('BAD_REQUEST', 'hidden folders cannot be repaired', { path: path.basename(oldP).startsWith('.') ? oldP : newP })
+      }
+    } else {
+      if (!dst.isFile()) throw new BridgeFailure('NOT_A_FILE', 'expected a file', { path: newP })
+      const oldKind = fileKind(oldP)
+      const newKind = fileKind(newP)
+      if (oldKind === null || newKind === null) {
+        throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .md/.markdown/.base files can be repaired', { path: oldKind === null ? oldP : newP })
+      }
+      if (oldKind !== newKind) throw new BridgeFailure('BAD_REQUEST', 'the extension kind cannot change (md↔md, base↔base)', { path: newP })
+    }
+    const src = await stat(oldP).catch(() => null)
+    if (src !== null) throw new BridgeFailure('BAD_REQUEST', 'the old path still exists on disk', { path: oldP })
+    return { oldPath: oldP, newPath: newP, kind }
+  })
+}

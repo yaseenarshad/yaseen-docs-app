@@ -401,6 +401,57 @@ button {
   box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
 }
 
+/* ---------- external-rename banner (Links E1c, GRO-2242): the passive confirm-first bar ----------
+   The link-notice idiom (amber tokens, top-center toast) with two actions; it lingers until
+   Update/Dismiss, so it sits UNDER the transient notice when both are up (sibling rule below). */
+
+.rename-banner {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 49;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 80vw;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--notice-fg);
+  background: var(--notice-bg);
+  border: 1px solid var(--notice-border);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
+}
+
+.rename-banner__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rename-banner code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.rename-banner button {
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid var(--notice-btn-border);
+  border-radius: 4px;
+  background: var(--notice-btn-bg);
+}
+
+.rename-banner button:hover {
+  background: var(--notice-btn-bg-hover);
+}
+
+/* Both toasts up: the transient notice keeps the prime spot, the banner steps below it. */
+.link-notice ~ .rename-banner {
+  top: 48px;
+}
+
 /* ---------- sidebar ---------- */
 
 .sidebar {

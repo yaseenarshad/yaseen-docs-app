@@ -200,13 +200,15 @@ export interface UpdateLinksOptions {
   tree?: readonly TreeNode[]
 }
 
-/** Rewrite every referencing note on disk; see the module doc for the whole discipline. */
-export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'file', records, tree }: UpdateLinksOptions): Promise<RenameRewriteSummary> {
+/** The referencing-set predicate shared by the rewrite and the E1c dry-run count — ONE construction, so the banner's N and the rewrite can never disagree. */
+function makeResolves({ root, oldPath, kind, records, tree }: { root: string; oldPath: string; kind: 'file' | 'dir'; records: readonly IndexRecord[]; tree?: readonly TreeNode[] }): {
+  resolves: ResolvesToOld
+  resolveTargetPath: (t: string) => string | null
+  isBaseTarget: (t: string) => boolean
+} {
   const resolver = resolverFor(records, root)
   const prefix = `${oldPath}/`
   const isMoved = kind === 'dir' ? (p: string) => p.startsWith(prefix) : (p: string) => p === oldPath
-  const mapMoved = kind === 'dir' ? (p: string) => (p.startsWith(prefix) ? newPath + p.slice(oldPath.length) : p) : (p: string) => (p === oldPath ? newPath : p)
-  const relOf = (p: string) => (p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p)
   const isBaseTarget = (t: string) => /\.base$/i.test(t)
   const targetPaths = new Map<string, string | null>()
   const resolveTargetPath = (t: string): string | null => {
@@ -224,6 +226,27 @@ export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'f
     const hit = resolveTargetPath(target)
     return hit !== null && isMoved(hit)
   }
+  return { resolves, resolveTargetPath, isBaseTarget }
+}
+
+/**
+ * DRY-RUN (E1c, GRO-2242): how many notes the rewrite WOULD touch — the exact referencing-set
+ * filter `updateLinksAfterRename` runs (records whose `links`/`embeds` resolve to the moved
+ * path through the same shared-resolver `resolves`), with no reads and no writes. This is the
+ * banner's N; N === 0 → no banner, nothing happens at all (the locked ruling). For an external
+ * rename pass a PRE-rename snapshot (`preRenameRecords` synthesises one).
+ */
+export function countLinkReferences({ root, oldPath, kind = 'file', records, tree }: { root: string; oldPath: string; kind?: 'file' | 'dir'; records: readonly IndexRecord[]; tree?: readonly TreeNode[] }): number {
+  const { resolves } = makeResolves({ root, oldPath, kind, records, tree })
+  return records.filter((r) => [...r.links, ...r.embeds].some(resolves)).length
+}
+
+/** Rewrite every referencing note on disk; see the module doc for the whole discipline. */
+export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'file', records, tree }: UpdateLinksOptions): Promise<RenameRewriteSummary> {
+  const prefix = `${oldPath}/`
+  const mapMoved = kind === 'dir' ? (p: string) => (p.startsWith(prefix) ? newPath + p.slice(oldPath.length) : p) : (p: string) => (p === oldPath ? newPath : p)
+  const relOf = (p: string) => (p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p)
+  const { resolves, resolveTargetPath, isBaseTarget } = makeResolves({ root, oldPath, kind, records, tree })
   // File mode: whether a bare form still wins AFTER the move is decided by RESOLUTION, not
   // text — the post-move record set (the moved record re-pathed) answers it (shallowest rule).
   const newName = basename(newPath)

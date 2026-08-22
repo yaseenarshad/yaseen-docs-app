@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, type AppState, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, type AppState, type IndexRecord, type WindowIdentity } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -39,8 +39,8 @@ import { App, LINK_NOTICE_MS } from './App'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-/** The full `window.yaseenDocs` surface the App tree touches, all observable. */
-function installBridge(state: AppState, identity: WindowIdentity) {
+/** The full `window.yaseenDocs` surface the App tree touches, all observable. `files` backs readFile/writeFile (the E1c rewrite path). */
+function installBridge(state: AppState, identity: WindowIdentity, files: Record<string, { content: string; mtime: number }> = {}) {
   const menuOpenRoot = new Set<(path: string) => void>()
   const menuCloseTab = new Set<() => void>()
   const menuNextTab = new Set<() => void>()
@@ -56,7 +56,18 @@ function installBridge(state: AppState, identity: WindowIdentity) {
   const bridge = {
     tree: vi.fn(async (root: string) => ({ root, tree: [], generatedAt: 1 })),
     // Empty index (GRO-2190): WikilinkIndexBridge reads it for wikilink resolution.
-    index: vi.fn(async (root: string) => ({ root, records: [], generatedAt: 1 })),
+    index: vi.fn(async (root: string) => ({ root, records: [] as IndexRecord[], generatedAt: 1 })),
+    // No cold diff by default (E1c, GRO-2242): the external-rename tests stub a hit.
+    coldDiff: vi.fn(async () => null),
+    readFile: vi.fn(async (path: string) => {
+      const f = files[path]
+      if (f === undefined) return Promise.reject({ code: 'NOT_FOUND', message: 'path does not exist', path })
+      return { path, content: f.content, mtime: f.mtime, size: f.content.length }
+    }),
+    writeFile: vi.fn(async ({ path, content }: { path: string; content: string }) => {
+      files[path] = { content, mtime: (files[path]?.mtime ?? 0) + 1 }
+      return { path, mtime: files[path].mtime, size: content.length }
+    }),
     pickFolder: vi.fn(async () => ({ cancelled: true as const })),
     watch: vi.fn(() => () => undefined),
     state: {
@@ -98,9 +109,11 @@ function installBridge(state: AppState, identity: WindowIdentity) {
         return () => linkNotice.delete(l)
       }),
     },
-    // In-app rename (Links E1, GRO-2194): App subscribes to the renamed push on mount.
+    // In-app rename (Links E1, GRO-2194) + external repair (E1c, GRO-2242): App subscribes to
+    // the renamed push on mount; the banner's Update goes through repairRename.
     file: {
       rename: vi.fn(async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => ({ oldPath, newPath })),
+      repairRename: vi.fn(async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => ({ oldPath, newPath, kind: 'file' as const })),
       onRenamed: vi.fn((l: (ev: { oldPath: string; newPath: string }) => void) => {
         fileRenamed.add(l)
         return () => fileRenamed.delete(l)
@@ -128,8 +141,8 @@ function installBridge(state: AppState, identity: WindowIdentity) {
 let root: Root | null = null
 let container: HTMLElement | null = null
 
-async function mount(state: AppState, identity: WindowIdentity) {
-  const b = installBridge(state, identity)
+async function mount(state: AppState, identity: WindowIdentity, files: Record<string, { content: string; mtime: number }> = {}) {
+  const b = installBridge(state, identity, files)
   await storage.init()
   container = document.createElement('div')
   document.body.appendChild(container)
@@ -450,6 +463,73 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => captured.sidebar?.onFileMissing())
     expect(stripLabels(el)).toEqual(['b'])
     expect(activeLabel(el)).toBe('b')
+  })
+})
+
+describe('App external-rename banner (Links E1c, GRO-2242)', () => {
+  const record = (path: string, over: Partial<IndexRecord> = {}): IndexRecord => {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    return { path, name, basename: name.replace(/\.md$/i, ''), folder: '', ext: 'md', size: 7, ctime: 1, mtime: 100, properties: {}, tags: [], links: [], embeds: [], ...over }
+  }
+  /** A references B; B2 is the externally renamed B — the post-rename index snapshot. */
+  const records = [record('/v/A.md', { links: ['B'], size: 20, mtime: 5 }), record('/v/B2.md')]
+  const coldDiff = {
+    root: '/v',
+    scannedAt: 1,
+    cacheStatus: 'hit' as const,
+    added: [{ path: '/v/B2.md', size: 7, mtime: 100 }],
+    removed: [{ path: '/v/B.md', size: 7, mtime: 100 }],
+    changed: [],
+  }
+
+  // These two mount by hand (not via mount()): the index/coldDiff stubs must be in place
+  // BEFORE the first render, or the first snapshot lands empty and the cold read is spent.
+
+  it('the cold-start feed banners passively: names root-relative, N from the engine, no rewrite before confirmation', async () => {
+    const files = { '/v/A.md': { content: 'See [[B]] and [[B|Bee]].\n', mtime: 1 } }
+    const b = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, files)
+    b.bridge.index.mockResolvedValue({ root: '/v', records, generatedAt: 1 })
+    b.bridge.coldDiff.mockResolvedValue(coldDiff as never)
+    await storage.init()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<StrictMode><App /></StrictMode>))
+    await act(async () => {})
+    const el = container
+    const banner = el.querySelector('.rename-banner')
+    expect(banner).not.toBeNull()
+    expect(banner?.textContent).toContain('Looks like B.md became B2.md — update 1 link?')
+    expect(banner?.getAttribute('role')).toBe('status') // passive: a status region, never a dialog
+    expect(b.bridge.writeFile).not.toHaveBeenCalled() // confirm-first, ALWAYS (locked)
+    expect(b.bridge.file.repairRename).not.toHaveBeenCalled()
+
+    // Update → repair (store/tabs follow via the existing push) + engine rewrite + summary notice.
+    await act(async () => el.querySelectorAll<HTMLButtonElement>('.rename-banner button')[0]?.click())
+    expect(b.bridge.file.repairRename).toHaveBeenCalledWith({ oldPath: '/v/B.md', newPath: '/v/B2.md' })
+    expect(files['/v/A.md'].content).toBe('See [[B2]] and [[B2|Bee]].\n')
+    expect(el.querySelector('.link-notice')?.textContent).toBe('Updated links in 1 note')
+    expect(el.querySelector('.rename-banner')).toBeNull()
+  })
+
+  it('Dismiss drops the hypothesis: no repair, no rewrite, banner gone', async () => {
+    const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
+    const b = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] }, files)
+    b.bridge.index.mockResolvedValue({ root: '/v', records, generatedAt: 1 })
+    b.bridge.coldDiff.mockResolvedValue(coldDiff as never)
+    await storage.init()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<StrictMode><App /></StrictMode>))
+    await act(async () => {})
+    const el = container
+    expect(el.querySelector('.rename-banner')).not.toBeNull()
+    await act(async () => el.querySelectorAll<HTMLButtonElement>('.rename-banner button')[1]?.click())
+    expect(el.querySelector('.rename-banner')).toBeNull()
+    expect(b.bridge.file.repairRename).not.toHaveBeenCalled()
+    expect(b.bridge.writeFile).not.toHaveBeenCalled()
+    expect(files['/v/A.md'].content).toBe('See [[B]].\n')
   })
 })
 

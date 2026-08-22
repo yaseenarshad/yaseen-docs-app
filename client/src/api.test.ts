@@ -11,6 +11,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     createDir: vi.fn(),
     createFile: vi.fn(),
     index: vi.fn(),
+    coldDiff: vi.fn(),
     readAsset: vi.fn(),
     pickFolder: vi.fn(),
     watch: vi.fn(),
@@ -67,6 +68,21 @@ describe('api', () => {
     expect(err).toBeInstanceOf(BridgeRequestError)
     expect(err.code).toBe('ALREADY_EXISTS')
     expect(err.path).toBe('/v/b.md')
+  })
+
+  it('repairRename delegates to file.repairRename and coldDiff to the top-level bridge method (Links E1c, GRO-2242)', async () => {
+    const file = { rename: vi.fn(), repairRename: vi.fn(), onRenamed: vi.fn() }
+    Object.defineProperty(window.yaseenDocs, 'file', { value: file, configurable: true })
+    file.repairRename.mockResolvedValue({ oldPath: '/v/a.md', newPath: '/v/b.md', kind: 'file' })
+    await expect(api.repairRename({ oldPath: '/v/a.md', newPath: '/v/b.md' })).resolves.toEqual({ oldPath: '/v/a.md', newPath: '/v/b.md', kind: 'file' })
+    expect(file.repairRename).toHaveBeenCalledWith({ oldPath: '/v/a.md', newPath: '/v/b.md' })
+    file.repairRename.mockRejectedValue({ code: 'BAD_REQUEST', message: 'the old path still exists on disk', path: '/v/a.md' })
+    const err = (await api.repairRename({ oldPath: '/v/a.md', newPath: '/v/b.md' }).catch((e: unknown) => e)) as BridgeRequestError
+    expect(err).toBeInstanceOf(BridgeRequestError)
+    expect(err.code).toBe('BAD_REQUEST')
+    bridge.coldDiff.mockResolvedValue(null)
+    await expect(api.coldDiff('/v')).resolves.toBeNull()
+    expect(bridge.coldDiff).toHaveBeenCalledWith('/v')
   })
 
   it('a rejected plain BridgeError becomes a thrown BridgeRequestError with code / message / path / mtime', async () => {

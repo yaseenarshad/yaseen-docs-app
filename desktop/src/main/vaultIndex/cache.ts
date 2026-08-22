@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
-import type { IndexRecord } from '@shared/types'
+import type { IndexCacheStatus, IndexRecord } from '@shared/types'
 import { atomicWrite } from '../fs/fsUtils'
 
 /**
@@ -35,7 +35,9 @@ const PERSIST_DEBOUNCE_MS = 5000
  */
 const GC_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000
 
-export type IndexCacheStatus = 'hit' | 'miss' | 'corrupt' | 'version-mismatch'
+// The status vocabulary is part of the E1c bridge contract (`ColdStartDiffResponse.cacheStatus`,
+// GRO-2242), so the ONE definition lives in shared/types.ts; re-exported here for main-side use.
+export type { IndexCacheStatus } from '@shared/types'
 
 export interface IndexCacheLoad {
   /** Non-null exactly when `status` is `'hit'`. */

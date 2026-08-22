@@ -2,6 +2,7 @@ import type {
   BridgeErrorCode,
   AssetResponse,
   BridgeError,
+  ColdStartDiffResponse,
   CreateDirResponse,
   CreateFileRequest,
   CreateFileResponse,
@@ -57,8 +58,12 @@ export const api = {
   createFile: (req: string | CreateFileRequest) => call<CreateFileResponse>(() => window.yaseenDocs.createFile(req)),
   /** In-app rename: file rename/move or folder rename, never overwrites (Links E1 GRO-2194, E1b GRO-2241). */
   rename: (req: RenameFileRequest) => call<RenameFileResponse>(() => window.yaseenDocs.file.rename(req)),
+  /** Store/tab repair for a rename that ALREADY happened on disk (Links E1c, GRO-2242); reuses the `file:renamed` downstream. */
+  repairRename: (req: RenameFileRequest) => call<RenameFileResponse>(() => window.yaseenDocs.file.repairRename(req)),
   /** Bases property index for `root` (GRO-2129). */
   index: (root: string) => call<IndexResponse>(() => window.yaseenDocs.index(root)),
+  /** The cold-start reconcile diff for `root` (Links E1c, GRO-2242); null before the first index build. */
+  coldDiff: (root: string) => call<ColdStartDiffResponse | null>(() => window.yaseenDocs.coldDiff(root)),
   /** Local image under `root` for a cards cover (GRO-2139); `ref` = wikilink target or path. */
   readAsset: (root: string, ref: string) => call<AssetResponse>(() => window.yaseenDocs.readAsset(root, ref)),
   /** Native open-directory dialog parented to this window; resolves when the user picks or cancels. */

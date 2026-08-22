@@ -4,10 +4,10 @@ import { readAsset } from '../fs/assets'
 import { createDir, createFile } from '../fs/create'
 import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure } from '../fs/fsUtils'
-import { renameFile } from '../fs/rename'
+import { renameFile, repairRename } from '../fs/rename'
 import { tree } from '../fs/tree'
 import type { Store } from '../store'
-import { getIndex } from '../vaultIndex'
+import { getColdStartDiff, getIndex } from '../vaultIndex'
 import type { WindowRegistry } from '../windows'
 import { broadcastAll } from './broadcast'
 import { handle, handleWithEvent } from './envelope'
@@ -20,6 +20,11 @@ export function registerFsIpc(store: Store, windows: WindowRegistry): void {
   handle(CH.fsCreateDir, createDir)
   handle(CH.fsCreateFile, createFile)
   handle(CH.fsIndex, getIndex)
+  // The cold-start reconcile diff (Links E1c, GRO-2242): the client's rename detector reads it
+  // AFTER the first fs:index for the root. Null before the first build (and again once idle
+  // eviction drops the entry); the registry's honest-miss semantics ride through untouched —
+  // consumers gate on cacheStatus === 'hit'.
+  handle(CH.fsColdDiff, async (root: unknown) => (typeof root === 'string' ? (getColdStartDiff(root) ?? null) : null))
   handle(CH.fsReadAsset, readAsset)
   // In-app rename/move (Links E1 GRO-2194, E1b GRO-2241). The SAME handler repairs the
   // store — every stored path at or under the renamed entry follows (window roots/files/
@@ -38,6 +43,18 @@ export function registerFsIpc(store: Store, windows: WindowRegistry): void {
       throw new BridgeFailure('BAD_REQUEST', 'the vault root itself cannot be renamed', { path: oldPath })
     }
     const res = await renameFile(req)
+    store.renamePath(res.oldPath, res.newPath)
+    broadcastAll(CH.fileRenamed, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
+    return res
+  })
+  // External-rename repair (Links E1c, GRO-2242): the entry ALREADY moved on disk (an external
+  // mover), the user confirmed the banner's hypothesis, so there is no fs work — validate the
+  // claim (repairRename: newPath exists, oldPath does not) and reuse E1's ENTIRE downstream:
+  // the same store repair and the same file:renamed push (tab remap, editor continuity,
+  // title/hash). No vault-root guard here — nothing moves, and a window rooted at a repaired
+  // folder is exactly what store.renamePath heals.
+  handle(CH.fileRepairRename, async (req: unknown) => {
+    const res = await repairRename(req)
     store.renamePath(res.oldPath, res.newPath)
     broadcastAll(CH.fileRenamed, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
     return res

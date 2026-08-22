@@ -13,12 +13,12 @@ vi.mock('electron', () => ({
  * typecheck. `as const satisfies` keeps each tuple's literal type (a plain `readonly (keyof T)[]`
  * annotation would widen it and make `Exhaustive<>` vacuous) while still rejecting typos.
  */
-const TOP = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'readAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'file', 'vaultConfig', 'registry'] as const satisfies readonly (keyof YaseenDocsApi)[]
+const TOP = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'coldDiff', 'readAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'file', 'vaultConfig', 'registry'] as const satisfies readonly (keyof YaseenDocsApi)[]
 const STATE = ['get', 'setSettings', 'setSidebarCollapsed', 'pushRecent', 'removeRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange'] as const satisfies readonly (keyof StateApi)[]
 const WINDOW = ['identity', 'setIdentity', 'open', 'duplicate', 'closeSelf', 'onFlush'] as const satisfies readonly (keyof WindowApi)[]
 const MENU = ['onOpenFolder', 'onOpenRoot', 'onCloseTab', 'onNextTab', 'onPrevTab'] as const satisfies readonly (keyof MenuApi)[]
 const LINK = ['onOpenFile', 'onNotice'] as const satisfies readonly (keyof LinkApi)[]
-const FILE = ['rename', 'onRenamed'] as const satisfies readonly (keyof FileApi)[]
+const FILE = ['rename', 'repairRename', 'onRenamed'] as const satisfies readonly (keyof FileApi)[]
 const VAULT_CONFIG = ['read', 'write', 'onChange'] as const satisfies readonly (keyof VaultConfigApi)[]
 const REGISTRY = ['get', 'setType', 'removeType', 'setProperty', 'removeProperty', 'onChange'] as const satisfies readonly (keyof RegistryApi)[]
 type Exhaustive<T, K extends readonly (keyof T)[]> = Exclude<keyof T, K[number]> extends never ? true : never
@@ -83,6 +83,22 @@ describe('preload bridge', () => {
     const { bridge } = await import('./index')
     await expect(bridge.file.rename({ oldPath: '/v/a.md', newPath: '/v/b.md' })).resolves.toEqual({ oldPath: '/v/a.md', newPath: '/v/b.md' })
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.fsRename, { oldPath: '/v/a.md', newPath: '/v/b.md' })
+  })
+
+  it('file.repairRename invokes file:repair-rename with the request (Links E1c, GRO-2242)', async () => {
+    const { ipcRenderer } = await import('electron')
+    vi.mocked(ipcRenderer.invoke).mockResolvedValueOnce({ ok: true, value: { oldPath: '/v/a.md', newPath: '/v/b.md', kind: 'file' } })
+    const { bridge } = await import('./index')
+    await expect(bridge.file.repairRename({ oldPath: '/v/a.md', newPath: '/v/b.md' })).resolves.toEqual({ oldPath: '/v/a.md', newPath: '/v/b.md', kind: 'file' })
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.fileRepairRename, { oldPath: '/v/a.md', newPath: '/v/b.md' })
+  })
+
+  it('coldDiff invokes fs:cold-diff and resolves null before the first index build (Links E1c, GRO-2242)', async () => {
+    const { ipcRenderer } = await import('electron')
+    vi.mocked(ipcRenderer.invoke).mockResolvedValueOnce({ ok: true, value: null })
+    const { bridge } = await import('./index')
+    await expect(bridge.coldDiff('/vaults/notes')).resolves.toBeNull()
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.fsColdDiff, '/vaults/notes')
   })
 
   it('window.closeSelf invokes window:close-self (GRO-2232)', async () => {

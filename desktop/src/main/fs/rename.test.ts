@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { renameFile } from './rename'
+import { renameFile, repairRename } from './rename'
 import { failure, makeFixture } from './testFixture'
 
 let root: string
@@ -105,5 +105,59 @@ describe('renameFile (Links E1b, GRO-2241: cross-directory file move + folder re
     expect(await code(renameFile({ oldPath: path.join(root, 'moved'), newPath: path.join(root, '.hidden-dir') }))).toBe('BAD_REQUEST')
     expect(await code(renameFile({ oldPath: path.join(root, 'moved'), newPath: path.join(root, 'moved', 'inner') }))).toBe('BAD_REQUEST')
     await expect(stat(path.join(root, '.yaseendocs'))).resolves.toBeDefined() // nothing moved
+  })
+})
+
+describe('repairRename (Links E1c, GRO-2242: validate a rename that ALREADY happened on disk)', () => {
+  it('accepts the happy claim — new path exists, old path gone — and derives kind: file; the disk is untouched', async () => {
+    const oldPath = path.join(root, 'ExtOld.md')
+    const newPath = path.join(root, 'ExtNew.md')
+    await writeFile(newPath, 'ext') // the external mover already moved it; only the NEW path exists
+    expect(await repairRename({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
+    expect(await readFile(newPath, 'utf8')).toBe('ext') // repair never touches the disk
+  })
+
+  it('derives kind: dir for an externally moved folder', async () => {
+    const newPath = path.join(root, 'ExtDir')
+    await mkdir(newPath, { recursive: true })
+    expect(await repairRename({ oldPath: path.join(root, 'ExtDirOld'), newPath })).toEqual({ oldPath: path.join(root, 'ExtDirOld'), newPath, kind: 'dir' })
+  })
+
+  it('BAD_REQUEST when the OLD path still exists — a live old path means the hypothesis was wrong', async () => {
+    const oldPath = path.join(root, 'StillHere.md')
+    const newPath = path.join(root, 'StillHereNew.md')
+    await writeFile(oldPath, 'old')
+    await writeFile(newPath, 'new')
+    const err = await failure(repairRename({ oldPath, newPath }))
+    expect(err.code).toBe('BAD_REQUEST')
+    expect(err.path).toBe(oldPath)
+  })
+
+  it('NOT_FOUND when nothing exists at the new path (the claim has no landing spot)', async () => {
+    const err = await failure(repairRename({ oldPath: path.join(root, 'GoneOld.md'), newPath: path.join(root, 'GoneNew.md') }))
+    expect(err.code).toBe('NOT_FOUND')
+    expect(err.path).toBe(path.join(root, 'GoneNew.md'))
+  })
+
+  it("mirrors renameFile's file rules: extension kind pinned, vault extensions only, same-path and bad input refused", async () => {
+    await writeFile(path.join(root, 'Ext.base'), 'views:\n  - type: table\n    name: T\n')
+    expect(await code(repairRename({ oldPath: path.join(root, 'Ext.md'), newPath: path.join(root, 'Ext.base') }))).toBe('BAD_REQUEST') // kind change
+    await writeFile(path.join(root, 'ext.txt'), 'txt')
+    expect(await code(repairRename({ oldPath: path.join(root, 'old.txt'), newPath: path.join(root, 'ext.txt') }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await code(repairRename({ oldPath: path.join(root, 'ExtNew.md'), newPath: path.join(root, 'ExtNew.md') }))).toBe('BAD_REQUEST') // same path
+    expect(await code(repairRename({ oldPath: 'relative.md', newPath: path.join(root, 'ExtNew.md') }))).toBe('NOT_ABSOLUTE')
+    expect(await code(repairRename(undefined))).toBe('BAD_REQUEST')
+    expect(await code(repairRename({ newPath: path.join(root, 'ExtNew.md') }))).toBe('BAD_REQUEST')
+  })
+
+  it("mirrors renameFile's dot-dir refusal for directories", async () => {
+    expect(await code(repairRename({ oldPath: path.join(root, 'WasVisible'), newPath: path.join(root, '.yaseendocs') }))).toBe('BAD_REQUEST')
+  })
+
+  it('an md ↔ markdown repair stays within the markdown kind (parity with renameFile)', async () => {
+    const oldPath = path.join(root, 'ExtKind.md')
+    const newPath = path.join(root, 'ExtKind.markdown')
+    await writeFile(newPath, 'k')
+    expect(await repairRename({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
   })
 })

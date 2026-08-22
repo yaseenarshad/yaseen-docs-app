@@ -35,6 +35,8 @@ const api: YaseenDocsApi = {
   createDir: (path) => call(CH.fsCreateDir, path),
   createFile: (req) => call(CH.fsCreateFile, req),
   index: (root) => call(CH.fsIndex, root),
+  // The cold-start reconcile diff (Links E1c, GRO-2242): read AFTER the first index(root).
+  coldDiff: (root) => call(CH.fsColdDiff, root),
   readAsset: (root, ref) => call(CH.fsReadAsset, root, ref),
   pickFolder: () => call(CH.dialogPickFolder),
   watch: (root, listener) => {
@@ -86,9 +88,11 @@ const api: YaseenDocsApi = {
     onOpenFile: on<string>(CH.linkOpenFile),
     onNotice: on<string>(CH.linkNotice),
   },
-  // In-app rename (Links E1, GRO-2194): the invoke plus the renamed push every window gets.
+  // In-app rename (Links E1, GRO-2194) + external-rename repair (E1c, GRO-2242): the invokes
+  // plus the renamed push every window gets (repair reuses the SAME push downstream).
   file: {
     rename: (req) => call(CH.fsRename, req),
+    repairRename: (req) => call(CH.fileRepairRename, req),
     onRenamed: on<FileRenamedEvent>(CH.fileRenamed),
   },
   // Type & property registry over `.yaseendocs/types.json` (Bible A, GRO-2201).

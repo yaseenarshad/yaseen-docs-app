@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { IndexRecord, TreeNode } from '@shared/types'
 import {
+  countLinkReferences,
   maskCode,
   renamedTarget,
   renameNotice,
@@ -312,5 +313,42 @@ describe('updateLinksAfterRename and `.base` embeds (E1b)', () => {
     const records = [rec('/v/A.md', { embeds: ['T.base'] })]
     expect(await updateLinksAfterRename({ root, oldPath: '/v/T.base', newPath: '/v/U.base', records })).toEqual({ updated: 0, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('![[T.base]]\n')
+  })
+})
+
+// ---------- the E1c dry-run count (GRO-2242) ----------
+
+describe('countLinkReferences (the banner N — the exact referencing-set filter, no reads, no writes)', () => {
+  const root = '/v'
+
+  it('counts records whose links OR embeds resolve to the moved path — bare, pathed and embed forms', () => {
+    const records = [
+      rec('/v/A.md', { links: ['B'] }),
+      rec('/v/Hub.md', { embeds: ['B'] }),
+      rec('/v/Pathed.md', { links: ['Sub/B'] }),
+      rec('/v/Other.md', { links: ['C'] }),
+      rec('/v/Sub/B.md'),
+      rec('/v/C.md'),
+    ]
+    // Bare [[B]] resolves to the shallowest B — none at the root, so /v/Sub/B.md wins.
+    expect(countLinkReferences({ root, oldPath: '/v/Sub/B.md', records })).toBe(3)
+  })
+
+  it('0 when nothing references the moved path (→ no banner at all, the locked N === 0 rule)', () => {
+    const records = [rec('/v/A.md', { links: ['C'] }), rec('/v/B.md'), rec('/v/C.md')]
+    expect(countLinkReferences({ root, oldPath: '/v/B.md', records })).toBe(0)
+  })
+
+  it('agrees with what updateLinksAfterRename then touches (one construction, never two truths)', async () => {
+    const files = {
+      '/v/A.md': { content: 'See [[B]].\n', mtime: 1 },
+      '/v/H.md': { content: '![[B]]\n', mtime: 1 },
+    }
+    installBridge(files)
+    const records = [rec('/v/A.md', { links: ['B'] }), rec('/v/H.md', { embeds: ['B'] }), rec('/v/B.md')]
+    const n = countLinkReferences({ root, oldPath: '/v/B.md', records })
+    const summary = await updateLinksAfterRename({ root, oldPath: '/v/B.md', newPath: '/v/B2.md', records })
+    expect(n).toBe(2)
+    expect(summary).toEqual({ updated: n, skipped: 0 })
   })
 })

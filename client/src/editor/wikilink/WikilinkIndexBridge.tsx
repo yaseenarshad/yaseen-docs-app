@@ -10,6 +10,7 @@
  * are replaced.
  */
 import { useEffect } from 'react'
+import type { IndexRecord } from '@shared/types'
 import { resolverFor } from '../../bases/engine'
 import { useIndex } from '../../bases/useIndex'
 import type { WatchSource } from '../../hooks/useWatch'
@@ -23,9 +24,15 @@ export interface WikilinkIndexBridgeProps {
   source: MutableWikilinkResolveSource
   /** The `[[` picker's candidate names (GRO-2191), fed from the same ready snapshots. */
   candidates?: MutableWikilinkCandidateSource
+  /**
+   * Every READY snapshot, verbatim (Links E1c, GRO-2242): the external-rename detector diffs
+   * consecutive snapshots — this component already sees them all, so no second `useIndex`
+   * (which would double every fetch). Keep the identity stable (App's hook does).
+   */
+  onSnapshot?: (records: IndexRecord[]) => void
 }
 
-export function WikilinkIndexBridge({ root, watch, source, candidates }: WikilinkIndexBridgeProps): null {
+export function WikilinkIndexBridge({ root, watch, source, candidates, onSnapshot }: WikilinkIndexBridgeProps): null {
   const { status, records } = useIndex(root, watch)
   useEffect(() => {
     // Only a READY snapshot feeds the sources: while the first fetch is pending (or a refetch
@@ -35,6 +42,7 @@ export function WikilinkIndexBridge({ root, watch, source, candidates }: Wikilin
     const resolve = resolverFor(records, root)
     source.update((target) => resolve(target)?.record.path ?? null)
     candidates?.update(linkCandidates(records))
-  }, [status, records, root, source, candidates])
+    onSnapshot?.(records)
+  }, [status, records, root, source, candidates, onSnapshot])
   return null
 }

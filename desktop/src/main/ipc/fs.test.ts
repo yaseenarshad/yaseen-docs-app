@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
@@ -55,7 +55,7 @@ describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc(store, registry)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsIndex, CH.fsRead, CH.fsReadAsset, CH.fsRename, CH.fsTree, CH.fsWrite].sort())
+    expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsColdDiff, CH.fsIndex, CH.fsRead, CH.fsReadAsset, CH.fsRename, CH.fileRepairRename, CH.fsTree, CH.fsWrite].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
@@ -90,6 +90,49 @@ describe('registerFsIpc', () => {
     expect(value.root).toBe(root)
     expect(value.records.length).toBeGreaterThan(0)
     expect(value.records.every((r) => r.ext === 'md' || r.ext === 'markdown')).toBe(true)
+  })
+
+  it('fs:cold-diff answers null for an unbuilt root and the reconcile diff after fs:index built one (Links E1c, GRO-2242)', async () => {
+    expect(await registered(CH.fsColdDiff)({ sender: {} }, path.join(root, 'never-indexed'))).toEqual({ ok: true, value: null })
+    expect(await registered(CH.fsColdDiff)({ sender: {} }, 42)).toEqual({ ok: true, value: null }) // non-string root: null, never a throw
+    const res = await registered(CH.fsColdDiff)({ sender: {} }, root) // built by the fs:index test above
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error('expected ok')
+    const value = res.value as { root: string; cacheStatus: string; added: unknown[]; removed: unknown[]; changed: unknown[] }
+    expect(value.root).toBe(root)
+    // No persistent cache in this env → an honest non-hit with EMPTY lists (never "everything added").
+    expect(value.cacheStatus).toBe('miss')
+    expect(value).toMatchObject({ added: [], removed: [], changed: [] })
+  })
+
+  it('file:repair-rename validates the already-moved claim, repairs the store and broadcasts file:renamed (Links E1c, GRO-2242)', async () => {
+    const oldPath = path.join(root, 'ext.md')
+    const newPath = path.join(root, 'ext2.md')
+    await writeFile(oldPath, '# ext\n')
+    await rename(oldPath, newPath) // the EXTERNAL mover already moved it — no fs work left
+    store.upsertWindow({ id: 'w-ext', root, file: oldPath, tabs: [oldPath], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    const w = fakeWindow()
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+    const res = await registered(CH.fileRepairRename)({ sender: {} }, { oldPath, newPath })
+    expect(res).toEqual({ ok: true, value: { oldPath, newPath, kind: 'file' } })
+    expect(await readFile(newPath, 'utf8')).toBe('# ext\n') // repair never touches the disk
+    // The SAME store repair and push as fs:rename — the E1 downstream is reused whole.
+    expect(store.get().windows.find((win) => win.id === 'w-ext')).toMatchObject({ file: newPath, tabs: [newPath] })
+    expect(w.webContents.send).toHaveBeenCalledWith(CH.fileRenamed, { oldPath, newPath, kind: 'file' })
+  })
+
+  it('file:repair-rename with a live old path answers a BridgeError envelope, repairs nothing and broadcasts nothing', async () => {
+    const oldPath = path.join(root, 'A.md') // still on disk — the hypothesis is wrong
+    const newPath = path.join(root, 'ext2.md') // exists from the test above
+    const w = fakeWindow()
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+    const before = store.get()
+    expect(await registered(CH.fileRepairRename)({ sender: {} }, { oldPath, newPath })).toEqual({
+      ok: false,
+      error: { code: 'BAD_REQUEST', message: 'the old path still exists on disk', path: oldPath },
+    })
+    expect(store.get()).toBe(before)
+    expect(w.webContents.send).not.toHaveBeenCalled()
   })
 
   it('fs:rename renames on disk, repairs the store and broadcasts file:renamed to every window (Links E1, GRO-2194)', async () => {

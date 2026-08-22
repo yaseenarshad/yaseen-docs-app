@@ -96,6 +96,42 @@ export interface IndexResponse {
   types?: Record<string, string>
 }
 
+// ---------- coldDiff(root) (Links E1c, GRO-2242) ----------
+
+/** How the persistent index cache loaded at cold start (`desktop/src/main/vaultIndex/cache.ts`). */
+export type IndexCacheStatus = 'hit' | 'miss' | 'corrupt' | 'version-mismatch'
+
+/** One file's identity stats in a `ColdStartDiffResponse` — the (size, mtime) rename join key. */
+export interface DiffFileStat {
+  /** Absolute path. */
+  path: string
+  /** Byte size. */
+  size: number
+  /** mtime in epoch ms. */
+  mtime: number
+}
+
+/**
+ * What changed between the persistent index cache and the disk at cold start — the E1c
+ * external-rename detection feed (GRO-2242). `removed` carries the CACHED stats and `added`
+ * the ON-DISK ones, so an external rename/move (which preserves size + mtime) joins them 1:1.
+ * Honest miss semantics: on any `cacheStatus` other than `'hit'` there was no before-snapshot,
+ * so all three lists are EMPTY (never "everything added") and `cacheStatus` says why —
+ * consumers MUST gate on `cacheStatus === 'hit'` before trusting them.
+ */
+export interface ColdStartDiffResponse {
+  root: string
+  /** Epoch ms when the reconcile ran. */
+  scannedAt: number
+  cacheStatus: IndexCacheStatus
+  /** On disk but not in the cache; ON-DISK stats. Sorted by path. */
+  added: DiffFileStat[]
+  /** In the cache but no longer on disk; CACHED stats. Sorted by path. */
+  removed: DiffFileStat[]
+  /** Present in both but mtime or size moved (re-scanned). Sorted. */
+  changed: string[]
+}
+
 // ---------- readFile(path) ----------
 
 export interface FileResponse {
@@ -561,6 +597,15 @@ export interface MenuApi {
 export interface FileApi {
   /** Same-directory FILE rename, extension kind unchanged; never overwrites (`ALREADY_EXISTS`). */
   rename(req: RenameFileRequest): Promise<RenameFileResponse>
+  /**
+   * Store/tab repair for a rename that ALREADY happened on disk (Links E1c, GRO-2242): the user
+   * confirmed a detected EXTERNAL rename, so there is nothing to move — `newPath` must exist
+   * (its stat derives `kind`) and `oldPath` must NOT (a live old path means the hypothesis was
+   * wrong: `BAD_REQUEST`); the other validation mirrors `rename` minus the disk rename itself.
+   * Runs the same store repair and pushes the same `file:renamed` to every window, so tabs,
+   * editor continuity and title/hash reuse the E1 downstream unchanged.
+   */
+  repairRename(req: RenameFileRequest): Promise<RenameFileResponse>
   /** Fired in every window after a successful rename; returns an unsubscribe. */
   onRenamed(listener: (ev: FileRenamedEvent) => void): () => void
 }
@@ -590,6 +635,14 @@ export interface YaseenDocsApi {
   createFile(req: string | CreateFileRequest): Promise<CreateFileResponse>
   /** Bases property index for `root` (GRO-2129): full scan on first call, watcher-incremental after. */
   index(root: string): Promise<IndexResponse>
+  /**
+   * The cold-start reconcile diff for `root` (Links E1c, GRO-2242): what changed on disk while
+   * the app was closed, straight from the persistent index cache's reconcile. Null before the
+   * first `index(root)` build for this root (and again after idle eviction drops the entry) —
+   * consumers read it AFTER the first index snapshot. Trust `added`/`removed`/`changed` only
+   * when `cacheStatus === 'hit'`; on any other status they are empty.
+   */
+  coldDiff(root: string): Promise<ColdStartDiffResponse | null>
   /**
    * Local image for the cards view (GRO-2139): `ref` is a wikilink target or path (`|alias` /
    * `#heading` stripped) — root-relative when it has a `/`, else Obsidian's shortest-path rule

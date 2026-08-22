@@ -1,6 +1,6 @@
 import { statSync, type Stats } from 'node:fs'
-import type { IndexRecord } from '@shared/types'
-import type { IndexCacheLoad, IndexCacheStatus } from './cache'
+import type { ColdStartDiffResponse, DiffFileStat, IndexRecord } from '@shared/types'
+import type { IndexCacheLoad } from './cache'
 import { scanFile } from './scan'
 
 /**
@@ -27,11 +27,7 @@ export async function scanAll(root: string, files: string[]): Promise<Map<string
   return records
 }
 
-interface FileStat {
-  path: string
-  size: number
-  mtime: number
-}
+type FileStat = DiffFileStat
 
 /**
  * What changed between the persisted cache and the disk at cold start — the E1c rename-detection
@@ -41,19 +37,11 @@ interface FileStat {
  * Miss semantics: on any `cacheStatus` other than `'hit'` there is no before-snapshot to diff
  * against, so `added`/`removed`/`changed` are EMPTY (never "everything added") and `cacheStatus`
  * says why — consumers MUST check `cacheStatus === 'hit'` before trusting the three lists.
+ *
+ * The shape IS the E1c bridge payload (`fs:cold-diff` ships it verbatim), so the ONE definition
+ * lives in shared/types.ts as `ColdStartDiffResponse`; this alias keeps the main-side name.
  */
-export interface ColdStartDiff {
-  root: string
-  /** Epoch ms when the reconcile ran. */
-  scannedAt: number
-  cacheStatus: IndexCacheStatus
-  /** On disk but not in the cache; ON-DISK stats. Sorted by path. */
-  added: FileStat[]
-  /** In the cache but no longer on disk; CACHED stats. Sorted by path. */
-  removed: FileStat[]
-  /** Present in both but mtime or size moved (re-scanned). Sorted. */
-  changed: string[]
-}
+export type ColdStartDiff = ColdStartDiffResponse
 
 const byPath = (a: FileStat, b: FileStat): number => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
 

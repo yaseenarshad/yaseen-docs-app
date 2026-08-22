@@ -12,6 +12,7 @@ import { useMenuEvents } from './hooks/useMenuEvents'
 import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
 import { renameNotice, updateLinksAfterRename } from './links/renameLinks'
+import { useExternalRenames } from './links/useExternalRenames'
 import { basename } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath } from './lib/renameContinuity'
 import { storage } from './lib/storage'
@@ -157,6 +158,16 @@ export function App() {
   }, [notice])
   useLinkEvents({ onOpenFile: openCurrent, onNotice: setNotice })
 
+  // External rename/move resilience (Links E1c, GRO-2242 — locked: confirm-first, NEVER
+  // automatic, never a dialog): ONE detector fed by the cold-start reconcile diff and by
+  // consecutive index snapshots (WikilinkIndexBridge's onSnapshot below), surfacing ONE
+  // passive app-level banner at a time. Update → repair the app (file:repair-rename, whose
+  // file:renamed push drives the SAME tab/editor downstream as an in-app rename) + rewrite
+  // the referencing notes; Dismiss → drop for this session. In-app renames are suppressed
+  // through the file:renamed effect below, so their watcher echo never banners.
+  const { banner: renameBanner, onSnapshot: onIndexSnapshot, suppress: suppressRenameHypothesis, update: updateRenameBanner, dismiss: dismissRenameBanner } = useExternalRenames(root, setNotice)
+  const relLabel = useCallback((p: string) => (root !== null && p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p), [root])
+
   // In-app rename (Links E1 GRO-2194, folders E1b GRO-2241). `file:renamed` reaches EVERY
   // window (originator included): BEFORE the tab remap unmounts the old-path editor(s), a
   // dirty buffer is carried into the new path and the old controller retired (no flush to
@@ -169,6 +180,9 @@ export function App() {
   useEffect(
     () =>
       window.yaseenDocs.file.onRenamed(({ oldPath, newPath, kind }) => {
+        // E1c: an in-app rename's watcher echo (unlink+add with preserved stats) must never
+        // be re-offered as an "external rename" hypothesis.
+        suppressRenameHypothesis(oldPath, newPath, kind)
         if (kind === 'dir') {
           carryEditorsAcrossDirRename(oldPath, newPath)
           const movedRoot = root !== null && (root === oldPath || root.startsWith(`${oldPath}/`)) ? newPath + root.slice(oldPath.length) : undefined
@@ -179,7 +193,7 @@ export function App() {
         carryEditorAcrossRename(oldPath, newPath)
         renameTabPath(oldPath, newPath)
       }),
-    [renameTabPath, renameDirTabs, root],
+    [renameTabPath, renameDirTabs, root, suppressRenameHypothesis],
   )
 
   /**
@@ -239,6 +253,22 @@ export function App() {
           {notice}
         </div>
       )}
+      {/* E1c (GRO-2242): the passive external-rename confirmation banner — one hypothesis at a
+          time, oldest first. Confirm-first, ALWAYS: no rewrite until Update; Dismiss drops it
+          for this session. Passive: steals no focus, Esc is not bound, never a dialog. */}
+      {renameBanner !== null && (
+        <div className="rename-banner" role="status">
+          <span className="rename-banner__text">
+            Looks like <code>{relLabel(renameBanner.oldPath)}</code> became <code>{relLabel(renameBanner.newPath)}</code> — update {renameBanner.count} link{renameBanner.count === 1 ? '' : 's'}?
+          </span>
+          <button type="button" onClick={updateRenameBanner}>
+            Update
+          </button>
+          <button type="button" onClick={dismissRenameBanner}>
+            Dismiss
+          </button>
+        </div>
+      )}
       {root !== null && !sidebarCollapsed && (
         <Sidebar
           key={root}
@@ -269,7 +299,7 @@ export function App() {
         </section>
       ) : (
         <div className="workspace">
-          <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} candidates={wikilinkCandidates} />
+          <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} candidates={wikilinkCandidates} onSnapshot={onIndexSnapshot} />
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
           <TabBar tabs={tabs} active={file} onActivate={activate} onClose={closeTab} onMove={moveTab} />
           <div className="tabstack">
