@@ -48,7 +48,7 @@ export function Editor({ root, path, watch, onOpenFile }: EditorProps) {
 function CrepeHost({ root, file, watch }: { root: string; file: FileResponse; watch: WatchSource }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const autosave = useAutosave(file.path)
-  const { attach, markReloaded, reportConflict } = autosave
+  const { attach, markReloaded, reportConflict, absorbFrontmatterOnly } = autosave
   const reloadRef = useRef<() => void>(() => {})
 
   useEffect(() => {
@@ -73,7 +73,7 @@ function CrepeHost({ root, file, watch }: { root: string; file: FileResponse; wa
     let cancelled = false
     const ready = crepe.create().then(() => {
       if (cancelled) return
-      controller = attach(() => getMarkdownForSave(crepe), file.mtime, frontmatter)
+      controller = attach(() => getMarkdownForSave(crepe), file.mtime, frontmatter, body)
       focusEditor(crepe)
     })
 
@@ -82,7 +82,7 @@ function CrepeHost({ root, file, watch }: { root: string; file: FileResponse; wa
       if (cancelled) return
       const split = splitFrontmatter(fresh.content)
       setMarkdown(crepe, split.body)
-      markReloaded(() => getMarkdownForSave(crepe), fresh.mtime, split.frontmatter)
+      markReloaded(() => getMarkdownForSave(crepe), fresh.mtime, split.frontmatter, split.body)
     }
     reloadRef.current = () => void reload()
 
@@ -92,9 +92,14 @@ function CrepeHost({ root, file, watch }: { root: string; file: FileResponse; wa
       // On slow filesystems (e.g. NFS vaults) the watcher event for our own PUT can arrive
       // before the PUT response carries the new mtime; settle the in-flight save first so
       // echo suppression compares against the mtime of the write that caused the event.
-      void c.settled().then(() => {
+      void c.settled().then(async () => {
         if (cancelled) return
         if (ev.mtime === c.mtime) return // echo of our own PUT
+        // A base's property write (GRO-2141) rewrites only the frontmatter block; absorb it
+        // silently so unsaved body edits and the caret survive (GRO-2186).
+        const fresh = await api.readFile(file.path)
+        if (cancelled) return
+        if (absorbFrontmatterOnly(fresh.content, fresh.mtime)) return
         // The listener plugin debounces markdownUpdated by 200ms, so pull the live content
         // before deciding whether in-progress typing would be lost by a silent reload.
         c.update(getMarkdownForSave(crepe))
@@ -108,7 +113,7 @@ function CrepeHost({ root, file, watch }: { root: string; file: FileResponse; wa
       unsubscribe()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly])
 
   return (
     <>

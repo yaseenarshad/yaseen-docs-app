@@ -60,7 +60,7 @@ export function BaseHost({ root, file, watch, onOpenFile }: BaseHostProps) {
   }
 
   useEffect(() => {
-    const controller = attach(() => contentOf(modeRef.current), file.mtime, '')
+    const controller = attach(() => contentOf(modeRef.current), file.mtime, '', file.content)
     controllerRef.current = controller
     let cancelled = false
 
@@ -68,7 +68,7 @@ export function BaseHost({ root, file, watch, onOpenFile }: BaseHostProps) {
       const fresh = await api.readFile(file.path)
       if (cancelled) return
       setModeNow(load(fresh.content))
-      markReloaded(() => contentOf(modeRef.current), fresh.mtime, '')
+      markReloaded(() => contentOf(modeRef.current), fresh.mtime, '', fresh.content)
     }
     reloadRef.current = () => void reload()
 

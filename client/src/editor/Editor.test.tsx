@@ -1,0 +1,251 @@
+/**
+ * CrepeHost external-change handling (GRO-2186): a property write from a base (GRO-2141)
+ * rewrites only the frontmatter block on disk; the open editor must absorb it silently —
+ * no replaceAll, no conflict bar, unsaved body edits kept. Mounted with react-dom in jsdom;
+ * `api` is mocked so every GET / PUT is observable, `./createCrepe` is replaced by a fake
+ * whose markdown state the tests drive by hand (the real editor is covered by
+ * roundtrip.test.ts / the outline suites), and the watcher is a fake `WatchSource` whose
+ * subscribers are captured so tests can push `change` events by hand.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import type { FileResponse, WatchEvent } from '@shared/types'
+import type { WatchListener, WatchSource } from '../hooks/useWatch'
+import { Editor } from './Editor'
+
+vi.mock('../api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api')>()),
+  api: { readFile: vi.fn(), writeFile: vi.fn() },
+}))
+
+vi.mock('./createCrepe', () => {
+  interface FakeCrepe {
+    md: string
+    onMarkdownUpdated?: (md: string) => void
+    create: () => Promise<void>
+    destroy: () => Promise<void>
+  }
+  return {
+    createCrepe: vi.fn((opts: { defaultValue?: string; onMarkdownUpdated?: (md: string) => void }): FakeCrepe => ({
+      md: opts.defaultValue ?? '',
+      onMarkdownUpdated: opts.onMarkdownUpdated,
+      create: () => Promise.resolve(),
+      destroy: () => Promise.resolve(),
+    })),
+    getMarkdownForSave: vi.fn((crepe: FakeCrepe) => crepe.md),
+    setMarkdown: vi.fn((crepe: FakeCrepe, md: string) => {
+      crepe.md = md
+    }),
+    focusEditor: vi.fn(),
+  }
+})
+
+import { api } from '../api'
+import { createCrepe, setMarkdown } from './createCrepe'
+
+interface FakeCrepe {
+  md: string
+  onMarkdownUpdated?: (md: string) => void
+}
+
+const readFile = vi.mocked(api.readFile)
+const writeFile = vi.mocked(api.writeFile)
+const createCrepeMock = vi.mocked(createCrepe)
+const setMarkdownMock = vi.mocked(setMarkdown)
+const openFile = vi.fn()
+
+// React's act() refuses to run outside a test renderer unless this flag is set.
+;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+
+const PATH = '/vault/note.md'
+const FM = '---\nstatus: draft\n---\n'
+const FM2 = '---\nstatus: done\n---\n'
+const BODY = '# Hello\n\nsome text\n'
+
+let root: Root | null = null
+let container: HTMLElement | null = null
+let listeners: WatchListener[] = []
+
+const watch: WatchSource = {
+  subscribe: (l) => {
+    listeners.push(l)
+    return () => {
+      listeners = listeners.filter((x) => x !== l)
+    }
+  },
+}
+
+/** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
+async function mount(content: string, mtime = 1): Promise<HTMLElement> {
+  const file: FileResponse = { path: PATH, content, mtime, size: content.length }
+  readFile.mockResolvedValueOnce(file)
+  container = document.createElement('div')
+  document.body.appendChild(container)
+  root = createRoot(container)
+  act(() => root?.render(<Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} />))
+  await settle()
+  await settle()
+  return container
+}
+
+async function settle(): Promise<void> {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0)
+  })
+}
+
+function crepe(): FakeCrepe {
+  const fake = createCrepeMock.mock.results.at(-1)?.value as FakeCrepe | undefined
+  if (fake === undefined) throw new Error('no crepe instance')
+  return fake
+}
+
+/** "Types" into the editor: updates the fake's markdown and fires the (debounced-in-real-life) listener. */
+function type(md: string): void {
+  const fake = crepe()
+  act(() => {
+    fake.md = md
+    fake.onMarkdownUpdated?.(md)
+  })
+}
+
+async function emit(ev: WatchEvent): Promise<void> {
+  await act(async () => {
+    listeners.forEach((l) => l(ev))
+    await vi.advanceTimersByTimeAsync(0)
+  })
+}
+
+async function pastDebounce(): Promise<void> {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(600)
+  })
+}
+
+/** The next external read of PATH (the watcher handler's fresh read, and reload's). */
+function diskHas(content: string, mtime: number): void {
+  readFile.mockResolvedValueOnce({ path: PATH, content, mtime, size: content.length })
+}
+
+let flushListeners: Array<() => Promise<void> | void> = []
+beforeEach(() => {
+  vi.useFakeTimers()
+  writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 99, size: body.content.length }))
+  Object.defineProperty(window, 'yaseenDocs', {
+    value: {
+      window: {
+        onFlush: (l: () => Promise<void> | void) => {
+          flushListeners.push(l)
+          return () => {
+            flushListeners = flushListeners.filter((x) => x !== l)
+          }
+        },
+      },
+    },
+    configurable: true,
+    writable: true,
+  })
+})
+
+afterEach(() => {
+  act(() => root?.unmount())
+  root = null
+  container?.remove()
+  container = null
+  listeners = []
+  flushListeners = []
+  delete (window as unknown as Record<string, unknown>).yaseenDocs
+  // reset (not clear): a failing test must not leak queued mockResolvedValueOnce reads into the next mount.
+  vi.resetAllMocks()
+  vi.useRealTimers()
+})
+
+describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
+  it('absorbs a property write while clean: no reload, no conflict bar, next save carries the new frontmatter and mtime', async () => {
+    const el = await mount(FM + BODY)
+    diskHas(FM2 + BODY, 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(setMarkdownMock).not.toHaveBeenCalled()
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+    // The refreshed frontmatter + baseline mtime show up in the next save.
+    type('# Hello\n\nedited\n')
+    await pastDebounce()
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    expect(writeFile.mock.calls[0]?.[0]).toEqual({ path: PATH, content: `${FM2}# Hello\n\nedited\n`, expectedMtime: 2 })
+  })
+
+  it('absorbs a property write while dirty: body edits kept, no conflict bar, save uses the new frontmatter and mtime', async () => {
+    const el = await mount(FM + BODY)
+    type('# Hello\n\nunsaved edit\n')
+    diskHas(FM2 + BODY, 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+    expect(setMarkdownMock).not.toHaveBeenCalled()
+    expect(crepe().md).toBe('# Hello\n\nunsaved edit\n')
+    await pastDebounce()
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    expect(writeFile.mock.calls[0]?.[0]).toEqual({ path: PATH, content: `${FM2}# Hello\n\nunsaved edit\n`, expectedMtime: 2 })
+  })
+
+  it('a real body change on disk while dirty still shows the conflict bar', async () => {
+    const el = await mount(FM + BODY)
+    type('# Hello\n\nunsaved edit\n')
+    diskHas(FM + '# Someone else\n', 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(el.querySelector('.conflict-bar')?.textContent).toContain('File changed on disk.')
+    expect(setMarkdownMock).not.toHaveBeenCalled()
+    expect(crepe().md).toBe('# Hello\n\nunsaved edit\n')
+  })
+
+  it('a real body change on disk while clean still reloads the document', async () => {
+    const el = await mount(FM + BODY)
+    const next = FM + '# Someone else\n'
+    diskHas(next, 2)
+    diskHas(next, 2) // reload() re-reads
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(setMarkdownMock).toHaveBeenCalledWith(expect.anything(), '# Someone else\n')
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+  })
+
+  it('absorbs frontmatter added to a note that had none', async () => {
+    const el = await mount(BODY)
+    type('# Hello\n\nunsaved edit\n')
+    diskHas(FM + BODY, 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+    expect(setMarkdownMock).not.toHaveBeenCalled()
+    await pastDebounce()
+    expect(writeFile.mock.calls[0]?.[0]).toEqual({ path: PATH, content: `${FM}# Hello\n\nunsaved edit\n`, expectedMtime: 2 })
+  })
+
+  it('absorbs a property write after an autosave: the saved body is the comparison key', async () => {
+    await mount(FM + BODY)
+    type('# Hello\n\nsaved edit\n')
+    await pastDebounce()
+    expect(writeFile).toHaveBeenCalledTimes(1) // mtime 99 now on disk
+    const el = container as HTMLElement
+    diskHas(`${FM2}# Hello\n\nsaved edit\n`, 100)
+    await emit({ type: 'change', path: PATH, mtime: 100 })
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+    expect(setMarkdownMock).not.toHaveBeenCalled()
+    type('# Hello\n\nsaved edit two\n')
+    await pastDebounce()
+    expect(writeFile).toHaveBeenCalledTimes(2)
+    expect(writeFile.mock.calls[1]?.[0]).toEqual({ path: PATH, content: `${FM2}# Hello\n\nsaved edit two\n`, expectedMtime: 100 })
+  })
+
+  it('a CRLF note: frontmatter-only change is matched byte-for-byte and absorbed', async () => {
+    const fmCrlf = '---\r\nstatus: draft\r\n---\r\n'
+    const fm2Crlf = '---\r\nstatus: done\r\n---\r\n'
+    const bodyCrlf = '# Hello\r\n\r\nsome text\r\n'
+    const el = await mount(fmCrlf + bodyCrlf)
+    diskHas(fm2Crlf + bodyCrlf, 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+    expect(setMarkdownMock).not.toHaveBeenCalled()
+    type('edited\r\n')
+    await pastDebounce()
+    expect(writeFile.mock.calls[0]?.[0]).toEqual({ path: PATH, content: `${fm2Crlf}edited\r\n`, expectedMtime: 2 })
+  })
+})
