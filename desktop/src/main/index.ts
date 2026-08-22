@@ -2,7 +2,7 @@ import { app, BrowserWindow, Menu, net, protocol, screen, shell } from 'electron
 import { statSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { parseFileLink } from '@shared/links'
+import { fileLink, parseFileLink } from '@shared/links'
 import type { WindowEntry } from '@shared/types'
 import { registerIpc } from './ipc'
 import { createLinkQueue } from './linkQueue'
@@ -47,6 +47,15 @@ const links = createLinkQueue(handleLink)
 app.on('open-url', (event, url) => {
   event.preventDefault()
   links.push(url)
+})
+
+// Finder "Open With" (E2, GRO-2172) hands a plain absolute path — also before `ready` on cold
+// start. Encoding it as a yaseendocs:// link reuses the whole E1 pipeline (queue, parse, routing,
+// markdown/exists guards); fileLink ↔ parseFileLink is lossless (links.test.ts round trips). The
+// packaged bundle's `fileAssociations` (role Alternate) declaration is F1's job.
+app.on('open-file', (event, path) => {
+  event.preventDefault()
+  links.push(fileLink(path))
 })
 
 // Privileged scheme: `standard` gives a real origin (history API, relative URLs), `secure` treats it
