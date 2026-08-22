@@ -58,6 +58,17 @@ Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Edit
 - **Collapse**: the panel icon in the header hides the sidebar (a floating button on the left edge brings it back); the choice survives reload.
 - **Paths**: the open file shows in the URL as `#/absolute/path.md`; right-click any row for "Copy path".
 
+## Bases
+
+Obsidian-compatible `.base` files open as live database views over the notes in your folder (frontmatter properties are indexed automatically):
+
+- **Views**: table, board (kanban — our extension; Obsidian ignores it and the file round-trips), cards and list, switched by the tabs across the top (add, rename, duplicate, reorder).
+- **Configure**: Filter / Sort / Properties menus and a search box; filters and formulas use Obsidian's Bases syntax, and every config change is saved into the `.base` file itself.
+- **Edit in place**: note properties edit right in table cells and card/list rows — text, numbers, checkboxes, dates, lists and `[[links]]` with completion; an edit rewrites just that frontmatter key.
+- **Board drag**: drag a card to another column to change its group property; the "No value" column removes it.
+- **New**: the toolbar's New button (or a group header's "+") creates a note pre-filled to match the current view's filters, in the right folder.
+- **Embeds**: `![[X.base]]` (or `![[X.base#View]]`) inside a note renders the base read-only beneath the line, and a ` ```base ` code block renders its own YAML the same way (with a raw-YAML toggle for editing the config); the markdown on disk stays plain text.
+
 ## Out of scope
 
-Wikilinks / embeds / tags (kept as plain text, not resolved), and renaming / deleting / moving files or folders. There is no browser mode: the app runs only inside Electron. The file layer has no path jail: anything under your user account can be read or written. Distribution is deliberately minimal (locked decisions): no Developer-ID signing or notarization, no auto-update, no Intel or universal builds, no Windows/Linux — all Future issues.
+Wikilinks and tags stay plain text (not resolved into links) — except `![[X.base]]` embeds and ` ```base ` code blocks, which render live base views as above. Renaming / deleting / moving files or folders is not built in. There is no browser mode: the app runs only inside Electron. The file layer has no path jail: anything under your user account can be read or written. Distribution is deliberately minimal (locked decisions): no Developer-ID signing or notarization, no auto-update, no Intel or universal builds, no Windows/Linux — all Future issues.

@@ -1,4 +1,4 @@
-import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useRef, useState } from 'react'
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useMemo, useRef, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import type { BaseDefinition, BaseView } from '../baseFile'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
@@ -72,13 +72,14 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const [scrollTop, setScrollTop] = useState(0)
   const wrapRef = useRef<HTMLDivElement>(null)
 
-  const keys = propertyKeys(def, view, records)
+  const keys = useMemo(() => propertyKeys(def, view, records), [def, view, records])
   const nameCol = keys.findIndex((k) => canonicalKey(k) === 'file.name')
-  // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows
-  const rowRecords = rows.map((r) => r.record)
-  const bares = keys.map((k) => (canonicalKey(k).startsWith('note.') ? canonicalKey(k).slice(5) : null))
-  const typings = keys.map((k) => columnTyping(k, rowRecords, types))
-  const basenames = records.map((r) => r.basename)
+  // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows;
+  // memoised so scroll/drag re-renders skip the per-column row walk (7B, GRO-2148)
+  const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
+  const bares = useMemo(() => keys.map((k) => (canonicalKey(k).startsWith('note.') ? canonicalKey(k).slice(5) : null)), [keys])
+  const typings = useMemo(() => keys.map((k) => columnTyping(k, rowRecords, types)), [keys, rowRecords, types])
+  const basenames = useMemo(() => records.map((r) => r.basename), [records])
   const rowH = ROW_HEIGHTS[view.rowHeight ?? ''] ?? ROW_HEIGHTS.short
   const widthOf = (key: string) => (drag?.key === key ? drag.width : view.columnSize?.[key] ?? DEFAULT_WIDTH)
 
@@ -167,7 +168,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   )
 
   return (
-    <div ref={wrapRef} className="base-table-wrap" onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}>
+    <div ref={wrapRef} className="base-table-wrap" onScroll={windowed ? (e) => setScrollTop(e.currentTarget.scrollTop) : undefined}>
       <table
         className="base-table"
         style={{ width: keys.reduce((w, k) => w + widthOf(k), 0), '--base-table-row-h': `${rowH}px` } as CSSProperties}

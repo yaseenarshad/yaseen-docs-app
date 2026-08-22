@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useState } from 'react'
+import { type CSSProperties, useEffect, useMemo, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import { api } from '../../api'
 import type { BaseDefinition, BaseView } from '../baseFile'
@@ -116,14 +116,18 @@ function CardCover({ root, cover }: { root: string | null; cover: Cover }) {
  * through `EditableCell` (5B, GRO-2142); a lightbox stays out of scope.
  */
 export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, types, readOnly = false }: CardsViewProps) {
-  const keys = propertyKeys(def, view, records)
+  const keys = useMemo(() => propertyKeys(def, view, records), [def, view, records])
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
-  const rest = keys.filter((k) => k !== nameKey)
-  // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows
-  const rowRecords = rows.map((r) => r.record)
-  const bares = new Map(rest.map((k) => [k, canonicalKey(k).startsWith('note.') ? canonicalKey(k).slice(5) : null]))
-  const typings = new Map(rest.map((k) => [k, columnTyping(k, rowRecords, types)]))
-  const basenames = records.map((r) => r.basename)
+  const rest = useMemo(() => keys.filter((k) => k !== nameKey), [keys, nameKey])
+  // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows;
+  // memoised so unrelated re-renders skip the per-column row walk (7B, GRO-2148)
+  const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
+  const bares = useMemo(
+    () => new Map(rest.map((k) => [k, canonicalKey(k).startsWith('note.') ? canonicalKey(k).slice(5) : null])),
+    [rest],
+  )
+  const typings = useMemo(() => new Map(rest.map((k) => [k, columnTyping(k, rowRecords, types)])), [rest, rowRecords, types])
+  const basenames = useMemo(() => records.map((r) => r.basename), [records])
   const imageKey = typeof view.image === 'string' && view.image.trim() !== '' ? view.image : null
   const ratio = Number(view.imageAspectRatio)
   const style = {

@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 /**
  * Hotkey reference (GRO-2067 Q4): keyboard-icon button beside the settings cog; the popover
  * lists every binding from this single source-of-truth list. When a keymap changes anywhere
- * (hotkeys.ts, zoom.ts, marks/underline.ts, listCommands.ts), update HOTKEYS with it —
+ * (hotkeys.ts, zoom.ts, marks/underline.ts, listCommands.ts, bases/view/*), update HOTKEYS
+ * (or BASES_HOTKEYS) with it —
  * HotkeysPanel.test.ts pins the expected set so drift fails loudly.
  * Reuses the settings popover classes (SettingsPanel.tsx / app.css) for placement and look.
  */
@@ -24,6 +25,12 @@ export const HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘U', label: 'Underline' },
   { keys: '⌘⇧X', label: 'Strikethrough' },
   { keys: 'Tab / ⇧Tab', label: 'Indent / outdent bullet' },
+]
+
+export const BASES_HOTKEYS: readonly HotkeyEntry[] = [
+  { keys: '↑ ↓ ← →', label: 'Move between table cells — Enter opens the note or edits the cell' },
+  { keys: '⏎ / Esc', label: 'Commit / cancel a cell edit' },
+  { keys: 'Esc', label: 'Cancel a card drag' },
 ]
 
 export const MOUSE_TIPS: readonly HotkeyEntry[] = [
@@ -62,6 +69,15 @@ export function HotkeysButton() {
           <p className="settings__label">Keyboard</p>
           <dl className="hotkeys__list">
             {HOTKEYS.map(({ keys, label }) => (
+              <div key={keys} className="hotkeys__row">
+                <dt className="hotkeys__keys">{keys}</dt>
+                <dd className="hotkeys__label">{label}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="settings__label">Bases</p>
+          <dl className="hotkeys__list">
+            {BASES_HOTKEYS.map(({ keys, label }) => (
               <div key={keys} className="hotkeys__row">
                 <dt className="hotkeys__keys">{keys}</dt>
                 <dd className="hotkeys__label">{label}</dd>

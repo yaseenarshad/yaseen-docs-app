@@ -230,6 +230,20 @@ describe('list editor', () => {
     press(byLabel(el, 'Edit tags'), 'Escape')
     expect(write).toHaveBeenCalledTimes(1)
   })
+
+  it('a numeric-list cell opened and blurred untouched never writes (chips stringify on seed)', () => {
+    // committing the unchanged value never writes — even when the seed lost the types ([1, 2] → ['1', '2'])
+    const records = TEST_RECORDS.map((r) =>
+      r.path === AGENTIC ? { ...r, properties: { ...r.properties, nums: [1, 2] } } : r,
+    )
+    const { el } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.nums\n', {
+      records,
+    })
+    open(el, 0, 1)
+    blur(byLabel(el, 'Edit nums'))
+    expect(write).not.toHaveBeenCalled()
+    expect(el.querySelector('[aria-label="Edit nums"]')).toBeNull()
+  })
 })
 
 describe('link editor', () => {

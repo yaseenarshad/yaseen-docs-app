@@ -151,16 +151,26 @@ interface ChipsEditorProps {
   onDone: () => void
 }
 
-/** List/tags chip editor: Enter adds the typed chip, empty Enter or blur commits, Esc cancels. */
+/**
+ * List/tags chip editor: Enter adds the typed chip, empty Enter or blur commits, Esc cancels.
+ * An untouched editor (no chip added/removed, no pending text) never commits: the seed
+ * stringifies `initial`, so a no-op commit would rewrite a numeric list as strings.
+ */
 function ChipsEditor({ initial, label, onCommit, onDone }: ChipsEditorProps) {
   const [items, setItems] = useState(initial)
   const [text, setText] = useState('')
   const done = useRef(false)
+  const dirty = useRef(false)
+
+  const change = (next: string[]) => {
+    dirty.current = true
+    setItems(next)
+  }
 
   const finish = (commit: boolean) => {
     if (done.current) return
     done.current = true
-    if (commit) onCommit(text.trim() === '' ? items : [...items, text.trim()])
+    if (commit && (dirty.current || text.trim() !== '')) onCommit(text.trim() === '' ? items : [...items, text.trim()])
     onDone()
   }
 
@@ -184,7 +194,7 @@ function ChipsEditor({ initial, label, onCommit, onDone }: ChipsEditorProps) {
             type="button"
             className="base-cell-edit__chip-x"
             aria-label={`Remove ${item}`}
-            onClick={() => setItems(items.filter((_, j) => j !== i))}
+            onClick={() => change(items.filter((_, j) => j !== i))}
           >
             ×
           </button>
@@ -201,11 +211,11 @@ function ChipsEditor({ initial, label, onCommit, onDone }: ChipsEditorProps) {
             e.preventDefault()
             if (text.trim() === '') finish(true)
             else {
-              setItems([...items, text.trim()])
+              change([...items, text.trim()])
               setText('')
             }
           } else if (e.key === 'Backspace' && text === '' && items.length > 0) {
-            setItems(items.slice(0, -1))
+            change(items.slice(0, -1))
           }
         }}
       />

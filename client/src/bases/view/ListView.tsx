@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import type { IndexRecord } from '@shared/types'
 import type { BaseDefinition, BaseView } from '../baseFile'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
@@ -53,18 +54,19 @@ const separatorOf = (view: BaseView): string => (typeof view.propertySeparator =
  * (5B, GRO-2142); the joined inline string stays read-only.
  */
 export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, types, readOnly = false }: ListViewProps) {
-  const keys = propertyKeys(def, view, records)
+  const keys = useMemo(() => propertyKeys(def, view, records), [def, view, records])
   const primary: string | undefined = keys[0]
   const rest = keys.slice(1)
   const nameIsPrimary = primary === undefined || canonicalKey(primary) === 'file.name'
   const marker = markerStyleOf(view)
   const indent = view.indentProperties === true
   const separator = separatorOf(view)
-  // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows
-  const rowRecords = rows.map((r) => r.record)
+  // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows;
+  // memoised so unrelated re-renders skip the per-column row walk (7B, GRO-2148)
+  const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
   const bareOf = (key: string) => (canonicalKey(key).startsWith('note.') ? canonicalKey(key).slice(5) : null)
-  const typings = new Map(keys.map((k) => [k, columnTyping(k, rowRecords, types)]))
-  const basenames = records.map((r) => r.basename)
+  const typings = useMemo(() => new Map(keys.map((k) => [k, columnTyping(k, rowRecords, types)])), [keys, rowRecords, types])
+  const basenames = useMemo(() => records.map((r) => r.basename), [records])
   const editable = (row: Row, key: string) => {
     const bare = bareOf(key)
     if (bare === null || readOnly) return cellContent(row.values[key])
