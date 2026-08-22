@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { THREAD_WIDTHS, type SettingsState } from '@shared/types'
+import { THREAD_WIDTHS, type SettingsState, type Theme } from '@shared/types'
+
+/** Obsidian's Appearance control and order (Desktop K, GRO-2218); App resolves and applies it. */
+const THEME_OPTIONS: Array<{ label: string; value: Theme }> = [
+  { label: 'System', value: 'system' },
+  { label: 'Light', value: 'light' },
+  { label: 'Dark', value: 'dark' },
+]
 
 /** Google-Docs-style presets (GRO-2024 D4). blockGap is per-side padding: visual gap = 2×. */
 const LINE_SPACING_PRESETS: Array<{ label: string; value: number }> = [
@@ -52,6 +59,19 @@ export function SettingsCog({ settings, onChange }: SettingsCogProps) {
     <div className="settings" ref={rootRef}>
       {open && (
         <div className="settings__panel" role="dialog" aria-label="Settings">
+          <p className="settings__label">Appearance</p>
+          <div className="settings__row">
+            {THEME_OPTIONS.map(({ label, value }) => (
+              <button
+                key={value}
+                type="button"
+                className={`settings__option${settings.theme === value ? ' settings__option--active' : ''}`}
+                onClick={() => onChange({ ...settings, theme: value })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <p className="settings__label">Line spacing</p>
           <div className="settings__row">
             {LINE_SPACING_PRESETS.map(({ label, value }) => (

@@ -7,7 +7,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { defaultAppState, defaultFolderState, type AppState, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, type AppState, type WindowIdentity } from '@shared/types'
+import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
+import frameLight from '@milkdown/crepe/theme/frame.css?inline'
+import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
 import { storage } from './lib/storage'
 
 interface SidebarStubProps {
@@ -114,6 +117,8 @@ afterEach(() => {
   container = null
   captured.sidebar = null
   history.replaceState(null, '', '/')
+  delete document.documentElement.dataset.theme
+  document.getElementById(CREPE_THEME_STYLE_ID)?.remove()
   delete (window as unknown as Record<string, unknown>).yaseenDocs
   vi.restoreAllMocks()
 })
@@ -223,6 +228,21 @@ describe('App deep links (E1, GRO-2171)', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('App appearance (Desktop K, GRO-2218)', () => {
+  it('defaults to System, which reads as light here (jsdom has no matchMedia): data-theme + light Crepe vars on <html>/head', async () => {
+    await mount(defaultAppState(), { id: 'w1', root: '/v', file: null })
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(document.getElementById(CREPE_THEME_STYLE_ID)?.textContent).toBe(frameLight)
+  })
+
+  it('a stored Dark setting themes the very first render: data-theme="dark" and the dark Crepe frame vars', async () => {
+    const state: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, theme: 'dark' } }
+    await mount(state, { id: 'w1', root: '/v', file: null })
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(document.getElementById(CREPE_THEME_STYLE_ID)?.textContent).toBe(frameDark)
   })
 })
 

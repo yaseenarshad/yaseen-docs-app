@@ -5,6 +5,7 @@ import {
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
   MAX_RECENT_ROOTS,
+  THEMES,
   THREAD_WIDTHS,
   defaultAppState,
   defaultFolderState,
@@ -12,6 +13,7 @@ import {
   type FolderState,
   type RecentRoots,
   type SettingsState,
+  type Theme,
   type WindowBounds,
   type WindowEntry,
 } from '@shared/types'
@@ -59,6 +61,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   bulletThreading: (v): v is boolean => typeof v === 'boolean',
   threadWidth: (v): v is number => isFiniteNumber(v) && THREAD_WIDTHS.includes(v),
   threadColor: (v): v is string | null => v === null || isHexColour(v),
+  theme: (v): v is Theme => typeof v === 'string' && (THEMES as readonly string[]).includes(v),
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 

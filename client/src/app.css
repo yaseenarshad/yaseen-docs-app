@@ -9,8 +9,46 @@
   --danger: #d64545;
   --warn: #c98a1a;
   --ok: #3a9d5d;
+  /* Hover washes on the sidebar chrome (header/cog) and on tree rows. */
+  --bg-hover: #eeeef0;
+  --bg-hover-row: #e9e9ec;
+  /* Directory rows in the tree: a touch softer than --fg. */
+  --fg-dir: #444444;
+  /* Amber notice family: conflict bar + link-notice toast. */
+  --notice-fg: #6b4e00;
+  --notice-bg: #fff7df;
+  --notice-border: #f1e2ad;
+  --notice-btn-border: #e2cf8a;
+  --notice-btn-bg: #fffdf5;
+  --notice-btn-bg-hover: #ffffff;
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
   --side-w: 260px;
+}
+
+/* Dark palette (Desktop K, GRO-2218): the SAME tokens, near-black surfaces. App.tsx resolves the
+   Appearance setting (System follows the OS live) and stamps data-theme="light"|"dark" on <html>;
+   the Crepe frame vars swap alongside (editor/crepeTheme.ts). WINDOW_BG in
+   desktop/src/main/theme.ts mirrors --bg — change one, change both. */
+[data-theme='dark'] {
+  --bg: #1e1e1e;
+  --bg-side: #262626;
+  --fg: #dadada;
+  --fg-muted: #8f8f8f;
+  --border: #3a3a3a;
+  --accent: #7c8aff;
+  --accent-soft: #2c3050;
+  --danger: #e06c6c;
+  --warn: #d9a13c;
+  --ok: #4fb573;
+  --bg-hover: #333336;
+  --bg-hover-row: #303034;
+  --fg-dir: #b8b8bd;
+  --notice-fg: #e6c878;
+  --notice-bg: #3a300f;
+  --notice-border: #5c4d1d;
+  --notice-btn-border: #6a5a24;
+  --notice-btn-bg: #45390f;
+  --notice-btn-bg-hover: #52431c;
 }
 
 *,
@@ -326,20 +364,20 @@ button {
   gap: 12px;
   padding: 8px 16px;
   font-size: 13px;
-  color: #6b4e00;
-  background: #fff7df;
-  border-bottom: 1px solid #f1e2ad;
+  color: var(--notice-fg);
+  background: var(--notice-bg);
+  border-bottom: 1px solid var(--notice-border);
 }
 
 .conflict-bar button {
   padding: 3px 10px;
-  border: 1px solid #e2cf8a;
+  border: 1px solid var(--notice-btn-border);
   border-radius: 4px;
-  background: #fffdf5;
+  background: var(--notice-btn-bg);
 }
 
 .conflict-bar button:hover {
-  background: #fff;
+  background: var(--notice-btn-bg-hover);
 }
 
 /* ---------- link notice (E1): a can't-open-link toast, self-dismissing ---------- */
@@ -356,9 +394,9 @@ button {
   white-space: nowrap;
   padding: 6px 14px;
   font-size: 13px;
-  color: #6b4e00;
-  background: #fff7df;
-  border: 1px solid #f1e2ad;
+  color: var(--notice-fg);
+  background: var(--notice-bg);
+  border: 1px solid var(--notice-border);
   border-radius: 6px;
   box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
 }
@@ -393,7 +431,7 @@ button {
 }
 
 .sidebar__root:hover {
-  background: #eeeef0;
+  background: var(--bg-hover);
 }
 
 .sidebar__root:disabled {
@@ -410,7 +448,7 @@ button {
 
 .sidebar__collapse:hover {
   color: var(--fg);
-  background: #eeeef0;
+  background: var(--bg-hover);
 }
 
 .sidebar-reopen {
@@ -512,7 +550,7 @@ button {
 .settings__cog:hover,
 .settings__cog[aria-expanded='true'] {
   color: var(--fg);
-  background: #eeeef0;
+  background: var(--bg-hover);
 }
 
 .settings__panel {
@@ -652,11 +690,11 @@ button {
 }
 
 .tree__row:hover {
-  background: #e9e9ec;
+  background: var(--bg-hover-row);
 }
 
 .tree__row--dir {
-  color: #444;
+  color: var(--fg-dir);
 }
 
 .tree__row--active {

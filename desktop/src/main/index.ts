@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, net, protocol, screen, shell } from 'electron'
+import { app, BrowserWindow, Menu, nativeTheme, net, protocol, screen, shell } from 'electron'
 import { statSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -8,6 +8,7 @@ import { registerIpc } from './ipc'
 import { createLinkQueue } from './linkQueue'
 import { buildMenuTemplate, createMenuHandlers, subscribeMenuRebuild } from './menu'
 import { createStore } from './store'
+import { subscribeNativeTheme, windowBackgroundColor } from './theme'
 import { createWindowManager } from './windows'
 
 // Before anything reads app.getPath('userData'): the workspace is named "desktop", the app is not.
@@ -72,6 +73,8 @@ const manager = createWindowManager(store, {
   create(entry: WindowEntry) {
     const win = new BrowserWindow({
       ...entry.bounds,
+      // The backing store matches the theme (K, GRO-2218): no white flash on dark launches.
+      backgroundColor: windowBackgroundColor(store.get().settings.theme, nativeTheme.shouldUseDarkColors),
       webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
     })
     // `<renderer>?win=<id>` so the renderer can ask `window.identity()` who it is.
@@ -96,6 +99,12 @@ const manager = createWindowManager(store, {
 
 app.whenReady().then(() => {
   if (!isPrimaryInstance) return
+  // Appearance (K, GRO-2218): the setting IS the themeSource vocabulary. Applied from the loaded
+  // store BEFORE any window is created (restoreAll below), re-applied whenever it changes — so
+  // `prefers-color-scheme` in every renderer and the OS chrome follow the setting.
+  subscribeNativeTheme(store, (theme) => {
+    nativeTheme.themeSource = theme
+  })
   protocol.handle('app', (req) => {
     const { pathname } = new URL(req.url)
     const file = join(RENDERER_DIR, pathname === '/' ? 'index.html' : pathname)

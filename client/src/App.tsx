@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useState, type CSSProperties } from 'react'
 import type { SettingsState } from '@shared/types'
 import { api, ApiRequestError } from './api'
+import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
 import { useLinkEvents } from './hooks/useLinkEvents'
 import { useMenuEvents } from './hooks/useMenuEvents'
 import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
 import { storage } from './lib/storage'
+import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash, hashFilePath } from './lib/urlHash'
 import { windowTitle } from './lib/windowTitle'
 import { Sidebar, SidebarPanelIcon } from './sidebar/Sidebar'
@@ -52,6 +54,17 @@ export function App() {
     storage.setSettings(next)
     setSettings(next)
   }, [])
+
+  // Appearance (Desktop K, GRO-2218): `system` tracks the OS live; explicit values win.
+  // `data-theme` goes on <html> so body / fixed overlays follow app.css's dark tokens, and
+  // the Crepe frame vars swap in the same commit (CSS-only — the open editor never remounts).
+  // storage.init() resolves before the first render, so the first paint is already themed.
+  const prefersDark = useSystemPrefersDark()
+  const theme = resolveTheme(settings.theme, prefersDark)
+  useLayoutEffect(() => {
+    document.documentElement.dataset.theme = theme
+    applyCrepeTheme(theme)
+  }, [theme])
 
   // Editor spacing settings land as CSS custom properties; app.css consumes them (GRO-2024).
   // Bullet threading is a CSS gate too (`data-threading`, bulletThreading.css) — no editor remount.

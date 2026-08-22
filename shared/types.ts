@@ -228,9 +228,15 @@ export interface SettingsState {
   threadWidth: number
   /** Custom thread colour as `#rrggbb`, or null = the app accent (GRO-2109). */
   threadColor: string | null
+  /** Appearance (Desktop K, GRO-2218): explicit values win; `system` tracks the OS live. */
+  theme: Theme
 }
 
 export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
+
+/** Obsidian's Appearance vocabulary and order — also exactly Electron's `nativeTheme.themeSource`. */
+export type Theme = 'system' | 'light' | 'dark'
+export const THEMES: readonly Theme[] = ['system', 'light', 'dark']
 
 /** Matches the app's pre-settings look (Crepe: line-height 1.5, block padding 4px); threading on, 2px, accent. */
 export const DEFAULT_SETTINGS: SettingsState = {
@@ -239,6 +245,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   bulletThreading: true,
   threadWidth: 2,
   threadColor: null,
+  theme: 'system',
 }
 
 export interface WindowBounds {
