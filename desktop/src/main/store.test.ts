@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, addRecentRoot, defaultAppState, type AppState, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, addRecentRoot, defaultAppState, type AppState, type WindowEntry } from '@shared/types'
 import { createStore } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
@@ -59,6 +59,7 @@ describe('createStore: loading', () => {
       version: 1,
       settings: { ...DEFAULT_SETTINGS, lineSpacing: 2, threadColor: '#00aaff' },
       sidebarCollapsed: true,
+      sidebarWidth: 320,
       recents: [{ path: '/v', lastOpened: 5 }],
       windows: [win('w1', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })],
       folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.base::T': ['v:idea'] } } },
@@ -116,6 +117,18 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().sidebarCollapsed).toBe(false)
     await seed(valid({ sidebarCollapsed: true }))
     expect(createStore(file).get().sidebarCollapsed).toBe(true)
+  })
+
+  it('sidebarWidth clamps a finite number and defaults when it is missing or junk', async () => {
+    await seed(valid({ sidebarWidth: 5 }))
+    expect(createStore(file).get().sidebarWidth).toBe(SIDEBAR_MIN_W)
+    await seed(valid({ sidebarWidth: 9999 }))
+    expect(createStore(file).get().sidebarWidth).toBe(SIDEBAR_MAX_W)
+    await seed(valid({ sidebarWidth: '300' }))
+    expect(createStore(file).get().sidebarWidth).toBe(SIDEBAR_DEFAULT_W)
+    const { sidebarWidth: _omitted, ...preResize } = valid()
+    await seed(preResize)
+    expect(createStore(file).get().sidebarWidth).toBe(SIDEBAR_DEFAULT_W)
   })
 
   it('recents: a wrong shape reads as empty, a long list is capped', async () => {

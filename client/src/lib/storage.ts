@@ -133,6 +133,13 @@ export const storage = {
     send('state.setSidebarCollapsed', () => window.yaseenDocs.state.setSidebarCollapsed(collapsed))
   },
 
+  /** Already clamped to [SIDEBAR_MIN_W, SIDEBAR_MAX_W] by the main process on load and on write. */
+  getSidebarWidth: (): number => state.sidebarWidth,
+  setSidebarWidth(width: number): void {
+    state = { ...state, sidebarWidth: width }
+    send('state.setSidebarWidth', () => window.yaseenDocs.state.setSidebarWidth(width))
+  },
+
   getFolds: (root: string, file: string): string[] => folderOf(root).folds[file] ?? [],
   /** Replace the fold keys for one file; an empty list removes the entry (keys the plugin no longer reports are dropped). */
   setFolds(root: string, file: string, keys: readonly string[]): void {

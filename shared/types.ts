@@ -291,6 +291,11 @@ export const MAX_FOLD_KEYS_PER_FILE = 500
 /** Collapsed group keys per base view (Bases 4C, GRO-2137) are capped at this many. */
 export const MAX_COLLAPSED_GROUP_KEYS = 200
 
+/** `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. */
+export const SIDEBAR_MIN_W = 180
+export const SIDEBAR_MAX_W = 520
+export const SIDEBAR_DEFAULT_W = 260
+
 /**
  * `AppState.settings` — app-global editor preferences (GRO-2024). Applied as CSS custom
  * properties on the app container; never written into the markdown on disk.
@@ -405,6 +410,8 @@ export interface AppState {
   version: 1
   settings: SettingsState
   sidebarCollapsed: boolean
+  /** Sidebar width in px, within [SIDEBAR_MIN_W, SIDEBAR_MAX_W]. */
+  sidebarWidth: number
   /** Most-recent first, max 10, de-duplicated. */
   recents: RecentRoots
   windows: WindowEntry[]
@@ -413,7 +420,7 @@ export interface AppState {
 
 /** A fresh default state (a factory, so no caller can mutate a shared constant). */
 export function defaultAppState(): AppState {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarCollapsed: false, recents: [], windows: [], folders: {} }
+  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarCollapsed: false, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {} }
 }
 
 export function defaultFolderState(): FolderState {
@@ -584,6 +591,8 @@ export interface StateApi {
   get(): Promise<AppState>
   setSettings(settings: SettingsState): Promise<void>
   setSidebarCollapsed(collapsed: boolean): Promise<void>
+  /** Clamped to [SIDEBAR_MIN_W, SIDEBAR_MAX_W] by the main process. */
+  setSidebarWidth(width: number): Promise<void>
   /** Prepend to recents (de-duplicated, capped). */
   pushRecent(path: string): Promise<void>
   /** Drop a folder from recents (its directory vanished on disk, C2 — GRO-2164); unknown path is a no-op. */

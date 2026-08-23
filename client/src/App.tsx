@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
-import type { SettingsState } from '@shared/types'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
+import { SIDEBAR_MAX_W, SIDEBAR_MIN_W, type SettingsState } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -39,6 +39,8 @@ export function App() {
   // window's `file`: title, URL hash and the sidebar highlight all follow it.
   const { tabs, active: file, mounted, openCurrent, openBackground, activate, close: closeTab, move: moveTab, closeActive, next: nextTab, prev: prevTab, reset: resetTabs, renamePath: renameTabPath, renameDirPath: renameDirTabs, deletePath: deleteTabPath, deleteDirPath: deleteDirTabs } = useTabs(root)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
+  const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
+  const [resizing, setResizing] = useState(false)
   const [settings, setSettings] = useState(storage.getSettings)
   const watch = useWatch(root)
   // Wikilinks (Links A, GRO-2190): ONE resolve source per window — a stable object every
@@ -54,6 +56,7 @@ export function App() {
       storage.subscribe(() => {
         setSettings(storage.getSettings())
         setSidebarCollapsed(storage.getSidebarCollapsed())
+        setSidebarWidth(storage.getSidebarWidth())
       }),
     [],
   )
@@ -64,6 +67,38 @@ export function App() {
       return !collapsed
     })
   }, [])
+
+  // Dragging past 60% of the minimum reads as "close it" rather than "make it tiny" — the
+  // sidebar collapses and the remembered width stays whatever it was before the drag.
+  const startSidebarResize = useCallback(
+    (e: ReactMouseEvent) => {
+      e.preventDefault()
+      const start = sidebarWidth
+      const x0 = e.clientX
+      let raw = start
+      let width = start
+      const move = (ev: MouseEvent) => {
+        raw = start + ev.clientX - x0
+        width = Math.min(SIDEBAR_MAX_W, Math.max(SIDEBAR_MIN_W, raw))
+        setSidebarWidth(width)
+      }
+      const up = () => {
+        window.removeEventListener('mousemove', move)
+        window.removeEventListener('mouseup', up)
+        document.body.style.cursor = ''
+        setResizing(false)
+        if (raw < SIDEBAR_MIN_W * 0.6) {
+          setSidebarWidth(start)
+          toggleSidebar()
+        } else if (width !== start) storage.setSidebarWidth(width)
+      }
+      window.addEventListener('mousemove', move)
+      window.addEventListener('mouseup', up)
+      document.body.style.cursor = 'col-resize'
+      setResizing(true)
+    },
+    [sidebarWidth, toggleSidebar],
+  )
 
   const changeSettings = useCallback((next: SettingsState) => {
     storage.setSettings(next)
@@ -102,6 +137,7 @@ export function App() {
     '--thread-width': `${settings.threadWidth}px`,
     // Absent → bulletThreading.css falls back to the app accent.
     ...(settings.threadColor !== null ? { '--thread-color': settings.threadColor } : {}),
+    '--side-w': `${sidebarWidth}px`,
   } as CSSProperties
 
   // The URL hash mirrors the ACTIVE tab (GRO-2069; rule 17: on boot the hash already won as
@@ -344,6 +380,7 @@ export function App() {
           onNotice={setNotice}
         />
       )}
+      {root !== null && !sidebarCollapsed && <div className={`sidebar-resize${resizing ? ' sidebar-resize--active' : ''}`} aria-hidden onMouseDown={startSidebarResize} />}
       {root !== null && sidebarCollapsed && (
         <button type="button" className="sidebar-reopen" onClick={toggleSidebar} title="Show sidebar" aria-label="Show sidebar">
           <SidebarPanelIcon />

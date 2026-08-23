@@ -467,6 +467,20 @@ button {
   user-select: none;
 }
 
+/* The drag-to-resize edge (YAZ-738): sits over the sidebar's border, hit area wider than the line. */
+.sidebar-resize {
+  flex: none;
+  width: 6px;
+  margin-left: -3px;
+  cursor: col-resize;
+  z-index: 1;
+}
+
+.sidebar-resize:hover,
+.sidebar-resize--active {
+  background: var(--accent-soft);
+}
+
 .sidebar__header {
   display: flex;
   align-items: stretch;

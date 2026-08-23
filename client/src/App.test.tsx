@@ -76,6 +76,7 @@ function installBridge(state: AppState, identity: WindowIdentity, files: Record<
       get: vi.fn(async () => state),
       setSettings: vi.fn(async () => undefined),
       setSidebarCollapsed: vi.fn(async () => undefined),
+      setSidebarWidth: vi.fn(async () => undefined),
       pushRecent: vi.fn(async () => undefined),
       removeRecent: vi.fn(async () => undefined),
       setFolder: vi.fn(async () => undefined),
@@ -326,6 +327,32 @@ describe('App appearance (Desktop K, GRO-2218)', () => {
     await mount(state, { id: 'w1', root: '/v', file: null, tabs: [] })
     expect(document.documentElement.dataset.theme).toBe('dark')
     expect(document.getElementById(CREPE_THEME_STYLE_ID)?.textContent).toBe(frameDark)
+  })
+})
+
+describe('App sidebar resize (YAZ-738)', () => {
+  const drag = (el: HTMLElement, dx: number) => {
+    el.querySelector('.sidebar-resize')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 0 }))
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: dx }))
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: dx }))
+  }
+  const sideW = (el: HTMLElement) => el.querySelector<HTMLElement>('.app')?.style.getPropertyValue('--side-w')
+
+  it('a drag widens the sidebar live and persists the new width once', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    expect(sideW(el)).toBe('260px')
+    act(() => drag(el, 120))
+    expect(sideW(el)).toBe('380px')
+    expect(bridge.state.setSidebarWidth.mock.calls).toEqual([[380]])
+  })
+
+  it('dragging well past the minimum collapses the sidebar instead of writing a sliver width', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    act(() => drag(el, 50 - 260))
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(sideW(el)).toBe('260px')
+    expect(bridge.state.setSidebarCollapsed).toHaveBeenCalledWith(true)
+    expect(bridge.state.setSidebarWidth).not.toHaveBeenCalled()
   })
 })
 

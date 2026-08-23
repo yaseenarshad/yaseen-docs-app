@@ -11,6 +11,7 @@ function installBridge(state: AppState, identity: WindowIdentity) {
       get: vi.fn(async () => state),
       setSettings: vi.fn(async () => undefined),
       setSidebarCollapsed: vi.fn(async () => undefined),
+      setSidebarWidth: vi.fn(async () => undefined),
       pushRecent: vi.fn(async () => undefined),
       removeRecent: vi.fn(async () => undefined),
       setFolder: vi.fn(async () => undefined),

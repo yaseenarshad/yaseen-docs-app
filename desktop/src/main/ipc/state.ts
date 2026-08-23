@@ -31,6 +31,10 @@ export function registerStateIpc(store: Store): void {
     if (typeof collapsed !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'collapsed' must be a boolean")
     store.setSidebarCollapsed(collapsed)
   })
+  handle(CH.stateSetSidebarWidth, async (width: unknown) => {
+    if (typeof width !== 'number' || !Number.isFinite(width)) throw new BridgeFailure('BAD_REQUEST', "'width' must be a finite number")
+    store.setSidebarWidth(width)
+  })
   handle(CH.statePushRecent, async (path: unknown) => {
     store.pushRecent(requireAbsPath(path, 'path'))
   })
