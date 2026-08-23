@@ -102,6 +102,34 @@ export function takeRenameBuffer(path: string): RenameBuffer | null {
   return buffer
 }
 
+/**
+ * The `file:deleted` step (GRO-2272), run BEFORE the tab remap unmounts the editor: retire
+ * the editor at `path` so it can never write again, and drop any buffer stashed for it.
+ *
+ * Deliberately NOT `carryEditorAcrossRename`, which sits a few lines above and looks like the
+ * thing to copy. That one CAPTURES, retires and STASHES, because a rename has a destination
+ * for the dirty buffer to travel to. A delete has none: stashing would leave a live
+ * resurrection vector for whatever mounts at this path next, and capturing at all is pointless
+ * work. Retire only.
+ *
+ * Why this matters: closing a tab unmounts its editor, and `useAutosave`'s unmount cleanup
+ * flushes the live buffer to disk — recreating the file the delete just trashed. `retire()`
+ * makes that flush a no-op and clears the pending debounce. See the residual-race note in this
+ * module's header: an in-flight save, and another WINDOW's pending debounce, are still out of
+ * reach — the same limits rename has always had.
+ */
+export function retireDeletedPath(path: string): void {
+  handles.get(path)?.retire()
+  buffers.delete(path)
+}
+
+/** The `file:deleted` kind-`dir` twin: every editor (and stashed buffer) under `dir` retires. */
+export function retireDeletedDir(dir: string): void {
+  const prefix = `${dir}/`
+  for (const path of [...handles.keys()]) if (path.startsWith(prefix)) handles.get(path)?.retire()
+  for (const path of [...buffers.keys()]) if (path.startsWith(prefix)) buffers.delete(path)
+}
+
 /** Test hook. */
 export function _resetRenameContinuity(): void {
   handles.clear()

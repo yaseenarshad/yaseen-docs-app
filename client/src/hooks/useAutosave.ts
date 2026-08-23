@@ -124,9 +124,14 @@ export function useAutosave(path: string): AutosaveHandle {
     [path],
   )
 
+  // Retired check included (GRO-2272 `B1a-`): `adopt()` writes, so a retired editor must not
+  // reach it. The scope pass judged this path near-unreachable — the conflict bar has to be
+  // visible on an editor whose file was just renamed away or deleted, and it is unmounting
+  // anyway — but "near-unreachable" is not a guarantee, and the cost of being wrong is a
+  // resurrected file. One condition is cheaper than the argument.
   const keepMine = useCallback(() => {
     const s = ref.current
-    if (s === null || conflictMtime === null) return
+    if (s === null || retiredRef.current || conflictMtime === null) return
     setConflictMtime(null)
     void s.autosave.adopt(conflictMtime)
   }, [conflictMtime])

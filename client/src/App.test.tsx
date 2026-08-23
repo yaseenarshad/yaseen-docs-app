@@ -11,6 +11,7 @@ import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, type AppState, t
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
+import * as continuity from './lib/renameContinuity'
 import { storage } from './lib/storage'
 
 interface SidebarStubProps {
@@ -48,6 +49,7 @@ function installBridge(state: AppState, identity: WindowIdentity, files: Record<
   const linkOpenFile = new Set<(path: string) => void>()
   const linkNotice = new Set<(message: string) => void>()
   const fileRenamed = new Set<(ev: { oldPath: string; newPath: string }) => void>()
+  const fileDeleted = new Set<(ev: { path: string; kind: 'file' | 'dir' }) => void>()
   const menuSub = (set: Set<() => void>) =>
     vi.fn((l: () => void) => {
       set.add(l)
@@ -118,6 +120,12 @@ function installBridge(state: AppState, identity: WindowIdentity, files: Record<
         fileRenamed.add(l)
         return () => fileRenamed.delete(l)
       }),
+      // In-app delete (GRO-2272): the invoke plus the push every window receives.
+      delete: vi.fn(async ({ path }: { path: string }) => ({ path, kind: 'file' as const })),
+      onDeleted: vi.fn((l: (ev: { path: string; kind: 'file' | 'dir' }) => void) => {
+        fileDeleted.add(l)
+        return () => fileDeleted.delete(l)
+      }),
     },
     // Empty registry (GRO-2202): the sidebar reads it for "New ▸"; empty = no menu change.
     registry: {
@@ -135,6 +143,7 @@ function installBridge(state: AppState, identity: WindowIdentity, files: Record<
     emitLinkOpenFile: (path: string) => linkOpenFile.forEach((l) => l(path)),
     emitLinkNotice: (message: string) => linkNotice.forEach((l) => l(message)),
     emitFileRenamed: (oldPath: string, newPath: string) => fileRenamed.forEach((l) => l({ oldPath, newPath })),
+    emitFileDeleted: (path: string, kind: 'file' | 'dir' = 'file') => fileDeleted.forEach((l) => l({ path, kind })),
   }
 }
 
@@ -543,5 +552,69 @@ describe('App root-missing (C2, GRO-2164)', () => {
     expect(el.querySelector('[data-sidebar]')).toBeNull()
     expect(el.querySelector('[data-editor]')).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [] })
+  })
+})
+
+/**
+ * Delete wiring (GRO-2272 `B3-`). The ordering test is the point of this block: retire the
+ * editor BEFORE the tab remap, because removing a tab unmounts its editor and the unmount
+ * flush would write the buffer back to disk, recreating the file that was just trashed.
+ */
+describe('in-app delete (GRO-2272)', () => {
+  it('retires the editor BEFORE remapping tabs — asserted by call order, not by reading the code', async () => {
+    const order: string[] = []
+    const retireSpy = vi.spyOn(continuity, 'retireDeletedPath').mockImplementation(() => void order.push('retire'))
+    const files = { '/v/a.md': { content: '# a', mtime: 1 }, '/v/b.md': { content: '# b', mtime: 1 } }
+    const b = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] }, files)
+    await storage.init()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => root?.render(<App />))
+    // setIdentity is the tab-model mirror: its first call AFTER the event is the remap.
+    b.bridge.window.setIdentity.mockImplementation(async () => void order.push('tabs'))
+    await act(async () => b.emitFileDeleted('/v/a.md'))
+    expect(order[0]).toBe('retire')
+    expect(order).toContain('tabs')
+    expect(order.indexOf('retire')).toBeLessThan(order.indexOf('tabs'))
+    retireSpy.mockRestore()
+  })
+
+  it('a file event closes that tab and activates the heir', async () => {
+    const files = { '/v/a.md': { content: '# a', mtime: 1 }, '/v/b.md': { content: '# b', mtime: 1 } }
+    const b = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] }, files)
+    await act(async () => b.emitFileDeleted('/v/a.md'))
+    expect(document.title).toContain('b')
+  })
+
+  it('a dir event retires and closes every tab under the folder', async () => {
+    const retireDir = vi.spyOn(continuity, 'retireDeletedDir')
+    const files = { '/v/Docs/a.md': { content: '# a', mtime: 1 }, '/v/x.md': { content: '# x', mtime: 1 } }
+    const b = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/Docs/a.md', tabs: ['/v/Docs/a.md', '/v/x.md'] }, files)
+    await act(async () => b.emitFileDeleted('/v/Docs', 'dir'))
+    expect(retireDir).toHaveBeenCalledWith('/v/Docs')
+    expect(document.title).toContain('x')
+    retireDir.mockRestore()
+  })
+
+  it('the delete path never fetches the index — link rewriting would need it (LOCKED decision C)', async () => {
+    // A rename fetches the index to find referencing notes. A delete must NOT: notes linking
+    // to a deleted page stay byte-identical. Asserted across BOTH event kinds; the
+    // sidebar-triggered call is covered end-to-end in C3, where the menu item exists.
+    const files = { '/v/Docs/a.md': { content: '# a', mtime: 1 }, '/v/x.md': { content: '# x', mtime: 1 } }
+    const b = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/Docs/a.md', tabs: ['/v/Docs/a.md', '/v/x.md'] }, files)
+    b.bridge.index.mockClear()
+    await act(async () => b.emitFileDeleted('/v/Docs', 'dir'))
+    await act(async () => b.emitFileDeleted('/v/x.md'))
+    expect(b.bridge.index).not.toHaveBeenCalled()
+    expect(b.bridge.file.rename).not.toHaveBeenCalled()
+  })
+
+  it('a delete for a path this window does not have open changes nothing', async () => {
+    const files = { '/v/a.md': { content: '# a', mtime: 1 } }
+    const b = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, files)
+    const before = document.title
+    await act(async () => b.emitFileDeleted('/v/somewhere-else.md'))
+    expect(document.title).toBe(before)
   })
 })

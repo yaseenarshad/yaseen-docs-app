@@ -42,6 +42,12 @@ interface SidebarProps {
    * closes.
    */
   onRenameFile: (oldPath: string, newPath: string) => Promise<void>
+  /**
+   * Context-menu "Delete" confirmed (GRO-2272): App moves the entry to the system Trash and
+   * routes ANY failure to the passive notice — this promise never rejects, so the sheet just
+   * closes. No link rewriting happens downstream (LOCKED decision C).
+   */
+  onDeleteFile: (path: string) => Promise<void>
 }
 
 /**
@@ -97,6 +103,7 @@ export function Sidebar({
   onRootMissing,
   onFileMissing,
   onRenameFile,
+  onDeleteFile,
 }: SidebarProps) {
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
