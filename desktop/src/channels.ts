@@ -23,6 +23,7 @@ export const CH = {
   stateGet: 'state:get',
   stateSetSettings: 'state:set-settings',
   stateSetSidebarCollapsed: 'state:set-sidebar-collapsed',
+  stateSetSidebarWidth: 'state:set-sidebar-width',
   statePushRecent: 'state:push-recent',
   stateRemoveRecent: 'state:remove-recent',
   stateSetFolder: 'state:set-folder',

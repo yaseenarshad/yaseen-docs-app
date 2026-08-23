@@ -215,6 +215,17 @@ describe('column resize', () => {
     mouse(window, 'mouseup', 0)
     expect(def().views[0].columnSize).toEqual({ 'note.priority': 60 })
   })
+
+  it('only the dragged handle carries the active class, and none do once the drag ends', () => {
+    const { el } = mount(TYPED_BASE)
+    const active = () => [...el.querySelectorAll('.base-table__resize')].map((h) => h.className.includes('base-table__resize--active'))
+    expect(active()).toEqual([false, false, false, false, false, false])
+    mouse(el.querySelectorAll('.base-table__resize')[1], 'mousedown', 100)
+    mouse(window, 'mousemove', 130)
+    expect(active()).toEqual([false, true, false, false, false, false])
+    mouse(window, 'mouseup', 130)
+    expect(active()).toEqual([false, false, false, false, false, false])
+  })
 })
 
 describe('summary row', () => {

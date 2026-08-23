@@ -192,6 +192,12 @@
   padding: 4px;
 }
 
+.base-popover--fixed {
+  position: fixed;
+  top: auto;
+  right: auto;
+}
+
 .base-popover__item {
   display: block;
   width: 100%;
@@ -512,7 +518,13 @@
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+  border-right: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
+}
+
+.base-table th:last-child,
+.base-table td:last-child {
+  border-right: none;
 }
 
 .base-table thead th {
@@ -554,15 +566,16 @@
 .base-table__resize {
   position: absolute;
   top: 0;
-  right: -3px;
+  right: 0;
   z-index: 1;
   width: 7px;
   height: 100%;
   cursor: col-resize;
 }
 
-.base-table__resize:hover {
-  background: var(--accent-soft);
+.base-table__resize:hover,
+.base-table__resize--active {
+  background: linear-gradient(var(--accent), var(--accent)) right / 2px 100% no-repeat;
 }
 
 .base-table__chip {
@@ -598,6 +611,7 @@
   padding: 0;
   background: var(--bg);
   border-top: 1px solid var(--border);
+  border-right: none;
   border-bottom: none;
 }
 

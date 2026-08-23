@@ -320,6 +320,26 @@ describe('sort menu', () => {
   })
 })
 
+describe('collapse all groups', () => {
+  const GROUPED = 'views:\n  - type: table\n    name: T\n    groupBy:\n      property: note.status\n'
+
+  it('the toggle is there only when the view is grouped', () => {
+    expect(mount().el.querySelector('[aria-label="Collapse all groups"]')).toBeNull()
+    expect(mount(GROUPED).el.querySelector('[aria-label="Collapse all groups"]')).not.toBeNull()
+  })
+
+  it('one click collapses every group, the next expands them, and neither writes the file', () => {
+    const { el, onChange } = mount(GROUPED)
+    expect(rows(el)).toHaveLength(8)
+    click(byLabel(el, 'Collapse all groups'))
+    expect(rows(el)).toEqual([])
+    expect([...el.querySelectorAll('.base-group__toggle')].map((t) => t.getAttribute('aria-expanded'))).toEqual(['false', 'false', 'false', 'false'])
+    click(byLabel(el, 'Expand all groups'))
+    expect(rows(el)).toHaveLength(8)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+})
+
 describe('properties menu', () => {
   it('file.name is always shown (checkbox disabled); toggling another key writes view.order', () => {
     const { el, onChange, def } = mount()
@@ -429,5 +449,13 @@ describe('popover behaviour', () => {
     })
     draw()
     expect(el.querySelector('.base-popover')).toBeNull()
+  })
+
+  it('the view menu escapes the scrolling tab strip: fixed, measured off the "…" button (YAZ-743)', () => {
+    const { el } = mount()
+    click(byLabel(el, 'View menu'))
+    const pop = q<HTMLElement>(el, '[role="menu"]').closest<HTMLElement>('.base-popover')
+    expect(pop?.style.position).toBe('fixed')
+    expect(pop?.className).toContain('base-popover--fixed')
   })
 })

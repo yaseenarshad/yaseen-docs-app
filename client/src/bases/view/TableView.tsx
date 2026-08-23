@@ -188,7 +188,13 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             {keys.map((key) => (
               <th key={key} scope="col" style={{ width: widthOf(key) }}>
                 {propertyLabel(def, key)}
-                {!readOnly && <span className="base-table__resize" aria-hidden onMouseDown={startResize(key)} />}
+                {!readOnly && (
+                  <span
+                    className={`base-table__resize${drag?.key === key ? ' base-table__resize--active' : ''}`}
+                    aria-hidden
+                    onMouseDown={startResize(key)}
+                  />
+                )}
               </th>
             ))}
           </tr>

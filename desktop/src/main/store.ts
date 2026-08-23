@@ -6,6 +6,9 @@ import {
   MAX_FOLD_KEYS_PER_FILE,
   MAX_RECENT_ROOTS,
   NEW_NOTE_LOCATIONS,
+  SIDEBAR_DEFAULT_W,
+  SIDEBAR_MAX_W,
+  SIDEBAR_MIN_W,
   THEMES,
   THREAD_WIDTHS,
   addRecentRoot,
@@ -34,6 +37,7 @@ export interface Store {
   get(): AppState
   setSettings(settings: SettingsState): void
   setSidebarCollapsed(collapsed: boolean): void
+  setSidebarWidth(width: number): void
   pushRecent(path: string, now?: number): void
   removeRecent(path: string): void
   setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile'>>): void
@@ -76,6 +80,7 @@ export const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && 
 const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 const isStringOrNull = (v: unknown): v is string | null => v === null || typeof v === 'string'
 const isHexColour = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v)
+const clampSidebarWidth = (w: number): number => Math.min(SIDEBAR_MAX_W, Math.max(SIDEBAR_MIN_W, w))
 
 export const isRecentRoots = (v: unknown): v is RecentRoots =>
   Array.isArray(v) && v.every((x) => isRecord(x) && typeof x.path === 'string' && isFiniteNumber(x.lastOpened))
@@ -186,6 +191,7 @@ function sanitizeState(raw: unknown): AppState | null {
     version: 1,
     settings: sanitizeSettings(raw.settings),
     sidebarCollapsed: raw.sidebarCollapsed === true,
+    sidebarWidth: isFiniteNumber(raw.sidebarWidth) ? clampSidebarWidth(raw.sidebarWidth) : SIDEBAR_DEFAULT_W,
     recents: isRecentRoots(raw.recents) ? raw.recents.slice(0, MAX_RECENT_ROOTS) : [],
     windows: sanitizeWindows(raw.windows),
     folders: sanitizeFolders(raw.folders),
@@ -266,6 +272,10 @@ export function createStore(filePath: string): Store {
 
     setSidebarCollapsed(collapsed) {
       commit({ ...state, sidebarCollapsed: collapsed })
+    },
+
+    setSidebarWidth(width) {
+      commit({ ...state, sidebarWidth: clampSidebarWidth(width) })
     },
 
     pushRecent(path, now = Date.now()) {

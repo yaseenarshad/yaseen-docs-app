@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { IndexRecord } from '@shared/types'
+import { MAX_COLLAPSED_GROUP_KEYS, type IndexRecord } from '@shared/types'
 import { type ParsedBase, parseBase, serializeBase } from '../baseFile'
 import { BaseView, type BaseViewProps } from '../BaseView'
 import { TEST_RECORDS } from '../testRecords'
@@ -231,6 +231,32 @@ describe('collapse', () => {
     click(toggleOf(again.el, 'idea'))
     expect(links(again.el)).toContain('Agentic Agency.md')
     expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.base::T', [])
+  })
+
+  it('the toolbar toggle collapses every group at once, the ones search hides included', async () => {
+    const { storage } = await import('../../lib/storage')
+    const { el } = mount(GROUP_BASE)
+    click(byLabel(el, 'Search'))
+    setValue(byLabel(el, 'Search rows'), 'agency')
+    expect(headerTexts(el)).toEqual(['drafting', 'idea'])
+    click(byLabel(el, 'Collapse all groups'))
+    expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.base::T', ['v:drafting', 'v:idea', 'v:published', groupKeyOf(null)])
+    click(byLabel(el, 'Expand all groups'))
+    expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.base::T', [])
+  })
+
+  it('hides the toggle above the persisted cap: 201 groups have no collapse-all button', () => {
+    const many: IndexRecord[] = Array.from({ length: MAX_COLLAPSED_GROUP_KEYS + 1 }, (_, i) => ({
+      ...TEST_RECORDS[0],
+      path: `/vault/many/n${i}.md`,
+      name: `n${i}.md`,
+      basename: `n${i}`,
+      folder: 'many',
+      properties: { ...TEST_RECORDS[0].properties, status: `s${i}` },
+    }))
+    const { el } = mount(GROUP_BASE, { records: many })
+    expect(el.querySelectorAll('.base-table__group').length).toBe(MAX_COLLAPSED_GROUP_KEYS + 1)
+    expect(el.querySelector('[aria-label="Collapse all groups"]')).toBeNull()
   })
 
   it('the No value group collapses under its own stable key', async () => {

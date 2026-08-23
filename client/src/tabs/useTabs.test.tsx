@@ -17,12 +17,16 @@ const state = (tabs: string[], active: string | null, mounted?: string[]): TabsS
   tabs,
   active,
   mounted: mounted ?? (active === null ? [] : [active]),
+  history: {},
 })
 
 describe('tabsReducer', () => {
   describe('open-current (rule 4: replace the active tab)', () => {
     it('creates the first tab of an empty window', () => {
-      expect(tabsReducer(state([], null), { type: 'open-current', path: '/v/a.md' })).toEqual(state(['/v/a.md'], '/v/a.md'))
+      expect(tabsReducer(state([], null), { type: 'open-current', path: '/v/a.md' })).toEqual({
+        ...state(['/v/a.md'], '/v/a.md'),
+        history: {},
+      })
     })
 
     it('replaces the active tab in its slot; the replaced path leaves the mounted set', () => {
@@ -31,6 +35,7 @@ describe('tabsReducer', () => {
         tabs: ['/v/c.md', '/v/b.md'],
         active: '/v/c.md',
         mounted: ['/v/b.md', '/v/c.md'],
+        history: { '/v/c.md': { entries: ['/v/a.md', '/v/c.md'], index: 1 } },
       })
     })
 
@@ -40,6 +45,7 @@ describe('tabsReducer', () => {
         tabs: ['/v/a.md', '/v/b.md'],
         active: '/v/b.md',
         mounted: ['/v/a.md', '/v/b.md'],
+        history: {},
       })
     })
 
@@ -56,6 +62,7 @@ describe('tabsReducer', () => {
         tabs: ['/v/a.md', '/v/b.md'],
         active: '/v/b.md',
         mounted: ['/v/a.md', '/v/b.md'],
+        history: {},
       })
     })
 
@@ -70,6 +77,7 @@ describe('tabsReducer', () => {
         tabs: ['/v/a.md', '/v/b.md'],
         active: '/v/a.md',
         mounted: ['/v/a.md'],
+        history: {},
       })
     })
 
@@ -188,6 +196,7 @@ describe('tabsReducer', () => {
         tabs: ['/v/new.md', '/v/x.md'],
         active: '/v/new.md',
         mounted: ['/v/x.md', '/v/new.md'],
+        history: {},
       })
     })
 
@@ -217,6 +226,7 @@ describe('tabsReducer', () => {
         tabs: ['/v/New/a.md', '/v/x.md', '/v/New/deep/b.md'],
         active: '/v/New/a.md',
         mounted: ['/v/x.md', '/v/New/a.md'],
+        history: {},
       })
     })
 
@@ -360,6 +370,36 @@ describe('useTabs mirror (the GRO-2232 gotcha: ONE explicit {tabs, file} write p
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: [], file: null })
   })
 
+  it('canBack / canForward read the ACTIVE tab\'s place in its own stack (YAZ-721 D1)', () => {
+    act(() => latest.openCurrent('/v/a.md'))
+    act(() => latest.openCurrent('/v/b.md'))
+    act(() => latest.openCurrent('/v/c.md'))
+    expect(latest.canBack).toBe(true)
+    expect(latest.canForward).toBe(false)
+
+    act(() => latest.back())
+    expect(latest.active).toBe('/v/b.md')
+    expect(latest.canBack).toBe(true)
+    expect(latest.canForward).toBe(true)
+  })
+
+  it('back mirrors ONE {tabs, file} write — the stacks never reach storage', () => {
+    act(() => latest.openCurrent('/v/a.md'))
+    act(() => latest.openCurrent('/v/b.md'))
+    const writes = bridge.window.setIdentity.mock.calls.length
+    act(() => latest.back())
+    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md'], file: '/v/a.md' })
+  })
+
+  it('back at the start of the stack (and forward at its end) mirror nothing', () => {
+    act(() => latest.openCurrent('/v/a.md'))
+    const writes = bridge.window.setIdentity.mock.calls.length
+    act(() => latest.back())
+    act(() => latest.forward())
+    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes)
+  })
+
   it('reset with a restored file mirrors against the EXPLICIT new root; an empty reset mirrors nothing', () => {
     act(() => latest.openCurrent('/v/a.md'))
     act(() => latest.reset('/w', '/w/b.md'))
@@ -380,7 +420,7 @@ describe('useTabs mirror (the GRO-2232 gotcha: ONE explicit {tabs, file} write p
  * than ⌘W does", which nobody reports and everybody feels.
  */
 describe('delete / delete-dir (GRO-2272)', () => {
-  const S = (tabs: string[], active: string | null, mounted: string[] = tabs): TabsState => ({ tabs, active, mounted })
+  const S = (tabs: string[], active: string | null, mounted: string[] = tabs): TabsState => ({ tabs, active, mounted, history: {} })
 
   it('deleting a NON-active tab leaves the active one alone', () => {
     const next = tabsReducer(S(['/a.md', '/b.md', '/c.md'], '/a.md'), { type: 'delete', path: '/b.md' })
@@ -402,7 +442,7 @@ describe('delete / delete-dir (GRO-2272)', () => {
 
   it('deleting the ONLY tab empties the window; it stays alive', () => {
     const next = tabsReducer(S(['/a.md'], '/a.md'), { type: 'delete', path: '/a.md' })
-    expect(next).toEqual({ tabs: [], active: null, mounted: [] })
+    expect(next).toEqual({ tabs: [], active: null, mounted: [], history: {} })
   })
 
   it('deleting a path that is not open returns the SAME state object (no identity mirror)', () => {
@@ -424,7 +464,7 @@ describe('delete / delete-dir (GRO-2272)', () => {
 
   it('delete-dir empties the window when every tab was under the folder', () => {
     const next = tabsReducer(S(['/Docs/a.md', '/Docs/b.md'], '/Docs/a.md'), { type: 'delete-dir', path: '/Docs' })
-    expect(next).toEqual({ tabs: [], active: null, mounted: [] })
+    expect(next).toEqual({ tabs: [], active: null, mounted: [], history: {} })
   })
 
   it('delete-dir needs a real path segment: /Docsy.md is not under /Docs', () => {

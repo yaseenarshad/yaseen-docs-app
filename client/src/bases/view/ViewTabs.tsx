@@ -19,9 +19,9 @@ export interface ViewTabsProps {
 
 /** View switcher (GRO-2135): one tab per view, "+" adds, the active tab's "…" / right-click opens the view menu. */
 export function ViewTabs({ views, active, onSelect, onAdd, onRename, onDuplicate, onDelete, onMove, readOnly = false }: ViewTabsProps) {
-  const [menuFor, setMenuFor] = useState<number | null>(null)
+  const [menu, setMenu] = useState<{ i: number; el: HTMLElement } | null>(null)
   const [renaming, setRenaming] = useState<number | null>(null)
-  const closeMenu = useCallback(() => setMenuFor(null), [])
+  const closeMenu = useCallback(() => setMenu(null), [])
 
   const item = (label: string, disabled: boolean, run: () => void) => (
     <button
@@ -30,7 +30,7 @@ export function ViewTabs({ views, active, onSelect, onAdd, onRename, onDuplicate
       className="base-popover__item"
       disabled={disabled}
       onClick={() => {
-        setMenuFor(null)
+        setMenu(null)
         run()
       }}
     >
@@ -66,7 +66,7 @@ export function ViewTabs({ views, active, onSelect, onAdd, onRename, onDuplicate
                   if (readOnly) return
                   e.preventDefault()
                   onSelect(i)
-                  setMenuFor(i)
+                  setMenu({ i, el: e.currentTarget })
                 }}
               >
                 <ViewTypeIcon type={v.type} />
@@ -80,14 +80,14 @@ export function ViewTabs({ views, active, onSelect, onAdd, onRename, onDuplicate
                 aria-label="View menu"
                 title="View menu"
                 aria-haspopup="menu"
-                aria-expanded={menuFor === i}
-                onClick={() => setMenuFor(menuFor === i ? null : i)}
+                aria-expanded={menu?.i === i}
+                onClick={(e) => setMenu(menu?.i === i ? null : { i, el: e.currentTarget })}
               >
                 …
               </button>
             )}
-            {menuFor === i && (
-              <Popover label="View menu" className="base-popover--menu" onClose={closeMenu}>
+            {menu?.i === i && (
+              <Popover label="View menu" className="base-popover--menu" anchor={menu.el} onClose={closeMenu}>
                 <div role="menu">
                   {item('Rename', false, () => setRenaming(i))}
                   {item('Duplicate', false, () => onDuplicate(i))}

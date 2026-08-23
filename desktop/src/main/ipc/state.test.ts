@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
-import { DEFAULT_SETTINGS } from '@shared/types'
+import { DEFAULT_SETTINGS, SIDEBAR_MAX_W } from '@shared/types'
 import { CH, type Envelope } from '../../channels'
 import { createStore, type Store } from '../store'
 import { registerStateIpc } from './state'
@@ -51,7 +51,7 @@ describe('registerStateIpc', () => {
   it('registers every state channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual(
-      [CH.stateGet, CH.stateSetSettings, CH.stateSetSidebarCollapsed, CH.statePushRecent, CH.stateRemoveRecent, CH.stateSetFolder, CH.stateSetFolds, CH.stateSetBaseGroups].sort(),
+      [CH.stateGet, CH.stateSetSettings, CH.stateSetSidebarCollapsed, CH.stateSetSidebarWidth, CH.statePushRecent, CH.stateRemoveRecent, CH.stateSetFolder, CH.stateSetFolds, CH.stateSetBaseGroups].sort(),
     )
   })
 
@@ -74,6 +74,14 @@ describe('registerStateIpc', () => {
     expect(store.get().sidebarCollapsed).toBe(true)
     expect(await registered(CH.stateSetSidebarCollapsed)({ sender }, 'true')).toEqual(bad('BAD_REQUEST'))
     expect(store.get().sidebarCollapsed).toBe(true)
+  })
+
+  it('state:set-sidebar-width only takes a finite number, clamped', async () => {
+    expect(await registered(CH.stateSetSidebarWidth)({ sender }, 9999)).toEqual(ok(undefined))
+    expect(store.get().sidebarWidth).toBe(SIDEBAR_MAX_W)
+    expect(await registered(CH.stateSetSidebarWidth)({ sender }, Number.NaN)).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.stateSetSidebarWidth)({ sender }, '300')).toEqual(bad('BAD_REQUEST'))
+    expect(store.get().sidebarWidth).toBe(SIDEBAR_MAX_W)
   })
 
   it('state:push-recent needs an absolute path', async () => {
