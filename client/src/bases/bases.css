@@ -512,7 +512,15 @@
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+  border-right: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
+}
+
+.base-table th:last-child,
+.base-table td:last-child,
+.base-table tfoot td,
+.base-table__group td {
+  border-right: none;
 }
 
 .base-table thead th {
@@ -559,10 +567,12 @@
   width: 7px;
   height: 100%;
   cursor: col-resize;
+  background: linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat;
 }
 
-.base-table__resize:hover {
-  background: var(--accent-soft);
+.base-table__resize:hover,
+.base-table__resize--active {
+  background: linear-gradient(var(--accent), var(--accent)) center / 2px 100% no-repeat;
 }
 
 .base-table__chip {
