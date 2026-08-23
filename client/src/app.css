@@ -744,8 +744,18 @@ button {
   text-align: left;
 }
 
-.ctx-menu__item:hover {
+.ctx-menu__item:hover:not(:disabled) {
   background: var(--accent-soft);
+}
+
+.ctx-menu__item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Editor block-handle menu (YAZ-726): no .ctx-overlay beneath it, so it needs its own z-index. */
+.ctx-menu--editor {
+  z-index: 40;
 }
 
 /* Delete (GRO-2272): destructive, so it reads as such in BOTH themes — --danger is

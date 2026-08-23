@@ -49,6 +49,9 @@
  *    `[[name]]` text. Its keymap MUST be `use`d before `outlinerKeymap`: both bind Enter at
  *    priority 100 and equal priorities run in addition order — the picker wins while open and
  *    declines (falls through) while closed.
+ *  - Block handle menu (YAZ-726, `blockHandleMenu.ts`): right-click on the 6-dot handle opens a
+ *    `.ctx-menu` popup; rows are data from a provider; capture-suppresses Crepe's right-button
+ *    mousedown/mouseup so the selection/focus don't jump.
  */
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -58,6 +61,7 @@ import { replaceAll } from '@milkdown/kit/utils'
 import { createBaseCodeBlock, createBaseCodeBlockRegistry, type BaseCodeBlockRegistry } from './baseCodeBlock/baseCodeBlockView'
 import { createBaseEmbed, createBaseEmbedRegistry, type BaseEmbedRegistry } from './baseEmbed/baseEmbedPlugin'
 import { blockHandleGate } from './blockHandleGate'
+import { createBlockHandleMenu } from './blockHandleMenu'
 import { bulletThreading } from './outline/bulletThreading'
 import { features } from './featureConfig'
 import { listItemRoundTrip, normalizeEmptyItems, stripEmptyTaskBreaks } from './listItemRoundTrip'
@@ -119,6 +123,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   if (opts.wikilinkNav !== undefined) crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav))
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource()))
   crepe.editor.use(blockHandleGate)
+  crepe.editor.use(createBlockHandleMenu(() => []))
   crepe.editor.use(multiBlockDrag)
   // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs
   // equal priorities in addition order — an OPEN [[ picker takes Enter, closed falls through.
