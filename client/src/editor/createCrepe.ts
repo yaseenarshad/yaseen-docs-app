@@ -54,9 +54,12 @@
  *    mousedown/mouseup so the selection/focus don't jump. First row: Number children ↔ Bullet
  *    children (YAZ-729, `outline/numberChildrenRow.ts`), disabled when the item has no direct
  *    child list.
+ *  - Numbers are manual-only (YAZ-793): upstream's `1. ` input rule is removed so typing a number
+ *    never auto-converts a line into a numbered list; `- ` / `* ` bullet rules stay.
  */
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
+import { wrapInOrderedListInputRule } from '@milkdown/kit/preset/commonmark'
 import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
 import { Selection } from '@milkdown/kit/prose/state'
 import { replaceAll } from '@milkdown/kit/utils'
@@ -126,6 +129,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   if (opts.wikilinkNav !== undefined) crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav))
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource()))
   crepe.editor.use(blockHandleGate)
+  // Numbers are manual-only (YAZ-793): typing "1. " never auto-converts; "- " / "* " bullets keep theirs.
+  void crepe.editor.remove(wrapInOrderedListInputRule)
   crepe.editor.use(createBlockHandleMenu(numberChildrenRow))
   crepe.editor.use(multiBlockDrag)
   // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs
