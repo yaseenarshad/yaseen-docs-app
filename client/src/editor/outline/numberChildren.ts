@@ -7,43 +7,34 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import { bulletListSchema, orderedListSchema } from '@milkdown/kit/preset/commonmark'
 import type { Node } from '@milkdown/kit/prose/model'
 import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
-import { LIST_NODE_NAMES } from './listNodes'
+import { findNestedList, findNestedLists, innermostItemPos } from './listNodes'
 
 /** Closest enclosing list_item of `inside` (the node at `inside` itself counts), or null. */
 export function nearestListItem(doc: Node, inside: number): { node: Node; pos: number } | null {
+  // Not defensive: posAtCoords().inside for a hovered item is the position BEFORE the list_item,
+  // where resolve().node(depth) is the list and the ancestor walk would return the grandparent item.
   const at = doc.nodeAt(inside)
   if (at?.type.name === 'list_item') return { node: at, pos: inside }
-  const $pos = doc.resolve(inside)
-  for (let depth = $pos.depth; depth >= 1; depth--) {
-    const node = $pos.node(depth)
-    if (node.type.name === 'list_item') return { node, pos: $pos.before(depth) }
-  }
-  return null
+  const pos = innermostItemPos(doc.resolve(inside))
+  return pos === null ? null : { node: doc.nodeAt(pos)!, pos }
 }
 
 /** Type of the first direct child list of the enclosing list_item; null when none / not in a list item. */
 export function childListState(doc: Node, inside: number): 'bullet' | 'ordered' | null {
   const item = nearestListItem(doc, inside)
-  if (!item) return null
-  let state: 'bullet' | 'ordered' | null = null
-  item.node.forEach((child) => {
-    if (state === null && LIST_NODE_NAMES.has(child.type.name)) {
-      state = child.type.name === 'bullet_list' ? 'bullet' : 'ordered'
-    }
-  })
-  return state
+  const first = item && findNestedList(item.node)
+  return first === null ? null : first.list.type.name === 'bullet_list' ? 'bullet' : 'ordered'
 }
 
 /** Flip every direct child list of the enclosing list_item. Grandchildren untouched. One transaction. Never touches text. */
 export function toggleNumberedChildren(state: EditorState, inside: number, ctx: Ctx): Transaction | null {
   const item = nearestListItem(state.doc, inside)
   if (!item) return null
+  const lists = findNestedLists(item.node)
+  if (lists.length === 0) return null
   const tr = state.tr
-  let flipped = false
   // setNodeMarkup never changes node sizes, so positions computed on the original doc stay valid.
-  item.node.forEach((list, offset) => {
-    if (!LIST_NODE_NAMES.has(list.type.name)) return
-    flipped = true
+  for (const { list, offset } of lists) {
     const toOrdered = list.type.name === 'bullet_list'
     const listPos = item.pos + 1 + offset
     tr.setNodeMarkup(
@@ -58,6 +49,6 @@ export function toggleNumberedChildren(state: EditorState, inside: number, ctx: 
         label: toOrdered ? `${i + 1}.` : '•',
       })
     })
-  })
-  return flipped ? tr : null
+  }
+  return tr
 }

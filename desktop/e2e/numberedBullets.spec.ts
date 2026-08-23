@@ -40,21 +40,27 @@ const menuRow = (w: Page) => menu(w).locator('.ctx-menu__item')
 
 /**
  * Hover a row's paragraph so Crepe's block handle attaches to it (its mousemove is throttled
- * 200ms), wait for the handle to show, then right-click the 6-dot glyph (the LAST
- * `.operation-item` — the plus is display:none).
+ * 200ms, so retry the hover until the handle shows ON THIS ROW — it may still be showing on the
+ * previously hovered row; alternating x so Chromium does not dedupe the mousemove), then
+ * right-click the 6-dot glyph (the LAST `.operation-item` — the plus is display:none).
  */
 async function openHandleMenu(w: Page, text: string): Promise<void> {
   const para = paraOf(rowOf(w, text))
   const handle = w.locator('.tabstack__layer:not(.tabstack__layer--hidden) .milkdown-block-handle')
-  await para.hover({ position: { x: 4, y: 8 } })
-  await w.waitForTimeout(250)
-  await para.hover({ position: { x: 6, y: 8 } }) // second move lands after the throttle window
-  await expect(handle).toHaveAttribute('data-show', 'true')
+  let attempt = 0
+  await expect(async () => {
+    await para.hover({ position: { x: attempt++ % 2 === 0 ? 4 : 6, y: 8 } })
+    await expect(handle).toHaveAttribute('data-show', 'true', { timeout: 300 })
+    const [p, h] = await Promise.all([para.boundingBox(), handle.boundingBox()])
+    const mid = h!.y + h!.height / 2
+    expect(mid).toBeGreaterThanOrEqual(p!.y)
+    expect(mid).toBeLessThanOrEqual(p!.y + p!.height)
+  }).toPass({ timeout: 5_000 })
   await handle.locator('.operation-item').last().click({ button: 'right' })
   await expect(menu(w)).toBeVisible()
 }
 
-const diskHasNumbers = async () => /^\s*1\. 1\\\) Setup$/m.test(await readFile(notePath, 'utf8'))
+const diskHasNumbers = async () => /^ *1\. 1\\\) Setup$/m.test(await readFile(notePath, 'utf8'))
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'numbered-userdata-'))
@@ -94,15 +100,16 @@ test('step 2 — Number children: 1. 2. 3. labels, grandchild stays a bullet, te
   await shoot(win, 'numbered-after')
   await expect.poll(diskHasNumbers, { timeout: 10_000 }).toBe(true)
   const md = await readFile(notePath, 'utf8')
-  expect(md).toMatch(/^\s*2\. 2\\\) VS Code$/m)
-  expect(md).toMatch(/^\s*3\. 3\\\) WisprFlow$/m)
-  expect(md).toMatch(/^\s*\* deep$/m)
+  expect(md).toMatch(/^ *2\. 2\\\) VS Code$/m)
+  expect(md).toMatch(/^ *3\. 3\\\) WisprFlow$/m)
+  expect(md).toMatch(/^ *\* deep$/m)
   expect(md).toMatch(/^\* Fundamentals$/m)
 })
 
 test('step 3 — copying the three children puts 1. markers on text/plain and an <ol> on text/html', async () => {
   const first = paraOf(rowOf(win, CHILDREN[0]))
   const last = paraOf(rowOf(win, CHILDREN[2]))
+  // Left edge of the paragraph so Home / Shift+End span exactly the three rows.
   await first.click({ position: { x: 1, y: 8 } })
   await win.keyboard.press('Home')
   await last.click({ modifiers: ['Shift'], position: { x: 1, y: 8 } })
@@ -114,7 +121,6 @@ test('step 3 — copying the three children puts 1. markers on text/plain and an
     .toMatch(/1\. 1\\?\) Setup/)
   const text = await app.evaluate(({ clipboard }) => clipboard.readText())
   const html = await app.evaluate(({ clipboard }) => clipboard.readHTML())
-  test.info().annotations.push({ type: 'clipboard text', description: JSON.stringify(text) })
   expect(text).toMatch(/2\. 2\\?\) VS Code/)
   expect(text).toMatch(/3\. 3\\?\) WisprFlow/)
   expect(html).toContain('<ol')
@@ -124,7 +130,7 @@ test('step 4 — one undo restores the bullets in the GUI and on disk', async ()
   await win.keyboard.press('ControlOrMeta+z')
   for (const text of CHILDREN) await expect(labelOf(rowOf(win, text))).toHaveClass(/\bbullet\b/)
   await expect.poll(diskHasNumbers, { timeout: 10_000 }).toBe(false)
-  expect(await readFile(notePath, 'utf8')).toMatch(/^\s*\* 1\\\) Setup$/m)
+  expect(await readFile(notePath, 'utf8')).toMatch(/^ *\* 1\\\) Setup$/m)
 })
 
 test('step 5 — re-number, then the row reads "Bullet children" and flips back', async () => {

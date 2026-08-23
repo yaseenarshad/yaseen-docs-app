@@ -11,6 +11,10 @@ export const PROBE_OFFSET_PX = 24
 export const isDragHandleGrab = (t: EventTarget | null): t is Element =>
   t instanceof Element && t.closest('.milkdown-block-handle .operation-item') !== null
 
+/** A grab on THIS editor's own handle (tabs keep hidden editors mounted, each with its own handle). */
+export const isOwnHandleGrab = (view: EditorView, t: EventTarget | null): t is Element =>
+  isDragHandleGrab(t) && (view.dom.parentElement?.contains(t) ?? false)
+
 export interface HandleTarget {
   pos: number
   inside: number

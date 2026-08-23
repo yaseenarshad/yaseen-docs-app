@@ -17,14 +17,14 @@
  *    removes that shell, walking up through wrappers (e.g. a list_item) it was the only child of.
  * Grabbing a block OUTSIDE the selection is untouched: the plugin never arms and Crepe's
  * single-block path runs as before.
- *  - Only a left-button grab on THIS editor's own handle arms: right-click used to arm the
- *    plugin, and a hidden tab's editor could arm on the visible editor's handle.
+ *  - Only a left-button grab on THIS editor's own handle arms the plugin (tabs keep hidden
+ *    editors mounted).
  */
 import { Slice, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, TextSelection, type EditorState } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { handleTargetPos, isDragHandleGrab } from './blockHandleTarget'
+import { handleTargetPos, isDragHandleGrab, isOwnHandleGrab } from './blockHandleTarget'
 
 interface Armed {
   from: number
@@ -89,7 +89,7 @@ export const multiBlockDrag = $prose(
       },
       view(view) {
         const arm = (e: MouseEvent) => {
-          if (e.button !== 0 || !isDragHandleGrab(e.target) || !view.dom.parentElement?.contains(e.target)) return
+          if (e.button !== 0 || !isOwnHandleGrab(view, e.target)) return
           const probe = handleTargetPos(view, e)
           if (probe === null) return
           const sel = view.state.selection

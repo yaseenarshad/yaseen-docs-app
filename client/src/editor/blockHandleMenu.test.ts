@@ -1,7 +1,7 @@
 /**
  * Block handle menu (YAZ-726) on a real Crepe in jsdom. The Crepe is built directly (not via
- * createCrepe) because createCrepe already registers the stock empty-provider menu, whose
- * capture contextmenu listener would swallow the event before the test's provider ran.
+ * createCrepe) because createCrepe already registers the menu with the real numberChildrenRow
+ * provider, whose capture contextmenu listener would swallow the event before the test's provider ran.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Crepe } from '@milkdown/crepe'
@@ -38,8 +38,9 @@ afterEach(async () => {
   }
 })
 
-const popupOf = (view: EditorView) => view.dom.parentElement!.querySelector<HTMLElement>('.ctx-menu--editor')!
-const itemsOf = (view: EditorView) => Array.from(popupOf(view).querySelectorAll<HTMLButtonElement>('.ctx-menu__item'))
+/** The popup exists only while open. */
+const popupOf = (view: EditorView) => view.dom.parentElement!.querySelector<HTMLElement>('.ctx-menu--editor')
+const itemsOf = (view: EditorView) => Array.from(popupOf(view)!.querySelectorAll<HTMLButtonElement>('.ctx-menu__item'))
 
 function contextmenu(target: Element): MouseEvent {
   const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })
@@ -57,7 +58,7 @@ describe('open', () => {
     const { view, item } = await mount(twoRows)
     const e = contextmenu(item)
     expect(e.defaultPrevented).toBe(true)
-    expect(popupOf(view).hidden).toBe(false)
+    expect(popupOf(view)).not.toBeNull()
     expect(itemsOf(view).map((b) => b.textContent)).toEqual(['One', 'Two'])
   })
 
@@ -67,7 +68,7 @@ describe('open', () => {
     contextmenu(item)
     itemsOf(view)[0]!.click()
     expect(run).toHaveBeenCalledTimes(1)
-    expect(popupOf(view).hidden).toBe(true)
+    expect(popupOf(view)).toBeNull()
   })
 
   it('disabled row carries the attribute and does not run', async () => {
@@ -83,14 +84,14 @@ describe('open', () => {
   it('never shows for an empty provider', async () => {
     const { view, item } = await mount(() => [])
     contextmenu(item)
-    expect(popupOf(view).hidden).toBe(true)
+    expect(popupOf(view)).toBeNull()
   })
 
   it('ignores a contextmenu on a paragraph', async () => {
     const { view } = await mount(twoRows)
     const e = contextmenu(view.dom.querySelector('p')!)
     expect(e.defaultPrevented).toBe(false)
-    expect(popupOf(view).hidden).toBe(true)
+    expect(popupOf(view)).toBeNull()
   })
 })
 
@@ -106,9 +107,9 @@ describe('dismiss', () => {
     it(name, async () => {
       const { view, item } = await mount(twoRows)
       contextmenu(item)
-      expect(popupOf(view).hidden).toBe(false)
+      expect(popupOf(view)).not.toBeNull()
       dismiss(view)
-      expect(popupOf(view).hidden).toBe(true)
+      expect(popupOf(view)).toBeNull()
     })
   }
 
@@ -116,7 +117,7 @@ describe('dismiss', () => {
     const { view, item } = await mount(twoRows)
     contextmenu(item)
     itemsOf(view)[0]!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
-    expect(popupOf(view).hidden).toBe(false)
+    expect(popupOf(view)).not.toBeNull()
   })
 })
 
@@ -125,10 +126,10 @@ describe('ownership', () => {
     const a = await mount(twoRows)
     const b = await mount(twoRows)
     contextmenu(b.item)
-    expect(popupOf(a.view).hidden).toBe(true)
-    expect(popupOf(b.view).hidden).toBe(false)
+    expect(popupOf(a.view)).toBeNull()
+    expect(popupOf(b.view)).not.toBeNull()
     contextmenu(a.item)
-    expect(popupOf(a.view).hidden).toBe(false)
+    expect(popupOf(a.view)).not.toBeNull()
   })
 })
 
@@ -152,11 +153,17 @@ describe('destroy', () => {
   it('removes the popup and stops listening', async () => {
     const { crepe, view, item } = await mount(twoRows)
     const parent = view.dom.parentElement!
+    contextmenu(item)
+    expect(popupOf(view)).not.toBeNull()
     await crepe.destroy()
     mounted.splice(0)
     expect(parent.querySelector('.ctx-menu--editor')).toBeNull()
-    document.body.appendChild(item)
-    expect(() => contextmenu(item)).not.toThrow()
-    expect(document.querySelector('.ctx-menu--editor')).toBeNull()
+    // `item` stays inside the editor's parent so a leaked listener would still match own().
+    const down = vi.fn()
+    item.addEventListener('mousedown', down)
+    item.dispatchEvent(new MouseEvent('mousedown', { button: 2, bubbles: true }))
+    expect(down).toHaveBeenCalledTimes(1)
+    expect(contextmenu(item).defaultPrevented).toBe(false)
+    expect(parent.querySelector('.ctx-menu--editor')).toBeNull()
   })
 })

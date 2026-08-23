@@ -179,7 +179,7 @@ test('step 8 — deleting the folder takes the whole subtree and closes the tab 
 
 test('step 9 — blank space offers no Delete: a destructive item needs a target', async () => {
   await win.locator('.sidebar__body').click({ button: 'right', position: { x: 20, y: 320 } })
-  await expect(win.locator('.ctx-menu:not(.ctx-menu--editor)')).toBeVisible()
+  await expect(win.locator('.ctx-menu')).toBeVisible()
   await expect(win.locator('.ctx-menu [role="menuitem"]', { hasText: 'Delete' })).toHaveCount(0)
   // Reveal in Finder and Copy path DO appear there — they target the vault root (GRO-2273/2274).
   await expect(win.locator('.ctx-menu [role="menuitem"]', { hasText: 'Copy path' })).toHaveCount(1)

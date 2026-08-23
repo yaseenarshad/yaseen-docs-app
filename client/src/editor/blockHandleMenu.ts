@@ -14,7 +14,7 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { handleTargetPos, isDragHandleGrab, type HandleTarget } from './blockHandleTarget'
+import { handleTargetPos, isOwnHandleGrab, type HandleTarget } from './blockHandleTarget'
 
 export interface MenuRow {
   label: string
@@ -31,20 +31,20 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
       new Plugin({
         key: new PluginKey('mdapp-block-handle-menu'),
         view: (view) => {
-          const popup = document.createElement('div')
-          popup.className = 'ctx-menu ctx-menu--editor'
-          popup.setAttribute('role', 'menu')
-          popup.hidden = true
-          view.dom.parentElement?.appendChild(popup)
+          // Exists only while open: `.ctx-menu` means "open" everywhere (the sidebar menu is
+          // mounted only while open too), so nothing lingers per mounted editor.
+          let popup: HTMLElement | null = null
 
           const close = () => {
-            popup.hidden = true
+            popup?.remove()
+            popup = null
           }
-          const own = (t: EventTarget | null) => t instanceof Node && (view.dom.parentElement?.contains(t) ?? false)
-          const rightGrab = (e: MouseEvent) => e.button === 2 && isDragHandleGrab(e.target) && own(e.target)
+          const rightGrab = (e: MouseEvent) => e.button === 2 && isOwnHandleGrab(view, e.target)
 
-          const render = (items: MenuRow[]) => {
-            popup.replaceChildren()
+          const render = (items: MenuRow[]): HTMLElement => {
+            const el = document.createElement('div')
+            el.className = 'ctx-menu ctx-menu--editor'
+            el.setAttribute('role', 'menu')
             for (const row of items) {
               const item = document.createElement('button')
               item.type = 'button'
@@ -57,27 +57,29 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
                 row.run()
                 close()
               })
-              popup.appendChild(item)
+              el.appendChild(item)
             }
+            view.dom.parentElement?.appendChild(el)
+            return el
           }
 
           const onMouseDown = (e: MouseEvent) => {
             if (rightGrab(e)) e.stopImmediatePropagation()
-            else if (!(e.target instanceof Node && popup.contains(e.target))) close()
+            else if (popup === null || !(e.target instanceof Node && popup.contains(e.target))) close()
           }
           const onMouseUp = (e: MouseEvent) => {
             if (rightGrab(e)) e.stopImmediatePropagation()
           }
           const onContextMenu = (e: MouseEvent) => {
-            if (!isDragHandleGrab(e.target) || !own(e.target)) return
+            if (!isOwnHandleGrab(view, e.target)) return
             e.preventDefault()
             e.stopImmediatePropagation()
             const target = handleTargetPos(view, e)
             if (target === null) return
             const items = rows(view, target, ctx)
             if (items.length === 0) return
-            render(items)
-            popup.hidden = false
+            close()
+            popup = render(items)
             const r = popup.getBoundingClientRect()
             popup.style.left = `${Math.max(0, Math.min(e.clientX, window.innerWidth - r.width))}px`
             popup.style.top = `${Math.max(0, Math.min(e.clientY, window.innerHeight - r.height))}px`
@@ -103,7 +105,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
               document.removeEventListener('scroll', close, true)
               window.removeEventListener('keydown', onKeyDown)
               window.removeEventListener('blur', close)
-              popup.remove()
+              close()
             },
           }
         },

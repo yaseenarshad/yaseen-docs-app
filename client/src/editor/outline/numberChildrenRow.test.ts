@@ -47,9 +47,9 @@ function aimAt(view: EditorView, label: string): void {
   view.posAtCoords = () => ({ pos: found + 1, inside: found })
 }
 
-const popupOf = (view: EditorView) => view.dom.parentElement!.querySelector<HTMLElement>('.ctx-menu--editor')!
+const popupOf = (view: EditorView) => view.dom.parentElement!.querySelector<HTMLElement>('.ctx-menu--editor')
 const rowOf = (view: EditorView) => {
-  const rows = popupOf(view).querySelectorAll<HTMLButtonElement>('.ctx-menu__item')
+  const rows = popupOf(view)!.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')
   expect(rows).toHaveLength(1)
   return rows[0]!
 }
@@ -68,7 +68,7 @@ describe('numberChildrenRow', () => {
     expect(row.disabled).toBe(false)
     row.click()
     expect(getMarkdownForSave(crepe)).toBe('* Fundamentals\n  1. Setup\n     * deep\n  2. VS Code\n')
-    expect(popupOf(view).hidden).toBe(true)
+    expect(popupOf(view)).toBeNull()
     expect(view.dom.contains(document.activeElement)).toBe(true)
 
     rightClick(item)
