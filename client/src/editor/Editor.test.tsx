@@ -10,13 +10,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { FileResponse, WatchEvent } from '@shared/types'
+import type { FileResponse, IndexRecord, WatchEvent } from '@shared/types'
+import { resolverFor } from '../bases/engine'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
 import { Editor } from './Editor'
+import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { readFile: vi.fn(), writeFile: vi.fn() },
+  // `index` / `registry` are only reached by the `.base` branch (BaseHost) — see the Links D block.
+  api: { readFile: vi.fn(), writeFile: vi.fn(), index: vi.fn(), registry: { get: vi.fn(), onChange: vi.fn() } },
 }))
 
 vi.mock('./createCrepe', () => {
@@ -77,13 +80,14 @@ const watch: WatchSource = {
 }
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1): Promise<HTMLElement> {
-  const file: FileResponse = { path: PATH, content, mtime, size: content.length }
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource } = {}): Promise<HTMLElement> {
+  const path = extra.path ?? PATH
+  const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} wikilinks={extra.wikilinks} />))
   await settle()
   await settle()
   return container
@@ -269,5 +273,61 @@ describe('CrepeHost empty frontmatter block (GRO-2216)', () => {
     await pastDebounce()
     expect(writeFile).toHaveBeenCalledTimes(1)
     expect(writeFile.mock.calls[0]?.[0]).toEqual({ path: PATH, content: `${EMPTY_FM}# Hello\n\nunsaved edit\n`, expectedMtime: 2 })
+  })
+})
+
+/**
+ * Links D (GRO-2193): the "Linked mentions" section is part of the MARKDOWN editor's scrollable
+ * content — appended after the Crepe mount inside `.editor-host`, so it scrolls with the note —
+ * and a `.base` file gets none (BaseHost is a different branch entirely).
+ */
+describe('Editor backlinks section (Links D, GRO-2193)', () => {
+  const record = (path: string, links: string[] = []): IndexRecord => {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    return {
+      path,
+      name,
+      basename: name.replace(/\.(md|base)$/, ''),
+      folder: '',
+      ext: 'md',
+      size: 1,
+      ctime: 1,
+      mtime: 1,
+      properties: {},
+      aliases: [],
+      tags: [],
+      links,
+      embeds: [],
+    }
+  }
+
+  /** One ready snapshot into the App-owned source, wrapped exactly like WikilinkIndexBridge does. */
+  function feed(source: ReturnType<typeof createWikilinkResolveSource>, records: IndexRecord[]): void {
+    const resolve = resolverFor(records, '/vault')
+    act(() => source.update((target) => resolve(target)?.record.path ?? null, records))
+  }
+
+  it('a markdown note renders the section after the Crepe mount, inside the scroller', async () => {
+    const source = createWikilinkResolveSource()
+    const el = await mount(BODY, 1, { wikilinks: source })
+    expect(el.querySelector('.backlinks')).toBeNull() // no snapshot yet → nothing at all
+    feed(source, [record('/vault/other.md', ['note']), record(PATH)])
+    const host = el.querySelector('.editor-host')
+    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['editor-mount', 'backlinks'])
+    expect(host?.querySelector('.editor-mount .editor-instance')).not.toBeNull()
+    expect(host?.querySelector('.backlinks__header')?.textContent).toBe('Linked mentions (1)')
+  })
+
+  it('a `.base` file gets no section (v1: what a base "mentions" is a Bases question)', async () => {
+    vi.mocked(api.index).mockResolvedValue({ root: '/vault', records: [], generatedAt: 1 })
+    vi.mocked(api.registry.get).mockResolvedValue({ root: '/vault', version: 1, types: {}, properties: {} })
+    vi.mocked(api.registry.onChange).mockReturnValue(() => undefined)
+    const source = createWikilinkResolveSource()
+    const BASE_PATH = '/vault/Notes.base'
+    const el = await mount('views:\n  - type: table\n    name: Table\n', 1, { path: BASE_PATH, wikilinks: source })
+    feed(source, [record('/vault/other.md', ['Notes.base']), record(BASE_PATH)])
+    await settle()
+    expect(el.querySelector('.base-host')).not.toBeNull()
+    expect(el.querySelector('.backlinks')).toBeNull()
   })
 })

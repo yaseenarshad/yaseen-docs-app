@@ -32,6 +32,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type EditorState, type Selection } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import type { IndexRecord } from '@shared/types'
 import './wikilink.css'
 
 export const WIKILINK_CLASS = 'wikilink'
@@ -46,21 +47,38 @@ export type ResolveLink = (target: string) => string | null
 export interface WikilinkResolveSource {
   /** null until the vault index first loads — every link renders as resolved meanwhile. */
   readonly resolve: ResolveLink | null
+  /**
+   * The index snapshot `resolve` was built from — `[]` until the first index lands. The
+   * decorations never read it; the backlinks section does (Links D, GRO-2193), and pairing it
+   * with the resolver in ONE object is what guarantees the two can never come from different
+   * snapshots.
+   */
+  readonly records: readonly IndexRecord[]
   /** Wakes subscribed editors (decoration recompute) whenever `resolve` is swapped. */
   subscribe(listener: () => void): () => void
 }
 
 export interface MutableWikilinkResolveSource extends WikilinkResolveSource {
-  /** Swap in a fresh resolver (index refetch) and notify every subscribed editor. */
-  update(resolve: ResolveLink): void
+  /**
+   * Swap in a fresh resolver + its snapshot (index refetch) and notify every subscriber.
+   * `records` omitted = no snapshot in play (decoration-only mounts): backlinks have nothing
+   * to list, which is exactly right — the resolver alone cannot say who links where.
+   */
+  update(resolve: ResolveLink, records?: readonly IndexRecord[]): void
 }
+
+const NO_RECORDS: readonly IndexRecord[] = []
 
 export function createWikilinkResolveSource(): MutableWikilinkResolveSource {
   let current: ResolveLink | null = null
+  let snapshot: readonly IndexRecord[] = NO_RECORDS
   const listeners = new Set<() => void>()
   return {
     get resolve() {
       return current
+    },
+    get records() {
+      return snapshot
     },
     subscribe(listener) {
       listeners.add(listener)
@@ -68,8 +86,9 @@ export function createWikilinkResolveSource(): MutableWikilinkResolveSource {
         listeners.delete(listener)
       }
     },
-    update(resolve) {
+    update(resolve, records = NO_RECORDS) {
       current = resolve
+      snapshot = records
       listeners.forEach((l) => l())
     },
   }

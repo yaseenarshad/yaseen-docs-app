@@ -21,6 +21,7 @@ import { SaveIndicator } from './SaveIndicator'
 import { useAutosave } from '../hooks/useAutosave'
 import { useFile } from '../hooks/useFile'
 import type { WatchSource } from '../hooks/useWatch'
+import { BacklinksSection } from '../links/BacklinksSection'
 import { basename } from '../lib/paths'
 import { takeRenameBuffer } from '../lib/renameContinuity'
 import { storage } from '../lib/storage'
@@ -214,7 +215,16 @@ function CrepeHost({
           </button>
         </div>
       )}
-      <div className="editor-host" ref={hostRef} />
+      {/* The scroller holds the Crepe mount and, after it, the note's own "Linked mentions"
+          block (Links D, GRO-2193) — so the section scrolls WITH the note instead of floating
+          in a panel. `.base` files get no section in v1: what "mentions" means for a base is a
+          Bases question (its rows are notes, not the file itself) — BaseHost stays untouched. */}
+      <div className="editor-host">
+        <div className="editor-mount" ref={hostRef} />
+        {wikilinks !== undefined && (
+          <BacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
+        )}
+      </div>
       {embedSlots.map((slot) =>
         createPortal(
           <BaseEmbed

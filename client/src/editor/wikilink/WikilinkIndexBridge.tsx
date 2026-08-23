@@ -6,7 +6,9 @@
  * resolver (`resolverFor`: same records array identity → same resolver) into the resolve
  * source and the snapshot's `linkCandidates` (shortest unambiguous names + one piped row per
  * frontmatter alias, Links E2 GRO-2214) into the candidate source; both pokes make every
- * subscribed editor recompute (decorations / picker rows). Aliases need no wiring of their own:
+ * subscribed editor recompute (decorations / picker rows). The snapshot's RECORDS ride into the
+ * resolve source alongside the resolver (Links D, GRO-2193): the backlinks section reads both off
+ * that one object, so this stays the window's single index feed. Aliases need no wiring of their own:
  * the resolver and the candidates carry them, so decorations, clicks and the picker all see them. The
  * editors never remount on index changes: the source OBJECTS stay stable, only their contents
  * are replaced.
@@ -42,7 +44,9 @@ export function WikilinkIndexBridge({ root, watch, source, candidates, onSnapsho
     // loaded, as resolved (source.resolve null) — never flashing everything unresolved.
     if (status !== 'ready') return
     const resolve = resolverFor(records, root)
-    source.update((target) => resolve(target)?.record.path ?? null)
+    // The snapshot rides ALONG with the resolver (Links D, GRO-2193): the backlinks section
+    // reads both off the same source, so N and the resolution behind it always agree.
+    source.update((target) => resolve(target)?.record.path ?? null, records)
     candidates?.update(linkCandidates(records))
     onSnapshot?.(records)
   }, [status, records, root, source, candidates, onSnapshot])

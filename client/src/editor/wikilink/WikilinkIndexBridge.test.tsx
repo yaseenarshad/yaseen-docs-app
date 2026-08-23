@@ -146,6 +146,18 @@ describe('WikilinkIndexBridge', () => {
     expect(candidates.candidates.map((c) => c.insert)).toEqual(['Note', 'New'])
   })
 
+  it('the snapshot RECORDS ride into the resolve source with the resolver (Links D, GRO-2193)', async () => {
+    mount()
+    expect(source.records).toEqual([]) // pending: the backlinks section has nothing to list
+    await flush()
+    expect(source.records.map((r) => r.path)).toEqual(['/vault/Note.md', '/vault/deep/Other.md'])
+    indexFn.mockResolvedValue(response('/vault/Note.md', '/vault/New.md'))
+    await emitPastDebounce({ type: 'add', path: '/vault/New.md', mtime: 2 })
+    // Records and resolver are swapped together, so a count can never disagree with resolution.
+    expect(source.records.map((r) => r.path)).toEqual(['/vault/Note.md', '/vault/New.md'])
+    expect(source.resolve?.('New')).toBe('/vault/New.md')
+  })
+
   it('aliases ride the same feed: the resolver dims nothing for `[[CAC]]` and the picker offers a piped row (E2, GRO-2214)', async () => {
     indexFn.mockResolvedValue({
       root: '/vault',

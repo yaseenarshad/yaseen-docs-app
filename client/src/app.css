@@ -98,6 +98,9 @@ button {
   overflow: hidden;
 }
 
+/* The note's scroller. Two stacked blocks live inside it: `.editor-mount`, where CrepeHost
+   appends its `.editor-instance`, and — for markdown files — the "Linked mentions" section
+   (Links D, GRO-2193; styled by links/backlinks.css), which therefore scrolls WITH the note. */
 .editor-host {
   flex: 1;
   min-height: 0;
