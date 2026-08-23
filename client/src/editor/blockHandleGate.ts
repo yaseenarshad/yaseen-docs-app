@@ -49,7 +49,10 @@ export const blockHandleGate = $prose(
           if (frame !== 0) return
           frame = requestAnimationFrame(() => {
             frame = 0
-            const handle = document.querySelector<HTMLElement>('.milkdown-block-handle')
+            // Own editor only (YAZ-747): tabs keep hidden editors mounted, each with its own
+            // handle appended into its view.dom.parentElement — a document-wide query muted
+            // whichever handle came first in the DOM, possibly another tab's.
+            const handle = view.dom.parentElement?.querySelector<HTMLElement>('.milkdown-block-handle')
             if (!handle) return
             if (view.dom.dataset.dragging === 'true') {
               handle.classList.remove(HANDLE_MUTED_CLASS)

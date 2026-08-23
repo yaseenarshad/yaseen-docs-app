@@ -21,3 +21,49 @@ describe('inStripBand', () => {
     expect(inStripBand(left - (2.15 * 16) / 2 - 5, left, 28)).toBe(false)
   })
 })
+
+describe('own-editor scoping (YAZ-747)', () => {
+  // Tabs keep hidden editors mounted, each with its own handle in its view.dom.parentElement.
+  // The gate must only ever touch ITS editor's handle — never the first one in the document.
+  it('mutes its own handle, not another editor\'s', async () => {
+    const { createCrepe } = await import('./createCrepe')
+    const { editorViewCtx } = await import('@milkdown/kit/core')
+    const { HANDLE_MUTED_CLASS } = await import('./blockHandleGate')
+
+    const mount = async () => {
+      const root = document.createElement('div')
+      document.body.appendChild(root)
+      const crepe = createCrepe({ root, defaultValue: '* a\n' })
+      await crepe.create()
+      const view = crepe.editor.ctx.get(editorViewCtx)
+      const handle = document.createElement('div')
+      handle.className = 'milkdown-block-handle'
+      view.dom.parentElement!.appendChild(handle)
+      return { crepe, root, view, handle }
+    }
+    const a = await mount()
+    const b = await mount()
+    // Force editor B's gate to see an affordance under the pointer: a fold chevron in the stack.
+    const chevron = document.createElement('span')
+    chevron.className = 'outline-toggle'
+    const originalFrom = document.elementsFromPoint
+    document.elementsFromPoint = () => [chevron]
+    try {
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX: 10, clientY: 10, bubbles: true }))
+      await new Promise((r) => requestAnimationFrame(() => r(null)))
+      // BOTH gates ran on the same document mousemove; each must have muted only its own handle.
+      expect(a.handle.classList.contains(HANDLE_MUTED_CLASS)).toBe(true)
+      expect(b.handle.classList.contains(HANDLE_MUTED_CLASS)).toBe(true)
+      // Un-mute: pointer leaves the affordance — again, each gate updates its own handle.
+      document.elementsFromPoint = () => []
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX: 10, clientY: 10, bubbles: true }))
+      await new Promise((r) => requestAnimationFrame(() => r(null)))
+      expect(a.handle.classList.contains(HANDLE_MUTED_CLASS)).toBe(false)
+      expect(b.handle.classList.contains(HANDLE_MUTED_CLASS)).toBe(false)
+    } finally {
+      document.elementsFromPoint = originalFrom
+      await a.crepe.destroy(); a.root.remove()
+      await b.crepe.destroy(); b.root.remove()
+    }
+  })
+})
