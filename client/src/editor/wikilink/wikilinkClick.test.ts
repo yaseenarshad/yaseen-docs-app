@@ -7,6 +7,8 @@
  * Files & Links location setting, C2- GRO-2240; '' = the vault root, the default) and then
  * opens by the same gesture, `[[#h]]` no-ops, revealed raw text and alt/shift/ctrl-modified
  * clicks fall through to plain editing, and failures land in `onNotice` — never a dialog.
+ * F2 (GRO-2197) added two more notices for otherwise invisible outcomes: a click during the
+ * pre-index window, and a ⌘-click whose freshly created note landed in a background tab.
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -143,6 +145,21 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     expect(nav.openCurrent).not.toHaveBeenCalled()
   })
 
+  it('a ⌘-click that CREATES notices too, naming the note — the background tab is invisible (GRO-2197)', async () => {
+    const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown)
+    mousedown(linkSpan(root, 'Missing'), { metaKey: true })
+    await vi.waitFor(() => expect(nav.openBackground).toHaveBeenCalledWith('/vault/Missing.md'))
+    expect(nav.onNotice).toHaveBeenCalledWith('Created "Missing" in a background tab')
+  })
+
+  it("a ⌘-click LOSING the creation race stays silent — nothing was freshly created (and plain-click creates open visibly, so they never notice)", async () => {
+    createFile.mockRejectedValueOnce(new BridgeRequestError('ALREADY_EXISTS', 'exists'))
+    const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown)
+    mousedown(linkSpan(root, 'Missing'), { metaKey: true })
+    await vi.waitFor(() => expect(nav.openBackground).toHaveBeenCalledWith('/vault/Missing.md'))
+    expect(nav.onNotice).not.toHaveBeenCalled()
+  })
+
   it('a pathed target creates parents and the file root-relatively', async () => {
     const { root, nav } = await mount('go [[Sub/Page]] now\n', () => null)
     mousedown(linkSpan(root, 'Sub/Page'))
@@ -237,12 +254,14 @@ describe('wikilink click: what does NOT navigate (GRO-2192)', () => {
     expectNoNav(nav)
   })
 
-  it('before the index has loaded (resolve null) the click is swallowed whole: creating could shadow a real note', async () => {
+  it('before the index has loaded (resolve null) nothing opens or is created — but a notice says the index is loading (GRO-2197)', async () => {
     const { root, nav } = await mount('pad [[Whatever]] tail\n') // source never updated
     expect(mousedown(linkSpan(root, 'Whatever'))).toBe(false)
     await Promise.resolve()
-    expectNoNav(nav)
+    expect(nav.openCurrent).not.toHaveBeenCalled()
+    expect(nav.openBackground).not.toHaveBeenCalled()
     expect(createFile).not.toHaveBeenCalled()
+    expect(nav.onNotice).toHaveBeenCalledWith('Vault index is still loading — try that link again in a moment')
   })
 
   it('without wikilinkNav the click plugin is not registered at all: clicks are plain editing', async () => {

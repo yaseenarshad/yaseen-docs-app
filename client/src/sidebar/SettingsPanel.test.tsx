@@ -110,7 +110,8 @@ describe('SettingsCog Files & Links section (Links C2-, GRO-2240)', () => {
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, newNoteLocation: 'folder', newNoteFolder: 'Fresh' })
   })
 
-  it.each([['/abs'], ['a/../b'], ['a//b'], ['Notes/']])('an invalid folder (%s) keeps the stored value and marks the input; editing clears the mark', (bad) => {
+  // Dot-names (GRO-2197): create-on-click rejects hidden `.name` segments, so the validator must too.
+  it.each([['/abs'], ['a/../b'], ['a//b'], ['Notes/'], ['.archive'], ['Notes/.archive']])('an invalid folder (%s) keeps the stored value and marks the input; editing clears the mark', (bad) => {
     const { onChange, el } = mount({ ...DEFAULT_SETTINGS, newNoteLocation: 'folder', newNoteFolder: 'Old' })
     const input = folderInput(el) as HTMLInputElement
     typeFolder(input, bad)

@@ -172,6 +172,24 @@ describe('storage', () => {
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: [], file: null })
   })
 
+  it('a tabs-only change (active file unchanged) writes the identity but NOT the folder (FN14, GRO-2197)', () => {
+    storage.setTabs('/r', ['/r/a.md'], '/r/a.md')
+    expect(b.bridge.state.setFolder).toHaveBeenCalledTimes(1)
+    expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/r', { lastFile: '/r/a.md' })
+    // ⌘-click background tab / drag-reorder / closing a non-active tab: `file` is identical —
+    // no redundant lastFile write (which would commit, hit disk and broadcast to every window).
+    storage.setTabs('/r', ['/r/a.md', '/r/b.md'], '/r/a.md')
+    expect(b.bridge.state.setFolder).toHaveBeenCalledTimes(1)
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/r/a.md', '/r/b.md'], file: '/r/a.md' })
+    expect(storage.getTabs()).toEqual(['/r/a.md', '/r/b.md'])
+    expect(storage.getLastFile('/r')).toBe('/r/a.md')
+    // A REAL active-file change still writes both halves.
+    storage.setTabs('/r', ['/r/a.md', '/r/b.md'], '/r/b.md')
+    expect(b.bridge.state.setFolder).toHaveBeenCalledTimes(2)
+    expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/r', { lastFile: '/r/b.md' })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/r/a.md', '/r/b.md'], file: '/r/b.md' })
+  })
+
   it('setTabs on a null root (no folder to remember into) updates the identity only', () => {
     storage.setTabs(null, ['/x/a.md'], '/x/a.md')
     expect(storage.getFile()).toBe('/x/a.md')

@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { resolverFor } from '../bases/engine'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
-import { MAX_SNIPPETS, SNIPPET_MAX_CHARS, backlinksFor, mentionSnippets } from './backlinks'
+import { MAX_SNIPPETS, SNIPPET_MAX_CHARS, backlinksFor, mentionSnippets, type MentionSnippet } from './backlinks'
 
 interface RecInit {
   links?: string[]
@@ -113,57 +113,92 @@ describe('backlinksFor (Links D, GRO-2193)', () => {
   })
 })
 
-describe('mentionSnippets (Links D, GRO-2193)', () => {
+describe('mentionSnippets (Links D, GRO-2193; display text + line grouping FN9/FN10, GRO-2197)', () => {
   const records = [rec('/vault/A.md'), rec(B, { aliases: ['CAC'] })]
   const resolve = resolverOver(records)
 
-  it('returns the mention line with the RAW match highlighted', () => {
+  /** The highlighted runs of one snippet, in order. */
+  const marked = (s: MentionSnippet): string[] => s.ranges.map((r) => s.text.slice(r.from, r.to))
+
+  it('returns the mention line as the EDITOR shows it, with the display text highlighted', () => {
     const [snippet] = mentionSnippets('# A\n\nSee [[B]] for more.\n', B, resolve)
-    expect(snippet.text).toBe('See [[B]] for more.')
-    expect(snippet.text.slice(snippet.from, snippet.to)).toBe('[[B]]')
+    expect(snippet.text).toBe('See B for more.')
+    expect(marked(snippet)).toEqual(['B'])
   })
 
-  it('one snippet per mention, in document order; other links are never highlighted', () => {
+  it('one snippet per LINE, in document order; other links are never highlighted', () => {
     const snippets = mentionSnippets('[[Elsewhere]] then [[B]]\n\nand [[B|the other]] again\n', B, resolve)
-    expect(snippets.map((s) => s.text)).toEqual(['[[Elsewhere]] then [[B]]', 'and [[B|the other]] again'])
-    expect(snippets.map((s) => s.text.slice(s.from, s.to))).toEqual(['[[B]]', '[[B|the other]]'])
+    expect(snippets.map((s) => s.text)).toEqual(['Elsewhere then B', 'and the other again'])
+    expect(snippets.map(marked)).toEqual([['B'], ['the other']])
   })
 
-  it('highlights alias-form and embed mentions the same way', () => {
-    expect(mentionSnippets('via [[CAC]]\n', B, resolve).map((s) => s.text.slice(s.from, s.to))).toEqual(['[[CAC]]'])
-    expect(mentionSnippets('shown ![[B]]\n', B, resolve).map((s) => s.text.slice(s.from, s.to))).toEqual(['![[B]]'])
+  it('a piped mention shows its ALIAS — exactly the editor display, never the raw brackets (FN9)', () => {
+    const [snippet] = mentionSnippets('see [[B|Bee alias]] here\n', B, resolve)
+    expect(snippet.text).toBe('see Bee alias here')
+    expect(marked(snippet)).toEqual(['Bee alias'])
+  })
+
+  it('a heading-form mention shows the ` > `-joined display, like the decorations', () => {
+    const [snippet] = mentionSnippets('deep [[B#Intro]] link\n', B, resolve)
+    expect(snippet.text).toBe('deep B > Intro link')
+    expect(marked(snippet)).toEqual(['B > Intro'])
+  })
+
+  it('an UNRELATED link on the same line shows display text too, unhighlighted (FN9)', () => {
+    const [snippet] = mentionSnippets('[[Other|o]] with [[B]] here\n', B, resolve)
+    expect(snippet.text).toBe('o with B here')
+    expect(marked(snippet)).toEqual(['B'])
+  })
+
+  it('TWO mentions on one line make ONE snippet with TWO highlights (FN10)', () => {
+    const snippets = mentionSnippets('See [[B]] and [[B|again]] here\n', B, resolve)
+    expect(snippets).toHaveLength(1)
+    expect(snippets[0].text).toBe('See B and again here')
+    expect(marked(snippets[0])).toEqual(['B', 'again'])
+  })
+
+  it('highlights alias-form mentions by display text and embed mentions raw (embeds are undecorated)', () => {
+    expect(mentionSnippets('via [[CAC]]\n', B, resolve).map(marked)).toEqual([['CAC']])
+    expect(mentionSnippets('shown ![[B]]\n', B, resolve).map(marked)).toEqual([['![[B]]']])
   })
 
   it('skips fenced blocks and inline code — exactly what the index skips', () => {
     const content = '```\n[[B]]\n```\n\nand `[[B]]` inline\n\nreal [[B]]\n'
-    expect(mentionSnippets(content, B, resolve).map((s) => s.text)).toEqual(['real [[B]]'])
+    expect(mentionSnippets(content, B, resolve).map((s) => s.text)).toEqual(['real B'])
   })
 
-  it('trims the line and windows a long one around the match, ellipsised on both sides', () => {
+  it('trims the line and windows a long one around the first mention, ellipsised on both sides', () => {
     const pad = 'x'.repeat(400)
     const [snippet] = mentionSnippets(`   ${pad} [[B]] ${pad}   \n`, B, resolve)
     expect(snippet.text.length).toBeLessThanOrEqual(SNIPPET_MAX_CHARS + 2)
     expect(snippet.text.startsWith('…')).toBe(true)
     expect(snippet.text.endsWith('…')).toBe(true)
-    expect(snippet.text.slice(snippet.from, snippet.to)).toBe('[[B]]')
+    expect(marked(snippet)).toEqual(['B']) // the window always contains the first mention whole
+  })
+
+  it('a second mention outside the window is dropped; the first (centred) one never is', () => {
+    const pad = 'x'.repeat(400)
+    const [snippet] = mentionSnippets(`[[B]] ${pad} [[B]]\n`, B, resolve)
+    expect(marked(snippet)).toEqual(['B'])
+    expect(snippet.ranges).toHaveLength(1)
   })
 
   it('a short line keeps its whole text and gets no ellipsis', () => {
     const [snippet] = mentionSnippets('   * [[B]] note   \n', B, resolve)
-    expect(snippet.text).toBe('* [[B]] note')
+    expect(snippet.text).toBe('* B note')
   })
 
   it('mentions of another note, same-file `[[#heading]]` links and plain text yield nothing', () => {
     expect(mentionSnippets('[[Elsewhere]] and [[#top]] and words\n', B, resolve)).toEqual([])
   })
 
-  it('caps the snippets per note (the section stays quiet on link-heavy notes)', () => {
+  it('caps the snippet LINES per note (the section stays quiet on link-heavy notes)', () => {
     const content = Array.from({ length: MAX_SNIPPETS + 3 }, (_, i) => `line ${i} [[B]]`).join('\n')
     expect(mentionSnippets(content, B, resolve)).toHaveLength(MAX_SNIPPETS)
   })
 
   it('reads mentions out of the frontmatter block too (the index counts them as links)', () => {
     const [snippet] = mentionSnippets('---\nparent: "[[B]]"\n---\n\nbody\n', B, resolve)
-    expect(snippet.text).toBe('parent: "[[B]]"')
+    expect(snippet.text).toBe('parent: "B"')
   })
 })

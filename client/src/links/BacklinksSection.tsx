@@ -145,12 +145,31 @@ function BacklinkEntry({
       ) : (
         snippets.map((snippet, i) => (
           <button key={i} type="button" className="backlinks__snippet" title={record.path} onClick={open}>
-            {snippet.text.slice(0, snippet.from)}
-            <mark className="backlinks__match">{snippet.text.slice(snippet.from, snippet.to)}</mark>
-            {snippet.text.slice(snippet.to)}
+            {snippetRuns(snippet)}
           </button>
         ))
       )}
     </li>
   )
+}
+
+/**
+ * One snippet line interleaved with its highlights: plain runs between the ranges, a `<mark>`
+ * per mention of the target — a line holding two mentions is ONE row with TWO marks (FN10,
+ * GRO-2197). Ranges are ascending and non-overlapping by construction (`mentionSnippets`).
+ */
+function snippetRuns(snippet: MentionSnippet): React.ReactNode[] {
+  const runs: React.ReactNode[] = []
+  let cursor = 0
+  snippet.ranges.forEach(({ from, to }, i) => {
+    if (from > cursor) runs.push(snippet.text.slice(cursor, from))
+    runs.push(
+      <mark key={i} className="backlinks__match">
+        {snippet.text.slice(from, to)}
+      </mark>,
+    )
+    cursor = to
+  })
+  if (cursor < snippet.text.length) runs.push(snippet.text.slice(cursor))
+  return runs
 }

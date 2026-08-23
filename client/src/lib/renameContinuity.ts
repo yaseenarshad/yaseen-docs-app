@@ -17,7 +17,12 @@
  *
  * Residual race, accepted: a save already IN FLIGHT over IPC when the rename lands cannot
  * be recalled; `writeFile` recreates the old path in that sub-millisecond window. The
- * systematic paths (debounced saves, unmount flush, close flush) are all covered above.
+ * systematic paths (debounced saves, unmount flush, close flush) are covered above FOR THE
+ * WINDOW THAT RENAMES — the handle map below is module-scoped, i.e. PER RENDERER, so another
+ * window's pending debounced save for the same path is not retired by this flow and its window
+ * is the same sub-millisecond race widened to a debounce interval (GRO-2197 audit: the earlier
+ * wording claimed blanket coverage). Deferred, not fixed: retiring across windows needs a
+ * main-side broadcast the rename path does not have today.
  *
  * E1b (GRO-2241) extends the same discipline to FOLDER renames: `flushRenamedDir` runs the
  * pre-rename flush for every mounted editor under the dir, and `carryEditorsAcrossDirRename`

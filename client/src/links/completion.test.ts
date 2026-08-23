@@ -1,7 +1,8 @@
 /**
  * Shared `[[…]]` completion matcher (Links B, GRO-2191): the trailing-fragment trigger, the
- * capped substring match every completion surface uses (EditableCell's editors + the editor's
- * `[[` picker), and `linkCandidates` — shortest unambiguous names with duplicate basenames
+ * ranked exact → prefix → substring match every completion surface uses (EditableCell's
+ * editors + the editor's `[[` picker; ranking upgraded in place — F2, GRO-2197), and
+ * `linkCandidates` — shortest unambiguous names with duplicate basenames
  * disambiguated per the resolver's shallowest-depth rule, plus one piped row per frontmatter
  * alias (Links E2, GRO-2214). A perf smoke keeps the 1,000+ file acceptance honest.
  */
@@ -75,6 +76,39 @@ describe('matchLinkNames', () => {
   })
 })
 
+describe('matchLinkCandidates ranking (F2, GRO-2197)', () => {
+  const names = (candidates: string[], fragment: string): string[] =>
+    matchLinkCandidates(candidates.map(nameCandidate), fragment).map((c) => c.name)
+
+  it('an exact name beats a prefix beats a substring, whatever the input order', () => {
+    expect(names(['Big CAC story', 'CAC Model', 'CAC'], 'cac')).toEqual(['CAC', 'CAC Model', 'Big CAC story'])
+  })
+
+  it('is stable within each bucket — input order preserved', () => {
+    expect(names(['CAC one', 'x CAC', 'CAC two', 'y CAC'], 'cac')).toEqual(['CAC one', 'CAC two', 'x CAC', 'y CAC'])
+  })
+
+  it('the cap applies AFTER ranking — a late exact match still tops a board of substrings', () => {
+    const candidates = [...Array.from({ length: 20 }, (_, i) => `note cac ${i}`), 'CAC']
+    const matched = names(candidates, 'cac')
+    expect(matched).toHaveLength(MAX_SUGGESTIONS)
+    expect(matched[0]).toBe('CAC')
+  })
+
+  it('a fragment with leading/trailing whitespace still matches — the needle ends are trimmed (Obsidian)', () => {
+    expect(names(['Alpha', 'Beta'], ' al')).toEqual(['Alpha'])
+    expect(names(['Alpha', 'Beta'], 'alpha ')).toEqual(['Alpha'])
+  })
+
+  it('internal whitespace stays significant', () => {
+    expect(names(['alphabet soup', 'alphabetsoup'], 'et sou')).toEqual(['alphabet soup'])
+  })
+
+  it('matches a hand-built literal without the precomputed lower (derived on the fly)', () => {
+    expect(matchLinkCandidates([{ name: 'Alpha', insert: 'Alpha', label: 'Alpha' }], 'ALPHA')).toHaveLength(1)
+  })
+})
+
 describe('linkCandidates', () => {
   // E2 (GRO-2214) turned candidates from bare strings into { name, insert, label } rows, so the
   // name pins below now read the inserted text; the row shape gets its own pins after them.
@@ -100,20 +134,35 @@ describe('linkCandidates', () => {
     expect(inserts(records)).toEqual(['note', 'sub/Note'])
   })
 
-  it('a name row matches, inserts and reads as itself', () => {
-    expect(linkCandidates([rec('/vault/A.md')])).toEqual([{ name: 'A', insert: 'A', label: 'A' }])
+  it('a name row matches, inserts and reads as itself (lower precomputed for the ranking scan, GRO-2197)', () => {
+    expect(linkCandidates([rec('/vault/A.md')])).toEqual([{ name: 'A', insert: 'A', label: 'A', lower: 'a' }])
   })
 
   it('an alias adds a row after its note: typed as the alias, inserted PIPED, labelled with the note (GRO-2214)', () => {
     const records = [rec('/vault/Customer Acquisition Cost.md', ['CAC', 'Acquisition Cost']), rec('/vault/Ideas.md')]
     expect(linkCandidates(records)).toEqual([
-      { name: 'Customer Acquisition Cost', insert: 'Customer Acquisition Cost', label: 'Customer Acquisition Cost' },
-      { name: 'CAC', insert: 'Customer Acquisition Cost|CAC', label: 'CAC — Customer Acquisition Cost' },
-      { name: 'Acquisition Cost', insert: 'Customer Acquisition Cost|Acquisition Cost', label: 'Acquisition Cost — Customer Acquisition Cost' },
-      { name: 'Ideas', insert: 'Ideas', label: 'Ideas' },
+      { name: 'Customer Acquisition Cost', insert: 'Customer Acquisition Cost', label: 'Customer Acquisition Cost', lower: 'customer acquisition cost' },
+      { name: 'CAC', insert: 'Customer Acquisition Cost|CAC', label: 'CAC — Customer Acquisition Cost', lower: 'cac' },
+      { name: 'Acquisition Cost', insert: 'Customer Acquisition Cost|Acquisition Cost', label: 'Acquisition Cost — Customer Acquisition Cost', lower: 'acquisition cost' },
+      { name: 'Ideas', insert: 'Ideas', label: 'Ideas', lower: 'ideas' },
     ])
     // Typing the alias offers the alias row only; typing the name offers the name row only.
     expect(matchLinkCandidates(linkCandidates(records), 'cac').map((c) => c.label)).toEqual(['CAC — Customer Acquisition Cost'])
+  })
+
+  it('an alias equal to the chosen name is skipped — no degenerate [[X|X]] row (GRO-2197)', () => {
+    const records = [rec('/vault/CAC.md', ['CAC', 'cac', 'Customer Acquisition Cost'])]
+    expect(linkCandidates(records).map((c) => c.label)).toEqual(['CAC', 'Customer Acquisition Cost — CAC'])
+  })
+
+  it('an alias matching only the BARE basename of a folder-disambiguated note is NOT degenerate — the piped row stays', () => {
+    const records = [rec('/vault/Note.md'), rec('/vault/a/Note.md', ['Note'])]
+    expect(linkCandidates(records).map((c) => c.insert)).toEqual(['Note', 'a/Note', 'a/Note|Note'])
+  })
+
+  it('an alias containing [ or ] is skipped — its piped insert would re-parse as a different link (GRO-2197)', () => {
+    const records = [rec('/vault/Metrics.md', ['[[X]]', 'ok]', '[ok', 'Fine'])]
+    expect(linkCandidates(records).map((c) => c.insert)).toEqual(['Metrics', 'Metrics|Fine'])
   })
 
   it('two notes claiming one alias both show, told apart by the note half (folder-disambiguated when the basenames collide too)', () => {

@@ -105,11 +105,15 @@ export const storage = {
    * BOTH `tabs` and the active `file` — never a `{ file }`-only patch, whose main-side
    * normalization would prepend the file into `tabs` on its own (the legacy pre-tabs path).
    * The active file is also the folder's remembered lastFile for the next window on it; a
-   * null `root` (nothing to remember into) skips the folder half.
+   * null `root` (nothing to remember into) skips the folder half — and so does an UNCHANGED
+   * active file (FN14, GRO-2197): a background-tab open, drag-reorder or non-active close moves
+   * only `tabs`, and re-sending the same lastFile would make the main process commit, schedule
+   * a disk write and broadcast the whole AppState to every window for nothing.
    */
   setTabs(root: string | null, tabs: readonly string[], file: string | null): void {
+    const fileChanged = file !== identity.file
     identity = { ...identity, file, tabs: [...tabs] }
-    if (root !== null) {
+    if (root !== null && fileChanged) {
       patchFolder(root, { lastFile: file })
       send('state.setFolder', () => window.yaseenDocs.state.setFolder(root, { lastFile: file }))
     }

@@ -118,6 +118,20 @@ describe('wikilink decorations: collapsed display (GRO-2190)', () => {
     expect(syntax(root)).toBe('')
   })
 
+  it('[[Note|]] (empty alias) stays raw — never a zero-width invisible run (FN12, GRO-2197)', async () => {
+    const { crepe, root } = await mount('pad [[Note|]] tail\n')
+    expect(links(root)).toEqual([])
+    expect(syntax(root)).toBe('')
+    expect(viewOf(crepe).dom.textContent).toContain('[[Note|]]')
+  })
+
+  it('[[|]] and [[#]] (nothing visible in any part) stay raw too (FN12, GRO-2197)', async () => {
+    const { crepe, root } = await mount('pad [[|]] and [[#]] tail\n')
+    expect(links(root)).toEqual([])
+    expect(syntax(root)).toBe('')
+    expect(viewOf(crepe).dom.textContent).toContain('[[|]] and [[#]]')
+  })
+
   it('adjacent links decorate independently', async () => {
     const { root } = await mount('Pair [[a]][[b]] end\n')
     expect(links(root)).toEqual(['a', 'b'])

@@ -327,8 +327,8 @@ describe('wikilink picker: frontmatter aliases (Links E2, GRO-2214)', () => {
     const { crepe } = await mount('X\n', source)
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[CAC')
-    expect(rows()).toEqual(['CAC — Customer Acquisition Cost', 'CAC Model', 'CAC — CAC Model'])
-    press(crepe, 'ArrowDown')
+    // F2 ranking (GRO-2197): the two EXACT alias hits rank ahead of the prefix-matched name.
+    expect(rows()).toEqual(['CAC — Customer Acquisition Cost', 'CAC — CAC Model', 'CAC Model'])
     press(crepe, 'ArrowDown')
     press(crepe, 'Enter')
     expect(getMarkdownForSave(crepe)).toBe('X[[CAC Model|CAC]]\n')

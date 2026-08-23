@@ -182,6 +182,35 @@ describe('useExternalRenames — the while-running feed', () => {
     expect(banner()).toBe('/v/C.md|/v/C2.md|1')
   })
 
+  it('a rename SPLIT across two snapshots (unlink seen a generation before the add) still banners (GRO-2197)', async () => {
+    // awaitWriteFinish delays the watcher's `add` while `unlink` lands at once, so a refetch
+    // can catch the index mid-rename: one diff sees only the removal, the next only the
+    // addition. The one-generation carry re-joins the halves.
+    await mount()
+    await snapshot(preRename)
+    await snapshot([rec('/v/A.md', { links: ['B'], size: 20, mtime: 5 })]) // B vanished, B2 not indexed yet
+    expect(banner()).toBeNull()
+    await snapshot(postRename) // B2 appears with B's exact (size, mtime)
+    expect(banner()).toBe('/v/B.md|/v/B2.md|1')
+  })
+
+  it('a carried removal whose path comes BACK in the next snapshot never banners (a save, not a rename)', async () => {
+    await mount()
+    await snapshot(preRename)
+    await snapshot([rec('/v/A.md', { links: ['B'], size: 20, mtime: 5 })]) // B momentarily gone mid-write
+    await snapshot(preRename) // …and back at the same path: drop the carried removal
+    expect(banner()).toBeNull()
+  })
+
+  it('the carry lasts exactly ONE generation: a removal older than that never pairs', async () => {
+    await mount()
+    await snapshot(preRename)
+    await snapshot([rec('/v/A.md', { links: ['B'], size: 20, mtime: 5 })]) // gen 1: B removed (carried)
+    await snapshot([rec('/v/A.md', { links: ['B'], size: 20, mtime: 5 })]) // gen 2: nothing — carry expires
+    await snapshot(postRename) // gen 3: B2 appears, but the removal is two generations old
+    expect(banner()).toBeNull()
+  })
+
   it('a root switch clears the queue and the snapshot chain', async () => {
     await mount()
     await snapshot(preRename)

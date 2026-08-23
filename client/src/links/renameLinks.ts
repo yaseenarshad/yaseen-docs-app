@@ -203,7 +203,19 @@ export interface UpdateLinksOptions {
   tree?: readonly TreeNode[]
 }
 
-/** The referencing-set predicate shared by the rewrite and the E1c dry-run count — ONE construction, so the banner's N and the rewrite can never disagree. */
+/**
+ * The referencing-set predicate shared by the rewrite and the E1c dry-run count — ONE
+ * construction, so both agree on WHICH notes reference the old path.
+ *
+ * They do NOT always agree on how many get WRITTEN, and the F- audit (GRO-2197) pinned the gap
+ * honestly rather than papering over it: `countLinkReferences` counts every note whose links
+ * RESOLVE to the old path, while `rewriteInner` writes nothing for a bare link that stays bare
+ * (it returns null). In a pure MOVE — which `renameDetector.ts` deliberately admits as a valid
+ * hypothesis — every bare link stays bare, so the banner can offer "update N links?" and the
+ * summary then read "Updated links in 0 notes". Closing that needs N to become form-aware
+ * (share `newTarget`, not just `resolves`), which is a behaviour change, not a finishing-pass
+ * fix — deferred with the rest of the E1c queue work.
+ */
 function makeResolves({ root, oldPath, kind, records, tree }: { root: string; oldPath: string; kind: 'file' | 'dir'; records: readonly IndexRecord[]; tree?: readonly TreeNode[] }): {
   resolves: ResolvesToOld
   resolveTargetPath: (t: string) => string | null
