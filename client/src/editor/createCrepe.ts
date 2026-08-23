@@ -51,7 +51,9 @@
  *    declines (falls through) while closed.
  *  - Block handle menu (YAZ-726, `blockHandleMenu.ts`): right-click on the 6-dot handle opens a
  *    `.ctx-menu` popup; rows are data from a provider; capture-suppresses Crepe's right-button
- *    mousedown/mouseup so the selection/focus don't jump.
+ *    mousedown/mouseup so the selection/focus don't jump. First row: Number children ↔ Bullet
+ *    children (YAZ-729, `outline/numberChildrenRow.ts`), disabled when the item has no direct
+ *    child list.
  */
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -68,6 +70,7 @@ import { listItemRoundTrip, normalizeEmptyItems, stripEmptyTaskBreaks } from './
 import { underline } from './marks/underline'
 import { multiBlockDrag } from './multiBlockDrag'
 import { guideLines } from './outline/guideLines'
+import { numberChildrenRow } from './outline/numberChildrenRow'
 import { obsidianHotkeys } from './outline/hotkeys'
 import { outlinerKeymap } from './outline/listCommands'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
@@ -123,7 +126,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   if (opts.wikilinkNav !== undefined) crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav))
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource()))
   crepe.editor.use(blockHandleGate)
-  crepe.editor.use(createBlockHandleMenu(() => []))
+  crepe.editor.use(createBlockHandleMenu(numberChildrenRow))
   crepe.editor.use(multiBlockDrag)
   // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs
   // equal priorities in addition order — an OPEN [[ picker takes Enter, closed falls through.

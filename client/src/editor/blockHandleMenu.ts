@@ -10,6 +10,7 @@
  * lives in `view.dom.parentElement` and tabs keep hidden editors mounted, so only this
  * editor's own handle is handled.
  */
+import type { Ctx } from '@milkdown/kit/ctx'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
@@ -21,12 +22,12 @@ export interface MenuRow {
   run: () => void
 }
 
-/** Called at open time with the handle's target (from blockHandleTarget.handleTargetPos). */
-export type RowProvider = (view: EditorView, target: HandleTarget) => MenuRow[]
+/** Called at open time with the handle's target (from blockHandleTarget.handleTargetPos) and the editor ctx. */
+export type RowProvider = (view: EditorView, target: HandleTarget, ctx: Ctx) => MenuRow[]
 
 export const createBlockHandleMenu = (rows: RowProvider) =>
   $prose(
-    () =>
+    (ctx) =>
       new Plugin({
         key: new PluginKey('mdapp-block-handle-menu'),
         view: (view) => {
@@ -73,7 +74,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
             e.stopImmediatePropagation()
             const target = handleTargetPos(view, e)
             if (target === null) return
-            const items = rows(view, target)
+            const items = rows(view, target, ctx)
             if (items.length === 0) return
             render(items)
             popup.hidden = false
