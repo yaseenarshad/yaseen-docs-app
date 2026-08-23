@@ -90,7 +90,7 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
     case 'open-current': {
       if (a.path === s.active) return s
       if (s.tabs.includes(a.path)) return withActive(s, a.path) // dedupe by path: activate, never duplicate
-      if (s.active === null) return { tabs: [a.path], active: a.path, mounted: [a.path], history: { [a.path]: { entries: [a.path], index: 0 } } }
+      if (s.active === null) return { tabs: [a.path], active: a.path, mounted: [a.path], history: s.history }
       // Replace the active tab in its slot; the old file's editor unmounts (→ autosave flush).
       // The slot's stack gains the page and re-keys onto it, any forward entries truncated.
       const h = s.history[s.active] ?? { entries: [s.active], index: 0 }

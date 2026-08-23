@@ -50,6 +50,7 @@ Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Edit
 - **Guide lines**: nested lists draw a vertical line under their parent's glyph; clicking a line folds/unfolds the bullets alongside it (every child with children — Roam's "collapse children"), never the parent itself (caret stays put).
 - **Drag**: the 6-dot handle moves a block; with several blocks highlighted, grabbing a handle inside the highlight moves them all together (drop position controls nesting depth). Over a guide line or a fold chevron the handle yields, so those clicks always land.
 - **Look**: ● ○ ■ bullet glyphs by depth and Obsidian's default typography (system font, 16px, Obsidian heading scale). Line spacing and the gap between blocks are adjustable from the settings cog (bottom-left); stored in the app state file (global: every window follows a change live), never in the files. The keyboard button next to the cog lists every hotkey.
+- **Spelling**: misspellings get the OS squiggle; right-click for suggestions, "Add to Dictionary", and cut/copy/paste.
 - **Round-trip**: the first real edit rewrites the file in remark's normalised form (bullet markers, 2-space indent, …); empty items are written as a bare `*` / `* [ ]`. Typing without changes never writes.
 
 ## Sidebar and windows
@@ -57,7 +58,7 @@ Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Edit
 - **Create**: right-click a folder, a file, or the blank space under the tree → "New note" / "New base" / "New folder"; name it inline (Enter confirms, Esc cancels). Notes get `.md` automatically and open at once; "New base" creates an Obsidian-compatible `.base` file (seeded with one table view) that opens in the base view; nothing is ever overwritten.
 - **Windows**: `⌘⇧N` duplicates the window (same folder, same file), `⌘⇧O` opens a folder, `⌘W` closes the window; File › Open Recent lists the last folders (⌥-click an entry to open it beside the current window). ⌘-click a sidebar file — or right-click → "Open in new window" — to open it in its own window. Open windows are restored on relaunch.
 - **Links**: right-click a file row for "Copy link" — a `yaseendocs://` URL that opens that exact note from anywhere (Slack, another app); "Copy path" sits next to it. Finder's Open With also lists Yaseen Docs for `.md`/`.markdown` (as an alternate, never stealing the default handler).
-- **Collapse**: the panel icon in the header hides the sidebar (a floating button on the left edge brings it back); the choice survives reload.
+- **Collapse**: the panel icon in the header hides the sidebar (a floating button on the left edge brings it back); the choice survives reload. Drag the sidebar's right edge to resize it (180–520 px, remembered); drag it well past the minimum to collapse.
 - **Paths**: the open file shows in the URL as `#/absolute/path.md`; right-click any row for "Copy path".
 
 ## Bases

@@ -25,7 +25,7 @@ describe('tabsReducer', () => {
     it('creates the first tab of an empty window', () => {
       expect(tabsReducer(state([], null), { type: 'open-current', path: '/v/a.md' })).toEqual({
         ...state(['/v/a.md'], '/v/a.md'),
-        history: { '/v/a.md': { entries: ['/v/a.md'], index: 0 } },
+        history: {},
       })
     })
 

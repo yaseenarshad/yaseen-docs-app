@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { IndexRecord, RegistryResponse, RegistryTypeDef } from '@shared/types'
+import { MAX_COLLAPSED_GROUP_KEYS, type IndexRecord, type RegistryResponse, type RegistryTypeDef } from '@shared/types'
 import { storage } from '../lib/storage'
 import { type BaseDefinition, type ParsedBase, parseBase, serializeBase, updateBase } from './baseFile'
 import { type Group, type Row, propertyKeys, runView } from './engine'
@@ -115,18 +115,18 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
   const groupsKey = thisFile === null ? null : `${thisFile}::${view.name}`
   const collapseKey = groupsKey ?? `#${index}`
   const collapsed = collapsedByKey[collapseKey] ?? (root !== null && groupsKey !== null ? storage.getBaseGroups(root, groupsKey) : [])
-  const onToggleGroup = (key: string) => {
-    const next = collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key]
-    setCollapsedByKey((m) => ({ ...m, [collapseKey]: next }))
-    if (root !== null && groupsKey !== null) storage.setBaseGroups(root, groupsKey, next)
-  }
-  // Collapse / expand all (YAZ-788): every group the VIEW has, not the search-narrowed `groups` —
-  // a group hidden behind an active search must collapse with the rest.
-  const allGroupKeys = result.groups === null ? [] : result.groups.map((g) => groupKeyOf(g.key))
-  const setAllGroups = (next: readonly string[]) => {
+  const writeCollapsed = (next: readonly string[]) => {
     setCollapsedByKey((m) => ({ ...m, [collapseKey]: [...next] }))
     if (root !== null && groupsKey !== null) storage.setBaseGroups(root, groupsKey, next)
   }
+  const onToggleGroup = (key: string) => {
+    writeCollapsed(collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key])
+  }
+  // Collapse / expand all (YAZ-744): every group the VIEW has, not the search-narrowed `groups` —
+  // a group hidden behind an active search must collapse with the rest. Above the store's cap the
+  // toggle hides rather than writing a list `setBaseGroups` would silently truncate.
+  const allGroupKeys =
+    result.groups === null || result.groups.length > MAX_COLLAPSED_GROUP_KEYS ? [] : result.groups.map((g) => groupKeyOf(g.key))
 
   // A drop on a board column / table section (5C, GRO-2143): optimistic move now, one-key write
   // through 5A; a failed write drops the move (the card snaps back) and flags the card instead.
@@ -257,7 +257,7 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           onNew={() => onNewNote(null)}
           allGroupKeys={allGroupKeys}
           collapsed={collapsed}
-          onSetAllGroups={setAllGroups}
+          onSetAllGroups={writeCollapsed}
           tabs={tabs}
           root={root}
           pinned={pinned}

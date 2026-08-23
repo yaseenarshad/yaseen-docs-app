@@ -22,7 +22,6 @@
   --notice-btn-bg: #fffdf5;
   --notice-btn-bg-hover: #ffffff;
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
-  --side-w: 260px;
 }
 
 /* Dark palette (Desktop K, GRO-2218): the SAME tokens, near-black surfaces. App.tsx resolves the
@@ -457,6 +456,7 @@ button {
 
 /* ---------- sidebar ---------- */
 
+/* --side-w is stamped on .app from AppState.sidebarWidth (YAZ-738). */
 .sidebar {
   width: var(--side-w);
   flex: none;

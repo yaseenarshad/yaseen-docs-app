@@ -523,9 +523,7 @@
 }
 
 .base-table th:last-child,
-.base-table td:last-child,
-.base-table tfoot td,
-.base-table__group td {
+.base-table td:last-child {
   border-right: none;
 }
 
@@ -568,17 +566,16 @@
 .base-table__resize {
   position: absolute;
   top: 0;
-  right: -3px;
+  right: 0;
   z-index: 1;
   width: 7px;
   height: 100%;
   cursor: col-resize;
-  background: linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat;
 }
 
 .base-table__resize:hover,
 .base-table__resize--active {
-  background: linear-gradient(var(--accent), var(--accent)) center / 2px 100% no-repeat;
+  background: linear-gradient(var(--accent), var(--accent)) right / 2px 100% no-repeat;
 }
 
 .base-table__chip {
@@ -614,6 +611,7 @@
   padding: 0;
   background: var(--bg);
   border-top: 1px solid var(--border);
+  border-right: none;
   border-bottom: none;
 }
 

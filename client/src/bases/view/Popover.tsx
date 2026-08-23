@@ -14,7 +14,8 @@ interface PopoverProps {
  * `position: relative` wrapper, so click-away is any mousedown outside that wrapper
  * (the trigger itself then toggles normally); Esc closes; focus moves in on open.
  * With `anchor` it is placed fixed under that element instead, measured and clamped
- * to the viewport like `ContextMenu`, so a clipping ancestor cannot cut it off.
+ * to the viewport like `ContextMenu`, so a clipping ancestor cannot cut it off — and
+ * a scroll or resize closes it, since the fixed placement is measured once.
  */
 export function Popover({ label, onClose, className, anchor, children }: PopoverProps) {
   const ref = useRef<HTMLDivElement>(null)
@@ -47,11 +48,20 @@ export function Popover({ label, onClose, className, anchor, children }: Popover
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
+    const onReflow = () => {
+      onClose()
+    }
     window.addEventListener('mousedown', onDown)
     window.addEventListener('keydown', onKey)
+    if (anchor) {
+      window.addEventListener('scroll', onReflow, true)
+      window.addEventListener('resize', onReflow)
+    }
     return () => {
       window.removeEventListener('mousedown', onDown)
       window.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', onReflow, true)
+      window.removeEventListener('resize', onReflow)
     }
   }, [anchor, onClose])
 

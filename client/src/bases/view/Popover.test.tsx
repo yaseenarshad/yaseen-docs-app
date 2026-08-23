@@ -57,14 +57,15 @@ afterEach(() => {
 })
 
 describe('anchored popover', () => {
-  it('hangs fixed 6px under the anchor; without one it keeps the CSS position', () => {
+  it('hangs fixed 6px under the anchor', () => {
     const { pop } = mount(anchorAt({ top: 20, bottom: 48, left: 30, right: 70 }))
     expect(pop.style.position).toBe('fixed')
     expect(pop.style.top).toBe('54px')
     expect(pop.style.left).toBe('30px')
     expect(pop.className).toBe('base-popover base-popover--fixed')
+  })
 
-    act(() => root?.unmount())
+  it('keeps the CSS position without an anchor', () => {
     expect(mount().pop.getAttribute('style')).toBeNull()
   })
 
@@ -82,5 +83,20 @@ describe('anchored popover', () => {
     expect(onClose).not.toHaveBeenCalled()
     mousedown(document.body)
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes on a scroll under the anchor, and never without one', () => {
+    const { onClose } = mount(anchorAt({ top: 20, bottom: 48, left: 30, right: 70 }))
+    act(() => {
+      window.dispatchEvent(new Event('scroll'))
+    })
+    expect(onClose).toHaveBeenCalledTimes(1)
+
+    act(() => root?.unmount())
+    const plain = mount()
+    act(() => {
+      window.dispatchEvent(new Event('scroll'))
+    })
+    expect(plain.onClose).not.toHaveBeenCalled()
   })
 })

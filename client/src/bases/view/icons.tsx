@@ -53,7 +53,7 @@ export const PencilIcon = () => (
   </svg>
 )
 
-/** Stacked chevrons, for the toolbar's collapse / expand all groups toggle (YAZ-788). */
+/** Stacked chevrons, for the toolbar's collapse / expand all groups toggle (YAZ-744). */
 export const ChevronsIcon = () => (
   <svg {...svg}>
     <path d="M4.5 4 8 7l3.5-3M4.5 9 8 12l3.5-3" />

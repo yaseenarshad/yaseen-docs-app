@@ -27,7 +27,7 @@ export interface ToolbarProps {
   onUpdate: Mutate
   /** Create a note satisfying this view and open it (5D, GRO-2144). */
   onNew: () => void
-  /** Every group key of the view, and the collapsed subset — the collapse / expand all toggle (YAZ-788); empty when the view is not grouped. */
+  /** Every group key of the view, and the collapsed subset — the collapse / expand all toggle (YAZ-744); empty when the view is not grouped. */
   allGroupKeys: readonly string[]
   collapsed: readonly string[]
   onSetAllGroups: (next: readonly string[]) => void

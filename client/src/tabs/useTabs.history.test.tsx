@@ -17,10 +17,6 @@ const fresh = (): TabsState => nav({ tabs: [], active: null, mounted: [], histor
 const abc = (): TabsState => nav(nav(fresh(), B), C)
 
 describe('history recording', () => {
-  it('the first tab of an empty window seeds a one-entry history', () => {
-    expect(fresh().history).toEqual({ [A]: { entries: [A], index: 0 } })
-  })
-
   it('same-tab navigation pushes and re-keys the record under the new path', () => {
     const s = abc()
     expect(s.tabs).toEqual([C])
@@ -42,9 +38,9 @@ describe('history recording', () => {
 
   it('a tab opened without navigating has no record until it navigates', () => {
     const s = tabsReducer(fresh(), { type: 'open-new', path: B })
-    expect(s.history).toEqual({ [A]: { entries: [A], index: 0 } })
+    expect(s.history).toEqual({})
     const moved = nav(s, C)
-    expect(moved.history).toEqual({ [A]: { entries: [A], index: 0 }, [C]: { entries: [B, C], index: 1 } })
+    expect(moved.history).toEqual({ [C]: { entries: [B, C], index: 1 } })
   })
 })
 
