@@ -27,6 +27,8 @@ function installBridge() {
     index: vi.fn(async (root: string) => ({ root, records: [] as unknown[], generatedAt: 1 })),
     state: { setFolder: vi.fn(async () => undefined) },
     window: { open: vi.fn(async () => undefined) },
+    // Reveal in Finder (GRO-2274) goes through the shell namespace.
+    shell: { reveal: vi.fn(async ({ path }: { path: string }) => ({ path })) },
     // Empty registry (GRO-2202; Round 10 Q4, GRO-2226): the sidebar reads it for "New ▸",
     // which is always present — empty collapses it to the single "New type…" item.
     registry: {
@@ -64,6 +66,7 @@ async function mount(over: Partial<SidebarProps> = {}) {
     onFileMissing: vi.fn(),
     onRenameFile: vi.fn(async () => undefined),
     onDeleteFile: vi.fn(async () => undefined),
+    onNotice: vi.fn(),
     ...over,
   }
   await act(async () => root?.render(<StrictMode><Sidebar {...props} /></StrictMode>))
@@ -475,5 +478,51 @@ describe('countChildren (GRO-2272 C3)', () => {
   it('an unknown or empty folder counts zero rather than throwing', () => {
     expect(countChildren(TREE_DEEP, '/v/nope')).toEqual({ notes: 0, folders: 0 })
     expect(countChildren([], '/v/Docs')).toEqual({ notes: 0, folders: 0 })
+  })
+})
+
+/**
+ * Reveal in Finder (GRO-2274). Available on every row type AND on blank space, where it
+ * targets the vault ROOT — the same target Copy path uses. Reveal-in-parent for all of them
+ * (LOCKED, VS Code parity): there is no branching on kind, which is the point.
+ */
+describe('reveal in Finder (GRO-2274)', () => {
+  const openOn = async (selector: string) => {
+    const m = await mount()
+    act(() => void m.el.querySelector(selector)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    return m
+  }
+
+  it('a FILE row reveals its own path', async () => {
+    const { el, bridge } = await openOn('.tree__row--file')
+    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v/a.md' })
+  })
+
+  it('a FOLDER row reveals the folder itself — no branching on kind', async () => {
+    const { el, bridge } = await openOn('.tree__row--dir')
+    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub' })
+  })
+
+  it('BLANK SPACE reveals the vault root — unlike Delete, which has no blank-space target', async () => {
+    const { el, bridge } = await openOn('.sidebar__body')
+    expect(itemByLabel(el, 'Delete')).toBeUndefined()
+    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v' })
+  })
+
+  it('a stale row surfaces a passive notice rather than looking like a dead menu item', async () => {
+    const { el, bridge, props } = await openOn('.tree__row--file')
+    bridge.shell.reveal.mockRejectedValue(Object.assign(new Error('path does not exist'), { code: 'NOT_FOUND' }))
+    await act(async () => itemByLabel(el, 'Reveal in Finder')?.click())
+    await act(async () => undefined)
+    expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining('no longer there'))
+  })
+
+  it('closes the menu after revealing', async () => {
+    const { el } = await openOn('.tree__row--file')
+    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 })

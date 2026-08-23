@@ -20,6 +20,9 @@ interface ContextMenuProps {
   /** Absolute path of the right-clicked row — file or folder; null (blank space) hides "Delete" (GRO-2272). */
   deletePath: string | null
   onDelete: (path: string) => void
+  /** Row to reveal in Finder — file, folder, or the vault ROOT for blank space (GRO-2274). */
+  revealPath: string | null
+  onReveal: (path: string) => void
   /**
    * Registered types for the "New ▸" submenu (Bible B, GRO-2202; Round 10 Q4 LOCKED, GRO-2226):
    * one item per type + "New type…" at the bottom. The submenu is ALWAYS present — [] collapses
@@ -39,7 +42,7 @@ interface ContextMenuProps {
 }
 
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, newTypes, onNewTyped, onNewType, onNewNote, onNewBase, onNewFolder, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, newTypes, onNewTyped, onNewType, onNewNote, onNewBase, onNewFolder, onClose }: ContextMenuProps) {
   const [subOpen, setSubOpen] = useState(false)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -115,6 +118,22 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
             group, away from the items a misclick would otherwise land on. Opens the confirm
             sheet; it must NEVER delete directly. Null on blank space: there is no target, and
             the vault root is refused by main anyway (GRO-2272). */}
+        {/* Reveal in Finder (GRO-2274): available on every row type AND on blank space, where
+            it reveals the vault root — the same target Copy path uses. Grouped with the other
+            read-only utilities, deliberately above the destructive item. */}
+        {revealPath !== null && (
+          <button
+            type="button"
+            className="ctx-menu__item"
+            role="menuitem"
+            onClick={() => {
+              onReveal(revealPath)
+              onClose()
+            }}
+          >
+            Reveal in Finder
+          </button>
+        )}
         {deletePath !== null && (
           <button
             type="button"

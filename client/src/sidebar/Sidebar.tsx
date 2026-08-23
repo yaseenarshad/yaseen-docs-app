@@ -50,6 +50,8 @@ interface SidebarProps {
    * closes. No link rewriting happens downstream (LOCKED decision C).
    */
   onDeleteFile: (path: string) => Promise<void>
+  /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
+  onNotice: (message: string) => void
 }
 
 /**
@@ -80,6 +82,8 @@ interface MenuTargets {
   renamePath: string | null
   /** "Delete" — a concrete row only, NEVER blank space: there is no target, and main refuses the vault root (GRO-2272). */
   deletePath: string | null
+  /** "Reveal in Finder" — the row, or the vault ROOT for blank space (GRO-2274); same target as `copyPath`. */
+  revealPath: string | null
 }
 
 /**
@@ -142,6 +146,7 @@ export function Sidebar({
   onFileMissing,
   onRenameFile,
   onDeleteFile,
+  onNotice,
 }: SidebarProps) {
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -256,6 +261,7 @@ export function Sidebar({
         newWindowPath: filePath,
         renamePath: node?.path ?? null,
         deletePath: node?.path ?? null,
+        revealPath: node?.path ?? root.replace(/\/+$/, ''),
       })
     },
     [root],
@@ -323,6 +329,21 @@ export function Sidebar({
   )
 
   const cancelCreate = useCallback(() => setCreating(null), [])
+
+  /**
+   * Reveal in Finder (GRO-2274). Read-only, so there is no confirm and nothing to repair —
+   * but a STALE row (deleted or moved externally) rejects `NOT_FOUND`, and that has to be
+   * visible: `showItemInFolder` is silent on a missing path, so without a notice the menu
+   * item would just look broken.
+   */
+  const reveal = useCallback(
+    (path: string) => {
+      api.reveal({ path }).catch((err: unknown) => {
+        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't reveal "${basename(path)}" — it is no longer there` : `Can't reveal: ${err instanceof Error ? err.message : String(err)}`)
+      })
+    },
+    [onNotice],
+  )
 
   // ---- Delete (GRO-2272): context menu "Delete" → confirm sheet → App trashes the entry ----
 
@@ -487,6 +508,8 @@ export function Sidebar({
           onRename={(path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir' })}
           deletePath={menu.deletePath}
           onDelete={askDelete}
+          revealPath={menu.revealPath}
+          onReveal={reveal}
           newTypes={newTypes}
           onNewTyped={startCreateTyped}
           onNewType={() => {

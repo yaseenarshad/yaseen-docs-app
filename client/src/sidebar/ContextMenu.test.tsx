@@ -56,6 +56,8 @@ function mount(x: number, y: number, over: Partial<MenuProps> = {}) {
     onRename: vi.fn(),
     deletePath: null,
     onDelete: vi.fn(),
+    revealPath: null,
+    onReveal: vi.fn(),
     newTypes: [{ name: 'kpi', label: 'KPI' }],
     onNewTyped: vi.fn(),
     onNewType: vi.fn(),

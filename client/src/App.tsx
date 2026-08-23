@@ -341,6 +341,7 @@ export function App() {
           onFileMissing={onFileMissing}
           onRenameFile={renameFile}
           onDeleteFile={deleteFile}
+          onNotice={setNotice}
         />
       )}
       {root !== null && sidebarCollapsed && (
