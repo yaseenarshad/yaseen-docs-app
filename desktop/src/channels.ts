@@ -15,6 +15,7 @@ export const CH = {
   fileRepairRename: 'file:repair-rename',
   fileRenamed: 'file:renamed',
   fileDeleted: 'file:deleted',
+  shellReveal: 'shell:reveal',
   dialogPickFolder: 'dialog:pick-folder',
   watchSubscribe: 'watch:subscribe',
   watchUnsubscribe: 'watch:unsubscribe',

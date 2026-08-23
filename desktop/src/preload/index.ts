@@ -98,6 +98,10 @@ const api: YaseenDocsApi = {
     delete: (req) => call(CH.fsDelete, req),
     onDeleted: on<FileDeletedEvent>(CH.fileDeleted),
   },
+  // OS-level actions (GRO-2274): reveal in the system file manager.
+  shell: {
+    reveal: (req) => call(CH.shellReveal, req),
+  },
   // Type & property registry over `.yaseendocs/types.json` (Bible A, GRO-2201).
   registry: {
     get: (root) => call(CH.registryGet, root),

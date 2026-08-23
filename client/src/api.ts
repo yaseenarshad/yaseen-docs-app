@@ -1,4 +1,4 @@
-import type { AssetResponse, BridgeError, BridgeErrorCode, ColdStartDiffResponse, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileResponse, FileWriteRequest, FileWriteResponse, IndexResponse, PickFolderResponse, RegistryPropertyDef, RegistryResponse, RegistryScope, RegistryTypeDef, RenameFileRequest, RenameFileResponse, TreeResponse } from '@shared/types'
+import type { AssetResponse, BridgeError, BridgeErrorCode, ColdStartDiffResponse, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileResponse, FileWriteRequest, FileWriteResponse, IndexResponse, PickFolderResponse, RegistryPropertyDef, RegistryResponse, RegistryScope, RegistryTypeDef, RenameFileRequest, RenameFileResponse, RevealRequest, RevealResponse, TreeResponse } from '@shared/types'
 
 /** Typed failure from the main process (see docs/CONTRACTS.md "Bridge API"). */
 export class BridgeRequestError extends Error {
@@ -42,6 +42,8 @@ export const api = {
   repairRename: (req: RenameFileRequest) => call<RenameFileResponse>(() => window.yaseenDocs.file.repairRename(req)),
   /** In-app delete to the SYSTEM Trash (GRO-2272); never `fs.rm`, and a trash failure deletes nothing. */
   delete: (req: DeleteRequest) => call<DeleteResponse>(() => window.yaseenDocs.file.delete(req)),
+  /** Reveal in the OS file manager, selected in its parent (GRO-2274); stale path → NOT_FOUND. */
+  reveal: (req: RevealRequest) => call<RevealResponse>(() => window.yaseenDocs.shell.reveal(req)),
   /** Bases property index for `root` (GRO-2129). */
   index: (root: string) => call<IndexResponse>(() => window.yaseenDocs.index(root)),
   /** The cold-start reconcile diff for `root` (Links E1c, GRO-2242); null before the first index build. */

@@ -6,6 +6,7 @@ import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure } from '../fs/fsUtils'
 import { renameFile, repairRename } from '../fs/rename'
 import { removeEntry } from '../fs/remove'
+import { revealItem } from '../fs/reveal'
 import { tree } from '../fs/tree'
 import type { Store } from '../store'
 import { getColdStartDiff, getIndex } from '../vaultIndex'
@@ -27,6 +28,10 @@ export function registerFsIpc(store: Store, windows: WindowRegistry): void {
   // consumers gate on cacheStatus === 'hit'.
   handle(CH.fsColdDiff, async (root: unknown) => (typeof root === 'string' ? (getColdStartDiff(root) ?? null) : null))
   handle(CH.fsReadAsset, readAsset)
+  // Reveal in Finder (GRO-2274): read-only, so no store repair and no broadcast — but still
+  // enveloped like every other handler so a stale row's NOT_FOUND reaches the renderer as a
+  // passive notice instead of vanishing (showItemInFolder is silent on a missing path).
+  handle(CH.shellReveal, revealItem)
   // In-app rename/move (Links E1 GRO-2194, E1b GRO-2241). The SAME handler repairs the
   // store — every stored path at or under the renamed entry follows (window roots/files/
   // tabs, recents, folder state) — and then pushes `file:renamed` to EVERY window so open
