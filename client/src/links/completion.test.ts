@@ -4,7 +4,7 @@
  * editors + the editor's `[[` picker; ranking upgraded in place — F2, GRO-2197), and
  * `linkCandidates` — shortest unambiguous names with duplicate basenames
  * disambiguated per the resolver's shallowest-depth rule, plus one piped row per frontmatter
- * alias (Links E2, GRO-2214). A perf smoke keeps the 1,000+ file acceptance honest.
+ * alias (Links E2, GRO-2214). The perf smoke lives in completion.perf.test.ts (YAZ-740).
  */
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
@@ -182,15 +182,6 @@ describe('linkCandidates', () => {
     expect(linkCandidates(records).map((c) => resolve(c.insert)?.record.path)).toEqual(owners)
   })
 
-  it('perf smoke: 5,000 records derive and match well under a keystroke budget', () => {
-    const records = Array.from({ length: 5000 }, (_, i) => rec(`/vault/folder${i % 50}/Note ${i}.md`, [`N${i}`]))
-    const start = performance.now()
-    const candidates = linkCandidates(records)
-    for (let i = 0; i < 10; i++) matchLinkCandidates(candidates, `Note 49`)
-    const elapsed = performance.now() - start
-    expect(candidates).toHaveLength(10000) // one name row + one alias row per record
-    expect(elapsed).toBeLessThan(100)
-  })
 })
 
 describe('matchLinkNames (plain-name surfaces)', () => {
