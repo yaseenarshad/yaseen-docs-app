@@ -44,6 +44,34 @@ interface SidebarProps {
   onRenameFile: (oldPath: string, newPath: string) => Promise<void>
 }
 
+/**
+ * What the open context menu targets (GRO-2296). Every item has its OWN field: no item
+ * derives its target — or its visibility — from another item's value.
+ *
+ * This split exists because the items are about to diverge. `copyPath` gains a blank-space
+ * fallback to the vault ROOT (GRO-2273) and `revealPath` will want the same (GRO-2274),
+ * while `renamePath` must NOT: main refuses to rename a window's own vault root
+ * (`BAD_REQUEST`, E1b GRO-2241), so offering it would be an item that can only ever fail.
+ * Before the split, `renamePath` was literally `menu.copyPath` and the two would have moved
+ * together silently.
+ */
+interface MenuTargets {
+  x: number
+  y: number
+  /** Where "New …" creates: a dir row → itself, a file row → its parent, blank space → the root. */
+  targetDir: string
+  /** The right-clicked row's kind; null for blank space. Drives the Rename input's mode. */
+  rowKind: 'file' | 'dir' | null
+  /** "Copy path" — the right-clicked row (file or folder); null for blank space (GRO-2069). */
+  copyPath: string | null
+  /** "Copy link" — FILE rows only; a folder link would only fail main's markdown guard (E3, GRO-2173). */
+  copyLinkPath: string | null
+  /** "Open in new window" — FILE rows only (D2, GRO-2168). */
+  newWindowPath: string | null
+  /** "Rename" — a concrete row only, NEVER blank space: the vault root is not renameable (E1b, GRO-2241). */
+  renamePath: string | null
+}
+
 /** Panel-left pictogram shared by the collapse and reopen buttons (GRO-2023). */
 export function SidebarPanelIcon() {
   return (
@@ -73,7 +101,7 @@ export function Sidebar({
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [expanded, dispatch] = useReducer(treeReducer, root, storage.getExpanded)
-  const [menu, setMenu] = useState<{ x: number; y: number; targetDir: string; copyPath: string | null; filePath: string | null } | null>(null)
+  const [menu, setMenu] = useState<MenuTargets | null>(null)
   const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string; type?: string; label?: string } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir' } | null>(null)
   const [newTypeOpen, setNewTypeOpen] = useState(false)
@@ -162,13 +190,19 @@ export function Sidebar({
     (node: TreeNode | null, e: React.MouseEvent) => {
       e.preventDefault()
       e.stopPropagation()
+      const filePath = node?.type === 'file' ? node.path : null
       setMenu({
         x: e.clientX,
         y: e.clientY,
         targetDir: targetDirFor(node, root),
+        rowKind: node?.type ?? null,
+        // ONE field per item, each resolved on its own (GRO-2296). Several are the same
+        // expression TODAY and must stay independent anyway: GRO-2273 gives `copyPath` a
+        // blank-space fallback to the vault ROOT that `renamePath` must never inherit.
         copyPath: node?.path ?? null,
-        // FILE rows only: feeds both "Copy link" (E3, GRO-2173) and "Open in new window" (D2).
-        filePath: node?.type === 'file' ? node.path : null,
+        copyLinkPath: filePath,
+        newWindowPath: filePath,
+        renamePath: node?.path ?? null,
       })
     },
     [root],
@@ -353,11 +387,11 @@ export function Sidebar({
           x={menu.x}
           y={menu.y}
           copyPath={menu.copyPath}
-          copyLinkPath={menu.filePath}
-          newWindowPath={menu.filePath}
+          copyLinkPath={menu.copyLinkPath}
+          newWindowPath={menu.newWindowPath}
           onOpenNewWindow={openFileNewWindow}
-          renamePath={menu.copyPath}
-          onRename={(path) => setRenamingEntry({ path, kind: menu.filePath !== null ? 'file' : 'dir' })}
+          renamePath={menu.renamePath}
+          onRename={(path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir' })}
           newTypes={newTypes}
           onNewTyped={startCreateTyped}
           onNewType={() => {

@@ -247,3 +247,57 @@ describe('Sidebar stale tab activation (I3, GRO-2235)', () => {
     expect(props.onFileMissing).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * The context menu's per-item TARGET matrix (GRO-2296). Each menu item resolves its own
+ * target; no item derives its visibility from another item's value. These assertions are the
+ * guard rail for GRO-2297 (blank-space Copy path → the vault ROOT), GRO-2302 (Reveal in
+ * Finder) and GRO-2285 (Delete), all of which add items to this same menu: the blank-space
+ * row below is what stops a root fallback for Copy path from silently switching on Rename
+ * for the vault root, which main refuses outright (BAD_REQUEST, GRO-2241).
+ */
+describe('context menu target matrix (GRO-2296)', () => {
+  const open = async (selector: string) => {
+    const { el } = await mount()
+    act(() => void el.querySelector(selector)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    return el
+  }
+
+  it('a FILE row targets every item: rename, copy path, copy link, open in new window', async () => {
+    const el = await open('.tree__row--file')
+    expect(itemByLabel(el, 'Rename')).toBeDefined()
+    expect(itemByLabel(el, 'Copy path')).toBeDefined()
+    expect(itemByLabel(el, 'Copy link')).toBeDefined()
+    expect(itemByLabel(el, 'Open in new window')).toBeDefined()
+  })
+
+  it('a FOLDER row targets rename and copy path; the file-only items stay hidden', async () => {
+    const el = await open('.tree__row--dir')
+    expect(itemByLabel(el, 'Rename')).toBeDefined()
+    expect(itemByLabel(el, 'Copy path')).toBeDefined()
+    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
+    expect(itemByLabel(el, 'Open in new window')).toBeUndefined()
+  })
+
+  it('BLANK SPACE shows no Rename — the vault root is never renameable (the GRO-2297 guard rail)', async () => {
+    const el = await open('.sidebar__body')
+    expect(itemByLabel(el, 'Rename')).toBeUndefined()
+    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
+    expect(itemByLabel(el, 'Open in new window')).toBeUndefined()
+    // The create actions are always available on blank space (they target the root).
+    expect(itemByLabel(el, 'New note')).toBeDefined()
+    expect(itemByLabel(el, 'New folder')).toBeDefined()
+  })
+
+  it('Rename on a FOLDER row opens the inline input in DIRECTORY mode (raw name, no extension logic)', async () => {
+    const el = await open('.tree__row--dir')
+    act(() => itemByLabel(el, 'Rename')?.click())
+    expect(el.querySelector<HTMLInputElement>('.create-inline__input')?.value).toBe('sub')
+  })
+
+  it('Rename on a FILE row opens the inline input in FILE mode (extension stripped)', async () => {
+    const el = await open('.tree__row--file')
+    act(() => itemByLabel(el, 'Rename')?.click())
+    expect(el.querySelector<HTMLInputElement>('.create-inline__input')?.value).toBe('a')
+  })
+})
