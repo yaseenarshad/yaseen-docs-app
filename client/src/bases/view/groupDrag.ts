@@ -14,6 +14,17 @@ import { groupKeyOf } from './GroupHeader'
  * through 5A's `writeProperty`.
  */
 
+/**
+ * A drop between FANNED-OUT groups (YAZ-671 D3): the row belongs to several groups, so the drop
+ * describes an edit rather than a value — drop the element it was dragged out of, add the one it
+ * was dropped into, leave every other value on the page alone. Either side is null at the
+ * "No value" group: dragging out of it adds only, dropping onto it removes only.
+ */
+export interface GroupSwap {
+  remove: Value | null
+  add: Value | null
+}
+
 /** One committed-but-not-yet-indexed move, keyed by note path in BaseView's state. */
 export interface PendingMove {
   /** Bare frontmatter key being written. */
@@ -35,7 +46,6 @@ export function groupByKey(view: BaseView): string | null {
   return c.startsWith('note.') ? c.slice(5) : null
 }
 
-
 /** `records` with the pending moves patched in, for the engine (same clearing discipline as 5B). */
 export function applyMoves(records: readonly IndexRecord[], moves: Record<string, PendingMove>): IndexRecord[] {
   return records.map((r) => {
@@ -46,17 +56,6 @@ export function applyMoves(records: readonly IndexRecord[], moves: Record<string
     else properties[mv.key] = mv.value
     return { ...r, properties }
   })
-}
-
-/**
- * A drop between FANNED-OUT groups (YAZ-671 D3): the row belongs to several groups, so the drop
- * describes an edit rather than a value — drop the element it was dragged out of, add the one it
- * was dropped into, leave every other value on the page alone. Either side is null at the
- * "No value" group: dragging out of it adds only, dropping onto it removes only.
- */
-export interface GroupSwap {
-  remove: Value | null
-  add: Value | null
 }
 
 export interface GroupDrag {
@@ -71,12 +70,13 @@ export interface GroupDrag {
 }
 
 /**
- * The HTML5 drag wiring for one view. `onMove(path, value)` fires on a drop onto ANOTHER
- * group with the target's raw YAML value — read off the target group's first row so the
- * written type matches what that group's members already carry — or undefined for "No value"
- * (deletes the key). Esc cancels: real drags fire `dragend` on Esc, jsdom (and any missed
- * dragend) goes through a document keydown listener. `dataTransfer` is guarded — jsdom's
- * synthetic drag events have none.
+ * The HTML5 drag wiring for one view. A drop onto ANOTHER group fires `onMove` one of two ways:
+ * scalar grouping → `onMove(path, value)` with the target's raw YAML value read off that group's
+ * first row (so the written type matches what its members already carry), or undefined for
+ * "No value" (deletes the key); fanned-out grouping → `onMove(path, undefined, swap)` with a
+ * `GroupSwap` naming the element to remove (the source group's value) and the one to add. Esc
+ * cancels: real drags fire `dragend` on Esc, jsdom (and any missed dragend) goes through a
+ * document keydown listener. `dataTransfer` is guarded — jsdom's synthetic drag events have none.
  */
 export function useGroupDrag(
   key: string | null,

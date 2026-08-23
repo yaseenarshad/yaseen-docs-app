@@ -53,7 +53,7 @@ const OVERSCAN = 10
 const FALLBACK_VIEWPORT = 600
 
 /** One display line: a group header row, or a data row with its `data-cell` row index (data rows only) and its group (null when ungrouped). */
-type Line = { header: Group; gk: string } | { row: Row; r: number; g: Group | null }
+type Line = { header: Group; gk: string } | { row: Row; r: number; g: Group | null; gk: string | null }
 
 /**
  * Table view (GRO-2136): sticky header with drag-to-resize columns (`view.columnSize`, written on
@@ -98,12 +98,12 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   /** Visible data rows in display order; `data-cell` row indices index into this. */
   const flat: Row[] = []
   if (groups === null) {
-    for (const row of rows) lines.push({ row, r: flat.push(row) - 1, g: null })
+    for (const row of rows) lines.push({ row, r: flat.push(row) - 1, g: null, gk: null })
   } else {
     for (const g of groups) {
       const gk = groupKeyOf(g.key)
       lines.push({ header: g, gk })
-      if (!collapsedSet.has(gk)) for (const row of g.rows) lines.push({ row, r: flat.push(row) - 1, g })
+      if (!collapsedSet.has(gk)) for (const row of g.rows) lines.push({ row, r: flat.push(row) - 1, g, gk })
     }
   }
 
@@ -219,8 +219,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
               <tr
                 // Fan-out (YAZ-671): the same record can sit in several groups, and the tbody is ONE
                 // flat list (the windowing needs it), so the path alone is not a unique sibling key.
-                key={line.g === null ? line.row.record.path : `${groupKeyOf(line.g.key)}:${line.row.record.path}`}
-                className={line.g !== null && dnd.over === groupKeyOf(line.g.key) ? 'base-table__row--drop' : undefined}
+                key={line.gk === null ? line.row.record.path : `${line.gk}:${line.row.record.path}`}
+                className={line.gk !== null && dnd.over === line.gk ? 'base-table__row--drop' : undefined}
                 {...(line.g === null ? {} : { ...dnd.source(line.row.record.path, line.g), ...dnd.target(line.g) })}
               >
                 {keys.map((key, c) => {

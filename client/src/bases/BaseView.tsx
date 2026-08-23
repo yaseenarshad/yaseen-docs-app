@@ -130,7 +130,7 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
       // Fan-out (D3): edit the list rather than replace it. Elements are matched with the engine's
       // own `equals` over `fromYaml` and NO resolver — the exact comparison that decided the
       // grouping — so we can only ever remove the element that put this row in that group.
-      const list = Array.isArray(prevRaw) ? prevRaw : prevRaw === undefined || prevRaw === null ? [] : [prevRaw]
+      const list = Array.isArray(prevRaw) ? prevRaw : prevRaw == null ? [] : [prevRaw]
       const next = swap.remove === null ? [...list] : list.filter((v) => !equals(fromYaml(v), swap.remove))
       if (swap.add !== null) next.push(render(swap.add))
       value = next
