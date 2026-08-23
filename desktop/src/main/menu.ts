@@ -122,6 +122,40 @@ export function buildMenuTemplate({ recents, isDev }: MenuInputs, handlers: Menu
   ]
 }
 
+export interface ContextMenuActions {
+  /** Swap the misspelled word under the cursor for the suggestion the user picked. */
+  replace(word: string): void
+  /** Teach the spellchecker a word it flagged, for good. */
+  addToDictionary(word: string): void
+}
+
+/**
+ * The right-click menu (YAZ-672). Electron ships no default one, so the spellchecker's squiggles
+ * had nothing to act on. Pure like `buildMenuTemplate`; the `context-menu` event and the
+ * `Menu.buildFromTemplate(...).popup()` apply layer live in `main/index.ts`.
+ */
+export function buildContextMenuTemplate(
+  params: Pick<Electron.ContextMenuParams, 'misspelledWord' | 'dictionarySuggestions' | 'editFlags'>,
+  actions: ContextMenuActions,
+): MenuItemConstructorOptions[] {
+  const suggestions: MenuItemConstructorOptions[] = params.dictionarySuggestions.map((s) => ({ label: s, click: () => actions.replace(s) }))
+  const dictionary: MenuItemConstructorOptions[] =
+    params.misspelledWord === ''
+      ? []
+      : [
+          ...(suggestions.length === 0 ? [] : [{ type: 'separator' } satisfies MenuItemConstructorOptions]),
+          { label: 'Add to Dictionary', click: () => actions.addToDictionary(params.misspelledWord) },
+          { type: 'separator' },
+        ]
+  return [
+    ...suggestions,
+    ...dictionary,
+    { role: 'cut', enabled: params.editFlags.canCut },
+    { role: 'copy', enabled: params.editFlags.canCopy },
+    { role: 'paste', enabled: params.editFlags.canPaste },
+  ]
+}
+
 /**
  * The window a menu action targets (GRO-2197): the OS-focused one when there is one, else the
  * most recently focused LIVE window, else any live window, else undefined. WHY a fallback at

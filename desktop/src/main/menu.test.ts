@@ -6,7 +6,7 @@ import type { MenuItemConstructorOptions } from 'electron'
 import type { RecentRoots, WindowEntry } from '@shared/types'
 import { CH } from '../channels'
 import { createStore, type Store } from './store'
-import { HELP_URL, buildMenuTemplate, createMenuHandlers, pickMenuTargetWindow, subscribeMenuRebuild, type MenuHandlers, type MenuHost } from './menu'
+import { HELP_URL, buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, pickMenuTargetWindow, subscribeMenuRebuild, type ContextMenuActions, type MenuHandlers, type MenuHost } from './menu'
 
 // ---------- buildMenuTemplate (pure) ----------
 
@@ -196,6 +196,48 @@ describe('buildMenuTemplate', () => {
     expect(recent.map((i) => i.id)).toEqual(['menu.file.open-recent.0', 'menu.file.open-recent.1', 'menu.file.open-recent.2'])
     expect(menuOf(build(), 'View').find((i) => i.label === 'Toggle Sidebar')?.id).toBe('menu.view.toggle-sidebar')
     expect((build().find((m) => m.label === 'Help')?.submenu as MenuItemConstructorOptions[])[0].id).toBe('menu.help.github')
+  })
+})
+
+// ---------- buildContextMenuTemplate (pure, YAZ-672) ----------
+
+type ContextParams = Parameters<typeof buildContextMenuTemplate>[0]
+
+const EDIT_FLAGS: ContextParams['editFlags'] = { canUndo: true, canRedo: true, canCut: true, canCopy: true, canPaste: true, canDelete: true, canSelectAll: true, canEditRichly: true }
+
+const noopActions = (): ContextMenuActions => ({ replace: vi.fn(), addToDictionary: vi.fn() })
+
+/** What Electron hands `context-menu`, defaulting to a clean right-click in an editable body. */
+function context(params: Partial<ContextParams> = {}): ContextParams {
+  return { misspelledWord: '', dictionarySuggestions: [], editFlags: EDIT_FLAGS, ...params }
+}
+
+const shapeOf = (items: MenuItemConstructorOptions[]) => items.map((i) => i.label ?? i.role ?? i.type)
+
+describe('buildContextMenuTemplate', () => {
+  it('a misspelling with suggestions: the suggestions, Add to Dictionary, then cut/copy/paste', () => {
+    const items = buildContextMenuTemplate(context({ misspelledWord: 'teh', dictionarySuggestions: ['the', 'ten', 'tea'] }), noopActions())
+    expect(shapeOf(items)).toEqual(['the', 'ten', 'tea', 'separator', 'Add to Dictionary', 'separator', 'cut', 'copy', 'paste'])
+  })
+
+  it('a misspelling Electron has no suggestions for leads with Add to Dictionary — no dangling separator', () => {
+    const items = buildContextMenuTemplate(context({ misspelledWord: 'Yaseen' }), noopActions())
+    expect(shapeOf(items)).toEqual(['Add to Dictionary', 'separator', 'cut', 'copy', 'paste'])
+  })
+
+  it('nothing misspelled: still never empty — cut/copy/paste mirroring editFlags', () => {
+    const items = buildContextMenuTemplate(context({ editFlags: { ...EDIT_FLAGS, canCut: false, canPaste: false } }), noopActions())
+    expect(shapeOf(items)).toEqual(['cut', 'copy', 'paste'])
+    expect(items.map((i) => i.enabled)).toEqual([false, true, false])
+  })
+
+  it('clicking a suggestion replaces the word; Add to Dictionary teaches the misspelled one', () => {
+    const actions = noopActions()
+    const items = buildContextMenuTemplate(context({ misspelledWord: 'teh', dictionarySuggestions: ['the', 'ten'] }), actions)
+    click(items.find((i) => i.label === 'ten'))
+    expect(actions.replace).toHaveBeenCalledWith('ten')
+    click(items.find((i) => i.label === 'Add to Dictionary'))
+    expect(actions.addToDictionary).toHaveBeenCalledWith('teh')
   })
 })
 
