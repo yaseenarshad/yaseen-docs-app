@@ -11,14 +11,50 @@
   overflow: hidden;
 }
 
+/* The strip's outer row (YAZ-762): history buttons + the scrolling tablist. The border and
+   background live HERE so the nav side reads as part of the same strip, not a hole in it. */
+.tabbar-row {
+  display: flex;
+  align-items: stretch;
+  flex: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.tabbar-nav {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 0 0 8px;
+}
+
+/* ◀ ▶ sized and coloured like the per-tab ✕, but always visible — disabled says "nowhere to go". */
+.tabbar-nav__btn {
+  display: inline-flex;
+  padding: 2px 4px;
+  line-height: 1;
+  color: var(--fg-muted);
+  border-radius: 4px;
+}
+
+.tabbar-nav__btn:hover:not(:disabled) {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.tabbar-nav__btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .tabbar {
   display: flex;
   align-items: center;
   gap: 2px;
-  flex: none;
+  flex: 1;
+  min-width: 0;
   padding: 4px 8px 0;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
   /* Overflow (I3): tabs shrink to their floor first, then the strip scrolls (Obsidian-like);
      TabBar scrolls the ACTIVE tab into view on activation. */
   overflow-x: auto;
