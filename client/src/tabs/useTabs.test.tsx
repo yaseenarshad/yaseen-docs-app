@@ -373,3 +373,72 @@ describe('useTabs mirror (the GRO-2232 gotcha: ONE explicit {tabs, file} write p
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes)
   })
 })
+
+/**
+ * Delete (GRO-2272 `B2-`): deleting a tab IS closing it. These assertions exist to keep the
+ * two in step — divergence would show up as "deleting the active note picks a different tab
+ * than ⌘W does", which nobody reports and everybody feels.
+ */
+describe('delete / delete-dir (GRO-2272)', () => {
+  const S = (tabs: string[], active: string | null, mounted: string[] = tabs): TabsState => ({ tabs, active, mounted })
+
+  it('deleting a NON-active tab leaves the active one alone', () => {
+    const next = tabsReducer(S(['/a.md', '/b.md', '/c.md'], '/a.md'), { type: 'delete', path: '/b.md' })
+    expect(next.tabs).toEqual(['/a.md', '/c.md'])
+    expect(next.active).toBe('/a.md')
+    expect(next.mounted).toEqual(['/a.md', '/c.md'])
+  })
+
+  it('deleting the ACTIVE tab promotes the right neighbour', () => {
+    const next = tabsReducer(S(['/a.md', '/b.md', '/c.md'], '/b.md'), { type: 'delete', path: '/b.md' })
+    expect(next.tabs).toEqual(['/a.md', '/c.md'])
+    expect(next.active).toBe('/c.md')
+  })
+
+  it('deleting the LAST tab falls back to the left neighbour', () => {
+    const next = tabsReducer(S(['/a.md', '/b.md'], '/b.md'), { type: 'delete', path: '/b.md' })
+    expect(next.active).toBe('/a.md')
+  })
+
+  it('deleting the ONLY tab empties the window; it stays alive', () => {
+    const next = tabsReducer(S(['/a.md'], '/a.md'), { type: 'delete', path: '/a.md' })
+    expect(next).toEqual({ tabs: [], active: null, mounted: [] })
+  })
+
+  it('deleting a path that is not open returns the SAME state object (no identity mirror)', () => {
+    const before = S(['/a.md'], '/a.md')
+    expect(tabsReducer(before, { type: 'delete', path: '/never.md' })).toBe(before)
+  })
+
+  it('delete matches close exactly — the heir ladder is shared, not re-implemented', () => {
+    const before = S(['/a.md', '/b.md', '/c.md'], '/b.md')
+    expect(tabsReducer(before, { type: 'delete', path: '/b.md' })).toEqual(tabsReducer(before, { type: 'close', path: '/b.md' }))
+  })
+
+  it('delete-dir drops every tab under the prefix in one dispatch and picks a survivor', () => {
+    const next = tabsReducer(S(['/Docs/a.md', '/x.md', '/Docs/deep/b.md'], '/Docs/a.md'), { type: 'delete-dir', path: '/Docs' })
+    expect(next.tabs).toEqual(['/x.md'])
+    expect(next.active).toBe('/x.md')
+    expect(next.mounted).toEqual(['/x.md'])
+  })
+
+  it('delete-dir empties the window when every tab was under the folder', () => {
+    const next = tabsReducer(S(['/Docs/a.md', '/Docs/b.md'], '/Docs/a.md'), { type: 'delete-dir', path: '/Docs' })
+    expect(next).toEqual({ tabs: [], active: null, mounted: [] })
+  })
+
+  it('delete-dir needs a real path segment: /Docsy.md is not under /Docs', () => {
+    const before = S(['/Docsy.md'], '/Docsy.md')
+    expect(tabsReducer(before, { type: 'delete-dir', path: '/Docs' })).toBe(before)
+  })
+
+  it('every invariant survives both actions: active in tabs, empty iff null, mounted a subset', () => {
+    for (const action of [{ type: 'delete', path: '/b.md' }, { type: 'delete-dir', path: '/Docs' }] as const) {
+      const next = tabsReducer(S(['/Docs/a.md', '/b.md', '/c.md'], '/b.md'), action)
+      if (next.active !== null) expect(next.tabs).toContain(next.active)
+      expect(next.tabs.length === 0).toBe(next.active === null)
+      expect(new Set(next.tabs).size).toBe(next.tabs.length)
+      for (const m of next.mounted) expect(next.tabs).toContain(m)
+    }
+  })
+})

@@ -20,6 +20,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     menu: vi.fn(),
     link: vi.fn(),
     file: vi.fn(),
+    shell: vi.fn(),
     vaultConfig: vi.fn(),
     registry: vi.fn(),
   }

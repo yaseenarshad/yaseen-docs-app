@@ -1,7 +1,13 @@
 /**
- * Editor continuity across an in-app rename (Links E1, GRO-2194). Editors are keyed by
- * path, so remapping a tab old→new REMOUNTS its editor — and the unmount flush would write
- * the old buffer back to the OLD path, resurrecting the file the rename just removed.
+ * Editor continuity across an in-app rename (Links E1, GRO-2194) — and across an in-app
+ * DELETE (GRO-2272). Editors are keyed by path, so remapping or removing a tab REMOUNTS or
+ * unmounts its editor, and the unmount flush would write the buffer back to the OLD path,
+ * resurrecting the file the rename or delete just removed.
+ *
+ * Two flows share the handle registry below, and the difference between them IS the point:
+ * a RENAME captures the dirty buffer, retires the old handle and stashes the buffer under
+ * the new path (it has somewhere to travel to); a DELETE retires ONLY (it does not), because
+ * a stashed buffer would be a live resurrection vector for whatever mounts there next.
  *
  * The design, pinned:
  *  - every `useAutosave` registers a per-path handle here (one editor per path per window);
@@ -100,6 +106,34 @@ export function takeRenameBuffer(path: string): RenameBuffer | null {
   const buffer = buffers.get(path) ?? null
   buffers.delete(path)
   return buffer
+}
+
+/**
+ * The `file:deleted` step (GRO-2272), run BEFORE the tab remap unmounts the editor: retire
+ * the editor at `path` so it can never write again, and drop any buffer stashed for it.
+ *
+ * Deliberately NOT `carryEditorAcrossRename`, which sits a few lines above and looks like the
+ * thing to copy. That one CAPTURES, retires and STASHES, because a rename has a destination
+ * for the dirty buffer to travel to. A delete has none: stashing would leave a live
+ * resurrection vector for whatever mounts at this path next, and capturing at all is pointless
+ * work. Retire only.
+ *
+ * Why this matters: closing a tab unmounts its editor, and `useAutosave`'s unmount cleanup
+ * flushes the live buffer to disk — recreating the file the delete just trashed. `retire()`
+ * makes that flush a no-op and clears the pending debounce. See the residual-race note in this
+ * module's header: an in-flight save, and another WINDOW's pending debounce, are still out of
+ * reach — the same limits rename has always had.
+ */
+export function retireDeletedPath(path: string): void {
+  handles.get(path)?.retire()
+  buffers.delete(path)
+}
+
+/** The `file:deleted` kind-`dir` twin: every editor (and stashed buffer) under `dir` retires. */
+export function retireDeletedDir(dir: string): void {
+  const prefix = `${dir}/`
+  for (const path of [...handles.keys()]) if (path.startsWith(prefix)) handles.get(path)?.retire()
+  for (const path of [...buffers.keys()]) if (path.startsWith(prefix)) buffers.delete(path)
 }
 
 /** Test hook. */

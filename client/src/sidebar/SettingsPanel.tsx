@@ -178,6 +178,26 @@ export function SettingsCog({ settings, onChange }: SettingsCogProps) {
             </button>
           </div>
           <p className="settings__section">Files &amp; Links</p>
+          {/* GRO-2272: the confirm sheet is the ONLY guard on delete (the OS Trash has no
+              programmatic undo), so this defaults ON and the label says what turning it off
+              actually means rather than being a bare switch. */}
+          <p className="settings__label">Confirm before deleting</p>
+          <div className="settings__options">
+            {[
+              { label: 'On', value: true },
+              { label: 'Off', value: false },
+            ].map(({ label, value }) => (
+              <button
+                key={label}
+                type="button"
+                className={`settings__option${settings.confirmDelete === value ? ' settings__option--active' : ''}`}
+                onClick={() => onChange({ ...settings, confirmDelete: value })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="settings__hint">Deleted notes and folders move to the Trash either way.</p>
           <p className="settings__label">Default location for new notes</p>
           <div className="settings__stack">
             {NEW_NOTE_LOCATION_OPTIONS.map(({ label, value }) => (

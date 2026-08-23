@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_SETTINGS, type TreeNode, type WatchEvent } from '@shared/types'
-import { Sidebar } from './Sidebar'
+import { countChildren, Sidebar } from './Sidebar'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -23,8 +23,12 @@ const TREE: TreeNode[] = [
 function installBridge() {
   const bridge = {
     tree: vi.fn(async (root: string) => ({ root, tree: TREE, generatedAt: 1 })),
+    // The delete confirm sheet reads the index for its backlink count (GRO-2272 C3).
+    index: vi.fn(async (root: string) => ({ root, records: [] as unknown[], generatedAt: 1 })),
     state: { setFolder: vi.fn(async () => undefined) },
     window: { open: vi.fn(async () => undefined) },
+    // Reveal in Finder (GRO-2274) goes through the shell namespace.
+    shell: { reveal: vi.fn(async ({ path }: { path: string }) => ({ path })) },
     // Empty registry (GRO-2202; Round 10 Q4, GRO-2226): the sidebar reads it for "New ▸",
     // which is always present — empty collapses it to the single "New type…" item.
     registry: {
@@ -61,6 +65,8 @@ async function mount(over: Partial<SidebarProps> = {}) {
     onRootMissing: vi.fn(),
     onFileMissing: vi.fn(),
     onRenameFile: vi.fn(async () => undefined),
+    onDeleteFile: vi.fn(async () => undefined),
+    onNotice: vi.fn(),
     ...over,
   }
   await act(async () => root?.render(<StrictMode><Sidebar {...props} /></StrictMode>))
@@ -245,5 +251,312 @@ describe('Sidebar stale tab activation (I3, GRO-2235)', () => {
     bridge.tree.mockImplementation(async (r: string) => ({ root: r, tree: TREE.filter((n) => n.path !== '/v/a.md'), generatedAt: 3 }))
     await act(async () => emit?.({ type: 'unlink', path: '/v/a.md' }))
     expect(props.onFileMissing).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * The context menu's per-item TARGET matrix (GRO-2296). Each menu item resolves its own
+ * target; no item derives its visibility from another item's value. These assertions are the
+ * guard rail for GRO-2297 (blank-space Copy path → the vault ROOT), GRO-2302 (Reveal in
+ * Finder) and GRO-2285 (Delete), all of which add items to this same menu: the blank-space
+ * row below is what stops a root fallback for Copy path from silently switching on Rename
+ * for the vault root, which main refuses outright (BAD_REQUEST, GRO-2241).
+ */
+describe('context menu target matrix (GRO-2296)', () => {
+  const open = async (selector: string) => {
+    const { el } = await mount()
+    act(() => void el.querySelector(selector)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    return el
+  }
+
+  it('a FILE row targets every item: rename, copy path, copy link, open in new window', async () => {
+    const el = await open('.tree__row--file')
+    expect(itemByLabel(el, 'Rename')).toBeDefined()
+    expect(itemByLabel(el, 'Copy path')).toBeDefined()
+    expect(itemByLabel(el, 'Copy link')).toBeDefined()
+    expect(itemByLabel(el, 'Open in new window')).toBeDefined()
+  })
+
+  it('a FOLDER row targets rename and copy path; the file-only items stay hidden', async () => {
+    const el = await open('.tree__row--dir')
+    expect(itemByLabel(el, 'Rename')).toBeDefined()
+    expect(itemByLabel(el, 'Copy path')).toBeDefined()
+    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
+    expect(itemByLabel(el, 'Open in new window')).toBeUndefined()
+  })
+
+  it('BLANK SPACE shows no Rename — the vault root is never renameable (the GRO-2297 guard rail)', async () => {
+    const el = await open('.sidebar__body')
+    expect(itemByLabel(el, 'Rename')).toBeUndefined()
+    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
+    expect(itemByLabel(el, 'Open in new window')).toBeUndefined()
+    // The create actions are always available on blank space (they target the root).
+    expect(itemByLabel(el, 'New note')).toBeDefined()
+    expect(itemByLabel(el, 'New folder')).toBeDefined()
+  })
+
+  it('Rename on a FOLDER row opens the inline input in DIRECTORY mode (raw name, no extension logic)', async () => {
+    const el = await open('.tree__row--dir')
+    act(() => itemByLabel(el, 'Rename')?.click())
+    expect(el.querySelector<HTMLInputElement>('.create-inline__input')?.value).toBe('sub')
+  })
+
+  it('Rename on a FILE row opens the inline input in FILE mode (extension stripped)', async () => {
+    const el = await open('.tree__row--file')
+    act(() => itemByLabel(el, 'Rename')?.click())
+    expect(el.querySelector<HTMLInputElement>('.create-inline__input')?.value).toBe('a')
+  })
+})
+
+/**
+ * Blank-space "Copy path" (GRO-2273): right-clicking below the tree copies the VAULT ROOT's
+ * absolute path — the blank area already means "the root" everywhere else in this menu
+ * (`targetDirFor` sends "New note" there). VS Code's empty-Explorer menu behaves the same.
+ * Copy path only: Copy Relative Path was declined (LOCKED, GRO-2273).
+ */
+describe('blank-space copy path (GRO-2273)', () => {
+  function installClipboard() {
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    return writeText
+  }
+
+  it('copies the vault ROOT path, with no trailing slash, and closes the menu', async () => {
+    const writeText = installClipboard()
+    const { el } = await mount()
+    act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(itemByLabel(el, 'Copy path')).toBeDefined()
+    act(() => itemByLabel(el, 'Copy path')?.click())
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(writeText).toHaveBeenCalledWith('/v')
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('still offers no Rename on blank space — the root fallback must not leak into it', async () => {
+    installClipboard()
+    const { el } = await mount()
+    act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(itemByLabel(el, 'Copy path')).toBeDefined()
+    expect(itemByLabel(el, 'Rename')).toBeUndefined()
+  })
+
+  it('file and folder rows still copy their OWN path, not the root', async () => {
+    const writeText = installClipboard()
+    const { el } = await mount()
+    act(() => void el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Copy path')?.click())
+    expect(writeText).toHaveBeenCalledWith('/v/a.md')
+    act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Copy path')?.click())
+    expect(writeText).toHaveBeenCalledWith('/v/sub')
+  })
+})
+
+/**
+ * Delete (GRO-2272 `C1-`/`C3-`): the menu entry, the confirm sheet, and what actually reaches
+ * App. The blank-space case is the one that matters most — a destructive item must never
+ * appear with no target, and main refuses the vault root anyway.
+ */
+describe('delete (GRO-2272)', () => {
+  const openOn = async (selector: string, over: Partial<SidebarProps> = {}) => {
+    const m = await mount(over)
+    act(() => void m.el.querySelector(selector)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    return m
+  }
+  const sheet = (el: HTMLElement) => el.querySelector('.confirm')
+  const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
+
+  it('file and folder rows offer Delete; BLANK SPACE does not', async () => {
+    const f = await openOn('.tree__row--file')
+    expect(itemByLabel(f.el, 'Delete')).toBeDefined()
+    const d = await openOn('.tree__row--dir')
+    expect(itemByLabel(d.el, 'Delete')).toBeDefined()
+    const b = await openOn('.sidebar__body')
+    expect(itemByLabel(b.el, 'Delete')).toBeUndefined()
+  })
+
+  it('clicking Delete opens the confirm sheet and deletes NOTHING yet', async () => {
+    const { el, props } = await openOn('.tree__row--file')
+    act(() => itemByLabel(el, 'Delete')?.click())
+    expect(sheet(el)).not.toBeNull()
+    expect(props.onDeleteFile).not.toHaveBeenCalled()
+  })
+
+  it('confirming calls onDeleteFile with the absolute path', async () => {
+    const { el, props } = await openOn('.tree__row--file')
+    act(() => itemByLabel(el, 'Delete')?.click())
+    await act(async () => sheetBtn(el, 'Delete')?.click())
+    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+  })
+
+  it('cancelling calls nothing and closes the sheet', async () => {
+    const { el, props } = await openOn('.tree__row--file')
+    act(() => itemByLabel(el, 'Delete')?.click())
+    await act(async () => sheetBtn(el, 'Cancel')?.click())
+    expect(props.onDeleteFile).not.toHaveBeenCalled()
+    expect(sheet(el)).toBeNull()
+  })
+
+  it('a FOLDER target shows the sheet and deletes the folder path', async () => {
+    const { el, props } = await openOn('.tree__row--dir')
+    act(() => itemByLabel(el, 'Delete')?.click())
+    expect(sheet(el)?.textContent).toContain('"sub"')
+    await act(async () => sheetBtn(el, 'Delete')?.click())
+    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+  })
+
+  it('"Don\'t ask me again" persists confirmDelete: false through onChangeSettings', async () => {
+    const { el, props } = await openOn('.tree__row--file')
+    act(() => itemByLabel(el, 'Delete')?.click())
+    act(() => void el.querySelector<HTMLInputElement>('.confirm__ask input')?.click())
+    await act(async () => sheetBtn(el, 'Delete')?.click())
+    expect(props.onChangeSettings).toHaveBeenCalledWith(expect.objectContaining({ confirmDelete: false }))
+    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+  })
+
+  it('shows the backlink count when notes link to the target', async () => {
+    // One note whose body link resolves to a.md — the shared resolver is what countLinkReferences uses.
+    // The TARGET must be in the record set too: the shared resolver resolves a link NAME
+    // against the indexed records, so without a.md there is nothing for [[a]] to point at.
+    // `basename` (no extension) and `folder` are what the shared resolver matches on — a
+    // record missing them resolves nothing, which is how the first draft of this test passed
+    // vacuously against an empty count.
+    const rec = (base: string, links: string[] = []) => ({
+      path: `/v/${base}.md`, name: `${base}.md`, basename: base, folder: '', ext: 'md',
+      size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links, embeds: [],
+    })
+    const records = [rec('a'), rec('hub', ['a'])]
+    const m = await mount()
+    m.bridge.index.mockResolvedValue({ root: '/v', records, generatedAt: 1 } as never)
+    act(() => void m.el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    await act(async () => itemByLabel(m.el, 'Delete')?.click())
+    await act(async () => undefined)
+    expect(sheet(m.el)?.textContent).toContain('1 note links to this')
+  })
+
+  it('says nothing about links when nothing links to the target', async () => {
+    const { el } = await openOn('.tree__row--file')
+    await act(async () => itemByLabel(el, 'Delete')?.click())
+    await act(async () => undefined)
+    expect(sheet(el)?.textContent).not.toContain('link to this')
+    expect(sheet(el)?.textContent).not.toContain('links to this')
+  })
+
+  it('an unavailable index still opens the sheet and still deletes — a missing count never blocks', async () => {
+    const m = await mount()
+    m.bridge.index.mockRejectedValue(new Error('no index'))
+    act(() => void m.el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    await act(async () => itemByLabel(m.el, 'Delete')?.click())
+    expect(sheet(m.el)).not.toBeNull()
+    await act(async () => sheetBtn(m.el, 'Delete')?.click())
+    expect(m.props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+  })
+})
+
+describe('countChildren (GRO-2272 C3)', () => {
+  const TREE_DEEP: TreeNode[] = [
+    {
+      type: 'dir',
+      name: 'Docs',
+      path: '/v/Docs',
+      children: [
+        { type: 'file', name: 'a.md', path: '/v/Docs/a.md', size: 1, mtime: 1, kind: 'markdown' },
+        { type: 'dir', name: 'deep', path: '/v/Docs/deep', children: [{ type: 'file', name: 'b.md', path: '/v/Docs/deep/b.md', size: 1, mtime: 1, kind: 'markdown' }] },
+      ],
+    },
+    { type: 'file', name: 'x.md', path: '/v/x.md', size: 1, mtime: 1, kind: 'markdown' },
+  ]
+
+  it('counts the WHOLE subtree, not just direct children — a delete takes all of it', () => {
+    expect(countChildren(TREE_DEEP, '/v/Docs')).toEqual({ notes: 2, folders: 1 })
+  })
+
+  it('counts a nested folder found by descent', () => {
+    expect(countChildren(TREE_DEEP, '/v/Docs/deep')).toEqual({ notes: 1, folders: 0 })
+  })
+
+  it('an unknown or empty folder counts zero rather than throwing', () => {
+    expect(countChildren(TREE_DEEP, '/v/nope')).toEqual({ notes: 0, folders: 0 })
+    expect(countChildren([], '/v/Docs')).toEqual({ notes: 0, folders: 0 })
+  })
+})
+
+/**
+ * Reveal in Finder (GRO-2274). Available on every row type AND on blank space, where it
+ * targets the vault ROOT — the same target Copy path uses. Reveal-in-parent for all of them
+ * (LOCKED, VS Code parity): there is no branching on kind, which is the point.
+ */
+describe('reveal in Finder (GRO-2274)', () => {
+  const openOn = async (selector: string) => {
+    const m = await mount()
+    act(() => void m.el.querySelector(selector)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    return m
+  }
+
+  it('a FILE row reveals its own path', async () => {
+    const { el, bridge } = await openOn('.tree__row--file')
+    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v/a.md' })
+  })
+
+  it('a FOLDER row reveals the folder itself — no branching on kind', async () => {
+    const { el, bridge } = await openOn('.tree__row--dir')
+    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub' })
+  })
+
+  it('BLANK SPACE reveals the vault root — unlike Delete, which has no blank-space target', async () => {
+    const { el, bridge } = await openOn('.sidebar__body')
+    expect(itemByLabel(el, 'Delete')).toBeUndefined()
+    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v' })
+  })
+
+  it('a stale row surfaces a passive notice rather than looking like a dead menu item', async () => {
+    const { el, bridge, props } = await openOn('.tree__row--file')
+    bridge.shell.reveal.mockRejectedValue(Object.assign(new Error('path does not exist'), { code: 'NOT_FOUND' }))
+    await act(async () => itemByLabel(el, 'Reveal in Finder')?.click())
+    await act(async () => undefined)
+    expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining('no longer there'))
+  })
+
+  it('closes the menu after revealing', async () => {
+    const { el } = await openOn('.tree__row--file')
+    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+})
+
+/**
+ * Menu ORDER (GRO-2272 `C1a-`, LOCKED): VS Code's Explorer grouping — read-only utilities
+ * first, then the create actions, then Rename and Delete LAST. Pinned here because order is a
+ * deliberate safety property, not an accident of JSX: Delete used to sit directly under
+ * Rename, which is the misclick pair that matters most.
+ */
+describe('context menu order (GRO-2272 C1a)', () => {
+  it('a FILE row renders utilities, then create actions, then Rename and Delete last', async () => {
+    const { el } = await mount()
+    act(() => void el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(menuItems(el).map((b) => b.textContent?.replace('▸', '').trim())).toEqual([
+      'Open in new window',
+      'Reveal in Finder',
+      'Copy path',
+      'Copy link',
+      'New',
+      'New note',
+      'New base',
+      'New folder',
+      'Rename',
+      'Delete',
+    ])
+  })
+
+  it('Delete is the LAST item wherever it appears', async () => {
+    for (const row of ['.tree__row--file', '.tree__row--dir']) {
+      const m = await mount()
+      act(() => void m.el.querySelector(row)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+      const labels = menuItems(m.el).map((b) => b.textContent)
+      expect(labels[labels.length - 1]).toBe('Delete')
+    }
   })
 })

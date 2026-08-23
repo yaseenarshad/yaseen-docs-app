@@ -312,6 +312,14 @@ export interface SettingsState {
   newNoteLocation: NewNoteLocation
   /** Root-relative folder for `newNoteLocation: 'folder'` ('' = the vault root); ignored otherwise. Interpreted per-vault against each window's root. */
   newNoteFolder: string
+  /**
+   * Show the confirm sheet before deleting (GRO-2272 — VS Code's `explorer.confirmDelete`).
+   * Defaults TRUE and should stay that way: the sheet is the ONLY guard on delete, because
+   * `shell.trashItem` has no programmatic undo, so there is no in-app restore to fall back
+   * on. Cleared from the sheet's own "Don't ask me again" and re-enabled from the settings
+   * cog — a one-way switch would leave hand-editing `yaseendocs.json` as the only way back.
+   */
+  confirmDelete: boolean
 }
 
 export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
@@ -349,6 +357,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   theme: 'system',
   newNoteLocation: 'root',
   newNoteFolder: '',
+  confirmDelete: true,
 }
 
 export interface WindowBounds {
@@ -530,6 +539,33 @@ export interface BridgeError {
   mtime?: number
 }
 
+/** Reveal in Finder (GRO-2274): the absolute path to show in the OS file manager. */
+export interface RevealRequest {
+  path: string
+}
+
+/** Reveal in Finder (GRO-2274): echoes the revealed path. */
+export interface RevealResponse {
+  path: string
+}
+
+/** In-app delete (GRO-2272): the absolute path of the entry to move to the system Trash. */
+export interface DeleteRequest {
+  path: string
+}
+
+/** In-app delete (GRO-2272): what moved to the system Trash. */
+export interface DeleteResponse {
+  path: string
+  kind: 'file' | 'dir'
+}
+
+/** `file:deleted` — pushed to EVERY window after a successful delete (GRO-2272). */
+export interface FileDeletedEvent {
+  path: string
+  kind: 'file' | 'dir'
+}
+
 export interface WindowIdentity {
   id: string
   root: string | null
@@ -622,6 +658,44 @@ export interface FileApi {
   repairRename(req: RenameFileRequest): Promise<RenameFileResponse>
   /** Fired in every window after a successful rename; returns an unsubscribe. */
   onRenamed(listener: (ev: FileRenamedEvent) => void): () => void
+  /**
+   * In-app delete (GRO-2272): move a file or folder to the SYSTEM TRASH and repair the app
+   * state. `shell.trashItem` only — never `fs.rm`, and no permanent-delete fallback: a trash
+   * failure rejects `IO_ERROR` and the entry stays on disk, because a filesystem with no
+   * Trash is exactly where destroying the file would be worst.
+   *
+   * Refuses (`BAD_REQUEST`) dot-entries — invisible infrastructure the UI never showed — and
+   * the CALLING window's own vault root (root identity is a recents/vault question, same
+   * split as `rename`); another window rooted inside a deleted folder is allowed and falls
+   * through to that window's existing `onRootMissing` repair. Missing path → `NOT_FOUND`.
+   * There is no extension gate: the tree shows every folder, so every folder is deletable.
+   *
+   * On success the same handler drops every stored reference (`store.removePath`: window
+   * `file` — promoted to an heir tab rather than nulled when other tabs survive — plus tabs,
+   * recents, folder state, fold and baseGroups keys) and pushes `file:deleted` to EVERY
+   * window. The vault index needs no push: the watcher's `unlink` / `unlinkDir` echo heals it
+   * (trashItem is a MOVE at the fs layer). Notes linking to a deleted page are left
+   * BYTE-IDENTICAL — their `[[links]]` simply go unresolved (LOCKED decision C).
+   */
+  delete(req: DeleteRequest): Promise<DeleteResponse>
+  /** Fired in every window after a successful delete; returns an unsubscribe. */
+  onDeleted(listener: (ev: FileDeletedEvent) => void): () => void
+}
+
+/**
+ * OS-level actions (GRO-2274). Its own namespace rather than a member of `FileApi`: revealing
+ * is not a file operation, and whatever OS action comes next (open-in-terminal, open-with)
+ * belongs beside it rather than scattered across the file API.
+ */
+export interface ShellApi {
+  /**
+   * Show `path` in the OS file manager, selected IN ITS PARENT (`shell.showItemInFolder`) —
+   * files, folders and the vault root alike. Not `openPath`: the verb is "Reveal", and VS Code
+   * and Obsidian both behave this way. A path that no longer exists rejects `NOT_FOUND` rather
+   * than silently doing nothing, so a stale row can surface a passive notice. Read-only, so
+   * unlike `delete`/`rename` there is no dot-entry or extension guard.
+   */
+  reveal(req: RevealRequest): Promise<RevealResponse>
 }
 
 /**
@@ -673,6 +747,8 @@ export interface YaseenDocsApi {
   link: LinkApi
   /** In-app file rename + the renamed push (Links E1, GRO-2194). */
   file: FileApi
+  /** OS-level actions (GRO-2274): Reveal in Finder today. */
+  shell: ShellApi
   /** Vault-local config in `<root>/.yaseendocs/` (Desktop J, GRO-2188). */
   vaultConfig: VaultConfigApi
   /** Type & property registry over `.yaseendocs/types.json` (Bible A, GRO-2201). */

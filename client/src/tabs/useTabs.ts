@@ -38,6 +38,8 @@ export type TabsAction =
   | { type: 'reset'; tabs: string[]; active: string | null } // boot + root switch: replace wholesale, normalizing
   | { type: 'rename'; oldPath: string; newPath: string } // in-app rename (Links E1, GRO-2194): the open tab follows the file in place
   | { type: 'rename-dir'; oldPath: string; newPath: string } // in-app FOLDER rename (Links E1b, GRO-2241): every tab under the prefix follows in place
+  | { type: 'delete'; path: string } // in-app delete (GRO-2272): the tab goes, the active one closing to its heir
+  | { type: 'delete-dir'; path: string } // in-app FOLDER delete (GRO-2272): every tab under the folder goes
 
 const EMPTY: TabsState = { tabs: [], active: null, mounted: [] }
 
@@ -119,6 +121,22 @@ export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
       const active = s.active === a.oldPath ? a.newPath : s.active
       return { tabs, active, mounted: active !== null && !mounted.includes(active) && tabs.includes(active) ? [...mounted, active] : mounted }
     }
+    case 'delete': {
+      // Deleting a tab IS closing it, from the user's point of view — so reuse the `close`
+      // case rather than re-implementing the heir ladder. Divergence between the two would
+      // show up as "deleting the active note picks a different tab than ⌘W does", which is
+      // the kind of inconsistency nobody reports but everybody feels.
+      return tabsReducer(s, { type: 'close', path: a.path })
+    }
+    case 'delete-dir': {
+      // Every tab under the folder closes, left to right, each through the SAME ladder. The
+      // fold means the heir is whatever survives after all of them are gone; the old prefix
+      // itself can never be a tab (tabs are files, not dirs).
+      const prefix = `${a.path}/`
+      const doomed = s.tabs.filter((t) => t.startsWith(prefix))
+      if (doomed.length === 0) return s
+      return doomed.reduce((acc, path) => tabsReducer(acc, { type: 'close', path }), s)
+    }
     case 'rename-dir': {
       // A FOLDER moved (E1b): every tab under `oldPath/` follows by prefix, each in its own
       // slot; activation and the mounted set remap with them. A remapped tab landing on a
@@ -180,6 +198,10 @@ export interface UseTabs extends TabsState {
    * lastFile write then lands under the repaired root, not a stale entry.
    */
   renameDirPath: (oldPath: string, newPath: string, nextRoot?: string) => void
+  /** A delete landed (`file:deleted`, GRO-2272): drop the tab; the active one closes to its heir. */
+  deletePath: (path: string) => void
+  /** A FOLDER delete landed (`file:deleted` kind `dir`): drop every tab under the prefix. */
+  deleteDirPath: (path: string) => void
 }
 
 export function useTabs(root: string | null): UseTabs {
@@ -229,5 +251,8 @@ export function useTabs(root: string | null): UseTabs {
     [dispatch],
   )
 
-  return { ...state, openCurrent, openNew, openBackground, activate, close, move, closeActive, next, prev, reset, renamePath, renameDirPath }
+  const deletePath = useCallback((path: string) => dispatch({ type: 'delete', path }), [dispatch])
+  const deleteDirPath = useCallback((path: string) => dispatch({ type: 'delete-dir', path }), [dispatch])
+
+  return { ...state, openCurrent, openNew, openBackground, activate, close, move, closeActive, next, prev, reset, renamePath, renameDirPath, deletePath, deleteDirPath }
 }

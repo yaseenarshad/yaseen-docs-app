@@ -50,6 +50,18 @@ export interface Store {
    * references it.
    */
   renamePath(oldPath: string, newPath: string): void
+  /**
+   * Drop every stored reference to a just-deleted file OR directory (GRO-2272) — the delete
+   * twin of `renamePath`. A directory removes BY PREFIX: everything at or under it goes.
+   *
+   * Per field: a window's `file` becomes null (and `normalizeTabs` then empties its tabs),
+   * deleted tabs are dropped, `recents` loses the entry, and folder-state keys plus their
+   * `expanded` / `lastFile` / fold keys / `baseGroups` keys (`<basePath>::<view>`) go too.
+   * A window's `root` is deliberately LEFT ALONE: the renderer's existing `onRootMissing`
+   * probe owns that repair (it also drops the dead MRU entry), and nulling it here would
+   * race it. One commit; a no-op when nothing references the path.
+   */
+  removePath(path: string): void
   onChange(listener: (state: AppState) => void): () => void
   flush(): Promise<void>
 }
@@ -78,6 +90,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   theme: (v): v is Theme => typeof v === 'string' && (THEMES as readonly string[]).includes(v),
   newNoteLocation: (v): v is NewNoteLocation => typeof v === 'string' && (NEW_NOTE_LOCATIONS as readonly string[]).includes(v),
   newNoteFolder: (v): v is string => typeof v === 'string' && isValidNewNoteFolder(v),
+  confirmDelete: (v): v is boolean => typeof v === 'boolean',
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -340,6 +353,66 @@ export function createStore(filePath: string): Store {
             baseGroups: remapKeys(folder.baseGroups, remapBaseGroupKey),
           },
         ]),
+      )
+      if (!changed) return
+      commit({ ...state, windows, recents, folders })
+    },
+
+    removePath(deleted) {
+      // The delete twin of `renamePath` above; read that first — the traversal is identical,
+      // only the mapping differs (drop instead of remap). A FILE's prefix branch is inert
+      // (nothing is ever stored under a file path), so one pass serves both kinds.
+      let changed = false
+      const prefix = `${deleted}/`
+      /** Is this stored path the deleted entry, or inside it? */
+      const gone = (p: string): boolean => p === deleted || p.startsWith(prefix)
+      const drop = (paths: readonly string[]): string[] => {
+        const kept = paths.filter((p) => !gone(p))
+        if (kept.length !== paths.length) changed = true
+        return kept
+      }
+      /** A baseGroups key is `<basePath>::<view>` — the exact-file half needs its own test. */
+      const baseGroupGone = (key: string): boolean => key.startsWith(`${deleted}::`) || gone(key)
+      const dropKeys = <T>(map: Record<string, T>, isGone: (key: string) => boolean): Record<string, T> => {
+        const kept = Object.entries(map).filter(([key]) => !isGone(key))
+        if (kept.length !== Object.keys(map).length) changed = true
+        return Object.fromEntries(kept)
+      }
+      const windows = state.windows.map((w) => {
+        // `root` is NOT touched here — see the interface doc: the renderer's onRootMissing owns it.
+        const tabs = drop(w.tabs)
+        let file = w.file
+        if (file !== null && gone(file)) {
+          changed = true
+          // The active file itself went. Pick an HEIR with the same ladder useTabs uses —
+          // right neighbour, else left — rather than nulling `file`: normalizeTabs returns []
+          // for a null file, which would throw away the window's SURVIVING tabs. The renderer
+          // picks the same heir a moment later and mirrors it down, but the store is also the
+          // boot snapshot, so it has to be correct on its own if the app quits in between.
+          const i = w.tabs.indexOf(file)
+          file = w.tabs.slice(i + 1).find((t) => !gone(t)) ?? [...w.tabs.slice(0, i)].reverse().find((t) => !gone(t)) ?? null
+        }
+        return { ...w, file, tabs: normalizeTabs(tabs, file) }
+      })
+      const recents = state.recents.filter((r) => !gone(r.path))
+      if (recents.length !== state.recents.length) changed = true
+      const folders = Object.fromEntries(
+        Object.entries(state.folders)
+          .filter(([root]) => {
+            if (!gone(root)) return true
+            changed = true
+            return false
+          })
+          .map(([root, folder]) => [
+            root,
+            {
+              ...folder,
+              expanded: drop(folder.expanded),
+              lastFile: folder.lastFile !== null && gone(folder.lastFile) ? ((changed = true), null) : folder.lastFile,
+              folds: dropKeys(folder.folds, gone),
+              baseGroups: dropKeys(folder.baseGroups, baseGroupGone),
+            },
+          ]),
       )
       if (!changed) return
       commit({ ...state, windows, recents, folders })

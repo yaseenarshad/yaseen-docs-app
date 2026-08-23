@@ -17,6 +17,12 @@ interface ContextMenuProps {
   /** Absolute path of the right-clicked row — FILE (Links E1, GRO-2194) or FOLDER (E1b, GRO-2241); null (blank space) hides "Rename". */
   renamePath: string | null
   onRename: (path: string) => void
+  /** Absolute path of the right-clicked row — file or folder; null (blank space) hides "Delete" (GRO-2272). */
+  deletePath: string | null
+  onDelete: (path: string) => void
+  /** Row to reveal in Finder — file, folder, or the vault ROOT for blank space (GRO-2274). */
+  revealPath: string | null
+  onReveal: (path: string) => void
   /**
    * Registered types for the "New ▸" submenu (Bible B, GRO-2202; Round 10 Q4 LOCKED, GRO-2226):
    * one item per type + "New type…" at the bottom. The submenu is ALWAYS present — [] collapses
@@ -36,7 +42,7 @@ interface ContextMenuProps {
 }
 
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, renamePath, onRename, newTypes, onNewTyped, onNewType, onNewNote, onNewBase, onNewFolder, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, newTypes, onNewTyped, onNewType, onNewNote, onNewBase, onNewFolder, onClose }: ContextMenuProps) {
   const [subOpen, setSubOpen] = useState(false)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -95,17 +101,20 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
             Open in new window
           </button>
         )}
-        {renamePath !== null && (
+        {/* Reveal in Finder (GRO-2274): available on every row type AND on blank space, where
+            it reveals the vault root — the same target Copy path uses. Grouped with the other
+            read-only utilities, deliberately above the destructive item. */}
+        {revealPath !== null && (
           <button
             type="button"
             className="ctx-menu__item"
             role="menuitem"
             onClick={() => {
-              onRename(renamePath)
+              onReveal(revealPath)
               onClose()
             }}
           >
-            Rename
+            Reveal in Finder
           </button>
         )}
         {copyPath !== null && (
@@ -171,6 +180,37 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
         <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewFolder}>
           New folder
         </button>
+        {/* Rename and Delete render LAST (GRO-2272 `C1a-`, LOCKED): VS Code's Explorer puts
+            both at the bottom, and destructive-last is safer on its own merits — Delete used
+            to sit directly under Rename, which is the misclick pair that matters most.
+            Delete opens the confirm sheet; it must NEVER delete directly. Both are null on
+            blank space: no target, and main refuses the vault root anyway. */}
+        {renamePath !== null && (
+          <button
+            type="button"
+            className="ctx-menu__item"
+            role="menuitem"
+            onClick={() => {
+              onRename(renamePath)
+              onClose()
+            }}
+          >
+            Rename
+          </button>
+        )}
+        {deletePath !== null && (
+          <button
+            type="button"
+            className="ctx-menu__item ctx-menu__item--danger"
+            role="menuitem"
+            onClick={() => {
+              onDelete(deletePath)
+              onClose()
+            }}
+          >
+            Delete
+          </button>
+        )}
       </div>
     </div>
   )

@@ -7,7 +7,9 @@ import { useRegistry } from '../bases/useRegistry'
 import type { WatchSource } from '../hooks/useWatch'
 import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
+import { countLinkReferences } from '../links/renameLinks'
 import { treeHasFile, treeReducer } from '../lib/treeState'
+import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ContextMenu } from './ContextMenu'
 import { entryPath, renamedPath, targetDirFor, type EntryKind } from './createEntry'
 import { HotkeysButton } from './HotkeysPanel'
@@ -42,6 +44,80 @@ interface SidebarProps {
    * closes.
    */
   onRenameFile: (oldPath: string, newPath: string) => Promise<void>
+  /**
+   * Context-menu "Delete" confirmed (GRO-2272): App moves the entry to the system Trash and
+   * routes ANY failure to the passive notice — this promise never rejects, so the sheet just
+   * closes. No link rewriting happens downstream (LOCKED decision C).
+   */
+  onDeleteFile: (path: string) => Promise<void>
+  /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
+  onNotice: (message: string) => void
+}
+
+/**
+ * What the open context menu targets (GRO-2296). Every item has its OWN field: no item
+ * derives its target — or its visibility — from another item's value.
+ *
+ * This split exists because the items are about to diverge. `copyPath` gains a blank-space
+ * fallback to the vault ROOT (GRO-2273) and `revealPath` will want the same (GRO-2274),
+ * while `renamePath` must NOT: main refuses to rename a window's own vault root
+ * (`BAD_REQUEST`, E1b GRO-2241), so offering it would be an item that can only ever fail.
+ * Before the split, `renamePath` was literally `menu.copyPath` and the two would have moved
+ * together silently.
+ */
+interface MenuTargets {
+  x: number
+  y: number
+  /** Where "New …" creates: a dir row → itself, a file row → its parent, blank space → the root. */
+  targetDir: string
+  /** The right-clicked row's kind; null for blank space. Drives the Rename input's mode. */
+  rowKind: 'file' | 'dir' | null
+  /** "Copy path" — the right-clicked row (file or folder), or the vault ROOT for blank space (GRO-2273). */
+  copyPath: string | null
+  /** "Copy link" — FILE rows only; a folder link would only fail main's markdown guard (E3, GRO-2173). */
+  copyLinkPath: string | null
+  /** "Open in new window" — FILE rows only (D2, GRO-2168). */
+  newWindowPath: string | null
+  /** "Rename" — a concrete row only, NEVER blank space: the vault root is not renameable (E1b, GRO-2241). */
+  renamePath: string | null
+  /** "Delete" — a concrete row only, NEVER blank space: there is no target, and main refuses the vault root (GRO-2272). */
+  deletePath: string | null
+  /** "Reveal in Finder" — the row, or the vault ROOT for blank space (GRO-2274); same target as `copyPath`. */
+  revealPath: string | null
+}
+
+/**
+ * Notes and subfolders inside `dir`, counted RECURSIVELY from the already-loaded tree
+ * (GRO-2272 `C3-`) — a delete takes the whole subtree, so a shallow count would understate
+ * what the user is about to lose. No fetch: the sidebar already holds this tree.
+ */
+export function countChildren(nodes: readonly TreeNode[], dir: string): { notes: number; folders: number } {
+  const found = findDir(nodes, dir)
+  if (found === null) return { notes: 0, folders: 0 }
+  let notes = 0
+  let folders = 0
+  const walk = (children: readonly TreeNode[]): void => {
+    for (const child of children) {
+      if (child.type === 'dir') {
+        folders++
+        walk(child.children)
+      } else notes++
+    }
+  }
+  walk(found)
+  return { notes, folders }
+}
+
+function findDir(nodes: readonly TreeNode[], dir: string): readonly TreeNode[] | null {
+  for (const node of nodes) {
+    if (node.type !== 'dir') continue
+    if (node.path === dir) return node.children
+    if (dir.startsWith(`${node.path}/`)) {
+      const hit = findDir(node.children, dir)
+      if (hit !== null) return hit
+    }
+  }
+  return null
 }
 
 /** Panel-left pictogram shared by the collapse and reopen buttons (GRO-2023). */
@@ -69,14 +145,18 @@ export function Sidebar({
   onRootMissing,
   onFileMissing,
   onRenameFile,
+  onDeleteFile,
+  onNotice,
 }: SidebarProps) {
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [expanded, dispatch] = useReducer(treeReducer, root, storage.getExpanded)
-  const [menu, setMenu] = useState<{ x: number; y: number; targetDir: string; copyPath: string | null; filePath: string | null } | null>(null)
+  const [menu, setMenu] = useState<MenuTargets | null>(null)
   const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string; type?: string; label?: string } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir' } | null>(null)
   const [newTypeOpen, setNewTypeOpen] = useState(false)
+  // The delete confirm sheet's target (GRO-2272 `C3-`); null when the sheet is closed.
+  const [confirmingDelete, setConfirmingDelete] = useState<DeleteTarget | null>(null)
   // File drag-to-move (E1b, GRO-2241): the dragged file row + the highlighted drop target.
   const [dragging, setDragging] = useState<string | null>(null)
   const [dropDir, setDropDir] = useState<string | null>(null)
@@ -120,7 +200,9 @@ export function Sidebar({
   }, [root, activeFile])
 
   // Stored lastFile that no longer exists → drop it (first tree only, so a file deleted on disk
-  // while it is being edited stays open and is recreated by the next save). Files OUTSIDE the
+  // EXTERNALLY while it is being edited stays open and is recreated by the next save — an
+  // IN-APP delete never reaches here, it closes tabs through the `file:deleted` broadcast
+  // which retires the editor first (GRO-2272); do not unify the two. Files OUTSIDE the
   // root (opened via a pasted `#/abs/path.md` URL, GRO-2069) are never in the tree — skip them.
   const validated = useRef(false)
   useEffect(() => {
@@ -134,8 +216,10 @@ export function Sidebar({
   // CHANGES to an in-root file the cached tree does not show, confirm against a FRESH tree —
   // the inline-create flow activates a just-created file before `refresh()` lands, so the
   // cached tree can be behind — and close it through the same onFileMissing path. A file
-  // deleted WHILE it is the active editor stays open (no activation change — recreated by the
-  // next save), and background tabs are never probed (out of scope, noted in GRO-2235).
+  // deleted EXTERNALLY while it is the active editor stays open (no activation change —
+  // recreated by the next save); an IN-APP delete never routes through here, it closes tabs
+  // via the `file:deleted` broadcast, which also retires the editor first (GRO-2272). Do not
+  // unify the two. Background tabs are never probed (out of scope, noted in GRO-2235).
   const lastActive = useRef(activeFile)
   const treeRef = useRef(tree)
   treeRef.current = tree
@@ -162,13 +246,26 @@ export function Sidebar({
     (node: TreeNode | null, e: React.MouseEvent) => {
       e.preventDefault()
       e.stopPropagation()
+      const filePath = node?.type === 'file' ? node.path : null
       setMenu({
         x: e.clientX,
         y: e.clientY,
         targetDir: targetDirFor(node, root),
-        copyPath: node?.path ?? null,
-        // FILE rows only: feeds both "Copy link" (E3, GRO-2173) and "Open in new window" (D2).
-        filePath: node?.type === 'file' ? node.path : null,
+        rowKind: node?.type ?? null,
+        // ONE field per item, each resolved on its own (GRO-2296). Several are the same
+        // expression TODAY and must stay independent anyway — `copyPath`'s root fallback
+        // below is exactly the divergence the split exists for.
+        //
+        // Blank space copies the vault ROOT (GRO-2273): the blank area already means "the
+        // root" everywhere else here (`targetDirFor` sends "New note" there), and VS Code's
+        // empty-Explorer menu does the same. Trailing separators are stripped so the copied
+        // bytes match the root the rest of the app uses.
+        copyPath: node?.path ?? root.replace(/\/+$/, ''),
+        copyLinkPath: filePath,
+        newWindowPath: filePath,
+        renamePath: node?.path ?? null,
+        deletePath: node?.path ?? null,
+        revealPath: node?.path ?? root.replace(/\/+$/, ''),
       })
     },
     [root],
@@ -236,6 +333,61 @@ export function Sidebar({
   )
 
   const cancelCreate = useCallback(() => setCreating(null), [])
+
+  /**
+   * Reveal in Finder (GRO-2274). Read-only, so there is no confirm and nothing to repair —
+   * but a STALE row (deleted or moved externally) rejects `NOT_FOUND`, and that has to be
+   * visible: `showItemInFolder` is silent on a missing path, so without a notice the menu
+   * item would just look broken.
+   */
+  const reveal = useCallback(
+    (path: string) => {
+      api.reveal({ path }).catch((err: unknown) => {
+        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't reveal "${basename(path)}" — it is no longer there` : `Can't reveal: ${err instanceof Error ? err.message : String(err)}`)
+      })
+    },
+    [onNotice],
+  )
+
+  // ---- Delete (GRO-2272): context menu "Delete" → confirm sheet → App trashes the entry ----
+
+  /**
+   * Counts for the sheet, computed ONCE when it opens rather than on every render.
+   *
+   * Both come from data already in hand — the loaded tree and the vault index — so the delete
+   * path makes no extra fetch. When the index is unavailable the backlink line is simply
+   * omitted (`backlinks: undefined`): a missing count must never block a delete.
+   */
+  const askDelete = useCallback(
+    (path: string) => {
+      const kind: 'file' | 'dir' = menu?.rowKind === 'file' ? 'file' : 'dir'
+      const target: DeleteTarget = { path, kind }
+      if (kind === 'dir') target.children = countChildren(tree?.tree ?? [], path)
+      setConfirmingDelete(target)
+      // The index is only needed for the count, so it rides in asynchronously and the sheet
+      // opens immediately. Failure leaves the line out; it never blocks or spins.
+      api.index(root).then(
+        ({ records }) => {
+          const n = countLinkReferences({ root, oldPath: path, kind, records, tree: tree?.tree })
+          setConfirmingDelete((current) => (current !== null && current.path === path ? { ...current, backlinks: n } : current))
+        },
+        () => undefined,
+      )
+    },
+    [menu, root, tree],
+  )
+
+  const confirmDelete = useCallback(
+    (dontAskAgain: boolean) => {
+      const target = confirmingDelete
+      setConfirmingDelete(null)
+      if (target === null) return
+      if (dontAskAgain) onChangeSettings({ ...settings, confirmDelete: false })
+      // Fire and forget: App owns the result and routes every failure to the passive notice.
+      void onDeleteFile(target.path)
+    },
+    [confirmingDelete, onDeleteFile, onChangeSettings, settings],
+  )
 
   // ---- Rename (files E1 GRO-2194, folders E1b GRO-2241): context menu "Rename" → inline input over the row ----
 
@@ -353,11 +505,15 @@ export function Sidebar({
           x={menu.x}
           y={menu.y}
           copyPath={menu.copyPath}
-          copyLinkPath={menu.filePath}
-          newWindowPath={menu.filePath}
+          copyLinkPath={menu.copyLinkPath}
+          newWindowPath={menu.newWindowPath}
           onOpenNewWindow={openFileNewWindow}
-          renamePath={menu.copyPath}
-          onRename={(path) => setRenamingEntry({ path, kind: menu.filePath !== null ? 'file' : 'dir' })}
+          renamePath={menu.renamePath}
+          onRename={(path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir' })}
+          deletePath={menu.deletePath}
+          onDelete={askDelete}
+          revealPath={menu.revealPath}
+          onReveal={reveal}
           newTypes={newTypes}
           onNewTyped={startCreateTyped}
           onNewType={() => {
@@ -370,6 +526,7 @@ export function Sidebar({
           onClose={() => setMenu(null)}
         />
       )}
+      {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
       {newTypeOpen && <NewTypeDialog root={root} onClose={() => setNewTypeOpen(false)} onCreated={refresh} />}
     </aside>
   )

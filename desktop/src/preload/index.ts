@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppState, FileRenamedEvent, RegistryResponse, VaultConfigChange, WatchEvent, YaseenDocsApi } from '@shared/types'
+import type { AppState, FileDeletedEvent, FileRenamedEvent, RegistryResponse, VaultConfigChange, WatchEvent, YaseenDocsApi } from '@shared/types'
 import { CH, type Envelope } from '../channels'
 
 /** invoke + unwrap: resolves the value or rejects with the plain `BridgeError` object. */
@@ -90,10 +90,17 @@ const api: YaseenDocsApi = {
   },
   // In-app rename (Links E1, GRO-2194) + external-rename repair (E1c, GRO-2242): the invokes
   // plus the renamed push every window gets (repair reuses the SAME push downstream).
+  // In-app delete (GRO-2272) rides the same shape: one invoke, one push to every window.
   file: {
     rename: (req) => call(CH.fsRename, req),
     repairRename: (req) => call(CH.fileRepairRename, req),
     onRenamed: on<FileRenamedEvent>(CH.fileRenamed),
+    delete: (req) => call(CH.fsDelete, req),
+    onDeleted: on<FileDeletedEvent>(CH.fileDeleted),
+  },
+  // OS-level actions (GRO-2274): reveal in the system file manager.
+  shell: {
+    reveal: (req) => call(CH.shellReveal, req),
   },
   // Type & property registry over `.yaseendocs/types.json` (Bible A, GRO-2201).
   registry: {

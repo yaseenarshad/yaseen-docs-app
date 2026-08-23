@@ -14,7 +14,7 @@ import { useWatch } from './hooks/useWatch'
 import { renameNotice, updateLinksAfterRename } from './links/renameLinks'
 import { useExternalRenames } from './links/useExternalRenames'
 import { basename } from './lib/paths'
-import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath } from './lib/renameContinuity'
+import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { storage } from './lib/storage'
 import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
@@ -37,7 +37,7 @@ export function App() {
   // Tabs (I2, GRO-2234): the renderer-owned tab model, seeded from the boot identity snapshot
   // (a pasted `#/abs/path.md` URL wins as the active tab — bootTabs). The ACTIVE tab is this
   // window's `file`: title, URL hash and the sidebar highlight all follow it.
-  const { tabs, active: file, mounted, openCurrent, openBackground, activate, close: closeTab, move: moveTab, closeActive, next: nextTab, prev: prevTab, reset: resetTabs, renamePath: renameTabPath, renameDirPath: renameDirTabs } = useTabs(root)
+  const { tabs, active: file, mounted, openCurrent, openBackground, activate, close: closeTab, move: moveTab, closeActive, next: nextTab, prev: prevTab, reset: resetTabs, renamePath: renameTabPath, renameDirPath: renameDirTabs, deletePath: deleteTabPath, deleteDirPath: deleteDirTabs } = useTabs(root)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const [settings, setSettings] = useState(storage.getSettings)
   const watch = useWatch(root)
@@ -238,6 +238,61 @@ export function App() {
     [root],
   )
 
+  /**
+   * In-app delete landed (GRO-2272). Reaches EVERY window, originator included.
+   *
+   * ORDER IS NOT NEGOTIABLE: retire the editor, THEN remap tabs. Removing a tab unmounts its
+   * editor, and `useAutosave`'s unmount cleanup flushes the live buffer to disk — which would
+   * recreate the file that was just trashed. Retiring first makes that flush a no-op. Reverse
+   * these two lines and the delete silently fails a second later.
+   *
+   * A window ROOTED at (or under) a deleted folder is deliberately not repaired here: the
+   * sidebar's existing `onRootMissing` probe owns that, and it also drops the dead MRU entry.
+   */
+  useEffect(
+    () =>
+      window.yaseenDocs.file.onDeleted(({ path, kind }) => {
+        if (kind === 'dir') {
+          retireDeletedDir(path)
+          deleteDirTabs(path)
+          return
+        }
+        retireDeletedPath(path)
+        deleteTabPath(path)
+      }),
+    [deleteTabPath, deleteDirTabs],
+  )
+
+  /**
+   * The sidebar's Delete commit (GRO-2272). Deliberately NOT the mirror of `renameFile`, and
+   * the two omissions are both load-bearing:
+   *
+   *  - NO pre-delete flush. `renameFile` flushes so the unsaved buffer travels with the file;
+   *    a delete has nowhere to travel to, so flushing would write the file to disk moments
+   *    before trashing it — pointless at best, racy at worst.
+   *  - NO link rewriting. LOCKED decision C (GRO-2272): notes referencing the deleted page are
+   *    left BYTE-IDENTICAL; their `[[links]]` simply go unresolved (the Links A decoration
+   *    already renders that) and create-on-click restores the page. Deleting one note must
+   *    never silently edit N others — a far bigger blast radius than the gesture, and
+   *    un-trashing the file would not undo those edits. Do not "fix" this by adding cleanup.
+   *
+   * Every failure lands in the passive notice, never a dialog; this promise never rejects back
+   * into the caller, matching `onRenameFile`.
+   */
+  const deleteFile = useCallback(async (path: string): Promise<void> => {
+    try {
+      await api.delete({ path })
+    } catch (err) {
+      const name = basename(path)
+      // A failed trash means NOTHING was deleted — say so, rather than a bare error string.
+      setNotice(
+        err instanceof BridgeRequestError && err.code === 'IO_ERROR'
+          ? `Can't move "${name}" to the Trash — nothing was deleted`
+          : `Can't delete "${name}": ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }, [])
+
   const onRootMissing = useCallback(() => {
     storage.setRoot(null) // one identity write: { root: null, file: null, tabs: [] }
     setRoot(null)
@@ -285,6 +340,8 @@ export function App() {
           onRootMissing={onRootMissing}
           onFileMissing={onFileMissing}
           onRenameFile={renameFile}
+          onDeleteFile={deleteFile}
+          onNotice={setNotice}
         />
       )}
       {root !== null && sidebarCollapsed && (
