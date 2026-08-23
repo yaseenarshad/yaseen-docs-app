@@ -155,7 +155,15 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
     const seed = deriveSeed(def, view)
     const groupKey = groupByKey(view)
     if (group !== null && groupKey !== null) {
-      const raw = group.key === null ? undefined : group.rows[0]?.record.properties[groupKey]
+      // Fanned out (D4): seed THIS group's own element as a one-item list. The first row's raw
+      // value is the neighbour's WHOLE list there, which would hand the new page someone else's
+      // values; `render()` gives a link back its `[[…]]` form, the same one the picker writes.
+      const raw =
+        group.key === null
+          ? undefined
+          : group.fannedOut
+            ? [render(group.key)]
+            : group.rows[0]?.record.properties[groupKey]
       if (raw !== undefined) seed.properties[groupKey] = raw
     }
     const typeDef = pinned === null ? undefined : registry?.types[pinned]

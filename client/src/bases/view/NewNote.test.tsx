@@ -353,3 +353,50 @@ describe('New inside a group', () => {
     expect(create).toHaveBeenCalledWith('/vault/Bases/Untitled.md', {})
   })
 })
+
+// ---------- Fan-out: the group "+" seeds its own element (YAZ-671 D4) ----------
+
+const STATUS_BOARD = `views:
+  - type: board
+    name: B
+    order:
+      - file.name
+    groupBy:
+      property: note.status
+`
+
+/** A record whose grouping property is a LIST, so the engine fans it out across groups. */
+const listRec = (name: string, status: unknown): IndexRecord => ({
+  ...TEST_RECORDS[0],
+  path: `/vault/${name}.md`,
+  name: `${name}.md`,
+  basename: name,
+  properties: { status },
+})
+
+describe('the group "+" under fan-out (YAZ-671 D4)', () => {
+  it('seeds ONLY that group\'s element, never the neighbour\'s whole list', () => {
+    const records = [listRec('both', ['a', 'b']), listRec('onlyA', ['a'])]
+    const { el } = mount(STATUS_BOARD, { records })
+
+    // 'both' carries ['a','b'] and is the first row of group a — the old code seeded that list
+    click(byLabel(el, 'New note in group a'))
+    expect(create).toHaveBeenCalledWith('/vault/Bases/Untitled.md', { status: ['a'] })
+  })
+
+  it('seeds a link element in the `[[…]]` form the picker writes', () => {
+    const records = [listRec('spans', ['[[Lead Gen]]', '[[Sales]]'])]
+    const { el } = mount(STATUS_BOARD, { records })
+
+    click(byLabel(el, 'New note in group [[Lead Gen]]'))
+    expect(create).toHaveBeenCalledWith('/vault/Bases/Untitled.md', { status: ['[[Lead Gen]]'] })
+  })
+
+  it('the "No value" group still seeds nothing when the grouping is fanned out', () => {
+    const records = [listRec('both', ['a', 'b']), listRec('none', [])]
+    const { el } = mount(STATUS_BOARD, { records })
+
+    click(byLabel(el, 'New note in group No value'))
+    expect(create).toHaveBeenCalledWith('/vault/Bases/Untitled.md', {})
+  })
+})
