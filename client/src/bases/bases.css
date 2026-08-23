@@ -192,6 +192,12 @@
   padding: 4px;
 }
 
+.base-popover--fixed {
+  position: fixed;
+  top: auto;
+  right: auto;
+}
+
 .base-popover__item {
   display: block;
   width: 100%;

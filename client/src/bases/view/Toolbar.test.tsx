@@ -430,4 +430,12 @@ describe('popover behaviour', () => {
     draw()
     expect(el.querySelector('.base-popover')).toBeNull()
   })
+
+  it('the view menu escapes the scrolling tab strip: fixed, measured off the "…" button (YAZ-743)', () => {
+    const { el } = mount()
+    click(byLabel(el, 'View menu'))
+    const pop = q<HTMLElement>(el, '[role="menu"]').closest<HTMLElement>('.base-popover')
+    expect(pop?.style.position).toBe('fixed')
+    expect(pop?.className).toContain('base-popover--fixed')
+  })
 })
