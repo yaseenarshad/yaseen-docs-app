@@ -6,7 +6,7 @@ import type { MenuItemConstructorOptions } from 'electron'
 import type { RecentRoots, WindowEntry } from '@shared/types'
 import { CH } from '../channels'
 import { createStore, type Store } from './store'
-import { HELP_URL, buildMenuTemplate, createMenuHandlers, subscribeMenuRebuild, type MenuHandlers, type MenuHost } from './menu'
+import { HELP_URL, buildMenuTemplate, createMenuHandlers, pickMenuTargetWindow, subscribeMenuRebuild, type MenuHandlers, type MenuHost } from './menu'
 
 // ---------- buildMenuTemplate (pure) ----------
 
@@ -196,6 +196,42 @@ describe('buildMenuTemplate', () => {
     expect(recent.map((i) => i.id)).toEqual(['menu.file.open-recent.0', 'menu.file.open-recent.1', 'menu.file.open-recent.2'])
     expect(menuOf(build(), 'View').find((i) => i.label === 'Toggle Sidebar')?.id).toBe('menu.view.toggle-sidebar')
     expect((build().find((m) => m.label === 'Help')?.submenu as MenuItemConstructorOptions[])[0].id).toBe('menu.help.github')
+  })
+})
+
+// ---------- pickMenuTargetWindow (pure, GRO-2197) ----------
+
+/** The structural slice the picker needs — no Electron anywhere. */
+const fakeWin = (id: number, destroyed = false) => ({ webContents: { id }, isDestroyed: () => destroyed })
+
+describe('pickMenuTargetWindow', () => {
+  it('the OS-focused window always wins', () => {
+    const focused = fakeWin(2)
+    expect(pickMenuTargetWindow(focused, [fakeWin(1), focused, fakeWin(3)], 3)).toBe(focused)
+  })
+
+  it('no focused window (macOS, app not frontmost) → the last-focused live window', () => {
+    const last = fakeWin(2)
+    expect(pickMenuTargetWindow(null, [fakeWin(1), last, fakeWin(3)], 2)).toBe(last)
+  })
+
+  it('a destroyed last-focused window falls back to a live one', () => {
+    const live = fakeWin(1)
+    expect(pickMenuTargetWindow(null, [live, fakeWin(2, true)], 2)).toBe(live)
+  })
+
+  it('no last-focused id recorded yet → any live window (never a destroyed one)', () => {
+    const live = fakeWin(2)
+    expect(pickMenuTargetWindow(null, [fakeWin(1, true), live], undefined)).toBe(live)
+  })
+
+  it('a destroyed focused window is not a target either — the fallback chain runs', () => {
+    const live = fakeWin(1)
+    expect(pickMenuTargetWindow(fakeWin(9, true), [live], undefined)).toBe(live)
+  })
+
+  it('no windows at all → undefined', () => {
+    expect(pickMenuTargetWindow(null, [], 1)).toBeUndefined()
   })
 })
 

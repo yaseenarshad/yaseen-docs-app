@@ -6,7 +6,7 @@ import { fileLink, parseFileLink } from '@shared/links'
 import type { WindowEntry } from '@shared/types'
 import { registerIpc } from './ipc'
 import { createLinkQueue } from './linkQueue'
-import { buildMenuTemplate, createMenuHandlers, subscribeMenuRebuild } from './menu'
+import { buildMenuTemplate, createMenuHandlers, pickMenuTargetWindow, subscribeMenuRebuild } from './menu'
 import { createStore } from './store'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
 import { flushIndexCache, initIndexCache } from './vaultIndex'
@@ -101,6 +101,16 @@ const manager = createWindowManager(store, {
   },
 })
 
+/**
+ * The most recently focused window's `webContents.id` — pickMenuTargetWindow's fallback key
+ * (GRO-2197). Never cleared on blur: macOS reporting "no focused window" (app not frontmost)
+ * is exactly the state the fallback exists for, so the last id must survive it.
+ */
+let lastFocusedWcId: number | undefined
+app.on('browser-window-focus', (_event, win) => {
+  lastFocusedWcId = win.webContents.id
+})
+
 app.whenReady().then(() => {
   if (!isPrimaryInstance) return
   // Appearance (K, GRO-2218): the setting IS the themeSource vocabulary. Applied from the loaded
@@ -115,8 +125,11 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).toString())
   })
   // Menu bar (B3, GRO-2161): the template is pure (menu.ts); only this apply layer touches Menu.
+  // `focusedWebContents` resolves through pickMenuTargetWindow (GRO-2197): macOS reports no
+  // focused window while the app is not frontmost, and a menu action must never silently no-op
+  // — so the last-focused live window (tracked below) is the documented fallback target.
   const handlers = createMenuHandlers(store, manager, {
-    focusedWebContents: () => BrowserWindow.getFocusedWindow()?.webContents,
+    focusedWebContents: () => pickMenuTargetWindow(BrowserWindow.getFocusedWindow(), BrowserWindow.getAllWindows(), lastFocusedWcId)?.webContents,
     openExternal: (url) => void shell.openExternal(url),
     dirExists: (path) => {
       try {

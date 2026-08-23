@@ -18,7 +18,11 @@
  * UNRESOLVED link is created first (`createFromLink` — bare targets under `nav.createBase()`,
  * the Files & Links "default location for new notes" setting read at CLICK time; C2-,
  * GRO-2240), then opened by the same gesture; failures surface via `nav.onNotice` (App's
- * passive link-notice), never a dialog. `[[#h]]` (same-file, empty target) is a no-op — the
+ * passive link-notice), never a dialog. Two more notices (F2, GRO-2197) keep otherwise
+ * invisible outcomes visible: a click during the pre-index window (nothing resolvable yet)
+ * says the index is still loading, and a ⌘-click that CREATES a note names it — the new page
+ * opened in a background tab, so nothing else on screen moves. `[[#h]]` (same-file, empty
+ * target) is a no-op — the
  * heading jump is GRO-2239. Alt-/Shift-/Ctrl-modified clicks keep their defaults (future
  * gestures, context menus).
  */
@@ -90,17 +94,28 @@ export function createWikilinkClick(source: WikilinkResolveSource, nav: Wikilink
               event.preventDefault()
               const page = linkPageName(inner)
               if (page === '') return true // same-file [[#h]] — the heading jump is GRO-2239, not this unit
-              const open = event.metaKey ? nav.openBackground : nav.openCurrent
+              const background = event.metaKey
+              const open = background ? nav.openBackground : nav.openCurrent
               const resolve = source.resolve
               // Pre-index window: every link renders resolved but nothing can be resolved yet;
-              // creating here could shadow an existing note, so the click is swallowed whole.
-              if (resolve === null) return true
+              // creating here could shadow an existing note, so the gesture is swallowed — but
+              // SAID (GRO-2197): a silently dead click reads as breakage.
+              if (resolve === null) {
+                nav.onNotice('Vault index is still loading — try that link again in a moment')
+                return true
+              }
               const path = resolve(page)
               if (path !== null) open(path)
               else
                 void createFromLink(nav.root, inner, nav.createBase()).then((result) => {
                   if (result.status === 'error') nav.onNotice(result.message)
-                  else if (result.status !== 'noop') open(result.path)
+                  else if (result.status !== 'noop') {
+                    open(result.path)
+                    // A ⌘-click's freshly CREATED page landed in a background tab (locked I3
+                    // ruling — never activated), so name what just appeared (GRO-2197). Losing
+                    // the creation race ('exists') created nothing and stays silent.
+                    if (background && result.status === 'created') nav.onNotice(`Created "${page}" in a background tab`)
+                  }
                 })
               return true
             },

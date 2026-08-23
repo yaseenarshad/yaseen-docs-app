@@ -9,6 +9,9 @@
  *  - `[[target|alias]]` hides `target|` and shows only the alias,
  *  - `[[target#heading]]` shows `target > heading` (the `#` is hidden; each post-`#` segment
  *    carries `wikilink__sub`, whose CSS `::before` draws the ` > ` separator),
+ *  - a match whose display would be EMPTY (`[[Note|]]`, `[[|]]`, `[[#]]`) stays raw — no
+ *    decorations at all, so nothing ever collapses to a zero-width invisible run (FN12,
+ *    GRO-2197),
  *  - visible segments get `wikilink` (accent + pointer cursor), plus `wikilink--unresolved`
  *    (dimmed) when the resolve source cannot find the target. Click handling lives in the
  *    sibling `wikilinkClick.ts` (Links C, GRO-2192), which navigates on mousedown over these
@@ -106,6 +109,23 @@ export function linkPageName(inner: string): string {
   return inner.split('|')[0].split('#')[0].trim()
 }
 
+/**
+ * The DISPLAY text the collapsed decorations show for a raw `[[inner]]` match: the alias after
+ * the first `|` when piped, else the non-empty `#`-split parts joined with the ` > ` separator
+ * the CSS draws between segments. '' means NOTHING would be visible (`[[Note|]]`, `[[|]]`,
+ * `[[#]]`) — such a match stays raw (FN12, GRO-2197; see `decorate`). Exported for the
+ * backlinks snippets (FN9, GRO-2197), which must read exactly as the editor renders: one
+ * mapping, never a second regex.
+ */
+export function linkDisplayText(inner: string): string {
+  const pipe = inner.indexOf('|')
+  if (pipe >= 0) return inner.slice(pipe + 1)
+  return inner
+    .split('#')
+    .filter((part) => part.length > 0)
+    .join(' > ')
+}
+
 const wikilinkKey = new PluginKey<DecorationSet>('mdapp-wikilink')
 
 /**
@@ -137,6 +157,11 @@ function hide(out: Decoration[], from: number, to: number): void {
 
 /** Decorations for one collapsed match: `[[inner]]` starting at `start`. */
 function decorate(out: Decoration[], start: number, inner: string, resolve: ResolveLink | null): void {
+  // A match whose display would be EMPTY ([[Note|]], [[|]], [[#]]) gets NO decorations at all:
+  // hiding every character would leave a zero-width invisible run the click handler cannot see
+  // and only exact caret placement can recover — raw-and-editable, the revealed state, is the
+  // consistent answer (FN12, GRO-2197).
+  if (linkDisplayText(inner) === '') return
   const target = linkPageName(inner)
   // An empty target ([[#heading]]) is a same-file link: always resolved.
   const resolved = resolve === null || target === '' || resolve(target) !== null
@@ -147,7 +172,7 @@ function decorate(out: Decoration[], start: number, inner: string, resolve: Reso
   const pipe = inner.indexOf('|')
   if (pipe >= 0) {
     hide(out, innerStart, innerStart + pipe + 1) // target(#heading)?| — the alias is the display
-    if (pipe + 1 < inner.length) out.push(Decoration.inline(innerStart + pipe + 1, end - 2, { class: cls }))
+    out.push(Decoration.inline(innerStart + pipe + 1, end - 2, { class: cls })) // never empty: guarded above
   } else {
     // target, then ` > `-separated sub segments for each `#heading` / `#^block` part
     let at = innerStart

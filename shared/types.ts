@@ -327,9 +327,16 @@ export const THEMES: readonly Theme[] = ['system', 'light', 'dark']
 export type NewNoteLocation = 'root' | 'current' | 'folder'
 export const NEW_NOTE_LOCATIONS: readonly NewNoteLocation[] = ['root', 'current', 'folder']
 
-/** Valid `newNoteFolder`: '' (the vault root) or root-relative — no leading/trailing `/`, no empty, `.` or `..` segments. */
+/**
+ * Valid `newNoteFolder`: '' (the vault root) or root-relative — no leading/trailing `/`, no
+ * empty segments, and no segment create-on-click would refuse: leading-`.` names (hidden —
+ * subsumes `.` and `..`) and NUL. The segment rules mirror `validateEntryName` in
+ * `client/src/sidebar/createEntry.ts`, which `createFromLink` runs over every segment at
+ * click time; `shared/` cannot import from `client/`, so the rule is replicated — keep the
+ * two in step (GRO-2197: `.archive` used to save cleanly here, then fail EVERY create).
+ */
 export function isValidNewNoteFolder(v: string): boolean {
-  return v === '' || v.split('/').every((s) => s.trim() !== '' && s.trim() !== '.' && s.trim() !== '..')
+  return v === '' || v.split('/').every((s) => s.trim() !== '' && !s.trim().startsWith('.') && !s.includes('\0'))
 }
 
 /** Matches the app's pre-settings look (Crepe: line-height 1.5, block padding 4px); threading on, 2px, accent. */

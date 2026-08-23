@@ -122,9 +122,34 @@ export function buildMenuTemplate({ recents, isDev }: MenuInputs, handlers: Menu
   ]
 }
 
+/**
+ * The window a menu action targets (GRO-2197): the OS-focused one when there is one, else the
+ * most recently focused LIVE window, else any live window, else undefined. WHY a fallback at
+ * all: macOS reports NO focused window while the app is not frontmost — `getFocusedWindow()`
+ * returns null even with a sole visible, unminimized window, and `win.focus()` cannot change
+ * that (macOS refuses to activate a background app) — and a menu item that silently does
+ * nothing is the worst possible answer. Electron-free and structural on purpose so
+ * `menu.test.ts` fakes windows in a few lines; generic so `index.ts` gets `BrowserWindow`
+ * back out. `lastFocusedId` is a `webContents.id` (tracked via `browser-window-focus`).
+ */
+export function pickMenuTargetWindow<W extends { webContents: { id: number }; isDestroyed(): boolean }>(
+  focused: W | null,
+  all: readonly W[],
+  lastFocusedId: number | undefined,
+): W | undefined {
+  if (focused !== null && !focused.isDestroyed()) return focused
+  const live = all.filter((w) => !w.isDestroyed())
+  return live.find((w) => w.webContents.id === lastFocusedId) ?? live[0]
+}
+
 /** The Electron-only half, injected by `main/index.ts` (like windows.ts's `WindowHost`). */
 export interface MenuHost {
-  /** The focused window's webContents; undefined when no app window has focus. */
+  /**
+   * The webContents a menu action targets. The fallback IS the contract (GRO-2197): the
+   * OS-focused window's when there is one, else the most recently focused live window's, else
+   * any live window's — undefined ONLY when no window exists at all. `index.ts` implements
+   * this through `pickMenuTargetWindow` (see its comment for why macOS forces the fallback).
+   */
   focusedWebContents(): { id: number; send(channel: string, ...args: unknown[]): void } | undefined
   openExternal(url: string): void
   /** Whether `path` exists as a directory — open-beside probes before touching the MRU (GRO-2211). */

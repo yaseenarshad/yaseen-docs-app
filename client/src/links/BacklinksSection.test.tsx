@@ -149,13 +149,14 @@ describe('BacklinksSection (Links D, GRO-2193)', () => {
     expect(el.querySelector('.backlinks__skeleton')).toBeNull()
   })
 
-  it('shows one snippet per mention with the resolving link highlighted (alias form included)', async () => {
+  it('shows one snippet per mention line, in display text, with the resolving link highlighted (alias form included)', async () => {
     const el = mount()
     feed(RECORDS)
     click(header(el)!)
     await flush()
-    expect(snippets(el).map((s) => s.textContent)).toEqual(['See [[B]] for the details.', 'related to [[Bee]] as well'])
-    expect([...el.querySelectorAll('.backlinks__match')].map((m) => m.textContent)).toEqual(['[[B]]', '[[Bee]]'])
+    // FN9 (GRO-2197): snippets read as the EDITOR shows the line — display text, no brackets.
+    expect(snippets(el).map((s) => s.textContent)).toEqual(['See B for the details.', 'related to Bee as well'])
+    expect([...el.querySelectorAll('.backlinks__match')].map((m) => m.textContent)).toEqual(['B', 'Bee'])
   })
 
   it('clicks ride the tabs API: plain → current tab, ⌘ → background tab (entry and snippet alike)', async () => {
@@ -207,11 +208,9 @@ describe('BacklinksSection (Links D, GRO-2193)', () => {
     await flush()
     expect(readFile).toHaveBeenCalledTimes(3) // only A was re-read
     expect(readFile.mock.calls[2]?.[0]).toBe(A)
-    expect(snippets(el).map((s) => s.textContent)).toEqual([
-      'now it says [[B]] twice: [[B]]',
-      'now it says [[B]] twice: [[B]]',
-      'related to [[Bee]] as well',
-    ])
+    // FN10 (GRO-2197): two mentions on one line are ONE row with TWO highlights, not two rows.
+    expect(snippets(el).map((s) => s.textContent)).toEqual(['now it says B twice: B', 'related to Bee as well'])
+    expect([...snippets(el)[0].querySelectorAll('.backlinks__match')].map((m) => m.textContent)).toEqual(['B', 'B'])
     CONTENT[A] = '# A\n\nSee [[B]] for the details.\n'
   })
 })

@@ -17,7 +17,10 @@
  *    Crepe's own `/` menu) POSITIONS the popup element at the caret via floating-ui and toggles
  *    `data-show`. Its single-character `trigger` cannot express `[[`, so it runs with a custom
  *    `shouldShow` that just reads the plugin state; row rendering stays ours (plain DOM — the
- *    rows are ≤ 9 buttons, rebuilt only when the session changes).
+ *    rows are ≤ 9 buttons). The `session === last` guard in `render` is an IDENTITY check and
+ *    the plugin builds a fresh session object per transaction, so while the picker is open the
+ *    rows are in fact rebuilt on every keystroke (GRO-2197 audit): ≤ 9 buttons of DOM, measured
+ *    as not worth a structural comparison yet — recorded here so the next reader is not misled.
  *  - `wikilinkPickerKeymap` (`$shortcut`, priority 100 — CONTRACTS "Keyboard") binds
  *    ↑/↓/Enter/Esc. Every command returns false when no session is open, so the keys fall
  *    through untouched (the outliner keeps Enter in lists, Crepe keeps its arrows). Enter ties

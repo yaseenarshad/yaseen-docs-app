@@ -165,14 +165,37 @@ export async function extraWindow(app: ElectronApplication, known: readonly stri
  * Drives a menu item by its stable id — the REAL user path for menu gestures (menu.ts assigns
  * ids for exactly this). `focusWinId` focuses that window first, so handlers that resolve the
  * focused window (File › New Window reads `BrowserWindow.getFocusedWindow()`) see the right one.
+ *
+ * Focus is asynchronous AND conditional (GRO-2197): while the app is not frontmost, macOS
+ * refuses to activate it — `win.focus()` returns with `getFocusedWindow()` still null, and a
+ * click fired in that state used to hit the old no-focused-window no-op. So: focus, poll
+ * briefly (~500ms) for the focus to actually LAND; only if it has not, steal app focus ONCE
+ * (`app.focus({ steal: true })` — the suite runs headed on a machine someone may be using, so
+ * never steal when the plain focus took) and poll again (~3s total). Then click regardless:
+ * main's own last-focused fallback (`pickMenuTargetWindow`) covers the single-window case even
+ * when macOS never granted focus at all.
  */
 export async function clickMenuItem(app: ElectronApplication, itemId: string, focusWinId?: string): Promise<void> {
   await app.evaluate(
-    ({ Menu, BrowserWindow }, arg) => {
-      if (arg.focusWinId !== undefined) {
-        BrowserWindow.getAllWindows()
-          .find((w) => w.webContents.getURL().includes(`win=${arg.focusWinId}`))
-          ?.focus()
+    async ({ Menu, BrowserWindow, app: electronApp }, arg) => {
+      const target =
+        arg.focusWinId === undefined
+          ? undefined
+          : BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes(`win=${arg.focusWinId}`))
+      if (target !== undefined) {
+        const focusLanded = async (deadline: number): Promise<boolean> => {
+          while (BrowserWindow.getFocusedWindow() !== target) {
+            if (Date.now() >= deadline) return false
+            await new Promise((r) => setTimeout(r, 50))
+          }
+          return true
+        }
+        target.focus()
+        if (!(await focusLanded(Date.now() + 500))) {
+          electronApp.focus({ steal: true })
+          target.focus()
+          await focusLanded(Date.now() + 2500) // best effort — the click below runs either way
+        }
       }
       const item = Menu.getApplicationMenu()?.getMenuItemById(arg.itemId)
       if (item == null) throw new Error(`no menu item with id ${arg.itemId}`)

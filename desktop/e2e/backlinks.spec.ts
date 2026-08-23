@@ -23,10 +23,13 @@ const ALIAS = 'Bee'
 /** Mentions the target by NAME. */
 const ALPHA_FILE = 'Alpha.md'
 const ALPHA_LINE = `links to [[B]] here`
+/** FN9 (GRO-2197): snippets read as the EDITOR shows the line — display text, no brackets. */
+const ALPHA_SNIPPET = 'links to B here'
 const ALPHA_BODY = 'backlinks-alpha-body'
 /** Mentions the target by ALIAS. */
 const GAMMA_FILE = 'Gamma.md'
 const GAMMA_LINE = `mentions [[${ALIAS}]] by alias`
+const GAMMA_SNIPPET = `mentions ${ALIAS} by alias`
 
 let userData: string
 let vaultSrc: string
@@ -80,8 +83,8 @@ test('step 2 — expanding lists both referencing notes with their mention lines
   await header(win).click()
   await expect(header(win)).toHaveAttribute('aria-expanded', 'true')
   await expect(entries(win)).toHaveText(['Alpha', 'Gamma']) // path-sorted, one row per note
-  await expect(snippets(win)).toHaveText([ALPHA_LINE, GAMMA_LINE])
-  await expect(backlinks(win).locator('.backlinks__match')).toHaveText(['[[B]]', `[[${ALIAS}]]`])
+  await expect(snippets(win)).toHaveText([ALPHA_SNIPPET, GAMMA_SNIPPET])
+  await expect(backlinks(win).locator('.backlinks__match')).toHaveText(['B', ALIAS])
   await shoot(win, 'backlinks-02-expanded')
 })
 
