@@ -7,8 +7,9 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 /** How far right of the handle to probe for the block it points at (the gutter is ~24px). */
 export const PROBE_OFFSET_PX = 24
 
-export const isDragHandleGrab = (t: EventTarget | null): t is HTMLElement =>
-  t instanceof HTMLElement && t.closest('.milkdown-block-handle .operation-item') !== null
+/** Element, not HTMLElement: the pointer usually lands on the icon's <svg>/<path>. */
+export const isDragHandleGrab = (t: EventTarget | null): t is Element =>
+  t instanceof Element && t.closest('.milkdown-block-handle .operation-item') !== null
 
 export interface HandleTarget {
   pos: number
@@ -21,7 +22,7 @@ export interface HandleTarget {
  * enclosing node (e.g. a list_item) must use `inside`.
  */
 export function handleTargetPos(view: EditorView, e: MouseEvent): HandleTarget | null {
-  const rect = (e.target as HTMLElement).closest('.milkdown-block-handle')!.getBoundingClientRect()
+  const rect = (e.target as Element).closest('.milkdown-block-handle')!.getBoundingClientRect()
   const probe = view.posAtCoords({ left: rect.right + PROBE_OFFSET_PX, top: e.clientY })
   return probe === null ? null : { pos: probe.pos, inside: probe.inside }
 }

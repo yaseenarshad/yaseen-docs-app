@@ -19,6 +19,12 @@ describe('isDragHandleGrab', () => {
     item.appendChild(icon)
     expect(isDragHandleGrab(item)).toBe(true)
     expect(isDragHandleGrab(icon)).toBe(true)
+    // The real pointer lands on the icon's <svg>/<path> — an SVGElement, not an HTMLElement.
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    svg.appendChild(pathEl)
+    icon.appendChild(svg)
+    expect(isDragHandleGrab(pathEl)).toBe(true)
     expect(isDragHandleGrab(handle)).toBe(false)
     expect(isDragHandleGrab(document.body)).toBe(false)
     expect(isDragHandleGrab(null)).toBe(false)
