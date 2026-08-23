@@ -200,7 +200,9 @@ export function Sidebar({
   }, [root, activeFile])
 
   // Stored lastFile that no longer exists → drop it (first tree only, so a file deleted on disk
-  // while it is being edited stays open and is recreated by the next save). Files OUTSIDE the
+  // EXTERNALLY while it is being edited stays open and is recreated by the next save — an
+  // IN-APP delete never reaches here, it closes tabs through the `file:deleted` broadcast
+  // which retires the editor first (GRO-2272); do not unify the two. Files OUTSIDE the
   // root (opened via a pasted `#/abs/path.md` URL, GRO-2069) are never in the tree — skip them.
   const validated = useRef(false)
   useEffect(() => {
@@ -214,8 +216,10 @@ export function Sidebar({
   // CHANGES to an in-root file the cached tree does not show, confirm against a FRESH tree —
   // the inline-create flow activates a just-created file before `refresh()` lands, so the
   // cached tree can be behind — and close it through the same onFileMissing path. A file
-  // deleted WHILE it is the active editor stays open (no activation change — recreated by the
-  // next save), and background tabs are never probed (out of scope, noted in GRO-2235).
+  // deleted EXTERNALLY while it is the active editor stays open (no activation change —
+  // recreated by the next save); an IN-APP delete never routes through here, it closes tabs
+  // via the `file:deleted` broadcast, which also retires the editor first (GRO-2272). Do not
+  // unify the two. Background tabs are never probed (out of scope, noted in GRO-2235).
   const lastActive = useRef(activeFile)
   const treeRef = useRef(tree)
   treeRef.current = tree

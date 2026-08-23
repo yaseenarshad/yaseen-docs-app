@@ -1,7 +1,13 @@
 /**
- * Editor continuity across an in-app rename (Links E1, GRO-2194). Editors are keyed by
- * path, so remapping a tab old→new REMOUNTS its editor — and the unmount flush would write
- * the old buffer back to the OLD path, resurrecting the file the rename just removed.
+ * Editor continuity across an in-app rename (Links E1, GRO-2194) — and across an in-app
+ * DELETE (GRO-2272). Editors are keyed by path, so remapping or removing a tab REMOUNTS or
+ * unmounts its editor, and the unmount flush would write the buffer back to the OLD path,
+ * resurrecting the file the rename or delete just removed.
+ *
+ * Two flows share the handle registry below, and the difference between them IS the point:
+ * a RENAME captures the dirty buffer, retires the old handle and stashes the buffer under
+ * the new path (it has somewhere to travel to); a DELETE retires ONLY (it does not), because
+ * a stashed buffer would be a live resurrection vector for whatever mounts there next.
  *
  * The design, pinned:
  *  - every `useAutosave` registers a per-path handle here (one editor per path per window);
