@@ -25,6 +25,12 @@ export interface Group {
   label: string
   rows: Row[]
   summaries: Record<string, Value>
+  /**
+   * True when the grouping property held a LIST somewhere and rows were fanned out per element
+   * (YAZ-671 D1) — so one row can appear in several groups, and the group counts can sum above
+   * `total` (D2, deliberate). Consumers that write back through group identity read this.
+   */
+  fannedOut: boolean
 }
 
 export interface EngineError {
@@ -359,19 +365,32 @@ export function runView(def: BaseDefinition, view: BaseView, records: readonly I
     const { property, direction } = view.groupBy
     const valued: { key: Value; entries: Entry[] }[] = []
     const noValue: Entry[] = []
+    let fannedOut = false
     for (const entry of kept) {
       const key = valueOf(entry, property)
       if (isNoValue(key)) {
         noValue.push(entry)
         continue
       }
-      const g = valued.find(x => equals(x.key, key))
-      if (g) g.entries.push(entry)
-      else valued.push({ key, entries: [entry] })
+      // A LIST fans out: the entry joins one group per DISTINCT non-empty element (D1), so a note
+      // in two funnels shows under both instead of forming a combination group. Empty elements are
+      // dropped, and a list left with none falls to "No value" exactly as `[]` already does.
+      const elements = Array.isArray(key) ? key : [key]
+      if (Array.isArray(key)) fannedOut = true
+      const distinct = elements.filter((k, i) => !isNoValue(k) && elements.findIndex(o => equals(o, k)) === i)
+      if (distinct.length === 0) {
+        noValue.push(entry)
+        continue
+      }
+      for (const k of distinct) {
+        const g = valued.find(x => equals(x.key, k))
+        if (g) g.entries.push(entry)
+        else valued.push({ key: k, entries: [entry] })
+      }
     }
     valued.sort((a, b) => compareValues(a.key, b.key, direction === 'DESC' ? 'DESC' : 'ASC'))
-    groups = valued.map(g => ({ key: g.key, label: render(g.key), rows: g.entries.map(e => e.row), summaries: summaryOf(g.entries) }))
-    if (noValue.length) groups.push({ key: null, label: NO_VALUE, rows: noValue.map(e => e.row), summaries: summaryOf(noValue) })
+    groups = valued.map(g => ({ key: g.key, label: render(g.key), rows: g.entries.map(e => e.row), summaries: summaryOf(g.entries), fannedOut }))
+    if (noValue.length) groups.push({ key: null, label: NO_VALUE, rows: noValue.map(e => e.row), summaries: summaryOf(noValue), fannedOut })
   }
 
   return { rows: kept.map(e => e.row), groups, summaries: summaryOf(kept), errors, total }

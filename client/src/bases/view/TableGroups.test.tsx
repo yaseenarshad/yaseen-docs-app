@@ -173,15 +173,18 @@ describe('grouped sections', () => {
     expect(headers(el)[0].querySelector('[data-cell]')).toBeNull()
   })
 
-  it('the No value group is last and muted; a list group value renders as chips', () => {
+  it('the No value group is last and muted; a list property gives one header per element', () => {
     const { el } = mount(GROUP_BASE)
     const last = headers(el)[3]
     expect(q(last, '.base-group__value').className).toContain('base-group__value--none')
 
     unmount()
+    // Fan-out (YAZ-671 D1): 'agentic, pillar' is no longer a group — each element gets its own
+    // header, so the value is a scalar and renders as plain text rather than a chip list.
     const tags = mount(GROUP_BASE.replace('property: note.status', 'property: note.tags'))
-    const chips = [...headers(tags.el)[0].querySelectorAll('.base-table__chip')].map((c) => c.textContent)
-    expect(chips).toEqual(['agentic', 'pillar'])
+    const values = headers(tags.el).map((h) => q(h, '.base-group__value').textContent)
+    expect(values.slice(0, 4)).toEqual(['agentic', 'agentic/levels', 'creator', 'pillar'])
+    expect(headers(tags.el)[0].querySelectorAll('.base-table__chip')).toHaveLength(0)
   })
 })
 
