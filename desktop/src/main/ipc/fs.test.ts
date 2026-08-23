@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
@@ -13,6 +13,10 @@ import { registerFsIpc } from './fs'
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
   BrowserWindow: { getAllWindows: vi.fn(() => []) },
+  // fs:delete goes to the SYSTEM Trash; these tests must not move real files into it, so the
+  // trash call is stubbed and the assertions are about the store repair and the broadcast.
+  // `remove.test.ts` owns the disk-level behaviour.
+  shell: { trashItem: vi.fn(async () => undefined) },
 }))
 
 type Handler = (event: unknown, ...args: unknown[]) => Promise<Envelope<unknown>>
@@ -55,7 +59,7 @@ describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc(store, registry)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsColdDiff, CH.fsIndex, CH.fsRead, CH.fsReadAsset, CH.fsRename, CH.fileRepairRename, CH.fsTree, CH.fsWrite].sort())
+    expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsColdDiff, CH.fsDelete, CH.fsIndex, CH.fsRead, CH.fsReadAsset, CH.fsRename, CH.fileRepairRename, CH.fsTree, CH.fsWrite].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
@@ -186,5 +190,60 @@ describe('registerFsIpc', () => {
     })
     expect(store.get()).toBe(before)
     expect(w.webContents.send).not.toHaveBeenCalled()
+  })
+
+  describe('fs:delete (GRO-2272)', () => {
+    it('trashes the file, repairs the store and pushes file:deleted to every window', async () => {
+      const target = path.join(root, 'delete-me.md')
+      await writeFile(target, '# gone\n')
+      store.upsertWindow({ id: 'wd', root, file: target, tabs: [target, path.join(root, 'A.md')], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      const w = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+      senderWinId = undefined
+      const res = await registered(CH.fsDelete)({ sender: {} }, { path: target })
+      expect(res).toEqual({ ok: true, value: { path: target, kind: 'file' } })
+      // Store repaired in the SAME handler: the active file went, so the heir took over and
+      // the SURVIVING tab is still there (the invariant removePath protects).
+      expect(store.get().windows.find((win) => win.id === 'wd')).toMatchObject({ file: path.join(root, 'A.md'), tabs: [path.join(root, 'A.md')] })
+      expect(w.webContents.send).toHaveBeenCalledWith(CH.fileDeleted, { path: target, kind: 'file' })
+    })
+
+    it("refuses the calling window's own vault root: nothing trashed, nothing broadcast", async () => {
+      const w = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+      store.upsertWindow({ id: 'w-own', root, file: null, tabs: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      senderWinId = 'w-own'
+      expect(await registered(CH.fsDelete)({ sender: {} }, { path: root })).toEqual({
+        ok: false,
+        error: { code: 'BAD_REQUEST', message: 'the vault root itself cannot be deleted', path: root },
+      })
+      expect(w.webContents.send).not.toHaveBeenCalled()
+      await expect(readFile(path.join(root, 'A.md'), 'utf8')).resolves.toBe('# A\n') // vault intact
+      senderWinId = undefined
+    })
+
+    it("allows deleting a folder that is ANOTHER window's root — onRootMissing owns that repair, so the stored root is untouched", async () => {
+      const sub = path.join(root, 'DeleteMeDir')
+      await mkdir(sub, { recursive: true })
+      await writeFile(path.join(sub, 'inner.md'), 'inner')
+      store.upsertWindow({ id: 'w-other', root: sub, file: path.join(sub, 'inner.md'), tabs: [path.join(sub, 'inner.md')], bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      const w = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+      senderWinId = undefined
+      expect(await registered(CH.fsDelete)({ sender: {} }, { path: sub })).toEqual({ ok: true, value: { path: sub, kind: 'dir' } })
+      const other = store.get().windows.find((win) => win.id === 'w-other')
+      expect(other?.root).toBe(sub) // deliberately NOT nulled here
+      expect(other?.file).toBeNull() // the file under it went
+      expect(w.webContents.send).toHaveBeenCalledWith(CH.fileDeleted, { path: sub, kind: 'dir' })
+    })
+
+    it('a refused delete (dot-folder) answers a BridgeError envelope and broadcasts nothing', async () => {
+      const w = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+      const dot = path.join(root, '.obsidian')
+      const res = await registered(CH.fsDelete)({ sender: {} }, { path: dot })
+      expect(res).toEqual({ ok: false, error: { code: 'BAD_REQUEST', message: 'hidden entries cannot be deleted', path: dot } })
+      expect(w.webContents.send).not.toHaveBeenCalled()
+    })
   })
 })

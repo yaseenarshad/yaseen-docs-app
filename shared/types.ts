@@ -530,6 +530,23 @@ export interface BridgeError {
   mtime?: number
 }
 
+/** In-app delete (GRO-2272): the absolute path of the entry to move to the system Trash. */
+export interface DeleteRequest {
+  path: string
+}
+
+/** In-app delete (GRO-2272): what moved to the system Trash. */
+export interface DeleteResponse {
+  path: string
+  kind: 'file' | 'dir'
+}
+
+/** `file:deleted` — pushed to EVERY window after a successful delete (GRO-2272). */
+export interface FileDeletedEvent {
+  path: string
+  kind: 'file' | 'dir'
+}
+
 export interface WindowIdentity {
   id: string
   root: string | null
@@ -622,6 +639,28 @@ export interface FileApi {
   repairRename(req: RenameFileRequest): Promise<RenameFileResponse>
   /** Fired in every window after a successful rename; returns an unsubscribe. */
   onRenamed(listener: (ev: FileRenamedEvent) => void): () => void
+  /**
+   * In-app delete (GRO-2272): move a file or folder to the SYSTEM TRASH and repair the app
+   * state. `shell.trashItem` only — never `fs.rm`, and no permanent-delete fallback: a trash
+   * failure rejects `IO_ERROR` and the entry stays on disk, because a filesystem with no
+   * Trash is exactly where destroying the file would be worst.
+   *
+   * Refuses (`BAD_REQUEST`) dot-entries — invisible infrastructure the UI never showed — and
+   * the CALLING window's own vault root (root identity is a recents/vault question, same
+   * split as `rename`); another window rooted inside a deleted folder is allowed and falls
+   * through to that window's existing `onRootMissing` repair. Missing path → `NOT_FOUND`.
+   * There is no extension gate: the tree shows every folder, so every folder is deletable.
+   *
+   * On success the same handler drops every stored reference (`store.removePath`: window
+   * `file` — promoted to an heir tab rather than nulled when other tabs survive — plus tabs,
+   * recents, folder state, fold and baseGroups keys) and pushes `file:deleted` to EVERY
+   * window. The vault index needs no push: the watcher's `unlink` / `unlinkDir` echo heals it
+   * (trashItem is a MOVE at the fs layer). Notes linking to a deleted page are left
+   * BYTE-IDENTICAL — their `[[links]]` simply go unresolved (LOCKED decision C).
+   */
+  delete(req: DeleteRequest): Promise<DeleteResponse>
+  /** Fired in every window after a successful delete; returns an unsubscribe. */
+  onDeleted(listener: (ev: FileDeletedEvent) => void): () => void
 }
 
 /**

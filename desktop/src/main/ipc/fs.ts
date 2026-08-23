@@ -5,6 +5,7 @@ import { createDir, createFile } from '../fs/create'
 import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure } from '../fs/fsUtils'
 import { renameFile, repairRename } from '../fs/rename'
+import { removeEntry } from '../fs/remove'
 import { tree } from '../fs/tree'
 import type { Store } from '../store'
 import { getColdStartDiff, getIndex } from '../vaultIndex'
@@ -45,6 +46,32 @@ export function registerFsIpc(store: Store, windows: WindowRegistry): void {
     const res = await renameFile(req)
     store.renamePath(res.oldPath, res.newPath)
     broadcastAll(CH.fileRenamed, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
+    return res
+  })
+  // In-app delete (GRO-2272). Deliberately the SAME shape as the rename handler above —
+  // fs work, then `store.removePath` repair, then one broadcast to every window — with two
+  // differences that are the point of the feature:
+  //  - it REMOVES rather than remaps, so a window whose active file went is left on an heir
+  //    tab (store.removePath picks it with useTabs' own ladder);
+  //  - there is NO link rewriting anywhere downstream (LOCKED decision C): notes referencing
+  //    the deleted page stay byte-identical and their [[links]] simply go unresolved.
+  // Like rename, the vault index needs no push: the watcher's unlink / unlinkDir echo heals
+  // it (verified empirically in the GRO-2275 scope pass — trashItem is a MOVE at the fs
+  // layer, so chokidar reports it exactly like any other move out of the root).
+  handleWithEvent(CH.fsDelete, async (e, req: unknown) => {
+    // The calling window's own vault ROOT cannot be deleted — same reasoning and the same
+    // sender lookup as rename: root identity is a recents/vault-management question. ANOTHER
+    // window rooted inside the deleted folder IS allowed; it falls through to that window's
+    // existing onRootMissing probe, which also drops the dead MRU entry.
+    const target = typeof (req as { path?: unknown } | null)?.path === 'string' ? path.resolve((req as { path: string }).path) : null
+    const senderId = windows.idFor(e.sender)
+    const senderRoot = store.get().windows.find((w) => w.id === senderId)?.root
+    if (target !== null && senderRoot != null && senderRoot === target) {
+      throw new BridgeFailure('BAD_REQUEST', 'the vault root itself cannot be deleted', { path: target })
+    }
+    const res = await removeEntry(req)
+    store.removePath(res.path)
+    broadcastAll(CH.fileDeleted, { path: res.path, kind: res.kind })
     return res
   })
   // External-rename repair (Links E1c, GRO-2242): the entry ALREADY moved on disk (an external

@@ -384,6 +384,120 @@ describe('createStore: mutations', () => {
     })
   })
 
+  describe('removePath (GRO-2272: the store repair after an in-app delete)', () => {
+    const GONE = '/v/B.md'
+
+    it('deleting the ONLY tab leaves the window empty (file null, tabs [])', () => {
+      const store = createStore(file)
+      store.upsertWindow(win('w1', { root: '/v', file: GONE, tabs: [GONE] }))
+      store.removePath(GONE)
+      expect(store.get().windows[0].file).toBeNull()
+      expect(store.get().windows[0].tabs).toEqual([])
+    })
+
+    it('deleting the ACTIVE tab promotes the right neighbour, else the left — never discards survivors', () => {
+      const store = createStore(file)
+      store.upsertWindow(win('w1', { root: '/v', file: GONE, tabs: ['/v/left.md', GONE, '/v/right.md'] }))
+      store.removePath(GONE)
+      expect(store.get().windows[0].file).toBe('/v/right.md')
+      expect(store.get().windows[0].tabs).toEqual(['/v/left.md', '/v/right.md'])
+      // No right neighbour: fall back to the nearest surviving tab on the left.
+      const store2 = createStore(`${file}.2`)
+      store2.upsertWindow(win('w2', { root: '/v', file: GONE, tabs: ['/v/left.md', GONE] }))
+      store2.removePath(GONE)
+      expect(store2.get().windows[0].file).toBe('/v/left.md')
+    })
+
+    it('drops the deleted tab and keeps the window on a surviving active file', () => {
+      const store = createStore(file)
+      store.upsertWindow(win('w1', { root: '/v', file: '/v/x.md', tabs: ['/v/x.md', GONE] }))
+      store.upsertWindow(win('w2', { root: '/other', file: '/other/a.md', tabs: ['/other/a.md'] }))
+      store.removePath(GONE)
+      expect(store.get().windows).toEqual([
+        win('w1', { root: '/v', file: '/v/x.md', tabs: ['/v/x.md'] }),
+        win('w2', { root: '/other', file: '/other/a.md', tabs: ['/other/a.md'] }),
+      ])
+    })
+
+    it('leaves window ROOT alone — the renderer onRootMissing probe owns that repair', () => {
+      const store = createStore(file)
+      store.upsertWindow(win('w1', { root: '/v/Sub', file: '/v/Sub/a.md', tabs: ['/v/Sub/a.md'] }))
+      store.removePath('/v/Sub')
+      expect(store.get().windows[0].root).toBe('/v/Sub') // untouched by design
+      expect(store.get().windows[0].file).toBeNull() // the file under it still goes
+      expect(store.get().windows[0].tabs).toEqual([])
+    })
+
+    it('a DIRECTORY removes by prefix: every file and tab under it goes, siblings stay', () => {
+      const store = createStore(file)
+      store.upsertWindow(win('w1', { root: '/v', file: '/v/Old/a.md', tabs: ['/v/Old/a.md', '/v/x.md', '/v/Old/deep/b.md'] }))
+      store.removePath('/v/Old')
+      expect(store.get().windows[0].file).toBe('/v/x.md')
+      expect(store.get().windows[0].tabs).toEqual(['/v/x.md'])
+    })
+
+    it('a prefix must be a real path segment: /v/Older is not under /v/Old', () => {
+      const store = createStore(file)
+      store.upsertWindow(win('w1', { root: '/v', file: '/v/Older.md', tabs: ['/v/Older.md'] }))
+      store.removePath('/v/Old')
+      expect(store.get().windows[0].tabs).toEqual(['/v/Older.md'])
+    })
+
+    it('drops the recents entry for a deleted folder', () => {
+      const store = createStore(file)
+      store.pushRecent('/v/Sub')
+      store.pushRecent('/v/Keep')
+      store.removePath('/v/Sub')
+      expect(store.get().recents.map((r) => r.path)).toEqual(['/v/Keep'])
+    })
+
+    it('drops folder state at or under the path: the key itself, expanded, lastFile, folds, baseGroups', () => {
+      const store = createStore(file)
+      store.setFolder('/v', { lastFile: GONE, expanded: ['/v/Old', '/v/Keep'] })
+      store.setFolds('/v', GONE, ['k1'])
+      store.setFolds('/v', '/v/x.md', ['k2'])
+      store.setBaseGroups('/v', '/v/T.base::Table', ['g1'])
+      store.setBaseGroups('/v', '/v/K.base::Table', ['g2'])
+      store.removePath(GONE)
+      expect(store.get().folders['/v'].lastFile).toBeNull()
+      expect(store.get().folders['/v'].folds).toEqual({ '/v/x.md': ['k2'] })
+      store.removePath('/v/Old')
+      expect(store.get().folders['/v'].expanded).toEqual(['/v/Keep'])
+      // A baseGroups key is `<basePath>::<view>` — the exact-file half needs its own test.
+      store.removePath('/v/T.base')
+      expect(store.get().folders['/v'].baseGroups).toEqual({ '/v/K.base::Table': ['g2'] })
+    })
+
+    it('drops the whole folder-state entry when the deleted folder was itself a stored root', () => {
+      const store = createStore(file)
+      store.setFolder('/v/Sub', { lastFile: '/v/Sub/a.md' })
+      store.setFolder('/v/Keep', { lastFile: '/v/Keep/b.md' })
+      store.removePath('/v/Sub')
+      expect(Object.keys(store.get().folders)).toEqual(['/v/Keep'])
+    })
+
+    it('a delete nothing references changes (and notifies) nothing', () => {
+      const store = createStore(file)
+      store.upsertWindow(win('w1', { root: '/v', file: '/v/x.md', tabs: ['/v/x.md'] }))
+      const seen: AppState[] = []
+      store.onChange((s) => seen.push(s))
+      store.removePath('/v/unreferenced.md')
+      expect(seen).toHaveLength(0)
+    })
+
+    it('commits ONCE for a delete that touches several places at once', () => {
+      const store = createStore(file)
+      store.upsertWindow(win('w1', { root: '/v', file: GONE, tabs: [GONE] }))
+      store.upsertWindow(win('w2', { root: '/v', file: '/v/x.md', tabs: ['/v/x.md', GONE] }))
+      store.setFolder('/v', { lastFile: GONE })
+      store.setFolds('/v', GONE, ['k1'])
+      const seen: AppState[] = []
+      store.onChange((s) => seen.push(s))
+      store.removePath(GONE)
+      expect(seen).toHaveLength(1)
+    })
+  })
+
   describe('renamePath with a DIRECTORY (Links E1b, GRO-2241: prefix repair)', () => {
     const OLD = '/v/Old'
     const NEW = '/v/New'
