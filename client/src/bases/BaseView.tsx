@@ -12,6 +12,7 @@ import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/filterRows'
 import { type GroupSwap, type PendingMove, applyMoves, groupByKey } from './view/groupDrag'
+import { groupKeyOf } from './view/GroupHeader'
 import { ListView } from './view/ListView'
 import { TableView } from './view/TableView'
 import { Toolbar } from './view/Toolbar'
@@ -117,6 +118,13 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
   const onToggleGroup = (key: string) => {
     const next = collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key]
     setCollapsedByKey((m) => ({ ...m, [collapseKey]: next }))
+    if (root !== null && groupsKey !== null) storage.setBaseGroups(root, groupsKey, next)
+  }
+  // Collapse / expand all (YAZ-788): every group the VIEW has, not the search-narrowed `groups` —
+  // a group hidden behind an active search must collapse with the rest.
+  const allGroupKeys = result.groups === null ? [] : result.groups.map((g) => groupKeyOf(g.key))
+  const setAllGroups = (next: readonly string[]) => {
+    setCollapsedByKey((m) => ({ ...m, [collapseKey]: [...next] }))
     if (root !== null && groupsKey !== null) storage.setBaseGroups(root, groupsKey, next)
   }
 
@@ -247,6 +255,9 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           onSearch={setSearch}
           onUpdate={update}
           onNew={() => onNewNote(null)}
+          allGroupKeys={allGroupKeys}
+          collapsed={collapsed}
+          onSetAllGroups={setAllGroups}
           tabs={tabs}
           root={root}
           pinned={pinned}

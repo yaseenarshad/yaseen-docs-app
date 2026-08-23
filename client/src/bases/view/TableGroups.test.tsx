@@ -233,6 +233,18 @@ describe('collapse', () => {
     expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.base::T', [])
   })
 
+  it('the toolbar toggle collapses every group at once, the ones search hides included', async () => {
+    const { storage } = await import('../../lib/storage')
+    const { el } = mount(GROUP_BASE)
+    click(byLabel(el, 'Search'))
+    setValue(byLabel(el, 'Search rows'), 'agency')
+    expect(headerTexts(el)).toEqual(['drafting', 'idea'])
+    click(byLabel(el, 'Collapse all groups'))
+    expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.base::T', ['v:drafting', 'v:idea', 'v:published', groupKeyOf(null)])
+    click(byLabel(el, 'Expand all groups'))
+    expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.base::T', [])
+  })
+
   it('the No value group collapses under its own stable key', async () => {
     const { storage } = await import('../../lib/storage')
     const { el } = mount(GROUP_BASE)
