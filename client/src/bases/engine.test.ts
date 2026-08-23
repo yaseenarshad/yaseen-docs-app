@@ -221,10 +221,12 @@ describe('runView: group by (GRO-2133 D6)', () => {
     expect(r.groups![3].rows).toHaveLength(5)
   })
 
-  it('lists group by the whole list; empty string, empty list and null are No value', () => {
+  it('lists fan out per element (YAZ-671 D1); empty string, empty list and null are No value', () => {
     const r = run({ groupBy: { property: 'tags' } })
-    expect(labels(r)).toEqual(['agentic, pillar', 'agentic/levels', 'creator', 'No value'])
-    expect(r.groups![0].key).toEqual(['agentic', 'pillar'])
+    // 'agentic, pillar' fans into 'agentic' and 'pillar' — one membership each, no combination group
+    expect(labels(r)).toEqual(['agentic', 'agentic/levels', 'creator', 'pillar', 'No value'])
+    expect(r.groups![0].key).toBe('agentic')
+    expect(r.groups!.every(g => g.fannedOut)).toBe(true)
     const recs = [
       { ...TEST_RECORDS[0], path: '/vault/a.md', properties: { k: '' } },
       { ...TEST_RECORDS[0], path: '/vault/b.md', properties: { k: [] } },
@@ -234,6 +236,47 @@ describe('runView: group by (GRO-2133 D6)', () => {
     const g = runView({ views: [] }, { type: 'table', name: 'T', groupBy: { property: 'k' } }, recs, {})
     expect(labels(g)).toEqual(['x', 'No value'])
     expect(g.groups![1].rows).toHaveLength(3)
+    expect(g.groups!.every(x => x.fannedOut)).toBe(false) // no list seen → scalar grouping
+  })
+
+  it('fan-out edges: duplicates count once, empty elements drop, an all-empty list is No value', () => {
+    const rec = (name: string, k: unknown) => ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, properties: { k } })
+    const recs = [
+      rec('dup', ['a', 'a']),
+      rec('mixed', ['a', null, '']),
+      rec('allEmpty', [null, '']),
+      rec('two', ['a', 'b']),
+    ]
+    const g = runView({ views: [] }, { type: 'table', name: 'T', groupBy: { property: 'k' } }, recs, {})
+    expect(labels(g)).toEqual(['a', 'b', 'No value'])
+    // dup joins 'a' once, not twice; mixed drops its empty elements
+    expect(g.groups![0].rows.map(r => r.record.basename)).toEqual(['dup', 'mixed', 'two'])
+    expect(g.groups![1].rows.map(r => r.record.basename)).toEqual(['two'])
+    expect(g.groups![2].rows.map(r => r.record.basename)).toEqual(['allEmpty'])
+  })
+
+  it('a row in two groups is counted in both; the footer stays de-duplicated (YAZ-671 D2)', () => {
+    const rec = (name: string, k: unknown) => ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, properties: { k } })
+    const recs = [rec('both', ['a', 'b']), rec('onlyA', ['a'])]
+    const g = runView(
+      { views: [] },
+      { type: 'table', name: 'T', groupBy: { property: 'k' }, summaries: { 'file.name': 'Count' } },
+      recs,
+      {},
+    )
+    expect(g.groups!.map(x => x.summaries['file.name'])).toEqual([2, 1]) // per group, duplicates included
+    expect(g.summaries['file.name']).toBe(2) // footer: each row once
+    expect(g.total).toBe(2)
+    expect(g.rows).toHaveLength(2)
+  })
+
+  it('links fan out per target and group by exact target (YAZ-673 Q1)', () => {
+    const rec = (name: string, k: unknown) => ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, properties: { k } })
+    const recs = [rec('spans', ['[[Lead Gen]]', '[[Sales]]']), rec('one', ['[[Lead Gen]]'])]
+    const g = runView({ views: [] }, { type: 'table', name: 'T', groupBy: { property: 'k' } }, recs, {})
+    expect(labels(g)).toEqual(['[[Lead Gen]]', '[[Sales]]'])
+    expect(g.groups![0].rows.map(r => r.record.basename)).toEqual(['spans', 'one'])
+    expect(g.groups![1].rows.map(r => r.record.basename)).toEqual(['spans'])
   })
 
   it('groups by a formula and a file field; limit applies before grouping', () => {

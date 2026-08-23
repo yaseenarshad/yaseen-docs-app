@@ -3,7 +3,7 @@ import type { IndexRecord, RegistryResponse, RegistryTypeDef } from '@shared/typ
 import { storage } from '../lib/storage'
 import { type BaseDefinition, type ParsedBase, parseBase, serializeBase, updateBase } from './baseFile'
 import { type Group, type Row, propertyKeys, runView } from './engine'
-import { render } from './expr'
+import { equals, fromYaml, render } from './expr'
 import { createNewNote, deriveSeed, targetFolder, untitledName } from './newNote'
 import { pinnedType } from './relation'
 import { ensureFolder, newEntityParts, usableFolder } from './scaffold'
@@ -11,7 +11,7 @@ import { writeProperty } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/filterRows'
-import { type PendingMove, applyMoves, dragKey } from './view/groupDrag'
+import { type GroupSwap, type PendingMove, applyMoves, groupByKey } from './view/groupDrag'
 import { ListView } from './view/ListView'
 import { TableView } from './view/TableView'
 import { Toolbar } from './view/Toolbar'
@@ -122,10 +122,19 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
 
   // A drop on a board column / table section (5C, GRO-2143): optimistic move now, one-key write
   // through 5A; a failed write drops the move (the card snaps back) and flags the card instead.
-  const onMoveToGroup = (path: string, value: unknown) => {
-    const key = dragKey(view)
+  const onMoveToGroup = (path: string, value: unknown, swap?: GroupSwap) => {
+    const key = groupByKey(view)
     if (key === null) return
     const prevRaw = records.find((r) => r.path === path)?.properties[key]
+    if (swap !== undefined) {
+      // Fan-out (D3): edit the list rather than replace it. Elements are matched with the engine's
+      // own `equals` over `fromYaml` and NO resolver — the exact comparison that decided the
+      // grouping — so we can only ever remove the element that put this row in that group.
+      const list = Array.isArray(prevRaw) ? prevRaw : prevRaw == null ? [] : [prevRaw]
+      const next = swap.remove === null ? [...list] : list.filter((v) => !equals(fromYaml(v), swap.remove))
+      if (swap.add !== null) next.push(render(swap.add))
+      value = next
+    }
     setMoveError(null)
     setMoves((m) => ({ ...m, [path]: { key, value, prevRaw } }))
     writeProperty(path, key, value).catch((err: unknown) => {
@@ -144,9 +153,17 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
   // (`folder ?? current placement`); an invalid stored folder is treated as absent.
   const onNewNote = (group: Group | null) => {
     const seed = deriveSeed(def, view)
-    const groupKey = dragKey(view)
+    const groupKey = groupByKey(view)
     if (group !== null && groupKey !== null) {
-      const raw = group.key === null ? undefined : group.rows[0]?.record.properties[groupKey]
+      // Fanned out (D4): seed THIS group's own element as a one-item list. The first row's raw
+      // value is the neighbour's WHOLE list there, which would hand the new page someone else's
+      // values; `render()` gives a link back its `[[…]]` form, the same one the picker writes.
+      const raw =
+        group.key === null
+          ? undefined
+          : group.fannedOut
+            ? [render(group.key)]
+            : group.rows[0]?.record.properties[groupKey]
       if (raw !== undefined) seed.properties[groupKey] = raw
     }
     const typeDef = pinned === null ? undefined : registry?.types[pinned]
