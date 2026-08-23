@@ -57,12 +57,8 @@ describe('perf', () => {
     expect(kept).toBeLessThan(1000)
     // eslint-disable-next-line no-console
     console.log(`perf: 1000 records in ${ms.toFixed(1)} ms (${kept} kept)`)
-    // Guards against an ALGORITHMIC regression (~3x the real cost), not against a busy
-
-    // machine: this runs in ~30ms alone but exceeded 50ms under full-suite parallel load,
-
-    // which was pure flake. Do not tighten it back (GRO-2272 wave).
-
-    expect(ms).toBeLessThan(150)
+    // Runs in the `perf` project, alone on an idle pool (YAZ-740), so this is a real budget:
+    // ~7 ms measured, 50 ms allowed. A 3x algorithmic regression fails it; a busy machine cannot.
+    expect(ms).toBeLessThan(50)
   })
 })

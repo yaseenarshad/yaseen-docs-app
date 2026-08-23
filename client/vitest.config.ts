@@ -15,6 +15,10 @@ export default defineConfig({
     css: true,
     setupFiles: ['src/test-setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
+    // Timing budgets live in the `perf` project (vitest.perf.config.ts), which runs AFTER this
+    // one on an idle pool. They flaked here under parallel load, and widening them to cope would
+    // have hidden a real 4-6x regression — see YAZ-740.
+    exclude: ['**/node_modules/**', 'src/**/*.perf.test.{ts,tsx}'],
     testTimeout: 30_000,
   },
 })
