@@ -79,6 +79,27 @@ describe('expandedBlockRange', () => {
   })
 })
 
+describe('arm guard', () => {
+  it('does not arm on a right-button handle grab', async () => {
+    const { view } = await mount('alpha\n\nbravo\n\ncharlie\n')
+    const range = expandedBlockRange(view.state.doc, posOf(view, 'alpha'), posOf(view, 'bravo'))!
+    const sel = TextSelection.between(view.state.doc.resolve(range.start), view.state.doc.resolve(range.end))
+    view.dispatch(view.state.tr.setSelection(sel))
+    const handle = document.createElement('div')
+    handle.className = 'milkdown-block-handle'
+    const item = document.createElement('div')
+    item.className = 'operation-item'
+    handle.appendChild(item)
+    view.dom.parentElement!.appendChild(handle)
+    handle.getBoundingClientRect = () => ({ right: 0 }) as DOMRect
+    view.posAtCoords = () => ({ pos: range.start + 1, inside: range.start })
+    item.dispatchEvent(new MouseEvent('mousedown', { button: 2, bubbles: true, clientY: 0 }))
+    expect(multiBlockDragKey.getState(view.state) ?? null).toBeNull()
+    expect(view.state.selection.from).toBe(sel.from)
+    expect(view.state.selection.to).toBe(sel.to)
+  })
+})
+
 describe('drop cleanup', () => {
   /** Arm the plugin over [start,end], then replay what ProseMirror's drop-move does. */
   function dragAndDrop(view: EditorView, start: number, end: number, targetText: string) {

@@ -17,11 +17,14 @@
  *    removes that shell, walking up through wrappers (e.g. a list_item) it was the only child of.
  * Grabbing a block OUTSIDE the selection is untouched: the plugin never arms and Crepe's
  * single-block path runs as before.
+ *  - Only a left-button grab on THIS editor's own handle arms: right-click used to arm the
+ *    plugin, and a hidden tab's editor could arm on the visible editor's handle.
  */
 import { Slice, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, TextSelection, type EditorState } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { handleTargetPos, isDragHandleGrab } from './blockHandleTarget'
 
 interface Armed {
   from: number
@@ -31,9 +34,6 @@ interface Armed {
 type Meta = { type: 'arm'; from: number; to: number } | { type: 'disarm' }
 
 export const multiBlockDragKey = new PluginKey<Armed | null>('mdapp-multi-block-drag')
-
-/** How far right of the handle to probe for the block it points at (the gutter is ~24px). */
-const PROBE_OFFSET_PX = 24
 
 /**
  * [start, end] covering whole sibling blocks at the deepest level containing both selection
@@ -52,9 +52,6 @@ export function expandedBlockRange(doc: ProseNode, from: number, to: number): { 
   if (first !== null && start + first.nodeSize >= end) return null
   return { start, end }
 }
-
-const isDragHandleGrab = (target: EventTarget | null): target is HTMLElement =>
-  target instanceof HTMLElement && target.closest('.milkdown-block-handle .operation-item') !== null
 
 /**
  * The armed selection's content as fully CLOSED blocks. An open slice (what content() returns
@@ -92,10 +89,8 @@ export const multiBlockDrag = $prose(
       },
       view(view) {
         const arm = (e: MouseEvent) => {
-          if (!isDragHandleGrab(e.target)) return
-          const handle = (e.target as HTMLElement).closest('.milkdown-block-handle') as HTMLElement
-          const rect = handle.getBoundingClientRect()
-          const probe = view.posAtCoords({ left: rect.right + PROBE_OFFSET_PX, top: e.clientY })
+          if (e.button !== 0 || !isDragHandleGrab(e.target) || !view.dom.parentElement?.contains(e.target)) return
+          const probe = handleTargetPos(view, e)
           if (probe === null) return
           const sel = view.state.selection
           const range = expandedBlockRange(view.state.doc, sel.from, sel.to)

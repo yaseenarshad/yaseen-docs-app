@@ -1,0 +1,27 @@
+/**
+ * Where the 6-dot block handle points. The handle floats in the gutter left of the block, so
+ * the block it belongs to is found by probing just right of the handle at the pointer's y.
+ */
+import type { EditorView } from '@milkdown/kit/prose/view'
+
+/** How far right of the handle to probe for the block it points at (the gutter is ~24px). */
+export const PROBE_OFFSET_PX = 24
+
+export const isDragHandleGrab = (t: EventTarget | null): t is HTMLElement =>
+  t instanceof HTMLElement && t.closest('.milkdown-block-handle .operation-item') !== null
+
+export interface HandleTarget {
+  pos: number
+  inside: number
+}
+
+/**
+ * Where the handle points: probe PROBE_OFFSET_PX right of the handle at the pointer's y. Null
+ * when the probe misses. `pos` lands on the block's start boundary, so consumers that need the
+ * enclosing node (e.g. a list_item) must use `inside`.
+ */
+export function handleTargetPos(view: EditorView, e: MouseEvent): HandleTarget | null {
+  const rect = (e.target as HTMLElement).closest('.milkdown-block-handle')!.getBoundingClientRect()
+  const probe = view.posAtCoords({ left: rect.right + PROBE_OFFSET_PX, top: e.clientY })
+  return probe === null ? null : { pos: probe.pos, inside: probe.inside }
+}
