@@ -10,6 +10,8 @@
  *   1  the "All KPIs" base opens grouped by funnel, the fixture has zero broken links
  *   2  canonical query A, standalone form: `funnel_stages.contains(link("Sales-Conversion"))`
  *   3  a relation cell edited through the 5E picker — registry-narrowed candidates, disk write, regroup
+ *   3b the multi-funnel KPI under FAN-OUT (YAZ-671): a drag between funnel groups SWAPS one element
+ *      on disk, a group "+" seeds only that funnel, and the table ends exactly where it began
  *   4  the SAME query embedded and `this`-scoped on the funnel page (Bases 6): prose and database in one note
  *   5  wiki-link navigation: click → current tab, ⌘-click → background tab (the LOCKED model)
  *   6  canonical query B, the reverse: `page_type == "problem" && file.hasLink(this)` on the KPI page
@@ -146,20 +148,24 @@ test('step 1 — the encyclopedia opens on "All KPIs", grouped by funnel, with n
 
   await expect(openBase(win)).toBeVisible()
   await expect(viewTabs(openBase(win))).toHaveText(['All KPIs', 'Sales-Conversion'])
-  // 5 kpi pages out of 17 — `page_type == "kpi"` is the only thing separating them.
-  await expect(dataRows(openBase(win))).toHaveCount(5)
+  // 5 kpi pages out of 17 — `page_type == "kpi"` is the only thing separating them. (Row
+  // COUNT is asserted below, where fan-out makes it 6.)
 
-  // Grouping is by the WHOLE property value: the KPI that spans two funnels forms its own group
-  // rather than joining both (the engine does no multi-link fan-out — recorded, not worked
-  // around), and the KPI with no funnel lands in the native trailing "No value" group.
-  await expect(groupCounts(openBase(win))).toHaveText(['2', '1', '1', '1'])
+  // Fan-out (YAZ-671 D1): the KPI that spans two funnels appears under BOTH — there is no
+  // combination group — and the KPI with no funnel lands in the native trailing "No value" group.
+  // 5 KPIs make 6 memberships, so the group counts sum ABOVE the 5-row total (D2, deliberate).
+  await expect(groupCounts(openBase(win))).toHaveText(['2', '1', '2', '1'])
   expect(await groupLabels(openBase(win))).toEqual([
     'Toggle group [[Lead Gen]]',
-    'Toggle group [[Lead Nurture]], [[Sales-Conversion]]',
+    'Toggle group [[Lead Nurture]]',
     'Toggle group [[Sales-Conversion]]',
     'Toggle group No value',
   ])
-  await expect(rowNames(openBase(win))).toHaveText(named('CAC', 'MQL Volume', 'Sales Cycle Time', 'Win Rate', 'Gross Margin'))
+  await expect(dataRows(openBase(win))).toHaveCount(6)
+  await expect(openBase(win).locator('.base-toolbar__count')).toHaveText('5 items')
+  await expect(rowNames(openBase(win))).toHaveText(
+    named('CAC', 'MQL Volume', 'Sales Cycle Time', 'Sales Cycle Time', 'Win Rate', 'Gross Margin'),
+  )
   await shoot(win, 'bible-01-all-kpis-grouped')
 })
 
@@ -174,7 +180,7 @@ test('step 2 — canonical query A, standalone form: funnel_stages.contains(link
 
 test('step 3 — a relation cell edited through the picker: registry-narrowed, written to disk, regrouped', async () => {
   await viewTabs(openBase(win)).filter({ hasText: 'All KPIs' }).click()
-  await expect(rowNames(openBase(win))).toHaveCount(5)
+  await expect(rowNames(openBase(win))).toHaveCount(6)
 
   // Gross Margin is the fixture's business-fundamentals metric: no funnel, so it sits in the
   // native "No value" group. Its `funnel_stages` cell is column 1 (file.name is column 0).
@@ -201,9 +207,86 @@ test('step 3 — a relation cell edited through the picker: registry-narrowed, w
 
   // …and the base regroups off the watcher: Lead Gen gains a row, "No value" is gone.
   await expect(groupToggles(openBase(win))).toHaveCount(3)
-  await expect(groupCounts(openBase(win))).toHaveText(['3', '1', '1'])
-  await expect(rowNames(openBase(win))).toHaveText(named('CAC', 'Gross Margin', 'MQL Volume', 'Sales Cycle Time', 'Win Rate'))
+  await expect(groupCounts(openBase(win))).toHaveText(['3', '1', '2'])
+  await expect(rowNames(openBase(win))).toHaveText(
+    named('CAC', 'Gross Margin', 'MQL Volume', 'Sales Cycle Time', 'Sales Cycle Time', 'Win Rate'),
+  )
   await shoot(win, 'bible-03b-relation-regrouped')
+})
+
+test('step 3b — fan-out writes: a drag between funnel groups SWAPS one element on disk; a group "+" seeds only that funnel', async () => {
+  const sct = path.join(vault, 'kpis', 'Sales Cycle Time.md')
+  // A group header's identity lives in its toggle's aria-label (`Toggle group [[X]]`), which
+  // `hasText` does not read — the visible text is the bare chip. Anchor on the button, then
+  // climb to the <tr>. A data row belongs to the nearest group header ABOVE it in the flat tbody.
+  const groupRow = (label: string) =>
+    openBase(win).locator(`.base-group__toggle[aria-label="Toggle group ${label}"]`).locator('xpath=ancestor::tr[1]')
+  const rowIn = (label: string, name: string) =>
+    groupRow(label)
+      .locator('xpath=following-sibling::tr[not(contains(@class,"base-table__group"))][preceding-sibling::tr[contains(@class,"base-table__group")][1][.//*[@aria-label="Toggle group ' + label + '"]]]')
+      .filter({ hasText: name })
+      .first()
+
+  // ---- drag: Sales Cycle Time sits in Lead Nurture AND Sales-Conversion. Drag its Lead Nurture
+  // row onto the Lead Gen section. The WRITE is the proof, not the DOM: [[Lead Nurture]] must go,
+  // [[Lead Gen]] must arrive, and [[Sales-Conversion]] must survive untouched (D3: swap, never
+  // overwrite with the neighbour's whole list).
+  expect(await readFile(sct, 'utf8')).toContain('funnel_stages: ["[[Lead Nurture]]", "[[Sales-Conversion]]"]')
+  await rowIn('[[Lead Nurture]]', 'Sales Cycle Time').dragTo(groupRow('[[Lead Gen]]'))
+  await expect.poll(() => readFile(sct, 'utf8'), { timeout: 10_000 }).toContain('[[Lead Gen]]')
+  const afterDrag = await readFile(sct, 'utf8')
+  expect(afterDrag).not.toContain('[[Lead Nurture]]')
+  expect(afterDrag).toContain('[[Sales-Conversion]]')
+  expect(afterDrag).toContain('# Sales Cycle Time') // the body is untouched
+  // the watcher regroups: Lead Nurture is empty and gone, Lead Gen is 4, Sales-Conversion still 2
+  await expect(groupToggles(openBase(win))).toHaveCount(2)
+  await expect(groupCounts(openBase(win))).toHaveText(['4', '2'])
+  await shoot(win, 'bible-03c-fanout-drag-swap')
+
+  // ---- "+": create inside the Sales-Conversion group. The seed must be THAT funnel alone (D4),
+  // not the first row's whole list — and the page must land in the group it was created from.
+  await groupRow('[[Sales-Conversion]]').locator('.base-group__new').click()
+  const created = path.join(vault, 'kpis', 'Untitled.md')
+  await expect.poll(() => readFile(created, 'utf8').catch(() => ''), { timeout: 10_000 }).toContain('page_type: kpi')
+  const seeded = await readFile(created, 'utf8')
+  expect(seeded).toContain('[[Sales-Conversion]]')
+  expect(seeded).not.toContain('[[Lead Gen]]')
+  expect(seeded).not.toContain('[[Lead Nurture]]')
+  // the create OPENS the new page in its own tab, so come back to the base before reading it
+  await expect(activeTab(win)).toHaveText('Untitled')
+  await shoot(win, 'bible-03d-fanout-plus-seed')
+  // ⌘W is a native menu accelerator the synthetic keyboard never reaches — use the tab's own
+  // close. The base was opened by seeded state, not as a tab, so closing the only tab leaves
+  // the window EMPTY: reopen the base from the sidebar to read it.
+  await win.locator('.tabbar [aria-label="Close Untitled"]').click()
+  await fileRow(win, 'All KPIs').click()
+  await expect(openBase(win)).toBeVisible()
+  await expect(groupCounts(openBase(win))).toHaveText(['4', '3'])
+
+  // ---- restore, so steps 4-8 see the fixture they were written against: remove the scratch
+  // page, and put Sales Cycle Time back into Lead Nurture.
+  await rm(created)
+  await expect.poll(() => readFile(created, 'utf8').catch(() => null)).toBeNull()
+  await expect(groupCounts(openBase(win))).toHaveText(['4', '2'])
+  // dragging onto "No value" would REMOVE only the Lead Gen element — no Lead Nurture group exists
+  // to drop onto. So go through the picker, the same way step 3 did, to write the list back.
+  const cell = rowIn('[[Lead Gen]]', 'Sales Cycle Time').locator('td').nth(1)
+  await cell.locator('[data-edit]').click()
+  const input = win.locator('.base-cell-edit__input')
+  await expect(input).toBeVisible()
+  // chips editor: first chip is [[Lead Gen]] → Backspace on the empty input removes the LAST chip
+  // ([[Sales-Conversion]]) so remove twice, then re-add both in the original order.
+  await win.keyboard.press('Backspace')
+  await win.keyboard.press('Backspace')
+  await input.pressSequentially('[[Lead Nurture', { delay: 15 })
+  await win.keyboard.press('Enter')
+  await win.keyboard.press('Enter')
+  await input.pressSequentially('[[Sales-Conversion', { delay: 15 })
+  await win.keyboard.press('Enter')
+  await win.keyboard.press('Enter')
+  await win.keyboard.press('Enter')
+  await expect.poll(() => readFile(sct, 'utf8'), { timeout: 10_000 }).toContain('[[Lead Nurture]]')
+  await expect(groupCounts(openBase(win))).toHaveText(['3', '1', '2'])
 })
 
 test('step 4 — the same query embedded and `this`-scoped on the funnel page: prose AND database', async () => {
