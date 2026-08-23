@@ -301,3 +301,47 @@ describe('context menu target matrix (GRO-2296)', () => {
     expect(el.querySelector<HTMLInputElement>('.create-inline__input')?.value).toBe('a')
   })
 })
+
+/**
+ * Blank-space "Copy path" (GRO-2273): right-clicking below the tree copies the VAULT ROOT's
+ * absolute path — the blank area already means "the root" everywhere else in this menu
+ * (`targetDirFor` sends "New note" there). VS Code's empty-Explorer menu behaves the same.
+ * Copy path only: Copy Relative Path was declined (LOCKED, GRO-2273).
+ */
+describe('blank-space copy path (GRO-2273)', () => {
+  function installClipboard() {
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    return writeText
+  }
+
+  it('copies the vault ROOT path, with no trailing slash, and closes the menu', async () => {
+    const writeText = installClipboard()
+    const { el } = await mount()
+    act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(itemByLabel(el, 'Copy path')).toBeDefined()
+    act(() => itemByLabel(el, 'Copy path')?.click())
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(writeText).toHaveBeenCalledWith('/v')
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('still offers no Rename on blank space — the root fallback must not leak into it', async () => {
+    installClipboard()
+    const { el } = await mount()
+    act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(itemByLabel(el, 'Copy path')).toBeDefined()
+    expect(itemByLabel(el, 'Rename')).toBeUndefined()
+  })
+
+  it('file and folder rows still copy their OWN path, not the root', async () => {
+    const writeText = installClipboard()
+    const { el } = await mount()
+    act(() => void el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Copy path')?.click())
+    expect(writeText).toHaveBeenCalledWith('/v/a.md')
+    act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Copy path')?.click())
+    expect(writeText).toHaveBeenCalledWith('/v/sub')
+  })
+})

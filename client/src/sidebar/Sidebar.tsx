@@ -62,7 +62,7 @@ interface MenuTargets {
   targetDir: string
   /** The right-clicked row's kind; null for blank space. Drives the Rename input's mode. */
   rowKind: 'file' | 'dir' | null
-  /** "Copy path" — the right-clicked row (file or folder); null for blank space (GRO-2069). */
+  /** "Copy path" — the right-clicked row (file or folder), or the vault ROOT for blank space (GRO-2273). */
   copyPath: string | null
   /** "Copy link" — FILE rows only; a folder link would only fail main's markdown guard (E3, GRO-2173). */
   copyLinkPath: string | null
@@ -197,9 +197,14 @@ export function Sidebar({
         targetDir: targetDirFor(node, root),
         rowKind: node?.type ?? null,
         // ONE field per item, each resolved on its own (GRO-2296). Several are the same
-        // expression TODAY and must stay independent anyway: GRO-2273 gives `copyPath` a
-        // blank-space fallback to the vault ROOT that `renamePath` must never inherit.
-        copyPath: node?.path ?? null,
+        // expression TODAY and must stay independent anyway — `copyPath`'s root fallback
+        // below is exactly the divergence the split exists for.
+        //
+        // Blank space copies the vault ROOT (GRO-2273): the blank area already means "the
+        // root" everywhere else here (`targetDirFor` sends "New note" there), and VS Code's
+        // empty-Explorer menu does the same. Trailing separators are stripped so the copied
+        // bytes match the root the rest of the app uses.
+        copyPath: node?.path ?? root.replace(/\/+$/, ''),
         copyLinkPath: filePath,
         newWindowPath: filePath,
         renamePath: node?.path ?? null,
