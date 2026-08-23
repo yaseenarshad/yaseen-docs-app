@@ -217,7 +217,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
               </tr>
             ) : (
               <tr
-                key={line.row.record.path}
+                // Fan-out (YAZ-671): the same record can sit in several groups, and the tbody is ONE
+                // flat list (the windowing needs it), so the path alone is not a unique sibling key.
+                key={line.g === null ? line.row.record.path : `${groupKeyOf(line.g.key)}:${line.row.record.path}`}
                 className={line.g !== null && dnd.over === groupKeyOf(line.g.key) ? 'base-table__row--drop' : undefined}
                 {...(line.g === null ? {} : { ...dnd.source(line.row.record.path, groupKeyOf(line.g.key)), ...dnd.target(line.g) })}
               >

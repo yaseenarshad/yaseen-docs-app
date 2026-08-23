@@ -186,6 +186,27 @@ describe('grouped sections', () => {
     expect(values.slice(0, 4)).toEqual(['agentic', 'agentic/levels', 'creator', 'pillar'])
     expect(headers(tags.el)[0].querySelectorAll('.base-table__chip')).toHaveLength(0)
   })
+
+  it('a record in several fanned-out groups renders once per group, with unique keys (YAZ-682)', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const rec = (name: string, status: unknown): IndexRecord => ({
+      ...TEST_RECORDS[0],
+      path: `/vault/${name}.md`,
+      name: `${name}.md`,
+      basename: name,
+      properties: { status },
+    })
+    const records = [rec('both', ['a', 'b']), rec('onlyA', ['a'])]
+    const { el } = mount(GROUP_BASE, { records })
+
+    // 'both' joins group a AND group b, so two records produce three data rows
+    expect(headers(el)).toHaveLength(2)
+    const data = [...el.querySelectorAll('tbody tr:not(.base-table__group)')]
+    expect(data).toHaveLength(3)
+    // React only warns once per duplicate-key list, and silently mis-reconciles after that
+    expect(errors.mock.calls.flat().join(' ')).not.toMatch(/same key|unique "key"/i)
+    errors.mockRestore()
+  })
 })
 
 describe('collapse', () => {
