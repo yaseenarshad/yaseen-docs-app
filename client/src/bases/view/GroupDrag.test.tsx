@@ -318,3 +318,70 @@ describe('grouped table drag between sections', () => {
     expect(rowOf(el, 'Agentic Agency.md').getAttribute('draggable')).not.toBe('true')
   })
 })
+
+// ---------- Fan-out: swap semantics (YAZ-671 D3) ----------
+
+/** A record whose grouping property is a LIST, so the engine fans it out across groups. */
+const listRec = (name: string, status: unknown): IndexRecord => ({
+  ...TEST_RECORDS[0],
+  path: `/vault/${name}.md`,
+  name: `${name}.md`,
+  basename: name,
+  properties: { status },
+})
+
+describe('drag between fanned-out groups (YAZ-671 D3)', () => {
+  it('a drop SWAPS: the source element goes, the target arrives, the rest survive', () => {
+    const records = [listRec('both', ['a', 'b']), listRec('onlyC', ['c'])]
+    const { el } = mount(STATUS_BOARD, { records })
+    // 'both' is in column a AND column b — that is the fan-out working
+    expect(titlesIn(colOf(el, 'a'))).toEqual(['both.md'])
+    expect(titlesIn(colOf(el, 'b'))).toEqual(['both.md'])
+
+    // drag the card OUT OF column a INTO column c
+    fire(cardOf(colOf(el, 'a'), 'both.md'), 'dragstart')
+    fire(colOf(el, 'c'), 'drop')
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/both.md', 'status', ['b', 'c'])
+  })
+
+  it('dragging the SAME card out of its other group removes that element instead', () => {
+    const records = [listRec('both', ['a', 'b']), listRec('onlyC', ['c'])]
+    const { el } = mount(STATUS_BOARD, { records })
+    fire(cardOf(colOf(el, 'b'), 'both.md'), 'dragstart')
+    fire(colOf(el, 'c'), 'drop')
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/both.md', 'status', ['a', 'c'])
+  })
+
+  it('a drop on "No value" removes only the dragged-from element, never the whole key', () => {
+    const records = [listRec('both', ['a', 'b']), listRec('none', [])]
+    const { el } = mount(STATUS_BOARD, { records })
+    fire(cardOf(colOf(el, 'a'), 'both.md'), 'dragstart')
+    fire(colOf(el, 'No value'), 'drop')
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/both.md', 'status', ['b'])
+  })
+
+  it('a card dragged OUT of "No value" gains the target element', () => {
+    const records = [listRec('empty', []), listRec('onlyA', ['a'])]
+    const { el } = mount(STATUS_BOARD, { records })
+    fire(cardOf(colOf(el, 'No value'), 'empty.md'), 'dragstart')
+    fire(colOf(el, 'a'), 'drop')
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/empty.md', 'status', ['a'])
+  })
+
+  it('link elements swap by exact target, matching how the engine grouped them (YAZ-673 Q1)', () => {
+    const records = [listRec('spans', ['[[Lead Gen]]', '[[Sales]]']), listRec('other', ['[[Nurture]]'])]
+    const { el } = mount(STATUS_BOARD, { records })
+    // a link group header renders the bare target as a chip, not the `[[…]]` source
+    fire(cardOf(colOf(el, 'Lead Gen'), 'spans.md'), 'dragstart')
+    fire(colOf(el, 'Nurture'), 'drop')
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/spans.md', 'status', ['[[Sales]]', '[[Nurture]]'])
+  })
+
+  it('dropping on the card\'s own group stays a no-op', () => {
+    const records = [listRec('both', ['a', 'b'])]
+    const { el } = mount(STATUS_BOARD, { records })
+    fire(cardOf(colOf(el, 'a'), 'both.md'), 'dragstart')
+    fire(colOf(el, 'a'), 'drop')
+    expect(write).not.toHaveBeenCalled()
+  })
+})

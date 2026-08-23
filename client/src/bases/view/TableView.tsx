@@ -10,7 +10,7 @@ import { EditableCell } from './EditableCell'
 import type { Mutate } from './FilterMenu'
 import { canonicalKey } from './filterRows'
 import { GroupHeader, cellContent, groupKeyOf, summaryKindOf } from './GroupHeader'
-import { dragKey, useGroupDrag } from './groupDrag'
+import { groupByKey, useGroupDrag } from './groupDrag'
 import { Popover } from './Popover'
 
 export interface TableViewProps {
@@ -71,7 +71,7 @@ type Line = { header: Group; gk: string } | { row: Row; r: number; g: Group | nu
 export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup, types, registry = null, pinned = null, readOnly = false }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   // Row drag between sections (5C, GRO-2143); disabled without groups, and in read-only embeds.
-  const dnd = useGroupDrag(groups === null || readOnly ? null : dragKey(view), onMoveToGroup)
+  const dnd = useGroupDrag(groups === null || readOnly ? null : groupByKey(view), onMoveToGroup)
   const [summaryFor, setSummaryFor] = useState<string | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -221,7 +221,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 // flat list (the windowing needs it), so the path alone is not a unique sibling key.
                 key={line.g === null ? line.row.record.path : `${groupKeyOf(line.g.key)}:${line.row.record.path}`}
                 className={line.g !== null && dnd.over === groupKeyOf(line.g.key) ? 'base-table__row--drop' : undefined}
-                {...(line.g === null ? {} : { ...dnd.source(line.row.record.path, groupKeyOf(line.g.key)), ...dnd.target(line.g) })}
+                {...(line.g === null ? {} : { ...dnd.source(line.row.record.path, line.g), ...dnd.target(line.g) })}
               >
                 {keys.map((key, c) => {
                   const v = line.row.values[key]

@@ -7,7 +7,7 @@ import { cardWidth } from './cardWidth'
 import type { Mutate } from './FilterMenu'
 import { canonicalKey } from './filterRows'
 import { GroupHeader, cellContent, groupKeyOf } from './GroupHeader'
-import { dragKey, useGroupDrag } from './groupDrag'
+import { groupByKey, useGroupDrag } from './groupDrag'
 import { allPropertyKeys } from './properties'
 
 export interface BoardViewProps {
@@ -49,7 +49,7 @@ export interface BoardViewProps {
  * card carries an inline error chip. Images are 4E.
  */
 export function BoardView({ def, view, viewIndex, records, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup, readOnly = false }: BoardViewProps) {
-  const dnd = useGroupDrag(readOnly ? null : dragKey(view), onMoveToGroup)
+  const dnd = useGroupDrag(readOnly ? null : groupByKey(view), onMoveToGroup)
   if (groups === null) {
     const fallback = allPropertyKeys(def, view, records).find((k) => !canonicalKey(k).startsWith('file.')) ?? 'file.folder'
     return (
@@ -99,7 +99,7 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
                   <li
                     key={row.record.path}
                     className={`base-board__card${dnd.drag?.path === row.record.path ? ' base-board__card--drag' : ''}`}
-                    {...dnd.source(row.record.path, gk)}
+                    {...dnd.source(row.record.path, g)}
                   >
                     <button type="button" className="base-board__title" onClick={() => onOpenFile(row.record.path)}>
                       {nameKey === undefined ? row.record.name : render(row.values[nameKey])}
