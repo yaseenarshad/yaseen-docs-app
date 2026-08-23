@@ -312,6 +312,14 @@ export interface SettingsState {
   newNoteLocation: NewNoteLocation
   /** Root-relative folder for `newNoteLocation: 'folder'` ('' = the vault root); ignored otherwise. Interpreted per-vault against each window's root. */
   newNoteFolder: string
+  /**
+   * Show the confirm sheet before deleting (GRO-2272 — VS Code's `explorer.confirmDelete`).
+   * Defaults TRUE and should stay that way: the sheet is the ONLY guard on delete, because
+   * `shell.trashItem` has no programmatic undo, so there is no in-app restore to fall back
+   * on. Cleared from the sheet's own "Don't ask me again" and re-enabled from the settings
+   * cog — a one-way switch would leave hand-editing `yaseendocs.json` as the only way back.
+   */
+  confirmDelete: boolean
 }
 
 export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
@@ -349,6 +357,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   theme: 'system',
   newNoteLocation: 'root',
   newNoteFolder: '',
+  confirmDelete: true,
 }
 
 export interface WindowBounds {

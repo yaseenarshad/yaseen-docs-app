@@ -7,7 +7,9 @@ import { useRegistry } from '../bases/useRegistry'
 import type { WatchSource } from '../hooks/useWatch'
 import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
+import { countLinkReferences } from '../links/renameLinks'
 import { treeHasFile, treeReducer } from '../lib/treeState'
+import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ContextMenu } from './ContextMenu'
 import { entryPath, renamedPath, targetDirFor, type EntryKind } from './createEntry'
 import { HotkeysButton } from './HotkeysPanel'
@@ -76,6 +78,42 @@ interface MenuTargets {
   newWindowPath: string | null
   /** "Rename" — a concrete row only, NEVER blank space: the vault root is not renameable (E1b, GRO-2241). */
   renamePath: string | null
+  /** "Delete" — a concrete row only, NEVER blank space: there is no target, and main refuses the vault root (GRO-2272). */
+  deletePath: string | null
+}
+
+/**
+ * Notes and subfolders inside `dir`, counted RECURSIVELY from the already-loaded tree
+ * (GRO-2272 `C3-`) — a delete takes the whole subtree, so a shallow count would understate
+ * what the user is about to lose. No fetch: the sidebar already holds this tree.
+ */
+export function countChildren(nodes: readonly TreeNode[], dir: string): { notes: number; folders: number } {
+  const found = findDir(nodes, dir)
+  if (found === null) return { notes: 0, folders: 0 }
+  let notes = 0
+  let folders = 0
+  const walk = (children: readonly TreeNode[]): void => {
+    for (const child of children) {
+      if (child.type === 'dir') {
+        folders++
+        walk(child.children)
+      } else notes++
+    }
+  }
+  walk(found)
+  return { notes, folders }
+}
+
+function findDir(nodes: readonly TreeNode[], dir: string): readonly TreeNode[] | null {
+  for (const node of nodes) {
+    if (node.type !== 'dir') continue
+    if (node.path === dir) return node.children
+    if (dir.startsWith(`${node.path}/`)) {
+      const hit = findDir(node.children, dir)
+      if (hit !== null) return hit
+    }
+  }
+  return null
 }
 
 /** Panel-left pictogram shared by the collapse and reopen buttons (GRO-2023). */
@@ -112,6 +150,8 @@ export function Sidebar({
   const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string; type?: string; label?: string } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir' } | null>(null)
   const [newTypeOpen, setNewTypeOpen] = useState(false)
+  // The delete confirm sheet's target (GRO-2272 `C3-`); null when the sheet is closed.
+  const [confirmingDelete, setConfirmingDelete] = useState<DeleteTarget | null>(null)
   // File drag-to-move (E1b, GRO-2241): the dragged file row + the highlighted drop target.
   const [dragging, setDragging] = useState<string | null>(null)
   const [dropDir, setDropDir] = useState<string | null>(null)
@@ -215,6 +255,7 @@ export function Sidebar({
         copyLinkPath: filePath,
         newWindowPath: filePath,
         renamePath: node?.path ?? null,
+        deletePath: node?.path ?? null,
       })
     },
     [root],
@@ -282,6 +323,46 @@ export function Sidebar({
   )
 
   const cancelCreate = useCallback(() => setCreating(null), [])
+
+  // ---- Delete (GRO-2272): context menu "Delete" → confirm sheet → App trashes the entry ----
+
+  /**
+   * Counts for the sheet, computed ONCE when it opens rather than on every render.
+   *
+   * Both come from data already in hand — the loaded tree and the vault index — so the delete
+   * path makes no extra fetch. When the index is unavailable the backlink line is simply
+   * omitted (`backlinks: undefined`): a missing count must never block a delete.
+   */
+  const askDelete = useCallback(
+    (path: string) => {
+      const kind: 'file' | 'dir' = menu?.rowKind === 'file' ? 'file' : 'dir'
+      const target: DeleteTarget = { path, kind }
+      if (kind === 'dir') target.children = countChildren(tree?.tree ?? [], path)
+      setConfirmingDelete(target)
+      // The index is only needed for the count, so it rides in asynchronously and the sheet
+      // opens immediately. Failure leaves the line out; it never blocks or spins.
+      api.index(root).then(
+        ({ records }) => {
+          const n = countLinkReferences({ root, oldPath: path, kind, records, tree: tree?.tree })
+          setConfirmingDelete((current) => (current !== null && current.path === path ? { ...current, backlinks: n } : current))
+        },
+        () => undefined,
+      )
+    },
+    [menu, root, tree],
+  )
+
+  const confirmDelete = useCallback(
+    (dontAskAgain: boolean) => {
+      const target = confirmingDelete
+      setConfirmingDelete(null)
+      if (target === null) return
+      if (dontAskAgain) onChangeSettings({ ...settings, confirmDelete: false })
+      // Fire and forget: App owns the result and routes every failure to the passive notice.
+      void onDeleteFile(target.path)
+    },
+    [confirmingDelete, onDeleteFile, onChangeSettings, settings],
+  )
 
   // ---- Rename (files E1 GRO-2194, folders E1b GRO-2241): context menu "Rename" → inline input over the row ----
 
@@ -404,6 +485,8 @@ export function Sidebar({
           onOpenNewWindow={openFileNewWindow}
           renamePath={menu.renamePath}
           onRename={(path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir' })}
+          deletePath={menu.deletePath}
+          onDelete={askDelete}
           newTypes={newTypes}
           onNewTyped={startCreateTyped}
           onNewType={() => {
@@ -416,6 +499,7 @@ export function Sidebar({
           onClose={() => setMenu(null)}
         />
       )}
+      {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
       {newTypeOpen && <NewTypeDialog root={root} onClose={() => setNewTypeOpen(false)} onCreated={refresh} />}
     </aside>
   )

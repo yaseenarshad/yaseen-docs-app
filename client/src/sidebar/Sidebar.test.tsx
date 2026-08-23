@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_SETTINGS, type TreeNode, type WatchEvent } from '@shared/types'
-import { Sidebar } from './Sidebar'
+import { countChildren, Sidebar } from './Sidebar'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -23,6 +23,8 @@ const TREE: TreeNode[] = [
 function installBridge() {
   const bridge = {
     tree: vi.fn(async (root: string) => ({ root, tree: TREE, generatedAt: 1 })),
+    // The delete confirm sheet reads the index for its backlink count (GRO-2272 C3).
+    index: vi.fn(async (root: string) => ({ root, records: [] as unknown[], generatedAt: 1 })),
     state: { setFolder: vi.fn(async () => undefined) },
     window: { open: vi.fn(async () => undefined) },
     // Empty registry (GRO-2202; Round 10 Q4, GRO-2226): the sidebar reads it for "New ▸",
@@ -344,5 +346,134 @@ describe('blank-space copy path (GRO-2273)', () => {
     act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     act(() => itemByLabel(el, 'Copy path')?.click())
     expect(writeText).toHaveBeenCalledWith('/v/sub')
+  })
+})
+
+/**
+ * Delete (GRO-2272 `C1-`/`C3-`): the menu entry, the confirm sheet, and what actually reaches
+ * App. The blank-space case is the one that matters most — a destructive item must never
+ * appear with no target, and main refuses the vault root anyway.
+ */
+describe('delete (GRO-2272)', () => {
+  const openOn = async (selector: string, over: Partial<SidebarProps> = {}) => {
+    const m = await mount(over)
+    act(() => void m.el.querySelector(selector)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    return m
+  }
+  const sheet = (el: HTMLElement) => el.querySelector('.confirm')
+  const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
+
+  it('file and folder rows offer Delete; BLANK SPACE does not', async () => {
+    const f = await openOn('.tree__row--file')
+    expect(itemByLabel(f.el, 'Delete')).toBeDefined()
+    const d = await openOn('.tree__row--dir')
+    expect(itemByLabel(d.el, 'Delete')).toBeDefined()
+    const b = await openOn('.sidebar__body')
+    expect(itemByLabel(b.el, 'Delete')).toBeUndefined()
+  })
+
+  it('clicking Delete opens the confirm sheet and deletes NOTHING yet', async () => {
+    const { el, props } = await openOn('.tree__row--file')
+    act(() => itemByLabel(el, 'Delete')?.click())
+    expect(sheet(el)).not.toBeNull()
+    expect(props.onDeleteFile).not.toHaveBeenCalled()
+  })
+
+  it('confirming calls onDeleteFile with the absolute path', async () => {
+    const { el, props } = await openOn('.tree__row--file')
+    act(() => itemByLabel(el, 'Delete')?.click())
+    await act(async () => sheetBtn(el, 'Delete')?.click())
+    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+  })
+
+  it('cancelling calls nothing and closes the sheet', async () => {
+    const { el, props } = await openOn('.tree__row--file')
+    act(() => itemByLabel(el, 'Delete')?.click())
+    await act(async () => sheetBtn(el, 'Cancel')?.click())
+    expect(props.onDeleteFile).not.toHaveBeenCalled()
+    expect(sheet(el)).toBeNull()
+  })
+
+  it('a FOLDER target shows the sheet and deletes the folder path', async () => {
+    const { el, props } = await openOn('.tree__row--dir')
+    act(() => itemByLabel(el, 'Delete')?.click())
+    expect(sheet(el)?.textContent).toContain('"sub"')
+    await act(async () => sheetBtn(el, 'Delete')?.click())
+    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/sub')
+  })
+
+  it('"Don\'t ask me again" persists confirmDelete: false through onChangeSettings', async () => {
+    const { el, props } = await openOn('.tree__row--file')
+    act(() => itemByLabel(el, 'Delete')?.click())
+    act(() => void el.querySelector<HTMLInputElement>('.confirm__ask input')?.click())
+    await act(async () => sheetBtn(el, 'Delete')?.click())
+    expect(props.onChangeSettings).toHaveBeenCalledWith(expect.objectContaining({ confirmDelete: false }))
+    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+  })
+
+  it('shows the backlink count when notes link to the target', async () => {
+    // One note whose body link resolves to a.md — the shared resolver is what countLinkReferences uses.
+    // The TARGET must be in the record set too: the shared resolver resolves a link NAME
+    // against the indexed records, so without a.md there is nothing for [[a]] to point at.
+    // `basename` (no extension) and `folder` are what the shared resolver matches on — a
+    // record missing them resolves nothing, which is how the first draft of this test passed
+    // vacuously against an empty count.
+    const rec = (base: string, links: string[] = []) => ({
+      path: `/v/${base}.md`, name: `${base}.md`, basename: base, folder: '', ext: 'md',
+      size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links, embeds: [],
+    })
+    const records = [rec('a'), rec('hub', ['a'])]
+    const m = await mount()
+    m.bridge.index.mockResolvedValue({ root: '/v', records, generatedAt: 1 } as never)
+    act(() => void m.el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    await act(async () => itemByLabel(m.el, 'Delete')?.click())
+    await act(async () => undefined)
+    expect(sheet(m.el)?.textContent).toContain('1 note links to this')
+  })
+
+  it('says nothing about links when nothing links to the target', async () => {
+    const { el } = await openOn('.tree__row--file')
+    await act(async () => itemByLabel(el, 'Delete')?.click())
+    await act(async () => undefined)
+    expect(sheet(el)?.textContent).not.toContain('link to this')
+    expect(sheet(el)?.textContent).not.toContain('links to this')
+  })
+
+  it('an unavailable index still opens the sheet and still deletes — a missing count never blocks', async () => {
+    const m = await mount()
+    m.bridge.index.mockRejectedValue(new Error('no index'))
+    act(() => void m.el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    await act(async () => itemByLabel(m.el, 'Delete')?.click())
+    expect(sheet(m.el)).not.toBeNull()
+    await act(async () => sheetBtn(m.el, 'Delete')?.click())
+    expect(m.props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+  })
+})
+
+describe('countChildren (GRO-2272 C3)', () => {
+  const TREE_DEEP: TreeNode[] = [
+    {
+      type: 'dir',
+      name: 'Docs',
+      path: '/v/Docs',
+      children: [
+        { type: 'file', name: 'a.md', path: '/v/Docs/a.md', size: 1, mtime: 1, kind: 'markdown' },
+        { type: 'dir', name: 'deep', path: '/v/Docs/deep', children: [{ type: 'file', name: 'b.md', path: '/v/Docs/deep/b.md', size: 1, mtime: 1, kind: 'markdown' }] },
+      ],
+    },
+    { type: 'file', name: 'x.md', path: '/v/x.md', size: 1, mtime: 1, kind: 'markdown' },
+  ]
+
+  it('counts the WHOLE subtree, not just direct children — a delete takes all of it', () => {
+    expect(countChildren(TREE_DEEP, '/v/Docs')).toEqual({ notes: 2, folders: 1 })
+  })
+
+  it('counts a nested folder found by descent', () => {
+    expect(countChildren(TREE_DEEP, '/v/Docs/deep')).toEqual({ notes: 1, folders: 0 })
+  })
+
+  it('an unknown or empty folder counts zero rather than throwing', () => {
+    expect(countChildren(TREE_DEEP, '/v/nope')).toEqual({ notes: 0, folders: 0 })
+    expect(countChildren([], '/v/Docs')).toEqual({ notes: 0, folders: 0 })
   })
 })

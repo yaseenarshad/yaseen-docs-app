@@ -17,6 +17,9 @@ interface ContextMenuProps {
   /** Absolute path of the right-clicked row — FILE (Links E1, GRO-2194) or FOLDER (E1b, GRO-2241); null (blank space) hides "Rename". */
   renamePath: string | null
   onRename: (path: string) => void
+  /** Absolute path of the right-clicked row — file or folder; null (blank space) hides "Delete" (GRO-2272). */
+  deletePath: string | null
+  onDelete: (path: string) => void
   /**
    * Registered types for the "New ▸" submenu (Bible B, GRO-2202; Round 10 Q4 LOCKED, GRO-2226):
    * one item per type + "New type…" at the bottom. The submenu is ALWAYS present — [] collapses
@@ -36,7 +39,7 @@ interface ContextMenuProps {
 }
 
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, renamePath, onRename, newTypes, onNewTyped, onNewType, onNewNote, onNewBase, onNewFolder, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, newTypes, onNewTyped, onNewType, onNewNote, onNewBase, onNewFolder, onClose }: ContextMenuProps) {
   const [subOpen, setSubOpen] = useState(false)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -106,6 +109,23 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
             }}
           >
             Rename
+          </button>
+        )}
+        {/* Destructive, and one row from Rename — so it sits at the END of the row-specific
+            group, away from the items a misclick would otherwise land on. Opens the confirm
+            sheet; it must NEVER delete directly. Null on blank space: there is no target, and
+            the vault root is refused by main anyway (GRO-2272). */}
+        {deletePath !== null && (
+          <button
+            type="button"
+            className="ctx-menu__item ctx-menu__item--danger"
+            role="menuitem"
+            onClick={() => {
+              onDelete(deletePath)
+              onClose()
+            }}
+          >
+            Delete
           </button>
         )}
         {copyPath !== null && (
