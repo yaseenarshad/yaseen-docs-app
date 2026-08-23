@@ -1,0 +1,16 @@
+# The same "all KPIs for this funnel" query written the embeddable way: `this` is the note
+# the base is embedded in, so one file serves every funnel-stage page.
+filters:
+  and:
+    - page_type == "kpi"
+    - funnel_stages.contains(this.asLink())
+views:
+  - type: table
+    name: KPIs in this funnel
+    order:
+      - file.name
+      - kpi_category
+      - unit
+    sort:
+      - property: file.name
+        direction: ASC

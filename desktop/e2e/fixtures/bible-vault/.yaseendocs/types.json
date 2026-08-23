@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "types": {
+    "funnel-stage": {
+      "displayName": "Funnel stage",
+      "pluralName": "Funnel stages",
+      "folder": "funnel-stages",
+      "properties": {
+        "order": { "kind": "number" }
+      }
+    },
+    "industry": {
+      "displayName": "Industry",
+      "pluralName": "Industries",
+      "folder": "industries",
+      "properties": {}
+    },
+    "kpi": {
+      "displayName": "KPI",
+      "pluralName": "KPIs",
+      "folder": "kpis",
+      "properties": {
+        "funnel_stages": { "kind": "multi-link", "target": "funnel-stage" },
+        "kpi_category": { "kind": "text" },
+        "unit": { "kind": "text" }
+      }
+    },
+    "problem": {
+      "displayName": "Problem",
+      "pluralName": "Problems",
+      "folder": "problems",
+      "properties": {
+        "funnel_stage": { "kind": "link", "target": "funnel-stage" },
+        "parent": { "kind": "link", "target": "problem" },
+        "kpis_impacted": { "kind": "multi-link", "target": "kpi", "required": true },
+        "sold_to": { "kind": "multi-link", "target": "role" },
+        "industries": { "kind": "multi-link", "target": "industry" },
+        "sku_tag": { "kind": "text" },
+        "channel": { "kind": "text" }
+      }
+    },
+    "role": {
+      "displayName": "Role",
+      "pluralName": "Roles",
+      "folder": "roles",
+      "properties": {
+        "function": { "kind": "text" },
+        "reports_to": { "kind": "link", "target": "role" }
+      }
+    }
+  },
+  "properties": {}
+}
