@@ -101,23 +101,6 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
             Open in new window
           </button>
         )}
-        {renamePath !== null && (
-          <button
-            type="button"
-            className="ctx-menu__item"
-            role="menuitem"
-            onClick={() => {
-              onRename(renamePath)
-              onClose()
-            }}
-          >
-            Rename
-          </button>
-        )}
-        {/* Destructive, and one row from Rename — so it sits at the END of the row-specific
-            group, away from the items a misclick would otherwise land on. Opens the confirm
-            sheet; it must NEVER delete directly. Null on blank space: there is no target, and
-            the vault root is refused by main anyway (GRO-2272). */}
         {/* Reveal in Finder (GRO-2274): available on every row type AND on blank space, where
             it reveals the vault root — the same target Copy path uses. Grouped with the other
             read-only utilities, deliberately above the destructive item. */}
@@ -132,19 +115,6 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
             }}
           >
             Reveal in Finder
-          </button>
-        )}
-        {deletePath !== null && (
-          <button
-            type="button"
-            className="ctx-menu__item ctx-menu__item--danger"
-            role="menuitem"
-            onClick={() => {
-              onDelete(deletePath)
-              onClose()
-            }}
-          >
-            Delete
           </button>
         )}
         {copyPath !== null && (
@@ -210,6 +180,37 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
         <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewFolder}>
           New folder
         </button>
+        {/* Rename and Delete render LAST (GRO-2272 `C1a-`, LOCKED): VS Code's Explorer puts
+            both at the bottom, and destructive-last is safer on its own merits — Delete used
+            to sit directly under Rename, which is the misclick pair that matters most.
+            Delete opens the confirm sheet; it must NEVER delete directly. Both are null on
+            blank space: no target, and main refuses the vault root anyway. */}
+        {renamePath !== null && (
+          <button
+            type="button"
+            className="ctx-menu__item"
+            role="menuitem"
+            onClick={() => {
+              onRename(renamePath)
+              onClose()
+            }}
+          >
+            Rename
+          </button>
+        )}
+        {deletePath !== null && (
+          <button
+            type="button"
+            className="ctx-menu__item ctx-menu__item--danger"
+            role="menuitem"
+            onClick={() => {
+              onDelete(deletePath)
+              onClose()
+            }}
+          >
+            Delete
+          </button>
+        )}
       </div>
     </div>
   )

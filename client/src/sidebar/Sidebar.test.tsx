@@ -526,3 +526,37 @@ describe('reveal in Finder (GRO-2274)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 })
+
+/**
+ * Menu ORDER (GRO-2272 `C1a-`, LOCKED): VS Code's Explorer grouping — read-only utilities
+ * first, then the create actions, then Rename and Delete LAST. Pinned here because order is a
+ * deliberate safety property, not an accident of JSX: Delete used to sit directly under
+ * Rename, which is the misclick pair that matters most.
+ */
+describe('context menu order (GRO-2272 C1a)', () => {
+  it('a FILE row renders utilities, then create actions, then Rename and Delete last', async () => {
+    const { el } = await mount()
+    act(() => void el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(menuItems(el).map((b) => b.textContent?.replace('▸', '').trim())).toEqual([
+      'Open in new window',
+      'Reveal in Finder',
+      'Copy path',
+      'Copy link',
+      'New',
+      'New note',
+      'New base',
+      'New folder',
+      'Rename',
+      'Delete',
+    ])
+  })
+
+  it('Delete is the LAST item wherever it appears', async () => {
+    for (const row of ['.tree__row--file', '.tree__row--dir']) {
+      const m = await mount()
+      act(() => void m.el.querySelector(row)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+      const labels = menuItems(m.el).map((b) => b.textContent)
+      expect(labels[labels.length - 1]).toBe('Delete')
+    }
+  })
+})

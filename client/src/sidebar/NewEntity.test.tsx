@@ -125,7 +125,7 @@ describe('New ▸ submenu (Round 9 Q1, amended by Round 10 Q4)', () => {
     // "Copy path" joined the blank-space menu in GRO-2273 (it copies the vault ROOT). This
     // list is pinned here only to prove the submenu did not add stray items — see
     // Sidebar.test.tsx's target matrix for the authoritative per-row-type assertions.
-    expect(menuItems(el).map((b) => b.textContent?.replace('▸', '').trim())).toEqual(['Reveal in Finder', 'Copy path', 'New', 'New note', 'New base', 'New folder'])
+    expect(menuItems(el).map((b) => b.textContent?.replace('▸', '').trim())).toEqual(['Reveal in Finder', 'Copy path', 'New', 'New note', 'New base', 'New folder'])  // Rename/Delete are row-only
     await click(itemByLabel(el, 'New'))
     const sub = [...(el.querySelector('.ctx-submenu')?.querySelectorAll('.ctx-menu__item') ?? [])].map((b) => b.textContent)
     expect(sub).toEqual(['New type…'])

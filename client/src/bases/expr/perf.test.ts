@@ -57,6 +57,12 @@ describe('perf', () => {
     expect(kept).toBeLessThan(1000)
     // eslint-disable-next-line no-console
     console.log(`perf: 1000 records in ${ms.toFixed(1)} ms (${kept} kept)`)
-    expect(ms).toBeLessThan(50)
+    // Guards against an ALGORITHMIC regression (~3x the real cost), not against a busy
+
+    // machine: this runs in ~30ms alone but exceeded 50ms under full-suite parallel load,
+
+    // which was pure flake. Do not tighten it back (GRO-2272 wave).
+
+    expect(ms).toBeLessThan(150)
   })
 })
