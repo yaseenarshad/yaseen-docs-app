@@ -547,6 +547,38 @@ button {
   color: var(--fg-muted);
 }
 
+/* Persistent search bar (YAZ-801) — its OWN row under the header, never fused into it: the
+   YAZ-797 lens-tabs row stacks above it later. */
+.sidebar__search {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 14px;
+  color: var(--fg-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar__search:focus-within {
+  border-bottom-color: var(--accent);
+}
+
+.sidebar__search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  border: none;
+  font: inherit;
+  font-size: 12px;
+  background: transparent;
+  color: var(--fg);
+  outline: none;
+}
+
+.sidebar__search-input::placeholder {
+  color: var(--fg-muted);
+}
+
 .sidebar__body {
   flex: 1;
   overflow: auto;
@@ -561,6 +593,48 @@ button {
 
 .sidebar__msg--error {
   color: var(--danger);
+}
+
+/* Search results (YAZ-803) — a FLAT ranked list in place of the tree, scrolling inside
+   `.sidebar__body`; the rows borrow the tree row's metrics and wash so the swap reads as the
+   same surface. The folder rides under the label instead of an indent (🔒 flat-list ruling). */
+.search-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.search-results__row {
+  display: flex;
+  flex-direction: column;
+  padding: 3px 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  border-radius: 4px;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.search-results__row:hover {
+  background: var(--bg-hover-row);
+}
+
+.search-results__row--active,
+.search-results__row--active:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.search-results__label,
+.search-results__folder {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-results__folder {
+  font-size: 11px;
+  color: var(--fg-muted);
 }
 
 /* ---------- settings (GRO-2024) ---------- */

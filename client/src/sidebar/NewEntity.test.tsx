@@ -75,6 +75,8 @@ async function mount(types: RegistryResponse['types'] = {}, over: Partial<Sideba
     onRenameFile: vi.fn(async () => undefined),
     onDeleteFile: vi.fn(async () => undefined),
     onNotice: vi.fn(),
+    pendingSearchFocus: false,
+    onSearchFocusHandled: vi.fn(),
     ...over,
   }
   await act(async () => root?.render(<StrictMode><Sidebar {...props} /></StrictMode>))

@@ -49,6 +49,11 @@ export function App() {
   // picker's candidate source (Links B, GRO-2191) works exactly the same way.
   const [wikilinks] = useState(createWikilinkResolveSource)
   const [wikilinkCandidates] = useState(createWikilinkCandidateSource)
+  // ⌘K's half of the search-bar focus handshake (YAZ-801, wired in YAZ-804): `openSearch` sets it
+  // (including the collapsed case, which un-collapses and mounts the sidebar with the flag already
+  // true); the sidebar focuses its input and clears it through the callback.
+  const [pendingSearchFocus, setPendingSearchFocus] = useState(false)
+  const searchFocusHandled = useCallback(() => setPendingSearchFocus(false), [])
 
   // Settings and the sidebar toggle are global (D9): a change made in another window lands here live.
   useEffect(
@@ -179,9 +184,17 @@ export function App() {
     if (!closeActive()) void window.yaseenDocs.window.closeSelf()
   }, [closeActive])
 
+  // ⌘K (D4, YAZ-804): un-collapse the sidebar when it is hidden — through `toggleSidebar`, since
+  // collapse state is GLOBAL across windows (D9, recorded on YAZ-800) and must be persisted the
+  // one way — then ask the sidebar to focus its search bar (it mounts with the flag already true).
+  const openSearch = useCallback(() => {
+    if (sidebarCollapsed) toggleSidebar()
+    setPendingSearchFocus(true)
+  }, [sidebarCollapsed, toggleSidebar])
+
   // File › Open Folder… / Open Recent (GRO-2161) reuse the same flows as the in-app buttons;
   // File › Close Tab and Window › Next/Previous Tab (GRO-2232) drive the tab model.
-  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openRoot, onCloseTab: closeTabOrWindow, onNextTab: nextTab, onPrevTab: prevTab })
+  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openRoot, onSearch: openSearch, onCloseTab: closeTabOrWindow, onNextTab: nextTab, onPrevTab: prevTab })
 
   // Deep links (E1, GRO-2171): a routed link behaves like a sidebar click (Tabs rule 10) —
   // it activates the file's tab when already open, else opens it in the CURRENT tab;
@@ -378,6 +391,8 @@ export function App() {
           onRenameFile={renameFile}
           onDeleteFile={deleteFile}
           onNotice={setNotice}
+          pendingSearchFocus={pendingSearchFocus}
+          onSearchFocusHandled={searchFocusHandled}
         />
       )}
       {root !== null && !sidebarCollapsed && <div className={`sidebar-resize${resizing ? ' sidebar-resize--active' : ''}`} aria-hidden onMouseDown={startSidebarResize} />}

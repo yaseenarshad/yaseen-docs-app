@@ -640,6 +640,8 @@ export interface MenuApi {
   onOpenFolder(listener: () => void): () => void
   /** File › Open Recent chose `path` for this window: switch the root in place. Returns an unsubscribe. */
   onOpenRoot(listener: (path: string) => void): () => void
+  /** File › Search Vault (⌘K) targeted this window: focus the sidebar search bar (YAZ-804). Returns an unsubscribe. */
+  onSearch(listener: () => void): () => void
   /** File › Close Tab (⌘W) targeted this window: close the active tab (GRO-2232). Returns an unsubscribe. */
   onCloseTab(listener: () => void): () => void
   /** Window › Next Tab (⌃Tab / ⌘⇧]) targeted this window: activate the tab to the right (GRO-2232). Returns an unsubscribe. */

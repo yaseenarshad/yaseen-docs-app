@@ -1,6 +1,6 @@
 /**
  * useMenuEvents (GRO-2161, tabs GRO-2232): the renderer's half of the File › Open Folder… /
- * Open Recent / Close Tab and Window › Next/Previous Tab menu gestures — subscribed on
+ * Open Recent / Search Vault / Close Tab and Window › Next/Previous Tab menu gestures — subscribed on
  * mount, unsubscribed on unmount, latest callbacks win.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -13,6 +13,7 @@ import { useMenuEvents } from './useMenuEvents'
 function installBridge() {
   const openFolderListeners = new Set<() => void>()
   const openRootListeners = new Set<(path: string) => void>()
+  const searchListeners = new Set<() => void>()
   const closeTabListeners = new Set<() => void>()
   const nextTabListeners = new Set<() => void>()
   const prevTabListeners = new Set<() => void>()
@@ -25,6 +26,7 @@ function installBridge() {
     menu: {
       onOpenFolder: sub(openFolderListeners),
       onOpenRoot: sub(openRootListeners),
+      onSearch: sub(searchListeners),
       onCloseTab: sub(closeTabListeners),
       onNextTab: sub(nextTabListeners),
       onPrevTab: sub(prevTabListeners),
@@ -34,16 +36,18 @@ function installBridge() {
   return {
     emitOpenFolder: () => openFolderListeners.forEach((l) => l()),
     emitOpenRoot: (path: string) => openRootListeners.forEach((l) => l(path)),
+    emitSearch: () => searchListeners.forEach((l) => l()),
     emitCloseTab: () => closeTabListeners.forEach((l) => l()),
     emitNextTab: () => nextTabListeners.forEach((l) => l()),
     emitPrevTab: () => prevTabListeners.forEach((l) => l()),
-    count: () => openFolderListeners.size + openRootListeners.size + closeTabListeners.size + nextTabListeners.size + prevTabListeners.size,
+    count: () => openFolderListeners.size + openRootListeners.size + searchListeners.size + closeTabListeners.size + nextTabListeners.size + prevTabListeners.size,
   }
 }
 
 interface ProbeProps {
   onOpenFolder: () => void
   onOpenRoot: (path: string) => void
+  onSearch: () => void
   onCloseTab: () => void
   onNextTab: () => void
   onPrevTab: () => void
@@ -64,7 +68,7 @@ afterEach(() => {
 describe('useMenuEvents', () => {
   it('routes menu gestures to the callbacks and unsubscribes on unmount', () => {
     const b = installBridge()
-    const handlers = { onOpenFolder: vi.fn(), onOpenRoot: vi.fn(), onCloseTab: vi.fn(), onNextTab: vi.fn(), onPrevTab: vi.fn() }
+    const handlers = { onOpenFolder: vi.fn(), onOpenRoot: vi.fn(), onSearch: vi.fn(), onCloseTab: vi.fn(), onNextTab: vi.fn(), onPrevTab: vi.fn() }
     root = createRoot(document.createElement('div'))
     act(() => root?.render(<Probe {...handlers} />))
 
@@ -72,6 +76,8 @@ describe('useMenuEvents', () => {
     expect(handlers.onOpenFolder).toHaveBeenCalledTimes(1)
     act(() => b.emitOpenRoot('/vaults/notes'))
     expect(handlers.onOpenRoot).toHaveBeenCalledWith('/vaults/notes')
+    act(() => b.emitSearch())
+    expect(handlers.onSearch).toHaveBeenCalledTimes(1)
     act(() => b.emitCloseTab())
     expect(handlers.onCloseTab).toHaveBeenCalledTimes(1)
     act(() => b.emitNextTab())

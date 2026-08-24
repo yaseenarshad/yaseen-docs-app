@@ -4,11 +4,14 @@ import { api, BridgeRequestError } from '../api'
 import { createNewNote } from '../bases/newNote'
 import { ensureFolder, newEntityParts, typeLabel, usableFolder } from '../bases/scaffold'
 import { useRegistry } from '../bases/useRegistry'
+import { SearchIcon } from '../bases/view/icons'
 import type { WatchSource } from '../hooks/useWatch'
 import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { countLinkReferences } from '../links/renameLinks'
 import { treeHasFile, treeReducer } from '../lib/treeState'
+import { SearchResults } from '../search/SearchResults'
+import { useSearchResults } from '../search/useSearchResults'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ContextMenu } from './ContextMenu'
 import { entryPath, renamedPath, targetDirFor, type EntryKind } from './createEntry'
@@ -52,6 +55,14 @@ interface SidebarProps {
   onDeleteFile: (path: string) => Promise<void>
   /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
   onNotice: (message: string) => void
+  /**
+   * ⌘K asked for the search bar (YAZ-801): the bar focuses its input. True at MOUNT is the
+   * ⌘K-while-collapsed path (App un-collapses, so the sidebar mounts with it already set), not an
+   * edge case. Nothing sets it true yet — YAZ-804 wires the shortcut.
+   */
+  pendingSearchFocus: boolean
+  /** The focus above happened (YAZ-801); App clears its flag so the next ⌘K is a fresh request. */
+  onSearchFocusHandled: () => void
 }
 
 /**
@@ -147,6 +158,8 @@ export function Sidebar({
   onRenameFile,
   onDeleteFile,
   onNotice,
+  pendingSearchFocus,
+  onSearchFocusHandled,
 }: SidebarProps) {
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -160,6 +173,22 @@ export function Sidebar({
   // File drag-to-move (E1b, GRO-2241): the dragged file row + the highlighted drop target.
   const [dragging, setDragging] = useState<string | null>(null)
   const [dropDir, setDropDir] = useState<string | null>(null)
+  // The persistent search bar's query (YAZ-801). It lives HERE rather than in the bar because
+  // YAZ-803 swaps the BODY while it is non-empty; Sidebar is mounted `key={root}`, so it resets
+  // on unmount and on a root switch without any clearing code.
+  const [query, setQuery] = useState('')
+  const searchInput = useRef<HTMLInputElement>(null)
+  // The highlighted result row (YAZ-803); the keyboard owns it, so it lives with the query.
+  const [selected, setSelected] = useState(0)
+
+  const results = useSearchResults(root, watch, query)
+  // 🔒 flat-list ruling on YAZ-739: while a query is typed the body shows a FLAT ranked list
+  // instead of the tree. A conditional render, not a teardown — every bit of tree state (data,
+  // expansion, pending create/rename, drag) lives here and is waiting untouched when it clears.
+  const searching = query.trim() !== ''
+  // An index refresh can shrink the list under the keyboard's index (F1 finding 2, YAZ-808), so
+  // every reader of the selection clamps: the highlight lands on the last row, not on nowhere.
+  const sel = Math.min(selected, results.length - 1)
 
   // The vault's type registry (Bible B, GRO-2202): feeds the "New ▸" submenu — always present;
   // an empty (or unreadable) registry collapses it to "New type…" (Round 10 Q4, GRO-2226).
@@ -198,6 +227,15 @@ export function Sidebar({
   useEffect(() => {
     if (activeFile !== null) dispatch({ type: 'expandTo', root, file: activeFile })
   }, [root, activeFile])
+
+  // ⌘K's focus handshake (YAZ-801). Firing on MOUNT is deliberate, not a side effect to guard
+  // against: ⌘K with the sidebar collapsed un-collapses it, so the sidebar mounts with the flag
+  // already true (0- re-scope on YAZ-800). A plain remount with the flag false focuses nothing.
+  useEffect(() => {
+    if (!pendingSearchFocus) return
+    searchInput.current?.focus()
+    onSearchFocusHandled()
+  }, [pendingSearchFocus, onSearchFocusHandled])
 
   // Stored lastFile that no longer exists → drop it (first tree only, so a file deleted on disk
   // EXTERNALLY while it is being edited stays open and is recreated by the next save — an
@@ -474,26 +512,84 @@ export function Sidebar({
           <SidebarPanelIcon />
         </button>
       </div>
-      <div className="sidebar__body" onContextMenu={(e) => openMenu(null, e)}>
-        {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}
-        {tree === null && error === null && <p className="sidebar__msg">Loading…</p>}
-        {tree !== null && tree.tree.length === 0 && pending === null && (
-          <p className="sidebar__msg">No notes here.</p>
-        )}
-        {tree !== null && (
-          <Tree
-            nodes={tree.tree}
-            dirPath={root}
-            expanded={new Set(expanded)}
-            activeFile={activeFile}
-            onToggle={(dir) => dispatch({ type: 'toggle', dir })}
-            onOpenFile={onOpenFile}
-            onOpenFileBackground={onOpenFileBackground}
-            onNodeContextMenu={openMenu}
-            pending={pending}
-            renaming={renaming}
-            move={fileMove}
-          />
+      {/* Persistent search bar (YAZ-739 A-, chrome v2 row 2 — 🔒 YAZ-797): always visible, never a
+          tab or a view. The 797 wave stacks its lens-tabs row ABOVE this later, and YAZ-750's
+          filter affordance sits beside it; YAZ-803 swaps the body to results while `query` is
+          non-empty — until then typing here changes nothing below, by design. */}
+      <div className="sidebar__search">
+        <SearchIcon />
+        <input
+          ref={searchInput}
+          className="sidebar__search-input"
+          type="text"
+          placeholder="Search"
+          title="Search (⌘K)"
+          aria-label="Search notes"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value)
+            setSelected(0) // a new query is a new ranking: the top row is the selection again
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.preventDefault()
+              e.stopPropagation()
+              // Esc empties a typed query first and only gives up focus on the second press.
+              if (query !== '') setQuery('')
+              else e.currentTarget.blur()
+              return
+            }
+            // The bar keeps focus while the list is driven from it (YAZ-803). Clamped at both
+            // ends, never wrapping — the `[[` picker's rule. Opening leaves the list up.
+            if (results.length === 0) return
+            if (e.key === 'ArrowDown') {
+              e.preventDefault()
+              setSelected(Math.min(sel + 1, results.length - 1))
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault()
+              setSelected(Math.max(sel - 1, 0))
+            } else if (e.key === 'Enter') {
+              e.preventDefault()
+              const hit = results[sel]
+              if (hit === undefined) return
+              if (e.metaKey) onOpenFileBackground(hit.path)
+              else onOpenFile(hit.path)
+            }
+          }}
+        />
+      </div>
+      {/* The blank-space menu is the TREE's ("New note" here creates in the vault root); the
+          results list has no such target, so right-clicking it offers nothing (YAZ-803). */}
+      <div className="sidebar__body" onContextMenu={(e) => (searching ? undefined : openMenu(null, e))}>
+        {searching ? (
+          results.length > 0 ? (
+            <SearchResults results={results} selected={sel} onSelect={setSelected} onOpen={onOpenFile} onOpenBackground={onOpenFileBackground} />
+          ) : (
+            <p className="sidebar__msg">No matches</p>
+          )
+        ) : (
+          <>
+            {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}
+            {tree === null && error === null && <p className="sidebar__msg">Loading…</p>}
+            {tree !== null && tree.tree.length === 0 && pending === null && (
+              <p className="sidebar__msg">No notes here.</p>
+            )}
+            {tree !== null && (
+              <Tree
+                nodes={tree.tree}
+                dirPath={root}
+                expanded={new Set(expanded)}
+                activeFile={activeFile}
+                onToggle={(dir) => dispatch({ type: 'toggle', dir })}
+                onOpenFile={onOpenFile}
+                onOpenFileBackground={onOpenFileBackground}
+                onNodeContextMenu={openMenu}
+                pending={pending}
+                renaming={renaming}
+                move={fileMove}
+              />
+            )}
+          </>
         )}
       </div>
       <div className="sidebar__footer">

@@ -73,14 +73,20 @@ export function trailingLinkFragment(text: string): string | null {
  * within each bucket. The needle is the fragment with its ENDS trimmed (Obsidian: `[[ al`
  * still matches Alpha) — internal whitespace stays significant. Ranking needs the full scan,
  * so there is no early exit: the per-candidate work is one `indexOf` over the precomputed
- * `lower`, and MAX_SUGGESTIONS caps the result AFTER ranking (the completion.test perf smoke
- * keeps 1,000+ files honest). An empty fragment matches everything — the first cap-full.
+ * `lower`, and `cap` (MAX_SUGGESTIONS by default) caps the result AFTER ranking (the
+ * completion.test perf smoke keeps 1,000+ files honest). An empty fragment matches everything —
+ * the first cap-full. Generic over the row type so surfaces with their own richer candidate
+ * (title search, YAZ-802) match through here without fabricating link-only fields.
  */
-export function matchLinkCandidates(candidates: readonly LinkCandidate[], fragment: string): LinkCandidate[] {
+export function matchLinkCandidates<T extends { name: string; lower?: string }>(
+  candidates: readonly T[],
+  fragment: string,
+  cap: number = MAX_SUGGESTIONS,
+): T[] {
   const needle = fragment.trim().toLowerCase()
-  const exact: LinkCandidate[] = []
-  const prefix: LinkCandidate[] = []
-  const substring: LinkCandidate[] = []
+  const exact: T[] = []
+  const prefix: T[] = []
+  const substring: T[] = []
   for (const candidate of candidates) {
     const lower = candidate.lower ?? candidate.name.toLowerCase()
     const at = lower.indexOf(needle)
@@ -89,7 +95,7 @@ export function matchLinkCandidates(candidates: readonly LinkCandidate[], fragme
     else if (at === 0) prefix.push(candidate)
     else substring.push(candidate)
   }
-  return [...exact, ...prefix, ...substring].slice(0, MAX_SUGGESTIONS)
+  return [...exact, ...prefix, ...substring].slice(0, cap)
 }
 
 /** The same match over plain names — Bases' cell editors complete over index basenames, no aliases in play. */
