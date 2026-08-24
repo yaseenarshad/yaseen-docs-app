@@ -80,6 +80,15 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
 }
 
 const fileRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.tree__row--file')
+const searchInput = (el: HTMLElement) => el.querySelector<HTMLInputElement>('input[aria-label="Search notes"]')
+/** Drive the CONTROLLED search input like a user: native value setter + input event (SettingsPanel idiom). */
+const type = (input: HTMLInputElement, value: string) => {
+  const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+  act(() => {
+    set?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
 const menuItems = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')]
 const itemByLabel = (el: HTMLElement, label: string) => menuItems(el).find((b) => b.textContent === label)
 
@@ -544,15 +553,6 @@ describe('reveal in Finder (GRO-2274)', () => {
  * so it is driven here through the prop — including at MOUNT, which is the ⌘K-while-collapsed path.
  */
 describe('persistent search bar (YAZ-801)', () => {
-  const searchInput = (el: HTMLElement) => el.querySelector<HTMLInputElement>('input[aria-label="Search notes"]')
-  /** Drive the CONTROLLED input like a user: native value setter + input event (SettingsPanel idiom). */
-  const type = (input: HTMLInputElement, value: string) => {
-    const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
-    act(() => {
-      set?.call(input, value)
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-    })
-  }
   const pressEscape = (input: HTMLInputElement) => act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
 
   it('renders while the tree is still loading', async () => {
@@ -616,6 +616,98 @@ describe('persistent search bar (YAZ-801)', () => {
     const { el, props } = await mount()
     expect(document.activeElement).not.toBe(searchInput(el))
     expect(props.onSearchFocusHandled).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * Search results in the body (YAZ-803, 🔒 flat-list ruling on YAZ-739): a typed query swaps the
+ * tree for a FLAT ranked list and clearing brings the tree straight back — the swap is a
+ * conditional render, so nothing about the tree is torn down. The list is driven entirely from
+ * the bar, which never loses focus: arrows clamp at both ends (no wrap, the `[[` picker's rule),
+ * Enter opens in place, ⌘Enter in a background tab, and the list stays up either way.
+ */
+describe('search results (YAZ-803)', () => {
+  const record = (basename: string, folder = '') => ({
+    path: `/v/${folder === '' ? '' : `${folder}/`}${basename}.md`, name: `${basename}.md`, basename, folder, ext: 'md',
+    size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [],
+  })
+  const RECORDS = [record('Alpha'), record('Anchor', 'Docs')]
+
+  /** Mount over an index of Alpha + Docs/Anchor, then type `query` into the bar. */
+  const search = async (query: string, over: Partial<SidebarProps> = {}) => {
+    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: RECORDS, generatedAt: 1 } as never))
+    const input = searchInput(m.el)!
+    type(input, query)
+    return { ...m, input }
+  }
+  const rowLabels = (el: HTMLElement) => [...el.querySelectorAll('.search-results__row .search-results__label')].map((n) => n.textContent)
+  const activeLabel = (el: HTMLElement) => el.querySelector('.search-results__row--active .search-results__label')?.textContent ?? null
+  const press = (input: HTMLInputElement, key: string, metaKey = false) =>
+    act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key, metaKey, bubbles: true })))
+
+  it('typing swaps the tree for the ranked result list; clearing brings the tree back', async () => {
+    const { el, input } = await search('a')
+    expect(el.querySelector('.tree')).toBeNull()
+    expect(rowLabels(el)).toEqual(['Alpha', 'Anchor'])
+    type(input, '')
+    expect(el.querySelector('.search-results')).toBeNull()
+    expect(el.querySelector('.tree__row--file')).not.toBeNull()
+  })
+
+  it('a query nothing matches says so, and still hides the tree', async () => {
+    const { el } = await search('zzz')
+    expect(el.textContent).toContain('No matches')
+    expect(el.querySelector('.tree')).toBeNull()
+  })
+
+  it('a folder label rides along on rows that have one', async () => {
+    const { el } = await search('anch')
+    expect(el.querySelector('.search-results__folder')?.textContent).toBe('Docs')
+  })
+
+  it('the top row starts selected; ArrowDown/ArrowUp clamp at both ends and never wrap', async () => {
+    const { el, input } = await search('a')
+    expect(activeLabel(el)).toBe('Alpha')
+    await press(input, 'ArrowUp')
+    expect(activeLabel(el)).toBe('Alpha') // already at the top
+    await press(input, 'ArrowDown')
+    expect(activeLabel(el)).toBe('Anchor')
+    await press(input, 'ArrowDown')
+    expect(activeLabel(el)).toBe('Anchor') // already at the bottom
+    await press(input, 'ArrowUp')
+    expect(activeLabel(el)).toBe('Alpha')
+  })
+
+  it('Enter opens the SELECTED row in the current tab and leaves the list up', async () => {
+    const { el, input, props } = await search('a')
+    await press(input, 'ArrowDown')
+    await press(input, 'Enter')
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/Docs/Anchor.md')
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+    expect(input.value).toBe('a')
+    expect(rowLabels(el)).toEqual(['Alpha', 'Anchor'])
+  })
+
+  it('⌘Enter opens the selected row in a background tab instead', async () => {
+    const { input, props } = await search('a')
+    await press(input, 'Enter', true)
+    expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith('/v/Alpha.md')
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+  })
+
+  it('changing the query re-selects the top row', async () => {
+    const { el, input } = await search('a')
+    await press(input, 'ArrowDown')
+    expect(activeLabel(el)).toBe('Anchor')
+    type(input, 'an')
+    expect(activeLabel(el)).toBe('Anchor') // the new ranking's FIRST row, not the carried index
+    expect(rowLabels(el)).toEqual(['Anchor'])
+  })
+
+  it('right-clicking the results offers no menu — "New note" there would have no target', async () => {
+    const { el } = await search('a')
+    act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 })
 
