@@ -4,6 +4,7 @@ import { api, BridgeRequestError } from '../api'
 import { createNewNote } from '../bases/newNote'
 import { ensureFolder, newEntityParts, typeLabel, usableFolder } from '../bases/scaffold'
 import { useRegistry } from '../bases/useRegistry'
+import { SearchIcon } from '../bases/view/icons'
 import type { WatchSource } from '../hooks/useWatch'
 import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
@@ -185,6 +186,9 @@ export function Sidebar({
   // instead of the tree. A conditional render, not a teardown — every bit of tree state (data,
   // expansion, pending create/rename, drag) lives here and is waiting untouched when it clears.
   const searching = query.trim() !== ''
+  // An index refresh can shrink the list under the keyboard's index (F1 finding 2, YAZ-808), so
+  // every reader of the selection clamps: the highlight lands on the last row, not on nowhere.
+  const sel = Math.min(selected, results.length - 1)
 
   // The vault's type registry (Bible B, GRO-2202): feeds the "New ▸" submenu — always present;
   // an empty (or unreadable) registry collapses it to "New type…" (Round 10 Q4, GRO-2226).
@@ -513,10 +517,7 @@ export function Sidebar({
           filter affordance sits beside it; YAZ-803 swaps the body to results while `query` is
           non-empty — until then typing here changes nothing below, by design. */}
       <div className="sidebar__search">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
-          <circle cx="7" cy="7" r="4.5" />
-          <path d="m10.5 10.5 3.5 3.5" />
-        </svg>
+        <SearchIcon />
         <input
           ref={searchInput}
           className="sidebar__search-input"
@@ -543,13 +544,13 @@ export function Sidebar({
             if (results.length === 0) return
             if (e.key === 'ArrowDown') {
               e.preventDefault()
-              setSelected((i) => Math.min(i + 1, results.length - 1))
+              setSelected(Math.min(sel + 1, results.length - 1))
             } else if (e.key === 'ArrowUp') {
               e.preventDefault()
-              setSelected((i) => Math.max(i - 1, 0))
+              setSelected(Math.max(sel - 1, 0))
             } else if (e.key === 'Enter') {
               e.preventDefault()
-              const hit = results[selected]
+              const hit = results[sel]
               if (hit === undefined) return
               if (e.metaKey) onOpenFileBackground(hit.path)
               else onOpenFile(hit.path)
@@ -562,7 +563,7 @@ export function Sidebar({
       <div className="sidebar__body" onContextMenu={(e) => (searching ? undefined : openMenu(null, e))}>
         {searching ? (
           results.length > 0 ? (
-            <SearchResults results={results} selected={selected} onSelect={setSelected} onOpen={onOpenFile} onOpenBackground={onOpenFileBackground} />
+            <SearchResults results={results} selected={sel} onSelect={setSelected} onOpen={onOpenFile} onOpenBackground={onOpenFileBackground} />
           ) : (
             <p className="sidebar__msg">No matches</p>
           )

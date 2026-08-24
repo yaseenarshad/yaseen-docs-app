@@ -2,6 +2,10 @@
  * The search bar's results (YAZ-803): one index snapshot per root, kept current by the watcher,
  * ranked per keystroke by `searchTitles`. No debounce — the ranking scan is synchronous over
  * title-scale data (guarded by `searchCandidates.perf.test.ts`).
+ *
+ * The feed is LAZY (F1 finding 1, YAZ-808). The ALWAYS-ON per-window index feed is
+ * WikilinkIndexBridge's; search must not duplicate it in every window for a bar nobody typed
+ * into, so it pays for its data only once someone searches.
  */
 import { useEffect, useMemo, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
@@ -11,8 +15,16 @@ import { searchCandidates, searchTitles, type SearchCandidate } from './searchCa
 
 export function useSearchResults(root: string, watch: WatchSource, query: string): SearchCandidate[] {
   const [records, setRecords] = useState<readonly IndexRecord[]>([])
+  // Latched by the first non-empty query and never unlatched: after that the snapshot stays warm
+  // and watch-fresh for the rest of this component's life, so clearing the bar and typing again
+  // costs nothing. Until then there is no fetch and no subscription at all.
+  const [activated, setActivated] = useState(false)
+  useEffect(() => {
+    if (query.trim() !== '') setActivated(true)
+  }, [query])
 
   useEffect(() => {
+    if (!activated) return
     let cancelled = false
     const load = () => {
       // An unreadable index leaves search with no rows — quietly. Search is an accelerator, not a
@@ -33,7 +45,7 @@ export function useSearchResults(root: string, watch: WatchSource, query: string
       cancelled = true
       off()
     }
-  }, [root, watch])
+  }, [root, watch, activated])
 
   const candidates = useMemo(() => searchCandidates(records), [records])
   // An empty query matches EVERYTHING through the shared matcher (`indexOf('')` is 0), so the

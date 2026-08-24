@@ -2,6 +2,10 @@
  * The search bar's index feed (YAZ-803): one `api.index` read per root, refetched on the same
  * structural watch events the sidebar tree refreshes on, ranked per keystroke. The failure case
  * matters most — search degrades to "no rows", never to an error surface.
+ *
+ * Since F1 finding 1 (YAZ-808) the feed is LAZY: an untouched bar reads no index and subscribes
+ * to nothing — the always-on feed is WikilinkIndexBridge's — and the first non-empty query
+ * latches it on for good. Both halves are asserted here, subscription included.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
@@ -47,20 +51,20 @@ function Harness({ watch, query }: { watch: WatchSource; query: string }) {
 async function mount(records: IndexRecord[], query: string, tweak?: (bridge: ReturnType<typeof installBridge>) => void) {
   const bridge = installBridge(records)
   tweak?.(bridge) // before the first render: the mount read is the one that can fail
-  let emit: ((ev: WatchEvent) => void) | undefined
-  const watch: WatchSource = {
-    subscribe: (l) => {
-      emit = l
-      return () => undefined
-    },
-  }
+  // A real fan-out watch (useWatch's shape), so "did search subscribe at all?" is answerable.
+  const listeners: ((ev: WatchEvent) => void)[] = []
+  const subscribe = vi.fn((l: (ev: WatchEvent) => void) => {
+    listeners.push(l)
+    return () => listeners.splice(listeners.indexOf(l), 1)
+  })
+  const watch: WatchSource = { subscribe }
   container = document.createElement('div')
   document.body.appendChild(container)
   reactRoot = createRoot(container)
   await act(async () => reactRoot?.render(<StrictMode><Harness watch={watch} query={query} /></StrictMode>))
   const rerender = async (q: string) => act(async () => reactRoot?.render(<StrictMode><Harness watch={watch} query={q} /></StrictMode>))
-  const fire = async (ev: WatchEvent) => act(async () => emit?.(ev))
-  return { bridge, rerender, fire }
+  const fire = async (ev: WatchEvent) => act(async () => [...listeners].forEach((l) => l(ev)))
+  return { bridge, rerender, fire, subscribe }
 }
 
 afterEach(() => {
@@ -73,10 +77,35 @@ afterEach(() => {
 })
 
 describe('useSearchResults (YAZ-803)', () => {
-  it('reads the index on mount and ranks it against the query', async () => {
+  it('reads the index for a query it already has and ranks it against that query', async () => {
     const { bridge } = await mount([rec('Meeting notes'), rec('Other')], 'meet')
     expect(bridge.index).toHaveBeenCalledWith('/v')
     expect(labels()).toEqual(['Meeting notes'])
+  })
+
+  it('an untouched bar reads NO index and subscribes to NOTHING; the first non-empty query does both (YAZ-808)', async () => {
+    const { bridge, subscribe, rerender } = await mount([rec('Alpha')], '')
+    expect(bridge.index).not.toHaveBeenCalled()
+    expect(subscribe).not.toHaveBeenCalled()
+    await rerender('   ') // whitespace is still no query
+    expect(bridge.index).not.toHaveBeenCalled()
+    expect(subscribe).not.toHaveBeenCalled()
+    await rerender('a')
+    expect(bridge.index).toHaveBeenCalledWith('/v')
+    expect(subscribe).toHaveBeenCalled()
+    expect(labels()).toEqual(['Alpha'])
+  })
+
+  it('the feed stays once activated: clearing the query refetches nothing, and a structural event still lands', async () => {
+    const { bridge, rerender, fire } = await mount([rec('Alpha')], '')
+    await rerender('a')
+    bridge.index.mockClear()
+    await rerender('') // back to no query: the records stay, nothing is refetched
+    expect(bridge.index).not.toHaveBeenCalled()
+    bridge.index.mockResolvedValue({ root: '/v', records: [rec('Alpha'), rec('Anchor')], generatedAt: 2 })
+    await fire({ type: 'add', path: '/v/Anchor.md', mtime: 1 }) // still subscribed while the bar is empty
+    await rerender('a')
+    expect(labels()).toEqual(['Alpha', 'Anchor'])
   })
 
   it('a structural watch event refetches the index; the new snapshot is searchable', async () => {

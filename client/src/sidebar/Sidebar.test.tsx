@@ -81,10 +81,14 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
 
 const fileRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.tree__row--file')
 const searchInput = (el: HTMLElement) => el.querySelector<HTMLInputElement>('input[aria-label="Search notes"]')
-/** Drive the CONTROLLED search input like a user: native value setter + input event (SettingsPanel idiom). */
-const type = (input: HTMLInputElement, value: string) => {
+/**
+ * Drive the CONTROLLED search input like a user: native value setter + input event (SettingsPanel
+ * idiom). Async because the index feed is LAZY since YAZ-808 — the first non-empty query is what
+ * starts the read, so a keystroke now has settling to do.
+ */
+const type = async (input: HTMLInputElement, value: string) => {
   const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
-  act(() => {
+  await act(async () => {
     set?.call(input, value)
     input.dispatchEvent(new Event('input', { bubbles: true }))
   })
@@ -576,7 +580,7 @@ describe('persistent search bar (YAZ-801)', () => {
   it('typing updates the query', async () => {
     const { el } = await mount()
     const input = searchInput(el)!
-    type(input, 'meeting')
+    await type(input, 'meeting')
     expect(input.value).toBe('meeting')
   })
 
@@ -584,7 +588,7 @@ describe('persistent search bar (YAZ-801)', () => {
     const { el } = await mount()
     const input = searchInput(el)!
     act(() => input.focus())
-    type(input, 'meeting')
+    await type(input, 'meeting')
     pressEscape(input)
     expect(input.value).toBe('')
     expect(document.activeElement).toBe(input)
@@ -637,7 +641,7 @@ describe('search results (YAZ-803)', () => {
   const search = async (query: string, over: Partial<SidebarProps> = {}) => {
     const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: RECORDS, generatedAt: 1 } as never))
     const input = searchInput(m.el)!
-    type(input, query)
+    await type(input, query)
     return { ...m, input }
   }
   const rowLabels = (el: HTMLElement) => [...el.querySelectorAll('.search-results__row .search-results__label')].map((n) => n.textContent)
@@ -649,7 +653,7 @@ describe('search results (YAZ-803)', () => {
     const { el, input } = await search('a')
     expect(el.querySelector('.tree')).toBeNull()
     expect(rowLabels(el)).toEqual(['Alpha', 'Anchor'])
-    type(input, '')
+    await type(input, '')
     expect(el.querySelector('.search-results')).toBeNull()
     expect(el.querySelector('.tree__row--file')).not.toBeNull()
   })
@@ -699,9 +703,29 @@ describe('search results (YAZ-803)', () => {
     const { el, input } = await search('a')
     await press(input, 'ArrowDown')
     expect(activeLabel(el)).toBe('Anchor')
-    type(input, 'an')
+    await type(input, 'an')
     expect(activeLabel(el)).toBe('Anchor') // the new ranking's FIRST row, not the carried index
     expect(rowLabels(el)).toEqual(['Anchor'])
+  })
+
+  it('an index refresh that shrinks the list keeps the highlight on the LAST row, and Enter opens that row (YAZ-808)', async () => {
+    // The watcher fans out to every subscriber (useWatch's shape) — here the tree's and search's.
+    const listeners: ((ev: WatchEvent) => void)[] = []
+    const watch = {
+      subscribe: (l: (ev: WatchEvent) => void) => {
+        listeners.push(l)
+        return () => void listeners.splice(listeners.indexOf(l), 1)
+      },
+    }
+    const { el, input, bridge, props } = await search('a', { watch })
+    await press(input, 'ArrowDown')
+    expect(activeLabel(el)).toBe('Anchor') // index 1 of two rows
+    bridge.index.mockResolvedValue({ root: '/v', records: [record('Alpha')], generatedAt: 2 } as never)
+    await act(async () => [...listeners].forEach((l) => l({ type: 'unlink', path: '/v/Docs/Anchor.md' })))
+    expect(rowLabels(el)).toEqual(['Alpha'])
+    expect(activeLabel(el)).toBe('Alpha') // the stale index 1 clamps onto the last row, not onto nothing
+    await press(input, 'Enter')
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/Alpha.md')
   })
 
   it('right-clicking the results offers no menu — "New note" there would have no target', async () => {
