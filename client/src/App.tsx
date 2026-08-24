@@ -49,6 +49,11 @@ export function App() {
   // picker's candidate source (Links B, GRO-2191) works exactly the same way.
   const [wikilinks] = useState(createWikilinkResolveSource)
   const [wikilinkCandidates] = useState(createWikilinkCandidateSource)
+  // ⌘K's half of the search-bar focus handshake (YAZ-801). NOTHING sets this true yet — YAZ-804
+  // wires the shortcut (including the collapsed case, which un-collapses and mounts the sidebar
+  // with the flag already true); the sidebar focuses its input and clears it through the callback.
+  const [pendingSearchFocus, setPendingSearchFocus] = useState(false)
+  const searchFocusHandled = useCallback(() => setPendingSearchFocus(false), [])
 
   // Settings and the sidebar toggle are global (D9): a change made in another window lands here live.
   useEffect(
@@ -378,6 +383,8 @@ export function App() {
           onRenameFile={renameFile}
           onDeleteFile={deleteFile}
           onNotice={setNotice}
+          pendingSearchFocus={pendingSearchFocus}
+          onSearchFocusHandled={searchFocusHandled}
         />
       )}
       {root !== null && !sidebarCollapsed && <div className={`sidebar-resize${resizing ? ' sidebar-resize--active' : ''}`} aria-hidden onMouseDown={startSidebarResize} />}

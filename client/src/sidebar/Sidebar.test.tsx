@@ -45,8 +45,9 @@ let container: HTMLElement | null = null
 
 type SidebarProps = Parameters<typeof Sidebar>[0]
 
-async function mount(over: Partial<SidebarProps> = {}) {
+async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: ReturnType<typeof installBridge>) => void) {
   const bridge = installBridge()
+  tweakBridge?.(bridge) // before the first render: the loading/error tree states only exist there
   const el = document.createElement('div')
   document.body.appendChild(el)
   container = el
@@ -67,6 +68,8 @@ async function mount(over: Partial<SidebarProps> = {}) {
     onRenameFile: vi.fn(async () => undefined),
     onDeleteFile: vi.fn(async () => undefined),
     onNotice: vi.fn(),
+    pendingSearchFocus: false,
+    onSearchFocusHandled: vi.fn(),
     ...over,
   }
   await act(async () => root?.render(<StrictMode><Sidebar {...props} /></StrictMode>))
@@ -533,6 +536,89 @@ describe('reveal in Finder (GRO-2274)', () => {
  * deliberate safety property, not an accident of JSX: Delete used to sit directly under
  * Rename, which is the misclick pair that matters most.
  */
+/**
+ * The persistent search bar (YAZ-801): row 2 of the sidebar chrome, ALWAYS present — loading,
+ * error and empty vault included, since a bar that comes and goes with the tree would be a view,
+ * which is exactly what the rescinded design was. Typing changes nothing below on purpose;
+ * YAZ-803 swaps the body to results. The ⌘K focus handshake has no key binding yet (YAZ-804),
+ * so it is driven here through the prop — including at MOUNT, which is the ⌘K-while-collapsed path.
+ */
+describe('persistent search bar (YAZ-801)', () => {
+  const searchInput = (el: HTMLElement) => el.querySelector<HTMLInputElement>('input[aria-label="Search notes"]')
+  /** Drive the CONTROLLED input like a user: native value setter + input event (SettingsPanel idiom). */
+  const type = (input: HTMLInputElement, value: string) => {
+    const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+    act(() => {
+      set?.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  }
+  const pressEscape = (input: HTMLInputElement) => act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+
+  it('renders while the tree is still loading', async () => {
+    const { el } = await mount({}, (b) => b.tree.mockImplementation(() => new Promise(() => undefined)))
+    expect(el.textContent).toContain('Loading…')
+    expect(searchInput(el)).not.toBeNull()
+  })
+
+  it('renders when the tree failed to load', async () => {
+    const { el } = await mount({}, (b) => b.tree.mockRejectedValue(new Error('nope')))
+    expect(el.querySelector('.sidebar__msg--error')).not.toBeNull()
+    expect(searchInput(el)).not.toBeNull()
+  })
+
+  it('renders in an empty vault', async () => {
+    const { el } = await mount({}, (b) => b.tree.mockImplementation(async (r: string) => ({ root: r, tree: [], generatedAt: 1 })))
+    expect(el.textContent).toContain('No notes here.')
+    expect(searchInput(el)).not.toBeNull()
+  })
+
+  it('typing updates the query', async () => {
+    const { el } = await mount()
+    const input = searchInput(el)!
+    type(input, 'meeting')
+    expect(input.value).toBe('meeting')
+  })
+
+  it('Escape with text clears the query and KEEPS focus', async () => {
+    const { el } = await mount()
+    const input = searchInput(el)!
+    act(() => input.focus())
+    type(input, 'meeting')
+    pressEscape(input)
+    expect(input.value).toBe('')
+    expect(document.activeElement).toBe(input)
+  })
+
+  it('Escape with an empty input gives up focus', async () => {
+    const { el } = await mount()
+    const input = searchInput(el)!
+    act(() => input.focus())
+    pressEscape(input)
+    expect(document.activeElement).not.toBe(input)
+  })
+
+  it('mounting with pendingSearchFocus focuses the input and reports back (⌘K while collapsed)', async () => {
+    const { el, props } = await mount({ pendingSearchFocus: true })
+    expect(document.activeElement).toBe(searchInput(el))
+    expect(props.onSearchFocusHandled).toHaveBeenCalled()
+  })
+
+  it('flipping pendingSearchFocus false → true on a mounted sidebar focuses the input and reports back', async () => {
+    const { el, props, rerender } = await mount()
+    expect(document.activeElement).not.toBe(searchInput(el))
+    await rerender({ pendingSearchFocus: true })
+    expect(document.activeElement).toBe(searchInput(el))
+    expect(props.onSearchFocusHandled).toHaveBeenCalled()
+  })
+
+  it('a plain mount steals no focus', async () => {
+    const { el, props } = await mount()
+    expect(document.activeElement).not.toBe(searchInput(el))
+    expect(props.onSearchFocusHandled).not.toHaveBeenCalled()
+  })
+})
+
 describe('context menu order (GRO-2272 C1a)', () => {
   it('a FILE row renders utilities, then create actions, then Rename and Delete last', async () => {
     const { el } = await mount()

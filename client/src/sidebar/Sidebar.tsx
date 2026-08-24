@@ -52,6 +52,14 @@ interface SidebarProps {
   onDeleteFile: (path: string) => Promise<void>
   /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
   onNotice: (message: string) => void
+  /**
+   * ⌘K asked for the search bar (YAZ-801): the bar focuses its input. True at MOUNT is the
+   * ⌘K-while-collapsed path (App un-collapses, so the sidebar mounts with it already set), not an
+   * edge case. Nothing sets it true yet — YAZ-804 wires the shortcut.
+   */
+  pendingSearchFocus: boolean
+  /** The focus above happened (YAZ-801); App clears its flag so the next ⌘K is a fresh request. */
+  onSearchFocusHandled: () => void
 }
 
 /**
@@ -147,6 +155,8 @@ export function Sidebar({
   onRenameFile,
   onDeleteFile,
   onNotice,
+  pendingSearchFocus,
+  onSearchFocusHandled,
 }: SidebarProps) {
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -160,6 +170,11 @@ export function Sidebar({
   // File drag-to-move (E1b, GRO-2241): the dragged file row + the highlighted drop target.
   const [dragging, setDragging] = useState<string | null>(null)
   const [dropDir, setDropDir] = useState<string | null>(null)
+  // The persistent search bar's query (YAZ-801). It lives HERE rather than in the bar because
+  // YAZ-803 swaps the BODY while it is non-empty; Sidebar is mounted `key={root}`, so it resets
+  // on unmount and on a root switch without any clearing code.
+  const [query, setQuery] = useState('')
+  const searchInput = useRef<HTMLInputElement>(null)
 
   // The vault's type registry (Bible B, GRO-2202): feeds the "New ▸" submenu — always present;
   // an empty (or unreadable) registry collapses it to "New type…" (Round 10 Q4, GRO-2226).
@@ -198,6 +213,15 @@ export function Sidebar({
   useEffect(() => {
     if (activeFile !== null) dispatch({ type: 'expandTo', root, file: activeFile })
   }, [root, activeFile])
+
+  // ⌘K's focus handshake (YAZ-801). Firing on MOUNT is deliberate, not a side effect to guard
+  // against: ⌘K with the sidebar collapsed un-collapses it, so the sidebar mounts with the flag
+  // already true (0- re-scope on YAZ-800). A plain remount with the flag false focuses nothing.
+  useEffect(() => {
+    if (!pendingSearchFocus) return
+    searchInput.current?.focus()
+    onSearchFocusHandled()
+  }, [pendingSearchFocus, onSearchFocusHandled])
 
   // Stored lastFile that no longer exists → drop it (first tree only, so a file deleted on disk
   // EXTERNALLY while it is being edited stays open and is recreated by the next save — an
@@ -473,6 +497,34 @@ export function Sidebar({
         <button type="button" className="sidebar__collapse" onClick={onCollapse} title="Hide sidebar" aria-label="Hide sidebar">
           <SidebarPanelIcon />
         </button>
+      </div>
+      {/* Persistent search bar (YAZ-739 A-, chrome v2 row 2 — 🔒 YAZ-797): always visible, never a
+          tab or a view. The 797 wave stacks its lens-tabs row ABOVE this later, and YAZ-750's
+          filter affordance sits beside it; YAZ-803 swaps the body to results while `query` is
+          non-empty — until then typing here changes nothing below, by design. */}
+      <div className="sidebar__search">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.5" />
+          <path d="m10.5 10.5 3.5 3.5" />
+        </svg>
+        <input
+          ref={searchInput}
+          className="sidebar__search-input"
+          type="text"
+          placeholder="Search"
+          title="Search (⌘K)"
+          aria-label="Search notes"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') return
+            e.preventDefault()
+            e.stopPropagation()
+            // Esc empties a typed query first and only gives up focus on the second press.
+            if (query !== '') setQuery('')
+            else e.currentTarget.blur()
+          }}
+        />
       </div>
       <div className="sidebar__body" onContextMenu={(e) => openMenu(null, e)}>
         {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}

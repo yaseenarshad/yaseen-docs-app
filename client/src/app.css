@@ -547,6 +547,38 @@ button {
   color: var(--fg-muted);
 }
 
+/* Persistent search bar (YAZ-801) — its OWN row under the header, never fused into it: the
+   YAZ-797 lens-tabs row stacks above it later. */
+.sidebar__search {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 14px;
+  color: var(--fg-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar__search:focus-within {
+  border-bottom-color: var(--accent);
+}
+
+.sidebar__search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  border: none;
+  font: inherit;
+  font-size: 12px;
+  background: transparent;
+  color: var(--fg);
+  outline: none;
+}
+
+.sidebar__search-input::placeholder {
+  color: var(--fg-muted);
+}
+
 .sidebar__body {
   flex: 1;
   overflow: auto;
