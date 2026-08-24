@@ -80,6 +80,7 @@ const api: YaseenDocsApi = {
   menu: {
     onOpenFolder: on<void>(CH.menuOpenFolder),
     onOpenRoot: on<string>(CH.menuOpenRoot),
+    onSearch: on<void>(CH.menuSearch),
     onCloseTab: on<void>(CH.menuCloseTab),
     onNextTab: on<void>(CH.menuNextTab),
     onPrevTab: on<void>(CH.menuPrevTab),

@@ -14,6 +14,7 @@ const noopHandlers = (): MenuHandlers => ({
   newWindow: vi.fn(),
   openFolder: vi.fn(),
   openRecent: vi.fn(),
+  search: vi.fn(),
   closeTab: vi.fn(),
   nextTab: vi.fn(),
   prevTab: vi.fn(),
@@ -53,7 +54,7 @@ describe('buildMenuTemplate', () => {
     expect(roles).toEqual(['about', 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit'])
   })
 
-  it('File menu: New Window ⌘⇧N, Open Folder… ⌘⇧O, Open Recent, Close Tab ⌘W, Close Window ⌘⇧W', () => {
+  it('File menu: New Window ⌘⇧N, Open Folder… ⌘⇧O, Open Recent, Search Vault ⌘K, Close Tab ⌘W, Close Window ⌘⇧W', () => {
     const handlers = noopHandlers()
     const file = menuOf(build(RECENTS, false, handlers), 'File')
 
@@ -68,6 +69,13 @@ describe('buildMenuTemplate', () => {
     expect(handlers.openFolder).toHaveBeenCalledTimes(1)
 
     expect(file.find((i) => i.label === 'Open Recent')).toBeDefined()
+
+    // ⌘K is Search Vault (D4, YAZ-739 amended): its own group right below Open Recent.
+    const search = file.find((i) => i.label === 'Search Vault')
+    expect(search?.accelerator).toBe('CmdOrCtrl+K')
+    expect(file.indexOf(search as MenuItemConstructorOptions)).toBe(file.findIndex((i) => i.label === 'Open Recent') + 2)
+    click(search)
+    expect(handlers.search).toHaveBeenCalledTimes(1)
 
     // ⌘W is Close Tab (GRO-2232, locked): a click item into the focused renderer, NOT the role.
     const closeTab = file.find((i) => i.label === 'Close Tab')
@@ -190,6 +198,7 @@ describe('buildMenuTemplate', () => {
     const file = menuOf(build(), 'File')
     expect(file.find((i) => i.label === 'New Window')?.id).toBe('menu.file.new-window')
     expect(file.find((i) => i.label === 'Open Folder…')?.id).toBe('menu.file.open-folder')
+    expect(file.find((i) => i.label === 'Search Vault')?.id).toBe('menu.file.search')
     expect(file.find((i) => i.label === 'Close Tab')?.id).toBe('menu.file.close-tab')
     expect(file.find((i) => i.label === 'Close Window')?.id).toBe('menu.file.close-window')
     const recent = file.find((i) => i.label === 'Open Recent')?.submenu as MenuItemConstructorOptions[]
@@ -323,6 +332,16 @@ describe('createMenuHandlers', () => {
     const { handlers } = makeHandlers(wc)
     handlers.openFolder()
     expect(wc.send).toHaveBeenCalledWith(CH.menuOpenFolder)
+  })
+
+  it('search tells the focused renderer to focus its search bar (D4, YAZ-804)', () => {
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers } = makeHandlers(wc)
+    handlers.search()
+    expect(wc.send).toHaveBeenCalledWith(CH.menuSearch)
+
+    const { handlers: unfocused } = makeHandlers(undefined)
+    expect(() => unfocused.search()).not.toThrow()
   })
 
   it('openRecent in place sends the path to the focused renderer', () => {

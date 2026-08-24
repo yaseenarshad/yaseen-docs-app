@@ -37,6 +37,7 @@ export const CH = {
   windowCloseSelf: 'window:close-self',
   menuOpenFolder: 'menu:open-folder',
   menuOpenRoot: 'menu:open-root',
+  menuSearch: 'menu:search',
   menuCloseTab: 'menu:close-tab',
   menuNextTab: 'menu:next-tab',
   menuPrevTab: 'menu:prev-tab',

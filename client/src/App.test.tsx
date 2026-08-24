@@ -21,6 +21,7 @@ interface SidebarStubProps {
   onOpenFileBackground: (path: string) => void
   onRootMissing: () => void
   onFileMissing: () => void
+  pendingSearchFocus: boolean
 }
 
 const captured = vi.hoisted(() => ({ sidebar: null as SidebarStubProps | null }))
@@ -43,6 +44,7 @@ import { App, LINK_NOTICE_MS } from './App'
 /** The full `window.yaseenDocs` surface the App tree touches, all observable. `files` backs readFile/writeFile (the E1c rewrite path). */
 function installBridge(state: AppState, identity: WindowIdentity, files: Record<string, { content: string; mtime: number }> = {}) {
   const menuOpenRoot = new Set<(path: string) => void>()
+  const menuSearch = new Set<() => void>()
   const menuCloseTab = new Set<() => void>()
   const menuNextTab = new Set<() => void>()
   const menuPrevTab = new Set<() => void>()
@@ -98,6 +100,7 @@ function installBridge(state: AppState, identity: WindowIdentity, files: Record<
         menuOpenRoot.add(l)
         return () => menuOpenRoot.delete(l)
       }),
+      onSearch: menuSub(menuSearch),
       onCloseTab: menuSub(menuCloseTab),
       onNextTab: menuSub(menuNextTab),
       onPrevTab: menuSub(menuPrevTab),
@@ -138,6 +141,7 @@ function installBridge(state: AppState, identity: WindowIdentity, files: Record<
   return {
     bridge,
     emitOpenRoot: (path: string) => menuOpenRoot.forEach((l) => l(path)),
+    emitSearch: () => menuSearch.forEach((l) => l()),
     emitCloseTab: () => menuCloseTab.forEach((l) => l()),
     emitNextTab: () => menuNextTab.forEach((l) => l()),
     emitPrevTab: () => menuPrevTab.forEach((l) => l()),
@@ -353,6 +357,25 @@ describe('App sidebar resize (YAZ-738)', () => {
     expect(sideW(el)).toBe('260px')
     expect(bridge.state.setSidebarCollapsed).toHaveBeenCalledWith(true)
     expect(bridge.state.setSidebarWidth).not.toHaveBeenCalled()
+  })
+})
+
+describe('App ⌘K search (D4, YAZ-804)', () => {
+  it('from a collapsed sidebar it un-collapses through the global setting and mounts the sidebar with the focus flag already true', async () => {
+    const { bridge, el, emitSearch } = await mount({ ...defaultAppState(), sidebarCollapsed: true }, { id: 'w1', root: '/v', file: null, tabs: [] })
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    act(() => emitSearch())
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(bridge.state.setSidebarCollapsed).toHaveBeenCalledWith(false) // collapse state is global (D9)
+    expect(captured.sidebar?.pendingSearchFocus).toBe(true)
+  })
+
+  it('with the sidebar already open it only raises the focus flag', async () => {
+    const { bridge, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    expect(captured.sidebar?.pendingSearchFocus).toBe(false)
+    act(() => emitSearch())
+    expect(captured.sidebar?.pendingSearchFocus).toBe(true)
+    expect(bridge.state.setSidebarCollapsed).not.toHaveBeenCalled()
   })
 })
 

@@ -21,6 +21,8 @@ export interface MenuHandlers {
   openFolder(): void
   /** File › Open Recent › item: in place in the focused window; `beside` (⌥-click) in a new one. */
   openRecent(path: string, beside: boolean): void
+  /** File › Search Vault (⌘K, YAZ-804): the focused window's renderer focuses its sidebar search bar. */
+  search(): void
   /** File › Close Tab (⌘W, GRO-2232): the focused window's renderer closes its active tab. */
   closeTab(): void
   /** Window › Next Tab (⌃Tab / ⌘⇧], GRO-2232): the focused window's renderer activates the tab to the right. */
@@ -75,6 +77,10 @@ export function buildMenuTemplate({ recents, isDev }: MenuInputs, handlers: Menu
         { type: 'separator' },
         { id: 'menu.file.open-folder', label: 'Open Folder…', accelerator: 'CmdOrCtrl+Shift+O', click: () => handlers.openFolder() },
         { id: 'menu.file.open-recent', label: 'Open Recent', submenu: recentItems },
+        { type: 'separator' },
+        // ⌘K focuses the sidebar's search bar (D4, YAZ-739 amended): the renderer owns the bar,
+        // so the gesture goes to the focused window's renderer — un-collapsing the sidebar first.
+        { id: 'menu.file.search', label: 'Search Vault', accelerator: 'CmdOrCtrl+K', click: () => handlers.search() },
         { type: 'separator' },
         // ⌘W is Close Tab (GRO-2232, locked): the renderer owns tab state, so the gesture goes to
         // the focused window's renderer. Close Window moves to ⌘⇧W and keeps `role: 'close'` — the
@@ -221,6 +227,9 @@ export function createMenuHandlers(store: Store, windows: MenuWindows, host: Men
         return
       }
       host.focusedWebContents()?.send(CH.menuOpenRoot, path)
+    },
+    search() {
+      host.focusedWebContents()?.send(CH.menuSearch)
     },
     closeTab() {
       host.focusedWebContents()?.send(CH.menuCloseTab)
