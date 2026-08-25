@@ -8,6 +8,7 @@ import {
   type FolderState,
   type RecentRoots,
   type SettingsState,
+  type SidebarLens,
   type WindowIdentity,
 } from '@shared/types'
 
@@ -138,6 +139,16 @@ export const storage = {
   setSidebarWidth(width: number): void {
     state = { ...state, sidebarWidth: width }
     send('state.setSidebarWidth', () => window.yaseenDocs.state.setSidebarWidth(width))
+  },
+
+  /**
+   * The active sidebar lens (YAZ-847). GLOBAL like the two above — the lens is chrome, not
+   * per-folder view state — so no root argument and no `FolderState` entry.
+   */
+  getSidebarLens: (): SidebarLens => state.sidebarLens,
+  setSidebarLens(lens: SidebarLens): void {
+    state = { ...state, sidebarLens: lens }
+    send('state.setSidebarLens', () => window.yaseenDocs.state.setSidebarLens(lens))
   },
 
   getFolds: (root: string, file: string): string[] => folderOf(root).folds[file] ?? [],

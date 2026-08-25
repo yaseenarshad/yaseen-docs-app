@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { fileKind } from '@shared/fileKind'
-import type { SettingsState, TreeNode, TreeResponse } from '@shared/types'
+import { SIDEBAR_LENSES, type SettingsState, type SidebarLens, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { createNewNote } from '../bases/newNote'
 import { SearchIcon } from '../bases/view/icons'
@@ -34,6 +34,15 @@ interface SidebarProps {
   pickDisabled: boolean
   /** Hide the sidebar (GRO-2023); App renders the floating reopen button while hidden. */
   onCollapse: () => void
+  /**
+   * Which lens the tabs row shows (🔒 D4, YAZ-847). App-owned and globally persisted
+   * (`AppState.sidebarLens`), never Sidebar-local: this component is mounted `key={root}` and
+   * only while the sidebar is open, so local state would forget the choice on every
+   * collapse/reopen and every root switch.
+   */
+  lens: SidebarLens
+  /** A lens tab was clicked; App writes it through to the global state and passes the new value back down. */
+  onLensChange: (lens: SidebarLens) => void
   /** Editor spacing preferences shown in the footer cog (GRO-2024); App owns and applies them. */
   settings: SettingsState
   onChangeSettings: (next: SettingsState) => void
@@ -155,6 +164,9 @@ function findDir(nodes: readonly TreeNode[], dir: string): readonly TreeNode[] |
   return null
 }
 
+/** The lens tabs' copy; the ORDER is `SIDEBAR_LENSES`', so the default lens leads (YAZ-847). */
+const LENS_LABEL: Record<SidebarLens, string> = { topics: 'Topics', files: 'Files' }
+
 /** Panel-left pictogram shared by the collapse and reopen buttons (GRO-2023). */
 export function SidebarPanelIcon() {
   return (
@@ -175,6 +187,8 @@ export function Sidebar({
   onPickFolder,
   pickDisabled,
   onCollapse,
+  lens,
+  onLensChange,
   settings,
   onChangeSettings,
   onRootMissing,
@@ -561,10 +575,29 @@ export function Sidebar({
           <SidebarPanelIcon />
         </button>
       </div>
+      {/* Lens tabs (🔒 D4/D5, YAZ-847) — chrome v2 ROW 1, above the search bar: Topics (the
+          folder-page tree, an empty shell until YAZ-848) ⇄ Files (today's file explorer,
+          unchanged, now behind a tab). The row stays VISIBLE and clickable during a search,
+          and switching lenses never touches the query (🔒 D5). `role="tab"` + `aria-selected`
+          only — no `aria-controls`/`tabpanel`, because the body below is shared with the flat
+          search results and belongs to neither lens while a query is typed. */}
+      <div className="sidebar__lenses" role="tablist" aria-label="Sidebar lens">
+        {SIDEBAR_LENSES.map((id) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={lens === id}
+            className={`sidebar__lens${lens === id ? ' sidebar__lens--active' : ''}`}
+            onClick={() => onLensChange(id)}
+          >
+            {LENS_LABEL[id]}
+          </button>
+        ))}
+      </div>
       {/* Persistent search bar (YAZ-739 A-, chrome v2 row 2 — 🔒 YAZ-797): always visible, never a
-          tab or a view. The 797 wave stacks its lens-tabs row ABOVE this later, and YAZ-750's
-          filter affordance sits beside it; YAZ-803 swaps the body to results while `query` is
-          non-empty — until then typing here changes nothing below, by design. */}
+          tab or a view — on BOTH lenses (YAZ-847 keeps that rule). YAZ-750's filter affordance
+          sits beside it; YAZ-803 swaps the body to results while `query` is non-empty. */}
       <div className="sidebar__search">
         <SearchIcon />
         <input
@@ -608,14 +641,22 @@ export function Sidebar({
         />
       </div>
       {/* The blank-space menu is the TREE's ("New note" here creates in the vault root); the
-          results list has no such target, so right-clicking it offers nothing (YAZ-803). */}
-      <div className="sidebar__body" onContextMenu={(e) => (searching ? undefined : openMenu(null, e))}>
+          results list has no such target, so right-clicking it offers nothing (YAZ-803) — and
+          neither does the Topics lens (🔒 YAZ-847): the blank-space menu belongs to Files, and
+          Topics' own menu is YAZ-848's to decide, not this issue's to invent. */}
+      <div className="sidebar__body" onContextMenu={(e) => (searching || lens === 'topics' ? undefined : openMenu(null, e))}>
         {searching ? (
+          // A typed query replaces the ACTIVE TAB's body, whichever lens that is (🔒 D5).
           results.length > 0 ? (
             <SearchResults results={results} selected={sel} onSelect={setSelected} onOpen={onOpenFile} onOpenBackground={onOpenFileBackground} />
           ) : (
             <p className="sidebar__msg">No matches</p>
           )
+        ) : lens === 'topics' ? (
+          // The Topics shell: YAZ-848 puts the folder-page tree here. Conditional render, like
+          // the search swap above — the Files tree's state (data, expansion, pending
+          // create/rename, drag) lives in this component and is waiting untouched below.
+          <p className="sidebar__msg">Topics arrives with the tree (YAZ-848)</p>
         ) : (
           <>
             {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}

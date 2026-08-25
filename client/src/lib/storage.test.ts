@@ -12,6 +12,7 @@ function installBridge(state: AppState, identity: WindowIdentity) {
       setSettings: vi.fn(async () => undefined),
       setSidebarCollapsed: vi.fn(async () => undefined),
       setSidebarWidth: vi.fn(async () => undefined),
+      setSidebarLens: vi.fn(async () => undefined),
       pushRecent: vi.fn(async () => undefined),
       removeRecent: vi.fn(async () => undefined),
       setFolder: vi.fn(async () => undefined),
@@ -277,6 +278,16 @@ describe('storage', () => {
     expect(b.bridge.state.setSidebarCollapsed).toHaveBeenLastCalledWith(false)
   })
 
+  it('sidebarLens defaults to topics and round-trips through the bridge (YAZ-847)', () => {
+    expect(storage.getSidebarLens()).toBe('topics')
+    storage.setSidebarLens('files')
+    expect(storage.getSidebarLens()).toBe('files')
+    expect(b.bridge.state.setSidebarLens).toHaveBeenLastCalledWith('files')
+    storage.setSidebarLens('topics')
+    expect(storage.getSidebarLens()).toBe('topics')
+    expect(b.bridge.state.setSidebarLens).toHaveBeenLastCalledWith('topics')
+  })
+
   it('settings default and round-trip through the bridge', () => {
     expect(storage.getSettings()).toEqual(DEFAULT_SETTINGS)
     const next = { ...DEFAULT_SETTINGS, lineSpacing: 2.0, blockGap: 12, bulletThreading: false, threadWidth: 1, threadColor: '#00AAff' }
@@ -292,12 +303,14 @@ describe('storage', () => {
       ...defaultAppState(),
       settings: { ...DEFAULT_SETTINGS, threadWidth: 3 },
       sidebarCollapsed: true,
+      sidebarLens: 'files',
       folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {} } },
     }
     b.emit(next)
     expect(seen).toHaveBeenCalledTimes(1)
     expect(storage.getSettings().threadWidth).toBe(3)
     expect(storage.getSidebarCollapsed()).toBe(true)
+    expect(storage.getSidebarLens()).toBe('files') // another window's lens switch lands here (global, D9)
     expect(storage.getFolds('/v', '/v/a.md')).toEqual(['z'])
     off()
     b.emit(defaultAppState())

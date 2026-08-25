@@ -14,7 +14,7 @@ vi.mock('electron', () => ({
  * annotation would widen it and make `Exhaustive<>` vacuous) while still rejecting typos.
  */
 const TOP = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'coldDiff', 'readAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'file', 'shell', 'vaultConfig', 'properties'] as const satisfies readonly (keyof YaseenDocsApi)[]
-const STATE = ['get', 'setSettings', 'setSidebarCollapsed', 'setSidebarWidth', 'pushRecent', 'removeRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange'] as const satisfies readonly (keyof StateApi)[]
+const STATE = ['get', 'setSettings', 'setSidebarCollapsed', 'setSidebarWidth', 'setSidebarLens', 'pushRecent', 'removeRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange'] as const satisfies readonly (keyof StateApi)[]
 const WINDOW = ['identity', 'setIdentity', 'open', 'duplicate', 'closeSelf', 'onFlush'] as const satisfies readonly (keyof WindowApi)[]
 const MENU = ['onOpenFolder', 'onOpenRoot', 'onSearch', 'onCloseTab', 'onNextTab', 'onPrevTab'] as const satisfies readonly (keyof MenuApi)[]
 const LINK = ['onOpenFile', 'onNotice'] as const satisfies readonly (keyof LinkApi)[]

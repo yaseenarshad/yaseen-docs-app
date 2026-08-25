@@ -51,7 +51,7 @@ describe('registerStateIpc', () => {
   it('registers every state channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual(
-      [CH.stateGet, CH.stateSetSettings, CH.stateSetSidebarCollapsed, CH.stateSetSidebarWidth, CH.statePushRecent, CH.stateRemoveRecent, CH.stateSetFolder, CH.stateSetFolds, CH.stateSetBaseGroups].sort(),
+      [CH.stateGet, CH.stateSetSettings, CH.stateSetSidebarCollapsed, CH.stateSetSidebarWidth, CH.stateSetSidebarLens, CH.statePushRecent, CH.stateRemoveRecent, CH.stateSetFolder, CH.stateSetFolds, CH.stateSetBaseGroups].sort(),
     )
   })
 
@@ -82,6 +82,16 @@ describe('registerStateIpc', () => {
     expect(await registered(CH.stateSetSidebarWidth)({ sender }, Number.NaN)).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CH.stateSetSidebarWidth)({ sender }, '300')).toEqual(bad('BAD_REQUEST'))
     expect(store.get().sidebarWidth).toBe(SIDEBAR_MAX_W)
+  })
+
+  it('state:set-sidebar-lens only takes one of the two lenses (YAZ-847)', async () => {
+    expect(await registered(CH.stateSetSidebarLens)({ sender }, 'files')).toEqual(ok(undefined))
+    expect(store.get().sidebarLens).toBe('files')
+    expect(await registered(CH.stateSetSidebarLens)({ sender }, 'graph')).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.stateSetSidebarLens)({ sender }, undefined)).toEqual(bad('BAD_REQUEST'))
+    expect(store.get().sidebarLens).toBe('files')
+    expect(await registered(CH.stateSetSidebarLens)({ sender }, 'topics')).toEqual(ok(undefined))
+    expect(store.get().sidebarLens).toBe('topics')
   })
 
   it('state:push-recent needs an absolute path', async () => {

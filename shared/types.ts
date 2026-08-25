@@ -294,6 +294,18 @@ export const MAX_FOLD_KEYS_PER_FILE = 500
 /** Collapsed group keys per base view (Bases 4C, GRO-2137) are capped at this many. */
 export const MAX_COLLAPSED_GROUP_KEYS = 200
 
+/**
+ * `AppState.sidebarLens` — which lens the sidebar's chrome-v2 ROW 1 tabs show (YAZ-847):
+ * `topics` (the folder-page tree, an empty shell until YAZ-848) or `files` (the file explorer).
+ * GLOBAL, exactly like `sidebarCollapsed` / `sidebarWidth`: the tabs are window chrome, not
+ * per-folder view state, so there is no per-root keying and no `FolderState` entry. Default
+ * `topics` — a pre-847 state file simply gains it.
+ */
+export type SidebarLens = 'topics' | 'files'
+/** The tabs' order, left→right: the default lens leads. */
+export const SIDEBAR_LENSES: readonly SidebarLens[] = ['topics', 'files']
+export const isSidebarLens = (v: unknown): v is SidebarLens => SIDEBAR_LENSES.includes(v as SidebarLens)
+
 /** `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. */
 export const SIDEBAR_MIN_W = 180
 export const SIDEBAR_MAX_W = 520
@@ -415,6 +427,8 @@ export interface AppState {
   sidebarCollapsed: boolean
   /** Sidebar width in px, within [SIDEBAR_MIN_W, SIDEBAR_MAX_W]. */
   sidebarWidth: number
+  /** Which sidebar lens is showing (YAZ-847); global, default `topics`, junk → `topics`. */
+  sidebarLens: SidebarLens
   /** Most-recent first, max 10, de-duplicated. */
   recents: RecentRoots
   windows: WindowEntry[]
@@ -423,7 +437,7 @@ export interface AppState {
 
 /** A fresh default state (a factory, so no caller can mutate a shared constant). */
 export function defaultAppState(): AppState {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarCollapsed: false, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {} }
+  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarCollapsed: false, sidebarWidth: SIDEBAR_DEFAULT_W, sidebarLens: 'topics', recents: [], windows: [], folders: {} }
 }
 
 export function defaultFolderState(): FolderState {
@@ -579,6 +593,8 @@ export interface StateApi {
   setSidebarCollapsed(collapsed: boolean): Promise<void>
   /** Clamped to [SIDEBAR_MIN_W, SIDEBAR_MAX_W] by the main process. */
   setSidebarWidth(width: number): Promise<void>
+  /** The active sidebar lens (YAZ-847); anything but a `SidebarLens` is `BAD_REQUEST`. */
+  setSidebarLens(lens: SidebarLens): Promise<void>
   /** Prepend to recents (de-duplicated, capped). */
   pushRecent(path: string): Promise<void>
   /** Drop a folder from recents (its directory vanished on disk, C2 — GRO-2164); unknown path is a no-op. */

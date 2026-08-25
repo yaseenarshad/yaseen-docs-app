@@ -84,10 +84,20 @@ async function reset(w: Page): Promise<void> {
   await expect(treeRows(w).first()).toBeVisible()
 }
 
-/** Types `query` into the bar and waits for the rows it must rank, in order. */
+/**
+ * Types `query` into the bar and waits for the rows it must rank, in order.
+ *
+ * The fill lives INSIDE the retry: the bar is a controlled input, so a value set while React is
+ * re-rendering it can be swallowed — the bar ends up empty and no rows ever arrive (seen under
+ * full-suite load once YAZ-847 grew the suite by a spec). Re-filling the same query is a no-op
+ * when it did land, so a healthy run still settles on the first attempt.
+ */
 async function search(w: Page, query: string, labels: readonly string[]): Promise<void> {
-  await searchBar(w).fill(query)
-  await expect.poll(() => rowLabels(w)).toEqual(labels.map((l) => `Search result ${l}`))
+  const want = labels.map((l) => `Search result ${l}`)
+  await expect(async () => {
+    await searchBar(w).fill(query)
+    expect(await rowLabels(w)).toEqual(want)
+  }).toPass({ timeout: 15_000 })
 }
 
 /** The selected row: `aria-selected` and the active class are ONE state — assert them together. */

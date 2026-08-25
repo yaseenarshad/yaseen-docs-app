@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
-import { SIDEBAR_MAX_W, SIDEBAR_MIN_W, type SettingsState } from '@shared/types'
+import { SIDEBAR_MAX_W, SIDEBAR_MIN_W, type SettingsState, type SidebarLens } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -41,6 +41,11 @@ export function App() {
   const { tabs, active: file, mounted, openCurrent, openBackground, activate, close: closeTab, move: moveTab, closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs, renamePath: renameTabPath, renameDirPath: renameDirTabs, deletePath: deleteTabPath, deleteDirPath: deleteDirTabs } = useTabs(root)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
+  // The sidebar's active LENS (🔒 D4, YAZ-847): App-owned and globally persisted, for the same
+  // reason `sidebarCollapsed` is — the Sidebar is mounted `key={root}` and only while it is
+  // open, so sidebar-local view state would reset on every collapse/reopen and every root
+  // switch (the stale-mount lesson). One flag, `AppState.sidebarLens`; never a second one.
+  const [sidebarLens, setSidebarLens] = useState(storage.getSidebarLens)
   const [resizing, setResizing] = useState(false)
   const [settings, setSettings] = useState(storage.getSettings)
   const watch = useWatch(root)
@@ -67,6 +72,7 @@ export function App() {
         setSettings(storage.getSettings())
         setSidebarCollapsed(storage.getSidebarCollapsed())
         setSidebarWidth(storage.getSidebarWidth())
+        setSidebarLens(storage.getSidebarLens())
       }),
     [],
   )
@@ -113,6 +119,12 @@ export function App() {
   const changeSettings = useCallback((next: SettingsState) => {
     storage.setSettings(next)
     setSettings(next)
+  }, [])
+
+  /** A lens tab click (YAZ-847): write through to the global state, then mirror it locally. */
+  const changeLens = useCallback((next: SidebarLens) => {
+    storage.setSidebarLens(next)
+    setSidebarLens(next)
   }, [])
 
   // Files & Links (C2-, GRO-2240): where a bare unresolved [[link]] creates its page — the
@@ -382,6 +394,9 @@ export function App() {
           onPickFolder={pick}
           pickDisabled={picking}
           onCollapse={toggleSidebar}
+          // The lens tabs (YAZ-847): App owns the value, the sidebar only renders the row.
+          lens={sidebarLens}
+          onLensChange={changeLens}
           settings={settings}
           onChangeSettings={changeSettings}
           onRootMissing={onRootMissing}

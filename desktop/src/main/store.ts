@@ -14,12 +14,14 @@ import {
   addRecentRoot,
   defaultAppState,
   defaultFolderState,
+  isSidebarLens,
   isValidNewNoteFolder,
   type AppState,
   type FolderState,
   type NewNoteLocation,
   type RecentRoots,
   type SettingsState,
+  type SidebarLens,
   type Theme,
   type WindowBounds,
   type WindowEntry,
@@ -38,6 +40,7 @@ export interface Store {
   setSettings(settings: SettingsState): void
   setSidebarCollapsed(collapsed: boolean): void
   setSidebarWidth(width: number): void
+  setSidebarLens(lens: SidebarLens): void
   pushRecent(path: string, now?: number): void
   removeRecent(path: string): void
   setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile'>>): void
@@ -192,6 +195,8 @@ function sanitizeState(raw: unknown): AppState | null {
     settings: sanitizeSettings(raw.settings),
     sidebarCollapsed: raw.sidebarCollapsed === true,
     sidebarWidth: isFiniteNumber(raw.sidebarWidth) ? clampSidebarWidth(raw.sidebarWidth) : SIDEBAR_DEFAULT_W,
+    // A pre-847 file has no lens at all; missing or junk both read as the default (YAZ-847).
+    sidebarLens: isSidebarLens(raw.sidebarLens) ? raw.sidebarLens : 'topics',
     recents: isRecentRoots(raw.recents) ? raw.recents.slice(0, MAX_RECENT_ROOTS) : [],
     windows: sanitizeWindows(raw.windows),
     folders: sanitizeFolders(raw.folders),
@@ -276,6 +281,10 @@ export function createStore(filePath: string): Store {
 
     setSidebarWidth(width) {
       commit({ ...state, sidebarWidth: clampSidebarWidth(width) })
+    },
+
+    setSidebarLens(lens) {
+      commit({ ...state, sidebarLens: lens })
     },
 
     pushRecent(path, now = Date.now()) {

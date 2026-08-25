@@ -64,6 +64,11 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     onPickFolder: vi.fn(),
     pickDisabled: false,
     onCollapse: vi.fn(),
+    // Every test below this line is about the FILE TREE, so the harness mounts the FILES lens
+    // (YAZ-847). The app's own default is Topics — App owns and persists the value, and the
+    // "lens tabs" describe mounts each lens explicitly, including the default.
+    lens: 'files',
+    onLensChange: vi.fn(),
     settings: { ...DEFAULT_SETTINGS },
     onChangeSettings: vi.fn(),
     onRootMissing: vi.fn(),
@@ -736,6 +741,111 @@ describe('search results (YAZ-803)', () => {
 
   it('right-clicking the results offers no menu — "New note" there would have no target', async () => {
     const { el } = await search('a')
+    act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+})
+
+/**
+ * The lens tabs (🔒 D4/D5, YAZ-847): chrome v2 ROW 1, above the persistent search bar. Topics is
+ * the DEFAULT lens and — until YAZ-848 fills it — an empty shell; Files is today's file explorer,
+ * unchanged, behind a tab. The VALUE is App's (globally persisted as `AppState.sidebarLens`): the
+ * sidebar renders the row and reports clicks, and App hands the new lens back down. Switching is
+ * a conditional render, never a teardown — the search wave's rule, re-proved here on the tree's
+ * expansion. Search keeps working from both lenses and the query survives a lens switch (🔒 D5).
+ */
+describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
+  const record = (basename: string, folder = '') => ({
+    path: `/v/${folder === '' ? '' : `${folder}/`}${basename}.md`, name: `${basename}.md`, basename, folder, ext: 'md',
+    size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [],
+  })
+  const RECORDS = [record('Alpha'), record('Anchor', 'Docs')]
+  const withIndex = (b: ReturnType<typeof installBridge>) => b.index.mockResolvedValue({ root: '/v', records: RECORDS, generatedAt: 1 } as never)
+
+  const tabs = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__lenses[role="tablist"] [role="tab"]')]
+  const tabByLabel = (el: HTMLElement, label: string) => tabs(el).find((b) => b.textContent === label)
+  const selectedTabs = (el: HTMLElement) => tabs(el).filter((b) => b.getAttribute('aria-selected') === 'true').map((b) => b.textContent)
+  const bodyMsg = (el: HTMLElement) => el.querySelector('.sidebar__body .sidebar__msg')?.textContent ?? null
+  const resultLabels = (el: HTMLElement) => [...el.querySelectorAll('.search-results__row .search-results__label')].map((n) => n.textContent)
+  const dirItem = (el: HTMLElement) => el.querySelector('.tree__row--dir')?.closest('[role="treeitem"]') ?? null
+
+  it('renders a tablist of exactly Topics then Files, the active one aria-selected and no other', async () => {
+    const { el } = await mount({ lens: 'topics' })
+    expect(tabs(el).map((b) => b.textContent)).toEqual(['Topics', 'Files'])
+    expect(selectedTabs(el)).toEqual(['Topics'])
+    const files = await mount({ lens: 'files' })
+    expect(selectedTabs(files.el)).toEqual(['Files'])
+  })
+
+  it('the default lens is Topics: a placeholder body, no tree — and the search bar is still there', async () => {
+    const { el } = await mount({ lens: 'topics' })
+    expect(el.querySelector('.tree')).toBeNull()
+    expect(bodyMsg(el)).toContain('YAZ-848')
+    expect(searchInput(el)).not.toBeNull() // ALWAYS visible, on both lenses (the locked YAZ-739 rule)
+  })
+
+  it('the Files lens is today\'s tree, unchanged', async () => {
+    const { el } = await mount({ lens: 'files' })
+    expect(el.querySelector('.tree')).not.toBeNull()
+    expect(fileRow(el)?.textContent).toBe('a')
+  })
+
+  it('clicking a tab reports UP to App and flips nothing by itself — the value is App\'s', async () => {
+    const { el, props } = await mount({ lens: 'topics' })
+    act(() => tabByLabel(el, 'Files')?.click())
+    expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
+    expect(selectedTabs(el)).toEqual(['Topics']) // still Topics until App hands the new lens back
+    expect(el.querySelector('.tree')).toBeNull()
+  })
+
+  it('App handing the new lens back down is what swaps the body', async () => {
+    const { el, rerender } = await mount({ lens: 'topics' })
+    await rerender({ lens: 'files' })
+    expect(selectedTabs(el)).toEqual(['Files'])
+    expect(el.querySelector('.tree')).not.toBeNull()
+    expect(bodyMsg(el)).toBeNull()
+  })
+
+  it('switching Files → Topics → Files never tears the tree down: its expansion is waiting', async () => {
+    const { el, rerender } = await mount({ lens: 'files' })
+    const before = dirItem(el)?.getAttribute('aria-expanded')
+    act(() => el.querySelector<HTMLButtonElement>('.tree__row--dir')?.click())
+    const toggled = dirItem(el)?.getAttribute('aria-expanded')
+    expect(toggled).not.toBe(before)
+    await rerender({ lens: 'topics' })
+    expect(el.querySelector('.tree')).toBeNull()
+    await rerender({ lens: 'files' })
+    expect(dirItem(el)?.getAttribute('aria-expanded')).toBe(toggled)
+  })
+
+  it('a query on TOPICS replaces the placeholder with the flat results; clearing brings the placeholder back', async () => {
+    const { el } = await mount({ lens: 'topics' }, withIndex)
+    const input = searchInput(el)!
+    await type(input, 'a')
+    expect(resultLabels(el)).toEqual(['Alpha', 'Anchor'])
+    expect(bodyMsg(el)).toBeNull()
+    await type(input, '')
+    expect(el.querySelector('.search-results')).toBeNull()
+    expect(bodyMsg(el)).toContain('YAZ-848')
+  })
+
+  it('the tabs row stays visible and clickable DURING a search, and a lens switch keeps the query (🔒 D5)', async () => {
+    const { el, props, rerender } = await mount({ lens: 'topics' }, withIndex)
+    const input = searchInput(el)!
+    await type(input, 'a')
+    expect(selectedTabs(el)).toEqual(['Topics'])
+    act(() => tabByLabel(el, 'Files')?.click())
+    expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
+    await rerender({ lens: 'files' })
+    expect(input.value).toBe('a') // the query is untouched by the switch…
+    expect(resultLabels(el)).toEqual(['Alpha', 'Anchor']) // …and still replaces the ACTIVE tab's body
+    expect(el.querySelector('.tree')).toBeNull()
+    await type(input, '')
+    expect(el.querySelector('.tree')).not.toBeNull() // clearing lands on the lens that is now active
+  })
+
+  it('right-clicking the Topics placeholder offers no menu — the blank-space menu is the TREE\'s', async () => {
+    const { el } = await mount({ lens: 'topics' })
     act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })

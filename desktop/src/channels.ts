@@ -24,6 +24,7 @@ export const CH = {
   stateSetSettings: 'state:set-settings',
   stateSetSidebarCollapsed: 'state:set-sidebar-collapsed',
   stateSetSidebarWidth: 'state:set-sidebar-width',
+  stateSetSidebarLens: 'state:set-sidebar-lens',
   statePushRecent: 'state:push-recent',
   stateRemoveRecent: 'state:remove-recent',
   stateSetFolder: 'state:set-folder',

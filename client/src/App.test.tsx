@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, type AppState, type IndexRecord, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, type AppState, type IndexRecord, type SidebarLens, type WindowIdentity } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -22,6 +22,10 @@ interface SidebarStubProps {
   onRootMissing: () => void
   onFileMissing: () => void
   pendingSearchFocus: boolean
+  /** The lens tabs (YAZ-847): App owns the value and the write-through; the sidebar only reports clicks. */
+  lens: SidebarLens
+  onLensChange: (lens: SidebarLens) => void
+  onCollapse: () => void
 }
 
 const captured = vi.hoisted(() => ({ sidebar: null as SidebarStubProps | null }))
@@ -79,6 +83,7 @@ function installBridge(state: AppState, identity: WindowIdentity, files: Record<
       setSettings: vi.fn(async () => undefined),
       setSidebarCollapsed: vi.fn(async () => undefined),
       setSidebarWidth: vi.fn(async () => undefined),
+      setSidebarLens: vi.fn(async () => undefined),
       pushRecent: vi.fn(async () => undefined),
       removeRecent: vi.fn(async () => undefined),
       setFolder: vi.fn(async () => undefined),
@@ -357,6 +362,40 @@ describe('App sidebar resize (YAZ-738)', () => {
     expect(sideW(el)).toBe('260px')
     expect(bridge.state.setSidebarCollapsed).toHaveBeenCalledWith(true)
     expect(bridge.state.setSidebarWidth).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * The sidebar's lens (🔒 D4, YAZ-847): App-owned, globally persisted, and passed down — never a
+ * Sidebar-local flag. The sidebar is mounted `key={root}` and only while it is open, so the
+ * collapse → reopen step below is the whole reason the value lives here.
+ */
+describe('App sidebar lens (🔒 D4, YAZ-847)', () => {
+  it('mounts the sidebar on the STORED lens — Topics by default', async () => {
+    await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    expect(captured.sidebar?.lens).toBe('topics')
+  })
+
+  it('a stored `files` boots straight onto Files', async () => {
+    await mount({ ...defaultAppState(), sidebarLens: 'files' }, { id: 'w1', root: '/v', file: null, tabs: [] })
+    expect(captured.sidebar?.lens).toBe('files')
+  })
+
+  it('a tab click writes through to the global state and comes back down as the new lens', async () => {
+    const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    act(() => captured.sidebar?.onLensChange('files'))
+    expect(bridge.state.setSidebarLens).toHaveBeenCalledExactlyOnceWith('files')
+    expect(captured.sidebar?.lens).toBe('files')
+  })
+
+  it('the lens survives collapse → reopen, because the value is App\'s and not the sidebar\'s', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    act(() => captured.sidebar?.onLensChange('files'))
+    act(() => captured.sidebar?.onCollapse())
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    act(() => el.querySelector<HTMLButtonElement>('.sidebar-reopen')?.click())
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(captured.sidebar?.lens).toBe('files')
   })
 })
 

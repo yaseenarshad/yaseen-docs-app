@@ -49,8 +49,18 @@ async function openHandleMenu(w: Page, text: string): Promise<void> {
   const handle = w.locator('.tabstack__layer:not(.tabstack__layer--hidden) .milkdown-block-handle')
   let attempt = 0
   await expect(async () => {
-    await para.hover({ position: { x: attempt++ % 2 === 0 ? 4 : 6, y: 8 } })
-    await expect(handle).toHaveAttribute('data-show', 'true', { timeout: 300 })
+    // TWO moves inside this row, not one (YAZ-847 hardening): the listener is throttled, so a
+    // single mousemove can be swallowed by the leading edge of a throttle window the PREVIOUS
+    // row opened — and the trailing edge then fires with the pointer nowhere new. The second
+    // move guarantees one event lands while the pointer is inside THIS paragraph.
+    const x = attempt++ % 2 === 0 ? 4 : 6
+    await para.hover({ position: { x, y: 8 } })
+    await para.hover({ position: { x: x + 1, y: 10 } })
+    // 1s, not 300ms: the mousemove behind the attribute is throttled 200ms, so a loaded machine
+    // can miss a 300ms window on EVERY attempt and burn the whole budget below (YAZ-847 grew the
+    // suite by one spec and this probe was the first thing to notice). Healthy runs still pass on
+    // the first attempt — the wait ends the moment the attribute lands.
+    await expect(handle).toHaveAttribute('data-show', 'true', { timeout: 1000 })
     const [p, h] = await Promise.all([para.boundingBox(), handle.boundingBox()])
     const mid = h!.y + h!.height / 2
     expect(mid).toBeGreaterThanOrEqual(p!.y)

@@ -60,6 +60,7 @@ describe('createStore: loading', () => {
       settings: { ...DEFAULT_SETTINGS, lineSpacing: 2, threadColor: '#00aaff' },
       sidebarCollapsed: true,
       sidebarWidth: 320,
+      sidebarLens: 'files',
       recents: [{ path: '/v', lastOpened: 5 }],
       windows: [win('w1', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })],
       folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] } } },
@@ -129,6 +130,20 @@ describe('createStore: loading', () => {
     const { sidebarWidth: _omitted, ...preResize } = valid()
     await seed(preResize)
     expect(createStore(file).get().sidebarWidth).toBe(SIDEBAR_DEFAULT_W)
+  })
+
+  it('sidebarLens honours only the two lenses; a PRE-847 file with no key at all gains Topics (YAZ-847)', async () => {
+    await seed(valid({ sidebarLens: 'files' }))
+    expect(createStore(file).get().sidebarLens).toBe('files')
+    await seed(valid({ sidebarLens: 'topics' }))
+    expect(createStore(file).get().sidebarLens).toBe('topics')
+    await seed(valid({ sidebarLens: 'graph' }))
+    expect(createStore(file).get().sidebarLens).toBe('topics')
+    await seed(valid({ sidebarLens: 1 }))
+    expect(createStore(file).get().sidebarLens).toBe('topics')
+    const { sidebarLens: _omitted, ...preLens } = valid()
+    await seed(preLens)
+    expect(createStore(file).get().sidebarLens).toBe('topics')
   })
 
   it('recents: a wrong shape reads as empty, a long list is capped', async () => {
@@ -260,6 +275,22 @@ describe('createStore: mutations', () => {
     expect(seen).toHaveLength(2)
     off()
     store.setSidebarCollapsed(false)
+    expect(seen).toHaveLength(2)
+  })
+
+  it('setSidebarLens replaces the lens and notifies, leaving the rest of the state alone (YAZ-847)', () => {
+    const store = createStore(file)
+    const seen: AppState[] = []
+    store.onChange((s) => seen.push(s))
+    expect(store.get().sidebarLens).toBe('topics')
+    store.setSidebarLens('files')
+    expect(store.get().sidebarLens).toBe('files')
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toBe(store.get())
+    expect(store.get().sidebarCollapsed).toBe(false)
+    expect(store.get().sidebarWidth).toBe(SIDEBAR_DEFAULT_W)
+    store.setSidebarLens('topics')
+    expect(store.get().sidebarLens).toBe('topics')
     expect(seen).toHaveLength(2)
   })
 

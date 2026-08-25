@@ -1,4 +1,4 @@
-import type { FolderState } from '@shared/types'
+import { isSidebarLens, type FolderState } from '@shared/types'
 import { CH } from '../../channels'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { isRecord, isSettings, isStringArray, type Store } from '../store'
@@ -34,6 +34,10 @@ export function registerStateIpc(store: Store): void {
   handle(CH.stateSetSidebarWidth, async (width: unknown) => {
     if (typeof width !== 'number' || !Number.isFinite(width)) throw new BridgeFailure('BAD_REQUEST', "'width' must be a finite number")
     store.setSidebarWidth(width)
+  })
+  handle(CH.stateSetSidebarLens, async (lens: unknown) => {
+    if (!isSidebarLens(lens)) throw new BridgeFailure('BAD_REQUEST', "'lens' must be 'topics' or 'files'")
+    store.setSidebarLens(lens)
   })
   handle(CH.statePushRecent, async (path: unknown) => {
     store.pushRecent(requireAbsPath(path, 'path'))

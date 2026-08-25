@@ -100,9 +100,19 @@ export async function copyVault(src: string): Promise<string> {
 
 // ---------- app state ----------
 
+/**
+ * The lens every seeded run starts on (YAZ-847). The app's own default is `topics` — an empty
+ * shell until YAZ-848 — while every spec in this suite is about the FILE TREE, so the seeds
+ * below pre-select `files`: the same kind of pre-configuration as the `windows[]` entry that
+ * skips the native folder dialog, not a change to the default. `lenses.spec.ts` seeds its own
+ * state (including a pre-847 file with no lens key at all) to pin the default and the switch.
+ */
+const SEEDED_LENS = 'files' as const
+
 /** One-window seed on `vault`/`file` — the no-native-dialog "open folder" (schema: shared/types.ts AppState v1). */
 export function seededState(vault: string, file: string | null, opts: { expanded?: string[] } = {}): AppState {
   const state = defaultAppState()
+  state.sidebarLens = SEEDED_LENS
   state.recents = [{ path: vault, lastOpened: Date.now() }]
   state.windows = [{ id: 'w1', root: vault, file, tabs: file === null ? [] : [file], bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
   state.folders = { [vault]: { expanded: opts.expanded ?? [], lastFile: file, folds: {}, baseGroups: {} } }
@@ -129,6 +139,7 @@ export interface SeedWindow {
  */
 export function multiWindowState(wins: SeedWindow[], recentRoots: string[]): AppState {
   const state = defaultAppState()
+  state.sidebarLens = SEEDED_LENS
   const now = Date.now()
   state.recents = recentRoots.map((p, i) => ({ path: p, lastOpened: now - i }))
   state.windows = wins.map((w, i) => ({
