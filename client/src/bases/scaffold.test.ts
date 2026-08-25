@@ -186,7 +186,7 @@ describe('scaffoldFromFolderPage (🔒 Q5)', () => {
     expect('folder_page' in scaffoldFromFolderPage('Metrics', METRICS)).toBe(false)
   })
 
-  it('a folder page declaring no columns scaffolds the membership alone', () => {
+  it('a folder page declaring no columns scaffolds the belonging alone', () => {
     expect(scaffoldFromFolderPage('Metrics', { columns: {}, views: [], problems: [] })).toEqual({
       folder_pages: ['[[Metrics]]'],
     })
