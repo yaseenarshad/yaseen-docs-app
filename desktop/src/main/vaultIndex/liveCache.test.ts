@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { makeBasesFixture } from '../fs/basesFixture'
 import { _resetIndexCache, flushIndexCache, initIndexCache, loadIndexCache } from './cache'
-import { _evictAll, getColdStartDiff, getIndex } from './registry'
+import { _evictAll, getColdStartDiff, getIndex } from './live'
 import { scanFile } from './scan'
 
 // Passthrough spy: behaviour identical, calls countable — proves the warm start reads no files.

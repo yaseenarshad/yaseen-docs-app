@@ -31,7 +31,7 @@ const PERSIST_DEBOUNCE_MS = 5000
  * alike) whose mtime is older than this is deleted. Generous on purpose: every vault open
  * refreshes its file's mtime (build success schedules a persist), so only truly abandoned entries
  * age out, and a wrongly deleted cache is self-healing — it costs exactly one full rescan.
- * Deliberately minimal: no size caps, no LRU, no registry.
+ * Deliberately minimal: no size caps, no LRU, no eviction policy of its own.
  */
 const GC_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000
 
@@ -195,7 +195,7 @@ function write(root: string, records: Map<string, IndexRecord>): Promise<void> {
 }
 
 /**
- * Schedules a debounced (~5 s per root) persist of `records` — the registry calls this from the
+ * Schedules a debounced (~5 s per root) persist of `records` — the live index map calls this from the
  * watcher-incremental mutations, build success and eviction. Bursts coalesce (trailing edge, the
  * latest map ref wins); the timer is unref'd, so `flushIndexCache` (quit) is what guarantees the
  * last write lands. No-op until `initIndexCache` ran.

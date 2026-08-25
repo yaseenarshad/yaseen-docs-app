@@ -5,5 +5,5 @@
  */
 export { flushIndexCache, initIndexCache } from './cache'
 export type { ColdStartDiff } from './reconcile'
-export { _evictAll, _setIdleMs, getColdStartDiff, getIndex } from './registry'
+export { _evictAll, _setIdleMs, getColdStartDiff, getIndex } from './live'
 export { extractAliases, extractEmbeds, extractLinks, extractTags, scanFile } from './scan'

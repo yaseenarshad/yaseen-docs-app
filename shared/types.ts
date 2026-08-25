@@ -481,7 +481,7 @@ export const FOLDER_NAME = /^(?![A-Za-z]:)[^\\\0/.][^\\\0/]*(?:\/[^\\\0/.][^\\\0
 /** One declared property: what kind of editor it gets, and what a link points at. */
 export interface PropertyDecl {
   kind: PropertyKind
-  /** link/multi-link only: constrain the picker to pages whose page_type equals this name. */
+  /** link/multi-link only: the picker constraint — a wikilink to a folder page ("pages that belong to [[X]]", resolved by belongsToBasenames; YAZ-831). */
   target?: string
   /** Metadata for the future validation report (report-never-block: gates nothing in v1). */
   required?: boolean

@@ -66,7 +66,6 @@ export async function makeBasesFixture(): Promise<{ root: string; cleanup: () =>
     writeFile(path.join(pillars, 'chart.png'), png),
     writeFile(path.join(root, 'VSL-v1.md'), '---\nstatus: published\npillar: null\n---\n\nVideo sales letter, version one.\n'),
     writeFile(path.join(root, '.obsidian', 'types.json'), '{"types":{"date":"date","published":"checkbox"}}'),
-    writeFile(path.join(root, '.yaseendocs', 'types.json'), '{"version":1}'),
     writeFile(path.join(root, '.trash', 'Untitled.md'), 'trash'),
   ])
   return { root, cleanup: () => rm(root, { recursive: true, force: true }) }
