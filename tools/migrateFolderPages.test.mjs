@@ -131,7 +131,7 @@ const TYPES_JSON = JSON.stringify(
 function fixture(extra = {}) {
   return {
     '.yaseendocs/types.json': TYPES_JSON,
-    '.yaseendocs/templates/problem.md': '---\nsku_tag:\n---\n\n# Problem template\n',
+    '.yaseendocs/templates/problem.md': '---\npage_type: problem\nsku_tag:\nchannels: []\n---\n\n# Problem template\n',
     '.yaseendocs/templates/metric.md': '---\n---\n\n# Metric template\n',
 
     // A deep function tree: the problem goes out to problems/, the function page comes up flat.
@@ -371,7 +371,12 @@ describe('the transform (🔒 D3/D4/D5)', () => {
     run(root, '--apply')
     expect(exists(root, '.yaseendocs/templates/problem.md')).toBe(false)
     expect(exists(root, '.yaseendocs/templates/Problems.md')).toBe(true)
-    expect(read(root, '.yaseendocs/templates/Problems.md')).toContain('# Problem template')
+    const template = read(root, '.yaseendocs/templates/Problems.md')
+    expect(template).toContain('# Problem template')
+    // The 7D rule: a renamed template's CONTENT migrates too — dead keys scrubbed, the rest kept.
+    expect(template).not.toContain('page_type')
+    expect(template).not.toContain('channels: []')
+    expect(template).toContain('sku_tag:')
     expect(exists(root, '.yaseendocs/templates/Metrics.md')).toBe(true)
   })
 

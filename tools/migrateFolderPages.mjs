@@ -416,7 +416,12 @@ export function gitDirtReason(root) {
   const dirty = status
     .split('\n')
     .filter((line) => line.trim() !== '')
-    .filter((line) => line.slice(3).replace(/^"|"$/g, '') !== REPORT_FILE)
+    // Porcelain paths are REPO-root-relative, and the vault may be a subdirectory of the repo
+    // (the e2e fixture is) — so forgive the report by its final path segment, not by equality.
+    .filter((line) => {
+      const p = line.slice(3).replace(/^"|"$/g, '')
+      return p !== REPORT_FILE && !p.endsWith(`/${REPORT_FILE}`)
+    })
   if (dirty.length === 0) return null
   return `the working tree has uncommitted changes:\n${dirty.map((l) => `    ${l}`).join('\n')}`
 }
@@ -949,6 +954,16 @@ function applyPlan(plan) {
       continue
     }
     fs.renameSync(rename.from, rename.to)
+    // A renamed template's CONTENT migrates too (found in the 7D polish pass): its frontmatter
+    // still carries the dead keys — `page_type` and the flattened relation seeds — and every page
+    // born from it would inherit them. Same dead-line rule the vault scrub used; body untouched.
+    const DEAD_TEMPLATE_LINE = /^(page_type:.*|channels: \[\]|functions: \[\]|function: ""|channel: "")$/
+    const before = fs.readFileSync(rename.to, 'utf8')
+    const after = before
+      .split('\n')
+      .filter((line) => !DEAD_TEMPLATE_LINE.test(line))
+      .join('\n')
+    if (after !== before) fs.writeFileSync(rename.to, after)
   }
 
   for (const move of plan.moves) {
