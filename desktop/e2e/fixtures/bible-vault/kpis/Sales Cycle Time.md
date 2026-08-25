@@ -1,8 +1,9 @@
 ---
-page_type: kpi
 funnel_stages: ["[[Lead Nurture]]", "[[Sales-Conversion]]"]
 kpi_category: lagging
 unit: days
+folder_pages:
+  - "[[KPIs]]"
 ---
 
 # Sales Cycle Time

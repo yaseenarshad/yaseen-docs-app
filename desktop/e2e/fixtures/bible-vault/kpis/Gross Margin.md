@@ -1,7 +1,8 @@
 ---
-page_type: kpi
 kpi_category: lagging
 unit: percent
+folder_pages:
+  - "[[KPIs]]"
 ---
 
 # Gross Margin

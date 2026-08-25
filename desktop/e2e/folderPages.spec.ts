@@ -4,8 +4,11 @@
  * that belong to it, columns from the folder page's own settings.
  *
  * Driven through the REAL app over the committed encyclopedia fixture (`fixtures/bible-vault`),
- * which gained exactly one folder page (`Funnel Stages.md`) and one `folder_pages` entry on each
- * of the three funnel-stage pages — the smallest extension that makes the model real.
+ * which since 7C- is a MIGRATED vault: every page belongs somewhere, `Funnel Stages` is one of six
+ * folder pages hanging off `Home`, and the only pages that belong nowhere are the two `inbox/`
+ * notes that were never told about. Nothing below depends on that shape except where it says so —
+ * the steps that move `CAC` around now move a page that ALREADY belongs to `[[KPIs]]`, which is
+ * what makes the add/remove gestures prove merge-and-drop rather than write-and-wipe.
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1 the block renders INSIDE the note's scroller, between the body and the backlinks, holding
@@ -20,7 +23,7 @@
  *     PICKED page's own file, on disk
  *   6 nesting: a member turned into a folder page of its own expands INSIDE this outline
  *   7 the hover × + confirm sheet un-tags it again — dropping ONLY this folder page's entry and
- *     leaving the other one exactly where it was
+ *     leaving the other two exactly where they were
  *   8 the GROUPED table (YAZ-744, restored here in YAZ-846): a `groupBy` set through the Sort
  *     menu is ONE `folder_page_settings` write, and a collapsed section survives quit → relaunch
  *     in the main-owned `baseGroups` bucket — keyed by the folder page's own `.md` path, never
@@ -164,7 +167,7 @@ test('step 4 — "New" births a member from the declaration, parked per the sett
   await shoot(win, 'folder-06-new-member-row')
 })
 
-/** The kpi page the outline gestures move around; it starts life belonging to nothing. */
+/** The kpi page the outline gestures move around; the migration left it belonging to `[[KPIs]]`. */
 const CAC = 'kpis/CAC.md'
 
 test('step 5 — the outline’s add row tags an existing page, on that page’s own file', async () => {
@@ -177,9 +180,11 @@ test('step 5 — the outline’s add row tags an existing page, on that page’s
   await shoot(win, 'folder-07-outline-picker')
   await picks(contents(win)).first().click()
 
-  // The write lands on the PICKED page's card — never on the folder page's.
+  // The write lands on the PICKED page's card — never on the folder page's — and it ADDS: the
+  // `[[KPIs]]` entry the migration wrote is still the first thing in the list.
   const cac = path.join(vault, CAC)
   await expect.poll(() => readFile(cac, 'utf8'), { timeout: 10_000 }).toContain('[[Funnel Stages]]')
+  expect(await readFile(cac, 'utf8')).toContain('[[KPIs]]') // a page belongs to as many topics as it says
   expect(await readFile(cac, 'utf8')).toContain('funnel_stages: ["[[Lead Gen]]"]') // every other key survives
   await expect(outlineRows(contents(win))).toHaveText(['CAC', ...MEMBERS, 'Untitled'])
   await shoot(win, 'folder-08-outline-tagged')
@@ -209,13 +214,15 @@ test('step 6 — a member that is itself a folder page expands inside the outlin
 test('step 7 — the × + sheet un-tags it, dropping ONLY this folder page’s entry', async () => {
   // Depth 0 only: the nested CAC under Lead Gen carries no ×, so this locator is unambiguous.
   await contents(win).locator('[aria-label="Remove CAC from Funnel Stages"]').click()
-  await expect(sheet(win)).toContainText('The page is not deleted — its file stays put. It remains in: Lead Gen.')
+  // The sheet names the OTHERS in entry order — the migrated `[[KPIs]]` first, then step 6's pick.
+  await expect(sheet(win)).toContainText('The page is not deleted — its file stays put. It remains in: KPIs, Lead Gen.')
   await shoot(win, 'folder-10-remove-sheet')
   await sheetBtn(win, 'Remove').click()
 
   const cac = path.join(vault, CAC)
   await expect.poll(() => readFile(cac, 'utf8'), { timeout: 10_000 }).not.toContain('[[Funnel Stages]]')
-  expect(await readFile(cac, 'utf8')).toContain('[[Lead Gen]]') // the other belonging is untouched
+  expect(await readFile(cac, 'utf8')).toContain('[[KPIs]]') // the other two belongings are untouched
+  expect(await readFile(cac, 'utf8')).toContain('[[Lead Gen]]')
   // Gone from depth 0, still standing under Lead Gen, which is where it still belongs.
   await expect(outlineRows(contents(win))).toHaveText(['Lead Gen', 'CAC', 'Lead Nurture', 'Sales-Conversion', 'Untitled'])
   await shoot(win, 'folder-11-outline-untagged')
@@ -224,14 +231,15 @@ test('step 7 — the × + sheet un-tags it, dropping ONLY this folder page’s e
 test('step 8 — the grouped table: one groupBy write, and a collapsed section that survives a relaunch', async () => {
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
 
-  // `page_type` is ORDINARY frontmatter since YAZ-836 — the three fixture stages carry it and the
-  // page step 4 created from the DECLARATION does not, so the run has a real group and the
-  // trailing "No value" one. Setting it is ONE `folder_page_settings` write through the one door.
+  // `folder_page` is ORDINARY frontmatter to the query engine — the flag MEANS something to
+  // `isFolderPage`, and nothing at all to a groupBy. Step 6 turned exactly one of these four
+  // members into a folder page, so the run has a real group and the trailing "No value" one.
+  // Setting it is ONE `folder_page_settings` write through the one door.
   await contents(win).locator('[aria-label="Sort"]').click()
-  await win.locator('.base-popover [aria-label="Group by"]').selectOption('note.page_type')
+  await win.locator('.base-popover [aria-label="Group by"]').selectOption('note.folder_page')
   await win.keyboard.press('Escape')
 
-  await expect(groupNames(contents(win))).toHaveText(['funnel-stage', 'No value'])
+  await expect(groupNames(contents(win))).toHaveText(['true', 'No value'])
   await expect(dataRows(contents(win))).toHaveCount(4)
   const folderPage = path.join(vault, FOLDER_PAGE)
   await expect.poll(() => readFile(folderPage, 'utf8'), { timeout: 10_000 }).toContain('groupBy')
@@ -239,14 +247,14 @@ test('step 8 — the grouped table: one groupBy write, and a collapsed section t
 
   // Collapsing keeps the header and drops the rows — and it lands in the MAIN-owned store, keyed
   // by the folder page's own path, never in its frontmatter (4C).
-  await contents(win).locator('[aria-label="Toggle group funnel-stage"]').click()
-  await expect(dataRows(contents(win))).toHaveCount(1)
-  await expect(groupNames(contents(win))).toHaveText(['funnel-stage', 'No value'])
+  await contents(win).locator('[aria-label="Toggle group true"]').click()
+  await expect(dataRows(contents(win))).toHaveCount(3)
+  await expect(groupNames(contents(win))).toHaveText(['true', 'No value'])
   await shoot(win, 'folder-13-group-collapsed')
 
   await quitApp(app) // the REAL quit path: the pending state write is flushed before exit
   const state = await readState(userData)
-  expect(state.folders?.[vault]?.baseGroups).toEqual({ [`${folderPage}::Table`]: ['v:funnel-stage'] })
+  expect(state.folders?.[vault]?.baseGroups).toEqual({ [`${folderPage}::Table`]: ['v:true'] })
   expect(await readFile(folderPage, 'utf8')).not.toContain('baseGroups')
 
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
@@ -255,8 +263,8 @@ test('step 8 — the grouped table: one groupBy write, and a collapsed section t
   await expect(contents(win)).toBeVisible()
   // Which view is active is SESSION state, so the reopened page is back on Q7's first skin.
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
-  await expect(groupNames(contents(win))).toHaveText(['funnel-stage', 'No value'])
-  await expect(dataRows(contents(win))).toHaveCount(1) // still collapsed
+  await expect(groupNames(contents(win))).toHaveText(['true', 'No value'])
+  await expect(dataRows(contents(win))).toHaveCount(3) // still collapsed
   await shoot(win, 'folder-14-group-collapse-restored')
 
   await quitApp(app)

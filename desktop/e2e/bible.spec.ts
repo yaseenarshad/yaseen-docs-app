@@ -1,32 +1,31 @@
 /**
- * Bible C (GRO-2203): the convergence proof — entity pages + relations + folder pages + wiki
- * links driven together, through the REAL app, over one committed encyclopedia fixture
- * (`fixtures/bible-vault/`: 18 entity pages wired by relation properties in their own
- * frontmatter). Every other spec generates its vault; this one commits it, because the content
- * IS the thing under test — the same five `page_type` values, the same relation graph.
+ * Bible C (GRO-2203, re-pointed at the folder-page model in 7C-): the convergence proof — one
+ * committed encyclopedia driven through the REAL app, with the index, the wiki-link graph and the
+ * folder pages all answering the same questions about it.
  *
- * `page_type` is an ORDINARY frontmatter property here, and always was: the query engine never
- * treated it specially. What died with the type system (YAZ-836) is the CLIENT half — the
- * registry that declared those names, typed "New ▸ <type>" creation, the registry-narrowed
- * relation picker and the type scaffold — and with it the steps that only ever proved the
- * registry (YAZ-837).
+ * The fixture (`fixtures/bible-vault/`) is a MIGRATED vault: `tools/migrateFolderPages.mjs` ran
+ * over the `page_type` encyclopedia this file used to open, turned its five type values into five
+ * folder pages, gave them a `Home` to hang from and deleted the registry. Every page now says in
+ * its OWN frontmatter which topics it belongs to — except the two `inbox/` notes, which are
+ * deliberately Uncategorized. Nothing carries `page_type` any more, and step 1 proves it.
  *
- * YAZ-844 retired `.base` itself. The three steps that drove a standalone `.base` host, an
- * `![[X.base]]` embed and a ```base fence went with it: each proved the SURFACE, and the
- * surface is gone. What the engine still reaches through the surviving one — the folder page's
- * contents block — was re-pointed onto `Funnel Stages.md` rather than deleted. Filters and
- * grouping have no folder-page gesture at all (🔒 Q3: a folder page's set IS the lookup), so
- * the steps that only existed to drive them are not re-pointed anywhere.
+ * WHAT THIS SPEC IS FOR, now that the wave has three siblings: `folderPages.spec.ts` drives the
+ * contents block's own gestures (cells, pickers, New, tag/untag, nesting, grouping),
+ * `topics.spec.ts` drives the sidebar tree and Home's birth, `lenses.spec.ts` the tabs above them.
+ * What is left here — and lives nowhere else — is the CONTENT: that the index reads this vault
+ * correctly, that its links and backlinks agree with its relations, and that a rename leaves both
+ * the graph and the belongings standing.
  *
  * The arc, in order (serial by design — each step continues the previous state):
- *   1  the "Funnel Stages" folder page opens holding exactly its members; zero broken links
- *   2  a relation cell edited inline through the chips editor — a surgical write to the
- *      MEMBER's own file, and the block picks it up off the watcher
+ *   1  the migrated vault is sound: zero `page_type` keys, zero broken links, and Home holds
+ *      exactly the five folder pages in the `order` the migration wrote
+ *   2  a cell the MIGRATION declared, edited inline on `KPIs` — a surgical write into a card the
+ *      migration itself rewrote, leaving its membership and body byte-for-byte
  *   3  wiki-link navigation: click → current tab, ⌘-click → background tab (the LOCKED model)
- *   4  the backlinks panel finds every note that names a KPI, and the `page_type: problem`
- *      ones are exactly the two problems whose relations point at it
- *   5  rename an entity page — relations, body links and backlinks all survive, still zero
- *      broken links
+ *   4  the backlinks panel finds every note that names a KPI, and the ones that BELONG TO
+ *      `[[Problems]]` are exactly the two problems whose relations point at it
+ *   5  rename an entity page — relations, body links, backlinks AND its belonging all survive,
+ *      still zero broken links
  *
  * Same harness as links.spec.ts / backlinks.spec.ts (temp `--user-data-dir`, a COPY of the
  * fixture, `bible-` step screenshots).
@@ -39,15 +38,28 @@ import { appWindow, copyVault, launchApp, quitApp, seededState, shoot } from './
 
 test.describe.configure({ mode: 'serial' })
 
-/** The committed encyclopedia. Copied per run; the source is never opened by the app. */
+/** The committed encyclopedia, post-migration. Copied per run; the source is never opened by the app. */
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
-const FOLDERS = ['funnel-stages', 'industries', 'kpis', 'problems', 'roles']
-/** Every `page_type: problem` page — the fixture's own answer to "which mentions are problems?". */
-const PROBLEMS = ['CRM Hygiene', 'Lead Quality Scoring', 'Nurture Sequencing', 'Stage Accuracy']
+const FOLDERS = ['funnel-stages', 'inbox', 'industries', 'kpis', 'problems', 'roles']
 
-const FOLDER_PAGE = 'Funnel Stages.md'
-/** Its members, in the path order `pagesIn` hands them over. */
-const MEMBERS = ['Lead Gen', 'Lead Nurture', 'Sales-Conversion']
+const HOME = 'Home.md'
+/** Home's members, in the `order` the migration wrote onto its outline view. */
+const TOPICS = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', 'Roles']
+/** Their direct-member counts, in the same order — the shape of the whole migrated map. */
+const TOPIC_COUNTS = ['3', '2', '5', '4', '3']
+
+/** The folder page step 2 edits through, and the member it writes to (row 1 in path order). */
+const KPIS = 'KPIs'
+const GROSS_MARGIN = path.join('kpis', 'Gross Margin.md')
+/** Its `kpi_category` today, and what step 2 makes it — the page's own body argues for the change. */
+const CATEGORY_WAS = 'lagging'
+const CATEGORY_NOW = 'fundamental'
+
+/** Every page that belongs to `[[Problems]]` — the fixture's own answer to "which mentions are problems?". */
+const PROBLEMS = ['CRM Hygiene', 'Lead Quality Scoring', 'Nurture Sequencing', 'Stage Accuracy']
+/** The KPIs, alphabetically — the [D5] fallback, since `KPIs.md` declares no outline `order`. */
+const KPI_MEMBERS = ['CAC', 'Gross Margin', 'MQL Volume', 'Sales Cycle Time', 'Win Rate']
+
 const FUNNEL = path.join('funnel-stages', 'Sales-Conversion.md')
 const RENAMED = 'Deal Win Rate'
 
@@ -75,6 +87,7 @@ const contents = (w: Page) => layer(w).locator('.folder-page-contents')
 const viewTabs = (scope: Locator) => scope.locator('.base-tab__btn[role="tab"]')
 const dataRows = (scope: Locator) => scope.locator('.base-table tbody tr:not(.base-table__group):not(.base-table__spacer)')
 const outlineRows = (scope: Locator) => scope.locator('.base-outline__link')
+const outlineCounts = (scope: Locator) => scope.locator('.base-outline__count')
 const rowNames = (scope: Locator) => scope.locator('.base-row__link, .base-table__link')
 const cell = (scope: Locator, r: number, c: number) => scope.locator(`[data-cell="${r}:${c}"]`)
 /**
@@ -85,7 +98,7 @@ const named = (...names: string[]) => names.map((n) => `${n}.md`)
 
 const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 
-// ---------- zero-broken-links audit ----------
+// ---------- whole-vault audits ----------
 
 /** Fenced and inline code can't carry links — same discipline as the index's `stripCode`. */
 const maskCode = (text: string) => text.replace(/```[\s\S]*?(?:```|$)/g, '').replace(/`[^`\n]*`/g, '')
@@ -105,10 +118,10 @@ async function walk(dir: string): Promise<string[]> {
 }
 
 /**
- * Every wiki link in every note — frontmatter relation values as much as body prose and
- * `![[…]]` embeds — whose target names no file in the vault, by basename or by root-relative
- * path, with or without extension. The durable result GRO-2203 asks for is that this is `[]`
- * both before and after the rename.
+ * Every wiki link in every note — frontmatter relation values and folder-page settings as much as
+ * body prose and `![[…]]` embeds — whose target names no file in the vault, by basename or by
+ * root-relative path, with or without extension. The durable result GRO-2203 asks for is that this
+ * is `[]` both before and after the rename.
  */
 async function brokenLinks(root: string): Promise<string[]> {
   const files = await walk(root)
@@ -130,6 +143,15 @@ async function brokenLinks(root: string): Promise<string[]> {
   return broken
 }
 
+/** Any note still carrying the retired type key. The migration's own post-check, re-asked here. */
+async function withPageType(root: string): Promise<string[]> {
+  const out: string[] = []
+  for (const f of (await walk(root)).filter((x) => x.endsWith('.md'))) {
+    if (/^page_type:/m.test(await readFile(f, 'utf8'))) out.push(path.relative(root, f))
+  }
+  return out
+}
+
 // ---------- lifecycle ----------
 
 test.beforeAll(async () => {
@@ -144,51 +166,61 @@ test.afterAll(async () => {
 
 // ---------- the scenario ----------
 
-test('step 1 — the encyclopedia opens on "Funnel Stages", holding exactly its members, with no broken links', async () => {
-  expect(await brokenLinks(vault)).toEqual([]) // the fixture itself is sound before anything runs
+test('step 1 — the migrated encyclopedia opens on Home, holding exactly its topics, with nothing left over', async () => {
+  // The fixture itself is sound before anything runs: the migration took every `page_type` with it
+  // and left not one dangling wiki link behind — settings targets and `folder_pages` entries included.
+  expect(await withPageType(vault)).toEqual([])
+  expect(await brokenLinks(vault)).toEqual([])
 
   app = await launchApp({
     userData,
-    seedState: seededState(vault, path.join(vault, FOLDER_PAGE), { expanded: FOLDERS.map((f) => path.join(vault, f)) }),
+    seedState: seededState(vault, path.join(vault, HOME), { expanded: FOLDERS.map((f) => path.join(vault, f)) }),
   })
   win = await appWindow(app, 'w1')
 
-  // The index page of an encyclopedia that maintains no list: the three funnel-stage pages say
-  // in their OWN frontmatter that they belong here, and that is the whole membership rule.
+  // The map of an encyclopedia that maintains no list: the five folder pages say in their OWN
+  // frontmatter that they belong to Home, and Home's `order` is the only thing deciding the sequence
+  // (alphabetically, Funnel Stages would still lead — but KPIs would not sit third).
   await expect(contents(win)).toBeVisible()
   await expect(viewTabs(contents(win))).toHaveText(['Outline', 'Table'])
-  await expect(outlineRows(contents(win))).toHaveText(MEMBERS)
+  await expect(outlineRows(contents(win))).toHaveText(TOPICS)
+  // A count per row, because every one of Home's members is itself a folder page: the whole
+  // migrated vault — 17 pages filed under five topics — in one assertion.
+  await expect(outlineCounts(contents(win))).toHaveText(TOPIC_COUNTS)
 
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
-  await expect(dataRows(contents(win))).toHaveCount(3)
-  await expect(rowNames(contents(win))).toHaveText(named(...MEMBERS))
-  await shoot(win, 'bible-01-folder-page-members')
+  await expect(dataRows(contents(win))).toHaveCount(TOPICS.length)
+  await expect(rowNames(contents(win))).toHaveText(named(...TOPICS))
+  await shoot(win, 'bible-01-home-topics')
 })
 
-test('step 2 — a relation cell edited inline: written to the MEMBER’s own file, surgically', async () => {
-  // Column 2 is `related_stages`, declared `multi-link` by the folder page's own card (🔒 Q8).
-  // Row 2 is Sales-Conversion, whose relation list starts empty.
-  await cell(contents(win), 2, 2).locator('[data-edit]').click()
+test('step 2 — a MIGRATED column, edited inline: written to the member’s own file, surgically', async () => {
+  await fileRow(win, KPIS).click()
+  await expect(activeTab(win)).toHaveText(KPIS)
+  await expect(outlineRows(contents(win))).toHaveText(KPI_MEMBERS)
+  await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
+
+  // Column 1 is `kpi_category`, declared `text` by `KPIs.md` — a column the MIGRATION wrote, out
+  // of the `types.json` the same run deleted. Row 1 is Gross Margin, whose own body argues it is
+  // not a funnel lagging indicator at all.
+  await cell(contents(win), 1, 1).locator('[data-edit]').click()
   const input = win.locator('.base-cell-edit__input')
   await expect(input).toBeVisible()
-  // A declared `multi-link` column opens the chips editor with `[[…]]` completion narrowed to
-  // the target folder page's members (🔒 D2) — so the link is PICKED, not typed whole.
-  await input.pressSequentially('[[', { delay: 15 })
-  const suggestions = win.locator('[aria-label="Edit related_stages suggestions"] [role="option"]')
-  await expect(suggestions).toHaveText(MEMBERS)
-  await shoot(win, 'bible-02-relation-cell-edit')
-  await suggestions.filter({ hasText: 'Lead Nurture' }).click() // the pick closes the `[[…]]`
-  await win.keyboard.press('Enter') // turns the text into a chip
-  await win.keyboard.press('Enter') // empty input → commits the whole list
+  await expect(input).toHaveValue(CATEGORY_WAS)
+  await shoot(win, 'bible-02-migrated-cell-edit')
+  await input.fill(CATEGORY_NOW)
+  await win.keyboard.press('Enter')
 
-  // The write lands in the MEMBER's frontmatter, surgically — every other key and the body survive.
-  const salesConversion = path.join(vault, FUNNEL)
-  await expect.poll(() => readFile(salesConversion, 'utf8'), { timeout: 10_000 }).toContain('[[Lead Nurture]]')
-  const after = await readFile(salesConversion, 'utf8')
-  expect(after).toContain('folder_pages: ["[[Funnel Stages]]"]') // the belonging is untouched
-  expect(after).toContain('order: 3')
-  expect(after).toContain('# Sales-Conversion')
-  await shoot(win, 'bible-02b-relation-written')
+  // The write lands in the MEMBER's frontmatter, surgically — every other key the migration left
+  // there, its belonging and the whole body survive.
+  const grossMargin = path.join(vault, GROSS_MARGIN)
+  await expect.poll(() => readFile(grossMargin, 'utf8'), { timeout: 10_000 }).toContain(`kpi_category: ${CATEGORY_NOW}`)
+  const after = await readFile(grossMargin, 'utf8')
+  expect(after).toContain('unit: percent')
+  expect(after).toContain('[[KPIs]]') // the belonging is untouched
+  expect(after).toContain('# Gross Margin')
+  expect(after).not.toContain('page_type')
+  await shoot(win, 'bible-02b-migrated-cell-written')
 })
 
 test('step 3 — navigating the encyclopedia: click → current tab, ⌘-click → background tab', async () => {
@@ -211,6 +243,11 @@ test('step 3 — navigating the encyclopedia: click → current tab, ⌘-click �
 })
 
 test('step 4 — the backlinks panel finds the whole mention set, problems included', async () => {
+  // Who the problems ARE is the folder page's own answer, not this file's: the four pages that
+  // say they belong to `[[Problems]]`, read straight off the block.
+  await fileRow(win, 'Problems').click()
+  await expect(outlineRows(contents(win))).toHaveText(PROBLEMS)
+
   await tabsOf(win).filter({ hasText: 'Win Rate' }).click()
   await expect(activeTab(win)).toHaveText('Win Rate')
   await expect(editorOf(win)).toContainText('Closed-won as a share of closed pipeline')
@@ -222,14 +259,14 @@ test('step 4 — the backlinks panel finds the whole mention set, problems inclu
   await expandBacklinks(win)
   await expect(backlinkNotes(win)).toHaveText(['Sales-Conversion', 'CRM Hygiene', 'Stage Accuracy', 'Head of Sales'])
 
-  // Convergence: the `page_type: problem` mentions are EXACTLY the two problems whose
-  // relations point at this KPI — prose and relations answering the same question.
+  // Convergence: the mentions that BELONG TO `[[Problems]]` are exactly the two problems whose
+  // relations point at this KPI — prose, relations and belonging answering the same question.
   const mentions = await backlinkNotes(win).allTextContents()
   expect(mentions.filter((n) => PROBLEMS.includes(n)).sort()).toEqual(['CRM Hygiene', 'Stage Accuracy'])
   await shoot(win, 'bible-04-backlinks-agree')
 })
 
-test('step 5 — renaming an entity page: relations, body links and backlinks all survive', async () => {
+test('step 5 — renaming an entity page: relations, body links, backlinks and its belonging survive', async () => {
   await fileRow(win, 'Win Rate').click({ button: 'right' })
   await win.locator('.ctx-menu [role="menuitem"]', { hasText: 'Rename' }).click()
   await expect(win.locator('.create-inline__input')).toHaveValue('Win Rate')
@@ -254,6 +291,13 @@ test('step 5 — renaming an entity page: relations, body links and backlinks al
   await expect(backlinksHeader(win)).toHaveText('Linked mentions (4)')
   await expandBacklinks(win)
   await expect(backlinkNotes(win)).toHaveText(['Sales-Conversion', 'CRM Hygiene', 'Stage Accuracy', 'Head of Sales'])
+
+  // And it still belongs where it belonged: the entry lives on the MEMBER and names the topic, so
+  // renaming the member is nothing the topic has to be told about.
+  await fileRow(win, RENAMED).click()
+  expect(await read(path.join('kpis', `${RENAMED}.md`))).toContain('[[KPIs]]')
+  await fileRow(win, KPIS).click()
+  await expect(outlineRows(contents(win))).toHaveText(['CAC', RENAMED, 'Gross Margin', 'MQL Volume', 'Sales Cycle Time'])
 
   // The durable result: not one dangling wiki link anywhere in the vault.
   await expect.poll(() => brokenLinks(vault)).toEqual([])

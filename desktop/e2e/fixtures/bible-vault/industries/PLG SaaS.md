@@ -1,5 +1,6 @@
 ---
-page_type: industry
+folder_pages:
+  - "[[Industries]]"
 ---
 
 # PLG SaaS

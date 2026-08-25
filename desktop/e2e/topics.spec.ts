@@ -2,25 +2,28 @@
  * The Topics tree (6B-, YAZ-848) end-to-end against the REAL app: the sidebar's Topics lens is
  * the folder-page tree — browsing the vault by MEANING rather than by the folders on disk.
  *
- * Driven over the committed encyclopedia (`fixtures/bible-vault`), which is deliberately the
- * NO-HOME shape: there is no `Home.md` at all, so the roots rule (🔒 D2) falls through to "every
- * folder page nobody claims" and stands `Funnel Stages` up on its own. Its three members live in
- * a `funnel-stages/` folder on disk that the tree never mentions — that is the whole point of the
- * lens — and everything else in the fixture belongs nowhere yet, so it waits under Uncategorized.
+ * Driven over the committed encyclopedia (`fixtures/bible-vault`), which since 7C- is a MIGRATED
+ * vault: `tools/migrateFolderPages.mjs` turned its five `page_type` values into five folder pages
+ * and gave them a `Home` to hang from, so the roots rule (🔒 D2) resolves `[[Home]]` and the whole
+ * encyclopedia descends from ONE row. The disk still has `funnel-stages/`, `kpis/`, `problems/`,
+ * `roles/`, `industries/` and `inbox/`; this lens never mentions any of them — that is the point.
+ * The two `inbox/` notes carry no `folder_pages` entry at all and wait under Uncategorized.
  *
  * The arc, in order (serial by design — each step continues the previous state):
- *   1 the roots: Funnel Stages alone, with the glyph and its direct-member count, collapsed
- *   2 the chevron nests its three members, in the [D5] order, indented one rung
+ *   1 the roots: Home alone, with the glyph and its direct-member count, collapsed
+ *   2 the chevrons descend two rungs — Home's five folder pages in Home's own `order`, then
+ *     Funnel Stages' three members in the [D5] fallback — each indented one rung further
  *   3 a row click OPENS the page (the file tree's own handler), and the chevron never does
  *   4 the expansion survives quit → relaunch, in the main-owned `folders[root].topicsExpanded`
  *     bucket — PAGE PATHS, never written into any note's frontmatter
  *   5 Uncategorized expands IN PLACE (🔒 D7, the locked deviation from the mockup), listing the
- *     orphans and subtracting both the root already on screen and everyone already nested
+ *     two unfiled notes and subtracting both the root already on screen and everyone nested
  *
- * Then HOME'S BIRTH (6C-, YAZ-849), which the fixture is also the honest shape for: it has no
- * `.yaseendocs/` either, so it is an UN-ADOPTED folder — the app must not write into it —
- * while step 7 adopts a second copy and proves the automatic half.
- *   6 the OFFER: un-adopted + no Home → the card, and one click makes Home (still un-adopted)
+ * Then HOME'S BIRTH (6C-, YAZ-849). The migrated fixture HAS a Home, so both steps below run over
+ * a copy with `Home.md` deleted — a vault full of folder pages that answers `[[Home]]` with
+ * nothing, which is exactly the shape 6C exists for.
+ *   6 the OFFER: un-adopted + no Home → the card, and one click makes Home — whereupon the five
+ *     orphaned topics stop being roots and snap underneath it
  *   7 the AUTO-CREATE: an ADOPTED copy grows its own Home on open, once, never overwritten
  *
  * Same harness as bible.spec.ts (temp `--user-data-dir`, a COPY of the fixture, `topics-` step
@@ -34,22 +37,26 @@ import { appWindow, copyVault, launchApp, quitApp, readState, seededState, shoot
 
 test.describe.configure({ mode: 'serial' })
 
-/** The committed encyclopedia. Copied per run; the source is never opened by the app. */
+/** The committed encyclopedia, post-migration. Copied per run; the source is never opened by the app. */
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
+const HOME = 'Home.md'
 const FOLDER_PAGE = 'Funnel Stages.md'
-/** Its members, alphabetically — the [D5] fallback, since the fixture declares no outline `order`. */
+/** Home's members, in the `order` the migration wrote onto Home's outline view. */
+const TOPICS = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', 'Roles']
+/** Their direct-member counts, in the same order — the whole migrated map, on one line. */
+const TOPIC_COUNTS = ['3', '2', '5', '4', '3']
+/** Funnel Stages' members, alphabetically — the [D5] fallback, since it declares no outline `order`. */
 const MEMBERS = ['Lead Gen', 'Lead Nurture', 'Sales-Conversion']
-/** Everything in the fixture that says it belongs nowhere: 2 industries + 5 kpis + 4 problems + 3 roles. */
-const ORPHAN_COUNT = 14
+/** The only two pages in the migrated fixture that belong nowhere: `inbox/`, deliberately unfiled. */
+const ORPHANS = ['Pipeline Review Notes', 'Positioning Draft']
 /** 6C (YAZ-849): the dotfolder whose existence IS adoption, and the exact bytes a newborn Home carries. */
 const VAULT_CONFIG_DIR = '.yaseendocs'
-const HOME = 'Home.md'
 const HOME_BYTES = '---\nfolder_page: true\n---\n'
 
 let userData: string
 let vault: string
-/** Step 7's second copy — the ADOPTED shape (`.yaseendocs/` present), which auto-creates. */
-let adoptedVault: string | null = null
+/** Every temp vault this file made, torn down together. */
+const vaults: string[] = []
 let app: ElectronApplication
 let win: Page
 
@@ -80,51 +87,68 @@ function topicsState(vaultPath: string, file: string | null) {
   return state
 }
 
+/** A copy of the encyclopedia with its Home deleted: folder pages everywhere, `[[Home]]` answering nothing. */
+async function homelessVault(): Promise<string> {
+  const dir = await copyVault(FIXTURE)
+  vaults.push(dir)
+  await rm(path.join(dir, HOME))
+  return dir
+}
+
 // ---------- lifecycle ----------
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'topics-userdata-'))
   vault = await copyVault(FIXTURE)
+  vaults.push(vault)
 })
 
 test.afterAll(async () => {
   await app?.close().catch(() => undefined)
-  const dirs = [userData, vault, adoptedVault].filter((dir): dir is string => typeof dir === 'string' && dir !== '')
-  await Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true })))
+  await Promise.all([userData, ...vaults].map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
 // ---------------------------------------------------------------- 🔒 D2: the roots
 
-test('step 1 — the no-Home shape: Funnel Stages stands as a root, glyphed and counted, collapsed', async () => {
-  app = await launchApp({ userData, seedState: topicsState(vault, path.join(vault, FOLDER_PAGE)) })
+test('step 1 — the migrated shape: Home stands alone as the root, glyphed and counted, collapsed', async () => {
+  app = await launchApp({ userData, seedState: topicsState(vault, path.join(vault, HOME)) })
   win = await appWindow(app, 'w1')
 
   await expect(lensTab(win, 'Topics')).toHaveAttribute('aria-selected', 'true')
-  // No `Home.md` in this vault, so no Home row — and the rest of the rule still stands the one
-  // unclaimed folder page up. Collapsed by default: the tree is exactly two rows.
-  await expect(topicLabels(win)).toHaveText(['Funnel Stages', 'Uncategorized'])
-  const root = rowFor(win, 'Funnel Stages')
+  // `[[Home]]` resolves and carries the flag, so it leads — and the five folder pages the
+  // migration created all say they belong to it, so NONE of them is a root of its own. Collapsed
+  // by default: the whole encyclopedia is two rows.
+  await expect(topicLabels(win)).toHaveText(['Home', 'Uncategorized'])
+  const root = rowFor(win, 'Home')
   await expect(root.locator('.tree__glyph')).toBeVisible() // 🔒 D3: folder pages wear the base glyph
-  await expect(root.locator('.tree__count')).toHaveText('3') // …and their DIRECT-member count
-  // The disk folder `funnel-stages/` is nowhere here — that shape belongs to the other tab.
+  await expect(root.locator('.tree__count')).toHaveText('5') // …and their DIRECT-member count
+  // The folders on disk are nowhere here — that shape belongs to the other tab.
   // (Folder-page rows wear `.tree__row--dir` themselves: same class family, same colour.)
   await expect(rowFor(win, 'funnel-stages')).toHaveCount(0)
+  await expect(rowFor(win, 'inbox')).toHaveCount(0)
   await expect(win.locator('.sidebar__body .tree__row--file')).toHaveCount(0)
-  // The fixture has no `.yaseendocs/` either, so 6C's card is up from the first frame — above
-  // the tree, replacing none of it. Step 6 drives it; here it only has to be true.
-  await expect(offerCard(win)).toBeVisible()
+  // A vault that already answers `[[Home]]` is never offered one, adopted or not (the fixture has
+  // no `.yaseendocs/`, so this is the offer's LIVE half deciding, not the adoption half).
+  await expect(offerCard(win)).toHaveCount(0)
   await shoot(win, 'topics-01-roots')
 })
 
 // ---------------------------------------------------------------- ⚡ D6 + [D5]: the descent
 
-test('step 2 — the chevron nests the three members, in the [D5] order, one rung in', async () => {
+test('step 2 — the chevrons descend two rungs: Home’s order, then the [D5] fallback', async () => {
+  await chevron(win, 'Expand', 'Home').click()
+  // Home's own outline `order` — written by the migration, not alphabetical (Funnel Stages leads).
+  await expect(topicLabels(win)).toHaveText(['Home', ...TOPICS, 'Uncategorized'])
+  await expect(win.locator('.sidebar__body .tree__count')).toHaveText(['5', ...TOPIC_COUNTS, String(ORPHANS.length)])
+
   await chevron(win, 'Expand', 'Funnel Stages').click()
-  await expect(topicLabels(win)).toHaveText(['Funnel Stages', ...MEMBERS, 'Uncategorized'])
+  // Funnel Stages declares no `order`, so its members fall through to alphabetical, one rung in.
+  await expect(topicLabels(win)).toHaveText(['Home', 'Funnel Stages', ...MEMBERS, ...TOPICS.slice(1), 'Uncategorized'])
   await expect(rowFor(win, 'Funnel Stages').locator('.tree__chevron--open')).toHaveCount(1)
-  // 8 + depth * 14, the file tree's own indent: the root at 8, its members at 22.
-  await expect(rowFor(win, 'Funnel Stages')).toHaveCSS('padding-left', '8px')
-  await expect(rowFor(win, 'Lead Gen')).toHaveCSS('padding-left', '22px')
+  // 8 + depth * 14, the file tree's own indent: the root at 8, its topics at 22, their pages at 36.
+  await expect(rowFor(win, 'Home')).toHaveCSS('padding-left', '8px')
+  await expect(rowFor(win, 'Funnel Stages')).toHaveCSS('padding-left', '22px')
+  await expect(rowFor(win, 'Lead Gen')).toHaveCSS('padding-left', '36px')
   // Leaves: no glyph, no count, nothing to expand.
   await expect(rowFor(win, 'Lead Gen').locator('.tree__glyph')).toHaveCount(0)
   await expect(rowFor(win, 'Lead Gen').locator('.tree__count')).toHaveCount(0)
@@ -139,84 +163,95 @@ test('step 3 — a row click OPENS the page; the chevron only ever expands', asy
   await expect(activeTab(win)).toHaveText('Lead Nurture')
   await expect(editorOf(win)).toContainText('Lead Nurture')
 
-  // The chevron is its own hit target: collapsing does not open Funnel Stages over the tab above.
-  await chevron(win, 'Collapse', 'Funnel Stages').click()
-  await expect(topicLabels(win)).toHaveText(['Funnel Stages', 'Uncategorized'])
+  // The chevron is its own hit target: collapsing does not open Home over the tab above.
+  await chevron(win, 'Collapse', 'Home').click()
+  await expect(topicLabels(win)).toHaveText(['Home', 'Uncategorized'])
   await expect(activeTab(win)).toHaveText('Lead Nurture')
-  await chevron(win, 'Expand', 'Funnel Stages').click()
-  await expect(topicLabels(win)).toHaveText(['Funnel Stages', ...MEMBERS, 'Uncategorized'])
+  // 🔒 D4: expansion is keyed by PAGE, not by tree position — so Funnel Stages comes back open.
+  await chevron(win, 'Expand', 'Home').click()
+  await expect(topicLabels(win)).toHaveText(['Home', 'Funnel Stages', ...MEMBERS, ...TOPICS.slice(1), 'Uncategorized'])
   await shoot(win, 'topics-03-row-opens')
 })
 
 // ---------------------------------------------------------------- 🔒 D4: persistence
 
 test('step 4 — the expansion survives quit → relaunch, as PAGE PATHS in the app state', async () => {
-  const folderPagePath = path.join(vault, FOLDER_PAGE)
-  await expect.poll(async () => (await readState(userData)).folders?.[vault]?.topicsExpanded).toEqual([folderPagePath])
+  const open = [path.join(vault, HOME), path.join(vault, FOLDER_PAGE)]
+  // A Set, so the bucket's ORDER is whatever the last toggle left (step 3 re-added Home): the
+  // durable claim is the membership, which is what the tree is rebuilt from.
+  const stored = async () => [...((await readState(userData)).folders?.[vault]?.topicsExpanded ?? [])].sort()
+  await expect.poll(stored).toEqual([...open].sort())
 
   await quitApp(app)
-  expect((await readState(userData)).folders[vault].topicsExpanded).toEqual([folderPagePath])
+  expect(await stored()).toEqual([...open].sort())
   // Session chrome, exactly like the `baseGroups` bucket: nothing about it reaches the page.
-  expect(await readFile(folderPagePath, 'utf8')).not.toContain('topicsExpanded')
+  expect(await readFile(open[1], 'utf8')).not.toContain('topicsExpanded')
 
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
   win = await appWindow(app, 'w1')
-  await expect(topicLabels(win)).toHaveText(['Funnel Stages', ...MEMBERS, 'Uncategorized'])
+  await expect(topicLabels(win)).toHaveText(['Home', 'Funnel Stages', ...MEMBERS, ...TOPICS.slice(1), 'Uncategorized'])
   await shoot(win, 'topics-04-expansion-restored')
 })
 
 // ---------------------------------------------------------------- 🔒 D7: Uncategorized
 
 test('step 5 — Uncategorized expands IN PLACE, subtracting the root and everyone nested', async () => {
-  await expect(uncategorizedRow(win).locator('.tree__count')).toHaveText(String(ORPHAN_COUNT))
+  await expect(uncategorizedRow(win).locator('.tree__count')).toHaveText(String(ORPHANS.length))
   await expect(uncategorizedRow(win).locator('.tree__chevron--open')).toHaveCount(0)
   await uncategorizedRow(win).click()
   await expect(uncategorizedRow(win).locator('.tree__chevron--open')).toHaveCount(1) // the chevron turns with it
-  await expect(topicRows(win)).toHaveCount(2 + MEMBERS.length + ORPHAN_COUNT)
-  // An orphan is listed…
-  await expect(rowFor(win, 'CAC')).toHaveCount(1)
-  // …the folder page already standing as a root is NOT (this surface's own subtraction), and
-  // neither is anyone already nested under it.
-  await expect(rowFor(win, 'Funnel Stages')).toHaveCount(1) // the root row only
+  // The two unfiled notes, and nothing else: one carries frontmatter without a `folder_pages`
+  // entry, the other carries none at all — belonging is an entry, never an inference from disk.
+  await expect(topicLabels(win)).toHaveText([
+    'Home',
+    'Funnel Stages',
+    ...MEMBERS,
+    ...TOPICS.slice(1),
+    'Uncategorized',
+    ...ORPHANS,
+  ])
+  // The folder page already standing as a root is NOT listed (this surface's own subtraction),
+  // and neither is anyone already nested under it.
+  await expect(rowFor(win, 'Home')).toHaveCount(1) // the root row only
   await expect(rowFor(win, 'Lead Gen')).toHaveCount(1) // the nested row only
   await shoot(win, 'topics-05-uncategorized')
 
   // It never becomes a page: clicking an orphan opens the ORPHAN, and there is no Uncategorized tab.
-  await rowFor(win, 'CAC').click()
-  await expect(activeTab(win)).toHaveText('CAC')
+  await rowFor(win, ORPHANS[0]).click()
+  await expect(activeTab(win)).toHaveText(ORPHANS[0])
   await uncategorizedRow(win).click() // …and it collapses back in place
-  await expect(topicLabels(win)).toHaveText(['Funnel Stages', ...MEMBERS, 'Uncategorized'])
+  await expect(topicLabels(win)).toHaveText(['Home', 'Funnel Stages', ...MEMBERS, ...TOPICS.slice(1), 'Uncategorized'])
   await quitApp(app)
 })
 
 // ------------------------------------------------- ⚡ the amendment (YAZ-797): the un-adopted offer
 
 test('step 6 — an UN-ADOPTED folder is OFFERED a Home, never given one; one click makes it', async () => {
-  // Five steps of real use have gone by and the app has still written no Home into a folder it
-  // never adopted — which is the whole rule.
-  expect(await onDisk(vault, HOME)).toBeNull()
-  expect(await onDisk(vault, `${VAULT_CONFIG_DIR}/properties.json`)).toBeNull()
+  const homeless = await homelessVault()
+  expect(await onDisk(homeless, HOME)).toBeNull()
+  expect(await onDisk(homeless, `${VAULT_CONFIG_DIR}/properties.json`)).toBeNull()
 
-  app = await launchApp({ userData })
+  app = await launchApp({ userData, seedState: topicsState(homeless, null) })
   win = await appWindow(app, 'w1')
   await expect(offerCard(win)).toContainText('Your map starts here')
   await expect(offerButton(win)).toHaveText('Create Home')
-  // It replaces nothing: the tree the previous steps left is still underneath it.
-  await expect(topicLabels(win)).toHaveText(['Funnel Stages', ...MEMBERS, 'Uncategorized'])
+  // It replaces nothing: with `[[Home]]` answering nothing, the five folder pages have no parents
+  // of their own, so the roots rule stands every one of them up — path-sorted — underneath the card.
+  await expect(topicLabels(win)).toHaveText([...TOPICS, 'Uncategorized'])
   await shoot(win, 'topics-06-offer')
 
   await offerButton(win).click()
   // Exactly 4B's birth bytes at the vault root — no settings block, no body.
-  await expect.poll(() => onDisk(vault, HOME)).toBe(HOME_BYTES)
+  await expect.poll(() => onDisk(homeless, HOME)).toBe(HOME_BYTES)
   // Created AND opened, in the current tab.
   await expect(activeTab(win)).toHaveText('Home')
-  // The card retires the moment `[[Home]]` resolves, and the tree roots on it — Home leads,
-  // Funnel Stages follows (🔒 D2). No members yet, so no chevron and a count of 0.
+  // The card retires the moment `[[Home]]` resolves — and the five topics stop being roots in the
+  // same breath, because their own `folder_pages: ["[[Home]]"]` now lands somewhere.
   await expect(offerCard(win)).toHaveCount(0)
-  await expect(topicLabels(win)).toHaveText(['Home', 'Funnel Stages', ...MEMBERS, 'Uncategorized'])
-  await expect(rowFor(win, 'Home').locator('.tree__count')).toHaveText('0')
+  await expect(topicLabels(win)).toHaveText(['Home', 'Uncategorized'])
+  await expect(rowFor(win, 'Home').locator('.tree__count')).toHaveText('5')
   // Making a Home does NOT adopt the folder: the app still owns nothing invisible in here.
-  expect(await onDisk(vault, `${VAULT_CONFIG_DIR}/properties.json`)).toBeNull()
+  expect(await onDisk(homeless, `${VAULT_CONFIG_DIR}/properties.json`)).toBeNull()
   await shoot(win, 'topics-06-home-made')
   await quitApp(app)
 })
@@ -224,16 +259,17 @@ test('step 6 — an UN-ADOPTED folder is OFFERED a Home, never given one; one cl
 // ------------------------------------------------------- 🔒 D2: an ADOPTED vault creates its own
 
 test('step 7 — an ADOPTED vault grows its own Home on open: once, unasked, never overwritten', async () => {
-  // The same encyclopedia, adopted: `.yaseendocs/` exists, so this vault has said yes already.
-  adoptedVault = await copyVault(FIXTURE)
-  await mkdir(path.join(adoptedVault, VAULT_CONFIG_DIR), { recursive: true })
-  expect(await onDisk(adoptedVault, HOME)).toBeNull()
+  // The same encyclopedia minus its Home, adopted: `.yaseendocs/` exists, so it has said yes already.
+  const adopted = await homelessVault()
+  await mkdir(path.join(adopted, VAULT_CONFIG_DIR), { recursive: true })
+  expect(await onDisk(adopted, HOME)).toBeNull()
 
-  app = await launchApp({ userData, seedState: topicsState(adoptedVault, null) })
+  app = await launchApp({ userData, seedState: topicsState(adopted, null) })
   win = await appWindow(app, 'w1')
-  // Nobody clicked anything: Home is simply there, carrying exactly the flag.
-  await expect.poll(() => onDisk(adoptedVault as string, HOME)).toBe(HOME_BYTES)
-  await expect(topicLabels(win)).toHaveText(['Home', 'Funnel Stages', 'Uncategorized'])
+  // Nobody clicked anything: Home is simply there, carrying exactly the flag, with the whole
+  // encyclopedia already hanging off it.
+  await expect.poll(() => onDisk(adopted, HOME)).toBe(HOME_BYTES)
+  await expect(topicLabels(win)).toHaveText(['Home', 'Uncategorized'])
   await expect(offerCard(win)).toHaveCount(0) // an adopted vault is never offered
   await shoot(win, 'topics-07-auto-created')
   await quitApp(app)
@@ -241,10 +277,10 @@ test('step 7 — an ADOPTED vault grows its own Home on open: once, unasked, nev
   // IDEMPOTENT: the user makes it their own, and reopening the vault never recreates or
   // overwrites it — the resolver finds a Home, so nothing is written.
   const mine = `${HOME_BYTES}\n# My map\n\nmy own words\n`
-  await writeFile(path.join(adoptedVault, HOME), mine)
+  await writeFile(path.join(adopted, HOME), mine)
   app = await launchApp({ userData })
   win = await appWindow(app, 'w1')
-  await expect(topicLabels(win)).toHaveText(['Home', 'Funnel Stages', 'Uncategorized'])
-  expect(await onDisk(adoptedVault, HOME)).toBe(mine)
+  await expect(topicLabels(win)).toHaveText(['Home', 'Uncategorized'])
+  expect(await onDisk(adopted, HOME)).toBe(mine)
   await quitApp(app)
 })

@@ -1,11 +1,12 @@
 ---
-page_type: problem
 funnel_stage: "[[Sales-Conversion]]"
 kpis_impacted: ["[[Win Rate]]", "[[Sales Cycle Time]]"]
 sold_to: ["[[RevOps Lead]]"]
 industries: ["[[VC-Backed B2B SaaS]]"]
 sku_tag: operational
 channel: Outbound
+folder_pages:
+  - "[[Problems]]"
 ---
 
 # CRM Hygiene

@@ -17,6 +17,8 @@ folder_page_settings:
         - file.name
         - note.order
         - note.related_stages
+folder_pages:
+  - "[[Home]]"
 ---
 
 # Funnel Stages

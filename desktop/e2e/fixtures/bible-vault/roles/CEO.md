@@ -1,6 +1,7 @@
 ---
-page_type: role
 function: exec
+folder_pages:
+  - "[[Roles]]"
 ---
 
 # CEO

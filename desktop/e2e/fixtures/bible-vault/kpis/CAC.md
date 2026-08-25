@@ -1,8 +1,9 @@
 ---
-page_type: kpi
 funnel_stages: ["[[Lead Gen]]"]
 kpi_category: lagging
 unit: currency
+folder_pages:
+  - "[[KPIs]]"
 ---
 
 # CAC

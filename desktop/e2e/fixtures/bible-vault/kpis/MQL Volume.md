@@ -1,8 +1,9 @@
 ---
-page_type: kpi
 funnel_stages: ["[[Lead Gen]]"]
 kpi_category: leading
 unit: count
+folder_pages:
+  - "[[KPIs]]"
 ---
 
 # MQL Volume

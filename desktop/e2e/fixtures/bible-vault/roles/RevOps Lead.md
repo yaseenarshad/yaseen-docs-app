@@ -1,7 +1,8 @@
 ---
-page_type: role
 function: ops
 reports_to: "[[Head of Sales]]"
+folder_pages:
+  - "[[Roles]]"
 ---
 
 # RevOps Lead

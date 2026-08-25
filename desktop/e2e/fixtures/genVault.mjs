@@ -4,8 +4,15 @@
  * generator for index benchmarks. Deterministic — a given --notes/--seed pair always produces the
  * same vault. Shapes mirror `basesFixture.ts` / `helpers.buildFixtureVault`: realistic frontmatter
  * (status/priority/pillar/tags/aliases on a subset), bodies with `[[wiki links]]` between notes,
- * inline #tags, code fences, `![[embeds]]`, folder depth 0-4, a few `.base` files, png stubs,
- * `.obsidian/types.json` and a `.trash` note.
+ * inline #tags, code fences, `![[embeds]]`, folder depth 0-4, png stubs, `.yaseendocs/` config
+ * and a `.trash` note.
+ *
+ * THE FOLDER-PAGE SHAPE (7C-, YAZ-855): the vault this emits speaks the model the app actually
+ * ships. A handful of root-level FOLDER PAGES (`folder_page: true`, with columns and both skins)
+ * hang off a `Home`; most notes name one — occasionally two — of them in their own
+ * `folder_pages`, and the rest belong nowhere and wait under Uncategorized. Scale is unchanged:
+ * `--notes` still counts ordinary notes, with the folder pages a fixed handful on top.
+ * `page_type` and `.base` are gone from here, exactly as they are gone from the app.
  *
  * Generated vaults go to a TEMP dir, never the repo — an --out inside the repository is refused.
  *
@@ -55,6 +62,13 @@ const chance = (p) => rand() < p
 // ---------- content pools ----------
 
 const FOLDER_NAMES = ['Projects', 'Areas', 'Archive', 'Inbox', 'Content Pillars', 'Weekly Reviews', 'Clients', 'Research', 'Drafts', 'Meetings', 'People', 'Systems']
+/**
+ * The folder pages, in `Home`'s own order. Names deliberately unlike the note basenames
+ * (`<TOPIC> <nnnn>`) and unlike the generated folder names (`<FOLDER_NAME> <n>`), so a
+ * `[[wiki link]]` can never resolve to the wrong one.
+ */
+const TOPIC_PAGES = ['Topics', 'Playbooks', 'Accounts', 'Experiments', 'Rituals', 'Sources', 'Signals', 'Decisions']
+const HOME_PAGE = 'Home'
 const TOPICS = ['Idea', 'Meeting', 'Project', 'Review', 'Draft', 'Client Call', 'Research Note', 'Plan', 'Retro', 'Brief']
 const STATUSES = ['idea', 'drafting', 'published', 'archived', 'in-review']
 const PILLARS = ['Agentic Agency', 'Creator Economy', 'Trust Economy', 'Tech & Silicon Valley']
@@ -87,17 +101,29 @@ async function main() {
     folders.push(parent === '' ? name : `${parent}/${name}`)
   }
   await Promise.all(
-    [...folders.filter((f) => f !== ''), '.obsidian', '.trash'].map((f) => mkdir(path.join(root, ...f.split('/')), { recursive: true })),
+    [...folders.filter((f) => f !== ''), '.yaseendocs', '.trash'].map((f) => mkdir(path.join(root, ...f.split('/')), { recursive: true })),
   )
+
+  // The folder pages: a fixed handful, scaled gently with the vault and capped by the pool, so a
+  // 1k vault has a believable number of topics rather than one per hundred notes.
+  const topicPages = TOPIC_PAGES.slice(0, Math.min(TOPIC_PAGES.length, Math.max(4, Math.floor(NOTES / 150))))
 
   // Basenames first, so bodies can link to any other note (wiki links resolve by basename).
   const basenames = Array.from({ length: NOTES }, (_, i) => `${pick(TOPICS)} ${String(i).padStart(4, '0')}`)
 
+  let belonging = 0
   const noteFile = (i) => {
     const basename = basenames[i]
     const lines = []
-    if (chance(0.65)) {
+    // BELONGING (YAZ-814): most notes name a topic in their own frontmatter — a few name two,
+    // because a page belongs to as many folder pages as it says it does — and the rest name none
+    // and land in Uncategorized. A note that belongs always has a frontmatter block; the rest
+    // keep their own roll, so the vault stays a mix of carded and bare notes.
+    const entries = [...new Set(chance(0.82) ? [pick(topicPages), ...(chance(0.12) ? [pick(topicPages)] : [])] : [])]
+    if (entries.length > 0) belonging++
+    if (entries.length > 0 || chance(0.45)) {
       lines.push('---')
+      if (entries.length > 0) lines.push(`folder_pages: [${entries.map((t) => `"[[${t}]]"`).join(', ')}]`)
       lines.push(`status: ${pick(STATUSES)}`)
       if (chance(0.6)) lines.push(`priority: ${int(1, 5)}`)
       if (chance(0.5)) lines.push(`pillar: ${pick(PILLARS)}`)
@@ -137,20 +163,83 @@ async function main() {
   }
   await Promise.all(Array.from({ length: 64 }, worker))
 
-  // Non-record files: .base files, png stubs, types.json, a .trash note (mirrors basesFixture).
+  // The folder pages themselves, at the root: the flag, a membership in Home, declared columns and
+  // Q7's two skins. Their `folder` is a real generated bin, so "New" would park a member somewhere
+  // that exists.
+  const folderPage = (name, bin) =>
+    [
+      '---',
+      'folder_page: true',
+      `folder_pages: ["[[${HOME_PAGE}]]"]`,
+      'folder_page_settings:',
+      '  columns:',
+      '    status:',
+      '      kind: text',
+      '    priority:',
+      '      kind: number',
+      '    pillar:',
+      '      kind: text',
+      ...(bin === undefined ? [] : [`  folder: ${bin}`]),
+      '  views:',
+      '    - type: outline',
+      '      name: Outline',
+      '    - type: table',
+      '      name: Table',
+      '      order:',
+      '        - file.name',
+      '        - note.status',
+      '        - note.priority',
+      '---',
+      '',
+      `# ${name}`,
+      '',
+      `Every page in this vault that says it belongs to ${name}. There is no list to maintain.`,
+      '',
+    ].join('\n')
+
+  const home = [
+    '---',
+    'folder_page: true',
+    'folder_page_settings:',
+    '  views:',
+    '    - type: outline',
+    '      name: Outline',
+    '      order:',
+    ...topicPages.map((name) => `        - "[[${name}]]"`),
+    '    - type: table',
+    '      name: Table',
+    '---',
+    '',
+    `# ${HOME_PAGE}`,
+    '',
+    'The root of the map: every folder page below belongs here, in this order.',
+    '',
+  ].join('\n')
+
+  const bins = folders.filter((f) => f !== '')
+  const pages = [
+    [`${HOME_PAGE}.md`, home],
+    ...topicPages.map((name, i) => [`${name}.md`, folderPage(name, bins[i % bins.length])]),
+  ]
+  for (const [, content] of pages) bytes += content.length
+  await Promise.all(pages.map(([name, content]) => writeFile(path.join(root, name), content)))
+
+  // Non-record files: png stubs, the vault's own config dir, a .trash note (mirrors basesFixture).
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
-  const base = 'views:\n  - type: table\n    name: Table\n  - type: cards\n    name: View\n'
   await Promise.all([
-    ...Array.from({ length: Math.max(2, Math.floor(NOTES / 1000)) }, (_, i) =>
-      writeFile(path.join(root, ...pick(folders).split('/').filter(Boolean), `Topics DB ${i}.base`), base),
-    ),
     ...Array.from({ length: 4 }, (_, i) => writeFile(path.join(root, `chart-${i}.png`), png)),
-    writeFile(path.join(root, '.obsidian', 'types.json'), '{"types":{"date":"date","published":"checkbox"}}'),
+    writeFile(
+      path.join(root, '.yaseendocs', 'properties.json'),
+      '{"version":1,"properties":{"status":{"kind":"text"},"priority":{"kind":"number"}}}',
+    ),
     writeFile(path.join(root, '.trash', 'Untitled.md'), 'trash'),
   ])
 
   console.log(`generated vault: ${root}`)
   console.log(`  notes: ${NOTES}, folders: ${folders.length - 1}, ~${(bytes / 1024 / 1024).toFixed(1)} MB of markdown, seed: ${SEED}`)
+  console.log(
+    `  folder pages: ${pages.length} (${HOME_PAGE} + ${topicPages.length}), belonging: ${belonging}, uncategorized: ${NOTES - belonging}`,
+  )
 }
 
 main().catch((err) => {

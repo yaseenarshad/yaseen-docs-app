@@ -1,5 +1,4 @@
 ---
-page_type: funnel-stage
 order: 1
 folder_pages: ["[[Funnel Stages]]"]
 ---
