@@ -3,11 +3,11 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
-import type { RegistryResponse } from '@shared/types'
+import type { PropertiesResponse } from '@shared/types'
 import { CH, type Envelope } from '../../channels'
 import { createStore, type Store } from '../store'
 import { activeConfigWatcherRoots, VAULT_CONFIG_DIR } from '../vaultConfig'
-import { registerRegistryIpc } from './registry'
+import { registerPropertiesIpc } from './properties'
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
@@ -47,11 +47,11 @@ let store: Store
 beforeEach(async () => {
   vi.mocked(ipcMain.handle).mockClear()
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([])
-  dir = await mkdtemp(path.join(tmpdir(), 'yd-registry-ipc-'))
+  dir = await mkdtemp(path.join(tmpdir(), 'yd-properties-ipc-'))
   vault = path.join(dir, 'vault')
   await mkdir(vault) // the root exists (an open vault always does); its dotfolder does not
   store = createStore(path.join(dir, 'yaseendocs.json'))
-  registerRegistryIpc(store)
+  registerPropertiesIpc(store)
 })
 afterEach(async () => {
   // Dropping every window releases this test's config watcher (the next register drops strays).
@@ -61,28 +61,25 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-describe('registerRegistryIpc', () => {
-  it('registers exactly the registry channels the preload invokes', () => {
+describe('registerPropertiesIpc', () => {
+  it('registers exactly the properties channels the preload invokes', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CH.registryGet, CH.registrySetType, CH.registryRemoveType, CH.registrySetProperty, CH.registryRemoveProperty].sort())
+    expect(channels).toEqual([CH.propertiesGet, CH.propertiesSetProperty, CH.propertiesRemoveProperty].sort())
   })
 
   it('get and the mutators round-trip through the envelope; bad input answers error envelopes', async () => {
-    expect(await registered(CH.registryGet)({ sender }, vault)).toEqual(ok({ root: vault, version: 1, types: {}, properties: {} }))
-    expect(await registered(CH.registrySetType)({ sender }, vault, 'kpi', { displayName: 'KPI' })).toEqual(ok(undefined))
-    expect(await registered(CH.registrySetProperty)({ sender }, vault, { type: 'kpi' }, 'unit', { kind: 'text' })).toEqual(ok(undefined))
-    expect(await registered(CH.registrySetProperty)({ sender }, vault, 'vault', 'related', { kind: 'multi-link' })).toEqual(ok(undefined))
-    const reg = (await registered(CH.registryGet)({ sender }, vault)) as { value: RegistryResponse }
-    expect(reg.value.types.kpi).toEqual({ displayName: 'KPI', properties: { unit: { kind: 'text' } } })
-    expect(reg.value.properties).toEqual({ related: { kind: 'multi-link' } })
-    expect(await registered(CH.registryRemoveProperty)({ sender }, vault, 'vault', 'related')).toEqual(ok(undefined))
-    expect(await registered(CH.registryRemoveType)({ sender }, vault, 'kpi')).toEqual(ok(undefined))
+    expect(await registered(CH.propertiesGet)({ sender }, vault)).toEqual(ok({ root: vault, version: 1, properties: {} }))
+    expect(await registered(CH.propertiesSetProperty)({ sender }, vault, 'unit', { kind: 'text' })).toEqual(ok(undefined))
+    expect(await registered(CH.propertiesSetProperty)({ sender }, vault, 'related', { kind: 'multi-link' })).toEqual(ok(undefined))
+    const got = (await registered(CH.propertiesGet)({ sender }, vault)) as { value: PropertiesResponse }
+    expect(got.value.properties).toEqual({ unit: { kind: 'text' }, related: { kind: 'multi-link' } })
+    expect(await registered(CH.propertiesRemoveProperty)({ sender }, vault, 'related')).toEqual(ok(undefined))
 
-    expect(await registered(CH.registryGet)({ sender }, 'rel')).toEqual(bad('NOT_ABSOLUTE'))
-    expect(await registered(CH.registrySetType)({ sender }, vault, 'Bad Name', {})).toEqual(bad('BAD_REQUEST'))
-    expect(await registered(CH.registrySetProperty)({ sender }, vault, 'vault', 'page_type', { kind: 'text' })).toEqual(bad('BAD_REQUEST'))
-    await writeFile(path.join(vault, VAULT_CONFIG_DIR, 'types.json'), '{broken')
-    expect(await registered(CH.registrySetType)({ sender }, vault, 'kpi', {})).toEqual(bad('INVALID_CONFIG'))
+    expect(await registered(CH.propertiesGet)({ sender }, 'rel')).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await registered(CH.propertiesSetProperty)({ sender }, vault, 'Bad Name', { kind: 'text' })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.propertiesSetProperty)({ sender }, vault, 'unit', { kind: 'nope' })).toEqual(bad('BAD_REQUEST'))
+    await writeFile(path.join(vault, VAULT_CONFIG_DIR, 'properties.json'), '{broken')
+    expect(await registered(CH.propertiesSetProperty)({ sender }, vault, 'unit', { kind: 'text' })).toEqual(bad('INVALID_CONFIG'))
   })
 
   it('subscribes one config watcher per open-vault root and drops it when the last window leaves', async () => {
@@ -99,7 +96,7 @@ describe('registerRegistryIpc', () => {
     await until(() => activeConfigWatcherRoots().length === 0)
   })
 
-  it('broadcasts registry:changed { root, registry } to every live window on an own mutation and on an external edit', async () => {
+  it('broadcasts properties:changed { root, properties } to every live window on an own mutation and on an external edit', async () => {
     const a = fakeWindow()
     const b = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([a, b] as unknown as BrowserWindow[])
@@ -107,20 +104,20 @@ describe('registerRegistryIpc', () => {
     a.webContents.send.mockClear()
     b.webContents.send.mockClear()
 
-    await registered(CH.registrySetProperty)({ sender }, vault, 'vault', 'related', { kind: 'multi-link' })
+    await registered(CH.propertiesSetProperty)({ sender }, vault, 'related', { kind: 'multi-link' })
     const got = (win: ReturnType<typeof fakeWindow>) =>
-      win.webContents.send.mock.calls.find(([ch]) => ch === CH.registryChanged)?.[1] as { root: string; registry: RegistryResponse } | undefined
+      win.webContents.send.mock.calls.find(([ch]) => ch === CH.propertiesChanged)?.[1] as { root: string; properties: PropertiesResponse } | undefined
     await until(() => got(a) !== undefined && got(b) !== undefined)
     expect(got(a)?.root).toBe(vault)
-    expect(got(a)?.registry.properties).toEqual({ related: { kind: 'multi-link' } })
-    expect(got(b)?.registry.root).toBe(vault)
+    expect(got(a)?.properties.properties).toEqual({ related: { kind: 'multi-link' } })
+    expect(got(b)?.properties.root).toBe(vault)
 
     a.webContents.send.mockClear()
     await new Promise((r) => setTimeout(r, 300)) // let the watcher settle on the just-created dotfolder
-    await writeFile(path.join(vault, VAULT_CONFIG_DIR, 'types.json'), '{"version":1,"types":{"kpi":{"properties":{}}}}')
+    await writeFile(path.join(vault, VAULT_CONFIG_DIR, 'properties.json'), '{"version":1,"properties":{"unit":{"kind":"text"}}}')
     await until(() => {
       const msg = got(a)
-      return msg !== undefined && msg.registry.types.kpi !== undefined
+      return msg !== undefined && msg.properties.properties.unit !== undefined
     })
   })
 })

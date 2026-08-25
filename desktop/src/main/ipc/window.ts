@@ -23,7 +23,7 @@ function optionalTabs(raw: Record<string, unknown>): string[] | undefined {
 }
 
 /**
- * The `window.*` half of `window.yaseenDocs`. The caller is resolved through the registry
+ * The `window.*` half of `window.yaseenDocs`. The caller is resolved through the window lookup
  * (`webContents.id` → window id) and answered from `AppState.windows`. `open` / `duplicate`
  * are D6 plumbing into the window manager (GRO-2160; the gestures land in D-), and
  * `app:flushed` is the renderer's half of the close/quit flush handshake.
@@ -60,7 +60,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   })
 
   // `window:close-self` (GRO-2232): the REAL close on the caller's own window, so the
-  // close/flush handshake in windows.ts runs — never a destroy. Resolved via the registry
+  // close/flush handshake in windows.ts runs — never a destroy. Resolved via the window lookup
   // only (no state lookup): a window mid-close can still ask.
   handleWithEvent(CH.windowCloseSelf, async (e) => {
     const id = windows.idFor(e.sender)

@@ -4,9 +4,9 @@ import { fileKind } from '@shared/fileKind'
 import type { FileResponse } from '@shared/types'
 import { api } from '../api'
 import { BaseHost } from '../bases/BaseHost'
-import { createBaseCodeBlockRegistry, type BaseCodeBlockSlot } from './baseCodeBlock/baseCodeBlockView'
+import { createBaseCodeBlockSlotStore, type BaseCodeBlockSlot } from './baseCodeBlock/baseCodeBlockView'
 import { BaseCodeBlock } from './baseCodeBlock/BaseCodeBlock'
-import { createBaseEmbedRegistry, type BaseEmbedSlot } from './baseEmbed/baseEmbedPlugin'
+import { createBaseEmbedSlotStore, type BaseEmbedSlot } from './baseEmbed/baseEmbedPlugin'
 import { BaseEmbed } from './baseEmbed/BaseEmbed'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
@@ -100,21 +100,21 @@ function CrepeHost({
   // Base embeds (6A, GRO-2145): the plugin keeps one widget slot per `![[X.base]]` paragraph;
   // React stays the owner of what renders inside — a portal per slot, keyed so typing around
   // the embed never remounts it.
-  const [embedRegistry] = useState(createBaseEmbedRegistry)
+  const [embedStore] = useState(createBaseEmbedSlotStore)
   const [embedSlots, setEmbedSlots] = useState<readonly BaseEmbedSlot[]>([])
   useEffect(() => {
-    setEmbedSlots(embedRegistry.list())
-    return embedRegistry.subscribe(() => setEmbedSlots(embedRegistry.list()))
-  }, [embedRegistry])
+    setEmbedSlots(embedStore.list())
+    return embedStore.subscribe(() => setEmbedSlots(embedStore.list()))
+  }, [embedStore])
 
   // `base` code blocks (6B, GRO-2146): same pattern — the node view keeps one slot per
   // ```base fence; a portal per slot renders <BaseCodeBlock> over the block's own YAML.
-  const [codeRegistry] = useState(createBaseCodeBlockRegistry)
+  const [codeStore] = useState(createBaseCodeBlockSlotStore)
   const [codeSlots, setCodeSlots] = useState<readonly BaseCodeBlockSlot[]>([])
   useEffect(() => {
-    setCodeSlots(codeRegistry.list())
-    return codeRegistry.subscribe(() => setCodeSlots(codeRegistry.list()))
-  }, [codeRegistry])
+    setCodeSlots(codeStore.list())
+    return codeStore.subscribe(() => setCodeSlots(codeStore.list()))
+  }, [codeStore])
 
   useEffect(() => {
     const host = hostRef.current
@@ -133,8 +133,8 @@ function CrepeHost({
         onCollapsedKeysChange: (keys) => storage.setFolds(root, file.path, keys),
       },
       zoom: { fileName: basename(file.path) },
-      baseEmbeds: embedRegistry,
-      baseCodeBlocks: codeRegistry,
+      baseEmbeds: embedStore,
+      baseCodeBlocks: codeStore,
       // Stable per window (App-owned): index updates flow INSIDE the sources, never remounting us.
       wikilinks,
       wikilinkCandidates,
@@ -199,7 +199,7 @@ function CrepeHost({
       unsubscribe()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, embedRegistry, codeRegistry, wikilinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, createBase])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, embedStore, codeStore, wikilinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, createBase])
 
   return (
     <>

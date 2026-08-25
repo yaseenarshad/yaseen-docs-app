@@ -1,25 +1,25 @@
 /**
- * `useRegistry` (5E GRO-2217 ↔ Bible A GRO-2201; contract GRO-2120 comment 73479ea3 §2): one
- * `registry.get(root)` fetch per root, live-replaced by `registry:changed` broadcasts for that
- * root. Public surface is exactly `{ status, registry, error }`. The bridge (`api.registry`, the
- * swapped source) is mocked; the onChange listeners are captured so tests can push broadcasts.
- * Stub-backed component integration lives in `view/RelationColumn.test.tsx`.
+ * `useProperties` (YAZ-835): one `properties.get(root)` fetch per root, live-replaced by
+ * `properties:changed` broadcasts for that root. Public surface is exactly
+ * `{ status, properties, error }`. The bridge (`api.properties`) is mocked; the onChange
+ * listeners are captured so tests can push broadcasts. Stub-backed component integration lives
+ * in `view/RelationColumn.test.tsx`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { RegistryResponse } from '@shared/types'
-import { useRegistry, type RegistryState } from './useRegistry'
+import type { PropertiesResponse } from '@shared/types'
+import { useProperties, type PropertiesState } from './useProperties'
 
-let listeners: Array<(reg: RegistryResponse) => void> = []
+let listeners: Array<(res: PropertiesResponse) => void> = []
 const offSpy = vi.fn()
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   api: {
-    registry: {
+    properties: {
       get: vi.fn(),
-      onChange: vi.fn((l: (reg: RegistryResponse) => void) => {
+      onChange: vi.fn((l: (res: PropertiesResponse) => void) => {
         listeners.push(l)
         return offSpy
       }),
@@ -29,18 +29,18 @@ vi.mock('../api', async (importOriginal) => ({
 
 import { api } from '../api'
 
-const getFn = vi.mocked(api.registry.get)
+const getFn = vi.mocked(api.properties.get)
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-const response = (root: string, extra: Partial<RegistryResponse> = {}): RegistryResponse => ({ root, version: 1, types: {}, properties: {}, ...extra })
+const response = (root: string, extra: Partial<PropertiesResponse> = {}): PropertiesResponse => ({ root, version: 1, properties: {}, ...extra })
 
 let root: Root | null = null
 let container: HTMLElement | null = null
-let state: RegistryState
+let state: PropertiesState
 
 function Probe({ vaultRoot }: { vaultRoot: string }) {
-  state = useRegistry(vaultRoot)
+  state = useProperties(vaultRoot)
   return null
 }
 
@@ -62,8 +62,8 @@ async function flush(): Promise<void> {
   })
 }
 
-function broadcast(reg: RegistryResponse): void {
-  act(() => listeners.forEach((l) => l(reg)))
+function broadcast(res: PropertiesResponse): void {
+  act(() => listeners.forEach((l) => l(res)))
 }
 
 beforeEach(() => {
@@ -79,52 +79,52 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-describe('useRegistry', () => {
-  it('is pending on mount, then ready with the fetched registry — an untouched vault is empty, never an error', async () => {
+describe('useProperties', () => {
+  it('is pending on mount, then ready with the fetched declarations — an untouched vault is empty, never an error', async () => {
     mount()
     expect(state.status).toBe('pending')
-    expect(state.registry).toBeNull()
+    expect(state.properties).toBeNull()
     await flush()
     expect(getFn).toHaveBeenCalledWith('/vault')
     expect(state.status).toBe('ready')
-    expect(state.registry).toEqual({ root: '/vault', version: 1, types: {}, properties: {} })
+    expect(state.properties).toEqual({ root: '/vault', version: 1, properties: {} })
     expect(state.error).toBeNull()
   })
 
-  it('a failed fetch becomes status error with the message; a corrupt registry is NOT a fetch error', async () => {
+  it('a failed fetch becomes status error with the message; a corrupt file is NOT a fetch error', async () => {
     getFn.mockRejectedValue(new Error('bridge gone'))
     mount()
     await flush()
     expect(state.status).toBe('error')
     expect(state.error).toBe('bridge gone')
-    expect(state.registry).toBeNull()
+    expect(state.properties).toBeNull()
 
-    getFn.mockResolvedValue(response('/other', { error: 'types.json is not valid JSON: x' }))
+    getFn.mockResolvedValue(response('/other', { error: 'properties.json is not valid JSON: x' }))
     rerender('/other')
     await flush()
-    expect(state.status).toBe('ready') // degraded, not failed: registry.error carries the string
-    expect(state.registry?.error).toContain('not valid JSON')
+    expect(state.status).toBe('ready') // degraded, not failed: the response's error carries the string
+    expect(state.properties?.error).toContain('not valid JSON')
   })
 
-  it('a broadcast for this root replaces the registry live; other roots are ignored', async () => {
+  it('a broadcast for this root replaces the declarations live; other roots are ignored', async () => {
     mount()
     await flush()
-    broadcast(response('/elsewhere', { types: { role: { properties: {} } } }))
-    expect(state.registry?.types.role).toBeUndefined()
-    broadcast(response('/vault', { types: { kpi: { properties: {} } } }))
+    broadcast(response('/elsewhere', { properties: { role: { kind: 'text' } } }))
+    expect(state.properties?.properties.role).toBeUndefined()
+    broadcast(response('/vault', { properties: { unit: { kind: 'text' } } }))
     expect(state.status).toBe('ready')
-    expect(state.registry?.types.kpi).toEqual({ properties: {} })
+    expect(state.properties?.properties.unit).toEqual({ kind: 'text' })
   })
 
   it('a broadcast landing before a slow initial get wins over it', async () => {
-    let resolve!: (r: RegistryResponse) => void
-    getFn.mockReturnValue(new Promise<RegistryResponse>((r) => (resolve = r)))
+    let resolve!: (r: PropertiesResponse) => void
+    getFn.mockReturnValue(new Promise<PropertiesResponse>((r) => (resolve = r)))
     mount()
-    broadcast(response('/vault', { types: { kpi: { properties: {} } } }))
+    broadcast(response('/vault', { properties: { unit: { kind: 'text' } } }))
     expect(state.status).toBe('ready')
     resolve(response('/vault')) // the stale fetch must not overwrite the fresher broadcast
     await flush()
-    expect(state.registry?.types.kpi).toEqual({ properties: {} })
+    expect(state.properties?.properties.unit).toEqual({ kind: 'text' })
   })
 
   it('a root change resets to pending and fetches the new root', async () => {
@@ -133,10 +133,10 @@ describe('useRegistry', () => {
     getFn.mockResolvedValue(response('/other', { properties: { related: { kind: 'multi-link' } } }))
     rerender('/other')
     expect(state.status).toBe('pending')
-    expect(state.registry).toBeNull()
+    expect(state.properties).toBeNull()
     await flush()
     expect(getFn).toHaveBeenLastCalledWith('/other')
-    expect(state.registry?.properties.related).toEqual({ kind: 'multi-link' })
+    expect(state.properties?.properties.related).toEqual({ kind: 'multi-link' })
   })
 
   it('unmount unsubscribes from onChange', async () => {

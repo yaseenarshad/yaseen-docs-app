@@ -10,12 +10,12 @@ import { revealItem } from '../fs/reveal'
 import { tree } from '../fs/tree'
 import type { Store } from '../store'
 import { getColdStartDiff, getIndex } from '../vaultIndex'
-import type { WindowRegistry } from '../windows'
+import type { WindowLookup } from '../windows'
 import { broadcastAll } from './broadcast'
 import { handle, handleWithEvent } from './envelope'
 
 /** The fs half of `window.yaseenDocs` (`dialog:pick-folder` lives in `./dialog`). */
-export function registerFsIpc(store: Store, windows: WindowRegistry): void {
+export function registerFsIpc(store: Store, windows: WindowLookup): void {
   handle(CH.fsTree, tree)
   handle(CH.fsRead, readFile)
   handle(CH.fsWrite, writeFile)
@@ -24,7 +24,7 @@ export function registerFsIpc(store: Store, windows: WindowRegistry): void {
   handle(CH.fsIndex, getIndex)
   // The cold-start reconcile diff (Links E1c, GRO-2242): the client's rename detector reads it
   // AFTER the first fs:index for the root. Null before the first build (and again once idle
-  // eviction drops the entry); the registry's honest-miss semantics ride through untouched —
+  // eviction drops the entry); the index cache's honest-miss semantics ride through untouched —
   // consumers gate on cacheStatus === 'hit'.
   handle(CH.fsColdDiff, async (root: unknown) => (typeof root === 'string' ? (getColdStartDiff(root) ?? null) : null))
   handle(CH.fsReadAsset, readAsset)

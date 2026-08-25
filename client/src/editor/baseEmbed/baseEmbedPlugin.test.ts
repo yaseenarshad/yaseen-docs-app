@@ -1,7 +1,7 @@
 /**
  * Base embeds in the editor (6A, GRO-2145): real editor (`createCrepe`), the `![[X.base]]` /
  * `![[X.base#View]]` paragraph gets a widget decoration (never a schema change), inspected via
- * the registry + DOM. The save-path guard matters most: an embed must round-trip byte-identically,
+ * the slot store + DOM. The save-path guard matters most: an embed must round-trip byte-identically,
  * and typing near it must NOT remount the widget DOM.
  */
 import { afterEach, describe, expect, it } from 'vitest'
@@ -9,14 +9,14 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
-import { BASE_EMBED_CLASS, createBaseEmbedRegistry, type BaseEmbedRegistry } from './baseEmbedPlugin'
+import { BASE_EMBED_CLASS, createBaseEmbedSlotStore, type BaseEmbedSlotStore } from './baseEmbedPlugin'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
-async function mount(markdown: string, registry: BaseEmbedRegistry) {
+async function mount(markdown: string, store: BaseEmbedSlotStore) {
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown, baseEmbeds: registry })
+  const crepe = createCrepe({ root, defaultValue: markdown, baseEmbeds: store })
   await crepe.create()
   mounted.push({ crepe, root })
   return { crepe, root }
@@ -34,8 +34,8 @@ afterEach(async () => {
 })
 
 async function roundTrip(markdown: string): Promise<string> {
-  const registry = createBaseEmbedRegistry()
-  const { crepe } = await mount(markdown, registry)
+  const store = createBaseEmbedSlotStore()
+  const { crepe } = await mount(markdown, store)
   return getMarkdownForSave(crepe)
 }
 
@@ -61,11 +61,11 @@ describe('base embed round-trip (decoration only, GRO-2145)', () => {
   })
 })
 
-describe('base embed widget (registry + DOM)', () => {
+describe('base embed widget (slot store + DOM)', () => {
   it('decorates the paragraph with a widget beneath the text', async () => {
-    const registry = createBaseEmbedRegistry()
-    const { root } = await mount('Intro\n\n![[Topics.base]]\n\nOutro\n', registry)
-    const slots = registry.list()
+    const store = createBaseEmbedSlotStore()
+    const { root } = await mount('Intro\n\n![[Topics.base]]\n\nOutro\n', store)
+    const slots = store.list()
     expect(slots).toHaveLength(1)
     expect(slots[0].target).toBe('Topics.base')
     expect(slots[0].viewName).toBeNull()
@@ -77,52 +77,52 @@ describe('base embed widget (registry + DOM)', () => {
   })
 
   it('#View is carried on the slot', async () => {
-    const registry = createBaseEmbedRegistry()
-    await mount('![[Topics.base#Board]]\n', registry)
-    expect(registry.list()).toHaveLength(1)
-    expect(registry.list()[0].viewName).toBe('Board')
+    const store = createBaseEmbedSlotStore()
+    await mount('![[Topics.base#Board]]\n', store)
+    expect(store.list()).toHaveLength(1)
+    expect(store.list()[0].viewName).toBe('Board')
   })
 
   it('a paragraph with two base embeds gets no widget', async () => {
-    const registry = createBaseEmbedRegistry()
-    await mount('![[A.base]] and ![[B.base]]\n', registry)
-    expect(registry.list()).toHaveLength(0)
+    const store = createBaseEmbedSlotStore()
+    await mount('![[A.base]] and ![[B.base]]\n', store)
+    expect(store.list()).toHaveLength(0)
   })
 
   it('non-base embeds and wikilinks get no widget', async () => {
-    const registry = createBaseEmbedRegistry()
-    await mount('![[note]] and ![[img.png]] and [[Topics.base]]\n', registry)
-    expect(registry.list()).toHaveLength(0)
+    const store = createBaseEmbedSlotStore()
+    await mount('![[note]] and ![[img.png]] and [[Topics.base]]\n', store)
+    expect(store.list()).toHaveLength(0)
   })
 
   it('two embed paragraphs get one widget each', async () => {
-    const registry = createBaseEmbedRegistry()
-    await mount('![[A.base]]\n\n![[B.base]]\n', registry)
-    expect(registry.list().map((s) => s.target)).toEqual(['A.base', 'B.base'])
+    const store = createBaseEmbedSlotStore()
+    await mount('![[A.base]]\n\n![[B.base]]\n', store)
+    expect(store.list().map((s) => s.target)).toEqual(['A.base', 'B.base'])
   })
 
   it('typing near the embed keeps the SAME widget DOM node (no remount)', async () => {
-    const registry = createBaseEmbedRegistry()
-    const { crepe, root } = await mount('Intro\n\n![[Topics.base]]\n\nOutro\n', registry)
-    const dom = registry.list()[0].dom
+    const store = createBaseEmbedSlotStore()
+    const { crepe, root } = await mount('Intro\n\n![[Topics.base]]\n\nOutro\n', store)
+    const dom = store.list()[0].dom
     const view = viewOf(crepe)
     // type into the first paragraph, then directly inside the embed paragraph (before the `!`)
     view.dispatch(view.state.tr.insertText('x', 2))
     const embedParaStart = view.state.doc.content.child(0).nodeSize // the embed paragraph node's position
     view.dispatch(view.state.tr.insertText('y', embedParaStart + 1))
-    expect(registry.list()).toHaveLength(1)
-    expect(registry.list()[0].dom).toBe(dom)
+    expect(store.list()).toHaveLength(1)
+    expect(store.list()[0].dom).toBe(dom)
     expect(dom.isConnected).toBe(true)
     expect(root.querySelectorAll(`.${BASE_EMBED_CLASS}`)).toHaveLength(1)
   })
 
   it('deleting the embed text removes the widget', async () => {
-    const registry = createBaseEmbedRegistry()
-    const { crepe, root } = await mount('![[Topics.base]]\n', registry)
-    const dom = registry.list()[0].dom
+    const store = createBaseEmbedSlotStore()
+    const { crepe, root } = await mount('![[Topics.base]]\n', store)
+    const dom = store.list()[0].dom
     const view = viewOf(crepe)
     view.dispatch(view.state.tr.delete(1, view.state.doc.content.child(0).nodeSize - 1))
-    expect(registry.list()).toHaveLength(0)
+    expect(store.list()).toHaveLength(0)
     expect(dom.isConnected).toBe(false)
     expect(root.querySelectorAll(`.${BASE_EMBED_CLASS}`)).toHaveLength(0)
   })

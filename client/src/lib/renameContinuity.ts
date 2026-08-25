@@ -4,7 +4,7 @@
  * unmounts its editor, and the unmount flush would write the buffer back to the OLD path,
  * resurrecting the file the rename or delete just removed.
  *
- * Two flows share the handle registry below, and the difference between them IS the point:
+ * Two flows share the handle map below, and the difference between them IS the point:
  * a RENAME captures the dirty buffer, retires the old handle and stashes the buffer under
  * the new path (it has somewhere to travel to); a DELETE retires ONLY (it does not), because
  * a stashed buffer would be a live resurrection vector for whatever mounts there next.

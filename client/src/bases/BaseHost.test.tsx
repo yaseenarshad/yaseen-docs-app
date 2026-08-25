@@ -16,8 +16,8 @@ vi.mock('../api', async (importOriginal) => ({
     readFile: vi.fn(),
     writeFile: vi.fn(),
     index: vi.fn(),
-    // The swapped useRegistry (GRO-2201): an empty ready registry, like an untouched vault.
-    registry: { get: vi.fn(async (root: string) => ({ root, version: 1, types: {}, properties: {} })), onChange: vi.fn(() => () => undefined) },
+    // What `useProperties` reads (YAZ-835): a ready, empty response, like an untouched vault.
+    properties: { get: vi.fn(async (root: string) => ({ root, version: 1, properties: {} })), onChange: vi.fn(() => () => undefined) },
   },
 }))
 

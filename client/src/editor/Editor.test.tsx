@@ -18,8 +18,8 @@ import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikil
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  // `index` / `registry` are only reached by the `.base` branch (BaseHost) — see the Links D block.
-  api: { readFile: vi.fn(), writeFile: vi.fn(), index: vi.fn(), registry: { get: vi.fn(), onChange: vi.fn() } },
+  // `index` / `properties` are only reached by the `.base` branch (BaseHost) — see the Links D block.
+  api: { readFile: vi.fn(), writeFile: vi.fn(), index: vi.fn(), properties: { get: vi.fn(), onChange: vi.fn() } },
 }))
 
 vi.mock('./createCrepe', () => {
@@ -320,8 +320,8 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
 
   it('a `.base` file gets no section (v1: what a base "mentions" is a Bases question)', async () => {
     vi.mocked(api.index).mockResolvedValue({ root: '/vault', records: [], generatedAt: 1 })
-    vi.mocked(api.registry.get).mockResolvedValue({ root: '/vault', version: 1, types: {}, properties: {} })
-    vi.mocked(api.registry.onChange).mockReturnValue(() => undefined)
+    vi.mocked(api.properties.get).mockResolvedValue({ root: '/vault', version: 1, properties: {} })
+    vi.mocked(api.properties.onChange).mockReturnValue(() => undefined)
     const source = createWikilinkResolveSource()
     const BASE_PATH = '/vault/Notes.base'
     const el = await mount('views:\n  - type: table\n    name: Table\n', 1, { path: BASE_PATH, wikilinks: source })

@@ -131,9 +131,9 @@ function installBridge(state: AppState, identity: WindowIdentity, files: Record<
         return () => fileDeleted.delete(l)
       }),
     },
-    // Empty registry (GRO-2202): the sidebar reads it for "New ▸"; empty = no menu change.
-    registry: {
-      get: vi.fn(async (r: string) => ({ root: r, version: 1, types: {}, properties: {} })),
+    // No declarations (GRO-2202): the sidebar reads them for "New ▸"; empty = no menu change.
+    properties: {
+      get: vi.fn(async (r: string) => ({ root: r, version: 1, properties: {} })),
       onChange: vi.fn(() => () => undefined),
     },
   }

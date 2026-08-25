@@ -7,10 +7,10 @@
  *
  * TOLERANT PARSING (locked): this never throws and never blocks. Every bad shape becomes a
  * one-line `problem` plus a safe default, so a hand-edited page always renders — the same
- * report-don't-block rule the deleted type registry followed for its own stored folder. A
+ * report-don't-block rule the deleted type system followed for its own stored folder. A
  * flagged page with no settings key at all is exactly that, with zero problems.
  */
-import { REGISTRY_FOLDER, REGISTRY_PROPERTY_KINDS, type IndexRecord, type RegistryPropertyKind } from '@shared/types'
+import { FOLDER_NAME, PROPERTY_KINDS, type IndexRecord, type PropertyKind } from '@shared/types'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import type { BaseView } from './baseFile'
 import { writeProperty } from './writeProperty'
@@ -18,12 +18,12 @@ import { writeProperty } from './writeProperty'
 /** The one reserved key this module owns; nothing else may name it. */
 const SETTINGS_KEY = 'folder_page_settings'
 
-/** A column the folder page declares — the registry's own vocabulary (`RegistryPropertyDef`). */
+/** A column the folder page declares — this module's own vocabulary, shaped like `PropertyDecl`. */
 export interface ColumnDecl {
-  kind: RegistryPropertyKind
+  kind: PropertyKind
   /** link/multi-link constraint. An opaque string HERE; its `[[X]]` belongs-to meaning is 2B's. */
   target?: string
-  /** Report-only metadata, kept as-is when boolean — it gates nothing, like the registry's. */
+  /** Report-only metadata, kept as-is when boolean — it gates nothing, like a vault-wide declaration's. */
   required?: boolean
 }
 
@@ -43,7 +43,7 @@ export const DEFAULT_VIEWS: readonly BaseView[] = [
   { type: 'table', name: 'Table' },
 ]
 
-const KINDS = new Set<string>(REGISTRY_PROPERTY_KINDS)
+const KINDS = new Set<string>(PROPERTY_KINDS)
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
@@ -67,7 +67,7 @@ function readColumns(raw: unknown, problems: string[]): Record<string, ColumnDec
       problems.push(`${SETTINGS_KEY}.columns.${name} has an unknown kind — ignoring that column`)
       continue
     }
-    const column: ColumnDecl = { kind: value.kind as RegistryPropertyKind }
+    const column: ColumnDecl = { kind: value.kind as PropertyKind }
     if (typeof value.target === 'string') column.target = value.target
     else if (value.target !== undefined) problems.push(`${SETTINGS_KEY}.columns.${name}.target must be text — ignoring it`)
     if (typeof value.required === 'boolean') column.required = value.required
@@ -97,10 +97,10 @@ function readViews(raw: unknown, problems: string[]): BaseView[] {
   return views.length > 0 ? views : defaultViews()
 }
 
-/** The registry's grammar and the registry's rule: unusable at rest reads as absent. */
+/** The shared folder grammar, and its rule: unusable at rest reads as absent. */
 function readFolder(raw: unknown, problems: string[]): string | undefined {
   if (raw === undefined) return undefined
-  if (typeof raw === 'string' && REGISTRY_FOLDER.test(raw)) return raw
+  if (typeof raw === 'string' && FOLDER_NAME.test(raw)) return raw
   problems.push(`${SETTINGS_KEY}.folder must be a root-relative folder name — ignoring it`)
   return undefined
 }

@@ -1,5 +1,5 @@
 import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useMemo, useRef, useState } from 'react'
-import type { IndexRecord, RegistryResponse } from '@shared/types'
+import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import type { BaseDefinition, BaseView } from '../baseFile'
 import { belongsToBasenames } from '../../links/folderPages'
 import { type Group, type Row, propertyKeys, propertyLabel, resolverFor } from '../engine'
@@ -35,8 +35,8 @@ export interface TableViewProps {
   onNewInGroup?: (group: Group) => void
   /** Assigned property types from `.obsidian/types.json`, for editor inference (5B, GRO-2142). */
   types?: Record<string, string>
-  /** The vault's registry (5E, GRO-2217): vault-wide editor inference and relation targets. */
-  registry?: RegistryResponse | null
+  /** The vault's property declarations (5E, GRO-2217): vault-wide editor inference and relation targets. */
+  properties?: PropertiesResponse | null
   /** Embed chrome (6A, GRO-2145): no cell editing, no column resize, no summary picking, no drag. */
   readOnly?: boolean
 }
@@ -67,7 +67,7 @@ type Line = { header: Group; gk: string } | { row: Row; r: number; g: Group | nu
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup, types, registry = null, readOnly = false }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup, types, properties = null, readOnly = false }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   // Row drag between sections (5C, GRO-2143); disabled without groups, and in read-only embeds.
   const dnd = useGroupDrag(groups === null || readOnly ? null : groupByKey(view), onMoveToGroup)
@@ -81,7 +81,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   // memoised so scroll/drag re-renders skip the per-column row walk (7B, GRO-2148)
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
   const bares = useMemo(() => keys.map((k) => (canonicalKey(k).startsWith('note.') ? canonicalKey(k).slice(5) : null)), [keys])
-  const typings = useMemo(() => keys.map((k) => columnTyping(k, rowRecords, types, registry)), [keys, rowRecords, types, registry])
+  const typings = useMemo(() => keys.map((k) => columnTyping(k, rowRecords, types, properties)), [keys, rowRecords, types, properties])
   const basenames = useMemo(() => records.map((r) => r.basename), [records])
   // Relation columns narrow the link picker to the pages of the folder page the target names
   // (YAZ-836: `belongsToBasenames` succeeded the type-keyed helper); a target naming no folder

@@ -1,7 +1,7 @@
 /**
  * Folder page settings (YAZ-830): the ONE door to `folder_page_settings`. Each case pins a
  * locked rule — tolerant parsing (report, never block, never throw), DEFAULT_VIEWS outline-first,
- * the 7 registry kinds, parseBase's own view assertion mirrored, the `REGISTRY_FOLDER` parking
+ * the 7 property kinds, parseBase's own view assertion mirrored, the `FOLDER_NAME` parking
  * bin, and the [D5] ordering rule. Resolution is handed IN, keyed exactly like the real resolver
  * (`makeResolver`, `bases/engine.ts`), same as folderPages.test.ts.
  */
@@ -88,7 +88,7 @@ describe('defaults (Q7): a flagged page always has its two skins, outline first'
   })
 })
 
-describe("columns: the 7 registry kinds, report-don't-block", () => {
+describe("columns: the 7 property kinds, report-don't-block", () => {
   it('parses declared columns, keeping kind, target and a boolean required', () => {
     const settings = settingsOf({
       columns: {
@@ -175,7 +175,7 @@ describe('views: parseBase\'s own assertion, mirrored', () => {
   })
 })
 
-describe('folder: the parking bin, validated by REGISTRY_FOLDER', () => {
+describe('folder: the parking bin, validated by FOLDER_NAME', () => {
   it('keeps a usable folder', () => {
     const settings = settingsOf({ folder: 'metrics' })
     expect(settings.folder).toBe('metrics')

@@ -51,13 +51,13 @@ afterAll(async () => {
   await rm(storeDir, { recursive: true, force: true })
 })
 
-/** Sender → window id registry fake (E1b root guard); tests point `senderWinId` at a store entry. */
+/** Sender → window id lookup fake (E1b root guard); tests point `senderWinId` at a store entry. */
 let senderWinId: string | undefined
-const registry = { idFor: () => senderWinId }
+const windows = { idFor: () => senderWinId }
 
 describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
-    registerFsIpc(store, registry)
+    registerFsIpc(store, windows)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsColdDiff, CH.fsDelete, CH.fsIndex, CH.fsRead, CH.fsReadAsset, CH.fsRename, CH.fileRepairRename, CH.fsTree, CH.fsWrite, CH.shellReveal].sort())
   })

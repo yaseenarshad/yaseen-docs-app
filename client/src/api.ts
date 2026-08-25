@@ -1,4 +1,4 @@
-import type { AssetResponse, BridgeError, BridgeErrorCode, ColdStartDiffResponse, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileResponse, FileWriteRequest, FileWriteResponse, IndexResponse, PickFolderResponse, RegistryPropertyDef, RegistryResponse, RegistryScope, RegistryTypeDef, RenameFileRequest, RenameFileResponse, RevealRequest, RevealResponse, TreeResponse } from '@shared/types'
+import type { AssetResponse, BridgeError, BridgeErrorCode, ColdStartDiffResponse, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileResponse, FileWriteRequest, FileWriteResponse, IndexResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RevealRequest, RevealResponse, TreeResponse } from '@shared/types'
 
 /** Typed failure from the main process (see docs/CONTRACTS.md "Bridge API"). */
 export class BridgeRequestError extends Error {
@@ -52,13 +52,11 @@ export const api = {
   readAsset: (root: string, ref: string) => call<AssetResponse>(() => window.yaseenDocs.readAsset(root, ref)),
   /** Native open-directory dialog parented to this window; resolves when the user picks or cancels. */
   pickFolder: () => call<PickFolderResponse>(() => window.yaseenDocs.pickFolder()),
-  /** Type & property registry over `.yaseendocs/types.json` (Bible A, GRO-2201); consumed via `useRegistry`. */
-  registry: {
-    get: (root: string) => call<RegistryResponse>(() => window.yaseenDocs.registry.get(root)),
-    setType: (root: string, name: string, def: Partial<RegistryTypeDef>) => call<void>(() => window.yaseenDocs.registry.setType(root, name, def)),
-    removeType: (root: string, name: string) => call<void>(() => window.yaseenDocs.registry.removeType(root, name)),
-    setProperty: (root: string, scope: RegistryScope, name: string, def: RegistryPropertyDef) => call<void>(() => window.yaseenDocs.registry.setProperty(root, scope, name, def)),
-    removeProperty: (root: string, scope: RegistryScope, name: string) => call<void>(() => window.yaseenDocs.registry.removeProperty(root, scope, name)),
-    onChange: (listener: (registry: RegistryResponse) => void) => window.yaseenDocs.registry.onChange(listener),
+  /** Vault-wide property declarations over `.yaseendocs/properties.json` (YAZ-835); consumed via `useProperties`. */
+  properties: {
+    get: (root: string) => call<PropertiesResponse>(() => window.yaseenDocs.properties.get(root)),
+    setProperty: (root: string, name: string, def: PropertyDecl) => call<void>(() => window.yaseenDocs.properties.setProperty(root, name, def)),
+    removeProperty: (root: string, name: string) => call<void>(() => window.yaseenDocs.properties.removeProperty(root, name)),
+    onChange: (listener: (properties: PropertiesResponse) => void) => window.yaseenDocs.properties.onChange(listener),
   },
 }

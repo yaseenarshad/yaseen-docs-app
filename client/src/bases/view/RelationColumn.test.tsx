@@ -1,7 +1,7 @@
 /**
  * Relation columns end to end (5E, GRO-2217; contract GRO-2120 comment 73479ea3 §4–§5), after
  * YAZ-836 deleted the type system: the Properties menu's relation editor saves `{kind, target}`
- * through `registry.setProperty` to the VAULT properties — always, whatever the view filters on,
+ * through `properties.setProperty` to the VAULT-WIDE declarations — always, whatever the view filters on,
  * and with no type-name suggestions behind the target field; the cell's link picker narrows to
  * the pages of the FOLDER PAGE the target names (`belongsToBasenames`, successor to the deleted
  * type-keyed helper), falling back to all pages when it names none; multi-link is the chips
@@ -11,10 +11,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { IndexRecord, RegistryResponse } from '@shared/types'
+import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { parseBase, type ParsedBase } from '../baseFile'
 import { BaseView, type BaseViewProps } from '../BaseView'
-import { registryStub, resetRegistryStub } from '../registryStub'
+import { propertiesStub, resetPropertiesStub } from '../propertiesStub'
 
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn() }))
 import { writeProperty } from '../writeProperty'
@@ -68,16 +68,12 @@ const ORDER = '    order:\n      - file.name\n      - note.owner\n      - note.f
 const KPI_BASE = `filters: page_type == "kpi"\nviews:\n  - type: table\n    name: T\n${ORDER}`
 const UNFILTERED_BASE = `views:\n  - type: table\n    name: T\n${ORDER}`
 
-const EMPTY_REG: RegistryResponse = { root: '/vault', version: 0, types: {}, properties: {} }
+const EMPTY_DECLS: PropertiesResponse = { root: '/vault', version: 0, properties: {} }
 
-/**
- * A registry declaring both relations VAULT-WIDE — the only scope left — targeting folder pages.
- * `types` stays empty: a type schema is never read (3A reshapes the response itself).
- */
-const REG: RegistryResponse = {
+/** Both relations declared VAULT-WIDE — the only scope there is — targeting folder pages. */
+const DECLS: PropertiesResponse = {
   root: '/vault',
   version: 1,
-  types: {},
   properties: {
     owner: { kind: 'link', target: 'People' },
     funnels: { kind: 'multi-link', target: 'Funnels' },
@@ -107,7 +103,7 @@ function mount(text: string, props: Partial<BaseViewProps> = {}) {
           thisFile={null}
           records={RECORDS}
           indexStatus="ready"
-          registry={EMPTY_REG}
+          properties={EMPTY_DECLS}
           onOpenFile={onOpenFile}
           {...props}
         />,
@@ -121,8 +117,8 @@ function mount(text: string, props: Partial<BaseViewProps> = {}) {
 beforeEach(() => {
   write.mockReset()
   write.mockResolvedValue({ mtime: 1 })
-  // GRO-2201 swapped `registry` to the real bridge; the 5E stub now plays the bridge in tests.
-  Object.defineProperty(window, 'yaseenDocs', { value: { registry: registryStub }, configurable: true, writable: true })
+  // `useProperties` reads the real bridge; the stub plays it in tests.
+  Object.defineProperty(window, 'yaseenDocs', { value: { properties: propertiesStub }, configurable: true, writable: true })
 })
 
 afterEach(() => {
@@ -130,7 +126,7 @@ afterEach(() => {
   root = null
   container?.remove()
   container = null
-  resetRegistryStub()
+  resetPropertiesStub()
   delete (window as unknown as Record<string, unknown>).yaseenDocs
 })
 
@@ -188,9 +184,8 @@ describe('column menu relation flow', () => {
     setValue(byLabel<HTMLInputElement>(el, 'Target type'), 'People')
     click(byLabel(el, 'Save relation'))
     await flush()
-    const res = await registryStub.get('/vault')
+    const res = await propertiesStub.get('/vault')
     expect(res.properties.owner).toEqual({ kind: 'link', target: 'People' })
-    expect(res.types).toEqual({})
   })
 
   it('Multiple → multi-link, saved to vault properties and labelled so', async () => {
@@ -201,20 +196,19 @@ describe('column menu relation flow', () => {
     setValue(byLabel<HTMLInputElement>(el, 'Target type'), 'Funnels')
     click(byLabel(el, 'Save relation'))
     await flush()
-    const res = await registryStub.get('/vault')
+    const res = await propertiesStub.get('/vault')
     expect(res.properties.funnels).toEqual({ kind: 'multi-link', target: 'Funnels' })
-    expect(res.types).toEqual({})
   })
 
   it('the target is free text with no suggestion list — the type-name datalist died with the types', () => {
-    const { el } = mount(KPI_BASE, { registry: REG })
+    const { el } = mount(KPI_BASE, { properties: DECLS })
     openRelation(el, 'owner')
     expect(el.querySelector('datalist')).toBeNull()
     expect(byLabel<HTMLInputElement>(el, 'Target type').getAttribute('list')).toBeNull()
   })
 
   it('an existing declaration pre-fills the toggle and target', () => {
-    const { el } = mount(KPI_BASE, { registry: REG })
+    const { el } = mount(KPI_BASE, { properties: DECLS })
     openRelation(el, 'funnels') // vault-wide multi-link → the Funnels folder page
     expect(byLabel<HTMLInputElement>(el, 'Multiple').checked).toBe(true)
     expect(byLabel<HTMLInputElement>(el, 'Target type').value).toBe('Funnels')
@@ -236,8 +230,8 @@ describe('column menu relation flow', () => {
 
 describe('constrained picker', () => {
   it('the link editor offers the target folder page\'s pages and commits the wiki-link through writeProperty', () => {
-    const { el } = mount(KPI_BASE, { registry: REG })
-    open(el, 1, 1) // Churn's empty owner cell — typed link by the registry alone
+    const { el } = mount(KPI_BASE, { properties: DECLS })
+    open(el, 1, 1) // Churn's empty owner cell — typed link by the declaration alone
     const input = byLabel<HTMLInputElement>(el, 'Edit owner')
     setValue(input, '[[')
     expect(options(el)).toEqual(['Alice', 'Bob']) // the pages inside [[People]]
@@ -249,8 +243,8 @@ describe('constrained picker', () => {
   it('a target naming no folder page falls back to ALL basenames — never an error', () => {
     // This is also the mid-wave degradation: targets still spelled as old TYPE names name no
     // folder page, so their columns widen to every page until 5.1 re-points them.
-    const ghost: RegistryResponse = { ...REG, properties: { owner: { kind: 'link', target: 'person' } } }
-    const { el } = mount(KPI_BASE, { registry: ghost })
+    const ghost: PropertiesResponse = { ...DECLS, properties: { owner: { kind: 'link', target: 'person' } } }
+    const { el } = mount(KPI_BASE, { properties: ghost })
     open(el, 1, 1)
     setValue(byLabel<HTMLInputElement>(el, 'Edit owner'), '[[')
     expect(options(el)).toEqual(ALL_NAMES)
@@ -259,7 +253,7 @@ describe('constrained picker', () => {
 
 describe('multi-link cells', () => {
   it('the chips editor completes constrained suggestions and commits a LIST of [[…]] strings', () => {
-    const { el } = mount(KPI_BASE, { registry: REG })
+    const { el } = mount(KPI_BASE, { properties: DECLS })
     open(el, 0, 2) // Revenue's empty funnels cell — multi-link vault-wide
     const input = byLabel<HTMLInputElement>(el, 'Edit funnels')
     setValue(input, '[[')
@@ -273,7 +267,7 @@ describe('multi-link cells', () => {
   })
 
   it('Esc cancels without a write', () => {
-    const { el } = mount(KPI_BASE, { registry: REG })
+    const { el } = mount(KPI_BASE, { properties: DECLS })
     open(el, 0, 2)
     press(byLabel(el, 'Edit funnels'), 'Escape')
     expect(write).not.toHaveBeenCalled()
@@ -282,15 +276,15 @@ describe('multi-link cells', () => {
 
 describe('round trip and degradation', () => {
   it('a relation value renders as a link chip, like any wiki-link property today', () => {
-    const { el } = mount(KPI_BASE, { registry: REG })
+    const { el } = mount(KPI_BASE, { properties: DECLS })
     const chip = q<HTMLElement>(cell(el, 0, 1), '.base-table__chip--link')
     expect(chip.textContent).toBe('Alice')
   })
 
-  it('a registry error string surfaces as an alert while typing degrades to inference', () => {
-    const broken: RegistryResponse = { root: '/vault', version: 0, types: {}, properties: {}, error: 'types.json: bad JSON' }
-    const { el } = mount(KPI_BASE, { registry: broken })
-    expect([...el.querySelectorAll('[role="alert"]')].some((n) => n.textContent?.includes('types.json: bad JSON'))).toBe(true)
+  it('an error string surfaces as an alert while typing degrades to inference', () => {
+    const broken: PropertiesResponse = { root: '/vault', version: 0, properties: {}, error: 'properties.json: bad JSON' }
+    const { el } = mount(KPI_BASE, { properties: broken })
+    expect([...el.querySelectorAll('[role="alert"]')].some((n) => n.textContent?.includes('properties.json: bad JSON'))).toBe(true)
     open(el, 0, 1) // owner: [[Alice]] — value inference still gives the link editor
     expect(byLabel<HTMLInputElement>(el, 'Edit owner').value).toBe('[[Alice]]')
   })

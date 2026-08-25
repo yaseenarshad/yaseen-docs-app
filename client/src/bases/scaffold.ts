@@ -11,7 +11,7 @@ import type { FolderPageSettings } from './folderPageSettings'
  * the new page is an ORDINARY page — the `folder_page` flag that makes a page a folder page is
  * never born here, only 4B's explicit "make this a folder page" writes it.
  *
- * The registry-driven half this file used to carry — the type scaffold, its templates, the
+ * The type-driven half this file used to carry — the type scaffold, its templates, the
  * starter base and the type-name helpers — died with the type system in YAZ-836: nothing
  * scaffolds a type identity property any more.
  */

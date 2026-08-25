@@ -2,7 +2,7 @@
  * Folder-page scaffolding (YAZ-832; 🔒 Q5/Q6 of YAZ-815): a new member is the folder page's
  * declared columns, empty, plus ONE `folder_pages` wikilink back to it, forced LAST — a template
  * at `.yaseendocs/templates/<folder page>.md` overrides key-by-key and may not displace the
- * birth. The registry/`page_type` half this file used to cover died with the type system
+ * birth. The declarations/`page_type` half this file used to cover died with the type system
  * (YAZ-836). `api` mocked like newNote.test.ts.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'

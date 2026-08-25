@@ -428,9 +428,9 @@ describe('search, count and body', () => {
     expect(el.querySelector('.base-row')).toBeNull()
   })
 
-  it('a corrupt type registry shows its error banner but the rows still render (report-never-block, Bible A)', () => {
-    const { el } = mount(YASIN_BASE, { registry: { root: '/vault', version: 1, types: {}, properties: {}, error: 'types.json is not valid JSON: x' } })
-    expect(q(el, '.base-view__error').textContent).toBe('Could not load the type registry: types.json is not valid JSON: x')
+  it('a corrupt properties.json shows its error banner but the rows still render (report-never-block)', () => {
+    const { el } = mount(YASIN_BASE, { properties: { root: '/vault', version: 1, properties: {}, error: 'properties.json is not valid JSON: x' } })
+    expect(q(el, '.base-view__error').textContent).toBe("Could not load the vault's property declarations: properties.json is not valid JSON: x")
     expect(rows(el).length).toBeGreaterThan(0)
   })
 })

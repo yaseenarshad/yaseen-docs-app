@@ -199,7 +199,7 @@ export interface MenuHost {
 type MenuWindows = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow'>
 
 export function createMenuHandlers(store: Store, windows: MenuWindows, host: MenuHost): MenuHandlers {
-  /** The focused window's `AppState.windows` entry (registry: `webContents.id` → entry id). */
+  /** The focused window's `AppState.windows` entry (lookup: `webContents.id` → entry id). */
   const focusedEntry = () => {
     const wc = host.focusedWebContents()
     const id = wc === undefined ? undefined : windows.idFor(wc)

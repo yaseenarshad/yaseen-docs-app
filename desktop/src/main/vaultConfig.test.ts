@@ -62,7 +62,7 @@ describe('readConfig', () => {
 })
 
 describe('readConfigDetailed', () => {
-  it('distinguishes absent from malformed without warning (the registry corrupt semantics need it)', async () => {
+  it('distinguishes absent from malformed without warning (the corrupt-file semantics need it)', async () => {
     const root = await makeRoot()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     expect(await readConfigDetailed(root, 'types.json')).toEqual({ state: 'absent' })

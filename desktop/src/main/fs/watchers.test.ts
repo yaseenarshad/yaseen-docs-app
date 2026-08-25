@@ -43,7 +43,7 @@ function openWatch(r: string): Sub {
   return sub
 }
 
-describe('watchers registry', () => {
+describe('shared watchers', () => {
   it('emits `ready` first and shares one watcher per root; late joiners get `ready` at once', async () => {
     const a = openWatch(root)
     expect(await a.next()).toEqual({ type: 'ready', root })

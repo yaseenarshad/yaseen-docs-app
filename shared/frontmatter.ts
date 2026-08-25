@@ -113,7 +113,7 @@ function serializeInner(doc: Document): string {
  * A whole frontmatter block built from scratch (5D seeds, new-entity scaffolds — GRO-2144,
  * Bible B GRO-2202): fences included, `{}` → ''. Values serialize through the same Document
  * API and options as `setFrontmatterProperty`; `null` prints Obsidian-style empty (`key:`),
- * not `key: null` — the shape the registry scaffold wants for empty scalar properties.
+ * not `key: null` — the shape a scaffold wants for empty scalar properties.
  */
 export function buildFrontmatter(properties: Record<string, unknown>): string {
   const entries = Object.entries(properties)

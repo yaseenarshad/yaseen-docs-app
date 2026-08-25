@@ -47,10 +47,10 @@ interface Entry {
 }
 
 /** One chokidar per root's dotfolder, shared by every subscriber; closed when the last one leaves. */
-const registry = new Map<string, Entry>()
+const entries = new Map<string, Entry>()
 
 export function activeConfigWatcherRoots(): string[] {
-  return [...registry.keys()]
+  return [...entries.keys()]
 }
 
 /** A config name is a plain `<stem>.json` basename: no separators, no `..`, nothing else. */
@@ -69,8 +69,8 @@ export type ConfigRead = { state: 'absent' } | { state: 'ok'; value: unknown } |
 
 /**
  * Like `readConfig`, but distinguishes a missing file from malformed JSON and leaves the
- * reporting to the caller — the registry's corrupt-file semantics need the difference
- * (GRO-2201: absent → empty registry, malformed → error surfaced, mutations refused).
+ * reporting to the caller — the corrupt-file semantics layered on top need the difference
+ * (absent → an empty result, malformed → error surfaced, mutations refused).
  * NEVER creates the folder.
  */
 export async function readConfigDetailed(root: string, name: string): Promise<ConfigRead> {
@@ -112,7 +112,7 @@ export async function writeConfig(root: string, name: string, value: unknown): P
     await mkdir(dir, { recursive: true })
     return atomicWrite(file, `${content}\n`)
   })
-  const entry = registry.get(r)
+  const entry = entries.get(r)
   if (entry !== undefined) {
     entry.ownMtimes.set(n, mtime)
     if (!entry.anchored) {
@@ -158,16 +158,16 @@ function createEntry(root: string): Entry {
 /** Subscribes to config changes under `root`; returns an unsubscribe fn. Attaching creates nothing on disk. */
 export function subscribeConfig(root: string, listener: Listener): () => void {
   const r = requireAbsPath(root, 'root')
-  let entry = registry.get(r)
+  let entry = entries.get(r)
   if (entry === undefined) {
     entry = createEntry(r)
-    registry.set(r, entry)
+    entries.set(r, entry)
   }
   entry.listeners.add(listener)
   return () => {
     entry.listeners.delete(listener)
-    if (entry.listeners.size === 0 && registry.get(r) === entry) {
-      registry.delete(r)
+    if (entry.listeners.size === 0 && entries.get(r) === entry) {
+      entries.delete(r)
       if (entry.timer !== null) clearTimeout(entry.timer)
       void entry.watcher.close()
     }

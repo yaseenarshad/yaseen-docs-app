@@ -5,7 +5,7 @@
  * live DOM — `renderPreview` sanitises to innerHTML, killing React), so this is a `$view`
  * replacement for `code_block` registered AFTER the Crepe features: `Object.fromEntries` in the
  * editor-view bootstrap makes the LAST entry win. For `language === 'base'` the node view is a
- * bare `div.base-code-block` slot (registry + CrepeHost portal, exactly 6A's pattern); for every
+ * bare `div.base-code-block` slot (slot store + CrepeHost portal, exactly 6A's pattern); for every
  * other language it delegates to the stock constructor found in `nodeViewCtx`, so those blocks
  * keep Crepe's CodeMirror block exactly as today.
  *
@@ -35,7 +35,7 @@ export interface BaseCodeBlockSlot {
   commit(text: string): void
 }
 
-export interface BaseCodeBlockRegistry {
+export interface BaseCodeBlockSlotStore {
   list(): readonly BaseCodeBlockSlot[]
   /** Wakes on every slot change (block added / removed / text changed). */
   subscribe(listener: () => void): () => void
@@ -47,7 +47,7 @@ export interface BaseCodeBlockRegistry {
   remove(key: string): void
 }
 
-export function createBaseCodeBlockRegistry(): BaseCodeBlockRegistry {
+export function createBaseCodeBlockSlotStore(): BaseCodeBlockSlotStore {
   let slots: BaseCodeBlockSlot[] = []
   let nextKey = 0
   const listeners = new Set<() => void>()
@@ -89,12 +89,12 @@ class BaseCodeBlockNodeView implements NodeView {
     private node: ProseNode,
     private readonly view: EditorView,
     private readonly getPos: () => number | undefined,
-    private readonly registry: BaseCodeBlockRegistry,
+    private readonly slotStore: BaseCodeBlockSlotStore,
   ) {
     this.dom = document.createElement('div')
     this.dom.className = BASE_CODE_BLOCK_CLASS
     this.dom.contentEditable = 'false'
-    this.key = registry.add({ text: node.textContent, dom: this.dom, commit: this.commit })
+    this.key = slotStore.add({ text: node.textContent, dom: this.dom, commit: this.commit })
   }
 
   private commit = (text: string): void => {
@@ -111,7 +111,7 @@ class BaseCodeBlockNodeView implements NodeView {
     // A language change away from `base` must rebuild the node view (back to CodeMirror).
     if (node.type !== this.node.type || node.attrs.language !== 'base') return false
     this.node = node
-    this.registry.setText(this.key, node.textContent)
+    this.slotStore.setText(this.key, node.textContent)
     return true
   }
 
@@ -125,14 +125,14 @@ class BaseCodeBlockNodeView implements NodeView {
   }
 
   destroy(): void {
-    this.registry.remove(this.key)
+    this.slotStore.remove(this.key)
   }
 }
 
-export function createBaseCodeBlock(registry: BaseCodeBlockRegistry) {
+export function createBaseCodeBlock(slotStore: BaseCodeBlockSlotStore) {
   return $view(codeBlockSchema.node, (ctx): NodeViewConstructor => {
     const wrapped: NodeViewConstructor = (node, view, getPos, decorations, innerDecorations) => {
-      if (node.attrs.language === 'base') return new BaseCodeBlockNodeView(node, view, getPos, registry)
+      if (node.attrs.language === 'base') return new BaseCodeBlockNodeView(node, view, getPos, slotStore)
       // Delegate every other language to the stock (Crepe CodeMirror) constructor. Both entries
       // share the id 'code_block'; ours is `wrapped`, so the other one is Crepe's.
       const stock = ctx.get(nodeViewCtx).find(([id, v]) => id === 'code_block' && v !== wrapped)?.[1] as

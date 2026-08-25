@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { FileApi, LinkApi, MenuApi, RegistryApi, ShellApi, StateApi, VaultConfigApi, WatchEvent, WindowApi, YaseenDocsApi } from '@shared/types'
+import type { FileApi, LinkApi, MenuApi, PropertiesApi, ShellApi, StateApi, VaultConfigApi, WatchEvent, WindowApi, YaseenDocsApi } from '@shared/types'
 import { CH } from '../channels'
 
 const exposed: Record<string, unknown> = {}
@@ -13,7 +13,7 @@ vi.mock('electron', () => ({
  * typecheck. `as const satisfies` keeps each tuple's literal type (a plain `readonly (keyof T)[]`
  * annotation would widen it and make `Exhaustive<>` vacuous) while still rejecting typos.
  */
-const TOP = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'coldDiff', 'readAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'file', 'shell', 'vaultConfig', 'registry'] as const satisfies readonly (keyof YaseenDocsApi)[]
+const TOP = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'coldDiff', 'readAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'file', 'shell', 'vaultConfig', 'properties'] as const satisfies readonly (keyof YaseenDocsApi)[]
 const STATE = ['get', 'setSettings', 'setSidebarCollapsed', 'setSidebarWidth', 'pushRecent', 'removeRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange'] as const satisfies readonly (keyof StateApi)[]
 const WINDOW = ['identity', 'setIdentity', 'open', 'duplicate', 'closeSelf', 'onFlush'] as const satisfies readonly (keyof WindowApi)[]
 const MENU = ['onOpenFolder', 'onOpenRoot', 'onSearch', 'onCloseTab', 'onNextTab', 'onPrevTab'] as const satisfies readonly (keyof MenuApi)[]
@@ -21,7 +21,7 @@ const LINK = ['onOpenFile', 'onNotice'] as const satisfies readonly (keyof LinkA
 const FILE = ['rename', 'repairRename', 'onRenamed', 'delete', 'onDeleted'] as const satisfies readonly (keyof FileApi)[]
 const SHELL = ['reveal'] as const satisfies readonly (keyof ShellApi)[]
 const VAULT_CONFIG = ['read', 'write', 'onChange'] as const satisfies readonly (keyof VaultConfigApi)[]
-const REGISTRY = ['get', 'setType', 'removeType', 'setProperty', 'removeProperty', 'onChange'] as const satisfies readonly (keyof RegistryApi)[]
+const PROPERTIES = ['get', 'setProperty', 'removeProperty', 'onChange'] as const satisfies readonly (keyof PropertiesApi)[]
 type Exhaustive<T, K extends readonly (keyof T)[]> = Exclude<keyof T, K[number]> extends never ? true : never
 const _top: Exhaustive<YaseenDocsApi, typeof TOP> = true
 const _state: Exhaustive<StateApi, typeof STATE> = true
@@ -31,8 +31,8 @@ const _link: Exhaustive<LinkApi, typeof LINK> = true
 const _file: Exhaustive<FileApi, typeof FILE> = true
 const _shell: Exhaustive<ShellApi, typeof SHELL> = true
 const _vaultConfig: Exhaustive<VaultConfigApi, typeof VAULT_CONFIG> = true
-const _registry: Exhaustive<RegistryApi, typeof REGISTRY> = true
-void [_top, _state, _window, _menu, _link, _file, _shell, _vaultConfig, _registry]
+const _properties: Exhaustive<PropertiesApi, typeof PROPERTIES> = true
+void [_top, _state, _window, _menu, _link, _file, _shell, _vaultConfig, _properties]
 
 describe('preload bridge', () => {
   it('installs window.yaseenDocs with every contract method', async () => {
@@ -47,7 +47,7 @@ describe('preload bridge', () => {
     for (const k of FILE) expect(typeof api.file[k], `file.${k}`).toBe('function')
     for (const k of SHELL) expect(typeof api.shell[k], `shell.${k}`).toBe('function')
     for (const k of VAULT_CONFIG) expect(typeof api.vaultConfig[k], `vaultConfig.${k}`).toBe('function')
-    for (const k of REGISTRY) expect(typeof api.registry[k], `registry.${k}`).toBe('function')
+    for (const k of PROPERTIES) expect(typeof api.properties[k], `properties.${k}`).toBe('function')
   })
 
   it('forwards link:open-file paths to the listener and unsubscribes cleanly (E1, GRO-2171)', async () => {

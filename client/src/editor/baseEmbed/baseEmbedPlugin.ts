@@ -4,7 +4,7 @@
  * `$prose` plugin decorates the paragraph containing EXACTLY ONE base embed with a widget right
  * after the paragraph — a decoration, never a schema change, so round-trip stays byte-identical.
  *
- * React ownership stays clean via a registry: the plugin only creates bare `div.base-embed`
+ * React ownership stays clean via a slot store: the plugin only creates bare `div.base-embed`
  * slots and keeps them in sync with the document; `CrepeHost` (Editor.tsx) subscribes and
  * portals `<BaseEmbed>` into each slot (resolution, loading and the read-only `<BaseView>` all
  * live on the React side).
@@ -41,7 +41,7 @@ interface FoundEmbed {
   viewName: string | null
 }
 
-export interface BaseEmbedRegistry {
+export interface BaseEmbedSlotStore {
   list(): readonly BaseEmbedSlot[]
   /** Wakes on every slot set change (embed added / removed / retargeted). */
   subscribe(listener: () => void): () => void
@@ -49,7 +49,7 @@ export interface BaseEmbedRegistry {
   sync(found: readonly Omit<FoundEmbed, 'pos'>[]): ReadonlyMap<string, HTMLElement>
 }
 
-export function createBaseEmbedRegistry(): BaseEmbedRegistry {
+export function createBaseEmbedSlotStore(): BaseEmbedSlotStore {
   let slots: BaseEmbedSlot[] = []
   const listeners = new Set<() => void>()
   return {
@@ -105,10 +105,10 @@ const pluginKey = new PluginKey<DecorationSet>('mdapp-base-embed')
 /** Same function object on every widget spec so decoration equality holds across rebuilds. */
 const stopEvent = () => true
 
-export function createBaseEmbed(registry: BaseEmbedRegistry) {
+export function createBaseEmbed(slotStore: BaseEmbedSlotStore) {
   const build = (doc: ProseNode): DecorationSet => {
     const found = findBaseEmbeds(doc)
-    const doms = registry.sync(found)
+    const doms = slotStore.sync(found)
     if (found.length === 0) return DecorationSet.empty
     return DecorationSet.create(
       doc,
@@ -133,7 +133,7 @@ export function createBaseEmbed(registry: BaseEmbedRegistry) {
         props: {
           decorations: (state) => pluginKey.getState(state),
         },
-        view: () => ({ destroy: () => void registry.sync([]) }),
+        view: () => ({ destroy: () => void slotStore.sync([]) }),
       }),
   )
 }

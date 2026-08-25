@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import type { IndexRecord, RegistryPropertyDef, RegistryResponse, RegistryScope } from '@shared/types'
+import type { IndexRecord, PropertiesResponse, PropertyDecl } from '@shared/types'
 import type { BaseDefinition, BaseView } from '../baseFile'
 import { propertyKeys, propertyLabel } from '../engine'
-import { registry as registryApi } from '../useRegistry'
+import { properties as propertiesApi } from '../useProperties'
 import type { Mutate } from './FilterMenu'
 import { canonicalKey } from './filterRows'
 import { PencilIcon, RelationIcon } from './icons'
@@ -16,9 +16,9 @@ export interface PropertiesMenuProps {
   viewIndex: number
   records: readonly IndexRecord[]
   onUpdate: Mutate
-  /** Relation columns (5E, GRO-2217): the vault root (null = unknown, no relation editor) and the registry. */
+  /** Relation columns (5E, GRO-2217): the vault root (null = unknown, no relation editor) and the vault-wide declarations. */
   root?: string | null
-  registry?: RegistryResponse | null
+  properties?: PropertiesResponse | null
 }
 
 const bare = (key: string): string => (key.startsWith('note.') ? key.slice(5) : key)
@@ -37,10 +37,10 @@ function entryKey(def: BaseDefinition, key: string): string {
  * `markerStyle` / `indentProperties` / `propertySeparator`, one write per change, the default
  * value DELETES the key (like SortMenu clearing `sort` / `groupBy`).
  * Note properties additionally offer the relation editor (5E, GRO-2217): single/multi toggle +
- * target, saved through `registry.setProperty` to the vault properties — the per-type scope
- * died with the type system (YAZ-836).
+ * target, saved through `properties.setProperty` to the vault-wide declarations — the per-type
+ * scope died with the type system (YAZ-836).
  */
-export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root = null, registry = null }: PropertiesMenuProps) {
+export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root = null, properties = null }: PropertiesMenuProps) {
   const [editing, setEditing] = useState<string | null>(null)
   const [relationFor, setRelationFor] = useState<string | null>(null)
   const shown = propertyKeys(def, view, records)
@@ -120,7 +120,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
                 </button>
               )}
               {relationFor === key && root !== null && (
-                <RelationEditor root={root} propKey={bare(key)} registry={registry} onDone={() => setRelationFor(null)} />
+                <RelationEditor root={root} propKey={bare(key)} properties={properties} onDone={() => setRelationFor(null)} />
               )}
               {on && (
                 <>
@@ -190,33 +190,32 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
 
 interface RelationEditorProps {
   root: string
-  /** Bare frontmatter key — registry declarations are keyed bare, like `.obsidian/types.json`. */
+  /** Bare frontmatter key — vault-wide declarations are keyed bare, like `.obsidian/types.json`. */
   propKey: string
-  registry: RegistryResponse | null
+  properties: PropertiesResponse | null
   onDone: () => void
 }
 
 /**
  * The relation editor for one column (5E, GRO-2217; contract GRO-2120 §4): single-vs-multiple
  * toggle (link vs multi-link) and a target — free text, since a target naming nothing just
- * widens the picker (§3). Saving calls `registry.setProperty(root, 'vault', key, { kind, target })`:
+ * widens the picker (§3). Saving calls `properties.setProperty(root, key, { kind, target })`:
  * the per-type scope (and the type-name suggestions that went with it) died with the type system
  * (YAZ-836) — 5.1 re-points the target at folder pages. Values are untouched: cells keep
  * committing wiki-link strings/lists through `writeProperty`.
  */
-function RelationEditor({ root, propKey, registry, onDone }: RelationEditorProps) {
-  const declared = registry?.properties[propKey]
+function RelationEditor({ root, propKey, properties, onDone }: RelationEditorProps) {
+  const declared = properties?.properties[propKey]
   const relation = declared?.kind === 'link' || declared?.kind === 'multi-link' ? declared : undefined
   const [multiple, setMultiple] = useState(relation?.kind === 'multi-link')
   const [target, setTarget] = useState(relation?.target ?? '')
   const [error, setError] = useState<string | null>(null)
 
   const save = () => {
-    const scope: RegistryScope = 'vault'
-    const def: RegistryPropertyDef = { kind: multiple ? 'multi-link' : 'link' }
+    const def: PropertyDecl = { kind: multiple ? 'multi-link' : 'link' }
     if (target.trim() !== '') def.target = target.trim()
     setError(null)
-    registryApi.setProperty(root, scope, propKey, def).then(onDone, (err: unknown) => {
+    propertiesApi.setProperty(root, propKey, def).then(onDone, (err: unknown) => {
       setError(err instanceof Error ? err.message : String(err))
     })
   }

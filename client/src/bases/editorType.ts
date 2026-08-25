@@ -1,10 +1,10 @@
-import type { IndexRecord, RegistryPropertyKind, RegistryResponse } from '@shared/types'
+import type { IndexRecord, PropertiesResponse, PropertyKind } from '@shared/types'
 import { canonicalKey } from './view/filterRows'
 
 /**
  * Editor type inference for inline cell editors (5B, GRO-2142). Locked precedence, as amended
  * by the 5E relation contract (GRO-2120 comment 1f28abb4 §5) and narrowed by YAZ-836 (the
- * type-scoped rung that used to sit above it died with the type system): a vault-wide registry
+ * type-scoped rung that used to sit above it died with the type system): a vault-wide property
  * declaration wins, then an explicit `.obsidian/types.json` assignment (an imported artifact
  * ranks below the vault's own schema); otherwise the note's own YAML value decides; a note
  * without the key borrows the dominant value type across the view's records; text is the final
@@ -14,7 +14,7 @@ import { canonicalKey } from './view/filterRows'
 
 export type EditorKind = 'text' | 'number' | 'checkbox' | 'date' | 'list' | 'link' | 'multi-link'
 
-/** Per-column typing facts; null = the column is read-only (`file.*` / `formula.*`). `target` rides along from a registry link/multi-link declaration to constrain the picker. */
+/** Per-column typing facts; null = the column is read-only (`file.*` / `formula.*`). `target` rides along from a declared link/multi-link property to constrain the picker. */
 export type ColumnTyping = { assigned: EditorKind | null; dominant: EditorKind | null; target?: string } | null
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}([T ].*)?$/
@@ -60,8 +60,8 @@ function dominantKind(records: readonly IndexRecord[], bare: string): EditorKind
   return best
 }
 
-/** `RegistryPropertyKind` → editor, 1:1 (contract §5; `multi-link` is the chips editor with link suggestions). */
-const REGISTRY_KIND: Record<RegistryPropertyKind, EditorKind> = {
+/** `PropertyKind` → editor, 1:1 (contract §5; `multi-link` is the chips editor with link suggestions). */
+const DECLARED_KIND: Record<PropertyKind, EditorKind> = {
   text: 'text',
   number: 'number',
   date: 'date',
@@ -72,21 +72,21 @@ const REGISTRY_KIND: Record<RegistryPropertyKind, EditorKind> = {
 }
 
 /**
- * The column-wide typing facts for `key` over the view's records, the registry's vault-wide
- * properties (5E) and the assigned `.obsidian/types.json` types.
+ * The column-wide typing facts for `key` over the view's records, the vault-wide property
+ * declarations (5E) and the assigned `.obsidian/types.json` types.
  */
 export function columnTyping(
   key: string,
   records: readonly IndexRecord[],
   types: Record<string, string> | undefined,
-  registry?: RegistryResponse | null,
+  properties?: PropertiesResponse | null,
 ): ColumnTyping {
   const c = canonicalKey(key)
   if (!c.startsWith('note.')) return null
   const bare = c.slice(5)
   const dominant = dominantKind(records, bare)
-  const declared = registry?.properties[bare]
-  if (declared !== undefined) return { assigned: REGISTRY_KIND[declared.kind], dominant, target: declared.target }
+  const declared = properties?.properties[bare]
+  if (declared !== undefined) return { assigned: DECLARED_KIND[declared.kind], dominant, target: declared.target }
   const name = types?.[bare]
   return { assigned: (name !== undefined ? ASSIGNED[name] : undefined) ?? null, dominant }
 }

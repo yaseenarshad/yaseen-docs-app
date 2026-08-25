@@ -9,7 +9,7 @@ import { takeRenameBuffer } from '../lib/renameContinuity'
 import { BaseParseError, parseBase, serializeBase, type ParsedBase } from './baseFile'
 import { BaseView } from './BaseView'
 import { useIndex } from './useIndex'
-import { useRegistry } from './useRegistry'
+import { useProperties } from './useProperties'
 import './bases.css'
 
 /** View mode when the file parses; raw-textarea fallback (with the parse error) when it does not. */
@@ -49,7 +49,7 @@ interface BaseHostProps {
  */
 export function BaseHost({ root, file, watch, onOpenFile }: BaseHostProps) {
   const index = useIndex(root, watch)
-  const registry = useRegistry(root)
+  const properties = useProperties(root)
   const [mode, setMode] = useState<BaseMode>(() => load(file.content))
   const modeRef = useRef(mode)
   const controllerRef = useRef<Autosave | null>(null)
@@ -141,7 +141,7 @@ export function BaseHost({ root, file, watch, onOpenFile }: BaseHostProps) {
             indexStatus={index.status}
             indexError={index.error ?? undefined}
             types={index.types}
-            registry={registry.registry}
+            properties={properties.properties}
             onOpenFile={onOpenFile}
           />
         ) : (

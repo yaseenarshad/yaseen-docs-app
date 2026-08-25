@@ -27,7 +27,7 @@ const entry: WindowEntry = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a
 let dir: string
 let store: Store
 let unregister: () => void
-/** The manager slice the IPC layer drives: the real registry, spies for the plumbing. */
+/** The manager slice the IPC layer drives: the real lookup, spies for the plumbing. */
 let manager: {
   idFor: typeof windows.idFor
   openWindow: ReturnType<typeof vi.fn>
@@ -54,7 +54,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-describe('windows registry', () => {
+describe('window lookup', () => {
   it('maps a webContents id to its window id until unregistered', () => {
     expect(windows.idFor(sender)).toBe('w1')
     expect(windows.idFor(stranger)).toBeUndefined()

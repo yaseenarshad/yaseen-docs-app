@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { IndexRecord, RegistryResponse } from '@shared/types'
+import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { parseBase, type ParsedBase } from '../baseFile'
 import { BaseView, type BaseViewProps } from '../BaseView'
 import { TEST_RECORDS } from '../testRecords'
@@ -214,24 +214,16 @@ views:
       - file.name
 `
 
-  const REGISTRY: RegistryResponse = {
+  const DECLS: PropertiesResponse = {
     root: '/vault',
     version: 1,
-    properties: {},
-    types: {
-      kpi: {
-        displayName: 'KPI',
-        pluralName: 'KPIs',
-        folder: 'kpis',
-        properties: { unit: { kind: 'text' } },
-      },
-    },
+    properties: { unit: { kind: 'text' } },
   }
 
-  it('a registered type in the filter no longer scaffolds or redirects: the plain filter-derived seed, in the view folder', async () => {
+  it('a page_type filter no longer scaffolds or redirects: the plain filter-derived seed, in the view folder', async () => {
     // No bridge is installed at all: a surviving scaffold path would read a template (or create
     // the type folder) through `window.yaseenDocs` and blow up instead of creating the note.
-    const { el, onOpenFile } = mount(KPI_TABLE, { registry: REGISTRY })
+    const { el, onOpenFile } = mount(KPI_TABLE, { properties: DECLS })
 
     click(byLabel(el, 'New note'))
     await flush()

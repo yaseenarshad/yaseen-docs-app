@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { MAX_COLLAPSED_GROUP_KEYS, type IndexRecord, type RegistryResponse } from '@shared/types'
+import { MAX_COLLAPSED_GROUP_KEYS, type IndexRecord, type PropertiesResponse } from '@shared/types'
 import { storage } from '../lib/storage'
 import { type BaseDefinition, type ParsedBase, parseBase, serializeBase, updateBase } from './baseFile'
 import { type Group, type Row, propertyKeys, runView } from './engine'
@@ -31,8 +31,8 @@ export interface BaseViewProps {
   indexError?: string
   /** Assigned property types from `.obsidian/types.json`, for cell editor inference (5B, GRO-2142). */
   types?: Record<string, string>
-  /** The vault's type registry (5E, GRO-2217; `useRegistry`); null/absent until fetched. Ranks above `types` for editor inference. */
-  registry?: RegistryResponse | null
+  /** The vault-wide property declarations (5E, GRO-2217; `useProperties`); null/absent until fetched. Rank above `types` for editor inference. */
+  properties?: PropertiesResponse | null
   onOpenFile: (path: string) => void
   /** Read-only chrome for embeds (6A, GRO-2145): view switcher only — no toolbar menus, New, cell editing or drag. */
   readOnly?: boolean
@@ -47,7 +47,7 @@ export interface BaseViewProps {
  * the list for `type: list` (4F, GRO-2140), a placeholder row list for unknown view types.
  * Only the active tab and the search text are component state — everything else is the file.
  */
-export function BaseView({ parsed, onChange, root, thisFile, records, indexStatus, indexError, types, registry = null, onOpenFile, readOnly = false, initialView }: BaseViewProps) {
+export function BaseView({ parsed, onChange, root, thisFile, records, indexStatus, indexError, types, properties = null, onOpenFile, readOnly = false, initialView }: BaseViewProps) {
   const [active, setActive] = useState(() =>
     initialView === undefined ? 0 : Math.max(0, parsed.def.views.findIndex((v) => v.name.toLowerCase() === initialView.toLowerCase())),
   )
@@ -150,7 +150,7 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
   // The toolbar's "New" / a group header's "+" (5D, GRO-2144): a note pre-filled to satisfy this
   // view — filter-derived seed, plus the group's raw value when created inside a group — created
   // over the bridge and opened only once the create lands; a failure shows the alert instead.
-  // The registry scaffold upgrade a type-pinned view used to trigger died with the type system
+  // The type-scaffold upgrade a type-pinned view used to trigger died with the type system
   // (YAZ-836): every New is the plain seeded create, wherever the view's own rules place it.
   const onNewNote = (group: Group | null) => {
     const seed = deriveSeed(def, view)
@@ -241,7 +241,7 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           onSetAllGroups={writeCollapsed}
           tabs={tabs}
           root={root}
-          registry={registry}
+          properties={properties}
         />
       )}
       {createError !== null && (
@@ -249,9 +249,9 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           Could not create note: {createError}
         </p>
       )}
-      {registry?.error !== undefined && (
+      {properties?.error !== undefined && (
         <p className="base-view__error" role="alert">
-          Could not load the type registry: {registry.error}
+          Could not load the vault's property declarations: {properties.error}
         </p>
       )}
       {indexStatus === 'pending' ? (
@@ -276,7 +276,7 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           moveError={moveError}
           onNewInGroup={readOnly ? undefined : onNewNote}
           types={types}
-          registry={registry}
+          properties={properties}
           readOnly={readOnly}
         />
       ) : view.type === 'board' ? (
@@ -308,7 +308,7 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           onOpenFile={onOpenFile}
           onNewInGroup={readOnly ? undefined : onNewNote}
           types={types}
-          registry={registry}
+          properties={properties}
           readOnly={readOnly}
         />
       ) : view.type === 'list' ? (
@@ -323,7 +323,7 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           onOpenFile={onOpenFile}
           onNewInGroup={readOnly ? undefined : onNewNote}
           types={types}
-          registry={registry}
+          properties={properties}
           readOnly={readOnly}
         />
       ) : (

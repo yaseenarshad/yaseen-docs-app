@@ -18,10 +18,10 @@ export interface WindowLike {
 
 /**
  * Which `AppState.windows` entry a renderer belongs to, keyed by `webContents.id`, so IPC
- * handlers can resolve their caller (`window.identity()` etc.). The registry deliberately
+ * handlers can resolve their caller (`window.identity()` etc.). The lookup deliberately
  * knows nothing about Electron beyond the id.
  */
-export interface WindowRegistry {
+export interface WindowLookup {
   idFor(webContents: { id: number }): string | undefined
 }
 
@@ -75,7 +75,7 @@ export interface WindowHost {
   exists(path: string): boolean
 }
 
-export interface WindowManager extends WindowRegistry {
+export interface WindowManager extends WindowLookup {
   /** One window per stored entry, bounds clamped; an empty state seeds a single Welcome window (D3). */
   restoreAll(): void
   /** D6 plumbing: an independent window on `root`/`file` (the gestures land in D-). */

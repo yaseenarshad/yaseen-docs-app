@@ -22,7 +22,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     file: vi.fn(),
     shell: vi.fn(),
     vaultConfig: vi.fn(),
-    registry: vi.fn(),
+    properties: vi.fn(),
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return bridge
@@ -99,16 +99,16 @@ describe('api', () => {
     expect('status' in e).toBe(false)
   })
 
-  it('registry calls delegate and wrap INVALID_CONFIG like every other code (Bible A, GRO-2201)', async () => {
-    const registry = { get: vi.fn(), setType: vi.fn(), removeType: vi.fn(), setProperty: vi.fn(), removeProperty: vi.fn(), onChange: vi.fn() }
-    Object.defineProperty(window.yaseenDocs, 'registry', { value: registry, configurable: true })
-    registry.get.mockResolvedValue({ root: '/v', version: 1, types: {}, properties: {} })
-    await expect(api.registry.get('/v')).resolves.toEqual({ root: '/v', version: 1, types: {}, properties: {} })
-    expect(registry.get).toHaveBeenCalledWith('/v')
-    await api.registry.setProperty('/v', { type: 'kpi' }, 'unit', { kind: 'text' })
-    expect(registry.setProperty).toHaveBeenCalledWith('/v', { type: 'kpi' }, 'unit', { kind: 'text' })
-    registry.setType.mockRejectedValue({ code: 'INVALID_CONFIG', message: 'types.json is unreadable' })
-    const err = (await api.registry.setType('/v', 'kpi', {}).catch((e: unknown) => e)) as BridgeRequestError
+  it('properties calls delegate and wrap INVALID_CONFIG like every other code (YAZ-835)', async () => {
+    const properties = { get: vi.fn(), setProperty: vi.fn(), removeProperty: vi.fn(), onChange: vi.fn() }
+    Object.defineProperty(window.yaseenDocs, 'properties', { value: properties, configurable: true })
+    properties.get.mockResolvedValue({ root: '/v', version: 1, properties: {} })
+    await expect(api.properties.get('/v')).resolves.toEqual({ root: '/v', version: 1, properties: {} })
+    expect(properties.get).toHaveBeenCalledWith('/v')
+    await api.properties.setProperty('/v', 'unit', { kind: 'text' })
+    expect(properties.setProperty).toHaveBeenCalledWith('/v', 'unit', { kind: 'text' })
+    properties.setProperty.mockRejectedValue({ code: 'INVALID_CONFIG', message: 'properties.json is unreadable' })
+    const err = (await api.properties.setProperty('/v', 'unit', { kind: 'text' }).catch((e: unknown) => e)) as BridgeRequestError
     expect(err).toBeInstanceOf(BridgeRequestError)
     expect(err.code).toBe('INVALID_CONFIG')
   })

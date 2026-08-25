@@ -13,10 +13,10 @@ interface Entry {
 }
 
 /** One chokidar watcher per root, shared by every window; closed when the last subscriber leaves. */
-const registry = new Map<string, Entry>()
+const entries = new Map<string, Entry>()
 
 export function activeWatcherRoots(): string[] {
-  return [...registry.keys()]
+  return [...entries.keys()]
 }
 
 function ignored(root: string, p: string, stats?: Stats): boolean {
@@ -55,17 +55,17 @@ function createEntry(root: string): Entry {
 
 /** Subscribes to events under `root`; returns an unsubscribe fn. Late joiners get `ready` immediately. */
 export function subscribe(root: string, listener: Listener): () => void {
-  let entry = registry.get(root)
+  let entry = entries.get(root)
   if (entry === undefined) {
     entry = createEntry(root)
-    registry.set(root, entry)
+    entries.set(root, entry)
   }
   entry.listeners.add(listener)
   if (entry.ready) listener({ type: 'ready', root })
   return () => {
     entry.listeners.delete(listener)
-    if (entry.listeners.size === 0 && registry.get(root) === entry) {
-      registry.delete(root)
+    if (entry.listeners.size === 0 && entries.get(root) === entry) {
+      entries.delete(root)
       void entry.watcher.close()
     }
   }
