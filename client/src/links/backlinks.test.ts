@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
-import { resolverFor } from '../bases/engine'
+import { resolverFor } from '../views/engine'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { MAX_SNIPPETS, SNIPPET_MAX_CHARS, backlinksFor, mentionSnippets, type MentionSnippet } from './backlinks'
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { FileResponse, PropertiesResponse } from '@shared/types'
 import { api } from '../api'
-import { FolderPageContents } from '../bases/FolderPageContents'
+import { FolderPageContents } from '../views/FolderPageContents'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'

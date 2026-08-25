@@ -26,7 +26,7 @@
  * `code_block` nodes and inline-`code` marked text (mirrors the index's `stripCode`,
  * CONTRACTS "Property index").
  *
- * Resolution: the ONE resolver (`bases/engine.ts` `resolverFor`) reaches the plugin through a
+ * Resolution: the ONE resolver (`views/engine.ts` `resolverFor`) reaches the plugin through a
  * `WikilinkResolveSource` — a mutable holder App owns. Index updates call `source.update(...)`,
  * which pokes every subscribed editor with a meta transaction: decorations recompute live, the
  * Crepe instance is never recreated and the document never changes.

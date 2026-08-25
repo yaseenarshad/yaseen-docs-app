@@ -548,7 +548,7 @@ button {
 }
 
 /* Lens tabs (YAZ-847) — chrome v2 ROW 1, between the header and the search bar: Topics ⇄ Files.
-   The base-view tab idiom (`.base-tab`, bases.css): a transparent 2px bottom border on every tab,
+   The ViewsPane tab idiom (`.view-tab`, views.css): a transparent 2px bottom border on every tab,
    accent on the active one, pulled down over the row's own hairline so the two read as one line. */
 .sidebar__lenses {
   flex: none;
@@ -1061,7 +1061,7 @@ button {
   display: none;
 }
 
-/* The folder-page marker: the app's own base glyph, at the size the mockup uses. */
+/* The folder-page marker: the app's own folder-page glyph, at the size the mockup uses. */
 .tree__glyph {
   flex: none;
   width: 12px;

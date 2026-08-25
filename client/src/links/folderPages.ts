@@ -1,7 +1,7 @@
 /**
  * Folder pages (YAZ-825): who belongs to a folder page, and which folder pages a note belongs to
  * — computed CLIENT-SIDE in ONE pass over the index snapshot this window already holds, through
- * THE shared resolver (`bases/engine.ts` `resolverFor`), exactly as backlinks are. No map in the
+ * THE shared resolver (`views/engine.ts` `resolverFor`), exactly as backlinks are. No map in the
  * main process, no new IPC, no new index field: the whole model lives in frontmatter. A note
  * names its parents in a `folder_pages` list; a folder page declares itself with
  * `folder_page: true`.
@@ -23,7 +23,7 @@ import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 
 /**
  * The note's parents, and the flag that makes a page a folder page. `FOLDER_PAGES_KEY` is
- * exported because the scaffold writes the very key this lookup reads back (`bases/scaffold.ts`
+ * exported because the scaffold writes the very key this lookup reads back (`views/scaffold.ts`
  * `newPageFromFolderPage`): ONE source of truth, never a second local const (YAZ-836).
  */
 export const FOLDER_PAGES_KEY = 'folder_pages'
@@ -146,7 +146,7 @@ export function folderPagesLookup(records: readonly IndexRecord[], resolve: Reso
  * Picker candidates for a belongs-to column (🔒 Q2, YAZ-815): the pages in the folder page
  * `target` names — resolved like a click — falling back to ALL basenames when the target is
  * unresolved or holds nobody. Report-don't-block, the picker narrows when it can and never goes
- * empty. THE successor to the type-keyed picker helper YAZ-836 deleted with `bases/relation.ts`:
+ * empty. THE successor to the type-keyed picker helper YAZ-836 deleted with `views/relation.ts`:
  * the table / list / cards views call this instead. Mid-wave their stored targets still spell old
  * type names, so those columns fall back to all pages until 5.1 re-points them at folder pages.
  */

@@ -38,7 +38,7 @@
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { resolverFor } from '../bases/engine'
+import { resolverFor } from '../views/engine'
 import { WIKILINK_RE } from '../editor/wikilink/wikilinkPlugin'
 import { flushRenamedPath } from '../lib/renameContinuity'
 import { basename, stripExt } from '../lib/paths'

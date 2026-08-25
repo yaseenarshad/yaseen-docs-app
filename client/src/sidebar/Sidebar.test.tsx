@@ -13,8 +13,8 @@ import { DEFAULT_SETTINGS, type TreeNode, type WatchEvent } from '@shared/types'
 
 // The folder-page toggle writes through the shared one-key card writer (🔒 D1/D3, YAZ-817);
 // mocked here the way every other writeProperty caller's tests mock it.
-vi.mock('../bases/writeProperty', () => ({ writeProperty: vi.fn() }))
-import { writeProperty } from '../bases/writeProperty'
+vi.mock('../views/writeProperty', () => ({ writeProperty: vi.fn() }))
+import { writeProperty } from '../views/writeProperty'
 import { countChildren, Sidebar } from './Sidebar'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true

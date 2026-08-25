@@ -37,7 +37,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, BridgeRequestError } from '../api'
-import { createNewNote, seedContent } from '../bases/newNote'
+import { createNewNote, seedContent } from '../views/newNote'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { FOLDER_PAGE_KEY } from '../links/folderPages'
 

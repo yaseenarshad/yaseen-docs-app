@@ -84,11 +84,11 @@ const expandBacklinks = async (w: Page): Promise<void> => {
 
 /** The folder page's contents block, and the rows/cells of whichever view it is showing. */
 const contents = (w: Page) => layer(w).locator('.folder-page-contents')
-const viewTabs = (scope: Locator) => scope.locator('.base-tab__btn[role="tab"]')
-const dataRows = (scope: Locator) => scope.locator('.base-table tbody tr:not(.base-table__group):not(.base-table__spacer)')
-const outlineRows = (scope: Locator) => scope.locator('.base-outline__link')
-const outlineCounts = (scope: Locator) => scope.locator('.base-outline__count')
-const rowNames = (scope: Locator) => scope.locator('.base-row__link, .base-table__link')
+const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
+const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
+const outlineRows = (scope: Locator) => scope.locator('.view-outline__link')
+const outlineCounts = (scope: Locator) => scope.locator('.view-outline__count')
+const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__link')
 const cell = (scope: Locator, r: number, c: number) => scope.locator(`[data-cell="${r}:${c}"]`)
 /**
  * What the name column shows. The clickable title cell is keyed to `file.name` (TableView's
@@ -204,7 +204,7 @@ test('step 2 — a MIGRATED column, edited inline: written to the member’s own
   // of the `types.json` the same run deleted. Row 1 is Gross Margin, whose own body argues it is
   // not a funnel lagging indicator at all.
   await cell(contents(win), 1, 1).locator('[data-edit]').click()
-  const input = win.locator('.base-cell-edit__input')
+  const input = win.locator('.view-cell-edit__input')
   await expect(input).toBeVisible()
   await expect(input).toHaveValue(CATEGORY_WAS)
   await shoot(win, 'bible-02-migrated-cell-edit')

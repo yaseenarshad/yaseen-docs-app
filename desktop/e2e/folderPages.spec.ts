@@ -1,6 +1,6 @@
 /**
  * Folder pages, end to end (YAZ-819; 🔒 D1/D2/D3 of YAZ-818): a page flagged `folder_page: true`
- * carries its CONTENTS below its own body — today's fully interactive bases table, fed the pages
+ * carries its CONTENTS below its own body — today's fully interactive views table, fed the pages
  * that belong to it, columns from the folder page's own settings.
  *
  * Driven through the REAL app over the committed encyclopedia fixture (`fixtures/bible-vault`),
@@ -56,19 +56,19 @@ let win: Page
 const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
 const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
 const contents = (w: Page) => layer(w).locator('.folder-page-contents')
-const viewTabs = (scope: Locator) => scope.locator('.base-tab__btn[role="tab"]')
-const dataRows = (scope: Locator) => scope.locator('.base-table tbody tr:not(.base-table__group):not(.base-table__spacer)')
+const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
+const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
 /** Row names, whichever body renders: the unknown-view placeholder list, or the real table. */
-const rowNames = (scope: Locator) => scope.locator('.base-row__link, .base-table__link')
+const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__link')
 /** The OUTLINE's rows (YAZ-820), in render order — nested rows are siblings, so this is the whole tree. */
-const outlineRows = (scope: Locator) => scope.locator('.base-outline__link')
+const outlineRows = (scope: Locator) => scope.locator('.view-outline__link')
 const addRow = (scope: Locator) => scope.locator('[aria-label="Link a page"]')
-const picks = (scope: Locator) => scope.locator('.base-outline__pick')
+const picks = (scope: Locator) => scope.locator('.view-outline__pick')
 const sheet = (w: Page) => w.locator('[role="dialog"]')
 const sheetBtn = (w: Page, label: string) => sheet(w).locator('.confirm__btn', { hasText: label })
 const cell = (scope: Locator, r: number, c: number) => scope.locator(`[data-cell="${r}:${c}"]`)
 /** The grouped table's section headers (4C), in document order. */
-const groupNames = (scope: Locator) => scope.locator('.base-table__group .base-group__value')
+const groupNames = (scope: Locator) => scope.locator('.view-table__group .view-group__value')
 const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 /** `file.name` is Obsidian's TFile name — extension included. */
 const named = (...names: string[]) => names.map((n) => `${n}.md`)
@@ -116,7 +116,7 @@ test('step 1 — the contents block sits between the note and its backlinks, hol
 test('step 2 — a cell edited in the block writes the MEMBER’s own file on disk', async () => {
   // Column 1 is `note.order`, typed `number` by the folder page's own declaration (🔒 Q8).
   await cell(contents(win), 0, 1).locator('[data-edit]').click()
-  const input = win.locator('.base-cell-edit__input')
+  const input = win.locator('.view-cell-edit__input')
   await expect(input).toBeVisible()
   await input.fill('9')
   await win.keyboard.press('Enter')
@@ -134,7 +134,7 @@ test('step 3 — the narrowed picker: a multi-link column targeting a folder pag
   // members are the ROWS here, but the picker resolves that target over the WHOLE vault (🔒 D2)
   // — fed the rows alone it would have found no folder page at all and widened to every page.
   await cell(contents(win), 0, 2).locator('[data-edit]').click()
-  const input = win.locator('.base-cell-edit__input')
+  const input = win.locator('.view-cell-edit__input')
   await expect(input).toBeVisible()
   await input.pressSequentially('[[', { delay: 15 })
 
@@ -205,7 +205,7 @@ test('step 6 — a member that is itself a folder page expands inside the outlin
   // Back on Funnel Stages the row wears the glyph and its direct-member count, and its chevron
   // opens the level below IN PLACE — CAC renders under both parents (🔒 D6).
   await fileRow(win, 'Funnel Stages').click()
-  await expect(contents(win).locator('.base-outline__count')).toHaveText(['1'])
+  await expect(contents(win).locator('.view-outline__count')).toHaveText(['1'])
   await contents(win).locator('[aria-label="Expand Lead Gen"]').click()
   await expect(outlineRows(contents(win))).toHaveText(['CAC', 'Lead Gen', 'CAC', 'Lead Nurture', 'Sales-Conversion', 'Untitled'])
   await shoot(win, 'folder-09-outline-nested')
@@ -236,7 +236,7 @@ test('step 8 — the grouped table: one groupBy write, and a collapsed section t
   // members into a folder page, so the run has a real group and the trailing "No value" one.
   // Setting it is ONE `folder_page_settings` write through the one door.
   await contents(win).locator('[aria-label="Sort"]').click()
-  await win.locator('.base-popover [aria-label="Group by"]').selectOption('note.folder_page')
+  await win.locator('.view-popover [aria-label="Group by"]').selectOption('note.folder_page')
   await win.keyboard.press('Escape')
 
   await expect(groupNames(contents(win))).toHaveText(['true', 'No value'])

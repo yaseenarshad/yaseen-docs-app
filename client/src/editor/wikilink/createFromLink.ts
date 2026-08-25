@@ -18,7 +18,7 @@
  */
 import type { SettingsState } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
-import { ensureFolder } from '../../bases/scaffold'
+import { ensureFolder } from '../../views/scaffold'
 import { validateEntryName } from '../../sidebar/createEntry'
 import { linkPageName } from './wikilinkPlugin'
 

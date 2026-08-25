@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
-import { stripBrackets } from '../bases/expr'
+import { stripBrackets } from '../views/expr'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { folderPagesLookup } from './folderPages'
 
@@ -55,7 +55,7 @@ const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecor
   }
 }
 
-/** Basename → path, keyed like `makeResolver` (`bases/engine.ts`) — the unit tests' `resolverOver`. */
+/** Basename → path, keyed like `makeResolver` (`views/engine.ts`) — the unit tests' `resolverOver`. */
 const resolverOver = (records: readonly IndexRecord[]): ResolveLink => {
   const byBase = new Map(records.map((r) => [r.basename.toLowerCase(), r.path]))
   return (target) => byBase.get(stripBrackets(target).replace(/[#|].*$/, '').trim().toLowerCase()) ?? null

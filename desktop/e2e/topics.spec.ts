@@ -120,7 +120,7 @@ test('step 1 — the migrated shape: Home stands alone as the root, glyphed and 
   // by default: the whole encyclopedia is two rows.
   await expect(topicLabels(win)).toHaveText(['Home', 'Uncategorized'])
   const root = rowFor(win, 'Home')
-  await expect(root.locator('.tree__glyph')).toBeVisible() // 🔒 D3: folder pages wear the base glyph
+  await expect(root.locator('.tree__glyph')).toBeVisible() // 🔒 D3: folder pages wear the folder-page glyph
   await expect(root.locator('.tree__count')).toHaveText('5') // …and their DIRECT-member count
   // The folders on disk are nowhere here — that shape belongs to the other tab.
   // (Folder-page rows wear `.tree__row--dir` themselves: same class family, same colour.)

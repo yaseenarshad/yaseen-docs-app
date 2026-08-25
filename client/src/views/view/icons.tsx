@@ -1,0 +1,114 @@
+import type { ReactElement } from 'react'
+
+/** 14px stroked glyphs for the Bases toolbar, in the sidebar's style (GRO-2135). */
+
+const svg = {
+  width: 14,
+  height: 14,
+  viewBox: '0 0 16 16',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.2,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+  'aria-hidden': true,
+}
+
+/**
+ * 2×2 grid marking a FOLDER PAGE row in the outline (YAZ-820) and in its add-row picker; same
+ * stroke weight as `SidebarPanelIcon`. It lived in `sidebar/Tree.tsx` while tree rows and tabs
+ * wore it too; YAZ-844 left the folder page its only wearer, so it moved in with the rest of
+ * the folder-page glyphs.
+ */
+export function FolderPageGlyph({ className }: { className: string }) {
+  return (
+    <svg className={className} width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
+      <rect x="1.5" y="1.5" width="9" height="9" rx="1" />
+      <line x1="6" y1="1.5" x2="6" y2="10.5" />
+      <line x1="1.5" y1="6" x2="10.5" y2="6" />
+    </svg>
+  )
+}
+
+export const PlusIcon = () => (
+  <svg {...svg}>
+    <path d="M8 3v10M3 8h10" />
+  </svg>
+)
+
+export const SortIcon = () => (
+  <svg {...svg}>
+    <path d="M5 2.5v11M2.5 11 5 13.5 7.5 11M11 13.5v-11M8.5 5 11 2.5 13.5 5" />
+  </svg>
+)
+
+export const PropertiesIcon = () => (
+  <svg {...svg}>
+    <path d="M2 5h12M2 11h12" />
+    <circle cx="6" cy="5" r="1.6" fill="var(--bg)" />
+    <circle cx="10" cy="11" r="1.6" fill="var(--bg)" />
+  </svg>
+)
+
+export const SearchIcon = () => (
+  <svg {...svg}>
+    <circle cx="7" cy="7" r="4.5" />
+    <path d="m10.5 10.5 3.5 3.5" />
+  </svg>
+)
+
+export const PencilIcon = () => (
+  <svg {...svg}>
+    <path d="m3 13 .8-3.2L11.2 2.4l2.4 2.4-7.4 7.4z" />
+  </svg>
+)
+
+/** Stacked chevrons, for the toolbar's collapse / expand all groups toggle (YAZ-744). */
+export const ChevronsIcon = () => (
+  <svg {...svg}>
+    <path d="M4.5 4 8 7l3.5-3M4.5 9 8 12l3.5-3" />
+  </svg>
+)
+
+/** Chain link, for the relation-column editor (5E, GRO-2217). */
+export const RelationIcon = () => (
+  <svg {...svg}>
+    <path d="M6.5 9.5 9.5 6.5M7.8 4.6l1.5-1.5a2.3 2.3 0 0 1 3.6 3.6l-1.5 1.5M8.2 11.4l-1.5 1.5a2.3 2.3 0 0 1-3.6-3.6l1.5-1.5" />
+  </svg>
+)
+
+const TYPE_GLYPHS: Record<string, ReactElement> = {
+  table: (
+    <>
+      <rect x="2" y="3" width="12" height="10" rx="1.2" />
+      <path d="M2 6.5h12M6.5 6.5V13" />
+    </>
+  ),
+  cards: (
+    <>
+      <rect x="2" y="2.5" width="5" height="5" rx="1" />
+      <rect x="9" y="2.5" width="5" height="5" rx="1" />
+      <rect x="2" y="8.5" width="5" height="5" rx="1" />
+      <rect x="9" y="8.5" width="5" height="5" rx="1" />
+    </>
+  ),
+  list: <path d="M2 4h12M2 8h12M2 12h12" />,
+  map: (
+    <>
+      <path d="M8 14s-4-4.2-4-7.3a4 4 0 0 1 8 0C12 9.8 8 14 8 14z" />
+      <circle cx="8" cy="6.7" r="1.3" />
+    </>
+  ),
+  board: (
+    <>
+      <rect x="2" y="2.5" width="3.2" height="11" rx="0.8" />
+      <rect x="6.4" y="2.5" width="3.2" height="7" rx="0.8" />
+      <rect x="10.8" y="2.5" width="3.2" height="9" rx="0.8" />
+    </>
+  ),
+}
+
+/** Small glyph for a view's `type`; unknown types get a plain frame. */
+export function ViewTypeIcon({ type }: { type: string }) {
+  return <svg {...svg}>{TYPE_GLYPHS[type] ?? <rect x="2" y="3" width="12" height="10" rx="1.2" />}</svg>
+}

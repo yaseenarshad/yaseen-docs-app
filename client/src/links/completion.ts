@@ -1,6 +1,6 @@
 /**
  * The ONE `[[…]]` completion matcher (Links B, GRO-2191 — locked ruling): Bases' cell editors
- * (`bases/view/EditableCell.tsx` — LinkEditor and ChipsEditor) and the editor's `[[` picker
+ * (`views/view/EditableCell.tsx` — LinkEditor and ChipsEditor) and the editor's `[[` picker
  * (`editor/wikilink/wikilinkPicker.ts`) all match through here, so completion behaves the same
  * everywhere — which is how the F2 ranking upgrade (GRO-2197) landed once, in place. Matching
  * is case-insensitive over the candidate NAME, ranked exact → prefix → substring, capped at
@@ -9,7 +9,7 @@
  * `linkCandidates(records)` derives the editor picker's candidates from an index snapshot:
  * every markdown note under its SHORTEST unambiguous link target, plus one row per frontmatter
  * ALIAS (Links E2, GRO-2214). Duplicate basenames follow the resolver's shallowest-depth rule
- * (`bases/engine.ts` `makeResolver`, GRO-2190): the bare basename resolves to the shallowest
+ * (`views/engine.ts` `makeResolver`, GRO-2190): the bare basename resolves to the shallowest
  * match (equal depth → first in path order), so only that record gets the bare name — every
  * other duplicate is disambiguated as `folder/basename`, which resolves root-relatively.
  * An alias row is typed as the alias but INSERTS the piped `[[Note|Alias]]`, so it is

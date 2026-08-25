@@ -1,0 +1,1033 @@
+/* Bases views: toolbar + menus (GRO-2135), placeholder row list, table/list/cards/board/outline. */
+
+.view-view {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 32px 48px 120px;
+}
+
+/* ---------- toolbar ---------- */
+
+.view-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.view-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.view-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: none;
+  border-bottom: 2px solid transparent;
+}
+
+.view-tab--active {
+  border-bottom-color: var(--accent);
+}
+
+.view-tab__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  font-size: 13px;
+  color: var(--fg-muted);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.view-tab__btn:hover {
+  background: var(--bg-side);
+}
+
+.view-tab__btn[aria-selected='true'] {
+  color: var(--fg);
+}
+
+.view-tab__more {
+  padding: 4px 2px;
+  color: var(--fg-muted);
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.view-tab__more:hover,
+.view-tab__more[aria-expanded='true'] {
+  color: var(--fg);
+  background: var(--bg-side);
+}
+
+.view-tab__add {
+  padding: 2px 8px 4px;
+  font-size: 15px;
+  color: var(--fg-muted);
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.view-tab__add:hover {
+  color: var(--fg);
+  background: var(--bg-side);
+}
+
+.view-tab__rename {
+  width: 110px;
+  margin: 0 2px 2px;
+}
+
+.view-toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.view-toolbar__menu,
+.view-toolbar__search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.view-toolbar__btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px 6px;
+  color: var(--fg-muted);
+  border-radius: 4px;
+}
+
+.view-toolbar__btn:hover,
+.view-toolbar__btn[aria-expanded='true'],
+.view-toolbar__btn--on {
+  color: var(--fg);
+  background: var(--bg-side);
+}
+
+.view-toolbar__new {
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.view-toolbar__badge {
+  min-width: 14px;
+  padding: 0 3px;
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 7px;
+}
+
+.view-toolbar__search-input {
+  width: 150px;
+  margin-left: 4px;
+}
+
+.view-toolbar__count {
+  margin-left: 8px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+/* ---------- popovers (anchored under their trigger; ctx-menu look) ---------- */
+
+.view-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 260px;
+  max-width: 420px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 10px;
+  font-size: 13px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.view-popover:focus {
+  outline: none;
+}
+
+.view-popover--menu {
+  left: 0;
+  right: auto;
+  min-width: 140px;
+  padding: 4px;
+}
+
+.view-popover--fixed {
+  position: fixed;
+  top: auto;
+  right: auto;
+}
+
+.view-popover__item {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 5px;
+  font-size: 13px;
+  text-align: left;
+}
+
+.view-popover__item:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.view-popover__item:disabled {
+  color: var(--fg-muted);
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* ---------- menu internals ---------- */
+/* The Filter menu's own chrome went with it in YAZ-846: `__errors`, `__head`, the All/Any/None
+   and scope segments (`.view-seg*`) and the raw-expression rows (`.view-rule__code` / `__expr`). */
+
+.view-menu__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.view-rule {
+  padding: 3px 0;
+}
+
+.view-rule__main {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.view-rule__remove,
+.view-rule__nav {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  padding: 2px;
+  color: var(--fg-muted);
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.view-rule__remove:hover:not(:disabled),
+.view-rule__nav:hover:not(:disabled) {
+  color: var(--fg);
+  background: var(--bg-side);
+}
+
+.view-rule__remove:disabled,
+.view-rule__nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.view-select {
+  max-width: 150px;
+  padding: 3px 4px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.view-input {
+  flex: 1;
+  min-width: 60px;
+  padding: 3px 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.view-input:focus,
+.view-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.view-chip {
+  flex: none;
+  padding: 3px 7px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.view-chip:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.view-menu__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.view-menu__action {
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--accent);
+  border-radius: 5px;
+}
+
+.view-menu__action:hover {
+  background: var(--accent-soft);
+}
+
+.view-menu__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.view-menu__label {
+  margin: 10px 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+.view-menu__empty {
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.view-prop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  flex-wrap: wrap;
+}
+
+/* Relation editor for one column (5E, GRO-2217): a full-width row under the property. */
+.view-relation {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0 2px 22px;
+  flex-wrap: wrap;
+}
+
+.view-relation__target {
+  width: 110px;
+}
+
+.view-relation__dest {
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.view-relation__error {
+  font-size: 11px;
+  color: var(--danger);
+}
+
+.view-prop__name {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.view-prop__name small {
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.view-prop__rename {
+  flex: 1;
+}
+
+/* ---------- body (placeholder rows for non-table views; their real bodies land in later units) ---------- */
+
+.view-view__pending {
+  margin: 48px auto;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.view-view__error {
+  margin: 48px auto;
+  color: var(--danger);
+  text-align: center;
+}
+
+.view-rows {
+  margin: 0;
+  padding: 8px 0 0;
+  list-style: none;
+}
+
+.view-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.view-row__link {
+  flex: none;
+  color: var(--accent);
+  text-align: left;
+}
+
+.view-row__link:hover {
+  text-decoration: underline;
+}
+
+.view-row__values {
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- table (4B) ---------- */
+
+.view-table-wrap {
+  flex: 1;
+  min-height: 0;
+  margin-top: 8px;
+  overflow: auto;
+}
+
+.view-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-size: 13px;
+}
+
+.view-table th,
+.view-table td {
+  padding: 3px 8px;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.view-table th:last-child,
+.view-table td:last-child {
+  border-right: none;
+}
+
+.view-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  font-weight: 600;
+  color: var(--fg-muted);
+  background: var(--bg);
+}
+
+.view-table tbody td {
+  height: var(--view-table-row-h, 28px);
+}
+
+.view-table tbody td:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.view-table td.view-table__cell--num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.view-table__link {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--accent);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-table__link:hover {
+  text-decoration: underline;
+}
+
+.view-table__resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.view-table__resize:hover,
+.view-table__resize--active {
+  background: linear-gradient(var(--accent), var(--accent)) right / 2px 100% no-repeat;
+}
+
+.view-table__chip {
+  display: inline-block;
+  max-width: 100%;
+  margin-right: 4px;
+  padding: 0 7px;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--fg-muted);
+  background: var(--bg-side);
+  border-radius: 9px;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.view-table__chip--link {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.view-table__chip--error {
+  color: #fff;
+  background: var(--danger);
+}
+
+.view-table tfoot td {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 0;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  border-right: none;
+  border-bottom: none;
+}
+
+.view-table__summary-btn {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  min-height: 24px;
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--fg);
+  text-align: left;
+}
+
+.view-table__summary-btn:hover {
+  background: var(--bg-side);
+}
+
+.view-table__summary-kind {
+  color: var(--fg-muted);
+}
+
+.view-table__summary-pop {
+  top: auto;
+  right: auto;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 140px;
+  padding: 4px;
+}
+
+.view-table__spacer td {
+  padding: 0;
+  border: none;
+}
+
+/* ---------- grouped table (4C) ---------- */
+
+.view-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.view-group__toggle {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 2px;
+  color: var(--fg-muted);
+  border-radius: 4px;
+}
+
+.view-group__toggle:hover {
+  color: var(--fg);
+  background: var(--bg-side);
+}
+
+.view-group__toggle svg {
+  transition: transform 120ms ease;
+}
+
+.view-group__toggle[aria-expanded='false'] svg {
+  transform: rotate(-90deg);
+}
+
+.view-group__value {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.view-group__value--none {
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+
+.view-group__count {
+  color: var(--fg-muted);
+}
+
+.view-group__new {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 2px;
+  color: var(--fg-muted);
+  border-radius: 4px;
+}
+
+.view-group__new:hover {
+  color: var(--fg);
+  background: var(--bg-side);
+}
+
+.view-group__summary {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+}
+
+.view-group__summary-kind {
+  color: var(--fg-muted);
+}
+
+/* ---------- board (4D) ---------- */
+
+.view-board {
+  display: flex;
+  flex: 1;
+  gap: 10px;
+  align-items: flex-start;
+  min-height: 0;
+  margin-top: 8px;
+  padding-bottom: 8px;
+  overflow: auto;
+}
+
+.view-board__col {
+  flex: none;
+  width: var(--view-board-col-w, 280px);
+  padding: 6px;
+  background: var(--bg-side);
+  border-radius: 8px;
+}
+
+.view-board__col .view-group {
+  padding: 2px 4px 6px;
+}
+
+.view-board__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.view-board__card {
+  padding: 7px 10px;
+  font-size: 13px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.view-board__title {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--accent);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-board__title:hover {
+  text-decoration: underline;
+}
+
+.view-board__prop {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-top: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.view-board__prop-name {
+  flex: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.view-board__prop-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.view-board__hint {
+  margin: 48px auto;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.view-board__hint p {
+  margin: 0 0 10px;
+}
+
+/* ---------- drag between groups (5C) ---------- */
+
+.view-board__card[draggable='true'] {
+  cursor: grab;
+}
+
+.view-board__card--drag {
+  opacity: 0.4;
+}
+
+.view-board__col--drop {
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+}
+
+.view-board__placeholder {
+  height: 34px;
+  border: 1px dashed var(--accent);
+  border-radius: 6px;
+  opacity: 0.5;
+}
+
+.view-table__group--drop td,
+.view-table__row--drop td {
+  background: var(--accent-soft);
+}
+
+.view-drag__error {
+  margin-left: 6px;
+}
+
+/* ---------- cards (4E) ---------- */
+
+.view-cards {
+  flex: 1;
+  min-height: 0;
+  margin-top: 8px;
+  overflow-y: auto;
+}
+
+.view-cards__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--view-card-w, 280px), 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 8px 0 2px;
+  list-style: none;
+}
+
+.view-cards__group {
+  margin-top: 8px;
+}
+
+.view-cards__group .view-group {
+  padding: 2px 0 4px;
+}
+
+.view-card {
+  overflow: hidden;
+  font-size: 13px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.view-card__cover {
+  display: block;
+  width: 100%;
+  aspect-ratio: var(--view-card-ratio, 1);
+  object-fit: var(--view-card-fit, cover);
+  background: var(--bg-side);
+  border-bottom: 1px solid var(--border);
+}
+
+.view-card__body {
+  padding: 7px 10px;
+}
+
+.view-card__title {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--accent);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-card__title:hover {
+  text-decoration: underline;
+}
+
+.view-card__prop {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-top: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.view-card__prop-name {
+  flex: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.view-card__prop-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- list (4F) ---------- */
+
+.view-list {
+  flex: 1;
+  min-height: 0;
+  margin-top: 8px;
+  overflow-y: auto;
+}
+
+.view-list__items {
+  margin: 0;
+  padding: 4px 0 2px;
+  list-style: none;
+}
+
+.view-list__group {
+  margin-top: 8px;
+}
+
+.view-list__group .view-group {
+  padding: 2px 0 4px;
+}
+
+.view-list__item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 3px 2px;
+  font-size: 13px;
+}
+
+.view-list__marker {
+  flex: none;
+  min-width: 14px;
+  color: var(--fg-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.view-list__body {
+  min-width: 0;
+}
+
+.view-list__line {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.view-list__title {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--accent);
+  text-align: left;
+  text-overflow: ellipsis;
+}
+
+.view-list__title:hover {
+  text-decoration: underline;
+}
+
+.view-list__primary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.view-list__inline {
+  overflow: hidden;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+}
+
+.view-list__prop {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-top: 2px;
+  padding-left: 14px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.view-list__prop-name {
+  flex: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.view-list__prop-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* the Properties menu's List section (markerStyle / indentProperties / propertySeparator) */
+.view-list-settings {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.view-list-settings .view-input {
+  width: 56px;
+}
+
+/* ---------- inline cell editors (5B, GRO-2142) ---------- */
+
+.view-cell-edit {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+/* the display is a button so it can be clicked/focused, but looks like plain cell content */
+.view-cell-edit__display {
+  display: inline-block;
+  max-width: 100%;
+  min-width: 12px;
+  min-height: 1em;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  background: none;
+  border: 0;
+  cursor: text;
+}
+
+.view-cell-edit__input {
+  width: 100%;
+  min-width: 60px;
+  font-size: 12px;
+}
+
+.view-cell-edit__chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  align-items: center;
+  max-width: 100%;
+}
+
+.view-cell-edit__chips .view-cell-edit__input {
+  width: auto;
+  flex: 1;
+}
+
+.view-cell-edit__chip-x {
+  padding: 0 0 0 3px;
+  font-size: 11px;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.view-cell-edit__link {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
+/* completion popover under the link input (reuses .view-popover) */
+.view-cell-edit__complete {
+  top: calc(100% + 2px);
+  left: 0;
+  right: auto;
+  min-width: 160px;
+  padding: 4px;
+}
+
+.view-cell-edit__error {
+  margin-left: 4px;
+}

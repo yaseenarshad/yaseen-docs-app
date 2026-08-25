@@ -1,8 +1,8 @@
 /**
  * Backlinks — "Linked mentions" (Links D, GRO-2193; decision D of GRO-2096, LOCKED): the notes
  * that link to the open one, computed CLIENT-SIDE in ONE pass over the index snapshot this
- * window already holds, through THE shared resolver (`bases/engine.ts` `resolverFor`, the one
- * behind base views, wikilink decorations and clicks). No reverse map in the main process, no
+ * window already holds, through THE shared resolver (`views/engine.ts` `resolverFor`, the one
+ * behind views, wikilink decorations and clicks). No reverse map in the main process, no
  * new IPC, no new index field — and alias-awareness comes free: a note linking `[[CAC]]` IS a
  * linked mention of the page whose frontmatter aliases it (E2, GRO-2214).
  *

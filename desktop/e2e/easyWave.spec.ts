@@ -67,9 +67,9 @@ const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter
 const backBtn = (w: Page) => w.locator('.tabbar-nav [aria-label="Back"]')
 const forwardBtn = (w: Page) => w.locator('.tabbar-nav [aria-label="Forward"]')
 
-/** The folder page's contents block — the one place a bases table still renders (YAZ-844). */
+/** The folder page's contents block — the one place a views table still renders (YAZ-844). */
 const contents = (w: Page) => layer(w).locator('.folder-page-contents')
-const viewTabs = (scope: Locator) => scope.locator('.base-tab__btn[role="tab"]')
+const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 
 const sidebar = (w: Page) => w.locator('.sidebar')
 const resizeEdge = (w: Page) => w.locator('.sidebar-resize')
@@ -180,7 +180,7 @@ test('step 3 — column dividers with the resize handle hovered, and a toolbar m
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
 
   // YAZ-741: the header's 1px divider thickens to the accent under the pointer.
-  const handle = contents(win).locator('.base-table__resize').first()
+  const handle = contents(win).locator('.view-table__resize').first()
   await expect(handle).toBeVisible()
   await handle.hover()
   await shoot(win, 'easy-table-dividers')

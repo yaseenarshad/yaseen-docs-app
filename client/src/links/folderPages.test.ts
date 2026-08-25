@@ -2,11 +2,11 @@
  * Folder pages (YAZ-825): the lookup over an index snapshot. Each case pins ONE locked rule —
  * the click rule (exactly a wikilink, resolved, flagged), dedupe, the strict `folder_page: true`
  * flag, and the carve-out-free uncategorized set. Resolution is handed IN, so the resolver used
- * here is a basename map keyed exactly like the real one (`makeResolver`, `bases/engine.ts`).
+ * here is a basename map keyed exactly like the real one (`makeResolver`, `views/engine.ts`).
  */
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
-import { stripBrackets } from '../bases/expr'
+import { stripBrackets } from '../views/expr'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { belongsToBasenames, folderPagesLookup, guardedChildren, isFolderPage, walkFolderPage } from './folderPages'
 

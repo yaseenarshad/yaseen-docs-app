@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
-import { resolverFor } from '../bases/engine'
+import { resolverFor } from '../views/engine'
 import { MAX_SUGGESTIONS, linkCandidates, matchLinkCandidates, matchLinkNames, nameCandidate, trailingLinkFragment } from './completion'
 
 const rec = (path: string, aliases: string[] = []): IndexRecord => {

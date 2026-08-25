@@ -34,9 +34,9 @@
        tab shows the dumb parking bins for contrast (YAZ-797/799). Search/filter row
        intentionally omitted per Yasin (this mock is about folder pages).
 
-  Visual language lifted from the real app (client/src/app.css, bases/bases.css):
-  tokens --bg/--bg-side/--fg/--accent/etc., .tree__row, .base-table, .ctx-menu,
-  .confirm, base-tab underline idiom, system font stack, 13px chrome / 16px editor.
+  Visual language lifted from the real app (client/src/app.css, views/views.css):
+  tokens --bg/--bg-side/--fg/--accent/etc., .tree__row, .view-table, .ctx-menu,
+  .confirm, view-tab underline idiom, system font stack, 13px chrome / 16px editor.
   ═══════════════════════════════════════════════════════════════════════════════════
 -->
 <style>
@@ -231,7 +231,7 @@
     display: flex; align-items: center; gap: 12px;
     padding-bottom: 6px; border-bottom: 1px solid var(--border); font-size: 13px;
   }
-  /* view toggle — the app's base-tab idiom (2px accent underline) */
+  /* view toggle — the app's view-tab idiom (2px accent underline) */
   .view-tab {
     display: inline-flex; align-items: center; gap: 5px;
     padding: 4px 8px; font-size: 13px; color: var(--fg-muted);
@@ -296,21 +296,21 @@
   .picker__item small { color: var(--fg-muted); }
   .picker__create { color: var(--accent); }
 
-  /* table view [D3][D10] — mirrors .base-table */
-  .base-table-wrap { margin-top: 8px; overflow: auto; }
-  .base-table { border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 13px; min-width: 100%; }
-  .base-table th, .base-table td {
+  /* table view [D3][D10] — mirrors .view-table */
+  .view-table-wrap { margin-top: 8px; overflow: auto; }
+  .view-table { border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 13px; min-width: 100%; }
+  .view-table th, .view-table td {
     padding: 3px 8px; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap;
     border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
   }
-  .base-table th:last-child, .base-table td:last-child { border-right: none; }
-  .base-table thead th { font-weight: 600; color: var(--fg-muted); background: var(--bg); }
-  .base-table tbody td { height: 28px; }
-  .base-table td[data-edit] { cursor: text; }
-  .base-table td[data-edit]:hover { background: var(--bg-hover-row); }
-  .base-table__link { color: var(--accent); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; max-width: 100%; }
-  .base-table__link:hover { text-decoration: underline; }
-  .base-table td .mem-chip { cursor: pointer; margin-right: 3px; }
+  .view-table th:last-child, .view-table td:last-child { border-right: none; }
+  .view-table thead th { font-weight: 600; color: var(--fg-muted); background: var(--bg); }
+  .view-table tbody td { height: 28px; }
+  .view-table td[data-edit] { cursor: text; }
+  .view-table td[data-edit]:hover { background: var(--bg-hover-row); }
+  .view-table__link { color: var(--accent); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; max-width: 100%; }
+  .view-table__link:hover { text-decoration: underline; }
+  .view-table td .mem-chip { cursor: pointer; margin-right: 3px; }
   .cell-input {
     width: 100%; padding: 1px 4px; border: 1px solid var(--accent); border-radius: 3px;
     font: inherit; font-size: 13px; background: var(--bg); color: var(--fg); outline: none;
@@ -644,12 +644,12 @@ function contentsHtml(fp) {
       </li>
     </ul>`;
   } else {
-    /* table view [D3][D10]: same computed set, base-table skin, columns from THIS folder page */
+    /* table view [D3][D10]: same computed set, view-table skin, columns from THIS folder page */
     const cols = fp.columns;
     let rows = '';
     for (const n of list) {
       const m = P[n];
-      let tds = `<td><button class="base-table__link" data-action="open" data-name="${esc(n)}">${esc(n)}</button></td>`;
+      let tds = `<td><button class="view-table__link" data-action="open" data-name="${esc(n)}">${esc(n)}</button></td>`;
       for (const c of cols) {
         const v = m.props[c];
         tds += `<td data-edit data-page="${esc(n)}" data-key="${esc(c)}">${v ? esc(v) : '<span class="cell-empty">—</span>'}</td>`;
@@ -658,7 +658,7 @@ function contentsHtml(fp) {
       tds += `<td>${others.map((o) => `<span class="mem-chip" data-action="open" data-name="${esc(o)}">${esc(o)}</span>`).join('') || '<span class="cell-empty">—</span>'}</td>`;
       rows += `<tr>${tds}</tr>`;
     }
-    body = `<div class="base-table-wrap"><table class="base-table">
+    body = `<div class="view-table-wrap"><table class="view-table">
       <colgroup><col style="width:230px">${cols.map(() => '<col style="width:170px">').join('')}<col style="width:180px"></colgroup>
       <thead><tr><th>Name</th>${cols.map((c) => `<th>${esc(c)}</th>`).join('')}<th>Also in</th></tr></thead>
       <tbody>${rows}</tbody></table></div>`;

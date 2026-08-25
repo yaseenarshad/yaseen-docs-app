@@ -2,7 +2,7 @@
  * "Linked mentions" (Links D, GRO-2193) — owned by BacklinksSection.tsx (the feature-CSS
  * convention). The block sits INSIDE the editor's scroller, after the Crepe host, and repeats
  * `.editor-instance`'s content column so it lines up with the note's text and scrolls with it.
- * Header affordance mirrors the base-group / ViewTabs chevron: one stroked SVG, rotated -90°
+ * Header affordance mirrors the view-group / ViewTabs chevron: one stroked SVG, rotated -90°
  * while collapsed. Colours are app theme tokens only, so dark mode follows for free.
  */
 

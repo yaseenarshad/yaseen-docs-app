@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { FileResponse, IndexRecord, WatchEvent } from '@shared/types'
-import { resolverFor } from '../bases/engine'
+import { resolverFor } from '../views/engine'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
 import { Editor } from './Editor'
 import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
@@ -333,7 +333,7 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['editor-mount', 'folder-page-contents', 'backlinks'])
     // fed the pages that belong to it, and no title row of its own — the note IS the title.
     // Q7's default view is the OUTLINE (YAZ-820), which names pages the way a link does.
-    expect([...el.querySelectorAll('.base-outline__link')].map((n) => n.textContent)).toEqual(['member'])
+    expect([...el.querySelectorAll('.view-outline__link')].map((n) => n.textContent)).toEqual(['member'])
   })
 
   it('an ordinary note gets no contents block at all', async () => {

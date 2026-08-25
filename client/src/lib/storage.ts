@@ -175,10 +175,19 @@ export const storage = {
     send('state.setFolds', () => window.yaseenDocs.state.setFolds(root, file, keys))
   },
 
-  /** Collapsed group keys for one base view; `key` is `<basePath>::<viewName>` (Bases 4C, GRO-2137). */
-  getBaseGroups: (root: string, key: string): string[] => folderOf(root).baseGroups[key] ?? [],
-  /** Replace the collapsed group keys for one base view; an empty list removes the entry. Session chrome, never written to the page's own frontmatter. */
-  setBaseGroups(root: string, key: string, collapsed: readonly string[]): void {
+  /**
+   * Collapsed group keys for one view; `key` is `<pagePath>::<viewName>` (4C, GRO-2137).
+   *
+   * HISTORICAL NAMES (🔒 D1 of YAZ-823, kept deliberately by YAZ-858's rename): the STORED field
+   * is still `baseGroups` and the bridge method / IPC channel are still `state.setBaseGroups` /
+   * `state:set-base-groups`. Renaming them would either orphan every user's persisted collapse
+   * state or need a migration, and would break the preload/main contract — so `shared/types.ts`'s
+   * `AppState` field, `store.ts`'s mutator and the channel all keep the old spelling on purpose.
+   * Only these two client accessors were renamed; the wire below is untouched.
+   */
+  getViewGroups: (root: string, key: string): string[] => folderOf(root).baseGroups[key] ?? [],
+  /** Replace the collapsed group keys for one view; an empty list removes the entry. Session chrome, never written to the page's own frontmatter. */
+  setViewGroups(root: string, key: string, collapsed: readonly string[]): void {
     const baseGroups = { ...folderOf(root).baseGroups }
     if (collapsed.length === 0) delete baseGroups[key]
     else baseGroups[key] = collapsed.slice(0, MAX_COLLAPSED_GROUP_KEYS)

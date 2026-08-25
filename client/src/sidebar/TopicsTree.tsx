@@ -47,8 +47,8 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { IndexRecord } from '@shared/types'
-import { folderPageSettings, orderedMembers } from '../bases/folderPageSettings'
-import { BaseGlyph } from '../bases/view/icons'
+import { folderPageSettings, orderedMembers } from '../views/folderPageSettings'
+import { FolderPageGlyph } from '../views/view/icons'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { storage } from '../lib/storage'
 import { folderPagesLookup, guardedChildren, type FolderPagesLookup } from '../links/folderPages'
@@ -195,7 +195,7 @@ export function TopicsTree({ root, source, activeFile, onOpenFile, onOpenFileBac
             ) : (
               <span className="tree__chevron tree__chevron--none" />
             )}
-            {isFolderPage && <BaseGlyph className="tree__glyph" />}
+            {isFolderPage && <FolderPageGlyph className="tree__glyph" />}
             <span className="tree__label">{member.basename}</span>
             {/* DIRECT members — the honest fact about the page, so a member hidden from THIS
                 branch by the loop guard is still counted where it belongs. The chevron above

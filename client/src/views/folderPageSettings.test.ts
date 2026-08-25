@@ -1,0 +1,328 @@
+/**
+ * Folder page settings (YAZ-830): the ONE door to `folder_page_settings`. Each case pins a
+ * locked rule — tolerant parsing (report, never block, never throw), DEFAULT_VIEWS outline-first,
+ * the 7 property kinds, parseViews's own view assertion mirrored, the `FOLDER_NAME` parking
+ * bin, and the [D5] ordering rule. Resolution is handed IN, keyed exactly like the real resolver
+ * (`makeResolver`, `views/engine.ts`), same as folderPages.test.ts.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { IndexRecord } from '@shared/types'
+import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
+import { stripBrackets } from './expr'
+
+vi.mock('./writeProperty', () => ({ writeProperty: vi.fn() }))
+import { writeProperty } from './writeProperty'
+import {
+  columnKindIn,
+  DEFAULT_VIEWS,
+  folderPageSettings,
+  orderedMembers,
+  outlineOrderOf,
+  writeFolderPageSettings,
+} from './folderPageSettings'
+
+const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
+  const name = path.slice(path.lastIndexOf('/') + 1)
+  const rel = path.slice('/vault/'.length)
+  return {
+    path,
+    name,
+    basename: name.replace(/\.md$/, ''),
+    folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '',
+    ext: 'md',
+    size: 1,
+    ctime: 1,
+    mtime: 1,
+    properties,
+    aliases: [],
+    tags: [],
+    links: [],
+    embeds: [],
+  }
+}
+
+const METRICS = '/vault/Metrics.md'
+
+/** A flagged folder page carrying this settings value, parsed. */
+const settingsOf = (value: unknown) =>
+  folderPageSettings(rec(METRICS, { folder_page: true, folder_page_settings: value }))
+
+/** Basename → path, keyed like `makeResolver`: `stripBrackets`, `#`/`|` tail dropped, trimmed, lowered. */
+const resolverOver = (records: readonly IndexRecord[]): ResolveLink => {
+  const byBase = new Map(records.map((r) => [r.basename.toLowerCase(), r.path]))
+  return (target) => byBase.get(stripBrackets(target).replace(/[#|].*$/, '').trim().toLowerCase()) ?? null
+}
+
+const OUTLINE_THEN_TABLE = [
+  { type: 'outline', name: 'Outline' },
+  { type: 'table', name: 'Table' },
+]
+
+describe('defaults (Q7): a flagged page always has its two skins, outline first', () => {
+  it('a page with NO settings key renders with defaults and zero problems', () => {
+    const settings = folderPageSettings(rec(METRICS, { folder_page: true }))
+    expect(settings.views).toEqual(OUTLINE_THEN_TABLE)
+    expect(settings.columns).toEqual({})
+    expect(settings.folder).toBeUndefined()
+    expect(settings.problems).toEqual([])
+  })
+
+  it('DEFAULT_VIEWS is outline first, and each parse hands back its own copy', () => {
+    expect(DEFAULT_VIEWS.map((v) => v.type)).toEqual(['outline', 'table'])
+    const a = folderPageSettings(rec(METRICS, { folder_page: true }))
+    const b = folderPageSettings(rec(METRICS, { folder_page: true }))
+    expect(a.views).not.toBe(b.views)
+    expect(a.views[0]).not.toBe(b.views[0])
+  })
+
+  it.each([
+    ['a string', 'table'],
+    ['a number', 3],
+    ['a list', [{ type: 'table', name: 'Table' }]],
+  ])('a settings key that is %s is ONE problem plus full defaults', (_label, value) => {
+    const settings = settingsOf(value)
+    expect(settings.problems).toHaveLength(1)
+    expect(settings.views).toEqual(OUTLINE_THEN_TABLE)
+    expect(settings.columns).toEqual({})
+    expect(settings.folder).toBeUndefined()
+  })
+})
+
+describe("columns: the 7 property kinds, report-don't-block", () => {
+  it('parses declared columns, keeping kind, target and a boolean required', () => {
+    const settings = settingsOf({
+      columns: {
+        owner: { kind: 'text' },
+        kpis: { kind: 'multi-link', target: '[[KPIs]]' },
+        due: { kind: 'date', required: true },
+      },
+    })
+    expect(settings.columns).toEqual({
+      owner: { kind: 'text' },
+      kpis: { kind: 'multi-link', target: '[[KPIs]]' },
+      due: { kind: 'date', required: true },
+    })
+    expect(settings.problems).toEqual([])
+  })
+
+  it('an unknown kind is a problem and the column is treated as ABSENT', () => {
+    const settings = settingsOf({ columns: { owner: { kind: 'text' }, weird: { kind: 'rating' } } })
+    expect(Object.keys(settings.columns)).toEqual(['owner'])
+    expect(settings.problems).toHaveLength(1)
+    expect(settings.problems[0]).toContain('weird')
+  })
+
+  it('a non-map column value is a problem and the column is absent', () => {
+    const settings = settingsOf({ columns: { owner: 'text', nope: null } })
+    expect(settings.columns).toEqual({})
+    expect(settings.problems).toHaveLength(2)
+  })
+
+  it('a non-boolean required is a problem and only that key is dropped — the column stays', () => {
+    const settings = settingsOf({ columns: { owner: { kind: 'text', required: 'yes' } } })
+    expect(settings.columns).toEqual({ owner: { kind: 'text' } })
+    expect(settings.problems).toHaveLength(1)
+    expect(settings.problems[0]).toContain('required')
+  })
+
+  it('a non-map columns value is a problem and no columns are declared', () => {
+    const settings = settingsOf({ columns: ['owner'] })
+    expect(settings.columns).toEqual({})
+    expect(settings.problems).toHaveLength(1)
+  })
+})
+
+describe('views: parseViews\'s own assertion, mirrored', () => {
+  it('keeps view order, and unknown types and extra keys pass through untouched', () => {
+    const settings = settingsOf({
+      views: [
+        { type: 'outline', name: 'Outline', order: ['[[CAC]]', '[[LTV]]'] },
+        { type: 'gantt', name: 'Table', columnSize: { owner: 120 }, zoom: 3 },
+      ],
+    })
+    expect(settings.views).toEqual([
+      { type: 'outline', name: 'Outline', order: ['[[CAC]]', '[[LTV]]'] },
+      { type: 'gantt', name: 'Table', columnSize: { owner: 120 }, zoom: 3 },
+    ])
+    expect(settings.views[1].zoom).toBe(3)
+    expect(settings.problems).toEqual([])
+  })
+
+  it('an entry missing name (or type, or not a map) is dropped with a problem; the rest survive', () => {
+    const settings = settingsOf({
+      views: [{ type: 'outline' }, { type: 'table', name: 'Table' }, 'table', { name: 'Nameless' }],
+    })
+    expect(settings.views).toEqual([{ type: 'table', name: 'Table' }])
+    expect(settings.problems).toHaveLength(3)
+  })
+
+  it('a non-list views is a problem and yields DEFAULT_VIEWS', () => {
+    const settings = settingsOf({ views: 'table' })
+    expect(settings.views).toEqual(OUTLINE_THEN_TABLE)
+    expect(settings.problems).toHaveLength(1)
+  })
+
+  it('an empty list yields DEFAULT_VIEWS quietly — a folder page always has its two skins', () => {
+    const settings = settingsOf({ views: [] })
+    expect(settings.views).toEqual(OUTLINE_THEN_TABLE)
+    expect(settings.problems).toEqual([])
+  })
+
+  it('views whose entries ALL fail fall back to DEFAULT_VIEWS, problems recorded', () => {
+    const settings = settingsOf({ views: [{ type: 'outline' }] })
+    expect(settings.views).toEqual(OUTLINE_THEN_TABLE)
+    expect(settings.problems).toHaveLength(1)
+  })
+})
+
+describe('folder: the parking bin, validated by FOLDER_NAME', () => {
+  it('keeps a usable folder', () => {
+    const settings = settingsOf({ folder: 'metrics' })
+    expect(settings.folder).toBe('metrics')
+    expect(settings.problems).toEqual([])
+  })
+
+  it.each([['../evil'], ['/absolute'], ['C:/drive'], ['back\\slash'], ['.hidden']])(
+    'treats %s as absent with a problem',
+    (folder) => {
+      const settings = settingsOf({ folder })
+      expect(settings.folder).toBeUndefined()
+      expect(settings.problems).toHaveLength(1)
+    },
+  )
+
+  it('a non-string folder is a problem and absent', () => {
+    const settings = settingsOf({ folder: 7 })
+    expect(settings.folder).toBeUndefined()
+    expect(settings.problems).toHaveLength(1)
+  })
+})
+
+/** A folder page whose outline view carries this order, plus the members to arrange. */
+const arrange = (order: unknown, memberPaths: string[], extra: string[] = []): string[] => {
+  const views = order === undefined ? [{ type: 'outline', name: 'Outline' }] : [{ type: 'outline', name: 'Outline', order }]
+  const page = rec(METRICS, { folder_page: true, folder_page_settings: { views } })
+  const members = memberPaths.map((p) => rec(p))
+  const records = [page, ...members, ...extra.map((p) => rec(p))]
+  return orderedMembers(members, folderPageSettings(page), resolverOver(records)).map((r) => r.basename)
+}
+
+describe('orderedMembers: the [D5] ordering rule, once', () => {
+  it('places the ordered members first, in order-entry sequence, then the rest alphabetically', () => {
+    expect(arrange(['[[CAC]]', '[[LTV]]'], ['/vault/Zulu.md', '/vault/LTV.md', '/vault/alpha.md', '/vault/CAC.md'])).toEqual([
+      'CAC',
+      'LTV',
+      'alpha',
+      'Zulu',
+    ])
+  })
+
+  it('ignores stale entries harmlessly: an unresolved one and one resolving to a NON-member', () => {
+    expect(
+      arrange(['[[Missing]]', '[[Outsider]]', '[[CAC]]'], ['/vault/Zulu.md', '/vault/CAC.md'], ['/vault/Outsider.md']),
+    ).toEqual(['CAC', 'Zulu'])
+  })
+
+  it('resolves order entries case-insensitively and counts one member ONCE', () => {
+    expect(arrange(['[[cac]]', '[[CAC]]', '[[CAC|nice name]]'], ['/vault/CAC.md', '/vault/alpha.md'])).toEqual([
+      'CAC',
+      'alpha',
+    ])
+  })
+
+  it('no order at all is all-alphabetical by basename, case-insensitively', () => {
+    expect(arrange(undefined, ['/vault/Zulu.md', '/vault/alpha.md', '/vault/Beta.md'])).toEqual(['alpha', 'Beta', 'Zulu'])
+  })
+
+  it('no outline view is all-alphabetical too', () => {
+    const page = rec(METRICS, {
+      folder_page: true,
+      folder_page_settings: { views: [{ type: 'table', name: 'Table', order: ['[[Zulu]]'] }] },
+    })
+    const members = [rec('/vault/Zulu.md'), rec('/vault/alpha.md')]
+    const ordered = orderedMembers(members, folderPageSettings(page), resolverOver([page, ...members]))
+    expect(ordered.map((r) => r.basename)).toEqual(['alpha', 'Zulu'])
+  })
+
+  it('non-string order entries are ignored, and no members is an empty list', () => {
+    expect(arrange([42, null, '[[CAC]]'], ['/vault/CAC.md', '/vault/alpha.md'])).toEqual(['CAC', 'alpha'])
+    expect(arrange(['[[CAC]]'], [])).toEqual([])
+  })
+})
+
+describe('outlineOrderOf', () => {
+  it('returns the FIRST outline view\'s order', () => {
+    const settings = settingsOf({
+      views: [
+        { type: 'table', name: 'Table', order: ['file.name'] },
+        { type: 'outline', name: 'Outline', order: ['[[CAC]]', '[[LTV]]'] },
+        { type: 'outline', name: 'Second', order: ['[[Nope]]'] },
+      ],
+    })
+    expect(outlineOrderOf(settings)).toEqual(['[[CAC]]', '[[LTV]]'])
+  })
+
+  it('is empty when there is no outline view, no order, or a non-list order', () => {
+    expect(outlineOrderOf(settingsOf({ views: [{ type: 'table', name: 'Table', order: ['file.name'] }] }))).toEqual([])
+    expect(outlineOrderOf(settingsOf({ views: [{ type: 'outline', name: 'Outline' }] }))).toEqual([])
+    expect(outlineOrderOf(settingsOf({ views: [{ type: 'outline', name: 'Outline', order: 'CAC' }] }))).toEqual([])
+    expect(outlineOrderOf(folderPageSettings(rec(METRICS, { folder_page: true })))).toEqual([])
+  })
+})
+
+describe('writeFolderPageSettings: ONE key, through the shared writer', () => {
+  const write = vi.mocked(writeProperty)
+
+  beforeEach(() => {
+    write.mockReset()
+    write.mockResolvedValue({ mtime: 200 })
+  })
+
+  it('round-trips a parsed settings value as a plain object under the one key', async () => {
+    const raw = {
+      columns: { owner: { kind: 'text' }, kpis: { kind: 'multi-link', target: '[[KPIs]]' } },
+      folder: 'metrics',
+      views: [
+        { type: 'outline', name: 'Outline', order: ['[[CAC]]', '[[LTV]]'] },
+        { type: 'table', name: 'Table', order: ['file.name', 'owner'], columnSize: { owner: 120 }, zoom: 3 },
+      ],
+    }
+    const settings = folderPageSettings(rec(METRICS, { folder_page: true, folder_page_settings: raw }))
+
+    await expect(writeFolderPageSettings(METRICS, settings)).resolves.toEqual({ mtime: 200 })
+
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(write).toHaveBeenCalledWith(METRICS, 'folder_page_settings', raw)
+  })
+
+  it('never serializes problems, and omits empty columns and an absent folder', async () => {
+    const settings = settingsOf({ folder: '../evil', views: [{ type: 'table', name: 'Table' }] })
+    expect(settings.problems).toHaveLength(1)
+
+    await writeFolderPageSettings(METRICS, settings)
+
+    expect(write).toHaveBeenCalledWith(METRICS, 'folder_page_settings', { views: [{ type: 'table', name: 'Table' }] })
+  })
+
+  it('writes undefined to DELETE the key when the caller explicitly asks for it', async () => {
+    await writeFolderPageSettings(METRICS, undefined)
+    expect(write).toHaveBeenCalledWith(METRICS, 'folder_page_settings', undefined)
+  })
+})
+
+describe('columnKindIn (YAZ-831): typing is VIEW-SCOPED — no global winner', () => {
+  it('answers one folder page\'s own declaration, or null', () => {
+    const settings = settingsOf({ columns: { owner: { kind: 'text' } } })
+    expect(columnKindIn(settings, 'owner')).toEqual({ kind: 'text' })
+    expect(columnKindIn(settings, 'cadence')).toBeNull()
+  })
+
+  it('two folder pages declaring the SAME key differently each answer their own — neither wins', () => {
+    const metrics = settingsOf({ columns: { owner: { kind: 'text' } } })
+    const team = folderPageSettings(
+      rec('/vault/Team.md', { folder_page: true, folder_page_settings: { columns: { owner: { kind: 'link' } } } }),
+    )
+    expect(columnKindIn(metrics, 'owner')).toEqual({ kind: 'text' })
+    expect(columnKindIn(team, 'owner')).toEqual({ kind: 'link' })
+  })
+})

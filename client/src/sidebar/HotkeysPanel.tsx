@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 /**
  * Hotkey reference (GRO-2067 Q4): keyboard-icon button beside the settings cog; the popover
  * lists every binding from this single source-of-truth list. When a keymap changes anywhere
- * (hotkeys.ts, zoom.ts, marks/underline.ts, listCommands.ts, bases/view/*, the application
+ * (hotkeys.ts, zoom.ts, marks/underline.ts, listCommands.ts, views/view/*, the application
  * menu in desktop/src/main/menu.ts), update HOTKEYS (or BASES_HOTKEYS / WINDOW_HOTKEYS) with it —
  * HotkeysPanel.test.ts pins the expected set so drift fails loudly.
  * Reuses the settings popover classes (SettingsPanel.tsx / app.css) for placement and look.

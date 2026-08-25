@@ -15,8 +15,8 @@
  */
 import { useEffect } from 'react'
 import type { IndexRecord } from '@shared/types'
-import { resolverFor } from '../../bases/engine'
-import { useIndex } from '../../bases/useIndex'
+import { resolverFor } from '../../views/engine'
+import { useIndex } from '../../views/useIndex'
 import type { WatchSource } from '../../hooks/useWatch'
 import { linkCandidates } from '../../links/completion'
 import type { MutableWikilinkCandidateSource } from './wikilinkPicker'
