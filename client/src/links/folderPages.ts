@@ -52,20 +52,41 @@ export interface FolderPagesLookup {
   isFolderPage(record: IndexRecord): boolean
 }
 
+/**
+ * One note's `folder_pages` as a REWRITABLE list (YAZ-820). Scalar-or-list is the indexer's own
+ * tolerance (`extractLinks`, scan.ts): a bare `folder_pages: "[[X]]"` is one entry, not nothing.
+ * Entries come back VERBATIM — nothing is dropped or normalised — because the tag / un-tag
+ * gestures read this, edit one element and write the whole list back, and an entry this module
+ * does not count for anybody is still the user's text and must survive untouched.
+ */
+export function folderPagesList(record: IndexRecord): unknown[] {
+  const raw = record.properties[FOLDER_PAGES_KEY]
+  if (Array.isArray(raw)) return [...raw]
+  // A mapping (or a missing key) declares nothing, and rewriting it as a list would be an edit
+  // nobody asked for — an absent/mapping value simply starts from empty.
+  return raw === undefined || raw === null || typeof raw === 'object' ? [] : [raw]
+}
+
+/**
+ * THE CLICK RULE for ONE entry, minus the flag test: the path this entry counts for, or null.
+ * Exported so the outline's un-tag can find exactly the entries `parentsOf` counted (YAZ-820) —
+ * a prose entry that merely SPELLS the folder page's name never resolves here, so removing a
+ * membership can never eat a line the lookup was ignoring anyway.
+ */
+export function entryTarget(entry: unknown, resolve: ResolveLink): string | null {
+  if (typeof entry !== 'string') return null
+  const link = entry.trim()
+  if (!EXACT_WIKILINK_RE.test(link)) return null
+  // The raw link goes to the resolver brackets and all — it strips them (`stripBrackets`),
+  // along with any `|alias` / `#heading`, exactly as a click on that link would.
+  return resolve(link)
+}
+
 /** The folder pages one record's `folder_pages` counts for: the click rule, de-duplicated. */
 function parentsOf(record: IndexRecord, flagged: ReadonlySet<string>, resolve: ResolveLink): string[] {
-  const raw = record.properties[FOLDER_PAGES_KEY]
-  // Scalar-or-list, the indexer's own tolerance (`extractLinks`, scan.ts): a bare
-  // `folder_pages: "[[X]]"` is one entry, not nothing. Mappings still declare nothing.
-  const entries = Array.isArray(raw) ? raw : [raw]
   const out: string[] = []
-  for (const entry of entries) {
-    if (typeof entry !== 'string') continue
-    const link = entry.trim()
-    if (!EXACT_WIKILINK_RE.test(link)) continue
-    // The raw link goes to the resolver brackets and all — it strips them (`stripBrackets`),
-    // along with any `|alias` / `#heading`, exactly as a click on that link would.
-    const target = resolve(link)
+  for (const entry of folderPagesList(record)) {
+    const target = entryTarget(entry, resolve)
     if (target === null || !flagged.has(target) || out.includes(target)) continue
     out.push(target)
   }

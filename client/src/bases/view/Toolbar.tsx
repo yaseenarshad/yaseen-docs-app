@@ -40,6 +40,13 @@ export interface ToolbarProps {
    * settings hold no filter for its contents and the Filter button is not offered at all.
    */
   noFilters?: boolean
+  /**
+   * The folder page's OUTLINE is showing (YAZ-820): that view's `order` is the [D5] member
+   * sequence, not a column list, and every Properties gesture rewrites `view.order` — so the menu
+   * is not offered rather than being allowed to overwrite the locked ordering. An outline has no
+   * columns to configure either way.
+   */
+  noProperties?: boolean
 }
 
 /** `8 items`, or `1 / 8 items` when search or limit reduce what the body shows. */
@@ -47,7 +54,7 @@ export const countLabel = (shown: number, total: number): string =>
   shown === total ? `${total} item${total === 1 ? '' : 's'}` : `${shown} / ${total} items`
 
 /** View chrome (GRO-2135): tabs on the left; Filter / Sort / Properties / Search buttons and the count on the right. */
-export function Toolbar({ def, view, viewIndex, records, errors, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, root = null, properties = null, noFilters = false }: ToolbarProps) {
+export function Toolbar({ def, view, viewIndex, records, errors, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, root = null, properties = null, noFilters = false, noProperties = false }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
   const close = useCallback(() => setOpen(null), [])
   const filters = countRules(def.filters) + countRules(view.filters)
@@ -107,13 +114,14 @@ export function Toolbar({ def, view, viewIndex, records, errors, shown, total, s
             <ChevronsIcon />
           </button>
         )}
-        {button(
-          'properties',
-          'Properties',
-          <PropertiesIcon />,
-          0,
-          <PropertiesMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} root={root} properties={properties} />,
-        )}
+        {!noProperties &&
+          button(
+            'properties',
+            'Properties',
+            <PropertiesIcon />,
+            0,
+            <PropertiesMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} root={root} properties={properties} />,
+          )}
         <div className="base-toolbar__search">
           <button
             type="button"

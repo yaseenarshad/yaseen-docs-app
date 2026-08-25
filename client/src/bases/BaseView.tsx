@@ -13,6 +13,7 @@ import { canonicalKey } from './view/filterRows'
 import { type GroupSwap, type PendingMove, applyMoves, groupByKey } from './view/groupDrag'
 import { groupKeyOf } from './view/GroupHeader'
 import { ListView } from './view/ListView'
+import { OutlineView } from './view/OutlineView'
 import { TableView } from './view/TableView'
 import { Toolbar } from './view/Toolbar'
 import { ViewTabs } from './view/ViewTabs'
@@ -27,8 +28,13 @@ export interface FolderPageMode {
   settings: FolderPageSettings
   /** The WHOLE index snapshot — `records` here carries only the members (🔒 D2), and link resolution plus the link pickers must still see the vault. */
   vaultRecords: readonly IndexRecord[]
-  /** Birth from a folder page (🔒 Q5, YAZ-815): create a page from `seed` and resolve its path. */
-  create: (seed: NewNoteSeed) => Promise<string>
+  /**
+   * Birth from a folder page (🔒 Q5, YAZ-815): create a page from `seed` and resolve its path.
+   * `name` is the outline add row's "+ Create 'X' here" (YAZ-820); absent → the `Untitled` scheme.
+   */
+  create: (seed: NewNoteSeed, name?: string) => Promise<string>
+  /** ⌘-click on an outline row opens the page in a BACKGROUND tab (YAZ-820); absent → opens in place. */
+  openBackground?: (path: string) => void
 }
 
 export interface BaseViewProps {
@@ -106,7 +112,19 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
   // passes nothing and keeps the default, which is the same resolver it always built.
   const vaultRecords = folderPage?.vaultRecords
   const resolve = useMemo(() => (vaultRecords === undefined ? undefined : resolverFor(vaultRecords)), [vaultRecords])
-  const result = useMemo(() => (view ? runView(def, view, shown, { thisFile, resolve }) : null), [def, view, shown, thisFile, resolve])
+  /**
+   * The folder page's OUTLINE (YAZ-820) — and the ONE place the engine has to be told about it:
+   * an outline view's `order` is the [D5] MEMBER sequence (wikilinks), not a column list, so it
+   * is dropped before the run. Left in, `propertyKeys` would hand those wikilinks to the value
+   * pass, every row's `values` would come back empty, and the toolbar's search — which matches
+   * over exactly those values — would hide the whole outline the moment anybody dragged a row.
+   * Everything else the view says (sort, limit, groupBy) still runs.
+   */
+  const isFolderOutline = view?.type === 'outline' && folderPage !== undefined
+  const result = useMemo(
+    () => (view ? runView(def, isFolderOutline && view.order !== undefined ? { ...view, order: undefined } : view, shown, { thisFile, resolve }) : null),
+    [def, view, shown, thisFile, resolve, isFolderOutline],
+  )
 
   if (view === undefined || result === null) {
     return (
@@ -214,6 +232,21 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const rest = keys.filter((k) => k !== nameKey)
 
+  /**
+   * The folder page's OUTLINE (YAZ-820) — only ever inside the contents block: a `.base` naming
+   * `type: outline` has no folder page behind it and keeps the placeholder rows, as it always did.
+   * `thisFile` IS the folder page's path here (`FolderPageContents` passes it), and it roots the
+   * ancestor guard, so a null one falls through too rather than guessing.
+   */
+  const outline = isFolderOutline && thisFile !== null
+  /**
+   * The outline view's `order` is the [D5] MEMBER sequence, not a column list — so the Properties
+   * menu, whose every gesture rewrites `view.order`, is not offered while it is showing. An
+   * outline has no columns to configure; leaving the menu up would let a click silently overwrite
+   * the locked ordering with property keys.
+   */
+  const outlineIndex = views.findIndex((v) => v.type === 'outline')
+
   const tabs = {
     views,
     active: index,
@@ -276,6 +309,7 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           root={root}
           properties={properties}
           noFilters={folderPage !== undefined}
+          noProperties={outline}
         />
       )}
       {createError !== null && (
@@ -294,6 +328,30 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
         <p className="base-view__error" role="alert">
           Could not load the vault index: {indexError}
         </p>
+      ) : outline ? (
+        <OutlineView
+          folderPagePath={thisFile}
+          settings={folderPage.settings}
+          vaultRecords={folderPage.vaultRecords}
+          records={records}
+          rows={rows}
+          onOpenFile={onOpenFile}
+          openBackground={folderPage.openBackground}
+          // ONE `folder_page_settings` write, through the same door every config edit uses. It
+          // lands on the FIRST outline view because that is the one `orderedMembers` reads back
+          // (🔒 Q3) — with the two default views they are the same view.
+          onOrder={(order) =>
+            update((d) => {
+              d.views[outlineIndex].order = order
+            })
+          }
+          onCreate={(name) => {
+            setCreateError(null)
+            // Birth, then STAY: the new member appears as a row on the next snapshot, and the
+            // outline the user is reading does not jump out from under them.
+            folderPage.create(deriveSeed(def, view), name).catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
+          }}
+        />
       ) : view.type === 'table' ? (
         <TableView
           def={def}

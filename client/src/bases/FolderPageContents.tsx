@@ -45,6 +45,8 @@ export interface FolderPageContentsProps {
   source: WikilinkResolveSource
   /** A row link opens the member; the create opens the new page. */
   onOpenFile: (path: string) => void
+  /** ⌘-click on an outline row (YAZ-820) — the window's background-tab open; absent → opens in place. */
+  onOpenFileBackground?: (path: string) => void
 }
 
 const NONE: IndexRecord[] = []
@@ -71,7 +73,7 @@ function folderPageBase(views: readonly BaseViewDef[]): ParsedBase {
   }
 }
 
-export function FolderPageContents({ path, root, source, onOpenFile }: FolderPageContentsProps) {
+export function FolderPageContents({ path, root, source, onOpenFile, onOpenFileBackground }: FolderPageContentsProps) {
   // Subscribe once, re-read the whole feed on each poke; an unchanged snapshot keeps the previous
   // object, so index churn elsewhere in the vault costs no render (BacklinksSection's idiom).
   const [feed, setFeed] = useState<Feed>(() => ({ records: source.records, resolve: source.resolve }))
@@ -119,7 +121,8 @@ export function FolderPageContents({ path, root, source, onOpenFile }: FolderPag
   const mode: FolderPageMode = {
     settings,
     vaultRecords: feed.records,
-    create: (seed) => createMember(root, record.basename, path, settings, feed.records, seed),
+    create: (seed, name) => createMember(root, record.basename, path, settings, feed.records, seed, name),
+    openBackground: onOpenFileBackground,
   }
 
   return (
@@ -148,6 +151,12 @@ export function FolderPageContents({ path, root, source, onOpenFile }: FolderPag
  * lands LAST, and the page is an ORDINARY one — the flag is never born here. Parking is the
  * settings' `folder` (created level by level), and without one the page lands beside the folder
  * page itself. The create is the existing atomic content-at-create path.
+ *
+ * `name` is the outline add row's "+ Create 'X' here" (YAZ-820) — the ONE thing that changes is
+ * what the file is called; the toolbar's New passes nothing and keeps the `Untitled` scheme. A
+ * name that is already taken in the parking folder is left to `createFile`'s never-overwrite
+ * guarantee, which refuses and is reported in place: silently renaming what the user typed would
+ * be worse than saying so.
  */
 async function createMember(
   root: string,
@@ -156,11 +165,12 @@ async function createMember(
   settings: FolderPageSettings,
   records: readonly IndexRecord[],
   seed: NewNoteSeed,
+  name?: string,
 ): Promise<string> {
   const parts = await newPageFromFolderPage(root, folderPageName, settings, seed.properties)
   const dir = settings.folder === undefined ? folderPagePath.slice(0, folderPagePath.lastIndexOf('/')) : await ensureFolder(root, settings.folder)
   const taken = new Set(records.filter((r) => r.path.slice(0, r.path.lastIndexOf('/')) === dir).map((r) => r.basename))
-  const target = `${dir}/${untitledName(taken)}.md`
+  const target = `${dir}/${name ?? untitledName(taken)}.md`
   await createNewNote(target, parts.properties, parts.body)
   return target
 }

@@ -16,6 +16,11 @@
  *     only the members
  *   4 "New" births a member from the declaration, parks it per the settings, and it comes back
  *     as a row
+ *   5 the OUTLINE tags a page (YAZ-820): the add row's picker writes `folder_pages` onto the
+ *     PICKED page's own file, on disk
+ *   6 nesting: a member turned into a folder page of its own expands INSIDE this outline
+ *   7 the hover × + confirm sheet un-tags it again — dropping ONLY this folder page's entry and
+ *     leaving the other one exactly where it was
  *
  * Same harness as bible.spec.ts (temp `--user-data-dir`, a COPY of the fixture, `folder-` step
  * screenshots).
@@ -48,6 +53,12 @@ const viewTabs = (scope: Locator) => scope.locator('.base-tab__btn[role="tab"]')
 const dataRows = (scope: Locator) => scope.locator('.base-table tbody tr:not(.base-table__group):not(.base-table__spacer)')
 /** Row names, whichever body renders: the unknown-view placeholder list, or the real table. */
 const rowNames = (scope: Locator) => scope.locator('.base-row__link, .base-table__link')
+/** The OUTLINE's rows (YAZ-820), in render order — nested rows are siblings, so this is the whole tree. */
+const outlineRows = (scope: Locator) => scope.locator('.base-outline__link')
+const addRow = (scope: Locator) => scope.locator('[aria-label="Link a page"]')
+const picks = (scope: Locator) => scope.locator('.base-outline__pick')
+const sheet = (w: Page) => w.locator('[role="dialog"]')
+const sheetBtn = (w: Page, label: string) => sheet(w).locator('.confirm__btn', { hasText: label })
 const cell = (scope: Locator, r: number, c: number) => scope.locator(`[data-cell="${r}:${c}"]`)
 const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 /** `file.name` is Obsidian's TFile name — extension included. */
@@ -78,10 +89,10 @@ test('step 1 — the contents block sits between the note and its backlinks, hol
     .evaluate((host) => Array.from(host.children).map((c) => c.className))
   expect(children).toEqual(['editor-mount', 'folder-page-contents', 'backlinks'])
 
-  // Q7: the folder page's two skins, outline FIRST — 5.2 builds that renderer, so today it is
-  // the placeholder row list, and the tabs still switch.
+  // Q7: the folder page's two skins, outline FIRST (YAZ-820) — rows are PAGES, in the [D5]
+  // order, which with no `order` stored is alphabetical by name.
   await expect(viewTabs(contents(win))).toHaveText(['Outline', 'Table'])
-  await expect(rowNames(contents(win))).toHaveText(named(...MEMBERS))
+  await expect(outlineRows(contents(win))).toHaveText(MEMBERS)
   await shoot(win, 'folder-01-contents-outline')
 
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
@@ -142,8 +153,66 @@ test('step 4 — "New" births a member from the declaration, parked per the sett
   // …and the folder page adopts it off the watcher, with no user action.
   await fileRow(win, 'Funnel Stages').click()
   await expect(contents(win)).toBeVisible()
-  await expect(rowNames(contents(win))).toHaveText(named('Lead Gen', 'Lead Nurture', 'Sales-Conversion', 'Untitled'))
+  // Which view is active is SESSION state, so the re-opened note is back on Q7's first skin.
+  await expect(outlineRows(contents(win))).toHaveText([...MEMBERS, 'Untitled'])
   await shoot(win, 'folder-06-new-member-row')
+})
+
+/** The kpi page the outline gestures move around; it starts life belonging to nothing. */
+const CAC = 'kpis/CAC.md'
+
+test('step 5 — the outline’s add row tags an existing page, on that page’s own file', async () => {
+  await viewTabs(contents(win)).filter({ hasText: 'Outline' }).click()
+  await expect(outlineRows(contents(win))).toHaveText([...MEMBERS, 'Untitled'])
+
+  // PICKER-ONLY (🔒 D4): typing narrows real pages and only a pick commits.
+  await addRow(contents(win)).fill('CAC')
+  await expect(picks(contents(win))).toHaveText(['CAC'])
+  await shoot(win, 'folder-07-outline-picker')
+  await picks(contents(win)).first().click()
+
+  // The write lands on the PICKED page's card — never on the folder page's.
+  const cac = path.join(vault, CAC)
+  await expect.poll(() => readFile(cac, 'utf8'), { timeout: 10_000 }).toContain('[[Funnel Stages]]')
+  expect(await readFile(cac, 'utf8')).toContain('funnel_stages: ["[[Lead Gen]]"]') // every other key survives
+  await expect(outlineRows(contents(win))).toHaveText(['CAC', ...MEMBERS, 'Untitled'])
+  await shoot(win, 'folder-08-outline-tagged')
+})
+
+test('step 6 — a member that is itself a folder page expands inside the outline', async () => {
+  // The sidebar's own gesture (YAZ-840) makes Lead Gen a folder page; forward never confirms.
+  await fileRow(win, 'Lead Gen').click({ button: 'right' })
+  await win.locator('.ctx-menu [role="menuitem"]', { hasText: 'Turn into folder page' }).click()
+
+  // Tag CAC into Lead Gen from LEAD GEN's own outline — CAC now belongs to both.
+  await fileRow(win, 'Lead Gen').click()
+  await expect(contents(win)).toBeVisible()
+  await addRow(contents(win)).fill('CAC')
+  await picks(contents(win)).first().click()
+  await expect.poll(() => readFile(path.join(vault, CAC), 'utf8'), { timeout: 10_000 }).toContain('[[Lead Gen]]')
+
+  // Back on Funnel Stages the row wears the glyph and its direct-member count, and its chevron
+  // opens the level below IN PLACE — CAC renders under both parents (🔒 D6).
+  await fileRow(win, 'Funnel Stages').click()
+  await expect(contents(win).locator('.base-outline__count')).toHaveText(['1'])
+  await contents(win).locator('[aria-label="Expand Lead Gen"]').click()
+  await expect(outlineRows(contents(win))).toHaveText(['CAC', 'Lead Gen', 'CAC', 'Lead Nurture', 'Sales-Conversion', 'Untitled'])
+  await shoot(win, 'folder-09-outline-nested')
+})
+
+test('step 7 — the × + sheet un-tags it, dropping ONLY this folder page’s entry', async () => {
+  // Depth 0 only: the nested CAC under Lead Gen carries no ×, so this locator is unambiguous.
+  await contents(win).locator('[aria-label="Remove CAC from Funnel Stages"]').click()
+  await expect(sheet(win)).toContainText('The page is not deleted — its file stays put. It remains in: Lead Gen.')
+  await shoot(win, 'folder-10-remove-sheet')
+  await sheetBtn(win, 'Remove').click()
+
+  const cac = path.join(vault, CAC)
+  await expect.poll(() => readFile(cac, 'utf8'), { timeout: 10_000 }).not.toContain('[[Funnel Stages]]')
+  expect(await readFile(cac, 'utf8')).toContain('[[Lead Gen]]') // the other belonging is untouched
+  // Gone from depth 0, still standing under Lead Gen, which is where it still belongs.
+  await expect(outlineRows(contents(win))).toHaveText(['Lead Gen', 'CAC', 'Lead Nurture', 'Sales-Conversion', 'Untitled'])
+  await shoot(win, 'folder-11-outline-untagged')
 
   await quitApp(app)
 })

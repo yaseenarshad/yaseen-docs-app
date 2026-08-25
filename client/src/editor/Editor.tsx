@@ -223,7 +223,9 @@ function CrepeHost({
           means for a base is a Bases question — BaseHost stays untouched. */}
       <div className="editor-host">
         <div className="editor-mount" ref={hostRef} />
-        {wikilinks !== undefined && <FolderPageContents path={file.path} root={root} source={wikilinks} onOpenFile={onOpenFile} />}
+        {wikilinks !== undefined && (
+          <FolderPageContents path={file.path} root={root} source={wikilinks} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} />
+        )}
         {wikilinks !== undefined && (
           <BacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
         )}

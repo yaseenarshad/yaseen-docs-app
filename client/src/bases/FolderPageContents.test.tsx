@@ -135,8 +135,11 @@ function q<T extends Element>(el: ParentNode, sel: string): T {
 const byLabel = <T extends HTMLElement>(el: ParentNode, label: string): T => q<T>(el, `[aria-label="${label}"]`)
 const texts = (el: ParentNode, sel: string): string[] => [...el.querySelectorAll(sel)].map((n) => n.textContent ?? '')
 const options = (el: ParentNode): (string | null)[] => [...el.querySelectorAll('[role="option"]')].map((o) => o.textContent)
-/** Row names, whichever body is rendering: the placeholder list or the real table. */
-const rowNames = (el: ParentNode): string[] => texts(el, '.base-row__link, .base-table__link')
+/**
+ * Row names, whichever body is rendering: the outline (YAZ-820, which names pages the way a link
+ * does — no extension), the placeholder list, or the real table (`file.name`, extension and all).
+ */
+const rowNames = (el: ParentNode): string[] => texts(el, '.base-outline__link, .base-row__link, .base-table__link')
 
 function click(el: Element): void {
   act(() => (el as HTMLElement).click())
@@ -197,6 +200,8 @@ describe('who gets a contents block', () => {
 describe('rows are the members, and only the members', () => {
   it('the lookup fills the block — never a filter over the whole vault', () => {
     const el = mount(FUNNELS)
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales']) // the outline, alphabetical (🔒 the [D5] rule)
+    selectView(el, 'Table')
     expect(rowNames(el)).toEqual(['Lead Gen.md', 'Sales.md']) // path order, as `pagesIn` gives them
     expect(el.textContent).not.toContain('Other')
     expect(el.textContent).not.toContain('CAC')
@@ -205,7 +210,7 @@ describe('rows are the members, and only the members', () => {
   it('a member added on the next snapshot lands in the block with no user action', () => {
     const el = mount(FUNNELS)
     feed([...vault(), rec('/vault/stages/Expansion.md', { folder_pages: ['[[Funnel Stages]]'] })])
-    expect(rowNames(el)).toEqual(['Expansion.md', 'Lead Gen.md', 'Sales.md'])
+    expect(rowNames(el)).toEqual(['Expansion', 'Lead Gen', 'Sales'])
   })
 
   it('the whole-vault resolver reaches the engine: a link pointing OUTSIDE the members resolves (🔒 D2)', () => {
@@ -219,10 +224,11 @@ describe('rows are the members, and only the members', () => {
 // ---------- the chrome (🔒 rule 4 + Q3) ----------
 
 describe('the chrome is the bases chrome, minus what a folder page cannot have', () => {
-  it('an unknown view type keeps the placeholder rows AND the tabs, so the user can switch', () => {
+  it('both skins render and the tabs switch between them (🔒 Q7: outline first)', () => {
     const el = mount(FUNNELS)
     expect(texts(el, '.base-tab__btn')).toEqual(['Outline', 'Table'])
-    expect(el.querySelector('.base-table')).toBeNull() // `outline` is 5.2's renderer
+    expect(el.querySelector('.base-outline')).not.toBeNull() // YAZ-820's renderer
+    expect(el.querySelector('.base-table')).toBeNull()
     selectView(el, 'Table')
     expect(el.querySelector('.base-table')).not.toBeNull()
     expect(rowNames(el)).toEqual(['Lead Gen.md', 'Sales.md'])
