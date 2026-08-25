@@ -113,6 +113,19 @@ export function folderPagesLookup(records: readonly IndexRecord[], resolve: Reso
 }
 
 /**
+ * Picker candidates for a belongs-to column (🔒 Q2, YAZ-815): the pages in the folder page
+ * `target` names — resolved like a click — falling back to ALL basenames when the target is
+ * unresolved or holds nobody. Report-don't-block, `relationBasenames`' own rule: the picker
+ * narrows when it can and never goes empty. Successor to the `page_type`-keyed
+ * `bases/relation.ts` `relationBasenames` (which 3- deletes).
+ */
+export function belongsToBasenames(records: readonly IndexRecord[], resolve: ResolveLink, target: string): string[] {
+  const home = resolve(target)
+  const matches = home === null ? [] : folderPagesLookup(records, resolve).pagesIn(home).map((r) => r.basename)
+  return matches.length > 0 ? matches : records.map((r) => r.basename)
+}
+
+/**
  * Depth-first over the CONTENTS of `start` — its direct members at depth 0, theirs at 1, `start`
  * itself never visited; siblings in `pagesIn` order and a member's whole subtree before the next.
  *

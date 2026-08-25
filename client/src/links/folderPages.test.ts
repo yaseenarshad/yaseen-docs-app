@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { stripBrackets } from '../bases/expr'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
-import { folderPagesLookup, isFolderPage, walkFolderPage } from './folderPages'
+import { belongsToBasenames, folderPagesLookup, isFolderPage, walkFolderPage } from './folderPages'
 
 const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -272,5 +272,26 @@ describe('walkFolderPage (YAZ-826): the loop guard', () => {
     const records = [rec('/vault/Leaf.md', belongs('[[Metrics]]')), folder(METRICS)]
     expect(visitsFrom(records, '/vault/Leaf.md')).toEqual([])
     expect(visitsFrom(records, '/vault/Nowhere.md')).toEqual([])
+  })
+})
+
+describe('belongsToBasenames (YAZ-831): the belongs-to picker', () => {
+  it('narrows to the pages in the named folder page, resolved like a click', () => {
+    const records = [
+      rec('/vault/CAC.md', belongs('[[Metrics]]')),
+      rec('/vault/LTV.md', belongs('[[metrics]]')),
+      rec('/vault/Elsewhere.md'),
+      folder(METRICS),
+    ]
+    expect(belongsToBasenames(records, resolverOver(records), '[[metrics]]')).toEqual(['CAC', 'LTV'])
+  })
+
+  it('falls back to ALL basenames when the target is unresolved, empty, or not a folder page', () => {
+    const records = [rec('/vault/A.md'), folder(METRICS)]
+    const resolve = resolverOver(records)
+    const all = ['A', 'Metrics']
+    expect(belongsToBasenames(records, resolve, '[[Missing]]')).toEqual(all)
+    expect(belongsToBasenames(records, resolve, '[[Metrics]]')).toEqual(all) // flagged, holds nobody
+    expect(belongsToBasenames(records, resolve, '[[A]]')).toEqual(all) // an ordinary page
   })
 })
