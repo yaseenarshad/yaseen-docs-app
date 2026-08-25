@@ -391,6 +391,9 @@ export function App() {
           onRenameFile={renameFile}
           onDeleteFile={deleteFile}
           onNotice={setNotice}
+          // The folder-page toggle's flag state (YAZ-840) reads the SAME per-window index source
+          // WikilinkIndexBridge already feeds below — read-only, and no second feed.
+          indexSource={wikilinks}
           pendingSearchFocus={pendingSearchFocus}
           onSearchFocusHandled={searchFocusHandled}
         />

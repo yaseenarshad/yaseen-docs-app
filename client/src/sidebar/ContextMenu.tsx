@@ -24,11 +24,20 @@ interface ContextMenuProps {
   /** Create an Obsidian-compatible `.base` file (GRO-2126). */
   onNewBase: () => void
   onNewFolder: () => void
+  /**
+   * The folder-page toggle's own target (🔒 D2, YAZ-817): MARKDOWN FILE rows only — null on
+   * folders, on `.base` rows and on blank space, none of which can carry the flag.
+   */
+  folderPagePath: string | null
+  /** Is that page a folder page ALREADY? One item, two labels — the flag picks which (🔒 D2). */
+  folderPageIsOn: boolean
+  /** The direction rides along with the target so the caller never re-derives it after the close. */
+  onToggleFolderPage: (path: string, isOn: boolean) => void
   onClose: () => void
 }
 
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, onNewNote, onNewBase, onNewFolder, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, onNewNote, onNewBase, onNewFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, onClose }: ContextMenuProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -123,6 +132,24 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
         <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewFolder}>
           New folder
         </button>
+        {/* The folder-page toggle (🔒 D2, YAZ-817): ONE state-aware item, both directions. It
+            acts ON the right-clicked page rather than creating beside it, so it sits after the
+            create group — and above Rename, because the destructive pair keeps the bottom. The
+            reverse label is the one that opens a confirm sheet (🔒 D5); the forward one writes
+            immediately (🔒 D1), which is why neither reads like a warning. */}
+        {folderPagePath !== null && (
+          <button
+            type="button"
+            className="ctx-menu__item"
+            role="menuitem"
+            onClick={() => {
+              onToggleFolderPage(folderPagePath, folderPageIsOn)
+              onClose()
+            }}
+          >
+            {folderPageIsOn ? 'Turn back into normal page' : 'Turn into folder page'}
+          </button>
+        )}
         {/* Rename and Delete render LAST (GRO-2272 `C1a-`, LOCKED): VS Code's Explorer puts
             both at the bottom, and destructive-last is safer on its own merits — Delete used
             to sit directly under Rename, which is the misclick pair that matters most.

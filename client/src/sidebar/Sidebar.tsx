@@ -1,15 +1,20 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { fileKind } from '@shared/fileKind'
 import type { SettingsState, TreeNode, TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { SearchIcon } from '../bases/view/icons'
+import { writeProperty } from '../bases/writeProperty'
+import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
+import { FOLDER_PAGE_KEY, isFolderPage } from '../links/folderPages'
 import { countLinkReferences } from '../links/renameLinks'
 import { treeHasFile, treeReducer } from '../lib/treeState'
 import { SearchResults } from '../search/SearchResults'
 import { useSearchResults } from '../search/useSearchResults'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
+import { ConfirmTurnBack } from './ConfirmTurnBack'
 import { ContextMenu } from './ContextMenu'
 import { entryPath, renamedPath, targetDirFor, type EntryKind } from './createEntry'
 import { HotkeysButton } from './HotkeysPanel'
@@ -52,6 +57,20 @@ interface SidebarProps {
   /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
   onNotice: (message: string) => void
   /**
+   * The window's index snapshot, for the folder-page toggle's LABEL (🔒 D2, YAZ-817). This is
+   * deliberately the SAME object `WikilinkIndexBridge` already feeds — App's one always-on
+   * per-window index source — read, never written: the sidebar needs one boolean about one
+   * right-clicked row, which is not worth a second feed (F1 finding 1, YAZ-808 says so about
+   * search) and certainly not new IPC. It is read in the context-menu handler, so the menu never
+   * re-renders on index churn and the flag can never disagree with the row it was read for.
+   *
+   * `records` is `[]` until the first index lands. That reads as "not a folder page", so a
+   * right-click in that first moment offers "Turn into folder page" on a page that already is
+   * one — and the write is then a no-op, because `writeProperty` never touches disk when the
+   * bytes would not change. Report-don't-block: nothing is lost, and the next right-click is right.
+   */
+  indexSource: WikilinkResolveSource
+  /**
    * ⌘K asked for the search bar (YAZ-801): the bar focuses its input. True at MOUNT is the
    * ⌘K-while-collapsed path (App un-collapses, so the sidebar mounts with it already set), not an
    * edge case. Nothing sets it true yet — YAZ-804 wires the shortcut.
@@ -91,6 +110,14 @@ interface MenuTargets {
   deletePath: string | null
   /** "Reveal in Finder" — the row, or the vault ROOT for blank space (GRO-2274); same target as `copyPath`. */
   revealPath: string | null
+  /**
+   * "Turn into folder page" / "Turn back into normal page" — MARKDOWN FILE rows only (🔒 D2,
+   * YAZ-817). Its OWN field, not `newWindowPath` reused: that one is every file row, and a
+   * `.base` row can no more carry the flag than a folder can.
+   */
+  folderPagePath: string | null
+  /** That row's flag when the menu opened, off the window's index snapshot; picks the label. */
+  folderPageIsOn: boolean
 }
 
 /**
@@ -154,6 +181,7 @@ export function Sidebar({
   onRenameFile,
   onDeleteFile,
   onNotice,
+  indexSource,
   pendingSearchFocus,
   onSearchFocusHandled,
 }: SidebarProps) {
@@ -165,6 +193,9 @@ export function Sidebar({
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir' } | null>(null)
   // The delete confirm sheet's target (GRO-2272 `C3-`); null when the sheet is closed.
   const [confirmingDelete, setConfirmingDelete] = useState<DeleteTarget | null>(null)
+  // The turn-BACK sheet's target (🔒 D5, YAZ-817); null when closed. Only the reverse has one —
+  // turning INTO a folder page never opens a sheet at all (🔒 D1).
+  const [confirmingTurnBack, setConfirmingTurnBack] = useState<string | null>(null)
   // File drag-to-move (E1b, GRO-2241): the dragged file row + the highlighted drop target.
   const [dragging, setDragging] = useState<string | null>(null)
   const [dropDir, setDropDir] = useState<string | null>(null)
@@ -275,6 +306,11 @@ export function Sidebar({
       e.preventDefault()
       e.stopPropagation()
       const filePath = node?.type === 'file' ? node.path : null
+      // The toggle's own target (🔒 D2): a NOTE, so `.base` rows are out — `fileKind` is the
+      // same classifier the tree and the index use, never a local `.md` test. The flag is read
+      // HERE, once, off the window's snapshot: the menu that opens is about the row that was
+      // right-clicked, and pinning the boolean into the menu's state is what keeps it that way.
+      const notePath = filePath !== null && fileKind(filePath) === 'markdown' ? filePath : null
       setMenu({
         x: e.clientX,
         y: e.clientY,
@@ -294,9 +330,11 @@ export function Sidebar({
         renamePath: node?.path ?? null,
         deletePath: node?.path ?? null,
         revealPath: node?.path ?? root.replace(/\/+$/, ''),
+        folderPagePath: notePath,
+        folderPageIsOn: notePath !== null && indexSource.records.some((r) => r.path === notePath && isFolderPage(r)),
       })
     },
-    [root],
+    [root, indexSource],
   )
 
   /** Context menu "Open in new window" (D2, GRO-2168): a fresh window on {root, file}; this one untouched. (⌘-click opens a background tab instead since I3.) */
@@ -390,6 +428,50 @@ export function Sidebar({
     },
     [confirmingDelete, onDeleteFile, onChangeSettings, settings],
   )
+
+  // ---- Turn into / turn back (YAZ-840): context menu → ONE frontmatter key, both directions ----
+
+  /**
+   * BOTH directions, ONE writer (🔒 D1 / 🔒 D3) — `on` is what the flag BECOMES. Forward writes exactly `folder_page: true` and
+   * NOTHING else — no settings block is stamped, because a folder page with no settings is a
+   * folder page and 4C's panel writes them when the user actually chooses something. Reverse
+   * deletes the key (`undefined`) and stops: `folder_page_settings` stays on disk, so a page
+   * turned back and then forward again returns with its columns and views intact, and every
+   * member's `folder_pages` entry is left untouched — the reverse is LOSSLESS by construction,
+   * not by cleanup.
+   *
+   * An editor open on this file absorbs the write silently — the existing GRO-2186 behaviour,
+   * nothing extra here. Failures take the sidebar's standing route for file-op failures: the
+   * passive notice (`reveal`'s idiom above), never a dialog.
+   */
+  const setFolderPageFlag = useCallback(
+    (path: string, on: boolean) => {
+      writeProperty(path, FOLDER_PAGE_KEY, on ? true : undefined).catch((err: unknown) => {
+        const what = on ? `turn "${basename(path)}" into a folder page` : `turn "${basename(path)}" back into a normal page`
+        onNotice(`Can't ${what}: ${err instanceof Error ? err.message : String(err)}`)
+      })
+    },
+    [onNotice],
+  )
+
+  /**
+   * The menu item's click (🔒 D5): forward goes straight to disk, reverse opens the sheet first.
+   * `isOn` — the flag as the menu found it — arrives WITH the path (GRO-2296) rather than being
+   * re-read here: the menu is closed by now, and re-deriving it would let the two disagree.
+   */
+  const toggleFolderPage = useCallback(
+    (path: string, isOn: boolean) => {
+      if (isOn) setConfirmingTurnBack(path)
+      else setFolderPageFlag(path, true)
+    },
+    [setFolderPageFlag],
+  )
+
+  const confirmTurnBack = useCallback(() => {
+    const path = confirmingTurnBack
+    setConfirmingTurnBack(null)
+    if (path !== null) setFolderPageFlag(path, false)
+  }, [confirmingTurnBack, setFolderPageFlag])
 
   // ---- Rename (files E1 GRO-2194, folders E1b GRO-2241): context menu "Rename" → inline input over the row ----
 
@@ -576,10 +658,14 @@ export function Sidebar({
           onNewNote={() => startCreate('file')}
           onNewBase={() => startCreate('base')}
           onNewFolder={() => startCreate('dir')}
+          folderPagePath={menu.folderPagePath}
+          folderPageIsOn={menu.folderPageIsOn}
+          onToggleFolderPage={toggleFolderPage}
           onClose={() => setMenu(null)}
         />
       )}
       {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
+      {confirmingTurnBack !== null && <ConfirmTurnBack path={confirmingTurnBack} onConfirm={confirmTurnBack} onCancel={() => setConfirmingTurnBack(null)} />}
     </aside>
   )
 }

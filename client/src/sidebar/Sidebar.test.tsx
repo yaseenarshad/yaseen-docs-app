@@ -6,10 +6,15 @@
  * unchanged, and activating a stale tab probes a fresh tree before onFileMissing fires.
  * Real Tree/ContextMenu render against the jsdom bridge stub.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_SETTINGS, type TreeNode, type WatchEvent } from '@shared/types'
+
+// The folder-page toggle writes through the shared one-key card writer (🔒 D1/D3, YAZ-817);
+// mocked here the way every other writeProperty caller's tests mock it.
+vi.mock('../bases/writeProperty', () => ({ writeProperty: vi.fn() }))
+import { writeProperty } from '../bases/writeProperty'
 import { countChildren, Sidebar } from './Sidebar'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -62,6 +67,9 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     onRenameFile: vi.fn(async () => undefined),
     onDeleteFile: vi.fn(async () => undefined),
     onNotice: vi.fn(),
+    // The window's already-on index feed (WikilinkIndexBridge's source): empty unless a test
+    // hands over a snapshot, which is exactly the pre-first-index state.
+    indexSource: { resolve: null, records: [], subscribe: () => () => undefined },
     pendingSearchFocus: false,
     onSearchFocusHandled: vi.fn(),
     ...over,
@@ -741,6 +749,10 @@ describe('context menu order (GRO-2272 C1a)', () => {
       'New note',
       'New base',
       'New folder',
+      // The folder-page toggle joins the row between the create group and Rename (🔒 D2,
+      // YAZ-817): it acts on the right-clicked page, so it belongs with the other
+      // act-on-this-row items — and above the destructive pair, which stays last.
+      'Turn into folder page',
       'Rename',
       'Delete',
     ])
@@ -753,5 +765,129 @@ describe('context menu order (GRO-2272 C1a)', () => {
       const labels = menuItems(m.el).map((b) => b.textContent)
       expect(labels[labels.length - 1]).toBe('Delete')
     }
+  })
+})
+
+/**
+ * The folder-page toggle (YAZ-840 — 🔒 D1/D2/D3/D5 on YAZ-817): the first user-facing
+ * folder-page gesture. ONE state-aware item on MARKDOWN FILE rows, both directions through the
+ * one frontmatter key.
+ *
+ *  - forward (🔒 D1) is IMMEDIATE and writes exactly `folder_page: true` — no settings stamped,
+ *    and no confirm to click through for something this same item undoes;
+ *  - reverse (🔒 D5) asks first, and on confirm DELETES the key (🔒 D3) — `folder_page_settings`
+ *    and every member note's `folder_pages` entry are left exactly where they are.
+ *
+ * The flag state behind the label comes off the window's ALREADY-ON index feed (the same
+ * snapshot WikilinkIndexBridge pushes at the wikilink resolver), read when the menu opens — no
+ * second feed and no fetch of its own.
+ */
+describe('folder-page toggle (YAZ-840)', () => {
+  const write = vi.mocked(writeProperty)
+
+  const MIXED_TREE: TreeNode[] = [
+    { type: 'dir', name: 'sub', path: '/v/sub', children: [] },
+    { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
+    { type: 'file', name: 'Board.base', path: '/v/Board.base', size: 1, mtime: 1, kind: 'base' },
+  ]
+
+  const record = (path: string, properties: Record<string, unknown> = {}) => {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    return { path, name, basename: name.replace(/\.[^.]+$/, ''), folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties, aliases: [], tags: [], links: [], embeds: [] }
+  }
+  /** A stubbed index feed holding this snapshot — the shape App hands over from the bridge's source. */
+  const feed = (...records: ReturnType<typeof record>[]): SidebarProps['indexSource'] =>
+    ({ resolve: null, records, subscribe: () => () => undefined }) as SidebarProps['indexSource']
+
+  /** Mount over the mixed tree, then right-click one row (or the blank body). */
+  const openOn = async (selector: string, indexSource: SidebarProps['indexSource']) => {
+    const m = await mount({ indexSource }, (b) =>
+      b.tree.mockImplementation(async (r: string) => ({ root: r, tree: MIXED_TREE, generatedAt: 1 })),
+    )
+    act(() => void m.el.querySelector(selector)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    return m
+  }
+
+  const sheetText = (el: HTMLElement) => el.querySelector('#confirm-turn-back-text')?.textContent ?? null
+  const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
+
+  beforeEach(() => {
+    write.mockReset()
+    write.mockResolvedValue({ mtime: 2 })
+  })
+
+  it('offers "Turn into folder page" on a markdown row whose flag is off', async () => {
+    const { el } = await openOn('[title="/v/a.md"]', feed(record('/v/a.md')))
+    expect(itemByLabel(el, 'Turn into folder page')).toBeDefined()
+    expect(itemByLabel(el, 'Turn back into normal page')).toBeUndefined()
+  })
+
+  it('offers "Turn back into normal page" once that row IS a folder page', async () => {
+    const { el } = await openOn('[title="/v/a.md"]', feed(record('/v/a.md', { folder_page: true })))
+    expect(itemByLabel(el, 'Turn back into normal page')).toBeDefined()
+    expect(itemByLabel(el, 'Turn into folder page')).toBeUndefined()
+  })
+
+  it('reads the flag through isFolderPage — only the boolean true is on', async () => {
+    const { el } = await openOn('[title="/v/a.md"]', feed(record('/v/a.md', { folder_page: 'true' })))
+    expect(itemByLabel(el, 'Turn into folder page')).toBeDefined()
+  })
+
+  it('shows no toggle at all on folder rows, on .base rows, or on blank space', async () => {
+    for (const selector of ['.tree__row--dir', '[title="/v/Board.base"]', '.sidebar__body']) {
+      const { el } = await openOn(selector, feed(record('/v/a.md', { folder_page: true })))
+      expect(itemByLabel(el, 'Turn into folder page')).toBeUndefined()
+      expect(itemByLabel(el, 'Turn back into normal page')).toBeUndefined()
+      expect(el.querySelector('.ctx-menu')).not.toBeNull() // the menu itself is still there
+    }
+  })
+
+  it('FORWARD writes exactly the flag and nothing else, with NO confirm sheet (🔒 D1)', async () => {
+    const { el } = await openOn('[title="/v/a.md"]', feed(record('/v/a.md')))
+    await act(async () => itemByLabel(el, 'Turn into folder page')?.click())
+    expect(write).toHaveBeenCalledExactlyOnceWith('/v/a.md', 'folder_page', true)
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('REVERSE opens the sheet with the LOCKED copy and writes nothing yet (🔒 D5)', async () => {
+    const { el } = await openOn('[title="/v/a.md"]', feed(record('/v/a.md', { folder_page: true })))
+    act(() => itemByLabel(el, 'Turn back into normal page')?.click())
+    expect(sheetText(el)).toBe(
+      "Turn 'a.md' back into a normal page? Pages that belong to it keep their entries — any that belong nowhere else will appear in Uncategorized until this is a folder page again. Nothing is deleted.",
+    )
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  it('Cancel on the sheet writes NOTHING and closes it', async () => {
+    const { el } = await openOn('[title="/v/a.md"]', feed(record('/v/a.md', { folder_page: true })))
+    act(() => itemByLabel(el, 'Turn back into normal page')?.click())
+    await act(async () => sheetBtn(el, 'Cancel')?.click())
+    expect(write).not.toHaveBeenCalled()
+    expect(el.querySelector('.confirm')).toBeNull()
+  })
+
+  it('confirming DELETES the key — lossless, settings untouched (🔒 D3)', async () => {
+    const { el } = await openOn('[title="/v/a.md"]', feed(record('/v/a.md', { folder_page: true })))
+    act(() => itemByLabel(el, 'Turn back into normal page')?.click())
+    await act(async () => sheetBtn(el, 'Turn back')?.click())
+    expect(write).toHaveBeenCalledExactlyOnceWith('/v/a.md', 'folder_page', undefined)
+    expect(el.querySelector('.confirm')).toBeNull()
+  })
+
+  it('a failed write surfaces as the passive notice — never a dialog', async () => {
+    write.mockRejectedValue(new Error('read-only volume'))
+    const { el, props } = await openOn('[title="/v/a.md"]', feed(record('/v/a.md')))
+    await act(async () => itemByLabel(el, 'Turn into folder page')?.click())
+    expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining('read-only volume'))
+    expect(el.querySelector('.confirm')).toBeNull()
+  })
+
+  it('a failed turn-BACK names that direction in the notice', async () => {
+    write.mockRejectedValue(new Error('read-only volume'))
+    const { el, props } = await openOn('[title="/v/a.md"]', feed(record('/v/a.md', { folder_page: true })))
+    act(() => itemByLabel(el, 'Turn back into normal page')?.click())
+    await act(async () => sheetBtn(el, 'Turn back')?.click())
+    expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining('back into a normal page'))
   })
 })

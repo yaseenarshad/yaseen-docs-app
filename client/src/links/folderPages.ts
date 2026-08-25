@@ -27,14 +27,19 @@ import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
  * `newPageFromFolderPage`): ONE source of truth, never a second local const (YAZ-836).
  */
 export const FOLDER_PAGES_KEY = 'folder_pages'
-const FLAG_KEY = 'folder_page'
+/**
+ * The flag key itself, exported for the SAME reason (YAZ-840): the sidebar's turn-into /
+ * turn-back item writes the very key `isFolderPage` reads back, both directions through
+ * `writeProperty` — ONE source of truth, never a second local `'folder_page'` literal.
+ */
+export const FOLDER_PAGE_KEY = 'folder_page'
 
 /** Exactly a wikilink, nothing around it — the index's frontmatter-link rule (`scan.ts`). */
 const EXACT_WIKILINK_RE = /^\[\[[^[\]]*\]\]$/
 
 /** Strictly the boolean: `"true"`, `1` and truthy objects do NOT declare a folder page. */
 export function isFolderPage(record: IndexRecord): boolean {
-  return record.properties[FLAG_KEY] === true
+  return record.properties[FOLDER_PAGE_KEY] === true
 }
 
 export interface FolderPagesLookup {

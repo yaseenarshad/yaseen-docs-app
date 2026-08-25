@@ -57,6 +57,9 @@ function mount(x: number, y: number, over: Partial<MenuProps> = {}) {
     onDelete: vi.fn(),
     revealPath: null,
     onReveal: vi.fn(),
+    folderPagePath: null,
+    folderPageIsOn: false,
+    onToggleFolderPage: vi.fn(),
     onNewNote: vi.fn(),
     onNewBase: vi.fn(),
     onNewFolder: vi.fn(),
@@ -92,5 +95,41 @@ describe('menu clamping', () => {
     const el = mount(100, 120)
     expect(el.querySelector('.ctx-submenu')).toBeNull()
     expect(el.querySelector('.ctx-menu__item--sub')).toBeNull()
+  })
+})
+
+/**
+ * ONE state-aware item, both directions (🔒 D2, YAZ-817). The label is the flag's; the click
+ * hands the handler BOTH the target and the direction, so the caller never has to re-derive
+ * which way the toggle was pointing after the menu closed (GRO-2296).
+ */
+describe('folder-page toggle item (🔒 D2)', () => {
+  const labels = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => b.textContent)
+  const item = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === label)
+
+  it('reads "Turn into folder page" while the flag is off', () => {
+    const el = mount(0, 0, { folderPagePath: '/v/a.md', folderPageIsOn: false })
+    expect(labels(el)).toContain('Turn into folder page')
+    expect(labels(el)).not.toContain('Turn back into normal page')
+  })
+
+  it('reads "Turn back into normal page" while the flag is on', () => {
+    const el = mount(0, 0, { folderPagePath: '/v/a.md', folderPageIsOn: true })
+    expect(labels(el)).toContain('Turn back into normal page')
+    expect(labels(el)).not.toContain('Turn into folder page')
+  })
+
+  it('is absent entirely when there is no target', () => {
+    const el = mount(0, 0, { folderPagePath: null, folderPageIsOn: false })
+    expect(labels(el).some((l) => l?.startsWith('Turn'))).toBe(false)
+  })
+
+  it('hands the click its own target AND the direction, then closes', () => {
+    const onToggleFolderPage = vi.fn()
+    const onClose = vi.fn()
+    const el = mount(0, 0, { folderPagePath: '/v/a.md', folderPageIsOn: true, onToggleFolderPage, onClose })
+    act(() => item(el, 'Turn back into normal page')?.click())
+    expect(onToggleFolderPage).toHaveBeenCalledExactlyOnceWith('/v/a.md', true)
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 })
