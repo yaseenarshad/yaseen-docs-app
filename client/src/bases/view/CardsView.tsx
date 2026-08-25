@@ -120,7 +120,7 @@ function CardCover({ root, cover }: { root: string | null; cover: Cover }) {
  * `imageFit` (cover|contain) and `imageAspectRatio` (number, default 1:1) land as CSS custom
  * properties on the grid. Grouped results render 4C sections — the shared `GroupHeader` over
  * each group's grid, with the SAME persisted collapse state as the table/board (never the
- * `.base` file); search narrows cards and drops empty groups. Note-property rows edit inline
+ * page's card); search narrows cards and drops empty groups. Note-property rows edit inline
  * through `EditableCell` (5B, GRO-2142); a lightbox stays out of scope.
  */
 export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, types, properties = null, folderPage = null, vaultRecords, readOnly = false }: CardsViewProps) {
@@ -138,7 +138,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
     () => new Map(rest.map((k) => [k, columnTyping(k, rowRecords, types, properties, folderPage)])),
     [rest, rowRecords, types, properties, folderPage],
   )
-  /** What the pickers resolve and complete over: the vault, which is the rows for a `.base` (🔒 D2). */
+  /** What the pickers resolve and complete over: the vault; absent → the rows themselves (🔒 D2). */
   const linkRecords = vaultRecords ?? records
   const basenames = useMemo(() => linkRecords.map((r) => r.basename), [linkRecords])
   // Relation columns narrow the link picker to the pages of the folder page the target names

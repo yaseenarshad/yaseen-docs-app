@@ -62,7 +62,6 @@ function mount(x: number, y: number, over: Partial<MenuProps> = {}) {
     onToggleFolderPage: vi.fn(),
     onNewNote: vi.fn(),
     onNewFolderPage: vi.fn(),
-    onNewBase: vi.fn(),
     onNewFolder: vi.fn(),
     onClose: vi.fn(),
     ...over,
@@ -109,9 +108,9 @@ const itemOf = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLB
  * because the position IS the ruling, not an accident of JSX.
  */
 describe('create group (🔒 D4)', () => {
-  it('offers New folder page directly after New note, ahead of New base and New folder', () => {
+  it('offers New folder page directly after New note, ahead of New folder', () => {
     const el = mount(0, 0)
-    expect(labelsOf(el)).toEqual(['New note', 'New folder page', 'New base', 'New folder'])
+    expect(labelsOf(el)).toEqual(['New note', 'New folder page', 'New folder'])
   })
 
   it('is offered on every row type — the group targets a DIRECTORY, never the clicked row', () => {

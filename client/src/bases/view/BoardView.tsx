@@ -40,7 +40,7 @@ export interface BoardViewProps {
  * properties as small label/value rows typed like table cells. Column width follows `cardSize`
  * (shared `cardWidth`: a number = px, presets small 220 / medium 280 / large 340, default
  * medium). Collapsing a column hides its cards and
- * keeps the header — same persisted state as the table's groups, never the `.base` file. Without
+ * keeps the header — same persisted state as the table's groups, never the page's card. Without
  * `groupBy` a centered hint's "Group by…" button writes the first non-file property through the
  * file (opening the Sort popover remotely would mean lifting Toolbar's menu state; one write is
  * simpler and the Sort menu can change it after). Dragging a card to another column (5C,

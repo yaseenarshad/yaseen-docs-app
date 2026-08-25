@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react'
-import { fileKind } from '@shared/fileKind'
 import { basename, stripExt } from '../lib/paths'
-import { BaseGlyph } from '../sidebar/Tree'
 import './tabs.css'
 
 export interface TabBarProps {
@@ -139,7 +137,6 @@ export function TabBar({ tabs, active, onActivate, onClose, onMove, canBack, can
                   if (e.button === 1) onClose(path)
                 }}
               >
-                {fileKind(path) === 'base' && <BaseGlyph className="tabbar__glyph" />}
                 <span className="tabbar__label">{label}</span>
               </button>
               <button type="button" className="tabbar__close" aria-label={`Close ${label}`} title={`Close ${label}`} onClick={() => onClose(path)}>

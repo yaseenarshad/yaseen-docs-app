@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 /**
- * Temp vault mirroring a real Obsidian Bases layout (synthetic content), shared by every Bases
- * test: 8 markdown notes (one with invalid frontmatter, two with none), 1 `.base`, png stubs,
+ * Temp vault mirroring a real Obsidian vault (synthetic content), shared by every Bases
+ * test: 8 markdown notes (one with invalid frontmatter, two with none), png stubs,
  * `.obsidian/types.json` and a `.trash` note. Caller removes it via `cleanup`.
  */
 export async function makeBasesFixture(): Promise<{ root: string; cleanup: () => Promise<void> }> {
@@ -21,25 +21,6 @@ export async function makeBasesFixture(): Promise<{ root: string; cleanup: () =>
   )
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
   await Promise.all([
-    writeFile(
-      path.join(pillars, 'Content Topics DB.base'),
-      [
-        'views:',
-        '  - type: table',
-        '    name: Table',
-        '    order:',
-        '      - file.name',
-        '    sort:',
-        '      - property: formula.Untitled',
-        '        direction: ASC',
-        '  - type: cards',
-        '    name: View',
-        '  - type: table',
-        '    name: View 2',
-        '    indentProperties: false',
-        '',
-      ].join('\n'),
-    ),
     writeFile(path.join(pillars, 'List of Topics.md'), 'Pillars #pillars\n\n* [[Agentic Agency]]\n* [[Creator Economy]]\n'),
     writeFile(
       path.join(agentic, 'Agentic Agency.md'),

@@ -4,7 +4,7 @@ import { type Expr, type Value, compile, fromYaml, typeOf } from '../expr'
 
 /**
  * Filter builder rows ↔ expression strings (GRO-2135). Pure and DOM-free: the Filter menu
- * edits `Rule`s, the `.base` file only ever stores the strings `ruleToExpr` produces, and
+ * edits `Rule`s, the stored view only ever holds the strings `ruleToExpr` produces, and
  * `exprToRule` recovers a row from any string in the grammar below (else null → raw row).
  */
 

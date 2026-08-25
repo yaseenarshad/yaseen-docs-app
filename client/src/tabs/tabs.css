@@ -114,10 +114,6 @@
   color: var(--fg);
 }
 
-.tabbar__glyph {
-  flex: none;
-}
-
 .tabbar__close {
   padding: 2px 4px;
   margin-right: 4px;

@@ -1,7 +1,7 @@
 import { useMemo, useState, type DragEvent, type ReactNode } from 'react'
 import type { IndexRecord } from '@shared/types'
 import { FOLDER_PAGES_KEY, entryTarget, folderPagesLookup, folderPagesList } from '../../links/folderPages'
-import { BaseGlyph } from '../../sidebar/Tree'
+import { BaseGlyph } from './icons'
 import type { Row } from '../engine'
 import { resolverFor } from '../engine'
 import { folderPageSettings, orderedMembers, type FolderPageSettings } from '../folderPageSettings'
@@ -11,7 +11,7 @@ import { OutlineAddRow, outlineCandidates } from './OutlineAddRow'
 
 /**
  * The OUTLINE skin of a folder page's contents (YAZ-820, 🔒 D4 of YAZ-818 · [D3]-[D6] of the
- * mockup). Reached only from the folder-page host: a `.base` naming `type: outline` keeps the
+ * mockup). Reached only from the folder-page host: a `type: outline` view with no folder page keeps the
  * placeholder row list, because an outline of WHAT has no answer without a folder page behind it.
  *
  * **ROWS ARE PAGES** (🔒 D4), never free text and never a bullet the user typed. Every row is a

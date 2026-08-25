@@ -41,17 +41,9 @@ describe('createFile', () => {
     expect((await stat(p)).isFile()).toBe(true)
   })
 
-  it('creates a .base file seeded with the minimal valid base', async () => {
-    const p = path.join(root, 'NewFolder', 'Topics.base')
-    const seed = 'views:\n  - type: table\n    name: Table\n'
-    const body = await createFile(p)
-    expect(body.path).toBe(p)
-    expect(body.size).toBe(Buffer.byteLength(seed))
-    expect(await readFile(p, 'utf8')).toBe(seed)
-  })
-
   it('UNSUPPORTED_EXTENSION for other extensions', async () => {
     expect(await code(createFile(path.join(root, 'note.txt')))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await code(createFile(path.join(root, 'Topics.base')))).toBe('UNSUPPORTED_EXTENSION')
   })
 
   it('ALREADY_EXISTS and never overwrites', async () => {
@@ -78,19 +70,10 @@ describe('createFile with content (Bible B, GRO-2202)', () => {
     expect(await readFile(p, 'utf8')).toBe(content)
   })
 
-  it('content wins over the .base seed (starter bases, R5)', async () => {
-    const p = path.join(root, 'NewFolder', 'All KPIs.base')
-    const content = 'filters:\n  and:\n    - page_type == "kpi"\nviews:\n  - type: table\n    name: Table\n'
-    await createFile({ path: p, content })
-    expect(await readFile(p, 'utf8')).toBe(content)
-  })
-
-  it('the object form without content keeps the defaults (md empty, .base seeded)', async () => {
+  it('the object form without content creates an empty note', async () => {
     const md = path.join(root, 'NewFolder', 'plain.md')
     expect((await createFile({ path: md })).size).toBe(0)
-    const base = path.join(root, 'NewFolder', 'Plain.base')
-    await createFile({ path: base })
-    expect(await readFile(base, 'utf8')).toBe('views:\n  - type: table\n    name: Table\n')
+    expect(await readFile(md, 'utf8')).toBe('')
   })
 
   it('ALREADY_EXISTS with content never overwrites', async () => {

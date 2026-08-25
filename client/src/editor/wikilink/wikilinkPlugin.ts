@@ -22,7 +22,7 @@
  * also what makes arrow traversal work with `display: none` hiding: the caret can never sit
  * against hidden text, because by the time it reaches a match boundary the match is already raw.
  *
- * Exclusions: `![[…]]` embeds (base embeds are `baseEmbedPlugin.ts`'s; image embeds stay plain),
+ * Exclusions: `![[…]]` embeds (image embeds stay plain),
  * `code_block` nodes and inline-`code` marked text (mirrors the index's `stripCode`,
  * CONTRACTS "Property index").
  *

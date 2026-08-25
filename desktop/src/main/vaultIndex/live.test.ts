@@ -26,7 +26,7 @@ describe('getIndex: cold scan', () => {
     await cleanup()
   })
 
-  it('indexes the 8 fixture notes, sorted by path; .base, pngs and dot-dirs are not records', async () => {
+  it('indexes the 8 fixture notes, sorted by path; pngs and dot-dirs are not records', async () => {
     const t0 = performance.now()
     const res = await getIndex(root)
     console.log(`cold scan of the bases fixture: ${(performance.now() - t0).toFixed(1)} ms`)
@@ -35,7 +35,7 @@ describe('getIndex: cold scan', () => {
     expect(res.records).toHaveLength(8)
     expect(res.records.map((r) => r.path)).toEqual([...res.records.map((r) => r.path)].sort())
     expect(res.records.every((r) => r.ext === 'md')).toBe(true)
-    expect(res.records.some((r) => r.name.endsWith('.base') || r.name.endsWith('.png'))).toBe(false)
+    expect(res.records.some((r) => r.name.endsWith('.png'))).toBe(false)
     // `.yaseendocs/` (vault-local config, GRO-2188) never becomes an index record (GRO-2117 note).
     expect(res.records.some((r) => r.path.includes('/.trash/') || r.path.includes('/.obsidian/') || r.path.includes('/.yaseendocs/'))).toBe(false)
   })
@@ -96,9 +96,9 @@ describe('getIndex: incremental updates from the watcher', () => {
     expect((await getIndex(root)).records).toHaveLength(8)
   })
 
-  it('a new note appears; a .base file does not', async () => {
+  it('a new note appears; a non-vault file does not', async () => {
     await writeFile(path.join(root, 'Content Pillars', 'New Note.md'), '# New\n#new [[VSL-v1]]\n')
-    await writeFile(path.join(root, 'Content Pillars', 'Other.base'), 'views:\n  - type: table\n    name: Table\n')
+    await writeFile(path.join(root, 'Content Pillars', 'Other.base'), 'views: []\n') // a non-vault extension since YAZ-844
     await until(async () => byName((await getIndex(root)).records, 'New Note.md') !== undefined)
     const r = byName((await getIndex(root)).records, 'New Note.md')
     expect(r).toMatchObject({ folder: 'Content Pillars', tags: ['new'], links: ['VSL-v1'] })

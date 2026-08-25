@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { IndexRecord, TreeNode } from '@shared/types'
+import type { IndexRecord } from '@shared/types'
 import {
   countLinkReferences,
   maskCode,
@@ -275,65 +275,6 @@ describe('updateLinksAfterRename across a cross-directory file MOVE (E1b)', () =
     ]
     expect(await updateLinksAfterRename({ root, oldPath: '/v/B.md', newPath: '/v/Deep/er/B.md', records })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[Deep/er/B]] here\n')
-  })
-})
-
-// ---------- E1b: `.base` embeds resolve over the TREE (resolveBasePath), never the index ----------
-
-const tfile = (path: string, kind: 'markdown' | 'base' = 'base'): TreeNode => ({
-  type: 'file',
-  name: path.slice(path.lastIndexOf('/') + 1),
-  path,
-  size: 0,
-  mtime: 0,
-  kind,
-})
-const tdir = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
-
-describe('updateLinksAfterRename and `.base` embeds (E1b)', () => {
-  const root = '/v'
-
-  it('folder rename: a PATHED base embed rewrites through the tree; a bare one stays byte-identical (dir rule)', async () => {
-    const files = { '/v/A.md': { content: '![[Old/T.base]] and ![[T.base]]\n', mtime: 1 } }
-    installBridge(files)
-    const records = [rec('/v/A.md', { embeds: ['Old/T.base', 'T.base'] })]
-    const tree = [tdir('/v/Old', [tfile('/v/Old/T.base')])]
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/Old', newPath: '/v/New', kind: 'dir', records, tree })).toEqual({ updated: 1, skipped: 0 })
-    expect(files['/v/A.md'].content).toBe('![[New/T.base]] and ![[T.base]]\n')
-  })
-
-  it('moving a `.base`: a bare embed stays byte-identical while the name is UNIQUE; a duplicate name escalates it to pathed', async () => {
-    // Unique name: bare survives the move untouched.
-    const filesA = { '/v/A.md': { content: '![[T.base]]\n', mtime: 1 } }
-    installBridge(filesA)
-    const treeA = [tdir('/v/Sub', []), tfile('/v/T.base')]
-    const recordsA = [rec('/v/A.md', { embeds: ['T.base'] })]
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/T.base', newPath: '/v/Sub/T.base', records: recordsA, tree: treeA })).toEqual({ updated: 0, skipped: 0 })
-    expect(filesA['/v/A.md'].content).toBe('![[T.base]]\n')
-    // A second U.base exists: the bare form is no longer unambiguous — rewrite to the pathed form.
-    const filesB = { '/v/B.md': { content: '![[U.base]]\n', mtime: 1 } }
-    installBridge(filesB)
-    const treeB = [tdir('/v/Deep', [tfile('/v/Deep/U.base')]), tdir('/v/Sub', []), tfile('/v/U.base')]
-    const recordsB = [rec('/v/B.md', { embeds: ['U.base'] })]
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/U.base', newPath: '/v/Sub/U.base', records: recordsB, tree: treeB })).toEqual({ updated: 1, skipped: 0 })
-    expect(filesB['/v/B.md'].content).toBe('![[Sub/U.base]]\n')
-  })
-
-  it('renaming a `.base` in place rewrites its embeds too (closed E1 gap: the index never carried .base records)', async () => {
-    const files = { '/v/A.md': { content: '![[T.base]] and ![[T.base#View]]\n', mtime: 1 } }
-    installBridge(files)
-    const records = [rec('/v/A.md', { embeds: ['T.base'] })]
-    const tree = [tfile('/v/T.base')]
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/T.base', newPath: '/v/U.base', records, tree })).toEqual({ updated: 1, skipped: 0 })
-    expect(files['/v/A.md'].content).toBe('![[U.base]] and ![[U.base#View]]\n')
-  })
-
-  it('without a tree snapshot base embeds are left alone (conservative — never a guessed rewrite)', async () => {
-    const files = { '/v/A.md': { content: '![[T.base]]\n', mtime: 1 } }
-    installBridge(files)
-    const records = [rec('/v/A.md', { embeds: ['T.base'] })]
-    expect(await updateLinksAfterRename({ root, oldPath: '/v/T.base', newPath: '/v/U.base', records })).toEqual({ updated: 0, skipped: 0 })
-    expect(files['/v/A.md'].content).toBe('![[T.base]]\n')
   })
 })
 

@@ -40,7 +40,7 @@ export interface TableViewProps {
   properties?: PropertiesResponse | null
   /** The folder page whose contents these rows are (YAZ-819): the typing ladder's TOP rung (🔒 Q8). */
   folderPage?: FolderPageSettings | null
-  /** The WHOLE index snapshot when `records` is a subset (🔒 D2, YAZ-819): link resolution and the link pickers read this, never the rows alone. Absent → `records` (a `.base`'s rows ARE the vault). */
+  /** The WHOLE index snapshot when `records` is a subset (🔒 D2, YAZ-819): link resolution and the link pickers read this, never the rows alone. Absent → `records`. */
   vaultRecords?: readonly IndexRecord[]
   /** Embed chrome (6A, GRO-2145): no cell editing, no column resize, no summary picking, no drag. */
   readOnly?: boolean
@@ -87,7 +87,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
   const bares = useMemo(() => keys.map((k) => (canonicalKey(k).startsWith('note.') ? canonicalKey(k).slice(5) : null)), [keys])
   const typings = useMemo(() => keys.map((k) => columnTyping(k, rowRecords, types, properties, folderPage)), [keys, rowRecords, types, properties, folderPage])
-  /** What the pickers resolve and complete over: the vault, which is the rows for a `.base` (🔒 D2). */
+  /** What the pickers resolve and complete over: the vault; absent → the rows themselves (🔒 D2). */
   const linkRecords = vaultRecords ?? records
   const basenames = useMemo(() => linkRecords.map((r) => r.basename), [linkRecords])
   // Relation columns narrow the link picker to the pages of the folder page the target names

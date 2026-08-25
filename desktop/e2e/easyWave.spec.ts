@@ -1,24 +1,29 @@
 /**
- * Easy wave (YAZ-721 / 738 / 744 / 741 / 743 / 672): the six small features of the wave driven
+ * Easy wave (YAZ-721 / 738 / 741 / 743 / 672): the small features of the wave driven
  * TOGETHER through the REAL app, over the committed encyclopedia fixture (`fixtures/bible-vault`)
  * — the one vault in the suite with a real `[[wiki link]]` graph, which is exactly what the
  * back/forward stack needs to be exercised over.
  *
+ * YAZ-844 retired `.base`, and with it the grouped standalone base these steps used to open.
+ * The two collapse-all-groups steps (744) went with that surface: no folder-page view ships a
+ * `groupBy`, so there is no grouped table left to fold through the app. The GUI-evidence step
+ * (741/743) drives the folder page's own table instead — same toolbar, same header; its
+ * viewport-containment half moved from the (switch-only) view menu to the Sort menu, the same
+ * anchored `Popover` on a surface the folder page actually offers.
+ *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1  sidebar drag-to-resize: the 6px edge dragged +120px takes `.sidebar` from 260 to 380 (738)
  *   2  …and it SURVIVES quit → relaunch, on disk as `AppState.sidebarWidth` (738)
- *   3  collapse all groups: one toolbar button folds every group of the grouped base (744)
- *   4  …collapsed across quit → relaunch, and the same button (now "Expand all") unfolds them (744)
- *   5  GUI evidence: table column dividers + the hovered resize handle (741), the ⋯ view menu
+ *   3  GUI evidence: table column dividers + the hovered resize handle (741), a toolbar menu
  *      opening fully INSIDE the viewport (743)
- *   6  the spell-check context-menu listener is actually wired on the window (672)
- *   7  history (a): A → B → C, Back Back Forward — one tab throughout (721)
- *   8  history (b): navigating away from a walked-back position TRUNCATES forward (721)
- *   9  history (c): a link to an ALREADY-OPEN file activates that tab; the source tab's stack
+ *   4  the spell-check context-menu listener is actually wired on the window (672)
+ *   5  history (a): A → B → C, Back Back Forward — one tab throughout (721)
+ *   6  history (b): navigating away from a walked-back position TRUNCATES forward (721)
+ *   7  history (c): a link to an ALREADY-OPEN file activates that tab; the source tab's stack
  *      is left exactly as it was (721)
- *  10  history (d): renaming a page that sits BEHIND the current one — Back lands on the new name (721)
- *  11  history (e): deleting a page that sits behind — Back skips straight past it (721)
- *  12  dragging the sidebar edge to the far left CLOSES the sidebar (738)
+ *   8  history (d): renaming a page that sits BEHIND the current one — Back lands on the new name (721)
+ *   9  history (e): deleting a page that sits behind — Back skips straight past it (721)
+ *  10  dragging the sidebar edge to the far left CLOSES the sidebar (738)
  *
  * Same harness as bible.spec.ts / tabs.spec.ts (temp `--user-data-dir`, a COPY of the fixture,
  * `easy-` step screenshots, `quitApp` at the end).
@@ -35,7 +40,7 @@ test.describe.configure({ mode: 'serial' })
 /** The committed encyclopedia — copied per run; the source is never opened by the app. */
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
 const FOLDERS = ['funnel-stages', 'industries', 'kpis', 'problems', 'roles']
-const ALL_KPIS = 'All KPIs.base'
+const FOLDER_PAGE = 'Funnel Stages.md'
 
 /** The drag distance under test: 260 (the default) + 120 = 380, comfortably inside the clamp. */
 const DRAG_DX = 120
@@ -62,13 +67,9 @@ const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter
 const backBtn = (w: Page) => w.locator('.tabbar-nav [aria-label="Back"]')
 const forwardBtn = (w: Page) => w.locator('.tabbar-nav [aria-label="Forward"]')
 
-const openBase = (w: Page) => layer(w).locator('.base-host .base-view')
-const dataRows = (scope: Locator) => scope.locator('.base-table tbody tr:not(.base-table__group):not(.base-table__spacer)')
-const rowNames = (scope: Locator) => scope.locator('.base-table__link')
-const groupToggles = (scope: Locator) => scope.locator('tr.base-table__group .base-group__toggle')
-/** The collapse state of every group, in table order — the assertion YAZ-744 B is really about. */
-const groupExpansion = (scope: Locator): Promise<(string | null)[]> =>
-  groupToggles(scope).evaluateAll((els) => els.map((e) => e.getAttribute('aria-expanded')))
+/** The folder page's contents block — the one place a bases table still renders (YAZ-844). */
+const contents = (w: Page) => layer(w).locator('.folder-page-contents')
+const viewTabs = (scope: Locator) => scope.locator('.base-tab__btn[role="tab"]')
 
 const sidebar = (w: Page) => w.locator('.sidebar')
 const resizeEdge = (w: Page) => w.locator('.sidebar-resize')
@@ -151,10 +152,10 @@ test.afterAll(async () => {
 test('step 1 — the sidebar edge drags 260 → 380', async () => {
   app = await launchApp({
     userData,
-    seedState: seededState(vault, path.join(vault, ALL_KPIS), { expanded: FOLDERS.map((f) => path.join(vault, f)) }),
+    seedState: seededState(vault, path.join(vault, FOLDER_PAGE), { expanded: FOLDERS.map((f) => path.join(vault, f)) }),
   })
   win = await appWindow(app, 'w1')
-  await expect(openBase(win)).toBeVisible()
+  await expect(contents(win)).toBeVisible()
 
   expect(await sidebarWidth(win)).toBe(SIDEBAR_DEFAULT_W)
   await expect(resizeEdge(win)).toBeVisible()
@@ -168,64 +169,32 @@ test('step 2 — the width survives quit → relaunch, on disk as AppState.sideb
 
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
   win = await appWindow(app, 'w1')
-  await expect(openBase(win)).toBeVisible()
+  await expect(contents(win)).toBeVisible()
   expect(await sidebarWidth(win)).toBe(WIDENED_W)
-})
-
-// ---------------------------------------------------------------- YAZ-744: collapse all groups
-
-test('step 3 — one toolbar button collapses every group of the grouped base', async () => {
-  // The fixture's "All KPIs" view groups 5 KPI pages into 4 funnel groups (one KPI fans out
-  // into two, one has no funnel at all) — see bible.spec.ts step 1.
-  await expect(groupToggles(openBase(win))).toHaveCount(4)
-  await expect(dataRows(openBase(win))).toHaveCount(6)
-  expect(await groupExpansion(openBase(win))).toEqual(['true', 'true', 'true', 'true'])
-
-  await openBase(win).locator('[aria-label="Collapse all groups"]').click()
-  expect(await groupExpansion(openBase(win))).toEqual(['false', 'false', 'false', 'false'])
-  await expect(rowNames(openBase(win))).toHaveCount(0) // not one row body left on screen
-  await expect(groupToggles(openBase(win))).toHaveCount(4) // the headers themselves stay
-  await shoot(win, 'easy-collapse-all')
-})
-
-test('step 4 — collapsed across quit → relaunch; the same button expands them again', async () => {
-  await quitApp(app)
-  // The collapse state is main-owned store state, keyed `<basePath>::<viewName>` — never the .base file.
-  const groups = (await readState(userData)).folders[vault].baseGroups
-  expect(Object.keys(groups)).toEqual([`${path.join(vault, ALL_KPIS)}::All KPIs`])
-  expect(groups[`${path.join(vault, ALL_KPIS)}::All KPIs`]).toHaveLength(4)
-
-  app = await launchApp({ userData })
-  win = await appWindow(app, 'w1')
-  await expect(openBase(win)).toBeVisible()
-  expect(await groupExpansion(openBase(win))).toEqual(['false', 'false', 'false', 'false'])
-  await expect(rowNames(openBase(win))).toHaveCount(0)
-
-  // The button is now the other half of the toggle.
-  await expect(openBase(win).locator('[aria-label="Collapse all groups"]')).toHaveCount(0)
-  await openBase(win).locator('[aria-label="Expand all groups"]').click()
-  expect(await groupExpansion(openBase(win))).toEqual(['true', 'true', 'true', 'true'])
-  await expect(dataRows(openBase(win))).toHaveCount(6)
-  await shoot(win, 'easy-expand-all')
 })
 
 // ---------------------------------------------------------------- YAZ-741 / 743: GUI evidence
 
-test('step 5 — column dividers with the resize handle hovered, and the ⋯ view menu inside the viewport', async () => {
+test('step 3 — column dividers with the resize handle hovered, and a toolbar menu inside the viewport', async () => {
+  // The folder page opens on its OUTLINE (🔒 Q7); the table is the other skin.
+  await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
+
   // YAZ-741: the header's 1px divider thickens to the accent under the pointer.
-  const handle = openBase(win).locator('.base-table__resize').first()
+  const handle = contents(win).locator('.base-table__resize').first()
   await expect(handle).toBeVisible()
   await handle.hover()
   await shoot(win, 'easy-table-dividers')
 
-  // YAZ-743: the view menu opens ANCHORED — fully on screen, at its natural height.
-  await openBase(win).locator('[aria-label="View menu"]').click()
-  const menu = win.locator('[role="menu"]')
+  // YAZ-743: a toolbar menu opens ANCHORED — fully on screen, at its natural height. The
+  // folder page's tabs are switch-only (🔒 Q3: no view menu, no Filter), so the claim is made
+  // through the Sort menu — the same `Popover`, the same anchoring, on a surface that exists.
+  await contents(win).locator('[aria-label="Sort"]').click()
+  const menu = win.locator('[role="dialog"][aria-label="Sort"]')
   await expect(menu).toBeVisible()
   const box = await menu.boundingBox()
   const view = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }))
   expect(box).not.toBeNull()
-  expect(box!.height).toBeGreaterThan(100)
+  expect(box!.height).toBeGreaterThan(40) // its natural height, not a clipped sliver
   expect(box!.x).toBeGreaterThanOrEqual(0)
   expect(box!.y).toBeGreaterThanOrEqual(0)
   expect(box!.x + box!.width).toBeLessThanOrEqual(view.w)
@@ -237,14 +206,14 @@ test('step 5 — column dividers with the resize handle hovered, and the ⋯ vie
 
 // ---------------------------------------------------------------- YAZ-672: spell-check listener
 
-test('step 6 — the window carries a context-menu listener (the spell-check menu is wired)', async () => {
+test('step 4 — the window carries a context-menu listener (the spell-check menu is wired)', async () => {
   const listeners = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.listenerCount('context-menu'))
   expect(listeners).toBeGreaterThanOrEqual(1)
 })
 
 // ---------------------------------------------------------------- YAZ-721: back / forward
 
-test('step 7 — (a) A → B → C, then Back Back Forward, all in ONE tab', async () => {
+test('step 5 — (a) A → B → C, then Back Back Forward, all in ONE tab', async () => {
   // Closing every tab resets the per-tab stacks, so this starts from a genuinely empty history.
   await closeAllTabs(win)
   await startAt(win, 'Lead Nurture', 'Known contacts that are not yet in a deal')
@@ -268,7 +237,7 @@ test('step 7 — (a) A → B → C, then Back Back Forward, all in ONE tab', asy
   await expect(tabsOf(win)).toHaveCount(1) // …and still exactly one tab at the end of the walk
 })
 
-test('step 8 — (b) navigating from a walked-back position truncates the forward entries', async () => {
+test('step 6 — (b) navigating from a walked-back position truncates the forward entries', async () => {
   // Standing at B with C ahead: going somewhere NEW must drop C, exactly like a browser.
   await expect(forwardBtn(win)).toBeEnabled()
   await followLink(win, 'Win Rate', 'Win Rate', 'Closed-won as a share of closed pipeline')
@@ -280,7 +249,7 @@ test('step 8 — (b) navigating from a walked-back position truncates the forwar
   await expect(backBtn(win)).toBeDisabled()
 })
 
-test('step 9 — (c) a link to an already-open file activates ITS tab, and leaves the source stack alone', async () => {
+test('step 7 — (c) a link to an already-open file activates ITS tab, and leaves the source stack alone', async () => {
   await closeAllTabs(win)
   // Give the source page a back entry of its own, so "unchanged" is something to see.
   await startAt(win, 'MQL Volume', 'Marketing-qualified leads per period')
@@ -308,7 +277,7 @@ test('step 9 — (c) a link to an already-open file activates ITS tab, and leave
   await expect(tabsOf(win)).toHaveText(['MQL Volume', 'CAC'])
 })
 
-test('step 10 — (d) renaming a page BEHIND the current one: Back lands on the new name', async () => {
+test('step 8 — (d) renaming a page BEHIND the current one: Back lands on the new name', async () => {
   await closeAllTabs(win)
   await startAt(win, 'Head of Sales', 'Owns quota attainment')
   await followLink(win, 'Win Rate', 'Win Rate', 'Closed-won as a share of closed pipeline')
@@ -331,7 +300,7 @@ test('step 10 — (d) renaming a page BEHIND the current one: Back lands on the 
   await step(win, 'back', 'Head of Sales', 'Owns quota attainment')
 })
 
-test('step 11 — (e) deleting a page behind the current one: Back skips straight past it', async () => {
+test('step 9 — (e) deleting a page behind the current one: Back skips straight past it', async () => {
   await closeAllTabs(win)
   await startAt(win, 'Stage Accuracy', 'Deals sit in stages they have already left')
   await followLink(win, 'CRM Hygiene', 'CRM Hygiene', 'The parent SKU')
@@ -354,7 +323,7 @@ test('step 11 — (e) deleting a page behind the current one: Back skips straigh
 
 // ---------------------------------------------------------------- YAZ-738: drag-to-close
 
-test('step 12 — dragging the edge past the minimum CLOSES the sidebar rather than shrinking it', async () => {
+test('step 10 — dragging the edge past the minimum CLOSES the sidebar rather than shrinking it', async () => {
   expect(await sidebarWidth(win)).toBe(WIDENED_W)
   // Well past 60% of the 180px minimum: the gesture reads as "close it", not "make it tiny".
   await dragSidebar(win, -(WIDENED_W - 40))

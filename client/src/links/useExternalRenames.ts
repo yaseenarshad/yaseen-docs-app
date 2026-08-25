@@ -190,19 +190,12 @@ export function useExternalRenames(root: string | null, notify: (message: string
       } catch {
         records = [] // no index snapshot → the repair stands, links stay as they are
       }
-      let tree: TreeNode[] | undefined
-      try {
-        tree = (await api.tree(r)).tree
-      } catch {
-        tree = undefined // no tree snapshot → `.base` embeds stay as they are (conservative)
-      }
       const summary = await updateLinksAfterRename({
         root: r,
         oldPath: item.oldPath,
         newPath: item.newPath,
         kind: 'file', // the detector only pairs markdown FILES
         records: preRenameRecords(records, r, item.oldPath, item.newPath),
-        tree,
       })
       // The user explicitly asked — always answer (unlike the in-app flow's silent no-op case).
       notify(renameNotice(summary))

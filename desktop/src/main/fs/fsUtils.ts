@@ -42,14 +42,14 @@ export function isMarkdown(name: string): boolean {
   return fileKind(name) === 'markdown'
 }
 
-/** Markdown or `.base` — the files the tree, watcher and file calls serve. */
+/** The files the tree, watcher and file calls serve — markdown, and nothing else (YAZ-844). */
 export function isVaultFile(name: string): boolean {
   return fileKind(name) !== null
 }
 
 /** Throws UNSUPPORTED_EXTENSION unless `p` is a vault file by extension. */
 export function requireVaultFile(p: string): void {
-  if (!isVaultFile(p)) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .md/.markdown/.base files are served', { path: p })
+  if (!isVaultFile(p)) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .md/.markdown files are served', { path: p })
 }
 
 /** Dot-entries and node_modules are invisible to every call. */
@@ -102,7 +102,7 @@ export async function requireDir(dir: string): Promise<void> {
 }
 
 /**
- * Recursive tree of vault files (`.md`/`.markdown`/`.base`, each tagged with its `kind`) under
+ * Recursive tree of vault files (`.md`/`.markdown`, each tagged with its `kind`) under
  * `dir`. Dirs first, then files, each sorted case-insensitively; every dir shows even with no
  * vault file beneath, so freshly created folders are visible (GRO-2022 D1). Unreadable subdirs
  * are skipped.

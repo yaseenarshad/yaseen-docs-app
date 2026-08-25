@@ -58,7 +58,7 @@ const PRIORITY_BOARD = `views:
       property: note.priority
 `
 
-const BASE_FILE = '/vault/Bases/Content.base'
+const BASE_FILE = '/vault/Bases/Content.md'
 
 /** The created note as the next index refetch would deliver it. */
 const created = (path: string, properties: Record<string, unknown>): IndexRecord => ({

@@ -114,7 +114,7 @@ interface MenuTargets {
   /**
    * "Turn into folder page" / "Turn back into normal page" — MARKDOWN FILE rows only (🔒 D2,
    * YAZ-817). Its OWN field, not `newWindowPath` reused: that one is every file row, and a
-   * `.base` row can no more carry the flag than a folder can.
+   * folder row can no more carry the flag than blank space can.
    */
   folderPagePath: string | null
   /** That row's flag when the menu opened, off the window's index snapshot; picks the label. */
@@ -300,14 +300,14 @@ export function Sidebar({
     }
   }, [activeFile, root, onFileMissing])
 
-  // ---- New note / new base / new folder (GRO-2022, GRO-2126): right-click menu → inline name input ----
+  // ---- New note / new folder page / new folder (GRO-2022, YAZ-841): right-click menu → inline name input ----
 
   const openMenu = useCallback(
     (node: TreeNode | null, e: React.MouseEvent) => {
       e.preventDefault()
       e.stopPropagation()
       const filePath = node?.type === 'file' ? node.path : null
-      // The toggle's own target (🔒 D2): a NOTE, so `.base` rows are out — `fileKind` is the
+      // The toggle's own target (🔒 D2): a NOTE — `fileKind` is the
       // same classifier the tree and the index use, never a local `.md` test. The flag is read
       // HERE, once, off the window's snapshot: the menu that opens is about the row that was
       // right-clicked, and pinning the boolean into the menu's state is what keeps it that way.
@@ -362,7 +362,6 @@ export function Sidebar({
     async (name: string) => {
       if (creating === null) return
       const p = entryPath(creating.parentDir, name, creating.kind)
-      // Notes and bases both go through createFile; the main process seeds `.base` with a minimal view.
       if (creating.kind === 'dir') await api.createDir(p)
       // Born a folder page (🔒 D4 + D1, YAZ-841): the SAME atomic content-at-create call the 5D
       // seed uses, carrying exactly `folder_page: true` and nothing else — no settings block
@@ -372,7 +371,6 @@ export function Sidebar({
       else await api.createFile(p)
       setCreating(null)
       refresh()
-      // The main pane picks the editor or the base host from the opened path's extension.
       if (creating.kind !== 'dir') onOpenFile(p)
     },
     [creating, refresh, onOpenFile],
@@ -414,7 +412,7 @@ export function Sidebar({
       // opens immediately. Failure leaves the line out; it never blocks or spins.
       api.index(root).then(
         ({ records }) => {
-          const n = countLinkReferences({ root, oldPath: path, kind, records, tree: tree?.tree })
+          const n = countLinkReferences({ root, oldPath: path, kind, records })
           setConfirmingDelete((current) => (current !== null && current.path === path ? { ...current, backlinks: n } : current))
         },
         () => undefined,
@@ -663,7 +661,6 @@ export function Sidebar({
           onReveal={reveal}
           onNewNote={() => startCreate('file')}
           onNewFolderPage={() => startCreate('folderPage')}
-          onNewBase={() => startCreate('base')}
           onNewFolder={() => startCreate('dir')}
           folderPagePath={menu.folderPagePath}
           folderPageIsOn={menu.folderPageIsOn}

@@ -18,7 +18,6 @@ import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikil
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  // `index` / `properties` are only reached by the `.base` branch (BaseHost) — see the Links D block.
   api: { readFile: vi.fn(), writeFile: vi.fn(), index: vi.fn(), properties: { get: vi.fn(), onChange: vi.fn() } },
 }))
 
@@ -279,7 +278,7 @@ describe('CrepeHost empty frontmatter block (GRO-2216)', () => {
 /**
  * Links D (GRO-2193): the "Linked mentions" section is part of the MARKDOWN editor's scrollable
  * content — appended after the Crepe mount inside `.editor-host`, so it scrolls with the note —
- * and a `.base` file gets none (BaseHost is a different branch entirely).
+ * and a page with no wikilink feed gets none.
  */
 describe('Editor backlinks section (Links D, GRO-2193)', () => {
   const record = (path: string, links: string[] = [], properties: Record<string, unknown> = {}): IndexRecord => {
@@ -345,16 +344,4 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['editor-mount', 'backlinks'])
   })
 
-  it('a `.base` file gets no section (v1: what a base "mentions" is a Bases question)', async () => {
-    vi.mocked(api.index).mockResolvedValue({ root: '/vault', records: [], generatedAt: 1 })
-    vi.mocked(api.properties.get).mockResolvedValue({ root: '/vault', version: 1, properties: {} })
-    vi.mocked(api.properties.onChange).mockReturnValue(() => undefined)
-    const source = createWikilinkResolveSource()
-    const BASE_PATH = '/vault/Notes.base'
-    const el = await mount('views:\n  - type: table\n    name: Table\n', 1, { path: BASE_PATH, wikilinks: source })
-    feed(source, [record('/vault/other.md', ['Notes.base']), record(BASE_PATH)])
-    await settle()
-    expect(el.querySelector('.base-host')).not.toBeNull()
-    expect(el.querySelector('.backlinks')).toBeNull()
-  })
 })

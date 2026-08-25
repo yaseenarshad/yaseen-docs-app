@@ -14,6 +14,22 @@ const svg = {
   'aria-hidden': true,
 }
 
+/**
+ * 2×2 grid marking a FOLDER PAGE row in the outline (YAZ-820) and in its add-row picker; same
+ * stroke weight as `SidebarPanelIcon`. It lived in `sidebar/Tree.tsx` while tree rows and tabs
+ * wore it too; YAZ-844 left the folder page its only wearer, so it moved in with the rest of
+ * the folder-page glyphs.
+ */
+export function BaseGlyph({ className }: { className: string }) {
+  return (
+    <svg className={className} width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
+      <rect x="1.5" y="1.5" width="9" height="9" rx="1" />
+      <line x1="6" y1="1.5" x2="6" y2="10.5" />
+      <line x1="1.5" y1="6" x2="10.5" y2="6" />
+    </svg>
+  )
+}
+
 export const PlusIcon = () => (
   <svg {...svg}>
     <path d="M8 3v10M3 8h10" />

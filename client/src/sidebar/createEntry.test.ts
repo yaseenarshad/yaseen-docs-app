@@ -29,16 +29,6 @@ describe('entryPath', () => {
     expect(entryPath('/r', 'note.MARKDOWN', 'file')).toBe('/r/note.MARKDOWN')
   })
 
-  it('appends .base to base names without the extension (GRO-2126)', () => {
-    expect(entryPath('/r', 'Tasks', 'base')).toBe('/r/Tasks.base')
-    expect(entryPath('/r', 'Tasks.md', 'base')).toBe('/r/Tasks.md.base')
-  })
-
-  it('keeps an existing .base extension, case-insensitive', () => {
-    expect(entryPath('/r', 'Tasks.base', 'base')).toBe('/r/Tasks.base')
-    expect(entryPath('/r', 'Tasks.BASE', 'base')).toBe('/r/Tasks.BASE')
-  })
-
   it('gives a folder page the note extension — it IS a note, just born flagged (🔒 D1, YAZ-841)', () => {
     expect(entryPath('/r', 'Growth', 'folderPage')).toBe('/r/Growth.md')
     expect(entryPath('/r', 'Growth.md', 'folderPage')).toBe('/r/Growth.md')
@@ -48,7 +38,6 @@ describe('entryPath', () => {
   it('uses dir names as-is and trims whitespace', () => {
     expect(entryPath('/r', 'Folder', 'dir')).toBe('/r/Folder')
     expect(entryPath('/r', '  note ', 'file')).toBe('/r/note.md')
-    expect(entryPath('/r', '  Tasks ', 'base')).toBe('/r/Tasks.base')
   })
 })
 
@@ -61,23 +50,20 @@ describe('targetDirFor', () => {
 })
 
 describe('renamedPath (Links E1, GRO-2194)', () => {
-  it('same parent dir; the OLD file extension re-appends when none of the same kind is typed', () => {
+  it('same parent dir; the OLD file extension re-appends when no markdown one is typed', () => {
     expect(renamedPath('/r/sub/B.md', 'C')).toBe('/r/sub/C.md')
     expect(renamedPath('/r/sub/B.markdown', 'C')).toBe('/r/sub/C.markdown')
-    expect(renamedPath('/r/T.base', 'U')).toBe('/r/U.base')
     expect(renamedPath('/r/B.md', '  C  ')).toBe('/r/C.md')
   })
 
-  it('a typed extension of the same kind is kept as typed', () => {
+  it('a typed markdown extension is kept as typed', () => {
     expect(renamedPath('/r/B.md', 'C.md')).toBe('/r/C.md')
     expect(renamedPath('/r/B.markdown', 'C.md')).toBe('/r/C.md')
-    expect(renamedPath('/r/T.base', 'U.base')).toBe('/r/U.base')
     expect(renamedPath('/r/B.md', 'C.MD')).toBe('/r/C.MD')
   })
 
   it('an unchanged name round-trips to the same path (the caller treats it as a no-op)', () => {
     expect(renamedPath('/r/B.md', 'B')).toBe('/r/B.md')
-    expect(renamedPath('/r/T.base', 'T')).toBe('/r/T.base')
   })
 
   it('a DIRECTORY renames with no extension logic at all (E1b, GRO-2241)', () => {

@@ -146,7 +146,7 @@ describe('useIndex', () => {
   it('ignores events for non-markdown paths', async () => {
     mount()
     await flush()
-    await emit({ type: 'change', path: '/vault/topics.base', mtime: 2 })
+    await emit({ type: 'change', path: '/vault/topics.txt', mtime: 2 })
     await emit({ type: 'add', path: '/vault/cover.png', mtime: 2 })
     await emit({ type: 'addDir', path: '/vault/new-dir' })
     await pastDebounce()

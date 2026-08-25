@@ -28,13 +28,6 @@
  *    selection moves the whole selection; single-block drag stays Crepe's.
  *  - Bullet threading (GRO-2094, `outline/bulletThreading.ts` + `.css`): root → caret path
  *    decorations (accent line + glyphs, stops at the active bullet); CSS-gated by the settings cog.
- *  - Base embeds (GRO-2145, `baseEmbed/baseEmbedPlugin.ts`): a paragraph with exactly one `![[X.base]]`
- *    gets a widget decoration slot (never a schema change — the text round-trips byte-identically);
- *    CrepeHost portals `<BaseEmbed>` into the slots via the slot store in `opts.baseEmbeds`.
- *  - `base` code blocks (GRO-2146, `baseCodeBlock/baseCodeBlockView.ts`): a `$view` replacement
- *    for `code_block` — `language === 'base'` gets a stored slot (CrepeHost portals
- *    `<BaseCodeBlock>`), every other language delegates to Crepe's stock CodeMirror block.
- *    No schema/serializer change: the block's exact text round-trips byte-identically.
  *  - Wikilinks (GRO-2190, `wikilink/wikilinkPlugin.ts`): `[[target]]` renders Obsidian
  *    live-preview style via inline decorations only (brackets hidden, alias/heading display,
  *    caret-adjacency reveal, resolved/unresolved via `opts.wikilinks`) — never a schema or
@@ -63,8 +56,6 @@ import { wrapInOrderedListInputRule } from '@milkdown/kit/preset/commonmark'
 import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
 import { Selection } from '@milkdown/kit/prose/state'
 import { replaceAll } from '@milkdown/kit/utils'
-import { createBaseCodeBlock, createBaseCodeBlockSlotStore, type BaseCodeBlockSlotStore } from './baseCodeBlock/baseCodeBlockView'
-import { createBaseEmbed, createBaseEmbedSlotStore, type BaseEmbedSlotStore } from './baseEmbed/baseEmbedPlugin'
 import { blockHandleGate } from './blockHandleGate'
 import { createBlockHandleMenu } from './blockHandleMenu'
 import { bulletThreading } from './outline/bulletThreading'
@@ -91,10 +82,6 @@ export interface CreateCrepeOptions {
   folding?: OutlineFoldingOptions
   /** Zoom into a bullet (GRO-2029); `fileName` is the root breadcrumb. Defaults to an unnamed file. */
   zoom?: ZoomOptions
-  /** Base embed slots (GRO-2145): the host portals `<BaseEmbed>` into them. Defaults to a private store. */
-  baseEmbeds?: BaseEmbedSlotStore
-  /** `base` code block slots (GRO-2146): the host portals `<BaseCodeBlock>` into them. Defaults to a private store. */
-  baseCodeBlocks?: BaseCodeBlockSlotStore
   /** Wikilink resolve source (GRO-2190): App keeps it fed from the vault index. Defaults to a never-updated source (all links render resolved). */
   wikilinks?: WikilinkResolveSource
   /** `[[` picker candidates (GRO-2191): App keeps it fed from the vault index. Defaults to a never-updated source (empty picker — only Create rows). */
@@ -121,8 +108,6 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createOutlineZoom(opts.zoom ?? { fileName: 'Untitled' }))
   crepe.editor.use(guideLines)
   crepe.editor.use(bulletThreading)
-  crepe.editor.use(createBaseEmbed(opts.baseEmbeds ?? createBaseEmbedSlotStore()))
-  crepe.editor.use(createBaseCodeBlock(opts.baseCodeBlocks ?? createBaseCodeBlockSlotStore()))
   // ONE resolve source instance feeds both the decorations and the click plugin's routing.
   const wikilinks = opts.wikilinks ?? createWikilinkResolveSource()
   crepe.editor.use(createWikilink(wikilinks))

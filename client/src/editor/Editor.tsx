@@ -1,13 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { fileKind } from '@shared/fileKind'
+import { useEffect, useRef } from 'react'
 import type { FileResponse } from '@shared/types'
 import { api } from '../api'
-import { BaseHost } from '../bases/BaseHost'
-import { createBaseCodeBlockSlotStore, type BaseCodeBlockSlot } from './baseCodeBlock/baseCodeBlockView'
-import { BaseCodeBlock } from './baseCodeBlock/BaseCodeBlock'
-import { createBaseEmbedSlotStore, type BaseEmbedSlot } from './baseEmbed/baseEmbedPlugin'
-import { BaseEmbed } from './baseEmbed/BaseEmbed'
 import { FolderPageContents } from '../bases/FolderPageContents'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
@@ -61,12 +54,9 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileBackground, on
       {state.status === 'idle' && <p className="editor-msg">Select a file from the sidebar.</p>}
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
-      {file !== null &&
-        (fileKind(file.path) === 'base' ? (
-          <BaseHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} />
-        ) : (
-          <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} />
-        ))}
+      {file !== null && (
+        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} />
+      )}
     </section>
   )
 }
@@ -98,25 +88,6 @@ function CrepeHost({
   const { attach, markReloaded, reportConflict, absorbFrontmatterOnly } = autosave
   const reloadRef = useRef<() => void>(() => {})
 
-  // Base embeds (6A, GRO-2145): the plugin keeps one widget slot per `![[X.base]]` paragraph;
-  // React stays the owner of what renders inside — a portal per slot, keyed so typing around
-  // the embed never remounts it.
-  const [embedStore] = useState(createBaseEmbedSlotStore)
-  const [embedSlots, setEmbedSlots] = useState<readonly BaseEmbedSlot[]>([])
-  useEffect(() => {
-    setEmbedSlots(embedStore.list())
-    return embedStore.subscribe(() => setEmbedSlots(embedStore.list()))
-  }, [embedStore])
-
-  // `base` code blocks (6B, GRO-2146): same pattern — the node view keeps one slot per
-  // ```base fence; a portal per slot renders <BaseCodeBlock> over the block's own YAML.
-  const [codeStore] = useState(createBaseCodeBlockSlotStore)
-  const [codeSlots, setCodeSlots] = useState<readonly BaseCodeBlockSlot[]>([])
-  useEffect(() => {
-    setCodeSlots(codeStore.list())
-    return codeStore.subscribe(() => setCodeSlots(codeStore.list()))
-  }, [codeStore])
-
   useEffect(() => {
     const host = hostRef.current
     if (host === null) return
@@ -134,8 +105,6 @@ function CrepeHost({
         onCollapsedKeysChange: (keys) => storage.setFolds(root, file.path, keys),
       },
       zoom: { fileName: basename(file.path) },
-      baseEmbeds: embedStore,
-      baseCodeBlocks: codeStore,
       // Stable per window (App-owned): index updates flow INSIDE the sources, never remounting us.
       wikilinks,
       wikilinkCandidates,
@@ -200,7 +169,7 @@ function CrepeHost({
       unsubscribe()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, embedStore, codeStore, wikilinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, createBase])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, createBase])
 
   return (
     <>
@@ -219,8 +188,7 @@ function CrepeHost({
       {/* The scroller holds the Crepe mount and, after it, two blocks of the note's own: the
           folder page's contents when this page carries the flag (YAZ-819, 🔒 D1 — nothing at all
           when it does not), then "Linked mentions" (Links D, GRO-2193). Both scroll WITH the note
-          instead of floating in a panel. `.base` files get neither: what "mentions" (or contents)
-          means for a base is a Bases question — BaseHost stays untouched. */}
+          instead of floating in a panel. */}
       <div className="editor-host">
         <div className="editor-mount" ref={hostRef} />
         {wikilinks !== undefined && (
@@ -230,36 +198,6 @@ function CrepeHost({
           <BacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
         )}
       </div>
-      {embedSlots.map((slot) =>
-        createPortal(
-          <BaseEmbed
-            key={slot.key}
-            root={root}
-            watch={watch}
-            thisFile={file.path}
-            target={slot.target}
-            viewName={slot.viewName}
-            onOpenFile={onOpenFile}
-          />,
-          slot.dom,
-          slot.key,
-        ),
-      )}
-      {codeSlots.map((slot) =>
-        createPortal(
-          <BaseCodeBlock
-            key={slot.key}
-            root={root}
-            watch={watch}
-            thisFile={file.path}
-            text={slot.text}
-            onCommit={slot.commit}
-            onOpenFile={onOpenFile}
-          />,
-          slot.dom,
-          slot.key,
-        ),
-      )}
     </>
   )
 }

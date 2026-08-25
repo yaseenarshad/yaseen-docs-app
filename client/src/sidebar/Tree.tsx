@@ -4,7 +4,7 @@ import { CreateInline } from './CreateInline'
 import type { EntryKind } from './createEntry'
 import { RenameInline } from './RenameInline'
 
-/** Inline "New note"/"New base"/"New folder" input pending inside the tree (GRO-2022, GRO-2126). */
+/** Inline "New note"/"New folder page"/"New folder" input pending inside the tree (GRO-2022, YAZ-841). */
 export interface PendingCreate {
   kind: EntryKind
   /** Absolute path of the directory the entry is created in. */
@@ -59,17 +59,6 @@ interface TreeProps {
   /** File drag-to-move state + callbacks (E1b); owned by the Sidebar. */
   move: TreeFileMove
   depth?: number
-}
-
-/** 2×2 grid marking a `.base` row (GRO-2126) or tab (I3 shares it with the TabBar); same stroke weight as `SidebarPanelIcon`. */
-export function BaseGlyph({ className }: { className: string }) {
-  return (
-    <svg className={className} width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
-      <rect x="1.5" y="1.5" width="9" height="9" rx="1" />
-      <line x1="6" y1="1.5" x2="6" y2="10.5" />
-      <line x1="1.5" y1="6" x2="10.5" y2="6" />
-    </svg>
-  )
 }
 
 export function Tree({
@@ -143,7 +132,7 @@ export function Tree({
           <li key={node.path} role="treeitem" aria-selected={node.path === activeFile}>
             <button
               type="button"
-              className={`tree__row tree__row--file${node.kind === 'base' ? ' tree__row--base' : ''}${node.path === activeFile ? ' tree__row--active' : ''}`}
+              className={`tree__row tree__row--file${node.path === activeFile ? ' tree__row--active' : ''}`}
               style={{ paddingLeft: 8 + depth * 14 + 14 }}
               onClick={(e) => (e.metaKey ? onOpenFileBackground(node.path) : onOpenFile(node.path))}
               onContextMenu={(e) => onNodeContextMenu(node, e)}
@@ -158,7 +147,6 @@ export function Tree({
               }}
               onDragEnd={move.end}
             >
-              {node.kind === 'base' && <BaseGlyph className="tree__glyph" />}
               <span className="tree__label">{stripExt(node.name)}</span>
             </button>
           </li>

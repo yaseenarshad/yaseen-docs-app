@@ -56,7 +56,7 @@ const separatorOf = (view: BaseView): string => (typeof view.propertySeparator =
  * `markerStyle` bullet | number | none draws the item marker (default bullet; number is the
  * ordinal within its list — restarting per group). Grouped results render 4C sections (the
  * shared `GroupHeader` over each group's own list) with the SAME persisted collapse state as
- * the table/board/cards (never the `.base` file); search narrows items and drops empty groups.
+ * the table/board/cards (never the page's card); search narrows items and drops empty groups.
  * The three config keys are edited in the Properties menu (list views only). The primary line
  * (when not file.name) and the indented property rows edit inline through `EditableCell`
  * (5B, GRO-2142); the joined inline string stays read-only.
@@ -77,7 +77,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
     () => new Map(keys.map((k) => [k, columnTyping(k, rowRecords, types, properties, folderPage)])),
     [keys, rowRecords, types, properties, folderPage],
   )
-  /** What the pickers resolve and complete over: the vault, which is the rows for a `.base` (🔒 D2). */
+  /** What the pickers resolve and complete over: the vault; absent → the rows themselves (🔒 D2). */
   const linkRecords = vaultRecords ?? records
   const basenames = useMemo(() => linkRecords.map((r) => r.basename), [linkRecords])
   // Relation columns narrow the link picker to the pages of the folder page the target names

@@ -21,7 +21,7 @@ import { ViewTabs } from './view/ViewTabs'
 /**
  * Folder-page contents mode (🔒 D3, YAZ-819). BaseView stays ONE component: the folder-page host
  * (`FolderPageContents`) hands it an in-memory def and this bundle, and everything below is
- * today's code. Absent → a plain `.base`, byte for byte the behaviour it always had.
+ * today's code. Absent → the plain, unscoped view: no declaration rung, no member gestures.
  */
 export interface FolderPageMode {
   /** The folder page's own declaration: the typing ladder's TOP rung (🔒 Q8, YAZ-815). */
@@ -39,11 +39,11 @@ export interface FolderPageMode {
 
 export interface BaseViewProps {
   parsed: ParsedBase
-  /** Every config change arrives here as `updateBase(parsed, …)`; BaseHost turns it into autosave. */
+  /** Every config change arrives here as `updateBase(parsed, …)`; the host turns it into a write. */
   onChange: (next: ParsedBase) => void
   /** Vault root, keying view state persisted OUTSIDE the file (collapsed groups, GRO-2137); null = session-only. */
   root: string | null
-  /** Absolute path of the open `.base`, for `this.file` in filters/formulas; null when unknown. */
+  /** Absolute path of the page the views belong to, for `this.file` in filters/formulas; null when unknown. */
   thisFile: string | null
   /** The vault index the views query; `[]` until `indexStatus` is ready (fed by `useIndex`, GRO-2129). */
   records: IndexRecord[]
@@ -57,7 +57,7 @@ export interface BaseViewProps {
   onOpenFile: (path: string) => void
   /** Read-only chrome for embeds (6A, GRO-2145): view switcher only — no toolbar menus, New, cell editing or drag. */
   readOnly?: boolean
-  /** Initial view by name (case-insensitive; `![[X.base#View]]`); unknown or absent → the first view. */
+  /** Initial view by name (case-insensitive); unknown or absent → the first view. */
   initialView?: string
   /**
    * Present only for a FOLDER PAGE's contents block (🔒 D3, YAZ-819): its rows are the members,
@@ -68,7 +68,7 @@ export interface BaseViewProps {
 }
 
 /**
- * One `.base` in the main pane (GRO-2135): the toolbar (view switcher, filter / sort /
+ * One set of views (GRO-2135): the toolbar (view switcher, filter / sort /
  * properties menus, search, count) over the body — the real table for `type: table` (GRO-2136),
  * the board for `type: board` (4D, GRO-2138), the card grid for `type: cards` (4E, GRO-2139),
  * the list for `type: list` (4F, GRO-2140), a placeholder row list for unknown view types.
@@ -108,8 +108,8 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
 
   const shown = useMemo(() => (Object.keys(moves).length === 0 ? records : applyMoves(records, moves)), [records, moves])
   // 🔒 D2 (YAZ-819): a folder page's rows are its MEMBERS, so the engine's own rows-are-the-vault
-  // resolver would miss every link pointing outside them — inject the whole-vault one. A `.base`
-  // passes nothing and keeps the default, which is the same resolver it always built.
+  // resolver would miss every link pointing outside them — inject the whole-vault one. A caller
+  // that passes nothing keeps the default, which is the same resolver the engine always built.
   const vaultRecords = folderPage?.vaultRecords
   const resolve = useMemo(() => (vaultRecords === undefined ? undefined : resolverFor(vaultRecords)), [vaultRecords])
   /**
@@ -150,8 +150,9 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
   // Search filters WITHIN each group; a group with no matching rows disappears (4C, GRO-2137).
   const groups = result.groups === null ? null : needle ? result.groups.map((g) => ({ ...g, rows: g.rows.filter(matches) })).filter((g) => g.rows.length > 0) : result.groups
 
-  // Collapse state lives per `<basePath>::<viewName>` in the main-owned store — NEVER in the .base
-  // file, so toggling can not touch autosave. Session-only (keyed by view index) when paths are unknown.
+  // Collapse state lives per `<pagePath>::<viewName>` in the main-owned store — NEVER in the
+  // page's own card, so toggling can not touch autosave. Session-only (keyed by view index)
+  // when paths are unknown.
   const groupsKey = thisFile === null ? null : `${thisFile}::${view.name}`
   const collapseKey = groupsKey ?? `#${index}`
   const collapsed = collapsedByKey[collapseKey] ?? (root !== null && groupsKey !== null ? storage.getBaseGroups(root, groupsKey) : [])
@@ -233,8 +234,8 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
   const rest = keys.filter((k) => k !== nameKey)
 
   /**
-   * The folder page's OUTLINE (YAZ-820) — only ever inside the contents block: a `.base` naming
-   * `type: outline` has no folder page behind it and keeps the placeholder rows, as it always did.
+   * The folder page's OUTLINE (YAZ-820) — only ever inside the contents block: a `type: outline`
+   * view with no folder page behind it keeps the placeholder rows, as it always did.
    * `thisFile` IS the folder page's path here (`FolderPageContents` passes it), and it roots the
    * ancestor guard, so a null one falls through too rather than guessing.
    */

@@ -208,7 +208,7 @@ describe('the outline is the folder page’s skin — and only ever hers', () =>
     expect(texts(el, '.base-tab__btn')).toEqual(['Outline', 'Table'])
   })
 
-  it('a `.base` naming `type: outline` keeps the placeholder rows — an outline of WHAT?', () => {
+  it('a `type: outline` view with no folder page keeps the placeholder rows — an outline of WHAT?', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -218,7 +218,7 @@ describe('the outline is the folder page’s skin — and only ever hers', () =>
           parsed={parseBase('views:\n  - type: outline\n    name: Outline\n')}
           onChange={vi.fn()}
           root="/vault"
-          thisFile="/vault/x.base"
+          thisFile="/vault/x.md"
           records={[rec(LEAD)]}
           indexStatus="ready"
           onOpenFile={onOpenFile}

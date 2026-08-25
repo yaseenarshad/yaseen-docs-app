@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import { matchLinkCandidates } from '../../links/completion'
 import { isFolderPage } from '../../links/folderPages'
-import { BaseGlyph } from '../../sidebar/Tree'
+import { BaseGlyph } from './icons'
 
 /**
  * The outline's add row (YAZ-820, 🔒 D4 of YAZ-818): "+ Link a page…" at the bottom, depth 0 only.

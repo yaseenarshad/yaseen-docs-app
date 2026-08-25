@@ -61,7 +61,7 @@ function mount(text: string, props: Partial<BaseViewProps> = {}) {
           parsed={parsed}
           onChange={onChange}
           root="/vault"
-          thisFile="/vault/pillars.base"
+          thisFile="/vault/pillars.md"
           records={TEST_RECORDS}
           indexStatus="ready"
           onOpenFile={onOpenFile}
@@ -218,8 +218,8 @@ describe('collapse', () => {
     expect(links(el)).not.toContain('The Gold In Your Archive.md')
     expect(headerTexts(el)).toEqual(['drafting', 'idea', 'published', 'No value']) // header stays
     expect(toggleOf(el, 'idea').getAttribute('aria-expanded')).toBe('false')
-    expect(onChange).not.toHaveBeenCalled() // NOT in the .base file, no autosave
-    expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.base::T', ['v:idea'])
+    expect(onChange).not.toHaveBeenCalled() // NOT in the page's own card, no autosave
+    expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::T', ['v:idea'])
 
     // a fresh mount of the same base + view starts collapsed from the store
     unmount()
@@ -230,7 +230,7 @@ describe('collapse', () => {
     // expanding removes the entry
     click(toggleOf(again.el, 'idea'))
     expect(links(again.el)).toContain('Agentic Agency.md')
-    expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.base::T', [])
+    expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::T', [])
   })
 
   it('the toolbar toggle collapses every group at once, the ones search hides included', async () => {
@@ -240,9 +240,9 @@ describe('collapse', () => {
     setValue(byLabel(el, 'Search rows'), 'agency')
     expect(headerTexts(el)).toEqual(['drafting', 'idea'])
     click(byLabel(el, 'Collapse all groups'))
-    expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.base::T', ['v:drafting', 'v:idea', 'v:published', groupKeyOf(null)])
+    expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::T', ['v:drafting', 'v:idea', 'v:published', groupKeyOf(null)])
     click(byLabel(el, 'Expand all groups'))
-    expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.base::T', [])
+    expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::T', [])
   })
 
   it('hides the toggle above the persisted cap: 201 groups have no collapse-all button', () => {
@@ -264,7 +264,7 @@ describe('collapse', () => {
     const { el } = mount(GROUP_BASE)
     click(toggleOf(el, 'No value'))
     expect(links(el)).not.toContain('Attribution.md')
-    expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.base::T', [groupKeyOf(null)])
+    expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::T', [groupKeyOf(null)])
   })
 })
 

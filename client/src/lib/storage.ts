@@ -152,7 +152,7 @@ export const storage = {
 
   /** Collapsed group keys for one base view; `key` is `<basePath>::<viewName>` (Bases 4C, GRO-2137). */
   getBaseGroups: (root: string, key: string): string[] => folderOf(root).baseGroups[key] ?? [],
-  /** Replace the collapsed group keys for one base view; an empty list removes the entry. Never written to the `.base` file. */
+  /** Replace the collapsed group keys for one base view; an empty list removes the entry. Session chrome, never written to the page's own frontmatter. */
   setBaseGroups(root: string, key: string, collapsed: readonly string[]): void {
     const baseGroups = { ...folderOf(root).baseGroups }
     if (collapsed.length === 0) delete baseGroups[key]

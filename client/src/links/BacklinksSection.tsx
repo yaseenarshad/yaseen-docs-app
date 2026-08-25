@@ -49,7 +49,7 @@ interface Feed {
 }
 
 export function BacklinksSection({ path, source, openCurrent, openBackground }: BacklinksSectionProps) {
-  // Same live-feed idiom as the base-embed / base-code-block registries: subscribe once, re-read
+  // The same live-feed idiom the folder page's contents block uses: subscribe once, re-read
   // the whole feed on each poke. Identical contents keep the previous object, so a snapshot that
   // changed nothing for us costs no render.
   const [feed, setFeed] = useState<Feed>(() => ({ records: source.records, resolve: source.resolve }))

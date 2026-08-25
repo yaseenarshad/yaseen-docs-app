@@ -41,9 +41,9 @@ describe('removeEntry (GRO-2272 A1)', () => {
     expect(trashItem).toHaveBeenCalledExactlyOnceWith(p)
   })
 
-  it('moves a .base file to the Trash — no extension gate beyond what the tree shows', async () => {
+  it('moves a non-vault file to the Trash — no extension gate beyond what the tree shows', async () => {
     trashResolves()
-    const p = path.join(root, 'alpha', 'Topics.base')
+    const p = path.join(root, 'notes.txt')
     expect(await removeEntry({ path: p })).toEqual({ path: p, kind: 'file' })
   })
 

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BridgeFailure } from './fsUtils'
 
-/** Creates a temp vault (markdown + one `.base`) and returns its root; caller removes it via `cleanup`. */
+/** Creates a temp vault (markdown, plus non-vault files that must stay invisible) and returns its root; caller removes it via `cleanup`. */
 export async function makeFixture(): Promise<{ root: string; cleanup: () => Promise<void> }> {
   const root = await mkdtemp(path.join(tmpdir(), 'mdapp-'))
   await mkdir(path.join(root, 'Zeta', 'inner'), { recursive: true })
@@ -22,7 +22,6 @@ export async function makeFixture(): Promise<{ root: string; cleanup: () => Prom
     writeFile(path.join(root, 'Zeta', 'inner', 'deep.md'), 'deep'),
     writeFile(path.join(root, 'Zeta', 'z.markdown'), 'z'),
     writeFile(path.join(root, 'alpha', 'a.md'), 'a'),
-    writeFile(path.join(root, 'alpha', 'Topics.base'), 'views:\n  - type: table\n    name: Table\n'),
     writeFile(path.join(root, 'assets-only', 'img.png'), 'png'),
     writeFile(path.join(root, '.obsidian', 'workspace.md'), 'ws'),
     writeFile(path.join(root, '.yaseendocs', 'foo.json'), '{"a":1}'),

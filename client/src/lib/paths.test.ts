@@ -15,13 +15,9 @@ describe('stripExt', () => {
     expect(stripExt('note.MARKDOWN')).toBe('note')
   })
 
-  it('strips .base, case-insensitive (GRO-2126)', () => {
-    expect(stripExt('Tasks.base')).toBe('Tasks')
-    expect(stripExt('Tasks.BASE')).toBe('Tasks')
-  })
-
   it('leaves other names alone', () => {
     expect(stripExt('notes.txt')).toBe('notes.txt')
+    expect(stripExt('Tasks.base')).toBe('Tasks.base') // not a vault extension since YAZ-844
     expect(stripExt('database')).toBe('database')
   })
 })

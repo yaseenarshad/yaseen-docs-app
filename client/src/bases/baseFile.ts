@@ -1,7 +1,8 @@
 import { type Document, isMap, parseDocument } from 'yaml'
 
 /**
- * Obsidian Bases (`.base`) file model. The types mirror Obsidian's schema and
+ * The Obsidian Bases view-schema model — the shape a folder page's `views` block round-trips
+ * through (`FolderPageContents`). The types mirror Obsidian's schema and
  * are ours too (extended later); unknown keys are typed as `unknown` and must
  * survive a parse → update → serialise cycle untouched, comments included.
  */

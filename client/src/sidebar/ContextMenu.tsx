@@ -23,12 +23,10 @@ interface ContextMenuProps {
   onNewNote: () => void
   /** Create a note born a folder page — the flag and nothing else (🔒 D4 + D1, YAZ-841). */
   onNewFolderPage: () => void
-  /** Create an Obsidian-compatible `.base` file (GRO-2126). */
-  onNewBase: () => void
   onNewFolder: () => void
   /**
    * The folder-page toggle's own target (🔒 D2, YAZ-817): MARKDOWN FILE rows only — null on
-   * folders, on `.base` rows and on blank space, none of which can carry the flag.
+   * folders and on blank space, neither of which can carry the flag.
    */
   folderPagePath: string | null
   /** Is that page a folder page ALREADY? One item, two labels — the flag picks which (🔒 D2). */
@@ -39,7 +37,7 @@ interface ContextMenuProps {
 }
 
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, onNewNote, onNewFolderPage, onNewBase, onNewFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, onNewNote, onNewFolderPage, onNewFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, onClose }: ContextMenuProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -134,9 +132,6 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
             the other half of the gesture, and the two must not drift together. */}
         <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewFolderPage}>
           New folder page
-        </button>
-        <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewBase}>
-          New base
         </button>
         <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewFolder}>
           New folder

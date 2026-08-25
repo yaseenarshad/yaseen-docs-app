@@ -14,7 +14,7 @@ export type BridgeErrorCode =
   | 'NOT_FOUND' // path does not exist
   | 'NOT_A_DIRECTORY' // expected a directory
   | 'NOT_A_FILE' // expected a regular file
-  | 'UNSUPPORTED_EXTENSION' // file extension is neither markdown nor .base
+  | 'UNSUPPORTED_EXTENSION' // file extension is not markdown
   | 'ALREADY_EXISTS' // create target already exists
   | 'FORBIDDEN' // OS permission denied
   | 'TOO_LARGE' // file exceeds MAX_FILE_BYTES
@@ -23,9 +23,12 @@ export type BridgeErrorCode =
   | 'INVALID_CONFIG' // a vault config file (e.g. .yaseendocs/properties.json) is unusable; the mutation is refused, the file never touched
 
 export const MARKDOWN_EXTENSIONS = ['.md', '.markdown'] as const
-/** Obsidian Bases files: YAML views over the vault's notes, first-class alongside markdown. */
-export const BASE_EXTENSIONS = ['.base'] as const
-export type FileKind = 'markdown' | 'base'
+/**
+ * The kinds of file the vault serves. Markdown is the only one (YAZ-844 retired `.base`);
+ * the name survives because `fileKind()` is the ONE extension classifier the tree, watcher,
+ * index and file calls all ask, and `markdown` reads better at every call site than `true`.
+ */
+export type FileKind = 'markdown'
 export const MAX_FILE_BYTES = 10 * 1024 * 1024
 
 // ---------- tree(root) ----------
@@ -45,13 +48,13 @@ export type TreeNode =
       size: number
       /** mtime in epoch ms. */
       mtime: number
-      /** `markdown` for `.md`/`.markdown`, `base` for `.base` (see `shared/fileKind.ts`). */
+      /** `markdown` for `.md`/`.markdown` — the only kind the tree serves (see `shared/fileKind.ts`). */
       kind: FileKind
     }
 
 export interface TreeResponse {
   root: string
-  /** Recursive tree of the root. Only vault files (`.md`/`.markdown` → `kind: 'markdown'`, `.base` → `kind: 'base'`) are included; every directory shows, vault files or not (GRO-2022). Hidden (dot) entries and `node_modules` skipped. */
+  /** Recursive tree of the root. Only vault files (`.md`/`.markdown` → `kind: 'markdown'`) are included; every directory shows, vault files or not (GRO-2022). Hidden (dot) entries and `node_modules` skipped. */
   tree: TreeNode[]
   /** Main-process time (epoch ms) when the tree was computed. */
   generatedAt: number
@@ -59,7 +62,7 @@ export interface TreeResponse {
 
 // ---------- Bases property index (GRO-2127; bridge method index(root) — Desktop D10) ----------
 
-/** One markdown note as the Bases query engine sees it. `.base` files are never records. */
+/** One markdown note as the Bases query engine sees it. */
 export interface IndexRecord {
   /** Absolute path. */
   path: string
@@ -200,7 +203,7 @@ export interface CreateDirResponse {
  */
 export interface CreateFileRequest {
   path: string
-  /** Initial file contents; omitted → '' for markdown, the minimal table-view seed for `.base`. */
+  /** Initial file contents; omitted → an empty file. */
   content?: string
 }
 
@@ -397,7 +400,7 @@ export interface FolderState {
   lastFile: string | null
   /** file → collapsed outline fold keys (max MAX_FOLD_KEYS_PER_FILE). Never written to the markdown. */
   folds: Record<string, string[]>
-  /** `<basePath>::<viewName>` → collapsed group keys (max MAX_COLLAPSED_GROUP_KEYS). Never written to the `.base` file (GRO-2137). */
+  /** `<pagePath>::<viewName>` → collapsed group keys (max MAX_COLLAPSED_GROUP_KEYS). Session chrome, never written to the page's own card (GRO-2137). */
   baseGroups: Record<string, string[]>
 }
 

@@ -247,11 +247,10 @@ export function App() {
 
   /**
    * The sidebar's Rename/move commit (files E1, folders + drag-moves E1b): flush our own
-   * buffer(s) for the file — or every open editor under the folder — snapshot the index AND
-   * tree BEFORE the rename (afterwards the old name no longer resolves; the tree serves
-   * `.base` embed targets), rename, then rewrite every referencing note through the
-   * shared-resolver engine. All failures land in the passive notice — never a dialog,
-   * never a rejection back into the inline input.
+   * buffer(s) for the file — or every open editor under the folder — snapshot the index
+   * BEFORE the rename (afterwards the old name no longer resolves), rename, then rewrite
+   * every referencing note through the shared-resolver engine. All failures land in the
+   * passive notice — never a dialog, never a rejection back into the inline input.
    */
   const renameFile = useCallback(
     async (oldPath: string, newPath: string): Promise<void> => {
@@ -267,12 +266,6 @@ export function App() {
       } catch {
         records = [] // no index snapshot → the rename still runs, links just stay as they are
       }
-      let tree: Awaited<ReturnType<typeof api.tree>>['tree'] | undefined
-      try {
-        tree = (await api.tree(r)).tree
-      } catch {
-        tree = undefined // no tree snapshot → `.base` embeds stay as they are (conservative)
-      }
       let kind: 'file' | 'dir'
       try {
         kind = (await api.rename({ oldPath, newPath })).kind
@@ -281,7 +274,7 @@ export function App() {
         setNotice(exists ? `Can't rename: "${basename(newPath)}" already exists` : `Can't rename: ${err instanceof Error ? err.message : String(err)}`)
         return
       }
-      const summary = await updateLinksAfterRename({ root: r, oldPath, newPath, kind, records, tree })
+      const summary = await updateLinksAfterRename({ root: r, oldPath, newPath, kind, records })
       if (summary.updated > 0 || summary.skipped > 0) setNotice(renameNotice(summary))
     },
     [root],

@@ -160,7 +160,7 @@ describe('folder-page columns are the top rung (🔒 Q8, YAZ-815)', () => {
     expect(columnTyping('stage', recs, undefined, DECLS, settings({ owner: { kind: 'link' } }))?.assigned).toBe('date')
   })
 
-  it('no folder page (a plain `.base`) is exactly today’s ladder', () => {
+  it('no folder page is exactly today’s ladder', () => {
     expect(columnTyping('owner', recs, undefined, DECLS, null)?.assigned).toBe('text')
     expect(columnTyping('owner', recs, undefined, DECLS)?.assigned).toBe('text')
   })

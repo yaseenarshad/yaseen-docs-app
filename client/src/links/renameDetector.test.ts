@@ -22,8 +22,8 @@ describe('detectRenames (the E1c guard rails, GRO-2242 — locked)', () => {
     expect(detectRenames([f('/v/Empty.md', 0, 100)], [f('/v/Empty2.md', 0, 100)])).toEqual([])
   })
 
-  it('markdown only: .base and asset paths never pair, whichever side they sit on', () => {
-    expect(detectRenames([f('/v/All.base', 7, 100)], [f('/v/All2.base', 7, 100)])).toEqual([])
+  it('markdown only: non-markdown paths never pair, whichever side they sit on', () => {
+    expect(detectRenames([f('/v/All.txt', 7, 100)], [f('/v/All2.txt', 7, 100)])).toEqual([])
     expect(detectRenames([f('/v/pic.png', 7, 100)], [f('/v/pic2.png', 7, 100)])).toEqual([])
     expect(detectRenames([f('/v/B.md', 7, 100)], [f('/v/B2.txt', 7, 100)])).toEqual([])
   })

@@ -755,7 +755,6 @@ describe('context menu order (GRO-2272 C1a)', () => {
       // note it is a kind of — it CREATES beside the right-clicked row, so it stays in the
       // create group and never drifts down to the act-on-this-row toggle.
       'New folder page',
-      'New base',
       'New folder',
       // The folder-page toggle joins the row between the create group and Rename (🔒 D2,
       // YAZ-817): it acts on the right-clicked page, so it belongs with the other
@@ -883,7 +882,6 @@ describe('folder-page toggle (YAZ-840)', () => {
   const MIXED_TREE: TreeNode[] = [
     { type: 'dir', name: 'sub', path: '/v/sub', children: [] },
     { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
-    { type: 'file', name: 'Board.base', path: '/v/Board.base', size: 1, mtime: 1, kind: 'base' },
   ]
 
   const record = (path: string, properties: Record<string, unknown> = {}) => {
@@ -928,8 +926,8 @@ describe('folder-page toggle (YAZ-840)', () => {
     expect(itemByLabel(el, 'Turn into folder page')).toBeDefined()
   })
 
-  it('shows no toggle at all on folder rows, on .base rows, or on blank space', async () => {
-    for (const selector of ['.tree__row--dir', '[title="/v/Board.base"]', '.sidebar__body']) {
+  it('shows no toggle at all on folder rows or on blank space', async () => {
+    for (const selector of ['.tree__row--dir', '.sidebar__body']) {
       const { el } = await openOn(selector, feed(record('/v/a.md', { folder_page: true })))
       expect(itemByLabel(el, 'Turn into folder page')).toBeUndefined()
       expect(itemByLabel(el, 'Turn back into normal page')).toBeUndefined()

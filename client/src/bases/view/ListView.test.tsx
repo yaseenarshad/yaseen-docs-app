@@ -73,7 +73,7 @@ function mount(text: string, props: Partial<BaseViewProps> = {}) {
           parsed={parsed}
           onChange={onChange}
           root="/vault"
-          thisFile="/vault/pillars.base"
+          thisFile="/vault/pillars.md"
           records={TEST_RECORDS}
           indexStatus="ready"
           onOpenFile={onOpenFile}
@@ -243,8 +243,8 @@ describe('grouped sections', () => {
     expect(titles(el)).not.toContain('Agentic Agency.md')
     expect(headerTexts(el)).toEqual(['drafting', 'idea', 'published', 'No value']) // header stays
     expect(toggleOf(el, 'idea').getAttribute('aria-expanded')).toBe('false')
-    expect(onChange).not.toHaveBeenCalled() // NOT in the .base file, no autosave
-    expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.base::L', ['v:idea'])
+    expect(onChange).not.toHaveBeenCalled() // NOT in the page's own card, no autosave
+    expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::L', ['v:idea'])
 
     // a fresh mount of the same base + view starts collapsed from the store
     unmount()
@@ -255,7 +255,7 @@ describe('grouped sections', () => {
     // expanding removes the entry
     click(toggleOf(again.el, 'idea'))
     expect(titles(again.el)).toContain('Agentic Agency.md')
-    expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.base::L', [])
+    expect(storage.setBaseGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::L', [])
   })
 
   it('search narrows items, drops empty sections and recomputes counts and summaries', () => {

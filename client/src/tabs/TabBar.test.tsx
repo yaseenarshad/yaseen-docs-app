@@ -1,6 +1,6 @@
 /**
  * The window tab strip (Tabs I2/I3, GRO-2234/2235): tablist semantics per the ViewTabs
- * pattern, extension-stripped labels with full-path tooltips, the `.base` glyph, the close
+ * pattern, extension-stripped labels with full-path tooltips, the close
  * affordances (✕, middle-click) vs activation, drag-to-reorder with the insertion indicator,
  * and the active tab scrolled into view on activation.
  */
@@ -48,13 +48,6 @@ describe('TabBar', () => {
     const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/b.md', ...noop, ...noNav })
     expect([...el.querySelectorAll('[role="tab"]')].map((t) => t.getAttribute('aria-selected'))).toEqual(['false', 'true'])
     expect([...el.querySelectorAll('.tabbar__tab')].map((t) => t.classList.contains('tabbar__tab--active'))).toEqual([false, true])
-  })
-
-  it('shows the sidebar\'s 2×2 glyph on .base tabs only (rule 14: .base files are tabs like any other)', () => {
-    const el = mount({ tabs: ['/v/a.md', '/v/Tasks.base'], active: '/v/a.md', ...noop, ...noNav })
-    const tabsEls = [...el.querySelectorAll('[role="tab"]')]
-    expect(tabsEls.map((t) => t.querySelector('.tabbar__glyph') !== null)).toEqual([false, true])
-    expect(tabsEls[1].textContent).toBe('Tasks')
   })
 
   it('clicking a tab activates it; the ✕ (labelled per file) closes it without activating', () => {

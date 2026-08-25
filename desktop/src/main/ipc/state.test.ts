@@ -126,14 +126,14 @@ describe('registerStateIpc', () => {
   })
 
   it('state:set-base-groups checks root, key and collapsed', async () => {
-    expect(await registered(CH.stateSetBaseGroups)({ sender }, '/v', '/v/a.base::T', ['v:idea'])).toEqual(ok(undefined))
-    expect(store.get().folders['/v'].baseGroups).toEqual({ '/v/a.base::T': ['v:idea'] })
-    expect(await registered(CH.stateSetBaseGroups)({ sender }, 'v', '/v/a.base::T', ['v:idea'])).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await registered(CH.stateSetBaseGroups)({ sender }, '/v', '/v/a.md::T', ['v:idea'])).toEqual(ok(undefined))
+    expect(store.get().folders['/v'].baseGroups).toEqual({ '/v/a.md::T': ['v:idea'] })
+    expect(await registered(CH.stateSetBaseGroups)({ sender }, 'v', '/v/a.md::T', ['v:idea'])).toEqual(bad('NOT_ABSOLUTE'))
     expect(await registered(CH.stateSetBaseGroups)({ sender }, '/v', 5, ['v:idea'])).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CH.stateSetBaseGroups)({ sender }, '/v', '', ['v:idea'])).toEqual(bad('BAD_REQUEST'))
-    expect(await registered(CH.stateSetBaseGroups)({ sender }, '/v', '/v/a.base::T', 'v:idea')).toEqual(bad('BAD_REQUEST'))
-    expect(await registered(CH.stateSetBaseGroups)({ sender }, '/v', '/v/a.base::T', [1])).toEqual(bad('BAD_REQUEST'))
-    expect(await registered(CH.stateSetBaseGroups)({ sender }, '/v', '/v/a.base::T', [])).toEqual(ok(undefined))
+    expect(await registered(CH.stateSetBaseGroups)({ sender }, '/v', '/v/a.md::T', 'v:idea')).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.stateSetBaseGroups)({ sender }, '/v', '/v/a.md::T', [1])).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.stateSetBaseGroups)({ sender }, '/v', '/v/a.md::T', [])).toEqual(ok(undefined))
     expect(store.get().folders['/v'].baseGroups).toEqual({})
   })
 

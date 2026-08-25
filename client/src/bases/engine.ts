@@ -55,7 +55,7 @@ export interface RunOptions {
   /** Vault root; lets link targets written as `<root>/…` resolve. */
   root?: string
   /**
-   * The resolver every link in this run resolves through (🔒 D2, YAZ-819). Absent — every `.base`
+   * The resolver every link in this run resolves through (🔒 D2, YAZ-819). Absent — every caller
    * caller — keeps today's behaviour exactly: one built from `records`, which for a base IS the
    * vault. A FOLDER PAGE's contents pass only the MEMBERS as rows and inject the FULL-VAULT
    * resolver here, so a link cell pointing outside the members still resolves.

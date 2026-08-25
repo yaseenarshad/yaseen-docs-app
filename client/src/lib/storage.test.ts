@@ -69,7 +69,7 @@ describe('storage.init', () => {
       settings: { ...DEFAULT_SETTINGS, lineSpacing: 2 },
       sidebarCollapsed: true,
       recents: [{ path: '/v', lastOpened: 5 }],
-      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.base::T': ['v:idea'] } } },
+      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] } } },
     }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
     await storage.init()
@@ -85,7 +85,7 @@ describe('storage.init', () => {
     expect(storage.getExpanded('/v')).toEqual(['/v/sub'])
     expect(storage.getLastFile('/v')).toBe('/v/a.md')
     expect(storage.getFolds('/v', '/v/a.md')).toEqual(['k1'])
-    expect(storage.getBaseGroups('/v', '/v/b.base::T')).toEqual(['v:idea'])
+    expect(storage.getBaseGroups('/v', '/v/b.md::T')).toEqual(['v:idea'])
   })
 
   it('reads fall back to defaults before init / when the bridge is unavailable', async () => {
@@ -98,7 +98,7 @@ describe('storage.init', () => {
     expect(fresh.getExpanded('/r')).toEqual([])
     expect(fresh.getLastFile('/r')).toBeNull()
     expect(fresh.getFolds('/r', '/r/a.md')).toEqual([])
-    expect(fresh.getBaseGroups('/r', '/r/a.base::T')).toEqual([])
+    expect(fresh.getBaseGroups('/r', '/r/a.md::T')).toEqual([])
     expect(fresh.getSidebarCollapsed()).toBe(false)
     expect(fresh.getSettings()).toEqual(DEFAULT_SETTINGS)
     await expect(fresh.init()).rejects.toBeDefined()
@@ -249,22 +249,22 @@ describe('storage', () => {
   })
 
   it('base group collapse state is keyed by root then base::view, capped, and pruned when empty', () => {
-    expect(storage.getBaseGroups('/r1', '/r1/a.base::T')).toEqual([])
-    storage.setBaseGroups('/r1', '/r1/a.base::T', ['v:idea', '∅'])
-    storage.setBaseGroups('/r2', '/r2/a.base::T', ['v:x'])
-    expect(storage.getBaseGroups('/r1', '/r1/a.base::T')).toEqual(['v:idea', '∅'])
-    expect(storage.getBaseGroups('/r2', '/r1/a.base::T')).toEqual([])
-    expect(b.bridge.state.setBaseGroups).toHaveBeenCalledWith('/r1', '/r1/a.base::T', ['v:idea', '∅'])
+    expect(storage.getBaseGroups('/r1', '/r1/a.md::T')).toEqual([])
+    storage.setBaseGroups('/r1', '/r1/a.md::T', ['v:idea', '∅'])
+    storage.setBaseGroups('/r2', '/r2/a.md::T', ['v:x'])
+    expect(storage.getBaseGroups('/r1', '/r1/a.md::T')).toEqual(['v:idea', '∅'])
+    expect(storage.getBaseGroups('/r2', '/r1/a.md::T')).toEqual([])
+    expect(b.bridge.state.setBaseGroups).toHaveBeenCalledWith('/r1', '/r1/a.md::T', ['v:idea', '∅'])
     // Replacing with the live set drops keys no longer collapsed.
-    storage.setBaseGroups('/r1', '/r1/a.base::T', ['∅'])
-    expect(storage.getBaseGroups('/r1', '/r1/a.base::T')).toEqual(['∅'])
-    storage.setBaseGroups('/r1', '/r1/a.base::T', [])
-    expect(storage.getBaseGroups('/r1', '/r1/a.base::T')).toEqual([])
-    expect(b.bridge.state.setBaseGroups).toHaveBeenLastCalledWith('/r1', '/r1/a.base::T', [])
+    storage.setBaseGroups('/r1', '/r1/a.md::T', ['∅'])
+    expect(storage.getBaseGroups('/r1', '/r1/a.md::T')).toEqual(['∅'])
+    storage.setBaseGroups('/r1', '/r1/a.md::T', [])
+    expect(storage.getBaseGroups('/r1', '/r1/a.md::T')).toEqual([])
+    expect(b.bridge.state.setBaseGroups).toHaveBeenLastCalledWith('/r1', '/r1/a.md::T', [])
     const many = Array.from({ length: MAX_COLLAPSED_GROUP_KEYS + 50 }, (_, i) => `v:${i}`)
-    storage.setBaseGroups('/r2', '/r2/a.base::T', many)
-    expect(storage.getBaseGroups('/r2', '/r2/a.base::T')).toHaveLength(MAX_COLLAPSED_GROUP_KEYS)
-    expect(b.bridge.state.setBaseGroups).toHaveBeenLastCalledWith('/r2', '/r2/a.base::T', many)
+    storage.setBaseGroups('/r2', '/r2/a.md::T', many)
+    expect(storage.getBaseGroups('/r2', '/r2/a.md::T')).toHaveLength(MAX_COLLAPSED_GROUP_KEYS)
+    expect(b.bridge.state.setBaseGroups).toHaveBeenLastCalledWith('/r2', '/r2/a.md::T', many)
   })
 
   it('sidebarCollapsed defaults to false and round-trips through the bridge', () => {

@@ -73,26 +73,11 @@ describe('shared watchers', () => {
     expect(await a.next()).toEqual({ type: 'unlink', path: file })
   })
 
-  it('add / change / unlink for a .base file, with mtime', async () => {
-    const a = openWatch(root)
-    await a.next()
-    const file = path.join(root, 'alpha', 'watched.base')
-    await writeFile(file, 'views: []\n')
-    const add = await a.next()
-    expect(add).toMatchObject({ type: 'add', path: file })
-    expect((add as { mtime: number }).mtime).toBeGreaterThan(0)
-
-    await writeFile(file, 'views:\n  - type: table\n    name: Table\n')
-    expect(await a.next()).toMatchObject({ type: 'change', path: file })
-
-    await rm(file)
-    expect(await a.next()).toEqual({ type: 'unlink', path: file })
-  })
-
   it('ignores non-vault files and dot-entries; reports new directories', async () => {
     const a = openWatch(root)
     await a.next()
     await writeFile(path.join(root, 'alpha', 'ignored.txt'), 'x')
+    await writeFile(path.join(root, 'alpha', 'ignored.base'), 'views: []\n')
     await mkdir(path.join(root, '.cache'))
     await writeFile(path.join(root, '.cache', 'c.md'), 'x')
     await mkdir(path.join(root, 'newdir'))

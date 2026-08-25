@@ -17,7 +17,7 @@ const YASIN_BASE = `views:
     indentProperties: false
 `
 
-/** chars.base from the Obsidian community — formulas, nested filters, blank line, columnSize. */
+/** A community Obsidian view schema — formulas, nested filters, blank line, columnSize. */
 const CHARS_BASE = `formulas:
   img2: file.embeds[0]
   info: race + " " + class + " (" + pronouns.join("/") + ")"
@@ -106,7 +106,7 @@ describe('parseBase / serializeBase round-trip', () => {
   })
 
   // Known, unavoidable normalisation: `yaml`'s stringifier has ONE global `indentSeq`
-  // option, but chars.base mixes both styles — `order:` indents its items by two
+  // option, but the community sample mixes both styles — `order:` indents its items by two
   // (indentSeq: true) while `- or:` puts its items flush with the key (indentSeq: false).
   // The library cannot reproduce both in one document, so the two lines under `- or:`
   // gain two spaces. Everything else is byte-identical, the output is idempotent, and

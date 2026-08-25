@@ -3,15 +3,12 @@ import type { CreateDirResponse, CreateFileRequest, CreateFileResponse } from '@
 import { fileKind } from '@shared/fileKind'
 import { BridgeFailure, fsCall, requireAbsPath } from './fsUtils'
 
-/** Minimal valid Obsidian base: one table view. What a freshly created `.base` contains. */
-const BASE_SEED = 'views:\n  - type: table\n    name: Table\n'
-
 /**
  * Creation calls for the sidebar's "New folder" / "New note" (GRO-2022).
- * Markdown files are created empty; `.base` files get BASE_SEED (GRO-2123). The object form's
- * `content` (Bible B, GRO-2202) rides the same `wx` write — content-at-create, no create-then-
- * write race. Existence races resolve at the fs layer: mkdir and `wx` writes throw EEXIST,
- * which `toBridgeFailure` maps to ALREADY_EXISTS — nothing is ever overwritten.
+ * Markdown files are created empty. The object form's `content` (Bible B, GRO-2202) rides the
+ * same `wx` write — content-at-create, no create-then-write race. Existence races resolve at
+ * the fs layer: mkdir and `wx` writes throw EEXIST, which `toBridgeFailure` maps to
+ * ALREADY_EXISTS — nothing is ever overwritten.
  */
 export async function createDir(path: string): Promise<CreateDirResponse> {
   const p = requireAbsPath(path, 'path')
@@ -24,12 +21,11 @@ export async function createFile(req: string | CreateFileRequest): Promise<Creat
   const raw: unknown = req
   const isReq = typeof raw === 'object' && raw !== null
   const p = requireAbsPath(isReq ? (raw as Record<string, unknown>).path : raw, 'path')
-  const kind = fileKind(p)
-  if (kind === null) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .md/.markdown/.base files can be created', { path: p })
+  if (fileKind(p) === null) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .md/.markdown files can be created', { path: p })
   const content = isReq ? (raw as Record<string, unknown>).content : undefined
   if (content !== undefined && typeof content !== 'string') throw new BridgeFailure('BAD_REQUEST', "'content' must be a string", { path: p })
   return fsCall(p, async () => {
-    await writeFile(p, content ?? (kind === 'base' ? BASE_SEED : ''), { flag: 'wx' })
+    await writeFile(p, content ?? '', { flag: 'wx' })
     const st = await stat(p)
     return { path: p, mtime: st.mtimeMs, size: st.size }
   })

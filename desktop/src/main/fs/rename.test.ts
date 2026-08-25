@@ -20,11 +20,7 @@ describe('renameFile (Links E1, GRO-2194)', () => {
     await expect(stat(oldPath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('renames a .base file (kind unchanged) and allows md ↔ markdown within the markdown kind', async () => {
-    const oldBase = path.join(root, 'alpha', 'Topics.base')
-    const newBase = path.join(root, 'alpha', 'Areas.base')
-    expect(await renameFile({ oldPath: oldBase, newPath: newBase })).toEqual({ oldPath: oldBase, newPath: newBase, kind: 'file' })
-    // .md → .markdown stays within the markdown kind (the kind is what is UNCHANGED).
+  it('allows md ↔ markdown — one kind, two spellings', async () => {
     const oldMd = path.join(root, 'alpha', 'a.md')
     const newMd = path.join(root, 'alpha', 'ay.markdown')
     expect(await renameFile({ oldPath: oldMd, newPath: newMd })).toEqual({ oldPath: oldMd, newPath: newMd, kind: 'file' })
@@ -48,14 +44,14 @@ describe('renameFile (Links E1, GRO-2194)', () => {
     expect(await readFile(newPath, 'utf8')).toBe('case')
   })
 
-  it('BAD_REQUEST when the kind changes or old and new path are the same', async () => {
-    expect(await code(renameFile({ oldPath: path.join(root, 'b.md'), newPath: path.join(root, 'b.base') }))).toBe('BAD_REQUEST')
-    expect(await code(renameFile({ oldPath: path.join(root, 'b.md'), newPath: path.join(root, 'b.md') }))).toBe('BAD_REQUEST') // same path
+  it('BAD_REQUEST when old and new path are the same', async () => {
+    expect(await code(renameFile({ oldPath: path.join(root, 'b.md'), newPath: path.join(root, 'b.md') }))).toBe('BAD_REQUEST')
   })
 
   it('UNSUPPORTED_EXTENSION on non-vault paths, NOT_FOUND on a missing source, NOT_ABSOLUTE / BAD_REQUEST on bad input', async () => {
     expect(await code(renameFile({ oldPath: path.join(root, 'notes.txt'), newPath: path.join(root, 'other.txt') }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(renameFile({ oldPath: path.join(root, 'b.md'), newPath: path.join(root, 'b.txt') }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await code(renameFile({ oldPath: path.join(root, 'b.md'), newPath: path.join(root, 'b.base') }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(renameFile({ oldPath: path.join(root, 'missing.md'), newPath: path.join(root, 'other.md') }))).toBe('NOT_FOUND')
     expect(await code(renameFile({ oldPath: 'relative.md', newPath: path.join(root, 'other.md') }))).toBe('NOT_ABSOLUTE')
     expect(await code(renameFile(undefined))).toBe('BAD_REQUEST')
@@ -139,9 +135,9 @@ describe('repairRename (Links E1c, GRO-2242: validate a rename that ALREADY happ
     expect(err.path).toBe(path.join(root, 'GoneNew.md'))
   })
 
-  it("mirrors renameFile's file rules: extension kind pinned, vault extensions only, same-path and bad input refused", async () => {
-    await writeFile(path.join(root, 'Ext.base'), 'views:\n  - type: table\n    name: T\n')
-    expect(await code(repairRename({ oldPath: path.join(root, 'Ext.md'), newPath: path.join(root, 'Ext.base') }))).toBe('BAD_REQUEST') // kind change
+  it("mirrors renameFile's file rules: vault extensions only, same-path and bad input refused", async () => {
+    await writeFile(path.join(root, 'Ext.base'), 'views: []\n')
+    expect(await code(repairRename({ oldPath: path.join(root, 'Ext.md'), newPath: path.join(root, 'Ext.base') }))).toBe('UNSUPPORTED_EXTENSION')
     await writeFile(path.join(root, 'ext.txt'), 'txt')
     expect(await code(repairRename({ oldPath: path.join(root, 'old.txt'), newPath: path.join(root, 'ext.txt') }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(repairRename({ oldPath: path.join(root, 'ExtNew.md'), newPath: path.join(root, 'ExtNew.md') }))).toBe('BAD_REQUEST') // same path

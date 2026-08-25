@@ -18,11 +18,6 @@ describe('readFile', () => {
     expect(body.mtime).toBeGreaterThan(0)
   })
 
-  it('serves a .base file as raw text', async () => {
-    const body = await readFile(path.join(root, 'alpha', 'Topics.base'))
-    expect(body.content).toBe('views:\n  - type: table\n    name: Table\n')
-  })
-
   it('NOT_FOUND missing, NOT_ABSOLUTE relative, UNSUPPORTED_EXTENSION, NOT_A_FILE', async () => {
     expect(await code(readFile(path.join(root, 'missing.md')))).toBe('NOT_FOUND')
     expect(await code(readFile('rel.md'))).toBe('NOT_ABSOLUTE')
@@ -45,16 +40,6 @@ describe('writeFile', () => {
     expect(r.mtime).toBe(w.mtime)
     expect(await fsReadFile(file, 'utf8')).toBe(content)
     expect((await readdir(path.join(root, 'alpha'))).filter((n) => n.includes('.tmp-'))).toEqual([])
-  })
-
-  it('writes and reads back a .base file byte-identically', async () => {
-    const file = path.join(root, 'alpha', 'new.base')
-    const content = 'views:\n  - type: cards\n    name: Cards\nfilters:\n  and:\n    - file.hasTag("x")\n'
-    const w = await writeFile({ path: file, content })
-    expect(w.size).toBe(Buffer.byteLength(content))
-    const r = await readFile(file)
-    expect(r.content).toBe(content)
-    expect(r.mtime).toBe(w.mtime)
   })
 
   it('BAD_REQUEST when content is not a string / request not an object, NOT_ABSOLUTE, UNSUPPORTED_EXTENSION', async () => {

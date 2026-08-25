@@ -46,9 +46,9 @@ export interface RenameContinuityHandle {
 }
 
 export interface RenameBuffer {
-  /** Raw frontmatter block as `useAutosave` holds it ('' for a `.base`). */
+  /** Raw frontmatter block as `useAutosave` holds it. */
   frontmatter: string
-  /** Editor body (for a `.base`: the whole raw content). */
+  /** Editor body. */
   body: string
 }
 

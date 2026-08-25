@@ -5,11 +5,9 @@
  * no longer resolves, so the referencing set must be computed against the index/tree as
  * they were).
  *
- * Referencing set: records whose `links` or `embeds` resolve to the moved path — markdown
- * targets through THE shared resolver (`resolverFor`, the one behind views and wikilink
- * decorations), `.base` targets through `resolveBasePath` (the documented root-relative-
- * then-BFS rule; `.base` files are never index records) over the pre-rename TREE snapshot
- * (no tree → base embeds are left alone, conservative). For a FOLDER (`kind: 'dir'`) the
+ * Referencing set: records whose `links` or `embeds` resolve to the moved path, through THE
+ * shared resolver (`resolverFor`, the one behind views and wikilink decorations). For a
+ * FOLDER (`kind: 'dir'`) the
  * moved set is everything under the old prefix. Per file: `fs:read` → rewrite → `fs:write`
  * with `expectedMtime`; a CONFLICT re-reads once and retries, a second conflict skips the
  * file (someone is actively writing it — their unsaved changes win over our link fix; the
@@ -33,18 +31,14 @@
  *    to the moved file AFTERWARDS — decided through the resolver against a POST-move record
  *    set (the shallowest rule may hand the name to a duplicate); otherwise it escalates to
  *    the pathed form. A kept bare form is never spliced, so padding survives too.
- *  - `.base` embeds: a bare `![[X.base]]` stays only while the (new) name is UNIQUE in the
- *    tree — with a duplicate the rewrite goes pathed (conservative stand-in for a post-move
- *    BFS, correct in both cases).
  *  - ALIAS-form links (E2, GRO-2214): `[[CAC]]` pointing at a note through its frontmatter
  *    `aliases` is NEVER rewritten — the alias travels with the file, so it still resolves
  *    afterwards. The referencing-set probe therefore resolves BY NAME ONLY (`makeResolves`).
  */
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
-import type { IndexRecord, TreeNode } from '@shared/types'
+import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { resolverFor } from '../bases/engine'
-import { resolveBasePath } from '../editor/baseEmbed/resolveBase'
 import { WIKILINK_RE } from '../editor/wikilink/wikilinkPlugin'
 import { flushRenamedPath } from '../lib/renameContinuity'
 import { basename, stripExt } from '../lib/paths'
@@ -106,7 +100,7 @@ export function rewriteInner(inner: string, resolves: ResolvesToOld, newTarget: 
  */
 export function renamedTarget(target: string, opts: { newName: string; newRel: string }): string {
   const withExt = target.includes('/') ? opts.newRel : opts.newName
-  return /\.(md|markdown|base)$/i.test(target) ? withExt : stripExt(withExt)
+  return /\.(md|markdown)$/i.test(target) ? withExt : stripExt(withExt)
 }
 
 /** Body `[[links]]` and `![[embeds]]` outside code, spliced in place; the input when nothing matched. */
@@ -177,17 +171,6 @@ export function renameNotice({ updated, skipped }: RenameRewriteSummary): string
   return skipped > 0 ? `${head}; ${skipped} skipped (unsaved changes)` : head
 }
 
-/** Files named `name` (case-insensitive) anywhere in the tree, EXCLUDING `except` — the bare-form ambiguity probe for `.base` targets. */
-function countTreeFilesNamed(nodes: readonly TreeNode[], name: string, except: string): number {
-  let count = 0
-  for (const node of nodes) {
-    if (node.type === 'file') {
-      if (node.path !== except && node.name.toLowerCase() === name.toLowerCase()) count++
-    } else count += countTreeFilesNamed(node.children, name, except)
-  }
-  return count
-}
-
 export interface UpdateLinksOptions {
   root: string
   oldPath: string
@@ -196,11 +179,6 @@ export interface UpdateLinksOptions {
   kind?: 'file' | 'dir'
   /** The PRE-rename index snapshot (fetched before `fs:rename` — see the module doc). */
   records: readonly IndexRecord[]
-  /**
-   * The PRE-rename TREE snapshot, for `.base` embed targets only (they resolve through
-   * `resolveBasePath`, never the index). Absent → base embeds are left alone (conservative).
-   */
-  tree?: readonly TreeNode[]
 }
 
 /**
@@ -216,10 +194,9 @@ export interface UpdateLinksOptions {
  * (share `newTarget`, not just `resolves`), which is a behaviour change, not a finishing-pass
  * fix — deferred with the rest of the E1c queue work.
  */
-function makeResolves({ root, oldPath, kind, records, tree }: { root: string; oldPath: string; kind: 'file' | 'dir'; records: readonly IndexRecord[]; tree?: readonly TreeNode[] }): {
+function makeResolves({ root, oldPath, kind, records }: { root: string; oldPath: string; kind: 'file' | 'dir'; records: readonly IndexRecord[] }): {
   resolves: ResolvesToOld
   resolveTargetPath: (t: string) => string | null
-  isBaseTarget: (t: string) => boolean
 } {
   // NAME-ONLY resolution (E2, GRO-2214): an alias-form link (`[[CAC]]`) does resolve to the
   // moved file through the shared resolver, but it must stay BYTE-IDENTICAL — the alias lives
@@ -228,15 +205,13 @@ function makeResolves({ root, oldPath, kind, records, tree }: { root: string; ol
   const resolver = resolverFor(records, root, { aliases: false })
   const prefix = `${oldPath}/`
   const isMoved = kind === 'dir' ? (p: string) => p.startsWith(prefix) : (p: string) => p === oldPath
-  const isBaseTarget = (t: string) => /\.base$/i.test(t)
   const targetPaths = new Map<string, string | null>()
   const resolveTargetPath = (t: string): string | null => {
-    let hit = targetPaths.get(t)
-    if (hit === undefined) {
-      hit = isBaseTarget(t) ? (tree !== undefined ? resolveBasePath(tree, root, t) : null) : resolver(t)?.record.path ?? null
-      targetPaths.set(t, hit)
-    }
-    return hit
+    const hit = targetPaths.get(t)
+    if (hit !== undefined) return hit
+    const resolved = resolver(t)?.record.path ?? null
+    targetPaths.set(t, resolved)
+    return resolved
   }
   const resolves: ResolvesToOld = (target) => {
     // LOCKED (E1b): across a FOLDER rename, bare-name links keep resolving (names are
@@ -245,7 +220,7 @@ function makeResolves({ root, oldPath, kind, records, tree }: { root: string; ol
     const hit = resolveTargetPath(target)
     return hit !== null && isMoved(hit)
   }
-  return { resolves, resolveTargetPath, isBaseTarget }
+  return { resolves, resolveTargetPath }
 }
 
 /**
@@ -255,17 +230,17 @@ function makeResolves({ root, oldPath, kind, records, tree }: { root: string; ol
  * banner's N; N === 0 → no banner, nothing happens at all (the locked ruling). For an external
  * rename pass a PRE-rename snapshot (`preRenameRecords` synthesises one).
  */
-export function countLinkReferences({ root, oldPath, kind = 'file', records, tree }: { root: string; oldPath: string; kind?: 'file' | 'dir'; records: readonly IndexRecord[]; tree?: readonly TreeNode[] }): number {
-  const { resolves } = makeResolves({ root, oldPath, kind, records, tree })
+export function countLinkReferences({ root, oldPath, kind = 'file', records }: { root: string; oldPath: string; kind?: 'file' | 'dir'; records: readonly IndexRecord[] }): number {
+  const { resolves } = makeResolves({ root, oldPath, kind, records })
   return records.filter((r) => [...r.links, ...r.embeds].some(resolves)).length
 }
 
 /** Rewrite every referencing note on disk; see the module doc for the whole discipline. */
-export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'file', records, tree }: UpdateLinksOptions): Promise<RenameRewriteSummary> {
+export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'file', records }: UpdateLinksOptions): Promise<RenameRewriteSummary> {
   const prefix = `${oldPath}/`
   const mapMoved = kind === 'dir' ? (p: string) => (p.startsWith(prefix) ? newPath + p.slice(oldPath.length) : p) : (p: string) => (p === oldPath ? newPath : p)
   const relOf = (p: string) => (p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p)
-  const { resolves, resolveTargetPath, isBaseTarget } = makeResolves({ root, oldPath, kind, records, tree })
+  const { resolves, resolveTargetPath } = makeResolves({ root, oldPath, kind, records })
   // File mode: whether a bare form still wins AFTER the move is decided by RESOLUTION, not
   // text — the post-move record set (the moved record re-pathed) answers it (shallowest rule).
   const newName = basename(newPath)
@@ -286,11 +261,9 @@ export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'f
     if (!target.includes('/')) {
       // Bare form (file mode only — dir mode filtered bare targets out above): keep it only
       // when the bare name still resolves to the moved file post-move; otherwise escalate
-      // to the pathed form. `.base` targets use the tree-uniqueness probe instead.
-      const stillBare = isBaseTarget(target)
-        ? tree !== undefined && countTreeFilesNamed(tree, movedName, oldPath) === 0
-        : postResolver(stripExt(movedName))?.record.path === moved
-      if (!stillBare) return /\.(md|markdown|base)$/i.test(target) ? movedRel : stripExt(movedRel)
+      // to the pathed form.
+      const stillBare = postResolver(stripExt(movedName))?.record.path === moved
+      if (!stillBare) return /\.(md|markdown)$/i.test(target) ? movedRel : stripExt(movedRel)
     }
     return renamedTarget(target, { newName: movedName, newRel: movedRel })
   }

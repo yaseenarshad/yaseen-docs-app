@@ -58,8 +58,8 @@ interface Feed {
 }
 
 /**
- * The def BaseView edits, built IN MEMORY from the settings' views (🔒 D3) — no `.base` file
- * stands behind a folder page. The round trip through the ONE parser is deliberate: `ParsedBase`
+ * The def BaseView edits, built IN MEMORY from the settings' views (🔒 D3) — nothing on disk
+ * stands behind it but the note's own card. The round trip through the ONE parser is deliberate: `ParsedBase`
  * carries the yaml Document every config edit is written into (`updateBase`), so it has to be a
  * real parse. No `filters` are ever put in: a folder page's set IS the lookup (🔒 Q3, YAZ-815).
  */
