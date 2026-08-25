@@ -8,13 +8,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RegistryTypeDef } from '@shared/types'
 import { parseBase } from './baseFile'
+import type { FolderPageSettings } from './folderPageSettings'
 import { pinnedType } from './relation'
 import {
   applyTemplate,
   createType,
   ensureFolder,
+  folderPageTemplatePath,
   newEntityParts,
+  newPageFromFolderPage,
   readTemplate,
+  scaffoldFromFolderPage,
   scaffoldProperties,
   starterBase,
   starterBasePath,
@@ -151,6 +155,83 @@ describe('readTemplate / newEntityParts', () => {
       properties: { page_type: 'kpi', funnel_stages: [], kpi_category: null, unit: '%' },
       body: 'Body\n',
     })
+  })
+})
+
+/** A folder page's declaration — the 2A shape, columns spanning every kind. */
+const METRICS: FolderPageSettings = {
+  columns: {
+    owner: { kind: 'link', target: 'person' },
+    kpis: { kind: 'multi-link', target: 'kpi', required: true },
+    steps: { kind: 'list' },
+    due: { kind: 'date' },
+    done: { kind: 'checkbox' },
+    score: { kind: 'number' },
+    unit: { kind: 'text' },
+  },
+  views: [{ type: 'outline', name: 'Outline' }],
+  problems: [],
+}
+
+const EMPTY_COLUMNS = { owner: null, kpis: [], steps: [], due: null, done: null, score: null, unit: null }
+
+describe('scaffoldFromFolderPage (🔒 Q5)', () => {
+  it('every declared column empty — list/multi-link → [], scalar kinds → null — and folder_pages LAST', () => {
+    const properties = scaffoldFromFolderPage('Metrics', METRICS)
+    expect(properties).toEqual({ ...EMPTY_COLUMNS, folder_pages: ['[[Metrics]]'] })
+    expect(Object.keys(properties).at(-1)).toBe('folder_pages')
+  })
+
+  it('the new page is a NORMAL page: no folder_page flag is ever born here (that is 4B\'s)', () => {
+    expect('folder_page' in scaffoldFromFolderPage('Metrics', METRICS)).toBe(false)
+  })
+
+  it('a folder page declaring no columns scaffolds the membership alone', () => {
+    expect(scaffoldFromFolderPage('Metrics', { columns: {}, views: [], problems: [] })).toEqual({
+      folder_pages: ['[[Metrics]]'],
+    })
+  })
+})
+
+describe('folderPageTemplatePath / newPageFromFolderPage (🔒 Q6)', () => {
+  it('the template lives beside the type templates; existence = has-template, unchanged', () => {
+    expect(folderPageTemplatePath('/v', 'Metrics')).toBe('/v/.yaseendocs/templates/Metrics.md')
+    expect(folderPageTemplatePath('/v', 'Meta Ads')).toBe('/v/.yaseendocs/templates/Meta Ads.md')
+  })
+
+  it('no template → scaffold + seed, folder_pages still last (a new seed key never displaces it), body \'\'', async () => {
+    readFile.mockRejectedValue(notFound())
+
+    const parts = await newPageFromFolderPage('/v', 'Metrics', METRICS, { unit: 'days', spend: 12 })
+
+    expect(readFile).toHaveBeenCalledWith('/v/.yaseendocs/templates/Metrics.md')
+    expect(parts).toEqual({
+      properties: { ...EMPTY_COLUMNS, unit: 'days', spend: 12, folder_pages: ['[[Metrics]]'] },
+      body: '',
+    })
+    expect(Object.keys(parts.properties).at(-1)).toBe('folder_pages')
+  })
+
+  it('merge order: scaffold ← template ← seed; extra template keys survive; folder_pages forced back and last; body verbatim', async () => {
+    readFile.mockResolvedValue({
+      path: '/v/.yaseendocs/templates/Metrics.md',
+      content: '---\nunit: "%"\nscore: 1\nextra: kept\nfolder_pages: ["[[Wrong]]"]\n---\n# Scaffolded\n\nNotes.\n',
+      mtime: 1,
+      size: 1,
+    })
+
+    const parts = await newPageFromFolderPage('/v', 'Metrics', METRICS, { score: 3, folder_pages: ['[[Also wrong]]'] })
+
+    expect(parts).toEqual({
+      properties: { ...EMPTY_COLUMNS, unit: '%', score: 3, extra: 'kept', folder_pages: ['[[Metrics]]'] },
+      body: '# Scaffolded\n\nNotes.\n',
+    })
+    expect(Object.keys(parts.properties).at(-1)).toBe('folder_pages')
+  })
+
+  it('other read failures propagate', async () => {
+    readFile.mockRejectedValue(new BridgeRequestError('FORBIDDEN', 'permission denied'))
+    await expect(newPageFromFolderPage('/v', 'Metrics', METRICS)).rejects.toThrow('permission denied')
   })
 })
 

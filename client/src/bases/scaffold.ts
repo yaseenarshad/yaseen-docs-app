@@ -1,6 +1,7 @@
 import { REGISTRY_FOLDER, type RegistryTypeDef } from '@shared/types'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { api, BridgeRequestError } from '../api'
+import type { FolderPageSettings } from './folderPageSettings'
 import { registry } from './useRegistry'
 
 /**
@@ -68,6 +69,67 @@ export function applyTemplate(type: string, def: RegistryTypeDef, template: stri
 /** Template read + merge — what every new-entity surface (sidebar New ▸, 5D New) consumes. */
 export async function newEntityParts(root: string, type: string, def: RegistryTypeDef, seed: Record<string, unknown> = {}): Promise<EntityParts> {
   return applyTemplate(type, def, await readTemplate(root, type), seed)
+}
+
+/**
+ * The folder-page successors (YAZ-832; 🔒 Q5/Q6 of YAZ-815). A folder page scaffolds its members
+ * exactly as a type scaffolds its entities — the DECLARATION is the schema, never a hardcoded
+ * shape — with two differences the model turns on: the birth key is `folder_pages`, one wikilink
+ * back to the folder page (`links/folderPages.ts`'s click rule), forced LAST so the card reads
+ * columns-then-parent; and the new page is an ORDINARY page — the `folder_page` flag that makes a
+ * page a folder page is never born here, only 4B's explicit "make this a folder page" writes it.
+ */
+
+/** The key a new member names its parent in — `links/folderPages.ts`'s `ENTRIES_KEY` (D1). */
+const FOLDER_PAGES_KEY = 'folder_pages'
+
+/** The one entry, spelled the way the click rule reads it back: exactly a wikilink. */
+const belongsTo = (folderPageName: string): Record<string, unknown> => ({
+  [FOLDER_PAGES_KEY]: [`[[${folderPageName}]]`],
+})
+
+/** Every declared column, empty, + `folder_pages` LAST (🔒 Q5) — the `page_type` scaffold's analog. */
+export function scaffoldFromFolderPage(name: string, settings: FolderPageSettings): Record<string, unknown> {
+  const properties: Record<string, unknown> = {}
+  for (const [column, decl] of Object.entries(settings.columns)) {
+    properties[column] = decl.kind === 'list' || decl.kind === 'multi-link' ? [] : null
+  }
+  return { ...properties, ...belongsTo(name) }
+}
+
+/** Where a folder page's template lives; existence = has-template, the type rule unchanged (🔒 Q6). */
+export function folderPageTemplatePath(root: string, folderPageName: string): string {
+  return `${root}/.yaseendocs/templates/${folderPageName}.md`
+}
+
+/**
+ * `newEntityParts`' analog: template read + merge, scaffold ← template frontmatter ← seed, with
+ * `folder_pages` forced back and re-appended LAST — neither a template nor a seed may redirect
+ * (or displace) the birth. Template keys outside the declaration are kept, as ever: frontmatter
+ * is source of truth and the declaration gates no content. No template → body ''.
+ */
+export async function newPageFromFolderPage(
+  root: string,
+  folderPageName: string,
+  settings: FolderPageSettings,
+  seed: Record<string, unknown> = {},
+): Promise<EntityParts> {
+  let template: string | null = null
+  try {
+    template = (await api.readFile(folderPageTemplatePath(root, folderPageName))).content
+  } catch (err) {
+    if (!(err instanceof BridgeRequestError && err.code === 'NOT_FOUND')) throw err
+  }
+  const { frontmatter, body } = splitFrontmatter(template ?? '')
+  const merged: Record<string, unknown> = {
+    ...scaffoldFromFolderPage(folderPageName, settings),
+    ...parseFrontmatter(frontmatter).properties,
+    ...seed,
+  }
+  // Deleted, not overwritten: an assignment would leave the key wherever the template or seed
+  // first put it, and LAST is the locked shape.
+  delete merged[FOLDER_PAGES_KEY]
+  return { properties: { ...merged, ...belongsTo(folderPageName) }, body }
 }
 
 /** UI label for a type: explicit `displayName`, else the key (R1.3). */
