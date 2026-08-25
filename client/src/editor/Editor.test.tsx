@@ -282,7 +282,7 @@ describe('CrepeHost empty frontmatter block (GRO-2216)', () => {
  * and a `.base` file gets none (BaseHost is a different branch entirely).
  */
 describe('Editor backlinks section (Links D, GRO-2193)', () => {
-  const record = (path: string, links: string[] = []): IndexRecord => {
+  const record = (path: string, links: string[] = [], properties: Record<string, unknown> = {}): IndexRecord => {
     const name = path.slice(path.lastIndexOf('/') + 1)
     return {
       path,
@@ -293,7 +293,7 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
       size: 1,
       ctime: 1,
       mtime: 1,
-      properties: {},
+      properties,
       aliases: [],
       tags: [],
       links,
@@ -316,6 +316,32 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['editor-mount', 'backlinks'])
     expect(host?.querySelector('.editor-mount .editor-instance')).not.toBeNull()
     expect(host?.querySelector('.backlinks__header')?.textContent).toBe('Linked mentions (1)')
+  })
+
+  /**
+   * The folder page's contents block (YAZ-819, 🔒 D1) is the THIRD sibling in the same scroller:
+   * the Crepe mount, then the contents (only when the open record carries the flag), then the
+   * backlinks. Order is the placement rule, so it is pinned as an order.
+   */
+  it('a FOLDER PAGE renders its contents between the mount and the backlinks', async () => {
+    const source = createWikilinkResolveSource()
+    const el = await mount(BODY, 1, { wikilinks: source })
+    feed(source, [
+      record('/vault/member.md', ['note'], { folder_pages: ['[[note]]'] }),
+      record(PATH, [], { folder_page: true }),
+    ])
+    const host = el.querySelector('.editor-host')
+    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['editor-mount', 'folder-page-contents', 'backlinks'])
+    // fed the pages that belong to it, and no title row of its own — the note IS the title
+    expect([...el.querySelectorAll('.base-row__link')].map((n) => n.textContent)).toEqual(['member.md'])
+  })
+
+  it('an ordinary note gets no contents block at all', async () => {
+    const source = createWikilinkResolveSource()
+    const el = await mount(BODY, 1, { wikilinks: source })
+    feed(source, [record('/vault/member.md', ['note'], { folder_pages: ['[[note]]'] }), record(PATH)])
+    const host = el.querySelector('.editor-host')
+    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['editor-mount', 'backlinks'])
   })
 
   it('a `.base` file gets no section (v1: what a base "mentions" is a Bases question)', async () => {

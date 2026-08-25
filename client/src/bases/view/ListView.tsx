@@ -5,6 +5,7 @@ import { belongsToBasenames } from '../../links/folderPages'
 import { type Group, type Row, propertyKeys, propertyLabel, resolverFor } from '../engine'
 import { render } from '../expr'
 import { cellEditor, columnTyping } from '../editorType'
+import type { FolderPageSettings } from '../folderPageSettings'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './filterRows'
 import { GroupHeader, cellContent, groupKeyOf } from './GroupHeader'
@@ -29,6 +30,10 @@ export interface ListViewProps {
   types?: Record<string, string>
   /** The vault's property declarations (5E, GRO-2217): vault-wide editor inference and relation targets. */
   properties?: PropertiesResponse | null
+  /** The folder page whose contents these rows are (YAZ-819): the typing ladder's TOP rung (🔒 Q8). */
+  folderPage?: FolderPageSettings | null
+  /** The WHOLE index snapshot when `records` is a subset (🔒 D2, YAZ-819); absent → `records`. */
+  vaultRecords?: readonly IndexRecord[]
 }
 
 export type MarkerStyle = 'bullet' | 'number' | 'none'
@@ -56,7 +61,7 @@ const separatorOf = (view: BaseView): string => (typeof view.propertySeparator =
  * (when not file.name) and the indented property rows edit inline through `EditableCell`
  * (5B, GRO-2142); the joined inline string stays read-only.
  */
-export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, types, properties = null, readOnly = false }: ListViewProps) {
+export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, types, properties = null, folderPage = null, vaultRecords, readOnly = false }: ListViewProps) {
   const keys = useMemo(() => propertyKeys(def, view, records), [def, view, records])
   const primary: string | undefined = keys[0]
   const rest = keys.slice(1)
@@ -69,21 +74,23 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
   const bareOf = (key: string) => (canonicalKey(key).startsWith('note.') ? canonicalKey(key).slice(5) : null)
   const typings = useMemo(
-    () => new Map(keys.map((k) => [k, columnTyping(k, rowRecords, types, properties)])),
-    [keys, rowRecords, types, properties],
+    () => new Map(keys.map((k) => [k, columnTyping(k, rowRecords, types, properties, folderPage)])),
+    [keys, rowRecords, types, properties, folderPage],
   )
-  const basenames = useMemo(() => records.map((r) => r.basename), [records])
+  /** What the pickers resolve and complete over: the vault, which is the rows for a `.base` (🔒 D2). */
+  const linkRecords = vaultRecords ?? records
+  const basenames = useMemo(() => linkRecords.map((r) => r.basename), [linkRecords])
   // Relation columns narrow the link picker to the pages of the folder page the target names
   // (YAZ-836: `belongsToBasenames` succeeded the type-keyed helper); missing key = all basenames.
   const resolve = useMemo(() => {
-    const resolver = resolverFor(records)
+    const resolver = resolverFor(linkRecords)
     return (target: string) => resolver(target)?.record.path ?? null
-  }, [records])
+  }, [linkRecords])
   const linkNames = useMemo(() => {
     const m = new Map<string, string[]>()
-    for (const [key, t] of typings) if (t?.target !== undefined) m.set(key, belongsToBasenames(records, resolve, t.target))
+    for (const [key, t] of typings) if (t?.target !== undefined) m.set(key, belongsToBasenames(linkRecords, resolve, t.target))
     return m
-  }, [typings, records, resolve])
+  }, [typings, linkRecords, resolve])
   const editable = (row: Row, key: string) => {
     const bare = bareOf(key)
     if (bare === null || readOnly) return cellContent(row.values[key])

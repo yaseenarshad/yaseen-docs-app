@@ -427,3 +427,29 @@ describe('makeResolver: frontmatter aliases (Links E2, GRO-2214)', () => {
   })
 })
 
+
+/**
+ * The rows a run walks and the snapshot its links resolve against are two different things
+ * (🔒 D2, YAZ-819). A `.base` never notices — its rows ARE the vault — but a folder page's
+ * contents pass only the MEMBERS as rows while injecting the whole-vault resolver, so a link
+ * cell pointing at a page OUTSIDE the members still resolves.
+ */
+describe('runView: RunOptions.resolve (🔒 D2, YAZ-819)', () => {
+  const view: BaseView = { type: 'table', name: 'T', order: ['formula.out'] }
+  const def: BaseDefinition = { formulas: { out: 'file("Attribution")' }, views: [view] }
+  /** One record out of the eight: "Attribution" is deliberately NOT among them. */
+  const members = [TEST_RECORDS[0]]
+
+  it('injected: a target outside the rows resolves through the whole-vault resolver', () => {
+    const r = runView(def, view, members, { resolve: resolverFor(TEST_RECORDS, '/vault') })
+    const out = r.rows[0].values['formula.out']
+    expect(out).toBeInstanceOf(FileValue)
+    expect((out as FileValue).record.basename).toBe('Attribution')
+  })
+
+  it('omitted: today’s behaviour exactly — the resolver is built from the rows, so the same target misses', () => {
+    expect(runView(def, view, members).rows[0].values['formula.out']).toBe(null)
+    // …and over the full snapshot the default resolves it, which is every `.base` caller.
+    expect(runView(def, view, TEST_RECORDS).rows[0].values['formula.out']).toBeInstanceOf(FileValue)
+  })
+})

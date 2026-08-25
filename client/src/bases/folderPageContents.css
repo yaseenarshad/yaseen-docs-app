@@ -1,0 +1,33 @@
+/*
+ * The folder page's contents block (YAZ-819, 🔒 D1) — owned by FolderPageContents.tsx (the
+ * feature-CSS convention). It sits INSIDE the editor's scroller, between the Crepe host and
+ * "Linked mentions", and repeats `.editor-instance`'s content column (backlinks.css's rule, byte
+ * for byte) so the table lines up with the note's text and scrolls with it. The hairline is the
+ * only chrome: no chip, no title row — the note itself is the title.
+ */
+
+.folder-page-contents {
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0 48px 64px;
+  border-top: 1px solid var(--border);
+}
+
+/*
+ * `.base-view` is written for the main pane, where it IS the pane: its own content column and a
+ * flex column that fills the window. Inside the note's scroller the column belongs to the block
+ * above (never doubled) and the height belongs to the content — the table grows and the NOTE
+ * scrolls, rather than a second scroller opening inside the page.
+ */
+.folder-page-contents .base-view {
+  max-width: none;
+  padding: 16px 0 0;
+}
+
+/*
+ * `.base-table-wrap` keeps its own `overflow: auto` from bases.css on purpose: with no height to
+ * fill it takes the table's, so it never opens a second VERTICAL scroller inside the note — while
+ * a table wider than the note's column still scrolls sideways in place instead of dragging the
+ * whole page with it. The sticky header sticks to a scroller that never scrolls, i.e. nothing.
+ */

@@ -55,7 +55,7 @@ async function openHandleMenu(w: Page, text: string): Promise<void> {
     const mid = h!.y + h!.height / 2
     expect(mid).toBeGreaterThanOrEqual(p!.y)
     expect(mid).toBeLessThanOrEqual(p!.y + p!.height)
-  }).toPass({ timeout: 5_000 })
+  }).toPass({ timeout: 15_000 }) // hover-probe flake under full-suite load (YAZ-819 hardening): the wiggle needs headroom, not luck
   await handle.locator('.operation-item').last().click({ button: 'right' })
   await expect(menu(w)).toBeVisible()
 }

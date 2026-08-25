@@ -1,6 +1,7 @@
 ---
 page_type: funnel-stage
 order: 2
+folder_pages: ["[[Funnel Stages]]"]
 ---
 
 # Lead Nurture

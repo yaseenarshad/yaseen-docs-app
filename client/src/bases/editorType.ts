@@ -1,15 +1,18 @@
 import type { IndexRecord, PropertiesResponse, PropertyKind } from '@shared/types'
+import { columnKindIn, type FolderPageSettings } from './folderPageSettings'
 import { canonicalKey } from './view/filterRows'
 
 /**
  * Editor type inference for inline cell editors (5B, GRO-2142). Locked precedence, as amended
- * by the 5E relation contract (GRO-2120 comment 1f28abb4 §5) and narrowed by YAZ-836 (the
- * type-scoped rung that used to sit above it died with the type system): a vault-wide property
- * declaration wins, then an explicit `.obsidian/types.json` assignment (an imported artifact
- * ranks below the vault's own schema); otherwise the note's own YAML value decides; a note
- * without the key borrows the dominant value type across the view's records; text is the final
- * fallback. `file.*` and `formula.*` never get an editor. The per-column halves are computed
- * once per render via `columnTyping`; `cellEditor` adds the per-note value on top.
+ * by the 5E relation contract (GRO-2120 comment 1f28abb4 §5), narrowed by YAZ-836 (the
+ * type-scoped rung that used to sit above it died with the type system) and topped by YAZ-819
+ * (the folder page's own, view-scoped declaration): the FOLDER PAGE whose view is rendering
+ * wins, then a vault-wide property declaration, then an explicit `.obsidian/types.json`
+ * assignment (an imported artifact ranks below the vault's own schema); otherwise the note's own
+ * YAML value decides; a note without the key borrows the dominant value type across the view's
+ * records; text is the final fallback. `file.*` and `formula.*` never get an editor. The
+ * per-column halves are computed once per render via `columnTyping`; `cellEditor` adds the
+ * per-note value on top.
  */
 
 export type EditorKind = 'text' | 'number' | 'checkbox' | 'date' | 'list' | 'link' | 'multi-link'
@@ -72,19 +75,26 @@ const DECLARED_KIND: Record<PropertyKind, EditorKind> = {
 }
 
 /**
- * The column-wide typing facts for `key` over the view's records, the vault-wide property
- * declarations (5E) and the assigned `.obsidian/types.json` types.
+ * The column-wide typing facts for `key` over the view's records, the folder page's own
+ * declaration (YAZ-819), the vault-wide property declarations (5E) and the assigned
+ * `.obsidian/types.json` types.
  */
 export function columnTyping(
   key: string,
   records: readonly IndexRecord[],
   types: Record<string, string> | undefined,
   properties?: PropertiesResponse | null,
+  folderPage?: FolderPageSettings | null,
 ): ColumnTyping {
   const c = canonicalKey(key)
   if (!c.startsWith('note.')) return null
   const bare = c.slice(5)
   const dominant = dominantKind(records, bare)
+  // Rung 1 (🔒 Q8, YAZ-815): the folder page whose view is rendering, asked through the ONE
+  // reader. VIEW-SCOPED by construction — two folder pages may type the same key differently and
+  // neither wins globally, so there is no conflict to resolve here and none may be built.
+  const own = folderPage == null ? null : columnKindIn(folderPage, bare)
+  if (own !== null) return { assigned: DECLARED_KIND[own.kind], dominant, target: own.target }
   const declared = properties?.properties[bare]
   if (declared !== undefined) return { assigned: DECLARED_KIND[declared.kind], dominant, target: declared.target }
   const name = types?.[bare]

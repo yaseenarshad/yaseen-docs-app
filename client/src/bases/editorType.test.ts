@@ -5,8 +5,9 @@
  * records; text is the fallback. `file.*` and `formula.*` never get an editor.
  */
 import { describe, expect, it } from 'vitest'
-import type { IndexRecord, PropertiesResponse } from '@shared/types'
+import type { IndexRecord, PropertiesResponse, PropertyKind } from '@shared/types'
 import { cellEditor, columnTyping, valueKind } from './editorType'
+import { DEFAULT_VIEWS, type FolderPageSettings } from './folderPageSettings'
 import { TEST_RECORDS } from './testRecords'
 
 const record = (properties: Record<string, unknown>, i = 0): IndexRecord => ({
@@ -128,5 +129,43 @@ describe('declaration precedence (5E, GRO-2217 — locked amendment on GRO-2120;
     const empty: PropertiesResponse = { root: '/vault', version: 0, properties: {} }
     expect(columnTyping('x', recs, { x: 'text' }, empty)?.assigned).toBe('text')
     expect(cellEditor('plain', columnTyping('x', recs, undefined, empty))).toBe('text')
+  })
+})
+
+/**
+ * The ladder's TOP rung (🔒 Q8 of YAZ-815, wired here at YAZ-819): a FOLDER PAGE's own column
+ * declaration, view-scoped — read through `columnKindIn`, never re-parsed here.
+ */
+describe('folder-page columns are the top rung (🔒 Q8, YAZ-815)', () => {
+  const DECLS: PropertiesResponse = {
+    root: '/vault',
+    version: 1,
+    properties: { owner: { kind: 'text' }, stage: { kind: 'date' } },
+  }
+  const recs = [record({ owner: 7, stage: 'plain' })]
+  const settings = (columns: Record<string, { kind: PropertyKind; target?: string }>): FolderPageSettings => ({
+    columns,
+    views: DEFAULT_VIEWS.map((v) => ({ ...v })),
+    problems: [],
+  })
+
+  it('beats the vault-wide declaration, .obsidian/types.json and the value — and carries its own target', () => {
+    const col = columnTyping('owner', recs, { owner: 'number' }, DECLS, settings({ owner: { kind: 'multi-link', target: '[[KPIs]]' } }))
+    expect(col?.assigned).toBe('multi-link')
+    expect(col?.target).toBe('[[KPIs]]')
+    expect(cellEditor(7, col)).toBe('multi-link')
+  })
+
+  it('a key the folder page does not declare falls through to the rungs below, untouched', () => {
+    expect(columnTyping('stage', recs, undefined, DECLS, settings({ owner: { kind: 'link' } }))?.assigned).toBe('date')
+  })
+
+  it('no folder page (a plain `.base`) is exactly today’s ladder', () => {
+    expect(columnTyping('owner', recs, undefined, DECLS, null)?.assigned).toBe('text')
+    expect(columnTyping('owner', recs, undefined, DECLS)?.assigned).toBe('text')
+  })
+
+  it('a folder page whose settings declare nothing changes nothing', () => {
+    expect(columnTyping('owner', recs, undefined, DECLS, settings({}))?.assigned).toBe('text')
   })
 })

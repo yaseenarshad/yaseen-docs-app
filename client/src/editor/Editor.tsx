@@ -8,6 +8,7 @@ import { createBaseCodeBlockSlotStore, type BaseCodeBlockSlot } from './baseCode
 import { BaseCodeBlock } from './baseCodeBlock/BaseCodeBlock'
 import { createBaseEmbedSlotStore, type BaseEmbedSlot } from './baseEmbed/baseEmbedPlugin'
 import { BaseEmbed } from './baseEmbed/BaseEmbed'
+import { FolderPageContents } from '../bases/FolderPageContents'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
@@ -215,12 +216,14 @@ function CrepeHost({
           </button>
         </div>
       )}
-      {/* The scroller holds the Crepe mount and, after it, the note's own "Linked mentions"
-          block (Links D, GRO-2193) — so the section scrolls WITH the note instead of floating
-          in a panel. `.base` files get no section in v1: what "mentions" means for a base is a
-          Bases question (its rows are notes, not the file itself) — BaseHost stays untouched. */}
+      {/* The scroller holds the Crepe mount and, after it, two blocks of the note's own: the
+          folder page's contents when this page carries the flag (YAZ-819, 🔒 D1 — nothing at all
+          when it does not), then "Linked mentions" (Links D, GRO-2193). Both scroll WITH the note
+          instead of floating in a panel. `.base` files get neither: what "mentions" (or contents)
+          means for a base is a Bases question — BaseHost stays untouched. */}
       <div className="editor-host">
         <div className="editor-mount" ref={hostRef} />
+        {wikilinks !== undefined && <FolderPageContents path={file.path} root={root} source={wikilinks} onOpenFile={onOpenFile} />}
         {wikilinks !== undefined && (
           <BacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
         )}

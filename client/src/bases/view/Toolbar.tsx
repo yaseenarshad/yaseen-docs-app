@@ -35,6 +35,11 @@ export interface ToolbarProps {
   /** Relation columns (5E, GRO-2217): the vault root and the vault-wide declarations, for the Properties menu. */
   root?: string | null
   properties?: PropertiesResponse | null
+  /**
+   * Folder-page contents (🔒 Q3, YAZ-815 · YAZ-819): a folder page's set IS the lookup, so its
+   * settings hold no filter for its contents and the Filter button is not offered at all.
+   */
+  noFilters?: boolean
 }
 
 /** `8 items`, or `1 / 8 items` when search or limit reduce what the body shows. */
@@ -42,7 +47,7 @@ export const countLabel = (shown: number, total: number): string =>
   shown === total ? `${total} item${total === 1 ? '' : 's'}` : `${shown} / ${total} items`
 
 /** View chrome (GRO-2135): tabs on the left; Filter / Sort / Properties / Search buttons and the count on the right. */
-export function Toolbar({ def, view, viewIndex, records, errors, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, root = null, properties = null }: ToolbarProps) {
+export function Toolbar({ def, view, viewIndex, records, errors, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, root = null, properties = null, noFilters = false }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
   const close = useCallback(() => setOpen(null), [])
   const filters = countRules(def.filters) + countRules(view.filters)
@@ -81,14 +86,15 @@ export function Toolbar({ def, view, viewIndex, records, errors, shown, total, s
           <PlusIcon />
           New
         </button>
-        {button(
-          'filter',
-          'Filter',
-          <FilterIcon />,
-          filters,
-          <FilterMenu def={def} view={view} viewIndex={viewIndex} records={records} errors={errors} onUpdate={onUpdate} />,
-          errors.length,
-        )}
+        {!noFilters &&
+          button(
+            'filter',
+            'Filter',
+            <FilterIcon />,
+            filters,
+            <FilterMenu def={def} view={view} viewIndex={viewIndex} records={records} errors={errors} onUpdate={onUpdate} />,
+            errors.length,
+          )}
         {button('sort', 'Sort', <SortIcon />, sorts, <SortMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} />)}
         {allGroupKeys.length > 0 && (
           <button

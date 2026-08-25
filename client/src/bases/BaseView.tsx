@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { MAX_COLLAPSED_GROUP_KEYS, type IndexRecord, type PropertiesResponse } from '@shared/types'
 import { storage } from '../lib/storage'
 import { type BaseDefinition, type ParsedBase, parseBase, serializeBase, updateBase } from './baseFile'
-import { type Group, type Row, propertyKeys, runView } from './engine'
+import { type Group, type Row, propertyKeys, resolverFor, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
-import { createNewNote, deriveSeed, targetFolder, untitledName } from './newNote'
+import type { FolderPageSettings } from './folderPageSettings'
+import { type NewNoteSeed, createNewNote, deriveSeed, targetFolder, untitledName } from './newNote'
 import { writeProperty } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
@@ -15,6 +16,20 @@ import { ListView } from './view/ListView'
 import { TableView } from './view/TableView'
 import { Toolbar } from './view/Toolbar'
 import { ViewTabs } from './view/ViewTabs'
+
+/**
+ * Folder-page contents mode (🔒 D3, YAZ-819). BaseView stays ONE component: the folder-page host
+ * (`FolderPageContents`) hands it an in-memory def and this bundle, and everything below is
+ * today's code. Absent → a plain `.base`, byte for byte the behaviour it always had.
+ */
+export interface FolderPageMode {
+  /** The folder page's own declaration: the typing ladder's TOP rung (🔒 Q8, YAZ-815). */
+  settings: FolderPageSettings
+  /** The WHOLE index snapshot — `records` here carries only the members (🔒 D2), and link resolution plus the link pickers must still see the vault. */
+  vaultRecords: readonly IndexRecord[]
+  /** Birth from a folder page (🔒 Q5, YAZ-815): create a page from `seed` and resolve its path. */
+  create: (seed: NewNoteSeed) => Promise<string>
+}
 
 export interface BaseViewProps {
   parsed: ParsedBase
@@ -38,6 +53,12 @@ export interface BaseViewProps {
   readOnly?: boolean
   /** Initial view by name (case-insensitive; `![[X.base#View]]`); unknown or absent → the first view. */
   initialView?: string
+  /**
+   * Present only for a FOLDER PAGE's contents block (🔒 D3, YAZ-819): its rows are the members,
+   * its def is in memory, its views are switch-only (no view CRUD) and it offers no Filter menu —
+   * a folder page's set IS the lookup and stores no filters (🔒 Q3, YAZ-815).
+   */
+  folderPage?: FolderPageMode
 }
 
 /**
@@ -47,7 +68,7 @@ export interface BaseViewProps {
  * the list for `type: list` (4F, GRO-2140), a placeholder row list for unknown view types.
  * Only the active tab and the search text are component state — everything else is the file.
  */
-export function BaseView({ parsed, onChange, root, thisFile, records, indexStatus, indexError, types, properties = null, onOpenFile, readOnly = false, initialView }: BaseViewProps) {
+export function BaseView({ parsed, onChange, root, thisFile, records, indexStatus, indexError, types, properties = null, onOpenFile, readOnly = false, initialView, folderPage }: BaseViewProps) {
   const [active, setActive] = useState(() =>
     initialView === undefined ? 0 : Math.max(0, parsed.def.views.findIndex((v) => v.name.toLowerCase() === initialView.toLowerCase())),
   )
@@ -80,7 +101,12 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
   }, [records])
 
   const shown = useMemo(() => (Object.keys(moves).length === 0 ? records : applyMoves(records, moves)), [records, moves])
-  const result = useMemo(() => (view ? runView(def, view, shown, { thisFile }) : null), [def, view, shown, thisFile])
+  // 🔒 D2 (YAZ-819): a folder page's rows are its MEMBERS, so the engine's own rows-are-the-vault
+  // resolver would miss every link pointing outside them — inject the whole-vault one. A `.base`
+  // passes nothing and keeps the default, which is the same resolver it always built.
+  const vaultRecords = folderPage?.vaultRecords
+  const resolve = useMemo(() => (vaultRecords === undefined ? undefined : resolverFor(vaultRecords)), [vaultRecords])
+  const result = useMemo(() => (view ? runView(def, view, shown, { thisFile, resolve }) : null), [def, view, shown, thisFile, resolve])
 
   if (view === undefined || result === null) {
     return (
@@ -147,6 +173,16 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
     })
   }
 
+  /** The plain 5D create: the view's own filter-derived folder, the first free `Untitled`. */
+  const createFromSeed = async (seed: NewNoteSeed): Promise<string> => {
+    const folder = targetFolder(seed.folder, root, thisFile)
+    if (folder === null) throw new Error('the vault root is not known yet')
+    const taken = new Set(records.filter((r) => r.path.slice(0, r.path.lastIndexOf('/')) === folder).map((r) => r.basename))
+    const path = `${folder}/${untitledName(taken)}.md`
+    await createNewNote(path, seed.properties)
+    return path
+  }
+
   // The toolbar's "New" / a group header's "+" (5D, GRO-2144): a note pre-filled to satisfy this
   // view — filter-derived seed, plus the group's raw value when created inside a group — created
   // over the bridge and opened only once the create lands; a failure shows the alert instead.
@@ -167,17 +203,11 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
             : group.rows[0]?.record.properties[groupKey]
       if (raw !== undefined) seed.properties[groupKey] = raw
     }
-    const folder = targetFolder(seed.folder, root, thisFile)
-    if (folder === null) {
-      setCreateError('the vault root is not known yet')
-      return
-    }
-    const taken = new Set(records.filter((r) => r.path.slice(0, r.path.lastIndexOf('/')) === folder).map((r) => r.basename))
-    const path = `${folder}/${untitledName(taken)}.md`
     setCreateError(null)
-    createNewNote(path, seed.properties)
-      .then(() => onOpenFile(path))
-      .catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
+    // A folder page births its members from its OWN declaration and parks them per its settings
+    // (🔒 Q5, YAZ-815) — the seed still rides along, so a group "+" seeds that group here too.
+    const run = folderPage === undefined ? createFromSeed(seed) : folderPage.create(seed)
+    run.then(onOpenFile).catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
   }
 
   const keys = propertyKeys(def, view, records)
@@ -188,6 +218,9 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
     views,
     active: index,
     onSelect: setActive,
+    // A folder page's views are switch-only (🔒 rule 4, YAZ-819): which view is active is session
+    // state that never reaches the card, and view CRUD is not this block's gesture.
+    readOnly: folderPage !== undefined,
     onAdd: () => {
       update((d) => d.views.push({ type: 'table', name: `Table ${d.views.length + 1}` }))
       setActive(views.length)
@@ -242,6 +275,7 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           tabs={tabs}
           root={root}
           properties={properties}
+          noFilters={folderPage !== undefined}
         />
       )}
       {createError !== null && (
@@ -277,6 +311,8 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           onNewInGroup={readOnly ? undefined : onNewNote}
           types={types}
           properties={properties}
+          folderPage={folderPage?.settings ?? null}
+          vaultRecords={vaultRecords}
           readOnly={readOnly}
         />
       ) : view.type === 'board' ? (
@@ -309,6 +345,8 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           onNewInGroup={readOnly ? undefined : onNewNote}
           types={types}
           properties={properties}
+          folderPage={folderPage?.settings ?? null}
+          vaultRecords={vaultRecords}
           readOnly={readOnly}
         />
       ) : view.type === 'list' ? (
@@ -324,6 +362,8 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           onNewInGroup={readOnly ? undefined : onNewNote}
           types={types}
           properties={properties}
+          folderPage={folderPage?.settings ?? null}
+          vaultRecords={vaultRecords}
           readOnly={readOnly}
         />
       ) : (

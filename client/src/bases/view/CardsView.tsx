@@ -6,6 +6,7 @@ import { belongsToBasenames } from '../../links/folderPages'
 import { type Group, type Row, propertyKeys, propertyLabel, resolverFor } from '../engine'
 import { render } from '../expr'
 import { cellEditor, columnTyping } from '../editorType'
+import type { FolderPageSettings } from '../folderPageSettings'
 import { cardWidth } from './cardWidth'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './filterRows'
@@ -33,6 +34,10 @@ export interface CardsViewProps {
   types?: Record<string, string>
   /** The vault's property declarations (5E, GRO-2217): vault-wide editor inference and relation targets. */
   properties?: PropertiesResponse | null
+  /** The folder page whose contents these rows are (YAZ-819): the typing ladder's TOP rung (🔒 Q8). */
+  folderPage?: FolderPageSettings | null
+  /** The WHOLE index snapshot when `records` is a subset (🔒 D2, YAZ-819); absent → `records`. */
+  vaultRecords?: readonly IndexRecord[]
 }
 
 // ---------- covers ----------
@@ -118,7 +123,7 @@ function CardCover({ root, cover }: { root: string | null; cover: Cover }) {
  * `.base` file); search narrows cards and drops empty groups. Note-property rows edit inline
  * through `EditableCell` (5B, GRO-2142); a lightbox stays out of scope.
  */
-export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, types, properties = null, readOnly = false }: CardsViewProps) {
+export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, types, properties = null, folderPage = null, vaultRecords, readOnly = false }: CardsViewProps) {
   const keys = useMemo(() => propertyKeys(def, view, records), [def, view, records])
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const rest = useMemo(() => keys.filter((k) => k !== nameKey), [keys, nameKey])
@@ -130,21 +135,23 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
     [rest],
   )
   const typings = useMemo(
-    () => new Map(rest.map((k) => [k, columnTyping(k, rowRecords, types, properties)])),
-    [rest, rowRecords, types, properties],
+    () => new Map(rest.map((k) => [k, columnTyping(k, rowRecords, types, properties, folderPage)])),
+    [rest, rowRecords, types, properties, folderPage],
   )
-  const basenames = useMemo(() => records.map((r) => r.basename), [records])
+  /** What the pickers resolve and complete over: the vault, which is the rows for a `.base` (🔒 D2). */
+  const linkRecords = vaultRecords ?? records
+  const basenames = useMemo(() => linkRecords.map((r) => r.basename), [linkRecords])
   // Relation columns narrow the link picker to the pages of the folder page the target names
   // (YAZ-836: `belongsToBasenames` succeeded the type-keyed helper); missing key = all basenames.
   const resolve = useMemo(() => {
-    const resolver = resolverFor(records)
+    const resolver = resolverFor(linkRecords)
     return (target: string) => resolver(target)?.record.path ?? null
-  }, [records])
+  }, [linkRecords])
   const linkNames = useMemo(() => {
     const m = new Map<string, string[]>()
-    for (const [key, t] of typings) if (t?.target !== undefined) m.set(key, belongsToBasenames(records, resolve, t.target))
+    for (const [key, t] of typings) if (t?.target !== undefined) m.set(key, belongsToBasenames(linkRecords, resolve, t.target))
     return m
-  }, [typings, records, resolve])
+  }, [typings, linkRecords, resolve])
   const imageKey = typeof view.image === 'string' && view.image.trim() !== '' ? view.image : null
   const ratio = Number(view.imageAspectRatio)
   const style = {

@@ -54,6 +54,13 @@ export interface RunOptions {
   thisFile?: string | null
   /** Vault root; lets link targets written as `<root>/…` resolve. */
   root?: string
+  /**
+   * The resolver every link in this run resolves through (🔒 D2, YAZ-819). Absent — every `.base`
+   * caller — keeps today's behaviour exactly: one built from `records`, which for a base IS the
+   * vault. A FOLDER PAGE's contents pass only the MEMBERS as rows and inject the FULL-VAULT
+   * resolver here, so a link cell pointing outside the members still resolves.
+   */
+  resolve?: Resolver
 }
 
 /** Value of one property key for one row's scope. */
@@ -298,7 +305,7 @@ export function runView(def: BaseDefinition, view: BaseView, records: readonly I
   const viewIndex = def.views.indexOf(view)
   const viewWhere = viewIndex >= 0 ? `views[${viewIndex}]` : 'view'
   const files = fileValuesFor(records)
-  const resolve = resolverFor(records, opts.root)
+  const resolve = opts.resolve ?? resolverFor(records, opts.root)
   const thisFile = opts.thisFile ? files.find(f => f.record.path === opts.thisFile) ?? null : null
   const formulas = def.formulas ?? {}
   const baseFilter = compileFilter(def.filters, 'filters', errors)

@@ -4,6 +4,7 @@ import type { BaseDefinition, BaseView } from '../baseFile'
 import { belongsToBasenames } from '../../links/folderPages'
 import { type Group, type Row, propertyKeys, propertyLabel, resolverFor } from '../engine'
 import { type Value, render, typeOf } from '../expr'
+import type { FolderPageSettings } from '../folderPageSettings'
 import { BUILTIN_SUMMARIES, summarize } from '../summaries'
 import { cellEditor, columnTyping } from '../editorType'
 import { EditableCell } from './EditableCell'
@@ -37,6 +38,10 @@ export interface TableViewProps {
   types?: Record<string, string>
   /** The vault's property declarations (5E, GRO-2217): vault-wide editor inference and relation targets. */
   properties?: PropertiesResponse | null
+  /** The folder page whose contents these rows are (YAZ-819): the typing ladder's TOP rung (🔒 Q8). */
+  folderPage?: FolderPageSettings | null
+  /** The WHOLE index snapshot when `records` is a subset (🔒 D2, YAZ-819): link resolution and the link pickers read this, never the rows alone. Absent → `records` (a `.base`'s rows ARE the vault). */
+  vaultRecords?: readonly IndexRecord[]
   /** Embed chrome (6A, GRO-2145): no cell editing, no column resize, no summary picking, no drag. */
   readOnly?: boolean
 }
@@ -67,7 +72,7 @@ type Line = { header: Group; gk: string } | { row: Row; r: number; g: Group | nu
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup, types, properties = null, readOnly = false }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup, types, properties = null, folderPage = null, vaultRecords, readOnly = false }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   // Row drag between sections (5C, GRO-2143); disabled without groups, and in read-only embeds.
   const dnd = useGroupDrag(groups === null || readOnly ? null : groupByKey(view), onMoveToGroup)
@@ -81,19 +86,21 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   // memoised so scroll/drag re-renders skip the per-column row walk (7B, GRO-2148)
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
   const bares = useMemo(() => keys.map((k) => (canonicalKey(k).startsWith('note.') ? canonicalKey(k).slice(5) : null)), [keys])
-  const typings = useMemo(() => keys.map((k) => columnTyping(k, rowRecords, types, properties)), [keys, rowRecords, types, properties])
-  const basenames = useMemo(() => records.map((r) => r.basename), [records])
+  const typings = useMemo(() => keys.map((k) => columnTyping(k, rowRecords, types, properties, folderPage)), [keys, rowRecords, types, properties, folderPage])
+  /** What the pickers resolve and complete over: the vault, which is the rows for a `.base` (🔒 D2). */
+  const linkRecords = vaultRecords ?? records
+  const basenames = useMemo(() => linkRecords.map((r) => r.basename), [linkRecords])
   // Relation columns narrow the link picker to the pages of the folder page the target names
   // (YAZ-836: `belongsToBasenames` succeeded the type-keyed helper); a target naming no folder
   // page falls back to all basenames. The resolver is THE shared one, memoized
   // per records identity (`resolverFor`), adapted to `ResolveLink` as WikilinkIndexBridge does.
   const resolve = useMemo(() => {
-    const resolver = resolverFor(records)
+    const resolver = resolverFor(linkRecords)
     return (target: string) => resolver(target)?.record.path ?? null
-  }, [records])
+  }, [linkRecords])
   const linkNames = useMemo(
-    () => typings.map((t) => (t?.target !== undefined ? belongsToBasenames(records, resolve, t.target) : null)),
-    [typings, records, resolve],
+    () => typings.map((t) => (t?.target !== undefined ? belongsToBasenames(linkRecords, resolve, t.target) : null)),
+    [typings, linkRecords, resolve],
   )
   const rowH = ROW_HEIGHTS[view.rowHeight ?? ''] ?? ROW_HEIGHTS.short
   const widthOf = (key: string) => (drag?.key === key ? drag.width : view.columnSize?.[key] ?? DEFAULT_WIDTH)
