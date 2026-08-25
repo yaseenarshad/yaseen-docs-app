@@ -111,3 +111,34 @@ export function folderPagesLookup(records: readonly IndexRecord[], resolve: Reso
   if (hit === undefined) lookupCache.set(records, (hit = build(records, resolve)))
   return hit
 }
+
+/**
+ * Depth-first over the CONTENTS of `start` — its direct members at depth 0, theirs at 1, `start`
+ * itself never visited; siblings in `pagesIn` order and a member's whole subtree before the next.
+ *
+ * THE LOOP GUARD (locked): folder pages hold folder pages and membership is plain text a note
+ * writes about itself, so `A → B → A` is one keystroke away and would hang any surface walking it.
+ * The guard is the ancestor PATH — `start` plus the folder pages descended through to get here —
+ * carried the way the formula evaluator carries `inProgress` (`bases/expr/evaluator.ts`). A member
+ * already standing above the walk is skipped and that branch ends quietly; no cap, no throw. It is
+ * deliberately NOT a global visited set: a page reachable down two branches belongs in both, and
+ * is visited once per branch.
+ */
+export function walkFolderPage(
+  lookup: FolderPagesLookup,
+  start: string,
+  visit: (record: IndexRecord, depth: number) => void,
+): void {
+  const ancestors = new Set<string>([start])
+  const descend = (folderPagePath: string, depth: number): void => {
+    for (const member of lookup.pagesIn(folderPagePath)) {
+      if (ancestors.has(member.path)) continue
+      visit(member, depth)
+      if (!lookup.isFolderPage(member)) continue
+      ancestors.add(member.path)
+      descend(member.path, depth + 1)
+      ancestors.delete(member.path)
+    }
+  }
+  descend(start, 0)
+}

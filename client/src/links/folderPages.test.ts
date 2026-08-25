@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { stripBrackets } from '../bases/expr'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
-import { folderPagesLookup, isFolderPage } from './folderPages'
+import { folderPagesLookup, isFolderPage, walkFolderPage } from './folderPages'
 
 const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -198,5 +198,79 @@ describe('robustness', () => {
     expect(lookup.uncategorized()).toHaveLength(2)
     expect(lookup.folderPagesOf('/vault/A.md')).toEqual([])
     expect(lookup.pagesIn('/vault/B.md')).toEqual([])
+  })
+})
+
+/** Every visit as `path@depth`, in order — the walk's whole observable output. */
+const visitsFrom = (records: readonly IndexRecord[], start: string): string[] => {
+  const seen: string[] = []
+  walkFolderPage(lookupOver(records), start, (record, depth) => seen.push(`${record.path}@${depth}`))
+  return seen
+}
+
+describe('walkFolderPage (YAZ-826): the loop guard', () => {
+  it('walks the CONTENTS depth-first — a member subtree finishes before the next sibling', () => {
+    const records = [
+      folder('/vault/Bravo.md', belongs('[[Metrics]]')),
+      rec('/vault/Charlie.md', belongs('[[Metrics]]')),
+      rec('/vault/Delta.md', belongs('[[Bravo]]')),
+      folder(METRICS),
+    ]
+    expect(visitsFrom(records, METRICS)).toEqual([
+      '/vault/Bravo.md@0',
+      '/vault/Delta.md@1',
+      '/vault/Charlie.md@0',
+    ])
+  })
+
+  it('ends a branch that loops back onto its own ancestor path, and never throws', () => {
+    const records = [folder('/vault/Ping.md', belongs('[[Pong]]')), folder('/vault/Pong.md', belongs('[[Ping]]'))]
+    expect(visitsFrom(records, '/vault/Ping.md')).toEqual(['/vault/Pong.md@0'])
+    expect(visitsFrom(records, '/vault/Pong.md')).toEqual(['/vault/Ping.md@0'])
+  })
+
+  it('a page listing ITSELF holds nothing to walk', () => {
+    const records = [folder('/vault/Ouro.md', belongs('[[Ouro]]'))]
+    expect(visitsFrom(records, '/vault/Ouro.md')).toEqual([])
+  })
+
+  it('a diamond is visited once per BRANCH — the guard is the path, not a visited set', () => {
+    const records = [
+      folder('/vault/Bravo.md', belongs('[[Metrics]]')),
+      folder('/vault/Charlie.md', belongs('[[Metrics]]')),
+      rec('/vault/Xray.md', belongs('[[Bravo]]', '[[Charlie]]')),
+      folder(METRICS),
+    ]
+    expect(visitsFrom(records, METRICS)).toEqual([
+      '/vault/Bravo.md@0',
+      '/vault/Xray.md@1',
+      '/vault/Charlie.md@0',
+      '/vault/Xray.md@1',
+    ])
+  })
+
+  it('a page held both directly and under a sibling folder page is visited at BOTH depths', () => {
+    const records = [
+      folder('/vault/Bravo.md', belongs('[[Metrics]]')),
+      rec('/vault/Xray.md', belongs('[[Metrics]]', '[[Bravo]]')),
+      folder(METRICS),
+    ]
+    expect(visitsFrom(records, METRICS)).toEqual(['/vault/Bravo.md@0', '/vault/Xray.md@1', '/vault/Xray.md@0'])
+  })
+
+  it('walks a 200-deep chain to the bottom — there is no depth cap', () => {
+    const deep = (i: number): string => `Deep${String(i).padStart(3, '0')}`
+    const records = [folder(`/vault/${deep(0)}.md`)]
+    for (let i = 1; i <= 200; i++) records.push(folder(`/vault/${deep(i)}.md`, belongs(`[[${deep(i - 1)}]]`)))
+    const visits = visitsFrom(records, '/vault/Deep000.md')
+    expect(visits).toHaveLength(200)
+    expect(visits[0]).toBe('/vault/Deep001.md@0')
+    expect(visits[199]).toBe('/vault/Deep200.md@199')
+  })
+
+  it('a leaf page and an unknown path both hold nothing to walk', () => {
+    const records = [rec('/vault/Leaf.md', belongs('[[Metrics]]')), folder(METRICS)]
+    expect(visitsFrom(records, '/vault/Leaf.md')).toEqual([])
+    expect(visitsFrom(records, '/vault/Nowhere.md')).toEqual([])
   })
 })
