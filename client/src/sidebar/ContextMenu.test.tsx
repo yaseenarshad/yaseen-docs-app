@@ -61,6 +61,7 @@ function mount(x: number, y: number, over: Partial<MenuProps> = {}) {
     folderPageIsOn: false,
     onToggleFolderPage: vi.fn(),
     onNewNote: vi.fn(),
+    onNewFolderPage: vi.fn(),
     onNewBase: vi.fn(),
     onNewFolder: vi.fn(),
     onClose: vi.fn(),
@@ -95,6 +96,36 @@ describe('menu clamping', () => {
     const el = mount(100, 120)
     expect(el.querySelector('.ctx-submenu')).toBeNull()
     expect(el.querySelector('.ctx-menu__item--sub')).toBeNull()
+  })
+})
+
+const labelsOf = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => b.textContent)
+const itemOf = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === label)
+
+/**
+ * The create group (🔒 D4, YAZ-817): "New folder page" is the SECOND item, directly after
+ * "New note" — a folder page is a note born with one flag (🔒 D1), so it belongs beside the
+ * note it is a kind of, not beside the act-on-this-row toggle further down. Pinned here
+ * because the position IS the ruling, not an accident of JSX.
+ */
+describe('create group (🔒 D4)', () => {
+  it('offers New folder page directly after New note, ahead of New base and New folder', () => {
+    const el = mount(0, 0)
+    expect(labelsOf(el)).toEqual(['New note', 'New folder page', 'New base', 'New folder'])
+  })
+
+  it('is offered on every row type — the group targets a DIRECTORY, never the clicked row', () => {
+    const el = mount(0, 0, { copyPath: '/v', revealPath: '/v', renamePath: '/v/a.md', deletePath: '/v/a.md', folderPagePath: '/v/a.md' })
+    expect(labelsOf(el)).toContain('New folder page')
+  })
+
+  it('hands the click to the caller and leaves the menu alone — the inline input closes it (the New note idiom)', () => {
+    const onNewFolderPage = vi.fn()
+    const onClose = vi.fn()
+    const el = mount(0, 0, { onNewFolderPage, onClose })
+    act(() => itemOf(el, 'New folder page')?.click())
+    expect(onNewFolderPage).toHaveBeenCalledTimes(1)
+    expect(onClose).not.toHaveBeenCalled()
   })
 })
 

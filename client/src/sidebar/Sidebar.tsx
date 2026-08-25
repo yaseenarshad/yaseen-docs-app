@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { fileKind } from '@shared/fileKind'
 import type { SettingsState, TreeNode, TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
+import { createNewNote } from '../bases/newNote'
 import { SearchIcon } from '../bases/view/icons'
 import { writeProperty } from '../bases/writeProperty'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -363,6 +364,11 @@ export function Sidebar({
       const p = entryPath(creating.parentDir, name, creating.kind)
       // Notes and bases both go through createFile; the main process seeds `.base` with a minimal view.
       if (creating.kind === 'dir') await api.createDir(p)
+      // Born a folder page (🔒 D4 + D1, YAZ-841): the SAME atomic content-at-create call the 5D
+      // seed uses, carrying exactly `folder_page: true` and nothing else — no settings block
+      // (4C's panel writes those when the user picks some), no body, no `folder_pages`. The key
+      // is `FOLDER_PAGE_KEY`, the one `isFolderPage` reads back, never a local literal.
+      else if (creating.kind === 'folderPage') await createNewNote(p, { [FOLDER_PAGE_KEY]: true })
       else await api.createFile(p)
       setCreating(null)
       refresh()
@@ -656,6 +662,7 @@ export function Sidebar({
           revealPath={menu.revealPath}
           onReveal={reveal}
           onNewNote={() => startCreate('file')}
+          onNewFolderPage={() => startCreate('folderPage')}
           onNewBase={() => startCreate('base')}
           onNewFolder={() => startCreate('dir')}
           folderPagePath={menu.folderPagePath}

@@ -6,8 +6,14 @@
  */
 import type { TreeNode } from '@shared/types'
 
-/** What the inline input creates: a markdown note, a folder, or an Obsidian `.base` file (GRO-2126). */
-export type EntryKind = 'file' | 'dir' | 'base'
+/**
+ * What the inline input creates: a markdown note, a folder, an Obsidian `.base` file (GRO-2126),
+ * or a FOLDER PAGE (🔒 D4, YAZ-841) — a note like any other, born carrying `folder_page: true`
+ * and nothing else (🔒 D1). It is a fourth KIND rather than a flag beside `file` so the one
+ * difference — the seed — stays at the end of the flow while every shared rule above it
+ * (validation, target dir, the `.md` extension) is literally the same code.
+ */
+export type EntryKind = 'file' | 'dir' | 'base' | 'folderPage'
 
 /** Human-readable reason the name is unusable, or null when fine. Callers trim first via entryPath. */
 export function validateEntryName(name: string): string | null {
@@ -18,10 +24,10 @@ export function validateEntryName(name: string): string | null {
   return null
 }
 
-/** Absolute path for the new entry; notes get `.md` unless already markdown, bases `.base` unless already present. */
+/** Absolute path for the new entry; notes (folder pages included) get `.md` unless already markdown, bases `.base` unless already present. */
 export function entryPath(parentDir: string, name: string, kind: EntryKind): string {
   let final = name.trim()
-  if (kind === 'file' && !/\.(md|markdown)$/i.test(final)) final += '.md'
+  if ((kind === 'file' || kind === 'folderPage') && !/\.(md|markdown)$/i.test(final)) final += '.md'
   else if (kind === 'base' && !/\.base$/i.test(final)) final += '.base'
   return `${parentDir}/${final}`
 }

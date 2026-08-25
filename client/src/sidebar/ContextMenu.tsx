@@ -21,6 +21,8 @@ interface ContextMenuProps {
   revealPath: string | null
   onReveal: (path: string) => void
   onNewNote: () => void
+  /** Create a note born a folder page — the flag and nothing else (🔒 D4 + D1, YAZ-841). */
+  onNewFolderPage: () => void
   /** Create an Obsidian-compatible `.base` file (GRO-2126). */
   onNewBase: () => void
   onNewFolder: () => void
@@ -37,7 +39,7 @@ interface ContextMenuProps {
 }
 
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, onNewNote, onNewBase, onNewFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, onNewNote, onNewFolderPage, onNewBase, onNewFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, onClose }: ContextMenuProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -125,6 +127,13 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
         )}
         <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewNote}>
           New note
+        </button>
+        {/* Directly after "New note" (🔒 D4, YAZ-817): a folder page is a NOTE born with one
+            flag (🔒 D1), so it belongs beside the note it is a kind of. It creates beside the
+            right-clicked row like the rest of this group — the act-on-this-row toggle below is
+            the other half of the gesture, and the two must not drift together. */}
+        <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewFolderPage}>
+          New folder page
         </button>
         <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewBase}>
           New base

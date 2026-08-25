@@ -39,6 +39,12 @@ describe('entryPath', () => {
     expect(entryPath('/r', 'Tasks.BASE', 'base')).toBe('/r/Tasks.BASE')
   })
 
+  it('gives a folder page the note extension — it IS a note, just born flagged (🔒 D1, YAZ-841)', () => {
+    expect(entryPath('/r', 'Growth', 'folderPage')).toBe('/r/Growth.md')
+    expect(entryPath('/r', 'Growth.md', 'folderPage')).toBe('/r/Growth.md')
+    expect(entryPath('/r', '  Growth ', 'folderPage')).toBe('/r/Growth.md')
+  })
+
   it('uses dir names as-is and trims whitespace', () => {
     expect(entryPath('/r', 'Folder', 'dir')).toBe('/r/Folder')
     expect(entryPath('/r', '  note ', 'file')).toBe('/r/note.md')

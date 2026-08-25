@@ -30,6 +30,10 @@ function installBridge() {
     tree: vi.fn(async (root: string) => ({ root, tree: TREE, generatedAt: 1 })),
     // The delete confirm sheet reads the index for its backlink count (GRO-2272 C3).
     index: vi.fn(async (root: string) => ({ root, records: [] as unknown[], generatedAt: 1 })),
+    // The inline-create flow (GRO-2022; "New folder page" YAZ-841). `createFile` takes the bare
+    // path OR `{ path, content }` — the content form is the atomic born-with-frontmatter call.
+    createFile: vi.fn(async (req: string | { path: string; content?: string }) => ({ path: typeof req === 'string' ? req : req.path, mtime: 2, size: 0 })),
+    createDir: vi.fn(async (path: string) => ({ path })),
     state: { setFolder: vi.fn(async () => undefined) },
     window: { open: vi.fn(async () => undefined) },
     // Reveal in Finder (GRO-2274) goes through the shell namespace.
@@ -747,6 +751,10 @@ describe('context menu order (GRO-2272 C1a)', () => {
       'Copy path',
       'Copy link',
       'New note',
+      // "New folder page" (🔒 D4, YAZ-817): second in the create group, directly after the
+      // note it is a kind of — it CREATES beside the right-clicked row, so it stays in the
+      // create group and never drifts down to the act-on-this-row toggle.
+      'New folder page',
       'New base',
       'New folder',
       // The folder-page toggle joins the row between the create group and Rename (🔒 D2,
@@ -765,6 +773,93 @@ describe('context menu order (GRO-2272 C1a)', () => {
       const labels = menuItems(m.el).map((b) => b.textContent)
       expect(labels[labels.length - 1]).toBe('Delete')
     }
+  })
+})
+
+/**
+ * "New folder page" (YAZ-841 — 🔒 D4 + D1 on YAZ-817): the create group's second item, and the
+ * only birth gesture for a folder page. It is the EXISTING inline-create flow with one branch at
+ * the end — same validation, same placement rule (the file lands where the right-click happened),
+ * same open-after-create — so the page is born through `createNewNote` carrying exactly
+ * `folder_page: true` and NOTHING else (🔒 D1: the flag alone is the whole declaration; Q7
+ * defaults render it once 5- ships, and 4C's panel writes settings only when the user picks some).
+ */
+describe('New folder page (🔒 D4 / 🔒 D1, YAZ-841)', () => {
+  const openOn = async (selector: string) => {
+    const m = await mount()
+    act(() => void m.el.querySelector(selector)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    return m
+  }
+  const input = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.create-inline__input')
+  const errorText = (el: HTMLElement) => el.querySelector('.create-inline__error')?.textContent ?? null
+  /** Type a name into the open inline input and commit it with Enter. */
+  const commit = async (el: HTMLElement, name: string) => {
+    const field = input(el)!
+    await act(async () => {
+      field.value = name
+      field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+  }
+  /** The birth content (🔒 D1): one frontmatter block, one key, no body. */
+  const FLAG_ONLY = '---\nfolder_page: true\n---\n'
+
+  it('is offered wherever the create group is — file rows, folder rows and blank space alike', async () => {
+    for (const selector of ['.tree__row--file', '.tree__row--dir', '.sidebar__body']) {
+      const { el } = await openOn(selector)
+      expect(itemByLabel(el, 'New folder page')).toBeDefined()
+    }
+  })
+
+  it('opens the SAME inline input as New note, under its own placeholder, and closes the menu', async () => {
+    const { el } = await openOn('.tree__row--dir')
+    act(() => itemByLabel(el, 'New folder page')?.click())
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(input(el)).not.toBeNull()
+    expect(input(el)?.placeholder).toBe('New folder page')
+  })
+
+  it('committing a name creates the page born with EXACTLY the flag, in the right-clicked folder, then opens it', async () => {
+    const { el, bridge, props } = await openOn('.tree__row--dir')
+    act(() => itemByLabel(el, 'New folder page')?.click())
+    await commit(el, 'Growth')
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/Growth.md', content: FLAG_ONLY })
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/Growth.md')
+    expect(input(el)).toBeNull() // the input is done
+  })
+
+  it('takes the same placement rule as New note: a FILE row creates beside it, blank space at the root', async () => {
+    const onFile = await openOn('.tree__row--file')
+    act(() => itemByLabel(onFile.el, 'New folder page')?.click())
+    await commit(onFile.el, 'Growth')
+    expect(onFile.bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Growth.md', content: FLAG_ONLY })
+
+    const onBlank = await openOn('.sidebar__body')
+    act(() => itemByLabel(onBlank.el, 'New folder page')?.click())
+    await commit(onBlank.el, 'Growth')
+    expect(onBlank.bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Growth.md', content: FLAG_ONLY })
+  })
+
+  it('leaves New note alone — the same flow with no seed at all, still the bare-path call', async () => {
+    const { el, bridge } = await openOn('.tree__row--dir')
+    act(() => itemByLabel(el, 'New note')?.click())
+    await commit(el, 'Growth')
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith('/v/sub/Growth.md')
+  })
+
+  it('validates through the SHARED path: an invalid name gives New note\'s exact error and writes nothing', async () => {
+    const note = await openOn('.tree__row--dir')
+    act(() => itemByLabel(note.el, 'New note')?.click())
+    await commit(note.el, 'a/b')
+    const shared = errorText(note.el)
+    expect(shared).not.toBeNull()
+    expect(note.bridge.createFile).not.toHaveBeenCalled()
+
+    const page = await openOn('.tree__row--dir')
+    act(() => itemByLabel(page.el, 'New folder page')?.click())
+    await commit(page.el, 'a/b')
+    expect(errorText(page.el)).toBe(shared)
+    expect(page.bridge.createFile).not.toHaveBeenCalled()
+    expect(input(page.el)).not.toBeNull() // the input stays open to fix the name
   })
 })
 
