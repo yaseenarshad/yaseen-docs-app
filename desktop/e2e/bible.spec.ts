@@ -1,15 +1,22 @@
 /**
- * Bible C (GRO-2203): the convergence proof — typed pages + relations + bases + wiki links
+ * Bible C (GRO-2203): the convergence proof — entity pages + relations + bases + wiki links
  * driven together, through the REAL app, over one committed encyclopedia fixture
- * (`fixtures/bible-vault/`: a `.yaseendocs/types.json` registering kpi / funnel-stage /
- * industry / role / problem per GRO-2200 R7, 17 entity pages wired by relation properties,
- * two `.base` files). Every other spec generates its vault; this one commits it, because the
- * content IS the thing under test — the same five types, the same two canonical queries.
+ * (`fixtures/bible-vault/`: 17 entity pages wired by relation properties in their own
+ * frontmatter, two `.base` files). Every other spec generates its vault; this one commits it,
+ * because the content IS the thing under test — the same five `page_type` values, the same two
+ * canonical queries.
+ *
+ * `page_type` is an ORDINARY frontmatter property here, and always was: the query engine never
+ * treated it specially, so every filter below still means exactly what it meant. What died with
+ * the type system (YAZ-836) is the CLIENT half — the registry that declared those names, typed
+ * "New ▸ <type>" creation, the registry-narrowed relation picker and the type scaffold — and with
+ * it the steps that only ever proved the registry (YAZ-837). Nothing that reads or writes the
+ * fixture's own frontmatter changed, so the arc is the same arc, one rung shorter.
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1  the "All KPIs" base opens grouped by funnel, the fixture has zero broken links
  *   2  canonical query A, standalone form: `funnel_stages.contains(link("Sales-Conversion"))`
- *   3  a relation cell edited through the 5E picker — registry-narrowed candidates, disk write, regroup
+ *   3  a relation cell edited inline through the chips editor — surgical disk write, regroup
  *   3b the multi-funnel KPI under FAN-OUT (YAZ-671): a drag between funnel groups SWAPS one element
  *      on disk, a group "+" seeds only that funnel, and the table ends exactly where it began
  *   4  the SAME query embedded and `this`-scoped on the funnel page (Bases 6): prose and database in one note
@@ -148,8 +155,9 @@ test('step 1 — the encyclopedia opens on "All KPIs", grouped by funnel, with n
 
   await expect(openBase(win)).toBeVisible()
   await expect(viewTabs(openBase(win))).toHaveText(['All KPIs', 'Sales-Conversion'])
-  // 5 kpi pages out of 17 — `page_type == "kpi"` is the only thing separating them. (Row
-  // COUNT is asserted below, where fan-out makes it 6.)
+  // 5 kpi pages out of 17 — the base's `page_type == "kpi"` filter over a plain frontmatter
+  // property is the only thing separating them. (Row COUNT is asserted below, where fan-out
+  // makes it 6.)
 
   // Fan-out (YAZ-671 D1): the KPI that spans two funnels appears under BOTH — there is no
   // combination group — and the KPI with no funnel lands in the native trailing "No value" group.
@@ -178,7 +186,7 @@ test('step 2 — canonical query A, standalone form: funnel_stages.contains(link
   await shoot(win, 'bible-02-query-a-standalone')
 })
 
-test('step 3 — a relation cell edited through the picker: registry-narrowed, written to disk, regrouped', async () => {
+test('step 3 — a relation cell edited inline: written to disk, regrouped', async () => {
   await viewTabs(openBase(win)).filter({ hasText: 'All KPIs' }).click()
   await expect(rowNames(openBase(win))).toHaveCount(6)
 
@@ -188,15 +196,15 @@ test('step 3 — a relation cell edited through the picker: registry-narrowed, w
   await cell.locator('[data-edit]').click()
   const input = win.locator('.base-cell-edit__input')
   await expect(input).toBeVisible()
-  await input.pressSequentially('[[Lead G', { delay: 15 })
+  // The editor is inferred from the VALUES the view holds (`editorType.ts`): every other KPI's
+  // `funnel_stages` is a list, so the empty cell opens the chips editor. Its `[[…]]` completion
+  // is declaration-gated (a `multi-link` property in `.yaseendocs/properties.json`) and this
+  // fixture declares nothing — the type registry that used to narrow the candidates to
+  // funnel-stage pages died with the type system (YAZ-836). So the link is typed whole, exactly
+  // as a user types into an undeclared list column.
+  await input.pressSequentially('[[Lead Gen]]', { delay: 15 })
+  await shoot(win, 'bible-03a-relation-cell-edit')
 
-  // The registry declares `kpi.funnel_stages` as multi-link → funnel-stage, so the picker offers
-  // funnel-stage PAGES only — never the 17-page vault, never the other KPIs.
-  const suggestions = win.locator('.base-cell-edit__complete [role="option"]')
-  await expect(suggestions).toHaveText(['Lead Gen'])
-  await shoot(win, 'bible-03a-relation-picker')
-
-  await win.keyboard.press('Enter') // picks the suggestion → `[[Lead Gen]]`
   await win.keyboard.press('Enter') // turns the text into a chip
   await win.keyboard.press('Enter') // empty input → commits the whole list
 
@@ -246,10 +254,12 @@ test('step 3b — fan-out writes: a drag between funnel groups SWAPS one element
   // ---- "+": create inside the Sales-Conversion group. The seed must be THAT funnel alone (D4),
   // not the first row's whole list — and the page must land in the group it was created from.
   await groupRow('[[Sales-Conversion]]').locator('.base-group__new').click()
-  const created = path.join(vault, 'kpis', 'Untitled.md')
-  await expect.poll(() => readFile(created, 'utf8').catch(() => ''), { timeout: 10_000 }).toContain('page_type: kpi')
+  // The VIEW's own rules place the page (`targetFolder`): no `file.inFolder` filter, so it lands
+  // beside the `.base` file. The registry folder a type-pinned view used to redirect it to went
+  // with the type system (YAZ-836) — the seed, not the placement, is what this step proves.
+  const created = path.join(vault, 'Untitled.md')
+  await expect.poll(() => readFile(created, 'utf8').catch(() => ''), { timeout: 10_000 }).toContain('[[Sales-Conversion]]')
   const seeded = await readFile(created, 'utf8')
-  expect(seeded).toContain('[[Sales-Conversion]]')
   expect(seeded).not.toContain('[[Lead Gen]]')
   expect(seeded).not.toContain('[[Lead Nurture]]')
   // the create OPENS the new page in its own tab, so come back to the base before reading it
@@ -274,15 +284,13 @@ test('step 3b — fan-out writes: a drag between funnel groups SWAPS one element
   await cell.locator('[data-edit]').click()
   const input = win.locator('.base-cell-edit__input')
   await expect(input).toBeVisible()
-  // chips editor: first chip is [[Lead Gen]] → Backspace on the empty input removes the LAST chip
-  // ([[Sales-Conversion]]) so remove twice, then re-add both in the original order.
+  // chips editor: Backspace on the empty input removes the LAST chip, so remove both, then type
+  // the two links back in the fixture's original order (one Enter chips each, a last one commits).
   await win.keyboard.press('Backspace')
   await win.keyboard.press('Backspace')
-  await input.pressSequentially('[[Lead Nurture', { delay: 15 })
+  await input.pressSequentially('[[Lead Nurture]]', { delay: 15 })
   await win.keyboard.press('Enter')
-  await win.keyboard.press('Enter')
-  await input.pressSequentially('[[Sales-Conversion', { delay: 15 })
-  await win.keyboard.press('Enter')
+  await input.pressSequentially('[[Sales-Conversion]]', { delay: 15 })
   await win.keyboard.press('Enter')
   await win.keyboard.press('Enter')
   await expect.poll(() => readFile(sct, 'utf8'), { timeout: 10_000 }).toContain('[[Lead Nurture]]')
@@ -335,7 +343,7 @@ test('step 7 — the backlinks panel agrees with query B on the same page', asyn
   await expandBacklinks(win)
   await expect(backlinkNotes(win)).toHaveText(['Sales-Conversion', 'CRM Hygiene', 'Stage Accuracy', 'Head of Sales'])
 
-  // Convergence: the problem-typed mentions are EXACTLY the rows the reverse query returned.
+  // Convergence: the `page_type: problem` mentions are EXACTLY the rows the reverse query returned.
   const mentions = await backlinkNotes(win).allTextContents()
   expect(mentions.filter((n) => PROBLEMS.includes(n)).sort()).toEqual(['CRM Hygiene', 'Stage Accuracy'])
   await shoot(win, 'bible-07-backlinks-agree')
