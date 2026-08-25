@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { stripBrackets } from '../bases/expr'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
-import { belongsToBasenames, folderPagesLookup, isFolderPage, walkFolderPage } from './folderPages'
+import { belongsToBasenames, folderPagesLookup, guardedChildren, isFolderPage, walkFolderPage } from './folderPages'
 
 const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -272,6 +272,27 @@ describe('walkFolderPage (YAZ-826): the loop guard', () => {
     const records = [rec('/vault/Leaf.md', belongs('[[Metrics]]')), folder(METRICS)]
     expect(visitsFrom(records, '/vault/Leaf.md')).toEqual([])
     expect(visitsFrom(records, '/vault/Nowhere.md')).toEqual([])
+  })
+})
+
+describe('guardedChildren (⚡ D6 amendment): the one door to a descent', () => {
+  it('hands back the members minus anyone on the ancestor path — path-scoped, not a visited set', () => {
+    const records = [
+      folder('/vault/Marketing.md', belongs('[[Metrics]]')),
+      rec('/vault/CAC.md', belongs('[[Metrics]]')),
+      folder(METRICS, belongs('[[Marketing]]')), // the loop: Metrics ↔ Marketing
+    ]
+    const lookup = lookupOver(records)
+    expect(guardedChildren(lookup, METRICS, [METRICS]).map((r) => r.path)).toEqual(['/vault/CAC.md', '/vault/Marketing.md'])
+    // Descending into Marketing: Metrics stands above, so the loop branch is simply not offered.
+    expect(guardedChildren(lookup, '/vault/Marketing.md', [METRICS, '/vault/Marketing.md']).map((r) => r.path)).toEqual([])
+    // A different path with no Metrics above sees it fine — the guard is the PATH, not history.
+    expect(guardedChildren(lookup, '/vault/Marketing.md', ['/vault/Marketing.md']).map((r) => r.path)).toEqual([METRICS])
+  })
+
+  it('a page listing itself is never offered as its own child', () => {
+    const records = [folder('/vault/Ouro.md', belongs('[[Ouro]]'))]
+    expect(guardedChildren(lookupOver(records), '/vault/Ouro.md', ['/vault/Ouro.md'])).toEqual([])
   })
 })
 

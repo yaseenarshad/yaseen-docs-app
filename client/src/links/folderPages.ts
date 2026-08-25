@@ -157,32 +157,41 @@ export function belongsToBasenames(records: readonly IndexRecord[], resolve: Res
 }
 
 /**
- * Depth-first over the CONTENTS of `start` — its direct members at depth 0, theirs at 1, `start`
- * itself never visited; siblings in `pagesIn` order and a member's whole subtree before the next.
- *
- * THE LOOP GUARD (locked): folder pages hold folder pages and belonging is plain text a note
- * writes about itself, so `A → B → A` is one keystroke away and would hang any surface walking it.
- * The guard is the ancestor PATH — `start` plus the folder pages descended through to get here —
- * carried the way the formula evaluator carries `inProgress` (`bases/expr/evaluator.ts`). A member
- * already standing above the walk is skipped and that branch ends quietly; no cap, no throw. It is
- * deliberately NOT a global visited set: a page reachable down two branches belongs in both, and
- * is visited once per branch.
+ * THE GUARDED STEP (⚡ D6 amendment, YAZ-814, ruled 2026-08-25): the members of `parent`,
+ * excluding anyone already standing on the ancestor path. Folder pages hold folder pages and
+ * belonging is plain text a note writes about itself, so `A → B → A` is one keystroke away and
+ * would hang any surface walking it. THE LAW: during a descent, children come ONLY from here —
+ * never raw `pagesIn` — so forgetting the loop protection is structurally impossible instead of
+ * merely forbidden. Path-scoped, deliberately NOT a global visited set: a page reachable down two
+ * branches belongs under both; the only banned thing is a page inside itself. No cap, no throw —
+ * a looping branch just ends quietly.
+ */
+export function guardedChildren(
+  lookup: FolderPagesLookup,
+  parent: string,
+  ancestors: readonly string[],
+): IndexRecord[] {
+  return lookup.pagesIn(parent).filter((member) => !ancestors.includes(member.path))
+}
+
+/**
+ * The canonical LINEAR walk over the CONTENTS of `start` — its direct members at depth 0, theirs
+ * at 1, `start` itself never visited; siblings in `pagesIn` order, a member's whole subtree
+ * before the next sibling. Built on `guardedChildren` like every other descent; expansion-driven
+ * surfaces (the outline, the Topics tree) recurse over `guardedChildren` themselves instead,
+ * with their own ordering and expansion.
  */
 export function walkFolderPage(
   lookup: FolderPagesLookup,
   start: string,
   visit: (record: IndexRecord, depth: number) => void,
 ): void {
-  const ancestors = new Set<string>([start])
-  const descend = (folderPagePath: string, depth: number): void => {
-    for (const member of lookup.pagesIn(folderPagePath)) {
-      if (ancestors.has(member.path)) continue
+  const descend = (parent: string, depth: number, ancestors: readonly string[]): void => {
+    for (const member of guardedChildren(lookup, parent, ancestors)) {
       visit(member, depth)
       if (!lookup.isFolderPage(member)) continue
-      ancestors.add(member.path)
-      descend(member.path, depth + 1)
-      ancestors.delete(member.path)
+      descend(member.path, depth + 1, [...ancestors, member.path])
     }
   }
-  descend(start, 0)
+  descend(start, 0, [start])
 }

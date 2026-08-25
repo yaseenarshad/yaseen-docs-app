@@ -1,6 +1,6 @@
 import { useMemo, useState, type DragEvent, type ReactNode } from 'react'
 import type { IndexRecord } from '@shared/types'
-import { FOLDER_PAGES_KEY, entryTarget, folderPagesLookup, folderPagesList } from '../../links/folderPages'
+import { FOLDER_PAGES_KEY, entryTarget, folderPagesLookup, folderPagesList, guardedChildren } from '../../links/folderPages'
 import { BaseGlyph } from './icons'
 import type { Row } from '../engine'
 import { resolverFor } from '../engine'
@@ -121,11 +121,14 @@ export function OutlineView({ folderPagePath, root, settings, vaultRecords, reco
 
   const rowsFor = (members: readonly IndexRecord[], depth: number, ancestors: readonly string[]): ReactNode[] =>
     members.flatMap((member, i) => {
-      if (ancestors.includes(member.path)) return [] // 🔒 THE loop guard: this branch ends, quietly
+      // Prop-supplied members (the top level) are guarded here; every FETCHED level below comes
+      // through guardedChildren — the one door (⚡ D6 amendment, YAZ-814).
+      if (ancestors.includes(member.path)) return []
       if (depth === 0 && !shown.has(member.path)) return []
       const isFolder = lookup.isFolderPage(member)
-      const kids = isFolder ? lookup.pagesIn(member.path) : []
-      const key = [...ancestors, member.path].join('>')
+      const next = [...ancestors, member.path]
+      const kids = isFolder ? guardedChildren(lookup, member.path, next) : []
+      const key = next.join('>')
       const open = expanded.has(key)
       const cls = ['base-outline__row']
       if (drag !== null && depth === 0 && drag.from === i) cls.push('base-outline__row--dragging')
@@ -214,7 +217,6 @@ export function OutlineView({ folderPagePath, root, settings, vaultRecords, reco
       if (!open || kids.length === 0) return [row]
       // Each level orders by ITS OWN folder page's settings — the order lives on the page that
       // owns the members, never on whoever happens to be showing them.
-      const next = [...ancestors, member.path]
       return [row, ...rowsFor(orderedMembers(kids, folderPageSettings(member), resolve), depth + 1, next)]
     })
 
