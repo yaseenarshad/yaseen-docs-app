@@ -1,9 +1,9 @@
 import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useMemo, useRef, useState } from 'react'
 import type { IndexRecord, RegistryResponse } from '@shared/types'
 import type { BaseDefinition, BaseView } from '../baseFile'
-import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
+import { belongsToBasenames } from '../../links/folderPages'
+import { type Group, type Row, propertyKeys, propertyLabel, resolverFor } from '../engine'
 import { type Value, render, typeOf } from '../expr'
-import { relationBasenames } from '../relation'
 import { BUILTIN_SUMMARIES, summarize } from '../summaries'
 import { cellEditor, columnTyping } from '../editorType'
 import { EditableCell } from './EditableCell'
@@ -35,9 +35,8 @@ export interface TableViewProps {
   onNewInGroup?: (group: Group) => void
   /** Assigned property types from `.obsidian/types.json`, for editor inference (5B, GRO-2142). */
   types?: Record<string, string>
-  /** The vault's type registry + the view's pinned type (5E, GRO-2217): rank 1–2 of editor inference, and relation targets. */
+  /** The vault's registry (5E, GRO-2217): vault-wide editor inference and relation targets. */
   registry?: RegistryResponse | null
-  pinned?: string | null
   /** Embed chrome (6A, GRO-2145): no cell editing, no column resize, no summary picking, no drag. */
   readOnly?: boolean
 }
@@ -68,7 +67,7 @@ type Line = { header: Group; gk: string } | { row: Row; r: number; g: Group | nu
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup, types, registry = null, pinned = null, readOnly = false }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup, types, registry = null, readOnly = false }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   // Row drag between sections (5C, GRO-2143); disabled without groups, and in read-only embeds.
   const dnd = useGroupDrag(groups === null || readOnly ? null : groupByKey(view), onMoveToGroup)
@@ -82,12 +81,19 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   // memoised so scroll/drag re-renders skip the per-column row walk (7B, GRO-2148)
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
   const bares = useMemo(() => keys.map((k) => (canonicalKey(k).startsWith('note.') ? canonicalKey(k).slice(5) : null)), [keys])
-  const typings = useMemo(() => keys.map((k) => columnTyping(k, rowRecords, types, registry, pinned)), [keys, rowRecords, types, registry, pinned])
+  const typings = useMemo(() => keys.map((k) => columnTyping(k, rowRecords, types, registry)), [keys, rowRecords, types, registry])
   const basenames = useMemo(() => records.map((r) => r.basename), [records])
-  // Relation columns (5E, GRO-2217) narrow the link picker to target-type pages; null = all basenames.
+  // Relation columns narrow the link picker to the pages of the folder page the target names
+  // (YAZ-836: `belongsToBasenames` succeeded the type-keyed helper); a target naming no folder
+  // page falls back to all basenames. The resolver is THE shared one, memoized
+  // per records identity (`resolverFor`), adapted to `ResolveLink` as WikilinkIndexBridge does.
+  const resolve = useMemo(() => {
+    const resolver = resolverFor(records)
+    return (target: string) => resolver(target)?.record.path ?? null
+  }, [records])
   const linkNames = useMemo(
-    () => typings.map((t) => (t?.target !== undefined ? relationBasenames(records, t.target) : null)),
-    [typings, records],
+    () => typings.map((t) => (t?.target !== undefined ? belongsToBasenames(records, resolve, t.target) : null)),
+    [typings, records, resolve],
   )
   const rowH = ROW_HEIGHTS[view.rowHeight ?? ''] ?? ROW_HEIGHTS.short
   const widthOf = (key: string) => (drag?.key === key ? drag.width : view.columnSize?.[key] ?? DEFAULT_WIDTH)

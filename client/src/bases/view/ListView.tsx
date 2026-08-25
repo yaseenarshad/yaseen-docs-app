@@ -1,10 +1,10 @@
 import { useMemo } from 'react'
 import type { IndexRecord, RegistryResponse } from '@shared/types'
 import type { BaseDefinition, BaseView } from '../baseFile'
-import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
+import { belongsToBasenames } from '../../links/folderPages'
+import { type Group, type Row, propertyKeys, propertyLabel, resolverFor } from '../engine'
 import { render } from '../expr'
 import { cellEditor, columnTyping } from '../editorType'
-import { relationBasenames } from '../relation'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './filterRows'
 import { GroupHeader, cellContent, groupKeyOf } from './GroupHeader'
@@ -27,9 +27,8 @@ export interface ListViewProps {
   readOnly?: boolean
   /** Assigned property types from `.obsidian/types.json`, for editor inference (5B, GRO-2142). */
   types?: Record<string, string>
-  /** The vault's type registry + the view's pinned type (5E, GRO-2217): rank 1–2 of editor inference, and relation targets. */
+  /** The vault's registry (5E, GRO-2217): vault-wide editor inference and relation targets. */
   registry?: RegistryResponse | null
-  pinned?: string | null
 }
 
 export type MarkerStyle = 'bullet' | 'number' | 'none'
@@ -57,7 +56,7 @@ const separatorOf = (view: BaseView): string => (typeof view.propertySeparator =
  * (when not file.name) and the indented property rows edit inline through `EditableCell`
  * (5B, GRO-2142); the joined inline string stays read-only.
  */
-export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, types, registry = null, pinned = null, readOnly = false }: ListViewProps) {
+export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, types, registry = null, readOnly = false }: ListViewProps) {
   const keys = useMemo(() => propertyKeys(def, view, records), [def, view, records])
   const primary: string | undefined = keys[0]
   const rest = keys.slice(1)
@@ -70,16 +69,21 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
   const bareOf = (key: string) => (canonicalKey(key).startsWith('note.') ? canonicalKey(key).slice(5) : null)
   const typings = useMemo(
-    () => new Map(keys.map((k) => [k, columnTyping(k, rowRecords, types, registry, pinned)])),
-    [keys, rowRecords, types, registry, pinned],
+    () => new Map(keys.map((k) => [k, columnTyping(k, rowRecords, types, registry)])),
+    [keys, rowRecords, types, registry],
   )
   const basenames = useMemo(() => records.map((r) => r.basename), [records])
-  // Relation columns (5E, GRO-2217) narrow the link picker to target-type pages; missing key = all basenames.
+  // Relation columns narrow the link picker to the pages of the folder page the target names
+  // (YAZ-836: `belongsToBasenames` succeeded the type-keyed helper); missing key = all basenames.
+  const resolve = useMemo(() => {
+    const resolver = resolverFor(records)
+    return (target: string) => resolver(target)?.record.path ?? null
+  }, [records])
   const linkNames = useMemo(() => {
     const m = new Map<string, string[]>()
-    for (const [key, t] of typings) if (t?.target !== undefined) m.set(key, relationBasenames(records, t.target))
+    for (const [key, t] of typings) if (t?.target !== undefined) m.set(key, belongsToBasenames(records, resolve, t.target))
     return m
-  }, [typings, records])
+  }, [typings, records, resolve])
   const editable = (row: Row, key: string) => {
     const bare = bareOf(key)
     if (bare === null || readOnly) return cellContent(row.values[key])

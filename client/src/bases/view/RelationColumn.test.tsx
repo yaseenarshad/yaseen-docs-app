@@ -1,10 +1,12 @@
 /**
- * Relation columns end to end (5E, GRO-2217; contract GRO-2120 comment 73479ea3 §4–§5):
- * the Properties menu's relation editor saves `{kind, target}` through `registry.setProperty`
- * to the pinned type's schema (or vault properties, with the destination labelled either way);
- * the cell's link picker narrows to target-type basenames (unregistered target → all pages);
- * multi-link is the chips editor with the same constrained suggestions committing a list of
- * `[[…]]` strings — values keep going through `writeProperty`, one direction only.
+ * Relation columns end to end (5E, GRO-2217; contract GRO-2120 comment 73479ea3 §4–§5), after
+ * YAZ-836 deleted the type system: the Properties menu's relation editor saves `{kind, target}`
+ * through `registry.setProperty` to the VAULT properties — always, whatever the view filters on,
+ * and with no type-name suggestions behind the target field; the cell's link picker narrows to
+ * the pages of the FOLDER PAGE the target names (`belongsToBasenames`, successor to the deleted
+ * type-keyed helper), falling back to all pages when it names none; multi-link is the chips
+ * editor with the same constrained suggestions committing a list of `[[…]]` strings — values
+ * keep going through `writeProperty`, one direction only.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -43,31 +45,43 @@ const rec = (path: string, properties: Record<string, unknown>): IndexRecord => 
 const REVENUE = '/vault/KPIs/Revenue.md'
 const CHURN = '/vault/KPIs/Churn.md'
 
+/**
+ * Two folder pages (`People`, `Funnels`) with members naming them, plus the two KPI rows the
+ * table shows. `page_type` rides along as ORDINARY frontmatter — it is what `KPI_BASE` filters
+ * on, and nothing in the client reads it as an identity any more (YAZ-836).
+ */
 const RECORDS: IndexRecord[] = [
   rec(REVENUE, { page_type: 'kpi', owner: '[[Alice]]' }),
   rec(CHURN, { page_type: 'kpi' }),
-  rec('/vault/Funnels/Signup.md', { page_type: 'funnel' }),
-  rec('/vault/Funnels/Retention.md', { page_type: 'funnel' }),
-  rec('/vault/People/Alice.md', { page_type: 'person' }),
-  rec('/vault/People/Bob.md', { page_type: 'person' }),
+  rec('/vault/People.md', { folder_page: true }),
+  rec('/vault/Funnels.md', { folder_page: true }),
+  rec('/vault/Funnels/Signup.md', { folder_pages: ['[[Funnels]]'] }),
+  rec('/vault/Funnels/Retention.md', { folder_pages: ['[[Funnels]]'] }),
+  rec('/vault/People/Alice.md', { folder_pages: ['[[People]]'] }),
+  rec('/vault/People/Bob.md', { folder_pages: ['[[People]]'] }),
 ]
 
+/** Every basename, in record order — what an unnarrowed picker offers. */
+const ALL_NAMES = ['Revenue', 'Churn', 'People', 'Funnels', 'Signup', 'Retention', 'Alice', 'Bob']
+
 const ORDER = '    order:\n      - file.name\n      - note.owner\n      - note.funnels\n'
-const PINNED_BASE = `filters: page_type == "kpi"\nviews:\n  - type: table\n    name: T\n${ORDER}`
-const UNPINNED_BASE = `views:\n  - type: table\n    name: T\n${ORDER}`
+const KPI_BASE = `filters: page_type == "kpi"\nviews:\n  - type: table\n    name: T\n${ORDER}`
+const UNFILTERED_BASE = `views:\n  - type: table\n    name: T\n${ORDER}`
 
 const EMPTY_REG: RegistryResponse = { root: '/vault', version: 0, types: {}, properties: {} }
 
-/** A registry declaring `owner` (link→person) on the kpi type and `funnels` (multi-link→funnel) vault-wide. */
+/**
+ * A registry declaring both relations VAULT-WIDE — the only scope left — targeting folder pages.
+ * `types` stays empty: a type schema is never read (3A reshapes the response itself).
+ */
 const REG: RegistryResponse = {
   root: '/vault',
   version: 1,
-  types: {
-    kpi: { properties: { owner: { kind: 'link', target: 'person' } } },
-    funnel: { properties: {} },
-    person: { properties: {} },
+  types: {},
+  properties: {
+    owner: { kind: 'link', target: 'People' },
+    funnels: { kind: 'multi-link', target: 'Funnels' },
   },
-  properties: { funnels: { kind: 'multi-link', target: 'funnel' } },
 }
 
 let root: Root | null = null
@@ -167,53 +181,53 @@ function openRelation(el: ParentNode, key: string) {
 // ---------- tests ----------
 
 describe('column menu relation flow', () => {
-  it('pinned view: saving writes {kind: link, target} to the type schema and labels the destination', async () => {
-    const { el } = mount(PINNED_BASE)
+  it('a filtered view saves to the VAULT properties — the per-type scope is gone (YAZ-836)', async () => {
+    const { el } = mount(KPI_BASE)
     openRelation(el, 'owner')
-    expect(el.textContent).toContain('Saved to kpi schema')
-    setValue(byLabel<HTMLInputElement>(el, 'Target type'), 'person')
-    click(byLabel(el, 'Save relation'))
-    await flush()
-    const res = await registryStub.get('/vault')
-    expect(res.types.kpi.properties.owner).toEqual({ kind: 'link', target: 'person' })
-    expect(res.properties).toEqual({})
-  })
-
-  it('unpinned view: Multiple → multi-link, saved to vault properties and labelled so', async () => {
-    const { el } = mount(UNPINNED_BASE)
-    openRelation(el, 'funnels')
     expect(el.textContent).toContain('Saved to vault properties')
-    click(byLabel(el, 'Multiple'))
-    setValue(byLabel<HTMLInputElement>(el, 'Target type'), 'funnel')
+    setValue(byLabel<HTMLInputElement>(el, 'Target type'), 'People')
     click(byLabel(el, 'Save relation'))
     await flush()
     const res = await registryStub.get('/vault')
-    expect(res.properties.funnels).toEqual({ kind: 'multi-link', target: 'funnel' })
+    expect(res.properties.owner).toEqual({ kind: 'link', target: 'People' })
     expect(res.types).toEqual({})
   })
 
-  it('the target picker offers the registry type names; free text stays legal (no options needed)', () => {
-    const { el } = mount(PINNED_BASE, { registry: REG })
+  it('Multiple → multi-link, saved to vault properties and labelled so', async () => {
+    const { el } = mount(UNFILTERED_BASE)
+    openRelation(el, 'funnels')
+    expect(el.textContent).toContain('Saved to vault properties')
+    click(byLabel(el, 'Multiple'))
+    setValue(byLabel<HTMLInputElement>(el, 'Target type'), 'Funnels')
+    click(byLabel(el, 'Save relation'))
+    await flush()
+    const res = await registryStub.get('/vault')
+    expect(res.properties.funnels).toEqual({ kind: 'multi-link', target: 'Funnels' })
+    expect(res.types).toEqual({})
+  })
+
+  it('the target is free text with no suggestion list — the type-name datalist died with the types', () => {
+    const { el } = mount(KPI_BASE, { registry: REG })
     openRelation(el, 'owner')
-    const names = [...el.querySelectorAll('datalist option')].map((o) => o.getAttribute('value'))
-    expect(names).toEqual(['kpi', 'funnel', 'person'])
+    expect(el.querySelector('datalist')).toBeNull()
+    expect(byLabel<HTMLInputElement>(el, 'Target type').getAttribute('list')).toBeNull()
   })
 
   it('an existing declaration pre-fills the toggle and target', () => {
-    const { el } = mount(PINNED_BASE, { registry: REG })
-    openRelation(el, 'funnels') // vault-wide multi-link → funnel
+    const { el } = mount(KPI_BASE, { registry: REG })
+    openRelation(el, 'funnels') // vault-wide multi-link → the Funnels folder page
     expect(byLabel<HTMLInputElement>(el, 'Multiple').checked).toBe(true)
-    expect(byLabel<HTMLInputElement>(el, 'Target type').value).toBe('funnel')
+    expect(byLabel<HTMLInputElement>(el, 'Target type').value).toBe('Funnels')
   })
 
   it('without a known root there is no relation editor to offer', () => {
-    const { el } = mount(PINNED_BASE, { root: null })
+    const { el } = mount(KPI_BASE, { root: null })
     click(byLabel(el, 'Properties'))
     expect(el.querySelector('[aria-label="Relation for owner"]')).toBeNull()
   })
 
   it('file.* rows never offer a relation; note.* rows do', () => {
-    const { el } = mount(PINNED_BASE)
+    const { el } = mount(KPI_BASE)
     click(byLabel(el, 'Properties'))
     expect(el.querySelector('[aria-label^="Relation for file."]')).toBeNull()
     expect(el.querySelector('[aria-label="Relation for owner"]')).not.toBeNull()
@@ -221,36 +235,35 @@ describe('column menu relation flow', () => {
 })
 
 describe('constrained picker', () => {
-  it('the link editor offers only target-type basenames and commits the wiki-link through writeProperty', () => {
-    const { el } = mount(PINNED_BASE, { registry: REG })
+  it('the link editor offers the target folder page\'s pages and commits the wiki-link through writeProperty', () => {
+    const { el } = mount(KPI_BASE, { registry: REG })
     open(el, 1, 1) // Churn's empty owner cell — typed link by the registry alone
     const input = byLabel<HTMLInputElement>(el, 'Edit owner')
     setValue(input, '[[')
-    expect(options(el)).toEqual(['Alice', 'Bob'])
+    expect(options(el)).toEqual(['Alice', 'Bob']) // the pages inside [[People]]
     click(q(el, '[role="option"]'))
     press(byLabel(el, 'Edit owner'), 'Enter')
     expect(write).toHaveBeenCalledExactlyOnceWith(CHURN, 'owner', '[[Alice]]')
   })
 
-  it('a target no page carries falls back to ALL basenames — never an error', () => {
-    const ghost: RegistryResponse = {
-      ...REG,
-      types: { kpi: { properties: { owner: { kind: 'link', target: 'ghost' } } } },
-    }
-    const { el } = mount(PINNED_BASE, { registry: ghost })
+  it('a target naming no folder page falls back to ALL basenames — never an error', () => {
+    // This is also the mid-wave degradation: targets still spelled as old TYPE names name no
+    // folder page, so their columns widen to every page until 5.1 re-points them.
+    const ghost: RegistryResponse = { ...REG, properties: { owner: { kind: 'link', target: 'person' } } }
+    const { el } = mount(KPI_BASE, { registry: ghost })
     open(el, 1, 1)
     setValue(byLabel<HTMLInputElement>(el, 'Edit owner'), '[[')
-    expect(options(el)).toEqual(['Revenue', 'Churn', 'Signup', 'Retention', 'Alice', 'Bob'])
+    expect(options(el)).toEqual(ALL_NAMES)
   })
 })
 
 describe('multi-link cells', () => {
   it('the chips editor completes constrained suggestions and commits a LIST of [[…]] strings', () => {
-    const { el } = mount(PINNED_BASE, { registry: REG })
+    const { el } = mount(KPI_BASE, { registry: REG })
     open(el, 0, 2) // Revenue's empty funnels cell — multi-link vault-wide
     const input = byLabel<HTMLInputElement>(el, 'Edit funnels')
     setValue(input, '[[')
-    expect(options(el)).toEqual(['Signup', 'Retention'])
+    expect(options(el)).toEqual(['Retention', 'Signup']) // the pages inside [[Funnels]], path-sorted
     setValue(byLabel<HTMLInputElement>(el, 'Edit funnels'), '[[Sig')
     press(byLabel(el, 'Edit funnels'), 'Enter') // completes to [[Signup]]
     expect(byLabel<HTMLInputElement>(el, 'Edit funnels').value).toBe('[[Signup]]')
@@ -260,7 +273,7 @@ describe('multi-link cells', () => {
   })
 
   it('Esc cancels without a write', () => {
-    const { el } = mount(PINNED_BASE, { registry: REG })
+    const { el } = mount(KPI_BASE, { registry: REG })
     open(el, 0, 2)
     press(byLabel(el, 'Edit funnels'), 'Escape')
     expect(write).not.toHaveBeenCalled()
@@ -269,14 +282,14 @@ describe('multi-link cells', () => {
 
 describe('round trip and degradation', () => {
   it('a relation value renders as a link chip, like any wiki-link property today', () => {
-    const { el } = mount(PINNED_BASE, { registry: REG })
+    const { el } = mount(KPI_BASE, { registry: REG })
     const chip = q<HTMLElement>(cell(el, 0, 1), '.base-table__chip--link')
     expect(chip.textContent).toBe('Alice')
   })
 
   it('a registry error string surfaces as an alert while typing degrades to inference', () => {
     const broken: RegistryResponse = { root: '/vault', version: 0, types: {}, properties: {}, error: 'types.json: bad JSON' }
-    const { el } = mount(PINNED_BASE, { registry: broken })
+    const { el } = mount(KPI_BASE, { registry: broken })
     expect([...el.querySelectorAll('[role="alert"]')].some((n) => n.textContent?.includes('types.json: bad JSON'))).toBe(true)
     open(el, 0, 1) // owner: [[Alice]] — value inference still gives the link editor
     expect(byLabel<HTMLInputElement>(el, 'Edit owner').value).toBe('[[Alice]]')

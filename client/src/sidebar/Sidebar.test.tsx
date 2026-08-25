@@ -29,12 +29,6 @@ function installBridge() {
     window: { open: vi.fn(async () => undefined) },
     // Reveal in Finder (GRO-2274) goes through the shell namespace.
     shell: { reveal: vi.fn(async ({ path }: { path: string }) => ({ path })) },
-    // Empty registry (GRO-2202; Round 10 Q4, GRO-2226): the sidebar reads it for "New ▸",
-    // which is always present — empty collapses it to the single "New type…" item.
-    registry: {
-      get: vi.fn(async (root: string) => ({ root, version: 1, types: {}, properties: {} })),
-      onChange: vi.fn(() => () => undefined),
-    },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return bridge
@@ -744,7 +738,6 @@ describe('context menu order (GRO-2272 C1a)', () => {
       'Reveal in Finder',
       'Copy path',
       'Copy link',
-      'New',
       'New note',
       'New base',
       'New folder',

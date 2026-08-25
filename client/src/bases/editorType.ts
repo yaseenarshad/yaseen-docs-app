@@ -3,13 +3,13 @@ import { canonicalKey } from './view/filterRows'
 
 /**
  * Editor type inference for inline cell editors (5B, GRO-2142). Locked precedence, as amended
- * by the 5E relation contract (GRO-2120 comment 1f28abb4 §5): a registry declaration on the
- * view's pinned type wins, then a vault-wide registry declaration, then an explicit
- * `.obsidian/types.json` assignment (an imported artifact ranks below the vault's own schema);
- * otherwise the note's own YAML value decides; a note without the key borrows the dominant
- * value type across the view's records; text is the final fallback. `file.*` and `formula.*`
- * never get an editor. The per-column halves are computed once per render via `columnTyping`;
- * `cellEditor` adds the per-note value on top.
+ * by the 5E relation contract (GRO-2120 comment 1f28abb4 §5) and narrowed by YAZ-836 (the
+ * type-scoped rung that used to sit above it died with the type system): a vault-wide registry
+ * declaration wins, then an explicit `.obsidian/types.json` assignment (an imported artifact
+ * ranks below the vault's own schema); otherwise the note's own YAML value decides; a note
+ * without the key borrows the dominant value type across the view's records; text is the final
+ * fallback. `file.*` and `formula.*` never get an editor. The per-column halves are computed
+ * once per render via `columnTyping`; `cellEditor` adds the per-note value on top.
  */
 
 export type EditorKind = 'text' | 'number' | 'checkbox' | 'date' | 'list' | 'link' | 'multi-link'
@@ -72,22 +72,20 @@ const REGISTRY_KIND: Record<RegistryPropertyKind, EditorKind> = {
 }
 
 /**
- * The column-wide typing facts for `key` over the view's records, the registry (5E) and the
- * assigned `.obsidian/types.json` types. `pinned` is the view's pinned type (`pinnedType`);
- * only then do type-scoped registry declarations apply.
+ * The column-wide typing facts for `key` over the view's records, the registry's vault-wide
+ * properties (5E) and the assigned `.obsidian/types.json` types.
  */
 export function columnTyping(
   key: string,
   records: readonly IndexRecord[],
   types: Record<string, string> | undefined,
   registry?: RegistryResponse | null,
-  pinned?: string | null,
 ): ColumnTyping {
   const c = canonicalKey(key)
   if (!c.startsWith('note.')) return null
   const bare = c.slice(5)
   const dominant = dominantKind(records, bare)
-  const declared = (pinned != null ? registry?.types[pinned]?.properties[bare] : undefined) ?? registry?.properties[bare]
+  const declared = registry?.properties[bare]
   if (declared !== undefined) return { assigned: REGISTRY_KIND[declared.kind], dominant, target: declared.target }
   const name = types?.[bare]
   return { assigned: (name !== undefined ? ASSIGNED[name] : undefined) ?? null, dominant }

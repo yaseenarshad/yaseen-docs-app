@@ -9,8 +9,6 @@ export interface PendingCreate {
   kind: EntryKind
   /** Absolute path of the directory the entry is created in. */
   parentDir: string
-  /** "New KPI" for a typed create (Bible B, GRO-2202); absent → the kind placeholder. */
-  placeholder?: string
   onSubmit: (name: string) => Promise<void>
   onCancel: () => void
 }
@@ -96,7 +94,6 @@ export function Tree({
           <CreateInline
             kind={pending.kind}
             indent={8 + depth * 14 + (pending.kind === 'dir' ? 0 : 14)}
-            placeholder={pending.placeholder}
             onSubmit={pending.onSubmit}
             onCancel={pending.onCancel}
           />

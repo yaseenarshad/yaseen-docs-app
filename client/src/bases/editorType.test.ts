@@ -91,36 +91,31 @@ describe('columnTyping + cellEditor', () => {
   })
 })
 
-describe('registry precedence (5E, GRO-2217 — locked amendment on GRO-2120)', () => {
+describe('registry precedence (5E, GRO-2217 — locked amendment on GRO-2120; type rung deleted by YAZ-836)', () => {
   const REG: RegistryResponse = {
     root: '/vault',
     version: 1,
+    // The per-type schemas are still in the response shape (3A reshapes it) — and are never read.
     types: { kpi: { properties: { x: { kind: 'number' }, owner: { kind: 'link', target: 'person' } } } },
-    properties: { x: { kind: 'date' }, funnels: { kind: 'multi-link', target: 'funnel' } },
+    properties: { x: { kind: 'date' }, owner: { kind: 'link', target: 'person' }, funnels: { kind: 'multi-link', target: 'funnel' } },
   }
   const recs = [record({ x: 'plain', owner: 7, funnels: 'plain' })]
 
-  it("the pinned type's declaration beats the vault-wide one, which beats .obsidian/types.json", () => {
-    expect(columnTyping('x', recs, { x: 'text' }, REG, 'kpi')?.assigned).toBe('number')
-    expect(columnTyping('x', recs, { x: 'text' }, REG, null)?.assigned).toBe('date')
-    expect(columnTyping('x', recs, { x: 'text' }, undefined, null)?.assigned).toBe('text')
+  it('the vault-wide declaration beats .obsidian/types.json, which beats the value', () => {
+    expect(columnTyping('x', recs, { x: 'text' }, REG)?.assigned).toBe('date')
+    expect(columnTyping('x', recs, { x: 'text' }, undefined)?.assigned).toBe('text')
   })
 
-  it('a pinned type silent on the key falls through to the vault-wide declaration', () => {
-    const col = columnTyping('funnels', recs, undefined, REG, 'kpi')
-    expect(col?.assigned).toBe('multi-link')
-    expect(col?.target).toBe('funnel')
-  })
-
-  it('an unpinned view never reads type-scoped declarations', () => {
-    const col = columnTyping('owner', recs, undefined, REG, null)
+  it('a type-scoped declaration is never read — only the vault-wide one exists (YAZ-836)', () => {
+    const typesOnly: RegistryResponse = { ...REG, properties: {} }
+    const col = columnTyping('owner', recs, undefined, typesOnly)
     expect(col?.assigned).toBeNull()
     expect(col?.target).toBeUndefined()
     expect(cellEditor(7, col)).toBe('number') // the note's own value decides, as before
   })
 
   it('registry declarations beat the value and carry the target onto the column', () => {
-    const col = columnTyping('owner', recs, undefined, REG, 'kpi')
+    const col = columnTyping('owner', recs, undefined, REG)
     expect(col?.assigned).toBe('link')
     expect(col?.target).toBe('person')
     expect(cellEditor(7, col)).toBe('link')
@@ -128,12 +123,12 @@ describe('registry precedence (5E, GRO-2217 — locked amendment on GRO-2120)', 
   })
 
   it("multi-link maps onto the chips editor kind 'multi-link'", () => {
-    expect(cellEditor(undefined, columnTyping('funnels', recs, undefined, REG, null))).toBe('multi-link')
+    expect(cellEditor(undefined, columnTyping('funnels', recs, undefined, REG))).toBe('multi-link')
   })
 
   it('an empty (or absent) registry changes nothing below rank 3', () => {
     const empty: RegistryResponse = { root: '/vault', version: 0, types: {}, properties: {} }
-    expect(columnTyping('x', recs, { x: 'text' }, empty, 'kpi')?.assigned).toBe('text')
-    expect(cellEditor('plain', columnTyping('x', recs, undefined, empty, null))).toBe('text')
+    expect(columnTyping('x', recs, { x: 'text' }, empty)?.assigned).toBe('text')
+    expect(cellEditor('plain', columnTyping('x', recs, undefined, empty))).toBe('text')
   })
 })

@@ -1,9 +1,8 @@
 /**
  * Context-menu viewport clamping (GRO-2204): the menu renders at the cursor but never spills
- * off screen — right/bottom overflow clamps the position; the "New ▸" submenu (Bible B,
- * GRO-2202) flips to the menu's left when it would overflow the right edge and slides up when
- * it would overflow the bottom. Sizes come from mocked `getBoundingClientRect` (jsdom has no
- * layout); the jsdom viewport is 1024×768.
+ * off screen — right/bottom overflow clamps the position. Sizes come from mocked
+ * `getBoundingClientRect` (jsdom has no layout); the jsdom viewport is 1024×768.
+ * (The "New ▸" submenu that used to clamp alongside it died with the type system, YAZ-836.)
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -58,9 +57,6 @@ function mount(x: number, y: number, over: Partial<MenuProps> = {}) {
     onDelete: vi.fn(),
     revealPath: null,
     onReveal: vi.fn(),
-    newTypes: [{ name: 'kpi', label: 'KPI' }],
-    onNewTyped: vi.fn(),
-    onNewType: vi.fn(),
     onNewNote: vi.fn(),
     onNewBase: vi.fn(),
     onNewFolder: vi.fn(),
@@ -77,15 +73,6 @@ const menu = (el: HTMLElement): HTMLElement => {
   return m
 }
 
-const openSub = (el: HTMLElement): HTMLElement => {
-  const trigger = [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent?.startsWith('New') && b.classList.contains('ctx-menu__item--sub'))
-  if (trigger === undefined) throw new Error('missing submenu trigger')
-  act(() => trigger.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-  const sub = el.querySelector<HTMLElement>('.ctx-submenu')
-  if (sub === null) throw new Error('missing submenu')
-  return sub
-}
-
 describe('menu clamping', () => {
   it('renders at the requested position when it fits', () => {
     boxes = { 'ctx-menu': { width: 160, height: 180 } }
@@ -100,26 +87,10 @@ describe('menu clamping', () => {
     expect(menu(el).style.left).toBe('864px') // 1024 - 160
     expect(menu(el).style.top).toBe('588px') // 768 - 180
   })
-})
 
-describe('submenu clamping', () => {
-  it('opens to the right with no flip or shift when there is room', () => {
-    boxes = { 'ctx-menu__group': { left: 100, top: 100, width: 152 }, 'ctx-submenu': { width: 150, height: 60 } }
-    const sub = openSub(mount(100, 100))
-    expect(sub.classList.contains('ctx-submenu--left')).toBe(false)
-    expect(sub.style.top).toBe('')
-  })
-
-  it('flips to the left of the menu when it would overflow the right edge', () => {
-    boxes = { 'ctx-menu__group': { left: 864, top: 100, width: 152 }, 'ctx-submenu': { width: 150, height: 60 } }
-    const sub = openSub(mount(864, 100))
-    expect(sub.classList.contains('ctx-submenu--left')).toBe(true)
-  })
-
-  it('slides up when it would overflow the bottom edge', () => {
-    boxes = { 'ctx-menu__group': { left: 100, top: 700, width: 152 }, 'ctx-submenu': { width: 150, height: 120 } }
-    const sub = openSub(mount(100, 700))
-    // Desired top 695 (group top - 5) + height 120 overflows 768 by 47 → slides up to -52.
-    expect(sub.style.top).toBe('-52px')
+  it('offers no submenu at all — the menu is one flat list of items (YAZ-836)', () => {
+    const el = mount(100, 120)
+    expect(el.querySelector('.ctx-submenu')).toBeNull()
+    expect(el.querySelector('.ctx-menu__item--sub')).toBeNull()
   })
 })

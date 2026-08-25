@@ -6,9 +6,9 @@
  * here: that is `folder_page`, read through `links/folderPages.ts` `isFolderPage`.
  *
  * TOLERANT PARSING (locked): this never throws and never blocks. Every bad shape becomes a
- * one-line `problem` plus a safe default, so a hand-edited page always renders — the
- * report-don't-block rule `usableFolder` already follows (`bases/scaffold.ts`). A flagged page
- * with no settings key at all is exactly that, with zero problems.
+ * one-line `problem` plus a safe default, so a hand-edited page always renders — the same
+ * report-don't-block rule the deleted type registry followed for its own stored folder. A
+ * flagged page with no settings key at all is exactly that, with zero problems.
  */
 import { REGISTRY_FOLDER, REGISTRY_PROPERTY_KINDS, type IndexRecord, type RegistryPropertyKind } from '@shared/types'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
@@ -97,7 +97,7 @@ function readViews(raw: unknown, problems: string[]): BaseView[] {
   return views.length > 0 ? views : defaultViews()
 }
 
-/** The registry's grammar and the registry's rule: unusable at rest reads as absent (`usableFolder`). */
+/** The registry's grammar and the registry's rule: unusable at rest reads as absent. */
 function readFolder(raw: unknown, problems: string[]): string | undefined {
   if (raw === undefined) return undefined
   if (typeof raw === 'string' && REGISTRY_FOLDER.test(raw)) return raw

@@ -21,8 +21,12 @@
 import type { IndexRecord } from '@shared/types'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 
-/** The note's parents, and the flag that makes a page a folder page. */
-const ENTRIES_KEY = 'folder_pages'
+/**
+ * The note's parents, and the flag that makes a page a folder page. `FOLDER_PAGES_KEY` is
+ * exported because the scaffold writes the very key this lookup reads back (`bases/scaffold.ts`
+ * `newPageFromFolderPage`): ONE source of truth, never a second local const (YAZ-836).
+ */
+export const FOLDER_PAGES_KEY = 'folder_pages'
 const FLAG_KEY = 'folder_page'
 
 /** Exactly a wikilink, nothing around it — the index's frontmatter-link rule (`scan.ts`). */
@@ -45,7 +49,7 @@ export interface FolderPagesLookup {
 
 /** The folder pages one record's `folder_pages` counts for: the click rule, de-duplicated. */
 function parentsOf(record: IndexRecord, flagged: ReadonlySet<string>, resolve: ResolveLink): string[] {
-  const raw = record.properties[ENTRIES_KEY]
+  const raw = record.properties[FOLDER_PAGES_KEY]
   // Scalar-or-list, the indexer's own tolerance (`extractLinks`, scan.ts): a bare
   // `folder_pages: "[[X]]"` is one entry, not nothing. Mappings still declare nothing.
   const entries = Array.isArray(raw) ? raw : [raw]
@@ -115,9 +119,10 @@ export function folderPagesLookup(records: readonly IndexRecord[], resolve: Reso
 /**
  * Picker candidates for a belongs-to column (🔒 Q2, YAZ-815): the pages in the folder page
  * `target` names — resolved like a click — falling back to ALL basenames when the target is
- * unresolved or holds nobody. Report-don't-block, `relationBasenames`' own rule: the picker
- * narrows when it can and never goes empty. Successor to the `page_type`-keyed
- * `bases/relation.ts` `relationBasenames` (which 3- deletes).
+ * unresolved or holds nobody. Report-don't-block, the picker narrows when it can and never goes
+ * empty. THE successor to the type-keyed picker helper YAZ-836 deleted with `bases/relation.ts`:
+ * the table / list / cards views call this instead. Mid-wave their stored targets still spell old
+ * type names, so those columns fall back to all pages until 5.1 re-points them at folder pages.
  */
 export function belongsToBasenames(records: readonly IndexRecord[], resolve: ResolveLink, target: string): string[] {
   const home = resolve(target)

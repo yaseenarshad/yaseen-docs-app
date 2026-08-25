@@ -2,9 +2,9 @@ import { type CSSProperties, useEffect, useMemo, useState } from 'react'
 import type { IndexRecord, RegistryResponse } from '@shared/types'
 import { api } from '../../api'
 import type { BaseDefinition, BaseView } from '../baseFile'
-import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
+import { belongsToBasenames } from '../../links/folderPages'
+import { type Group, type Row, propertyKeys, propertyLabel, resolverFor } from '../engine'
 import { render } from '../expr'
-import { relationBasenames } from '../relation'
 import { cellEditor, columnTyping } from '../editorType'
 import { cardWidth } from './cardWidth'
 import { EditableCell } from './EditableCell'
@@ -31,9 +31,8 @@ export interface CardsViewProps {
   readOnly?: boolean
   /** Assigned property types from `.obsidian/types.json`, for editor inference (5B, GRO-2142). */
   types?: Record<string, string>
-  /** The vault's type registry + the view's pinned type (5E, GRO-2217): rank 1–2 of editor inference, and relation targets. */
+  /** The vault's registry (5E, GRO-2217): vault-wide editor inference and relation targets. */
   registry?: RegistryResponse | null
-  pinned?: string | null
 }
 
 // ---------- covers ----------
@@ -119,7 +118,7 @@ function CardCover({ root, cover }: { root: string | null; cover: Cover }) {
  * `.base` file); search narrows cards and drops empty groups. Note-property rows edit inline
  * through `EditableCell` (5B, GRO-2142); a lightbox stays out of scope.
  */
-export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, types, registry = null, pinned = null, readOnly = false }: CardsViewProps) {
+export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, types, registry = null, readOnly = false }: CardsViewProps) {
   const keys = useMemo(() => propertyKeys(def, view, records), [def, view, records])
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const rest = useMemo(() => keys.filter((k) => k !== nameKey), [keys, nameKey])
@@ -131,16 +130,21 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
     [rest],
   )
   const typings = useMemo(
-    () => new Map(rest.map((k) => [k, columnTyping(k, rowRecords, types, registry, pinned)])),
-    [rest, rowRecords, types, registry, pinned],
+    () => new Map(rest.map((k) => [k, columnTyping(k, rowRecords, types, registry)])),
+    [rest, rowRecords, types, registry],
   )
   const basenames = useMemo(() => records.map((r) => r.basename), [records])
-  // Relation columns (5E, GRO-2217) narrow the link picker to target-type pages; missing key = all basenames.
+  // Relation columns narrow the link picker to the pages of the folder page the target names
+  // (YAZ-836: `belongsToBasenames` succeeded the type-keyed helper); missing key = all basenames.
+  const resolve = useMemo(() => {
+    const resolver = resolverFor(records)
+    return (target: string) => resolver(target)?.record.path ?? null
+  }, [records])
   const linkNames = useMemo(() => {
     const m = new Map<string, string[]>()
-    for (const [key, t] of typings) if (t?.target !== undefined) m.set(key, relationBasenames(records, t.target))
+    for (const [key, t] of typings) if (t?.target !== undefined) m.set(key, belongsToBasenames(records, resolve, t.target))
     return m
-  }, [typings, records])
+  }, [typings, records, resolve])
   const imageKey = typeof view.image === 'string' && view.image.trim() !== '' ? view.image : null
   const ratio = Number(view.imageAspectRatio)
   const style = {

@@ -32,9 +32,8 @@ export interface ToolbarProps {
   collapsed: readonly string[]
   onSetAllGroups: (next: readonly string[]) => void
   tabs: ViewTabsProps
-  /** Relation columns (5E, GRO-2217): vault root, the view's pinned type and the registry, for the Properties menu. */
+  /** Relation columns (5E, GRO-2217): the vault root and the registry, for the Properties menu. */
   root?: string | null
-  pinned?: string | null
   registry?: RegistryResponse | null
 }
 
@@ -43,7 +42,7 @@ export const countLabel = (shown: number, total: number): string =>
   shown === total ? `${total} item${total === 1 ? '' : 's'}` : `${shown} / ${total} items`
 
 /** View chrome (GRO-2135): tabs on the left; Filter / Sort / Properties / Search buttons and the count on the right. */
-export function Toolbar({ def, view, viewIndex, records, errors, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, root = null, pinned = null, registry = null }: ToolbarProps) {
+export function Toolbar({ def, view, viewIndex, records, errors, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, root = null, registry = null }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
   const close = useCallback(() => setOpen(null), [])
   const filters = countRules(def.filters) + countRules(view.filters)
@@ -107,7 +106,7 @@ export function Toolbar({ def, view, viewIndex, records, errors, shown, total, s
           'Properties',
           <PropertiesIcon />,
           0,
-          <PropertiesMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} root={root} pinned={pinned} registry={registry} />,
+          <PropertiesMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} root={root} registry={registry} />,
         )}
         <div className="base-toolbar__search">
           <button

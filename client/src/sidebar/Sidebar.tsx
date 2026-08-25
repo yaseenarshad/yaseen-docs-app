@@ -1,9 +1,6 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import type { SettingsState, TreeNode, TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { createNewNote } from '../bases/newNote'
-import { ensureFolder, newEntityParts, typeLabel, usableFolder } from '../bases/scaffold'
-import { useRegistry } from '../bases/useRegistry'
 import { SearchIcon } from '../bases/view/icons'
 import type { WatchSource } from '../hooks/useWatch'
 import { basename } from '../lib/paths'
@@ -16,7 +13,6 @@ import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ContextMenu } from './ContextMenu'
 import { entryPath, renamedPath, targetDirFor, type EntryKind } from './createEntry'
 import { HotkeysButton } from './HotkeysPanel'
-import { NewTypeDialog } from './NewTypeDialog'
 import { SettingsCog } from './SettingsPanel'
 import { Tree, type PendingCreate, type PendingRename, type TreeFileMove } from './Tree'
 
@@ -165,9 +161,8 @@ export function Sidebar({
   const [error, setError] = useState<string | null>(null)
   const [expanded, dispatch] = useReducer(treeReducer, root, storage.getExpanded)
   const [menu, setMenu] = useState<MenuTargets | null>(null)
-  const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string; type?: string; label?: string } | null>(null)
+  const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir' } | null>(null)
-  const [newTypeOpen, setNewTypeOpen] = useState(false)
   // The delete confirm sheet's target (GRO-2272 `C3-`); null when the sheet is closed.
   const [confirmingDelete, setConfirmingDelete] = useState<DeleteTarget | null>(null)
   // File drag-to-move (E1b, GRO-2241): the dragged file row + the highlighted drop target.
@@ -189,11 +184,6 @@ export function Sidebar({
   // An index refresh can shrink the list under the keyboard's index (F1 finding 2, YAZ-808), so
   // every reader of the selection clamps: the highlight lands on the last row, not on nowhere.
   const sel = Math.min(selected, results.length - 1)
-
-  // The vault's type registry (Bible B, GRO-2202): feeds the "New ▸" submenu — always present;
-  // an empty (or unreadable) registry collapses it to "New type…" (Round 10 Q4, GRO-2226).
-  const reg = useRegistry(root).registry
-  const newTypes = useMemo(() => Object.entries(reg?.types ?? {}).map(([name, def]) => ({ name, label: typeLabel(name, def) })), [reg])
 
   const refresh = useCallback(() => {
     api.tree(root).then(
@@ -329,35 +319,9 @@ export function Sidebar({
     [menu, root],
   )
 
-  /** "New ▸ <type>" (GRO-2202): the input shows where the click was; the page may land in the registry folder. */
-  const startCreateTyped = useCallback(
-    (type: string) => {
-      if (menu === null) return
-      if (menu.targetDir !== root) dispatch({ type: 'expandTo', root, file: `${menu.targetDir}/x` })
-      setCreating({ kind: 'file', parentDir: menu.targetDir, type, label: newTypes.find((t) => t.name === type)?.label ?? type })
-      setMenu(null)
-    },
-    [menu, root, newTypes],
-  )
-
   const submitCreate = useCallback(
     async (name: string) => {
       if (creating === null) return
-      // A typed create (GRO-2202): usable registry folder ?? the right-clicked dir (an invalid
-      // stored folder is treated as absent — GRO-2226), scaffold from the registry (+ template),
-      // all in one atomic content-at-create call — ALREADY_EXISTS fails loudly.
-      if (creating.type !== undefined) {
-        const def = reg?.types[creating.type] ?? { properties: {} }
-        const folder = usableFolder(def)
-        const dir = folder === null ? creating.parentDir : await ensureFolder(root, folder)
-        const p = entryPath(dir, name, 'file')
-        const { properties, body } = await newEntityParts(root, creating.type, def)
-        await createNewNote(p, properties, body)
-        setCreating(null)
-        refresh()
-        onOpenFile(p)
-        return
-      }
       const p = entryPath(creating.parentDir, name, creating.kind)
       // Notes and bases both go through createFile; the main process seeds `.base` with a minimal view.
       if (creating.kind === 'dir') await api.createDir(p)
@@ -367,7 +331,7 @@ export function Sidebar({
       // The main pane picks the editor or the base host from the opened path's extension.
       if (creating.kind !== 'dir') onOpenFile(p)
     },
-    [creating, reg, root, refresh, onOpenFile],
+    [creating, refresh, onOpenFile],
   )
 
   const cancelCreate = useCallback(() => setCreating(null), [])
@@ -480,7 +444,6 @@ export function Sidebar({
       : {
           kind: creating.kind,
           parentDir: creating.parentDir,
-          placeholder: creating.type === undefined ? undefined : `New ${creating.label ?? creating.type}`,
           onSubmit: submitCreate,
           onCancel: cancelCreate,
         }
@@ -610,12 +573,6 @@ export function Sidebar({
           onDelete={askDelete}
           revealPath={menu.revealPath}
           onReveal={reveal}
-          newTypes={newTypes}
-          onNewTyped={startCreateTyped}
-          onNewType={() => {
-            setMenu(null)
-            setNewTypeOpen(true)
-          }}
           onNewNote={() => startCreate('file')}
           onNewBase={() => startCreate('base')}
           onNewFolder={() => startCreate('dir')}
@@ -623,7 +580,6 @@ export function Sidebar({
         />
       )}
       {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
-      {newTypeOpen && <NewTypeDialog root={root} onClose={() => setNewTypeOpen(false)} onCreated={refresh} />}
     </aside>
   )
 }
