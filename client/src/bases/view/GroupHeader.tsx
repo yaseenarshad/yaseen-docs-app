@@ -2,7 +2,7 @@ import type { BaseDefinition, BaseView } from '../baseFile'
 import { type Row, propertyLabel } from '../engine'
 import { ErrorValue, FileValue, LinkValue, type Value, render } from '../expr'
 import { summarize } from '../summaries'
-import { canonicalKey } from './filterRows'
+import { canonicalKey } from './keys'
 
 /**
  * One group's header content (4C, GRO-2137), shared by Table today and Cards / List / Board

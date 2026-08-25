@@ -2,15 +2,24 @@
  * View chrome (GRO-2135): BaseView mounted with react-dom in jsdom over `TEST_RECORDS` and
  * Yasin's base. `onChange` is a spy that swaps in the new `ParsedBase` and re-renders, so every
  * assertion can read the YAML the file would get (`serializeBase`) next to the DOM.
+ *
+ * YAZ-846: the mount is a FOLDER PAGE's contents block, because that is the only mount there is.
+ * Two consequences run through this file — the **Filter** menu is gone (a folder page's set IS
+ * the lookup, 🔒 Q3), and the tabs are SWITCH-ONLY — the editable tab half was deleted with its
+ * last reachable surface (view management is parked on YAZ-824).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { type BaseDefinition, type ParsedBase, parseBase, serializeBase } from '../baseFile'
+import { type BaseDefinition, type BaseView as BaseViewDef, type ParsedBase, parseBase, serializeBase } from '../baseFile'
 import { BaseView, type BaseViewProps } from '../BaseView'
+import { testFolderPage } from '../testFolderPage'
 import { TEST_RECORDS } from '../testRecords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+
+/** YAZ-846: `folderPage` is required — the contents block is the only mount there is. */
+const FOLDER_PAGE = testFolderPage()
 
 /** Yasin's real base (also pinned in baseFile.test.ts and engine.test.ts). */
 const YASIN_BASE = `views:
@@ -50,7 +59,7 @@ function mount(text = YASIN_BASE, props: Partial<BaseViewProps> = {}) {
           root={null}
           thisFile={null}
           records={TEST_RECORDS}
-          indexStatus="ready"
+          folderPage={FOLDER_PAGE}
           onOpenFile={onOpenFile}
           {...props}
         />,
@@ -141,141 +150,17 @@ describe('view switcher', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('"+" appends { type: table, name: Table 4 } to the YAML and activates it', () => {
-    const { el, onChange, yaml } = mount()
-    click(byLabel(el, 'Add view'))
-    expect(onChange).toHaveBeenCalledTimes(1)
-    expect(yaml()).toBe(`${YASIN_BASE}  - type: table\n    name: Table 4\n`)
-    expect(tabs(el)).toEqual(['Table', 'View', 'View 2', 'Table 4'])
-    expect(selected(el)).toBe('Table 4')
-  })
-
-  it('rename via the view menu edits only that name', () => {
-    const { el, onChange, yaml, def } = mount()
-    click(byLabel(el, 'View menu'))
-    click(byText(el, '[role="menuitem"]', 'Rename'))
+  // 🔒 rule 4 (YAZ-819), unconditional since YAZ-846: view CRUD is not this block's gesture. The
+  // four write-throughs that used to be proved here — "+", rename, duplicate, delete, move —
+  // moved down to `ViewTabs`' own mount, which is the only place its editable half is reachable.
+  it('the tabs are SWITCH-ONLY: no "+", no "…" menu, no right-click menu', () => {
+    const { el, onChange } = mount()
+    expect(el.querySelector('[aria-label="Add view"]')).toBeNull()
+    expect(el.querySelector('[aria-label="View menu"]')).toBeNull()
+    act(() => byText(el, '[role="tab"]', 'Table').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    draw()
+    expect(el.querySelector('[role="menu"]')).toBeNull()
     expect(onChange).not.toHaveBeenCalled()
-    type(byLabel(el, 'View name'), 'Main')
-    expect(onChange).toHaveBeenCalledTimes(1)
-    expect(def().views[0].name).toBe('Main')
-    expect(yaml()).toBe(YASIN_BASE.replace('name: Table\n', 'name: Main\n'))
-    expect(el.querySelector('[aria-label="View name"]')).toBeNull()
-  })
-
-  it('duplicate clones the view (config included) as "<name> copy" right after it', () => {
-    const { el, onChange, def } = mount()
-    click(byLabel(el, 'View menu'))
-    click(byText(el, '[role="menuitem"]', 'Duplicate'))
-    expect(onChange).toHaveBeenCalledTimes(1)
-    expect(tabs(el)).toEqual(['Table', 'Table copy', 'View', 'View 2'])
-    expect(selected(el)).toBe('Table copy')
-    expect(def().views[1]).toEqual({ ...def().views[0], name: 'Table copy' })
-  })
-
-  it('delete removes the view and selects its neighbour; disabled for the only view', () => {
-    const { el, onChange, yaml } = mount()
-    click(byLabel(el, 'View menu'))
-    click(byText(el, '[role="menuitem"]', 'Delete'))
-    expect(onChange).toHaveBeenCalledTimes(1)
-    expect(tabs(el)).toEqual(['View', 'View 2'])
-    expect(selected(el)).toBe('View')
-    expect(yaml()).not.toContain('name: Table\n')
-
-    const single = mount('views:\n  - type: table\n    name: Only\n')
-    click(byLabel(single.el, 'View menu'))
-    const del = byText<HTMLButtonElement>(single.el, '[role="menuitem"]', 'Delete')
-    expect(del.disabled).toBe(true)
-    click(del)
-    expect(single.onChange).not.toHaveBeenCalled()
-  })
-
-  it('move right / move left reorder the views and follow the moved tab', () => {
-    const { el, onChange, def } = mount()
-    click(byLabel(el, 'View menu'))
-    expect(byText<HTMLButtonElement>(el, '[role="menuitem"]', 'Move left').disabled).toBe(true)
-    click(byText(el, '[role="menuitem"]', 'Move right'))
-    expect(tabs(el)).toEqual(['View', 'Table', 'View 2'])
-    expect(selected(el)).toBe('Table')
-    click(byLabel(el, 'View menu'))
-    click(byText(el, '[role="menuitem"]', 'Move left'))
-    expect(def().views.map((v) => v.name)).toEqual(['Table', 'View', 'View 2'])
-    expect(onChange).toHaveBeenCalledTimes(2)
-  })
-})
-
-describe('filter menu', () => {
-  it('builds "status is idea" in this view, one onChange per step, and narrows the body', () => {
-    const { el, onChange, def } = mount()
-    const pop = openMenu(el, 'Filter')
-    click(byText(pop, 'button', 'Add rule'))
-    expect(def().views[0].filters).toEqual({ and: ['file.name.contains("")'] })
-    setValue(byLabel(pop, 'Property'), 'note.status')
-    expect(def().views[0].filters).toEqual({ and: ['note.status.contains("")'] })
-    setValue(byLabel(pop, 'Operator'), 'is')
-    type(byLabel(pop, 'Value'), 'idea')
-    expect(onChange).toHaveBeenCalledTimes(4)
-    expect((def().views[0].filters as { and: string[] }).and[0]).toBe('note.status == "idea"')
-    expect(def().filters).toBeUndefined()
-    expect(rows(el)).toEqual(['Agentic Agency.md', 'The Gold In Your Archive.md'])
-    expect(count(el)).toBe('2 items')
-    expect(q(el, '.base-toolbar__badge').textContent).toBe('1')
-  })
-
-  it('the All views scope edits def.filters instead', () => {
-    const { el, def } = mount()
-    const pop = openMenu(el, 'Filter')
-    click(byText(pop, '.base-seg__opt', 'All views'))
-    click(byText(pop, 'button', 'Add rule'))
-    setValue(byLabel(pop, 'Property'), 'note.status')
-    setValue(byLabel(pop, 'Operator'), 'is')
-    type(byLabel(pop, 'Value'), 'idea')
-    expect((def().filters as { and: string[] }).and[0]).toBe('note.status == "idea"')
-    expect(def().views[0].filters).toBeUndefined()
-    expect(rows(el)).toHaveLength(2)
-  })
-
-  it('the conjunction rewrites the node: None → not:', () => {
-    const { el, def, yaml } = mount('views:\n  - type: table\n    name: T\n    filters:\n      and:\n        - note.status == "idea"\n')
-    const pop = openMenu(el, 'Filter')
-    click(byText(pop, '.base-seg__opt', 'None'))
-    expect(def().views[0].filters).toEqual({ not: ['note.status == "idea"'] })
-    expect(yaml()).toContain('      not:\n')
-    expect(rows(el)).toHaveLength(6)
-    click(byText(pop, '.base-seg__opt', 'Any'))
-    expect(def().views[0].filters).toEqual({ or: ['note.status == "idea"'] })
-  })
-
-  it('Advanced shows each rule as raw expression text and commits edits', () => {
-    const { el, def, onChange } = mount('views:\n  - type: table\n    name: T\n    filters:\n      and:\n        - note.status == "idea"\n')
-    const pop = openMenu(el, 'Filter')
-    click(q(pop, '.base-menu__toggle input'))
-    const expr = byLabel<HTMLInputElement>(pop, 'Expression')
-    expect(expr.value).toBe('note.status == "idea"')
-    type(expr, 'note.priority > 1')
-    expect(onChange).toHaveBeenCalledTimes(1)
-    expect(def().views[0].filters).toEqual({ and: ['note.priority > 1'] })
-    expect(rows(el)).toEqual(['Agentic Agency.md', 'Creator Economy.md'])
-  })
-
-  it('a rule the builder cannot express is a code row; a compile error shows the red badge and its message', () => {
-    const yamlIn = 'views:\n  - type: table\n    name: T\n    filters:\n      and:\n        - note.a == note.b\n        - "note.x =="\n'
-    const { el } = mount(yamlIn)
-    expect(q(el, '.base-toolbar__badge--error').textContent).toBe('1')
-    const pop = openMenu(el, 'Filter')
-    expect(q(pop, '.base-menu__errors').textContent).toContain('views[0].filters[1]')
-    const codes = [...pop.querySelectorAll('.base-rule__code')].map((c) => c.textContent)
-    expect(codes).toContain('note.a == note.b')
-    expect(codes).toContain('note.x ==')
-    expect(pop.querySelector('[aria-label="Property"]')).toBeNull()
-  })
-
-  it('removing the last rule deletes the filters key', () => {
-    const { el, def, yaml } = mount('views:\n  - type: table\n    name: T\n    filters:\n      and:\n        - note.status == "idea"\n')
-    const pop = openMenu(el, 'Filter')
-    click(byLabel(pop, 'Remove rule'))
-    expect(def().views[0].filters).toBeUndefined()
-    expect(yaml()).not.toContain('filters')
-    expect(rows(el)).toHaveLength(8)
   })
 })
 
@@ -415,19 +300,6 @@ describe('search, count and body', () => {
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
   })
 
-  it('indexStatus pending shows the loading notice instead of rows', () => {
-    const { el } = mount(YASIN_BASE, { records: [], indexStatus: 'pending' })
-    expect(q(el, '.base-view__pending').textContent).toBe('Loading the vault index…')
-    expect(el.querySelector('.base-row')).toBeNull()
-    expect(count(el)).toBe('0 items')
-  })
-
-  it('indexStatus error shows the failure with its message instead of rows', () => {
-    const { el } = mount(YASIN_BASE, { records: [], indexStatus: 'error', indexError: 'bridge gone' })
-    expect(q(el, '.base-view__error').textContent).toBe('Could not load the vault index: bridge gone')
-    expect(el.querySelector('.base-row')).toBeNull()
-  })
-
   it('a corrupt properties.json shows its error banner but the rows still render (report-never-block)', () => {
     const { el } = mount(YASIN_BASE, { properties: { root: '/vault', version: 1, properties: {}, error: 'properties.json is not valid JSON: x' } })
     expect(q(el, '.base-view__error').textContent).toBe("Could not load the vault's property declarations: properties.json is not valid JSON: x")
@@ -438,24 +310,24 @@ describe('search, count and body', () => {
 describe('popover behaviour', () => {
   it('opens focused, closes on Escape and on click-away', () => {
     const { el } = mount()
-    const pop = openMenu(el, 'Filter')
+    const pop = openMenu(el, 'Sort')
     expect(pop.contains(document.activeElement)).toBe(true)
     press(window as unknown as Element, 'Escape')
     expect(el.querySelector('.base-popover')).toBeNull()
 
-    openMenu(el, 'Filter')
+    openMenu(el, 'Sort')
     act(() => {
       document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
     })
     draw()
     expect(el.querySelector('.base-popover')).toBeNull()
   })
-
-  it('the view menu escapes the scrolling tab strip: fixed, measured off the "…" button (YAZ-743)', () => {
-    const { el } = mount()
-    click(byLabel(el, 'View menu'))
-    const pop = q<HTMLElement>(el, '[role="menu"]').closest<HTMLElement>('.base-popover')
-    expect(pop?.style.position).toBe('fixed')
-    expect(pop?.className).toContain('base-popover--fixed')
-  })
 })
+
+/**
+ * `ViewTabs`' EDITABLE half, on its own mount (YAZ-846). BaseView passes `readOnly` — the folder
+ * page's contents block is the only mount and its views are switch-only (🔒 rule 4) — so these
+ * gestures are unreachable from the app today and are pinned here at the component's own edge:
+ * each one must call its callback with the right arguments, which is what BaseView turns into the
+ * ONE `folder_page_settings` write.
+ */

@@ -86,12 +86,12 @@ export function untitledName(taken: ReadonlySet<string>): string {
   for (let n = 2; ; n++) if (!taken.has(`Untitled ${n}`)) return `Untitled ${n}`
 }
 
-/** Absolute folder the note goes in: the inFolder seed under the root, else the base file's folder, else the root; null when nothing is known. */
-export function targetFolder(seedFolder: string | null, root: string | null, thisFile: string | null): string | null {
-  if (seedFolder !== null && root !== null) return seedFolder === '' ? root : `${root}/${seedFolder}`
-  if (thisFile !== null) return thisFile.slice(0, thisFile.lastIndexOf('/'))
-  return root
-}
+// TOMBSTONE (YAZ-846): `targetFolder(seedFolder, root, thisFile)` stood here — the plain 5D
+// placement rule (the `inFolder` seed under the root, else the page's own folder, else the root).
+// Its one caller was `BaseView`'s `createFromSeed`, and inside a folder page placement is
+// OVERRIDDEN by the settings' `folder` (🔒 Q5/Q6): `FolderPageContents.createMember` parks the
+// page and `untitledName` names it. `NewNoteSeed.folder` is still DERIVED — it is what the
+// filter says — it simply has nobody left to obey it.
 
 /** One frontmatter block carrying the seed, no body; '' for an empty seed (null values print `key:`). */
 export function seedContent(properties: Record<string, unknown>): string {

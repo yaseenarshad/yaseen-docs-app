@@ -7,7 +7,7 @@ import { render } from '../expr'
 import { cellEditor, columnTyping } from '../editorType'
 import type { FolderPageSettings } from '../folderPageSettings'
 import { EditableCell } from './EditableCell'
-import { canonicalKey } from './filterRows'
+import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, groupKeyOf } from './GroupHeader'
 
 export interface ListViewProps {
@@ -24,16 +24,14 @@ export interface ListViewProps {
   onOpenFile: (path: string) => void
   /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. */
   onNewInGroup?: (group: Group) => void
-  /** Embed chrome (6A, GRO-2145): no inline property editing. */
-  readOnly?: boolean
-  /** Assigned property types from `.obsidian/types.json`, for editor inference (5B, GRO-2142). */
-  types?: Record<string, string>
+  /** Vault root, so the picker's resolver is THE one the wikilink surfaces share (YAZ-846); null = name-and-relative-path resolution only. */
+  root: string | null
   /** The vault's property declarations (5E, GRO-2217): vault-wide editor inference and relation targets. */
   properties?: PropertiesResponse | null
   /** The folder page whose contents these rows are (YAZ-819): the typing ladder's TOP rung (🔒 Q8). */
   folderPage?: FolderPageSettings | null
-  /** The WHOLE index snapshot when `records` is a subset (🔒 D2, YAZ-819); absent → `records`. */
-  vaultRecords?: readonly IndexRecord[]
+  /** The WHOLE index snapshot (🔒 D2, YAZ-819) — `records` is only the MEMBERS: link resolution and the pickers read this. */
+  vaultRecords: readonly IndexRecord[]
 }
 
 export type MarkerStyle = 'bullet' | 'number' | 'none'
@@ -61,7 +59,7 @@ const separatorOf = (view: BaseView): string => (typeof view.propertySeparator =
  * (when not file.name) and the indented property rows edit inline through `EditableCell`
  * (5B, GRO-2142); the joined inline string stays read-only.
  */
-export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, types, properties = null, folderPage = null, vaultRecords, readOnly = false }: ListViewProps) {
+export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, root, properties = null, folderPage = null, vaultRecords }: ListViewProps) {
   const keys = useMemo(() => propertyKeys(def, view, records), [def, view, records])
   const primary: string | undefined = keys[0]
   const rest = keys.slice(1)
@@ -73,27 +71,29 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
   // memoised so unrelated re-renders skip the per-column row walk (7B, GRO-2148)
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
   const bareOf = (key: string) => (canonicalKey(key).startsWith('note.') ? canonicalKey(key).slice(5) : null)
+  // Rung 3 (`.obsidian/types.json`) has no feed on this surface — see the Typing paragraph of
+  // "The contents block" (YAZ-846: rung 2 wired, rung 3 deferred with its `IndexResponse` feed).
   const typings = useMemo(
-    () => new Map(keys.map((k) => [k, columnTyping(k, rowRecords, types, properties, folderPage)])),
-    [keys, rowRecords, types, properties, folderPage],
+    () => new Map(keys.map((k) => [k, columnTyping(k, rowRecords, undefined, properties, folderPage)])),
+    [keys, rowRecords, properties, folderPage],
   )
-  /** What the pickers resolve and complete over: the vault; absent → the rows themselves (🔒 D2). */
-  const linkRecords = vaultRecords ?? records
-  const basenames = useMemo(() => linkRecords.map((r) => r.basename), [linkRecords])
+  /** What the pickers resolve and complete over: the WHOLE vault, never the members alone (🔒 D2). */
+  const basenames = useMemo(() => vaultRecords.map((r) => r.basename), [vaultRecords])
   // Relation columns narrow the link picker to the pages of the folder page the target names
   // (YAZ-836: `belongsToBasenames` succeeded the type-keyed helper); missing key = all basenames.
+  // The resolver carries the ROOT since YAZ-846 — the very instance the wikilink surfaces hold.
   const resolve = useMemo(() => {
-    const resolver = resolverFor(linkRecords)
+    const resolver = resolverFor(vaultRecords, root ?? undefined)
     return (target: string) => resolver(target)?.record.path ?? null
-  }, [linkRecords])
+  }, [vaultRecords, root])
   const linkNames = useMemo(() => {
     const m = new Map<string, string[]>()
-    for (const [key, t] of typings) if (t?.target !== undefined) m.set(key, belongsToBasenames(linkRecords, resolve, t.target))
+    for (const [key, t] of typings) if (t?.target !== undefined) m.set(key, belongsToBasenames(vaultRecords, resolve, t.target))
     return m
-  }, [typings, linkRecords, resolve])
+  }, [typings, vaultRecords, resolve])
   const editable = (row: Row, key: string) => {
     const bare = bareOf(key)
-    if (bare === null || readOnly) return cellContent(row.values[key])
+    if (bare === null) return cellContent(row.values[key])
     return (
       <EditableCell
         path={row.record.path}

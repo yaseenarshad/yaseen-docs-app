@@ -1,11 +1,12 @@
 /**
  * "New" button (5D, GRO-2144): BaseView mounted with react-dom in jsdom over `TEST_RECORDS`,
- * `createNewNote` mocked (derivation runs for real). The toolbar's New creates `Untitled.md`
- * in the view's folder with the filter-derived seed and opens it; the per-group "+" on a
- * grouped table section / board column also seeds the group's value (acceptance: filter
- * `status == "idea"` grouped by `pillar`, create in "Agentic Agency" → BOTH keys, and the
- * note lands in that group once the index delivers it). A failed create shows an inline
- * error and opens nothing.
+ * with the folder page's own `create` spied (the seed DERIVATION runs for real). Every New goes
+ * through it since YAZ-846 amputated the plain `createFromSeed` path — a folder page births its
+ * members from its DECLARATION and parks them per its settings (🔒 Q5/Q6), so what this file
+ * pins is the SEED that rides along and what happens to the note the create resolves. The
+ * per-group "+" seeds the group's value on top (acceptance: filter `status == "idea"` grouped by
+ * `pillar`, create in "Agentic Agency" → BOTH keys, and the note lands in that group once the
+ * index delivers it). A failed create shows an inline error and opens nothing.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -13,17 +14,16 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { parseBase, type ParsedBase } from '../baseFile'
 import { BaseView, type BaseViewProps } from '../BaseView'
+import type { NewNoteSeed } from '../newNote'
+import { testFolderPage } from '../testFolderPage'
 import { TEST_RECORDS } from '../testRecords'
 
-vi.mock('../newNote', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../newNote')>()),
-  createNewNote: vi.fn(),
-}))
-import { createNewNote } from '../newNote'
-
-const create = vi.mocked(createNewNote)
-
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+
+/** The folder page's own birth (🔒 Q5): the ONE create path, spied for the seed it is handed. */
+const create = vi.fn<(seed: NewNoteSeed, name?: string) => Promise<string>>()
+/** The seed of the nth create — `properties` is what every assertion here is about. */
+const seed = (n = 0): Record<string, unknown> => create.mock.calls[n][0].properties
 
 const IDEA_TABLE = `views:
   - type: table
@@ -58,7 +58,9 @@ const PRIORITY_BOARD = `views:
       property: note.priority
 `
 
-const BASE_FILE = '/vault/Bases/Content.md'
+const FOLDER_PAGE_PATH = '/vault/Bases/Content.md'
+/** Where the folder page's settings park a new member — this test's stand-in for `createMember`. */
+const PARKED = '/vault/Bases/Untitled.md'
 
 /** The created note as the next index refetch would deliver it. */
 const created = (path: string, properties: Record<string, unknown>): IndexRecord => ({
@@ -98,9 +100,9 @@ function mount(text: string, props: Partial<BaseViewProps> = {}) {
           parsed={parsed}
           onChange={onChange}
           root="/vault"
-          thisFile={BASE_FILE}
+          thisFile={FOLDER_PAGE_PATH}
           records={records}
-          indexStatus="ready"
+          folderPage={testFolderPage({ create })}
           onOpenFile={onOpenFile}
           {...props}
         />,
@@ -121,7 +123,7 @@ function mount(text: string, props: Partial<BaseViewProps> = {}) {
 
 beforeEach(() => {
   create.mockReset()
-  create.mockResolvedValue(undefined)
+  create.mockResolvedValue(PARKED)
 })
 
 afterEach(() => {
@@ -146,7 +148,7 @@ function click(el: Element): void {
   draw()
 }
 
-/** Settle the createNewNote promise so open/error state lands. */
+/** Settle the create promise so open/error state lands. */
 async function flush(): Promise<void> {
   await act(async () => {})
   draw()
@@ -170,23 +172,27 @@ function tableSections(el: ParentNode): Record<string, string[]> {
 // ---------- tests ----------
 
 describe('toolbar New', () => {
-  it('creates Untitled.md in the base folder with the filter-derived seed, then opens it', async () => {
+  it('hands the filter-derived seed to the folder page\'s own create, then opens what it returns', async () => {
     const { el, onOpenFile } = mount(IDEA_TABLE)
 
     click(byLabel(el, 'New note'))
     await flush()
 
-    expect(create).toHaveBeenCalledWith('/vault/Bases/Untitled.md', { status: 'idea' })
-    expect(onOpenFile).toHaveBeenCalledWith('/vault/Bases/Untitled.md')
+    expect(create).toHaveBeenCalledTimes(1)
+    expect(seed()).toEqual({ status: 'idea' })
+    expect(onOpenFile).toHaveBeenCalledWith(PARKED)
   })
 
-  it('a single file.inFolder filter names the folder; taken names bump to Untitled 2', async () => {
-    const dir = '/vault/Content Pillars/1. Agentic Agency'
-    const { el } = mount(FOLDER_TABLE, { records: [...TEST_RECORDS, created(`${dir}/Untitled.md`, {})] })
+  // The `inFolder` seed still DERIVES (`newNote.test.ts` pins it) — it just no longer places the
+  // note: inside a folder page the settings' `folder` decides, and the toolbar's New passes no
+  // name, so `createMember` keeps the `Untitled` scheme (`FolderPageContents.test.tsx`).
+  it('a single file.inFolder filter rides along in the seed but never places the note', async () => {
+    const { el } = mount(FOLDER_TABLE)
 
     click(byLabel(el, 'New note'))
 
-    expect(create).toHaveBeenCalledWith(`${dir}/Untitled 2.md`, {})
+    expect(create.mock.calls[0][0].folder).toBe('Content Pillars/1. Agentic Agency')
+    expect(create.mock.calls[0][1]).toBeUndefined()
   })
 
   it('a failed create shows an inline error and opens nothing', async () => {
@@ -228,8 +234,8 @@ views:
     click(byLabel(el, 'New note'))
     await flush()
 
-    expect(create).toHaveBeenCalledWith('/vault/Bases/Untitled.md', { page_type: 'kpi' })
-    expect(onOpenFile).toHaveBeenCalledWith('/vault/Bases/Untitled.md')
+    expect(seed()).toEqual({ page_type: 'kpi' })
+    expect(onOpenFile).toHaveBeenCalledWith(PARKED)
     expect(el.querySelector('[role="alert"]')).toBeNull()
   })
 })
@@ -241,10 +247,10 @@ describe('New inside a group', () => {
     click(byLabel(el, 'New note in group Agentic Agency'))
     await flush()
 
-    expect(create).toHaveBeenCalledWith('/vault/Bases/Untitled.md', { status: 'idea', pillar: 'Agentic Agency' })
-    expect(onOpenFile).toHaveBeenCalledWith('/vault/Bases/Untitled.md')
+    expect(seed()).toEqual({ status: 'idea', pillar: 'Agentic Agency' })
+    expect(onOpenFile).toHaveBeenCalledWith(PARKED)
 
-    setRecords([...TEST_RECORDS, created('/vault/Bases/Untitled.md', { status: 'idea', pillar: 'Agentic Agency' })])
+    setRecords([...TEST_RECORDS, created(PARKED, { status: 'idea', pillar: 'Agentic Agency' })])
     expect(tableSections(el)['Agentic Agency']).toContain('Untitled.md')
   })
 
@@ -253,7 +259,7 @@ describe('New inside a group', () => {
 
     click(byLabel(el, 'New note in group 2'))
 
-    expect(create).toHaveBeenCalledWith('/vault/Bases/Untitled.md', { priority: 2 })
+    expect(seed()).toEqual({ priority: 2 })
   })
 
   it('the "No value" group seeds nothing for the groupBy key', () => {
@@ -261,7 +267,7 @@ describe('New inside a group', () => {
 
     click(byLabel(el, 'New note in group No value'))
 
-    expect(create).toHaveBeenCalledWith('/vault/Bases/Untitled.md', {})
+    expect(seed()).toEqual({})
   })
 })
 
@@ -292,7 +298,7 @@ describe('the group "+" under fan-out (YAZ-671 D4)', () => {
 
     // 'both' carries ['a','b'] and is the first row of group a — the old code seeded that list
     click(byLabel(el, 'New note in group a'))
-    expect(create).toHaveBeenCalledWith('/vault/Bases/Untitled.md', { status: ['a'] })
+    expect(seed()).toEqual({ status: ['a'] })
   })
 
   it('seeds a link element in the `[[…]]` form the picker writes', () => {
@@ -300,7 +306,7 @@ describe('the group "+" under fan-out (YAZ-671 D4)', () => {
     const { el } = mount(STATUS_BOARD, { records })
 
     click(byLabel(el, 'New note in group [[Lead Gen]]'))
-    expect(create).toHaveBeenCalledWith('/vault/Bases/Untitled.md', { status: ['[[Lead Gen]]'] })
+    expect(seed()).toEqual({ status: ['[[Lead Gen]]'] })
   })
 
   it('the "No value" group still seeds nothing when the grouping is fanned out', () => {
@@ -308,6 +314,6 @@ describe('the group "+" under fan-out (YAZ-671 D4)', () => {
     const { el } = mount(STATUS_BOARD, { records })
 
     click(byLabel(el, 'New note in group No value'))
-    expect(create).toHaveBeenCalledWith('/vault/Bases/Untitled.md', {})
+    expect(seed()).toEqual({})
   })
 })

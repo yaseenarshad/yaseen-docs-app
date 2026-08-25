@@ -14,9 +14,13 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
 import { type ParsedBase, parseBase } from '../baseFile'
 import { BaseView, type BaseViewProps } from '../BaseView'
+import { testFolderPage } from '../testFolderPage'
 import { TEST_RECORDS } from '../testRecords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+
+/** YAZ-846: `folderPage` is required — the contents block is the only mount there is. */
+const FOLDER_PAGE = testFolderPage()
 
 /** In-memory stand-in for the main-owned store: collapse state must go through here, not the file. */
 const { groupStore } = vi.hoisted(() => ({ groupStore: new Map<string, string[]>() }))
@@ -101,7 +105,7 @@ function mount(text: string, props: Partial<BaseViewProps> = {}) {
           root="/vault"
           thisFile="/vault/pillars.md"
           records={TEST_RECORDS}
-          indexStatus="ready"
+          folderPage={FOLDER_PAGE}
           onOpenFile={onOpenFile}
           {...props}
         />,

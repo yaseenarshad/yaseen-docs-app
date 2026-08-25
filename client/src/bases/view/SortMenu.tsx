@@ -1,8 +1,7 @@
 import type { IndexRecord } from '@shared/types'
-import type { BaseDefinition, BaseView, SortSpec } from '../baseFile'
+import type { BaseDefinition, BaseView, Mutate, SortSpec } from '../baseFile'
 import { propertyLabel } from '../engine'
-import type { Mutate } from './FilterMenu'
-import { canonicalKey } from './filterRows'
+import { canonicalKey } from './keys'
 import { allPropertyKeys, withKey } from './properties'
 
 export interface SortMenuProps {

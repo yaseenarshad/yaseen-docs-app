@@ -3,7 +3,7 @@ import type { IndexRecord } from '@shared/types'
 import type { BaseView } from '../baseFile'
 import type { Group } from '../engine'
 import type { Value } from '../expr'
-import { canonicalKey } from './filterRows'
+import { canonicalKey } from './keys'
 import { groupKeyOf } from './GroupHeader'
 
 /**

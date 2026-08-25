@@ -21,6 +21,10 @@
  *   6 nesting: a member turned into a folder page of its own expands INSIDE this outline
  *   7 the hover × + confirm sheet un-tags it again — dropping ONLY this folder page's entry and
  *     leaving the other one exactly where it was
+ *   8 the GROUPED table (YAZ-744, restored here in YAZ-846): a `groupBy` set through the Sort
+ *     menu is ONE `folder_page_settings` write, and a collapsed section survives quit → relaunch
+ *     in the main-owned `baseGroups` bucket — keyed by the folder page's own `.md` path, never
+ *     written into the page's frontmatter
  *
  * Same harness as bible.spec.ts (temp `--user-data-dir`, a COPY of the fixture, `folder-` step
  * screenshots).
@@ -29,7 +33,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
+import { appWindow, copyVault, launchApp, quitApp, readState, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -60,6 +64,8 @@ const picks = (scope: Locator) => scope.locator('.base-outline__pick')
 const sheet = (w: Page) => w.locator('[role="dialog"]')
 const sheetBtn = (w: Page, label: string) => sheet(w).locator('.confirm__btn', { hasText: label })
 const cell = (scope: Locator, r: number, c: number) => scope.locator(`[data-cell="${r}:${c}"]`)
+/** The grouped table's section headers (4C), in document order. */
+const groupNames = (scope: Locator) => scope.locator('.base-table__group .base-group__value')
 const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 /** `file.name` is Obsidian's TFile name — extension included. */
 const named = (...names: string[]) => names.map((n) => `${n}.md`)
@@ -213,6 +219,45 @@ test('step 7 — the × + sheet un-tags it, dropping ONLY this folder page’s e
   // Gone from depth 0, still standing under Lead Gen, which is where it still belongs.
   await expect(outlineRows(contents(win))).toHaveText(['Lead Gen', 'CAC', 'Lead Nurture', 'Sales-Conversion', 'Untitled'])
   await shoot(win, 'folder-11-outline-untagged')
+})
+
+test('step 8 — the grouped table: one groupBy write, and a collapsed section that survives a relaunch', async () => {
+  await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
+
+  // `page_type` is ORDINARY frontmatter since YAZ-836 — the three fixture stages carry it and the
+  // page step 4 created from the DECLARATION does not, so the run has a real group and the
+  // trailing "No value" one. Setting it is ONE `folder_page_settings` write through the one door.
+  await contents(win).locator('[aria-label="Sort"]').click()
+  await win.locator('.base-popover [aria-label="Group by"]').selectOption('note.page_type')
+  await win.keyboard.press('Escape')
+
+  await expect(groupNames(contents(win))).toHaveText(['funnel-stage', 'No value'])
+  await expect(dataRows(contents(win))).toHaveCount(4)
+  const folderPage = path.join(vault, FOLDER_PAGE)
+  await expect.poll(() => readFile(folderPage, 'utf8'), { timeout: 10_000 }).toContain('groupBy')
+  await shoot(win, 'folder-12-grouped-table')
+
+  // Collapsing keeps the header and drops the rows — and it lands in the MAIN-owned store, keyed
+  // by the folder page's own path, never in its frontmatter (4C).
+  await contents(win).locator('[aria-label="Toggle group funnel-stage"]').click()
+  await expect(dataRows(contents(win))).toHaveCount(1)
+  await expect(groupNames(contents(win))).toHaveText(['funnel-stage', 'No value'])
+  await shoot(win, 'folder-13-group-collapsed')
+
+  await quitApp(app) // the REAL quit path: the pending state write is flushed before exit
+  const state = await readState(userData)
+  expect(state.folders?.[vault]?.baseGroups).toEqual({ [`${folderPage}::Table`]: ['v:funnel-stage'] })
+  expect(await readFile(folderPage, 'utf8')).not.toContain('baseGroups')
+
+  app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
+  win = await appWindow(app, 'w1')
+  await fileRow(win, 'Funnel Stages').click()
+  await expect(contents(win)).toBeVisible()
+  // Which view is active is SESSION state, so the reopened page is back on Q7's first skin.
+  await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
+  await expect(groupNames(contents(win))).toHaveText(['funnel-stage', 'No value'])
+  await expect(dataRows(contents(win))).toHaveCount(1) // still collapsed
+  await shoot(win, 'folder-14-group-collapse-restored')
 
   await quitApp(app)
 })

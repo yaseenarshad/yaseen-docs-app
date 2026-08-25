@@ -14,6 +14,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
 import { parseBase, type ParsedBase } from '../baseFile'
 import { BaseView, type BaseViewProps } from '../BaseView'
+import { testFolderPage } from '../testFolderPage'
 import { TEST_RECORDS } from '../testRecords'
 
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn() }))
@@ -22,6 +23,9 @@ import { writeProperty } from '../writeProperty'
 const write = vi.mocked(writeProperty)
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+
+/** YAZ-846: `folderPage` is required — the contents block is the only mount there is. */
+const FOLDER_PAGE = testFolderPage()
 
 const STATUS_BOARD = `views:
   - type: board
@@ -81,7 +85,7 @@ function mount(text: string, props: Partial<BaseViewProps> = {}) {
           root={null}
           thisFile={null}
           records={records}
-          indexStatus="ready"
+          folderPage={FOLDER_PAGE}
           onOpenFile={onOpenFile}
           {...props}
         />,

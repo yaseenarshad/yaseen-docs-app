@@ -25,7 +25,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { stringify } from 'yaml'
-import type { IndexRecord } from '@shared/types'
+import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { type BaseView as BaseViewDef, type ParsedBase, parseBase } from './baseFile'
@@ -43,6 +43,13 @@ export interface FolderPageContentsProps {
   root: string
   /** The window's link feed — the full-vault resolver AND the snapshot it was built from. */
   source: WikilinkResolveSource
+  /**
+   * The vault-wide property declarations (`useProperties`, App-owned like `wikilinks` and fed
+   * through `Editor`): the editor ladder's RUNG 2, wired in YAZ-846. null until the fetch
+   * resolves, and a corrupt `properties.json` arrives as a `properties.error` the view reports
+   * passively — an undeclared column simply keeps falling through to the value inference.
+   */
+  properties?: PropertiesResponse | null
   /** A row link opens the member; the create opens the new page. */
   onOpenFile: (path: string) => void
   /** ⌘-click on an outline row (YAZ-820) — the window's background-tab open; absent → opens in place. */
@@ -73,7 +80,7 @@ function folderPageBase(views: readonly BaseViewDef[]): ParsedBase {
   }
 }
 
-export function FolderPageContents({ path, root, source, onOpenFile, onOpenFileBackground }: FolderPageContentsProps) {
+export function FolderPageContents({ path, root, source, properties = null, onOpenFile, onOpenFileBackground }: FolderPageContentsProps) {
   // Subscribe once, re-read the whole feed on each poke; an unchanged snapshot keeps the previous
   // object, so index churn elsewhere in the vault costs no render (BacklinksSection's idiom).
   const [feed, setFeed] = useState<Feed>(() => ({ records: source.records, resolve: source.resolve }))
@@ -138,7 +145,7 @@ export function FolderPageContents({ path, root, source, onOpenFile, onOpenFileB
         root={root}
         thisFile={path}
         records={members}
-        indexStatus="ready"
+        properties={properties}
         onOpenFile={onOpenFile}
         folderPage={mode}
       />

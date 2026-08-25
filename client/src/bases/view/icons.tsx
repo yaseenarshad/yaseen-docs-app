@@ -36,12 +36,6 @@ export const PlusIcon = () => (
   </svg>
 )
 
-export const FilterIcon = () => (
-  <svg {...svg}>
-    <path d="M2 3.5h12L9.5 8.8v4.2l-3 1.5V8.8z" />
-  </svg>
-)
-
 export const SortIcon = () => (
   <svg {...svg}>
     <path d="M5 2.5v11M2.5 11 5 13.5 7.5 11M11 13.5v-11M8.5 5 11 2.5 13.5 5" />

@@ -15,6 +15,7 @@ import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { parseBase, type ParsedBase } from '../baseFile'
 import { BaseView, type BaseViewProps } from '../BaseView'
 import { propertiesStub, resetPropertiesStub } from '../propertiesStub'
+import { testFolderPage } from '../testFolderPage'
 
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn() }))
 import { writeProperty } from '../writeProperty'
@@ -64,6 +65,13 @@ const RECORDS: IndexRecord[] = [
 /** Every basename, in record order — what an unnarrowed picker offers. */
 const ALL_NAMES = ['Revenue', 'Churn', 'People', 'Funnels', 'Signup', 'Retention', 'Alice', 'Bob']
 
+/**
+ * YAZ-846: `folderPage` is required. The whole `RECORDS` list is the VAULT here — the picker's
+ * narrowing resolves its `target` over it, exactly as 🔒 D2 says, even when a filter has cut the
+ * rows down to the two KPIs.
+ */
+const FOLDER_PAGE = testFolderPage({ vaultRecords: RECORDS })
+
 const ORDER = '    order:\n      - file.name\n      - note.owner\n      - note.funnels\n'
 const KPI_BASE = `filters: page_type == "kpi"\nviews:\n  - type: table\n    name: T\n${ORDER}`
 const UNFILTERED_BASE = `views:\n  - type: table\n    name: T\n${ORDER}`
@@ -102,7 +110,7 @@ function mount(text: string, props: Partial<BaseViewProps> = {}) {
           root="/vault"
           thisFile={null}
           records={RECORDS}
-          indexStatus="ready"
+          folderPage={FOLDER_PAGE}
           properties={EMPTY_DECLS}
           onOpenFile={onOpenFile}
           {...props}

@@ -50,6 +50,13 @@ export interface BaseDefinition {
   [extra: string]: unknown
 }
 
+/**
+ * The ONE config-write door every menu is handed: `BaseView`'s `update`, which re-parses and
+ * calls `onChange` (the folder-page host turns it into exactly one `folder_page_settings`
+ * write). It lived in `view/FilterMenu.tsx` until YAZ-846 deleted that menu.
+ */
+export type Mutate = (mutate: (def: BaseDefinition) => void) => void
+
 export class BaseParseError extends Error {
   constructor(
     message: string,

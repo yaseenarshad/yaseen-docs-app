@@ -33,7 +33,12 @@ export interface PropertiesState {
   error: string | null
 }
 
-export function useProperties(root: string): PropertiesState {
+/**
+ * `root` is nullable so App can own ONE of these beside `wikilinks` (YAZ-846) — hooks cannot be
+ * conditional, and a window with no vault open must not fetch. A null root is 'pending' with no
+ * declarations and no bridge call at all.
+ */
+export function useProperties(root: string | null): PropertiesState {
   const [status, setStatus] = useState<PropertiesStatus>('pending')
   const [response, setResponse] = useState<PropertiesResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -45,6 +50,7 @@ export function useProperties(root: string): PropertiesState {
     setStatus('pending')
     setResponse(null)
     setError(null)
+    if (root === null) return
     properties.get(root).then(
       (res) => {
         if (gen !== generation.current) return

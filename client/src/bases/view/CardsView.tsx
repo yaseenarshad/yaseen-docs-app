@@ -9,7 +9,7 @@ import { cellEditor, columnTyping } from '../editorType'
 import type { FolderPageSettings } from '../folderPageSettings'
 import { cardWidth } from './cardWidth'
 import { EditableCell } from './EditableCell'
-import { canonicalKey } from './filterRows'
+import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, groupKeyOf } from './GroupHeader'
 
 export interface CardsViewProps {
@@ -28,16 +28,12 @@ export interface CardsViewProps {
   onOpenFile: (path: string) => void
   /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. */
   onNewInGroup?: (group: Group) => void
-  /** Embed chrome (6A, GRO-2145): no inline property editing. */
-  readOnly?: boolean
-  /** Assigned property types from `.obsidian/types.json`, for editor inference (5B, GRO-2142). */
-  types?: Record<string, string>
   /** The vault's property declarations (5E, GRO-2217): vault-wide editor inference and relation targets. */
   properties?: PropertiesResponse | null
   /** The folder page whose contents these rows are (YAZ-819): the typing ladder's TOP rung (🔒 Q8). */
   folderPage?: FolderPageSettings | null
-  /** The WHOLE index snapshot when `records` is a subset (🔒 D2, YAZ-819); absent → `records`. */
-  vaultRecords?: readonly IndexRecord[]
+  /** The WHOLE index snapshot (🔒 D2, YAZ-819) — `records` is only the MEMBERS: link resolution and the pickers read this. */
+  vaultRecords: readonly IndexRecord[]
 }
 
 // ---------- covers ----------
@@ -123,7 +119,7 @@ function CardCover({ root, cover }: { root: string | null; cover: Cover }) {
  * page's card); search narrows cards and drops empty groups. Note-property rows edit inline
  * through `EditableCell` (5B, GRO-2142); a lightbox stays out of scope.
  */
-export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, types, properties = null, folderPage = null, vaultRecords, readOnly = false }: CardsViewProps) {
+export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, properties = null, folderPage = null, vaultRecords }: CardsViewProps) {
   const keys = useMemo(() => propertyKeys(def, view, records), [def, view, records])
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const rest = useMemo(() => keys.filter((k) => k !== nameKey), [keys, nameKey])
@@ -134,24 +130,27 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
     () => new Map(rest.map((k) => [k, canonicalKey(k).startsWith('note.') ? canonicalKey(k).slice(5) : null])),
     [rest],
   )
+  // Rung 3 (`.obsidian/types.json`) has no feed on this surface — see the Typing paragraph of
+  // "The contents block" (YAZ-846: rung 2 wired, rung 3 deferred with its `IndexResponse` feed).
   const typings = useMemo(
-    () => new Map(rest.map((k) => [k, columnTyping(k, rowRecords, types, properties, folderPage)])),
-    [rest, rowRecords, types, properties, folderPage],
+    () => new Map(rest.map((k) => [k, columnTyping(k, rowRecords, undefined, properties, folderPage)])),
+    [rest, rowRecords, properties, folderPage],
   )
-  /** What the pickers resolve and complete over: the vault; absent → the rows themselves (🔒 D2). */
-  const linkRecords = vaultRecords ?? records
-  const basenames = useMemo(() => linkRecords.map((r) => r.basename), [linkRecords])
+  /** What the pickers resolve and complete over: the WHOLE vault, never the members alone (🔒 D2). */
+  const basenames = useMemo(() => vaultRecords.map((r) => r.basename), [vaultRecords])
   // Relation columns narrow the link picker to the pages of the folder page the target names
   // (YAZ-836: `belongsToBasenames` succeeded the type-keyed helper); missing key = all basenames.
+  // The resolver carries the ROOT since YAZ-846, so it is the very instance the wikilink
+  // surfaces hold and an absolute-path target resolves here too.
   const resolve = useMemo(() => {
-    const resolver = resolverFor(linkRecords)
+    const resolver = resolverFor(vaultRecords, root ?? undefined)
     return (target: string) => resolver(target)?.record.path ?? null
-  }, [linkRecords])
+  }, [vaultRecords, root])
   const linkNames = useMemo(() => {
     const m = new Map<string, string[]>()
-    for (const [key, t] of typings) if (t?.target !== undefined) m.set(key, belongsToBasenames(linkRecords, resolve, t.target))
+    for (const [key, t] of typings) if (t?.target !== undefined) m.set(key, belongsToBasenames(vaultRecords, resolve, t.target))
     return m
-  }, [typings, linkRecords, resolve])
+  }, [typings, vaultRecords, resolve])
   const imageKey = typeof view.image === 'string' && view.image.trim() !== '' ? view.image : null
   const ratio = Number(view.imageAspectRatio)
   const style = {
@@ -175,7 +174,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
                 <div key={key} className="base-card__prop">
                   <span className="base-card__prop-name">{propertyLabel(def, key)}</span>
                   <span className="base-card__prop-value">
-                    {bare === null || readOnly ? (
+                    {bare === null ? (
                       cellContent(row.values[key])
                     ) : (
                       <EditableCell

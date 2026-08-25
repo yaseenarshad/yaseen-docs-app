@@ -41,6 +41,8 @@ import { OutlineAddRow, outlineCandidates } from './OutlineAddRow'
 export interface OutlineViewProps {
   /** The folder page whose contents these are: BaseView's `thisFile`. Roots the ancestor guard. */
   folderPagePath: string
+  /** Vault root, so the click-rule resolver is THE one the wikilink surfaces share (YAZ-846); null = name-and-relative-path resolution only. */
+  root: string | null
   /** Its own settings — the [D5] `order` at depth 0. Deeper levels read their OWN folder page's. */
   settings: FolderPageSettings
   /** The WHOLE snapshot (🔒 D2): nesting, the lookup and the picker all read the vault. */
@@ -64,17 +66,20 @@ interface DragState {
   over: number | null
 }
 
-export function OutlineView({ folderPagePath, settings, vaultRecords, records, rows, onOpenFile, openBackground, onOrder, onCreate }: OutlineViewProps) {
+export function OutlineView({ folderPagePath, root, settings, vaultRecords, records, rows, onOpenFile, openBackground, onOrder, onCreate }: OutlineViewProps) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   const [drag, setDrag] = useState<DragState | null>(null)
   const [removing, setRemoving] = useState<IndexRecord | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const folderPageName = folderPagePath.slice(folderPagePath.lastIndexOf('/') + 1).replace(/\.md$/i, '')
+  // THE shared resolver, rooted (YAZ-846): keyed per records identity then per root, so this is
+  // the very instance the wikilink decorations and backlinks hold — and an `order` entry or a
+  // `folder_pages` entry written as an absolute `<root>/…` path resolves here as it does there.
   const resolve = useMemo(() => {
-    const resolver = resolverFor(vaultRecords)
+    const resolver = resolverFor(vaultRecords, root ?? undefined)
     return (target: string) => resolver(target)?.record.path ?? null
-  }, [vaultRecords])
+  }, [vaultRecords, root])
   const lookup = useMemo(() => folderPagesLookup(vaultRecords, resolve), [vaultRecords, resolve])
   const ordered = useMemo(() => orderedMembers(records, settings, resolve), [records, settings, resolve])
   const shown = useMemo(() => new Set(rows.map((r) => r.record.path)), [rows])

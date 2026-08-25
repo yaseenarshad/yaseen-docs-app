@@ -6,7 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BaseDefinition, BaseView, FilterNode } from './baseFile'
-import { createNewNote, deriveSeed, seedContent, targetFolder, untitledName } from './newNote'
+import { createNewNote, deriveSeed, seedContent, untitledName } from './newNote'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -81,20 +81,6 @@ describe('untitledName', () => {
 
   it('fills gaps left by renames', () => {
     expect(untitledName(new Set(['Untitled', 'Untitled 3']))).toBe('Untitled 2')
-  })
-})
-
-describe('targetFolder', () => {
-  it('resolves an inFolder seed against the root', () => {
-    expect(targetFolder('Content Pillars', '/vault', '/vault/Bases/x.md')).toBe('/vault/Content Pillars')
-    expect(targetFolder('', '/vault', null)).toBe('/vault')
-  })
-
-  it('falls back to the base file folder, then the root', () => {
-    expect(targetFolder(null, '/vault', '/vault/Bases/x.md')).toBe('/vault/Bases')
-    expect(targetFolder('A', null, '/vault/Bases/x.md')).toBe('/vault/Bases')
-    expect(targetFolder(null, '/vault', null)).toBe('/vault')
-    expect(targetFolder(null, null, null)).toBeNull()
   })
 })
 

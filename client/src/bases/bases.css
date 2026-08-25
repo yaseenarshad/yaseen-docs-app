@@ -140,11 +140,6 @@
   border-radius: 7px;
 }
 
-.base-toolbar__badge--error {
-  color: #fff;
-  background: var(--danger);
-}
-
 .base-toolbar__search-input {
   width: 150px;
   margin-left: 4px;
@@ -212,43 +207,8 @@
 }
 
 /* ---------- menu internals ---------- */
-
-.base-menu__errors {
-  margin: 0 0 8px;
-  padding: 6px 8px;
-  list-style: none;
-  font-size: 12px;
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 7%, var(--bg));
-  border-radius: 5px;
-}
-
-.base-menu__head {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.base-seg {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  background: var(--bg-side);
-  border-radius: 6px;
-}
-
-.base-seg__opt {
-  padding: 2px 8px;
-  font-size: 12px;
-  color: var(--fg-muted);
-  border-radius: 4px;
-}
-
-.base-seg__opt[aria-pressed='true'] {
-  color: var(--accent);
-  background: var(--bg);
-  box-shadow: 0 0 0 1px var(--border);
-}
+/* The Filter menu's own chrome went with it in YAZ-846: `__errors`, `__head`, the All/Any/None
+   and scope segments (`.base-seg*`) and the raw-expression rows (`.base-rule__code` / `__expr`). */
 
 .base-menu__list {
   margin: 0;
@@ -264,23 +224,6 @@
   display: flex;
   align-items: center;
   gap: 4px;
-}
-
-.base-rule__code {
-  flex: 1;
-  overflow-x: auto;
-  padding: 3px 6px;
-  font-size: 12px;
-  background: var(--bg-side);
-  border-radius: 4px;
-  white-space: nowrap;
-}
-
-.base-rule__expr {
-  width: 100%;
-  margin-top: 3px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
 }
 
 .base-rule__remove,

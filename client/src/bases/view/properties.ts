@@ -1,7 +1,7 @@
 import type { IndexRecord } from '@shared/types'
 import type { BaseDefinition, BaseView } from '../baseFile'
 import { propertyKeys } from '../engine'
-import { canonicalKey } from './filterRows'
+import { canonicalKey } from './keys'
 
 /**
  * Every key the menus can offer (GRO-2135): the view's shown keys first (as written, so

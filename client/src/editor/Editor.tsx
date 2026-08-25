@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { FileResponse } from '@shared/types'
+import type { FileResponse, PropertiesResponse } from '@shared/types'
 import { api } from '../api'
 import { FolderPageContents } from '../bases/FolderPageContents'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
@@ -44,9 +44,11 @@ interface EditorProps {
   wikilinks?: WikilinkResolveSource
   /** `[[` picker candidates (GRO-2191): same ownership and feed as `wikilinks`. */
   wikilinkCandidates?: WikilinkCandidateSource
+  /** The vault's property declarations (YAZ-835), App-owned like `wikilinks`: typing rung 2 for a folder page's contents block (YAZ-846). */
+  properties?: PropertiesResponse | null
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileBackground, onNotice, createBase, wikilinks, wikilinkCandidates }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileBackground, onNotice, createBase, wikilinks, wikilinkCandidates, properties }: EditorProps) {
   const state = useFile(path)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   return (
@@ -55,7 +57,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileBackground, on
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} />
+        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={properties} />
       )}
     </section>
   )
@@ -72,6 +74,7 @@ function CrepeHost({
   createBase,
   wikilinks,
   wikilinkCandidates,
+  properties,
 }: {
   root: string
   file: FileResponse
@@ -82,6 +85,7 @@ function CrepeHost({
   createBase?: () => string
   wikilinks?: WikilinkResolveSource
   wikilinkCandidates?: WikilinkCandidateSource
+  properties?: PropertiesResponse | null
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const autosave = useAutosave(file.path)
@@ -192,7 +196,7 @@ function CrepeHost({
       <div className="editor-host">
         <div className="editor-mount" ref={hostRef} />
         {wikilinks !== undefined && (
-          <FolderPageContents path={file.path} root={root} source={wikilinks} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} />
+          <FolderPageContents path={file.path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} />
         )}
         {wikilinks !== undefined && (
           <BacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />

@@ -6,6 +6,7 @@ import { Editor } from './editor/Editor'
 import { newNoteBase } from './editor/wikilink/createFromLink'
 import { createWikilinkCandidateSource } from './editor/wikilink/wikilinkPicker'
 import { createWikilinkResolveSource } from './editor/wikilink/wikilinkPlugin'
+import { useProperties } from './bases/useProperties'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
 import { useLinkEvents } from './hooks/useLinkEvents'
 import { useMenuEvents } from './hooks/useMenuEvents'
@@ -49,6 +50,10 @@ export function App() {
   // picker's candidate source (Links B, GRO-2191) works exactly the same way.
   const [wikilinks] = useState(createWikilinkResolveSource)
   const [wikilinkCandidates] = useState(createWikilinkCandidateSource)
+  // The vault's property DECLARATIONS (YAZ-835), owned here for the same reason `wikilinks` is:
+  // ONE per window, threaded down rather than re-fetched per surface. It is the editor ladder's
+  // rung 2 inside a folder page's contents block (YAZ-846) — Editor → FolderPageContents.
+  const { properties: propertyDecls } = useProperties(root)
   // ⌘K's half of the search-bar focus handshake (YAZ-801, wired in YAZ-804): `openSearch` sets it
   // (including the collapsed case, which un-collapses and mounts the sidebar with the flag already
   // true); the sidebar focuses its input and clears it through the callback.
@@ -408,14 +413,14 @@ export function App() {
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
           <TabBar tabs={tabs} active={file} onActivate={activate} onClose={closeTab} onMove={moveTab} canBack={canBack} canForward={canForward} onBack={back} onForward={forward} />
           <div className="tabstack">
-            {mounted.length === 0 && <Editor root={root} path={null} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} />}
+            {mounted.length === 0 && <Editor root={root} path={null} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={propertyDecls} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility — see tabs.css
               // for why display:none would lose scroll positions.
               <div key={path} className={path === file ? 'tabstack__layer' : 'tabstack__layer tabstack__layer--hidden'}>
                 {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → openCurrent, ⌘ → openBackground; create failures land in the link-notice. */}
-                <Editor root={root} path={path} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} />
+                <Editor root={root} path={path} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={propertyDecls} />
               </div>
             ))}
           </div>

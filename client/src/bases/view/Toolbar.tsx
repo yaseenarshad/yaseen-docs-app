@@ -1,23 +1,19 @@
 import { type ReactNode, useCallback, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
-import type { BaseDefinition, BaseView } from '../baseFile'
-import type { EngineError } from '../engine'
-import { FilterMenu, type Mutate } from './FilterMenu'
-import { countRules } from './filterRows'
-import { ChevronsIcon, FilterIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon } from './icons'
+import type { BaseDefinition, BaseView, Mutate } from '../baseFile'
+import { ChevronsIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon } from './icons'
 import { Popover } from './Popover'
 import { PropertiesMenu } from './PropertiesMenu'
 import { SortMenu } from './SortMenu'
 import { ViewTabs, type ViewTabsProps } from './ViewTabs'
 
-type Menu = 'filter' | 'sort' | 'properties'
+type Menu = 'sort' | 'properties'
 
 export interface ToolbarProps {
   def: BaseDefinition
   view: BaseView
   viewIndex: number
   records: readonly IndexRecord[]
-  errors: readonly EngineError[]
   /** Rows in the body after search / limit, and the pre-limit total. */
   shown: number
   total: number
@@ -36,11 +32,6 @@ export interface ToolbarProps {
   root?: string | null
   properties?: PropertiesResponse | null
   /**
-   * Folder-page contents (🔒 Q3, YAZ-815 · YAZ-819): a folder page's set IS the lookup, so its
-   * settings hold no filter for its contents and the Filter button is not offered at all.
-   */
-  noFilters?: boolean
-  /**
    * The folder page's OUTLINE is showing (YAZ-820): that view's `order` is the [D5] member
    * sequence, not a column list, and every Properties gesture rewrites `view.order` — so the menu
    * is not offered rather than being allowed to overwrite the locked ordering. An outline has no
@@ -53,20 +44,25 @@ export interface ToolbarProps {
 export const countLabel = (shown: number, total: number): string =>
   shown === total ? `${total} item${total === 1 ? '' : 's'}` : `${shown} / ${total} items`
 
-/** View chrome (GRO-2135): tabs on the left; Filter / Sort / Properties / Search buttons and the count on the right. */
-export function Toolbar({ def, view, viewIndex, records, errors, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, root = null, properties = null, noFilters = false, noProperties = false }: ToolbarProps) {
+/**
+ * View chrome (GRO-2135): tabs on the left; Sort / Properties / Search buttons and the count on
+ * the right. TOMBSTONE (YAZ-846): there was a **Filter** button first among them, opening
+ * `view/FilterMenu.tsx`. The only surface that mounts these views is a folder page's contents
+ * block, whose set IS the lookup and stores no filters (🔒 Q3) — so the button was never
+ * rendered, and it and its menu are gone rather than permanently hidden.
+ */
+export function Toolbar({ def, view, viewIndex, records, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, root = null, properties = null, noProperties = false }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
   const close = useCallback(() => setOpen(null), [])
-  const filters = countRules(def.filters) + countRules(view.filters)
   const sorts = (view.sort?.length ?? 0) + (view.groupBy ? 1 : 0)
   const allCollapsed = allGroupKeys.every((k) => collapsed.includes(k))
   const groupsLabel = allCollapsed ? 'Expand all groups' : 'Collapse all groups'
 
-  const button = (menu: Menu, label: string, icon: ReactNode, badge: number, body: ReactNode, error = 0) => (
+  const button = (menu: Menu, label: string, icon: ReactNode, badge: number, body: ReactNode) => (
     <div className="base-toolbar__menu">
       <button
         type="button"
-        className={`base-toolbar__btn${badge || error ? ' base-toolbar__btn--on' : ''}`}
+        className={`base-toolbar__btn${badge ? ' base-toolbar__btn--on' : ''}`}
         aria-label={label}
         title={label}
         aria-haspopup="dialog"
@@ -75,7 +71,6 @@ export function Toolbar({ def, view, viewIndex, records, errors, shown, total, s
       >
         {icon}
         {badge > 0 && <span className="base-toolbar__badge">{badge}</span>}
-        {error > 0 && <span className="base-toolbar__badge base-toolbar__badge--error">{error}</span>}
       </button>
       {open === menu && (
         <Popover label={label} onClose={close}>
@@ -93,15 +88,6 @@ export function Toolbar({ def, view, viewIndex, records, errors, shown, total, s
           <PlusIcon />
           New
         </button>
-        {!noFilters &&
-          button(
-            'filter',
-            'Filter',
-            <FilterIcon />,
-            filters,
-            <FilterMenu def={def} view={view} viewIndex={viewIndex} records={records} errors={errors} onUpdate={onUpdate} />,
-            errors.length,
-          )}
         {button('sort', 'Sort', <SortIcon />, sorts, <SortMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} />)}
         {allGroupKeys.length > 0 && (
           <button

@@ -11,6 +11,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { parseBase, type ParsedBase } from '../baseFile'
 import { BaseView, type BaseViewProps } from '../BaseView'
+import { testFolderPage } from '../testFolderPage'
 import { TEST_RECORDS } from '../testRecords'
 
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn() }))
@@ -19,6 +20,9 @@ import { writeProperty } from '../writeProperty'
 const write = vi.mocked(writeProperty)
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+
+/** YAZ-846: `folderPage` is required — the contents block is the only mount there is. */
+const FOLDER_PAGE = testFolderPage()
 
 /** file.name plus one column per editor type, and a read-only formula column. */
 const EDIT_BASE = `views:
@@ -60,7 +64,7 @@ function mount(text: string, props: Partial<BaseViewProps> = {}) {
           root={null}
           thisFile={null}
           records={TEST_RECORDS}
-          indexStatus="ready"
+          folderPage={FOLDER_PAGE}
           onOpenFile={onOpenFile}
           {...props}
         />,
@@ -312,13 +316,11 @@ describe('failed writes', () => {
   })
 })
 
+// The rung-3 case that stood here — an explicit `.obsidian/types.json` assignment beating the
+// value type — went with the `types` prop in YAZ-846: that rung has no feed on this surface (its
+// data rides `IndexResponse`, which a folder page deliberately never fetches). The ladder itself
+// is unchanged and still unit-tested rung by rung in `editorType.test.ts`.
 describe('type inference wiring', () => {
-  it('an explicit types.json assignment beats the value type', () => {
-    const { el } = mount(EDIT_BASE, { types: { priority: 'text' } })
-    open(el, 0, 2)
-    expect(byLabel<HTMLInputElement>(el, 'Edit priority').type).toBe('text')
-  })
-
   it('a note without the key borrows the dominant type across the view', () => {
     const { el } = mount(EDIT_BASE)
     open(el, 3, 2) // The Gold In Your Archive has no priority; 2, 1, 3 elsewhere

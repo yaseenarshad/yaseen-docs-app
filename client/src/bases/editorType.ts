@@ -1,6 +1,6 @@
 import type { IndexRecord, PropertiesResponse, PropertyKind } from '@shared/types'
 import { columnKindIn, type FolderPageSettings } from './folderPageSettings'
-import { canonicalKey } from './view/filterRows'
+import { canonicalKey } from './view/keys'
 
 /**
  * Editor type inference for inline cell editors (5B, GRO-2142). Locked precedence, as amended

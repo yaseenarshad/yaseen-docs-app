@@ -22,6 +22,7 @@ import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '
 import { parseBase } from '../baseFile'
 import { BaseView } from '../BaseView'
 import { FolderPageContents } from '../FolderPageContents'
+import { folderPageSettings } from '../folderPageSettings'
 import { removeMemberMessage } from './ConfirmRemoveMember'
 
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn() }))
@@ -208,7 +209,10 @@ describe('the outline is the folder page’s skin — and only ever hers', () =>
     expect(texts(el, '.base-tab__btn')).toEqual(['Outline', 'Table'])
   })
 
-  it('a `type: outline` view with no folder page keeps the placeholder rows — an outline of WHAT?', () => {
+  // The other half of this pair — a `type: outline` view with NO folder page behind it — went
+  // with the `folderPage === undefined` branch in YAZ-846: there is no such mount any more. The
+  // guard that survives is the one on `thisFile`, which roots the ancestor walk.
+  it('a null `thisFile` keeps the placeholder rows — the ancestor guard has nothing to stand on', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -218,9 +222,9 @@ describe('the outline is the folder page’s skin — and only ever hers', () =>
           parsed={parseBase('views:\n  - type: outline\n    name: Outline\n')}
           onChange={vi.fn()}
           root="/vault"
-          thisFile="/vault/x.md"
+          thisFile={null}
           records={[rec(LEAD)]}
-          indexStatus="ready"
+          folderPage={{ settings: folderPageSettings(rec(FUNNELS, { folder_page: true })), vaultRecords: vault(), create: () => Promise.reject(new Error('no')) }}
           onOpenFile={onOpenFile}
         />,
       ),

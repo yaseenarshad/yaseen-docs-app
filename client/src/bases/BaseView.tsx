@@ -5,23 +5,22 @@ import { type BaseDefinition, type ParsedBase, parseBase, serializeBase, updateB
 import { type Group, type Row, propertyKeys, resolverFor, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
 import type { FolderPageSettings } from './folderPageSettings'
-import { type NewNoteSeed, createNewNote, deriveSeed, targetFolder, untitledName } from './newNote'
+import { type NewNoteSeed, deriveSeed } from './newNote'
 import { writeProperty } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
-import { canonicalKey } from './view/filterRows'
+import { canonicalKey } from './view/keys'
 import { type GroupSwap, type PendingMove, applyMoves, groupByKey } from './view/groupDrag'
 import { groupKeyOf } from './view/GroupHeader'
 import { ListView } from './view/ListView'
 import { OutlineView } from './view/OutlineView'
 import { TableView } from './view/TableView'
 import { Toolbar } from './view/Toolbar'
-import { ViewTabs } from './view/ViewTabs'
 
 /**
  * Folder-page contents mode (🔒 D3, YAZ-819). BaseView stays ONE component: the folder-page host
  * (`FolderPageContents`) hands it an in-memory def and this bundle, and everything below is
- * today's code. Absent → the plain, unscoped view: no declaration rung, no member gestures.
+ * today's code. REQUIRED since YAZ-846 — the contents block is the only mount there is.
  */
 export interface FolderPageMode {
   /** The folder page's own declaration: the typing ladder's TOP rung (🔒 Q8, YAZ-815). */
@@ -41,43 +40,49 @@ export interface BaseViewProps {
   parsed: ParsedBase
   /** Every config change arrives here as `updateBase(parsed, …)`; the host turns it into a write. */
   onChange: (next: ParsedBase) => void
-  /** Vault root, keying view state persisted OUTSIDE the file (collapsed groups, GRO-2137); null = session-only. */
+  /**
+   * Vault root. It keys the view state persisted OUTSIDE the file (collapsed groups, GRO-2137)
+   * AND roots the resolver (YAZ-846, closing the Engine entry's KNOWN GAP), so a link target
+   * written as an absolute `<root>/…` path resolves here exactly as it does for the wikilink
+   * surfaces. null = session-only collapse, name-and-relative-path resolution only.
+   */
   root: string | null
   /** Absolute path of the page the views belong to, for `this.file` in filters/formulas; null when unknown. */
   thisFile: string | null
-  /** The vault index the views query; `[]` until `indexStatus` is ready (fed by `useIndex`, GRO-2129). */
+  /** The MEMBERS the views query (🔒 D2) — the folder page's own rows, never the whole vault. */
   records: IndexRecord[]
-  indexStatus: 'pending' | 'ready' | 'error'
-  /** The fetch failure shown when `indexStatus` is 'error'. */
-  indexError?: string
-  /** Assigned property types from `.obsidian/types.json`, for cell editor inference (5B, GRO-2142). */
-  types?: Record<string, string>
-  /** The vault-wide property declarations (5E, GRO-2217; `useProperties`); null/absent until fetched. Rank above `types` for editor inference. */
+  /**
+   * The vault-wide property declarations (5E, GRO-2217; `useProperties`) — typing rung 2, fed
+   * App → `Editor` → `FolderPageContents` since YAZ-846. null/absent until the fetch resolves; a
+   * `properties.error` renders its own passive line and never blocks a row.
+   */
   properties?: PropertiesResponse | null
   onOpenFile: (path: string) => void
-  /** Read-only chrome for embeds (6A, GRO-2145): view switcher only — no toolbar menus, New, cell editing or drag. */
-  readOnly?: boolean
-  /** Initial view by name (case-insensitive); unknown or absent → the first view. */
-  initialView?: string
   /**
-   * Present only for a FOLDER PAGE's contents block (🔒 D3, YAZ-819): its rows are the members,
-   * its def is in memory, its views are switch-only (no view CRUD) and it offers no Filter menu —
-   * a folder page's set IS the lookup and stores no filters (🔒 Q3, YAZ-815).
+   * The FOLDER PAGE's contents (🔒 D3, YAZ-819) — REQUIRED since YAZ-846: its rows are the
+   * members, its def is in memory, its views are switch-only (no view CRUD) and it offers no
+   * Filter menu, a folder page's set being the lookup itself (🔒 Q3, YAZ-815).
    */
-  folderPage?: FolderPageMode
+  folderPage: FolderPageMode
 }
 
 /**
- * One set of views (GRO-2135): the toolbar (view switcher, filter / sort /
- * properties menus, search, count) over the body — the real table for `type: table` (GRO-2136),
- * the board for `type: board` (4D, GRO-2138), the card grid for `type: cards` (4E, GRO-2139),
- * the list for `type: list` (4F, GRO-2140), a placeholder row list for unknown view types.
- * Only the active tab and the search text are component state — everything else is the file.
+ * One set of views (GRO-2135): the toolbar (view switcher, sort / properties menus, search,
+ * count) over the body — the real table for `type: table` (GRO-2136), the board for
+ * `type: board` (4D, GRO-2138), the card grid for `type: cards` (4E, GRO-2139), the list for
+ * `type: list` (4F, GRO-2140), the outline for `type: outline` (YAZ-820), a placeholder row list
+ * for unknown view types. Only the active tab and the search text are component state —
+ * everything else is the file.
+ *
+ * TOMBSTONE (YAZ-846, the amputation): `readOnly` (the read-only embed chrome), `initialView`
+ * (which picked the starting tab for `![[X.base#View]]`), `types` (`.obsidian/types.json`, the
+ * ladder's rung 3 — see "Cell editing"), `indexStatus` / `indexError` and the plain 5D
+ * `createFromSeed` path all died here. Every one of them lost its production caller when YAZ-844
+ * retired `.base`: the contents block is the ONLY mount, it hands over a snapshot already in hand
+ * and it births through the declaration.
  */
-export function BaseView({ parsed, onChange, root, thisFile, records, indexStatus, indexError, types, properties = null, onOpenFile, readOnly = false, initialView, folderPage }: BaseViewProps) {
-  const [active, setActive] = useState(() =>
-    initialView === undefined ? 0 : Math.max(0, parsed.def.views.findIndex((v) => v.name.toLowerCase() === initialView.toLowerCase())),
-  )
+export function BaseView({ parsed, onChange, root, thisFile, records, properties = null, onOpenFile, folderPage }: BaseViewProps) {
+  const [active, setActive] = useState(0)
   const [search, setSearch] = useState<string | null>(null)
   /** Collapsed group keys per view, seeded from the store; a toggle replaces the entry here AND writes through storage. */
   const [collapsedByKey, setCollapsedByKey] = useState<Record<string, string[]>>({})
@@ -108,10 +113,11 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
 
   const shown = useMemo(() => (Object.keys(moves).length === 0 ? records : applyMoves(records, moves)), [records, moves])
   // 🔒 D2 (YAZ-819): a folder page's rows are its MEMBERS, so the engine's own rows-are-the-vault
-  // resolver would miss every link pointing outside them — inject the whole-vault one. A caller
-  // that passes nothing keeps the default, which is the same resolver the engine always built.
-  const vaultRecords = folderPage?.vaultRecords
-  const resolve = useMemo(() => (vaultRecords === undefined ? undefined : resolverFor(vaultRecords)), [vaultRecords])
+  // resolver would miss every link pointing outside them — inject the whole-vault one. It is built
+  // WITH the root (YAZ-846): keyed per records identity then per root, the memo hands the wikilink
+  // feed and this one the SAME resolver, and an absolute-path link target resolves in both.
+  const vaultRecords = folderPage.vaultRecords
+  const resolve = useMemo(() => resolverFor(vaultRecords, root ?? undefined), [vaultRecords, root])
   /**
    * The folder page's OUTLINE (YAZ-820) — and the ONE place the engine has to be told about it:
    * an outline view's `order` is the [D5] MEMBER sequence (wikilinks), not a column list, so it
@@ -120,25 +126,20 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
    * over exactly those values — would hide the whole outline the moment anybody dragged a row.
    * Everything else the view says (sort, limit, groupBy) still runs.
    */
-  const isFolderOutline = view?.type === 'outline' && folderPage !== undefined
+  const isOutline = view?.type === 'outline'
   const result = useMemo(
-    () => (view ? runView(def, isFolderOutline && view.order !== undefined ? { ...view, order: undefined } : view, shown, { thisFile, resolve }) : null),
-    [def, view, shown, thisFile, resolve, isFolderOutline],
+    () => (view ? runView(def, isOutline && view.order !== undefined ? { ...view, order: undefined } : view, shown, { thisFile, resolve }) : null),
+    [def, view, shown, thisFile, resolve, isOutline],
   )
 
   if (view === undefined || result === null) {
     return (
       <div className="base-view">
         <p className="base-view__pending">
-          This base has no views.
-          {!readOnly && (
-            <>
-              {' '}
-              <button type="button" className="base-menu__action" onClick={() => update((d) => d.views.push({ type: 'table', name: 'Table 1' }))}>
-                Add view
-              </button>
-            </>
-          )}
+          This base has no views.{' '}
+          <button type="button" className="base-menu__action" onClick={() => update((d) => d.views.push({ type: 'table', name: 'Table 1' }))}>
+            Add view
+          </button>
         </p>
       </div>
     )
@@ -192,21 +193,11 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
     })
   }
 
-  /** The plain 5D create: the view's own filter-derived folder, the first free `Untitled`. */
-  const createFromSeed = async (seed: NewNoteSeed): Promise<string> => {
-    const folder = targetFolder(seed.folder, root, thisFile)
-    if (folder === null) throw new Error('the vault root is not known yet')
-    const taken = new Set(records.filter((r) => r.path.slice(0, r.path.lastIndexOf('/')) === folder).map((r) => r.basename))
-    const path = `${folder}/${untitledName(taken)}.md`
-    await createNewNote(path, seed.properties)
-    return path
-  }
-
   // The toolbar's "New" / a group header's "+" (5D, GRO-2144): a note pre-filled to satisfy this
-  // view — filter-derived seed, plus the group's raw value when created inside a group — created
-  // over the bridge and opened only once the create lands; a failure shows the alert instead.
-  // The type-scaffold upgrade a type-pinned view used to trigger died with the type system
-  // (YAZ-836): every New is the plain seeded create, wherever the view's own rules place it.
+  // view — filter-derived seed, plus the group's raw value when created inside a group. A folder
+  // page births its members from its OWN declaration and parks them per its settings (🔒 Q5,
+  // YAZ-815), which since YAZ-846 is the ONLY create path here: the seed still rides along, so a
+  // group "+" seeds its group. The note opens once the create lands; a failure shows the alert.
   const onNewNote = (group: Group | null) => {
     const seed = deriveSeed(def, view)
     const groupKey = groupByKey(view)
@@ -223,10 +214,10 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
       if (raw !== undefined) seed.properties[groupKey] = raw
     }
     setCreateError(null)
-    // A folder page births its members from its OWN declaration and parks them per its settings
-    // (🔒 Q5, YAZ-815) — the seed still rides along, so a group "+" seeds that group here too.
-    const run = folderPage === undefined ? createFromSeed(seed) : folderPage.create(seed)
-    run.then(onOpenFile).catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
+    folderPage
+      .create(seed)
+      .then(onOpenFile)
+      .catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
   }
 
   const keys = propertyKeys(def, view, records)
@@ -234,12 +225,11 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
   const rest = keys.filter((k) => k !== nameKey)
 
   /**
-   * The folder page's OUTLINE (YAZ-820) — only ever inside the contents block: a `type: outline`
-   * view with no folder page behind it keeps the placeholder rows, as it always did.
-   * `thisFile` IS the folder page's path here (`FolderPageContents` passes it), and it roots the
-   * ancestor guard, so a null one falls through too rather than guessing.
+   * The folder page's OUTLINE (YAZ-820). `thisFile` IS the folder page's path here
+   * (`FolderPageContents` passes it) and it roots the ancestor guard, so a null one falls through
+   * to the placeholder rows rather than guessing.
    */
-  const outline = isFolderOutline && thisFile !== null
+  const outline = isOutline && thisFile !== null
   /**
    * The outline view's `order` is the [D5] MEMBER sequence, not a column list — so the Properties
    * menu, whose every gesture rewrites `view.order`, is not offered while it is showing. An
@@ -248,71 +238,32 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
    */
   const outlineIndex = views.findIndex((v) => v.type === 'outline')
 
-  const tabs = {
-    views,
-    active: index,
-    onSelect: setActive,
-    // A folder page's views are switch-only (🔒 rule 4, YAZ-819): which view is active is session
-    // state that never reaches the card, and view CRUD is not this block's gesture.
-    readOnly: folderPage !== undefined,
-    onAdd: () => {
-      update((d) => d.views.push({ type: 'table', name: `Table ${d.views.length + 1}` }))
-      setActive(views.length)
-    },
-    onRename: (i: number, name: string) =>
-      update((d) => {
-        d.views[i].name = name
-      }),
-    onDuplicate: (i: number) => {
-      update((d) => d.views.splice(i + 1, 0, { ...structuredClone(d.views[i]), name: `${d.views[i].name} copy` }))
-      setActive(i + 1)
-    },
-    onDelete: (i: number) => {
-      if (views.length <= 1) return
-      update((d) => d.views.splice(i, 1))
-      setActive(Math.min(i, views.length - 2))
-    },
-    onMove: (i: number, dir: -1 | 1) => {
-      const j = i + dir
-      if (j < 0 || j >= views.length) return
-      update((d) => {
-        const [v] = d.views.splice(i, 1)
-        d.views.splice(j, 0, v)
-      })
-      setActive(j)
-    },
-  }
+  // A folder page's views are switch-only (🔒 rule 4, YAZ-819): which view is active is session
+  // state that never reaches the card, and view CRUD is not this block's gesture. The editable
+  // tab half was deleted with its last reachable surface (YAZ-846; parked on YAZ-824).
+  const tabs = { views, active: index, onSelect: setActive }
 
   return (
     <div className="base-view">
-      {readOnly ? (
-        // Read-only chrome (6A, GRO-2145): the view switcher only — no menus, search or New.
-        <div className="base-toolbar">
-          <ViewTabs {...tabs} readOnly />
-        </div>
-      ) : (
-        <Toolbar
-          def={def}
-          view={view}
-          viewIndex={index}
-          records={records}
-          errors={result.errors}
-          shown={rows.length}
-          total={result.total}
-          search={search}
-          onSearch={setSearch}
-          onUpdate={update}
-          onNew={() => onNewNote(null)}
-          allGroupKeys={allGroupKeys}
-          collapsed={collapsed}
-          onSetAllGroups={writeCollapsed}
-          tabs={tabs}
-          root={root}
-          properties={properties}
-          noFilters={folderPage !== undefined}
-          noProperties={outline}
-        />
-      )}
+      <Toolbar
+        def={def}
+        view={view}
+        viewIndex={index}
+        records={records}
+        shown={rows.length}
+        total={result.total}
+        search={search}
+        onSearch={setSearch}
+        onUpdate={update}
+        onNew={() => onNewNote(null)}
+        allGroupKeys={allGroupKeys}
+        collapsed={collapsed}
+        onSetAllGroups={writeCollapsed}
+        tabs={tabs}
+        root={root}
+        properties={properties}
+        noProperties={outline}
+      />
       {createError !== null && (
         <p className="base-view__error" role="alert">
           Could not create note: {createError}
@@ -323,17 +274,12 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           Could not load the vault's property declarations: {properties.error}
         </p>
       )}
-      {indexStatus === 'pending' ? (
-        <p className="base-view__pending">Loading the vault index…</p>
-      ) : indexStatus === 'error' ? (
-        <p className="base-view__error" role="alert">
-          Could not load the vault index: {indexError}
-        </p>
-      ) : outline ? (
+      {outline ? (
         <OutlineView
           folderPagePath={thisFile}
+          root={root}
           settings={folderPage.settings}
-          vaultRecords={folderPage.vaultRecords}
+          vaultRecords={vaultRecords}
           records={records}
           rows={rows}
           onOpenFile={onOpenFile}
@@ -367,12 +313,11 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           onOpenFile={onOpenFile}
           onMoveToGroup={onMoveToGroup}
           moveError={moveError}
-          onNewInGroup={readOnly ? undefined : onNewNote}
-          types={types}
+          onNewInGroup={onNewNote}
+          root={root}
           properties={properties}
-          folderPage={folderPage?.settings ?? null}
+          folderPage={folderPage.settings}
           vaultRecords={vaultRecords}
-          readOnly={readOnly}
         />
       ) : view.type === 'board' ? (
         <BoardView
@@ -387,8 +332,7 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           onOpenFile={onOpenFile}
           onMoveToGroup={onMoveToGroup}
           moveError={moveError}
-          onNewInGroup={readOnly ? undefined : onNewNote}
-          readOnly={readOnly}
+          onNewInGroup={onNewNote}
         />
       ) : view.type === 'cards' ? (
         <CardsView
@@ -401,12 +345,10 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
           onOpenFile={onOpenFile}
-          onNewInGroup={readOnly ? undefined : onNewNote}
-          types={types}
+          onNewInGroup={onNewNote}
           properties={properties}
-          folderPage={folderPage?.settings ?? null}
+          folderPage={folderPage.settings}
           vaultRecords={vaultRecords}
-          readOnly={readOnly}
         />
       ) : view.type === 'list' ? (
         <ListView
@@ -418,12 +360,11 @@ export function BaseView({ parsed, onChange, root, thisFile, records, indexStatu
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
           onOpenFile={onOpenFile}
-          onNewInGroup={readOnly ? undefined : onNewNote}
-          types={types}
+          onNewInGroup={onNewNote}
+          root={root}
           properties={properties}
-          folderPage={folderPage?.settings ?? null}
+          folderPage={folderPage.settings}
           vaultRecords={vaultRecords}
-          readOnly={readOnly}
         />
       ) : (
         <ul className="base-rows">
