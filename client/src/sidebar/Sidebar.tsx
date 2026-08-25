@@ -430,6 +430,12 @@ export function Sidebar({
    */
   const askDelete = useCallback(
     (path: string) => {
+      // The setting finally gates the sheet (YAZ-857 — it existed end-to-end but nothing read
+      // it): off → delete directly, exactly what "Don't ask me again" promised.
+      if (!settings.confirmDelete) {
+        void onDeleteFile(path)
+        return
+      }
       const kind: 'file' | 'dir' = menu?.rowKind === 'file' ? 'file' : 'dir'
       const target: DeleteTarget = { path, kind }
       if (kind === 'dir') target.children = countChildren(tree?.tree ?? [], path)
@@ -444,7 +450,7 @@ export function Sidebar({
         () => undefined,
       )
     },
-    [menu, root, tree],
+    [menu, root, tree, settings.confirmDelete, onDeleteFile],
   )
 
   const confirmDelete = useCallback(

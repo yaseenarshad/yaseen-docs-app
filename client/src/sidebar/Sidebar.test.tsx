@@ -445,6 +445,13 @@ describe('delete (GRO-2272)', () => {
     expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
   })
 
+  it('confirmDelete: false deletes DIRECTLY — no sheet at all (YAZ-857: the setting finally gates)', async () => {
+    const { el, props } = await openOn('.tree__row--file', { settings: { ...DEFAULT_SETTINGS, confirmDelete: false } })
+    act(() => itemByLabel(el, 'Delete')?.click())
+    expect(sheet(el)).toBeNull()
+    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+  })
+
   it('shows the backlink count when notes link to the target', async () => {
     // One note whose body link resolves to a.md — the shared resolver is what countLinkReferences uses.
     // The TARGET must be in the record set too: the shared resolver resolves a link NAME
