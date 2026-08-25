@@ -17,11 +17,17 @@
  *   5 Uncategorized expands IN PLACE (🔒 D7, the locked deviation from the mockup), listing the
  *     orphans and subtracting both the root already on screen and everyone already nested
  *
+ * Then HOME'S BIRTH (6C-, YAZ-849), which the fixture is also the honest shape for: it has no
+ * `.yaseendocs/` either, so it is an UN-ADOPTED folder — the app must not write into it —
+ * while step 7 adopts a second copy and proves the automatic half.
+ *   6 the OFFER: un-adopted + no Home → the card, and one click makes Home (still un-adopted)
+ *   7 the AUTO-CREATE: an ADOPTED copy grows its own Home on open, once, never overwritten
+ *
  * Same harness as bible.spec.ts (temp `--user-data-dir`, a COPY of the fixture, `topics-` step
  * screenshots), with the seed pre-selecting the Topics lens.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { appWindow, copyVault, launchApp, quitApp, readState, seededState, shoot } from './helpers'
@@ -35,9 +41,15 @@ const FOLDER_PAGE = 'Funnel Stages.md'
 const MEMBERS = ['Lead Gen', 'Lead Nurture', 'Sales-Conversion']
 /** Everything in the fixture that says it belongs nowhere: 2 industries + 5 kpis + 4 problems + 3 roles. */
 const ORPHAN_COUNT = 14
+/** 6C (YAZ-849): the dotfolder whose existence IS adoption, and the exact bytes a newborn Home carries. */
+const VAULT_CONFIG_DIR = '.yaseendocs'
+const HOME = 'Home.md'
+const HOME_BYTES = '---\nfolder_page: true\n---\n'
 
 let userData: string
 let vault: string
+/** Step 7's second copy — the ADOPTED shape (`.yaseendocs/` present), which auto-creates. */
+let adoptedVault: string | null = null
 let app: ElectronApplication
 let win: Page
 
@@ -54,6 +66,12 @@ const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="tr
 /** The VISIBLE tab layer — every visited tab keeps its own DOM mounted. */
 const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
 const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
+/** 6C's offer card and its one button. */
+const offerCard = (w: Page) => w.locator('.sidebar__body .topics-offer')
+const offerButton = (w: Page) => offerCard(w).locator('button')
+
+/** What is on disk at `<vault>/<name>`, or null when it is not there at all. */
+const onDisk = (vaultPath: string, name: string): Promise<string | null> => readFile(path.join(vaultPath, name), 'utf8').catch(() => null)
 
 /** `seededState` pre-selects the FILES lens for the rest of the suite; this spec is about Topics. */
 function topicsState(vaultPath: string, file: string | null) {
@@ -71,7 +89,8 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close().catch(() => undefined)
-  await Promise.all([userData, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
+  const dirs = [userData, vault, adoptedVault].filter((dir): dir is string => typeof dir === 'string' && dir !== '')
+  await Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
 // ---------------------------------------------------------------- 🔒 D2: the roots
@@ -91,6 +110,9 @@ test('step 1 — the no-Home shape: Funnel Stages stands as a root, glyphed and 
   // (Folder-page rows wear `.tree__row--dir` themselves: same class family, same colour.)
   await expect(rowFor(win, 'funnel-stages')).toHaveCount(0)
   await expect(win.locator('.sidebar__body .tree__row--file')).toHaveCount(0)
+  // The fixture has no `.yaseendocs/` either, so 6C's card is up from the first frame — above
+  // the tree, replacing none of it. Step 6 drives it; here it only has to be true.
+  await expect(offerCard(win)).toBeVisible()
   await shoot(win, 'topics-01-roots')
 })
 
@@ -164,5 +186,65 @@ test('step 5 — Uncategorized expands IN PLACE, subtracting the root and everyo
   await expect(activeTab(win)).toHaveText('CAC')
   await uncategorizedRow(win).click() // …and it collapses back in place
   await expect(topicLabels(win)).toHaveText(['Funnel Stages', ...MEMBERS, 'Uncategorized'])
+  await quitApp(app)
+})
+
+// ------------------------------------------------- ⚡ the amendment (YAZ-797): the un-adopted offer
+
+test('step 6 — an UN-ADOPTED folder is OFFERED a Home, never given one; one click makes it', async () => {
+  // Five steps of real use have gone by and the app has still written no Home into a folder it
+  // never adopted — which is the whole rule.
+  expect(await onDisk(vault, HOME)).toBeNull()
+  expect(await onDisk(vault, `${VAULT_CONFIG_DIR}/properties.json`)).toBeNull()
+
+  app = await launchApp({ userData })
+  win = await appWindow(app, 'w1')
+  await expect(offerCard(win)).toContainText('Your map starts here')
+  await expect(offerButton(win)).toHaveText('Create Home')
+  // It replaces nothing: the tree the previous steps left is still underneath it.
+  await expect(topicLabels(win)).toHaveText(['Funnel Stages', ...MEMBERS, 'Uncategorized'])
+  await shoot(win, 'topics-06-offer')
+
+  await offerButton(win).click()
+  // Exactly 4B's birth bytes at the vault root — no settings block, no body.
+  await expect.poll(() => onDisk(vault, HOME)).toBe(HOME_BYTES)
+  // Created AND opened, in the current tab.
+  await expect(activeTab(win)).toHaveText('Home')
+  // The card retires the moment `[[Home]]` resolves, and the tree roots on it — Home leads,
+  // Funnel Stages follows (🔒 D2). No members yet, so no chevron and a count of 0.
+  await expect(offerCard(win)).toHaveCount(0)
+  await expect(topicLabels(win)).toHaveText(['Home', 'Funnel Stages', ...MEMBERS, 'Uncategorized'])
+  await expect(rowFor(win, 'Home').locator('.tree__count')).toHaveText('0')
+  // Making a Home does NOT adopt the folder: the app still owns nothing invisible in here.
+  expect(await onDisk(vault, `${VAULT_CONFIG_DIR}/properties.json`)).toBeNull()
+  await shoot(win, 'topics-06-home-made')
+  await quitApp(app)
+})
+
+// ------------------------------------------------------- 🔒 D2: an ADOPTED vault creates its own
+
+test('step 7 — an ADOPTED vault grows its own Home on open: once, unasked, never overwritten', async () => {
+  // The same encyclopedia, adopted: `.yaseendocs/` exists, so this vault has said yes already.
+  adoptedVault = await copyVault(FIXTURE)
+  await mkdir(path.join(adoptedVault, VAULT_CONFIG_DIR), { recursive: true })
+  expect(await onDisk(adoptedVault, HOME)).toBeNull()
+
+  app = await launchApp({ userData, seedState: topicsState(adoptedVault, null) })
+  win = await appWindow(app, 'w1')
+  // Nobody clicked anything: Home is simply there, carrying exactly the flag.
+  await expect.poll(() => onDisk(adoptedVault as string, HOME)).toBe(HOME_BYTES)
+  await expect(topicLabels(win)).toHaveText(['Home', 'Funnel Stages', 'Uncategorized'])
+  await expect(offerCard(win)).toHaveCount(0) // an adopted vault is never offered
+  await shoot(win, 'topics-07-auto-created')
+  await quitApp(app)
+
+  // IDEMPOTENT: the user makes it their own, and reopening the vault never recreates or
+  // overwrites it — the resolver finds a Home, so nothing is written.
+  const mine = `${HOME_BYTES}\n# My map\n\nmy own words\n`
+  await writeFile(path.join(adoptedVault, HOME), mine)
+  app = await launchApp({ userData })
+  win = await appWindow(app, 'w1')
+  await expect(topicLabels(win)).toHaveText(['Home', 'Funnel Stages', 'Uncategorized'])
+  expect(await onDisk(adoptedVault, HOME)).toBe(mine)
   await quitApp(app)
 })

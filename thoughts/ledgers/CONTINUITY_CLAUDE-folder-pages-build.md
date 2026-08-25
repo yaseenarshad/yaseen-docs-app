@@ -19,14 +19,18 @@ Execute the entire YAZ-813 tree (issues 1- through 8-, 33 subissues) to Done: th
 - Done:
   - [x] Scoping phase: all 8 issues locked (~46 🔒), 33 subissues created
   - [x] Setup: worktree, Linear helper (scratchpad/lin.mjs), statuses, this ledger
-- Now: [→] 1- YAZ-814: 1D (YAZ-828) CONTRACTS.md entry — Opus drafting, Fable reviews closely (it's the law)
-  - [x] 1A (YAZ-825) folderPages.ts — Done; commit 77e0a7f; gotcha: worktrees need own npm ci
-  - [x] 1B (YAZ-826) walkFolderPage — Done; commit ac1efcd; zero corrections needed
-  - [x] 1C (YAZ-827) perf tripwire — Done; commit cb923a4; 1.2ms measured vs 25ms budget
-- Next: 1E (YAZ-829) polish → merge 814 → start 815
+- Done issues:
+  - [x] 1- YAZ-814 COMPLETE + MERGED to main (adf0b25). 1A 77e0a7f · 1B ac1efcd · 1C cb923a4 (1.2ms/25ms) · 1D 1df7a67 (CONTRACTS Links entry) · 1E adf0b25 (term sweep; zero drift on six locks). Gotchas: worktrees need own npm ci; scalar folder_pages tolerated like extractLinks.
+  - [x] 2- YAZ-815 COMPLETE + MERGED to main (4440933). 2A c9f6247 · 2B 0e092c8 (Fable direct) · 2C 75666c5 · 2D+2E 4440933. Zero corrections across 2A/2C; ripples filed on 835/836. Pre-existing 'membership' prose in engine.test.ts:226 left for 8B.
+  - [x] 3- YAZ-816 COMPLETE + MERGED to main (150c780). Order was 3B→3A→3C→3D→3E. 3B c868c4d (−1663) · 3A da4d02e (properties.json) · 3C dac0291 (e2e 85/85) · 3D 057c908 (tombstones) · 3E 150c780 (vaultIndex/registry→live; 'registry' greps ZERO incl. tests). Gotchas: picker e2e gap filed on 819; bible fixture pages still carry inert page_type until 7-.
+  - [x] 4- YAZ-817 COMPLETE + MERGED to main (721b69d). 4A c249a99 (toggle + ConfirmTurnBack; indexSource wiring) · 4B 1098d87 (New folder page, 4th EntryKind) · 4C+4D 721b69d (gestures contract; fixed pre-existing 5D atomicity lie). e2e 85/85 twice.
+  - [x] 5- YAZ-818 COMPLETE + MERGED to main (5c60901). 5.1 9a798ce · 5.2 f27e2fa · 5.3 41929ad (−2,839) · 5.4 0782377 · 5.5 5c60901 (amputation; rung 2 wired; ViewTabs switch-only for real → CRUD parked 824). e2e 87/87.
+- Now: [→] 6- YAZ-821: 6D (YAZ-850) contracts — next. D6 RULED by Yasin (guardedChildren = the one door; ⚡ amendment on YAZ-814, merged ec15f3b).
+  - [x] 6A (YAZ-847) lens tabs — Done; 98f8058; sidebarLens global; probe flakes hardened w/ control experiment
+  - [x] 6B (YAZ-848) Topics tree — Done; 3fc8359; guardedChildren's first tree consumer; 96/96
+  - [x] 6C (YAZ-849) Home ensure + offer — Done (resumed after stream cut); tree-probe adoption; 98/98
+- Next: 6D contracts → 6E polish → merge 821 → 7- (Yasin gates: canonical copy + dry-run approval)
 - Remaining:
-  - [ ] 2- YAZ-815 (2A–2E)
-  - [ ] 3- YAZ-816 (3A–3E)
   - [ ] 4- YAZ-817 (4A–4D)
   - [ ] 5- YAZ-818 (5.1–5.5)
   - [ ] 6- YAZ-821 (6A–6E)

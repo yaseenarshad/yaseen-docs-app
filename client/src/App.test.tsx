@@ -26,6 +26,9 @@ interface SidebarStubProps {
   lens: SidebarLens
   onLensChange: (lens: SidebarLens) => void
   onCollapse: () => void
+  /** 6C (YAZ-849): App's per-vault verdict + the offer card's button, both threaded to Topics. */
+  unadopted: boolean
+  onCreateHome: () => void
 }
 
 const captured = vi.hoisted(() => ({ sidebar: null as SidebarStubProps | null }))
@@ -75,6 +78,14 @@ function installBridge(state: AppState, identity: WindowIdentity, files: Record<
     writeFile: vi.fn(async ({ path, content }: { path: string; content: string }) => {
       files[path] = { content, mtime: (files[path]?.mtime ?? 0) + 1 }
       return { path, mtime: files[path].mtime, size: content.length }
+    }),
+    // Home's birth (6C-, YAZ-849) is the only thing in the App tree that creates a file. Like
+    // the real `wx` write it NEVER overwrites: an existing path rejects ALREADY_EXISTS.
+    createFile: vi.fn(async (req: string | { path: string; content?: string }) => {
+      const { path, content } = typeof req === 'string' ? { path: req, content: '' } : req
+      if (files[path] !== undefined) return Promise.reject({ code: 'ALREADY_EXISTS', message: 'path already exists', path })
+      files[path] = { content: content ?? '', mtime: 1 }
+      return { path, mtime: 1, size: (content ?? '').length }
     }),
     pickFolder: vi.fn(async () => ({ cancelled: true as const })),
     watch: vi.fn(() => () => undefined),
@@ -160,8 +171,15 @@ function installBridge(state: AppState, identity: WindowIdentity, files: Record<
 let root: Root | null = null
 let container: HTMLElement | null = null
 
-async function mount(state: AppState, identity: WindowIdentity, files: Record<string, { content: string; mtime: number }> = {}) {
+async function mount(
+  state: AppState,
+  identity: WindowIdentity,
+  files: Record<string, { content: string; mtime: number }> = {},
+  /** Runs BEFORE the first render, for stubs the mount itself consumes (the index, the `.yaseendocs` probe). */
+  tweak?: (b: ReturnType<typeof installBridge>) => void,
+) {
   const b = installBridge(state, identity, files)
+  tweak?.(b)
   await storage.init()
   container = document.createElement('div')
   document.body.appendChild(container)
@@ -705,5 +723,86 @@ describe('in-app delete (GRO-2272)', () => {
     const before = document.title
     await act(async () => b.emitFileDeleted('/v/somewhere-else.md'))
     expect(document.title).toBe(before)
+  })
+})
+
+// ---------------------------------------------------------------- 6C-: Home on vault open
+
+/**
+ * The TRIGGER half of YAZ-849 (the decision itself is pinned in `sidebar/ensureHome.test.ts`).
+ * It lives in App because Home is born ON VAULT OPEN — with the sidebar collapsed, or on the
+ * Files lens, or with the Topics tree never rendered, it must still happen exactly once.
+ *
+ * Adoption is read through the ONE existing bridge call that can tell a missing directory from
+ * an existing one: `fs:tree` of `<root>/.yaseendocs`. Nothing here creates that folder.
+ */
+describe('Home is born on vault open (6C-, YAZ-849)', () => {
+  const HOME = '/v/Home.md'
+  const DOTFOLDER = '/v/.yaseendocs'
+  const identity = (): WindowIdentity => ({ id: 'w1', root: '/v', file: null, tabs: [] })
+
+  const homeRecord = (): IndexRecord => ({
+    path: HOME,
+    name: 'Home.md',
+    basename: 'Home',
+    folder: '',
+    ext: 'md',
+    size: 7,
+    ctime: 1,
+    mtime: 1,
+    properties: {},
+    aliases: [],
+    tags: [],
+    links: [],
+    embeds: [],
+  })
+
+  /** No `.yaseendocs/`: the probe rejects NOT_FOUND exactly as `requireDir` does; the root itself still answers. */
+  const unadopt = (b: ReturnType<typeof installBridge>) =>
+    b.bridge.tree.mockImplementation(async (r: string) =>
+      r === DOTFOLDER ? Promise.reject({ code: 'NOT_FOUND', message: 'path does not exist', path: r }) : { root: r, tree: [], generatedAt: 1 },
+    )
+
+  it('an ADOPTED vault with no Home gets one automatically: the flag bytes, at the root, ONCE', async () => {
+    const b = await mount(defaultAppState(), identity())
+    expect(b.bridge.tree).toHaveBeenCalledWith(DOTFOLDER)
+    // Exactly 4B's birth: `folder_page: true` and nothing else — no settings block, no body.
+    expect(b.bridge.createFile).toHaveBeenCalledWith({ path: HOME, content: '---\nfolder_page: true\n---\n' })
+    // ONCE, though StrictMode mounts the effect twice and every index poke re-enters the
+    // subscriber: the per-root ref is what makes it once per vault, not once per snapshot.
+    expect(b.bridge.createFile).toHaveBeenCalledTimes(1)
+    // An adopted vault never offers — its map was made for it.
+    expect(captured.sidebar?.unadopted).toBe(false)
+  })
+
+  it('an UN-ADOPTED folder is never written into; the offer rides down to the Topics lens instead', async () => {
+    const b = await mount(defaultAppState(), identity(), {}, unadopt)
+    expect(b.bridge.tree).toHaveBeenCalledWith(DOTFOLDER)
+    expect(b.bridge.createFile).not.toHaveBeenCalled()
+    expect(captured.sidebar?.unadopted).toBe(true)
+  })
+
+  it("the offer's button runs the SAME create and opens the page it made", async () => {
+    const b = await mount(defaultAppState(), identity(), {}, unadopt)
+    await act(async () => captured.sidebar?.onCreateHome())
+    expect(b.bridge.createFile).toHaveBeenCalledWith({ path: HOME, content: '---\nfolder_page: true\n---\n' })
+    expect(document.querySelector('[data-editor]')?.getAttribute('data-path')).toBe(HOME)
+    // Still un-adopted — making a Home does not adopt the folder. The CARD retires because
+    // `[[Home]]` resolves now, which is the Topics tree's own live half of the condition.
+    expect(captured.sidebar?.unadopted).toBe(true)
+  })
+
+  it('a vault that ALREADY answers [[Home]] is left alone — resolver-based, never a path check', async () => {
+    const b = await mount(defaultAppState(), identity(), {}, (bb) => bb.bridge.index.mockResolvedValue({ root: '/v', records: [homeRecord()], generatedAt: 1 }))
+    expect(b.bridge.createFile).not.toHaveBeenCalled()
+    // The probe is not even reached: a vault WITH a Home is never asked whether it was adopted.
+    expect(b.bridge.tree).not.toHaveBeenCalledWith(DOTFOLDER)
+    expect(captured.sidebar?.unadopted).toBe(false)
+  })
+
+  it('nothing happens on the Welcome screen — there is no folder to have a Home', async () => {
+    const b = await mount(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] })
+    expect(b.bridge.createFile).not.toHaveBeenCalled()
+    expect(b.bridge.tree).not.toHaveBeenCalled()
   })
 })

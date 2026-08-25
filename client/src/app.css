@@ -1092,6 +1092,35 @@ button {
   margin-top: 10px;
 }
 
+/* The offer card (6C-, YAZ-849): shown ONLY in an un-adopted folder with no Home. Quiet, small,
+   and above the tree it does not replace — an invitation, never an empty state. */
+.topics-offer {
+  margin: 8px 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--accent-soft);
+}
+
+.topics-offer__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.topics-offer__body {
+  margin: 4px 0 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--fg-muted);
+}
+
+/* One button, sized for a sidebar rather than a dialog. */
+.topics-offer__go {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
 .btn {
   padding: 6px 14px;
   border-radius: 6px;

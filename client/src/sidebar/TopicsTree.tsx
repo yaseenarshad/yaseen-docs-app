@@ -35,7 +35,15 @@
  * index lands the feed is empty and this renders NOTHING — not even the Uncategorized row, which
  * would otherwise flash "0" over a vault it has not seen yet.
  *
- * Read-only apart from expansion: no drag, and no context menu of its own (YAZ-848's scope).
+ * THE OFFER (6C-, YAZ-849): the one thing this lens shows that is not the vault — a small card
+ * above the tree, and ONLY when the folder has not been adopted (no `.yaseendocs/`, a fact App
+ * establishes once per vault) AND nothing answers `[[Home]]`. An adopted vault never sees it: its
+ * Home was created for it on open. The condition's live half is asked HERE, on this surface's own
+ * feed, so the card retires the moment a Home appears — including an ordinary, unflagged page
+ * called Home, which IS Home (🔒 D1) even though the roots rule above gives it no row. The card
+ * REPLACES nothing: the roots and Uncategorized render underneath it exactly as they would.
+ *
+ * Read-only apart from expansion and that one button: no drag, and no context menu of its own.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { IndexRecord } from '@shared/types'
@@ -44,6 +52,13 @@ import { BaseGlyph } from '../bases/view/icons'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { storage } from '../lib/storage'
 import { folderPagesLookup, guardedChildren, type FolderPagesLookup } from '../links/folderPages'
+import { HOME_LINK } from './ensureHome'
+
+/**
+ * THE Home link (🔒 D1) — re-exported from where the birth routine keeps it, so the tree and the
+ * ensure can never ask two different questions.
+ */
+export { HOME_LINK }
 
 export interface TopicsTreeProps {
   /** The vault, which keys the persisted expansion bucket (the Sidebar is mounted per root). */
@@ -55,13 +70,15 @@ export interface TopicsTreeProps {
   onOpenFile: (path: string) => void
   /** ⌘-click (I3, GRO-2235): a background tab of THIS window — the file tree's other handler. */
   onOpenFileBackground: (path: string) => void
+  /**
+   * This folder has no `.yaseendocs/` (6C-, YAZ-849), so nothing was written into it and the
+   * offer card is on the table. App establishes it once per vault (`useEnsureHome`) — it is a
+   * fact about the FOLDER, not about Home, and stays true after the card has made one.
+   */
+  unadopted: boolean
+  /** The card's one button: App runs the same create the auto-path runs, then opens the page. */
+  onCreateHome: () => void
 }
-
-/**
- * THE Home link (🔒 D1). A wikilink, not a bare name, because it goes through the very resolver a
- * CLICK would use: `[[home]]`, an alias, a `Home.md` anywhere in the vault — all of it lands here.
- */
-export const HOME_LINK = '[[Home]]'
 
 /** Stands in while the index has not landed; only ever paired with an empty snapshot. */
 const NEVER: ResolveLink = () => null
@@ -95,7 +112,7 @@ export function topicRoots(records: readonly IndexRecord[], lookup: FolderPagesL
   return homeRoot === null ? others : [homeRoot, ...others]
 }
 
-export function TopicsTree({ root, source, activeFile, onOpenFile, onOpenFileBackground }: TopicsTreeProps) {
+export function TopicsTree({ root, source, activeFile, onOpenFile, onOpenFileBackground, unadopted, onCreateHome }: TopicsTreeProps) {
   // Subscribe once, re-read the whole feed on each poke; an unchanged snapshot keeps the previous
   // object, so index churn that changed nothing here costs no render (BacklinksSection's idiom).
   const [feed, setFeed] = useState<Feed>(() => ({ records: source.records, resolve: source.resolve }))
@@ -190,8 +207,21 @@ export function TopicsTree({ root, source, activeFile, onOpenFile, onOpenFileBac
       return isOpen ? [row, ...rowsFor(kids, depth + 1, trail)] : [row]
     })
 
+  // The offer's live half (see the module doc): `resolve` is null until the first index lands, and
+  // a card shown then would be asking about a vault nobody has read yet.
+  const offerHome = unadopted && resolve !== null && resolve(HOME_LINK) === null
+
   return (
     <>
+      {offerHome && (
+        <div className="topics-offer">
+          <p className="topics-offer__title">Your map starts here</p>
+          <p className="topics-offer__body">A Home page is the top of your topics. Making one adds a single note to this folder.</p>
+          <button type="button" className="btn btn--primary topics-offer__go" onClick={onCreateHome}>
+            Create Home
+          </button>
+        </div>
+      )}
       {roots.length > 0 && (
         <ul className="tree" role="tree" aria-label="Topics">
           {rowsFor(roots, 0, [])}

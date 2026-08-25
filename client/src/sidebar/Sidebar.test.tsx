@@ -81,6 +81,10 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     indexSource: { resolve: null, records: [], subscribe: () => () => undefined },
     pendingSearchFocus: false,
     onSearchFocusHandled: vi.fn(),
+    // 6C (YAZ-849): App's per-vault verdict, threaded to the Topics lens. False = adopted, the
+    // ordinary case — the offer card is TopicsTree.test's own subject.
+    unadopted: false,
+    onCreateHome: vi.fn(),
     ...over,
   }
   await act(async () => root?.render(<StrictMode><Sidebar {...props} /></StrictMode>))

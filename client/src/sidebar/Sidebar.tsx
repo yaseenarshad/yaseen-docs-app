@@ -89,6 +89,15 @@ interface SidebarProps {
   pendingSearchFocus: boolean
   /** The focus above happened (YAZ-801); App clears its flag so the next ⌘K is a fresh request. */
   onSearchFocusHandled: () => void
+  /**
+   * 6C's offer (YAZ-849), threaded straight through to the Topics lens: this folder has no
+   * `.yaseendocs/`, so Home was NOT created for it and the lens offers to make one. App owns
+   * both — the fact is established once per vault ON OPEN (`useEnsureHome`), which the sidebar
+   * cannot do: it is unmounted while collapsed and would let a whole session pass without a Home.
+   */
+  unadopted: boolean
+  /** The offer card's button; App creates Home and opens it. */
+  onCreateHome: () => void
 }
 
 /**
@@ -200,6 +209,8 @@ export function Sidebar({
   indexSource,
   pendingSearchFocus,
   onSearchFocusHandled,
+  unadopted,
+  onCreateHome,
 }: SidebarProps) {
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -659,7 +670,7 @@ export function Sidebar({
           // conditional render, like the search swap above: the Files tree's state (data,
           // expansion, pending create/rename, drag) lives in this component and is waiting
           // untouched below.
-          <TopicsTree root={root} source={indexSource} activeFile={activeFile} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} />
+          <TopicsTree root={root} source={indexSource} activeFile={activeFile} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} unadopted={unadopted} onCreateHome={onCreateHome} />
         ) : (
           <>
             {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}

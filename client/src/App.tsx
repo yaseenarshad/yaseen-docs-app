@@ -20,6 +20,7 @@ import { storage } from './lib/storage'
 import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
 import { windowTitle } from './lib/windowTitle'
+import { useEnsureHome } from './sidebar/ensureHome'
 import { Sidebar, SidebarPanelIcon } from './sidebar/Sidebar'
 import { TabBar } from './tabs/TabBar'
 import { useTabs } from './tabs/useTabs'
@@ -224,6 +225,14 @@ export function App() {
   }, [notice])
   useLinkEvents({ onOpenFile: openCurrent, onNotice: setNotice })
 
+  // HOME (6C-, YAZ-849): every ADOPTED vault gets one the first time its index lands — one
+  // `Home.md` carrying `folder_page: true`, created automatically, never twice, never over
+  // anything. An UN-ADOPTED folder (no `.yaseendocs/`) is not written into at all: `unadopted`
+  // rides down to the Topics lens, which offers a card whose button runs the same create. It
+  // belongs HERE, beside the window's one index feed, because Home is born on VAULT OPEN — the
+  // sidebar is unmounted while collapsed, and the Topics tree only exists on its own lens.
+  const { unadopted, createHome } = useEnsureHome(root, wikilinks, openCurrent, setNotice)
+
   // External rename/move resilience (Links E1c, GRO-2242 — locked: confirm-first, NEVER
   // automatic, never a dialog): ONE detector fed by the cold-start reconcile diff and by
   // consecutive index snapshots (WikilinkIndexBridge's onSnapshot below), surfacing ONE
@@ -409,6 +418,9 @@ export function App() {
           indexSource={wikilinks}
           pendingSearchFocus={pendingSearchFocus}
           onSearchFocusHandled={searchFocusHandled}
+          // 6C's offer (YAZ-849): the fact and the button, both App's, both straight through.
+          unadopted={unadopted}
+          onCreateHome={createHome}
         />
       )}
       {root !== null && !sidebarCollapsed && <div className={`sidebar-resize${resizing ? ' sidebar-resize--active' : ''}`} aria-hidden onMouseDown={startSidebarResize} />}

@@ -136,6 +136,10 @@ async function mount(over: Partial<Props> & { source: Props['source'] }) {
     activeFile: null,
     onOpenFile: vi.fn(),
     onOpenFileBackground: vi.fn(),
+    // 6C's offer (YAZ-849): every case below runs on an ADOPTED vault, where the card never
+    // shows; the "the offer card" describe is the one that flips this.
+    unadopted: false,
+    onCreateHome: vi.fn(),
     ...over,
   }
   await act(async () => root?.render(<StrictMode><TopicsTree {...props} /></StrictMode>))
@@ -395,5 +399,52 @@ describe('expansion persists through the per-vault storage bucket (🔒 D4)', ()
     container?.remove()
     const { el } = await mount({ source: sourceOver(vault()) })
     expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized'])
+  })
+})
+
+// ---------------------------------------------------------------- ⚡ the amendment: the offer
+
+describe('the offer card (6C-, YAZ-849): un-adopted AND no Home, and nothing else', () => {
+  const card = (el: HTMLElement) => el.querySelector<HTMLElement>('.topics-offer')
+  const offerButton = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.topics-offer button')
+
+  it('shows at the TOP of the lens when the folder is un-adopted and nothing answers [[Home]]', async () => {
+    const { el } = await mount({ source: sourceOver([folder(PROJECTS), rec(`${ROOT}/Loose.md`)]), unadopted: true })
+    expect(card(el)?.textContent).toContain('Your map starts here')
+    expect(offerButton(el)?.textContent).toBe('Create Home')
+    // First thing in the lens, and it REPLACES nothing: the tree still stands Projects up and
+    // still lists the orphan (there is never a silent fallback to Files).
+    expect(el.firstElementChild).toBe(card(el))
+    expect(labels(el)).toEqual(['Projects', 'Uncategorized'])
+  })
+
+  it('one click runs the create — App makes Home and opens it; the card asks for nothing else', async () => {
+    const onCreateHome = vi.fn()
+    const { el } = await mount({ source: sourceOver([rec(`${ROOT}/Loose.md`)]), unadopted: true, onCreateHome })
+    await click(offerButton(el) as Element)
+    expect(onCreateHome).toHaveBeenCalledTimes(1)
+  })
+
+  it('an ADOPTED vault never offers — its Home was created for it, silently', async () => {
+    const { el } = await mount({ source: sourceOver([rec(`${ROOT}/Loose.md`)]), unadopted: false })
+    expect(card(el)).toBeNull()
+  })
+
+  it('a Home that RESOLVES retires the card live, flagged or not (🔒 D1)', async () => {
+    const source = sourceOver([rec(`${ROOT}/Loose.md`)])
+    const { el } = await mount({ source, unadopted: true })
+    expect(card(el)).not.toBeNull()
+    // The click made Home (or the user did, by hand, unflagged): the next snapshot answers
+    // `[[Home]]`, so the offer retires — even though 6B's roots rule shows no Home ROW for an
+    // unflagged page. The folder is still un-adopted; it simply has a Home now.
+    await act(async () => source.update([rec(`${ROOT}/Loose.md`), rec(HOME)]))
+    expect(card(el)).toBeNull()
+    expect(labels(el)).toEqual(['Uncategorized'])
+  })
+
+  it('never shows before the first index lands — an empty feed knows nothing about Home', async () => {
+    const { el } = await mount({ source: sourceOver([]), unadopted: true })
+    expect(card(el)).toBeNull()
+    expect(el.textContent).toBe('')
   })
 })
