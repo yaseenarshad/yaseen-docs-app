@@ -4,7 +4,7 @@
  * half the bases engine's budget, 25 ms for 1,000 pages. Runs in the `perf` project (YAZ-740).
  *
  * The snapshot is a realistic spread, not a best case: a nested Home → topics tree of 16 folder
- * pages, most notes carrying 1-3 memberships through mixed spellings (cased, piped), some waiting
+ * pages, most notes carrying 1-3 parents through mixed spellings (cased, piped), some waiting
  * on dangling or unflagged targets, some uncategorised, and a sprinkle of malformed entries — every
  * leg of the click rule gets walked. Generation is deterministic (`i % n`, never `Math.random`).
  */
@@ -83,7 +83,7 @@ function folderPageRecord(t: number): IndexRecord {
 }
 
 /**
- * One ordinary note. `i % 7` sets the shape — uncategorised, one/two/three memberships, or an
+ * One ordinary note. `i % 7` sets the shape — uncategorised, one/two/three parents, or an
  * entry still waiting on a dangling or unflagged target — and the rarer moduli sprinkle in the
  * malformed entries the click rule has to drop quietly (bare names, prose, numbers, null, a
  * mapping, and the scalar-instead-of-list the indexer tolerates).

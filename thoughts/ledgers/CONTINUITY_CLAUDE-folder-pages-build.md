@@ -19,8 +19,11 @@ Execute the entire YAZ-813 tree (issues 1- through 8-, 33 subissues) to Done: th
 - Done:
   - [x] Scoping phase: all 8 issues locked (~46 🔒), 33 subissues created
   - [x] Setup: worktree, Linear helper (scratchpad/lin.mjs), statuses, this ledger
-- Now: [→] 1- YAZ-814: 1A (YAZ-825) folderPages.ts — Opus implementing, Fable reviewing
-- Next: 1B (YAZ-826) walker → 1C (YAZ-827) perf test → 1D (YAZ-828) contracts → 1E (YAZ-829) polish → merge 814 → start 815
+- Now: [→] 1- YAZ-814: 1D (YAZ-828) CONTRACTS.md entry — Opus drafting, Fable reviews closely (it's the law)
+  - [x] 1A (YAZ-825) folderPages.ts — Done; commit 77e0a7f; gotcha: worktrees need own npm ci
+  - [x] 1B (YAZ-826) walkFolderPage — Done; commit ac1efcd; zero corrections needed
+  - [x] 1C (YAZ-827) perf tripwire — Done; commit cb923a4; 1.2ms measured vs 25ms budget
+- Next: 1E (YAZ-829) polish → merge 814 → start 815
 - Remaining:
   - [ ] 2- YAZ-815 (2A–2E)
   - [ ] 3- YAZ-816 (3A–3E)

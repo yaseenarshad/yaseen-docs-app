@@ -13,7 +13,7 @@
  * to carries the flag. THE FLAG RULE (locked): `folder_page` is the boolean `true` and nothing
  * else; `"true"`, `1` and truthy objects are not it. An entry failing any leg counts as NOTHING
  * and is ignored quietly — prose, bare names, non-strings, dangling links and links to ordinary
- * pages all just leave the note unparented. Two entries resolving to one page are ONE membership.
+ * pages all just leave the note unparented. Two entries resolving to one page count ONCE.
  *
  * `uncategorized()` is every record with zero counting entries — folder pages and Home included.
  * The lookup has NO carve-outs; a surface that wants one subtracts it itself.
@@ -116,7 +116,7 @@ export function folderPagesLookup(records: readonly IndexRecord[], resolve: Reso
  * Depth-first over the CONTENTS of `start` — its direct members at depth 0, theirs at 1, `start`
  * itself never visited; siblings in `pagesIn` order and a member's whole subtree before the next.
  *
- * THE LOOP GUARD (locked): folder pages hold folder pages and membership is plain text a note
+ * THE LOOP GUARD (locked): folder pages hold folder pages and belonging is plain text a note
  * writes about itself, so `A → B → A` is one keystroke away and would hang any surface walking it.
  * The guard is the ancestor PATH — `start` plus the folder pages descended through to get here —
  * carried the way the formula evaluator carries `inProgress` (`bases/expr/evaluator.ts`). A member

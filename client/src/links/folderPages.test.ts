@@ -69,7 +69,7 @@ describe('the click rule (YAZ-825): exactly a wikilink, resolved, flagged', () =
     expect(lookupOver(records).pagesIn(METRICS).map((r) => r.path)).toEqual(['/vault/Cased.md', '/vault/Piped.md'])
   })
 
-  it('two spellings of ONE page are one membership', () => {
+  it('two spellings of ONE page count once', () => {
     const records = [rec('/vault/A.md', belongs('[[metrics]]', '[[Metrics]]', '[[Metrics|again]]')), folder(METRICS)]
     const lookup = lookupOver(records)
     expect(lookup.pagesIn(METRICS).map((r) => r.path)).toEqual(['/vault/A.md'])
