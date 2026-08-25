@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, addRecentRoot, defaultAppState, type AppState, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_TOPICS_EXPANDED_PAGES, addRecentRoot, defaultAppState, type AppState, type WindowIdentity } from '@shared/types'
 import { storage } from './storage'
 import { hashFilePath } from './urlHash'
 
@@ -70,7 +70,7 @@ describe('storage.init', () => {
       settings: { ...DEFAULT_SETTINGS, lineSpacing: 2 },
       sidebarCollapsed: true,
       recents: [{ path: '/v', lastOpened: 5 }],
-      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] } } },
+      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, topicsExpanded: ['/v/Metrics.md'] } },
     }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
     await storage.init()
@@ -87,6 +87,7 @@ describe('storage.init', () => {
     expect(storage.getLastFile('/v')).toBe('/v/a.md')
     expect(storage.getFolds('/v', '/v/a.md')).toEqual(['k1'])
     expect(storage.getBaseGroups('/v', '/v/b.md::T')).toEqual(['v:idea'])
+    expect(storage.getTopicsExpanded('/v')).toEqual(['/v/Metrics.md'])
   })
 
   it('reads fall back to defaults before init / when the bridge is unavailable', async () => {
@@ -100,6 +101,7 @@ describe('storage.init', () => {
     expect(fresh.getLastFile('/r')).toBeNull()
     expect(fresh.getFolds('/r', '/r/a.md')).toEqual([])
     expect(fresh.getBaseGroups('/r', '/r/a.md::T')).toEqual([])
+    expect(fresh.getTopicsExpanded('/r')).toEqual([])
     expect(fresh.getSidebarCollapsed()).toBe(false)
     expect(fresh.getSettings()).toEqual(DEFAULT_SETTINGS)
     await expect(fresh.init()).rejects.toBeDefined()
@@ -216,7 +218,7 @@ describe('storage', () => {
 
   it('boot precedence (GRO-2160): identity file wins over the folder lastFile, a pasted hash beats both', async () => {
     // Two windows on the same folder: w2 restored on b.md while the folder's lastFile is a.md.
-    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {} } } }
+    const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {}, topicsExpanded: [] } } }
     b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/b.md', tabs: ['/v/b.md'] })
     await storage.init()
     expect(bootFile('', '/v')).toBe('/v/b.md')
@@ -268,6 +270,25 @@ describe('storage', () => {
     expect(b.bridge.state.setBaseGroups).toHaveBeenLastCalledWith('/r2', '/r2/a.md::T', many)
   })
 
+  it('topicsExpanded is per root, capped, and rides the SAME setFolder patch as expanded (YAZ-848)', () => {
+    storage.setTopicsExpanded('/r1', ['/r1/Metrics.md', '/r1/Home.md'])
+    storage.setTopicsExpanded('/r2', ['/r2/Other.md'])
+    expect(storage.getTopicsExpanded('/r1')).toEqual(['/r1/Metrics.md', '/r1/Home.md'])
+    expect(storage.getTopicsExpanded('/r2')).toEqual(['/r2/Other.md'])
+    expect(storage.getTopicsExpanded('/r3')).toEqual([])
+    expect(b.bridge.state.setFolder).toHaveBeenCalledWith('/r1', { topicsExpanded: ['/r1/Metrics.md', '/r1/Home.md'] })
+    // The FILE tree's own bucket is untouched by a Topics write, and vice versa.
+    storage.setExpanded('/r1', ['/r1/dir'])
+    expect(storage.getTopicsExpanded('/r1')).toEqual(['/r1/Metrics.md', '/r1/Home.md'])
+    storage.setTopicsExpanded('/r1', [])
+    expect(storage.getTopicsExpanded('/r1')).toEqual([])
+    expect(storage.getExpanded('/r1')).toEqual(['/r1/dir'])
+    const many = Array.from({ length: MAX_TOPICS_EXPANDED_PAGES + 50 }, (_, i) => `/r2/p${i}.md`)
+    storage.setTopicsExpanded('/r2', many)
+    expect(storage.getTopicsExpanded('/r2')).toHaveLength(MAX_TOPICS_EXPANDED_PAGES)
+    expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/r2', { topicsExpanded: many.slice(0, MAX_TOPICS_EXPANDED_PAGES) })
+  })
+
   it('sidebarCollapsed defaults to false and round-trips through the bridge', () => {
     expect(storage.getSidebarCollapsed()).toBe(false)
     storage.setSidebarCollapsed(true)
@@ -304,7 +325,7 @@ describe('storage', () => {
       settings: { ...DEFAULT_SETTINGS, threadWidth: 3 },
       sidebarCollapsed: true,
       sidebarLens: 'files',
-      folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {} } },
+      folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {}, topicsExpanded: [] } },
     }
     b.emit(next)
     expect(seen).toHaveBeenCalledTimes(1)

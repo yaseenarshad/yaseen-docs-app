@@ -114,7 +114,7 @@ describe('registerStateIpc', () => {
 
   it('state:set-folder checks the root and the patch shape', async () => {
     expect(await registered(CH.stateSetFolder)({ sender }, '/v', { expanded: ['/v/sub'], lastFile: '/v/a.md' })).toEqual(ok(undefined))
-    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: '/v/a.md', folds: {}, baseGroups: {} })
+    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: '/v/a.md', folds: {}, baseGroups: {}, topicsExpanded: [] })
     expect(await registered(CH.stateSetFolder)({ sender }, '/v', { lastFile: null })).toEqual(ok(undefined))
     expect(store.get().folders['/v'].lastFile).toBeNull()
     expect(await registered(CH.stateSetFolder)({ sender }, 'v', {})).toEqual(bad('NOT_ABSOLUTE'))
@@ -122,7 +122,13 @@ describe('registerStateIpc', () => {
     expect(await registered(CH.stateSetFolder)({ sender }, '/v', { expanded: 'nope' })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CH.stateSetFolder)({ sender }, '/v', { expanded: [1] })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CH.stateSetFolder)({ sender }, '/v', { lastFile: 5 })).toEqual(bad('BAD_REQUEST'))
-    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {} })
+    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
+    // The Topics tree's open pages ride the same patch (YAZ-848), checked like `expanded`.
+    expect(await registered(CH.stateSetFolder)({ sender }, '/v', { topicsExpanded: ['/v/Metrics.md'] })).toEqual(ok(undefined))
+    expect(store.get().folders['/v'].topicsExpanded).toEqual(['/v/Metrics.md'])
+    expect(await registered(CH.stateSetFolder)({ sender }, '/v', { topicsExpanded: 'nope' })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.stateSetFolder)({ sender }, '/v', { topicsExpanded: [1] })).toEqual(bad('BAD_REQUEST'))
+    expect(store.get().folders['/v'].topicsExpanded).toEqual(['/v/Metrics.md'])
   })
 
   it('state:set-folds checks root, file and keys', async () => {

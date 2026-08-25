@@ -20,6 +20,7 @@ import { ContextMenu } from './ContextMenu'
 import { entryPath, renamedPath, targetDirFor, type EntryKind } from './createEntry'
 import { HotkeysButton } from './HotkeysPanel'
 import { SettingsCog } from './SettingsPanel'
+import { TopicsTree } from './TopicsTree'
 import { Tree, type PendingCreate, type PendingRename, type TreeFileMove } from './Tree'
 
 interface SidebarProps {
@@ -653,10 +654,12 @@ export function Sidebar({
             <p className="sidebar__msg">No matches</p>
           )
         ) : lens === 'topics' ? (
-          // The Topics shell: YAZ-848 puts the folder-page tree here. Conditional render, like
-          // the search swap above — the Files tree's state (data, expansion, pending
-          // create/rename, drag) lives in this component and is waiting untouched below.
-          <p className="sidebar__msg">Topics arrives with the tree (YAZ-848)</p>
+          // The folder-page tree (YAZ-848), fed by the window's index snapshot — the SAME
+          // `indexSource` the folder-page toggle reads, so the two can never disagree. A
+          // conditional render, like the search swap above: the Files tree's state (data,
+          // expansion, pending create/rename, drag) lives in this component and is waiting
+          // untouched below.
+          <TopicsTree root={root} source={indexSource} activeFile={activeFile} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} />
         ) : (
           <>
             {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}

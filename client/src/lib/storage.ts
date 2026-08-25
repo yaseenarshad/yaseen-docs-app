@@ -1,6 +1,7 @@
 import {
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
+  MAX_TOPICS_EXPANDED_PAGES,
   addRecentRoot,
   defaultAppState,
   defaultFolderState,
@@ -91,6 +92,19 @@ export const storage = {
   setExpanded(root: string, dirs: string[]): void {
     patchFolder(root, { expanded: dirs })
     send('state.setFolder', () => window.yaseenDocs.state.setFolder(root, { expanded: dirs }))
+  },
+
+  /**
+   * The Topics tree's expanded folder pages (🔒 D4, YAZ-848) — PAGE PATHS, not tree positions,
+   * so a page under two folder pages is one entry and opens under both. `expanded`'s twin in
+   * every way: same per-root bucket, same `setFolder` patch, same path-keyed repair in
+   * `store.renamePath` / `store.removePath`.
+   */
+  getTopicsExpanded: (root: string): string[] => folderOf(root).topicsExpanded,
+  setTopicsExpanded(root: string, pages: readonly string[]): void {
+    const topicsExpanded = pages.slice(0, MAX_TOPICS_EXPANDED_PAGES)
+    patchFolder(root, { topicsExpanded })
+    send('state.setFolder', () => window.yaseenDocs.state.setFolder(root, { topicsExpanded }))
   },
 
   /** The window identity records what is open now: THIS window's restored file, not the folder's shared lastFile (GRO-2160). */

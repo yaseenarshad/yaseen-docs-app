@@ -5,6 +5,7 @@ import {
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
   MAX_RECENT_ROOTS,
+  MAX_TOPICS_EXPANDED_PAGES,
   NEW_NOTE_LOCATIONS,
   SIDEBAR_DEFAULT_W,
   SIDEBAR_MAX_W,
@@ -43,7 +44,7 @@ export interface Store {
   setSidebarLens(lens: SidebarLens): void
   pushRecent(path: string, now?: number): void
   removeRecent(path: string): void
-  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile'>>): void
+  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded'>>): void
   setFolds(root: string, file: string, keys: readonly string[]): void
   setBaseGroups(root: string, key: string, collapsed: readonly string[]): void
   upsertWindow(entry: WindowEntry): void
@@ -51,7 +52,7 @@ export interface Store {
   /**
    * Repair every stored reference to a just-renamed file OR directory (Links E1 GRO-2194,
    * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`), recents, each
-   * folder-state key and its `expanded`/`lastFile`/fold keys/baseGroups keys
+   * folder-state key and its `expanded`/`lastFile`/`topicsExpanded`/fold keys/baseGroups keys
    * (`<basePath>::<view>`). A dir remaps by prefix — everything at or under it follows,
    * including a window ROOTED at the renamed folder. One commit; a no-op when nothing
    * references it.
@@ -63,7 +64,8 @@ export interface Store {
    *
    * Per field: a window's `file` becomes null (and `normalizeTabs` then empties its tabs),
    * deleted tabs are dropped, `recents` loses the entry, and folder-state keys plus their
-   * `expanded` / `lastFile` / fold keys / `baseGroups` keys (`<basePath>::<view>`) go too.
+   * `expanded` / `lastFile` / `topicsExpanded` / fold keys / `baseGroups` keys
+   * (`<basePath>::<view>`) go too.
    * A window's `root` is deliberately LEFT ALONE: the renderer's existing `onRootMissing`
    * probe owns that repair (it also drops the dead MRU entry), and nulling it here would
    * race it. One commit; a no-op when nothing references the path.
@@ -174,6 +176,8 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     lastFile: typeof raw.lastFile === 'string' ? raw.lastFile : null,
     folds: sanitizeKeyLists(raw.folds, MAX_FOLD_KEYS_PER_FILE),
     baseGroups: sanitizeKeyLists(raw.baseGroups, MAX_COLLAPSED_GROUP_KEYS),
+    // A pre-848 file has no Topics expansion at all; missing or junk both read as none (YAZ-848).
+    topicsExpanded: isStringArray(raw.topicsExpanded) ? raw.topicsExpanded.slice(0, MAX_TOPICS_EXPANDED_PAGES) : [],
   }
 }
 
@@ -302,6 +306,9 @@ export function createStore(filePath: string): Store {
         ...cur,
         ...(patch.expanded !== undefined ? { expanded: [...patch.expanded] } : {}),
         ...(patch.lastFile !== undefined ? { lastFile: patch.lastFile } : {}),
+        // Capped here as well as in the renderer (`folds` / `baseGroups`' rule): the store is
+        // what a hand-edited or third-party write lands in, and this bucket grows per page.
+        ...(patch.topicsExpanded !== undefined ? { topicsExpanded: patch.topicsExpanded.slice(0, MAX_TOPICS_EXPANDED_PAGES) } : {}),
       }
       commit({ ...state, folders: { ...state.folders, [root]: next } })
     },
@@ -368,6 +375,10 @@ export function createStore(filePath: string): Store {
             ...folder,
             expanded: folder.expanded.map(remap),
             lastFile: folder.lastFile === null ? null : remap(folder.lastFile),
+            // Path-keyed like `expanded`, only holding PAGES rather than dirs (YAZ-848) — so an
+            // expanded topic follows its own rename, and a renamed FOLDER carries every topic
+            // inside it through the same prefix branch.
+            topicsExpanded: folder.topicsExpanded.map(remap),
             folds: remapKeys(folder.folds, remap),
             baseGroups: remapKeys(folder.baseGroups, remapBaseGroupKey),
           },
@@ -427,6 +438,9 @@ export function createStore(filePath: string): Store {
             {
               ...folder,
               expanded: drop(folder.expanded),
+              // The Topics tree's open pages (YAZ-848): a deleted page's entry would never match
+              // a row again, so it goes with the rest rather than sitting in the file forever.
+              topicsExpanded: drop(folder.topicsExpanded),
               lastFile: folder.lastFile !== null && gone(folder.lastFile) ? ((changed = true), null) : folder.lastFile,
               folds: dropKeys(folder.folds, gone),
               baseGroups: dropKeys(folder.baseGroups, baseGroupGone),

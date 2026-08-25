@@ -1054,6 +1054,44 @@ button {
   top: 0;
 }
 
+/* ---------- Topics lens (YAZ-848): the same tree rows, plus what a MEANING tree needs ---------- */
+
+/* A leaf keeps the chevron's slot so its label lines up with its siblings' — the mockup's rule. */
+.tree__chevron--none::before {
+  display: none;
+}
+
+/* The folder-page marker: the app's own base glyph, at the size the mockup uses. */
+.tree__glyph {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-right: 2px;
+  color: var(--fg-muted);
+}
+
+.tree__row--active .tree__glyph {
+  color: inherit;
+}
+
+/* Direct-member count, pushed to the right edge of the row. */
+.tree__count {
+  margin-left: auto;
+  padding-left: 6px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+/* The Uncategorized row (🔒 D7): present, quiet, not one of the topics. */
+.tree__row--muted {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.tree--uncategorized {
+  margin-top: 10px;
+}
+
 .btn {
   padding: 6px 14px;
   border-radius: 6px;

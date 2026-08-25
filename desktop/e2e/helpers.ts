@@ -101,11 +101,12 @@ export async function copyVault(src: string): Promise<string> {
 // ---------- app state ----------
 
 /**
- * The lens every seeded run starts on (YAZ-847). The app's own default is `topics` — an empty
- * shell until YAZ-848 — while every spec in this suite is about the FILE TREE, so the seeds
- * below pre-select `files`: the same kind of pre-configuration as the `windows[]` entry that
- * skips the native folder dialog, not a change to the default. `lenses.spec.ts` seeds its own
- * state (including a pre-847 file with no lens key at all) to pin the default and the switch.
+ * The lens every seeded run starts on (YAZ-847). The app's own default is `topics` — the
+ * folder-page tree since YAZ-848 — while every spec in this suite is about the FILE TREE, so the
+ * seeds below pre-select `files`: the same kind of pre-configuration as the `windows[]` entry
+ * that skips the native folder dialog, not a change to the default. `lenses.spec.ts` seeds its
+ * own state (including a pre-847 file with no lens key at all) to pin the default and the
+ * switch; `topics.spec.ts` seeds `topics` to drive the tree itself.
  */
 const SEEDED_LENS = 'files' as const
 
@@ -115,7 +116,7 @@ export function seededState(vault: string, file: string | null, opts: { expanded
   state.sidebarLens = SEEDED_LENS
   state.recents = [{ path: vault, lastOpened: Date.now() }]
   state.windows = [{ id: 'w1', root: vault, file, tabs: file === null ? [] : [file], bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
-  state.folders = { [vault]: { expanded: opts.expanded ?? [], lastFile: file, folds: {}, baseGroups: {} } }
+  state.folders = { [vault]: { expanded: opts.expanded ?? [], lastFile: file, folds: {}, baseGroups: {}, topicsExpanded: [] } }
   return state
 }
 
@@ -150,7 +151,7 @@ export function multiWindowState(wins: SeedWindow[], recentRoots: string[]): App
     bounds: w.bounds ?? { x: 60 + i * 40, y: 60 + i * 30, width: 1000, height: 700 },
   }))
   for (const w of wins) {
-    state.folders[w.root] ??= { expanded: [], lastFile: w.file, folds: {}, baseGroups: {} }
+    state.folders[w.root] ??= { expanded: [], lastFile: w.file, folds: {}, baseGroups: {}, topicsExpanded: [] }
   }
   return state
 }

@@ -294,6 +294,9 @@ export const MAX_FOLD_KEYS_PER_FILE = 500
 /** Collapsed group keys per base view (Bases 4C, GRO-2137) are capped at this many. */
 export const MAX_COLLAPSED_GROUP_KEYS = 200
 
+/** Expanded Topics-tree pages per vault (🔒 D4, YAZ-848) are capped at this many — `folds`' cap, for a bucket of the same kind: one entry per page the user opened. */
+export const MAX_TOPICS_EXPANDED_PAGES = 500
+
 /**
  * `AppState.sidebarLens` — which lens the sidebar's chrome-v2 ROW 1 tabs show (YAZ-847):
  * `topics` (the folder-page tree, an empty shell until YAZ-848) or `files` (the file explorer).
@@ -414,6 +417,17 @@ export interface FolderState {
   folds: Record<string, string[]>
   /** `<pagePath>::<viewName>` → collapsed group keys (max MAX_COLLAPSED_GROUP_KEYS). Session chrome, never written to the page's own card (GRO-2137). */
   baseGroups: Record<string, string[]>
+  /**
+   * The Topics tree's expanded folder pages (🔒 D4, YAZ-848), as PAGE PATHS — max
+   * MAX_TOPICS_EXPANDED_PAGES. Sibling of `expanded` (the FILE tree's open dirs): one flat
+   * per-root list of absolute paths, and a path-keyed bucket, so `store.renamePath` /
+   * `store.removePath` repair it exactly as they repair the other two.
+   *
+   * Keyed by the PAGE, never by tree position: a page reachable under two folder pages is ONE
+   * entry and opens under both at once — the mockup's behaviour. Session chrome, never written
+   * into any note's frontmatter.
+   */
+  topicsExpanded: string[]
 }
 
 /**
@@ -441,7 +455,7 @@ export function defaultAppState(): AppState {
 }
 
 export function defaultFolderState(): FolderState {
-  return { expanded: [], lastFile: null, folds: {}, baseGroups: {} }
+  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] }
 }
 
 // ---------- Vault-local config (`<root>/.yaseendocs/`, Desktop J — GRO-2188) ----------
@@ -599,8 +613,8 @@ export interface StateApi {
   pushRecent(path: string): Promise<void>
   /** Drop a folder from recents (its directory vanished on disk, C2 — GRO-2164); unknown path is a no-op. */
   removeRecent(path: string): Promise<void>
-  /** Merge into `folders[root]`; missing root entries are created with defaults. */
-  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile'>>): Promise<void>
+  /** Merge into `folders[root]`; missing root entries are created with defaults. `topicsExpanded` is capped main-side (YAZ-848). */
+  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded'>>): Promise<void>
   /** Replace the fold keys for one file; an empty list removes the entry. */
   setFolds(root: string, file: string, keys: readonly string[]): Promise<void>
   /** Replace the collapsed group keys for one base view (`<basePath>::<viewName>`); an empty list removes the entry. */

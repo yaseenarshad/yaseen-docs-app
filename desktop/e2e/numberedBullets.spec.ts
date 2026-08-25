@@ -65,7 +65,11 @@ async function openHandleMenu(w: Page, text: string): Promise<void> {
     const mid = h!.y + h!.height / 2
     expect(mid).toBeGreaterThanOrEqual(p!.y)
     expect(mid).toBeLessThanOrEqual(p!.y + p!.height)
-  }).toPass({ timeout: 15_000 }) // hover-probe flake under full-suite load (YAZ-819 hardening): the wiggle needs headroom, not luck
+    // Hover-probe headroom under full-suite load (YAZ-819 → YAZ-847 → YAZ-848): every wave that
+    // adds a spec ahead of this one leaves the machine warmer here, and the throttled mousemove
+    // is the first thing to feel it. Raised again with 6B-'s `topics.spec.ts`. Healthy runs pass
+    // on the FIRST attempt and never spend any of this — the budget only buys retries.
+  }).toPass({ timeout: 30_000 })
   await handle.locator('.operation-item').last().click({ button: 'right' })
   await expect(menu(w)).toBeVisible()
 }

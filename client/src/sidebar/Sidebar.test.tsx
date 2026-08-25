@@ -748,7 +748,8 @@ describe('search results (YAZ-803)', () => {
 
 /**
  * The lens tabs (🔒 D4/D5, YAZ-847): chrome v2 ROW 1, above the persistent search bar. Topics is
- * the DEFAULT lens and — until YAZ-848 fills it — an empty shell; Files is today's file explorer,
+ * the DEFAULT lens and holds the folder-page tree (YAZ-848, pinned in `TopicsTree.test.tsx` —
+ * what matters HERE is only which body the tabs swap in); Files is today's file explorer,
  * unchanged, behind a tab. The VALUE is App's (globally persisted as `AppState.sidebarLens`): the
  * sidebar renders the row and reports clicks, and App hands the new lens back down. Switching is
  * a conditional render, never a teardown — the search wave's rule, re-proved here on the tree's
@@ -761,6 +762,8 @@ describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
   })
   const RECORDS = [record('Alpha'), record('Anchor', 'Docs')]
   const withIndex = (b: ReturnType<typeof installBridge>) => b.index.mockResolvedValue({ root: '/v', records: RECORDS, generatedAt: 1 } as never)
+  /** The window's live feed with a snapshot in it — what the Topics tree reads (YAZ-848). */
+  const topicsFeed = { resolve: () => null, records: RECORDS, subscribe: () => () => undefined }
 
   const tabs = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__lenses[role="tablist"] [role="tab"]')]
   const tabByLabel = (el: HTMLElement, label: string) => tabs(el).find((b) => b.textContent === label)
@@ -777,11 +780,18 @@ describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
     expect(selectedTabs(files.el)).toEqual(['Files'])
   })
 
-  it('the default lens is Topics: a placeholder body, no tree — and the search bar is still there', async () => {
+  it('the default lens is Topics: the folder-page tree, never the file tree — and the search bar is still there', async () => {
+    // The harness's index feed is empty (the pre-first-index state), so the Topics tree renders
+    // nothing at all — and above all NOT the file tree, which is the other tab's body.
     const { el } = await mount({ lens: 'topics' })
-    expect(el.querySelector('.tree')).toBeNull()
-    expect(bodyMsg(el)).toContain('YAZ-848')
+    expect(el.querySelector('.tree__row--file')).toBeNull()
+    expect(el.querySelector('.sidebar__body')?.textContent).toBe('')
     expect(searchInput(el)).not.toBeNull() // ALWAYS visible, on both lenses (the locked YAZ-739 rule)
+    // With a snapshot in hand it is the MEANING tree: this vault declares no folder page, so
+    // every page lands in Uncategorized (YAZ-848 owns the rest of that behaviour).
+    const fed = await mount({ lens: 'topics', indexSource: topicsFeed })
+    expect(fed.el.querySelector('.tree__row--muted')?.textContent).toBe('Uncategorized2')
+    expect(fed.el.querySelector('.tree__row--file')).toBeNull()
   })
 
   it('the Files lens is today\'s tree, unchanged', async () => {
@@ -818,15 +828,15 @@ describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
     expect(dirItem(el)?.getAttribute('aria-expanded')).toBe(toggled)
   })
 
-  it('a query on TOPICS replaces the placeholder with the flat results; clearing brings the placeholder back', async () => {
-    const { el } = await mount({ lens: 'topics' }, withIndex)
+  it('a query on TOPICS replaces the topic tree with the flat results; clearing brings the tree back', async () => {
+    const { el } = await mount({ lens: 'topics', indexSource: topicsFeed }, withIndex)
     const input = searchInput(el)!
     await type(input, 'a')
     expect(resultLabels(el)).toEqual(['Alpha', 'Anchor'])
-    expect(bodyMsg(el)).toBeNull()
+    expect(el.querySelector('.tree')).toBeNull()
     await type(input, '')
     expect(el.querySelector('.search-results')).toBeNull()
-    expect(bodyMsg(el)).toContain('YAZ-848')
+    expect(el.querySelector('.tree__row--muted')?.textContent).toBe('Uncategorized2')
   })
 
   it('the tabs row stays visible and clickable DURING a search, and a lens switch keeps the query (🔒 D5)', async () => {
