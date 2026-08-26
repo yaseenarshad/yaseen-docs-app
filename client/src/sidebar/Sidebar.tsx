@@ -17,10 +17,10 @@ import { useSearchResults } from '../search/useSearchResults'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmTurnBack } from './ConfirmTurnBack'
 import { ContextMenu } from './ContextMenu'
-import { entryPath, renamedPath, targetDirFor, type EntryKind } from './createEntry'
+import { entryPath, renamedPath, targetDirFor, type EntryKind, type MenuRow } from './createEntry'
 import { HotkeysButton } from './HotkeysPanel'
 import { SettingsCog } from './SettingsPanel'
-import { TopicsTree } from './TopicsTree'
+import { TopicsTree, type PendingTopicCreate } from './TopicsTree'
 import { Tree, type PendingCreate, type PendingRename, type TreeFileMove } from './Tree'
 
 interface SidebarProps {
@@ -138,6 +138,14 @@ interface MenuTargets {
   folderPagePath: string | null
   /** That row's flag when the menu opened, off the window's index snapshot; picks the label. */
   folderPageIsOn: boolean
+  /**
+   * The TOPICS row this menu was opened from (8G-, YAZ-865), or null for every file-tree row and
+   * for blank space. Only the create group reads it, and only to know WHERE to draw its inline
+   * input: the Topics tree has no folder rows to nest one inside, so the input is anchored to
+   * the right-clicked row. `targetDir` above still decides where the file actually lands, and it
+   * is the file tree's own rule either way — beside the right-clicked page.
+   */
+  topicsAnchor: string | null
 }
 
 /**
@@ -216,7 +224,9 @@ export function Sidebar({
   const [error, setError] = useState<string | null>(null)
   const [expanded, dispatch] = useReducer(treeReducer, root, storage.getExpanded)
   const [menu, setMenu] = useState<MenuTargets | null>(null)
-  const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string } | null>(null)
+  // `anchor` is the TOPICS row the create was asked from (8G-, YAZ-865); null on the file tree,
+  // where the input nests inside `parentDir`'s own children instead.
+  const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string; anchor: string | null } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir' } | null>(null)
   // The delete confirm sheet's target (GRO-2272 `C3-`); null when the sheet is closed.
   const [confirmingDelete, setConfirmingDelete] = useState<DeleteTarget | null>(null)
@@ -329,7 +339,7 @@ export function Sidebar({
   // ---- New note / new folder page / new folder (GRO-2022, YAZ-841): right-click menu → inline name input ----
 
   const openMenu = useCallback(
-    (node: TreeNode | null, e: React.MouseEvent) => {
+    (node: MenuRow | null, e: React.MouseEvent, topicsAnchor: string | null = null) => {
       e.preventDefault()
       e.stopPropagation()
       const filePath = node?.type === 'file' ? node.path : null
@@ -359,10 +369,20 @@ export function Sidebar({
         revealPath: node?.path ?? root.replace(/\/+$/, ''),
         folderPagePath: notePath,
         folderPageIsOn: notePath !== null && indexSource.records.some((r) => r.path === notePath && isFolderPage(r)),
+        topicsAnchor,
       })
     },
     [root, indexSource],
   )
+
+  /**
+   * A Topics row's right-click (8G-, YAZ-865 — the ⚡ amendment on YAZ-821, ruled by Yasin):
+   * the SAME menu, opened on the page's own FILE. Every item then resolves its own target from
+   * that one path exactly as it does for a file row (GRO-2296) — including the folder-page
+   * toggle, whose label the row's flag picks off the same snapshot the tree itself is drawn
+   * from. The anchor rides along so the create group knows where to draw its inline input.
+   */
+  const openTopicsMenu = useCallback((path: string, e: React.MouseEvent) => openMenu({ type: 'file', path }, e, path), [openMenu])
 
   /** Context menu "Open in new window" (D2, GRO-2168): a fresh window on {root, file}; this one untouched. (⌘-click opens a background tab instead since I3.) */
   const openFileNewWindow = useCallback(
@@ -378,7 +398,7 @@ export function Sidebar({
       // The input renders inside the target dir's children, so that dir must be open;
       // expandTo opens every dir ABOVE the given path, so a synthetic child opens targetDir itself.
       if (menu.targetDir !== root) dispatch({ type: 'expandTo', root, file: `${menu.targetDir}/x` })
-      setCreating({ kind, parentDir: menu.targetDir })
+      setCreating({ kind, parentDir: menu.targetDir, anchor: menu.topicsAnchor })
       setMenu(null)
     },
     [menu, root],
@@ -566,6 +586,12 @@ export function Sidebar({
           onCancel: cancelCreate,
         }
 
+  /** The SAME pending create, addressed the way the Topics tree can draw it: by the anchor row (YAZ-865). */
+  const topicsPending: PendingTopicCreate | null =
+    creating === null || creating.anchor === null
+      ? null
+      : { kind: creating.kind, anchorPath: creating.anchor, onSubmit: submitCreate, onCancel: cancelCreate }
+
   return (
     <aside className="sidebar">
       {/* The root header doubles as the "move to the vault root" drop target (E1b). */}
@@ -676,7 +702,18 @@ export function Sidebar({
           // conditional render, like the search swap above: the Files tree's state (data,
           // expansion, pending create/rename, drag) lives in this component and is waiting
           // untouched below.
-          <TopicsTree root={root} source={indexSource} activeFile={activeFile} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} unadopted={unadopted} onCreateHome={onCreateHome} />
+          <TopicsTree
+            root={root}
+            source={indexSource}
+            activeFile={activeFile}
+            onOpenFile={onOpenFile}
+            onOpenFileBackground={onOpenFileBackground}
+            unadopted={unadopted}
+            onCreateHome={onCreateHome}
+            onRowContextMenu={openTopicsMenu}
+            renaming={renaming}
+            creating={topicsPending}
+          />
         ) : (
           <>
             {error !== null && <p className="sidebar__msg sidebar__msg--error">{error}</p>}

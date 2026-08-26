@@ -140,6 +140,12 @@ async function mount(over: Partial<Props> & { source: Props['source'] }) {
     // shows; the "the offer card" describe is the one that flips this.
     unadopted: false,
     onCreateHome: vi.fn(),
+    // The menu, the inline rename and the inline create all belong to the SIDEBAR (8G-,
+    // YAZ-865): this component only reports the row and draws whatever it is handed. The
+    // whole gesture is pinned end to end in `Sidebar.test.tsx`, where the real menu renders.
+    onRowContextMenu: vi.fn(),
+    renaming: null,
+    creating: null,
     ...over,
   }
   await act(async () => root?.render(<StrictMode><TopicsTree {...props} /></StrictMode>))

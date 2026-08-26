@@ -1115,3 +1115,192 @@ describe('folder-page toggle (YAZ-840)', () => {
     expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining('back into a normal page'))
   })
 })
+
+/**
+ * The TOPICS context menu (8G-, YAZ-865 — the ⚡ amendment on YAZ-821, ruled by Yasin): a Topics
+ * PAGE row gets the SAME menu a FILE row gets, on the page's own file. Not a menu of that lens'
+ * own — `TopicsTree` reports the row and the Sidebar opens its ONE `ContextMenu`, so the items,
+ * their order, every target (GRO-2296) and every pipeline behind them are literally the file
+ * tree's and cannot drift between the two readings of one vault.
+ *
+ * What gets NOTHING: the Uncategorized HEADER (there is no page behind it), the offer card, and
+ * blank space — whose menu stays the FILE tree's, its guard untouched (🔒 D7 and YAZ-847 both hold).
+ */
+describe('the Topics context menu (8G-, YAZ-865)', () => {
+  const record = (path: string, properties: Record<string, unknown> = {}) => {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    const rel = path.slice('/v/'.length)
+    return {
+      path,
+      name,
+      basename: name.replace(/\.[^.]+$/, ''),
+      folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '',
+      ext: 'md', size: 1, ctime: 1, mtime: 1, properties, aliases: [], tags: [], links: [], embeds: [],
+    }
+  }
+  /**
+   * Home (a folder page) with ONE member, and that member lives in a SUBFOLDER — so "create
+   * beside the page's file" has a folder of its own to prove, which is exactly the fact this
+   * lens hides. Loose belongs nowhere and waits under Uncategorized.
+   */
+  const HOME = record('/v/Home.md', { folder_page: true })
+  const GUIDE = record('/v/Docs/Guide.md', { folder_pages: ['[[Home]]'] })
+  const LOOSE = record('/v/Loose.md')
+  const feedOver = (...records: ReturnType<typeof record>[]): SidebarProps['indexSource'] =>
+    ({
+      // The one link this vault declares, keyed like the real resolver (lowered, brackets and all).
+      resolve: (target: string) => (target.trim().toLowerCase() === '[[home]]' && records.includes(HOME) ? HOME.path : null),
+      records,
+      subscribe: () => () => undefined,
+    }) as SidebarProps['indexSource']
+
+  const topics = (over: Partial<SidebarProps> = {}) => mount({ lens: 'topics', indexSource: feedOver(HOME, GUIDE, LOOSE), ...over })
+  const rowFor = (el: HTMLElement, label: string) =>
+    [...el.querySelectorAll<HTMLButtonElement>('.tree__row')].find((r) => r.querySelector('.tree__label')?.textContent === label)
+  const rightClick = (node: Element | null | undefined) => act(() => void node?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+  /** 🔒 D3: the chevron is the expand gesture; the row itself opens the page. */
+  const expandHome = (el: HTMLElement) => act(() => el.querySelector<HTMLElement>('[aria-label="Expand Home"]')?.click())
+  const inlineInput = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.create-inline__input')
+  const commit = async (el: HTMLElement, name: string) => {
+    const field = inlineInput(el)!
+    await act(async () => {
+      field.value = name
+      field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+  }
+  const confirmBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
+  function installClipboard() {
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    return writeText
+  }
+
+  it('a PAGE row opens the file tree\'s OWN menu — item for item, in the same order (GRO-2272 C1a)', async () => {
+    const { el } = await topics()
+    await rightClick(rowFor(el, 'Home'))
+    expect(menuItems(el).map((b) => b.textContent)).toEqual([
+      'Open in new window',
+      'Reveal in Finder',
+      'Copy path',
+      'Copy link',
+      'New note',
+      'New folder page',
+      'New folder',
+      // Home IS a folder page, so the ONE state-aware item shows the REVERSE label (🔒 D2).
+      'Turn back into normal page',
+      'Rename',
+      'Delete',
+    ])
+  })
+
+  it('the toggle\'s label follows THAT row\'s flag: a leaf is offered the forward direction', async () => {
+    const { el } = await topics()
+    await expandHome(el)
+    await rightClick(rowFor(el, 'Guide'))
+    expect(itemByLabel(el, 'Turn into folder page')).toBeDefined()
+    expect(itemByLabel(el, 'Turn back into normal page')).toBeUndefined()
+  })
+
+  it('every item resolves the PAGE\'s own file: Reveal and Copy path name it exactly (GRO-2296)', async () => {
+    const writeText = installClipboard()
+    const { el, bridge } = await topics()
+    await expandHome(el)
+    await rightClick(rowFor(el, 'Guide'))
+    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v/Docs/Guide.md' })
+    await rightClick(rowFor(el, 'Guide'))
+    act(() => itemByLabel(el, 'Copy path')?.click())
+    // The PAGE's path, never the vault root's — the blank-space fallback stays where it belongs.
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/Docs/Guide.md')
+  })
+
+  it('Delete flows through the EXISTING pipeline: the same sheet, then onDeleteFile with the page\'s path', async () => {
+    const { el, props } = await topics()
+    await expandHome(el)
+    await rightClick(rowFor(el, 'Guide'))
+    await act(async () => itemByLabel(el, 'Delete')?.click())
+    expect(el.querySelector('.confirm')).not.toBeNull()
+    expect(props.onDeleteFile).not.toHaveBeenCalled() // opening the sheet deletes nothing
+    await act(async () => confirmBtn(el, 'Delete')?.click())
+    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith('/v/Docs/Guide.md')
+  })
+
+  it('Rename opens the inline input ON the Topics row and commits through the rename pipeline', async () => {
+    const { el, props } = await topics()
+    await expandHome(el)
+    await rightClick(rowFor(el, 'Guide'))
+    act(() => itemByLabel(el, 'Rename')?.click())
+    expect(inlineInput(el)?.value).toBe('Guide') // the name minus its extension — the file tree's prefill
+    expect(rowFor(el, 'Guide')).toBeUndefined() // …IN PLACE of the row, never beside it
+    await commit(el, 'Manual')
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/Docs/Guide.md', '/v/Docs/Manual.md')
+  })
+
+  it('a page standing under TWO parents renames through ONE input — two autofocused ones would fight', async () => {
+    // The diamond (⚡ D6): Guide belongs to both roots, so it renders twice. An inline input is
+    // ONE input — the second's mount would blur, and so CANCEL, the first.
+    const OPS = record('/v/Ops.md', { folder_page: true })
+    const SHARED = record('/v/Docs/Guide.md', { folder_pages: ['[[Home]]', '[[Ops]]'] })
+    const both = {
+      records: [HOME, OPS, SHARED],
+      resolve: (target: string) => ({ '[[home]]': HOME.path, '[[ops]]': OPS.path })[target.trim().toLowerCase()] ?? null,
+      subscribe: () => () => undefined,
+    } as SidebarProps['indexSource']
+    const { el } = await topics({ indexSource: both })
+    await expandHome(el)
+    await act(() => el.querySelector<HTMLElement>('[aria-label="Expand Ops"]')?.click())
+    const guides = () => [...el.querySelectorAll('.tree__row .tree__label')].filter((n) => n.textContent === 'Guide').length
+    expect(guides()).toBe(2)
+    await rightClick(rowFor(el, 'Guide'))
+    act(() => itemByLabel(el, 'Rename')?.click())
+    expect(el.querySelectorAll('.create-inline__input')).toHaveLength(1)
+    expect(guides()).toBe(1) // the FIRST occurrence became the input; the other stays a row
+  })
+
+  it('the create group lands BESIDE the page\'s file on disk — the file tree\'s own rule', async () => {
+    const { el, bridge, props } = await topics()
+    await expandHome(el)
+    await rightClick(rowFor(el, 'Guide'))
+    act(() => itemByLabel(el, 'New note')?.click())
+    // The input is drawn under the row it was asked from; the row itself stays put.
+    expect(inlineInput(el)?.placeholder).toBe('New note')
+    expect(rowFor(el, 'Guide')).toBeDefined()
+    await commit(el, 'Nearby')
+    // `/v/Docs`, the folder this lens never shows — belonging is meaning, the file is still a file.
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith('/v/Docs/Nearby.md')
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/Docs/Nearby.md')
+  })
+
+  it('"New folder page" on a Topics row is born with EXACTLY the flag, beside that page (🔒 D1)', async () => {
+    const { el, bridge } = await topics()
+    await rightClick(rowFor(el, 'Home'))
+    act(() => itemByLabel(el, 'New folder page')?.click())
+    await commit(el, 'Growth')
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Growth.md', content: '---\nfolder_page: true\n---\n' })
+  })
+
+  it('an UNCATEGORIZED member is a page like any other: same menu, its own path', async () => {
+    const { el, bridge } = await topics()
+    act(() => el.querySelector<HTMLButtonElement>('.tree__row--muted')?.click()) // expand the section
+    await rightClick(rowFor(el, 'Loose'))
+    expect(itemByLabel(el, 'Turn into folder page')).toBeDefined()
+    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v/Loose.md' })
+  })
+
+  it('the Uncategorized HEADER gets NO menu — there is no page behind it', async () => {
+    const { el } = await topics()
+    await rightClick(el.querySelector('.tree__row--muted'))
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('the offer card gets NO menu, and BLANK SPACE still falls through to Electron (the guard is untouched)', async () => {
+    // Un-adopted AND nothing answers [[Home]]: the 6C card is up, over an otherwise bare lens.
+    const { el } = await topics({ unadopted: true, indexSource: feedOver(LOOSE) })
+    expect(el.querySelector('.topics-offer')).not.toBeNull()
+    await rightClick(el.querySelector('.topics-offer'))
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    await rightClick(el.querySelector('.sidebar__body'))
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+})

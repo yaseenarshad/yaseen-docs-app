@@ -221,6 +221,31 @@ test('step 5 — Uncategorized expands IN PLACE, subtracting the root and everyo
   await expect(activeTab(win)).toHaveText(ORPHANS[0])
   await uncategorizedRow(win).click() // …and it collapses back in place
   await expect(topicLabels(win)).toHaveText(['Home', 'Funnel Stages', ...MEMBERS, ...TOPICS.slice(1), 'Uncategorized'])
+})
+
+// ------------------------------------------- ⚡ the amendment (YAZ-865): the row menu is the file tree's
+
+test('step 5b — a member row carries the FILE tree’s own menu, and Delete trashes the page', async () => {
+  // The amendment on YAZ-821 (ruled by Yasin): Topics rows get the SAME right-click menu file
+  // rows get. The unit tests pin the whole item list and every target; what only the real app
+  // can prove is the DELETE landing — the sheet, the row leaving the MEANING tree, and the file
+  // actually leaving the vault (delete.spec.ts's own assertions, from the other lens).
+  const doomed = path.join(vault, 'funnel-stages', 'Lead Nurture.md')
+  await rowFor(win, 'Lead Nurture').click({ button: 'right' })
+  const item = (label: string) => win.locator('.ctx-menu [role="menuitem"]', { hasText: label })
+  await expect(item('Reveal in Finder')).toHaveCount(1)
+  await expect(item('Copy path')).toHaveCount(1)
+  await expect(item('Turn into folder page')).toHaveCount(1) // state-aware: a LEAF gets the forward label
+  await shoot(win, 'topics-05b-row-menu')
+
+  await item('Delete').click()
+  await expect(win.locator('.confirm')).toContainText('Delete "Lead Nurture.md"?')
+  await win.locator('.confirm__btn', { hasText: 'Delete' }).click()
+  // Gone from the vault (where it went — the Trash — is not this spec's business, delete.spec.ts
+  // says so) AND gone from the tree, which is the whole point: one delete, both readings.
+  await expect.poll(() => readFile(doomed, 'utf8').then(() => false, () => true)).toBe(true)
+  await expect(topicLabels(win)).toHaveText(['Home', 'Funnel Stages', 'Lead Gen', 'Sales-Conversion', ...TOPICS.slice(1), 'Uncategorized'])
+  await shoot(win, 'topics-05b-deleted')
   await quitApp(app)
 })
 

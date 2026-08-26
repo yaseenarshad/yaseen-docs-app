@@ -4,7 +4,6 @@
  * The UI (context menu + inline input) lives in Sidebar/Tree; the main process
  * enforces the same rules again (absolute path, vault extension, no overwrite).
  */
-import type { TreeNode } from '@shared/types'
 
 /**
  * What the inline input creates: a markdown note, a folder, or a FOLDER PAGE (🔒 D4, YAZ-841)
@@ -31,8 +30,19 @@ export function entryPath(parentDir: string, name: string, kind: EntryKind): str
   return `${parentDir}/${final}`
 }
 
+/**
+ * The least a right-clicked row has to say for the menu to target it: its KIND and its path.
+ * A `TreeNode` satisfies it structurally, and so does a Topics row built from an index record
+ * (YAZ-865 — the ⚡ amendment on YAZ-821 gives those rows the file tree's own menu), which is
+ * why the rule below asks for this and not for a whole tree node it would never read.
+ */
+export interface MenuRow {
+  type: 'file' | 'dir'
+  path: string
+}
+
 /** Where a right-click creates: a dir row → itself, a file row → its parent, blank space → the root. */
-export function targetDirFor(node: TreeNode | null, root: string): string {
+export function targetDirFor(node: MenuRow | null, root: string): string {
   if (node === null) return root
   if (node.type === 'dir') return node.path
   return node.path.slice(0, node.path.lastIndexOf('/'))

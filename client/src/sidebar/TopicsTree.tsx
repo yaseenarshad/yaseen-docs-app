@@ -43,7 +43,13 @@
  * called Home, which IS Home (🔒 D1) even though the roots rule above gives it no row. The card
  * REPLACES nothing: the roots and Uncategorized render underneath it exactly as they would.
  *
- * Read-only apart from expansion and that one button: no drag, and no context menu of its own.
+ * THE MENU (8G-, YAZ-865 — the ⚡ amendment on YAZ-821, ruled by Yasin): a PAGE row's right-click
+ * opens the SAME `ContextMenu` a file row opens, on the page's own file. Not a menu of this
+ * lens' own: the tree reports the row and the Sidebar — which owns the menu, its targets and
+ * every pipeline behind them — does the rest, so copy/reveal/create/toggle/rename/delete can
+ * never drift between the two readings of one vault. What gets NO menu: the Uncategorized
+ * HEADER (no page behind it), the offer card, and blank space, whose menu stays the FILE tree's.
+ * Still no drag.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { IndexRecord } from '@shared/types'
@@ -52,13 +58,32 @@ import { FolderPageGlyph } from '../views/view/icons'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { storage } from '../lib/storage'
 import { folderPagesLookup, guardedChildren, type FolderPagesLookup } from '../links/folderPages'
+import { CreateInline } from './CreateInline'
+import type { EntryKind } from './createEntry'
 import { HOME_LINK } from './ensureHome'
+import { RenameInline } from './RenameInline'
+import type { PendingRename } from './Tree'
 
 /**
  * THE Home link (🔒 D1) — re-exported from where the birth routine keeps it, so the tree and the
  * ensure can never ask two different questions.
  */
 export { HOME_LINK }
+
+/**
+ * The inline "New …" input pending BESIDE one Topics row (8G-, YAZ-865). The file tree's
+ * `PendingCreate` carries a `parentDir` because it has folder rows to nest the input inside;
+ * this tree has none — a page's folder on disk is exactly what this reading hides — so the
+ * input is anchored to the ROW the create was asked from and lines up with it. Where the file
+ * LANDS is unchanged and still the Sidebar's: beside the right-clicked page (`targetDirFor`).
+ */
+export interface PendingTopicCreate {
+  kind: EntryKind
+  /** The right-clicked page's path; the input renders under that row's FIRST occurrence. */
+  anchorPath: string
+  onSubmit: (name: string) => Promise<void>
+  onCancel: () => void
+}
 
 export interface TopicsTreeProps {
   /** The vault, which keys the persisted expansion bucket (the Sidebar is mounted per root). */
@@ -78,6 +103,17 @@ export interface TopicsTreeProps {
   unadopted: boolean
   /** The card's one button: App runs the same create the auto-path runs, then opens the page. */
   onCreateHome: () => void
+  /**
+   * A PAGE row was right-clicked (8G-, YAZ-865): the Sidebar opens its ONE `ContextMenu` on that
+   * page's file. Every member row gets it, at any depth and under Uncategorized too; the
+   * Uncategorized HEADER and the offer card do not, and blank space is left to bubble so the
+   * body's guard can hand it on unchanged.
+   */
+  onRowContextMenu: (path: string, e: React.MouseEvent) => void
+  /** The one page currently renamed inline (menu → Rename), or null. The file tree's own type. */
+  renaming: PendingRename | null
+  /** The inline create input pending under one row (menu → New note / folder page / folder), or null. */
+  creating: PendingTopicCreate | null
 }
 
 /** Stands in while the index has not landed; only ever paired with an empty snapshot. */
@@ -112,7 +148,7 @@ export function topicRoots(records: readonly IndexRecord[], lookup: FolderPagesL
   return homeRoot === null ? others : [homeRoot, ...others]
 }
 
-export function TopicsTree({ root, source, activeFile, onOpenFile, onOpenFileBackground, unadopted, onCreateHome }: TopicsTreeProps) {
+export function TopicsTree({ root, source, activeFile, onOpenFile, onOpenFileBackground, unadopted, onCreateHome, onRowContextMenu, renaming, creating }: TopicsTreeProps) {
   // Subscribe once, re-read the whole feed on each poke; an unchanged snapshot keeps the previous
   // object, so index churn that changed nothing here costs no render (BacklinksSection's idiom).
   const [feed, setFeed] = useState<Feed>(() => ({ records: source.records, resolve: source.resolve }))
@@ -162,6 +198,32 @@ export function TopicsTree({ root, source, activeFile, onOpenFile, onOpenFileBac
   const childrenFor = (parent: IndexRecord, trail: readonly string[]): IndexRecord[] =>
     lookup.isFolderPage(parent) ? orderedMembers(guardedChildren(lookup, parent.path, trail), folderPageSettings(parent), resolve ?? NEVER) : []
 
+  // A page stands under EVERY parent that claims it (⚡ D6), so one path can own several rows —
+  // but an inline input is ONE input: two autofocused ones would fight, the second's mount
+  // blurring (and so cancelling) the first. Both land on the FIRST occurrence in document order,
+  // which the top-down traversal below makes deterministic. Reset every render, never state.
+  let renameRendered = false
+  let createRendered = false
+
+  /** The rename input in place of THIS row's label, or null when this row is not the one. */
+  const renameOn = (record: IndexRecord, indent: number): ReactNode => {
+    if (renaming === null || renaming.path !== record.path || renameRendered) return null
+    renameRendered = true
+    // `basename` is already the name minus its extension, which is exactly the file tree's prefill.
+    return <RenameInline initial={record.basename} indent={indent} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
+  }
+
+  /** The create input pending BESIDE this row, as its own `<li>`, or null. */
+  const createUnder = (record: IndexRecord, indent: number): ReactNode => {
+    if (creating === null || creating.anchorPath !== record.path || createRendered) return null
+    createRendered = true
+    return (
+      <li key={`${record.path} new`}>
+        <CreateInline kind={creating.kind} indent={indent} onSubmit={creating.onSubmit} onCancel={creating.onCancel} />
+      </li>
+    )
+  }
+
   const rowsFor = (members: readonly IndexRecord[], depth: number, ancestors: readonly string[]): ReactNode[] =>
     members.flatMap((member) => {
       // `trail` is the ancestor PATH of this row's own subtree — it is what guards the descent,
@@ -171,40 +233,50 @@ export function TopicsTree({ root, source, activeFile, onOpenFile, onOpenFileBac
       const kids = childrenFor(member, trail)
       const isOpen = kids.length > 0 && expanded.has(member.path)
       const active = member.path === activeFile
+      const indent = 8 + depth * 14
+      const inlineRename = renameOn(member, indent)
       const row = (
         <li key={trail.join('>')} role="treeitem" aria-expanded={kids.length > 0 ? isOpen : undefined} aria-selected={active}>
-          <button
-            type="button"
-            className={`tree__row${isFolderPage ? ' tree__row--dir' : ''}${active ? ' tree__row--active' : ''}`}
-            style={{ paddingLeft: 8 + depth * 14 }}
-            title={member.path}
-            onClick={(e) => open(member.path, e)}
-          >
-            {kids.length > 0 ? (
-              // 🔒 D3: the chevron is its OWN hit target — expanding a topic is not opening it,
-              // and the row around it stays the open gesture the file tree taught.
-              <span
-                role="button"
-                className={`tree__chevron${isOpen ? ' tree__chevron--open' : ''}`}
-                aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${member.basename}`}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  toggle(member.path)
-                }}
-              />
-            ) : (
-              <span className="tree__chevron tree__chevron--none" />
-            )}
-            {isFolderPage && <FolderPageGlyph className="tree__glyph" />}
-            <span className="tree__label">{member.basename}</span>
-            {/* DIRECT members — the honest fact about the page, so a member hidden from THIS
-                branch by the loop guard is still counted where it belongs. The chevron above
-                asks the guarded question instead, so it never opens onto nothing. */}
-            {isFolderPage && <span className="tree__count">{lookup.pagesIn(member.path).length}</span>}
-          </button>
+          {/* Rename (YAZ-865) replaces the row exactly as it does in the file tree — never beside it. */}
+          {inlineRename ?? (
+            <button
+              type="button"
+              className={`tree__row${isFolderPage ? ' tree__row--dir' : ''}${active ? ' tree__row--active' : ''}`}
+              style={{ paddingLeft: indent }}
+              title={member.path}
+              onClick={(e) => open(member.path, e)}
+              onContextMenu={(e) => onRowContextMenu(member.path, e)}
+            >
+              {kids.length > 0 ? (
+                // 🔒 D3: the chevron is its OWN hit target — expanding a topic is not opening it,
+                // and the row around it stays the open gesture the file tree taught.
+                <span
+                  role="button"
+                  className={`tree__chevron${isOpen ? ' tree__chevron--open' : ''}`}
+                  aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${member.basename}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    toggle(member.path)
+                  }}
+                />
+              ) : (
+                <span className="tree__chevron tree__chevron--none" />
+              )}
+              {isFolderPage && <FolderPageGlyph className="tree__glyph" />}
+              <span className="tree__label">{member.basename}</span>
+              {/* DIRECT members — the honest fact about the page, so a member hidden from THIS
+                  branch by the loop guard is still counted where it belongs. The chevron above
+                  asks the guarded question instead, so it never opens onto nothing. */}
+              {isFolderPage && <span className="tree__count">{lookup.pagesIn(member.path).length}</span>}
+            </button>
+          )}
         </li>
       )
-      return isOpen ? [row, ...rowsFor(kids, depth + 1, trail)] : [row]
+      // The create input sits directly under the row it was asked from — a SIBLING on disk, so
+      // it wears that row's own indent — and above whatever the row is expanded onto.
+      const born = createUnder(member, indent)
+      const below = isOpen ? rowsFor(kids, depth + 1, trail) : []
+      return born === null ? [row, ...below] : [row, born, ...below]
     })
 
   // The offer's live half (see the module doc): `resolve` is null until the first index lands, and
@@ -238,20 +310,31 @@ export function TopicsTree({ root, source, activeFile, onOpenFile, onOpenFileBac
             </button>
             {showOrphans && (
               <ul className="tree" role="group">
-                {orphans.map((record) => (
-                  <li key={record.path} role="treeitem" aria-selected={record.path === activeFile}>
-                    <button
-                      type="button"
-                      className={`tree__row${record.path === activeFile ? ' tree__row--active' : ''}`}
-                      style={{ paddingLeft: 8 + 14 }}
-                      title={record.path}
-                      onClick={(e) => open(record.path, e)}
-                    >
-                      <span className="tree__chevron tree__chevron--none" />
-                      <span className="tree__label">{record.basename}</span>
-                    </button>
-                  </li>
-                ))}
+                {/* An unfiled note is a PAGE like any other, so it carries the same menu, the
+                    same inline rename and the same create-beside as a nested row (YAZ-865) —
+                    only the muted HEADER above has no page behind it and so offers nothing. */}
+                {orphans.flatMap((record) => {
+                  const inline = renameOn(record, 8 + 14)
+                  const born = createUnder(record, 8 + 14)
+                  const row = (
+                    <li key={record.path} role="treeitem" aria-selected={record.path === activeFile}>
+                      {inline ?? (
+                        <button
+                          type="button"
+                          className={`tree__row${record.path === activeFile ? ' tree__row--active' : ''}`}
+                          style={{ paddingLeft: 8 + 14 }}
+                          title={record.path}
+                          onClick={(e) => open(record.path, e)}
+                          onContextMenu={(e) => onRowContextMenu(record.path, e)}
+                        >
+                          <span className="tree__chevron tree__chevron--none" />
+                          <span className="tree__label">{record.basename}</span>
+                        </button>
+                      )}
+                    </li>
+                  )
+                  return born === null ? [row] : [row, born]
+                })}
               </ul>
             )}
           </li>
