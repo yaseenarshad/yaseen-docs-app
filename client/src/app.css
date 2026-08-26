@@ -364,6 +364,14 @@ button {
   padding: 32px 48px 120px;
 }
 
+/* A folder page's body is a short preamble between Properties and its contents block — not a
+   document with an end (YAZ-909): both the 32px lead-in and the 120px tail collapse to a working
+   gap, so the outline starts right under whatever the body says. Ordinary notes keep both. */
+.editor-host:has(.folder-page-contents) .editor-mount > .editor-instance {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
 .editor-instance .milkdown {
   --crepe-color-background: transparent;
 }
