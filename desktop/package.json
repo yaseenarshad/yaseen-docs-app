@@ -2,7 +2,7 @@
   "name": "desktop",
   "private": true,
   "author": "Yasin Arshad",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Yaseen Docs — Electron shell (main + preload); the renderer is ../client",
   "main": "out/main/index.js",
   "scripts": {
@@ -21,20 +21,51 @@
   "build": {
     "appId": "com.yasinarshad.yaseendocs",
     "productName": "Yaseen Docs",
-    "directories": { "output": "dist-app" },
-    "files": ["out/**"],
+    "directories": {
+      "output": "dist-app"
+    },
+    "files": [
+      "out/**"
+    ],
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["arm64"] },
-        { "target": "dir", "arch": ["arm64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
       ],
       "identity": null,
       "category": "public.app-category.productivity"
     },
-    "dmg": { "artifactName": "${productName}-${version}-arm64.dmg" },
-    "protocols": [{ "name": "Yaseen Docs", "schemes": ["yaseendocs"] }],
+    "dmg": {
+      "artifactName": "${productName}-${version}-arm64.dmg"
+    },
+    "protocols": [
+      {
+        "name": "Yaseen Docs",
+        "schemes": [
+          "yaseendocs"
+        ]
+      }
+    ],
     "fileAssociations": [
-      { "ext": ["md", "markdown"], "name": "Markdown", "role": "Editor", "rank": "Alternate" }
+      {
+        "ext": [
+          "md",
+          "markdown"
+        ],
+        "name": "Markdown",
+        "role": "Editor",
+        "rank": "Alternate"
+      }
     ]
   }
 }
