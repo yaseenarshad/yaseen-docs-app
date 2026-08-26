@@ -12,16 +12,18 @@
  *
  * The arc, in order (serial by design — each step continues the previous state, and the sidebar
  * sits on the TOPICS lens throughout so the tree and the contents block are on screen together):
- *   1 THE FULL CIRCLE — tag a page through the outline's add row, then read the SAME fact off four
+ *   1 THE FULL CIRCLE — tag a page by typing its link into the outline, then read the SAME fact off four
  *     places at once: the member's own file on disk, the Topics tree's nesting, the Table tab's
  *     rows, the outline's bullets (and Uncategorized shrinking by one, the fifth)
  *   2 THE LAST REMOVAL — the × on a member whose ONLY parent this is: the sheet says Uncategorized,
  *     and Uncategorized is exactly where the sidebar then puts it, while the table drops the row
- *   3 ORDER SURVIVES RESTART — a drag in the outline is ONE `folder_page_settings` write (not one
- *     member card is touched), and after quit → relaunch the outline AND the Topics tree read the
- *     same 2A order out of the same one place
- *   4 LOOPS ARE SAFE EVERYWHERE — an `A ↔ B` loop hand-written on disk: both walkers descend into
- *     it and terminate, and a page reachable down two branches repeats under both
+ *   3 ORDER SURVIVES RESTART — rearranging the outline is ONE `folder_page_settings` write (not
+ *     one member card is touched), and after quit → relaunch the document reads back as it was —
+ *     while the Topics tree, still ordering by the [D5] `order` that the first edit RETIRES, keeps
+ *     the same members in its own fallback order (the seam YAZ-904 found)
+ *   4 LOOPS ARE SAFE EVERYWHERE — an `A ↔ B` loop hand-written on disk: the tree's walker descends
+ *     into it and terminates, a page reachable down two branches repeats under both, and the
+ *     outline — a flat document since YAZ-903 — has no descent left to hang
  *   5 TURN-INTO END TO END — the file tree's context menu makes a folder page, the block appears
  *     under its body, it nests in the tree, it takes a member; turning it BACK drops the member
  *     into Uncategorized and takes the block away, with not one member card rewritten
@@ -37,7 +39,22 @@ import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, copyVault, launchApp, md5, quitApp, REPO_ROOT, seededState, shoot } from './helpers'
+import {
+  appWindow,
+  bulletAfterLine,
+  caretAtEndOfLine,
+  clearOutlineLine,
+  copyVault,
+  launchApp,
+  md5,
+  outlineLineIndex,
+  outlineLines,
+  pickOutlineLink,
+  quitApp,
+  REPO_ROOT,
+  seededState,
+  shoot,
+} from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -48,6 +65,8 @@ const FOLDERS = ['funnel-stages', 'inbox', 'industries', 'kpis', 'problems', 'ro
 
 const HOME = 'Home.md'
 const FOLDER_PAGE = 'Funnel Stages.md'
+/** Its members at the start, alphabetically — which is what the outline's seed spells out. */
+const MEMBERS = ['Lead Gen', 'Lead Nurture', 'Sales-Conversion']
 /** Home's members, in the `order` the migration wrote onto its outline view. */
 const TOPICS = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', 'Roles']
 
@@ -92,13 +111,21 @@ const contents = (w: Page) => layer(w).locator('.folder-page-contents')
 const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
 const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__link')
+/**
+ * The outline's APPENDED rows (YAZ-903): members this folder page's DOCUMENT does not name. What
+ * the document says is `outlineLines`, and its per-row glyph / count / × live only down here.
+ */
 const outlineRows = (scope: Locator) => scope.locator('.view-outline__link')
 const outlineCounts = (scope: Locator) => scope.locator('.view-outline__count')
-/** One outline row by the name it shows — never by `data-outline-row`, whose path is the app's own spelling. */
-const outlineRow = (w: Page, name: string) =>
-  contents(w).locator('.view-outline__row').filter({ has: w.locator('.view-outline__link', { hasText: new RegExp(`^${name}$`) }) })
-const addRow = (scope: Locator) => scope.locator('[aria-label="Link a page"]')
-const picks = (scope: Locator) => scope.locator('.view-outline__pick')
+/**
+ * The document's lines that still say something. Clearing a line's TEXT leaves its bullet standing
+ * (an empty level-1 bullet cannot be lifted out of a bullets-only document), so the blanks are
+ * real, expected, and not what any assertion here is about.
+ */
+const outlineSaid = async (scope: Locator): Promise<string[]> =>
+  (await outlineLines(scope).allTextContents()).filter((line) => line !== '')
+/** Every name as a LINK LINE, which is how a membership is spelled inside the document. */
+const asLinks = (...names: string[]) => names.map((n) => `[[${n}]]`)
 const sheet = (w: Page) => w.locator('[role="dialog"]')
 const sheetBtn = (w: Page, label: string) => sheet(w).locator('.confirm__btn', { hasText: label })
 /** `file.name` is Obsidian's TFile name — extension included. */
@@ -160,7 +187,7 @@ test.afterAll(async () => {
 
 // ================================================================ 1. the full circle
 
-test('step 1 — one gesture, four surfaces: the add row writes the member’s card, and the tree, the table and the outline all say so', async () => {
+test('step 1 — one gesture, four surfaces: a link line writes the member’s card, and the tree, the table and the outline all say so', async () => {
   app = await launchApp({
     userData,
     seedState: crossState(vault, path.join(vault, FOLDER_PAGE), [path.join(vault, HOME), path.join(vault, FOLDER_PAGE)]),
@@ -181,25 +208,33 @@ test('step 1 — one gesture, four surfaces: the add row writes the member’s c
   ])
   await expect(uncategorizedRow(win).locator('.tree__count')).toHaveText('2') // the two `inbox/` notes
   await expect(contents(win)).toBeVisible()
-  await expect(outlineRows(contents(win))).toHaveText(['Lead Gen', 'Lead Nurture', 'Sales-Conversion'])
+  await expect(outlineLines(contents(win))).toHaveText(asLinks(...MEMBERS))
   await shoot(win, 'cross-01-both-surfaces')
 
-  // THE GESTURE — one pick in the outline's add row, on an `inbox/` orphan. The full name is
-  // typed on purpose: a name that answers in the vault is a PICK and never the create row.
-  await addRow(contents(win)).fill('Pipeline Review Notes')
-  await expect(picks(contents(win))).toHaveText(['Pipeline Review Notes'])
-  await picks(contents(win)).first().click()
+  // THE GESTURE — one link line typed into the outline's DOCUMENT (YAZ-903, replacing the add row
+  // this step used to drive), on an `inbox/` orphan. The full name is typed on purpose: a name
+  // that answers in the vault is a PICK and never the picker's create row.
+  await bulletAfterLine(win, contents(win), MEMBERS.length - 1)
+  await pickOutlineLink(win, 'Pipeline Review Notes')
 
   // (a) DISK — the write lands on the PICKED page's own card, surgically: the entry is new and the
   //     key it already carried is untouched. Belonging is text a page writes about ITSELF.
   await expect.poll(() => read(ORPHAN_IN), { timeout: 10_000 }).toContain('[[Funnel Stages]]')
   expect(await read(ORPHAN_IN)).toContain('captured: 2026-08-14')
   expect(await read(ORPHAN_IN)).toContain('# Pipeline Review Notes')
-  // …and the FOLDER PAGE was not touched at all: it maintains no list.
-  expect(await read(FOLDER_PAGE)).not.toContain('Pipeline Review Notes')
+  // …and the FOLDER PAGE still maintains no MEMBER LIST. Its own card names the page exactly once,
+  // as a LINE of the outline document the gesture typed — and a line is text. What GRANTS the
+  // membership is the entry that landed on the member's card above; nothing on this side does.
+  const card = await read(FOLDER_PAGE)
+  expect(card.match(/Pipeline Review Notes/g)).toHaveLength(1)
+  expect(card).toMatch(/\* \[\[Pipeline Review Notes\]\]/)
+  expect(card).toContain('folder_pages:\n  - "[[Home]]"') // its own belonging, untouched
 
-  // (b) THE OUTLINE — a fourth bullet, in the [D5] fallback order (Funnel Stages declares none).
-  await expect(outlineRows(contents(win))).toHaveText(['Lead Gen', 'Lead Nurture', 'Pipeline Review Notes', 'Sales-Conversion'])
+  // (b) THE OUTLINE — a fourth bullet, where the caret put it: the document is the order now, so
+  //     the new link line stands last rather than sorted into the [D5] fallback. Nothing is
+  //     appended below the editor, because the document names every member it has.
+  await expect(outlineLines(contents(win))).toHaveText(asLinks(...MEMBERS, 'Pipeline Review Notes'))
+  await expect(outlineRows(contents(win))).toHaveCount(0)
 
   // (c) THE TOPICS TREE — nested under the same folder page, one rung in, with the count moved and
   //     Uncategorized one shorter. The sidebar read the same frontmatter through the same lookup.
@@ -228,12 +263,14 @@ test('step 1 — one gesture, four surfaces: the add row writes the member’s c
 
 // ================================================================ 2. the last removal
 
-test('step 2 — the × on a page’s ONLY parent: the sheet promises Uncategorized and the sidebar delivers it', async () => {
+test('step 2 — dropping a page’s ONLY parent: the sheet promises Uncategorized and the sidebar delivers it', async () => {
   await viewTabs(contents(win)).filter({ hasText: 'Outline' }).click()
 
   // `Lead Nurture` belongs to `[[Funnel Stages]]` and nowhere else, so this is the copy's OTHER
-  // form — the one that names Uncategorized instead of listing the folder pages left.
-  await outlineRow(win, 'Lead Nurture').locator('[aria-label="Remove Lead Nurture from Funnel Stages"]').click()
+  // form — the one that names Uncategorized instead of listing the folder pages left. The gesture
+  // is now deleting its LINE (YAZ-903): a page the document names has no × of its own, and the
+  // sheet a deleted link line raises is the same sheet the × has raised since YAZ-820.
+  await clearOutlineLine(win, contents(win), await outlineLineIndex(contents(win), '[[Lead Nurture]]'))
   await expect(sheet(win)).toContainText(
     "Remove 'Lead Nurture' from 'Funnel Stages'? The page is not deleted — its file stays put. It has no other folder pages, so it moves to Uncategorized.",
   )
@@ -245,8 +282,9 @@ test('step 2 — the × on a page’s ONLY parent: the sheet promises Uncategori
   expect(await read(ONLY_CHILD)).toContain('# Lead Nurture')
   expect(await read(ONLY_CHILD)).toContain('order: 2')
 
-  // THE BLOCK: gone from both skins.
-  await expect(outlineRows(contents(win))).toHaveText(['Lead Gen', 'Pipeline Review Notes', 'Sales-Conversion'])
+  // THE BLOCK: gone from both skins — its line says nothing now, and it is not appended either.
+  await expect.poll(() => outlineSaid(contents(win))).toEqual(asLinks('Lead Gen', 'Sales-Conversion', 'Pipeline Review Notes'))
+  await expect(outlineRows(contents(win))).toHaveCount(0)
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(dataRows(contents(win))).toHaveCount(3)
   await expect(rowNames(contents(win))).toHaveText(named('Lead Gen', 'Sales-Conversion', 'Pipeline Review Notes'))
@@ -273,40 +311,47 @@ test('step 2 — the × on a page’s ONLY parent: the sheet promises Uncategori
 
 // ================================================================ 3. order survives restart
 
-test('step 3 — a drag in the outline is ONE settings write, and the Topics tree reads it back after a relaunch', async () => {
+test('step 3 — the outline IS the order now: rearranging it writes nobody’s card, and survives a relaunch', async () => {
   test.setTimeout(60_000)
 
-  // Not one member card may be touched by a reorder: the order is PRESENTATION, and it lives on
-  // the folder page. Fingerprint a member before and after.
+  // TOMBSTONE (YAZ-904): this step used to DRAG a depth-0 row, which wrote the [D5] `order` list.
+  // Rows are gone; rearranging is editing the document. The claim survives whole — a rearrangement
+  // is presentation, it lives on the FOLDER PAGE, and not one member card may be touched by it.
   const leadGen = path.join(vault, 'funnel-stages', 'Lead Gen.md')
   const before = await md5(leadGen)
 
-  // The last row to the TOP, dropped above `Lead Gen`'s midpoint (TabBar's insertion rule).
-  await outlineRow(win, 'Sales-Conversion').dragTo(outlineRow(win, 'Lead Gen'), { targetPosition: { x: 24, y: 2 } })
-  await expect(outlineRows(contents(win))).toHaveText(['Sales-Conversion', 'Lead Gen', 'Pipeline Review Notes'])
+  // `Lead Gen` to the BOTTOM, in the two moves a document allows: write the line where it should
+  // go, then take away the one that was. Membership is a SET, so the link set never changes across
+  // either edit — which is why neither raises the un-tag sheet.
+  await bulletAfterLine(win, contents(win), (await outlineLines(contents(win)).count()) - 1)
+  await pickOutlineLink(win, 'Lead Gen')
+  await clearOutlineLine(win, contents(win), await outlineLineIndex(contents(win), '[[Lead Gen]]'))
+  await expect.poll(() => outlineSaid(contents(win))).toEqual(asLinks('Sales-Conversion', 'Pipeline Review Notes', 'Lead Gen'))
+  await expect(sheet(win)).toHaveCount(0)
 
   // DISK: the new sequence is on the FOLDER PAGE's own card, inside `folder_page_settings` — the
   // one place 2A keeps it — and the member is byte-for-byte what it was.
-  await expect.poll(() => read(FOLDER_PAGE), { timeout: 10_000 }).toContain('[[Sales-Conversion]]')
-  const card = await read(FOLDER_PAGE)
-  expect(card.indexOf('[[Sales-Conversion]]')).toBeLessThan(card.indexOf('[[Lead Gen]]'))
-  expect(card.indexOf('[[Lead Gen]]')).toBeLessThan(card.indexOf('[[Pipeline Review Notes]]'))
+  await expect
+    .poll(() => read(FOLDER_PAGE), { timeout: 10_000 })
+    .toMatch(/\[\[Sales-Conversion\]\][\s\S]*\[\[Pipeline Review Notes\]\][\s\S]*\[\[Lead Gen\]\]/)
   expect(await md5(leadGen)).toBe(before)
 
-  // THE SIDEBAR, live: the tree orders each level by ITS OWN folder page's settings, so it is
-  // reading the very key the drag just wrote.
+  // THE SIDEBAR, live — and THE SEAM YAZ-904 FOUND. The tree orders each level with
+  // `orderedMembers`, which reads the [D5] `order`… a key the outline's first edit RETIRES (the
+  // lazy migration). So the tree keeps the same MEMBERS, in its own fallback order (alphabetical),
+  // while the document keeps the arrangement: one set, two orderings, and no key shared any more.
   await expect(topicLabels(win)).toHaveText([
     'Home',
     'Funnel Stages',
-    'Sales-Conversion',
     'Lead Gen',
     'Pipeline Review Notes',
+    'Sales-Conversion',
     ...TOPICS.slice(1),
     'Uncategorized',
   ])
-  await shoot(win, 'cross-06-dragged-order')
+  await shoot(win, 'cross-06-rearranged-order')
 
-  // AND ACROSS A RESTART: the order is frontmatter (the page's), the expansion is app state
+  // AND ACROSS A RESTART: the document is frontmatter (the page's), the expansion is app state
   // (main's) — two different stores, one restored screen.
   await quitApp(app)
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
@@ -315,21 +360,22 @@ test('step 3 — a drag in the outline is ONE settings write, and the Topics tre
   await expect(topicLabels(win)).toHaveText([
     'Home',
     'Funnel Stages',
-    'Sales-Conversion',
     'Lead Gen',
     'Pipeline Review Notes',
+    'Sales-Conversion',
     ...TOPICS.slice(1),
     'Uncategorized',
   ])
   await expect(contents(win)).toBeVisible()
-  // Which view is active is SESSION state, so the reopened page is back on the first skin.
-  await expect(outlineRows(contents(win))).toHaveText(['Sales-Conversion', 'Lead Gen', 'Pipeline Review Notes'])
+  // Which view is active is SESSION state, so the reopened page is back on the first skin — and it
+  // reads the arrangement back out of the document, exactly as it was left.
+  await expect.poll(() => outlineSaid(contents(win))).toEqual(asLinks('Sales-Conversion', 'Pipeline Review Notes', 'Lead Gen'))
   await shoot(win, 'cross-07-order-restored')
 })
 
 // ================================================================ 4. loops are safe everywhere
 
-test('step 4 — a hand-written A ↔ B loop: both walkers descend into it, terminate, and repeat a two-parent page under both', async () => {
+test('step 4 — a hand-written A ↔ B loop: the tree descends into it, terminates, repeats a two-parent page under both — and the outline has nothing left to hang', async () => {
   test.setTimeout(60_000)
 
   // Written straight onto disk — the honest path for "somebody typed this in another editor". The
@@ -345,9 +391,9 @@ test('step 4 — a hand-written A ↔ B loop: both walkers descend into it, term
   await expect(topicLabels(win)).toHaveText([
     'Home',
     'Funnel Stages',
-    'Sales-Conversion',
     'Lead Gen',
     'Pipeline Review Notes',
+    'Sales-Conversion',
     ...TOPICS.slice(1),
     'Loop A',
     'Uncategorized',
@@ -360,9 +406,9 @@ test('step 4 — a hand-written A ↔ B loop: both walkers descend into it, term
   await expect(topicLabels(win)).toHaveText([
     'Home',
     'Funnel Stages',
-    'Sales-Conversion',
     'Lead Gen',
     'Pipeline Review Notes',
+    'Sales-Conversion',
     ...TOPICS.slice(1),
     'Loop A',
     'Loop B',
@@ -377,27 +423,26 @@ test('step 4 — a hand-written A ↔ B loop: both walkers descend into it, term
   await expect(topicRow(win, 'Loop A').first().locator('.tree__count')).toHaveText('2')
   await shoot(win, 'cross-08-loop-in-the-tree')
 
-  // THE OUTLINE, from inside the loop. Same guard, same termination, same repeat — the other
-  // expansion-driven surface, recursing over the same one primitive.
+  // THE OUTLINE, from inside the loop — and the OTHER half of the YAZ-859 seam ruling, re-aimed.
+  //
+  // TOMBSTONE (YAZ-904): the outline used to be the second EXPANSION-driven surface — chevrons,
+  // per-row counts, a guarded descent of its own — and this step used to prove the two walkers
+  // agreed inside the loop. That surface is gone: the outline is a DOCUMENT, seeded flat from the
+  // page's direct members, and it never recurses at all. So a loop cannot hang it, and there is no
+  // second walker left to disagree with the tree — which the assertions below say out loud. The
+  // honesty split itself (count = DIRECT members, chevron = the guarded question) is still proven,
+  // where it still exists: on the Topics tree, three assertions up.
   await topicRow(win, 'Loop A').click()
   await expect(activeTab(win)).toHaveText('Loop A')
-  await expect(outlineRows(contents(win))).toHaveText(['Loop B', 'Loop Leaf'])
-  // THE SEAM RULING (YAZ-859, found by this very step): both surfaces count the same way — the
-  // honesty split the Topics tree locked. The COUNT is the page's DIRECT members (the honest fact:
-  // `Loop B` really holds 2), the CHEVRON asks the guarded question (opening it here shows only 1,
-  // the ancestor being skipped). Inside a loop the two deliberately disagree — on BOTH surfaces,
-  // identically. Before the ruling the outline counted guarded children and the same page showed
-  // different numbers in the sidebar and the outline; no spec outside a loop could tell them apart.
-  await expect(outlineCounts(contents(win))).toHaveText(['2'])
-  await contents(win).locator('[aria-label="Expand Loop B"]').click()
-  await expect(outlineRows(contents(win))).toHaveText(['Loop B', 'Loop Leaf', 'Loop Leaf'])
+  await expect(outlineLines(contents(win))).toHaveText(asLinks('Loop B', 'Loop Leaf'))
+  await expect(outlineCounts(contents(win))).toHaveCount(0) // no rows to carry a count
+  await expect(contents(win).locator('[aria-label="Expand Loop B"]')).toHaveCount(0) // and nothing to expand
   await shoot(win, 'cross-09-loop-in-the-outline')
 
   // And from the OTHER end of the loop, so neither direction is the special case.
   await topicRow(win, 'Loop B').click()
   await expect(activeTab(win)).toHaveText('Loop B')
-  await expect(outlineRows(contents(win))).toHaveText(['Loop A', 'Loop Leaf'])
-  await expect(outlineCounts(contents(win))).toHaveText(['2'])
+  await expect(outlineLines(contents(win))).toHaveText(asLinks('Loop A', 'Loop Leaf'))
 
   // Tidy the tree back up before step 5 reads it again.
   await treeChevron(win, 'Collapse', 'Loop A').click()
@@ -437,11 +482,13 @@ test('step 5 — turn a plain note into a folder page, feed it, and turn it back
 
   // FEED IT — from its own outline, the remaining orphan. The target has NO frontmatter at all,
   // so this write builds the block from nothing.
-  await addRow(contents(win)).fill('Positioning Draft')
-  await expect(picks(contents(win))).toHaveText(['Positioning Draft'])
-  await picks(contents(win)).first().click()
+  // A brand-new folder page holds nobody, so its document is the single empty bullet the seed
+  // guarantees — there is always something to click into and type.
+  await expect(outlineLines(contents(win))).toHaveText([''])
+  await caretAtEndOfLine(win, contents(win), 0)
+  await pickOutlineLink(win, 'Positioning Draft')
   await expect.poll(() => read(ORPHAN_OUT), { timeout: 10_000 }).toContain('[[CAC]]')
-  await expect(outlineRows(contents(win))).toHaveText(['Positioning Draft'])
+  await expect(outlineLines(contents(win))).toHaveText(asLinks('Positioning Draft'))
   await expect(topicRow(win, 'CAC').locator('.tree__count')).toHaveText('1')
   await expect(uncategorizedRow(win).locator('.tree__count')).toHaveText('1') // only Lead Nurture left
   await treeChevron(win, 'Expand', 'CAC').click()
@@ -559,8 +606,12 @@ test('step 6 — a page_type vault, migrated by the real script, OPENS as a fold
   await topicRow(win, 'Channels').click()
   await expect(activeTab(win)).toHaveText('Channels')
   await expect(contents(win)).toBeVisible()
-  await expect(outlineRows(contents(win))).toHaveText(['Newsletter', 'Website'])
-  await expect(outlineCounts(contents(win))).toHaveText(['1', '1'])
+  // Both channel pages stand in the document the [D5] seed wrote, as plain link lines — the glyph
+  // and the direct-member count they used to wear moved to the APPENDED section with YAZ-903, and
+  // this page names every member it has, so nothing is appended (folderPages.spec.ts step 6 owns
+  // the glyph-and-count claim on the surface that kept it).
+  await expect(outlineLines(contents(win))).toHaveText(asLinks('Newsletter', 'Website'))
+  await expect(outlineRows(contents(win))).toHaveCount(0)
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(rowNames(contents(win))).toHaveText(named('Newsletter', 'Website'))
   await shoot(win, 'cross-16-migrated-folder-page')

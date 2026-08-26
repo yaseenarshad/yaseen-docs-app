@@ -7,7 +7,7 @@
  * entry to skip the native folder dialog (the locked no-dialog-in-tests rule), and always work
  * on a COPY of a generated fixture vault — the real vault and real app state are never touched.
  */
-import { _electron, type ElectronApplication, type Page } from '@playwright/test'
+import { _electron, expect, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { createHash } from 'node:crypto'
 import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -238,6 +238,227 @@ export async function closeWindow(app: ElectronApplication, winId: string): Prom
       .find((w) => w.webContents.getURL().includes(`win=${id}`))
       ?.close()
   }, winId)
+}
+
+// ---------- the folder page's OUTLINE editor (YAZ-903; harnessed in YAZ-904) ----------
+
+/**
+ * THE OUTLINE IS A PROSEMIRROR NOW, and driving one from Playwright is its own small craft — so
+ * the craft lives here, once, and every spec that types into an outline shares it.
+ *
+ * Four things race, and all four have bitten:
+ *  - `Home` / `End` do NOT move the caret on macOS. `Meta+ArrowLeft` / `Meta+ArrowRight` do — and
+ *    `Meta+ArrowUp` / `Meta+ArrowDown` are the outliner's own fold keys, so they never move it.
+ *  - a resolved wikilink renders its `[[ ]]` as `display: none` spans, and a caret cannot stop
+ *    inside hidden text — so end-of-line lands in FRONT of the closing `]]` until the plugin's
+ *    REVEAL rule steps the decorations aside, which the click itself triggers. The second attempt,
+ *    on the raw text, lands properly.
+ *  - the browser owns the DOM selection but ProseMirror owns `state.selection`, and PM reads the
+ *    browser's only on its own deferred flush. Every keyboard COMMAND runs against PM's — so an
+ *    Enter sent too early splits the document where PM still THINKS the caret is (on a freshly
+ *    mounted editor, the document's start).
+ *  - and a keystroke that arrives while the editor is re-rendering is simply DROPPED, so typing
+ *    cannot be trusted to have landed either. Retrying a bare `type` would double whatever did,
+ *    so the writers below take over a line they own and WIPE it before each attempt.
+ * Hence the shape of everything below: perform the gesture, then CHECK it against ProseMirror's
+ * own answer, and retry the whole thing until the two agree. Never a sleep.
+ */
+
+/** The outline view's editor — a real contenteditable, the note editor's own Crepe (YAZ-901). */
+export const outlineEditor = (scope: Locator) => scope.locator('.view-outline .editor-instance .ProseMirror')
+
+/**
+ * Its bullets, in document order — nested ones included, as siblings. Read with `textContent`
+ * (never `innerText`) on purpose: a resolved link's brackets are hidden spans, and reading them is
+ * how a line's LINK-ness is asserted at all.
+ */
+export const outlineLines = (scope: Locator) => outlineEditor(scope).locator('.content-dom > p')
+
+/** Only the bullets nested at least one level in — what a Tab produces. */
+export const outlineNested = (scope: Locator) => outlineEditor(scope).locator('ul ul .content-dom > p')
+
+/** The `[[` picker, while it is showing (Links B). */
+export const linkPicker = (w: Page) => w.locator('.wikilink-picker[data-show="true"]')
+
+/** The bullet reading exactly `text` (raw, brackets included) — how a line is addressed by name. */
+export const outlineLineIndex = async (scope: Locator, text: string): Promise<number> =>
+  (await outlineLines(scope).allTextContents()).indexOf(text)
+
+/** What the caret reading answers with; `null` when the outline editor is not even focused. */
+export interface OutlineCaret {
+  /** The whole raw text of the bullet the caret sits in. */
+  text: string
+  /** How far into it, hidden bracket spans counted. */
+  offset: number
+  /** Whether PROSEMIRROR agrees the caret is in this bullet (see `outlineCaret`). */
+  live: boolean
+}
+
+/**
+ * WHERE THE CARET IS, and — crucially — where ProseMirror thinks it is.
+ *
+ * `text` / `offset` come from the DOM selection, measured with a Range so the hidden bracket spans
+ * are counted. `live` is the other half: `outline-thread-node` is the bullet-threading
+ * decoration's caret path (`editor/outline/bulletThreading.ts`, derived from
+ * `state.selection.$from`), so it is PM's OWN answer, read back off the DOM. Null when the outline
+ * editor is not focused — a stale DOM selection outlives the focus that made it, and would happily
+ * answer for keystrokes that are going somewhere else entirely.
+ */
+export const outlineCaret = (w: Page): Promise<OutlineCaret | null> =>
+  w.evaluate(() => {
+    const active = document.activeElement
+    if (active === null || !active.classList.contains('ProseMirror') || active.closest('.view-outline') === null) return null
+    const sel = document.getSelection()
+    const node = sel === null ? null : sel.anchorNode
+    if (sel === null || node === null) return null
+    const el = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement
+    const bullet = el === null ? null : el.closest('.view-outline .content-dom > p')
+    if (bullet === null) return null
+    const range = document.createRange()
+    range.selectNodeContents(bullet)
+    range.setEnd(node, sel.anchorOffset)
+    const item = bullet.closest('.milkdown-list-item-block')
+    return {
+      text: bullet.textContent ?? '',
+      offset: range.toString().length,
+      live: item !== null && item.classList.contains('outline-thread-node'),
+    }
+  })
+
+/**
+ * The caret once it has stopped moving, with the `[[` picker's verdict beside it. Two reads a
+ * round trip apart catch a selection that is still settling; `picking` answers the one question
+ * the DOM cannot be trusted on, because the picker's session is computed from `state.selection`:
+ * an OPEN picker means PM's caret is inside an unclosed `[[…`, which on a link line means it has
+ * not got past the hidden `]]` yet, however the DOM measures it.
+ */
+export const settledCaret = async (w: Page): Promise<(OutlineCaret & { picking: boolean }) | null> => {
+  const first = await outlineCaret(w)
+  const second = await outlineCaret(w)
+  if (second === null || JSON.stringify(first) !== JSON.stringify(second)) return null
+  return { ...second, picking: (await linkPicker(w).count()) > 0 }
+}
+
+/** Every gesture below leaves the caret in this state — settled, live, and not mid-completion. */
+const at = (text: string, offset: number) => ({ text, offset, live: true, picking: false })
+
+/** THE ONE CARET PRIMITIVE: click into bullet `i` and land after its LAST character. */
+export async function caretAtEndOfLine(w: Page, scope: Locator, i: number): Promise<void> {
+  const line = outlineLines(scope).nth(i)
+  const text = (await line.textContent()) ?? ''
+  await expect
+    .poll(async () => {
+      await line.click() // free to repeat: a click never changes the document
+      await w.keyboard.press('Meta+ArrowRight')
+      return settledCaret(w)
+    })
+    .toEqual(at(text, text.length))
+}
+
+/**
+ * A fresh bullet after bullet `i`, caret in it. It leaves behind exactly one guarantee — ONE more
+ * bullet than there was, EMPTY, with ProseMirror's own caret inside it — so the typing that
+ * follows has somewhere to land.
+ */
+export async function bulletAfterLine(w: Page, scope: Locator, i: number): Promise<void> {
+  await expect
+    .poll(async () => {
+      // Counted per attempt, never once up front: a retry has to judge the Enter it just sent.
+      const before = await outlineLines(scope).count()
+      await caretAtEndOfLine(w, scope, i)
+      await w.keyboard.press('Enter')
+      const now = await settledCaret(w)
+      return (await outlineLines(scope).count()) === before + 1 ? now : null
+    })
+    .toEqual(at('', 0))
+}
+
+/** The whole of bullet `i` selected and deleted — the "select + delete" a user does to drop a line. */
+export async function clearOutlineLine(w: Page, scope: Locator, i: number): Promise<void> {
+  await caretAtEndOfLine(w, scope, i)
+  await w.keyboard.press('Shift+Meta+ArrowLeft')
+  await w.keyboard.press('Backspace')
+}
+
+/**
+ * `[[` at the caret, narrowed to `name`, committed with Enter — Links B, inside the outline.
+ * `shot` names a screenshot taken while the picker is open, for specs that want that evidence.
+ *
+ * THE CARET'S LINE IS TAKEN OVER WHOLE, and retried by WIPING first: a keystroke that arrives
+ * while the editor is re-rendering is simply dropped, and a retry that just typed `[[` again would
+ * turn a half-landed `[` into `[[[`. So each attempt clears the line and types the fragment afresh,
+ * until ProseMirror shows the fragment standing there with its picker open — which is also the
+ * proof that the picker is looking at what we think it is. Callers therefore hand this a line they
+ * own: a fresh bullet, or the empty one the seed guarantees.
+ */
+export async function pickOutlineLink(w: Page, name: string, shot?: string): Promise<void> {
+  const fragment = `[[${name}`
+  await expect
+    .poll(async () => {
+      const now = await settledCaret(w)
+      if (now !== null && now.text === fragment && now.picking) return now
+      // Wipe only what is THERE. A Backspace on an already-empty bullet is not a no-op — it merges
+      // the bullet into the line above, which would put the caret in somebody else's text.
+      if (now !== null && now.text !== '') {
+        await w.keyboard.press('Meta+ArrowRight')
+        await w.keyboard.press('Shift+Meta+ArrowLeft')
+        await w.keyboard.press('Backspace')
+      }
+      await w.keyboard.type(fragment, { delay: 20 })
+      return settledCaret(w)
+    })
+    .toEqual({ text: fragment, offset: fragment.length, live: true, picking: true })
+  // The picker narrows over REAL pages: the row it will insert is the one this asserts.
+  await expect(linkPicker(w).locator('[role="option"]').first()).toHaveText(name)
+  if (shot !== undefined) await shoot(w, shot)
+  await w.keyboard.press('Enter')
+  // The picker inserts PLAIN TEXT, so the proof it took is the caret's own line reading it back.
+  await expect.poll(() => settledCaret(w)).toEqual(at(`[[${name}]]`, name.length + 4))
+}
+
+/**
+ * `text` typed as the WHOLE of the caret's line, retried by WIPING first — same discipline as
+ * `pickOutlineLink`, for the same reason: a keystroke that arrives while the editor is
+ * re-rendering is dropped, and retrying a bare `type` would double what did land. Callers hand
+ * this a line they own, which is what makes wiping safe.
+ */
+export async function writeOutlineLine(w: Page, text: string): Promise<void> {
+  await expect
+    .poll(async () => {
+      const now = await settledCaret(w)
+      if (now !== null && now.text === text) return now
+      // Only what is THERE: a Backspace on an already-empty bullet merges it into the line above.
+      if (now !== null && now.text !== '') {
+        await w.keyboard.press('Meta+ArrowRight')
+        await w.keyboard.press('Shift+Meta+ArrowLeft')
+        await w.keyboard.press('Backspace')
+      }
+      await w.keyboard.type(text, { delay: 15 })
+      return settledCaret(w)
+    })
+    .toEqual(at(text, text.length))
+}
+
+/**
+ * Tab until the caret's line has actually nested. A dropped keypress is the only reason it would
+ * not have, and a Tab on a line that is already the first child of its parent is a no-op — the
+ * outliner has nothing deeper to put it under — so repeating is safe.
+ */
+export async function indentOutlineLine(w: Page, scope: Locator, text: string): Promise<void> {
+  const nestedLine = () => outlineNested(scope).filter({ hasText: text }).count()
+  await expect
+    .poll(async () => {
+      if ((await nestedLine()) > 0) return true
+      await w.keyboard.press('Tab')
+      return (await nestedLine()) > 0
+    })
+    .toBe(true)
+}
+
+/** A whole line written from scratch after bullet `i`: a fresh bullet, then the text typed into it. */
+export async function typeOutlineLine(w: Page, scope: Locator, i: number, text: string): Promise<void> {
+  await bulletAfterLine(w, scope, i)
+  await writeOutlineLine(w, text)
 }
 
 // ---------- evidence ----------

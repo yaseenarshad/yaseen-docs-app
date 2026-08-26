@@ -30,6 +30,12 @@
  *      too: Home's outline `order` entry and another folder page's column `target`, alongside the
  *      members' own `folder_pages`. Still zero broken links, and the map still browses.
  *
+ * TOMBSTONE (YAZ-904): the outline is a free-form DOCUMENT since YAZ-903, so the rows this file
+ * used to read — one per member, each with a direct-member COUNT — are gone. What stands in their
+ * place is the seed: one link line per member, in the [D5] arrangement, inside a real editor. The
+ * counts moved to the appended section (members a document does not name), which none of these
+ * pages has; the vault-wide claim they carried is re-asked of the vault itself, in `directMembers`.
+ *
  * Same harness as links.spec.ts / backlinks.spec.ts (temp `--user-data-dir`, a COPY of the
  * fixture, `bible-` step screenshots).
  */
@@ -37,7 +43,8 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
+import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
+import { appWindow, copyVault, launchApp, outlineLines, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -102,8 +109,16 @@ const expandBacklinks = async (w: Page): Promise<void> => {
 const contents = (w: Page) => layer(w).locator('.folder-page-contents')
 const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
+/**
+ * The outline's APPENDED rows (YAZ-903): members the page's DOCUMENT does not name. What the
+ * document itself says is `outlineLines` — one bullet per line, a link line per membership.
+ */
 const outlineRows = (scope: Locator) => scope.locator('.view-outline__link')
 const outlineCounts = (scope: Locator) => scope.locator('.view-outline__count')
+/** Every name as a LINK LINE, which is how the [D5] seed spells a membership into the document. */
+const asLinks = (...names: string[]) => names.map((n) => `[[${n}]]`)
+
+const read = (rel: string) => readFile(path.join(vault, rel), 'utf8')
 const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__link')
 const cell = (scope: Locator, r: number, c: number) => scope.locator(`[data-cell="${r}:${c}"]`)
 /**
@@ -159,6 +174,25 @@ async function brokenLinks(root: string): Promise<string[]> {
   return broken
 }
 
+/**
+ * How many pages say, in their OWN frontmatter, that they belong to each of `topics` — the fact the
+ * outline used to print beside every row before YAZ-903 moved counts onto the appended section.
+ * Read straight off the vault, so the claim outlives the surface that used to carry it.
+ */
+async function directMembers(root: string, topics: readonly string[]): Promise<string[]> {
+  const counts = new Map(topics.map((t) => [t, 0]))
+  for (const f of (await walk(root)).filter((x) => x.endsWith('.md'))) {
+    const props = parseFrontmatter(splitFrontmatter(await readFile(f, 'utf8')).frontmatter).properties
+    const entries = Array.isArray(props.folder_pages) ? props.folder_pages : []
+    for (const topic of topics) {
+      if (entries.some((e) => typeof e === 'string' && targetOf(e.replace(/^\[\[|\]\]$/g, '')) === topic)) {
+        counts.set(topic, (counts.get(topic) ?? 0) + 1)
+      }
+    }
+  }
+  return topics.map((t) => String(counts.get(t) ?? 0))
+}
+
 /** Any note still carrying the retired type key. The migration's own post-check, re-asked here. */
 async function withPageType(root: string): Promise<string[]> {
   const out: string[] = []
@@ -199,10 +233,17 @@ test('step 1 — the migrated encyclopedia opens on Home, holding exactly its to
   // (alphabetically, Funnel Stages would still lead — but KPIs would not sit third).
   await expect(contents(win)).toBeVisible()
   await expect(viewTabs(contents(win))).toHaveText(['Outline', 'Table'])
-  await expect(outlineRows(contents(win))).toHaveText(TOPICS)
-  // A count per row, because every one of Home's members is itself a folder page: the whole
-  // migrated vault — 17 pages filed under five topics — in one assertion.
-  await expect(outlineCounts(contents(win))).toHaveText(TOPIC_COUNTS)
+  await expect(outlineLines(contents(win))).toHaveText(asLinks(...TOPICS))
+  // …and it is still only a SEED: the page has no document of its own until it is edited, so the
+  // `order` the migration wrote is untouched on disk — read, never written (the lazy migration).
+  expect(await read(HOME)).toContain('order:')
+  // TOMBSTONE (YAZ-904): a per-row COUNT used to stand beside every one of these, and this was the
+  // one assertion that held the whole migrated vault. Counts moved onto the APPENDED section with
+  // YAZ-903 — the members a document does not name — and Home names all five, so it shows none.
+  // The claim itself is unchanged, re-asked of the vault: 17 pages filed under five topics.
+  await expect(outlineCounts(contents(win))).toHaveCount(0)
+  await expect(outlineRows(contents(win))).toHaveCount(0)
+  expect(await directMembers(vault, TOPICS)).toEqual(TOPIC_COUNTS)
 
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(dataRows(contents(win))).toHaveCount(TOPICS.length)
@@ -213,7 +254,7 @@ test('step 1 — the migrated encyclopedia opens on Home, holding exactly its to
 test('step 2 — a MIGRATED column, edited inline: written to the member’s own file, surgically', async () => {
   await fileRow(win, KPIS).click()
   await expect(activeTab(win)).toHaveText(KPIS)
-  await expect(outlineRows(contents(win))).toHaveText(KPI_MEMBERS)
+  await expect(outlineLines(contents(win))).toHaveText(asLinks(...KPI_MEMBERS))
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
 
   // Column 1 is `kpi_category`, declared `text` by `KPIs.md` — a column the MIGRATION wrote, out
@@ -262,7 +303,7 @@ test('step 4 — the backlinks panel finds the whole mention set, problems inclu
   // Who the problems ARE is the folder page's own answer, not this file's: the four pages that
   // say they belong to `[[Problems]]`, read straight off the block.
   await fileRow(win, 'Problems').click()
-  await expect(outlineRows(contents(win))).toHaveText(PROBLEMS)
+  await expect(outlineLines(contents(win))).toHaveText(asLinks(...PROBLEMS))
 
   await tabsOf(win).filter({ hasText: 'Win Rate' }).click()
   await expect(activeTab(win)).toHaveText('Win Rate')
@@ -293,7 +334,6 @@ test('step 5 — renaming an entity page: relations, body links, backlinks and i
   await expect(win.locator('.link-notice')).toHaveText('Updated links in 4 notes')
   await expect(activeTab(win)).toHaveText(RENAMED)
 
-  const read = (rel: string) => readFile(path.join(vault, rel), 'utf8')
   const crmHygiene = path.join('problems', 'CRM Hygiene.md')
   // relation properties (whole-value links inside a list) …
   await expect.poll(() => read(crmHygiene)).toContain(`[[${RENAMED}]]`)
@@ -313,7 +353,11 @@ test('step 5 — renaming an entity page: relations, body links, backlinks and i
   await fileRow(win, RENAMED).click()
   expect(await read(path.join('kpis', `${RENAMED}.md`))).toContain('[[KPIs]]')
   await fileRow(win, KPIS).click()
-  await expect(outlineRows(contents(win))).toHaveText(['CAC', RENAMED, 'Gross Margin', 'MQL Volume', 'Sales Cycle Time'])
+  // `KPIs.md` has no stored outline, so its document is still the [D5] seed — recomputed from the
+  // members at mount, which is how the renamed page shows up under its NEW name with nothing left
+  // over: the seed spells a membership, it does not remember one.
+  await expect(outlineLines(contents(win))).toHaveText(asLinks('CAC', RENAMED, 'Gross Margin', 'MQL Volume', 'Sales Cycle Time'))
+  await expect(outlineRows(contents(win))).toHaveCount(0)
 
   // The durable result: not one dangling wiki link anywhere in the vault.
   await expect.poll(() => brokenLinks(vault)).toEqual([])
@@ -324,7 +368,7 @@ test('step 5 — renaming an entity page: relations, body links, backlinks and i
 test('step 6 — renaming a FOLDER PAGE: the links INSIDE folder_page_settings follow too (YAZ-864)', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, HOME)) })
   win = await appWindow(app, 'w1')
-  await expect(outlineRows(contents(win))).toHaveText(TOPICS)
+  await expect(outlineLines(contents(win))).toHaveText(asLinks(...TOPICS))
 
   await fileRow(win, ROLES).click({ button: 'right' })
   await win.locator('.ctx-menu [role="menuitem"]', { hasText: 'Rename' }).click()
@@ -337,7 +381,6 @@ test('step 6 — renaming a FOLDER PAGE: the links INSIDE folder_page_settings f
   // which the index never extracted as links and the rewrite therefore used to walk straight past.
   await expect(win.locator('.link-notice')).toHaveText('Updated links in 6 notes')
 
-  const read = (rel: string) => readFile(path.join(vault, rel), 'utf8')
   // Home's outline `order` entry — the [D5] sequence, rewritten in place …
   await expect.poll(() => read(HOME)).toContain(`- "[[${ROLES_RENAMED}]]"`)
   expect(await read(HOME)).toContain('- "[[KPIs]]"') // its siblings, untouched
@@ -357,13 +400,16 @@ test('step 6 — renaming a FOLDER PAGE: the links INSIDE folder_page_settings f
     await expect.poll(() => read(path.join('roles', `${member}.md`))).toContain(`- "[[${ROLES_RENAMED}]]"`)
   }
 
-  // Everything still browses: Home's order still places it LAST — a stale entry would be ignored
-  // and 'Buyer Roles' would have drifted to the top alphabetically — and it still holds its three.
-  await expect(outlineRows(contents(win))).toHaveText(TOPICS_AFTER)
-  await expect(outlineCounts(contents(win))).toHaveText(TOPIC_COUNTS)
+  // Everything still browses. Home's `order` still places it LAST — a stale entry would be ignored
+  // and 'Buyer Roles' would have drifted to the top alphabetically — and the SEED reads the
+  // rewritten sequence, exactly as the [D5] arrangement always did. (The editor standing on screen
+  // was mounted before the rename and holds the string it was handed: the document is text, and a
+  // rename walks the CARD, which is what the next mount reads. Its members are re-seeded.)
   await fileRow(win, ROLES_RENAMED).click()
   await expect(activeTab(win)).toHaveText(ROLES_RENAMED)
-  await expect(outlineRows(contents(win))).toHaveText(ROLE_MEMBERS)
+  await expect(outlineLines(contents(win))).toHaveText(asLinks(...ROLE_MEMBERS))
+  await expect(outlineRows(contents(win))).toHaveCount(0)
+  expect(await directMembers(vault, TOPICS_AFTER)).toEqual(TOPIC_COUNTS)
 
   // The durable result again, with the settings targets now inside the audit's reach.
   await expect.poll(() => brokenLinks(vault)).toEqual([])

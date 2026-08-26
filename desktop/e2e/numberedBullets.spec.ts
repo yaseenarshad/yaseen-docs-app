@@ -65,10 +65,13 @@ async function openHandleMenu(w: Page, text: string): Promise<void> {
     const mid = h!.y + h!.height / 2
     expect(mid).toBeGreaterThanOrEqual(p!.y)
     expect(mid).toBeLessThanOrEqual(p!.y + p!.height)
-    // Hover-probe headroom under full-suite load (YAZ-819 → YAZ-847 → YAZ-848): every wave that
-    // adds a spec ahead of this one leaves the machine warmer here, and the throttled mousemove
-    // is the first thing to feel it. Raised again with 6B-'s `topics.spec.ts`. Healthy runs pass
-    // on the FIRST attempt and never spend any of this — the budget only buys retries.
+    // Hover-probe headroom under full-suite load (YAZ-819 → YAZ-847 → YAZ-848 → YAZ-904): every
+    // wave that adds a spec ahead of this one leaves the machine warmer here, and the throttled
+    // mousemove is the first thing to feel it. Raised again with 6B-'s `topics.spec.ts`, and again
+    // with 8H-'s `folderPageOutline.spec.ts`, which sorts ahead of this file and drives a second
+    // Milkdown instance. Healthy runs pass on the FIRST attempt and never spend any of this — the
+    // budget only buys retries. NOTE the budget is only spendable because the steps that call this
+    // raise their OWN timeout past it: a 30s probe inside a 30s test can never retry at all.
   }).toPass({ timeout: 30_000 })
   await handle.locator('.operation-item').last().click({ button: 'right' })
   await expect(menu(w)).toBeVisible()
@@ -93,6 +96,7 @@ test.afterAll(async () => {
 })
 
 test('step 1 — right-click on the handle of "Fundamentals" offers exactly "Number children"', async () => {
+  test.setTimeout(60_000) // room for openHandleMenu's documented retry budget (YAZ-904)
   for (const text of CHILDREN) await expect(labelOf(rowOf(win, text))).toHaveClass(/\bbullet\b/)
   await openHandleMenu(win, 'Fundamentals')
   await expect(menuRow(win)).toHaveCount(1)
@@ -148,6 +152,7 @@ test('step 4 — one undo restores the bullets in the GUI and on disk', async ()
 })
 
 test('step 5 — re-number, then the row reads "Bullet children" and flips back', async () => {
+  test.setTimeout(90_000) // TWO hover probes, so twice the documented retry budget (YAZ-904)
   await openHandleMenu(win, 'Fundamentals')
   await expect(menuRow(win)).toHaveText('Number children')
   await menuRow(win).click()
@@ -162,6 +167,7 @@ test('step 5 — re-number, then the row reads "Bullet children" and flips back'
 })
 
 test('step 6 — a leaf ("deep") still shows the row, disabled', async () => {
+  test.setTimeout(60_000) // room for openHandleMenu's documented retry budget (YAZ-904)
   await openHandleMenu(win, 'deep')
   await expect(menuRow(win)).toHaveCount(1)
   await expect(menuRow(win)).toHaveText('Number children')
