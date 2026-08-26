@@ -1,14 +1,21 @@
 import type { IndexRecord } from '@shared/types'
 import type { ViewSet, ViewDef } from '../viewSchema'
+import type { ColumnDecl } from '../folderPageSettings'
 import { propertyKeys } from '../engine'
 import { canonicalKey } from './keys'
 
 /**
  * Every key the menus can offer (GRO-2135): the view's shown keys first (as written, so
- * `view.order` round-trips), then `file.name` + every note key seen, then the formulas;
- * de-duplicated by canonical key.
+ * `view.order` round-trips), then `file.name` + every note key seen, then the folder page's
+ * `columns` (YAZ-895 — a DECLARED column is offerable before any member carries a value for it),
+ * then the formulas; de-duplicated by canonical key.
  */
-export function allPropertyKeys(def: ViewSet, view: ViewDef, records: readonly IndexRecord[]): string[] {
+export function allPropertyKeys(
+  def: ViewSet,
+  view: ViewDef,
+  records: readonly IndexRecord[],
+  columns: Record<string, ColumnDecl> = {},
+): string[] {
   const out: string[] = []
   const seen = new Set<string>()
   const add = (key: string) => {
@@ -19,6 +26,7 @@ export function allPropertyKeys(def: ViewSet, view: ViewDef, records: readonly I
   }
   for (const k of propertyKeys(def, view, records)) add(k)
   for (const k of propertyKeys(def, { ...view, order: undefined }, records)) add(k)
+  for (const name of Object.keys(columns)) add(`note.${name}`)
   for (const name of Object.keys(def.formulas ?? {})) add(`formula.${name}`)
   return out
 }

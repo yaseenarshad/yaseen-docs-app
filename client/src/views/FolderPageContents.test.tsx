@@ -23,8 +23,21 @@ vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   api: { readFile: vi.fn(), createDir: vi.fn(), createFile: vi.fn() },
 }))
+/** The real pane, wrapped: YAZ-895's columns door has no menu caller yet, so it is reached as the bundle. */
+const captured = vi.hoisted(() => ({ folderPage: null as FolderPageMode | null }))
+vi.mock('./ViewsPane', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./ViewsPane')>()
+  return {
+    ...actual,
+    ViewsPane: (props: ViewsPaneProps) => {
+      captured.folderPage = props.folderPage
+      return <actual.ViewsPane {...props} />
+    },
+  }
+})
 
 import { api, BridgeRequestError } from '../api'
+import type { FolderPageMode, ViewsPaneProps } from './ViewsPane'
 import { writeProperty } from './writeProperty'
 
 const write = vi.mocked(writeProperty)
@@ -289,6 +302,34 @@ describe('config edits are ONE settings write on the folder page', () => {
     await flush()
     expect(q(el, '[role="alert"]').textContent).toContain('disk full')
     expect(el.querySelector('.view-table')).not.toBeNull()
+  })
+})
+
+describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
+  const COLUMNS = { order: { kind: 'number' as const }, owner: { kind: 'link' as const } }
+
+  it('one write, whole-key: the new columns, the card’s views verbatim', async () => {
+    mount(FUNNELS)
+    act(() => captured.folderPage!.setColumns(COLUMNS))
+    await flush()
+    expect(write).toHaveBeenCalledExactlyOnceWith(FUNNELS, 'folder_page_settings', { ...SETTINGS, columns: COLUMNS })
+  })
+
+  it('columns AND views ride in that SAME single write when views are passed', async () => {
+    mount(FUNNELS)
+    const views = [{ type: 'outline', name: 'Outline', order: ['[[Sales]]'] }, TABLE]
+    act(() => captured.folderPage!.setColumns(COLUMNS, views))
+    await flush()
+    expect(write).toHaveBeenCalledExactlyOnceWith(FUNNELS, 'folder_page_settings', { ...SETTINGS, columns: COLUMNS, views })
+  })
+
+  it('a failed write lands in the banner every other config edit uses', async () => {
+    write.mockRejectedValue(new Error('disk full'))
+    const el = mount(FUNNELS)
+    act(() => captured.folderPage!.setColumns(COLUMNS))
+    await flush()
+    expect(q(el, '[role="alert"]').textContent).toContain('disk full')
+    expect(el.querySelector('.view-outline')).not.toBeNull()
   })
 })
 

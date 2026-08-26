@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import type { IndexRecord, PropertiesResponse, PropertyDecl } from '@shared/types'
+import { PROPERTY_KINDS, PROPERTY_NAME, type IndexRecord, type PropertiesResponse, type PropertyDecl, type PropertyKind } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
+import type { ColumnDecl } from '../folderPageSettings'
+import type { FolderPageMode } from '../ViewsPane'
 import { propertyKeys, propertyLabel } from '../engine'
 import { properties as propertiesApi } from '../useProperties'
 import { canonicalKey } from './keys'
@@ -18,6 +20,8 @@ export interface PropertiesMenuProps {
   /** Relation columns (5E, GRO-2217): the vault root (null = unknown, no relation editor) and the vault-wide declarations. */
   root?: string | null
   properties?: PropertiesResponse | null
+  /** The folder page's own declarations (the ladder's TOP rung) and `setColumns`, the door they go back through (YAZ-895). */
+  folderPage: FolderPageMode
 }
 
 const bare = (key: string): string => (key.startsWith('note.') ? key.slice(5) : key)
@@ -38,12 +42,13 @@ function entryKey(def: ViewSet, key: string): string {
  * Note properties additionally offer the relation editor (5E, GRO-2217): single/multi toggle +
  * target, saved through `properties.setProperty` to the vault-wide declarations — the per-type
  * scope died with the type system (YAZ-836).
+ * A trailing "+ Add column" (YAZ-896) declares a column on the FOLDER PAGE instead, and shows it.
  */
-export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root = null, properties = null }: PropertiesMenuProps) {
+export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root = null, properties = null, folderPage }: PropertiesMenuProps) {
   const [editing, setEditing] = useState<string | null>(null)
   const [relationFor, setRelationFor] = useState<string | null>(null)
   const shown = propertyKeys(def, view, records)
-  const keys = allPropertyKeys(def, view, records)
+  const keys = allPropertyKeys(def, view, records, folderPage.settings.columns)
   const isShown = (key: string) => shown.some((k) => canonicalKey(k) === canonicalKey(key))
 
   const writeOrder = (order: string[]) =>
@@ -135,6 +140,17 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
           )
         })}
       </ul>
+      <AddColumn
+        taken={keys}
+        onSave={(name, column) =>
+          folderPage.setColumns(
+            { ...folderPage.settings.columns, [name]: column },
+            // The new column shown TOO, in that same one write (🔒 D3): `shown` is what `writeOrder`
+            // writes — the view's own `order`, or the derived keys when it has none.
+            def.views.map((v, i) => (i === viewIndex ? { ...v, order: [...shown, `note.${name}`] } : v)),
+          )
+        }
+      />
       {view.type === 'list' && (
         <>
           <p className="view-menu__label">List</p>
@@ -182,6 +198,83 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
             />
           </div>
         </>
+      )}
+    </div>
+  )
+}
+
+interface AddColumnProps {
+  /** Every key the menu already offers — the folder page's DECLARED columns among them (YAZ-895). */
+  taken: readonly string[]
+  onSave: (name: string, column: ColumnDecl) => void
+}
+
+/**
+ * "+ Add column" (YAZ-896): declare a column on the FOLDER PAGE — the typing ladder's top rung
+ * (🔒 Q8) — and show it, in one `folder_page_settings` write (🔒 D3). A name that is not a
+ * property name, or one the menu already offers, is refused inline and nothing is written.
+ */
+function AddColumn({ taken, onSave }: AddColumnProps) {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [kind, setKind] = useState<PropertyKind>('text')
+  const [target, setTarget] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  if (!open)
+    return (
+      <button type="button" className="view-menu__action" onClick={() => setOpen(true)}>
+        + Add column
+      </button>
+    )
+
+  const save = () => {
+    const key = name.trim()
+    if (!PROPERTY_NAME.test(key)) {
+      setError('Use lower case letters, digits and _, starting with a letter')
+      return
+    }
+    if (taken.some((k) => canonicalKey(k) === canonicalKey(key))) {
+      setError(`${key} is already a column`)
+      return
+    }
+    const column: ColumnDecl = { kind }
+    // A target typed under a link kind must not ride into a non-link declaration after a kind switch.
+    if ((kind === 'link' || kind === 'multi-link') && target.trim() !== '') column.target = target.trim()
+    onSave(key, column)
+    setOpen(false)
+    setName('')
+    setKind('text')
+    setTarget('')
+    setError(null)
+  }
+
+  return (
+    <div className="view-relation">
+      <input className="view-input" aria-label="Column name" placeholder="Name" autoFocus value={name} onChange={(e) => setName(e.target.value)} />
+      <select className="view-select" aria-label="Column kind" value={kind} onChange={(e) => setKind(e.target.value as PropertyKind)}>
+        {PROPERTY_KINDS.map((k) => (
+          <option key={k} value={k}>
+            {k}
+          </option>
+        ))}
+      </select>
+      {(kind === 'link' || kind === 'multi-link') && (
+        <input
+          className="view-input view-relation__target"
+          aria-label="Column target"
+          placeholder="Any page"
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
+        />
+      )}
+      <button type="button" className="view-menu__action" aria-label="Save column" onClick={save}>
+        Save
+      </button>
+      {error !== null && (
+        <span className="view-relation__error" role="alert">
+          {error}
+        </span>
       )}
     </div>
   )

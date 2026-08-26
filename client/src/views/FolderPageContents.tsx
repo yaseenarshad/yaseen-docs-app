@@ -129,6 +129,13 @@ export function FolderPageContents({ path, root, source, properties = null, onOp
     settings,
     vaultRecords: feed.records,
     create: (seed, name) => createMember(root, record.basename, path, settings, feed.records, seed, name),
+    // Columns (and, when the caller moves both, `views`) through the SAME one door — still ONE write.
+    setColumns: (columns, views) => {
+      setError(null)
+      writeFolderPageSettings(path, { ...settings, columns, views: views ?? settings.views }).catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : String(err)),
+      )
+    },
     openBackground: onOpenFileBackground,
   }
 

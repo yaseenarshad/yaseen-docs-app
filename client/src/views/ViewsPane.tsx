@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { MAX_COLLAPSED_GROUP_KEYS, type IndexRecord, type PropertiesResponse } from '@shared/types'
 import { storage } from '../lib/storage'
-import { type ViewSet, type ParsedViews, parseViews, serializeViews, updateViews } from './viewSchema'
+import { type ViewSet, type ViewDef, type ParsedViews, parseViews, serializeViews, updateViews } from './viewSchema'
 import { type Group, type Row, propertyKeys, resolverFor, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
-import type { FolderPageSettings } from './folderPageSettings'
+import type { ColumnDecl, FolderPageSettings } from './folderPageSettings'
 import { type NewNoteSeed, deriveSeed } from './newNote'
 import { writeProperty } from './writeProperty'
 import { BoardView } from './view/BoardView'
@@ -32,6 +32,12 @@ export interface FolderPageMode {
    * `name` is the outline add row's "+ Create 'X' here" (YAZ-820); absent → the `Untitled` scheme.
    */
   create: (seed: NewNoteSeed, name?: string) => Promise<string>
+  /**
+   * The declarations, back through the one door (YAZ-895) — ONE `folder_page_settings` write
+   * (🔒 D3), failures in the host's own banner. `views` rides along so a caller can move the
+   * columns AND `view.order` in that same single write.
+   */
+  setColumns: (columns: Record<string, ColumnDecl>, views?: ViewDef[]) => void
   /** ⌘-click on an outline row opens the page in a BACKGROUND tab (YAZ-820); absent → opens in place. */
   openBackground?: (path: string) => void
 }
@@ -263,6 +269,7 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
         root={root}
         properties={properties}
         noProperties={outline}
+        folderPage={folderPage}
       />
       {createError !== null && (
         <p className="view-view__error" role="alert">

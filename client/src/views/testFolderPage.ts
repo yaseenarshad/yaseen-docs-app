@@ -17,6 +17,9 @@ export function testFolderPage(over: Partial<FolderPageMode> = {}): FolderPageMo
     settings: { columns: {}, views: [], problems: [] },
     vaultRecords: TEST_RECORDS,
     create: () => Promise.reject(new Error('this test did not expect a create')),
+    setColumns: () => {
+      throw new Error('this test did not expect a column write')
+    },
     ...over,
   }
 }
