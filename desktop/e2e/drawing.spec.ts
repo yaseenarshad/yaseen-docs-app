@@ -18,6 +18,10 @@
  *     is written back to the sidecar on Save — same shape, still pretty-printed — the in-page
  *     preview redraws WITHOUT a remount (the feed's poke), and reopening the saved drawing is
  *     clean: Save is disabled and Esc closes it outright. The note never moves.
+ *   5 the saved rectangle SURVIVES the app (YAZ-880): quit, relaunch, and it is back on the page
+ *     read cold from the sidecar alone — still without a single request leaving the app
+ *   6 and it was never the note's drawing: a SECOND note embedding the same `![[…]]` line draws
+ *     the very same scene from the one file, which is what the modular sidecar buys (🔒 locked)
  *
  * Same harness as title.spec.ts (temp `--user-data-dir`, a COPY of a generated fixture vault,
  * `drawing-` step screenshots).
@@ -34,6 +38,9 @@ const NOTE = 'Drawings.md'
 /** Already in remark's normalised form, so the ONLY diff a save can make is the inserted line. */
 const NOTE_BODY = `# Drawings\n\ndrawing-note-body\n`
 const DRAWINGS_DIR = path.join('assets', 'drawings')
+/** Step 7's second home for the SAME drawing; its body needs a name only step 1 knows. */
+const REUSE_NOTE = 'Reuse.md'
+const reuseNoteBody = () => `# Reuse\n\nreuse-note-body\n\n![[${second}]]\n`
 /** `Drawing YYYY-MM-DD HH.mm.ss[ n].excalidraw` — the creator's clock name (client/src/drawings). */
 const DRAWING_NAME = /^Drawing \d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.\d{2}( \d+)?\.excalidraw$/
 /** What step 4 writes over a sidecar: still a `.excalidraw` file, no longer a scene. */
@@ -103,9 +110,13 @@ let win: Page
 /** The two sidecars step 1 creates; steps 2 and 3 render and then corrupt them. */
 let first: string
 let second: string
+/** Step 5's saved rectangle exactly as the preview drew it — steps 6 and 7 both redraw it again. */
+let savedSvg: string
 
 const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
 const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
+const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
+const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 /** Crepe's OWN slash menu (YAZ-877 rides it — there is no second popup to find). */
 const slashMenu = (w: Page) => layer(w).locator('.milkdown-slash-menu')
 const slashItem = (w: Page, label: string) => slashMenu(w).locator('li').filter({ hasText: label })
@@ -325,8 +336,8 @@ test('step 5 — a preview opens the modal; a rectangle DRAWN there is saved bac
 
   // The in-page preview re-read and redrew itself on the feed's poke — no remount, no reload.
   await expect.poll(async () => previewOf(win, second).locator('svg').innerHTML()).not.toBe(svgBefore)
-  const svgAfter = await previewOf(win, second).locator('svg').innerHTML()
-  expect(svgAfter.length).toBeGreaterThan(0)
+  savedSvg = await previewOf(win, second).locator('svg').innerHTML()
+  expect(savedSvg.length).toBeGreaterThan(0)
   await shoot(win, 'drawing-09-preview-redrawn')
 
   // --- reopen: the saved drawing opens CLEAN, and Esc closes it outright ---
@@ -338,5 +349,64 @@ test('step 5 — a preview opens the modal; a rectangle DRAWN there is saved bac
 
   // The NOTE never moved: the modal edits a sidecar, never the page (decorations only, rule 27).
   expect(await readNote()).toBe(before)
+  await quitApp(app)
+})
+
+test('step 6 — the saved drawing survives quit → relaunch: read cold from the sidecar, still offline', async () => {
+  const beforeNote = await readNote()
+  const beforeSidecar = await readSidecar(second)
+  app = await launchApp({ userData }) // NO re-seed: restore is whatever step 5's quit wrote
+  win = await appWindow(app, 'w1')
+  // 🔒 The offline rule again, on the path a user actually lives on: reopening yesterday's note.
+  const external: string[] = []
+  win.on('request', (req) => {
+    if (/^https?:/i.test(req.url())) external.push(req.url())
+  })
+  await expect(editorOf(win)).toContainText('drawing-note-body')
+
+  // A new process, a new editor, a new read — and the rectangle is on screen again, because the
+  // sidecar is the only place it ever lived: nothing about it is in the note or in the app state.
+  await expect(rendered(win)).toHaveCount(1)
+  await expect(brokenChips(win)).toHaveCount(1) // `first` is still step 4's junk, still inert
+  const svg = await previewOf(win, second).locator('svg').innerHTML()
+  expect(svg.length).toBeGreaterThan(0)
+  expect(svg).toBe(savedSvg) // the very drawing step 5 saved, down to the stroke
+  const box = await rendered(win).first().boundingBox()
+  expect(box?.width ?? 0).toBeGreaterThan(80)
+  expect(box?.height ?? 0).toBeGreaterThan(80)
+  await shoot(win, 'drawing-10-survives-relaunch')
+
+  expect(external).toEqual([])
+  // Reopening reads and never writes: both files are the bytes step 5 left behind.
+  expect(await readNote()).toBe(beforeNote)
+  expect(await readSidecar(second)).toBe(beforeSidecar)
+})
+
+test('step 7 — one drawing, two notes: a SECOND note embedding the same sidecar draws the same scene', async () => {
+  const beforeNote = await readNote()
+  const beforeSidecar = await readSidecar(second)
+  // Written straight onto disk — the honest path for a line someone typed in another editor — and
+  // it is the SAME embed text, because a sidecar is a file in the vault like any other: nothing
+  // about it belongs to the note that happened to create it.
+  await writeFile(path.join(vault, REUSE_NOTE), reuseNoteBody())
+
+  await fileRow(win, 'Reuse').click()
+  await expect(activeTab(win)).toHaveText('Reuse')
+  await expect(editorOf(win)).toContainText('reuse-note-body')
+
+  // Its own note, its own editor mount, its own read of the ONE file on disk — and the same
+  // rectangle comes out. This is what the modular sidecar is FOR (🔒 the locked decision).
+  await expect(previews(win)).toHaveCount(1)
+  await expect(rendered(win)).toHaveCount(1)
+  const svg = await previewOf(win, second).locator('svg').innerHTML()
+  expect(svg.length).toBeGreaterThan(0)
+  expect(svg).toBe(savedSvg)
+  await shoot(win, 'drawing-11-second-note')
+
+  // Nothing was copied to make that happen: still two sidecars, and both notes are as written.
+  expect(await listDrawings()).toEqual([first, second].sort())
+  expect(await readFile(path.join(vault, REUSE_NOTE), 'utf8')).toBe(reuseNoteBody())
+  expect(await readSidecar(second)).toBe(beforeSidecar)
+  expect(await readNote()).toBe(beforeNote)
   await quitApp(app)
 })
