@@ -128,4 +128,18 @@ describe('PageTitle (⚡ YAZ-888)', () => {
     expect(onNotice).toHaveBeenCalledWith(HOME_TITLE_NOTICE)
     expect(HOME_TITLE_NOTICE).toBe('Home anchors this vault — it keeps its name.')
   })
+
+  it('a rename never REQUIRES the mouse: the heading is focusable and Enter opens the input (⚡ YAZ-891)', () => {
+    const { el } = mount()
+    expect(heading(el)?.tabIndex).toBe(0)
+    press(heading(el)!, 'Enter')
+    expect(input(el)?.value).toBe('Old Note')
+  })
+
+  it('HOME stays out of the tab order — an inert stop would only slow the way into the note (⚡ YAZ-891)', () => {
+    const { el } = mount({ path: '/vault/Home.md', isHome: true })
+    expect(heading(el)?.hasAttribute('tabindex')).toBe(false)
+    press(heading(el)!, 'Enter')
+    expect(input(el)).toBeNull()
+  })
 })

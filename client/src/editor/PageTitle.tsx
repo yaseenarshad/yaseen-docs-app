@@ -85,9 +85,18 @@ export function PageTitle({ path, isHome, onRename, onNotice, onArrowDown }: Pag
 
   return (
     <div className="page-title">
+      {/* Keyboard path too (⚡ YAZ-891 polish): the heading is focusable and Enter opens the
+          input, so a rename never REQUIRES the mouse. Home stays out of the tab order — an
+          inert stop would only be a speed bump on the way into the note. */}
       <h1
         className={`page-title__text${isHome ? ' page-title__text--home' : ''}`}
+        tabIndex={isHome ? undefined : 0}
         onClick={() => (isHome ? onNotice?.(HOME_TITLE_NOTICE) : setEditing(true))}
+        onKeyDown={(e) => {
+          if (isHome || e.key !== 'Enter') return
+          e.preventDefault()
+          setEditing(true)
+        }}
       >
         {name}
       </h1>
