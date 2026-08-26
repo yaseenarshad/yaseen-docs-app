@@ -25,6 +25,8 @@ export interface ViewDef {
   name: string
   filters?: FilterNode
   order?: string[]
+  /** 🔒 D2 (YAZ-867): an outline view's whole document — ONE markdown bullet list (`views/outlineDoc.ts`). */
+  outline?: string
   sort?: SortSpec[]
   groupBy?: GroupBySpec
   limit?: number

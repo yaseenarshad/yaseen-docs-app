@@ -50,7 +50,7 @@
  *  - Numbers are manual-only (YAZ-793): upstream's `1. ` input rule is removed so typing a number
  *    never auto-converts a line into a numbered list; `- ` / `* ` bullet rules stay.
  */
-import { Crepe } from '@milkdown/crepe'
+import { Crepe, type CrepeFeature } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { wrapInOrderedListInputRule } from '@milkdown/kit/preset/commonmark'
 import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
@@ -88,13 +88,19 @@ export interface CreateCrepeOptions {
   wikilinkCandidates?: WikilinkCandidateSource
   /** Wikilink click navigation (GRO-2192): tabs API + create-on-click handlers. Absent → links render but clicks fall through to plain editing (the click plugin is not registered). */
   wikilinkNav?: WikilinkNav
+  /**
+   * Feature overrides for a NON-note instance (YAZ-901's bullets-only outline editor passes
+   * `outlineFeatures`). The note editor passes none and gets `featureConfig.ts`'s allowlist
+   * verbatim — which is what `featureConfig.test.ts` keeps honest.
+   */
+  features?: Partial<Record<CrepeFeature, boolean>>
 }
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
   const crepe = new Crepe({
     root: opts.root,
     defaultValue: normalizeEmptyItems(opts.defaultValue ?? ''),
-    features,
+    features: { ...features, ...opts.features },
   })
   crepe.editor.use(
     // NB: extend the GFM task-item schema, not the commonmark base — extendSchema()

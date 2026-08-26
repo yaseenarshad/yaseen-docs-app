@@ -1,243 +1,202 @@
-import { useMemo, useState, type DragEvent, type ReactNode } from 'react'
+import { useMemo, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
-import { FOLDER_PAGES_KEY, entryTarget, folderPagesLookup, folderPagesList, guardedChildren } from '../../links/folderPages'
-import { FolderPageGlyph } from './icons'
-import type { Row } from '../engine'
+import type { WikilinkNav } from '../../editor/wikilink/wikilinkClick'
+import type { WikilinkCandidateSource } from '../../editor/wikilink/wikilinkPicker'
+import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
+import { folderPagesLookup } from '../../links/folderPages'
 import { resolverFor } from '../engine'
-import { folderPageSettings, orderedMembers, type FolderPageSettings } from '../folderPageSettings'
-import { writeProperty } from '../writeProperty'
+import { outlineOrderOf, type FolderPageSettings } from '../folderPageSettings'
+import { fromOrder, serializeOutline } from '../outlineDoc'
+import { applyMembership, diffOutlineMembership, outlineLinkTargets } from '../outlineSync'
 import { ConfirmRemoveMember } from './ConfirmRemoveMember'
-import { OutlineAddRow, outlineCandidates } from './OutlineAddRow'
+import { FolderPageGlyph } from './icons'
+import { OutlineEditor } from './OutlineEditor'
 
 /**
- * The OUTLINE skin of a folder page's contents (YAZ-820, 🔒 D4 of YAZ-818 · [D3]-[D6] of the
- * mockup). Reached only from the folder-page host: a `type: outline` view with no folder page keeps the
- * placeholder row list, because an outline of WHAT has no answer without a folder page behind it.
+ * The OUTLINE skin of a folder page's contents (YAZ-903 — the surface D4 of YAZ-818 asked for,
+ * amended by YAZ-867). It is now ONE free-form markdown bullet list the user types into
+ * (`OutlineEditor`, YAZ-901) held as `views[i].outline` (🔒 D2, YAZ-900), plus the members that
+ * document does not mention, appended below it.
  *
- * **ROWS ARE PAGES** (🔒 D4), never free text and never a bullet the user typed. Every row is a
- * member of this folder page: click opens it (⌘-click into a background tab — the standard two
- * handlers), a folder-page member wears the folder-page glyph and its direct-member count, and one that
- * holds anybody gets a chevron of its own hit target.
+ * TOMBSTONE (YAZ-903): rows-are-pages, the picker-only add row (`OutlineAddRow`, "Enter never
+ * commits free text"), depth-0 drag over `views[i].order` and the nested auto-expansion (chevrons,
+ * the ancestor-path guard inside the row builder) are all gone. The outline is TEXT; what is text
+ * and what is membership is the LINK LINE, and nothing else.
  *
- * ORDER is `orderedMembers` — 2A's ONE place (🔒 Q3, "Folder page settings") — so the outline and
- * the table can never drift apart. Dragging is depth 0 only and PRESENTATION ONLY: the drop
- * rewrites the outline view's `order` (wikilinks of the new sequence) through ViewsPane's own
- * config door, i.e. ONE `folder_page_settings` write on the FOLDER PAGE, and not one member card
- * is touched. Depth > 0 has no drag and no ×: a nested level belongs to ITS folder page, which is
- * also whose settings order it (each level reads its own `order`), and editing it from inside
- * somebody else's outline would be editing a page the user is not looking at.
+ * THE SEED, read ONCE: `view.outline` when the page has one, else the [D5] `order` frozen into a
+ * document (`fromOrder` — the entries verbatim, every unlisted member behind them alphabetically,
+ * the arrangement `orderedMembers` used to produce live). The migration is LAZY: `order` stays on
+ * the card, read but never written, until the first edit retires it.
  *
- * NESTING comes through `guardedChildren`, node for node (🔒 D6, "Links": Folder pages) — THE
- * law, the one door to any descent: the guard is the ancestor PATH, never a visited set, so a
- * member already standing above this branch is skipped and the branch ends quietly (`A → B → A`
- * terminates), while a page reachable down two branches renders under BOTH. Expansion is
- * session-only React state, keyed by the whole ancestor path, so a diamond opens independently
- * under each parent and nothing about it reaches disk.
+ * THE COMMIT PATH, per debounced edit (🔒 E1, YAZ-902): the document goes back through the host's
+ * ONE settings door, then `diffOutlineMembership(prev, next)` says what the text now claims —
+ * `prev` being the LAST-WRITTEN document, which is why this component holds it. A link line that
+ * appeared TAGS its page immediately (a page can never become its own member — the exclusion the
+ * add row made); a link line that vanished only ASKS, through the very sheet the × has used since
+ * YAZ-820, one page at a time in the order the edit dropped them.
  *
- * The two card writes this view owns are the BELONGING gestures — the product's own word, 🔒 D6's
- * rule being that no name here is borrowed from anywhere else — and both are ONE key on ONE page:
- * the add row appends `[[this folder page]]` to the TARGET's `folder_pages`, the hover × removes
- * exactly this folder page's entry from the MEMBER's — read-modify-write through the shared
- * `writeProperty`, every other entry preserved, nothing deleted.
+ * CANCEL KEEPS THE MEMBERSHIP (🔒 the YAZ-903 ruling) and does NOT put the text back: the page
+ * simply shows up in the appended section below. `prev` advances to the new text either way, so a
+ * question answered once is never asked again on the next keystroke.
+ *
+ * THE APPENDED SECTION is the "tagged elsewhere still shows" rule: a member whose page the
+ * document does not NAME is still a member (its own card says so), so it renders under the editor
+ * as the read-only row it always was — link, folder-page glyph, direct-member count, hover ×.
+ * Inside the editor a folder-page link is a plain wikilink and nothing more (the locked scoping
+ * decision): the glyph and the count live here.
  */
 export interface OutlineViewProps {
-  /** The folder page whose contents these are: ViewsPane's `thisFile`. Roots the ancestor guard. */
+  /** The folder page whose contents these are: ViewsPane's `thisFile`. Every membership write is about it. */
   folderPagePath: string
   /** Vault root, so the click-rule resolver is THE one the wikilink surfaces share (YAZ-846); null = name-and-relative-path resolution only. */
   root: string | null
-  /** Its own settings — the [D5] `order` at depth 0. Deeper levels read their OWN folder page's. */
+  /** Its own settings — read for the [D5] `order` the seed migrates, and nothing else. */
   settings: FolderPageSettings
-  /** The WHOLE snapshot (🔒 D2): nesting, the lookup and the picker all read the vault. */
+  /** The FIRST outline view's stored document, when it has one; absent = migrate from `order`. */
+  outline?: string
+  /** The WHOLE snapshot (🔒 D2): the resolver, the lookup and every membership write read the vault. */
   vaultRecords: readonly IndexRecord[]
-  /** Every member, pre-search — what a drag reorders (a search must never drop pages from `order`). */
+  /** Every member of this folder page — what the appended section is drawn from. */
   records: readonly IndexRecord[]
-  /** The post-search rows; a member missing here is hidden at depth 0. */
-  rows: readonly Row[]
   onOpenFile: (path: string) => void
   /** ⌘-click's other half; absent → ⌘-click just opens in place. */
   openBackground?: (path: string) => void
-  /** The new depth-0 sequence as wikilinks — ONE settings write, through ViewsPane's `update`. */
-  onOrder: (order: string[]) => void
-  /** Birth a member of this folder page called `name` (🔒 Q5) and open NOTHING: we stay here. */
-  onCreate: (name: string) => void
+  /** The committed document — ONE settings write, through ViewsPane's `update`; `order` retires with it. */
+  onDocument: (markdown: string) => void
+  /** The window's link feed (Links A), for the editor's own wikilink surfaces. */
+  wikilinks?: WikilinkResolveSource
+  /** `[[` picker candidates (Links B): same ownership and feed. */
+  wikilinkCandidates?: WikilinkCandidateSource
+  /** Wiki-link click navigation (Links C) — assembled by the host, its identity STABLE (YAZ-901). */
+  nav?: WikilinkNav
 }
 
-/** In-flight drag: the grabbed row's index in the FULL ordered list + the hovered insertion slot. */
-interface DragState {
-  from: number
-  over: number | null
-}
+/** Names sort the way the base engine sorts them: case- and accent-insensitive, numeric-aware. */
+const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true })
 
-export function OutlineView({ folderPagePath, root, settings, vaultRecords, records, rows, onOpenFile, openBackground, onOrder, onCreate }: OutlineViewProps) {
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
-  const [drag, setDrag] = useState<DragState | null>(null)
-  const [removing, setRemoving] = useState<IndexRecord | null>(null)
+export function OutlineView({
+  folderPagePath,
+  root,
+  settings,
+  outline,
+  vaultRecords,
+  records,
+  onOpenFile,
+  openBackground,
+  onDocument,
+  wikilinks,
+  wikilinkCandidates,
+  nav,
+}: OutlineViewProps) {
   const [error, setError] = useState<string | null>(null)
+  /** The un-tag queue: one sheet at a time, in the order the edit dropped them. */
+  const [pending, setPending] = useState<readonly IndexRecord[]>([])
 
   const folderPageName = folderPagePath.slice(folderPagePath.lastIndexOf('/') + 1).replace(/\.md$/i, '')
   // THE shared resolver, rooted (YAZ-846): keyed per records identity then per root, so this is
-  // the very instance the wikilink decorations and backlinks hold — and an `order` entry or a
+  // the very instance the wikilink decorations and backlinks hold — and a link line or a
   // `folder_pages` entry written as an absolute `<root>/…` path resolves here as it does there.
   const resolve = useMemo(() => {
     const resolver = resolverFor(vaultRecords, root ?? undefined)
     return (target: string) => resolver(target)?.record.path ?? null
   }, [vaultRecords, root])
   const lookup = useMemo(() => folderPagesLookup(vaultRecords, resolve), [vaultRecords, resolve])
-  const ordered = useMemo(() => orderedMembers(records, settings, resolve), [records, settings, resolve])
-  const shown = useMemo(() => new Set(rows.map((r) => r.record.path)), [rows])
-  const memberPaths = useMemo(() => new Set(records.map((r) => r.path)), [records])
-  const candidates = useMemo(() => outlineCandidates(vaultRecords, folderPagePath, memberPaths), [vaultRecords, folderPagePath, memberPaths])
-  const taken = useMemo(() => new Set(vaultRecords.map((r) => r.basename.toLowerCase())), [vaultRecords])
 
-  /** One BELONGING write, either direction: the whole list back on ONE page's ONE key. */
-  const writeBelonging = (path: string, next: unknown[]): void => {
+  /**
+   * The document, seeded ONCE and advanced by every commit — both what the editor was mounted
+   * with and `prev` for the next diff. Later `outline` props are deliberately not read back in:
+   * the editor owns the caret, and this is the string it was handed.
+   */
+  const [doc, setDoc] = useState(() => {
+    if (outline !== undefined) return outline
+    const order = outlineOrderOf(settings)
+    const listed = new Set(order.map(resolve).filter((path): path is string => path !== null))
+    return serializeOutline(fromOrder(order, records.filter((r) => !listed.has(r.path)).map((r) => r.basename)))
+  })
+
+  const membership = { path: folderPagePath, name: folderPageName, records: vaultRecords, resolve }
+  const report = (err: unknown): void => setError(err instanceof Error ? err.message : String(err))
+  /**
+   * The records a diff side is about. A page cannot be its own member, in EITHER direction — the
+   * exclusion the add row made (🔒 D4) — and a path with no record in the snapshot is nobody.
+   */
+  const pagesNamed = (paths: readonly string[]): IndexRecord[] =>
+    paths
+      .filter((path) => path !== folderPagePath)
+      .map((path) => vaultRecords.find((r) => r.path === path))
+      .filter((record): record is IndexRecord => record !== undefined)
+
+  const commit = (markdown: string): void => {
     setError(null)
-    writeProperty(path, FOLDER_PAGES_KEY, next).catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
-  }
-  const tag = (path: string): void => {
-    const target = vaultRecords.find((r) => r.path === path)
-    if (target === undefined) return
-    writeBelonging(path, [...folderPagesList(target), `[[${folderPageName}]]`])
-  }
-  const untag = (member: IndexRecord): void => {
-    // Only the entries that COUNT for this folder page go — prose that merely spells its name
-    // never resolved for the lookup and is not ours to delete.
-    writeBelonging(member.path, folderPagesList(member).filter((entry) => entryTarget(entry, resolve) !== folderPagePath))
+    onDocument(markdown)
+    const diff = diffOutlineMembership(doc, markdown, resolve)
+    // `prev` advances whatever the sheet is answered below: a cancelled un-tag must never be asked twice.
+    setDoc(markdown)
+    const tag = pagesNamed(diff.tag)
+    if (tag.length > 0) applyMembership(tag.map((r) => r.path), membership, 'tag').catch(report)
+    const untag = pagesNamed(diff.untag)
+    if (untag.length > 0) setPending((queue) => [...queue, ...untag])
   }
 
-  /** The insertion slot a pointer at `clientY` over row `i` means (TabBar's midpoint rule). */
-  const insertionAt = (e: DragEvent, i: number): number => {
-    const r = e.currentTarget.getBoundingClientRect()
-    return e.clientY < r.top + r.height / 2 ? i : i + 1
-  }
-  const drop = (insertion: number): void => {
-    if (drag === null) return
-    setDrag(null)
-    // The slot is an index in the WITH-dragged-row list; past the grab point it shifts one left.
-    const to = insertion > drag.from ? insertion - 1 : insertion
-    if (to === drag.from) return
-    const next = [...ordered]
-    next.splice(to, 0, ...next.splice(drag.from, 1))
-    onOrder(next.map((member) => `[[${member.basename}]]`))
-  }
-
-  const rowsFor = (members: readonly IndexRecord[], depth: number, ancestors: readonly string[]): ReactNode[] =>
-    members.flatMap((member, i) => {
-      // Prop-supplied members (the top level) are guarded here; every FETCHED level below comes
-      // through guardedChildren — the one door (⚡ D6 amendment, YAZ-814).
-      if (ancestors.includes(member.path)) return []
-      if (depth === 0 && !shown.has(member.path)) return []
-      const isFolder = lookup.isFolderPage(member)
-      const next = [...ancestors, member.path]
-      const kids = isFolder ? guardedChildren(lookup, member.path, next) : []
-      const key = next.join('>')
-      const open = expanded.has(key)
-      const cls = ['view-outline__row']
-      if (drag !== null && depth === 0 && drag.from === i) cls.push('view-outline__row--dragging')
-      if (drag !== null && depth === 0 && drag.over === i) cls.push('view-outline__row--insert-before')
-      if (drag !== null && depth === 0 && drag.over === ordered.length && i === ordered.length - 1) cls.push('view-outline__row--insert-after')
-      const row = (
-        <li
-          key={key}
-          className={cls.join(' ')}
-          data-outline-row={member.path}
-          draggable={depth === 0}
-          onDragStart={(e) => {
-            if (depth !== 0) return
-            if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-            setDrag({ from: i, over: null })
-          }}
-          onDragEnd={() => setDrag(null)}
-          onDragOver={(e) => {
-            if (drag === null || depth !== 0) return
-            e.preventDefault()
-            const over = insertionAt(e, i)
-            if (drag.over !== over) setDrag({ ...drag, over })
-          }}
-          onDrop={(e) => {
-            if (drag === null || depth !== 0) return
-            e.preventDefault()
-            drop(insertionAt(e, i))
-          }}
-        >
-          <span className="view-outline__indent" style={{ width: depth * 22 }} />
-          {kids.length > 0 ? (
-            <button
-              type="button"
-              className={`view-outline__chevron${open ? ' view-outline__chevron--open' : ''}`}
-              aria-label={`${open ? 'Collapse' : 'Expand'} ${member.basename}`}
-              aria-expanded={open}
-              // Its own hit target: expanding is not opening.
-              onClick={(e) => {
-                e.stopPropagation()
-                setExpanded((set) => {
-                  const next = new Set(set)
-                  if (!next.delete(key)) next.add(key)
-                  return next
-                })
-              }}
-            />
-          ) : (
-            <span className="view-outline__chevron-slot" />
-          )}
-          <span className="view-outline__bullet" aria-hidden>
-            •
-          </span>
-          <button
-            type="button"
-            className="view-outline__link"
-            title={member.path}
-            onClick={(e) => {
-              if (e.metaKey && openBackground !== undefined) openBackground(member.path)
-              else onOpenFile(member.path)
-            }}
-          >
-            {member.basename}
-          </button>
-          {isFolder && (
-            <>
-              <FolderPageGlyph className="view-outline__glyph" />
-              {/* DIRECT members, the Topics tree's locked honesty split (YAZ-859 seam ruling):
-                  the count is the honest fact about the PAGE; the chevron asks the guarded
-                  question. Inside a loop the two deliberately disagree — on BOTH surfaces. */}
-              <span className="view-outline__count">{lookup.pagesIn(member.path).length}</span>
-            </>
-          )}
-          {depth === 0 && (
-            <button
-              type="button"
-              className="view-outline__x"
-              aria-label={`Remove ${member.basename} from ${folderPageName}`}
-              title={`Remove from ${folderPageName}`}
-              onClick={(e) => {
-                e.stopPropagation()
-                setRemoving(member)
-              }}
-            >
-              ×
-            </button>
-          )}
-        </li>
-      )
-      if (!open || kids.length === 0) return [row]
-      // Each level orders by ITS OWN folder page's settings — the order lives on the page that
-      // owns the members, never on whoever happens to be showing them.
-      return [row, ...rowsFor(orderedMembers(kids, folderPageSettings(member), resolve), depth + 1, next)]
-    })
+  const linked = useMemo(() => outlineLinkTargets(doc, resolve), [doc, resolve])
+  const appended = useMemo(
+    () => records.filter((r) => !linked.has(r.path)).sort((a, b) => collator.compare(a.basename, b.basename)),
+    [records, linked],
+  )
+  const removing = pending.length > 0 ? pending[0] : null
 
   return (
     <div className="view-outline">
       {error !== null && (
-        <p className="views-pane__error" role="alert">
+        <p className="view-view__error" role="alert">
           Could not update the page's folder pages: {error}
         </p>
       )}
-      <ul className="view-outline__list">
-        {rowsFor(ordered, 0, [folderPagePath])}
-        <OutlineAddRow candidates={candidates} taken={taken} onPick={tag} onCreate={onCreate} />
-      </ul>
+      {/* `markdown` is read at MOUNT only (YAZ-901): every later edit comes back OUT through onChange. */}
+      <OutlineEditor markdown={doc} onChange={commit} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} nav={nav} />
+      {appended.length > 0 && (
+        <ul className="view-outline__list">
+          {appended.map((member) => (
+            <li key={member.path} className="view-outline__row" data-outline-row={member.path}>
+              <span className="view-outline__bullet" aria-hidden>
+                •
+              </span>
+              <button
+                type="button"
+                className="view-outline__link"
+                title={member.path}
+                onClick={(e) => {
+                  if (e.metaKey && openBackground !== undefined) openBackground(member.path)
+                  else onOpenFile(member.path)
+                }}
+              >
+                {member.basename}
+              </button>
+              {lookup.isFolderPage(member) && (
+                <>
+                  <FolderPageGlyph className="view-outline__glyph" />
+                  {/* DIRECT members, the Topics tree's locked honesty split: the count is the
+                      honest fact about the PAGE, whatever this document happens to say. */}
+                  <span className="view-outline__count">{lookup.pagesIn(member.path).length}</span>
+                </>
+              )}
+              <button
+                type="button"
+                className="view-outline__x"
+                aria-label={`Remove ${member.basename} from ${folderPageName}`}
+                title={`Remove from ${folderPageName}`}
+                onClick={() => setPending((queue) => [...queue, member])}
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       {removing !== null && (
+        // Keyed by the page: each queued un-tag is its OWN sheet, so focus starts on Cancel again.
         <ConfirmRemoveMember
+          key={removing.path}
           page={removing.basename}
           folderPage={folderPageName}
           others={lookup
@@ -245,10 +204,10 @@ export function OutlineView({ folderPagePath, root, settings, vaultRecords, reco
             .filter((path) => path !== folderPagePath)
             .map((path) => vaultRecords.find((r) => r.path === path)?.basename ?? path)}
           onConfirm={() => {
-            untag(removing)
-            setRemoving(null)
+            applyMembership([removing.path], membership, 'untag').catch(report)
+            setPending((queue) => queue.slice(1))
           }}
-          onCancel={() => setRemoving(null)}
+          onCancel={() => setPending((queue) => queue.slice(1))}
         />
       )}
     </div>

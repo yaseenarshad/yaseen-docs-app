@@ -26,6 +26,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { stringify } from 'yaml'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
+import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
+import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { type ViewDef, type ParsedViews, parseViews } from './viewSchema'
@@ -54,6 +56,16 @@ export interface FolderPageContentsProps {
   onOpenFile: (path: string) => void
   /** ⌘-click on an outline row (YAZ-820) — the window's background-tab open; absent → opens in place. */
   onOpenFileBackground?: (path: string) => void
+  /**
+   * The rest of the outline editor's wikilink wiring (YAZ-903), threaded from the SAME `Editor`
+   * mount that hands it to the note's own Crepe instance — `source` above is the first piece:
+   * the `[[` picker feed (Links B), then the two halves of the click-navigation contract this
+   * host cannot derive (where a bare unresolved link creates its page, C2-, and where a create
+   * failure is reported).
+   */
+  wikilinkCandidates?: WikilinkCandidateSource
+  createBase?: () => string
+  onNotice?: (message: string) => void
 }
 
 const NONE: IndexRecord[] = []
@@ -80,7 +92,17 @@ function folderPageViewSet(views: readonly ViewDef[]): ParsedViews {
   }
 }
 
-export function FolderPageContents({ path, root, source, properties = null, onOpenFile, onOpenFileBackground }: FolderPageContentsProps) {
+export function FolderPageContents({
+  path,
+  root,
+  source,
+  properties = null,
+  onOpenFile,
+  onOpenFileBackground,
+  wikilinkCandidates,
+  createBase,
+  onNotice,
+}: FolderPageContentsProps) {
   // Subscribe once, re-read the whole feed on each poke; an unchanged snapshot keeps the previous
   // object, so index churn elsewhere in the vault costs no render (BacklinksSection's idiom).
   const [feed, setFeed] = useState<Feed>(() => ({ records: source.records, resolve: source.resolve }))
@@ -99,6 +121,26 @@ export function FolderPageContents({ path, root, source, properties = null, onOp
   const members = useMemo(
     () => (settings === null || feed.resolve === null ? NONE : folderPagesLookup(feed.records, feed.resolve).pagesIn(path)),
     [settings, feed, path],
+  )
+
+  /**
+   * The outline editor's click navigation (YAZ-903), assembled EXACTLY as `Editor` assembles the
+   * note's own — same contract, same defaults, wired only when the window threads the
+   * background opener. Memoised because the editor remounts on a new identity (YAZ-901), and
+   * every input here is App-stable.
+   */
+  const nav = useMemo<WikilinkNav | undefined>(
+    () =>
+      onOpenFileBackground === undefined
+        ? undefined
+        : {
+            root,
+            createBase: createBase ?? (() => ''),
+            openCurrent: onOpenFile,
+            openBackground: onOpenFileBackground,
+            onNotice: onNotice ?? (() => undefined),
+          },
+    [root, createBase, onOpenFile, onOpenFileBackground, onNotice],
   )
 
   const [parsed, setParsed] = useState<ParsedViews | null>(() => (settings === null ? null : folderPageViewSet(settings.views)))
@@ -128,8 +170,18 @@ export function FolderPageContents({ path, root, source, properties = null, onOp
   const mode: FolderPageMode = {
     settings,
     vaultRecords: feed.records,
-    create: (seed, name) => createMember(root, record.basename, path, settings, feed.records, seed, name),
+    create: (seed) => createMember(root, record.basename, path, settings, feed.records, seed),
+    // Columns (and, when the caller moves both, `views`) through the SAME one door — still ONE write.
+    setColumns: (columns, views) => {
+      setError(null)
+      writeFolderPageSettings(path, { ...settings, columns, views: views ?? settings.views }).catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : String(err)),
+      )
+    },
     openBackground: onOpenFileBackground,
+    wikilinks: source,
+    wikilinkCandidates,
+    nav,
   }
 
   return (
@@ -159,11 +211,8 @@ export function FolderPageContents({ path, root, source, properties = null, onOp
  * settings' `folder` (created level by level), and without one the page lands beside the folder
  * page itself. The create is the existing atomic content-at-create path.
  *
- * `name` is the outline add row's "+ Create 'X' here" (YAZ-820) — the ONE thing that changes is
- * what the file is called; the toolbar's New passes nothing and keeps the `Untitled` scheme. A
- * name that is already taken in the parking folder is left to `createFile`'s never-overwrite
- * guarantee, which refuses and is reported in place: silently renaming what the user typed would
- * be worse than saying so.
+ * The name is the `Untitled` scheme, always: the outline's "+ Create 'X' here" row — the one
+ * caller that ever passed a typed name — died with the picker-only add row in YAZ-903.
  */
 async function createMember(
   root: string,
@@ -172,12 +221,11 @@ async function createMember(
   settings: FolderPageSettings,
   records: readonly IndexRecord[],
   seed: NewNoteSeed,
-  name?: string,
 ): Promise<string> {
   const parts = await newPageFromFolderPage(root, folderPageName, settings, seed.properties)
   const dir = await memberFolder(root, folderPagePath, settings)
   const taken = new Set(records.filter((r) => r.path.slice(0, r.path.lastIndexOf('/')) === dir).map((r) => r.basename))
-  const target = `${dir}/${name ?? untitledName(taken)}.md`
+  const target = `${dir}/${untitledName(taken)}.md`
   await createNewNote(target, parts.properties, parts.body)
   return target
 }
