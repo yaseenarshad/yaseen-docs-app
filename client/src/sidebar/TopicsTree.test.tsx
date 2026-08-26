@@ -10,14 +10,14 @@
  * jsdom bridge stub, so the bucket, its patch and its restore are all exercised end to end.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { StrictMode, act } from 'react'
+import { StrictMode, act, useEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { defaultAppState, defaultFolderState, type AppState, type IndexRecord, type WindowIdentity } from '@shared/types'
+import { MAX_TOPICS_EXPANDED_PAGES, defaultAppState, defaultFolderState, type AppState, type IndexRecord, type WindowIdentity } from '@shared/types'
 import { stripBrackets } from '../views/expr'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { storage } from '../lib/storage'
 import { folderPagesLookup } from '../links/folderPages'
-import { TopicsTree, topicRoots } from './TopicsTree'
+import { TopicsTree, allExpandableTopics, topicRoots } from './TopicsTree'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -125,13 +125,31 @@ let root: Root | null = null
 let container: HTMLElement | null = null
 
 type Props = Parameters<typeof TopicsTree>[0]
+/** What the harness hands over: the tree's props minus the ones its OWNER supplies, plus the vault. */
+type OwnedProps = Omit<Props, 'expanded' | 'onExpandedChange'> & { root: string }
 
-async function mount(over: Partial<Props> & { source: Props['source'] }) {
+/**
+ * ⚡ YAZ-873 lifted the expansion into the Sidebar, so the tree is CONTROLLED. This is that owner
+ * in miniature — the same restore from the per-vault bucket and the same idempotent write-back —
+ * so every case below still drives the real gestures and still proves the persistence end to end.
+ */
+function Controlled({ root, ...props }: OwnedProps) {
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(storage.getTopicsExpanded(root)))
+  useEffect(() => {
+    const next = [...expanded]
+    const stored = storage.getTopicsExpanded(root)
+    if (stored.length === next.length && stored.every((path, i) => path === next[i])) return
+    storage.setTopicsExpanded(root, next)
+  }, [root, expanded])
+  return <TopicsTree {...props} expanded={expanded} onExpandedChange={setExpanded} />
+}
+
+async function mount(over: Partial<OwnedProps> & { source: Props['source'] }) {
   const el = document.createElement('div')
   document.body.appendChild(el)
   container = el
   root = createRoot(el)
-  const props: Props = {
+  const props: OwnedProps = {
     root: ROOT,
     activeFile: null,
     onOpenFile: vi.fn(),
@@ -148,7 +166,7 @@ async function mount(over: Partial<Props> & { source: Props['source'] }) {
     creating: null,
     ...over,
   }
-  await act(async () => root?.render(<StrictMode><TopicsTree {...props} /></StrictMode>))
+  await act(async () => root?.render(<StrictMode><Controlled {...props} /></StrictMode>))
   return { el, props }
 }
 
@@ -171,6 +189,44 @@ afterEach(() => {
   container = null
   delete (window as unknown as Record<string, unknown>).yaseenDocs
   vi.restoreAllMocks()
+})
+
+// ---------------------------------------------------------------- ⚡ YAZ-873: the expand-all set
+
+describe('allExpandableTopics (⚡ YAZ-873): every page the tree could unfold, once, loop-safe, capped', () => {
+  const setOf = (records: readonly IndexRecord[]) => {
+    const resolve = resolverOver(records)
+    return allExpandableTopics(records, folderPagesLookup(records, resolve), resolve)
+  }
+
+  it('collects every folder page that can unfold, from every root, once each, and never a dead end', () => {
+    // Home → A → B → A (a loop); Shared under Home AND Projects (a diamond); B can never unfold —
+    // its only member is A, already standing above it on every trail the tree can walk.
+    const records = [
+      folder(HOME),
+      folder(PROJECTS),
+      folder(`${ROOT}/A.md`, belongs('[[Home]]', '[[B]]')),
+      folder(`${ROOT}/B.md`, belongs('[[A]]')),
+      folder(`${ROOT}/Shared.md`, belongs('[[Home]]', '[[Projects]]')),
+      rec(`${ROOT}/Leaf.md`, belongs('[[Shared]]')),
+    ]
+    expect([...setOf(records)].sort()).toEqual([`${ROOT}/A.md`, HOME, PROJECTS, `${ROOT}/Shared.md`].sort())
+  })
+
+  it('a leaf-only vault and an empty feed both answer nothing', () => {
+    expect(setOf([folder(PROJECTS), rec(`${ROOT}/Loose.md`)])).toEqual([])
+    expect(allExpandableTopics([], folderPagesLookup([], () => null), null)).toEqual([])
+  })
+
+  it('caps at MAX_TOPICS_EXPANDED_PAGES — the bucket the answer is written into', () => {
+    // A chain of 600 folder pages, each the sole member of the one before it: 599 can unfold.
+    const chain: IndexRecord[] = [folder(`${ROOT}/T000.md`)]
+    for (let i = 1; i < 600; i++) {
+      const name = `T${String(i).padStart(3, '0')}`
+      chain.push(folder(`${ROOT}/${name}.md`, belongs(`[[T${String(i - 1).padStart(3, '0')}]]`)))
+    }
+    expect(setOf(chain)).toHaveLength(MAX_TOPICS_EXPANDED_PAGES)
+  })
 })
 
 // ---------------------------------------------------------------- 🔒 D2: the roots

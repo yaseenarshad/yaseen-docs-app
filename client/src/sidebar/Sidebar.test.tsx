@@ -875,9 +875,9 @@ describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
 /**
  * Expand / collapse all (⚡ YAZ-862): ONE double-chevron button at the end of the lens row,
  * replacing the whole expanded set in a single dispatch. Anything open means the click collapses;
- * only a fully closed tree expands. It belongs to the FILES tree and to the tree BODY — so it is
- * GONE (never disabled) on Topics, which YAZ-873 extends it to, while a query is typed, and in a
- * vault with no folders to open.
+ * only a fully closed tree expands. This describe is the FILES half; it belongs to the tree BODY,
+ * so it is GONE (never disabled) while a query is typed and in a vault with no folders to open.
+ * The Topics half — and the two stores' independence — is the ⚡ YAZ-873 describe below.
  */
 describe('expand / collapse all (⚡ YAZ-862)', () => {
   const note = (path: string): TreeNode => ({ type: 'file', name: 'n.md', path, size: 1, mtime: 1, kind: 'markdown' })
@@ -938,12 +938,90 @@ describe('expand / collapse all (⚡ YAZ-862)', () => {
     await type(input, '')
     expect(allButton(searched.el)).not.toBeNull() // back with the tree it belongs to
 
+    // The lens row's button acts on the ACTIVE lens since ⚡ YAZ-873, so Topics over this
+    // harness's EMPTY feed has nothing to unfold — the same "nothing to open" rule, not a
+    // lens exclusion. The folder tree standing right there does not lend it one.
     const topics = await mountVault(NESTED, { lens: 'topics' })
     expect(allButton(topics.el)).toBeNull()
 
     const flat = await mountVault((v) => [note(`${v}/n.md`)])
     expect(flat.el.querySelector('.tree__row--file')).not.toBeNull()
     expect(allButton(flat.el)).toBeNull()
+  })
+})
+
+/**
+ * The Topics half of the same button (⚡ YAZ-873): ONE control at the end of the lens row acting
+ * on whichever lens is ACTIVE. On Topics it replaces the lifted `topicsExpanded` set with
+ * `allExpandableTopics` — the guarded walk's answer, so it opens exactly the rows the tree draws
+ * chevrons on — and empties it when anything is open. The two lenses keep their OWN stores: one
+ * button, never one set. Gone, as ever, when the active reading has nothing to unfold.
+ */
+describe('expand / collapse all on TOPICS (⚡ YAZ-873)', () => {
+  const rec = (v: string, basename: string, properties: Record<string, unknown> = {}) => ({
+    path: `${v}/${basename}.md`, name: `${basename}.md`, basename, folder: '', ext: 'md',
+    size: 1, ctime: 1, mtime: 1, properties, aliases: [] as string[], tags: [] as string[], links: [] as string[], embeds: [] as string[],
+  })
+  const folder = (v: string, basename: string, properties: Record<string, unknown> = {}) => rec(v, basename, { folder_page: true, ...properties })
+  const belongs = (...entries: string[]): Record<string, unknown> => ({ folder_pages: entries })
+  /** The window's feed over one snapshot, resolved by basename the way `makeResolver` keys it. */
+  const feedOver = (records: ReturnType<typeof rec>[]) => ({
+    records,
+    resolve: (target: string) => records.find((r) => r.basename.toLowerCase() === target.replace(/[[\]]/g, '').trim().toLowerCase())?.path ?? null,
+    subscribe: () => () => undefined,
+  })
+  /** Two depths of meaning: Home holds Metrics, Metrics holds a leaf that never unfolds. */
+  const TOPICS = (v: string) => [folder(v, 'Home'), folder(v, 'Metrics', belongs('[[Home]]')), rec(v, 'Revenue', belongs('[[Metrics]]'))]
+  /** One folder on disk beside them, so the FILES lens has something of its own to open. */
+  const FILES = (v: string): TreeNode[] => [{ type: 'dir', name: 'docs', path: `${v}/docs`, children: [] }]
+
+  // Both buckets are per ROOT in the module-level app-state cache, so every mount opens its OWN
+  // vault and starts closed — the YAZ-862 describe's isolation idiom.
+  let vaults = 0
+  const mountVault = async (records: (v: string) => ReturnType<typeof rec>[] = TOPICS, over: Partial<SidebarProps> = {}) => {
+    const vault = `/v-topics-${++vaults}`
+    return mount({ root: vault, lens: 'topics', indexSource: feedOver(records(vault)), ...over }, (b) =>
+      b.tree.mockResolvedValue({ root: vault, tree: FILES(vault), generatedAt: 1 } as never),
+    )
+  }
+  const allButton = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sidebar__lenses .sidebar__expand-all')
+  const label = (el: HTMLElement) => allButton(el)?.getAttribute('aria-label') ?? null
+  const topicLabels = (el: HTMLElement) => [...el.querySelectorAll('[aria-label="Topics"] .tree__label')].map((n) => n.textContent)
+
+  it('a closed topic tree offers "Expand all", and one click unfolds every page at every depth', async () => {
+    const { el } = await mountVault()
+    expect(topicLabels(el)).toEqual(['Home'])
+    expect(label(el)).toBe('Expand all')
+    act(() => allButton(el)?.click())
+    expect(topicLabels(el)).toEqual(['Home', 'Metrics', 'Revenue'])
+    expect(label(el)).toBe('Collapse all')
+  })
+
+  it('and the click back is "Collapse all" — down to the roots, in one dispatch', async () => {
+    const { el } = await mountVault()
+    act(() => allButton(el)?.click())
+    act(() => allButton(el)?.click())
+    expect(topicLabels(el)).toEqual(['Home'])
+    expect(label(el)).toBe('Expand all')
+  })
+
+  it('the two lenses keep their OWN stores: expanding all of Files leaves Topics fully closed', async () => {
+    const { el, rerender } = await mountVault(TOPICS, { lens: 'files' })
+    act(() => allButton(el)?.click())
+    expect(label(el)).toBe('Collapse all')
+    await rerender({ lens: 'topics' })
+    // One button, two readings of the vault: the folder tree being open says nothing about
+    // whether a topic is, so Topics still offers to expand.
+    expect(label(el)).toBe('Expand all')
+    expect(topicLabels(el)).toEqual(['Home'])
+    await rerender({ lens: 'files' })
+    expect(label(el)).toBe('Collapse all') // …and the Files store was never touched meanwhile
+  })
+
+  it('there is no button on Topics when nothing can unfold — a vault of leaves offers nothing', async () => {
+    const { el } = await mountVault((v) => [folder(v, 'Home'), rec(v, 'Loose')])
+    expect(topicLabels(el)).toEqual(['Home'])
+    expect(allButton(el)).toBeNull()
   })
 })
 

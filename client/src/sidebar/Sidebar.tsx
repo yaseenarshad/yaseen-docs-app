@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import { fileKind } from '@shared/fileKind'
 import { SIDEBAR_LENSES, type SettingsState, type SidebarLens, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { createNewNote } from '../views/newNote'
 import { ChevronsIcon, SearchIcon } from '../views/view/icons'
 import { writeProperty } from '../views/writeProperty'
-import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
-import { FOLDER_PAGE_KEY, isFolderPage } from '../links/folderPages'
+import { FOLDER_PAGE_KEY, folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { countLinkReferences } from '../links/renameLinks'
 import { allDirs, treeHasFile, treeReducer } from '../lib/treeState'
 import { SearchResults } from '../search/SearchResults'
@@ -20,7 +20,7 @@ import { ContextMenu } from './ContextMenu'
 import { entryPath, renamedPath, targetDirFor, type EntryKind, type MenuRow } from './createEntry'
 import { HotkeysButton } from './HotkeysPanel'
 import { SettingsCog } from './SettingsPanel'
-import { TopicsTree, type PendingTopicCreate } from './TopicsTree'
+import { TopicsTree, allExpandableTopics, type PendingTopicCreate } from './TopicsTree'
 import { Tree, type PendingCreate, type PendingRename, type TreeFileMove } from './Tree'
 
 interface SidebarProps {
@@ -185,6 +185,9 @@ function findDir(nodes: readonly TreeNode[], dir: string): readonly TreeNode[] |
 /** The lens tabs' copy; the ORDER is `SIDEBAR_LENSES`', so the default lens leads (YAZ-847). */
 const LENS_LABEL: Record<SidebarLens, string> = { topics: 'Topics', files: 'Files' }
 
+/** Stands in while the index has not landed; only ever paired with an empty snapshot (TopicsTree's twin). */
+const NEVER: ResolveLink = () => null
+
 /** Panel-left pictogram shared by the collapse and reopen buttons (GRO-2023). */
 export function SidebarPanelIcon() {
   return (
@@ -223,6 +226,11 @@ export function Sidebar({
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [expanded, dispatch] = useReducer(treeReducer, root, storage.getExpanded)
+  // The TOPICS tree's open pages (🔒 D4), lifted here by ⚡ YAZ-873 so the lens row's one button
+  // can read and replace them; the tree itself is controlled. PAGE PATHS, restored from the
+  // main-owned per-vault bucket, so it opens where it was left — across a lens switch, a window
+  // and a restart alike. A lens switch never touches it: this state outlives the tree's mount.
+  const [topicsExpanded, setTopicsExpanded] = useState<ReadonlySet<string>>(() => new Set(storage.getTopicsExpanded(root)))
   const [menu, setMenu] = useState<MenuTargets | null>(null)
   // `anchor` is the TOPICS row the create was asked from (8G-, YAZ-865); null on the file tree,
   // where the input nests inside `parentDir`'s own children instead.
@@ -253,11 +261,23 @@ export function Sidebar({
   // every reader of the selection clamps: the highlight lands on the last row, not on nowhere.
   const sel = Math.min(selected, results.length - 1)
 
-  // Expand / collapse the whole tree (⚡ YAZ-862). "Any open" is measured against the CURRENT
-  // tree's dirs, never the raw `expanded` list: that one is persisted and can still name paths an
-  // external change took away, which would leave the button offering to collapse nothing.
+  // Expand / collapse the whole tree (⚡ YAZ-862, BOTH lenses since ⚡ YAZ-873). "Any open" is
+  // measured against what the CURRENT tree can actually unfold, never the raw persisted list:
+  // that one can still name paths an external change took away, which would leave the button
+  // offering to collapse nothing.
   const dirs = useMemo(() => (tree === null ? [] : allDirs(tree.tree)), [tree])
-  const anyExpanded = dirs.some((d) => expanded.includes(d))
+  // Topics' half of the same question, over the window's ONE index feed — the very source the
+  // tree reads, so the two can never disagree; `folderPagesLookup` is memoized per records
+  // identity, so this shares the tree's lookup rather than building a second one. Before the
+  // first index lands the snapshot is empty, the answer is nothing, and the button is gone.
+  const topicRecords = useSyncExternalStore(indexSource.subscribe, () => indexSource.records)
+  const topics = useMemo(() => {
+    const resolve = indexSource.resolve
+    return allExpandableTopics(topicRecords, folderPagesLookup(topicRecords, resolve ?? NEVER), resolve)
+  }, [indexSource, topicRecords])
+  // One button, the ACTIVE lens' store — never a set shared between the two readings of the vault.
+  const foldable = lens === 'topics' ? topics : dirs
+  const anyExpanded = lens === 'topics' ? topics.some((page) => topicsExpanded.has(page)) : dirs.some((d) => expanded.includes(d))
   const allLabel = anyExpanded ? 'Collapse all' : 'Expand all'
 
   const refresh = useCallback(() => {
@@ -288,6 +308,17 @@ export function Sidebar({
   useEffect(() => {
     storage.setExpanded(root, expanded)
   }, [root, expanded])
+
+  // The Topics bucket's write-back, `expanded`'s twin (🔒 D4) — it came up from the tree with the
+  // state in ⚡ YAZ-873, unchanged. Idempotent: the first render after a mount holds exactly what
+  // was just read, and re-sending it would make the main process commit, write and broadcast for
+  // nothing — including on every Files-lens mount, where the tree is not even on screen.
+  useEffect(() => {
+    const next = [...topicsExpanded]
+    const stored = storage.getTopicsExpanded(root)
+    if (stored.length === next.length && stored.every((path, i) => path === next[i])) return
+    storage.setTopicsExpanded(root, next)
+  }, [root, topicsExpanded])
 
   useEffect(() => {
     if (activeFile !== null) dispatch({ type: 'expandTo', root, file: activeFile })
@@ -645,17 +676,23 @@ export function Sidebar({
             {LENS_LABEL[id]}
           </button>
         ))}
-        {/* One button for both directions (⚡ YAZ-862): anything open collapses everything, and
-            only a fully closed tree expands it. Gone — not disabled — while a query is typed
-            (the tree is not the body then) and on a vault with no folders to open. FILES only
-            here; YAZ-873 extends it to Topics. */}
-        {!searching && lens === 'files' && dirs.length > 0 && (
+        {/* One button for both directions AND both lenses (⚡ YAZ-862, ⚡ YAZ-873): anything open
+            collapses everything, and only a fully closed tree expands it. It acts on whichever
+            lens is ACTIVE, through that lens' own store. Gone — not disabled — while a query is
+            typed (the tree is not the body then) and whenever the active reading has nothing to
+            unfold: a vault with no folders, a Topics tree of leaves, or the empty snapshot before
+            the first index lands. */}
+        {!searching && foldable.length > 0 && (
           <button
             type="button"
             className="sidebar__expand-all"
             aria-label={allLabel}
             title={allLabel}
-            onClick={() => dispatch({ type: 'setAll', dirs: anyExpanded ? [] : dirs })}
+            onClick={() =>
+              lens === 'topics'
+                ? setTopicsExpanded(new Set(anyExpanded ? [] : topics))
+                : dispatch({ type: 'setAll', dirs: anyExpanded ? [] : dirs })
+            }
           >
             <ChevronsIcon />
           </button>
@@ -725,7 +762,8 @@ export function Sidebar({
           // expansion, pending create/rename, drag) lives in this component and is waiting
           // untouched below.
           <TopicsTree
-            root={root}
+            expanded={topicsExpanded}
+            onExpandedChange={setTopicsExpanded}
             source={indexSource}
             activeFile={activeFile}
             onOpenFile={onOpenFile}

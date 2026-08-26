@@ -23,6 +23,10 @@
  * parent expands it under every parent, which is the mockup's behaviour and the honest one — the
  * user opened the PAGE. It is persisted per vault in the main-owned `folders[root].topicsExpanded`
  * bucket, `expanded`'s twin, so it survives a restart and is repaired by `store.renamePath`.
+ * The SET itself is the Sidebar's since ⚡ YAZ-873 — this tree is CONTROLLED: it computes the next
+ * set and hands it up, while the restore and the write-back live with the owner, which needs the
+ * same set for the lens row's expand/collapse-all button. `allExpandableTopics` below is that
+ * button's answer: the same walk this tree draws, asked all at once.
  *
  * THE ROW UNFOLDS (⚡ YAZ-870, the amendment on 🔒 D3): clicking a folder-page row opens the page
  * AND expands it in place — one gesture, both meanings. Add-only: a second click never folds
@@ -58,11 +62,10 @@
  * Still no drag.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import type { IndexRecord } from '@shared/types'
+import { MAX_TOPICS_EXPANDED_PAGES, type IndexRecord } from '@shared/types'
 import { folderPageSettings, orderedMembers } from '../views/folderPageSettings'
 import { FolderPageGlyph } from '../views/view/icons'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
-import { storage } from '../lib/storage'
 import { folderPagesLookup, guardedChildren, type FolderPagesLookup } from '../links/folderPages'
 import { CreateInline } from './CreateInline'
 import type { EntryKind } from './createEntry'
@@ -92,8 +95,14 @@ export interface PendingTopicCreate {
 }
 
 export interface TopicsTreeProps {
-  /** The vault, which keys the persisted expansion bucket (the Sidebar is mounted per root). */
-  root: string
+  /**
+   * The open PAGE PATHS (🔒 D4). Owned by the Sidebar since ⚡ YAZ-873 — which restores it from
+   * the per-vault bucket, writes it back, and needs the very same set for its expand-all button —
+   * so this tree is CONTROLLED: it computes the next set and hands it up, nothing more. (The
+   * `root` this tree used to take went with the bucket: keying it is the owner's job now.)
+   */
+  expanded: ReadonlySet<string>
+  onExpandedChange: (next: ReadonlySet<string>) => void
   /** The window's index feed: the snapshot AND the resolver built from it, always read together. */
   source: WikilinkResolveSource
   /** The open file, highlighted wherever it appears — including under two parents at once. */
@@ -154,7 +163,34 @@ export function topicRoots(records: readonly IndexRecord[], lookup: FolderPagesL
   return homeRoot === null ? others : [homeRoot, ...others]
 }
 
-export function TopicsTree({ root, source, activeFile, onOpenFile, onOpenFileBackground, unadopted, onCreateHome, onRowContextMenu, renaming, creating }: TopicsTreeProps) {
+/**
+ * THE EXPAND-ALL ANSWER (⚡ YAZ-873), pure and exported beside the roots rule it starts from:
+ * every page the tree could unfold, once each, in walk order (roots first, depth first). It is
+ * the SAME descent the rows are drawn from — from every root, through `guardedChildren` only
+ * (⚡ D6), never raw `pagesIn` — so a loop ends quietly and a page whose only member already
+ * stands above it on every reachable trail is honestly not expandable, exactly as its missing
+ * chevron says. A diamond page counts ONCE: the set is keyed by page path, like the expansion
+ * itself (🔒 D4). Capped at the bucket's own ceiling, because the answer is written into it.
+ */
+export function allExpandableTopics(records: readonly IndexRecord[], lookup: FolderPagesLookup, resolve: ResolveLink | null): string[] {
+  const found: string[] = []
+  const seen = new Set<string>()
+  const descend = (page: IndexRecord, trail: readonly string[]): void => {
+    const kids = guardedChildren(lookup, page.path, trail)
+    if (kids.length === 0) return // a chevron-less row: there is nothing here to open
+    if (!seen.has(page.path)) {
+      seen.add(page.path)
+      found.push(page.path)
+    }
+    // Only a folder page holds members, so only a folder page is descended into — `childrenFor`'s
+    // own test, kept in step so the walk can never reach a row the tree does not draw.
+    for (const kid of kids) if (lookup.isFolderPage(kid)) descend(kid, [...trail, kid.path])
+  }
+  for (const start of topicRoots(records, lookup, resolve)) descend(start, [start.path])
+  return found.slice(0, MAX_TOPICS_EXPANDED_PAGES)
+}
+
+export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onOpenFile, onOpenFileBackground, unadopted, onCreateHome, onRowContextMenu, renaming, creating }: TopicsTreeProps) {
   // Subscribe once, re-read the whole feed on each poke; an unchanged snapshot keeps the previous
   // object, so index churn that changed nothing here costs no render (BacklinksSection's idiom).
   const [feed, setFeed] = useState<Feed>(() => ({ records: source.records, resolve: source.resolve }))
@@ -165,20 +201,9 @@ export function TopicsTree({ root, source, activeFile, onOpenFile, onOpenFileBac
     return source.subscribe(read)
   }, [source])
 
-  // 🔒 D4: PAGE PATHS, restored from the main-owned per-vault bucket, so the tree opens where it
-  // was left — across a lens switch, a window and a restart alike.
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(storage.getTopicsExpanded(root)))
-  useEffect(() => {
-    const next = [...expanded]
-    const stored = storage.getTopicsExpanded(root)
-    // Idempotent: the first render after a mount holds exactly what was just read, and re-sending
-    // it would make the main process commit, write and broadcast for nothing.
-    if (stored.length === next.length && stored.every((path, i) => path === next[i])) return
-    storage.setTopicsExpanded(root, next)
-  }, [root, expanded])
-
-  // Uncategorized's own open/closed is SESSION state, deliberately not in the bucket above: that
+  // Uncategorized's own open/closed is SESSION state, deliberately not in the lifted bucket: that
   // bucket holds page paths (and is repaired as such on rename), and Uncategorized is not a page.
+  // So it stays HERE while the expansion went up — the two are not the same kind of fact.
   const [showOrphans, setShowOrphans] = useState(false)
 
   const { records, resolve } = feed
@@ -191,16 +216,19 @@ export function TopicsTree({ root, source, activeFile, onOpenFile, onOpenFileBac
     return lookup.uncategorized().filter((record) => !shown.has(record.path))
   }, [lookup, roots])
 
-  const toggle = (path: string): void =>
-    setExpanded((set) => {
-      const next = new Set(set)
-      if (!next.delete(path)) next.add(path)
-      return next
-    })
+  // Pure computations over the prop since ⚡ YAZ-873 — the next set goes up, the owner decides.
+  const toggle = (path: string): void => {
+    const next = new Set(expanded)
+    if (!next.delete(path)) next.add(path)
+    onExpandedChange(next)
+  }
 
   // ⚡ YAZ-870: `toggle`'s add-only twin — the row gesture unfolds but never folds, so
   // navigating to a page you are already on cannot close the tree under you.
-  const expand = (path: string): void => setExpanded((set) => (set.has(path) ? set : new Set(set).add(path)))
+  const expand = (path: string): void => {
+    if (expanded.has(path)) return
+    onExpandedChange(new Set(expanded).add(path))
+  }
 
   const open = (path: string, e: React.MouseEvent): void => (e.metaKey ? onOpenFileBackground(path) : onOpenFile(path))
 
@@ -228,7 +256,7 @@ export function TopicsTree({ root, source, activeFile, onOpenFile, onOpenFileBac
     if (creating === null || creating.anchorPath !== record.path || createRendered) return null
     createRendered = true
     return (
-      <li key={`${record.path} new`}>
+      <li key={`${record.path} new`}>
         <CreateInline kind={creating.kind} indent={indent} onSubmit={creating.onSubmit} onCancel={creating.onCancel} />
       </li>
     )
