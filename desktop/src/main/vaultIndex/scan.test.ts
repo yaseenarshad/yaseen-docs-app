@@ -3,7 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parseFrontmatter } from '@shared/frontmatter'
 import { MAX_FILE_BYTES } from '@shared/types'
-import { makeBasesFixture } from '../fs/basesFixture'
+import { makeViewsFixture } from '../fs/viewsFixture'
 import { extractAliases, extractEmbeds, extractLinks, extractTags, scanFile } from './index'
 
 describe('parseFrontmatter', () => {
@@ -124,7 +124,7 @@ describe('extractLinks / extractEmbeds', () => {
 describe('scanFile', () => {
   let root: string
   let cleanup: () => Promise<void>
-  beforeAll(async () => ({ root, cleanup } = await makeBasesFixture()))
+  beforeAll(async () => ({ root, cleanup } = await makeViewsFixture()))
   afterAll(() => cleanup())
   const note = (...p: string[]) => path.join(root, 'Content Pillars', ...p)
 

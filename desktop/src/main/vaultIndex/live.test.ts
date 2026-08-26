@@ -3,7 +3,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { IndexRecord } from '@shared/types'
 import { TEST_RECORDS } from '../../../../client/src/views/testRecords'
-import { makeBasesFixture } from '../fs/basesFixture'
+import { makeViewsFixture } from '../fs/viewsFixture'
 import { activeWatcherRoots } from '../fs/watchers'
 import { _evictAll, _setIdleMs, getIndex } from './index'
 
@@ -20,7 +20,7 @@ const byName = (records: IndexRecord[], name: string) => records.find((r) => r.n
 describe('getIndex: cold scan', () => {
   let root: string
   let cleanup: () => Promise<void>
-  beforeAll(async () => ({ root, cleanup } = await makeBasesFixture()))
+  beforeAll(async () => ({ root, cleanup } = await makeViewsFixture()))
   afterAll(async () => {
     _evictAll()
     await cleanup()
@@ -79,7 +79,7 @@ describe('getIndex: incremental updates from the watcher', () => {
   let root: string
   let cleanup: () => Promise<void>
   beforeAll(async () => {
-    ;({ root, cleanup } = await makeBasesFixture())
+    ;({ root, cleanup } = await makeViewsFixture())
     await getIndex(root)
   })
   afterAll(async () => {
@@ -129,7 +129,7 @@ describe('getIndex: incremental updates from the watcher', () => {
 describe('getIndex: .obsidian/types.json (5B, GRO-2142)', () => {
   let root: string
   let cleanup: () => Promise<void>
-  beforeAll(async () => ({ root, cleanup } = await makeBasesFixture()))
+  beforeAll(async () => ({ root, cleanup } = await makeViewsFixture()))
   afterAll(async () => {
     _evictAll()
     await cleanup()
@@ -153,7 +153,7 @@ describe('getIndex: .obsidian/types.json (5B, GRO-2142)', () => {
 describe('getIndex: idle eviction', () => {
   let root: string
   let cleanup: () => Promise<void>
-  beforeAll(async () => ({ root, cleanup } = await makeBasesFixture()))
+  beforeAll(async () => ({ root, cleanup } = await makeViewsFixture()))
   afterAll(async () => {
     _setIdleMs()
     _evictAll()

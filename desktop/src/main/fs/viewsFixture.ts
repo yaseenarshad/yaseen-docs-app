@@ -3,12 +3,15 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 /**
- * Temp vault mirroring a real Obsidian vault (synthetic content), shared by every Bases
+ * Temp vault mirroring a real Obsidian vault (synthetic content), shared by every view/index
  * test: 8 markdown notes (one with invalid frontmatter, two with none), png stubs,
  * `.obsidian/types.json` and a `.trash` note. Caller removes it via `cleanup`.
+ *
+ * Named `basesFixture` / `makeBasesFixture` until YAZ-861 renamed it for the surface it actually
+ * feeds — the folder-page views and the vault index — rather than the retired `.base` format.
  */
-export async function makeBasesFixture(): Promise<{ root: string; cleanup: () => Promise<void> }> {
-  const root = await mkdtemp(path.join(tmpdir(), 'mdapp-bases-'))
+export async function makeViewsFixture(): Promise<{ root: string; cleanup: () => Promise<void> }> {
+  const root = await mkdtemp(path.join(tmpdir(), 'mdapp-views-'))
   const pillars = path.join(root, 'Content Pillars')
   const agentic = path.join(pillars, '1. Agentic Agency')
   const creator = path.join(pillars, '2. Creator Economy')

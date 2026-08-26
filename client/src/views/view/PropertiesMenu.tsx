@@ -227,7 +227,7 @@ function RelationEditor({ root, propKey, properties, onDone }: RelationEditorPro
       </label>
       <input
         className="view-input view-relation__target"
-        aria-label="Target type"
+        aria-label="Target folder page"
         placeholder="Any page"
         value={target}
         onChange={(e) => setTarget(e.target.value)}

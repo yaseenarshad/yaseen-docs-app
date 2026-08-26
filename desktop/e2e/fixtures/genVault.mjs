@@ -2,7 +2,7 @@
 /**
  * GRO-2227 (scope pass for the persistent vault-index cache, GRO-2223): synthetic fixture-vault
  * generator for index benchmarks. Deterministic — a given --notes/--seed pair always produces the
- * same vault. Shapes mirror `basesFixture.ts` / `helpers.buildFixtureVault`: realistic frontmatter
+ * same vault. Shapes mirror `viewsFixture.ts` / `helpers.buildFixtureVault`: realistic frontmatter
  * (status/priority/pillar/tags/aliases on a subset), bodies with `[[wiki links]]` between notes,
  * inline #tags, code fences, `![[embeds]]`, folder depth 0-4, png stubs, `.yaseendocs/` config
  * and a `.trash` note.
@@ -224,7 +224,7 @@ async function main() {
   for (const [, content] of pages) bytes += content.length
   await Promise.all(pages.map(([name, content]) => writeFile(path.join(root, name), content)))
 
-  // Non-record files: png stubs, the vault's own config dir, a .trash note (mirrors basesFixture).
+  // Non-record files: png stubs, the vault's own config dir, a .trash note (mirrors viewsFixture).
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
   await Promise.all([
     ...Array.from({ length: 4 }, (_, i) => writeFile(path.join(root, `chart-${i}.png`), png)),

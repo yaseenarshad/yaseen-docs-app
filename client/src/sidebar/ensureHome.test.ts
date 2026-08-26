@@ -26,8 +26,9 @@ vi.mock('../api', async (importOriginal) => ({
   },
 }))
 
+import { VAULT_CONFIG_DIR } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { createHome, ensureHome, HOME_CONTENT, HOME_LINK, homePath, isAdopted, VAULT_CONFIG_DIR } from './ensureHome'
+import { createHome, ensureHome, HOME_CONTENT, HOME_LINK, homePath, isAdopted } from './ensureHome'
 
 const tree = vi.mocked(api.tree)
 const createFile = vi.mocked(api.createFile)

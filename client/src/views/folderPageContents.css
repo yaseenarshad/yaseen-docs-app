@@ -15,13 +15,19 @@
 }
 
 /*
- * `.view-view` is written for the main pane, where it IS the pane: its own content column and a
- * flex column that fills the window. Inside the note's scroller the column belongs to the block
- * above (never doubled) and the height belongs to the content — the table grows and the NOTE
- * scrolls, rather than a second scroller opening inside the page.
+ * The views pane's WHOLE geometry (YAZ-861 folded it here from views.css, where `.view-view` used
+ * to declare a main-pane column this rule then overrode line by line). There is no main pane: the
+ * note's scroller is the only place these views mount. So the column belongs to the block above
+ * (never doubled) and the height belongs to the content — the table grows and the NOTE scrolls,
+ * rather than a second scroller opening inside the page. What did NOT survive the fold: the
+ * `max-width` / `margin: 0 auto` column and the `32px 48px 120px` padding (this rule already
+ * replaced both), and `flex: 1; min-height: 0`, which only a flex parent reads and
+ * `.folder-page-contents` is a block.
  */
-.folder-page-contents .view-view {
-  max-width: none;
+.folder-page-contents .views-pane {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
   padding: 16px 0 0;
 }
 

@@ -19,12 +19,12 @@ npm run dev
 npm run desktop:build
 ```
 
-- Builds `desktop/out` (electron-vite) and then packages with electron-builder: `desktop/dist-app/mac-arm64/Yaseen Docs.app` and `desktop/dist-app/Yaseen Docs-0.1.0-arm64.dmg` (ad-hoc signed — `identity: null` — arm64 only; the filenames contain spaces, so quote them).
+- Builds `desktop/out` (electron-vite) and then packages with electron-builder: `desktop/dist-app/mac-arm64/Yaseen Docs.app` and `desktop/dist-app/Yaseen Docs-0.3.0-arm64.dmg` (ad-hoc signed — `identity: null` — arm64 only; the filenames contain spaces, so quote them).
 - The first packaging run on a clean machine needs network: electron-builder downloads its Electron dist zip and dmgbuild once, then caches them.
 - Install: drag `Yaseen Docs.app` into `/Applications` in Finder — either straight from `desktop/dist-app/mac-arm64/`, or from the mounted dmg:
 
 ```bash
-open "desktop/dist-app/Yaseen Docs-0.1.0-arm64.dmg"
+open "desktop/dist-app/Yaseen Docs-0.3.0-arm64.dmg"
 ```
 
 - On another Mac the first open is blocked by Gatekeeper (the app is not notarized): System Settings › Privacy & Security › **Open Anyway**, once. See `README.md` "Sharing it".
@@ -32,7 +32,8 @@ open "desktop/dist-app/Yaseen Docs-0.1.0-arm64.dmg"
 
 ## App state — where it lives, how to reset it
 
-- ONE user-global file, owned by the main process: `~/Library/Application Support/Yaseen Docs/yaseendocs.json` (settings, recents, open windows, per-folder view state — schema in `docs/CONTRACTS.md` "App state"). Nothing is ever stored in the browser profile and nothing is ever written into the vault's markdown.
+- ONE user-global file, owned by the main process: `~/Library/Application Support/Yaseen Docs/yaseendocs.json` (settings, recents, open windows, per-folder view state including which sidebar lens and which Topics rows are expanded — schema in `docs/CONTRACTS.md` "App state"). Nothing is ever stored in the browser profile.
+- TWO things do live in the vault, both by design and both the user's own data rather than app state: a folder page's view configuration, written into that note's own frontmatter under the single `folder_page_settings` key, and the vault-wide property declarations at `<vault>/.yaseendocs/properties.json` — the `.obsidian`-style dotfolder that travels with the notes. The dotfolder is created lazily on the first write and never otherwise; reading it creates nothing. Everything else about a vault stays in the state file above.
 - To reset or hand-edit: **quit the app first** (⌘Q — quitting flushes the file), then delete or edit the JSON; on the next launch a missing file gets defaults and a corrupt one is moved aside as `yaseendocs.json.corrupt-<epoch>`, never silently overwritten. To find it (the folder first appears after the app has run once against the real state):
 
 ```bash
@@ -44,8 +45,8 @@ ls "$HOME/Library/Application Support/Yaseen Docs/"
 ## Verify
 
 ```bash
-npm test          # vitest suite: client (jsdom) + desktop (node)
-npm run e2e       # Playwright-Electron smoke suite (desktop/e2e/, ~10 s): builds, then drives the real app against a fixture-vault copy + temp user-data-dir; step screenshots land in desktop/e2e/artifacts/
+npm test          # vitest suite, FOUR projects: client (jsdom), desktop (node), tools (node — the migration CLI), perf (jsdom — the budget tripwires)
+npm run e2e       # Playwright-Electron suite (desktop/e2e/, 17 specs, ~1.5 min): builds, then drives the real app against a fixture-vault copy + temp user-data-dir, serially on ONE worker with no retries; step screenshots land in desktop/e2e/artifacts/
 npm run typecheck
 npm run build     # electron-vite build → desktop/out
 ```

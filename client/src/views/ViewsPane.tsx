@@ -93,7 +93,16 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
   const { def } = parsed
   const views = def.views
   const index = Math.max(0, Math.min(active, views.length - 1))
-  const view = views[index]
+  /**
+   * NEVER undefined, and the assertion says so rather than a branch pretending otherwise
+   * (YAZ-861): `views` cannot be empty. `folderPageSettings.readViews` returns `DEFAULT_VIEWS`
+   * for every unusable shape it meets (`views.length > 0 ? views : defaultViews()`), and the one
+   * mount — `FolderPageContents.folderPageViewSet` — falls back to `DEFAULT_VIEWS` again when the
+   * card's YAML will not parse. `index` is clamped into that non-empty list. The "This folder
+   * page has no views. [Add view]" branch this replaces was unreachable UI with a live code path
+   * behind it, which is the FilterMenu's lesson (YAZ-846): delete it rather than keep it hidden.
+   */
+  const view = views[index]!
   // Re-parse after every edit: `doc.setIn` stores plain JS values, so a second edit inside a
   // collection a previous edit created would throw ("Expected YAML collection"). The round trip
   // through text keeps comments and rebuilds proper nodes.
@@ -126,24 +135,11 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
    * over exactly those values — would hide the whole outline the moment anybody dragged a row.
    * Everything else the view says (sort, limit, groupBy) still runs.
    */
-  const isOutline = view?.type === 'outline'
+  const isOutline = view.type === 'outline'
   const result = useMemo(
-    () => (view ? runView(def, isOutline && view.order !== undefined ? { ...view, order: undefined } : view, shown, { thisFile, resolve }) : null),
+    () => runView(def, isOutline && view.order !== undefined ? { ...view, order: undefined } : view, shown, { thisFile, resolve }),
     [def, view, shown, thisFile, resolve, isOutline],
   )
-
-  if (view === undefined || result === null) {
-    return (
-      <div className="view-view">
-        <p className="view-view__pending">
-          This folder page has no views.{' '}
-          <button type="button" className="view-menu__action" onClick={() => update((d) => d.views.push({ type: 'table', name: 'Table 1' }))}>
-            Add view
-          </button>
-        </p>
-      </div>
-    )
-  }
 
   const needle = (search ?? '').trim().toLowerCase()
   const matches = (r: Row) => Object.values(r.values).some((v) => render(v).toLowerCase().includes(needle))
@@ -225,6 +221,18 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
   const rest = keys.filter((k) => k !== nameKey)
 
   /**
+   * The report-don't-block channel, finally reporting somewhere (YAZ-861). Both halves are
+   * produced on every render and, until now, read by nobody: `settings.problems` — the one-liners
+   * `folderPageSettings` collects while it ignores an unusable `folder_page_settings` key — and
+   * `result.errors`, the `EngineError`s a hand-written `filters:` or a broken formula compiles
+   * into. A folder page whose card says something the app silently declined to honour should say
+   * so; it should not be a dialog about it. So: ONE muted line at the foot of the pane, `role`
+   * `note` (never `alert` — nothing here is urgent and nothing here failed), rendered only when
+   * there is something to say, and blocking exactly nothing above it.
+   */
+  const notes = [...folderPage.settings.problems, ...result.errors.map((e) => `${e.where}: ${e.message}`)]
+
+  /**
    * The folder page's OUTLINE (YAZ-820). `thisFile` IS the folder page's path here
    * (`FolderPageContents` passes it) and it roots the ancestor guard, so a null one falls through
    * to the placeholder rows rather than guessing.
@@ -244,7 +252,7 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
   const tabs = { views, active: index, onSelect: setActive }
 
   return (
-    <div className="view-view">
+    <div className="views-pane">
       <Toolbar
         def={def}
         view={view}
@@ -265,12 +273,12 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
         noProperties={outline}
       />
       {createError !== null && (
-        <p className="view-view__error" role="alert">
+        <p className="views-pane__error" role="alert">
           Could not create note: {createError}
         </p>
       )}
       {properties?.error !== undefined && (
-        <p className="view-view__error" role="alert">
+        <p className="views-pane__error" role="alert">
           Could not load the vault's property declarations: {properties.error}
         </p>
       )}
@@ -377,6 +385,11 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
             </li>
           ))}
         </ul>
+      )}
+      {notes.length > 0 && (
+        <p className="views-pane__notes" role="note">
+          {notes.join(' · ')}
+        </p>
       )}
     </div>
   )

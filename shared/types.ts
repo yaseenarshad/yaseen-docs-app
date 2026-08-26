@@ -461,6 +461,14 @@ export function defaultFolderState(): FolderState {
 // ---------- Vault-local config (`<root>/.yaseendocs/`, Desktop J — GRO-2188) ----------
 
 /**
+ * The `.obsidian/`-style dotfolder that travels with a vault, and THE one definition of its name
+ * (YAZ-861 — main's `vaultConfig.ts` and the client's `ensureHome.ts` each used to declare their
+ * own copy of the literal). Both sides read it from here: main joins paths under it, and the
+ * client probes it because its existence IS adoption (6C-, YAZ-849).
+ */
+export const VAULT_CONFIG_DIR = '.yaseendocs'
+
+/**
  * Pushed to every window after a config file under `<root>/.yaseendocs/` changes — an own
  * `vaultConfig.write` or an external edit (sync tools). Renderers filter by their own root,
  * the same posture as `state:changed`, and re-read the named file.

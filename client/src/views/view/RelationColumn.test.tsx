@@ -189,7 +189,7 @@ describe('column menu relation flow', () => {
     const { el } = mount(KPI_BASE)
     openRelation(el, 'owner')
     expect(el.textContent).toContain('Saved to vault properties')
-    setValue(byLabel<HTMLInputElement>(el, 'Target type'), 'People')
+    setValue(byLabel<HTMLInputElement>(el, 'Target folder page'), 'People')
     click(byLabel(el, 'Save relation'))
     await flush()
     const res = await propertiesStub.get('/vault')
@@ -201,7 +201,7 @@ describe('column menu relation flow', () => {
     openRelation(el, 'funnels')
     expect(el.textContent).toContain('Saved to vault properties')
     click(byLabel(el, 'Multiple'))
-    setValue(byLabel<HTMLInputElement>(el, 'Target type'), 'Funnels')
+    setValue(byLabel<HTMLInputElement>(el, 'Target folder page'), 'Funnels')
     click(byLabel(el, 'Save relation'))
     await flush()
     const res = await propertiesStub.get('/vault')
@@ -212,14 +212,14 @@ describe('column menu relation flow', () => {
     const { el } = mount(KPI_BASE, { properties: DECLS })
     openRelation(el, 'owner')
     expect(el.querySelector('datalist')).toBeNull()
-    expect(byLabel<HTMLInputElement>(el, 'Target type').getAttribute('list')).toBeNull()
+    expect(byLabel<HTMLInputElement>(el, 'Target folder page').getAttribute('list')).toBeNull()
   })
 
   it('an existing declaration pre-fills the toggle and target', () => {
     const { el } = mount(KPI_BASE, { properties: DECLS })
     openRelation(el, 'funnels') // vault-wide multi-link → the Funnels folder page
     expect(byLabel<HTMLInputElement>(el, 'Multiple').checked).toBe(true)
-    expect(byLabel<HTMLInputElement>(el, 'Target type').value).toBe('Funnels')
+    expect(byLabel<HTMLInputElement>(el, 'Target folder page').value).toBe('Funnels')
   })
 
   it('without a known root there is no relation editor to offer', () => {

@@ -2,7 +2,7 @@ import { watch, type FSWatcher } from 'chokidar'
 import { existsSync, type Stats } from 'node:fs'
 import { mkdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { VaultConfigChange } from '@shared/types'
+import { VAULT_CONFIG_DIR, type VaultConfigChange } from '@shared/types'
 import { atomicWrite, BridgeFailure, fsCall, requireAbsPath, toBridgeFailure } from './fs/fsUtils'
 
 /**
@@ -29,7 +29,12 @@ import { atomicWrite, BridgeFailure, fsCall, requireAbsPath, toBridgeFailure } f
  * debounced/deduped to one `{ root, name }` per file.
  */
 
-export const VAULT_CONFIG_DIR = '.yaseendocs'
+/**
+ * Re-exported, not re-declared (YAZ-861): the name lives in `@shared/types` so main and the
+ * client's adoption probe can never drift. This module owns the dotfolder, so it keeps naming it.
+ */
+export { VAULT_CONFIG_DIR }
+
 const NOTIFY_DEBOUNCE_MS = 50
 
 type Listener = (change: VaultConfigChange) => void

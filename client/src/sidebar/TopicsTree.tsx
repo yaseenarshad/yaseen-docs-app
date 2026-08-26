@@ -65,12 +65,6 @@ import { RenameInline } from './RenameInline'
 import type { PendingRename } from './Tree'
 
 /**
- * THE Home link (🔒 D1) — re-exported from where the birth routine keeps it, so the tree and the
- * ensure can never ask two different questions.
- */
-export { HOME_LINK }
-
-/**
  * The inline "New …" input pending BESIDE one Topics row (8G-, YAZ-865). The file tree's
  * `PendingCreate` carries a `parentDir` because it has folder rows to nest the input inside;
  * this tree has none — a page's folder on disk is exactly what this reading hides — so the
@@ -218,7 +212,10 @@ export function TopicsTree({ root, source, activeFile, onOpenFile, onOpenFileBac
     if (creating === null || creating.anchorPath !== record.path || createRendered) return null
     createRendered = true
     return (
-      <li key={`${record.path} new`}>
+      // `␟` (U+241F) separates the key's parts: a printable character that cannot appear in a
+      // path or a name, so the key stays unique. It replaces a literal NUL, which did the same
+      // job but made this file grep-invisible — `grep` treats a NUL byte as binary and skips it.
+      <li key={`${record.path}␟new`}>
         <CreateInline kind={creating.kind} indent={indent} onSubmit={creating.onSubmit} onCancel={creating.onCancel} />
       </li>
     )

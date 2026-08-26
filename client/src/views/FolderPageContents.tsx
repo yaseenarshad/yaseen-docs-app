@@ -135,7 +135,7 @@ export function FolderPageContents({ path, root, source, properties = null, onOp
   return (
     <section className="folder-page-contents">
       {error !== null && (
-        <p className="view-view__error" role="alert">
+        <p className="views-pane__error" role="alert">
           Could not save the folder page's settings: {error}
         </p>
       )}

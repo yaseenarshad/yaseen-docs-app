@@ -223,7 +223,7 @@ describe('runView: group by (GRO-2133 D6)', () => {
 
   it('lists fan out per element (YAZ-671 D1); empty string, empty list and null are No value', () => {
     const r = run({ groupBy: { property: 'tags' } })
-    // 'agentic, pillar' fans into 'agentic' and 'pillar' — one membership each, no combination group
+    // 'agentic, pillar' fans into 'agentic' and 'pillar' — the row joins each group once, no combination group
     expect(labels(r)).toEqual(['agentic', 'agentic/levels', 'creator', 'pillar', 'No value'])
     expect(r.groups![0].key).toBe('agentic')
     expect(r.groups!.every(g => g.fannedOut)).toBe(true)

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { makeBasesFixture } from '../fs/basesFixture'
+import { makeViewsFixture } from '../fs/viewsFixture'
 import { _resetIndexCache, flushIndexCache, initIndexCache, loadIndexCache } from './cache'
 import { _evictAll, getColdStartDiff, getIndex } from './live'
 import { scanFile } from './scan'
@@ -26,7 +26,7 @@ describe('getIndex + persistent cache (GRO-2228/2229)', () => {
   let cleanup: () => Promise<void>
   let cacheDir: string
   beforeAll(async () => {
-    ;({ root, cleanup } = await makeBasesFixture())
+    ;({ root, cleanup } = await makeViewsFixture())
     cacheDir = await mkdtemp(path.join(tmpdir(), 'mdapp-index-cache-int-'))
     initIndexCache(cacheDir)
   })
@@ -146,7 +146,7 @@ describe('stale-cache torture (GRO-2230): heavy offline mutation, cache-assisted
   let cleanup: () => Promise<void>
   let cacheDir: string
   beforeAll(async () => {
-    ;({ root, cleanup } = await makeBasesFixture())
+    ;({ root, cleanup } = await makeViewsFixture())
     cacheDir = await mkdtemp(path.join(tmpdir(), 'mdapp-index-cache-torture-'))
     initIndexCache(cacheDir)
   })
@@ -228,7 +228,7 @@ describe('types.json is never cached (GRO-2230)', () => {
   let cleanup: () => Promise<void>
   let cacheDir: string
   beforeAll(async () => {
-    ;({ root, cleanup } = await makeBasesFixture())
+    ;({ root, cleanup } = await makeViewsFixture())
     cacheDir = await mkdtemp(path.join(tmpdir(), 'mdapp-index-cache-types-'))
     initIndexCache(cacheDir)
   })

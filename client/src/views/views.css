@@ -1,15 +1,14 @@
-/* Bases views: toolbar + menus (GRO-2135), placeholder row list, table/list/cards/board/outline. */
+/* Folder-page views: toolbar + menus (GRO-2135), placeholder row list, table/list/cards/board/outline. */
 
-.view-view {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  flex-direction: column;
-  width: 100%;
-  max-width: 1040px;
-  margin: 0 auto;
-  padding: 32px 48px 120px;
-}
+/*
+ * TOMBSTONE (YAZ-861): `.view-view`'s own geometry block lived here — a full-pane content column
+ * (`max-width: 1040px; margin: 0 auto; padding: 32px 48px 120px`) plus `flex: 1; min-height: 0` to
+ * fill the window. It was written for a main pane that no longer exists: since the `.base`
+ * retirement (YAZ-846) the ONE mount is the note's contents block, which overrode the column and
+ * the padding on the very next rule it met. The values that actually apply now live where they are
+ * used — `.folder-page-contents .views-pane` in folderPageContents.css — and the class is
+ * `.views-pane`, named for the pane it is rather than the dead format it was named after.
+ */
 
 /* ---------- toolbar ---------- */
 
@@ -62,36 +61,13 @@
   color: var(--fg);
 }
 
-.view-tab__more {
-  padding: 4px 2px;
-  color: var(--fg-muted);
-  border-radius: 4px;
-  line-height: 1;
-}
-
-.view-tab__more:hover,
-.view-tab__more[aria-expanded='true'] {
-  color: var(--fg);
-  background: var(--bg-side);
-}
-
-.view-tab__add {
-  padding: 2px 8px 4px;
-  font-size: 15px;
-  color: var(--fg-muted);
-  border-radius: 4px;
-  line-height: 1;
-}
-
-.view-tab__add:hover {
-  color: var(--fg);
-  background: var(--bg-side);
-}
-
-.view-tab__rename {
-  width: 110px;
-  margin: 0 2px 2px;
-}
+/*
+ * TOMBSTONE (YAZ-861): `.view-tab__more`, `.view-tab__add` and `.view-tab__rename` were the skins
+ * of the editable tab strip — the per-tab "…" menu, the "+" and the rename input — amputated with
+ * `ViewTabs`' editable half in 5.5 (YAZ-846), a folder page's views being switch-only. Nothing has
+ * rendered them since; `.view-popover--menu`, the popover variant that dropped the "…" menu under
+ * its tab, went with them.
+ */
 
 .view-toolbar__actions {
   display: flex;
@@ -172,13 +148,6 @@
 
 .view-popover:focus {
   outline: none;
-}
-
-.view-popover--menu {
-  left: 0;
-  right: auto;
-  min-width: 140px;
-  padding: 4px;
 }
 
 .view-popover--fixed {
@@ -388,16 +357,21 @@
 
 /* ---------- body (placeholder rows for non-table views; their real bodies land in later units) ---------- */
 
-.view-view__pending {
-  margin: 48px auto;
-  color: var(--fg-muted);
-  text-align: center;
-}
-
-.view-view__error {
+.views-pane__error {
   margin: 48px auto;
   color: var(--danger);
   text-align: center;
+}
+
+/*
+ * The report-don't-block footnote (YAZ-861): settings problems + engine errors, one muted line at
+ * the FOOT of the pane. Muted and small on purpose — it is `role="note"`, not an alert: nothing
+ * here failed, the app simply declined to honour part of a card and is saying so.
+ */
+.views-pane__notes {
+  margin: 12px 0 0;
+  color: var(--fg-muted);
+  font-size: 12px;
 }
 
 .view-rows {

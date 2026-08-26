@@ -226,7 +226,7 @@ export function OutlineView({ folderPagePath, root, settings, vaultRecords, reco
   return (
     <div className="view-outline">
       {error !== null && (
-        <p className="view-view__error" role="alert">
+        <p className="views-pane__error" role="alert">
           Could not update the page's folder pages: {error}
         </p>
       )}

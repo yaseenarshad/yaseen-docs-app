@@ -45,6 +45,10 @@ const menuRow = (w: Page) => menu(w).locator('.ctx-menu__item')
  * right-click the 6-dot glyph (the LAST `.operation-item` — the plus is display:none).
  */
 async function openHandleMenu(w: Page, text: string): Promise<void> {
+  // 60s, so the 30s `toPass` budget below is actually SPENDABLE (YAZ-861): the config's per-test
+  // timeout is 30s, which the probe alone would exhaust — step 5 opens the menu twice. Set here
+  // rather than per test so it covers every caller, present and future; healthy runs spend none.
+  test.setTimeout(60_000)
   const para = paraOf(rowOf(w, text))
   const handle = w.locator('.tabstack__layer:not(.tabstack__layer--hidden) .milkdown-block-handle')
   let attempt = 0

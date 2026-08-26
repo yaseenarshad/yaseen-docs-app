@@ -302,8 +302,45 @@ describe('search, count and body', () => {
 
   it('a corrupt properties.json shows its error banner but the rows still render (report-never-block)', () => {
     const { el } = mount(YASIN_BASE, { properties: { root: '/vault', version: 1, properties: {}, error: 'properties.json is not valid JSON: x' } })
-    expect(q(el, '.view-view__error').textContent).toBe("Could not load the vault's property declarations: properties.json is not valid JSON: x")
+    expect(q(el, '.views-pane__error').textContent).toBe("Could not load the vault's property declarations: properties.json is not valid JSON: x")
     expect(rows(el).length).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * The report-don't-block footnote (YAZ-861). Both halves were produced on every render and read
+ * by nobody until this line existed; neither may block a row, and neither is an `alert`.
+ */
+describe('the notes line', () => {
+  it('says nothing at all when there is nothing to say', () => {
+    const { el } = mount()
+    expect(el.querySelector('.views-pane__notes')).toBeNull()
+  })
+
+  it("lists the settings' problems — the one-liners folderPageSettings collects while ignoring an unusable key", () => {
+    const problems = ['folder_page_settings.folder must be a root-relative folder name — ignoring it']
+    const { el } = mount(YASIN_BASE, { folderPage: testFolderPage({ settings: { columns: {}, views: [], problems } }) })
+    const note = q<HTMLElement>(el, '.views-pane__notes')
+    expect(note.getAttribute('role')).toBe('note') // a note, never an alert: nothing here failed
+    expect(note.textContent).toBe(problems[0])
+    expect(rows(el).length).toBeGreaterThan(0) // and it blocks nothing above it
+  })
+
+  it("lists the engine's compile errors, `where: message`, from a hand-written filters block", () => {
+    const { el } = mount('filters: 1 +\nviews:\n  - type: table\n    name: T\n    order:\n      - file.name\n')
+    const note = q<HTMLElement>(el, '.views-pane__notes')
+    expect(note.getAttribute('role')).toBe('note')
+    expect(note.textContent).toMatch(/^filters: /)
+  })
+
+  it('joins both halves into ONE line — the settings first, then the engine', () => {
+    const problems = ['folder_page_settings must be a map of settings — using the defaults']
+    const { el } = mount('filters: 1 +\nviews:\n  - type: table\n    name: T\n    order:\n      - file.name\n', {
+      folderPage: testFolderPage({ settings: { columns: {}, views: [], problems } }),
+    })
+    const notes = el.querySelectorAll('.views-pane__notes')
+    expect(notes).toHaveLength(1)
+    expect(notes[0].textContent).toBe(`${problems[0]} · filters: unexpected end of input`)
   })
 })
 
