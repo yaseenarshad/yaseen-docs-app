@@ -82,7 +82,9 @@ export async function readAsset(root: string, ref: string): Promise<AssetRespons
   return fsCall(found, async () => {
     const st = await stat(found)
     if (st.size > MAX_FILE_BYTES) throw new BridgeFailure('TOO_LARGE', `file exceeds ${MAX_FILE_BYTES} bytes`, { path: found })
-    return { path: found, mime, data: (await readFile(found)).toString('base64'), size: st.size }
+    // `mtime` rides along for `writeAsset`'s `expectedMtime` (YAZ-879): the read that produced
+    // the bytes is the only honest place to take the guard from.
+    return { path: found, mime, data: (await readFile(found)).toString('base64'), size: st.size, mtime: st.mtimeMs }
   })
 }
 

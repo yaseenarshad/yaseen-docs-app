@@ -29,12 +29,12 @@
  * missing, unreadable, not a scene — is a small INERT chip and the embed text stays visible and
  * editable, because a drawing whose file is gone must still be a line the user can fix by hand;
  * ready is the SVG, `max-width: 100%` inside the editor column and clickable when the host
- * supplies `onOpenDrawing` (YAZ-879 wires the modal; absent → the preview is inert).
+ * supplies `onOpenDrawing` — Editor opens the modal on it (YAZ-879); absent → the preview is inert.
  *
  * REFRESH: scenes are cached per target for the life of this plugin instance (one editor mount).
  * A `DrawingFeed` poke naming a target drops its entry and pokes the decorations, which re-read
- * and re-render it — the live path YAZ-879's save uses. No feed → previews still render, they
- * just never refresh short of a remount.
+ * and re-render it — the live path the modal's save uses (YAZ-879). No feed → previews still
+ * render, they just never refresh short of a remount.
  */
 import { Plugin, PluginKey, type EditorState, type Selection } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'

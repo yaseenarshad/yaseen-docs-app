@@ -68,7 +68,18 @@ export default defineConfig({
   renderer: {
     root: client,
     plugins: [react(), excalidrawAssets()],
-    resolve: { alias: { '@shared': shared } },
+    resolve: {
+      alias: { '@shared': shared },
+      /**
+       * 🔒 ONE React in the renderer (YAZ-879). npm hoists a SECOND, older `react` to the repo
+       * root (a transitive peer of the Excalidraw tree), and `@excalidraw/excalidraw` lives up
+       * there too — so without this its bundle carried its own React while `client/` used 19.x,
+       * and the first `<Excalidraw>` mount died on a null dispatcher ("Cannot read properties of
+       * null (reading 'useEffect')"). Invisible until now only because YAZ-878's previews call
+       * `exportToSvg` and render no components at all.
+       */
+      dedupe: ['react', 'react-dom'],
+    },
     build: { outDir: rendererOut, rollupOptions: { input: resolve(client, 'index.html') } },
   },
 })

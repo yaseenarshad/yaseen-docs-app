@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FileResponse, PropertiesResponse } from '@shared/types'
 import { api } from '../api'
 import { createDrawing } from '../drawings/createDrawing'
+import { DrawingModal } from '../drawings/DrawingModal'
+import { createDrawingFeed } from '../drawings/drawingFeed'
 import { FolderPageContents } from '../views/FolderPageContents'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
 import { FrontmatterPanel } from './FrontmatterPanel'
@@ -21,6 +23,7 @@ import type { WatchSource } from '../hooks/useWatch'
 import { BacklinksSection } from '../links/BacklinksSection'
 import { basename } from '../lib/paths'
 import { takeRenameBuffer } from '../lib/renameContinuity'
+import { appliedTheme } from '../lib/theme'
 import { storage } from '../lib/storage'
 import { HOME_LINK } from '../sidebar/ensureHome'
 
@@ -106,6 +109,14 @@ function CrepeHost({
   const autosave = useAutosave(file.path)
   const { attach, markReloaded, reportConflict, absorbFrontmatterOnly } = autosave
   const reloadRef = useRef<() => void>(() => {})
+  /**
+   * The drawing wiring (YAZ-879), ONE per host: the preview plugin subscribes to this feed and the
+   * modal's save pokes it, so a scene written back re-renders every preview of it in this editor
+   * without a remount. Stable identity — a new feed would silently orphan the subscription.
+   */
+  const drawingFeed = useMemo(() => createDrawingFeed(), [])
+  /** The target whose modal is open; the preview's click sets it, close clears it. */
+  const [openDrawing, setOpenDrawing] = useState<string | null>(null)
 
   useEffect(() => {
     const host = hostRef.current
@@ -139,9 +150,9 @@ function CrepeHost({
       // needs; failures ride the same passive notice as a failed link create.
       drawing: { create: () => createDrawing(root), onNotice },
       // Drawing previews (YAZ-878): the root is all a preview needs — the embed's own target
-      // carries the rest and `readAsset` resolves it. The refresh feed and the click handler
-      // (`onOpenDrawing`) are YAZ-879's to thread; without them previews render and stay inert.
-      drawingPreview: { root },
+      // carries the rest and `readAsset` resolves it. Both live wires are YAZ-879's: the feed
+      // the modal's save pokes, and the click that opens that modal.
+      drawingPreview: { root, feed: drawingFeed, onOpenDrawing: setOpenDrawing },
     })
     crepeRef.current = crepe
     let controller: ReturnType<typeof attach> | null = null
@@ -197,7 +208,7 @@ function CrepeHost({
       unsubscribe()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, createBase])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, createBase, drawingFeed])
 
   // The Home guard's fact (⚡ YAZ-888): Home is whatever `[[Home]]` RESOLVES to (🔒 D1, YAZ-821)
   // — the window's own resolver, never a path check, so an aliased or nested Home is still Home.
@@ -253,6 +264,12 @@ function CrepeHost({
           <BacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
         )}
       </div>
+      {/* The drawing editor (YAZ-879) — a MODAL over the window, never a node view inside the
+          note. Keyed by target so reopening a different drawing is a fresh canvas, and the
+          appearance is App's already-resolved one, read once (`appliedTheme`). */}
+      {openDrawing !== null && (
+        <DrawingModal key={openDrawing} root={root} target={openDrawing} theme={appliedTheme()} feed={drawingFeed} onClose={() => setOpenDrawing(null)} />
+      )}
     </>
   )
 }

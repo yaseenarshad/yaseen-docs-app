@@ -49,8 +49,24 @@ export function parseScene(base64: string): DrawingScene {
   return { elements: scene.elements, appState, files }
 }
 
+/**
+ * A drawing as the MODAL needs it (YAZ-879): the scene plus the two facts a save needs — the
+ * ABSOLUTE path the fuzzy target resolved to (writes are never fuzzy, YAZ-876) and the mtime of
+ * the read, which is the `expectedMtime` guard the write goes back with.
+ */
+export interface LoadedDrawing {
+  readonly scene: DrawingScene
+  readonly path: string
+  readonly mtime: number
+}
+
+/** Reads `target` under `root` and parses it, keeping the identity a save needs. */
+export async function openDrawing(root: string, target: string): Promise<LoadedDrawing> {
+  const asset = await api.readAsset(root, target)
+  return { scene: parseScene(asset.data), path: asset.path, mtime: asset.mtime }
+}
+
 /** Reads `target` under `root` and parses it; rejects for the preview's broken state. */
 export async function loadDrawingScene(root: string, target: string): Promise<DrawingScene> {
-  const asset = await api.readAsset(root, target)
-  return parseScene(asset.data)
+  return (await openDrawing(root, target)).scene
 }

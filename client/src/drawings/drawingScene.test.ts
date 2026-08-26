@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../api'
 import { BridgeRequestError } from '../api'
 import { EMPTY_SCENE_JSON } from './createDrawing'
-import { isDrawingTarget, loadDrawingScene, parseScene } from './drawingScene'
+import { isDrawingTarget, loadDrawingScene, openDrawing, parseScene } from './drawingScene'
 
 vi.mock('../api', async (original) => ({
   ...(await original<typeof import('../api')>()),
@@ -16,12 +16,13 @@ vi.mock('../api', async (original) => ({
 
 const readAsset = vi.mocked(api.readAsset)
 
-/** What the asset pipe hands back: the file's bytes, base64. */
+/** What the asset pipe hands back: the file's bytes, base64, plus the save guard (YAZ-879). */
 const asset = (text: string) => ({
   path: `/v/assets/drawings/x.excalidraw`,
   mime: 'application/json',
   data: btoa(String.fromCharCode(...new TextEncoder().encode(text))),
   size: text.length,
+  mtime: 1234,
 })
 
 beforeEach(() => {
@@ -74,5 +75,18 @@ describe('loadDrawingScene', () => {
   it('a missing sidecar rejects — the preview turns that into its broken state', async () => {
     readAsset.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'no such asset'))
     await expect(loadDrawingScene('/v', 'Gone.excalidraw')).rejects.toThrow('no such asset')
+  })
+})
+
+describe('openDrawing (YAZ-879)', () => {
+  it('keeps the RESOLVED path and the read mtime — the two facts a save needs', async () => {
+    readAsset.mockResolvedValue(asset(EMPTY_SCENE_JSON))
+    // The target went in fuzzy (a bare basename); what comes back is the explicit path a write
+    // takes, because writes are never fuzzy (YAZ-876).
+    await expect(openDrawing('/v', 'Sketch.excalidraw')).resolves.toEqual({
+      scene: { elements: [], appState: {}, files: {} },
+      path: '/v/assets/drawings/x.excalidraw',
+      mtime: 1234,
+    })
   })
 })

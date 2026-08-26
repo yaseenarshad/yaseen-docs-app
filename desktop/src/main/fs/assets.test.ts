@@ -136,6 +136,11 @@ describe('readAsset drawings', () => {
     expect((await readAsset(root, 'aa/sketch.excalidraw')).path).toBe(path.join(root, 'aa', 'sketch.excalidraw'))
     expect((await readAsset(root, 'sketch.excalidraw|Diagram')).path).toBe(path.join(root, 'aa', 'sketch.excalidraw'))
   })
+
+  it("reports the file's own mtime, which is the guard writeAsset expects back (YAZ-879)", async () => {
+    const res = await readAsset(root, 'sketch.excalidraw')
+    expect(res.mtime).toBe((await stat(res.path)).mtimeMs)
+  })
 })
 
 /**

@@ -14,8 +14,10 @@
  *   3 a sidecar CORRUPTED on disk (the scene replaced by junk) reopens as the inert "broken
  *     drawing" chip with its embed text visible and editable again — no crash, no rewrite: the
  *     note is still byte-identical and the healthy drawing beside it still renders
- *   … the last unit extends this same spec: clicking a preview opens the editing modal that
- *     writes the scene back (YAZ-879). Add its steps below.
+ *   4 clicking a preview opens the MODAL (YAZ-879): a rectangle drawn there with the real mouse
+ *     is written back to the sidecar on Save — same shape, still pretty-printed — the in-page
+ *     preview redraws WITHOUT a remount (the feed's poke), and reopening the saved drawing is
+ *     clean: Save is disabled and Esc closes it outright. The note never moves.
  *
  * Same harness as title.spec.ts (temp `--user-data-dir`, a COPY of a generated fixture vault,
  * `drawing-` step screenshots).
@@ -111,8 +113,17 @@ const slashItem = (w: Page, label: string) => slashMenu(w).locator('li').filter(
 const previews = (w: Page) => editorOf(w).locator('.drawing-preview')
 const rendered = (w: Page) => editorOf(w).locator('.drawing-preview--ready svg')
 const brokenChips = (w: Page) => editorOf(w).locator('.drawing-preview__broken')
+/** One embed's own widget, by the target the plugin stamps on it. */
+const previewOf = (w: Page, target: string) => editorOf(w).locator(`.drawing-preview[data-drawing-target="${target}"]`)
+
+/** The YAZ-879 modal and its parts; the canvas inside it is the engine's, mounted by the seam. */
+const modal = (w: Page) => w.locator('.drawing-modal')
+const modalCanvas = (w: Page) => modal(w).locator('.drawing-modal__canvas')
+const saveButton = (w: Page) => modal(w).locator('.drawing-modal__bar .drawing-modal__btn').first()
 
 const readNote = () => readFile(path.join(vault, NOTE), 'utf8')
+const readSidecar = (name: string) => readFile(path.join(vault, DRAWINGS_DIR, name), 'utf8')
+const readScene = async (name: string) => JSON.parse(await readSidecar(name)) as { type: string; source: string; elements: Array<{ type: string }>; files: unknown }
 const listDrawings = async () => (await readdir(path.join(vault, DRAWINGS_DIR)).catch(() => [])).sort()
 
 test.beforeAll(async () => {
@@ -256,5 +267,76 @@ test('step 4 — a corrupted sidecar becomes the inert broken chip; nothing cras
   // No repair, no rewrite: the note is the same bytes and the junk is still junk.
   expect(await readNote()).toBe(before)
   expect(await readFile(path.join(vault, DRAWINGS_DIR, first), 'utf8')).toBe(JUNK)
+  await quitApp(app)
+})
+
+test('step 5 — a preview opens the modal; a rectangle DRAWN there is saved back and the preview redraws', async () => {
+  const before = await readNote()
+  app = await launchApp({ userData })
+  win = await appWindow(app, 'w1')
+  await expect(editorOf(win)).toContainText('drawing-note-body')
+  // `first` is still the junk step 4 wrote, so the ONE rendered preview is `second`'s empty scene.
+  await expect(rendered(win)).toHaveCount(1)
+  const svgBefore = await previewOf(win, second).locator('svg').innerHTML()
+  expect((await readScene(second)).elements).toEqual([])
+
+  // --- open ---
+  await previewOf(win, second).click()
+  await expect(modal(win)).toBeVisible()
+  await expect(modalCanvas(win).locator('canvas').first()).toBeVisible()
+  // Opened and untouched is CLEAN: there is nothing to write, so there is no button to press.
+  await expect(saveButton(win)).toBeDisabled()
+  await shoot(win, 'drawing-07-modal-open')
+
+  // --- draw, with the real mouse on the engine's own toolbar and canvas ---
+  // The engine's own toolbar: the radio is covered by its icon, so click the LABEL — which is
+  // the control a user actually presses.
+  await modal(win).locator('label:has([data-testid="toolbar-rectangle"])').click()
+  await expect(modal(win).locator('[data-testid="toolbar-rectangle"]')).toBeChecked()
+  const box = await modalCanvas(win).boundingBox()
+  if (box === null) throw new Error('the modal canvas has no box')
+  // Right of centre and below the toolbar: the tool islands hug the top-left of the canvas.
+  const x = box.x + box.width * 0.55
+  const y = box.y + box.height * 0.5
+  await win.mouse.move(x, y)
+  await win.mouse.down()
+  await win.mouse.move(x + 180, y + 130, { steps: 12 })
+  await win.mouse.up()
+
+  // The drag is the change the modal tracks: Save wakes up.
+  await expect(saveButton(win)).toBeEnabled()
+  await shoot(win, 'drawing-08-rectangle-drawn')
+
+  // --- save ---
+  await saveButton(win).click()
+  await expect(modal(win)).toHaveCount(0)
+
+  // On disk: the sidecar GAINED the rectangle, and it is still the same kind of file — the shape
+  // YAZ-877 created, pretty-printed with a trailing newline and its `files` map intact.
+  await expect.poll(async () => (await readScene(second)).elements.length).toBe(1)
+  const saved = await readScene(second)
+  expect(saved.elements[0].type).toBe('rectangle')
+  expect(saved.type).toBe('excalidraw')
+  expect(saved.source).toBe('yaseen-docs')
+  expect(saved.files).toEqual({})
+  const raw = await readSidecar(second)
+  expect(raw.endsWith('\n')).toBe(true)
+  expect(raw).toContain('\n  "elements": [')
+
+  // The in-page preview re-read and redrew itself on the feed's poke — no remount, no reload.
+  await expect.poll(async () => previewOf(win, second).locator('svg').innerHTML()).not.toBe(svgBefore)
+  const svgAfter = await previewOf(win, second).locator('svg').innerHTML()
+  expect(svgAfter.length).toBeGreaterThan(0)
+  await shoot(win, 'drawing-09-preview-redrawn')
+
+  // --- reopen: the saved drawing opens CLEAN, and Esc closes it outright ---
+  await previewOf(win, second).click()
+  await expect(modal(win)).toBeVisible()
+  await expect(saveButton(win)).toBeDisabled()
+  await win.keyboard.press('Escape')
+  await expect(modal(win)).toHaveCount(0)
+
+  // The NOTE never moved: the modal edits a sidecar, never the page (decorations only, rule 27).
+  expect(await readNote()).toBe(before)
   await quitApp(app)
 })

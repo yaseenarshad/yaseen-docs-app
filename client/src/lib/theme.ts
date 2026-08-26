@@ -27,3 +27,13 @@ const getSnapshot = (): boolean => window.matchMedia?.(QUERY).matches ?? false
 export function useSystemPrefersDark(): boolean {
   return useSyncExternalStore(subscribe, getSnapshot)
 }
+
+/**
+ * The appearance App ALREADY resolved, read back off `<html data-theme>` (YAZ-879). The setting
+ * lives in App and the resolution needs it, so a component below the editor has no honest way to
+ * recompute this — and threading a `theme` prop down to reach one transient modal is plumbing the
+ * feature does not earn. A one-shot read: nothing here follows a theme change live.
+ */
+export function appliedTheme(): 'light' | 'dark' {
+  return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
+}

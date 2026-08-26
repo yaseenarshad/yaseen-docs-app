@@ -174,6 +174,12 @@ export interface AssetResponse {
   data: string
   /** Byte size; capped at MAX_FILE_BYTES (above → `TOO_LARGE`). */
   size: number
+  /**
+   * Disk mtime at the moment of the read — `writeAsset`'s `expectedMtime` guard, from the door
+   * that read the bytes (YAZ-879: the drawing modal loads here and saves back through that guard,
+   * and a read with no mtime would have left the save with nothing honest to guard on).
+   */
+  mtime: number
 }
 
 /**

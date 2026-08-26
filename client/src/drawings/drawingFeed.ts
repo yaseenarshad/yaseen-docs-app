@@ -7,8 +7,9 @@
  * scene and re-reads it. Nothing else moves: no remount, no document change, no transaction the
  * autosave can see.
  *
- * Nothing pokes it yet — YAZ-879's modal save is the first caller. Absent from `createCrepe`,
- * previews still render; they just never live-refresh (a full editor remount is the only reload).
+ * ONE per editor mount, made by `CrepeHost` and given to BOTH the preview plugin and the modal
+ * (YAZ-879, the first and only poker: a save redraws every preview of that target in place).
+ * Absent from `createCrepe`, previews still render; they just never live-refresh.
  */
 
 /** How a poke reaches the previews; see `createDrawingFeed`. */
