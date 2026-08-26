@@ -156,6 +156,19 @@ describe('views: parseViews\'s own assertion, mirrored', () => {
     expect(settings.problems).toHaveLength(3)
   })
 
+  it('a string outline rides along verbatim (🔒 D2: the view IS its markdown bullet list)', () => {
+    const settings = settingsOf({ views: [{ type: 'outline', name: 'Outline', outline: '- [[CAC]]\n    - [[LTV]]' }] })
+    expect(settings.views).toEqual([{ type: 'outline', name: 'Outline', outline: '- [[CAC]]\n    - [[LTV]]' }])
+    expect(settings.problems).toEqual([])
+  })
+
+  it('a non-string outline is a problem and only THAT key is dropped — the view stays', () => {
+    const settings = settingsOf({ views: [{ type: 'outline', name: 'Outline', outline: ['[[CAC]]'], limit: 3 }] })
+    expect(settings.views).toEqual([{ type: 'outline', name: 'Outline', limit: 3 }])
+    expect(settings.problems).toHaveLength(1)
+    expect(settings.problems[0]).toContain('outline')
+  })
+
   it('a non-list views is a problem and yields DEFAULT_VIEWS', () => {
     const settings = settingsOf({ views: 'table' })
     expect(settings.views).toEqual(OUTLINE_THEN_TABLE)

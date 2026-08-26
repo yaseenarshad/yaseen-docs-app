@@ -125,6 +125,27 @@ describe('rewriteNoteLinks inside folder_page_settings (YAZ-864)', () => {
     expect(rewriteNoteLinks(content, resolvesB, toC)).toBeNull()
   })
 
+  it('rewrites a wikilink LINE inside a view’s outline; prose lines, markers and indentation survive (YAZ-900)', () => {
+    const content =
+      '---\nfolder_page_settings:\n  views:\n    - type: outline\n      name: Outline\n      outline: |-\n        - [[A]]\n            * [[B]]\n        - see [[B]] inline\n        - [[B]] and [[B]]\n---\n\nbody\n'
+    const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
+    const views = (parseFrontmatter(splitFrontmatter(out).frontmatter).properties.folder_page_settings as { views: { outline: string }[] }).views
+    expect(views[0].outline).toBe('- [[A]]\n    * [[C]]\n- see [[B]] inline\n- [[B]] and [[B]]')
+  })
+
+  it('an outline that only MENTIONS the renamed page mid-line is null — never written', () => {
+    const content =
+      '---\nfolder_page_settings:\n  views:\n    - type: outline\n      outline: "- see [[B]] inline"\n      outline_note: "[[B]] in an unknown key"\n---\n\nbody\n'
+    expect(rewriteNoteLinks(content, resolvesB, toC)).toBeNull()
+  })
+
+  it('a non-string outline rides along untouched — the raw value is never normalised', () => {
+    const content = '---\nfolder_page_settings:\n  views:\n    - type: outline\n      outline: 7\n      order: ["[[B]]"]\n---\n\nbody\n'
+    const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
+    expect(out).toContain('outline: 7')
+    expect(out).toContain('"[[C]]"')
+  })
+
   it('an unusable settings shape is not normalised away — the raw value rides along, only the leaf moves', () => {
     const content =
       '---\nfolder_page_settings:\n  columns:\n    broken:\n      kind: not-a-kind\n      target: "[[B]]"\n    alsoBroken: 7\n  views: {}\n  stray: keep me\n---\n\nbody\n'
@@ -307,6 +328,20 @@ describe('updateLinksAfterRename reaches notes referenced ONLY inside folder_pag
     expect(files['/v/Cols.md'].content).toContain('target: "[[C]]"')
     expect(files['/v/Other.md'].content).toBe(OTHER) // byte-for-byte: settings, but no reference
     expect(bridge.readFile).not.toHaveBeenCalledWith('/v/Other.md')
+  })
+
+  it('a page referenced ONLY by an outline LINE is counted and rewritten too (YAZ-900)', async () => {
+    const OUT = '---\nfolder_page: true\nfolder_page_settings:\n  views:\n    - type: outline\n      name: Outline\n      outline: |-\n        - [[B]]\n        - prose about [[A]]\n---\n\n# Out\n'
+    const files = { '/v/Out.md': { content: OUT, mtime: 1 } }
+    installBridge(files)
+    const records = [
+      rec('/v/Out.md', { properties: { folder_page: true, folder_page_settings: settingsOf(OUT) } }),
+      rec('/v/B.md'),
+    ]
+    expect(countLinkReferences({ root, oldPath, records })).toBe(1)
+    expect(await updateLinksAfterRename({ root, oldPath, newPath, records })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/Out.md'].content).toContain('- [[C]]')
+    expect(files['/v/Out.md'].content).toContain('- prose about [[A]]')
   })
 
   it('a FOLDER rename leaves a bare settings leaf byte-identical, exactly like a bare body link (LOCKED)', async () => {

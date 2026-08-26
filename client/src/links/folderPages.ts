@@ -74,12 +74,18 @@ export function folderPagesList(record: IndexRecord): unknown[] {
  * membership can never eat a line the lookup was ignoring anyway.
  */
 export function entryTarget(entry: unknown, resolve: ResolveLink): string | null {
-  if (typeof entry !== 'string') return null
-  const link = entry.trim()
-  if (!EXACT_WIKILINK_RE.test(link)) return null
+  if (!isExactWikilink(entry)) return null
   // The raw link goes to the resolver brackets and all — it strips them (`stripBrackets`),
   // along with any `|alias` / `#heading`, exactly as a click on that link would.
-  return resolve(link)
+  return resolve(entry.trim())
+}
+
+/**
+ * THE CLICK RULE's SPELLING leg alone, for a caller with no resolver to ask (YAZ-900): the
+ * outline's rename rewrite decides which LINES are links long before anything resolves them.
+ */
+export function isExactWikilink(entry: unknown): entry is string {
+  return typeof entry === 'string' && EXACT_WIKILINK_RE.test(entry.trim())
 }
 
 /** The folder pages one record's `folder_pages` counts for: the click rule, de-duplicated. */
