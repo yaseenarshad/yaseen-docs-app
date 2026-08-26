@@ -15,8 +15,13 @@ import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import type { ViewDef } from './viewSchema'
 import { writeProperty } from './writeProperty'
 
-/** The one reserved key this module owns; nothing else may name it. */
-const SETTINGS_KEY = 'folder_page_settings'
+/**
+ * The one reserved key this module owns; nothing else may name it — exported (⚡ YAZ-884) only so
+ * the properties panel's RESERVED list can be spelled from the real constants, exactly as
+ * `FOLDER_PAGE_KEY` is exported for the sidebar's toggle. Reading or writing it stays this
+ * module's business.
+ */
+export const SETTINGS_KEY = 'folder_page_settings'
 
 /** A column the folder page declares — this module's own vocabulary, shaped like `PropertyDecl`. */
 export interface ColumnDecl {

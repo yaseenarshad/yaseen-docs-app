@@ -161,7 +161,8 @@ button {
 /* The properties panel (⚡ YAZ-883): block ONE, between the title and the Crepe mount, in the same
    content column. Collapsed it is one small muted row — deliberately SUBORDINATE to the title
    above it, since most pages have nothing to say here. Header affordance is the backlinks /
-   view-group chevron, rotated -90° while collapsed. */
+   view-group chevron, rotated -90° while collapsed. Expanded it is TYPED ROWS by default
+   (⚡ YAZ-884) with the raw textarea as the fallback under them. */
 .frontmatter-panel {
   width: 100%;
   max-width: 1040px;
@@ -206,6 +207,105 @@ button {
   align-items: flex-start;
   gap: 8px;
   padding: 6px 0 0 20px;
+}
+
+/* Typed rows (⚡ YAZ-884), the DEFAULT expanded view: one line per key, the name in a fixed
+   column so the values line up, everything else riding at the end of the row. Deliberately
+   flat — this is a list of properties, not a table. */
+.frontmatter-panel__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.frontmatter-panel__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  font-size: 13px;
+}
+
+.frontmatter-panel__key {
+  flex: none;
+  width: 150px;
+  overflow: hidden;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.frontmatter-panel__value {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* The read-only marker: a row with no editor says WHY, and points at the mode that can hold it. */
+.frontmatter-panel__chip {
+  flex: none;
+  padding: 0 5px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+/* Per-row affordances are QUIET: a row is its name and its value until you reach for it. Faded
+   rather than removed, so they keep their place in the tab order and the layout never jumps. */
+.frontmatter-panel__type,
+.frontmatter-panel__del {
+  flex: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.frontmatter-panel__row:hover .frontmatter-panel__type,
+.frontmatter-panel__row:hover .frontmatter-panel__del,
+.frontmatter-panel__type:focus,
+.frontmatter-panel__del:focus {
+  opacity: 1;
+}
+
+.frontmatter-panel__row:hover .frontmatter-panel__type,
+.frontmatter-panel__type:focus {
+  border-color: var(--border);
+}
+
+.frontmatter-panel__del {
+  width: 20px;
+  height: 20px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.frontmatter-panel__del:hover {
+  color: var(--danger);
+  background: var(--bg-hover);
+}
+
+.frontmatter-panel__new,
+.frontmatter-panel__footer {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.frontmatter-panel__name {
+  width: 150px;
 }
 
 /* Raw YAML is code: monospace, so indentation reads as the structure it is. */

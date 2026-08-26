@@ -19,17 +19,25 @@ export interface EditableCellProps {
   editor: EditorKind | null
   /** Index basenames for the link editor's `[[…]]` completion. */
   basenames: readonly string[]
+  /**
+   * Replaces the default `writeProperty(path, propKey, next)` commit (⚡ YAZ-884). The properties
+   * panel passes its own writer — the SAME dance, plus the panel's own belief of disk moving with
+   * it — so its raw fallback can never show a block that a typed edit has already left behind.
+   * Same contract as the default: resolves on success, rejects with the message to show.
+   */
+  onCommit?: (next: unknown) => Promise<unknown>
 }
 
 /**
  * One editable property cell (5B, GRO-2142), shared by table cells and card/list property
  * chips: the display (typed like a read-only cell) opens the editor on click — or on Enter,
- * via the host view clicking `[data-edit]` — Enter/blur commit through `writeProperty`, Esc
+ * via the host view clicking `[data-edit]` — Enter/blur commit through `writeProperty` (or the
+ * host's own `onCommit`, the properties panel's seam — ⚡ YAZ-884), Esc
  * cancels. Commits are optimistic: the committed raw value renders immediately and stays
  * until the index refetch delivers it (`raw` changes); a failed write reverts the cell and
  * shows an inline error. Checkboxes are live and commit on every toggle, no edit mode.
  */
-export function EditableCell({ path, propKey, raw, value, editor, basenames }: EditableCellProps) {
+export function EditableCell({ path, propKey, raw, value, editor, basenames, onCommit }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   /** Committed-but-not-yet-indexed value; cleared when `raw` catches up (or the write fails). */
   const [pending, setPending] = useState<{ v: unknown } | null>(null)
@@ -57,7 +65,7 @@ export function EditableCell({ path, propKey, raw, value, editor, basenames }: E
     if (JSON.stringify(next) === JSON.stringify(raw ?? null)) return
     setError(null)
     setPending({ v: next })
-    writeProperty(path, propKey, next).catch((err: unknown) => {
+    ;(onCommit === undefined ? writeProperty(path, propKey, next) : onCommit(next)).catch((err: unknown) => {
       setPending(null)
       setError(err instanceof Error ? err.message : String(err))
     })

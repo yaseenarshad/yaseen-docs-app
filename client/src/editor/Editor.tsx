@@ -233,7 +233,10 @@ function CrepeHost({
             if (crepe !== null) focusEditor(crepe)
           }}
         />
-        <FrontmatterPanel file={file} />
+        {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App already threads here for
+            the contents block below — ONE registry, so a type declared in a row types the same
+            column in every folder page's views. */}
+        <FrontmatterPanel file={file} root={root} properties={properties} wikilinks={wikilinks} />
         <div className="editor-mount" ref={hostRef} />
         {wikilinks !== undefined && (
           <FolderPageContents path={file.path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} />
