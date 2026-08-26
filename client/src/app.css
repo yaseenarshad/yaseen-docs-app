@@ -468,9 +468,13 @@ button {
   margin-top: calc(var(--edit-block-gap, 4px) * 8);
 }
 
-/* A heading BETWEEN blocks earns its lead-in; the document's FIRST block does not (YAZ-918) —
-   it sits on the title row's own gap, exactly like a first paragraph. */
-.editor-instance .milkdown .ProseMirror > :first-child {
+/* A heading BETWEEN blocks earns its lead-in; the document's FIRST block does not (YAZ-918,
+   selector fixed twice in YAZ-932 — probe-verified) — it sits on the title row's own gap,
+   exactly like a first paragraph. ProseMirror's literal first child is NOT the first block:
+   the note editor leads with Milkdown's `prosemirror-virtual-cursor` widget, and the outline
+   editor wraps its blocks in `.content-dom`. Both shapes covered, by meaning not position. */
+.editor-instance .milkdown .ProseMirror > :nth-child(1 of :not(.prosemirror-virtual-cursor)),
+.editor-instance .milkdown .ProseMirror > .content-dom > :first-child {
   margin-top: 0;
 }
 
