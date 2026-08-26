@@ -21,6 +21,8 @@ interface SidebarStubProps {
   onOpenFileBackground: (path: string) => void
   onRootMissing: () => void
   onFileMissing: () => void
+  /** The ONE rename door (⚡ YAZ-888): the inline rename AND the drag-move both arrive through it. */
+  onRenameFile: (oldPath: string, newPath: string) => Promise<void>
   pendingSearchFocus: boolean
   /** The lens tabs (YAZ-847): App owns the value and the write-through; the sidebar only reports clicks. */
   lens: SidebarLens
@@ -646,6 +648,68 @@ describe('App external-rename banner (Links E1c, GRO-2242)', () => {
     expect(b.bridge.file.repairRename).not.toHaveBeenCalled()
     expect(b.bridge.writeFile).not.toHaveBeenCalled()
     expect(files['/v/A.md'].content).toBe('See [[B]].\n')
+  })
+})
+
+/**
+ * The ONE rename door (⚡ YAZ-888, amending decision E / GRO-2096 for NAME changes): every
+ * gesture — the sidebar's inline rename, its drag-move, the page title — arrives at App as
+ * (oldPath, newPath), and the rule is asked here and nowhere else. A changed NAME confirms
+ * first with the honest count; a MOVE runs silently, exactly as it always has.
+ */
+describe('App rename door (⚡ YAZ-888)', () => {
+  const record = (path: string, over: Partial<IndexRecord> = {}): IndexRecord => {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    const rel = path.slice('/v/'.length)
+    return { path, name, basename: name.replace(/\.md$/i, ''), folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '', ext: 'md', size: 7, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
+  }
+  /** A references B by name; R references Docs/N by path — one file case, one folder case. */
+  const records = [record('/v/A.md', { links: ['B'] }), record('/v/B.md'), record('/v/R.md', { links: ['Docs/N'] }), record('/v/Docs/N.md')]
+  const identity = (): WindowIdentity => ({ id: 'w1', root: '/v', file: null, tabs: [] })
+  const feed = (b: ReturnType<typeof installBridge>) => b.bridge.index.mockResolvedValue({ root: '/v', records, generatedAt: 1 })
+  const sheetText = (el: HTMLElement) => el.querySelector('.confirm__text')?.textContent
+  const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
+
+  it('a NAME change asks first, with the honest count — and confirming runs the whole pipeline', async () => {
+    const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
+    const { bridge, el } = await mount(defaultAppState(), identity(), files, feed)
+    await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md'))
+    expect(sheetText(el)).toBe("Rename 'B' to 'B2'? Links in 1 note will be updated.")
+    expect(bridge.file.rename).not.toHaveBeenCalled() // nothing moves before the beat
+
+    await act(async () => sheetBtn(el, 'Rename')?.click())
+    expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/B.md', newPath: '/v/B2.md' })
+    expect(files['/v/A.md'].content).toBe('See [[B2]].\n') // links ALWAYS follow on confirm (locked)
+    expect(el.querySelector('.confirm')).toBeNull()
+  })
+
+  it('a MOVE stays silent: no sheet, the rename runs straight through', async () => {
+    const { bridge, el } = await mount(defaultAppState(), identity(), {}, feed)
+    await act(async () => await captured.sidebar?.onRenameFile('/v/B.md', '/v/Docs/B.md'))
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/B.md', newPath: '/v/Docs/B.md' })
+  })
+
+  it('Cancel renames nothing and rewrites nothing', async () => {
+    const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
+    const { bridge, el } = await mount(defaultAppState(), identity(), files, feed)
+    await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md'))
+    await act(async () => sheetBtn(el, 'Cancel')?.click())
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(bridge.file.rename).not.toHaveBeenCalled()
+    expect(files['/v/A.md'].content).toBe('See [[B]].\n')
+  })
+
+  it('a FOLDER rename asks too, and its count is the DIR-mode one — pathed links only', async () => {
+    const { el } = await mount(defaultAppState(), identity(), {}, feed)
+    await act(async () => void captured.sidebar?.onRenameFile('/v/Docs', '/v/Notes'))
+    expect(sheetText(el)).toBe("Rename 'Docs' to 'Notes'? Links in 1 note will be updated.")
+  })
+
+  it('a page nobody links to says so rather than promising an update of nothing', async () => {
+    const { el } = await mount(defaultAppState(), identity(), {}, feed)
+    await act(async () => void captured.sidebar?.onRenameFile('/v/A.md', '/v/A2.md'))
+    expect(sheetText(el)).toBe("Rename 'A' to 'A2'? No other notes link to it.")
   })
 })
 

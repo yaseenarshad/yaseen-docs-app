@@ -12,7 +12,7 @@ import { useLinkEvents } from './hooks/useLinkEvents'
 import { useMenuEvents } from './hooks/useMenuEvents'
 import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
-import { renameNotice, updateLinksAfterRename } from './links/renameLinks'
+import { countLinkReferences, renameNotice, updateLinksAfterRename } from './links/renameLinks'
 import { useExternalRenames } from './links/useExternalRenames'
 import { basename } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
@@ -20,6 +20,7 @@ import { storage } from './lib/storage'
 import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
 import { windowTitle } from './lib/windowTitle'
+import { ConfirmRename, isNameChange } from './sidebar/ConfirmRename'
 import { useEnsureHome } from './sidebar/ensureHome'
 import { Sidebar, SidebarPanelIcon } from './sidebar/Sidebar'
 import { TabBar } from './tabs/TabBar'
@@ -307,6 +308,40 @@ export function App() {
   )
 
   /**
+   * THE ONE DOOR (⚡ YAZ-888, amending decision E / GRO-2096 for NAME changes). Every rename
+   * gesture in the app arrives here as (oldPath, newPath) — the sidebar's inline rename, its
+   * drag-move, and the page title — so the rule is asked ONCE, here, and no surface reimplements
+   * it: a changed NAME confirms first (the rename chains into the file on disk and then into
+   * every note that links to it), a MOVE runs silently exactly as it always has (a confirm on
+   * every drag would be hostile, and bare links keep resolving across a move anyway).
+   *
+   * N is `countLinkReferences` over the window's OWN index snapshot — synchronous, no fetch, so
+   * the sheet opens in the same frame as the gesture. The rewrite itself re-reads a fresh
+   * snapshot inside `renameFile`; a vault that changed underneath between the two would move the
+   * count, which is why the copy promises what WILL be updated rather than an exact receipt.
+   */
+  const [pendingRename, setPendingRename] = useState<{ oldPath: string; newPath: string; count: number } | null>(null)
+
+  const requestRename = useCallback(
+    async (oldPath: string, newPath: string): Promise<void> => {
+      if (root === null || !isNameChange(oldPath, newPath)) return renameFile(oldPath, newPath)
+      const records = wikilinks.records
+      // The kind the count needs, asked of the very snapshot the count reads: a markdown file IS
+      // a record, a folder never is. Before the first index lands both modes count 0 alike.
+      const kind = records.some((r) => r.path === oldPath) ? 'file' : 'dir'
+      setPendingRename({ oldPath, newPath, count: countLinkReferences({ root, oldPath, kind, records }) })
+    },
+    [root, renameFile, wikilinks],
+  )
+
+  const confirmRename = useCallback(() => {
+    if (pendingRename === null) return
+    const { oldPath, newPath } = pendingRename
+    setPendingRename(null)
+    void renameFile(oldPath, newPath)
+  }, [pendingRename, renameFile])
+
+  /**
    * In-app delete landed (GRO-2272). Reaches EVERY window, originator included.
    *
    * ORDER IS NOT NEGOTIABLE: retire the editor, THEN remap tabs. Removing a tab unmounts its
@@ -410,7 +445,7 @@ export function App() {
           onChangeSettings={changeSettings}
           onRootMissing={onRootMissing}
           onFileMissing={onFileMissing}
-          onRenameFile={renameFile}
+          onRenameFile={requestRename}
           onDeleteFile={deleteFile}
           onNotice={setNotice}
           // The folder-page toggle's flag state (YAZ-840) reads the SAME per-window index source
@@ -440,18 +475,29 @@ export function App() {
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
           <TabBar tabs={tabs} active={file} onActivate={activate} onClose={closeTab} onMove={moveTab} canBack={canBack} canForward={canForward} onBack={back} onForward={forward} />
           <div className="tabstack">
-            {mounted.length === 0 && <Editor root={root} path={null} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={propertyDecls} />}
+            {mounted.length === 0 && <Editor root={root} path={null} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={propertyDecls} onRenameFile={requestRename} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility — see tabs.css
               // for why display:none would lose scroll positions.
               <div key={path} className={path === file ? 'tabstack__layer' : 'tabstack__layer tabstack__layer--hidden'}>
                 {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → openCurrent, ⌘ → openBackground; create failures land in the link-notice. */}
-                <Editor root={root} path={path} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={propertyDecls} />
+                <Editor root={root} path={path} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={propertyDecls} onRenameFile={requestRename} />
               </div>
             ))}
           </div>
         </div>
+      )}
+      {/* The name-change confirm (⚡ YAZ-888): App's, not the sidebar's, because the door is
+          App's — the title and the tree both reach it, and one sheet answers for both. */}
+      {pendingRename !== null && (
+        <ConfirmRename
+          oldPath={pendingRename.oldPath}
+          newPath={pendingRename.newPath}
+          count={pendingRename.count}
+          onConfirm={confirmRename}
+          onCancel={() => setPendingRename(null)}
+        />
       )}
     </div>
   )

@@ -424,7 +424,7 @@ test('step 5 — turn a plain note into a folder page, feed it, and turn it back
   await expect.poll(() => read(CAC), { timeout: 10_000 }).toContain('folder_page: true')
   expect(await read(CAC)).toContain('[[KPIs]]') // it still belongs where it belonged
   await expect(contents(win)).toBeVisible()
-  expect(await scrollerBlocks(win)).toEqual(['editor-mount', 'folder-page-contents', 'backlinks'])
+  expect(await scrollerBlocks(win)).toEqual(['page-title', 'editor-mount', 'folder-page-contents', 'backlinks'])
   await shoot(win, 'cross-10-turned-into')
 
   // THE SIDEBAR: a folder page NESTED under the topic it belongs to — glyph, count, no chevron

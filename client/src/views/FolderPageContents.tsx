@@ -5,7 +5,8 @@
  *
  *  - PLACEMENT (🔒 D1): the THIRD block inside the note's scroller — `.editor-mount`, then this,
  *    then "Linked mentions" — so it scrolls WITH the note, exactly like backlinks (Editor rule
- *    25). Same content column, its own CSS file. No chip, no title row: the note IS the title.
+ *    25). Same content column, its own CSS file. No chip and no title row of its own: the page's
+ *    NAME is block zero (⚡ YAZ-888), and a folder page adds nothing to that.
  *  - ROWS (🔒 D2): `folderPagesLookup(records, resolve).pagesIn(thisPath)` — the members, and
  *    nothing else. NEVER a `folder_pages.contains(link(…))` filter, which compares link targets
  *    as raw text and would silently disagree with what clicking the same link does ("Links":

@@ -114,6 +114,14 @@ const named = (...names: string[]) => names.map((n) => `${n}.md`)
 
 const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 
+/** The name-change confirm (⚡ YAZ-888): every rename below passes it, and its count is the rewrite's own. */
+async function confirmRename(w: Page, message: string): Promise<void> {
+  const sheet = w.locator('.confirm[role="dialog"]')
+  await expect(sheet.locator('.confirm__text')).toHaveText(message)
+  await sheet.locator('.confirm__btn', { hasText: 'Rename' }).click()
+  await expect(sheet).toHaveCount(0)
+}
+
 // ---------- whole-vault audits ----------
 
 /** Fenced and inline code can't carry links — same discipline as the index's `stripCode`. */
@@ -288,6 +296,8 @@ test('step 5 — renaming an entity page: relations, body links, backlinks and i
   await expect(win.locator('.create-inline__input')).toHaveValue('Win Rate')
   await win.locator('.create-inline__input').fill(RENAMED)
   await win.keyboard.press('Enter')
+  // The name-change confirm (⚡ YAZ-888), whose count is the same four notes the rewrite touches.
+  await confirmRename(win, `Rename 'Win Rate' to '${RENAMED}'? Links in 4 notes will be updated.`)
 
   // Four referencing notes: two through frontmatter relations, two through body prose.
   await expect(win.locator('.link-notice')).toHaveText('Updated links in 4 notes')
@@ -331,6 +341,8 @@ test('step 6 — renaming a FOLDER PAGE: the links INSIDE folder_page_settings f
   await expect(win.locator('.create-inline__input')).toHaveValue(ROLES)
   await win.locator('.create-inline__input').fill(ROLES_RENAMED)
   await win.keyboard.press('Enter')
+  // The confirm's count sees what the rewrite sees — settings-only references included (YAZ-864).
+  await confirmRename(win, `Rename '${ROLES}' to '${ROLES_RENAMED}'? Links in 6 notes will be updated.`)
 
   // SIX notes: the three members through their own top-level `folder_pages` — the half that already
   // worked — plus the three folder pages that name Roles ONLY from inside `folder_page_settings`,

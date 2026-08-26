@@ -1,6 +1,7 @@
 /**
  * Links E1 (GRO-2194): in-app rename with automatic link updates, against the REAL app —
- * the sidebar context menu's "Rename" → inline input → Enter. The renamed file moves on
+ * the sidebar context menu's "Rename" → inline input → Enter → the name-change confirm sheet
+ * (⚡ YAZ-888, which every NAME change below now passes). The renamed file moves on
  * disk, every referencing note is rewritten (bare, aliased and embed forms, alias
  * preserved), the open tab follows in place (label + window title), the summary notice
  * shows, and clicking the rewritten link navigates to the renamed file. A rename onto an
@@ -65,6 +66,20 @@ async function startRenameDir(w: Page, label: string): Promise<void> {
   await expect(w.locator('.create-inline__input')).toHaveValue(label)
 }
 
+const sheet = (w: Page) => w.locator('.confirm[role="dialog"]')
+
+/**
+ * The name-change confirm (⚡ YAZ-888, amending decision E / GRO-2096): since the one door in App
+ * asks before any NAME change, every rename below passes this sheet — with the honest count —
+ * and only a drag-MOVE still runs silently (step 6 pins that).
+ */
+async function confirmRename(w: Page, message?: string): Promise<void> {
+  if (message !== undefined) await expect(sheet(w).locator('.confirm__text')).toHaveText(message)
+  await expect(sheet(w)).toBeVisible()
+  await sheet(w).locator('.confirm__btn', { hasText: 'Rename' }).click()
+  await expect(sheet(w)).toHaveCount(0)
+}
+
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'rename-userdata-'))
   vaultSrc = await buildFixtureVault()
@@ -106,6 +121,11 @@ test('step 1 — rename B via the context menu: disk file renamed, tab and title
   await shoot(win, 'rename-01-inline-input')
   await win.locator('.create-inline__input').fill('B2')
   await win.keyboard.press('Enter')
+  // ⚡ YAZ-888: the name changed, so the sheet asks first — with the honest count (A is the one
+  // note that links to B, however many times it does).
+  await expect(sheet(win)).toBeVisible()
+  await shoot(win, 'rename-01b-confirm-sheet')
+  await confirmRename(win, "Rename 'B' to 'B2'? Links in 1 note will be updated.")
 
   // Disk: the file moved, content intact; nothing remains at the old path.
   await expect.poll(() => readWhenReady(path.join(vault, 'B2.md'))).toContain(B_BODY)
@@ -142,6 +162,8 @@ test('step 4 — renaming onto an existing name is DECLINED with a passive notic
   await startRename(win, 'A')
   await win.locator('.create-inline__input').fill('C')
   await win.keyboard.press('Enter')
+  // The sheet asks about a name nobody links to, then the never-overwrite rule declines it.
+  await confirmRename(win, "Rename 'A' to 'C'? No other notes link to it.")
   await expect(win.locator('.link-notice')).toHaveText('Can\'t rename: "C.md" already exists')
   // Both files untouched; the row is still A.
   expect(await readFile(path.join(vault, 'A.md'), 'utf8')).toContain(A_BODY)
@@ -163,6 +185,9 @@ test('step 5 — folder rename via its context menu: disk moves, PATHED link rew
   await shoot(win, 'rename-05-folder-inline-input')
   await win.locator('.create-inline__input').fill('Notes')
   await win.keyboard.press('Enter')
+  // A FOLDER name is a name too (⚡ YAZ-888), and its count is the DIR-mode one: R's PATHED
+  // link is what the rewrite would touch — the bare [[N]] keeps resolving and is not counted.
+  await confirmRename(win, "Rename 'Docs' to 'Notes'? Links in 1 note will be updated.")
 
   // Disk: the folder moved with its file; nothing remains at the old path.
   await expect.poll(() => readWhenReady(path.join(vault, 'Notes', 'N.md'))).toContain(N_BODY)
@@ -184,6 +209,8 @@ test('step 6 — drag a file row onto a folder row: the file moves there, bare l
   await expect(fileRow(win, 'M')).toBeVisible()
   await fileRow(win, 'M').dragTo(dirRow(win, 'Notes'))
 
+  // A MOVE keeps the name, so it stays SILENT (⚡ YAZ-888): no sheet, ever, on a drag.
+  await expect(sheet(win)).toHaveCount(0)
   await expect.poll(() => readWhenReady(path.join(vault, 'Notes', 'M.md'))).toContain(M_BODY)
   await expect(readFile(path.join(vault, 'Target', 'M.md'), 'utf8')).rejects.toThrow()
   // S.md pinned WHOLE: [[Target/M]] → [[Notes/M]]; the bare [[M]] still resolves — unchanged.
@@ -196,6 +223,11 @@ test('step 7 — renaming a folder onto an EXISTING folder is DECLINED with a pa
   await startRenameDir(win, 'Target')
   await win.locator('.create-inline__input').fill('Notes')
   await win.keyboard.press('Enter')
+  // The sheet stands in the way of this one too. Only the NAMES are pinned here: N is read off
+  // whatever index snapshot the window holds at that instant, and step 6 moved a file moments
+  // ago — the counted set depends on how far the 300ms-debounced refetch has caught up.
+  await expect(sheet(win).locator('.confirm__text')).toContainText("Rename 'Target' to 'Notes'?")
+  await confirmRename(win)
   await expect(win.locator('.link-notice')).toHaveText('Can\'t rename: "Notes" already exists')
   // Both folders untouched.
   expect((await stat(path.join(vault, 'Target'))).isDirectory()).toBe(true)

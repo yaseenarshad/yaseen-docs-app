@@ -289,6 +289,8 @@ test('step 8 — (d) renaming a page BEHIND the current one: Back lands on the n
   await expect(win.locator('.create-inline__input')).toHaveValue('Win Rate')
   await win.locator('.create-inline__input').fill(RENAMED)
   await win.keyboard.press('Enter')
+  // The name-change confirm (⚡ YAZ-888) stands between the input and the rename now.
+  await win.locator('.confirm[role="dialog"] .confirm__btn', { hasText: 'Rename' }).click()
   await expect(win.locator('.link-notice')).toContainText('Updated links in')
   await expect.poll(() => gone(path.join(vault, 'kpis', 'Win Rate.md'))).toBe(true)
 

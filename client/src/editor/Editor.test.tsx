@@ -312,7 +312,7 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     expect(el.querySelector('.backlinks')).toBeNull() // no snapshot yet → nothing at all
     feed(source, [record('/vault/other.md', ['note']), record(PATH)])
     const host = el.querySelector('.editor-host')
-    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['editor-mount', 'backlinks'])
+    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'editor-mount', 'backlinks'])
     expect(host?.querySelector('.editor-mount .editor-instance')).not.toBeNull()
     expect(host?.querySelector('.backlinks__header')?.textContent).toBe('Linked mentions (1)')
   })
@@ -330,8 +330,9 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
       record(PATH, [], { folder_page: true }),
     ])
     const host = el.querySelector('.editor-host')
-    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['editor-mount', 'folder-page-contents', 'backlinks'])
-    // fed the pages that belong to it, and no title row of its own — the note IS the title.
+    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'editor-mount', 'folder-page-contents', 'backlinks'])
+    // fed the pages that belong to it, and no title row of its own — block zero already names
+    // the page (⚡ YAZ-888).
     // Q7's default view is the OUTLINE (YAZ-820), which names pages the way a link does.
     expect([...el.querySelectorAll('.view-outline__link')].map((n) => n.textContent)).toEqual(['member'])
   })
@@ -341,7 +342,7 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     const el = await mount(BODY, 1, { wikilinks: source })
     feed(source, [record('/vault/member.md', ['note'], { folder_pages: ['[[note]]'] }), record(PATH)])
     const host = el.querySelector('.editor-host')
-    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['editor-mount', 'backlinks'])
+    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'editor-mount', 'backlinks'])
   })
 
 })

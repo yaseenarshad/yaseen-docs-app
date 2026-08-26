@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FileResponse, PropertiesResponse } from '@shared/types'
 import { api } from '../api'
 import { FolderPageContents } from '../views/FolderPageContents'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
+import { PageTitle } from './PageTitle'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import './outline/outlineFolding.css'
@@ -19,6 +20,7 @@ import { BacklinksSection } from '../links/BacklinksSection'
 import { basename } from '../lib/paths'
 import { takeRenameBuffer } from '../lib/renameContinuity'
 import { storage } from '../lib/storage'
+import { HOME_LINK } from '../sidebar/ensureHome'
 
 interface EditorProps {
   /** Open root folder; fold state is persisted per root + file. */
@@ -46,9 +48,15 @@ interface EditorProps {
   wikilinkCandidates?: WikilinkCandidateSource
   /** The vault's property declarations (YAZ-835), App-owned like `wikilinks`: typing rung 2 for a folder page's contents block (YAZ-846). */
   properties?: PropertiesResponse | null
+  /**
+   * A title commit (⚡ YAZ-888) goes to App's ONE rename door — the same prop the sidebar's
+   * inline rename and drag-move reach, so the name-change confirm and every failure notice come
+   * with it. Absent → the title renders and edits, but commits nothing (decoration-only mounts).
+   */
+  onRenameFile?: (oldPath: string, newPath: string) => void
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileBackground, onNotice, createBase, wikilinks, wikilinkCandidates, properties }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileBackground, onNotice, createBase, wikilinks, wikilinkCandidates, properties, onRenameFile }: EditorProps) {
   const state = useFile(path)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   return (
@@ -57,7 +65,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileBackground, on
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={properties} />
+        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} />
       )}
     </section>
   )
@@ -75,6 +83,7 @@ function CrepeHost({
   wikilinks,
   wikilinkCandidates,
   properties,
+  onRenameFile,
 }: {
   root: string
   file: FileResponse
@@ -86,8 +95,12 @@ function CrepeHost({
   wikilinks?: WikilinkResolveSource
   wikilinkCandidates?: WikilinkCandidateSource
   properties?: PropertiesResponse | null
+  onRenameFile?: (oldPath: string, newPath: string) => void
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
+  // The live Crepe instance, for ArrowDown out of the title (⚡ YAZ-888) — the same
+  // `focusEditor` the mount itself ends with, so the caret lands where a click would put it.
+  const crepeRef = useRef<ReturnType<typeof createCrepe> | null>(null)
   const autosave = useAutosave(file.path)
   const { attach, markReloaded, reportConflict, absorbFrontmatterOnly } = autosave
   const reloadRef = useRef<() => void>(() => {})
@@ -121,6 +134,7 @@ function CrepeHost({
           ? undefined
           : { root, createBase: createBase ?? (() => ''), openCurrent: onOpenFile, openBackground: onOpenFileBackground, onNotice: onNotice ?? (() => undefined) },
     })
+    crepeRef.current = crepe
     let controller: ReturnType<typeof attach> | null = null
     let cancelled = false
     const ready = crepe.create().then(() => {
@@ -170,10 +184,22 @@ function CrepeHost({
 
     return () => {
       cancelled = true
+      crepeRef.current = null
       unsubscribe()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
   }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, createBase])
+
+  // The Home guard's fact (⚡ YAZ-888): Home is whatever `[[Home]]` RESOLVES to (🔒 D1, YAZ-821)
+  // — the window's own resolver, never a path check, so an aliased or nested Home is still Home.
+  // The live-feed idiom the backlinks section uses: subscribe once, re-read on each poke.
+  const [homePath, setHomePath] = useState<string | null>(() => wikilinks?.resolve?.(HOME_LINK) ?? null)
+  useEffect(() => {
+    if (wikilinks === undefined) return
+    const read = () => setHomePath(wikilinks.resolve?.(HOME_LINK) ?? null)
+    read()
+    return wikilinks.subscribe(read)
+  }, [wikilinks])
 
   return (
     <>
@@ -189,11 +215,22 @@ function CrepeHost({
           </button>
         </div>
       )}
-      {/* The scroller holds the Crepe mount and, after it, two blocks of the note's own: the
-          folder page's contents when this page carries the flag (YAZ-819, 🔒 D1 — nothing at all
-          when it does not), then "Linked mentions" (Links D, GRO-2193). Both scroll WITH the note
-          instead of floating in a panel. */}
+      {/* The scroller holds FOUR stacked blocks, in this order. Block ZERO is the page title
+          (⚡ YAZ-888) — the file's own name, React-side and never a ProseMirror node; then the
+          Crepe mount; then two blocks of the note's own: the folder page's contents when this
+          page carries the flag (YAZ-819, 🔒 D1 — nothing at all when it does not), then "Linked
+          mentions" (Links D, GRO-2193). All of it scrolls WITH the note, never in a panel. */}
       <div className="editor-host">
+        <PageTitle
+          path={file.path}
+          isHome={homePath === file.path}
+          onRename={(newPath) => onRenameFile?.(file.path, newPath)}
+          onNotice={onNotice}
+          onArrowDown={() => {
+            const crepe = crepeRef.current
+            if (crepe !== null) focusEditor(crepe)
+          }}
+        />
         <div className="editor-mount" ref={hostRef} />
         {wikilinks !== undefined && (
           <FolderPageContents path={file.path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} />

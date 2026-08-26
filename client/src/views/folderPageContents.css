@@ -3,7 +3,7 @@
  * feature-CSS convention). It sits INSIDE the editor's scroller, between the Crepe host and
  * "Linked mentions", and repeats `.editor-instance`'s content column (backlinks.css's rule, byte
  * for byte) so the table lines up with the note's text and scrolls with it. The hairline is the
- * only chrome: no chip, no title row — the note itself is the title.
+ * only chrome: no chip and no title row of its own — the page's NAME is block zero (⚡ YAZ-888).
  */
 
 .folder-page-contents {
