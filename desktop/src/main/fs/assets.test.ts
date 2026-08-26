@@ -1,8 +1,9 @@
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { MAX_FILE_BYTES } from '@shared/types'
-import { readAsset } from './assets'
+import { readAsset, writeAsset } from './assets'
 import { makeBasesFixture } from './basesFixture'
 import { failure } from './testFixture'
 
@@ -11,9 +12,12 @@ import { failure } from './testFixture'
  * path to a local image under `root` — root-relative when the ref has a `/`, else Obsidian's
  * shortest-path rule (case-insensitive basename, first match in a breadth-first walk with each
  * directory's entries sorted, dot-dirs and node_modules skipped) — and answers base64 + mime.
+ * Since YAZ-876 it also serves `.excalidraw` drawing sidecars, whose writes are `writeAsset`'s.
  */
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+/** A scene small enough to inline; the round-trip assertions are byte-exact, so it stays verbatim. */
+const SCENE = '{"type":"excalidraw","version":2,"elements":[{"id":"a","x":1.5,"y":-2}],"appState":{"viewBackgroundColor":"#ffffff"}}'
 
 let root: string
 let cleanup: () => Promise<void>
@@ -29,6 +33,7 @@ beforeAll(async () => {
     writeFile(path.join(root, 'bb', 'photo.jpg'), PNG),
     writeFile(path.join(root, '.obsidian', 'hidden.webp'), PNG),
     writeFile(path.join(root, 'big.png'), Buffer.alloc(MAX_FILE_BYTES + 1)),
+    writeFile(path.join(root, 'aa', 'sketch.excalidraw'), SCENE),
   ])
 })
 afterAll(() => cleanup())
@@ -85,9 +90,24 @@ describe('readAsset failures', () => {
     expect((await failure(readAsset(root, 'missing.png'))).code).toBe('NOT_FOUND')
   })
 
-  it('UNSUPPORTED_EXTENSION for non-image refs, even existing files', async () => {
+  it('the vault edge holds on reads: an escaping ref never reaches a file outside root (⚡ YAZ-876)', async () => {
+    // A real file OUTSIDE the vault, with a name nothing inside shares — before the seal,
+    // `../<name>` read it straight through (the pre-existing GRO-2139 gap this pins shut).
+    const outside = path.join(root, '..', 'escaped-asset-yaz876.png')
+    await writeFile(outside, PNG)
+    try {
+      expect((await failure(readAsset(root, '../escaped-asset-yaz876.png'))).code).toBe('NOT_FOUND')
+      expect((await failure(readAsset(root, 'aa/../../escaped-asset-yaz876.png'))).code).toBe('NOT_FOUND')
+      expect((await failure(readAsset(root, outside))).code).toBe('NOT_FOUND')
+    } finally {
+      await rm(outside, { force: true })
+    }
+  })
+
+  it('UNSUPPORTED_EXTENSION for refs that are neither image nor drawing, even existing files', async () => {
     expect((await failure(readAsset(root, 'Content Pillars/List of Topics.md'))).code).toBe('UNSUPPORTED_EXTENSION')
     expect((await failure(readAsset(root, 'levels'))).code).toBe('UNSUPPORTED_EXTENSION')
+    expect((await failure(readAsset(root, 'sketch.excalidraw.bak'))).code).toBe('UNSUPPORTED_EXTENSION')
   })
 
   it('TOO_LARGE above MAX_FILE_BYTES', async () => {
@@ -99,5 +119,108 @@ describe('readAsset failures', () => {
     expect((await failure(readAsset(root, '  |alias'))).code).toBe('BAD_REQUEST')
     expect((await failure(readAsset('vault', 'levels.png'))).code).toBe('NOT_ABSOLUTE')
     expect((await failure(readAsset(path.join(root, 'gone'), 'levels.png'))).code).toBe('NOT_FOUND')
+  })
+})
+
+/** The read half of the drawing pipe (YAZ-876): the SAME resolution, one more allowed extension. */
+describe('readAsset drawings', () => {
+  it('serves a .excalidraw sidecar as application/json, base64 round-tripping the scene', async () => {
+    const res = await readAsset(root, 'sketch.excalidraw')
+    expect(res.path).toBe(path.join(root, 'aa', 'sketch.excalidraw'))
+    expect(res.mime).toBe('application/json')
+    expect(Buffer.from(res.data, 'base64').toString('utf8')).toBe(SCENE)
+    expect(res.size).toBe(Buffer.byteLength(SCENE))
+  })
+
+  it('resolves a drawing root-relative too, and strips |alias like any other ref', async () => {
+    expect((await readAsset(root, 'aa/sketch.excalidraw')).path).toBe(path.join(root, 'aa', 'sketch.excalidraw'))
+    expect((await readAsset(root, 'sketch.excalidraw|Diagram')).path).toBe(path.join(root, 'aa', 'sketch.excalidraw'))
+  })
+})
+
+/**
+ * `writeAsset(req)` (YAZ-876, the Excalidraw embed's asset pipe — YAZ-852): drawings ONLY, an
+ * EXPLICIT vault-relative path (writes are never fuzzy — no basename search), parent folders made
+ * on the way, and `file.ts`'s write semantics: atomic tmp+rename, `expectedMtime` → `CONFLICT`,
+ * and a create mode that never overwrites. The md-only vault-file guard is deliberately untouched:
+ * this rides the asset pipe, so drawings stay out of the tree, the index and the watcher.
+ */
+describe('writeAsset', () => {
+  let vault: string
+  beforeAll(async () => (vault = await mkdtemp(path.join(tmpdir(), 'mdapp-draw-'))))
+  afterAll(() => rm(vault, { recursive: true, force: true }))
+
+  const code = async (p: Promise<unknown>) => (await failure(p)).code
+  const rel = (name: string) => path.posix.join('assets', 'drawings', name)
+
+  it('round-trips scene JSON byte-identically through write → read, creating the parent folders', async () => {
+    const res = await writeAsset({ root: vault, path: rel('first.excalidraw'), content: SCENE })
+    const file = path.join(vault, 'assets', 'drawings', 'first.excalidraw')
+    expect(res.path).toBe(file)
+    expect(res.size).toBe(Buffer.byteLength(SCENE))
+    expect(await readFile(file, 'utf8')).toBe(SCENE)
+    // The bytes survive the base64 hop back out through the read half.
+    expect(Buffer.from((await readAsset(vault, rel('first.excalidraw'))).data, 'base64').toString('utf8')).toBe(SCENE)
+  })
+
+  it("the receipt's mtime is the file's own, and a fresh expectedMtime writes while a stale one CONFLICTs", async () => {
+    const file = path.join(vault, 'assets', 'drawings', 'first.excalidraw')
+    const before = (await stat(file)).mtimeMs
+    expect(await code(writeAsset({ root: vault, path: rel('first.excalidraw'), content: '{"stale":true}', expectedMtime: before - 1000 }))).toBe('CONFLICT')
+    expect(await readFile(file, 'utf8')).toBe(SCENE) // nothing was written
+    const res = await writeAsset({ root: vault, path: rel('first.excalidraw'), content: '{"fresh":true}', expectedMtime: before })
+    expect(res.mtime).toBe((await stat(file)).mtimeMs)
+    expect(await readFile(file, 'utf8')).toBe('{"fresh":true}')
+  })
+
+  it('CONFLICT carries the disk mtime so the renderer can show it', async () => {
+    const file = path.join(vault, 'assets', 'drawings', 'first.excalidraw')
+    const err = await failure(writeAsset({ root: vault, path: rel('first.excalidraw'), content: SCENE, expectedMtime: 1 }))
+    expect(err.mtime).toBe((await stat(file)).mtimeMs)
+  })
+
+  it('an absolute path under the root is accepted, an absent expectedMtime just overwrites', async () => {
+    const file = path.join(vault, 'assets', 'drawings', 'first.excalidraw')
+    expect((await writeAsset({ root: vault, path: file, content: SCENE })).path).toBe(file)
+    expect(await readFile(file, 'utf8')).toBe(SCENE)
+  })
+
+  it('create mode never overwrites: a second create is ALREADY_EXISTS and the bytes stand', async () => {
+    const file = path.join(vault, 'assets', 'drawings', 'once.excalidraw')
+    expect((await writeAsset({ root: vault, path: rel('once.excalidraw'), content: SCENE, create: true })).path).toBe(file)
+    expect(await code(writeAsset({ root: vault, path: rel('once.excalidraw'), content: '{"clobber":true}', create: true }))).toBe('ALREADY_EXISTS')
+    expect(await readFile(file, 'utf8')).toBe(SCENE)
+  })
+
+  it('UNSUPPORTED_EXTENSION for anything but a drawing — images included: writes are drawings-only', async () => {
+    expect(await code(writeAsset({ root: vault, path: rel('note.md'), content: '# no' }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await code(writeAsset({ root: vault, path: rel('pic.png'), content: 'x' }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await code(writeAsset({ root: vault, path: rel('scene'), content: 'x' }))).toBe('UNSUPPORTED_EXTENSION')
+  })
+
+  it('TOO_LARGE above MAX_FILE_BYTES, and nothing lands on disk', async () => {
+    const p = rel('huge.excalidraw')
+    expect(await code(writeAsset({ root: vault, path: p, content: 'x'.repeat(MAX_FILE_BYTES + 1) }))).toBe('TOO_LARGE')
+    expect(await stat(path.join(vault, 'assets', 'drawings', 'huge.excalidraw')).catch(() => null)).toBeNull()
+  })
+
+  it('a path escaping the root is refused, whatever shape the escape takes', async () => {
+    expect(await code(writeAsset({ root: vault, path: '../outside.excalidraw', content: SCENE }))).toBe('BAD_REQUEST')
+    expect(await code(writeAsset({ root: vault, path: 'assets/../../outside.excalidraw', content: SCENE }))).toBe('BAD_REQUEST')
+    expect(await code(writeAsset({ root: vault, path: path.join(path.dirname(vault), 'outside.excalidraw'), content: SCENE }))).toBe('BAD_REQUEST')
+    expect(await stat(path.join(path.dirname(vault), 'outside.excalidraw')).catch(() => null)).toBeNull()
+  })
+
+  it('BAD_REQUEST / NOT_ABSOLUTE / NOT_FOUND on a malformed request or a missing root', async () => {
+    expect(await code(writeAsset(undefined as never))).toBe('BAD_REQUEST')
+    expect(await code(writeAsset({ root: vault, path: '', content: SCENE }))).toBe('BAD_REQUEST')
+    expect(await code(writeAsset({ root: vault, path: rel('x.excalidraw'), content: 42 as never }))).toBe('BAD_REQUEST')
+    expect(await code(writeAsset({ root: vault, path: rel('x.excalidraw'), content: SCENE, expectedMtime: 'soon' as never }))).toBe('BAD_REQUEST')
+    expect(await code(writeAsset({ root: 'vault', path: rel('x.excalidraw'), content: SCENE }))).toBe('NOT_ABSOLUTE')
+    expect(await code(writeAsset({ root: path.join(vault, 'gone'), path: rel('x.excalidraw'), content: SCENE }))).toBe('NOT_FOUND')
+  })
+
+  it('leaves no .tmp- debris behind', async () => {
+    expect((await readdir(path.join(vault, 'assets', 'drawings'))).filter((n) => n.includes('.tmp-'))).toEqual([])
   })
 })

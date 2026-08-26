@@ -13,6 +13,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     index: vi.fn(),
     coldDiff: vi.fn(),
     readAsset: vi.fn(),
+    writeAsset: vi.fn(),
     pickFolder: vi.fn(),
     watch: vi.fn(),
     state: vi.fn(),
@@ -56,6 +57,11 @@ describe('api', () => {
     bridge.readAsset.mockResolvedValue({ path: '/v/pic.png', mime: 'image/png', data: 'aGk=', size: 2 })
     await expect(api.readAsset('/v', 'pic.png')).resolves.toEqual({ path: '/v/pic.png', mime: 'image/png', data: 'aGk=', size: 2 })
     expect(bridge.readAsset).toHaveBeenCalledWith('/v', 'pic.png')
+    // The drawing write half (YAZ-876): the request goes through untouched, the receipt comes back.
+    const draw = { root: '/v', path: 'assets/drawings/a.excalidraw', content: '{}' }
+    bridge.writeAsset.mockResolvedValue({ path: '/v/assets/drawings/a.excalidraw', mtime: 7, size: 2 })
+    await expect(api.writeAsset(draw)).resolves.toEqual({ path: '/v/assets/drawings/a.excalidraw', mtime: 7, size: 2 })
+    expect(bridge.writeAsset).toHaveBeenCalledWith(draw)
   })
 
   it('rename delegates to file.rename and wraps ALREADY_EXISTS like every other code (Links E1, GRO-2194)', async () => {

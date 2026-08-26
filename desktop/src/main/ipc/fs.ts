@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { CH } from '../../channels'
-import { readAsset } from '../fs/assets'
+import { readAsset, writeAsset } from '../fs/assets'
 import { createDir, createFile } from '../fs/create'
 import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure } from '../fs/fsUtils'
@@ -28,6 +28,9 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   // consumers gate on cacheStatus === 'hit'.
   handle(CH.fsColdDiff, async (root: unknown) => (typeof root === 'string' ? (getColdStartDiff(root) ?? null) : null))
   handle(CH.fsReadAsset, readAsset)
+  // The drawing sidecar write (YAZ-876): no store repair and no broadcast — a `.excalidraw` is
+  // not a vault file, so no tab, recents entry or index record can be pointing at it.
+  handle(CH.fsWriteAsset, writeAsset)
   // Reveal in Finder (GRO-2274): read-only, so no store repair and no broadcast — but still
   // enveloped like every other handler so a stale row's NOT_FOUND reaches the renderer as a
   // passive notice instead of vanishing (showItemInFolder is silent on a missing path).

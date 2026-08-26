@@ -38,6 +38,7 @@ const api: YaseenDocsApi = {
   // The cold-start reconcile diff (Links E1c, GRO-2242): read AFTER the first index(root).
   coldDiff: (root) => call(CH.fsColdDiff, root),
   readAsset: (root, ref) => call(CH.fsReadAsset, root, ref),
+  writeAsset: (req) => call(CH.fsWriteAsset, req),
   pickFolder: () => call(CH.dialogPickFolder),
   watch: (root, listener) => {
     const id = crypto.randomUUID()

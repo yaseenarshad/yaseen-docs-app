@@ -10,6 +10,7 @@ export const CH = {
   fsIndex: 'fs:index',
   fsColdDiff: 'fs:cold-diff',
   fsReadAsset: 'fs:read-asset',
+  fsWriteAsset: 'fs:write-asset',
   fsRename: 'fs:rename',
   fsDelete: 'fs:delete',
   fileRepairRename: 'file:repair-rename',

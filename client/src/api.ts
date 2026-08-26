@@ -1,4 +1,4 @@
-import type { AssetResponse, BridgeError, BridgeErrorCode, ColdStartDiffResponse, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileResponse, FileWriteRequest, FileWriteResponse, IndexResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RevealRequest, RevealResponse, TreeResponse } from '@shared/types'
+import type { AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, BridgeErrorCode, ColdStartDiffResponse, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileResponse, FileWriteRequest, FileWriteResponse, IndexResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RevealRequest, RevealResponse, TreeResponse } from '@shared/types'
 
 /** Typed failure from the main process (see docs/CONTRACTS.md "Bridge API"). */
 export class BridgeRequestError extends Error {
@@ -48,8 +48,10 @@ export const api = {
   index: (root: string) => call<IndexResponse>(() => window.yaseenDocs.index(root)),
   /** The cold-start reconcile diff for `root` (Links E1c, GRO-2242); null before the first index build. */
   coldDiff: (root: string) => call<ColdStartDiffResponse | null>(() => window.yaseenDocs.coldDiff(root)),
-  /** Local image under `root` for a cards cover (GRO-2139); `ref` = wikilink target or path. */
+  /** Local image or drawing under `root` (GRO-2139, drawings YAZ-876); `ref` = wikilink target or path. */
   readAsset: (root: string, ref: string) => call<AssetResponse>(() => window.yaseenDocs.readAsset(root, ref)),
+  /** Writes a `.excalidraw` sidecar under `root` (YAZ-876): drawings only, explicit path, never fuzzy. */
+  writeAsset: (req: AssetWriteRequest) => call<AssetWriteResponse>(() => window.yaseenDocs.writeAsset(req)),
   /** Native open-directory dialog parented to this window; resolves when the user picks or cancels. */
   pickFolder: () => call<PickFolderResponse>(() => window.yaseenDocs.pickFolder()),
   /** Vault-wide property declarations over `.yaseendocs/properties.json` (YAZ-835); consumed via `useProperties`. */

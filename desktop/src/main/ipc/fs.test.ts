@@ -59,7 +59,7 @@ describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc(store, windows)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsColdDiff, CH.fsDelete, CH.fsIndex, CH.fsRead, CH.fsReadAsset, CH.fsRename, CH.fileRepairRename, CH.fsTree, CH.fsWrite, CH.shellReveal].sort())
+    expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsColdDiff, CH.fsDelete, CH.fsIndex, CH.fsRead, CH.fsReadAsset, CH.fsWriteAsset, CH.fsRename, CH.fileRepairRename, CH.fsTree, CH.fsWrite, CH.shellReveal].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
@@ -84,6 +84,21 @@ describe('registerFsIpc', () => {
     expect(Buffer.from(value.data, 'base64').toString('utf8')).toBe('png')
     const missing = await registered(CH.fsReadAsset)({ sender: {} }, root, 'missing.png')
     expect(missing).toEqual({ ok: false, error: { code: 'NOT_FOUND', message: 'no asset with this name under the root', path: 'missing.png' } })
+  })
+
+  it('fs:write-asset writes a drawing sidecar and envelopes its failures (YAZ-876)', async () => {
+    const req = { root, path: 'assets/drawings/scene.excalidraw', content: '{"type":"excalidraw"}' }
+    const ok = await registered(CH.fsWriteAsset)({ sender: {} }, req)
+    expect(ok.ok).toBe(true)
+    if (!ok.ok) throw new Error('expected ok')
+    const file = path.join(root, 'assets', 'drawings', 'scene.excalidraw')
+    expect((ok.value as { path: string }).path).toBe(file)
+    expect(await readFile(file, 'utf8')).toBe(req.content)
+    const bad = await registered(CH.fsWriteAsset)({ sender: {} }, { ...req, path: 'assets/drawings/scene.png' })
+    expect(bad).toEqual({
+      ok: false,
+      error: { code: 'UNSUPPORTED_EXTENSION', message: 'only drawing files can be written as assets', path: path.join(root, 'assets', 'drawings', 'scene.png') },
+    })
   })
 
   it('fs:index answers the vault index for the root: markdown records only (GRO-2129)', async () => {

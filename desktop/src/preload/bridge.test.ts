@@ -13,7 +13,7 @@ vi.mock('electron', () => ({
  * typecheck. `as const satisfies` keeps each tuple's literal type (a plain `readonly (keyof T)[]`
  * annotation would widen it and make `Exhaustive<>` vacuous) while still rejecting typos.
  */
-const TOP = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'coldDiff', 'readAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'file', 'shell', 'vaultConfig', 'properties'] as const satisfies readonly (keyof YaseenDocsApi)[]
+const TOP = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'coldDiff', 'readAsset', 'writeAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'file', 'shell', 'vaultConfig', 'properties'] as const satisfies readonly (keyof YaseenDocsApi)[]
 const STATE = ['get', 'setSettings', 'setSidebarCollapsed', 'setSidebarWidth', 'setSidebarLens', 'pushRecent', 'removeRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange'] as const satisfies readonly (keyof StateApi)[]
 const WINDOW = ['identity', 'setIdentity', 'open', 'duplicate', 'closeSelf', 'onFlush'] as const satisfies readonly (keyof WindowApi)[]
 const MENU = ['onOpenFolder', 'onOpenRoot', 'onSearch', 'onCloseTab', 'onNextTab', 'onPrevTab'] as const satisfies readonly (keyof MenuApi)[]
@@ -94,6 +94,15 @@ describe('preload bridge', () => {
     const { bridge } = await import('./index')
     await expect(bridge.file.repairRename({ oldPath: '/v/a.md', newPath: '/v/b.md' })).resolves.toEqual({ oldPath: '/v/a.md', newPath: '/v/b.md', kind: 'file' })
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.fileRepairRename, { oldPath: '/v/a.md', newPath: '/v/b.md' })
+  })
+
+  it('writeAsset invokes fs:write-asset with the request (YAZ-876)', async () => {
+    const { ipcRenderer } = await import('electron')
+    const req = { root: '/v', path: 'assets/drawings/a.excalidraw', content: '{}' }
+    vi.mocked(ipcRenderer.invoke).mockResolvedValueOnce({ ok: true, value: { path: '/v/assets/drawings/a.excalidraw', mtime: 5, size: 2 } })
+    const { bridge } = await import('./index')
+    await expect(bridge.writeAsset(req)).resolves.toEqual({ path: '/v/assets/drawings/a.excalidraw', mtime: 5, size: 2 })
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.fsWriteAsset, req)
   })
 
   it('coldDiff invokes fs:cold-diff and resolves null before the first index build (Links E1c, GRO-2242)', async () => {

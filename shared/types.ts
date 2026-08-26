@@ -152,19 +152,50 @@ export interface FileResponse {
   size: number
 }
 
-// ---------- readAsset(root, ref) (Bases 4E, GRO-2139 — Desktop D10: bridge method, never a route) ----------
+// ---------- readAsset(root, ref) / writeAsset(req) (Bases 4E, GRO-2139 — Desktop D10: bridge methods, never routes) ----------
 
 /** Allowed image extensions for `readAsset` (no dot); anything else rejects `UNSUPPORTED_EXTENSION`. */
 export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp'] as const
 
+/**
+ * Drawing sidecars the asset pipe reads AND writes (Excalidraw embed, YAZ-852 / YAZ-876): scene
+ * JSON standing on its own in the vault (`assets/drawings/` by default), a note holding only
+ * `![[<name>.excalidraw]]`. Deliberately NOT a vault file — the tree, index and watcher stay
+ * markdown-only (YAZ-844), so a drawing is invisible to the sidebar and rides this pipe alone.
+ */
+export const DRAWING_EXTENSIONS = ['excalidraw'] as const
+
 export interface AssetResponse {
   /** Absolute path the ref resolved to. */
   path: string
-  /** Mime type derived from the extension. */
+  /** Mime type derived from the extension (`application/json` for a drawing). */
   mime: string
-  /** The file's bytes, base64-encoded (the renderer builds a `data:` URL). */
+  /** The file's bytes, base64-encoded (the renderer builds a `data:` URL, or decodes scene JSON). */
   data: string
   /** Byte size; capped at MAX_FILE_BYTES (above → `TOO_LARGE`). */
+  size: number
+}
+
+/**
+ * `writeAsset` — the write half of the asset pipe (YAZ-876). Drawings ONLY: images arrive by
+ * other means, so widening write access to them is deliberately out of scope.
+ */
+export interface AssetWriteRequest {
+  /** Vault root; the resolved target must sit under it (else `BAD_REQUEST`). */
+  root: string
+  /** The drawing's vault-relative path (absolute under `root` also accepted). Never a basename search — writes are never fuzzy. */
+  path: string
+  /** Scene JSON as UTF-8; above MAX_FILE_BYTES → `TOO_LARGE`. */
+  content: string
+  /** Optimistic-concurrency guard, `writeFile`'s exactly: a differing disk mtime rejects `CONFLICT` and nothing is written. */
+  expectedMtime?: number
+  /** Create mode (`createFile`'s `wx`): an existing target rejects `ALREADY_EXISTS` and is never overwritten. */
+  create?: boolean
+}
+
+export interface AssetWriteResponse {
+  path: string
+  mtime: number
   size: number
 }
 
@@ -759,11 +790,14 @@ export interface YaseenDocsApi {
    */
   coldDiff(root: string): Promise<ColdStartDiffResponse | null>
   /**
-   * Local image for the cards view (GRO-2139): `ref` is a wikilink target or path (`|alias` /
-   * `#heading` stripped) — root-relative when it has a `/`, else Obsidian's shortest-path rule
-   * (case-insensitive basename, first match in a deterministic walk). Images only (IMAGE_EXTENSIONS).
+   * Local asset for the cards view (GRO-2139) and the drawing embed (YAZ-876): `ref` is a
+   * wikilink target or path (`|alias` / `#heading` stripped) — root-relative when it has a `/`,
+   * else Obsidian's shortest-path rule (case-insensitive basename, first match in a deterministic
+   * walk). Images (`IMAGE_EXTENSIONS`) and drawings (`DRAWING_EXTENSIONS`) only.
    */
   readAsset(root: string, ref: string): Promise<AssetResponse>
+  /** Writes a drawing sidecar under `root` (YAZ-876): drawings only, explicit path, atomic; see `AssetWriteRequest`. */
+  writeAsset(req: AssetWriteRequest): Promise<AssetWriteResponse>
   /** Native open-directory dialog parented to the calling window (GRO-2163). */
   pickFolder(): Promise<PickFolderResponse>
   /** One chokidar watcher per root in main, shared by every window; late joiners get `ready` at once. */
