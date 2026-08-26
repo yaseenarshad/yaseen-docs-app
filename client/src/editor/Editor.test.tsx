@@ -312,15 +312,16 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     expect(el.querySelector('.backlinks')).toBeNull() // no snapshot yet → nothing at all
     feed(source, [record('/vault/other.md', ['note']), record(PATH)])
     const host = el.querySelector('.editor-host')
-    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'editor-mount', 'backlinks'])
+    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'frontmatter-panel', 'editor-mount', 'backlinks'])
     expect(host?.querySelector('.editor-mount .editor-instance')).not.toBeNull()
     expect(host?.querySelector('.backlinks__header')?.textContent).toBe('Linked mentions (1)')
   })
 
   /**
-   * The folder page's contents block (YAZ-819, 🔒 D1) is the THIRD sibling in the same scroller:
-   * the Crepe mount, then the contents (only when the open record carries the flag), then the
-   * backlinks. Order is the placement rule, so it is pinned as an order.
+   * The folder page's contents block (YAZ-819, 🔒 D1) sits between the Crepe mount and the
+   * backlinks (only when the open record carries the flag) — the fourth of the scroller's five
+   * blocks since the properties panel took block ONE (⚡ YAZ-883). Order is the placement rule,
+   * so it is pinned as an order.
    */
   it('a FOLDER PAGE renders its contents between the mount and the backlinks', async () => {
     const source = createWikilinkResolveSource()
@@ -330,7 +331,7 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
       record(PATH, [], { folder_page: true }),
     ])
     const host = el.querySelector('.editor-host')
-    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'editor-mount', 'folder-page-contents', 'backlinks'])
+    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'frontmatter-panel', 'editor-mount', 'folder-page-contents', 'backlinks'])
     // fed the pages that belong to it, and no title row of its own — block zero already names
     // the page (⚡ YAZ-888).
     // Q7's default view is the OUTLINE (YAZ-820), which names pages the way a link does.
@@ -342,7 +343,7 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     const el = await mount(BODY, 1, { wikilinks: source })
     feed(source, [record('/vault/member.md', ['note'], { folder_pages: ['[[note]]'] }), record(PATH)])
     const host = el.querySelector('.editor-host')
-    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'editor-mount', 'backlinks'])
+    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'frontmatter-panel', 'editor-mount', 'backlinks'])
   })
 
 })

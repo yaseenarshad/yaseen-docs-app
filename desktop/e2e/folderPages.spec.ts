@@ -91,13 +91,14 @@ test('step 1 — the contents block sits between the note and its backlinks, hol
   win = await appWindow(app, 'w1')
 
   await expect(contents(win)).toBeVisible()
-  // 🔒 D1: the THIRD block in the note's own scroller — it scrolls WITH the note, exactly like
-  // the backlinks below it. No chip of its own: the page's NAME is block zero (⚡ YAZ-888), the
-  // same editable title every page carries, and a folder page adds nothing to it.
+  // 🔒 D1: between the Crepe mount and "Linked mentions" in the note's own scroller — it scrolls
+  // WITH the note, exactly like the backlinks below it. No chip of its own: the page's NAME is
+  // block zero (⚡ YAZ-888) and its properties are block one (⚡ YAZ-883), both carried by every
+  // page, and a folder page adds nothing to either.
   const children = await layer(win)
     .locator('.editor-host')
     .evaluate((host) => Array.from(host.children).map((c) => c.className))
-  expect(children).toEqual(['page-title', 'editor-mount', 'folder-page-contents', 'backlinks'])
+  expect(children).toEqual(['page-title', 'frontmatter-panel', 'editor-mount', 'folder-page-contents', 'backlinks'])
 
   // Q7: the folder page's two skins, outline FIRST (YAZ-820) — rows are PAGES, in the [D5]
   // order, which with no `order` stored is alphabetical by name.

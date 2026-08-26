@@ -4,7 +4,7 @@
  * Lives under client/src so vitest collects it; the module itself is in shared/.
  */
 import { describe, expect, it } from 'vitest'
-import { buildFrontmatter, FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { buildFrontmatter, FrontmatterWriteError, parseFrontmatter, replaceFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 
 const NOTE = `---
 # how this note is filed
@@ -158,5 +158,43 @@ describe('buildFrontmatter (Bible B, GRO-2202)', () => {
   it('round-trips through parseFrontmatter (nulls stay null)', () => {
     const block = buildFrontmatter({ channel: 'Outbound', parent: null, kpis_impacted: [] })
     expect(parseFrontmatter(splitFrontmatter(`${block}Body\n`).frontmatter).properties).toEqual({ channel: 'Outbound', parent: null, kpis_impacted: [] })
+  })
+})
+
+/**
+ * `replaceFrontmatter` (⚡ YAZ-883): the raw panel's whole-block write. The user's literal text
+ * goes back verbatim — never a parse→reformat — while the FRAME (fences, terminator style, the
+ * file's own line endings around them) and the body stay byte-identical.
+ */
+describe('replaceFrontmatter (⚡ YAZ-883): the raw panel writes the user\'s literal text, never a reformat', () => {
+  it('replaces the interior verbatim — fences, terminator style and the body stay byte-identical', () => {
+    const content = '---\n# kept comment\ntitle: "quoted"\n---\nbody line\n'
+    expect(replaceFrontmatter(content, 'status: draft\n')).toBe('---\nstatus: draft\n---\nbody line\n')
+    const dots = '---\na: 1\n...\nbody\n'
+    expect(replaceFrontmatter(dots, 'a: 2\n')).toBe('---\na: 2\n...\nbody\n')
+  })
+
+  it("the user's text needs no trailing newline — one is supplied, never two", () => {
+    expect(replaceFrontmatter('---\na: 1\n---\nb\n', 'a: 2')).toBe('---\na: 2\n---\nb\n')
+    expect(replaceFrontmatter('---\na: 1\n---\nb\n', 'a: 2\n')).toBe('---\na: 2\n---\nb\n')
+  })
+
+  it('a page with no frontmatter grows a block at the top, body untouched', () => {
+    expect(replaceFrontmatter('just body\n', 'a: 1\n')).toBe('---\na: 1\n---\njust body\n')
+  })
+
+  it('empty text removes the whole block; empty on empty stays empty', () => {
+    expect(replaceFrontmatter('---\na: 1\n---\nbody\n', '')).toBe('body\n')
+    expect(replaceFrontmatter('body\n', '')).toBe('body\n')
+  })
+
+  it('an unchanged interior is the identity — the caller can skip the write', () => {
+    const content = '---\na: 1\n---\nbody\n'
+    expect(replaceFrontmatter(content, 'a: 1\n')).toBe(content)
+  })
+
+  it("CRLF fences survive: the interior is the user's, the frame is the file's", () => {
+    const crlf = '---\r\na: 1\r\n---\r\nbody\r\n'
+    expect(replaceFrontmatter(crlf, 'a: 2\r\n')).toBe('---\r\na: 2\r\n---\r\nbody\r\n')
   })
 })

@@ -98,9 +98,10 @@ button {
 }
 
 /* The note's scroller. Stacked blocks live inside it: `.page-title` (block ZERO, ⚡ YAZ-888),
-   `.editor-mount`, where CrepeHost appends its `.editor-instance`, and — for markdown files —
-   the folder page's contents block and the "Linked mentions" section (Links D, GRO-2193; styled
-   by links/backlinks.css), all of which therefore scroll WITH the note. */
+   `.frontmatter-panel` (block ONE, ⚡ YAZ-883), `.editor-mount`, where CrepeHost appends its
+   `.editor-instance`, and — for markdown files — the folder page's contents block and the
+   "Linked mentions" section (Links D, GRO-2193; styled by links/backlinks.css), all of which
+   therefore scroll WITH the note. */
 .editor-host {
   flex: 1;
   min-height: 0;
@@ -155,6 +156,104 @@ button {
   border: 1px solid var(--accent);
   border-radius: 4px;
   outline: none;
+}
+
+/* The properties panel (⚡ YAZ-883): block ONE, between the title and the Crepe mount, in the same
+   content column. Collapsed it is one small muted row — deliberately SUBORDINATE to the title
+   above it, since most pages have nothing to say here. Header affordance is the backlinks /
+   view-group chevron, rotated -90° while collapsed. */
+.frontmatter-panel {
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 10px 48px 0;
+}
+
+.frontmatter-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.frontmatter-panel__header:hover {
+  color: var(--fg);
+}
+
+.frontmatter-panel__chevron {
+  flex: none;
+  transition: transform 120ms ease;
+}
+
+.frontmatter-panel__header[aria-expanded='false'] .frontmatter-panel__chevron {
+  transform: rotate(-90deg);
+}
+
+/* The label carries the weight, the count rides along plain — backlinks' own split. */
+.frontmatter-panel__title {
+  font-weight: 600;
+}
+
+.frontmatter-panel__count {
+  font-weight: 400;
+}
+
+.frontmatter-panel__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0 0 20px;
+}
+
+/* Raw YAML is code: monospace, so indentation reads as the structure it is. */
+.frontmatter-panel__text {
+  width: 100%;
+  min-height: 92px;
+  padding: 8px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--bg-side);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.frontmatter-panel__text:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.frontmatter-panel__error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.frontmatter-panel__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.frontmatter-panel__btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+}
+
+.frontmatter-panel__btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.frontmatter-panel__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* Content column: centred, wide on large windows, fills the host on narrow ones (GRO-2007). */

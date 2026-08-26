@@ -38,8 +38,19 @@ const CLOSE_FENCE_RE = /(?:^|\r?\n)(?:---|\.\.\.)[ \t]*(?:\r?\n)?$/
  * schema, so dates stay strings and only the 1.2 core scalars (null/bool/int/float) are typed.
  * Non-map documents and YAML errors yield `{}` plus a one-line `error` (GRO-2127).
  */
+/**
+ * The raw INTERIOR of a `splitFrontmatter().frontmatter` block: the fences and the terminator
+ * come off, every other byte — comments, key order, quoting, blank lines — stays exactly as the
+ * file has it. The inverse of `replaceFrontmatter` (⚡ YAZ-883) and the one place the fence
+ * regexes are applied, so the parser and the raw panel can never disagree about where a block
+ * ends. Note the trailing newline goes with the terminator: `---\na: 1\n---\n` → `a: 1`.
+ */
+export function frontmatterInterior(frontmatter: string): string {
+  return frontmatter.replace(OPEN_FENCE_RE, '').replace(CLOSE_FENCE_RE, '')
+}
+
 export function parseFrontmatter(frontmatter: string): { properties: Record<string, unknown>; error?: string } {
-  const yaml = frontmatter.replace(OPEN_FENCE_RE, '').replace(CLOSE_FENCE_RE, '')
+  const yaml = frontmatterInterior(frontmatter)
   let value: unknown
   try {
     value = parse(yaml, { prettyErrors: false })
@@ -101,6 +112,30 @@ export function setFrontmatterProperty(content: string, key: string, value: unkn
 
   const yaml = serializeInner(doc)
   return `---${eol}${eol === '\r\n' ? yaml.replace(/\n/g, '\r\n') : yaml}${terminator}${trailingEol}${body}`
+}
+
+/**
+ * Replace a note's WHOLE frontmatter interior with the user's literal text (⚡ YAZ-883, the raw
+ * properties panel). The text goes back VERBATIM — never parsed and re-serialised — so comments,
+ * key order and quoting styles survive exactly as typed; validation is the CALLER's job
+ * (`parseFrontmatter` on the result), because a block that will not parse would corrupt the index.
+ *
+ * The FRAME is the file's, not the text's: the opening fence, the terminator style (`---` or
+ * `...`) and the line endings around them are carried over, and the body is untouched. A page with
+ * no block grows one at the top; empty text removes the block entirely. One trailing newline is
+ * supplied when the text lacks it, never a second when it has one — so an unchanged interior
+ * round-trips to the identical string and the caller can skip the write.
+ */
+export function replaceFrontmatter(content: string, yamlText: string): string {
+  const { frontmatter, body } = splitFrontmatter(content)
+  if (yamlText === '') return body
+
+  const eol = frontmatter.includes('\r\n') ? '\r\n' : '\n'
+  const terminator = TERMINATOR_RE.exec(frontmatter)?.[1] ?? '---'
+  // A block the file ends on without a newline keeps that shape; a fresh block always gets one.
+  const trailingEol = frontmatter === '' || /\r?\n$/.test(frontmatter) ? eol : ''
+  const interior = /\r?\n$/.test(yamlText) ? yamlText : `${yamlText}${eol}`
+  return `---${eol}${interior}${terminator}${trailingEol}${body}`
 }
 
 /** An emptied map serialises as `{}`; we want the block to just be empty instead. */
