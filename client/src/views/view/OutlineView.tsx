@@ -195,7 +195,10 @@ export function OutlineView({ folderPagePath, root, settings, vaultRecords, reco
           {isFolder && (
             <>
               <FolderPageGlyph className="view-outline__glyph" />
-              <span className="view-outline__count">{kids.length}</span>
+              {/* DIRECT members, the Topics tree's locked honesty split (YAZ-859 seam ruling):
+                  the count is the honest fact about the PAGE; the chevron asks the guarded
+                  question. Inside a loop the two deliberately disagree — on BOTH surfaces. */}
+              <span className="view-outline__count">{lookup.pagesIn(member.path).length}</span>
             </>
           )}
           {depth === 0 && (
