@@ -71,10 +71,8 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
   // memoised so unrelated re-renders skip the per-column row walk (7B, GRO-2148)
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
   const bareOf = (key: string) => (canonicalKey(key).startsWith('note.') ? canonicalKey(key).slice(5) : null)
-  // Rung 3 (`.obsidian/types.json`) has no feed on this surface — see the Typing paragraph of
-  // "The contents block" (YAZ-846: rung 2 wired, rung 3 deferred with its `IndexResponse` feed).
   const typings = useMemo(
-    () => new Map(keys.map((k) => [k, columnTyping(k, rowRecords, undefined, properties, folderPage)])),
+    () => new Map(keys.map((k) => [k, columnTyping(k, rowRecords, properties, folderPage)])),
     [keys, rowRecords, properties, folderPage],
   )
   /** What the pickers resolve and complete over: the WHOLE vault, never the members alone (🔒 D2). */

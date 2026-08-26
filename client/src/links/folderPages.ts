@@ -71,7 +71,7 @@ export function folderPagesList(record: IndexRecord): unknown[] {
  * THE CLICK RULE for ONE entry, minus the flag test: the path this entry counts for, or null.
  * Exported so the outline's un-tag can find exactly the entries `parentsOf` counted (YAZ-820) —
  * a prose entry that merely SPELLS the folder page's name never resolves here, so removing a
- * membership can never eat a line the lookup was ignoring anyway.
+ * belonging can never eat a line the lookup was ignoring anyway.
  */
 export function entryTarget(entry: unknown, resolve: ResolveLink): string | null {
   if (typeof entry !== 'string') return null
@@ -174,24 +174,8 @@ export function guardedChildren(
   return lookup.pagesIn(parent).filter((member) => !ancestors.includes(member.path))
 }
 
-/**
- * The canonical LINEAR walk over the CONTENTS of `start` — its direct members at depth 0, theirs
- * at 1, `start` itself never visited; siblings in `pagesIn` order, a member's whole subtree
- * before the next sibling. Built on `guardedChildren` like every other descent; expansion-driven
- * surfaces (the outline, the Topics tree) recurse over `guardedChildren` themselves instead,
- * with their own ordering and expansion.
- */
-export function walkFolderPage(
-  lookup: FolderPagesLookup,
-  start: string,
-  visit: (record: IndexRecord, depth: number) => void,
-): void {
-  const descend = (parent: string, depth: number, ancestors: readonly string[]): void => {
-    for (const member of guardedChildren(lookup, parent, ancestors)) {
-      visit(member, depth)
-      if (!lookup.isFolderPage(member)) continue
-      descend(member.path, depth + 1, [...ancestors, member.path])
-    }
-  }
-  descend(start, 0, [start])
-}
+// TOMBSTONE (⚡ YAZ-814, ruled by Yasin): `walkFolderPage(lookup, start, visit)` stood here — a
+// canonical LINEAR depth-first walk over a folder page's contents, itself built on
+// `guardedChildren`. Every real surface is expansion-driven and recurses over `guardedChildren`
+// ITSELF, with its own ordering and its own expansion, so the walker had no production caller and
+// only ever restated the guard a second time. `guardedChildren` IS the whole law.

@@ -317,9 +317,9 @@ describe('failed writes', () => {
 })
 
 // The rung-3 case that stood here — an explicit `.obsidian/types.json` assignment beating the
-// value type — went with the `types` prop in YAZ-846: that rung has no feed on this surface (its
-// data rides `IndexResponse`, which a folder page deliberately never fetches). The ladder itself
-// is unchanged and still unit-tested rung by rung in `editorType.test.ts`.
+// value type — went with the `types` prop in YAZ-846, and ⚡ YAZ-815 then deleted the rung and the
+// whole chain behind it. The ladder that remains is unit-tested rung by rung in
+// `editorType.test.ts`.
 describe('type inference wiring', () => {
   it('a note without the key borrows the dominant type across the view', () => {
     const { el } = mount(EDIT_BASE)

@@ -27,16 +27,18 @@ import { OutlineAddRow, outlineCandidates } from './OutlineAddRow'
  * also whose settings order it (each level reads its own `order`), and editing it from inside
  * somebody else's outline would be editing a page the user is not looking at.
  *
- * NESTING is `walkFolderPage`'s guard, node for node (🔒 D6, "Links": Folder pages) — the
- * ancestor PATH, never a visited set: a member already standing above this branch is skipped and
- * the branch ends quietly (so `A → B → A` terminates), while a page reachable down two branches
- * renders under BOTH. Expansion is session-only React state, keyed by the whole ancestor path, so
- * a diamond opens independently under each parent and nothing about it reaches disk.
+ * NESTING comes through `guardedChildren`, node for node (🔒 D6, "Links": Folder pages) — THE
+ * law, the one door to any descent: the guard is the ancestor PATH, never a visited set, so a
+ * member already standing above this branch is skipped and the branch ends quietly (`A → B → A`
+ * terminates), while a page reachable down two branches renders under BOTH. Expansion is
+ * session-only React state, keyed by the whole ancestor path, so a diamond opens independently
+ * under each parent and nothing about it reaches disk.
  *
- * The two card writes this view owns are the membership gestures, and both are ONE key on ONE
- * page: the add row appends `[[this folder page]]` to the TARGET's `folder_pages`, the hover ×
- * removes exactly this folder page's entry from the MEMBER's — read-modify-write through the
- * shared `writeProperty`, every other entry preserved, nothing deleted.
+ * The two card writes this view owns are the BELONGING gestures — the product's own word, 🔒 D6's
+ * rule being that no name here is borrowed from anywhere else — and both are ONE key on ONE page:
+ * the add row appends `[[this folder page]]` to the TARGET's `folder_pages`, the hover × removes
+ * exactly this folder page's entry from the MEMBER's — read-modify-write through the shared
+ * `writeProperty`, every other entry preserved, nothing deleted.
  */
 export interface OutlineViewProps {
   /** The folder page whose contents these are: ViewsPane's `thisFile`. Roots the ancestor guard. */
@@ -87,20 +89,20 @@ export function OutlineView({ folderPagePath, root, settings, vaultRecords, reco
   const candidates = useMemo(() => outlineCandidates(vaultRecords, folderPagePath, memberPaths), [vaultRecords, folderPagePath, memberPaths])
   const taken = useMemo(() => new Set(vaultRecords.map((r) => r.basename.toLowerCase())), [vaultRecords])
 
-  /** One membership write, either direction: the whole list back on ONE page's ONE key. */
-  const writeMemberships = (path: string, next: unknown[]): void => {
+  /** One BELONGING write, either direction: the whole list back on ONE page's ONE key. */
+  const writeBelonging = (path: string, next: unknown[]): void => {
     setError(null)
     writeProperty(path, FOLDER_PAGES_KEY, next).catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
   }
   const tag = (path: string): void => {
     const target = vaultRecords.find((r) => r.path === path)
     if (target === undefined) return
-    writeMemberships(path, [...folderPagesList(target), `[[${folderPageName}]]`])
+    writeBelonging(path, [...folderPagesList(target), `[[${folderPageName}]]`])
   }
   const untag = (member: IndexRecord): void => {
     // Only the entries that COUNT for this folder page go — prose that merely spells its name
     // never resolved for the lookup and is not ours to delete.
-    writeMemberships(member.path, folderPagesList(member).filter((entry) => entryTarget(entry, resolve) !== folderPagePath))
+    writeBelonging(member.path, folderPagesList(member).filter((entry) => entryTarget(entry, resolve) !== folderPagePath))
   }
 
   /** The insertion slot a pointer at `clientY` over row `i` means (TabBar's midpoint rule). */

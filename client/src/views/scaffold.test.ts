@@ -7,7 +7,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FolderPageSettings } from './folderPageSettings'
-import { ensureFolder, folderPageTemplatePath, newPageFromFolderPage, scaffoldFromFolderPage } from './scaffold'
+import { ensureFolder, folderPageTemplatePath, memberFolder, newPageFromFolderPage, scaffoldFromFolderPage } from './scaffold'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -103,6 +103,24 @@ describe('folderPageTemplatePath / newPageFromFolderPage (🔒 Q6)', () => {
   it('other read failures propagate', async () => {
     readFile.mockRejectedValue(new BridgeRequestError('FORBIDDEN', 'permission denied'))
     await expect(newPageFromFolderPage('/v', 'Metrics', METRICS)).rejects.toThrow('permission denied')
+  })
+})
+
+/**
+ * WHERE a member lands (🔒 Q5/Q6) — the ONE place both birth surfaces ask (YAZ-869): the contents
+ * block's New / outline create row, and the Topics tree's right-click on the folder page itself.
+ */
+describe('memberFolder', () => {
+  it('is the settings folder, created level by level', async () => {
+    createDir.mockResolvedValue({ path: '' })
+    expect(await memberFolder('/v', '/v/Metrics.md', { ...METRICS, folder: 'kpis/growth' })).toBe('/v/kpis/growth')
+    expect(createDir.mock.calls.map((c) => c[0])).toEqual(['/v/kpis', '/v/kpis/growth'])
+  })
+
+  it("without one, the folder page's OWN directory — and nothing is created", async () => {
+    expect(await memberFolder('/v', '/v/deep/Metrics.md', METRICS)).toBe('/v/deep')
+    expect(await memberFolder('/v', '/v/Metrics.md', METRICS)).toBe('/v')
+    expect(createDir).not.toHaveBeenCalled()
   })
 })
 

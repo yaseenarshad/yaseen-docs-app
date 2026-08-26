@@ -189,7 +189,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
 
 interface RelationEditorProps {
   root: string
-  /** Bare frontmatter key — vault-wide declarations are keyed bare, like `.obsidian/types.json`. */
+  /** Bare frontmatter key — vault-wide declarations are keyed bare, never canonicalised. */
   propKey: string
   properties: PropertiesResponse | null
   onDone: () => void

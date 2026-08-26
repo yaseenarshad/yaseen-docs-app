@@ -32,7 +32,7 @@ import { type ViewDef, type ParsedViews, parseViews } from './viewSchema'
 import { ViewsPane, type FolderPageMode } from './ViewsPane'
 import { DEFAULT_VIEWS, folderPageSettings, writeFolderPageSettings, type FolderPageSettings } from './folderPageSettings'
 import { createNewNote, untitledName, type NewNoteSeed } from './newNote'
-import { ensureFolder, newPageFromFolderPage } from './scaffold'
+import { memberFolder, newPageFromFolderPage } from './scaffold'
 import './views.css'
 import './folderPageContents.css'
 
@@ -175,7 +175,7 @@ async function createMember(
   name?: string,
 ): Promise<string> {
   const parts = await newPageFromFolderPage(root, folderPageName, settings, seed.properties)
-  const dir = settings.folder === undefined ? folderPagePath.slice(0, folderPagePath.lastIndexOf('/')) : await ensureFolder(root, settings.folder)
+  const dir = await memberFolder(root, folderPagePath, settings)
   const taken = new Set(records.filter((r) => r.path.slice(0, r.path.lastIndexOf('/')) === dir).map((r) => r.basename))
   const target = `${dir}/${name ?? untitledName(taken)}.md`
   await createNewNote(target, parts.properties, parts.body)

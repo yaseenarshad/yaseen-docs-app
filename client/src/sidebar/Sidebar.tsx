@@ -2,14 +2,17 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { fileKind } from '@shared/fileKind'
 import { SIDEBAR_LENSES, type SettingsState, type SidebarLens, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
+import type { IndexRecord } from '@shared/types'
+import { folderPageSettings } from '../views/folderPageSettings'
 import { createNewNote } from '../views/newNote'
+import { memberFolder, newPageFromFolderPage } from '../views/scaffold'
 import { SearchIcon } from '../views/view/icons'
 import { writeProperty } from '../views/writeProperty'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
-import { FOLDER_PAGE_KEY, isFolderPage } from '../links/folderPages'
+import { FOLDER_PAGE_KEY, FOLDER_PAGES_KEY, isFolderPage } from '../links/folderPages'
 import { countLinkReferences } from '../links/renameLinks'
 import { treeHasFile, treeReducer } from '../lib/treeState'
 import { SearchResults } from '../search/SearchResults'
@@ -182,6 +185,38 @@ function findDir(nodes: readonly TreeNode[], dir: string): readonly TreeNode[] |
   return null
 }
 
+/**
+ * Birth from a FLAGGED folder-page row in Topics (8H, ⚡ YAZ-869 — Yasin's dogfooding ruling).
+ *
+ * THE RULING: a right-click that says "New note" ON a topic means "a note IN this topic". Anything
+ * else is the file tree leaking through a lens that is not about files — the page would be born
+ * beside the folder page and belong to NOTHING, and the user would have to go and tag it by hand
+ * to see the thing they just made appear where they made it.
+ *
+ * So "New note" travels the folder page's OWN declaration path — the SAME `newPageFromFolderPage`
+ * the contents block's New and the outline's create row use (scaffold ← template ← seed, with
+ * `folder_pages` forced LAST) — and parks through the SAME `memberFolder`. One rule, three
+ * doorways. "New folder page" is the SUB-TOPIC case and stays 🔒 D1 of YAZ-841's birth exactly:
+ * the flag and nothing else, never a template and never a settings block, with the belonging
+ * stamped beside it so the new topic shows up nested under the one it was made from.
+ *
+ * Leaf Topics rows and every Files row keep today's create-beside behaviour untouched: there is no
+ * folder page to belong to, so there is nothing to declare.
+ */
+async function createInTopic(root: string, folderPage: IndexRecord, kind: 'file' | 'folderPage', name: string): Promise<string> {
+  const settings = folderPageSettings(folderPage)
+  const target = entryPath(await memberFolder(root, folderPage.path, settings), name, kind)
+  // The belonging is spelled the way the click rule reads it back — exactly a wikilink on the
+  // basename — and both keys go through the ONE source of truth, never a local literal.
+  if (kind === 'folderPage') {
+    await createNewNote(target, { [FOLDER_PAGE_KEY]: true, [FOLDER_PAGES_KEY]: [`[[${folderPage.basename}]]`] })
+    return target
+  }
+  const parts = await newPageFromFolderPage(root, folderPage.basename, settings)
+  await createNewNote(target, parts.properties, parts.body)
+  return target
+}
+
 /** The lens tabs' copy; the ORDER is `SIDEBAR_LENSES`', so the default lens leads (YAZ-847). */
 const LENS_LABEL: Record<SidebarLens, string> = { topics: 'Topics', files: 'Files' }
 
@@ -225,8 +260,11 @@ export function Sidebar({
   const [expanded, dispatch] = useReducer(treeReducer, root, storage.getExpanded)
   const [menu, setMenu] = useState<MenuTargets | null>(null)
   // `anchor` is the TOPICS row the create was asked from (8G-, YAZ-865); null on the file tree,
-  // where the input nests inside `parentDir`'s own children instead.
-  const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string; anchor: string | null } | null>(null)
+  // where the input nests inside `parentDir`'s own children instead. `intoFolderPage` is that same
+  // row WHEN it is a flagged folder page (8H, YAZ-869) — the birth then declares belonging instead
+  // of landing beside a file. Pinned when the menu opened, off the same snapshot read that picked
+  // the toggle's label (GRO-2296): the create is about the row that was right-clicked.
+  const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string; anchor: string | null; intoFolderPage: string | null } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir' } | null>(null)
   // The delete confirm sheet's target (GRO-2272 `C3-`); null when the sheet is closed.
   const [confirmingDelete, setConfirmingDelete] = useState<DeleteTarget | null>(null)
@@ -398,7 +436,15 @@ export function Sidebar({
       // The input renders inside the target dir's children, so that dir must be open;
       // expandTo opens every dir ABOVE the given path, so a synthetic child opens targetDir itself.
       if (menu.targetDir !== root) dispatch({ type: 'expandTo', root, file: `${menu.targetDir}/x` })
-      setCreating({ kind, parentDir: menu.targetDir, anchor: menu.topicsAnchor })
+      setCreating({
+        kind,
+        parentDir: menu.targetDir,
+        anchor: menu.topicsAnchor,
+        // TOPICS only, and only on a row that IS a folder page (8H, YAZ-869): `topicsAnchor` is
+        // null for every Files row and for blank space, so that lens is untouched by construction,
+        // and a leaf topic has nothing to belong to. Both facts were read when the menu opened.
+        intoFolderPage: menu.topicsAnchor !== null && menu.folderPageIsOn ? menu.topicsAnchor : null,
+      })
       setMenu(null)
     },
     [menu, root],
@@ -407,6 +453,18 @@ export function Sidebar({
   const submitCreate = useCallback(
     async (name: string) => {
       if (creating === null) return
+      // A folder is never a member — belonging is a page's word about itself — so "New folder"
+      // keeps the file tree's rule even here. The record is re-read off the window's snapshot: if
+      // it has vanished since the menu opened, this falls through to the plain create rather than
+      // failing, which is the standing report-don't-block rule.
+      const topic = creating.kind === 'dir' || creating.intoFolderPage === null ? undefined : indexSource.records.find((r) => r.path === creating.intoFolderPage)
+      if (topic !== undefined) {
+        const born = await createInTopic(root, topic, creating.kind === 'folderPage' ? 'folderPage' : 'file', name)
+        setCreating(null)
+        refresh()
+        onOpenFile(born)
+        return
+      }
       const p = entryPath(creating.parentDir, name, creating.kind)
       if (creating.kind === 'dir') await api.createDir(p)
       // Born a folder page (🔒 D4 + D1, YAZ-841): the SAME atomic content-at-create call the 5D
@@ -419,7 +477,7 @@ export function Sidebar({
       refresh()
       if (creating.kind !== 'dir') onOpenFile(p)
     },
-    [creating, refresh, onOpenFile],
+    [creating, refresh, onOpenFile, root, indexSource],
   )
 
   const cancelCreate = useCallback(() => setCreating(null), [])

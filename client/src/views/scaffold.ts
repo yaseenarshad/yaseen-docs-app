@@ -76,6 +76,18 @@ export async function newPageFromFolderPage(
   return { properties: { ...merged, ...belongsTo(folderPageName) }, body }
 }
 
+/**
+ * WHERE a folder page's members are parked (🔒 Q5/Q6): the settings' `folder`, created level by
+ * level, and without one the folder page's OWN directory — the file lands beside the page it
+ * belongs to. THE ONE PLACE both birth surfaces ask (YAZ-869): the contents block's New / outline
+ * create row, and the Topics tree's right-click. Two copies of this rule would drift the moment
+ * one of them learned about a new setting.
+ */
+export async function memberFolder(root: string, folderPagePath: string, settings: FolderPageSettings): Promise<string> {
+  if (settings.folder === undefined) return folderPagePath.slice(0, folderPagePath.lastIndexOf('/'))
+  return ensureFolder(root, settings.folder)
+}
+
 /** Create `<root>/<folder>` level by level (existing levels tolerated); resolves the absolute dir. */
 export async function ensureFolder(root: string, folder: string): Promise<string> {
   let dir = root

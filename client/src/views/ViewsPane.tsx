@@ -75,8 +75,8 @@ export interface ViewsPaneProps {
  * everything else is the file.
  *
  * TOMBSTONE (YAZ-846, the amputation): `readOnly` (the read-only embed chrome), `initialView`
- * (which picked the starting tab for `![[X.base#View]]`), `types` (`.obsidian/types.json`, the
- * ladder's rung 3 — see "Cell editing"), `indexStatus` / `indexError` and the plain 5D
+ * (which picked the starting tab for `![[X.base#View]]`), `types` (the ladder's rung 3, whose
+ * whole `.obsidian/types.json` chain ⚡ YAZ-815 then deleted), `indexStatus` / `indexError` and the plain 5D
  * `createFromSeed` path all died here. Every one of them lost its production caller when YAZ-844
  * retired `.base`: the contents block is the ONLY mount, it hands over a snapshot already in hand
  * and it births through the declaration.

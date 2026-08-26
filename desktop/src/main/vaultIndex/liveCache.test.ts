@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { subscribe } from '../fs/watchers'
 import { makeViewsFixture } from '../fs/viewsFixture'
 import { _resetIndexCache, flushIndexCache, initIndexCache, loadIndexCache } from './cache'
 import { _evictAll, getColdStartDiff, getIndex } from './live'
@@ -20,6 +21,31 @@ const until = async (pred: () => Promise<boolean> | boolean, ms = 3000) => {
     await new Promise((r) => setTimeout(r, 25))
   }
 }
+
+/**
+ * Resolves once the root's chokidar watcher has finished its initial scan.
+ *
+ * REQUIRED before any test writes a file expecting the WATCHER to notice it, whenever an
+ * `_evictAll()` has closed and reopened that watcher: the watcher runs `ignoreInitial: true`, so a
+ * file created while the fresh initial scan is still walking is swallowed as "initial" and no
+ * `add` is ever emitted — `live.ts` ignores `ready` itself, so nothing recovers it and the wait
+ * below would burn its whole budget. (This dependency was always here; until ⚡ YAZ-815 deleted the
+ * per-call `.obsidian/types.json` read, every `getIndex` above happened to pay an extra file read
+ * and handed the scan enough slack by accident.) `subscribe` replays `ready` to late joiners, so
+ * an already-warm watcher resolves this synchronously.
+ */
+const watcherReady = (root: string): Promise<void> =>
+  new Promise((resolve) => {
+    let off: (() => void) | null = null
+    let fired = false
+    off = subscribe(root, (ev) => {
+      if (ev.type !== 'ready') return
+      fired = true
+      off?.()
+      resolve()
+    })
+    if (fired) off() // `ready` replayed synchronously inside subscribe, before `off` was assigned
+  })
 
 describe('getIndex + persistent cache (GRO-2228/2229)', () => {
   let root: string
@@ -100,6 +126,7 @@ describe('getIndex + persistent cache (GRO-2228/2229)', () => {
 
   it('watcher mutations schedule persists: after a flush the cache file reflects them', async () => {
     await getIndex(root)
+    await watcherReady(root) // the test above evicted, so this watcher may still be scanning
     const live = path.join(root, 'Live Note.md')
     await writeFile(live, '# Live\n')
     await until(async () => (await getIndex(root)).records.some((r) => r.path === live))
@@ -223,7 +250,12 @@ describe('stale-cache torture (GRO-2230): heavy offline mutation, cache-assisted
   })
 })
 
-describe('types.json is never cached (GRO-2230)', () => {
+/**
+ * The payload the cache actually persists. Stood as "types.json is never cached (GRO-2230)" until
+ * ⚡ YAZ-815 deleted the `.obsidian/types.json` chain outright — the exact-keys assertion is what
+ * was load-bearing and it survives on its own: `{version, root, records}`, nothing else.
+ */
+describe('the persisted payload is version/root/records and nothing else', () => {
   let root: string
   let cleanup: () => Promise<void>
   let cacheDir: string
@@ -239,23 +271,19 @@ describe('types.json is never cached (GRO-2230)', () => {
     await rm(cacheDir, { recursive: true, force: true })
   })
 
-  it('a types.json change lands on the next getIndex under a full warm hit — no invalidation, nothing was cached', async () => {
+  it('holds exactly those three keys, and reloads as a full warm hit', async () => {
     const first = await getIndex(root)
-    expect(first.types).toEqual({ date: 'date', published: 'checkbox' })
     _evictAll()
     await flushIndexCache()
-    // The persisted payload is version/root/records and nothing else — types never enter it.
     const files = (await readdir(cacheDir)).filter((f) => f.endsWith('.json'))
     expect(files).toHaveLength(1)
     const payload: unknown = JSON.parse(await readFile(path.join(cacheDir, files[0]), 'utf8'))
     expect(Object.keys(payload as object).sort()).toEqual(['records', 'root', 'version'])
 
-    await writeFile(path.join(root, '.obsidian', 'types.json'), '{"types":{"date":"date","published":"checkbox","views":"number"}}')
     vi.mocked(scanFile).mockClear()
     const warm = await getIndex(root)
     expect(scanFile).not.toHaveBeenCalled() // every record reused: a full warm hit…
-    expect(getColdStartDiff(root)).toMatchObject({ cacheStatus: 'hit', added: [], removed: [], changed: [] }) // …with zero invalidation…
-    expect(warm.types).toEqual({ date: 'date', published: 'checkbox', views: 'number' }) // …and the fresh types anyway
+    expect(getColdStartDiff(root)).toMatchObject({ cacheStatus: 'hit', added: [], removed: [], changed: [] }) // …with zero invalidation
     expect(warm.records).toEqual(first.records)
   })
 })

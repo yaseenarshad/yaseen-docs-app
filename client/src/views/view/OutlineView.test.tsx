@@ -5,7 +5,7 @@
  * rows appearing at all, and every write travels the real door it will travel in the app.
  *
  * Pinned here: order is `orderedMembers` and nothing else; the chevron expands, with
- * `walkFolderPage`'s ancestor-path guard node for node (an A↔B loop terminates, a diamond renders
+ * `guardedChildren`'s ancestor-path guard node for node (an A↔B loop terminates, a diamond renders
  * under BOTH parents); the glyph and the direct-member count are folder-page rows only; a drag at
  * depth 0 writes the outline view's `order` and touches NO card; the add row is picker-only —
  * self and members excluded, a pick appends to the TARGET's `folder_pages` preserving what was
@@ -494,7 +494,7 @@ describe('the confirm copy is a pure function', () => {
   })
 })
 
-describe('the hover × removes the membership, and only after the sheet', () => {
+describe('the hover × removes the belonging, and only after the sheet', () => {
   it('the × opens the sheet — it never removes on the click itself', () => {
     const el = mount()
     click(byLabel(el, 'Remove Nurture from Funnel Stages'))

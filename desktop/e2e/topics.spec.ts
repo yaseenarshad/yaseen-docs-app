@@ -18,6 +18,9 @@
  *     bucket — PAGE PATHS, never written into any note's frontmatter
  *   5 Uncategorized expands IN PLACE (🔒 D7, the locked deviation from the mockup), listing the
  *     two unfiled notes and subtracting both the root already on screen and everyone nested
+ *   5b a member row carries the file tree's own menu, and Delete trashes the page (YAZ-865)
+ *   5c "New note" ON a folder-page row births a MEMBER of it (8H, YAZ-869) — the new page shows
+ *     up under that topic in the tree AND in the topic's own contents, without one hand-tag
  *
  * Then HOME'S BIRTH (6C-, YAZ-849). The migrated fixture HAS a Home, so both steps below run over
  * a copy with `Home.md` deleted — a vault full of folder pages that answers `[[Home]]` with
@@ -47,6 +50,12 @@ const TOPICS = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', 'Roles']
 const TOPIC_COUNTS = ['3', '2', '5', '4', '3']
 /** Funnel Stages' members, alphabetically — the [D5] fallback, since it declares no outline `order`. */
 const MEMBERS = ['Lead Gen', 'Lead Nurture', 'Sales-Conversion']
+/** KPIs' five members, alphabetically — the topic 8H's step births a sixth one into. */
+const KPI_MEMBERS = ['CAC', 'Gross Margin', 'MQL Volume', 'Sales Cycle Time', 'Win Rate']
+/** The sixth. Named so it sorts INTO the list rather than onto the end — placement is proven, not assumed. */
+const NEW_KPI = 'Growth Rate'
+/** KPIs' members once 8H's step has made one, in the [D5] alphabetical fallback KPIs declares no order against. */
+const WITH_NEW_KPI = ['CAC', 'Gross Margin', NEW_KPI, 'MQL Volume', 'Sales Cycle Time', 'Win Rate']
 /** The only two pages in the migrated fixture that belong nowhere: `inbox/`, deliberately unfiled. */
 const ORPHANS = ['Pipeline Review Notes', 'Positioning Draft']
 /** 6C (YAZ-849): the dotfolder whose existence IS adoption, and the exact bytes a newborn Home carries. */
@@ -73,6 +82,15 @@ const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="tr
 /** The VISIBLE tab layer — every visited tab keeps its own DOM mounted. */
 const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
 const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
+/** The right-clicked row's menu, and the inline name input the create group opens (8G-/8H). */
+const menuItem = (w: Page, label: string) => w.locator('.ctx-menu [role="menuitem"]', { hasText: label })
+const inlineInput = (w: Page) => w.locator('.sidebar__body .create-inline__input')
+/** The folder page's contents block and its two skins — bible.spec.ts's own locators. */
+const contents = (w: Page) => layer(w).locator('.folder-page-contents')
+const viewTabs = (w: Page) => contents(w).locator('.view-tab__btn[role="tab"]')
+const outlineRows = (w: Page) => contents(w).locator('.view-outline__link')
+const tableNames = (w: Page) => contents(w).locator('.view-row__link, .view-table__link')
+
 /** 6C's offer card and its one button. */
 const offerCard = (w: Page) => w.locator('.sidebar__body .topics-offer')
 const offerButton = (w: Page) => offerCard(w).locator('button')
@@ -246,6 +264,60 @@ test('step 5b — a member row carries the FILE tree’s own menu, and Delete tr
   await expect.poll(() => readFile(doomed, 'utf8').then(() => false, () => true)).toBe(true)
   await expect(topicLabels(win)).toHaveText(['Home', 'Funnel Stages', 'Lead Gen', 'Sales-Conversion', ...TOPICS.slice(1), 'Uncategorized'])
   await shoot(win, 'topics-05b-deleted')
+  await quitApp(app)
+})
+
+// ------------------------------------------ ⚡ the amendment (YAZ-869): New note ON a topic
+
+test('step 5c — “New note” on a FOLDER-PAGE row births a MEMBER of it, tree and table both', async () => {
+  // 8H, Yasin's dogfooding ruling: the right-click that says "New note" on KPIs means "a KPI".
+  // The unit tests pin the frontmatter and the parking; what only the real app can prove is the
+  // round trip — the page is born, the INDEX picks the belonging up, and the same page then
+  // appears in the meaning tree and in the topic's own contents with nobody tagging anything.
+  // Its own copy of the vault: step 5b deleted a page out of the shared one and then quit.
+  const own = await copyVault(FIXTURE)
+  vaults.push(own)
+  app = await launchApp({ userData, seedState: topicsState(own, path.join(own, HOME)) })
+  win = await appWindow(app, 'w1')
+
+  await chevron(win, 'Expand', 'Home').click()
+  await rowFor(win, 'KPIs').click({ button: 'right' })
+  await menuItem(win, 'New note').click()
+  await inlineInput(win).fill(NEW_KPI)
+  await shoot(win, 'topics-05c-new-note-on-a-topic')
+  await inlineInput(win).press('Enter')
+
+  // PARKED where KPIs' members live (`folder_page_settings.folder: kpis`), never beside KPIs.md,
+  // and born carrying KPIs' whole DECLARATION — every column empty, in the order it declares them,
+  // with the belonging forced LAST. (The empty multi-link's exact YAML rendering is the writer's
+  // business and is pinned in its own unit; what is LOCKED here is the shape and the order.)
+  await expect
+    .poll(() => onDisk(own, path.join('kpis', `${NEW_KPI}.md`)))
+    .toMatch(/^---\nfunnel_stages:.*\nkpi_category:\nunit:\nfolder_pages:\n {2}- "\[\[KPIs\]\]"\n---\n$/)
+  expect(await onDisk(own, `${NEW_KPI}.md`)).toBeNull() // never beside the folder page's own file
+  // Created AND opened, the create group's standing behaviour.
+  await expect(activeTab(win)).toHaveText(NEW_KPI)
+
+  // THE TREE: the next index snapshot adopts it, with nobody tagging anything — a sixth member
+  // under KPIs, in its alphabetical place among the five that were already there.
+  await chevron(win, 'Expand', 'KPIs').click()
+  await expect(rowFor(win, 'KPIs').locator('.tree__count')).toHaveText('6')
+  await expect(topicLabels(win)).toHaveText([
+    'Home',
+    ...TOPICS.slice(0, 3),
+    ...WITH_NEW_KPI,
+    ...TOPICS.slice(3),
+    'Uncategorized',
+  ])
+
+  // THE TABLE: the same page, from KPIs' own contents block — both skins.
+  await rowFor(win, 'KPIs').click()
+  await expect(activeTab(win)).toHaveText('KPIs')
+  await expect(outlineRows(win)).toHaveText(WITH_NEW_KPI)
+  await viewTabs(win).filter({ hasText: 'Table' }).click()
+  await expect(tableNames(win)).toHaveCount(WITH_NEW_KPI.length)
+  await expect(tableNames(win).filter({ hasText: `${NEW_KPI}.md` })).toHaveCount(1)
+  await shoot(win, 'topics-05c-member-everywhere')
   await quitApp(app)
 })
 

@@ -102,8 +102,6 @@ export interface IndexResponse {
   records: IndexRecord[]
   /** Main-process time (epoch ms) when this snapshot was taken. */
   generatedAt: number
-  /** Assigned property types from `.obsidian/types.json` (5B, GRO-2142); absent when the vault has none. */
-  types?: Record<string, string>
 }
 
 // ---------- coldDiff(root) (Links E1c, GRO-2242) ----------

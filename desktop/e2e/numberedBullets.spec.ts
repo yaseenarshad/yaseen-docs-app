@@ -51,19 +51,16 @@ async function openHandleMenu(w: Page, text: string): Promise<void> {
   test.setTimeout(60_000)
   const para = paraOf(rowOf(w, text))
   const handle = w.locator('.tabstack__layer:not(.tabstack__layer--hidden) .milkdown-block-handle')
-  let attempt = 0
   await expect(async () => {
-    // TWO moves inside this row, not one (YAZ-847 hardening): the listener is throttled, so a
-    // single mousemove can be swallowed by the leading edge of a throttle window the PREVIOUS
-    // row opened — and the trailing edge then fires with the pointer nowhere new. The second
-    // move guarantees one event lands while the pointer is inside THIS paragraph.
-    const x = attempt++ % 2 === 0 ? 4 : 6
-    await para.hover({ position: { x, y: 8 } })
-    await para.hover({ position: { x: x + 1, y: 10 } })
-    // 1s, not 300ms: the mousemove behind the attribute is throttled 200ms, so a loaded machine
-    // can miss a 300ms window on EVERY attempt and burn the whole budget below (YAZ-847 grew the
-    // suite by one spec and this probe was the first thing to notice). Healthy runs still pass on
-    // the first attempt — the wait ends the moment the attribute lands.
+    // A SWEEP, not discrete hops (the YAZ-861 rework, after the two-hop version flaked across
+    // three waves): the handle's mousemove listener is throttled ~200ms, and any finite set of
+    // synthetic single events can land entirely inside stale throttle windows on a loaded
+    // machine. `mouse.move(..., steps)` emits a continuous stream of real events while the
+    // pointer crosses the paragraph — some event ALWAYS falls in a fresh window over this row.
+    const box = await para.boundingBox()
+    if (box === null) throw new Error('paragraph not laid out yet')
+    await w.mouse.move(box.x - 10, box.y + 8) // enter from outside so the crossing is real
+    await w.mouse.move(box.x + Math.min(80, box.width / 2), box.y + box.height / 2, { steps: 12 })
     await expect(handle).toHaveAttribute('data-show', 'true', { timeout: 1000 })
     const [p, h] = await Promise.all([para.boundingBox(), handle.boundingBox()])
     const mid = h!.y + h!.height / 2

@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_SETTINGS, type TreeNode, type WatchEvent } from '@shared/types'
+import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 
 // The folder-page toggle writes through the shared one-key card writer (🔒 D1/D3, YAZ-817);
 // mocked here the way every other writeProperty caller's tests mock it.
@@ -34,6 +35,12 @@ function installBridge() {
     // path OR `{ path, content }` — the content form is the atomic born-with-frontmatter call.
     createFile: vi.fn(async (req: string | { path: string; content?: string }) => ({ path: typeof req === 'string' ? req : req.path, mtime: 2, size: 0 })),
     createDir: vi.fn(async (path: string) => ({ path })),
+    // Birth from a Topics folder-page row (8H, YAZ-869) probes the folder page's template through
+    // the ordinary readFile door. The default vault has none — the bridge rejects the way main
+    // does, with a bare BridgeError object, which `api` gives its class back.
+    readFile: vi.fn(async (path: string) => {
+      throw { code: 'NOT_FOUND', message: `no such file: ${path}` }
+    }),
     state: { setFolder: vi.fn(async () => undefined) },
     window: { open: vi.fn(async () => undefined) },
     // Reveal in Finder (GRO-2274) goes through the shell namespace.
@@ -1146,10 +1153,22 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
   const HOME = record('/v/Home.md', { folder_page: true })
   const GUIDE = record('/v/Docs/Guide.md', { folder_pages: ['[[Home]]'] })
   const LOOSE = record('/v/Loose.md')
+  /**
+   * A folder page that DECLARES things (8H, YAZ-869): two columns for the scaffold to empty out
+   * and a parking `folder`, so a birth from its row has something to prove beyond "it happened".
+   */
+  const METRICS = record('/v/Metrics.md', {
+    folder_page: true,
+    folder_pages: ['[[Home]]'],
+    folder_page_settings: { folder: 'KPIs', columns: { owner: { kind: 'text' }, funnels: { kind: 'multi-link' } } },
+  })
   const feedOver = (...records: ReturnType<typeof record>[]): SidebarProps['indexSource'] =>
     ({
-      // The one link this vault declares, keyed like the real resolver (lowered, brackets and all).
-      resolve: (target: string) => (target.trim().toLowerCase() === '[[home]]' && records.includes(HOME) ? HOME.path : null),
+      // The links this vault declares, keyed like the real resolver (lowered, brackets and all).
+      resolve: (target: string) =>
+        ({ '[[home]]': records.includes(HOME) ? HOME.path : null, '[[metrics]]': records.includes(METRICS) ? METRICS.path : null })[
+          target.trim().toLowerCase()
+        ] ?? null,
       records,
       subscribe: () => () => undefined,
     }) as SidebarProps['indexSource']
@@ -1271,12 +1290,105 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/Docs/Nearby.md')
   })
 
-  it('"New folder page" on a Topics row is born with EXACTLY the flag, beside that page (🔒 D1)', async () => {
+  it('"New folder page" on a LEAF Topics row is born with EXACTLY the flag, beside that page (🔒 D1)', async () => {
     const { el, bridge } = await topics()
-    await rightClick(rowFor(el, 'Home'))
+    await expandHome(el)
+    await rightClick(rowFor(el, 'Guide')) // a leaf: nothing to belong to, so nothing is declared
     act(() => itemByLabel(el, 'New folder page')?.click())
     await commit(el, 'Growth')
-    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Growth.md', content: '---\nfolder_page: true\n---\n' })
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Docs/Growth.md', content: '---\nfolder_page: true\n---\n' })
+  })
+
+  /**
+   * 8H (⚡ YAZ-869, Yasin's dogfooding ruling): "New note" ON a topic means "a note IN this topic".
+   * The birth travels the folder page's OWN declaration path — the same `newPageFromFolderPage`
+   * the contents block's New uses — and parks where that page's members live. Pinned here rather
+   * than in a unit: the whole point is that the SIDEBAR's create group reaches it.
+   */
+  const topicsWithMetrics = (over: Partial<SidebarProps> = {}, tweak?: (b: ReturnType<typeof installBridge>) => void) =>
+    mount({ lens: 'topics', indexSource: feedOver(HOME, METRICS, GUIDE, LOOSE), ...over }, tweak)
+  /** The frontmatter of the single content-at-create call, parsed — key ORDER included. */
+  const born = (bridge: ReturnType<typeof installBridge>) => {
+    expect(bridge.createFile).toHaveBeenCalledTimes(1)
+    const req = bridge.createFile.mock.calls[0][0] as { path: string; content: string }
+    const { frontmatter, body } = splitFrontmatter(req.content)
+    return { path: req.path, properties: parseFrontmatter(frontmatter).properties, body }
+  }
+
+  it('"New note" on a FLAGGED row births a MEMBER: declared columns empty, folder_pages LAST, parked per settings', async () => {
+    const { el, bridge, props } = await topicsWithMetrics()
+    await expandHome(el)
+    await rightClick(rowFor(el, 'Metrics'))
+    act(() => itemByLabel(el, 'New note')?.click())
+    await commit(el, 'Growth')
+    // The parking folder is created level by level before the file lands (locked Q5/Q6).
+    expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith('/v/KPIs')
+    const page = born(bridge)
+    expect(page.path).toBe('/v/KPIs/Growth.md')
+    // The DECLARATION is the schema: every column, empty by kind — and the birth key LAST, so the
+    // card reads columns-then-parent.
+    expect(Object.keys(page.properties)).toEqual(['owner', 'funnels', 'folder_pages'])
+    expect(page.properties).toEqual({ owner: null, funnels: [], folder_pages: ['[[Metrics]]'] })
+    expect(page.body).toBe('')
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/KPIs/Growth.md')
+  })
+
+  it("…and the folder page's TEMPLATE rides along, without ever displacing the birth key", async () => {
+    const { el, bridge } = await topicsWithMetrics({}, (b) => {
+      b.readFile = vi.fn(async (path: string) => {
+        if (path !== '/v/.yaseendocs/templates/Metrics.md') throw { code: 'NOT_FOUND', message: path }
+        return { path, content: '---\nowner: Yasin\nstage: draft\nfolder_pages: ["[[Elsewhere]]"]\n---\n\n## Notes\n', mtime: 1, size: 1 }
+      })
+    })
+    await expandHome(el)
+    await rightClick(rowFor(el, 'Metrics'))
+    act(() => itemByLabel(el, 'New note')?.click())
+    await commit(el, 'Growth')
+    const page = born(bridge)
+    // Template values win over the empty scaffold, template-only keys are KEPT (frontmatter is the
+    // source of truth and the declaration gates no content) — and the template's own attempt to
+    // redirect the belonging is overwritten AND pushed back to last.
+    expect(Object.keys(page.properties)).toEqual(['owner', 'funnels', 'stage', 'folder_pages'])
+    expect(page.properties).toEqual({ owner: 'Yasin', funnels: [], stage: 'draft', folder_pages: ['[[Metrics]]'] })
+    expect(page.body).toBe('\n## Notes\n')
+  })
+
+  it('"New folder page" on a FLAGGED row is a SUB-TOPIC: the flag, and the belonging beside it', async () => {
+    const { el, bridge } = await topicsWithMetrics()
+    await expandHome(el)
+    await rightClick(rowFor(el, 'Metrics'))
+    act(() => itemByLabel(el, 'New folder page')?.click())
+    await commit(el, 'Retention')
+    const page = born(bridge)
+    expect(page.path).toBe('/v/KPIs/Retention.md') // parked with Metrics' other members
+    // D1 of YAZ-841 is untouched: NO template, NO settings block, NO scaffolded columns — a folder
+    // page is born with the flag, and 8H adds only the one entry that nests it.
+    expect(Object.keys(page.properties)).toEqual(['folder_page', 'folder_pages'])
+    expect(page.properties).toEqual({ folder_page: true, folder_pages: ['[[Metrics]]'] })
+    expect(page.body).toBe('')
+    expect(bridge.readFile).not.toHaveBeenCalled()
+  })
+
+  it('"New folder" on a flagged row is untouched: a folder is never a member', async () => {
+    const { el, bridge } = await topicsWithMetrics()
+    await expandHome(el)
+    await rightClick(rowFor(el, 'Metrics'))
+    act(() => itemByLabel(el, 'New folder')?.click())
+    await commit(el, 'Archive')
+    expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith('/v/Archive') // beside Metrics' file
+    expect(bridge.createFile).not.toHaveBeenCalled()
+  })
+
+  it('the FILES lens is untouched, even on a row whose file IS a folder page', async () => {
+    // The same kind of record that births members in Topics, right-clicked in the FILE tree:
+    // `topicsAnchor` is null there, so the create group falls straight through to the file rule.
+    const A = record('/v/a.md', { folder_page: true, folder_page_settings: { folder: 'KPIs' } })
+    const { el, bridge } = await mount({ lens: 'files', indexSource: feedOver(A) })
+    await rightClick(fileRow(el))
+    act(() => itemByLabel(el, 'New note')?.click())
+    await commit(el, 'Nearby')
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith('/v/Nearby.md')
+    expect(bridge.createDir).not.toHaveBeenCalled()
   })
 
   it('an UNCATEGORIZED member is a page like any other: same menu, its own path', async () => {
