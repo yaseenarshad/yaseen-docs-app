@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { MAX_COLLAPSED_GROUP_KEYS, type IndexRecord, type PropertiesResponse } from '@shared/types'
+import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
+import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
+import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { storage } from '../lib/storage'
 import { type ViewSet, type ViewDef, type ParsedViews, parseViews, serializeViews, updateViews } from './viewSchema'
 import { type Group, type Row, propertyKeys, resolverFor, runView } from './engine'
@@ -29,9 +32,10 @@ export interface FolderPageMode {
   vaultRecords: readonly IndexRecord[]
   /**
    * Birth from a folder page (🔒 Q5, YAZ-815): create a page from `seed` and resolve its path.
-   * `name` is the outline add row's "+ Create 'X' here" (YAZ-820); absent → the `Untitled` scheme.
+   * The name is always the `Untitled` scheme — the outline add row that once typed one died in
+   * YAZ-903, and with it the `name` argument.
    */
-  create: (seed: NewNoteSeed, name?: string) => Promise<string>
+  create: (seed: NewNoteSeed) => Promise<string>
   /**
    * The declarations, back through the one door (YAZ-895) — ONE `folder_page_settings` write
    * (🔒 D3), failures in the host's own banner. `views` rides along so a caller can move the
@@ -40,6 +44,15 @@ export interface FolderPageMode {
   setColumns: (columns: Record<string, ColumnDecl>, views?: ViewDef[]) => void
   /** ⌘-click on an outline row opens the page in a BACKGROUND tab (YAZ-820); absent → opens in place. */
   openBackground?: (path: string) => void
+  /**
+   * The outline editor's own wikilink surfaces (YAZ-903) — the window's ONE resolve source, its
+   * `[[` picker feed and the click-navigation contract, assembled by the host exactly as
+   * `Editor` assembles them for the note. `nav`'s identity must be STABLE: a new object remounts
+   * the editor, and a remount costs the caret.
+   */
+  wikilinks?: WikilinkResolveSource
+  wikilinkCandidates?: WikilinkCandidateSource
+  nav?: WikilinkNav
 }
 
 export interface ViewsPaneProps {
@@ -129,7 +142,10 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
    * an outline view's `order` is the [D5] MEMBER sequence (wikilinks), not a column list, so it
    * is dropped before the run. Left in, `propertyKeys` would hand those wikilinks to the value
    * pass, every row's `values` would come back empty, and the toolbar's search — which matches
-   * over exactly those values — would hide the whole outline the moment anybody dragged a row.
+   * over exactly those values — would hide the whole outline. The strip outlives the [D5] list
+   * itself (YAZ-903 retires `order` on the first edit): an un-migrated card still carries one.
+   * The DOCUMENT needs no strip of its own — `propertyKeys` reads `view.order` and nothing else,
+   * so `view.outline`, a string, can not reach the value pass however long it grows.
    * Everything else the view says (sort, limit, groupBy) still runs.
    */
   const isOutline = view?.type === 'outline'
@@ -268,7 +284,7 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
         tabs={tabs}
         root={root}
         properties={properties}
-        noProperties={outline}
+        documentView={outline}
         folderPage={folderPage}
       />
       {createError !== null && (
@@ -286,25 +302,24 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
           folderPagePath={thisFile}
           root={root}
           settings={folderPage.settings}
+          outline={views[outlineIndex].outline}
           vaultRecords={vaultRecords}
           records={records}
-          rows={rows}
           onOpenFile={onOpenFile}
           openBackground={folderPage.openBackground}
-          // ONE `folder_page_settings` write, through the same door every config edit uses. It
-          // lands on the FIRST outline view because that is the one `orderedMembers` reads back
-          // (🔒 Q3) — with the two default views they are the same view.
-          onOrder={(order) =>
+          wikilinks={folderPage.wikilinks}
+          wikilinkCandidates={folderPage.wikilinkCandidates}
+          nav={folderPage.nav}
+          // ONE `folder_page_settings` write, through the same door every config edit uses — the
+          // door the retired drag wrote `order` through (YAZ-903). It lands on the FIRST outline
+          // view because that is the one the seed was read from, and `order` RETIRES in the same
+          // write: the [D5] list has said its piece the moment the document exists.
+          onDocument={(markdown) =>
             update((d) => {
-              d.views[outlineIndex].order = order
+              d.views[outlineIndex].outline = markdown
+              delete d.views[outlineIndex].order
             })
           }
-          onCreate={(name) => {
-            setCreateError(null)
-            // Birth, then STAY: the new member appears as a row on the next snapshot, and the
-            // outline the user is reading does not jump out from under them.
-            folderPage.create(deriveSeed(def, view), name).catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
-          }}
         />
       ) : view.type === 'table' ? (
         <TableView

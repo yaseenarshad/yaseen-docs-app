@@ -36,6 +36,11 @@ vi.mock('./ViewsPane', async (importOriginal) => {
   }
 })
 
+/** The outline's editor, stubbed (YAZ-903): a real Crepe in jsdom is `OutlineEditor.test.tsx`'s job. */
+vi.mock('./view/OutlineEditor', () => ({
+  OutlineEditor: ({ markdown }: { markdown: string }) => <pre className="outline-doc">{markdown}</pre>,
+}))
+
 import { api, BridgeRequestError } from '../api'
 import type { FolderPageMode, ViewsPaneProps } from './ViewsPane'
 import { writeProperty } from './writeProperty'
@@ -149,10 +154,13 @@ const byLabel = <T extends HTMLElement>(el: ParentNode, label: string): T => q<T
 const texts = (el: ParentNode, sel: string): string[] => [...el.querySelectorAll(sel)].map((n) => n.textContent ?? '')
 const options = (el: ParentNode): (string | null)[] => [...el.querySelectorAll('[role="option"]')].map((o) => o.textContent)
 /**
- * Row names, whichever body is rendering: the outline (YAZ-820, which names pages the way a link
- * does — no extension), the placeholder list, or the real table (`file.name`, extension and all).
+ * Row names, whichever body is rendering: the outline's APPENDED members (YAZ-903, which name
+ * pages the way a link does — no extension), the placeholder list, or the real table
+ * (`file.name`, extension and all).
  */
 const rowNames = (el: ParentNode): string[] => texts(el, '.view-outline__link, .view-row__link, .view-table__link')
+/** The outline document the editor was seeded with (YAZ-903). */
+const doc = (el: ParentNode): string => q(el, '.outline-doc').textContent ?? ''
 
 function click(el: Element): void {
   act(() => (el as HTMLElement).click())
@@ -213,7 +221,7 @@ describe('who gets a contents block', () => {
 describe('rows are the members, and only the members', () => {
   it('the lookup fills the block — never a filter over the whole vault', () => {
     const el = mount(FUNNELS)
-    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales']) // the outline, alphabetical (🔒 the [D5] rule)
+    expect(doc(el)).toBe('- [[Lead Gen]]\n- [[Sales]]') // the outline, alphabetical (the [D5] seed)
     selectView(el, 'Table')
     expect(rowNames(el)).toEqual(['Lead Gen.md', 'Sales.md']) // path order, as `pagesIn` gives them
     expect(el.textContent).not.toContain('Other')
@@ -223,7 +231,10 @@ describe('rows are the members, and only the members', () => {
   it('a member added on the next snapshot lands in the block with no user action', () => {
     const el = mount(FUNNELS)
     feed([...vault(), rec('/vault/stages/Expansion.md', { folder_pages: ['[[Funnel Stages]]'] })])
-    expect(rowNames(el)).toEqual(['Expansion', 'Lead Gen', 'Sales'])
+    // In the APPENDED section (YAZ-903): the document the user is typing into is never rewritten
+    // under them, and a member it does not name is a member all the same.
+    expect(rowNames(el)).toEqual(['Expansion'])
+    expect(doc(el)).toBe('- [[Lead Gen]]\n- [[Sales]]')
   })
 
   it('the whole-vault resolver reaches the engine: a link pointing OUTSIDE the members resolves (🔒 D2)', () => {
