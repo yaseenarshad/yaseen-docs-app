@@ -100,6 +100,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
           const on = isShown(key)
           const i = shown.indexOf(key)
           const label = propertyLabel(def, key)
+          const decl = folderPage.settings.columns[bare(key)]
           return (
             <li key={key} className="view-prop">
               <input
@@ -132,7 +133,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
                 <select
                   className="view-select"
                   aria-label={`Type of ${label}`}
-                  value={folderPage.settings.columns[bare(key)]?.kind ?? ''}
+                  value={decl?.kind ?? ''}
                   onChange={(e) => setKind(bare(key), e.target.value as PropertyKind)}
                 >
                   {/* Undeclared: the ladder's LOWER rungs decide — a placeholder, never a choice. */}
@@ -146,12 +147,12 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
                   ))}
                 </select>
               )}
-              {['link', 'multi-link'].includes(folderPage.settings.columns[bare(key)]?.kind ?? '') && (
+              {(decl?.kind === 'link' || decl?.kind === 'multi-link') && (
                 <TextField
                   className="view-input view-relation__target"
                   aria-label={`Target of ${label}`}
                   placeholder="Any page"
-                  value={folderPage.settings.columns[bare(key)]?.target ?? ''}
+                  value={decl.target ?? ''}
                   onCommit={(target) => setTarget(bare(key), target)}
                 />
               )}
