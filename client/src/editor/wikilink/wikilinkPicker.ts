@@ -12,7 +12,10 @@
  *    reopens until the caret leaves it. Candidates come from a `WikilinkCandidateSource` — the
  *    same mutable-holder pattern as A-'s resolve source: App owns one per window,
  *    `WikilinkIndexBridge` feeds it `linkCandidates(records)` per index snapshot, updates poke
- *    subscribed editors with a meta transaction (live rows, no remount).
+ *    subscribed editors with a meta transaction (live rows, no remount). A CLOSED picker only ever
+ *    OPENS on a doc-changing transaction (YAZ-908) — moving the caret into a closed `[[Alpha]]`
+ *    reads like a fresh `[[Al` before it, so caret movement (and a candidate refresh) must never
+ *    pop the popup; an already-open session survives caret moves within its own `[[`.
  *  - `SlashProvider` (@milkdown/kit/plugin/slash — the locked foundation; the machinery behind
  *    Crepe's own `/` menu) POSITIONS the popup element at the caret via floating-ui and toggles
  *    `data-show`. Its single-character `trigger` cannot express `[[`, so it runs with a custom
@@ -143,6 +146,11 @@ function compute(state: EditorState, prev: PickerState | null, tr: Transaction |
   const ctx = findContext(state)
   if (ctx === null) return { session: null, dismissed: null } // context gone: a fresh [[ starts clean
   if (dismissed !== null && ctx.from === dismissed) return { session: null, dismissed }
+  // Only TYPING opens a closed picker (YAZ-908): walking the caret into a closed `[[Alpha]]` reads
+  // like a fresh `[[Al` but must stay shut. `from` needs no mapping — when the doc changed the gate
+  // passes anyway, and when it did not the positions are already comparable.
+  const sameOpen = prev?.session != null && prev.session.from === ctx.from
+  if (!sameOpen && tr?.docChanged !== true) return { session: null, dismissed }
   const rows = rowsFor(ctx.fragment, source.candidates)
   if (rows.length === 0) return { session: null, dismissed }
   const held =

@@ -394,3 +394,53 @@ describe('wikilink picker: a closed picker never swallows keys', () => {
     expect(getMarkdownForSave(crepe)).not.toBe('* item [[Alpha]]\n')
   })
 })
+
+describe('wikilink picker: walking never opens (YAZ-908)', () => {
+  it('moving the caret into the middle of a closed [[Alpha]] never opens the picker', async () => {
+    const { crepe } = await mount('before [[Alpha]] after\n', source('Alpha'))
+    caret(crepe, posOf(crepe, '[[Alpha]]', 4)) // [[Al|pha]] — text before the caret reads like a fresh [[Al
+    await tick()
+    expect(rows()).toEqual([])
+    expect(popup()?.dataset.show ?? 'false').toBe('false')
+  })
+
+  it('moving the caret into loaded unclosed [[Al text never opens the picker either', async () => {
+    const { crepe } = await mount('stray [[Al tail\n', source('Alpha'))
+    caret(crepe, posOf(crepe, '[[Al', 4))
+    await tick()
+    expect(rows()).toEqual([])
+    expect(popup()?.dataset.show ?? 'false').toBe('false')
+  })
+
+  it('an open picker survives intra-fragment caret moves, closes on leave, and walking back in does NOT reopen it', async () => {
+    const { crepe } = await mount('X\n', source('Alpha'))
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, '[[al')
+    expect(rows()).toEqual(['Alpha'])
+    caret(crepe, posOf(crepe, '[[al', 3)) // [[a|l — same [[, still open
+    expect(rows()).toEqual(['Alpha'])
+    caret(crepe, posOf(crepe, 'X')) // left the fragment — closes
+    expect(rows()).toEqual([])
+    caret(crepe, posOf(crepe, '[[al', 4)) // walked back in — stays closed
+    await tick()
+    expect(rows()).toEqual([])
+    expect(popup()?.dataset.show ?? 'false').toBe('false')
+  })
+
+  it('typing inside a closed [[Alpha]] still opens suggestions (editing the tag — the Obsidian/Roam default)', async () => {
+    const { crepe } = await mount('see [[Alpha]] here\n', source('Alpha'))
+    caret(crepe, posOf(crepe, '[[Alpha]]', 4)) // [[Al|pha]]
+    type(crepe, 'p') // doc changed: [[Alp|pha]] — fragment "Alp" prefix-matches Alpha
+    expect(rows()).toEqual(['Alpha'])
+  })
+
+  it('a candidate refresh never opens a closed picker under the caret', async () => {
+    const s = source('Alpha')
+    const { crepe } = await mount('go [[Alpha]] on\n', s)
+    caret(crepe, posOf(crepe, '[[Alpha]]', 4))
+    s.update(['Alpha', 'Beta'].map(nameCandidate))
+    await tick()
+    expect(rows()).toEqual([])
+    expect(popup()?.dataset.show ?? 'false').toBe('false')
+  })
+})
