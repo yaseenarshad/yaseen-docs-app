@@ -130,6 +130,19 @@ test('step 1 — the contents block sits between the note and its backlinks, hol
     .evaluate((host) => Array.from(host.children).map((c) => c.className))
   expect(children).toEqual(['page-title', 'frontmatter-panel', 'editor-mount', 'folder-page-contents', 'backlinks'])
 
+  // YAZ-909: a folder page's BODY is a preamble, not a document with an end — its 32px lead-in
+  // and 120px tail collapse to a working 12px, so the outline starts right under the text.
+  await expect
+    .poll(() =>
+      layer(win)
+        .locator('.editor-mount > .editor-instance')
+        .evaluate((el) => {
+          const s = getComputedStyle(el)
+          return `${s.paddingTop} ${s.paddingBottom}`
+        }),
+    )
+    .toBe('12px 12px')
+
   // Q7: the folder page's two skins, outline FIRST (YAZ-820). The outline is a DOCUMENT now
   // (YAZ-903) and this page has none stored, so what stands there is the [D5] arrangement frozen
   // into one — a link line per member, alphabetical because no `order` is stored. Every member is
@@ -192,6 +205,18 @@ test('step 4 — "New" births a member from the declaration, parked per the sett
   expect(born).toContain('related_stages: []')
   expect(born).not.toContain('folder_page:')
   await expect(activeTab(win)).toHaveText('Untitled')
+  // YAZ-909's other half: an ORDINARY page keeps its document spacing — the collapse is the
+  // folder page's alone.
+  await expect
+    .poll(() =>
+      layer(win)
+        .locator('.editor-mount > .editor-instance')
+        .evaluate((el) => {
+          const s = getComputedStyle(el)
+          return `${s.paddingTop} ${s.paddingBottom}`
+        }),
+    )
+    .toBe('32px 120px')
   await shoot(win, 'folder-05-new-member')
 
   // …and the folder page adopts it off the watcher, with no user action.
