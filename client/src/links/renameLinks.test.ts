@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { IndexRecord } from '@shared/types'
+import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import {
   countLinkReferences,
   maskCode,
@@ -70,6 +71,69 @@ describe('rewriteNoteLinks', () => {
 
   it('null when nothing references the renamed file (the caller never writes)', () => {
     expect(rewriteNoteLinks('---\nk: 1\n---\n\n[[A]]\n', resolvesB, toC)).toBeNull()
+  })
+})
+
+// ---------- YAZ-864: the ONE reserved key is walked INTO ----------
+
+describe('rewriteNoteLinks inside folder_page_settings (YAZ-864)', () => {
+  it('rewrites an outline `order` entry, keeping every other key and the body byte-for-byte', () => {
+    const content =
+      '---\nfolder_page: true\nfolder_page_settings:\n  views:\n    - type: outline\n      name: Outline\n      order:\n        - "[[A]]"\n        - "[[B]]"\n    - type: table\n      name: Table\n---\n\n# Home\n'
+    const out = rewriteNoteLinks(content, resolvesB, toC)
+    expect(out).toContain('- "[[C]]"')
+    expect(out).toContain('- "[[A]]"') // the sibling entry is untouched
+    expect(out).toContain('folder_page: true')
+    expect(out).toContain('name: Table') // the second view rides along
+    expect(out).toContain('\n# Home\n')
+  })
+
+  it('rewrites a column `target`, leaving the column\u2019s other keys and the sibling columns alone', () => {
+    const content =
+      '---\nfolder_page_settings:\n  columns:\n    sold_to:\n      kind: multi-link\n      target: "[[B]]"\n      required: true\n    owner:\n      kind: link\n      target: "[[A]]"\n    note:\n      kind: text\n  folder: roles\n---\n\nbody\n'
+    const out = rewriteNoteLinks(content, resolvesB, toC)
+    expect(out).toContain('target: "[[C]]"')
+    expect(out).toContain('kind: multi-link')
+    expect(out).toContain('required: true')
+    expect(out).toContain('target: "[[A]]"')
+    expect(out).toContain('kind: text')
+    expect(out).toContain('folder: roles')
+  })
+
+  it('the spelling rules are the top level\u2019s, not a second set: alias, heading and pathed forms all follow', () => {
+    const content =
+      '---\nfolder_page_settings:\n  columns:\n    a:\n      kind: link\n      target: "[[Sub/B|Bee]]"\n  views:\n    - type: outline\n      order:\n        - "[[ B #H]]"\n---\n\nbody\n'
+    const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
+    expect(out).toContain('target: "[[Sub/C|Bee]]"') // pathed stays pathed
+    expect(out).toContain('"[[C#H]]"') // heading rides along, padding normalised as everywhere else
+  })
+
+  it('a STALE entry that never resolved to the renamed page stays exactly as written', () => {
+    const content =
+      '---\nfolder_page_settings:\n  views:\n    - type: outline\n      order:\n        - "[[Gone]]"\n        - not a link at all\n        - 7\n      order_note: "[[B]] in an unknown key"\n---\n\nbody [[B]]\n'
+    const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
+    expect(out).toContain('- "[[Gone]]"')
+    expect(out).toContain('- not a link at all')
+    expect(out).toContain('- 7')
+    expect(out).toContain('order_note: "[[B]] in an unknown key"') // not a leaf, and not whole-value
+    expect(out).toContain('body [[C]]\n') // the body still rewrote, so the file WAS written
+  })
+
+  it('a page with settings but no reference to the renamed file is null — never written, byte-for-byte safe', () => {
+    const content =
+      '---\nfolder_page: true\nfolder_page_settings:\n  columns:\n    owner:\n      kind: link\n      target: "[[A]]"\n  views:\n    - type: outline\n      order: ["[[A]]"]\n---\n\n# Not about B\n'
+    expect(rewriteNoteLinks(content, resolvesB, toC)).toBeNull()
+  })
+
+  it('an unusable settings shape is not normalised away — the raw value rides along, only the leaf moves', () => {
+    const content =
+      '---\nfolder_page_settings:\n  columns:\n    broken:\n      kind: not-a-kind\n      target: "[[B]]"\n    alsoBroken: 7\n  views: {}\n  stray: keep me\n---\n\nbody\n'
+    const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
+    expect(out).toContain('kind: not-a-kind') // the tolerant READ would drop this column entirely
+    expect(out).toContain('target: "[[C]]"')
+    expect(out).toContain('alsoBroken: 7')
+    expect(out).toContain('views: {}')
+    expect(out).toContain('stray: keep me')
   })
 })
 
@@ -208,6 +272,52 @@ describe('updateLinksAfterRename', () => {
     ]
     expect(await updateLinksAfterRename({ root, oldPath: '/v/Sub/B.md', newPath: '/v/Sub/C.md', records })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[Sub/C]]\n')
+  })
+})
+
+describe('updateLinksAfterRename reaches notes referenced ONLY inside folder_page_settings (YAZ-864)', () => {
+  const root = '/v'
+  const oldPath = '/v/B.md'
+  const newPath = '/v/C.md'
+  /** Home names B in its outline `order`; Cols names it as a column target. Neither has a `links` entry. */
+  const HOME = '---\nfolder_page: true\nfolder_page_settings:\n  views:\n    - type: outline\n      name: Outline\n      order:\n        - "[[A]]"\n        - "[[B]]"\n---\n\n# Home\n'
+  const COLS = '---\nfolder_page: true\nfolder_page_settings:\n  columns:\n    sold_to:\n      kind: multi-link\n      target: "[[B]]"\n---\n\n# Cols\n'
+  const settingsOf = (raw: string) => parseFrontmatter(splitFrontmatter(raw).frontmatter).properties.folder_page_settings
+
+  it('counts them in the banner N and rewrites both leaves on disk; a settings page naming nobody is never read', async () => {
+    const OTHER = '---\nfolder_page: true\nfolder_page_settings:\n  columns:\n    owner:\n      kind: link\n      target: "[[A]]"\n---\n\n# Other\n'
+    const files = {
+      '/v/Home.md': { content: HOME, mtime: 1 },
+      '/v/Cols.md': { content: COLS, mtime: 1 },
+      '/v/Other.md': { content: OTHER, mtime: 1 },
+    }
+    const bridge = installBridge(files)
+    const records = [
+      rec('/v/Home.md', { properties: { folder_page: true, folder_page_settings: settingsOf(HOME) } }),
+      rec('/v/Cols.md', { properties: { folder_page: true, folder_page_settings: settingsOf(COLS) } }),
+      rec('/v/Other.md', { properties: { folder_page: true, folder_page_settings: settingsOf(OTHER) } }),
+      rec('/v/A.md'),
+      rec('/v/B.md'),
+    ]
+    // The banner's N and the rewrite agree — the probe walks the same leaves the rewrite does.
+    expect(countLinkReferences({ root, oldPath, records })).toBe(2)
+    expect(await updateLinksAfterRename({ root, oldPath, newPath, records })).toEqual({ updated: 2, skipped: 0 })
+    expect(files['/v/Home.md'].content).toContain('- "[[C]]"')
+    expect(files['/v/Home.md'].content).toContain('- "[[A]]"')
+    expect(files['/v/Cols.md'].content).toContain('target: "[[C]]"')
+    expect(files['/v/Other.md'].content).toBe(OTHER) // byte-for-byte: settings, but no reference
+    expect(bridge.readFile).not.toHaveBeenCalledWith('/v/Other.md')
+  })
+
+  it('a FOLDER rename leaves a bare settings leaf byte-identical, exactly like a bare body link (LOCKED)', async () => {
+    const files = { '/v/Home.md': { content: HOME, mtime: 1 } }
+    installBridge(files)
+    const records = [
+      rec('/v/Home.md', { properties: { folder_page: true, folder_page_settings: settingsOf(HOME) } }),
+      rec('/v/Old/B.md', { folder: 'Old' }),
+    ]
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/Old', newPath: '/v/New', kind: 'dir', records })).toEqual({ updated: 0, skipped: 0 })
+    expect(files['/v/Home.md'].content).toBe(HOME)
   })
 })
 

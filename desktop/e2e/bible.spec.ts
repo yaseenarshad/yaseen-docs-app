@@ -26,6 +26,9 @@
  *      `[[Problems]]` are exactly the two problems whose relations point at it
  *   5  rename an entity page — relations, body links, backlinks AND its belonging all survive,
  *      still zero broken links
+ *   6  rename a FOLDER PAGE (YAZ-864) — the links that live INSIDE `folder_page_settings` follow
+ *      too: Home's outline `order` entry and another folder page's column `target`, alongside the
+ *      members' own `folder_pages`. Still zero broken links, and the map still browses.
  *
  * Same harness as links.spec.ts / backlinks.spec.ts (temp `--user-data-dir`, a COPY of the
  * fixture, `bible-` step screenshots).
@@ -62,6 +65,19 @@ const KPI_MEMBERS = ['CAC', 'Gross Margin', 'MQL Volume', 'Sales Cycle Time', 'W
 
 const FUNNEL = path.join('funnel-stages', 'Sales-Conversion.md')
 const RENAMED = 'Deal Win Rate'
+
+/**
+ * Step 6 (YAZ-864): the folder page whose name is spelled in three OTHER frontmatter places than a
+ * `folder_pages` list — Home's outline `order`, `Problems.md`'s `sold_to` column `target`, and its
+ * own `reports_to` target — all of them NESTED inside `folder_page_settings`, where the index never
+ * looked for links. Renamed to a name that sorts FIRST alphabetically, so a stale order entry
+ * (silently ignored, then alphabetical) could not pass for a rewritten one.
+ */
+const ROLES = 'Roles'
+const ROLES_RENAMED = 'Buyer Roles'
+/** Its members, alphabetically — `Roles.md` declares no outline `order`, so [D5] falls back. */
+const ROLE_MEMBERS = ['CEO', 'Head of Sales', 'RevOps Lead']
+const TOPICS_AFTER = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', ROLES_RENAMED]
 
 let userData: string
 let vault: string
@@ -302,5 +318,55 @@ test('step 5 — renaming an entity page: relations, body links, backlinks and i
   // The durable result: not one dangling wiki link anywhere in the vault.
   await expect.poll(() => brokenLinks(vault)).toEqual([])
   await shoot(win, 'bible-05-rename-survived')
+  await quitApp(app)
+})
+
+test('step 6 — renaming a FOLDER PAGE: the links INSIDE folder_page_settings follow too (YAZ-864)', async () => {
+  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, HOME)) })
+  win = await appWindow(app, 'w1')
+  await expect(outlineRows(contents(win))).toHaveText(TOPICS)
+
+  await fileRow(win, ROLES).click({ button: 'right' })
+  await win.locator('.ctx-menu [role="menuitem"]', { hasText: 'Rename' }).click()
+  await expect(win.locator('.create-inline__input')).toHaveValue(ROLES)
+  await win.locator('.create-inline__input').fill(ROLES_RENAMED)
+  await win.keyboard.press('Enter')
+
+  // SIX notes: the three members through their own top-level `folder_pages` — the half that already
+  // worked — plus the three folder pages that name Roles ONLY from inside `folder_page_settings`,
+  // which the index never extracted as links and the rewrite therefore used to walk straight past.
+  await expect(win.locator('.link-notice')).toHaveText('Updated links in 6 notes')
+
+  const read = (rel: string) => readFile(path.join(vault, rel), 'utf8')
+  // Home's outline `order` entry — the [D5] sequence, rewritten in place …
+  await expect.poll(() => read(HOME)).toContain(`- "[[${ROLES_RENAMED}]]"`)
+  expect(await read(HOME)).toContain('- "[[KPIs]]"') // its siblings, untouched
+  // … a column `target` on ANOTHER folder page, its column's other keys intact …
+  await expect.poll(() => read('Problems.md')).toContain(`target: "[[${ROLES_RENAMED}]]"`)
+  const problems = await read('Problems.md')
+  expect(problems).toContain('target: "[[KPIs]]"')
+  expect(problems).toContain('required: true')
+  expect(problems).toContain('folder: problems')
+  // … the renamed page's OWN self-target, written at its new path, `folder` and belonging intact …
+  const renamedPage = await read(`${ROLES_RENAMED}.md`)
+  expect(renamedPage).toContain(`target: "[[${ROLES_RENAMED}]]"`)
+  expect(renamedPage).toContain('folder: roles')
+  expect(renamedPage).toContain('- "[[Home]]"')
+  // … and the members' plain `folder_pages`, which is the behaviour that already worked.
+  for (const member of ROLE_MEMBERS) {
+    await expect.poll(() => read(path.join('roles', `${member}.md`))).toContain(`- "[[${ROLES_RENAMED}]]"`)
+  }
+
+  // Everything still browses: Home's order still places it LAST — a stale entry would be ignored
+  // and 'Buyer Roles' would have drifted to the top alphabetically — and it still holds its three.
+  await expect(outlineRows(contents(win))).toHaveText(TOPICS_AFTER)
+  await expect(outlineCounts(contents(win))).toHaveText(TOPIC_COUNTS)
+  await fileRow(win, ROLES_RENAMED).click()
+  await expect(activeTab(win)).toHaveText(ROLES_RENAMED)
+  await expect(outlineRows(contents(win))).toHaveText(ROLE_MEMBERS)
+
+  // The durable result again, with the settings targets now inside the audit's reach.
+  await expect.poll(() => brokenLinks(vault)).toEqual([])
+  await shoot(win, 'bible-06-folder-page-rename')
   await quitApp(app)
 })

@@ -25,11 +25,9 @@ Execute the entire YAZ-813 tree (issues 1- through 8-, 33 subissues) to Done: th
   - [x] 3- YAZ-816 COMPLETE + MERGED to main (150c780). Order was 3B→3A→3C→3D→3E. 3B c868c4d (−1663) · 3A da4d02e (properties.json) · 3C dac0291 (e2e 85/85) · 3D 057c908 (tombstones) · 3E 150c780 (vaultIndex/registry→live; 'registry' greps ZERO incl. tests). Gotchas: picker e2e gap filed on 819; bible fixture pages still carry inert page_type until 7-.
   - [x] 4- YAZ-817 COMPLETE + MERGED to main (721b69d). 4A c249a99 (toggle + ConfirmTurnBack; indexSource wiring) · 4B 1098d87 (New folder page, 4th EntryKind) · 4C+4D 721b69d (gestures contract; fixed pre-existing 5D atomicity lie). e2e 85/85 twice.
   - [x] 5- YAZ-818 COMPLETE + MERGED to main (5c60901). 5.1 9a798ce · 5.2 f27e2fa · 5.3 41929ad (−2,839) · 5.4 0782377 · 5.5 5c60901 (amputation; rung 2 wired; ViewTabs switch-only for real → CRUD parked 824). e2e 87/87.
-- Now: [→] 6- YAZ-821: 6D (YAZ-850) contracts — next. D6 RULED by Yasin (guardedChildren = the one door; ⚡ amendment on YAZ-814, merged ec15f3b).
-  - [x] 6A (YAZ-847) lens tabs — Done; 98f8058; sidebarLens global; probe flakes hardened w/ control experiment
-  - [x] 6B (YAZ-848) Topics tree — Done; 3fc8359; guardedChildren's first tree consumer; 96/96
-  - [x] 6C (YAZ-849) Home ensure + offer — Done (resumed after stream cut); tree-probe adoption; 98/98
-- Next: 6D contracts → 6E polish → merge 821 → 7- (Yasin gates: canonical copy + dry-run approval)
+  - [x] 6- YAZ-821 COMPLETE + MERGED to main (baa0794). 6A 98f8058 · 6B 3fc8359 · 6C 86c257a · 6D+6E baa0794. THE WHOLE APP SURFACE IS BUILT. e2e 98/98.
+- Now: [→] 7- YAZ-822: 7A (YAZ-853) tools/migrateFolderPages.mjs — Opus building vs synthetic fixtures ONLY (real vault untouched)
+- Next: 7B — **YASIN GATES: (1) canonical-copy confirmation (/Users/yasin/Documents/GitHub/business-wiki-MASTER dupe vs original), (2) dry-run report approval in a YAZ-822 comment BEFORE --apply** → 7C fixtures/specs → 7D polish → merge 822 → 8- (incl. Yasin dogfooding)
 - Remaining:
   - [ ] 4- YAZ-817 (4A–4D)
   - [ ] 5- YAZ-818 (5.1–5.5)

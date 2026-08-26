@@ -62,7 +62,7 @@ export class FrontmatterWriteError extends Error {
 /** Captures the closing fence so `...` survives a rewrite. */
 const TERMINATOR_RE = /(?:^|\r?\n)(---|\.\.\.)[ \t]*(?:\r?\n)?$/
 
-/** Same options as `serializeBase`: no folding, no `[ 1, 2 ]` padding. */
+/** Same options as `serializeViews`: no folding, no `[ 1, 2 ]` padding. */
 const YAML_OUT = { lineWidth: 0, flowCollectionPadding: false } as const
 
 /**

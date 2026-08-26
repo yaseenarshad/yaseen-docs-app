@@ -24,6 +24,16 @@
  * (top-level and inside lists), rewritten through `setFrontmatterProperty` so everything
  * else in the block survives byte-for-byte.
  *
+ * ONE key is walked deeper than that (YAZ-864): `folder_page_settings`, the single reserved key
+ * with app-defined link semantics (Q1, YAZ-815). Its `views[].order` entries and
+ * `columns.<name>.target` strings ARE links the index never extracted, so a folder-page rename
+ * used to leave them dangling; they now rewrite exactly as a top-level entry does, through the
+ * same `resolves` / `newTarget` pair, so their spelling rules cannot drift from anyone else's.
+ * The key's own module owns both the key name and the list of link-bearing leaves
+ * (`views/folderPageSettings.ts` `mapFolderPageSettingsLinks`) — this engine never re-parses it.
+ * The referencing-set probe learned the same leaves, because a page whose ONLY reference lives
+ * in there has no `links` entry to be found by: one construction, never two truths.
+ *
  * E1b's bare-vs-pathed rules, LOCKED (decision E thread):
  *  - FOLDER rename: bare-name links keep resolving (names unchanged) — they stay
  *    BYTE-IDENTICAL; only PATHED targets rewrite, to the new root-relative path.
@@ -39,6 +49,7 @@ import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@sha
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { resolverFor } from '../views/engine'
+import { folderPageSettingsLinks, mapFolderPageSettingsLinks } from '../views/folderPageSettings'
 import { WIKILINK_RE } from '../editor/wikilink/wikilinkPlugin'
 import { flushRenamedPath } from '../lib/renameContinuity'
 import { basename, stripExt } from '../lib/paths'
@@ -129,9 +140,23 @@ function rewriteExactLink(value: string, resolves: ResolvesToOld, newTarget: New
 }
 
 /**
+ * The same string's TARGET (`|alias` / `#heading` stripped), or null — what `rewriteInner`
+ * decides on, exposed for the probe. The probe asks `resolves`, not "would this be rewritten":
+ * a bare link that stays bare still makes its note part of the referencing set, exactly as a
+ * top-level `links` entry does.
+ */
+function exactLinkTarget(value: string): string | null {
+  const m = EXACT_WIKILINK_RE.exec(value.trim())
+  if (m === null) return null
+  const target = m[1].split('|')[0].split('#')[0].trim()
+  return target === '' ? null : target
+}
+
+/**
  * One note's full rewrite: body scan + frontmatter whole-value links (through
- * `setFrontmatterProperty`, one key at a time). Null when nothing changed — the caller
- * never writes an unchanged file.
+ * `setFrontmatterProperty`, one key at a time) + the ONE reserved key's nested links
+ * (YAZ-864 — see the module doc). Null when nothing changed — the caller never writes an
+ * unchanged file, so a page carrying settings that reference nobody stays byte-identical.
  */
 export function rewriteNoteLinks(content: string, resolves: ResolvesToOld, newTarget: NewTarget): string | null {
   const { frontmatter, body } = splitFrontmatter(content)
@@ -153,9 +178,23 @@ export function rewriteNoteLinks(content: string, resolves: ResolvesToOld, newTa
           if (changed) out = setFrontmatterProperty(out, key, next)
         }
       }
+      // The nested leaves go back as the WHOLE key — the one door's own write shape
+      // (`writeFolderPageSettings`), so nothing about that block is serialised two ways.
+      const settings = mapFolderPageSettingsLinks(properties, (link) => rewriteExactLink(link, resolves, newTarget))
+      if (settings !== null) out = setFrontmatterProperty(out, settings.key, settings.value)
     }
   }
   return out === content ? null : out
+}
+
+/** Does this note reference the renamed file AT ALL — index links/embeds, or a nested settings leaf? */
+function makeReferences(resolves: ResolvesToOld): (record: IndexRecord) => boolean {
+  return (record) =>
+    [...record.links, ...record.embeds].some(resolves) ||
+    folderPageSettingsLinks(record.properties).some((link) => {
+      const target = exactLinkTarget(link)
+      return target !== null && resolves(target)
+    })
 }
 
 export interface RenameRewriteSummary {
@@ -232,7 +271,7 @@ function makeResolves({ root, oldPath, kind, records }: { root: string; oldPath:
  */
 export function countLinkReferences({ root, oldPath, kind = 'file', records }: { root: string; oldPath: string; kind?: 'file' | 'dir'; records: readonly IndexRecord[] }): number {
   const { resolves } = makeResolves({ root, oldPath, kind, records })
-  return records.filter((r) => [...r.links, ...r.embeds].some(resolves)).length
+  return records.filter(makeReferences(resolves)).length
 }
 
 /** Rewrite every referencing note on disk; see the module doc for the whole discipline. */
@@ -267,9 +306,10 @@ export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'f
     }
     return renamedTarget(target, { newName: movedName, newRel: movedRel })
   }
+  const references = makeReferences(resolves)
   const summary: RenameRewriteSummary = { updated: 0, skipped: 0 }
   for (const record of records) {
-    if (![...record.links, ...record.embeds].some(resolves)) continue
+    if (!references(record)) continue
     // A self-link travels with the file: a moved note is read/written at its NEW path
     // (for a dir, every record under the old prefix relocated).
     const filePath = mapMoved(record.path)

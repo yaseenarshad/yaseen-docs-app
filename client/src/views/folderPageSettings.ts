@@ -124,6 +124,62 @@ export function folderPageSettings(record: IndexRecord): FolderPageSettings {
 }
 
 /**
+ * WHERE LINKS LIVE inside the one key, and the ONE place that knows it (YAZ-864). A rename has to
+ * walk INTO `folder_page_settings` — the one reserved key with app-defined link semantics (🔒 Q1) —
+ * and the rule that no surface re-parses that key holds for the rename engine too: it comes through
+ * here, and the key STRING rides back in the result rather than being spelled anywhere else.
+ *
+ * The link-bearing leaves are exactly two: every view's [D5] `order` entry (🔒 Q3) and every
+ * column's belongs-to `target` (🔒 Q2) — the two places this module's vocabulary spells a wikilink.
+ * Each string leaf is offered to `map`; `undefined` means LEAVE IT, and everything else in the
+ * value — unknown view types, extra keys, `folder`, unusable shapes — rides along verbatim.
+ *
+ * Deliberately over the RAW value, not the tolerant read: `folderPageSettings()` normalises and
+ * DROPS what it cannot use, so a rewrite built on it would quietly delete a hand-written shape,
+ * and a probe built on it would disagree with the rewrite about which leaves even exist. Null when
+ * no leaf changed, so a page with settings but no reference is never written at all.
+ */
+export function mapFolderPageSettingsLinks(
+  properties: Record<string, unknown>,
+  map: (link: string) => string | undefined,
+): { key: string; value: unknown } | null {
+  const raw = properties[SETTINGS_KEY]
+  if (!isRecord(raw)) return null
+  let changed = false
+  const mapLink = (link: unknown): unknown => {
+    const next = typeof link === 'string' ? map(link) : undefined
+    if (next === undefined) return link
+    changed = true
+    return next
+  }
+  // Spread-then-reassign, so every untouched key keeps its value AND its position.
+  const value: Record<string, unknown> = { ...raw }
+  if (Array.isArray(raw.views)) {
+    value.views = raw.views.map((view: unknown) =>
+      isRecord(view) && Array.isArray(view.order) ? { ...view, order: view.order.map(mapLink) } : view,
+    )
+  }
+  if (isRecord(raw.columns)) {
+    const columns: Record<string, unknown> = {}
+    for (const [name, column] of Object.entries(raw.columns)) {
+      columns[name] = isRecord(column) && 'target' in column ? { ...column, target: mapLink(column.target) } : column
+    }
+    value.columns = columns
+  }
+  return changed ? { key: SETTINGS_KEY, value } : null
+}
+
+/** The same leaves for a caller that only needs to LOOK — verbatim, in walk order (YAZ-864). */
+export function folderPageSettingsLinks(properties: Record<string, unknown>): string[] {
+  const links: string[] = []
+  mapFolderPageSettingsLinks(properties, (link) => {
+    links.push(link)
+    return undefined
+  })
+  return links
+}
+
+/**
  * One folder page's declaration for a key — VIEW-SCOPED (🔒 Q8, YAZ-815): two folder pages may
  * declare the same card key with different kinds and NEITHER wins globally; the caller asks the
  * folder page whose view it is rendering, and no conflict resolver exists anywhere.

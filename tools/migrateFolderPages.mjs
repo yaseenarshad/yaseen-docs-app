@@ -126,7 +126,7 @@ const posix = (p) => p.split(path.sep).join('/')
 const isSkipped = (name) => name.startsWith('.') || name === 'node_modules'
 const isMarkdown = (name) => /\.(md|markdown)$/i.test(name)
 
-/** `[[x]]` → `x`, otherwise unchanged — `bases/expr/values.ts`'s rule. */
+/** `[[x]]` → `x`, otherwise unchanged — `views/expr/values.ts`'s rule. */
 const WIKI_LINK = /^\[\[([^\]|]+)(?:\|([^\]]*))?\]\]$/
 const stripBrackets = (s) => WIKI_LINK.exec(s)?.[1] ?? s
 
@@ -202,7 +202,7 @@ export function pluralNameFor(type, def) {
 }
 
 // ---------------------------------------------------------------------------
-// Resolution — the SAME rule the app clicks with (`bases/engine.ts` makeResolver)
+// Resolution — the SAME rule the app clicks with (`views/engine.ts` makeResolver)
 // ---------------------------------------------------------------------------
 
 const normalise = (s) =>
