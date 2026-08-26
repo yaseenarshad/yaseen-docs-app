@@ -88,7 +88,8 @@ const inlineInput = (w: Page) => w.locator('.sidebar__body .create-inline__input
 /** The folder page's contents block and its two skins — bible.spec.ts's own locators. */
 const contents = (w: Page) => layer(w).locator('.folder-page-contents')
 const viewTabs = (w: Page) => contents(w).locator('.view-tab__btn[role="tab"]')
-const outlineRows = (w: Page) => contents(w).locator('.view-outline__link')
+/** The outline is a DOCUMENT since YAZ-903: members render as its link LINES, not row buttons. */
+const outlineLines = (w: Page) => contents(w).locator('.view-outline .editor-instance .content-dom > p')
 const tableNames = (w: Page) => contents(w).locator('.view-row__link, .view-table__link')
 
 /** 6C's offer card and its one button. */
@@ -313,7 +314,7 @@ test('step 5c — “New note” on a FOLDER-PAGE row births a MEMBER of it, tre
   // THE TABLE: the same page, from KPIs' own contents block — both skins.
   await rowFor(win, 'KPIs').click()
   await expect(activeTab(win)).toHaveText('KPIs')
-  await expect(outlineRows(win)).toHaveText(WITH_NEW_KPI)
+  await expect(outlineLines(win)).toHaveText(WITH_NEW_KPI.map((n) => `[[${n}]]`))
   await viewTabs(win).filter({ hasText: 'Table' }).click()
   await expect(tableNames(win)).toHaveCount(WITH_NEW_KPI.length)
   await expect(tableNames(win).filter({ hasText: `${NEW_KPI}.md` })).toHaveCount(1)
