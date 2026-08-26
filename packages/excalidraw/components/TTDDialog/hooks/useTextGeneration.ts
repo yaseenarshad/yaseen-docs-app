@@ -1,5 +1,4 @@
 import { useRef } from "react";
-import { parseMermaidToExcalidraw } from "@excalidraw/mermaid-to-excalidraw";
 import { isFiniteNumber } from "@excalidraw/math";
 
 import { useAtom } from "../../../editor-jotai";
@@ -191,6 +190,11 @@ export const useTextGeneration = ({
       }
 
       try {
+        // Loaded on demand like TTDDialog's own `api` import: a static import here would
+        // drag the whole mermaid stack into every consumer's eager bundle.
+        const { parseMermaidToExcalidraw } = await import(
+          "@excalidraw/mermaid-to-excalidraw"
+        );
         await parseMermaidToExcalidraw(generatedResponse ?? "");
         trackEvent("ai", "mermaid parse success", "ttd");
       } catch (error: any) {
