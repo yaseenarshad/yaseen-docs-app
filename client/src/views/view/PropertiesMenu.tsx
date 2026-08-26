@@ -43,6 +43,7 @@ function entryKey(def: ViewSet, key: string): string {
  * target, saved through `properties.setProperty` to the vault-wide declarations — the per-type
  * scope died with the type system (YAZ-836).
  * A trailing "+ Add column" (YAZ-896) declares a column on the FOLDER PAGE instead, and shows it.
+ * Each `note.*` row carries that declaration's kind (YAZ-897) — `auto` when undeclared.
  */
 export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root = null, properties = null, folderPage }: PropertiesMenuProps) {
   const [editing, setEditing] = useState<string | null>(null)
@@ -62,6 +63,22 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
     next.splice(i, 1)
     next.splice(i + dir, 0, key)
     writeOrder(next)
+  }
+  /**
+   * A column's declared kind (YAZ-897), in ONE `folder_page_settings` write (🔒 D3) — `views` is
+   * NOT passed, so the order is untouched. C1 (locked): member VALUES are never migrated or
+   * rewritten; the declaration alone moves, and its `target` / `required` ride along on the spread
+   * (so a link ⇄ multi-link switch keeps the target it was given at add-time, YAZ-896).
+   */
+  const setKind = (name: string, kind: PropertyKind) => {
+    const columns = folderPage.settings.columns
+    folderPage.setColumns({ ...columns, [name]: { ...columns[name], kind } })
+  }
+  /** A declared link column's per-page target (YAZ-897) — same one-write door; empty DELETES the key. */
+  const setTarget = (name: string, target: string) => {
+    const columns = folderPage.settings.columns
+    const { target: _prev, ...rest } = columns[name]
+    folderPage.setColumns({ ...columns, [name]: target.trim() === '' ? rest : { ...rest, target: target.trim() } })
   }
   const setDisplayName = (key: string, name: string) =>
     onUpdate((d) => {
@@ -111,6 +128,33 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
               <button type="button" className="view-rule__nav" aria-label={`Rename ${label}`} title="Display name" onClick={() => setEditing(key)}>
                 <PencilIcon />
               </button>
+              {canonicalKey(key).startsWith('note.') && (
+                <select
+                  className="view-select"
+                  aria-label={`Type of ${label}`}
+                  value={folderPage.settings.columns[bare(key)]?.kind ?? ''}
+                  onChange={(e) => setKind(bare(key), e.target.value as PropertyKind)}
+                >
+                  {/* Undeclared: the ladder's LOWER rungs decide — a placeholder, never a choice. */}
+                  <option value="" disabled>
+                    auto
+                  </option>
+                  {PROPERTY_KINDS.map((k) => (
+                    <option key={k} value={k}>
+                      {k}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {['link', 'multi-link'].includes(folderPage.settings.columns[bare(key)]?.kind ?? '') && (
+                <TextField
+                  className="view-input view-relation__target"
+                  aria-label={`Target of ${label}`}
+                  placeholder="Any page"
+                  value={folderPage.settings.columns[bare(key)]?.target ?? ''}
+                  onCommit={(target) => setTarget(bare(key), target)}
+                />
+              )}
               {root !== null && canonicalKey(key).startsWith('note.') && (
                 <button
                   type="button"

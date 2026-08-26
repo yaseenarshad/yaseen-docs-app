@@ -302,6 +302,19 @@ describe('properties menu', () => {
     expect(setColumns.mock.calls[0][0]).toEqual({ owner: { kind: 'multi-link', target: 'People' } })
   })
 
+  it("a declared link column's per-page target is editable in place; empty deletes it (YAZ-897)", () => {
+    const setColumns = vi.fn()
+    const columns = { owner: { kind: 'link' as const, target: 'People' }, tag: { kind: 'text' as const } }
+    const { el } = mount(undefined, { folderPage: testFolderPage({ settings: { columns, views: [], problems: [] }, setColumns }) })
+    const pop = openMenu(el, 'Properties')
+    expect(pop.querySelector('[aria-label="Target of tag"]')).toBeNull()
+    type(byLabel(pop, 'Target of owner'), '  Teams  ')
+    expect(setColumns).toHaveBeenCalledTimes(1)
+    expect(setColumns.mock.calls[0][0]).toEqual({ owner: { kind: 'link', target: 'Teams' }, tag: { kind: 'text' } })
+    type(byLabel(pop, 'Target of owner'), '')
+    expect(setColumns.mock.calls[1][0]).toEqual({ owner: { kind: 'link' }, tag: { kind: 'text' } })
+  })
+
   it('a target typed under a link kind does not ride into a non-link declaration', () => {
     const setColumns = vi.fn()
     const { el } = mount(undefined, { folderPage: testFolderPage({ setColumns }) })
@@ -313,6 +326,40 @@ describe('properties menu', () => {
     setValue(byLabel(pop, 'Column name'), 'notes')
     click(byLabel(pop, 'Save column'))
     expect(setColumns.mock.calls[0][0]).toEqual({ notes: { kind: 'text' } })
+  })
+
+  it('a declared column shows its kind; changing it rewrites that declaration only (YAZ-897)', () => {
+    const setColumns = vi.fn()
+    const settings = { columns: { owner: { kind: 'link' as const, target: 'People' }, tag: { kind: 'text' as const } }, views: [], problems: [] }
+    const { el, onChange } = mount(undefined, { folderPage: testFolderPage({ settings, setColumns }) })
+    const pop = openMenu(el, 'Properties')
+    const kind = byLabel<HTMLSelectElement>(pop, 'Type of owner')
+    expect(kind.value).toBe('link')
+    setValue(kind, 'multi-link')
+    expect(setColumns).toHaveBeenCalledTimes(1)
+    // C1 (locked): the DECLARATION alone moves — the target rides along, the other column is untouched.
+    expect(setColumns.mock.calls[0][0]).toEqual({ owner: { kind: 'multi-link', target: 'People' }, tag: { kind: 'text' } })
+    expect(setColumns.mock.calls[0][1]).toBeUndefined() // no `views` — the order is not this gesture's
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('an undeclared note key reads `auto`, and picking a kind declares it (YAZ-897)', () => {
+    const setColumns = vi.fn()
+    const { el, onChange } = mount(undefined, { folderPage: testFolderPage({ setColumns }) })
+    const pop = openMenu(el, 'Properties')
+    const kind = byLabel<HTMLSelectElement>(pop, 'Type of status')
+    expect(kind.value).toBe('') // the ladder's lower rungs decide
+    expect(kind.selectedOptions[0].textContent).toBe('auto')
+    expect(kind.selectedOptions[0].disabled).toBe(true)
+    setValue(kind, 'date')
+    expect(setColumns).toHaveBeenCalledExactlyOnceWith({ status: { kind: 'date' } })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('file.* rows get no Type select — they are not note properties (YAZ-897)', () => {
+    const pop = openMenu(mount().el, 'Properties')
+    expect(pop.querySelector('[aria-label="Type of file.name"]')).toBeNull()
+    expect(byLabel(pop, 'Type of status')).toBeDefined()
   })
 
   it('the pencil sets def.properties[key].displayName; clearing it deletes the entry', () => {
