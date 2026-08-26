@@ -306,6 +306,10 @@ export function Sidebar({
   )
 
   useEffect(() => {
+    // Idempotent like its Topics twin below (⚡ YAZ-874): the first render holds exactly what was
+    // just read, and re-sending it would make the main process commit, write and broadcast for nothing.
+    const stored = storage.getExpanded(root)
+    if (stored.length === expanded.length && stored.every((dir, i) => dir === expanded[i])) return
     storage.setExpanded(root, expanded)
   }, [root, expanded])
 
