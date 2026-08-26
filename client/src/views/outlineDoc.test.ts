@@ -117,7 +117,7 @@ describe('lineTarget: the click rule, and no second rule', () => {
     expect(lineTarget('', resolve)).toBeNull()
   })
 
-  it('does NOT ask whether the target is a folder page — membership is not parsing', () => {
+  it('does NOT ask whether the target is a folder page — belonging is not parsing', () => {
     expect(lineTarget('[[LTV]]', resolve)).toBe('/vault/LTV.md')
   })
 })

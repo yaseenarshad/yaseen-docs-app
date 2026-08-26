@@ -1,15 +1,15 @@
 /**
- * MEMBERSHIP AUTO-SYNC (🔒 E1, YAZ-902): what changed between two outline documents,
- * membership-wise — and, when asked, the writes that make it true. The LOGIC layer only; the view
+ * BELONGING AUTO-SYNC (🔒 E1, YAZ-902): what changed between two outline documents,
+ * belonging-wise — and, when asked, the writes that make it true. The LOGIC layer only; the view
  * that calls it, debounce and confirm sheet included, is YAZ-903.
  *
  * THE RULE is one rule, the click rule, and no second rule: a LINE that is exactly one resolving
  * wikilink (`outlineDoc.ts` `lineTarget` → `entryTarget`) means that page is a member of this
  * folder page. Prose, a link inside prose, a bare name and a dangling link are text and mean
  * nothing — the outline is free-form and unsaid is not unmeant. Two lines naming ONE page (however
- * they spell it — alias, case, `#heading`) are ONE membership.
+ * they spell it — alias, case, `#heading`) are ONE belonging.
  *
- * MEMBERSHIP STAYS CHILD-DECLARED (YAZ-825): every write here lands on the MEMBER's own
+ * BELONGING STAYS CHILD-DECLARED (YAZ-825): every write here lands on the MEMBER's own
  * `folder_pages`, one key on one page through the shared `writeProperty` — never on the folder
  * page, never in the outline document itself.
  *
@@ -45,13 +45,13 @@ export function outlineLinkTargets(markdown: string, resolve: ResolveLink): Set<
 }
 
 /** Members gained and lost between two outlines: resolved paths, never basenames. */
-export interface MembershipDiff {
+export interface BelongingDiff {
   tag: string[]
   untag: string[]
 }
 
-/** Pure: what `next` says about membership that `prev` did not, and what it no longer says. */
-export function diffOutlineMembership(prev: string, next: string, resolve: ResolveLink): MembershipDiff {
+/** Pure: what `next` says about belonging that `prev` did not, and what it no longer says. */
+export function diffOutlineBelonging(prev: string, next: string, resolve: ResolveLink): BelongingDiff {
   const before = outlineLinkTargets(prev, resolve)
   const after = outlineLinkTargets(next, resolve)
   return {
@@ -60,9 +60,9 @@ export function diffOutlineMembership(prev: string, next: string, resolve: Resol
   }
 }
 
-/** The folder page a membership write is about, and everything reading one takes. */
-export interface FolderPageMembership {
-  /** Its path — what an existing entry must RESOLVE to to count as this membership. */
+/** The folder page a belonging write is about, and everything reading one takes. */
+export interface FolderPageBelonging {
+  /** Its path — what an existing entry must RESOLVE to to count as this belonging. */
   path: string
   /** Its basename — the text a NEW entry is written as, `[[<name>]]`, exactly as the add row writes it. */
   name: string
@@ -72,10 +72,10 @@ export interface FolderPageMembership {
   resolve: ResolveLink
 }
 
-export type MembershipMode = 'tag' | 'untag'
+export type BelongingMode = 'tag' | 'untag'
 
 /** The member's whole list after the change, or null when it already says what we want. */
-function nextEntries(record: IndexRecord, folderPage: FolderPageMembership, mode: MembershipMode): unknown[] | null {
+function nextEntries(record: IndexRecord, folderPage: FolderPageBelonging, mode: BelongingMode): unknown[] | null {
   const entries = folderPagesList(record)
   const counts = (entry: unknown): boolean => entryTarget(entry, folderPage.resolve) === folderPage.path
   if (mode === 'tag') return entries.some(counts) ? null : [...entries, `[[${folderPage.name}]]`]
@@ -89,10 +89,10 @@ function nextEntries(record: IndexRecord, folderPage: FolderPageMembership, mode
  * and so is one whose list already reads correctly (no disk touched). Every path is attempted;
  * a failure rejects and the caller owns the banner.
  */
-export async function applyMembership(
+export async function applyBelonging(
   paths: readonly string[],
-  folderPage: FolderPageMembership,
-  mode: MembershipMode,
+  folderPage: FolderPageBelonging,
+  mode: BelongingMode,
 ): Promise<void> {
   await Promise.all(
     paths.map((path) => {

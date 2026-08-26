@@ -11,7 +11,7 @@
  * Pinned here: the seed is `view.outline`, or the [D5] `order` frozen into a document when there is
  * none; one edit is ONE settings write that stores the document AND retires `order`; a link line
  * that appeared tags its page (never this folder page itself); a link line that vanished only asks,
- * through the sheet, one page at a time — Confirm un-tags, Cancel keeps the membership and is never
+ * through the sheet, one page at a time — Confirm un-tags, Cancel keeps the belonging and is never
  * asked again; and a member the document does not name still shows, in the appended section, with
  * its glyph, its count and its own ×.
  */
@@ -294,7 +294,7 @@ describe('an edit stores the document and retires the order', () => {
   })
 })
 
-// ---------- tagging (🔒 E1: a link line IS the membership) ----------
+// ---------- tagging (🔒 E1: a link line IS the belonging) ----------
 
 describe('a link line that appears tags its page, at once', () => {
   it('the entry lands on the TARGET’s own card, preserving what was already there', async () => {
@@ -324,7 +324,7 @@ describe('a link line that appears tags its page, at once', () => {
     expect(memberWrites()).toEqual([])
   })
 
-  it('a failed membership write is reported in place and never takes the block down', async () => {
+  it('a failed belonging write is reported in place and never takes the block down', async () => {
     write.mockRejectedValue(new Error('read-only vault'))
     const el = mount()
     edit('- [[Lead Gen]]\n- [[Nurture]]\n- [[Sales]]\n- [[Other]]')
@@ -374,7 +374,7 @@ describe('a link line that vanishes only ASKS', () => {
     expect(memberWrites()).toEqual([[LEAD, 'folder_pages', ['Funnel Stages']]])
   })
 
-  it('CANCEL KEEPS THE MEMBERSHIP — and the next edit does not ask again', async () => {
+  it('CANCEL KEEPS THE BELONGING — and the next edit does not ask again', async () => {
     const el = mount()
     edit('- [[Lead Gen]]\n- [[Sales]]')
     click(sheetButton('Cancel'))

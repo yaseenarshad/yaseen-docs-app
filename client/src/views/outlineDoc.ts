@@ -13,7 +13,7 @@
  *
  * THE LINK RULE is the click rule and no second rule: a line whose text trims to EXACTLY a
  * wikilink and resolves is a link line, everything else is text (`links/folderPages.ts`
- * `entryTarget`). Whether the target is a folder page — or a member at all — is membership's
+ * `entryTarget`). Whether the target is a folder page — or a member at all — is belonging's
  * question, asked elsewhere.
  */
 import { entryTarget, isExactWikilink } from '../links/folderPages'

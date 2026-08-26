@@ -7,7 +7,7 @@ import { folderPagesLookup } from '../../links/folderPages'
 import { resolverFor } from '../engine'
 import { outlineOrderOf, type FolderPageSettings } from '../folderPageSettings'
 import { fromOrder, serializeOutline } from '../outlineDoc'
-import { applyMembership, diffOutlineMembership, outlineLinkTargets } from '../outlineSync'
+import { applyBelonging, diffOutlineBelonging, outlineLinkTargets } from '../outlineSync'
 import { ConfirmRemoveMember } from './ConfirmRemoveMember'
 import { FolderPageGlyph } from './icons'
 import { OutlineEditor } from './OutlineEditor'
@@ -21,7 +21,7 @@ import { OutlineEditor } from './OutlineEditor'
  * TOMBSTONE (YAZ-903): rows-are-pages, the picker-only add row (`OutlineAddRow`, "Enter never
  * commits free text"), depth-0 drag over `views[i].order` and the nested auto-expansion (chevrons,
  * the ancestor-path guard inside the row builder) are all gone. The outline is TEXT; what is text
- * and what is membership is the LINK LINE, and nothing else.
+ * and what is belonging is the LINK LINE, and nothing else.
  *
  * THE SEED, read ONCE: `view.outline` when the page has one, else the [D5] `order` frozen into a
  * document (`fromOrder` — the entries verbatim, every unlisted member behind them alphabetically,
@@ -29,13 +29,13 @@ import { OutlineEditor } from './OutlineEditor'
  * the card, read but never written, until the first edit retires it.
  *
  * THE COMMIT PATH, per debounced edit (🔒 E1, YAZ-902): the document goes back through the host's
- * ONE settings door, then `diffOutlineMembership(prev, next)` says what the text now claims —
+ * ONE settings door, then `diffOutlineBelonging(prev, next)` says what the text now claims —
  * `prev` being the LAST-WRITTEN document, which is why this component holds it. A link line that
  * appeared TAGS its page immediately (a page can never become its own member — the exclusion the
  * add row made); a link line that vanished only ASKS, through the very sheet the × has used since
  * YAZ-820, one page at a time in the order the edit dropped them.
  *
- * CANCEL KEEPS THE MEMBERSHIP (🔒 the YAZ-903 ruling) and does NOT put the text back: the page
+ * CANCEL KEEPS THE BELONGING (🔒 the YAZ-903 ruling) and does NOT put the text back: the page
  * simply shows up in the appended section below. `prev` advances to the new text either way, so a
  * question answered once is never asked again on the next keystroke.
  *
@@ -46,7 +46,7 @@ import { OutlineEditor } from './OutlineEditor'
  * decision): the glyph and the count live here.
  */
 export interface OutlineViewProps {
-  /** The folder page whose contents these are: ViewsPane's `thisFile`. Every membership write is about it. */
+  /** The folder page whose contents these are: ViewsPane's `thisFile`. Every belonging write is about it. */
   folderPagePath: string
   /** Vault root, so the click-rule resolver is THE one the wikilink surfaces share (YAZ-846); null = name-and-relative-path resolution only. */
   root: string | null
@@ -54,7 +54,7 @@ export interface OutlineViewProps {
   settings: FolderPageSettings
   /** The FIRST outline view's stored document, when it has one; absent = migrate from `order`. */
   outline?: string
-  /** The WHOLE snapshot (🔒 D2): the resolver, the lookup and every membership write read the vault. */
+  /** The WHOLE snapshot (🔒 D2): the resolver, the lookup and every belonging write read the vault. */
   vaultRecords: readonly IndexRecord[]
   /** Every member of this folder page — what the appended section is drawn from. */
   records: readonly IndexRecord[]
@@ -114,7 +114,7 @@ export function OutlineView({
     return serializeOutline(fromOrder(order, records.filter((r) => !listed.has(r.path)).map((r) => r.basename)))
   })
 
-  const membership = { path: folderPagePath, name: folderPageName, records: vaultRecords, resolve }
+  const belonging = { path: folderPagePath, name: folderPageName, records: vaultRecords, resolve }
   const report = (err: unknown): void => setError(err instanceof Error ? err.message : String(err))
   /**
    * The records a diff side is about. A page cannot be its own member, in EITHER direction — the
@@ -129,11 +129,11 @@ export function OutlineView({
   const commit = (markdown: string): void => {
     setError(null)
     onDocument(markdown)
-    const diff = diffOutlineMembership(doc, markdown, resolve)
+    const diff = diffOutlineBelonging(doc, markdown, resolve)
     // `prev` advances whatever the sheet is answered below: a cancelled un-tag must never be asked twice.
     setDoc(markdown)
     const tag = pagesNamed(diff.tag)
-    if (tag.length > 0) applyMembership(tag.map((r) => r.path), membership, 'tag').catch(report)
+    if (tag.length > 0) applyBelonging(tag.map((r) => r.path), belonging, 'tag').catch(report)
     const untag = pagesNamed(diff.untag)
     if (untag.length > 0) setPending((queue) => [...queue, ...untag])
   }
@@ -204,7 +204,7 @@ export function OutlineView({
             .filter((path) => path !== folderPagePath)
             .map((path) => vaultRecords.find((r) => r.path === path)?.basename ?? path)}
           onConfirm={() => {
-            applyMembership([removing.path], membership, 'untag').catch(report)
+            applyBelonging([removing.path], belonging, 'untag').catch(report)
             setPending((queue) => queue.slice(1))
           }}
           onCancel={() => setPending((queue) => queue.slice(1))}
