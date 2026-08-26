@@ -300,10 +300,10 @@ test('step 5 — a preview opens the modal; a rectangle DRAWN there is saved bac
   await shoot(win, 'drawing-07-modal-open')
 
   // --- draw, with the real mouse on the engine's own toolbar and canvas ---
-  // The engine's own toolbar: the radio is covered by its icon, so click the LABEL — which is
-  // the control a user actually presses.
-  await modal(win).locator('label:has([data-testid="toolbar-rectangle"])').click()
-  await expect(modal(win).locator('[data-testid="toolbar-rectangle"]')).toBeChecked()
+  // The engine's own toolbar: yaseendraw's tool is a real BUTTON carrying the testid itself
+  // (stock hid a radio under a label), and it reports selection through `aria-pressed`.
+  await modal(win).locator('[data-testid="toolbar-rectangle"]').click()
+  await expect(modal(win).locator('[data-testid="toolbar-rectangle"]')).toHaveAttribute('aria-pressed', 'true')
   const box = await modalCanvas(win).boundingBox()
   if (box === null) throw new Error('the modal canvas has no box')
   // Right of centre and below the toolbar: the tool islands hug the top-left of the canvas.

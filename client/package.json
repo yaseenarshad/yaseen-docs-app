@@ -4,7 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "dependencies": {
-    "@excalidraw/excalidraw": "0.18.1",
+    "@excalidraw/common": "file:vendor/yaseendraw-common-0.18.0-9e63bdf2.tgz",
+    "@excalidraw/element": "file:vendor/yaseendraw-element-0.18.0-9e63bdf2.tgz",
+    "@excalidraw/excalidraw": "file:vendor/yaseendraw-excalidraw-0.18.0-9e63bdf2.tgz",
+    "@excalidraw/fractional-indexing": "file:vendor/yaseendraw-fractional-indexing-3.3.0-9e63bdf2.tgz",
+    "@excalidraw/math": "file:vendor/yaseendraw-math-0.18.0-9e63bdf2.tgz",
     "@milkdown/crepe": "^7.22.1",
     "@milkdown/kit": "^7.22.1",
     "react": "^19.2.8",

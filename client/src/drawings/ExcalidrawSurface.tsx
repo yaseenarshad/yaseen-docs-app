@@ -19,8 +19,12 @@
  * offers for exactly this) plus a lazy `serialize()` that costs nothing until Save is pressed.
  * The FIRST snapshot is emitted at mount, from the loaded scene, BEFORE Excalidraw's own first
  * `onChange` — so the chrome always has a baseline to call "clean", even if the engine never
- * volunteered one. `restore()` preserves element `version`, so the mount snapshot and the
- * engine's first `onChange` agree and an untouched drawing never reads as dirty.
+ * volunteered one. The baseline runs the disk elements through the engine's own
+ * `restoreElements()` FIRST: restore is what the engine mounts (yaseendraw's bumps element
+ * `version` and materializes rounding values — YAZ-929), so only a restore-then-compare
+ * baseline agrees with the engine's first `onChange`, and an untouched drawing never reads
+ * as dirty. Restore is deterministic, so the two independent runs always land on the same
+ * version sum.
  *
  * SHAPE ON DISK: `serializeAsJSON(…, 'local')` is the library's OWN writer — the same one its
  * "Save to disk" uses — so element cleanup and the `files` filter (an image paste survives, a
@@ -103,9 +107,10 @@ export function ExcalidrawSurface({ scene, theme, onSnapshot, onFailed }: Drawin
         if (!live) return
         engineRef.current = mod
         setEngine(mod)
-        // The baseline, before the engine has said anything (see the module doc).
+        // The baseline, before the engine has said anything — through the engine's own
+        // restore, because restored elements are what it mounts (see the module doc).
         const { elements, appState, files } = engineScene(scene)
-        emitRef.current(snapshotOf(mod, elements, appState, files))
+        emitRef.current(snapshotOf(mod, mod.restoreElements(elements, null) as ChangeArgs[0], appState, files))
       },
       () => {
         if (live) failRef.current(ENGINE_LOAD_FAILED)
