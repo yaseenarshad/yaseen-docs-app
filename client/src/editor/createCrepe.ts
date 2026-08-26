@@ -49,8 +49,11 @@
  *    child list.
  *  - Numbers are manual-only (YAZ-793): upstream's `1. ` input rule is removed so typing a number
  *    never auto-converts a line into a numbered list; `- ` / `* ` bullet rules stay.
+ *  - Drawing slash item (YAZ-877, `drawingMenu.ts`): rides Crepe's OWN BlockEdit menu via
+ *    `featureConfigs[BlockEdit].buildMenu` — never a parallel slash plugin. Registered only when
+ *    `opts.drawing` supplies the creator, so a mount without it keeps the stock menu exactly.
  */
-import { Crepe } from '@milkdown/crepe'
+import { Crepe, CrepeFeature } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { wrapInOrderedListInputRule } from '@milkdown/kit/preset/commonmark'
 import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
@@ -58,6 +61,7 @@ import { Selection } from '@milkdown/kit/prose/state'
 import { replaceAll } from '@milkdown/kit/utils'
 import { blockHandleGate } from './blockHandleGate'
 import { createBlockHandleMenu } from './blockHandleMenu'
+import { drawingMenu, type DrawingCreator } from './drawingMenu'
 import { bulletThreading } from './outline/bulletThreading'
 import { features } from './featureConfig'
 import { listItemRoundTrip, normalizeEmptyItems, stripEmptyTaskBreaks } from './listItemRoundTrip'
@@ -88,6 +92,8 @@ export interface CreateCrepeOptions {
   wikilinkCandidates?: WikilinkCandidateSource
   /** Wikilink click navigation (GRO-2192): tabs API + create-on-click handlers. Absent → links render but clicks fall through to plain editing (the click plugin is not registered). */
   wikilinkNav?: WikilinkNav
+  /** Drawing creator (YAZ-877): the host writes the sidecar, the item inserts the embed. Absent → NO Drawing row is added to the slash menu. */
+  drawing?: DrawingCreator
 }
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
@@ -95,6 +101,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     root: opts.root,
     defaultValue: normalizeEmptyItems(opts.defaultValue ?? ''),
     features,
+    // The ONE customisation of a stock Crepe feature (YAZ-877): the BlockEdit menu gains a
+    // Drawing row when the host supplies a creator. No creator → no config, stock menu.
+    featureConfigs: opts.drawing === undefined ? undefined : { [CrepeFeature.BlockEdit]: { buildMenu: drawingMenu(opts.drawing) } },
   })
   crepe.editor.use(
     // NB: extend the GFM task-item schema, not the commonmark base — extendSchema()

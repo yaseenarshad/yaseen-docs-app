@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FileResponse, PropertiesResponse } from '@shared/types'
 import { api } from '../api'
+import { createDrawing } from '../drawings/createDrawing'
 import { FolderPageContents } from '../views/FolderPageContents'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
 import { FrontmatterPanel } from './FrontmatterPanel'
@@ -134,6 +135,9 @@ function CrepeHost({
         onOpenFileBackground === undefined
           ? undefined
           : { root, createBase: createBase ?? (() => ''), openCurrent: onOpenFile, openBackground: onOpenFileBackground, onNotice: onNotice ?? (() => undefined) },
+      // The slash menu's Drawing row (YAZ-877): this window's root is the only thing the creator
+      // needs; failures ride the same passive notice as a failed link create.
+      drawing: { create: () => createDrawing(root), onNotice },
     })
     crepeRef.current = crepe
     let controller: ReturnType<typeof attach> | null = null
