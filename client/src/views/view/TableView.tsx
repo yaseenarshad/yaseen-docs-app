@@ -83,10 +83,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   // memoised so scroll/drag re-renders skip the per-column row walk (7B, GRO-2148)
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
   const bares = useMemo(() => keys.map((k) => (canonicalKey(k).startsWith('note.') ? canonicalKey(k).slice(5) : null)), [keys])
-  // Rung 3 of the ladder (`.obsidian/types.json`) has no feed on this surface — see the ladder in
-  // `editorType.ts` and the Typing paragraph of "The contents block" (YAZ-846: rung 2 wired, rung
-  // 3 deferred because its data rides `IndexResponse`, which a folder page deliberately never fetches).
-  const typings = useMemo(() => keys.map((k) => columnTyping(k, rowRecords, undefined, properties, folderPage)), [keys, rowRecords, properties, folderPage])
+  const typings = useMemo(() => keys.map((k) => columnTyping(k, rowRecords, properties, folderPage)), [keys, rowRecords, properties, folderPage])
   /** What the pickers resolve and complete over: the WHOLE vault, never the members alone (🔒 D2). */
   const basenames = useMemo(() => vaultRecords.map((r) => r.basename), [vaultRecords])
   // Relation columns narrow the link picker to the pages of the folder page the target names

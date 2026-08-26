@@ -1,7 +1,7 @@
 import type { IndexRecord } from '@shared/types'
 
 /**
- * The 8 notes of `desktop/src/main/fs/basesFixture.ts` as `getIndex()` records, rooted at `/vault`, with
+ * The 8 notes of `desktop/src/main/fs/viewsFixture.ts` as `getIndex()` records, rooted at `/vault`, with
  * size/ctime/mtime zeroed (GRO-2128). `vaultIndex/live.test.ts` deep-equals the real scan to this list,
  * so client-side Bases tests and the main-process index share one truth. Sorted by path.
  */

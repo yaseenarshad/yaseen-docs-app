@@ -15,13 +15,19 @@
 }
 
 /*
- * `.view-view` is written for the main pane, where it IS the pane: its own content column and a
- * flex column that fills the window. Inside the note's scroller the column belongs to the block
- * above (never doubled) and the height belongs to the content — the table grows and the NOTE
- * scrolls, rather than a second scroller opening inside the page.
+ * The views pane's WHOLE geometry (YAZ-861 folded it here from views.css, where `.view-view` used
+ * to declare a main-pane column this rule then overrode line by line). There is no main pane: the
+ * note's scroller is the only place these views mount. So the column belongs to the block above
+ * (never doubled) and the height belongs to the content — the table grows and the NOTE scrolls,
+ * rather than a second scroller opening inside the page. What did NOT survive the fold: the
+ * `max-width` / `margin: 0 auto` column and the `32px 48px 120px` padding (this rule already
+ * replaced both), and `flex: 1; min-height: 0`, which only a flex parent reads and
+ * `.folder-page-contents` is a block.
  */
-.folder-page-contents .view-view {
-  max-width: none;
+.folder-page-contents .views-pane {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
   padding: 16px 0 0;
 }
 
@@ -33,12 +39,15 @@
  */
 
 /*
- * ── The OUTLINE skin (YAZ-820; mockup [D4][D5][D6]) ───────────────────────────────────────────
+ * ── The OUTLINE skin (YAZ-820, rewritten by YAZ-903) ──────────────────────────────────────────
  * Rendered by `view/OutlineView.tsx`, which only ever renders inside THIS block — which is why
  * the rules live in the folder page's own CSS file rather than in `views.css` beside the vault-
- * wide view skins. Rows are pages: an indent well, a chevron slot that is always the same width
- * (so nothing shifts sideways when a level turns out to have children), the bullet, the link,
- * then the folder-page glyph + direct-member count, and the hover ×.
+ * wide view skins. What is left after the editor took over the outline itself is the APPENDED
+ * section: the read-only row for a member this document does not name — bullet, link, then the
+ * folder-page glyph + direct-member count, and the hover ×.
+ *
+ * TOMBSTONE (YAZ-903): the indent well, the chevron and its always-same-width slot, the drag and
+ * insertion-edge states and the whole add-row picker went with the surface that wore them.
  */
 
 .view-outline__list {
@@ -47,8 +56,7 @@
   padding: 0;
 }
 
-.view-outline__row,
-.view-outline__add {
+.view-outline__row {
   position: relative;
   display: flex;
   align-items: center;
@@ -61,69 +69,12 @@
   background: var(--accent-soft);
 }
 
-.view-outline__row--dragging {
-  opacity: 0.5;
-}
-
-/* The insertion indicator is TabBar's: an accent edge on the row the drop would land against. */
-.view-outline__row--insert-before {
-  box-shadow: inset 0 2px 0 var(--accent);
-}
-
-.view-outline__row--insert-after {
-  box-shadow: inset 0 -2px 0 var(--accent);
-}
-
-.view-outline__indent {
-  flex: none;
-}
-
-.view-outline__chevron,
-.view-outline__chevron-slot {
-  flex: none;
-  width: 14px;
-  height: 14px;
-}
-
-.view-outline__chevron {
-  position: relative;
-  border-radius: 3px;
-  cursor: pointer;
-}
-
-.view-outline__chevron:hover {
-  background: var(--accent-soft);
-}
-
-.view-outline__chevron::before {
-  content: '';
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  width: 5px;
-  height: 5px;
-  border-right: 1.4px solid currentColor;
-  border-bottom: 1.4px solid currentColor;
-  transform: rotate(-45deg);
-  transition: transform 0.12s ease;
-}
-
-.view-outline__chevron--open::before {
-  top: 3px;
-  transform: rotate(45deg);
-}
-
 .view-outline__bullet {
   flex: none;
   width: 14px;
   font-size: 13px;
   color: var(--fg-muted);
   text-align: center;
-}
-
-/* A depth-0 row IS the drag handle (depth > 0 never drags), so its bullet advertises the grab. */
-.view-outline__row[draggable='true'] .view-outline__bullet {
-  cursor: grab;
 }
 
 .view-outline__link {
@@ -151,7 +102,7 @@
   color: var(--fg-muted);
 }
 
-/* Hover-only, depth 0 only — and it opens the sheet; it never removes on the click itself. */
+/* Hover-only — and it opens the sheet; it never removes on the click itself. */
 .view-outline__x {
   flex: none;
   width: 18px;
@@ -170,44 +121,4 @@
 .view-outline__x:hover {
   color: var(--danger);
   background: var(--accent-soft);
-}
-
-.view-outline__add-input {
-  flex: 1;
-  min-width: 0;
-  max-width: 420px;
-  font-size: 13px;
-}
-
-/* The picker is the context-menu idiom, anchored under the input it filters. */
-.view-outline__picker {
-  position: absolute;
-  top: 28px;
-  left: 26px;
-  z-index: 20;
-  min-width: 220px;
-  padding: 4px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-}
-
-.view-outline__pick {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 4px 8px;
-  border-radius: 5px;
-  font-size: 13px;
-  text-align: left;
-}
-
-.view-outline__pick:hover {
-  background: var(--accent-soft);
-}
-
-.view-outline__pick--create {
-  color: var(--accent);
 }

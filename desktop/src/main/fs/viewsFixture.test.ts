@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
-import { makeBasesFixture } from './basesFixture'
+import { makeViewsFixture } from './viewsFixture'
 import { tree } from './tree'
 
 let root: string
 let cleanup: () => Promise<void>
-beforeAll(async () => ({ root, cleanup } = await makeBasesFixture()))
+beforeAll(async () => ({ root, cleanup } = await makeViewsFixture()))
 afterAll(() => cleanup())
 
 type FileNode = Extract<TreeNode, { type: 'file' }>

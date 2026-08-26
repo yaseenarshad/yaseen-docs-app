@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { MAX_FILE_BYTES } from '@shared/types'
 import { readAsset, writeAsset } from './assets'
-import { makeBasesFixture } from './basesFixture'
+import { makeViewsFixture } from './viewsFixture'
 import { failure } from './testFixture'
 
 /**
@@ -22,7 +22,7 @@ const SCENE = '{"type":"excalidraw","version":2,"elements":[{"id":"a","x":1.5,"y
 let root: string
 let cleanup: () => Promise<void>
 beforeAll(async () => {
-  ;({ root, cleanup } = await makeBasesFixture())
+  ;({ root, cleanup } = await makeViewsFixture())
   // Extra assets for the resolution-order cases; the shared fixture itself stays untouched.
   await Promise.all([mkdir(path.join(root, 'aa', 'deeper'), { recursive: true }), mkdir(path.join(root, 'bb'), { recursive: true })])
   await Promise.all([

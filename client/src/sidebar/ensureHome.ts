@@ -36,6 +36,8 @@
  * always the card, which writes nothing until the user clicks.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+// The dotfolder whose existence IS adoption. ONE definition, in shared, read by main too.
+import { VAULT_CONFIG_DIR } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { createNewNote, seedContent } from '../views/newNote'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -49,9 +51,6 @@ export const HOME_LINK = '[[Home]]'
 
 /** Where an auto-created Home lands: the vault ROOT, the one place a map belongs. */
 export const HOME_BASENAME = 'Home.md'
-
-/** The `.obsidian/`-style dotfolder whose existence IS adoption (main's `VAULT_CONFIG_DIR`). */
-export const VAULT_CONFIG_DIR = '.yaseendocs'
 
 /**
  * The bytes a newborn Home carries: exactly `folder_page: true`, no settings block, no body —

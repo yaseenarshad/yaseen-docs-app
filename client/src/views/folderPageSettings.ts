@@ -12,6 +12,8 @@
  */
 import { FOLDER_NAME, PROPERTY_KINDS, type IndexRecord, type PropertyKind } from '@shared/types'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
+import { isExactWikilink } from '../links/folderPages'
+import { mapOutlineLinks, parseOutline } from './outlineDoc'
 import type { ViewDef } from './viewSchema'
 import { writeProperty } from './writeProperty'
 
@@ -96,6 +98,12 @@ function readViews(raw: unknown, problems: string[]): ViewDef[] {
       problems.push(`${SETTINGS_KEY}.views[${i}] must be a map with a type and a name — skipping it`)
       return
     }
+    if (view.outline !== undefined && typeof view.outline !== 'string') {
+      problems.push(`${SETTINGS_KEY}.views[${i}].outline must be one markdown bullet list — ignoring it`)
+      const { outline: _dropped, ...rest } = view
+      views.push(rest as ViewDef)
+      return
+    }
     // Unknown view types and extra keys ride along untouched (`ViewDef`'s index signature).
     views.push(view as ViewDef)
   })
@@ -134,9 +142,11 @@ export function folderPageSettings(record: IndexRecord): FolderPageSettings {
  * and the rule that no surface re-parses that key holds for the rename engine too: it comes through
  * here, and the key STRING rides back in the result rather than being spelled anywhere else.
  *
- * The link-bearing leaves are exactly two: every view's [D5] `order` entry (🔒 Q3) and every
- * column's belongs-to `target` (🔒 Q2) — the two places this module's vocabulary spells a wikilink.
- * Each string leaf is offered to `map`; `undefined` means LEAVE IT, and everything else in the
+ * The link-bearing leaves are exactly three: every view's [D5] `order` entry (🔒 Q3), every
+ * outline LINE that is exactly a wikilink (🔒 D2, YAZ-900 — the line rule stays `outlineDoc`'s,
+ * never re-spelled here) and every column's belongs-to `target` (🔒 Q2) — the places this module's
+ * vocabulary spells a wikilink. Each string leaf is offered to `map`; `undefined` means LEAVE IT,
+ * and a wikilink sitting inside an outline line's PROSE is not a leaf at all. Everything else in the
  * value — unknown view types, extra keys, `folder`, unusable shapes — rides along verbatim.
  *
  * Deliberately over the RAW value, not the tolerant read: `folderPageSettings()` normalises and
@@ -160,9 +170,19 @@ export function mapFolderPageSettingsLinks(
   // Spread-then-reassign, so every untouched key keeps its value AND its position.
   const value: Record<string, unknown> = { ...raw }
   if (Array.isArray(raw.views)) {
-    value.views = raw.views.map((view: unknown) =>
-      isRecord(view) && Array.isArray(view.order) ? { ...view, order: view.order.map(mapLink) } : view,
-    )
+    value.views = raw.views.map((view: unknown) => {
+      if (!isRecord(view)) return view
+      const next: Record<string, unknown> = { ...view }
+      if (Array.isArray(view.order)) next.order = view.order.map(mapLink)
+      if (typeof view.outline === 'string') {
+        const outline = mapOutlineLinks(view.outline, map)
+        if (outline !== undefined) {
+          changed = true
+          next.outline = outline
+        }
+      }
+      return next
+    })
   }
   if (isRecord(raw.columns)) {
     const columns: Record<string, unknown> = {}
@@ -193,10 +213,20 @@ export function columnKindIn(settings: FolderPageSettings, key: string): ColumnD
   return settings.columns[key] ?? null
 }
 
-/** The FIRST outline view's raw wikilink list, or []. Non-strings are ignored — nothing here is trusted. */
+/**
+ * The FIRST outline view's member sequence, as raw wikilink strings, or []. An EDITED outline
+ * holds the sequence as its DOCUMENT (🔒 D2 — `order` retired with the first edit, YAZ-903), so
+ * the link lines are read in document order; a never-edited page still answers from `order`.
+ * One rule, both readers: the outline skin and the Topics tree cannot drift apart (YAZ-905 —
+ * the seam YAZ-904 found). Non-strings are ignored — nothing here is trusted.
+ */
 export function outlineOrderOf(settings: FolderPageSettings): string[] {
-  const order = settings.views.find((view) => view.type === 'outline')?.order
-  return Array.isArray(order) ? order.filter((entry: unknown): entry is string => typeof entry === 'string') : []
+  const view = settings.views.find((v) => v.type === 'outline')
+  if (typeof view?.outline === 'string')
+    return parseOutline(view.outline)
+      .map((line) => line.text)
+      .filter(isExactWikilink)
+  return Array.isArray(view?.order) ? view.order.filter((entry: unknown): entry is string => typeof entry === 'string') : []
 }
 
 /** Names sort the way the base engine sorts them: case- and accent-insensitive, numeric-aware. */

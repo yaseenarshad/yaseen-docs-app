@@ -16,9 +16,10 @@ npm run dev      # launches the Electron app with HMR
 See `LAUNCH.md` for the full launch recipe (state file, packaged-app install, agent verification).
 
 ```sh
-npm test         # unit tests (vitest: client jsdom + desktop node)
+npm test         # unit tests (vitest, four projects: client jsdom, desktop node, tools node, perf jsdom)
 npm run typecheck
 npm run build    # electron-vite build into desktop/out
+npm run e2e      # 17 Playwright-Electron specs driving the real app
 ```
 
 ## Build the app
@@ -27,7 +28,7 @@ npm run build    # electron-vite build into desktop/out
 npm run desktop:build
 ```
 
-produces `desktop/dist-app/mac-arm64/Yaseen Docs.app` and `desktop/dist-app/Yaseen Docs-0.1.0-arm64.dmg` (arm64, ad-hoc signed). Drag the `.app` into `/Applications`, or send someone the dmg.
+produces `desktop/dist-app/mac-arm64/Yaseen Docs.app` and `desktop/dist-app/Yaseen Docs-0.3.0-arm64.dmg` (arm64, ad-hoc signed). Drag the `.app` into `/Applications`, or send someone the dmg.
 
 ## Sharing it
 
@@ -55,23 +56,33 @@ Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Edit
 
 ## Sidebar and windows
 
-- **Create**: right-click a folder, a file, or the blank space under the tree → "New note" / "New folder page" / "New base" / "New folder"; name it inline (Enter confirms, Esc cancels). Notes get `.md` automatically and open at once; "New folder page" is a note born with `folder_page: true` (any note can be turned into one — or back — from the same menu, and turning back deletes only that key); "New base" creates an Obsidian-compatible `.base` file (seeded with one table view) that opens in the base view; nothing is ever overwritten.
-- **Windows**: `⌘⇧N` duplicates the window (same folder, same file), `⌘⇧O` opens a folder, `⌘W` closes the window; File › Open Recent lists the last folders (⌥-click an entry to open it beside the current window). ⌘-click a sidebar file — or right-click → "Open in new window" — to open it in its own window. Open windows are restored on relaunch.
+- **Two lenses**: the sidebar shows your vault two ways, switched by the tabs at the top. **Topics** (the default) browses by MEANING — the folder-page tree, Home first, everything else nested under the pages it belongs to, with an Uncategorized section at the bottom for notes that belong nowhere yet. **Files** is the ordinary folder tree on disk. Same vault, two readings; both offer the same right-click menu.
+- **Create**: right-click a folder, a file, a topic row, or the blank space under the tree → "New note" / "New folder page" / "New folder"; name it inline (Enter confirms, Esc cancels). Notes get `.md` automatically and open at once; "New folder page" is a note born with `folder_page: true` (any note can be turned into one — or back — from the same menu, and turning back deletes only that key); nothing is ever overwritten.
+- **Rename and delete**: both are in the same right-click menu, in both lenses. Renaming edits the name inline and rewrites every `[[wikilink]]` pointing at the note across the vault (a summary notice says how many); deleting moves the file to the system Trash — never a permanent delete — and closes its tabs. A rename or move done OUTSIDE the app (Finder, sync) is detected too and offers to repair the links, always confirm-first.
+- **Search**: `⌘K` searches note titles and aliases across the vault from the sidebar; ↑/↓ pick, Enter opens, ⌘-Enter opens in a background tab.
+- **Tabs and windows**: notes open in tabs (`⌃Tab` / `⌃⇧Tab` or `⌘⇧]` / `⌘⇧[` to switch, `⌘W` closes the **tab** — on the last one it empties the window and then closes it). `⌘⇧N` duplicates the window (same folder, same file), `⌘⇧O` opens a folder, `⌘⇧W` closes the window; File › Open Recent lists the last folders (⌥-click an entry to open it beside the current window). ⌘-click a sidebar file — or right-click → "Open in new window" — to open it in its own window. Open windows and their tabs are restored on relaunch.
 - **Links**: right-click a file row for "Copy link" — a `yaseendocs://` URL that opens that exact note from anywhere (Slack, another app); "Copy path" sits next to it. Finder's Open With also lists Yaseen Docs for `.md`/`.markdown` (as an alternate, never stealing the default handler).
 - **Collapse**: the panel icon in the header hides the sidebar (a floating button on the left edge brings it back); the choice survives reload. Drag the sidebar's right edge to resize it (180–520 px, remembered); drag it well past the minimum to collapse.
 - **Paths**: the open file shows in the URL as `#/absolute/path.md`; right-click any row for "Copy path".
 
-## Bases
+## Folder pages
 
-Obsidian-compatible `.base` files open as live database views over the notes in your folder (frontmatter properties are indexed automatically):
+A **folder page** is an ordinary note that carries `folder_page: true` in its frontmatter. Other notes say they belong to it by naming it in a `folder_pages:` list — `folder_pages: ["[[Metrics]]"]` — and the folder page then shows them all, live, in a database view beneath its own body. That is the whole model: plain frontmatter, no sidecar files, and belonging is decided the way a click is (case-insensitive, alias-aware), so every spelling that would open the page also counts as belonging to it. A note that names nobody shows up under Uncategorized in the Topics lens until it does.
 
-- **Views**: table, board (kanban — our extension; Obsidian ignores it and the file round-trips), cards and list, switched by the tabs across the top (add, rename, duplicate, reorder).
-- **Configure**: Filter / Sort / Properties menus and a search box; filters and formulas use Obsidian's Bases syntax, and every config change is saved into the `.base` file itself.
-- **Edit in place**: note properties edit right in table cells and card/list rows — text, numbers, checkboxes, dates, lists and `[[links]]` with completion; an edit rewrites just that frontmatter key.
+The views live INSIDE the note, under whatever you have written there — never a separate pane, never a separate file:
+
+- **Views**: outline (the default, and the one that only exists here), table, board (kanban), cards and list. The tabs across the top **switch** between them; a folder page's views are not created, renamed or deleted from the toolbar.
+- **The outline**: rows are pages, not free text. Click opens, ⌘-click opens in a background tab, a member that is itself a folder page shows its own glyph and direct-member count with a chevron to descend. Drag reorders (top level only); "+ Link a page…" at the bottom adds an existing page as a member, and offers to create one only on an explicit click — Enter never commits free text.
+- **Configure**: Sort / Properties menus and a search box, plus grouping and column setup. Every config change is saved into the folder page's own frontmatter, under the single `folder_page_settings` key — one write, in the note itself.
+- **Edit in place**: note properties edit right in table cells and card/list rows — text, numbers, checkboxes, dates, lists and `[[links]]` with completion; an edit rewrites just that one frontmatter key on the member's own note.
 - **Board drag**: drag a card to another column to change its group property; the "No value" column removes it.
-- **New**: the toolbar's New button (or a group header's "+") creates a note pre-filled to match the current view's filters, in the right folder.
-- **Embeds**: `![[X.base]]` (or `![[X.base#View]]`) inside a note renders the base read-only beneath the line, and a ` ```base ` code block renders its own YAML the same way (with a raw-YAML toggle for editing the config); the markdown on disk stays plain text.
+- **New**: the toolbar's New button (or a group header's "+") creates a member from the folder page's own declaration, parked in the folder the settings name.
+- **Property declarations** (optional): a vault-wide `properties.json` decides which editor a column gets. It is written INTO the vault, at `<vault>/.yaseendocs/properties.json` — the `.obsidian/`-style dotfolder that travels with your notes, so the declarations move with the vault rather than living in app state. Nothing else is ever written into your vault.
+
+Coming from the old `page_type` scheme? `node tools/migrateFolderPages.mjs --vault <path>` converts a vault to this model. It is a dry run by default, refuses to touch anything that is not a clean git repo, is safe to run twice, and writes a full report.
 
 ## Out of scope
 
-Wikilinks and tags stay plain text (not resolved into links) — except `![[X.base]]` embeds and ` ```base ` code blocks, which render live base views as above. Renaming / deleting / moving files or folders is not built in. There is no browser mode: the app runs only inside Electron. The file layer has no path jail: anything under your user account can be read or written. Distribution is deliberately minimal (locked decisions): no Developer-ID signing or notarization, no auto-update, no Intel or universal builds, no Windows/Linux — all Future issues.
+Tags stay plain text (not resolved into links); `[[wikilinks]]`, by contrast, are live — they resolve, they are clickable, they autocomplete as you type `[[`, and they are rewritten when a note is renamed. There is no browser mode: the app runs only inside Electron. The file layer has no path jail: anything under your user account can be read or written. Distribution is deliberately minimal (locked decisions): no Developer-ID signing or notarization, no auto-update, no Intel or universal builds, no Windows/Linux — all Future issues.
+
+Retired in YAZ-844: Obsidian's `.base` file format. There is no "New base", no `.base` file type, no `![[X.base]]` embed and no ` ```base ` code block — a folder page's own contents block is the only place these views are mounted now.

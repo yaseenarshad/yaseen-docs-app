@@ -3,12 +3,17 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 /**
- * Temp vault mirroring a real Obsidian vault (synthetic content), shared by every Bases
- * test: 8 markdown notes (one with invalid frontmatter, two with none), png stubs,
- * `.obsidian/types.json` and a `.trash` note. Caller removes it via `cleanup`.
+ * Temp vault mirroring a real Obsidian vault (synthetic content), shared by every view/index
+ * test: 8 markdown notes (one with invalid frontmatter, two with none), png stubs, a `.trash`
+ * note, and the two dotfolders that must stay invisible to tree/index/watcher — `.obsidian`
+ * (a foreign app's, now EMPTY: ⚡ YAZ-815 deleted the `types.json` it used to carry along with
+ * every read of it) and `.yaseendocs` (ours). Caller removes it via `cleanup`.
+ *
+ * Named `basesFixture` / `makeBasesFixture` until YAZ-861 renamed it for the surface it actually
+ * feeds — the folder-page views and the vault index — rather than the retired `.base` format.
  */
-export async function makeBasesFixture(): Promise<{ root: string; cleanup: () => Promise<void> }> {
-  const root = await mkdtemp(path.join(tmpdir(), 'mdapp-bases-'))
+export async function makeViewsFixture(): Promise<{ root: string; cleanup: () => Promise<void> }> {
+  const root = await mkdtemp(path.join(tmpdir(), 'mdapp-views-'))
   const pillars = path.join(root, 'Content Pillars')
   const agentic = path.join(pillars, '1. Agentic Agency')
   const creator = path.join(pillars, '2. Creator Economy')
@@ -46,7 +51,6 @@ export async function makeBasesFixture(): Promise<{ root: string; cleanup: () =>
     writeFile(path.join(pillars, 'levels.png'), png),
     writeFile(path.join(pillars, 'chart.png'), png),
     writeFile(path.join(root, 'VSL-v1.md'), '---\nstatus: published\npillar: null\n---\n\nVideo sales letter, version one.\n'),
-    writeFile(path.join(root, '.obsidian', 'types.json'), '{"types":{"date":"date","published":"checkbox"}}'),
     writeFile(path.join(root, '.trash', 'Untitled.md'), 'trash'),
   ])
   return { root, cleanup: () => rm(root, { recursive: true, force: true }) }

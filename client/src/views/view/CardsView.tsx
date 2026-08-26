@@ -130,10 +130,8 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
     () => new Map(rest.map((k) => [k, canonicalKey(k).startsWith('note.') ? canonicalKey(k).slice(5) : null])),
     [rest],
   )
-  // Rung 3 (`.obsidian/types.json`) has no feed on this surface — see the Typing paragraph of
-  // "The contents block" (YAZ-846: rung 2 wired, rung 3 deferred with its `IndexResponse` feed).
   const typings = useMemo(
-    () => new Map(rest.map((k) => [k, columnTyping(k, rowRecords, undefined, properties, folderPage)])),
+    () => new Map(rest.map((k) => [k, columnTyping(k, rowRecords, properties, folderPage)])),
     [rest, rowRecords, properties, folderPage],
   )
   /** What the pickers resolve and complete over: the WHOLE vault, never the members alone (🔒 D2). */

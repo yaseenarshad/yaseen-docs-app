@@ -105,11 +105,11 @@ interface Row {
 
 /**
  * The editor for a key on THIS surface. `columnTyping` is the ONE ladder (`views/editorType.ts`):
- * handed no records, no `.obsidian/types.json` and no folder page, its upper and lower rungs fall
- * away and what is left is exactly ours — declared kind → the note's own value → text.
+ * handed no records and no folder page, its upper and lower rungs fall away and what is left is
+ * exactly ours — declared kind → the note's own value → text.
  */
 const editorFor = (key: string, raw: unknown, decls: PropertiesResponse | null): EditorKind | null =>
-  cellEditor(raw, columnTyping(key, NO_RECORDS, undefined, decls, null))
+  cellEditor(raw, columnTyping(key, NO_RECORDS, decls, null))
 
 function rowsOf(properties: Record<string, unknown>, decls: PropertiesResponse | null): Row[] {
   return Object.entries(properties).map(([key, raw]) => {

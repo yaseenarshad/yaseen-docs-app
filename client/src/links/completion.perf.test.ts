@@ -31,6 +31,9 @@ describe('linkCandidates', () => {
     for (let i = 0; i < 10; i++) matchLinkCandidates(candidates, `Note 49`)
     const elapsed = performance.now() - start
     expect(candidates).toHaveLength(10000) // one name row + one alias row per record
+    // The measured ms in the run's output, like every other perf smoke (YAZ-861): a budget that
+    // only ever prints on failure hides the drift that walks up to it.
+    console.log(`completion perf: 5000 records in ${elapsed.toFixed(1)} ms (${candidates.length} candidates)`)
     // Alone on an idle pool this is a real budget: ~27 ms measured, 100 ms allowed.
     expect(elapsed).toBeLessThan(100)
   })

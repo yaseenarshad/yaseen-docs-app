@@ -7,12 +7,16 @@ import { canonicalKey } from './view/keys'
  * by the 5E relation contract (GRO-2120 comment 1f28abb4 §5), narrowed by YAZ-836 (the
  * type-scoped rung that used to sit above it died with the type system) and topped by YAZ-819
  * (the folder page's own, view-scoped declaration): the FOLDER PAGE whose view is rendering
- * wins, then a vault-wide property declaration, then an explicit `.obsidian/types.json`
- * assignment (an imported artifact ranks below the vault's own schema); otherwise the note's own
- * YAML value decides; a note without the key borrows the dominant value type across the view's
- * records; text is the final fallback. `file.*` and `formula.*` never get an editor. The
- * per-column halves are computed once per render via `columnTyping`; `cellEditor` adds the
- * per-note value on top.
+ * wins, then a vault-wide property declaration; otherwise the note's own YAML value decides; a
+ * note without the key borrows the dominant value type across the view's records; text is the
+ * final fallback. `file.*` and `formula.*` never get an editor. The per-column halves are
+ * computed once per render via `columnTyping`; `cellEditor` adds the per-note value on top.
+ *
+ * TOMBSTONE (⚡ YAZ-815, ruled by Yasin): a rung for an explicit `.obsidian/types.json`
+ * assignment sat between the vault-wide declarations and the note's own value, with a `types`
+ * parameter to feed it. Nothing ever fed it — the one surface that mounts these editors reads
+ * the window's link snapshot rather than fetching an index (🔒 D2) — and the whole
+ * `.obsidian/types.json` chain came out with it: a foreign app's file is not our schema.
  */
 
 export type EditorKind = 'text' | 'number' | 'checkbox' | 'date' | 'list' | 'link' | 'multi-link'
@@ -31,18 +35,6 @@ export function valueKind(raw: unknown): EditorKind | null {
   if (Array.isArray(raw)) return 'list'
   if (typeof raw === 'string') return ISO_DATE.test(raw) ? 'date' : WIKILINK.test(raw) ? 'link' : 'text'
   return 'text'
-}
-
-/** Obsidian's assigned type names → our editors; unknown names do not assign. */
-const ASSIGNED: Record<string, EditorKind> = {
-  text: 'text',
-  number: 'number',
-  checkbox: 'checkbox',
-  date: 'date',
-  datetime: 'date',
-  multitext: 'list',
-  tags: 'list',
-  aliases: 'list',
 }
 
 /** Most common value kind for `bare` across `records`; ties go to the first kind seen. */
@@ -76,13 +68,11 @@ const DECLARED_KIND: Record<PropertyKind, EditorKind> = {
 
 /**
  * The column-wide typing facts for `key` over the view's records, the folder page's own
- * declaration (YAZ-819), the vault-wide property declarations (5E) and the assigned
- * `.obsidian/types.json` types.
+ * declaration (YAZ-819) and the vault-wide property declarations (5E).
  */
 export function columnTyping(
   key: string,
   records: readonly IndexRecord[],
-  types: Record<string, string> | undefined,
   properties?: PropertiesResponse | null,
   folderPage?: FolderPageSettings | null,
 ): ColumnTyping {
@@ -97,8 +87,7 @@ export function columnTyping(
   if (own !== null) return { assigned: DECLARED_KIND[own.kind], dominant, target: own.target }
   const declared = properties?.properties[bare]
   if (declared !== undefined) return { assigned: DECLARED_KIND[declared.kind], dominant, target: declared.target }
-  const name = types?.[bare]
-  return { assigned: (name !== undefined ? ASSIGNED[name] : undefined) ?? null, dominant }
+  return { assigned: null, dominant }
 }
 
 /** The editor for one cell; null = read-only. */

@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { MAX_COLLAPSED_GROUP_KEYS, type IndexRecord, type PropertiesResponse } from '@shared/types'
+import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
+import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
+import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { storage } from '../lib/storage'
-import { type ViewSet, type ParsedViews, parseViews, serializeViews, updateViews } from './viewSchema'
+import { type ViewSet, type ViewDef, type ParsedViews, parseViews, serializeViews, updateViews } from './viewSchema'
 import { type Group, type Row, propertyKeys, resolverFor, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
-import type { FolderPageSettings } from './folderPageSettings'
+import type { ColumnDecl, FolderPageSettings } from './folderPageSettings'
 import { type NewNoteSeed, deriveSeed } from './newNote'
 import { writeProperty } from './writeProperty'
 import { BoardView } from './view/BoardView'
@@ -29,11 +32,27 @@ export interface FolderPageMode {
   vaultRecords: readonly IndexRecord[]
   /**
    * Birth from a folder page (🔒 Q5, YAZ-815): create a page from `seed` and resolve its path.
-   * `name` is the outline add row's "+ Create 'X' here" (YAZ-820); absent → the `Untitled` scheme.
+   * The name is always the `Untitled` scheme — the outline add row that once typed one died in
+   * YAZ-903, and with it the `name` argument.
    */
-  create: (seed: NewNoteSeed, name?: string) => Promise<string>
+  create: (seed: NewNoteSeed) => Promise<string>
+  /**
+   * The declarations, back through the one door (YAZ-895) — ONE `folder_page_settings` write
+   * (🔒 D3), failures in the host's own banner. `views` rides along so a caller can move the
+   * columns AND `view.order` in that same single write.
+   */
+  setColumns: (columns: Record<string, ColumnDecl>, views?: ViewDef[]) => void
   /** ⌘-click on an outline row opens the page in a BACKGROUND tab (YAZ-820); absent → opens in place. */
   openBackground?: (path: string) => void
+  /**
+   * The outline editor's own wikilink surfaces (YAZ-903) — the window's ONE resolve source, its
+   * `[[` picker feed and the click-navigation contract, assembled by the host exactly as
+   * `Editor` assembles them for the note. `nav`'s identity must be STABLE: a new object remounts
+   * the editor, and a remount costs the caret.
+   */
+  wikilinks?: WikilinkResolveSource
+  wikilinkCandidates?: WikilinkCandidateSource
+  nav?: WikilinkNav
 }
 
 export interface ViewsPaneProps {
@@ -75,8 +94,8 @@ export interface ViewsPaneProps {
  * everything else is the file.
  *
  * TOMBSTONE (YAZ-846, the amputation): `readOnly` (the read-only embed chrome), `initialView`
- * (which picked the starting tab for `![[X.base#View]]`), `types` (`.obsidian/types.json`, the
- * ladder's rung 3 — see "Cell editing"), `indexStatus` / `indexError` and the plain 5D
+ * (which picked the starting tab for `![[X.base#View]]`), `types` (the ladder's rung 3, whose
+ * whole `.obsidian/types.json` chain ⚡ YAZ-815 then deleted), `indexStatus` / `indexError` and the plain 5D
  * `createFromSeed` path all died here. Every one of them lost its production caller when YAZ-844
  * retired `.base`: the contents block is the ONLY mount, it hands over a snapshot already in hand
  * and it births through the declaration.
@@ -93,7 +112,16 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
   const { def } = parsed
   const views = def.views
   const index = Math.max(0, Math.min(active, views.length - 1))
-  const view = views[index]
+  /**
+   * NEVER undefined, and the assertion says so rather than a branch pretending otherwise
+   * (YAZ-861): `views` cannot be empty. `folderPageSettings.readViews` returns `DEFAULT_VIEWS`
+   * for every unusable shape it meets (`views.length > 0 ? views : defaultViews()`), and the one
+   * mount — `FolderPageContents.folderPageViewSet` — falls back to `DEFAULT_VIEWS` again when the
+   * card's YAML will not parse. `index` is clamped into that non-empty list. The "This folder
+   * page has no views. [Add view]" branch this replaces was unreachable UI with a live code path
+   * behind it, which is the FilterMenu's lesson (YAZ-846): delete it rather than keep it hidden.
+   */
+  const view = views[index]!
   // Re-parse after every edit: `doc.setIn` stores plain JS values, so a second edit inside a
   // collection a previous edit created would throw ("Expected YAML collection"). The round trip
   // through text keeps comments and rebuilds proper nodes.
@@ -123,27 +151,17 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
    * an outline view's `order` is the [D5] MEMBER sequence (wikilinks), not a column list, so it
    * is dropped before the run. Left in, `propertyKeys` would hand those wikilinks to the value
    * pass, every row's `values` would come back empty, and the toolbar's search — which matches
-   * over exactly those values — would hide the whole outline the moment anybody dragged a row.
+   * over exactly those values — would hide the whole outline. The strip outlives the [D5] list
+   * itself (YAZ-903 retires `order` on the first edit): an un-migrated card still carries one.
+   * The DOCUMENT needs no strip of its own — `propertyKeys` reads `view.order` and nothing else,
+   * so `view.outline`, a string, can not reach the value pass however long it grows.
    * Everything else the view says (sort, limit, groupBy) still runs.
    */
-  const isOutline = view?.type === 'outline'
+  const isOutline = view.type === 'outline'
   const result = useMemo(
-    () => (view ? runView(def, isOutline && view.order !== undefined ? { ...view, order: undefined } : view, shown, { thisFile, resolve }) : null),
+    () => runView(def, isOutline && view.order !== undefined ? { ...view, order: undefined } : view, shown, { thisFile, resolve }),
     [def, view, shown, thisFile, resolve, isOutline],
   )
-
-  if (view === undefined || result === null) {
-    return (
-      <div className="view-view">
-        <p className="view-view__pending">
-          This folder page has no views.{' '}
-          <button type="button" className="view-menu__action" onClick={() => update((d) => d.views.push({ type: 'table', name: 'Table 1' }))}>
-            Add view
-          </button>
-        </p>
-      </div>
-    )
-  }
 
   const needle = (search ?? '').trim().toLowerCase()
   const matches = (r: Row) => Object.values(r.values).some((v) => render(v).toLowerCase().includes(needle))
@@ -225,6 +243,18 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
   const rest = keys.filter((k) => k !== nameKey)
 
   /**
+   * The report-don't-block channel, finally reporting somewhere (YAZ-861). Both halves are
+   * produced on every render and, until now, read by nobody: `settings.problems` — the one-liners
+   * `folderPageSettings` collects while it ignores an unusable `folder_page_settings` key — and
+   * `result.errors`, the `EngineError`s a hand-written `filters:` or a broken formula compiles
+   * into. A folder page whose card says something the app silently declined to honour should say
+   * so; it should not be a dialog about it. So: ONE muted line at the foot of the pane, `role`
+   * `note` (never `alert` — nothing here is urgent and nothing here failed), rendered only when
+   * there is something to say, and blocking exactly nothing above it.
+   */
+  const notes = [...folderPage.settings.problems, ...result.errors.map((e) => `${e.where}: ${e.message}`)]
+
+  /**
    * The folder page's OUTLINE (YAZ-820). `thisFile` IS the folder page's path here
    * (`FolderPageContents` passes it) and it roots the ancestor guard, so a null one falls through
    * to the placeholder rows rather than guessing.
@@ -244,7 +274,7 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
   const tabs = { views, active: index, onSelect: setActive }
 
   return (
-    <div className="view-view">
+    <div className="views-pane">
       <Toolbar
         def={def}
         view={view}
@@ -262,15 +292,16 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
         tabs={tabs}
         root={root}
         properties={properties}
-        noProperties={outline}
+        documentView={outline}
+        folderPage={folderPage}
       />
       {createError !== null && (
-        <p className="view-view__error" role="alert">
+        <p className="views-pane__error" role="alert">
           Could not create note: {createError}
         </p>
       )}
       {properties?.error !== undefined && (
-        <p className="view-view__error" role="alert">
+        <p className="views-pane__error" role="alert">
           Could not load the vault's property declarations: {properties.error}
         </p>
       )}
@@ -279,25 +310,24 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
           folderPagePath={thisFile}
           root={root}
           settings={folderPage.settings}
+          outline={views[outlineIndex].outline}
           vaultRecords={vaultRecords}
           records={records}
-          rows={rows}
           onOpenFile={onOpenFile}
           openBackground={folderPage.openBackground}
-          // ONE `folder_page_settings` write, through the same door every config edit uses. It
-          // lands on the FIRST outline view because that is the one `orderedMembers` reads back
-          // (🔒 Q3) — with the two default views they are the same view.
-          onOrder={(order) =>
+          wikilinks={folderPage.wikilinks}
+          wikilinkCandidates={folderPage.wikilinkCandidates}
+          nav={folderPage.nav}
+          // ONE `folder_page_settings` write, through the same door every config edit uses — the
+          // door the retired drag wrote `order` through (YAZ-903). It lands on the FIRST outline
+          // view because that is the one the seed was read from, and `order` RETIRES in the same
+          // write: the [D5] list has said its piece the moment the document exists.
+          onDocument={(markdown) =>
             update((d) => {
-              d.views[outlineIndex].order = order
+              d.views[outlineIndex].outline = markdown
+              delete d.views[outlineIndex].order
             })
           }
-          onCreate={(name) => {
-            setCreateError(null)
-            // Birth, then STAY: the new member appears as a row on the next snapshot, and the
-            // outline the user is reading does not jump out from under them.
-            folderPage.create(deriveSeed(def, view), name).catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
-          }}
         />
       ) : view.type === 'table' ? (
         <TableView
@@ -377,6 +407,11 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
             </li>
           ))}
         </ul>
+      )}
+      {notes.length > 0 && (
+        <p className="views-pane__notes" role="note">
+          {notes.join(' · ')}
+        </p>
       )}
     </div>
   )

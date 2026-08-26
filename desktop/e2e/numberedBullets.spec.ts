@@ -45,30 +45,34 @@ const menuRow = (w: Page) => menu(w).locator('.ctx-menu__item')
  * right-click the 6-dot glyph (the LAST `.operation-item` — the plus is display:none).
  */
 async function openHandleMenu(w: Page, text: string): Promise<void> {
+  // 60s, so the 30s `toPass` budget below is actually SPENDABLE (YAZ-861): the config's per-test
+  // timeout is 30s, which the probe alone would exhaust — step 5 opens the menu twice. Set here
+  // rather than per test so it covers every caller, present and future; healthy runs spend none.
+  test.setTimeout(60_000)
   const para = paraOf(rowOf(w, text))
   const handle = w.locator('.tabstack__layer:not(.tabstack__layer--hidden) .milkdown-block-handle')
-  let attempt = 0
   await expect(async () => {
-    // TWO moves inside this row, not one (YAZ-847 hardening): the listener is throttled, so a
-    // single mousemove can be swallowed by the leading edge of a throttle window the PREVIOUS
-    // row opened — and the trailing edge then fires with the pointer nowhere new. The second
-    // move guarantees one event lands while the pointer is inside THIS paragraph.
-    const x = attempt++ % 2 === 0 ? 4 : 6
-    await para.hover({ position: { x, y: 8 } })
-    await para.hover({ position: { x: x + 1, y: 10 } })
-    // 1s, not 300ms: the mousemove behind the attribute is throttled 200ms, so a loaded machine
-    // can miss a 300ms window on EVERY attempt and burn the whole budget below (YAZ-847 grew the
-    // suite by one spec and this probe was the first thing to notice). Healthy runs still pass on
-    // the first attempt — the wait ends the moment the attribute lands.
+    // A SWEEP, not discrete hops (the YAZ-861 rework, after the two-hop version flaked across
+    // three waves): the handle's mousemove listener is throttled ~200ms, and any finite set of
+    // synthetic single events can land entirely inside stale throttle windows on a loaded
+    // machine. `mouse.move(..., steps)` emits a continuous stream of real events while the
+    // pointer crosses the paragraph — some event ALWAYS falls in a fresh window over this row.
+    const box = await para.boundingBox()
+    if (box === null) throw new Error('paragraph not laid out yet')
+    await w.mouse.move(box.x - 10, box.y + 8) // enter from outside so the crossing is real
+    await w.mouse.move(box.x + Math.min(80, box.width / 2), box.y + box.height / 2, { steps: 12 })
     await expect(handle).toHaveAttribute('data-show', 'true', { timeout: 1000 })
     const [p, h] = await Promise.all([para.boundingBox(), handle.boundingBox()])
     const mid = h!.y + h!.height / 2
     expect(mid).toBeGreaterThanOrEqual(p!.y)
     expect(mid).toBeLessThanOrEqual(p!.y + p!.height)
-    // Hover-probe headroom under full-suite load (YAZ-819 → YAZ-847 → YAZ-848): every wave that
-    // adds a spec ahead of this one leaves the machine warmer here, and the throttled mousemove
-    // is the first thing to feel it. Raised again with 6B-'s `topics.spec.ts`. Healthy runs pass
-    // on the FIRST attempt and never spend any of this — the budget only buys retries.
+    // Hover-probe headroom under full-suite load (YAZ-819 → YAZ-847 → YAZ-848 → YAZ-904): every
+    // wave that adds a spec ahead of this one leaves the machine warmer here, and the throttled
+    // mousemove is the first thing to feel it. Raised again with 6B-'s `topics.spec.ts`, and again
+    // with 8H-'s `folderPageOutline.spec.ts`, which sorts ahead of this file and drives a second
+    // Milkdown instance. Healthy runs pass on the FIRST attempt and never spend any of this — the
+    // budget only buys retries. NOTE the budget is only spendable because the steps that call this
+    // raise their OWN timeout past it: a 30s probe inside a 30s test can never retry at all.
   }).toPass({ timeout: 30_000 })
   await handle.locator('.operation-item').last().click({ button: 'right' })
   await expect(menu(w)).toBeVisible()
@@ -93,6 +97,7 @@ test.afterAll(async () => {
 })
 
 test('step 1 — right-click on the handle of "Fundamentals" offers exactly "Number children"', async () => {
+  test.setTimeout(60_000) // room for openHandleMenu's documented retry budget (YAZ-904)
   for (const text of CHILDREN) await expect(labelOf(rowOf(win, text))).toHaveClass(/\bbullet\b/)
   await openHandleMenu(win, 'Fundamentals')
   await expect(menuRow(win)).toHaveCount(1)
@@ -148,6 +153,7 @@ test('step 4 — one undo restores the bullets in the GUI and on disk', async ()
 })
 
 test('step 5 — re-number, then the row reads "Bullet children" and flips back', async () => {
+  test.setTimeout(90_000) // TWO hover probes, so twice the documented retry budget (YAZ-904)
   await openHandleMenu(win, 'Fundamentals')
   await expect(menuRow(win)).toHaveText('Number children')
   await menuRow(win).click()
@@ -162,6 +168,7 @@ test('step 5 — re-number, then the row reads "Bullet children" and flips back'
 })
 
 test('step 6 — a leaf ("deep") still shows the row, disabled', async () => {
+  test.setTimeout(60_000) // room for openHandleMenu's documented retry budget (YAZ-904)
   await openHandleMenu(win, 'deep')
   await expect(menuRow(win)).toHaveCount(1)
   await expect(menuRow(win)).toHaveText('Number children')

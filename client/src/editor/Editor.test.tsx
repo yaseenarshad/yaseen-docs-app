@@ -43,6 +43,15 @@ vi.mock('./createCrepe', () => {
   }
 })
 
+/**
+ * The folder page's outline editor (YAZ-903) is a SECOND Crepe instance, and the factory above is
+ * faked here — so it is stubbed as the document it was seeded with. The real one is pinned in
+ * `views/view/OutlineEditor.test.tsx`.
+ */
+vi.mock('../views/view/OutlineEditor', () => ({
+  OutlineEditor: ({ markdown }: { markdown: string }) => <pre className="outline-doc">{markdown}</pre>,
+}))
+
 import { api } from '../api'
 import { createCrepe, setMarkdown } from './createCrepe'
 
@@ -334,8 +343,8 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'frontmatter-panel', 'editor-mount', 'folder-page-contents', 'backlinks'])
     // fed the pages that belong to it, and no title row of its own — block zero already names
     // the page (⚡ YAZ-888).
-    // Q7's default view is the OUTLINE (YAZ-820), which names pages the way a link does.
-    expect([...el.querySelectorAll('.view-outline__link')].map((n) => n.textContent)).toEqual(['member'])
+    // Q7's default view is the OUTLINE (YAZ-820/903), whose document names them as links.
+    expect(el.querySelector('.outline-doc')?.textContent).toBe('- [[member]]')
   })
 
   it('an ordinary note gets no contents block at all', async () => {

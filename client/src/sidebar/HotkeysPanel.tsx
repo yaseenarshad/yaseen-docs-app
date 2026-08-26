@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from 'react'
  * Hotkey reference (GRO-2067 Q4): keyboard-icon button beside the settings cog; the popover
  * lists every binding from this single source-of-truth list. When a keymap changes anywhere
  * (hotkeys.ts, zoom.ts, marks/underline.ts, listCommands.ts, views/view/*, the application
- * menu in desktop/src/main/menu.ts), update HOTKEYS (or BASES_HOTKEYS / WINDOW_HOTKEYS) with it —
+ * menu in desktop/src/main/menu.ts), update HOTKEYS (or VIEW_HOTKEYS / WINDOW_HOTKEYS) with it —
+ * `VIEW_HOTKEYS` is the folder-page view surface's own set (table / cards / outline bindings); it
+ * was `BASES_HOTKEYS` under the heading "Bases" until YAZ-861 renamed both to what they describe.
  * HotkeysPanel.test.ts pins the expected set so drift fails loudly.
  * Reuses the settings popover classes (SettingsPanel.tsx / app.css) for placement and look.
  */
@@ -27,7 +29,7 @@ export const HOTKEYS: readonly HotkeyEntry[] = [
   { keys: 'Tab / ⇧Tab', label: 'Indent / outdent bullet' },
 ]
 
-export const BASES_HOTKEYS: readonly HotkeyEntry[] = [
+export const VIEW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '↑ ↓ ← →', label: 'Move between table cells — Enter opens the note or edits the cell' },
   { keys: '⏎ / Esc', label: 'Commit / cancel a cell edit' },
   { keys: 'Esc', label: 'Cancel a card drag' },
@@ -92,9 +94,9 @@ export function HotkeysButton() {
               </div>
             ))}
           </dl>
-          <p className="settings__label">Bases</p>
+          <p className="settings__label">Views</p>
           <dl className="hotkeys__list">
-            {BASES_HOTKEYS.map(({ keys, label }) => (
+            {VIEW_HOTKEYS.map(({ keys, label }) => (
               <div key={keys} className="hotkeys__row">
                 <dt className="hotkeys__keys">{keys}</dt>
                 <dd className="hotkeys__label">{label}</dd>

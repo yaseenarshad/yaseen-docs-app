@@ -26,17 +26,14 @@ Execute the entire YAZ-813 tree (issues 1- through 8-, 33 subissues) to Done: th
   - [x] 4- YAZ-817 COMPLETE + MERGED to main (721b69d). 4A c249a99 (toggle + ConfirmTurnBack; indexSource wiring) · 4B 1098d87 (New folder page, 4th EntryKind) · 4C+4D 721b69d (gestures contract; fixed pre-existing 5D atomicity lie). e2e 85/85 twice.
   - [x] 5- YAZ-818 COMPLETE + MERGED to main (5c60901). 5.1 9a798ce · 5.2 f27e2fa · 5.3 41929ad (−2,839) · 5.4 0782377 · 5.5 5c60901 (amputation; rung 2 wired; ViewTabs switch-only for real → CRUD parked 824). e2e 87/87.
   - [x] 6- YAZ-821 COMPLETE + MERGED to main (baa0794). 6A 98f8058 · 6B 3fc8359 · 6C 86c257a · 6D+6E baa0794. THE WHOLE APP SURFACE IS BUILT. e2e 98/98.
-- Now: [→] 7- YAZ-822: 7A (YAZ-853) tools/migrateFolderPages.mjs — Opus building vs synthetic fixtures ONLY (real vault untouched)
-- Next: 7B — **YASIN GATES: (1) canonical-copy confirmation (/Users/yasin/Documents/GitHub/business-wiki-MASTER dupe vs original), (2) dry-run report approval in a YAZ-822 comment BEFORE --apply** → 7C fixtures/specs → 7D polish → merge 822 → 8- (incl. Yasin dogfooding)
-- Remaining:
-  - [ ] 4- YAZ-817 (4A–4D)
-  - [ ] 5- YAZ-818 (5.1–5.5)
-  - [ ] 6- YAZ-821 (6A–6E)
-  - [ ] 7- YAZ-822 (7A–7D) — 7B needs Yasin (canonical-copy + dry-run approval)
-  - [ ] 8- YAZ-823 (8A–8E) — 8D needs Yasin (dogfooding)
+  - [x] 7- YAZ-822 COMPLETE. 7A 68aa029 (tools/migrateFolderPages.mjs — dry-run default, clean-tree gate, idempotent, four post-checks, 41 tests in its own `tools` vitest project) · 7C f9e7191 (the e2e fixture vault migrated BY THE SCRIPT ITSELF, so the fixtures and the migration can never disagree) · 7D ff99d9f (catches: templates' CONTENT migrates too; subdir-vault apply).
+  - [x] 8A–8D, 8F, 8G. 8B 15ba133 (the dead word leaves the codebase — `bases` → `views`) · 8F 4f95f84 (the `confirmDelete` setting finally gates the sheet) · 8C 5ef0aa0 (crossCutting.spec.ts — six seams proven together; it FOUND the YAZ-859 counts-vs-chevron seam ruling) · 8G 4c62593 (the Topics context menu — the ⚡ amendment on YAZ-821) + 5c5381d (YAZ-864: renames rewrite nested settings links).
+  - [x] 8E YAZ-861 COMPLETE (4585b94 worklist + a1bf7c3 finale). Both ⚡ rulings executed: walkFolderPage deleted (cases survive in the guard's suite) · .obsidian/types.json chain killed (no CACHE_VERSION bump — payload proof; exposed+fixed the latent liveCache watcher race) · writeMemberships→writeBelonging ('membership' greps ZERO). Hover probe REWORKED (continuous mouse sweep, per the YAZ-846 rule).
+  - [x] 8H YAZ-869 COMPLETE (a1bf7c3): Topics row births a MEMBER (memberFolder shared via scaffold.ts; createInTopic); New folder page there = sub-topic.
+- **WAVE COMPLETE (2026-08-25).** YAZ-823 Done · closing evidence comment posted on YAZ-813 (#comment-067c83c6) · YAZ-813 Done. Final gate at main a1bf7c3: unit 1751/1751 · tsc ×3 · e2e 107/107 twice, zero skips. Tags pushed: app `folder-pages-v1` (a1bf7c3) · vault `folder-pages-migrated` (fe8cd6d, incl. the 04-views dead-rung fix). Awaiting only Yasin's sign-off on the final DMG.
 
 ## Open Questions
-- UNCONFIRMED: none right now — locks cover the build. Yasin checkpoints ahead: 7B gates, 8D dogfooding.
+- None. Deferred by ruling (filed, not open): view CRUD YAZ-824 · copy-in-Finder-from-Topics. The `client/src/views/view/` directory keeps its name (33 files of churn for no truth).
 
 ## Working Set
 - Worktree: .claude/worktrees/folder-pages-813 (branch worktree-folder-pages-813, from main d38369f)

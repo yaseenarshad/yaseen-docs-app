@@ -1,8 +1,12 @@
 /**
- * Editor type inference for inline cell editors (5B, GRO-2142). Locked precedence: an explicit
- * `.obsidian/types.json` assignment wins over any inference from values; otherwise the note's own
- * YAML value decides; a note without the key borrows the dominant value type across the view's
+ * Editor type inference for inline cell editors (5B, GRO-2142). Locked precedence: the FOLDER
+ * PAGE's own view-scoped declaration wins, then a vault-wide one; otherwise the note's own YAML
+ * value decides; a note without the key borrows the dominant value type across the view's
  * records; text is the fallback. `file.*` and `formula.*` never get an editor.
+ *
+ * TOMBSTONE (⚡ YAZ-815): the rung-3 cases — an explicit `.obsidian/types.json` assignment, and
+ * the Obsidian type-name → editor mapping under it — stood in the two describes below. The rung
+ * and its `types` parameter are gone with the whole `.obsidian/types.json` chain.
  */
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord, PropertiesResponse, PropertyKind } from '@shared/types'
@@ -47,48 +51,31 @@ describe('valueKind', () => {
 
 describe('columnTyping + cellEditor', () => {
   it('file.* and formula.* columns are read-only', () => {
-    expect(columnTyping('file.name', TEST_RECORDS, undefined)).toBeNull()
-    expect(columnTyping('formula.x', TEST_RECORDS, undefined)).toBeNull()
+    expect(columnTyping('file.name', TEST_RECORDS)).toBeNull()
+    expect(columnTyping('formula.x', TEST_RECORDS)).toBeNull()
     expect(cellEditor('anything', null)).toBeNull()
   })
 
   it('the current YAML value decides when nothing is assigned', () => {
-    const col = columnTyping('note.priority', TEST_RECORDS, undefined)
+    const col = columnTyping('note.priority', TEST_RECORDS)
     expect(cellEditor(2, col)).toBe('number')
     expect(cellEditor('high', col)).toBe('text')
   })
 
-  it('an explicit types.json assignment wins over inference from values', () => {
-    const col = columnTyping('priority', TEST_RECORDS, { priority: 'text' })
-    expect(col?.assigned).toBe('text')
-    expect(cellEditor(2, col)).toBe('text')
-    expect(cellEditor(undefined, col)).toBe('text')
-  })
-
-  it('obsidian type names map onto our editors; unknown names do not assign', () => {
-    const recs = [record({ x: 'plain' })]
-    expect(cellEditor('plain', columnTyping('x', recs, { x: 'datetime' }))).toBe('date')
-    expect(cellEditor('plain', columnTyping('x', recs, { x: 'multitext' }))).toBe('list')
-    expect(cellEditor('plain', columnTyping('x', recs, { x: 'tags' }))).toBe('list')
-    expect(cellEditor('plain', columnTyping('x', recs, { x: 'aliases' }))).toBe('list')
-    expect(cellEditor('plain', columnTyping('x', recs, { x: 'checkbox' }))).toBe('checkbox')
-    expect(cellEditor('plain', columnTyping('x', recs, { x: 'mystery' }))).toBe('text')
-  })
-
   it('a note without the key borrows the dominant value type across the view records', () => {
     const recs = [record({ n: 1 }, 1), record({ n: 2 }, 2), record({ n: 'three' }, 3), record({}, 4)]
-    const col = columnTyping('n', recs, undefined)
+    const col = columnTyping('n', recs)
     expect(col?.dominant).toBe('number')
     expect(cellEditor(undefined, col)).toBe('number')
   })
 
   it('falls back to text when the key exists nowhere', () => {
-    expect(cellEditor(undefined, columnTyping('ghost', TEST_RECORDS, undefined))).toBe('text')
+    expect(cellEditor(undefined, columnTyping('ghost', TEST_RECORDS))).toBe('text')
   })
 
   it('ties go to the first kind seen', () => {
     const recs = [record({ v: 'a' }, 1), record({ v: 2 }, 2)]
-    expect(cellEditor(undefined, columnTyping('v', recs, undefined))).toBe('text')
+    expect(cellEditor(undefined, columnTyping('v', recs))).toBe('text')
   })
 })
 
@@ -100,21 +87,23 @@ describe('declaration precedence (5E, GRO-2217 — locked amendment on GRO-2120;
   }
   const recs = [record({ x: 'plain', owner: 7, funnels: 'plain' })]
 
-  it('the vault-wide declaration beats .obsidian/types.json, which beats the value', () => {
-    expect(columnTyping('x', recs, { x: 'text' }, DECLS)?.assigned).toBe('date')
-    expect(columnTyping('x', recs, { x: 'text' }, undefined)?.assigned).toBe('text')
+  it('the vault-wide declaration beats the value', () => {
+    expect(columnTyping('x', recs, DECLS)?.assigned).toBe('date')
+    // …and with no declarations there is nothing above the value any more (⚡ YAZ-815).
+    expect(columnTyping('x', recs, undefined)?.assigned).toBeNull()
+    expect(cellEditor('plain', columnTyping('x', recs, undefined))).toBe('text')
   })
 
   it('an undeclared key falls straight through — there is no type-scoped rung any more (YAZ-836)', () => {
     const none: PropertiesResponse = { ...DECLS, properties: {} }
-    const col = columnTyping('owner', recs, undefined, none)
+    const col = columnTyping('owner', recs, none)
     expect(col?.assigned).toBeNull()
     expect(col?.target).toBeUndefined()
     expect(cellEditor(7, col)).toBe('number') // the note's own value decides, as before
   })
 
   it('vault-wide declarations beat the value and carry the target onto the column', () => {
-    const col = columnTyping('owner', recs, undefined, DECLS)
+    const col = columnTyping('owner', recs, DECLS)
     expect(col?.assigned).toBe('link')
     expect(col?.target).toBe('person')
     expect(cellEditor(7, col)).toBe('link')
@@ -122,13 +111,13 @@ describe('declaration precedence (5E, GRO-2217 — locked amendment on GRO-2120;
   })
 
   it("multi-link maps onto the chips editor kind 'multi-link'", () => {
-    expect(cellEditor(undefined, columnTyping('funnels', recs, undefined, DECLS))).toBe('multi-link')
+    expect(cellEditor(undefined, columnTyping('funnels', recs, DECLS))).toBe('multi-link')
   })
 
-  it('an empty (or absent) response changes nothing below rank 3', () => {
+  it('an empty (or absent) response assigns nothing — the value decides', () => {
     const empty: PropertiesResponse = { root: '/vault', version: 0, properties: {} }
-    expect(columnTyping('x', recs, { x: 'text' }, empty)?.assigned).toBe('text')
-    expect(cellEditor('plain', columnTyping('x', recs, undefined, empty))).toBe('text')
+    expect(columnTyping('x', recs, empty)?.assigned).toBeNull()
+    expect(cellEditor('plain', columnTyping('x', recs, empty))).toBe('text')
   })
 })
 
@@ -149,23 +138,23 @@ describe('folder-page columns are the top rung (🔒 Q8, YAZ-815)', () => {
     problems: [],
   })
 
-  it('beats the vault-wide declaration, .obsidian/types.json and the value — and carries its own target', () => {
-    const col = columnTyping('owner', recs, { owner: 'number' }, DECLS, settings({ owner: { kind: 'multi-link', target: '[[KPIs]]' } }))
+  it('beats the vault-wide declaration and the value — and carries its own target', () => {
+    const col = columnTyping('owner', recs, DECLS, settings({ owner: { kind: 'multi-link', target: '[[KPIs]]' } }))
     expect(col?.assigned).toBe('multi-link')
     expect(col?.target).toBe('[[KPIs]]')
     expect(cellEditor(7, col)).toBe('multi-link')
   })
 
   it('a key the folder page does not declare falls through to the rungs below, untouched', () => {
-    expect(columnTyping('stage', recs, undefined, DECLS, settings({ owner: { kind: 'link' } }))?.assigned).toBe('date')
+    expect(columnTyping('stage', recs, DECLS, settings({ owner: { kind: 'link' } }))?.assigned).toBe('date')
   })
 
   it('no folder page is exactly today’s ladder', () => {
-    expect(columnTyping('owner', recs, undefined, DECLS, null)?.assigned).toBe('text')
-    expect(columnTyping('owner', recs, undefined, DECLS)?.assigned).toBe('text')
+    expect(columnTyping('owner', recs, DECLS, null)?.assigned).toBe('text')
+    expect(columnTyping('owner', recs, DECLS)?.assigned).toBe('text')
   })
 
   it('a folder page whose settings declare nothing changes nothing', () => {
-    expect(columnTyping('owner', recs, undefined, DECLS, settings({}))?.assigned).toBe('text')
+    expect(columnTyping('owner', recs, DECLS, settings({}))?.assigned).toBe('text')
   })
 })

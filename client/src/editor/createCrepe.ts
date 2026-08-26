@@ -101,13 +101,19 @@ export interface CreateCrepeOptions {
   drawing?: DrawingCreator
   /** Drawing previews (YAZ-878): the vault root to read scenes against, plus the optional refresh feed and click handler. Absent → `.excalidraw` embeds stay plain text. */
   drawingPreview?: DrawingPreviewOptions
+  /**
+   * Feature overrides for a NON-note instance (YAZ-901's bullets-only outline editor passes
+   * `outlineFeatures`). The note editor passes none and gets `featureConfig.ts`'s allowlist
+   * verbatim — which is what `featureConfig.test.ts` keeps honest.
+   */
+  features?: Partial<Record<CrepeFeature, boolean>>
 }
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
   const crepe = new Crepe({
     root: opts.root,
     defaultValue: normalizeEmptyItems(opts.defaultValue ?? ''),
-    features,
+    features: { ...features, ...opts.features },
     // The ONE customisation of a stock Crepe feature (YAZ-877): the BlockEdit menu gains a
     // Drawing row when the host supplies a creator. No creator → no config, stock menu.
     featureConfigs: opts.drawing === undefined ? undefined : { [CrepeFeature.BlockEdit]: { buildMenu: drawingMenu(opts.drawing) } },

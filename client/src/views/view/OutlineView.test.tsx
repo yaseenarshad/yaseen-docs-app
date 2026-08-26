@@ -1,22 +1,24 @@
 /**
- * The folder page's OUTLINE view (YAZ-820; 🔒 D4 of YAZ-818, [D3]-[D6] of the mockup). Mounted
+ * The folder page's OUTLINE view (YAZ-903 — 🔒 D4 of YAZ-818 as YAZ-867 amended it). Mounted
  * through the REAL host (`FolderPageContents` → `ViewsPane`), the same harness 5.1's tests use, so
  * the routing — `type: outline` INSIDE the folder-page mode and nowhere else — is proven by the
- * rows appearing at all, and every write travels the real door it will travel in the app.
+ * editor appearing at all, and every write travels the real door it will travel in the app.
  *
- * Pinned here: order is `orderedMembers` and nothing else; the chevron expands, with
- * `walkFolderPage`'s ancestor-path guard node for node (an A↔B loop terminates, a diamond renders
- * under BOTH parents); the glyph and the direct-member count are folder-page rows only; a drag at
- * depth 0 writes the outline view's `order` and touches NO card; the add row is picker-only —
- * self and members excluded, a pick appends to the TARGET's `folder_pages` preserving what was
- * there, Enter never commits free text, the explicit create row births a member; and the × is a
- * confirm sheet whose copy is a pure function, whose Cancel writes nothing and whose Confirm
- * removes only THIS folder page's entry.
+ * `OutlineEditor` itself is STUBBED here (a real Crepe instance in jsdom is slow, and the lock, the
+ * seeding and the debounce are pinned next door in `OutlineEditor.test.tsx`): the stub renders the
+ * markdown it was handed and hands back the `onChange` a debounced edit would call.
+ *
+ * Pinned here: the seed is `view.outline`, or the [D5] `order` frozen into a document when there is
+ * none; one edit is ONE settings write that stores the document AND retires `order`; a link line
+ * that appeared tags its page (never this folder page itself); a link line that vanished only asks,
+ * through the sheet, one page at a time — Confirm un-tags, Cancel keeps the belonging and is never
+ * asked again; and a member the document does not name still shows, in the appended section, with
+ * its glyph, its count and its own ×.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { CreateFileRequest, IndexRecord } from '@shared/types'
+import type { IndexRecord } from '@shared/types'
 import { resolverFor } from '../engine'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
 import { parseViews } from '../viewSchema'
@@ -24,11 +26,20 @@ import { ViewsPane } from '../ViewsPane'
 import { FolderPageContents } from '../FolderPageContents'
 import { folderPageSettings } from '../folderPageSettings'
 import { removeMemberMessage } from './ConfirmRemoveMember'
+import type { OutlineEditorProps } from './OutlineEditor'
 
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn() }))
 vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
   api: { readFile: vi.fn(), createDir: vi.fn(), createFile: vi.fn() },
+}))
+/** The editor, stubbed: what it was seeded with, and the door a debounced edit comes back through. */
+const editor = vi.hoisted(() => ({ props: null as OutlineEditorProps | null }))
+vi.mock('./OutlineEditor', () => ({
+  OutlineEditor: (props: OutlineEditorProps) => {
+    editor.props = props
+    return <pre className="outline-doc">{props.markdown}</pre>
+  },
 }))
 
 import { api, BridgeRequestError } from '../../api'
@@ -38,7 +49,6 @@ const write = vi.mocked(writeProperty)
 const readFile = vi.mocked(api.readFile)
 const createDir = vi.mocked(api.createDir)
 const createFile = vi.mocked(api.createFile)
-const created = (call: number): CreateFileRequest => createFile.mock.calls[call][0] as CreateFileRequest
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -77,8 +87,7 @@ const SETTINGS = { columns: {}, folder: 'stages', views: [OUTLINE, TABLE] }
 
 /**
  * The folder page, three members (one of them ALSO in a second folder page, so the remove sheet
- * has something to name), a second folder page nobody here belongs to, and one loose page the
- * picker can offer.
+ * has something to name), a second folder page nobody here belongs to, and one loose page.
  */
 function vault(settings: unknown = SETTINGS): IndexRecord[] {
   return [
@@ -91,16 +100,13 @@ function vault(settings: unknown = SETTINGS): IndexRecord[] {
   ]
 }
 
-/**
- * The NESTING vault: `Alpha` and `Beta` are folder pages that contain EACH OTHER (the one-keystroke
- * `A → B → A` loop the guard exists for), and `Diamond` belongs to both of them.
- */
+/** `Alpha` is a folder page holding two pages, and belongs to this one — the glyph + count row. */
 function nested(): IndexRecord[] {
   return [
-    rec(FUNNELS, { folder_page: true, folder_page_settings: { views: [OUTLINE, TABLE] } }),
-    rec('/vault/Alpha.md', { folder_page: true, folder_pages: ['[[Funnel Stages]]', '[[Beta]]'] }),
-    rec('/vault/Beta.md', { folder_page: true, folder_pages: ['[[Funnel Stages]]', '[[Alpha]]'] }),
-    rec('/vault/Diamond.md', { folder_pages: ['[[Alpha]]', '[[Beta]]'] }),
+    rec(FUNNELS, { folder_page: true, folder_page_settings: { views: [{ ...OUTLINE, outline: '- nothing yet' }, TABLE] } }),
+    rec('/vault/Alpha.md', { folder_page: true, folder_pages: ['[[Funnel Stages]]'] }),
+    rec('/vault/One.md', { folder_pages: ['[[Alpha]]'] }),
+    rec('/vault/Two.md', { folder_pages: ['[[Alpha]]'] }),
   ]
 }
 
@@ -132,6 +138,7 @@ function mount(path = FUNNELS, records: IndexRecord[] = vault()): HTMLElement {
 
 beforeEach(() => {
   source = createWikilinkResolveSource()
+  editor.props = null
   write.mockResolvedValue({ mtime: 2 })
   readFile.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'path does not exist')) // no template
   createDir.mockResolvedValue({ path: '/vault/stages' })
@@ -156,63 +163,38 @@ function q<T extends Element>(el: ParentNode, sel: string): T {
 
 const all = <T extends Element>(el: ParentNode, sel: string): T[] => [...el.querySelectorAll<T>(sel)]
 const texts = (el: ParentNode, sel: string): string[] => all(el, sel).map((n) => n.textContent ?? '')
-/** The outline's own rows, in render order — nesting included, since nested rows are siblings. */
+/** The APPENDED members — everything the document does not name. */
 const rowNames = (el: ParentNode): string[] => texts(el, '.view-outline__link')
 const rowFor = (el: ParentNode, path: string): HTMLElement => q<HTMLElement>(el, `[data-outline-row="${path}"]`)
 const byLabel = <T extends HTMLElement>(el: ParentNode, label: string): T => q<T>(el, `[aria-label="${label}"]`)
+/** The document the editor was seeded with. */
+const doc = (el: ParentNode): string => q(el, '.outline-doc').textContent ?? ''
+/** One committed edit — what the editor's debounce hands back. */
+const edit = (markdown: string): void => act(() => editor.props?.onChange(markdown))
+const settingsWrites = () => write.mock.calls.filter((c) => c[1] === 'folder_page_settings')
+const memberWrites = () => write.mock.calls.filter((c) => c[1] === 'folder_pages')
+const sheetButton = (label: string): HTMLElement => all<HTMLElement>(document.body, '.confirm__btn').find((b) => b.textContent === label)!
 
 function click(el: Element, init: MouseEventInit = {}): void {
   act(() => void el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ...init })))
 }
 
-function setValue(el: HTMLInputElement, value: string): void {
-  const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
-  act(() => {
-    set?.call(el, value)
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-  })
-}
-
-function press(el: Element, key: string): void {
-  act(() => void el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })))
-}
-
-/**
- * Drag events bubble like the real thing; jsdom has no DragEvent and the handlers guard
- * `dataTransfer` (the TabBar / groupDrag idiom). jsdom rects are all-zero, so the midpoint test
- * reduces to the sign of `clientY`: negative = before the row, else after it.
- */
-const fire = (target: Element, type: string, clientY = 0): void =>
-  act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })))
-
 async function flush(): Promise<void> {
   await act(async () => {})
-}
-
-const addInput = (el: ParentNode): HTMLInputElement => byLabel<HTMLInputElement>(el, 'Link a page')
-const picks = (el: ParentNode): string[] => texts(el, '.view-outline__pick')
-
-function focusAdd(el: ParentNode, query: string): HTMLInputElement {
-  const input = addInput(el)
-  act(() => input.focus())
-  setValue(input, query)
-  return input
 }
 
 // ---------- routing ----------
 
 describe('the outline is the folder page’s skin — and only ever hers', () => {
-  it('a folder page’s `type: outline` view renders the outline, not the placeholder rows', () => {
+  it('a folder page’s `type: outline` view renders the EDITOR, not the placeholder rows', () => {
     const el = mount()
     expect(el.querySelector('.view-outline')).not.toBeNull()
+    expect(el.querySelector('.outline-doc')).not.toBeNull()
     expect(el.querySelector('.view-row__link')).toBeNull() // the old unknown-view placeholder
     expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table'])
   })
 
-  // The other half of this pair — a `type: outline` view with NO folder page behind it — went
-  // with the `folderPage === undefined` branch in YAZ-846: there is no such mount any more. The
-  // guard that survives is the one on `thisFile`, which roots the ancestor walk.
-  it('a null `thisFile` keeps the placeholder rows — the ancestor guard has nothing to stand on', () => {
+  it('a null `thisFile` keeps the placeholder rows — there is no folder page to be an outline of', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -224,7 +206,7 @@ describe('the outline is the folder page’s skin — and only ever hers', () =>
           root="/vault"
           thisFile={null}
           records={[rec(LEAD)]}
-          folderPage={{ settings: folderPageSettings(rec(FUNNELS, { folder_page: true })), vaultRecords: vault(), create: () => Promise.reject(new Error('no')) }}
+          folderPage={{ settings: folderPageSettings(rec(FUNNELS, { folder_page: true })), vaultRecords: vault(), create: () => Promise.reject(new Error('no')), setColumns: () => {} }}
           onOpenFile={onOpenFile}
         />,
       ),
@@ -233,252 +215,125 @@ describe('the outline is the folder page’s skin — and only ever hers', () =>
     expect(texts(container, '.view-row__link')).toEqual(['Lead Gen.md'])
   })
 
-  it('the Properties menu is not offered while it shows — its every gesture rewrites `view.order`', () => {
+  it('the Properties menu and search are not offered while it shows — a document has no columns and no rows to filter', () => {
     const el = mount()
     expect(el.querySelector('[aria-label="Properties"]')).toBeNull()
+    expect(el.querySelector('[aria-label="Search"]')).toBeNull()
     const tab = all<HTMLElement>(el, '.view-tab__btn').find((b) => b.textContent === 'Table')!
     click(tab)
-    expect(el.querySelector('[aria-label="Properties"]')).not.toBeNull() // the table keeps it
+    expect(el.querySelector('[aria-label="Properties"]')).not.toBeNull() // the table keeps both
+    expect(el.querySelector('[aria-label="Search"]')).not.toBeNull()
+  })
+
+  it('the editor is handed the window’s link feed, and a nav whose identity survives a re-render', () => {
+    const el = mount()
+    const first = editor.props
+    expect(el.querySelector('.view-outline-editor')).toBeNull() // the stub stands in its place
+    feed([...vault(), rec('/vault/Late.md')])
+    // A new snapshot re-renders the block; a NEW nav object would remount the editor and eat the caret.
+    expect(editor.props?.nav).toBe(first?.nav)
+    expect(editor.props?.nav?.openCurrent).toBe(onOpenFile)
+    expect(editor.props?.nav?.openBackground).toBe(onOpenFileBackground)
+    expect(editor.props?.wikilinks).toBe(source)
   })
 })
 
-// ---------- order (🔒 the [D5] rule, in ONE place) ----------
+// ---------- the seed (🔒 D2 + the lazy migration) ----------
 
-describe('rows come out in `orderedMembers` order', () => {
-  it('no `order` at all is all-alphabetical by basename', () => {
-    expect(rowNames(mount())).toEqual(['Lead Gen', 'Nurture', 'Sales'])
+describe('the document is seeded once, from the card', () => {
+  it('a stored `outline` is the document, verbatim', () => {
+    const stored = '- [[Sales]]\n    - a note about it\n- free text'
+    expect(doc(mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: stored }, TABLE] })))).toBe(stored)
   })
 
-  it('the outline view’s `order` places its entries first, the rest alphabetical behind them', () => {
+  it('no `outline` migrates the [D5] `order`: its entries first, every unlisted member behind them', () => {
     const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, order: ['[[Sales]]'] }, TABLE] }))
-    expect(rowNames(el)).toEqual(['Sales', 'Lead Gen', 'Nurture'])
+    expect(doc(el)).toBe('- [[Sales]]\n- [[Lead Gen]]\n- [[Nurture]]')
   })
 
-  it('a stale entry is ignored harmlessly and every member still appears exactly once', () => {
-    const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, order: ['[[Gone]]', '[[Other]]', '[[Nurture]]'] }, TABLE] }))
-    expect(rowNames(el)).toEqual(['Nurture', 'Lead Gen', 'Sales'])
+  it('no order at all is every member, alphabetical — the arrangement `orderedMembers` gave', () => {
+    expect(doc(mount())).toBe('- [[Lead Gen]]\n- [[Nurture]]\n- [[Sales]]')
   })
 
-  it('the toolbar search still narrows the rows once an `order` is stored', () => {
-    // The trap the engine hand-off closes: `order` here is MEMBERS, not columns, so a view run
-    // with it would give every row empty values and search would hide the whole outline.
+  it('a stale `order` entry rides along as the text it is, and the member still appears once', () => {
+    const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, order: ['[[Gone]]', '[[Nurture]]'] }, TABLE] }))
+    expect(doc(el)).toBe('- [[Gone]]\n- [[Nurture]]\n- [[Lead Gen]]\n- [[Sales]]')
+  })
+
+  it('an empty stored document stays empty — the members ride the appended section instead', () => {
+    const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: '' }, TABLE] }))
+    expect(doc(el)).toBe('')
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Nurture', 'Sales'])
+  })
+})
+
+// ---------- the commit (ONE settings write, and `order` retires) ----------
+
+describe('an edit stores the document and retires the order', () => {
+  it('the document lands on the FIRST outline view and takes `order` with it — ONE write', async () => {
     const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, order: ['[[Sales]]'] }, TABLE] }))
-    click(byLabel(el, 'Search'))
-    setValue(byLabel<HTMLInputElement>(el, 'Search rows'), 'Nurture')
-    expect(rowNames(el)).toEqual(['Nurture'])
+    edit('- [[Sales]]\n- [[Lead Gen]]')
+    await flush()
+
+    expect(settingsWrites()).toHaveLength(1)
+    const [path, , value] = settingsWrites()[0]
+    expect(path).toBe(FUNNELS) // the FOLDER PAGE's card
+    expect(value).toEqual({
+      folder: 'stages',
+      views: [{ type: 'outline', name: 'Outline', outline: '- [[Sales]]\n- [[Lead Gen]]' }, TABLE],
+    })
+    expect(el.querySelector('.view-view__error')).toBeNull()
+  })
+
+  it('free text is just text: it stores, and it tags nobody', async () => {
+    mount()
+    edit('- [[Lead Gen]]\n- [[Nurture]]\n- [[Sales]]\n- read [[Other]] some day')
+    await flush()
+    expect(settingsWrites()).toHaveLength(1)
+    expect(memberWrites()).toEqual([]) // a link INSIDE prose is not a link line (🔒 the click rule)
   })
 })
 
-// ---------- opening ----------
+// ---------- tagging (🔒 E1: a link line IS the belonging) ----------
 
-describe('a row opens its page — the standard two handlers', () => {
-  it('a click opens in place; ⌘-click opens in a background tab', () => {
-    const el = mount()
-    click(q(rowFor(el, LEAD), '.view-outline__link'))
-    expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(LEAD)
-    expect(onOpenFileBackground).not.toHaveBeenCalled()
-
-    click(q(rowFor(el, SALES), '.view-outline__link'), { metaKey: true })
-    expect(onOpenFileBackground).toHaveBeenCalledExactlyOnceWith(SALES)
-    expect(onOpenFile).toHaveBeenCalledTimes(1) // still just the first one
-  })
-})
-
-// ---------- nesting (🔒 D6: the ancestor-path guard) ----------
-
-describe('a folder-page member expands to its own members', () => {
-  it('the glyph and the direct-member count ride folder-page rows ONLY', () => {
-    const el = mount(FUNNELS, nested())
-    expect(rowNames(el)).toEqual(['Alpha', 'Beta'])
-    expect(texts(el, '.view-outline__count')).toEqual(['2', '2']) // Beta+Diamond, Alpha+Diamond
-
-    const plain = mount()
-    expect(plain.querySelector('.view-outline__glyph')).toBeNull()
-    expect(plain.querySelector('.view-outline__count')).toBeNull()
-  })
-
-  it('an ordinary member gets a chevron SLOT and no chevron — nothing shifts sideways', () => {
-    const el = mount()
-    expect(el.querySelectorAll('.view-outline__chevron').length).toBe(0)
-    expect(el.querySelectorAll('.view-outline__row .view-outline__chevron-slot').length).toBe(3)
-  })
-
-  it('the chevron is its own hit target: expanding never opens the page', () => {
-    const el = mount(FUNNELS, nested())
-    click(byLabel(el, 'Expand Alpha'))
-    expect(onOpenFile).not.toHaveBeenCalled()
-    expect(rowNames(el)).toEqual(['Alpha', 'Beta', 'Diamond', 'Beta'])
-    click(byLabel(el, 'Collapse Alpha'))
-    expect(rowNames(el)).toEqual(['Alpha', 'Beta'])
-  })
-
-  it('the A↔B loop TERMINATES: a member already standing above the branch is skipped', () => {
-    const el = mount(FUNNELS, nested())
-    click(byLabel(el, 'Expand Alpha')) // Alpha ▸ Beta, Diamond
-    const beta = all<HTMLElement>(el, '[data-outline-row="/vault/Beta.md"]')[0]
-    click(q(beta, '.view-outline__chevron'))
-    // Beta's own members are Alpha and Diamond — and Alpha is an ANCESTOR here, so it is not
-    // rendered at all and the branch ends. Depth 0's Beta is untouched.
-    expect(rowNames(el)).toEqual(['Alpha', 'Beta', 'Diamond', 'Diamond', 'Beta'])
-  })
-
-  it('a DIAMOND renders under both its parents, and each copy expands on its own', () => {
-    const el = mount(FUNNELS, nested())
-    click(byLabel(el, 'Expand Alpha'))
-    click(all<HTMLElement>(el, '[aria-label="Expand Beta"]').at(-1)!) // the depth-0 Beta
-    expect(rowNames(el)).toEqual(['Alpha', 'Beta', 'Diamond', 'Beta', 'Alpha', 'Diamond'])
-    expect(all(el, '[data-outline-row="/vault/Diamond.md"]').length).toBe(2)
-  })
-
-  it('depth > 0 carries no × and no drag — a nested level belongs to ITS folder page', () => {
-    const el = mount(FUNNELS, nested())
-    click(byLabel(el, 'Expand Alpha'))
-    const nestedDiamond = rowFor(el, '/vault/Diamond.md')
-    expect(nestedDiamond.getAttribute('draggable')).toBe('false')
-    expect(nestedDiamond.querySelector('.view-outline__x')).toBeNull()
-    expect(all(el, '.view-outline__row[draggable="true"]').length).toBe(2) // Alpha and Beta, depth 0
-  })
-
-  it('each level orders by its OWN folder page’s settings, never the outer one’s', () => {
-    const records = nested().map((r) =>
-      r.path === '/vault/Alpha.md'
-        ? rec('/vault/Alpha.md', {
-            folder_page: true,
-            folder_pages: ['[[Funnel Stages]]', '[[Beta]]'],
-            folder_page_settings: { views: [{ ...OUTLINE, order: ['[[Diamond]]'] }] },
-          })
-        : r,
-    )
-    const el = mount(FUNNELS, records)
-    click(byLabel(el, 'Expand Alpha'))
-    expect(rowNames(el)).toEqual(['Alpha', 'Diamond', 'Beta', 'Beta'])
-  })
-})
-
-// ---------- drag (🔒 presentation only) ----------
-
-describe('drag-to-reorder at depth 0 writes the view’s order, and nothing else', () => {
-  it('a drop past a row’s midpoint writes the new sequence as wikilinks — ONE settings key', async () => {
-    const el = mount()
-    fire(rowFor(el, LEAD), 'dragstart')
-    expect(rowFor(el, LEAD).className).toContain('view-outline__row--dragging')
-    fire(rowFor(el, SALES), 'dragover', 5)
-    fire(rowFor(el, SALES), 'drop', 5) // after Sales = last
+describe('a link line that appears tags its page, at once', () => {
+  it('the entry lands on the TARGET’s own card, preserving what was already there', async () => {
+    mount()
+    edit('- [[Lead Gen]]\n- [[Nurture]]\n- [[Sales]]\n- [[Other]]')
     await flush()
-
-    expect(write).toHaveBeenCalledTimes(1)
-    const [path, key, value] = write.mock.calls[0]
-    expect(path).toBe(FUNNELS) // the FOLDER PAGE's card — no member is touched
-    expect(key).toBe('folder_page_settings')
-    expect(value).toEqual({ folder: 'stages', views: [{ ...OUTLINE, order: ['[[Nurture]]', '[[Sales]]', '[[Lead Gen]]'] }, TABLE] })
-  })
-
-  it('a drop on a row’s top half inserts BEFORE it, and the indicator marks that row', async () => {
-    const el = mount()
-    fire(rowFor(el, SALES), 'dragstart')
-    fire(rowFor(el, LEAD), 'dragover', -5)
-    expect(rowFor(el, LEAD).className).toContain('view-outline__row--insert-before')
-    fire(rowFor(el, LEAD), 'drop', -5)
-    await flush()
-    expect(write.mock.calls[0][2]).toMatchObject({ views: [{ order: ['[[Sales]]', '[[Lead Gen]]', '[[Nurture]]'] }, TABLE] })
-  })
-
-  it('dropping back on the grabbed slot writes nothing; dragend clears an abandoned drag', async () => {
-    const el = mount()
-    fire(rowFor(el, LEAD), 'dragstart')
-    fire(rowFor(el, LEAD), 'drop', -5) // before itself = its own slot
-    await flush()
-    expect(write).not.toHaveBeenCalled()
-
-    fire(rowFor(el, LEAD), 'dragstart')
-    fire(rowFor(el, LEAD), 'dragend')
-    expect(el.querySelector('.view-outline__row--dragging')).toBeNull()
-  })
-
-  it('the order the drag rewrites lands on the FIRST outline view, which is what reads it back', async () => {
-    const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, order: ['[[Sales]]'] }, TABLE] }))
-    expect(rowNames(el)).toEqual(['Sales', 'Lead Gen', 'Nurture'])
-    fire(rowFor(el, SALES), 'dragstart')
-    fire(rowFor(el, NURTURE), 'drop', 5)
-    await flush()
-    expect(write.mock.calls[0][2]).toMatchObject({ views: [{ order: ['[[Lead Gen]]', '[[Nurture]]', '[[Sales]]'] }, TABLE] })
-  })
-})
-
-// ---------- the add row (🔒 rows are pages) ----------
-
-describe('the add row is picker-only', () => {
-  it('candidates exclude this folder page and everyone already in it', () => {
-    const el = mount()
-    focusAdd(el, '')
-    expect(picks(el)).toEqual(['KPIs', 'Other'])
-    expect(picks(el)).not.toContain('Funnel Stages')
-  })
-
-  it('typing narrows through the SHARED matcher: prefix bucket first, snapshot order within it', () => {
-    const el = mount(FUNNELS, [...vault(), rec('/vault/Theory.md'), rec('/vault/The Other One.md')])
-    focusAdd(el, 'the')
-    // `matchLinkCandidates` (Links B) ranks exact → prefix → substring and keeps input order
-    // inside each bucket — the ranking the `[[` picker and every cell editor already use. And
-    // `the` names no page, so the explicit create row rides at the bottom.
-    expect(picks(el)).toEqual(['Theory', 'The Other One', 'Other', "+ Create 'the' here"])
-  })
-
-  it('picking appends this folder page to the TARGET’s card, preserving what was already there', () => {
-    const el = mount()
-    focusAdd(el, 'Oth')
-    click(q(el, '.view-outline__pick'))
-    expect(write).toHaveBeenCalledExactlyOnceWith(OTHER, 'folder_pages', ['[[Funnel Stages]]'])
-
-    // …and a page that already belongs somewhere keeps that entry: read-modify-WRITE.
-    write.mockClear()
-    const withKpis = mount(FUNNELS, vault().map((r) => (r.path === OTHER ? rec(OTHER, { folder_pages: ['[[KPIs]]'] }) : r)))
-    focusAdd(withKpis, 'Oth')
-    click(q(withKpis, '.view-outline__pick'))
-    expect(write).toHaveBeenCalledExactlyOnceWith(OTHER, 'folder_pages', ['[[KPIs]]', '[[Funnel Stages]]'])
-  })
-
-  it('Enter picks the first match — and with no match it commits NOTHING', () => {
-    const el = mount()
-    const input = focusAdd(el, 'Oth')
-    press(input, 'Enter')
-    expect(write).toHaveBeenCalledExactlyOnceWith(OTHER, 'folder_pages', ['[[Funnel Stages]]'])
+    expect(memberWrites()).toEqual([[OTHER, 'folder_pages', ['[[Funnel Stages]]']]])
 
     write.mockClear()
-    const fresh = mount()
-    press(focusAdd(fresh, 'Nothing By That Name'), 'Enter')
-    expect(write).not.toHaveBeenCalled()
-    expect(createFile).not.toHaveBeenCalled()
-  })
-
-  it('a name no page carries offers ONE explicit create row, which births a member and opens nothing', async () => {
-    const el = mount()
-    focusAdd(el, 'Expansion')
-    expect(picks(el)).toEqual(["+ Create 'Expansion' here"])
-    click(q(el, '.view-outline__pick--create'))
+    mount(FUNNELS, vault().map((r) => (r.path === OTHER ? rec(OTHER, { folder_pages: ['[[KPIs]]'] }) : r)))
+    edit('- [[Lead Gen]]\n- [[Nurture]]\n- [[Sales]]\n- [[Other]]')
     await flush()
-
-    expect(createFile).toHaveBeenCalledTimes(1)
-    const { path, content } = created(0)
-    expect(path).toBe('/vault/stages/Expansion.md') // parked per the settings (🔒 Q5)
-    expect(content).toContain('folder_pages:\n  - "[[Funnel Stages]]"')
-    expect(content).not.toContain('folder_page:') // an ORDINARY page
-    expect(onOpenFile).not.toHaveBeenCalled() // we stay in the outline
+    expect(memberWrites()).toEqual([[OTHER, 'folder_pages', ['[[KPIs]]', '[[Funnel Stages]]']]])
   })
 
-  it('a name an existing page already carries gets no create row — only the pick', () => {
-    const el = mount()
-    focusAdd(el, 'KPIs')
-    expect(picks(el)).toEqual(['KPIs'])
+  it('the folder page can not become its own member', async () => {
+    mount()
+    edit('- [[Funnel Stages]]\n- [[Lead Gen]]\n- [[Nurture]]\n- [[Sales]]')
+    await flush()
+    expect(memberWrites()).toEqual([])
+  })
 
-    // …including a name that belongs to a MEMBER, who is excluded from the picker: offering to
-    // "create" it would collide with a file that plainly exists.
-    setValue(addInput(el), 'Sales')
-    expect(picks(el)).toEqual([])
+  it('a page that already belongs is not written at all — tagging is idempotent through the resolver', async () => {
+    mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: '' }, TABLE] }))
+    edit('- [[lead gen]]') // a different SPELLING of a member: the resolver already counts it
+    await flush()
+    expect(memberWrites()).toEqual([])
+  })
+
+  it('a failed belonging write is reported in place and never takes the block down', async () => {
+    write.mockRejectedValue(new Error('read-only vault'))
+    const el = mount()
+    edit('- [[Lead Gen]]\n- [[Nurture]]\n- [[Sales]]\n- [[Other]]')
+    await flush()
+    expect(q(el, '[role="alert"]').textContent).toContain('read-only vault')
   })
 })
 
-// ---------- remove (🔒 the confirm-sheet idiom) ----------
+// ---------- un-tagging (🔒 sheet-gated, and cancel KEEPS) ----------
 
 describe('the confirm copy is a pure function', () => {
   it('names where the page still lives', () => {
@@ -494,54 +349,114 @@ describe('the confirm copy is a pure function', () => {
   })
 })
 
-describe('the hover × removes the membership, and only after the sheet', () => {
-  it('the × opens the sheet — it never removes on the click itself', () => {
+describe('a link line that vanishes only ASKS', () => {
+  it('the sheet opens and nothing is un-tagged on the edit itself', async () => {
+    mount()
+    edit('- [[Lead Gen]]\n- [[Sales]]') // Nurture dropped
+    await flush()
+    expect(q(document.body, '[role="dialog"]').textContent).toContain('It remains in: KPIs.')
+    expect(memberWrites()).toEqual([])
+  })
+
+  it('Confirm removes ONLY this folder page’s entry, on the member’s own card', async () => {
+    mount()
+    edit('- [[Lead Gen]]\n- [[Sales]]')
+    click(sheetButton('Remove'))
+    await flush()
+    expect(memberWrites()).toEqual([[NURTURE, 'folder_pages', ['[[KPIs]]']]])
+  })
+
+  it('an entry that merely SPELLS the folder page is not a link, and is left alone', async () => {
+    mount(FUNNELS, vault().map((r) => (r.path === LEAD ? rec(LEAD, { folder_pages: ['Funnel Stages', '[[Funnel Stages]]'] }) : r)))
+    edit('- [[Nurture]]\n- [[Sales]]')
+    click(sheetButton('Remove'))
+    await flush()
+    expect(memberWrites()).toEqual([[LEAD, 'folder_pages', ['Funnel Stages']]])
+  })
+
+  it('CANCEL KEEPS THE BELONGING — and the next edit does not ask again', async () => {
     const el = mount()
+    edit('- [[Lead Gen]]\n- [[Sales]]')
+    click(sheetButton('Cancel'))
+    await flush()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(memberWrites()).toEqual([])
+    // Still a member: its card was never touched, so it shows in the appended section.
+    expect(rowNames(el)).toEqual(['Nurture'])
+
+    // The document ADVANCED past the cancelled question: typing on does not re-open the sheet.
+    edit('- [[Lead Gen]]\n- [[Sales]]\n- and now some prose')
+    await flush()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(memberWrites()).toEqual([])
+  })
+
+  it('two pages dropped in ONE edit are asked one sheet at a time, in document order', async () => {
+    mount()
+    edit('- [[Sales]]') // Lead Gen and Nurture both gone
+    expect(q(document.body, '[role="dialog"]').textContent).toContain("Remove 'Lead Gen'")
+    click(sheetButton('Remove'))
+    await flush()
+    expect(q(document.body, '[role="dialog"]').textContent).toContain("Remove 'Nurture'")
+    click(sheetButton('Cancel'))
+    await flush()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(memberWrites()).toEqual([[LEAD, 'folder_pages', []]])
+  })
+})
+
+// ---------- the appended section (tagged elsewhere still shows) ----------
+
+describe('a member the document does not name still shows', () => {
+  it('the rows are alphabetical, and only the members the document leaves out', () => {
+    const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: '- [[Sales]]' }, TABLE] }))
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Nurture'])
+    expect(el.textContent).not.toContain('Other') // never a member, never a row
+  })
+
+  it('a member that arrives on the next snapshot lands here — the document is not rewritten under the user', () => {
+    const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: '- [[Sales]]' }, TABLE] }))
+    feed([...vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: '- [[Sales]]' }, TABLE] }), rec('/vault/stages/Expansion.md', { folder_pages: ['[[Funnel Stages]]'] })])
+    expect(rowNames(el)).toEqual(['Expansion', 'Lead Gen', 'Nurture'])
+    expect(doc(el)).toBe('- [[Sales]]')
+  })
+
+  it('a row that becomes a link line leaves the section on the next edit', async () => {
+    const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: '- [[Sales]]' }, TABLE] }))
+    edit('- [[Sales]]\n- [[Nurture]]')
+    await flush()
+    expect(rowNames(el)).toEqual(['Lead Gen'])
+  })
+
+  it('the glyph and the direct-member count ride folder-page rows ONLY', () => {
+    const el = mount(FUNNELS, nested())
+    expect(rowNames(el)).toEqual(['Alpha'])
+    expect(texts(el, '.view-outline__count')).toEqual(['2'])
+
+    const plain = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: '' }, TABLE] }))
+    expect(plain.querySelector('.view-outline__glyph')).toBeNull()
+    expect(plain.querySelector('.view-outline__count')).toBeNull()
+  })
+
+  it('a row opens its page — the standard two handlers', () => {
+    const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: '' }, TABLE] }))
+    click(q(rowFor(el, LEAD), '.view-outline__link'))
+    expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(LEAD)
+    expect(onOpenFileBackground).not.toHaveBeenCalled()
+
+    click(q(rowFor(el, SALES), '.view-outline__link'), { metaKey: true })
+    expect(onOpenFileBackground).toHaveBeenCalledExactlyOnceWith(SALES)
+    expect(onOpenFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('the × opens the same sheet, and only Confirm writes', async () => {
+    const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: '' }, TABLE] }))
     click(byLabel(el, 'Remove Nurture from Funnel Stages'))
     expect(q(document.body, '[role="dialog"]').textContent).toContain('It remains in: KPIs.')
     expect(write).not.toHaveBeenCalled()
-  })
 
-  it('Cancel writes nothing at all', () => {
-    const el = mount()
-    click(byLabel(el, 'Remove Lead Gen from Funnel Stages'))
-    click(all<HTMLElement>(document.body, '.confirm__btn').find((b) => b.textContent === 'Cancel')!)
-    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
-    expect(write).not.toHaveBeenCalled()
-  })
-
-  it('Confirm removes ONLY this folder page’s entry, on the member’s own card', () => {
-    const el = mount()
-    click(byLabel(el, 'Remove Nurture from Funnel Stages'))
-    click(all<HTMLElement>(document.body, '.confirm__btn').find((b) => b.textContent === 'Remove')!)
-    expect(write).toHaveBeenCalledExactlyOnceWith(NURTURE, 'folder_pages', ['[[KPIs]]'])
-  })
-
-  it('the last folder page leaves an empty list, and the copy said so', () => {
-    const el = mount()
-    click(byLabel(el, 'Remove Lead Gen from Funnel Stages'))
-    expect(q(document.body, '[role="dialog"]').textContent).toContain('it moves to Uncategorized')
-    click(all<HTMLElement>(document.body, '.confirm__btn').find((b) => b.textContent === 'Remove')!)
-    expect(write).toHaveBeenCalledExactlyOnceWith(LEAD, 'folder_pages', [])
-  })
-
-  it('an entry that merely SPELLS the folder page is not a link, and is left alone', () => {
-    const el = mount(
-      FUNNELS,
-      vault().map((r) => (r.path === LEAD ? rec(LEAD, { folder_pages: ['Funnel Stages', '[[Funnel Stages]]'] }) : r)),
-    )
-    click(byLabel(el, 'Remove Lead Gen from Funnel Stages'))
-    click(all<HTMLElement>(document.body, '.confirm__btn').find((b) => b.textContent === 'Remove')!)
-    expect(write).toHaveBeenCalledExactlyOnceWith(LEAD, 'folder_pages', ['Funnel Stages'])
-  })
-
-  it('a failed write is reported in place and never takes the block down', async () => {
-    write.mockRejectedValue(new Error('read-only vault'))
-    const el = mount()
-    click(byLabel(el, 'Remove Lead Gen from Funnel Stages'))
-    click(all<HTMLElement>(document.body, '.confirm__btn').find((b) => b.textContent === 'Remove')!)
+    click(sheetButton('Remove'))
     await flush()
-    expect(q(el, '[role="alert"]').textContent).toContain('read-only vault')
-    expect(rowNames(el)).toEqual(['Lead Gen', 'Nurture', 'Sales'])
+    expect(memberWrites()).toEqual([[NURTURE, 'folder_pages', ['[[KPIs]]']]])
   })
 })

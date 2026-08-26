@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 /**
- * The un-membership sheet's copy (YAZ-820) — PURE and separately tested, exactly like
+ * The remove-from-folder-page sheet's copy (YAZ-820) — PURE and separately tested, exactly like
  * `sidebar/ConfirmTurnBack.tsx`'s `turnBackConfirmMessage` and `deleteConfirmMessage` next to it,
  * so the component around it stays trivial.
  *

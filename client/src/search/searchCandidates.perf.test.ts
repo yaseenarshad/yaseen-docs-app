@@ -31,6 +31,9 @@ describe('searchCandidates', () => {
     for (let i = 0; i < 10; i++) searchTitles(candidates, `Note 49`)
     const elapsed = performance.now() - start
     expect(candidates).toHaveLength(4000) // one basename row + one alias row per record
+    // The measured ms in the run's output, like every other perf smoke (YAZ-861): a budget that
+    // only ever prints on failure hides the drift that walks up to it.
+    console.log(`search perf: 2000 records in ${elapsed.toFixed(1)} ms (${candidates.length} candidates)`)
     // Alone on an idle pool this is a real budget: ~4 ms measured, 50 ms allowed.
     expect(elapsed).toBeLessThan(50)
   })

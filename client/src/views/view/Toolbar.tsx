@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
+import type { FolderPageMode } from '../ViewsPane'
 import { ChevronsIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon } from './icons'
 import { Popover } from './Popover'
 import { PropertiesMenu } from './PropertiesMenu'
@@ -32,12 +33,13 @@ export interface ToolbarProps {
   root?: string | null
   properties?: PropertiesResponse | null
   /**
-   * The folder page's OUTLINE is showing (YAZ-820): that view's `order` is the [D5] member
-   * sequence, not a column list, and every Properties gesture rewrites `view.order` — so the menu
-   * is not offered rather than being allowed to overwrite the locked ordering. An outline has no
-   * columns to configure either way.
+   * The folder page's OUTLINE is showing (YAZ-820, amended YAZ-903): the outline is a free-form
+   * DOCUMENT, not rows — it has no columns for the Properties menu to configure and no row values
+   * for search to filter, so neither is offered.
    */
-  noProperties?: boolean
+  documentView?: boolean
+  /** The folder page bundle, for the Properties menu: its declarations, and the door they are written back through (YAZ-895). */
+  folderPage: FolderPageMode
 }
 
 /** `8 items`, or `1 / 8 items` when search or limit reduce what the body shows. */
@@ -51,7 +53,7 @@ export const countLabel = (shown: number, total: number): string =>
  * block, whose set IS the lookup and stores no filters (🔒 Q3) — so the button was never
  * rendered, and it and its menu are gone rather than permanently hidden.
  */
-export function Toolbar({ def, view, viewIndex, records, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, root = null, properties = null, noProperties = false }: ToolbarProps) {
+export function Toolbar({ def, view, viewIndex, records, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, root = null, properties = null, documentView = false, folderPage }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
   const close = useCallback(() => setOpen(null), [])
   const sorts = (view.sort?.length ?? 0) + (view.groupBy ? 1 : 0)
@@ -100,14 +102,16 @@ export function Toolbar({ def, view, viewIndex, records, shown, total, search, o
             <ChevronsIcon />
           </button>
         )}
-        {!noProperties &&
+        {!documentView &&
           button(
             'properties',
             'Properties',
             <PropertiesIcon />,
             0,
-            <PropertiesMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} root={root} properties={properties} />,
+            <PropertiesMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} root={root} properties={properties} folderPage={folderPage} />,
           )}
+        {/* An outline is a DOCUMENT, not rows (YAZ-903): search has nothing to filter there. */}
+        {!documentView && (
         <div className="view-toolbar__search">
           <button
             type="button"
@@ -137,6 +141,7 @@ export function Toolbar({ def, view, viewIndex, records, shown, total, search, o
             />
           )}
         </div>
+        )}
         <span className="view-toolbar__count" aria-live="polite">
           {countLabel(shown, total)}
         </span>
