@@ -58,8 +58,9 @@
  *    when `opts.drawingPreview` gives it the vault root; every other embed is untouched.
  */
 import { Crepe, CrepeFeature } from '@milkdown/crepe'
-import { editorViewCtx } from '@milkdown/kit/core'
-import { wrapInOrderedListInputRule } from '@milkdown/kit/preset/commonmark'
+import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
+import type { Ctx } from '@milkdown/kit/ctx'
+import { turnIntoTextCommand, wrapInHeadingCommand, wrapInOrderedListInputRule } from '@milkdown/kit/preset/commonmark'
 import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
 import { Selection } from '@milkdown/kit/prose/state'
 import { replaceAll } from '@milkdown/kit/utils'
@@ -109,14 +110,59 @@ export interface CreateCrepeOptions {
   features?: Partial<Record<CrepeFeature, boolean>>
 }
 
+/** An `Hn` / `T` glyph for the toolbar, drawn as text — the label IS the icon. */
+const headingIcon = (label: string): string =>
+  `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><text x="12" y="16.5" text-anchor="middle" font-size="12" font-weight="700" font-family="inherit" fill="currentColor">${label}</text></svg>`
+
+/** The slice of Crepe's GroupBuilder `buildToolbar` hands over — structural, since Crepe does not export the class from its root. */
+interface HeadingToolbarBuilder {
+  addGroup: (key: string, label: string) => {
+    addItem: (key: string, item: { icon: string; label: string; active: (ctx: Ctx) => boolean; onRun: (ctx: Ctx) => void }) => unknown
+  }
+}
+
+/**
+ * The toolbar's Heading group (YAZ-923): H1/H2/H3/T buttons whose ACTIVE state answers "what
+ * block is this?" — the invisible `##` made visible — and whose click switches it, through the
+ * same commands the typed markdown runs. `T` is the way back to plain text without backspacing
+ * hashes you cannot see.
+ */
+function buildHeadingToolbar(builder: HeadingToolbarBuilder): void {
+  const blockAt = (ctx: Ctx) => ctx.get(editorViewCtx).state.selection.$from.parent
+  const group = builder.addGroup('heading', 'Heading')
+  for (const level of [1, 2, 3] as const) {
+    group.addItem(`h${level}`, {
+      icon: headingIcon(`H${level}`),
+      label: `Heading ${level}`,
+      active: (ctx) => {
+        const block = blockAt(ctx)
+        return block.type.name === 'heading' && block.attrs.level === level
+      },
+      onRun: (ctx) => ctx.get(commandsCtx).call(wrapInHeadingCommand.key, level),
+    })
+  }
+  group.addItem('text', {
+    icon: headingIcon('T'),
+    label: 'Text',
+    active: (ctx) => blockAt(ctx).type.name === 'paragraph',
+    onRun: (ctx) => ctx.get(commandsCtx).call(turnIntoTextCommand.key),
+  })
+}
+
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
   const crepe = new Crepe({
     root: opts.root,
     defaultValue: normalizeEmptyItems(opts.defaultValue ?? ''),
     features: { ...features, ...opts.features },
-    // The ONE customisation of a stock Crepe feature (YAZ-877): the BlockEdit menu gains a
-    // Drawing row when the host supplies a creator. No creator → no config, stock menu.
-    featureConfigs: opts.drawing === undefined ? undefined : { [CrepeFeature.BlockEdit]: { buildMenu: drawingMenu(opts.drawing) } },
+    featureConfigs: {
+      // Crepe feature customisation #1 (YAZ-877): the BlockEdit menu gains a Drawing row when
+      // the host supplies a creator. No creator → no config, stock menu.
+      ...(opts.drawing === undefined ? {} : { [CrepeFeature.BlockEdit]: { buildMenu: drawingMenu(opts.drawing) } }),
+      // #2 (YAZ-923): the selection toolbar SAYS the block's level — a Heading group whose
+      // active button is the answer to "what is this?", and whose click is the switch. The
+      // markdown stays the source of truth; these call the same commands typing `##` does.
+      [CrepeFeature.Toolbar]: { buildToolbar: buildHeadingToolbar },
+    },
   })
   crepe.editor.use(
     // NB: extend the GFM task-item schema, not the commonmark base — extendSchema()

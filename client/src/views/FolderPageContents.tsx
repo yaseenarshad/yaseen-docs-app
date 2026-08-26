@@ -33,7 +33,8 @@ import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wiki
 import { folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { type ViewDef, type ParsedViews, parseViews } from './viewSchema'
 import { ViewsPane, type FolderPageMode } from './ViewsPane'
-import { DEFAULT_VIEWS, folderPageSettings, writeFolderPageSettings, type FolderPageSettings } from './folderPageSettings'
+import { splitFrontmatter, parseFrontmatter } from '@shared/frontmatter'
+import { DEFAULT_VIEWS, folderPageSettings, folderPageSettingsOf, writeFolderPageSettings, type FolderPageSettings } from './folderPageSettings'
 import { createNewNote, untitledName, type NewNoteSeed } from './newNote'
 import { memberFolder, newPageFromFolderPage } from './scaffold'
 import './views.css'
@@ -67,6 +68,14 @@ export interface FolderPageContentsProps {
   wikilinkCandidates?: WikilinkCandidateSource
   createBase?: () => string
   onNotice?: (message: string) => void
+  /**
+   * The open file's OWN bytes, from the same read the editor mounted with (YAZ-919). The views
+   * SEED prefers these over the index snapshot: the body migration rewrites the file before the
+   * first paint, and the index echo only lands after it — a seed from the stale snapshot showed
+   * the old outline, and the first commit wrote it back, erasing the migrated text. Every LATER
+   * update still follows the index (the stamp reconcile), which catches up to these very bytes.
+   */
+  fileContent?: string
 }
 
 const NONE: IndexRecord[] = []
@@ -103,6 +112,7 @@ export function FolderPageContents({
   wikilinkCandidates,
   createBase,
   onNotice,
+  fileContent,
 }: FolderPageContentsProps) {
   // Subscribe once, re-read the whole feed on each poke; an unchanged snapshot keeps the previous
   // object, so index churn elsewhere in the vault costs no render (BacklinksSection's idiom).
@@ -144,14 +154,36 @@ export function FolderPageContents({
     [root, createBase, onOpenFile, onOpenFileBackground, onNotice],
   )
 
-  const [parsed, setParsed] = useState<ParsedViews | null>(() => (settings === null ? null : folderPageViewSet(settings.views)))
+  // The SEED prefers the open file's own bytes (YAZ-919, `fileContent` above): the migration
+  // rewrote them before this mount, and the snapshot's echo lands after the first paint. The
+  // stamp reconcile below still follows the index — which catches up to exactly these bytes.
+  const fileSettings = useMemo(() => {
+    if (fileContent === undefined) return null
+    return folderPageSettingsOf(parseFrontmatter(splitFrontmatter(fileContent).frontmatter).properties)
+  }, [fileContent])
+  const [parsed, setParsed] = useState<ParsedViews | null>(() => {
+    const seed = fileSettings ?? settings
+    return seed === null ? null : folderPageViewSet(seed.views)
+  })
   const [error, setError] = useState<string | null>(null)
   // Rebuilt when the CARD's own views move — an external edit, or our own write coming back
   // through the index (identical then, since `onChange` already applied it). JSON identity is the
   // honest comparison: every read hands back a fresh copy of the views.
+  //
+  // A FILE-SEEDED mount (YAZ-919) treats the index as THE PAST until its stamp first matches the
+  // file's: snapshots older than the open file's own bytes must not overwrite the seed — that was
+  // the clobber that erased migrated text. An external edit landing inside that window is not
+  // lost, only late: its own echo still moves the stamp once the index has caught up.
   const stamp = settings === null ? '' : JSON.stringify(settings.views)
-  const seen = useRef(stamp) // seeded with what the state above was built from: no rebuild on mount
+  const fileStamp = fileSettings === null ? null : JSON.stringify(fileSettings.views)
+  const caughtUp = useRef(fileStamp === null) // no file seed → the index led from the start
+  const seen = useRef(fileStamp ?? stamp) // what the state above was built from: no rebuild on mount
   useEffect(() => {
+    if (!caughtUp.current) {
+      if (stamp !== seen.current) return // still the past — the pre-migration bytes
+      caughtUp.current = true
+      return
+    }
     if (seen.current === stamp) return
     seen.current = stamp
     setParsed(settings === null ? null : folderPageViewSet(settings.views))

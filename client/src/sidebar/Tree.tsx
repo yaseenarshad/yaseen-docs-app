@@ -134,7 +134,13 @@ export function Tree({
               type="button"
               className={`tree__row tree__row--file${node.path === activeFile ? ' tree__row--active' : ''}`}
               style={{ paddingLeft: 8 + depth * 14 + 14 }}
-              onClick={(e) => (e.metaKey ? onOpenFileBackground(node.path) : onOpenFile(node.path))}
+              onClick={(e) => {
+                // First activation previews, second commits — the Topics rows' rule (YAZ-921):
+                // opening keeps focus on the row, re-activating the open page enters its text.
+                if (e.metaKey) onOpenFileBackground(node.path)
+                else if (node.path === activeFile) document.querySelector<HTMLElement>('.editor-instance .ProseMirror')?.focus()
+                else onOpenFile(node.path)
+              }}
               onContextMenu={(e) => onNodeContextMenu(node, e)}
               title={node.path}
               draggable

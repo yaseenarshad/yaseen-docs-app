@@ -960,9 +960,13 @@ describe('expand / collapse all (⚡ YAZ-862)', () => {
 /**
  * The Topics half of the same button (⚡ YAZ-873): ONE control at the end of the lens row acting
  * on whichever lens is ACTIVE. On Topics it replaces the lifted `topicsExpanded` set with
- * `allExpandableTopics` — the guarded walk's answer, so it opens exactly the rows the tree draws
- * chevrons on — and empties it when anything is open. The two lenses keep their OWN stores: one
- * button, never one set. Gone, as ever, when the active reading has nothing to unfold.
+ * `allExpandableTopics` — the guarded walk's answer — and empties it when anything is open. The
+ * two lenses keep their OWN stores: one button, never one set. Gone, as ever, when the active
+ * reading has nothing to unfold.
+ *
+ * YAZ-920 reshapes what it acts ON, not what it does: Home is a pinned leaf and the topics it
+ * held stand at the ROOT beside it, so "expand all" now opens one rung shallower and "collapse
+ * all" comes back down to that wider set of roots.
  */
 describe('expand / collapse all on TOPICS (⚡ YAZ-873)', () => {
   const rec = (v: string, basename: string, properties: Record<string, unknown> = {}) => ({
@@ -977,7 +981,10 @@ describe('expand / collapse all on TOPICS (⚡ YAZ-873)', () => {
     resolve: (target: string) => records.find((r) => r.basename.toLowerCase() === target.replace(/[[\]]/g, '').trim().toLowerCase())?.path ?? null,
     subscribe: () => () => undefined,
   })
-  /** Two depths of meaning: Home holds Metrics, Metrics holds a leaf that never unfolds. */
+  /**
+   * Two depths of meaning: Metrics names Home and so stands beside it as a ROOT (YAZ-920), and
+   * Metrics holds a leaf that never unfolds.
+   */
   const TOPICS = (v: string) => [folder(v, 'Home'), folder(v, 'Metrics', belongs('[[Home]]')), rec(v, 'Revenue', belongs('[[Metrics]]'))]
   /** One folder on disk beside them, so the FILES lens has something of its own to open. */
   const FILES = (v: string): TreeNode[] => [{ type: 'dir', name: 'docs', path: `${v}/docs`, children: [] }]
@@ -997,7 +1004,7 @@ describe('expand / collapse all on TOPICS (⚡ YAZ-873)', () => {
 
   it('a closed topic tree offers "Expand all", and one click unfolds every page at every depth', async () => {
     const { el } = await mountVault()
-    expect(topicLabels(el)).toEqual(['Home'])
+    expect(topicLabels(el)).toEqual(['Home', 'Metrics'])
     expect(label(el)).toBe('Expand all')
     act(() => allButton(el)?.click())
     expect(topicLabels(el)).toEqual(['Home', 'Metrics', 'Revenue'])
@@ -1008,7 +1015,8 @@ describe('expand / collapse all on TOPICS (⚡ YAZ-873)', () => {
     const { el } = await mountVault()
     act(() => allButton(el)?.click())
     act(() => allButton(el)?.click())
-    expect(topicLabels(el)).toEqual(['Home'])
+    // The roots are the pinned Home AND every topic promoted beside it (YAZ-920).
+    expect(topicLabels(el)).toEqual(['Home', 'Metrics'])
     expect(label(el)).toBe('Expand all')
   })
 
@@ -1020,7 +1028,7 @@ describe('expand / collapse all on TOPICS (⚡ YAZ-873)', () => {
     // One button, two readings of the vault: the folder tree being open says nothing about
     // whether a topic is, so Topics still offers to expand.
     expect(label(el)).toBe('Expand all')
-    expect(topicLabels(el)).toEqual(['Home'])
+    expect(topicLabels(el)).toEqual(['Home', 'Metrics'])
     await rerender({ lens: 'files' })
     expect(label(el)).toBe('Collapse all') // …and the Files store was never touched meanwhile
   })
@@ -1299,12 +1307,14 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     }
   }
   /**
-   * Home (a folder page) with ONE member, and that member lives in a SUBFOLDER — so "create
-   * beside the page's file" has a folder of its own to prove, which is exactly the fact this
-   * lens hides. Loose belongs nowhere and waits under Uncategorized.
+   * Docs is a topic under Home — and since YAZ-920 Home is a PINNED LEAF, so a member hangs off
+   * Docs, never off Home itself. Docs has ONE member, and that member lives in a SUBFOLDER — so
+   * "create beside the page's file" has a folder of its own to prove, which is exactly the fact
+   * this lens hides. Loose belongs nowhere and waits under Uncategorized.
    */
   const HOME = record('/v/Home.md', { folder_page: true })
-  const GUIDE = record('/v/Docs/Guide.md', { folder_pages: ['[[Home]]'] })
+  const DOCS = record('/v/Docs.md', { folder_page: true, folder_pages: ['[[Home]]'] })
+  const GUIDE = record('/v/Docs/Guide.md', { folder_pages: ['[[Docs]]'] })
   const LOOSE = record('/v/Loose.md')
   /**
    * A folder page that DECLARES things (8H, YAZ-869): two columns for the scaffold to empty out
@@ -1319,19 +1329,24 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     ({
       // The links this vault declares, keyed like the real resolver (lowered, brackets and all).
       resolve: (target: string) =>
-        ({ '[[home]]': records.includes(HOME) ? HOME.path : null, '[[metrics]]': records.includes(METRICS) ? METRICS.path : null })[
-          target.trim().toLowerCase()
-        ] ?? null,
+        ({
+          '[[home]]': records.includes(HOME) ? HOME.path : null,
+          '[[docs]]': records.includes(DOCS) ? DOCS.path : null,
+          '[[metrics]]': records.includes(METRICS) ? METRICS.path : null,
+        })[target.trim().toLowerCase()] ?? null,
       records,
       subscribe: () => () => undefined,
     }) as SidebarProps['indexSource']
 
-  const topics = (over: Partial<SidebarProps> = {}) => mount({ lens: 'topics', indexSource: feedOver(HOME, GUIDE, LOOSE), ...over })
+  const topics = (over: Partial<SidebarProps> = {}) => mount({ lens: 'topics', indexSource: feedOver(HOME, DOCS, GUIDE, LOOSE), ...over })
   const rowFor = (el: HTMLElement, label: string) =>
     [...el.querySelectorAll<HTMLButtonElement>('.tree__row')].find((r) => r.querySelector('.tree__label')?.textContent === label)
   const rightClick = (node: Element | null | undefined) => act(() => void node?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-  /** 🔒 D3: the chevron is the expand gesture; the row itself opens the page. */
-  const expandHome = (el: HTMLElement) => act(() => el.querySelector<HTMLElement>('[aria-label="Expand Home"]')?.click())
+  /**
+   * 🔒 D3: the chevron is the expand gesture; the row itself opens the page. It is DOCS' chevron
+   * since YAZ-920 — Home is a pinned leaf now and offers none at all.
+   */
+  const expandDocs = (el: HTMLElement) => act(() => el.querySelector<HTMLElement>('[aria-label="Expand Docs"]')?.click())
   const inlineInput = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.create-inline__input')
   const commit = async (el: HTMLElement, name: string) => {
     const field = inlineInput(el)!
@@ -1367,7 +1382,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
 
   it('the toggle\'s label follows THAT row\'s flag: a leaf is offered the forward direction', async () => {
     const { el } = await topics()
-    await expandHome(el)
+    await expandDocs(el)
     await rightClick(rowFor(el, 'Guide'))
     expect(itemByLabel(el, 'Turn into folder page')).toBeDefined()
     expect(itemByLabel(el, 'Turn back into normal page')).toBeUndefined()
@@ -1376,7 +1391,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
   it('every item resolves the PAGE\'s own file: Reveal and Copy path name it exactly (GRO-2296)', async () => {
     const writeText = installClipboard()
     const { el, bridge } = await topics()
-    await expandHome(el)
+    await expandDocs(el)
     await rightClick(rowFor(el, 'Guide'))
     act(() => itemByLabel(el, 'Reveal in Finder')?.click())
     expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v/Docs/Guide.md' })
@@ -1388,7 +1403,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
 
   it('Delete flows through the EXISTING pipeline: the same sheet, then onDeleteFile with the page\'s path', async () => {
     const { el, props } = await topics()
-    await expandHome(el)
+    await expandDocs(el)
     await rightClick(rowFor(el, 'Guide'))
     await act(async () => itemByLabel(el, 'Delete')?.click())
     expect(el.querySelector('.confirm')).not.toBeNull()
@@ -1399,7 +1414,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
 
   it('Rename opens the inline input ON the Topics row and commits through the rename pipeline', async () => {
     const { el, props } = await topics()
-    await expandHome(el)
+    await expandDocs(el)
     await rightClick(rowFor(el, 'Guide'))
     act(() => itemByLabel(el, 'Rename')?.click())
     expect(inlineInput(el)?.value).toBe('Guide') // the name minus its extension — the file tree's prefill
@@ -1409,17 +1424,19 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
   })
 
   it('a page standing under TWO parents renames through ONE input — two autofocused ones would fight', async () => {
-    // The diamond (⚡ D6): Guide belongs to both roots, so it renders twice. An inline input is
-    // ONE input — the second's mount would blur, and so CANCEL, the first.
+    // The diamond (⚡ D6): Guide belongs to two topics, so it renders twice. An inline input is
+    // ONE input — the second's mount would blur, and so CANCEL, the first. Both parents are real
+    // topics: since YAZ-920 Home descends into nothing, so it can never be one half of a diamond.
     const OPS = record('/v/Ops.md', { folder_page: true })
-    const SHARED = record('/v/Docs/Guide.md', { folder_pages: ['[[Home]]', '[[Ops]]'] })
+    const SHARED = record('/v/Docs/Guide.md', { folder_pages: ['[[Docs]]', '[[Ops]]'] })
     const both = {
-      records: [HOME, OPS, SHARED],
-      resolve: (target: string) => ({ '[[home]]': HOME.path, '[[ops]]': OPS.path })[target.trim().toLowerCase()] ?? null,
+      records: [HOME, DOCS, OPS, SHARED],
+      resolve: (target: string) =>
+        ({ '[[home]]': HOME.path, '[[docs]]': DOCS.path, '[[ops]]': OPS.path })[target.trim().toLowerCase()] ?? null,
       subscribe: () => () => undefined,
     } as SidebarProps['indexSource']
     const { el } = await topics({ indexSource: both })
-    await expandHome(el)
+    await expandDocs(el)
     await act(() => el.querySelector<HTMLElement>('[aria-label="Expand Ops"]')?.click())
     const guides = () => [...el.querySelectorAll('.tree__row .tree__label')].filter((n) => n.textContent === 'Guide').length
     expect(guides()).toBe(2)
@@ -1431,7 +1448,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
 
   it('the create group lands BESIDE the page\'s file on disk — the file tree\'s own rule', async () => {
     const { el, bridge, props } = await topics()
-    await expandHome(el)
+    await expandDocs(el)
     await rightClick(rowFor(el, 'Guide'))
     act(() => itemByLabel(el, 'New note')?.click())
     // The input is drawn under the row it was asked from; the row itself stays put.
@@ -1445,7 +1462,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
 
   it('"New folder page" on a LEAF Topics row is born with EXACTLY the flag, beside that page (🔒 D1)', async () => {
     const { el, bridge } = await topics()
-    await expandHome(el)
+    await expandDocs(el)
     await rightClick(rowFor(el, 'Guide')) // a leaf: nothing to belong to, so nothing is declared
     act(() => itemByLabel(el, 'New folder page')?.click())
     await commit(el, 'Growth')
@@ -1457,9 +1474,12 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
    * The birth travels the folder page's OWN declaration path — the same `newPageFromFolderPage`
    * the contents block's New uses — and parks where that page's members live. Pinned here rather
    * than in a unit: the whole point is that the SIDEBAR's create group reaches it.
+   *
+   * Metrics names only Home, so since YAZ-920 it stands at the ROOT: these cases right-click it
+   * where it sits, with nothing to unfold first.
    */
   const topicsWithMetrics = (over: Partial<SidebarProps> = {}, tweak?: (b: ReturnType<typeof installBridge>) => void) =>
-    mount({ lens: 'topics', indexSource: feedOver(HOME, METRICS, GUIDE, LOOSE), ...over }, tweak)
+    mount({ lens: 'topics', indexSource: feedOver(HOME, DOCS, METRICS, GUIDE, LOOSE), ...over }, tweak)
   /** The frontmatter of the single content-at-create call, parsed — key ORDER included. */
   const born = (bridge: ReturnType<typeof installBridge>) => {
     expect(bridge.createFile).toHaveBeenCalledTimes(1)
@@ -1470,7 +1490,6 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
 
   it('"New note" on a FLAGGED row births a MEMBER: declared columns empty, folder_pages LAST, parked per settings', async () => {
     const { el, bridge, props } = await topicsWithMetrics()
-    await expandHome(el)
     await rightClick(rowFor(el, 'Metrics'))
     act(() => itemByLabel(el, 'New note')?.click())
     await commit(el, 'Growth')
@@ -1493,7 +1512,6 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
         return { path, content: '---\nowner: Yasin\nstage: draft\nfolder_pages: ["[[Elsewhere]]"]\n---\n\n## Notes\n', mtime: 1, size: 1 }
       })
     })
-    await expandHome(el)
     await rightClick(rowFor(el, 'Metrics'))
     act(() => itemByLabel(el, 'New note')?.click())
     await commit(el, 'Growth')
@@ -1508,7 +1526,6 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
 
   it('"New folder page" on a FLAGGED row is a SUB-TOPIC: the flag, and the belonging beside it', async () => {
     const { el, bridge } = await topicsWithMetrics()
-    await expandHome(el)
     await rightClick(rowFor(el, 'Metrics'))
     act(() => itemByLabel(el, 'New folder page')?.click())
     await commit(el, 'Retention')
@@ -1524,7 +1541,6 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
 
   it('"New folder" on a flagged row is untouched: a folder is never a member', async () => {
     const { el, bridge } = await topicsWithMetrics()
-    await expandHome(el)
     await rightClick(rowFor(el, 'Metrics'))
     act(() => itemByLabel(el, 'New folder')?.click())
     await commit(el, 'Archive')

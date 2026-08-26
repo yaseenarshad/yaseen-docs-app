@@ -104,7 +104,8 @@ function CrepeHost({
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   // The live Crepe instance, for ArrowDown out of the title (⚡ YAZ-888) — the same
-  // `focusEditor` the mount itself ends with, so the caret lands where a click would put it.
+  // `focusEditor` the mount runs when the sidebar walk is not standing in the tree (YAZ-921),
+  // so the caret lands where a click would put it.
   const crepeRef = useRef<ReturnType<typeof createCrepe> | null>(null)
   const autosave = useAutosave(file.path)
   const { attach, markReloaded, reportConflict, absorbFrontmatterOnly } = autosave
@@ -168,7 +169,10 @@ function CrepeHost({
         setMarkdown(crepe, buf.body)
         controller.update(getMarkdownForSave(crepe))
       }
-      focusEditor(crepe)
+      // The mount's caret grab (⚡ YAZ-888) YIELDS to the sidebar walk (YAZ-921): a page opened
+      // while focus stands on a tree row is a PREVIEW — stealing the caret would strand the
+      // arrows mid-walk. Every other door (tabs, wikilinks, boot) still lands in the text.
+      if (!(document.activeElement instanceof HTMLElement && document.activeElement.closest('.tree') !== null)) focusEditor(crepe)
     })
 
     const reload = async () => {
@@ -242,23 +246,27 @@ function CrepeHost({
           carries the flag (YAZ-819, 🔒 D1 — nothing at all when it does not), then "Linked
           mentions" (Links D, GRO-2193). All of it scrolls WITH the note, never in a panel. */}
       <div className="editor-host">
-        <PageTitle
-          path={file.path}
-          isHome={homePath === file.path}
-          onRename={(newPath) => onRenameFile?.(file.path, newPath)}
-          onNotice={onNotice}
-          onArrowDown={() => {
-            const crepe = crepeRef.current
-            if (crepe !== null) focusEditor(crepe)
-          }}
-        />
-        {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App already threads here for
-            the contents block below — ONE registry, so a type declared in a row types the same
-            column in every folder page's views. */}
-        <FrontmatterPanel file={file} root={root} properties={properties} wikilinks={wikilinks} />
+        {/* Title and properties share ONE header row (YAZ-918): the panel sits to
+            the title's right and wraps under it when the title runs long. */}
+        <div className="page-header">
+          <PageTitle
+            path={file.path}
+            isHome={homePath === file.path}
+            onRename={(newPath) => onRenameFile?.(file.path, newPath)}
+            onNotice={onNotice}
+            onArrowDown={() => {
+              const crepe = crepeRef.current
+              if (crepe !== null) focusEditor(crepe)
+            }}
+          />
+          {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App already threads here for
+              the contents block below — ONE registry, so a type declared in a row types the same
+              column in every folder page's views. */}
+          <FrontmatterPanel file={file} root={root} properties={properties} wikilinks={wikilinks} />
+        </div>
         <div className="editor-mount" ref={hostRef} />
         {wikilinks !== undefined && (
-          <FolderPageContents path={file.path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} wikilinkCandidates={wikilinkCandidates} createBase={createBase} onNotice={onNotice} />
+          <FolderPageContents path={file.path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} wikilinkCandidates={wikilinkCandidates} createBase={createBase} onNotice={onNotice} fileContent={file.content} />
         )}
         {wikilinks !== undefined && (
           <BacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />

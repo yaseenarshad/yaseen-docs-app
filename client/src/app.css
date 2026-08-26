@@ -97,35 +97,81 @@ button {
   overflow: hidden;
 }
 
-/* The note's scroller. Stacked blocks live inside it: `.page-title` (block ZERO, ⚡ YAZ-888),
-   `.frontmatter-panel` (block ONE, ⚡ YAZ-883), `.editor-mount`, where CrepeHost appends its
-   `.editor-instance`, and — for markdown files — the folder page's contents block and the
-   "Linked mentions" section (Links D, GRO-2193; styled by links/backlinks.css), all of which
-   therefore scroll WITH the note. */
+/* The note's scroller. Stacked blocks live inside it: `.page-header` (block ZERO since YAZ-918 —
+   ⚡ YAZ-888's title and ⚡ YAZ-883's properties panel sharing one row), `.editor-mount`, where
+   CrepeHost appends its `.editor-instance`, and — for markdown files — the folder page's
+   contents block and the "Linked mentions" section (Links D, GRO-2193; styled by
+   links/backlinks.css), all of which therefore scroll WITH the note. */
 .editor-host {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
 }
 
-/* The page title (⚡ YAZ-888): the note's own name above its body, repeating `.editor-instance`'s
-   content column (backlinks.css's rule) so it lines up with the text, at the editor's own h1
-   scale (GRO-2009). It owns the space ABOVE it only — the gap below is `.editor-instance`'s own
-   top padding, so the note's first block never double-spaces. */
-.page-title {
+/* The header ROW (YAZ-918): ⚡ YAZ-888's title and ⚡ YAZ-883's properties panel share one line —
+   the row owns the content column both blocks used to declare for themselves. The panel
+   DISSOLVES into the row (display: contents): its header becomes a chevron+count chip at the
+   row's right edge, and its expanded body wraps onto its own full-width line UNDER the title —
+   opening exactly where the old stacked panel lived, from a trigger that lives on the right. */
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 24px;
   width: 100%;
   max-width: 1040px;
   margin: 0 auto;
   padding: 32px 48px 0;
-  /* The editor's own base (`--crepe-base-font-size`), not the app's 14px, so the em scale
-     below lands on exactly the heading size the note's own `# H1` would render at. */
+}
+
+/* The title item (⚡ YAZ-888, at the editor's own h1 scale — GRO-2009): GROWS to fill the row
+   (the chip's margin-left: auto still parks it at the right edge), so the rename field —
+   width: 100% of this box — keeps the title's full breadth while editing. The 16px base, not
+   the app's 14px, lands the em scale on exactly the size the note's own `# H1` renders at. */
+.page-header .page-title {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 16px;
+}
+
+.page-header .frontmatter-panel {
+  display: contents;
+}
+
+.page-header .frontmatter-panel__header {
+  margin-left: auto;
+}
+
+.page-header .frontmatter-panel__body {
+  flex: 1 1 100%;
+}
+
+/* The chip is the chevron and the count alone — "Properties" says nothing the rows don't. */
+.page-header .frontmatter-panel__title {
+  font-size: 0;
+}
+
+.page-header .frontmatter-panel__count {
+  font-size: 14px;
+}
+
+/* Folder pages (YAZ-919): the outline IS the document — the body editor above it
+   and the divider between them are gone. Title, then contents, nothing else. */
+.editor-host:has(.folder-page-contents) .editor-mount {
+  display: none;
+}
+
+.editor-host:has(.folder-page-contents) .folder-page-contents {
+  border-top: none;
 }
 
 .page-title__text {
   margin: 0;
   padding: 2px 4px;
   margin-left: -4px;
+  /* The hover wash hugs the words (YAZ-918), not the row the flex header hands the title. */
+  width: fit-content;
+  max-width: 100%;
   font-size: 1.802em;
   font-weight: 700;
   line-height: 1.3;
@@ -156,20 +202,20 @@ button {
   border: 1px solid var(--accent);
   border-radius: 4px;
   outline: none;
+  /* A textarea now (YAZ-918): wraps like the rendered title and grows to fit — no scrollbar,
+     no drag handle, no sideways tunnel. */
+  display: block;
+  field-sizing: content;
+  resize: none;
+  overflow: hidden;
 }
 
-/* The properties panel (⚡ YAZ-883): block ONE, between the title and the Crepe mount, in the same
-   content column. Collapsed it is one small muted row — deliberately SUBORDINATE to the title
-   above it, since most pages have nothing to say here. Header affordance is the backlinks /
-   view-group chevron, rotated -90° while collapsed. Expanded it is TYPED ROWS by default
-   (⚡ YAZ-884) with the raw textarea as the fallback under them. */
-.frontmatter-panel {
-  width: 100%;
-  max-width: 1040px;
-  margin: 0 auto;
-  padding: 10px 48px 0;
-}
-
+/* The properties panel (⚡ YAZ-883, folded into the header row by YAZ-918): its box dissolved
+   (`display: contents` above), so only its PIECES carry styles now. Collapsed it is one small
+   muted chip — deliberately SUBORDINATE to the title beside it, since most pages have nothing to
+   say here. Header affordance is the backlinks / view-group chevron, rotated -90° while
+   collapsed. Expanded it is TYPED ROWS by default (⚡ YAZ-884) with the raw textarea as the
+   fallback under them. */
 .frontmatter-panel__header {
   display: flex;
   align-items: center;
@@ -361,15 +407,23 @@ button {
   width: 100%;
   max-width: 1040px;
   margin: 0 auto;
-  padding: 32px 48px 120px;
+  /* No lead-in of its own (YAZ-918): the properties panel left this slot for the title row, so
+     the gap under the title is ProseMirror's 16px + the first paragraph's 4px — nothing more. */
+  padding: 0 48px 120px;
 }
 
 /* A folder page's body is a short preamble between Properties and its contents block — not a
-   document with an end (YAZ-909): both the 32px lead-in and the 120px tail collapse to a working
-   gap, so the outline starts right under whatever the body says. Ordinary notes keep both. */
+   document with an end (YAZ-909, tightened by YAZ-917): the column's 32px lead-in and 120px tail
+   collapse to ZERO, and so does ProseMirror's 16px halo below — the paragraph's own 4px rhythm is
+   all the air a preamble needs. Ordinary notes keep everything. */
 .editor-host:has(.folder-page-contents) .editor-mount > .editor-instance {
-  padding-top: 12px;
-  padding-bottom: 12px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.editor-host:has(.folder-page-contents) .editor-mount .milkdown .ProseMirror {
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .editor-instance .milkdown {
@@ -412,6 +466,12 @@ button {
   font-size: 1.802em;
   font-weight: 700;
   margin-top: calc(var(--edit-block-gap, 4px) * 8);
+}
+
+/* A heading BETWEEN blocks earns its lead-in; the document's FIRST block does not (YAZ-918) —
+   it sits on the title row's own gap, exactly like a first paragraph. */
+.editor-instance .milkdown .ProseMirror > :first-child {
+  margin-top: 0;
 }
 
 .editor-instance .milkdown .ProseMirror h2 {
@@ -1268,6 +1328,14 @@ button {
   text-align: left;
   border-radius: 4px;
   color: var(--fg);
+}
+
+/* The keyboard walk (YAZ-921) needs a visible "you are here" — the hover wash, plus an inset
+   accent ring so mouse-hover and key-focus stay tellable apart. */
+.tree__row:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .tree__row:hover {

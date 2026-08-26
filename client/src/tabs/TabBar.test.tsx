@@ -2,9 +2,10 @@
  * The window tab strip (Tabs I2/I3, GRO-2234/2235): tablist semantics per the ViewTabs
  * pattern, extension-stripped labels with full-path tooltips, the close
  * affordances (✕, middle-click) vs activation, drag-to-reorder with the insertion indicator,
- * and the active tab scrolled into view on activation.
+ * and the active tab scrolled into view on activation. Plus the right-click Copy path menu
+ * (YAZ-922) and the ◀ ▶ history buttons (YAZ-721).
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { TabBar, type TabBarProps } from './TabBar'
@@ -135,6 +136,106 @@ describe('TabBar keeps the active tab in view (I3 overflow polish)', () => {
       expect(activeTab.querySelector('[role="tab"]')?.textContent).toBe('b')
     } finally {
       delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollIntoView
+    }
+  })
+})
+
+describe('TabBar right-click menu (YAZ-922)', () => {
+  const TABS = ['/vault/Note.md', '/vault/sub/Deep Note.md']
+  const props = { tabs: TABS, active: '/vault/Note.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), ...noNav }
+
+  /** jsdom has no clipboard; the menu's only job is to hand the path to it, so spy on writeText. */
+  let writeText: ReturnType<typeof vi.fn>
+  const hadClipboard = 'clipboard' in navigator
+
+  beforeEach(() => {
+    writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true })
+  })
+
+  afterEach(() => {
+    if (!hadClipboard) delete (navigator as unknown as Record<string, unknown>).clipboard
+  })
+
+  const tabAt = (el: HTMLElement, i: number) => [...el.querySelectorAll<HTMLElement>('.tabbar__tab')][i]
+
+  /** Right-click a tab; returns the event so the caller can check it was swallowed. */
+  const rightClick = (target: Element, clientX = 0, clientY = 0): MouseEvent => {
+    const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX, clientY })
+    act(() => void target.dispatchEvent(e))
+    return e
+  }
+
+  const menuOf = (el: HTMLElement) => el.querySelector<HTMLElement>('.ctx-menu')
+  const items = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+
+  it('right-clicking a tab opens a role=menu at the pointer with the single Copy path item', () => {
+    const el = mount(props)
+    expect(menuOf(el)).toBeNull() // nothing until asked for
+    const e = rightClick(tabAt(el, 0), 120, 42)
+    expect(e.defaultPrevented).toBe(true) // the OS menu never shows
+    const menu = menuOf(el)
+    expect(menu?.getAttribute('role')).toBe('menu')
+    expect(menu?.style.left).toBe('120px')
+    expect(menu?.style.top).toBe('42px')
+    expect(items(el).map((b) => b.textContent)).toEqual(['Copy path'])
+  })
+
+  it('Copy path writes the tab\'s ABSOLUTE path — not the label — and closes the menu', () => {
+    const el = mount(props)
+    rightClick(tabAt(el, 1))
+    act(() => items(el)[0]?.click())
+    expect(writeText).toHaveBeenCalledWith('/vault/sub/Deep Note.md')
+    expect(menuOf(el)).toBeNull()
+  })
+
+  it('the menu retargets: right-clicking another tab copies THAT tab\'s path', () => {
+    const el = mount(props)
+    rightClick(tabAt(el, 0))
+    rightClick(tabAt(el, 1))
+    act(() => items(el)[0]?.click())
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(writeText).toHaveBeenCalledWith('/vault/sub/Deep Note.md')
+  })
+
+  it('Escape anywhere in the window dismisses the menu', () => {
+    const el = mount(props)
+    rightClick(tabAt(el, 0))
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true })))
+    expect(menuOf(el)).not.toBeNull() // other keys are none of its business
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(menuOf(el)).toBeNull()
+  })
+
+  it('a press OUTSIDE dismisses the menu', () => {
+    const el = mount(props)
+    rightClick(tabAt(el, 0))
+    act(() => void document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(menuOf(el)).toBeNull()
+  })
+
+  it('a press INSIDE the menu keeps it open (the item stops propagation, so the click can land)', () => {
+    const el = mount(props)
+    rightClick(tabAt(el, 0))
+    act(() => void items(el)[0]?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(menuOf(el)).not.toBeNull()
+    // …and the press that survived is followed by the click that actually copies.
+    act(() => items(el)[0]?.click())
+    expect(writeText).toHaveBeenCalledWith('/vault/Note.md')
+  })
+
+  it('closing the menu unhooks its window listeners (no stray dismissals after the fact)', () => {
+    const el = mount(props)
+    const add = vi.spyOn(window, 'addEventListener')
+    const remove = vi.spyOn(window, 'removeEventListener')
+    try {
+      rightClick(tabAt(el, 0))
+      expect(add.mock.calls.map((c) => c[0]).sort()).toEqual(['keydown', 'mousedown'])
+      act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+      expect(remove.mock.calls.map((c) => c[0]).sort()).toEqual(['keydown', 'mousedown'])
+    } finally {
+      add.mockRestore()
+      remove.mockRestore()
     }
   })
 })

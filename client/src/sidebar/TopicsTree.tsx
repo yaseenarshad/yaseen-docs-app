@@ -1,17 +1,19 @@
 /**
  * The TOPICS lens' body (6B-, YAZ-848) — browsing the vault BY MEANING: the folder-page tree.
- * Home first, then every other unparented folder page as a root of its own, members nested per
- * each folder page's own order, live, loop-safe, with an expandable Uncategorized section at the
+ * Home pinned as a LEAF, its topics standing at the root beside it, members nested per each
+ * folder page's own order, live, loop-safe, with an expandable Uncategorized section at the
  * bottom. The sibling of `Tree.tsx`, which browses the same vault by its FOLDERS on disk; both
  * wear the same `.tree__row` family, the same `8 + depth * 14` indent and the same two open
  * handlers, because they are two readings of one vault and not two kinds of list.
  *
- * ROOTS (🔒 D2 of YAZ-821): whatever `[[Home]]` resolves to comes first — through the WINDOW's
- * resolver, so alias-aware and case-insensitive, every spelling a CLICK would follow — and only
- * when it is a FOLDER PAGE: a plain note called Home is not a tree root, and the tree simply has
- * no Home row (offering to make one is 6C's, deliberately not here). Then every other folder page
- * the lookup gives no parents (`folderPagesOf(path).length === 0`), path-sorted, so a vault with
- * no Home still shows all of its top-level topics rather than nothing at all.
+ * ROOTS (🔒 D2 of YAZ-821, as YAZ-920 amends it): whatever `[[Home]]` resolves to comes first —
+ * through the WINDOW's resolver, so alias-aware and case-insensitive, every spelling a CLICK
+ * would follow — and only when it is a FOLDER PAGE: a plain note called Home is not a tree root,
+ * and the tree simply has no Home row (offering to make one is 6C's, deliberately not here).
+ * Home is a PINNED LEAF, not an umbrella: it wears the house, counts nothing, descends into
+ * nothing — and every folder page whose parents-minus-Home are empty stands at the ROOT beside
+ * it, path-sorted, so the tree stops opening one indent deep on every vault whose Home lists all
+ * its topics. A vault with no Home keeps the old rule: unparented folder pages are the roots.
  *
  * DESCENT (⚡ D6 amendment on YAZ-814): children come ONLY from `guardedChildren` — never raw
  * `pagesIn` — so `A → B → A` ends quietly at any depth while a page reachable down two branches
@@ -28,16 +30,20 @@
  * same set for the lens row's expand/collapse-all button. `allExpandableTopics` below is that
  * button's answer: the same walk this tree draws, asked all at once.
  *
- * THE ROW UNFOLDS (⚡ YAZ-870, the amendment on 🔒 D3): clicking a folder-page row opens the page
- * AND expands it in place — one gesture, both meanings. Add-only: a second click never folds
- * (navigation must not close the tree under you; the chevron keeps the collapse), a ⌘-click
- * (background open, "not now") leaves the tree alone, and a page with nothing under it records
- * nothing. The chevron's own half of D3 stands untouched: expanding is still not opening.
+ * THE ROW UNFOLDS (⚡ YAZ-870 on 🔒 D3, toggled by YAZ-921): clicking a folder-page row you are
+ * NOT on opens the page AND expands it in place — one gesture, both meanings, and navigation
+ * never folds the tree under you. On the TOPIC you are ALREADY reading, a click is not
+ * navigation, so it toggles the fold — both directions. First activation of a plain page
+ * PREVIEWS (focus stays on the row, the keyboard walk stays armed); the second COMMITS the
+ * caret into the text. ⌘-click (background open, "not now") leaves the tree and the caret
+ * alone. The chevron's own half of D3 stands untouched: expanding is still not opening —
+ * and ←/→ fold/unfold the focused row from the keyboard without visiting it.
  *
  * UNCATEGORIZED (🔒 D7, the locked DEVIATION from the mockup): a muted row at the bottom that
- * EXPANDS IN PLACE — never a virtual page, never a main-pane view. It is the lookup's
- * carve-out-free `uncategorized()` minus whatever already stands as a root, which is this
- * surface's own subtraction to make (the lookup has none).
+ * EXPANDS IN PLACE — never a virtual page, never a main-pane view. As YAZ-920 amends it, the
+ * section holds what the tree does NOT draw — computed from the same guarded descent the rows
+ * come from, never "no parents" read off the index — so a page reachable only through the
+ * pinned-leaf Home (which unfolds nothing) surfaces here instead of vanishing.
  *
  * FEED: the window's ONE `WikilinkResolveSource` — the same records + resolver pair backlinks,
  * the contents block and the folder-page toggle read. A refetched index pokes it and the whole
@@ -151,8 +157,16 @@ export function topicRoots(records: readonly IndexRecord[], lookup: FolderPagesL
   // An ORDINARY page called Home is no Home for the tree: it gets no row, and the rule below
   // still stands the unparented folder pages up. (6C decides whether to OFFER one; not here.)
   const homeRoot = home !== undefined && lookup.isFolderPage(home) ? home : null
+  // YAZ-920 amends 🔒 D2: Home is a PINNED LEAF now, not the umbrella everything hangs under —
+  // so a topic whose only parent is Home stands at the root beside it, and the tree stops
+  // opening one indent deep on every vault whose Home lists all its topics.
   const others = records
-    .filter((record) => lookup.isFolderPage(record) && record.path !== homeRoot?.path && lookup.folderPagesOf(record.path).length === 0)
+    .filter(
+      (record) =>
+        lookup.isFolderPage(record) &&
+        record.path !== homeRoot?.path &&
+        lookup.folderPagesOf(record.path).every((parent) => parent === homeRoot?.path),
+    )
     .sort(byPath)
   return homeRoot === null ? others : [homeRoot, ...others]
 }
@@ -180,7 +194,10 @@ export function allExpandableTopics(records: readonly IndexRecord[], lookup: Fol
     // own test, kept in step so the walk can never reach a row the tree does not draw.
     for (const kid of kids) if (lookup.isFolderPage(kid)) descend(kid, [...trail, kid.path])
   }
-  for (const start of topicRoots(records, lookup, resolve)) descend(start, [start.path])
+  // The pinned-leaf Home (YAZ-920) never descends in the TREE, so it never counts here either —
+  // an "Expand all" that opened nothing visible would be a lie told by a button.
+  const homePath = resolve === null ? null : resolve(HOME_LINK)
+  for (const start of topicRoots(records, lookup, resolve)) if (start.path !== homePath) descend(start, [start.path])
   return found.slice(0, MAX_TOPICS_EXPANDED_PAGES)
 }
 
@@ -203,12 +220,22 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
   const { records, resolve } = feed
   const lookup = useMemo(() => folderPagesLookup(records, resolve ?? NEVER), [records, resolve])
   const roots = useMemo(() => topicRoots(records, lookup, resolve), [records, lookup, resolve])
-  // The subtraction is THIS surface's (🔒 D7): the lookup has no carve-outs, so a folder page
-  // standing as a root would otherwise be listed as an orphan too — it has no parents either.
+  // YAZ-920: the pinned-leaf Home — its row opens the page and unfolds nothing.
+  const homePath = resolve === null ? null : resolve(HOME_LINK)
+  // 🔒 D7 as YAZ-920 amends it: Uncategorized is what the tree does NOT draw — the same guarded
+  // descent the rows are drawn from, never "no parents" read off the index. A page reachable
+  // only through the leaf Home (a Home-only note, an orphaned loop) surfaces here, not nowhere.
   const orphans = useMemo(() => {
-    const shown = new Set(roots.map((record) => record.path))
-    return lookup.uncategorized().filter((record) => !shown.has(record.path))
-  }, [lookup, roots])
+    const drawn = new Set<string>()
+    const walk = (page: IndexRecord, trail: readonly string[]): void => {
+      if (drawn.has(page.path)) return
+      drawn.add(page.path)
+      if (page.path === homePath || !lookup.isFolderPage(page)) return
+      for (const kid of guardedChildren(lookup, page.path, trail)) walk(kid, [...trail, kid.path])
+    }
+    for (const root of roots) walk(root, [root.path])
+    return records.filter((record) => !drawn.has(record.path))
+  }, [records, lookup, roots, homePath])
 
   // Pure computations over the prop since ⚡ YAZ-873 — the next set goes up, the owner decides.
   const toggle = (path: string): void => {
@@ -224,11 +251,27 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
     onExpandedChange(new Set(expanded).add(path))
   }
 
-  const open = (path: string, e: React.MouseEvent): void => (e.metaKey ? onOpenFileBackground(path) : onOpenFile(path))
+  const open = (path: string, e: React.MouseEvent): void => {
+    // First activation PREVIEWS, second COMMITS (YAZ-921): opening from the tree keeps focus on
+    // the row — the walk stays armed, click or Enter alike — and activating the page you are
+    // already reading is the deliberate "take me in": the caret jumps into the text.
+    if (e.metaKey) {
+      onOpenFileBackground(path)
+      return
+    }
+    if (path === activeFile) {
+      document.querySelector<HTMLElement>('.editor-instance .ProseMirror')?.focus()
+      return
+    }
+    onOpenFile(path)
+  }
 
-  /** The children to DESCEND into: the one door (⚡ D6), ordered by this parent's own settings. */
+  /** The children to DESCEND into: the one door (⚡ D6), ordered by this parent's own settings.
+      Home descends into NOTHING (YAZ-920): its members stand at the root beside it. */
   const childrenFor = (parent: IndexRecord, trail: readonly string[]): IndexRecord[] =>
-    lookup.isFolderPage(parent) ? orderedMembers(guardedChildren(lookup, parent.path, trail), folderPageSettings(parent), resolve ?? NEVER) : []
+    lookup.isFolderPage(parent) && parent.path !== homePath
+      ? orderedMembers(guardedChildren(lookup, parent.path, trail), folderPageSettings(parent), resolve ?? NEVER)
+      : []
 
   // A page stands under EVERY parent that claims it (⚡ D6), so one path can own several rows —
   // but an inline input is ONE input: two autofocused ones would fight, the second's mount
@@ -279,7 +322,17 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
               className={`tree__row${isFolderPage ? ' tree__row--dir' : ''}${active ? ' tree__row--active' : ''}`}
               style={{ paddingLeft: indent }}
               title={member.path}
+              data-path={member.path}
               onClick={(e) => {
+                // YAZ-921 amends ⚡ YAZ-870's expand-only ruling: that ruling protected
+                // NAVIGATION from folding the tree — but a click on the TOPIC you are already
+                // reading is not navigation, so it toggles the fold like a second knock (both
+                // directions; `open`'s second-activation commit is for plain pages, which have
+                // text to enter — a topic's document IS its outline).
+                if (active && kids.length > 0 && !e.metaKey) {
+                  toggle(member.path)
+                  return
+                }
                 open(member.path, e)
                 // ⚡ YAZ-870: opening a topic unfolds it too — foreground opens only (⌘ says
                 // "not now", so the tree stays put), and only when there is something to show
@@ -303,12 +356,22 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
               ) : (
                 <span className="tree__chevron tree__chevron--none" />
               )}
-              {isFolderPage && <FolderPageGlyph className="tree__glyph" />}
+              {/* Home wears the HOUSE (YAZ-920), not the folder glyph — it is the vault's front
+                  door, not one topic among the others — and counts nothing: its members are the
+                  roots below it. */}
+              {member.path === homePath ? (
+                <svg className="tree__glyph" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M2.5 7.5 8 2.5l5.5 5v5.5a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z" />
+                  <path d="M6.5 14v-4h3v4" />
+                </svg>
+              ) : (
+                isFolderPage && <FolderPageGlyph className="tree__glyph" />
+              )}
               <span className="tree__label">{member.basename}</span>
               {/* DIRECT members — the honest fact about the page, so a member hidden from THIS
                   branch by the loop guard is still counted where it belongs. The chevron above
                   asks the guarded question instead, so it never opens onto nothing. */}
-              {isFolderPage && <span className="tree__count">{lookup.pagesIn(member.path).length}</span>}
+              {isFolderPage && member.path !== homePath && <span className="tree__count">{lookup.pagesIn(member.path).length}</span>}
             </button>
           )}
         </li>
@@ -324,8 +387,35 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
   // a card shown then would be asking about a vault nobody has read yet.
   const offerHome = unadopted && resolve !== null && resolve(HOME_LINK) === null
 
+  // Keyboard walking (YAZ-921): ↑/↓ rove focus across every visible row — topics, pages and the
+  // Uncategorized rows alike (they all wear `.tree__row`) — and Enter is simply the row's own
+  // click (the rows are buttons), so open/unfold/toggle need no second contract. From outside
+  // the rows, ↓ enters at the top and ↑ at the bottom.
+  const onTreeKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    // ←/→ fold and unfold the row underfoot WITHOUT visiting it (Enter is the visit) — the
+    // ARIA-tree convention, and the only way to tidy topics mid-walk. Chevron-less leaves
+    // (`--none`, and the pathless Uncategorized header) fold nothing.
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      const row = document.activeElement
+      if (!(row instanceof HTMLElement) || row.dataset.path === undefined) return
+      if (row.querySelector('.tree__chevron:not(.tree__chevron--none)') === null) return
+      e.preventDefault()
+      const isOpen = expanded.has(row.dataset.path)
+      if (e.key === 'ArrowLeft' ? isOpen : !isOpen) toggle(row.dataset.path)
+      return
+    }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+    const rows = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('.tree__row'))
+    if (rows.length === 0) return
+    e.preventDefault()
+    const at = rows.indexOf(document.activeElement as HTMLButtonElement)
+    const next =
+      e.key === 'ArrowDown' ? (at === -1 ? 0 : Math.min(at + 1, rows.length - 1)) : at === -1 ? rows.length - 1 : Math.max(at - 1, 0)
+    rows[next]?.focus()
+  }
+
   return (
-    <>
+    <div onKeyDown={onTreeKeyDown}>
       {offerHome && (
         <div className="topics-offer">
           <p className="topics-offer__title">Your map starts here</p>
@@ -381,6 +471,6 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
           </li>
         </ul>
       )}
-    </>
+    </div>
   )
 }

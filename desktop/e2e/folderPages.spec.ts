@@ -37,6 +37,14 @@
  * the surface that replaced it; where the premise itself died (nesting expanding IN PLACE) the
  * step says so and asserts the behaviour that took its place.
  *
+ * TOMBSTONE (YAZ-919, for steps 1/4/5/6): and the document these steps used to read is gone too.
+ * Every folder page in the fixture SHIPS a body, and a folder page is title → outline now — so
+ * the body migrates into the outline document on the page's first open, deterministically, on the
+ * first paint. What stands in the editor is therefore the page's own prose, and the [D5]
+ * member-link list these steps used to assert is the fallback a folder page with NO document
+ * gets. The members are all still there — in the APPENDED section, which is what it is for — and
+ * step 9 is the migration's own proof.
+ *
  * Same harness as bible.spec.ts (temp `--user-data-dir`, a COPY of the fixture, `folder-` step
  * screenshots).
  */
@@ -47,7 +55,6 @@ import path from 'node:path'
 import {
   appWindow,
   bulletAfterLine,
-  caretAtEndOfLine,
   clearOutlineLine,
   copyVault,
   launchApp,
@@ -69,6 +76,23 @@ const FOLDER_PAGE = 'Funnel Stages.md'
 const STAGES = 'funnel-stages'
 /** Its members, in the path order `pagesIn` hands them over. */
 const MEMBERS = ['Lead Gen', 'Lead Nurture', 'Sales-Conversion']
+/**
+ * `Funnel Stages.md`'s own BODY, migrated into its outline DOCUMENT on the page's first open
+ * (YAZ-919): the heading marker stripped, blank lines dropped, one bullet per surviving line.
+ * This is what the document says from the first paint — so the members it does not NAME are the
+ * appended rows below it, which is where every assertion about them now looks.
+ */
+const BODY = [
+  'Funnel Stages',
+  'The stages a deal walks through, from first touch to closed-won. Every page that says it',
+  'belongs here shows up below — there is no list to maintain.',
+]
+/** The same, for `funnel-stages/Lead Gen.md` — step 6 turns it into a folder page and opens it. */
+const LEAD_GEN_BODY = [
+  'Lead Gen',
+  'Everything that turns strangers into known contacts. Spend concentrates here, so',
+  "[[CAC]] and [[MQL Volume]] are the stage's scoreboard.",
+]
 
 let userData: string
 let vault: string
@@ -122,34 +146,43 @@ test('step 1 — the contents block sits between the note and its backlinks, hol
 
   await expect(contents(win)).toBeVisible()
   // 🔒 D1: between the Crepe mount and "Linked mentions" in the note's own scroller — it scrolls
-  // WITH the note, exactly like the backlinks below it. No chip of its own: the page's NAME is
-  // block zero (⚡ YAZ-888) and its properties are block one (⚡ YAZ-883), both carried by every
-  // page, and a folder page adds nothing to either.
+  // WITH the note, exactly like the backlinks below it. No chip of its own: the page's NAME and
+  // its properties share block zero, the header ROW (YAZ-918 folded ⚡ YAZ-888's title and
+  // ⚡ YAZ-883's panel into one), and a folder page adds nothing to it.
   const children = await layer(win)
     .locator('.editor-host')
     .evaluate((host) => Array.from(host.children).map((c) => c.className))
-  expect(children).toEqual(['page-title', 'frontmatter-panel', 'editor-mount', 'folder-page-contents', 'backlinks'])
+  expect(children).toEqual(['page-header', 'editor-mount', 'folder-page-contents', 'backlinks'])
 
-  // YAZ-909: a folder page's BODY is a preamble, not a document with an end — its 32px lead-in
-  // and 120px tail collapse to a working 12px, so the outline starts right under the text.
+  // YAZ-909 → YAZ-917/YAZ-919: a folder page IS title → outline. The body editor still mounts
+  // (autosave, and YAZ-919's migration path, live behind it) but shows NOTHING, and the contents
+  // block draws no divider — the outline starts right under the header row.
   await expect
     .poll(() =>
       layer(win)
-        .locator('.editor-mount > .editor-instance')
-        .evaluate((el) => {
-          const s = getComputedStyle(el)
-          return `${s.paddingTop} ${s.paddingBottom}`
+        .locator('.editor-host')
+        .evaluate((host) => {
+          const mount = getComputedStyle(host.querySelector('.editor-mount')!)
+          const contents = getComputedStyle(host.querySelector('.folder-page-contents')!)
+          return `${mount.display} | ${contents.borderTopWidth}`
         }),
     )
-    .toBe('12px 12px')
+    .toBe('none | 0px')
 
-  // Q7: the folder page's two skins, outline FIRST (YAZ-820). The outline is a DOCUMENT now
-  // (YAZ-903) and this page has none stored, so what stands there is the [D5] arrangement frozen
-  // into one — a link line per member, alphabetical because no `order` is stored. Every member is
-  // named, so nothing is appended below it.
+  // Q7: the folder page's two skins, outline FIRST (YAZ-820). The outline is a DOCUMENT (YAZ-903)
+  // and YAZ-919 gave this page one on its very first paint: the body it has carried since the
+  // fixture was written, moved in whole. The [D5] member-link arrangement is what a folder page
+  // with NO document falls back to — this page has one now, and it names none of its three
+  // members, so all three stand in the APPENDED section that exists for exactly that. Both
+  // halves, deterministically, before anybody has typed anything.
   await expect(viewTabs(contents(win))).toHaveText(['Outline', 'Table'])
-  await expect(outlineLines(contents(win))).toHaveText(asLinks(...MEMBERS))
-  await expect(outlineRows(contents(win))).toHaveCount(0)
+  await expect(outlineLines(contents(win))).toHaveText(BODY)
+  await expect(outlineRows(contents(win))).toHaveText(MEMBERS)
+  // …and the body really did LEAVE the file, which is the other half of "nothing disappears":
+  // frontmatter, and nothing after it.
+  await expect
+    .poll(() => readFile(path.join(vault, FOLDER_PAGE), 'utf8').then((t) => t.trimEnd().endsWith('---')), { timeout: 10_000 })
+    .toBe(true)
   await shoot(win, 'folder-01-contents-outline')
 
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
@@ -205,29 +238,30 @@ test('step 4 — "New" births a member from the declaration, parked per the sett
   expect(born).toContain('related_stages: []')
   expect(born).not.toContain('folder_page:')
   await expect(activeTab(win)).toHaveText('Untitled')
-  // YAZ-909's other half: an ORDINARY page keeps its document spacing — the collapse is the
-  // folder page's alone.
+  // YAZ-909's other half, retuned by YAZ-918: an ORDINARY page keeps its visible editor and its
+  // 120px document tail — but the 32px lead-in went with the stacked panel the header row
+  // replaced, so the body starts on the editor's own 16px + 4px rhythm.
   await expect
     .poll(() =>
       layer(win)
         .locator('.editor-mount > .editor-instance')
         .evaluate((el) => {
           const s = getComputedStyle(el)
-          return `${s.paddingTop} ${s.paddingBottom}`
+          return `${getComputedStyle(el.closest('.editor-mount')!).display} | ${s.paddingTop} ${s.paddingBottom}`
         }),
     )
-    .toBe('32px 120px')
+    .toBe('block | 0px 120px')
   await shoot(win, 'folder-05-new-member')
 
   // …and the folder page adopts it off the watcher, with no user action.
   await fileRow(win, 'Funnel Stages').click()
   await expect(contents(win)).toBeVisible()
   // Which view is active is SESSION state, so the re-opened note is back on Q7's first skin — and
-  // the newborn arrives the YAZ-903 way: the DOCUMENT standing in the editor is the one the seed
-  // wrote and it does not name Untitled, so Untitled is a member the document does not mention,
-  // which is exactly what the appended section below the editor is for.
-  await expect(outlineLines(contents(win))).toHaveText(asLinks(...MEMBERS))
-  await expect(outlineRows(contents(win))).toHaveText(['Untitled'])
+  // the newborn arrives the YAZ-903 way: the DOCUMENT standing in the editor is this page's own
+  // migrated body (YAZ-919) and it names nobody at all, so Untitled simply joins the three
+  // members already standing in the appended section, in that section's own name order.
+  await expect(outlineLines(contents(win))).toHaveText(BODY)
+  await expect(outlineRows(contents(win))).toHaveText([...MEMBERS, 'Untitled'])
   await shoot(win, 'folder-06-new-member-row')
 })
 
@@ -236,12 +270,13 @@ const CAC = 'kpis/CAC.md'
 
 test('step 5 — the outline’s `[[` picker tags an existing page, on that page’s own file', async () => {
   await viewTabs(contents(win)).filter({ hasText: 'Outline' }).click()
-  await expect(outlineLines(contents(win))).toHaveText(asLinks(...MEMBERS))
+  await expect(outlineLines(contents(win))).toHaveText(BODY)
 
   // The add row is gone (YAZ-903): the gesture is now typing `[[` in the document itself, which
   // is still picker-only in the sense that mattered — the picker narrows over REAL pages and
   // inserts the link text, and a line that is exactly one resolving link IS the membership.
-  await bulletAfterLine(win, contents(win), MEMBERS.length - 1)
+  // The new line goes under the page's own prose, which is where a user typing would put it.
+  await bulletAfterLine(win, contents(win), BODY.length - 1)
   await pickOutlineLink(win, 'CAC', 'folder-07-outline-picker')
 
   // The write lands on the PICKED page's card — never on the folder page's — and it ADDS: the
@@ -250,8 +285,9 @@ test('step 5 — the outline’s `[[` picker tags an existing page, on that page
   await expect.poll(() => readFile(cac, 'utf8'), { timeout: 10_000 }).toContain('[[Funnel Stages]]')
   expect(await readFile(cac, 'utf8')).toContain('[[KPIs]]') // a page belongs to as many topics as it says
   expect(await readFile(cac, 'utf8')).toContain('funnel_stages: ["[[Lead Gen]]"]') // every other key survives
-  await expect(outlineLines(contents(win))).toHaveText(asLinks(...MEMBERS, 'CAC'))
-  await expect(outlineRows(contents(win))).toHaveText(['Untitled']) // still the only unnamed member
+  await expect(outlineLines(contents(win))).toHaveText([...BODY, '[[CAC]]'])
+  // CAC is NAMED now, so it is the one member that is not appended — the four that are, are.
+  await expect(outlineRows(contents(win))).toHaveText([...MEMBERS, 'Untitled'])
   await shoot(win, 'folder-08-outline-tagged')
 })
 
@@ -260,28 +296,41 @@ test('step 6 — a member that is itself a folder page: plain text in the docume
   // its direct-member count on the row. That premise died with rows-are-pages — inside the
   // document a folder page's link is a plain wikilink and nothing more (the locked scoping
   // decision), and the glyph and count live on the APPENDED row instead. Both halves below.
+  //
+  // TOMBSTONE (YAZ-919): and the member used to arrive already NAMED, because a document-less
+  // folder page fell back to the [D5] member-link list. This page's document is its own migrated
+  // body now and names nobody, so the naming is typed by hand — which is the honest gesture the
+  // fallback was standing in for anyway.
 
   // The sidebar's own gesture (YAZ-840) makes Lead Gen a folder page; forward never confirms.
   await fileRow(win, 'Lead Gen').click({ button: 'right' })
   await win.locator('.ctx-menu [role="menuitem"]', { hasText: 'Turn into folder page' }).click()
 
-  // Tag CAC into Lead Gen from LEAD GEN's own outline — CAC now belongs to both. A brand-new
-  // folder page holds nobody, so its document is the single empty bullet the seed guarantees.
+  // Tag CAC into Lead Gen from LEAD GEN's own outline — CAC now belongs to both. `Lead Gen.md`
+  // carries a body of its own, so becoming a folder page moves it in exactly the same way: the
+  // document is that prose, and the link line goes UNDER it.
   await fileRow(win, 'Lead Gen').click()
   await expect(contents(win)).toBeVisible()
-  await expect(outlineLines(contents(win))).toHaveText([''])
-  await caretAtEndOfLine(win, contents(win), 0)
+  await expect(outlineLines(contents(win))).toHaveText(LEAD_GEN_BODY)
+  await bulletAfterLine(win, contents(win), LEAD_GEN_BODY.length - 1)
   await pickOutlineLink(win, 'CAC')
   // The `folder_pages` ENTRY, not just the name: CAC's body and its `funnel_stages` relation both
   // spell `[[Lead Gen]]` already, so a bare `toContain` would pass without a membership at all.
   await expect.poll(() => readFile(path.join(vault, CAC), 'utf8'), { timeout: 10_000 }).toContain('- "[[Lead Gen]]"')
 
-  // Back on Funnel Stages: `[[Lead Gen]]` is a LINE of the document, wearing no glyph, no count
-  // and no chevron — the outline holds text, and nothing about a folder page shows through it.
+  // Back on Funnel Stages, and NAME the folder-page member: `Lead Gen` is already a member (its
+  // own card says so), so the line adds no belonging — it moves the row INTO the document, which
+  // is the half of this step the appended section cannot show.
   await fileRow(win, 'Funnel Stages').click()
-  await expect(outlineLines(contents(win))).toHaveText(asLinks(...MEMBERS, 'CAC'))
+  await expect(outlineLines(contents(win))).toHaveText([...BODY, '[[CAC]]'])
+  await bulletAfterLine(win, contents(win), BODY.length)
+  await pickOutlineLink(win, 'Lead Gen')
+  await expect(outlineLines(contents(win))).toHaveText([...BODY, '[[CAC]]', '[[Lead Gen]]'])
+  // As a LINE it wears no glyph, no count and no chevron — the outline holds text, and nothing
+  // about a folder page shows through it. The three members left unnamed are still appended.
   await expect(outlineEditor(contents(win)).locator('.view-outline__glyph, .view-outline__count')).toHaveCount(0)
   await expect(contents(win).locator('[aria-label="Expand Lead Gen"]')).toHaveCount(0)
+  await expect(outlineRows(contents(win))).toHaveText(['Lead Nurture', 'Sales-Conversion', 'Untitled'])
 
   // Stop NAMING it and it becomes an appended row — which is where the glyph and the honest
   // direct-member count (CAC, 1) do live. A cancelled removal is the way to arrange that: the
@@ -289,7 +338,7 @@ test('step 6 — a member that is itself a folder page: plain text in the docume
   await clearOutlineLine(win, contents(win), await outlineLineIndex(contents(win), '[[Lead Gen]]'))
   await expect(sheet(win)).toBeVisible()
   await sheetBtn(win, 'Cancel').click()
-  await expect(outlineRows(contents(win))).toHaveText(['Lead Gen', 'Untitled'])
+  await expect(outlineRows(contents(win))).toHaveText(['Lead Gen', 'Lead Nurture', 'Sales-Conversion', 'Untitled'])
   await expect(outlineRow(win, 'Lead Gen').locator('.view-outline__glyph')).toBeVisible()
   await expect(outlineRow(win, 'Lead Gen').locator('.view-outline__count')).toHaveText('1')
   expect(await readFile(path.join(vault, 'funnel-stages', 'Lead Gen.md'), 'utf8')).toContain('[[Funnel Stages]]')
@@ -310,8 +359,9 @@ test('step 7 — deleting the link line + sheet un-tags it, dropping ONLY this f
   await expect.poll(() => readFile(cac, 'utf8'), { timeout: 10_000 }).not.toContain('[[Funnel Stages]]')
   expect(await readFile(cac, 'utf8')).toContain('[[KPIs]]') // the other two belongings are untouched
   expect(await readFile(cac, 'utf8')).toContain('[[Lead Gen]]')
-  // Gone from this folder page entirely: not a line, and not an appended row either.
-  await expect(outlineRows(contents(win))).toHaveText(['Lead Gen', 'Untitled'])
+  // Gone from this folder page entirely: not a line, and not an appended row either — the four
+  // members that remain are all of them, and CAC is none of them.
+  await expect(outlineRows(contents(win))).toHaveText(['Lead Gen', 'Lead Nurture', 'Sales-Conversion', 'Untitled'])
   await shoot(win, 'folder-11-outline-untagged')
 })
 
@@ -353,6 +403,29 @@ test('step 8 — the grouped table: one groupBy write, and a collapsed section t
   await expect(groupNames(contents(win))).toHaveText(['true', 'No value'])
   await expect(dataRows(contents(win))).toHaveCount(3) // still collapsed
   await shoot(win, 'folder-14-group-collapse-restored')
+
+  await quitApp(app)
+})
+
+test('step 9 — a body the page already carried migrates into the outline on open (YAZ-919)', async () => {
+  // A folder page is title → outline now, and its body editor shows nothing — so the body
+  // `Roles.md` has carried since the fixture was written must MOVE on first open: into the top
+  // of its outline document, leaving the file frontmatter-only. Nothing silently disappears.
+  const roles = path.join(vault, 'Roles.md')
+  expect(await readFile(roles, 'utf8')).toContain('Who signs') // the body is really there first
+
+  app = await launchApp({ userData }) // restore, no re-seed — the ordinary door in
+  win = await appWindow(app, 'w1')
+  await fileRow(win, 'Roles').click()
+  await expect(contents(win)).toBeVisible()
+  // The moved text stands in the page's contents — the outline is where the body went.
+  await expect(contents(win)).toContainText('Who signs')
+
+  // Durable, not cosmetic: the outline document holds the text as bullets, the body is gone,
+  // and the write happened THROUGH the one open door (useFile), before the editor ever mounted.
+  await expect.poll(() => readFile(roles, 'utf8'), { timeout: 10_000 }).toContain('- Who signs')
+  const after = await readFile(roles, 'utf8')
+  expect(after.trimEnd().endsWith('---')).toBe(true) // frontmatter only: the body moved out
 
   await quitApp(app)
 })

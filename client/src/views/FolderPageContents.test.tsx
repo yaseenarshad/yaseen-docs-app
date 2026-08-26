@@ -117,11 +117,11 @@ function feed(records: IndexRecord[]): void {
   act(() => source.update((target) => resolve(target)?.record.path ?? null, records))
 }
 
-function mount(path: string, records: IndexRecord[] | null = vault()): HTMLElement {
+function mount(path: string, records: IndexRecord[] | null = vault(), fileContent?: string): HTMLElement {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<FolderPageContents path={path} root="/vault" source={source} onOpenFile={onOpenFile} />))
+  act(() => root?.render(<FolderPageContents path={path} root="/vault" source={source} onOpenFile={onOpenFile} fileContent={fileContent} />))
   if (records !== null) feed(records)
   return container
 }
@@ -398,5 +398,33 @@ describe('New births a member from the declaration (🔒 Q5)', () => {
     await flush()
     expect(el.textContent).toContain('read-only vault')
     expect(onOpenFile).not.toHaveBeenCalled()
+  })
+})
+
+describe('the seed reads the OPEN file, not the snapshot (YAZ-919)', () => {
+  it('a just-migrated outline renders on FIRST paint, while the index still says yesterday', () => {
+    // The migration rewrites the file BEFORE the editor mounts; the index echo lands only after
+    // the first paint. A seed from the stale snapshot showed the OLD document — and the first
+    // commit wrote it back, erasing the migrated text: the silent disappearance YAZ-919 forbids.
+    const migrated = [
+      '---',
+      'folder_page: true',
+      'folder_page_settings:',
+      '  views:',
+      '    - type: outline',
+      '      name: Outline',
+      '      outline: |-',
+      '        - Migrated line',
+      '        - "[[Sales-Conversion]]"',
+      '---',
+      '',
+    ].join('\n')
+    const el = mount(FUNNELS, vault(), migrated)
+    expect(doc(el)).toContain('Migrated line')
+  })
+
+  it('without fileContent the snapshot seeds, exactly as before', () => {
+    const el = mount(FUNNELS)
+    expect(doc(el)).not.toContain('Migrated line')
   })
 })

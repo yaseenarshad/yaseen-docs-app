@@ -18,7 +18,8 @@
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1  the migrated vault is sound: zero `page_type` keys, zero broken links, and Home holds
- *      exactly the five folder pages in the `order` the migration wrote
+ *      exactly the five folder pages — its own migrated body as the document, the five appended
+ *      below it with their direct-member counts
  *   2  a cell the MIGRATION declared, edited inline on `KPIs` — a surgical write into a card the
  *      migration itself rewrote, leaving its membership and body byte-for-byte
  *   3  wiki-link navigation: click → current tab, ⌘-click → background tab (the LOCKED model)
@@ -30,11 +31,13 @@
  *      too: Home's outline `order` entry and another folder page's column `target`, alongside the
  *      members' own `folder_pages`. Still zero broken links, and the map still browses.
  *
- * TOMBSTONE (YAZ-904): the outline is a free-form DOCUMENT since YAZ-903, so the rows this file
- * used to read — one per member, each with a direct-member COUNT — are gone. What stands in their
- * place is the seed: one link line per member, in the [D5] arrangement, inside a real editor. The
- * counts moved to the appended section (members a document does not name), which none of these
- * pages has; the vault-wide claim they carried is re-asked of the vault itself, in `directMembers`.
+ * TOMBSTONE (YAZ-904 → ⚡ YAZ-919): the outline is a free-form DOCUMENT since YAZ-903, and the
+ * member rows this file used to read — one per member, each with a direct-member COUNT — moved to
+ * the APPENDED section, the members a document does not name. YAZ-904 then found none of these
+ * pages had any, because a document-less folder page fell back to a member-link list that named
+ * them all. YAZ-919 ended that: every page here ships a body, the body IS the document from the
+ * first paint, and so every member is appended again — rows, glyphs and counts included. The
+ * vault-wide claim is still re-asked of the vault itself in `directMembers`, as a second source.
  *
  * Same harness as links.spec.ts / backlinks.spec.ts (temp `--user-data-dir`, a COPY of the
  * fixture, `bible-` step screenshots).
@@ -67,8 +70,35 @@ const CATEGORY_NOW = 'fundamental'
 
 /** Every page that belongs to `[[Problems]]` — the fixture's own answer to "which mentions are problems?". */
 const PROBLEMS = ['CRM Hygiene', 'Lead Quality Scoring', 'Nurture Sequencing', 'Stage Accuracy']
-/** The KPIs, alphabetically — the [D5] fallback, since `KPIs.md` declares no outline `order`. */
+/** The KPIs, alphabetically — the appended section's own name order. */
 const KPI_MEMBERS = ['CAC', 'Gross Margin', 'MQL Volume', 'Sales Cycle Time', 'Win Rate']
+
+/**
+ * ⚡ YAZ-919: every folder page in this fixture SHIPS a body, and a folder page is title → outline
+ * now — so on its first open the body MOVES into `folder_page_settings.views[i].outline` (heading
+ * marker stripped, blank lines dropped, one bullet per surviving line) and the file is left
+ * frontmatter-only. That document is on screen from the first paint, so what `outlineLines` says
+ * about any of these pages is the page's own PROSE, and its members — named nowhere in it — are
+ * the APPENDED rows below. The three bodies this file reads back, verbatim:
+ */
+const HOME_BODY = [
+  'Home',
+  'The root of the map. Every folder page below says in its own frontmatter that it belongs here,',
+  // the editor renders `order` as a code span, so its backticks are an element and not text
+  "and the outline's order is the only thing that decides what comes first.",
+]
+const KPIS_BODY = [
+  'KPIs',
+  'The numbers the funnel is judged on. Each one names the stages it belongs to, so the same',
+  'metric can be owned jointly without anybody maintaining a second list.',
+]
+const PROBLEMS_BODY = [
+  'Problems',
+  'The things we are hired to fix. Every one names the stage it lives in, the KPIs it moves and',
+  'the role that buys it — which is why nothing here needs a category to be found.',
+]
+/** `Roles.md`'s, read after step 6 has RENAMED the page — prose is prose, and a rename never rewrites it. */
+const ROLES_BODY = ['Roles', 'Who signs, who owns and who reports to whom. The buyers every problem below is sold to.']
 
 const FUNNEL = path.join('funnel-stages', 'Sales-Conversion.md')
 const RENAMED = 'Deal Win Rate'
@@ -237,20 +267,22 @@ test('step 1 — the migrated encyclopedia opens on Home, holding exactly its to
   win = await appWindow(app, 'w1')
 
   // The map of an encyclopedia that maintains no list: the five folder pages say in their OWN
-  // frontmatter that they belong to Home, and Home's `order` is the only thing deciding the sequence
-  // (alphabetically, Funnel Stages would still lead — but KPIs would not sit third).
+  // frontmatter that they belong to Home, and NOTHING on Home's side says it back.
   await expect(contents(win)).toBeVisible()
   await expect(viewTabs(contents(win))).toHaveText(['Outline', 'Table'])
-  await expect(outlineLines(contents(win))).toHaveText(asLinks(...TOPICS))
-  // …and it is still only a SEED: the page has no document of its own until it is edited, so the
-  // `order` the migration wrote is untouched on disk — read, never written (the lazy migration).
+  // ⚡ YAZ-919: what the outline DOCUMENT holds is Home's own body, migrated in on the first open
+  // — so the page's prose is on screen and its file is frontmatter-only.
+  await expect(outlineLines(contents(win))).toHaveText(HOME_BODY)
+  expect((await read(HOME)).trimEnd().endsWith('---')).toBe(true)
+  // `order` is untouched: the lazy migration is spent by the first EDIT, and the body move is not
+  // one — it read no `order` and wrote none.
   expect(await read(HOME)).toContain('order:')
-  // TOMBSTONE (YAZ-904): a per-row COUNT used to stand beside every one of these, and this was the
-  // one assertion that held the whole migrated vault. Counts moved onto the APPENDED section with
-  // YAZ-903 — the members a document does not name — and Home names all five, so it shows none.
-  // The claim itself is unchanged, re-asked of the vault: 17 pages filed under five topics.
-  await expect(outlineCounts(contents(win))).toHaveCount(0)
-  await expect(outlineRows(contents(win))).toHaveCount(0)
+  // …and because the document names NONE of them, all five members stand in the appended section,
+  // each with its DIRECT-member count — which is the one assertion that holds the whole migrated
+  // vault, and which YAZ-903 had moved out of reach until YAZ-919 put the pages back below the
+  // document. Confirmed independently against the vault: 17 pages filed under five topics.
+  await expect(outlineRows(contents(win))).toHaveText(TOPICS)
+  await expect(outlineCounts(contents(win))).toHaveText(TOPIC_COUNTS)
   expect(await directMembers(vault, TOPICS)).toEqual(TOPIC_COUNTS)
 
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
@@ -262,7 +294,9 @@ test('step 1 — the migrated encyclopedia opens on Home, holding exactly its to
 test('step 2 — a MIGRATED column, edited inline: written to the member’s own file, surgically', async () => {
   await fileRow(win, KPIS).click()
   await expect(activeTab(win)).toHaveText(KPIS)
-  await expect(outlineLines(contents(win))).toHaveText(asLinks(...KPI_MEMBERS))
+  // Its own body as the document (⚡ YAZ-919), its five members appended below it.
+  await expect(outlineLines(contents(win))).toHaveText(KPIS_BODY)
+  await expect(outlineRows(contents(win))).toHaveText(KPI_MEMBERS)
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
 
   // Column 1 is `kpi_category`, declared `text` by `KPIs.md` — a column the MIGRATION wrote, out
@@ -309,9 +343,11 @@ test('step 3 — navigating the encyclopedia: click → current tab, ⌘-click �
 
 test('step 4 — the backlinks panel finds the whole mention set, problems included', async () => {
   // Who the problems ARE is the folder page's own answer, not this file's: the four pages that
-  // say they belong to `[[Problems]]`, read straight off the block.
+  // say they belong to `[[Problems]]`, read straight off the block — below the page's own
+  // migrated body (⚡ YAZ-919), which names none of them.
   await fileRow(win, 'Problems').click()
-  await expect(outlineLines(contents(win))).toHaveText(asLinks(...PROBLEMS))
+  await expect(outlineLines(contents(win))).toHaveText(PROBLEMS_BODY)
+  await expect(outlineRows(contents(win))).toHaveText(PROBLEMS)
 
   await tabsOf(win).filter({ hasText: 'Win Rate' }).click()
   await expect(activeTab(win)).toHaveText('Win Rate')
@@ -363,11 +399,12 @@ test('step 5 — renaming an entity page: relations, body links, backlinks and i
   await fileRow(win, RENAMED).click()
   expect(await read(path.join('kpis', `${RENAMED}.md`))).toContain('[[KPIs]]')
   await fileRow(win, KPIS).click()
-  // `KPIs.md` has no stored outline, so its document is still the [D5] seed — recomputed from the
-  // members at mount, which is how the renamed page shows up under its NEW name with nothing left
-  // over: the seed spells a membership, it does not remember one.
-  await expect(outlineLines(contents(win))).toHaveText(asLinks('CAC', RENAMED, 'Gross Margin', 'MQL Volume', 'Sales Cycle Time'))
-  await expect(outlineRows(contents(win))).toHaveCount(0)
+  // `KPIs.md`'s document is its own migrated body and names nobody, so its whole membership is the
+  // APPENDED section — recomputed from the members at mount, which is how the renamed page shows
+  // up under its NEW name with nothing left over: the section spells a membership, it does not
+  // remember one. And the document is untouched by any of it: a rename is not an edit of the text.
+  await expect(outlineLines(contents(win))).toHaveText(KPIS_BODY)
+  await expect(outlineRows(contents(win))).toHaveText(['CAC', RENAMED, 'Gross Margin', 'MQL Volume', 'Sales Cycle Time'])
 
   // The durable result: not one dangling wiki link anywhere in the vault.
   await expect.poll(() => brokenLinks(vault)).toEqual([])
@@ -378,7 +415,10 @@ test('step 5 — renaming an entity page: relations, body links, backlinks and i
 test('step 6 — renaming a FOLDER PAGE: the links INSIDE folder_page_settings follow too (YAZ-864)', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, HOME)) })
   win = await appWindow(app, 'w1')
-  await expect(outlineLines(contents(win))).toHaveText(asLinks(...TOPICS))
+  // Home's document is the body step 1 watched migrate — read back off the page, not re-migrated:
+  // the body is empty now, so there is nothing left for YAZ-919 to move and it moves nothing.
+  await expect(outlineLines(contents(win))).toHaveText(HOME_BODY)
+  await expect(outlineRows(contents(win))).toHaveText(TOPICS)
 
   await fileRow(win, ROLES).click({ button: 'right' })
   await win.locator('.ctx-menu [role="menuitem"]', { hasText: 'Rename' }).click()
@@ -412,15 +452,16 @@ test('step 6 — renaming a FOLDER PAGE: the links INSIDE folder_page_settings f
     await expect.poll(() => read(path.join('roles', `${member}.md`))).toContain(`- "[[${ROLES_RENAMED}]]"`)
   }
 
-  // Everything still browses. Home's `order` still places it LAST — a stale entry would be ignored
-  // and 'Buyer Roles' would have drifted to the top alphabetically — and the SEED reads the
-  // rewritten sequence, exactly as the [D5] arrangement always did. (The editor standing on screen
-  // was mounted before the rename and holds the string it was handed: the document is text, and a
-  // rename walks the CARD, which is what the next mount reads. Its members are re-seeded.)
+  // And everything still browses. The renamed page opens for the FIRST time here, so this is also
+  // where its body migrates (⚡ YAZ-919) — out of the file the rename just moved, into the
+  // settings the rename just rewrote, with both writes intact afterwards. The prose still says
+  // "Roles", because prose is prose: a rename walks the CARD and never edits a word of the text.
+  // Its three members, untouched by any of it, are the appended rows below.
   await fileRow(win, ROLES_RENAMED).click()
   await expect(activeTab(win)).toHaveText(ROLES_RENAMED)
-  await expect(outlineLines(contents(win))).toHaveText(asLinks(...ROLE_MEMBERS))
-  await expect(outlineRows(contents(win))).toHaveCount(0)
+  await expect(outlineLines(contents(win))).toHaveText(ROLES_BODY)
+  await expect(outlineRows(contents(win))).toHaveText(ROLE_MEMBERS)
+  expect(await read(`${ROLES_RENAMED}.md`)).toContain('folder: roles') // the rename's own write survived the migration's
   expect(await directMembers(vault, TOPICS_AFTER)).toEqual(TOPIC_COUNTS)
 
   // The durable result again, with the settings targets now inside the audit's reach.

@@ -1,8 +1,15 @@
 /**
  * The Topics tree (6B-, YAZ-848): the folder-page tree in the sidebar. Each case pins ONE locked
- * rule — the roots rule (🔒 D2), the row gestures (🔒 D3), the guarded descent (⚡ D6 of YAZ-814)
- * with its own per-level ordering ([D5]), page-path expansion (🔒 D4) and its persistence, and
- * the Uncategorized section (🔒 D7).
+ * rule — the roots rule (🔒 D2, amended by YAZ-920), the row gestures (🔒 D3, amended by
+ * YAZ-921), the keyboard walk (YAZ-921), the guarded descent (⚡ D6 of YAZ-814) with its own
+ * per-level ordering ([D5]), page-path expansion (🔒 D4) and its persistence, and the
+ * Uncategorized section (🔒 D7).
+ *
+ * THE YAZ-917 WAVE, which every fixture below is now shaped by: Home is a PINNED LEAF (YAZ-920) —
+ * it leads the tree, wears a house instead of the folder glyph, counts nothing, offers no chevron
+ * and descends into nothing — and the topics that named it as their parent stand at the ROOT
+ * beside it. So a vault's topics live one indent shallower than they used to, and a fixture that
+ * wants a second rung hangs it off a topic, never off Home.
  *
  * The feed is the real `WikilinkResolveSource` shape (records + resolver, always together) over a
  * hand-built snapshot, resolved by a basename map keyed exactly like `makeResolver`
@@ -92,8 +99,9 @@ function sourceOver(records: readonly IndexRecord[]) {
 }
 
 /**
- * The standing vault: Home leads (a folder page), Projects is a second unparented folder page,
- * Metrics nests under Home with two members of its own, Loose belongs nowhere.
+ * The standing vault: Home leads as the pinned leaf (a folder page), Metrics names Home as its
+ * parent and so stands at the root BESIDE it since YAZ-920 — with two members of its own —
+ * Projects is a third root with nobody in it, and Loose belongs nowhere.
  */
 const HOME = `${ROOT}/Home.md`
 const METRICS = `${ROOT}/Metrics.md`
@@ -170,6 +178,12 @@ async function mount(over: Partial<OwnedProps> & { source: Props['source'] }) {
   return { el, props }
 }
 
+/**
+ * The tree's own element: since YAZ-921 the whole lens renders inside ONE div carrying the
+ * keyboard walk's `onKeyDown`, so the offer card and the `<ul>`s are ITS children, not the
+ * mount container's — and a keydown dispatched anywhere inside reaches the handler by bubbling.
+ */
+const host = (el: HTMLElement) => el.firstElementChild as HTMLElement
 const rows = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.tree__row')]
 const labels = (el: HTMLElement) => rows(el).map((r) => r.querySelector('.tree__label')?.textContent ?? '')
 const rowFor = (el: HTMLElement, label: string) => rows(el).find((r) => r.querySelector('.tree__label')?.textContent === label)
@@ -177,6 +191,10 @@ const countOn = (el: HTMLElement, label: string) => rowFor(el, label)?.querySele
 const indentOf = (el: HTMLElement, label: string) => rowFor(el, label)?.style.paddingLeft ?? null
 const chevrons = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLElement>(`[aria-label="${label}"]`)]
 const click = async (node: Element, init: MouseEventInit = {}) => act(async () => void node.dispatchEvent(new MouseEvent('click', { bubbles: true, ...init })))
+/** One key press, from wherever it is dispatched — the walk reads `document.activeElement` itself. */
+const press = async (node: Element, key: string) => act(async () => void node.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })))
+/** The label of the row DOM focus stands on, or null when focus is outside the rows. */
+const focused = (el: HTMLElement) => rows(el).find((r) => r === document.activeElement)?.querySelector('.tree__label')?.textContent ?? null
 
 beforeEach(async () => {
   await initStorage()
@@ -187,6 +205,9 @@ afterEach(() => {
   root = null
   container?.remove()
   container = null
+  // The commit gesture (YAZ-921) reaches for the editor by DOM query, so its stand-in lives in
+  // the document beside the mount — and must not survive into the next case.
+  document.querySelectorAll('.editor-instance').forEach((node) => node.remove())
   delete (window as unknown as Record<string, unknown>).yaseenDocs
   vi.restoreAllMocks()
 })
@@ -199,9 +220,10 @@ describe('allExpandableTopics (⚡ YAZ-873): every page the tree could unfold, o
     return allExpandableTopics(records, folderPagesLookup(records, resolve), resolve)
   }
 
-  it('collects every folder page that can unfold, from every root, once each, and never a dead end', () => {
-    // Home → A → B → A (a loop); Shared under Home AND Projects (a diamond); B can never unfold —
-    // its only member is A, already standing above it on every trail the tree can walk.
+  it('collects every folder page the TREE can unfold — never the pinned-leaf Home, never a page it cannot draw', () => {
+    // Home is a leaf now (YAZ-920) and unfolds nothing, so it is never in the set. The A↔B loop
+    // hangs only off Home: the tree draws neither (they stand in Uncategorized, flat), so neither
+    // can unfold. Shared descends from Projects, its real parent, exactly as the rows do.
     const records = [
       folder(HOME),
       folder(PROJECTS),
@@ -210,7 +232,12 @@ describe('allExpandableTopics (⚡ YAZ-873): every page the tree could unfold, o
       folder(`${ROOT}/Shared.md`, belongs('[[Home]]', '[[Projects]]')),
       rec(`${ROOT}/Leaf.md`, belongs('[[Shared]]')),
     ]
-    expect([...setOf(records)].sort()).toEqual([`${ROOT}/A.md`, HOME, PROJECTS, `${ROOT}/Shared.md`].sort())
+    expect([...setOf(records)].sort()).toEqual([PROJECTS, `${ROOT}/Shared.md`].sort())
+  })
+
+  it('the pinned-leaf Home is never expandable, however many members it claims', () => {
+    const records = [folder(HOME), folder(METRICS, belongs('[[Home]]')), rec(`${ROOT}/Leaf.md`, belongs('[[Metrics]]'))]
+    expect(setOf(records)).toEqual([METRICS])
   })
 
   it('a leaf-only vault and an empty feed both answer nothing', () => {
@@ -231,14 +258,17 @@ describe('allExpandableTopics (⚡ YAZ-873): every page the tree could unfold, o
 
 // ---------------------------------------------------------------- 🔒 D2: the roots
 
-describe('the roots rule (🔒 D2): Home first, then every other unparented folder page', () => {
+describe('the roots rule (🔒 D2, as YAZ-920 amends it): the pinned Home, then every topic it held', () => {
   const rootsOf = (records: readonly IndexRecord[]) => {
     const resolve = records.length === 0 ? null : resolverOver(records)
     return topicRoots(records, folderPagesLookup(records, resolve ?? (() => null)), resolve).map((r) => r.path)
   }
 
-  it('puts Home first and path-sorts the rest', () => {
-    expect(rootsOf(vault())).toEqual([HOME, PROJECTS])
+  it('puts Home first, then every folder page whose parents-minus-Home are empty, path-sorted', () => {
+    // Metrics names Home as its parent and is a ROOT anyway (YAZ-920): Home is no longer the
+    // umbrella everything hangs under, so the tree stops opening one indent deep on every vault
+    // whose Home lists all its topics.
+    expect(rootsOf(vault())).toEqual([HOME, METRICS, PROJECTS])
     // Path order, not declaration order: the snapshot below lists them backwards.
     const records = [folder(`${ROOT}/Zebra.md`), folder(`${ROOT}/Alpha.md`), folder(HOME)]
     expect(rootsOf(records)).toEqual([HOME, `${ROOT}/Alpha.md`, `${ROOT}/Zebra.md`])
@@ -257,8 +287,37 @@ describe('the roots rule (🔒 D2): Home first, then every other unparented fold
     expect(labels(el)).toEqual(['Projects', 'Uncategorized'])
   })
 
-  it('a folder page with any counting parent is NOT a root (it renders under that parent instead)', () => {
-    expect(rootsOf(vault())).not.toContain(METRICS)
+  it('a folder page with a real NON-Home parent is not a root — it nests under that parent only', async () => {
+    const SUB = `${ROOT}/Sub.md`
+    const records = [folder(HOME), folder(METRICS, belongs('[[Home]]')), folder(SUB, belongs('[[Metrics]]'))]
+    // Metrics is promoted (Home is its only parent); Sub is not (Metrics is a real parent).
+    expect(rootsOf(records)).toEqual([HOME, METRICS])
+    const { el } = await mount({ source: sourceOver(records) })
+    expect(labels(el)).toEqual(['Home', 'Metrics'])
+    await click(chevrons(el, 'Expand Metrics')[0])
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Sub'])
+  })
+
+  it('a vault with NO Home keeps the old rule: every UNPARENTED folder page is a root, and only those', () => {
+    // Nothing answers `[[Home]]`, so nothing is promoted — a parent is a parent again.
+    const records = [folder(PROJECTS), folder(METRICS, belongs('[[Projects]]')), folder(`${ROOT}/Alpha.md`)]
+    expect(rootsOf(records)).toEqual([`${ROOT}/Alpha.md`, PROJECTS])
+  })
+
+  it('Home is a PINNED LEAF: a house, no count, no chevron, and it descends into nothing', async () => {
+    const { el } = await mount({ source: sourceOver(vault()) })
+    const home = rowFor(el, 'Home')!
+    // The house (YAZ-920), not `FolderPageGlyph` — whose square-and-cross is a rect plus lines.
+    expect(home.querySelector('.tree__glyph path')).not.toBeNull()
+    expect(home.querySelector('.tree__glyph rect')).toBeNull()
+    expect(rowFor(el, 'Metrics')?.querySelector('.tree__glyph rect')).not.toBeNull()
+    // No count and no chevron: its members are the roots standing beside it, not a fold.
+    expect(countOn(el, 'Home')).toBeNull()
+    expect(home.querySelector('.tree__chevron--none')).not.toBeNull()
+    expect(chevrons(el, 'Expand Home')).toHaveLength(0)
+    // …and the row cannot be made to descend from any direction: clicking it opens, only.
+    await click(home)
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized'])
   })
 
   it('a Home that belongs somewhere still LEADS — and can never appear inside itself', async () => {
@@ -267,9 +326,31 @@ describe('the roots rule (🔒 D2): Home first, then every other unparented fold
     expect(rootsOf(records)).toEqual([HOME, PROJECTS])
     const { el } = await mount({ source: sourceOver(records) })
     await click(chevrons(el, 'Expand Projects')[0])
-    // Projects > Home, and Home's own branch holds Projects' guard: no third rung, ever.
+    // Projects > Home, and there is no third rung: the nested Home is the SAME pinned leaf
+    // (YAZ-920) wherever it stands, so it descends into nothing and offers no chevron either.
     expect(labels(el)).toEqual(['Home', 'Projects', 'Home'])
     expect(chevrons(el, 'Expand Home')).toHaveLength(0)
+  })
+
+  it('what the tree cannot draw stands in Uncategorized: a note whose only parent is the leaf Home', async () => {
+    // Guide's one parent is Home — which unfolds nothing (YAZ-920), so no row would draw it.
+    // 🔒 D7's honest answer, as YAZ-920 amends it: Uncategorized is what the tree does NOT draw,
+    // computed from the SAME descent the rows come from — never "no parents" read off the index.
+    const GUIDE = `${ROOT}/Guide.md`
+    const records = [folder(HOME), folder(METRICS, belongs('[[Home]]')), rec(GUIDE, belongs('[[Home]]'))]
+    const { el } = await mount({ source: sourceOver(records) })
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Uncategorized'])
+    await click(rowFor(el, 'Uncategorized')!)
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Uncategorized', 'Guide'])
+  })
+
+  it('an A↔B loop hanging only off Home surfaces in Uncategorized instead of vanishing', async () => {
+    // Neither is promoted (each has a non-Home parent: the other), neither is reachable from any
+    // root — before the reachability rule they had NO row anywhere. Nothing silently disappears.
+    const records = [folder(HOME), folder(`${ROOT}/A.md`, belongs('[[Home]]', '[[B]]')), folder(`${ROOT}/B.md`, belongs('[[A]]'))]
+    const { el } = await mount({ source: sourceOver(records) })
+    await click(rowFor(el, 'Uncategorized')!)
+    expect(labels(el)).toEqual(['Home', 'Uncategorized', 'A', 'B'])
   })
 
   it('an empty snapshot (before the first index) renders NOTHING — not even the Uncategorized row', async () => {
@@ -294,77 +375,236 @@ describe('the rows (🔒 D3): the file tree\'s two open handlers, a chevron of i
 
   it('the chevron only EXPANDS — it never opens the page under it', async () => {
     const { el, props } = await mount({ source: sourceOver(vault()) })
-    await click(chevrons(el, 'Expand Home')[0])
+    await click(chevrons(el, 'Expand Metrics')[0])
     expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Churn', 'Revenue', 'Projects', 'Uncategorized'])
+    await click(chevrons(el, 'Collapse Metrics')[0])
     expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized'])
-    await click(chevrons(el, 'Collapse Home')[0])
-    expect(labels(el)).toEqual(['Home', 'Projects', 'Uncategorized'])
   })
 
   it('folder-page rows wear the glyph and their DIRECT-member count; leaves wear neither', async () => {
     const { el } = await mount({ source: sourceOver(vault()) })
-    await click(chevrons(el, 'Expand Home')[0])
     await click(chevrons(el, 'Expand Metrics')[0])
-    expect(countOn(el, 'Home')).toBe('1')
     expect(countOn(el, 'Metrics')).toBe('2')
     expect(countOn(el, 'Projects')).toBe('0')
     expect(countOn(el, 'Revenue')).toBeNull()
+    // Home is the one folder page that counts NOTHING (YAZ-920) — its own case is pinned with
+    // the roots rule above, beside the house it wears in place of the glyph.
+    expect(countOn(el, 'Home')).toBeNull()
     expect(rowFor(el, 'Metrics')?.querySelector('.tree__glyph')).not.toBeNull()
     expect(rowFor(el, 'Revenue')?.querySelector('.tree__glyph')).toBeNull()
   })
 
   it('indents by 8 + depth * 14, exactly as the file tree does', async () => {
-    const { el } = await mount({ source: sourceOver(vault()) })
-    await click(chevrons(el, 'Expand Home')[0])
+    // Three rungs since YAZ-920 means hanging them off a TOPIC: Home is a leaf and holds none.
+    const SUB = `${ROOT}/Sub.md`
+    const records = [folder(HOME), folder(METRICS, belongs('[[Home]]')), folder(SUB, belongs('[[Metrics]]')), rec(`${ROOT}/Revenue.md`, belongs('[[Sub]]'))]
+    const { el } = await mount({ source: sourceOver(records) })
     await click(chevrons(el, 'Expand Metrics')[0])
-    expect(indentOf(el, 'Home')).toBe('8px')
-    expect(indentOf(el, 'Metrics')).toBe('22px')
+    await click(chevrons(el, 'Expand Sub')[0])
+    expect(indentOf(el, 'Metrics')).toBe('8px')
+    expect(indentOf(el, 'Sub')).toBe('22px')
     expect(indentOf(el, 'Revenue')).toBe('36px')
   })
 
   it('the open file is highlighted wherever it stands', async () => {
-    const records = [folder(HOME), folder(PROJECTS), rec(`${ROOT}/Shared.md`, belongs('[[Home]]', '[[Projects]]'))]
+    const records = [
+      folder(HOME),
+      folder(METRICS, belongs('[[Home]]')),
+      folder(PROJECTS),
+      rec(`${ROOT}/Shared.md`, belongs('[[Metrics]]', '[[Projects]]')),
+    ]
     const { el } = await mount({ source: sourceOver(records), activeFile: `${ROOT}/Shared.md` })
-    await click(chevrons(el, 'Expand Home')[0])
+    await click(chevrons(el, 'Expand Metrics')[0])
     await click(chevrons(el, 'Expand Projects')[0])
     expect(rows(el).filter((r) => r.classList.contains('tree__row--active'))).toHaveLength(2)
   })
 })
 
-// ---------------------------------------------------------------- ⚡ YAZ-870: the row unfolds
+// ------------------------------------------- ⚡ YAZ-870 + YAZ-921: the row unfolds, then commits
 
-describe('the row gesture opens AND unfolds (⚡ YAZ-870, the amendment on 🔒 D3)', () => {
-  it('a row click on a folder page opens it AND expands it in place', async () => {
+/**
+ * The row gesture, in the shape YAZ-921 leaves it. YAZ-870's ruling still stands where it was
+ * aimed — NAVIGATION never folds the tree under you — but YAZ-921 splits off the two gestures
+ * that are not navigation:
+ *
+ *  - the TOPIC you are already reading toggles its fold on every activation, BOTH directions,
+ *    and opens nothing (its document IS its outline, so there is nowhere else to go);
+ *  - the PLAIN page you are already reading COMMITS: the caret jumps into the editor's own
+ *    ProseMirror node instead of opening the file a second time.
+ *
+ * ⌘-click is untouched: a background tab, no unfold, no caret.
+ */
+describe('the row gesture: open + unfold (⚡ YAZ-870), then toggle or commit (YAZ-921)', () => {
+  const REVENUE = `${ROOT}/Revenue.md`
+  /** Stands in for the mounted editor, so a commit has a real caret target to land on. */
+  const editorStub = (): HTMLElement => {
+    const instance = document.createElement('div')
+    instance.className = 'editor-instance'
+    const pm = document.createElement('div')
+    pm.className = 'ProseMirror'
+    pm.tabIndex = -1
+    instance.appendChild(pm)
+    document.body.appendChild(instance)
+    return pm
+  }
+
+  it('a row click on a topic you are NOT on opens it AND expands it in place', async () => {
     const { el, props } = await mount({ source: sourceOver(vault()) })
-    await click(rowFor(el, 'Home')!)
-    expect(props.onOpenFile).toHaveBeenCalledWith(HOME)
-    expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized'])
+    await click(rowFor(el, 'Metrics')!)
+    expect(props.onOpenFile).toHaveBeenCalledWith(METRICS)
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Churn', 'Revenue', 'Projects', 'Uncategorized'])
     // …and through the same 🔒 D4 bucket a chevron expansion takes, so it persists.
-    expect(storage.getTopicsExpanded(ROOT)).toEqual([HOME])
+    expect(storage.getTopicsExpanded(ROOT)).toEqual([METRICS])
   })
 
-  it('a second click never collapses — the chevron keeps that gesture to itself', async () => {
+  it('a second click on a topic you are NOT on still only unfolds — navigation cannot fold the tree under you', async () => {
+    // ⚡ YAZ-870's add-only half, exactly where it was aimed: `activeFile` is still elsewhere,
+    // so both clicks are real navigation and the second one leaves the fold open.
     const { el } = await mount({ source: sourceOver(vault()) })
-    await click(rowFor(el, 'Home')!)
-    await click(rowFor(el, 'Home')!)
+    await click(rowFor(el, 'Metrics')!)
+    await click(rowFor(el, 'Metrics')!)
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Churn', 'Revenue', 'Projects', 'Uncategorized'])
+    await click(chevrons(el, 'Collapse Metrics')[0])
     expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized'])
-    await click(chevrons(el, 'Collapse Home')[0])
-    expect(labels(el)).toEqual(['Home', 'Projects', 'Uncategorized'])
   })
 
-  it('⌘-click still means "not now": a background tab, and the tree does not move', async () => {
-    const { el, props } = await mount({ source: sourceOver(vault()) })
-    await click(rowFor(el, 'Home')!, { metaKey: true })
-    expect(props.onOpenFileBackground).toHaveBeenCalledWith(HOME)
-    expect(labels(el)).toEqual(['Home', 'Projects', 'Uncategorized'])
+  it('clicking the TOPIC you are already reading TOGGLES its fold — both directions, and never navigates', async () => {
+    // YAZ-921's amendment on ⚡ YAZ-870: a click on the page you are already on is not
+    // navigation, so it is free to fold — and it must not re-open the file either.
+    const { el, props } = await mount({ source: sourceOver(vault()), activeFile: METRICS })
+    await click(rowFor(el, 'Metrics')!)
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Churn', 'Revenue', 'Projects', 'Uncategorized'])
+    await click(rowFor(el, 'Metrics')!)
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized'])
     expect(storage.getTopicsExpanded(ROOT)).toEqual([])
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+  })
+
+  it('⌘-click still means "not now": a background tab, the tree does not move, the caret stays put', async () => {
+    const pm = editorStub()
+    const { el, props } = await mount({ source: sourceOver(vault()), activeFile: METRICS })
+    await click(rowFor(el, 'Metrics')!, { metaKey: true })
+    expect(props.onOpenFileBackground).toHaveBeenCalledWith(METRICS)
+    // Neither of YAZ-921's two gestures fires under ⌘: no toggle, and no commit into the text.
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized'])
+    expect(storage.getTopicsExpanded(ROOT)).toEqual([])
+    expect(document.activeElement).not.toBe(pm)
   })
 
   it('a folder page with nothing under it just opens — nothing to unfold, nothing recorded', async () => {
     const { el, props } = await mount({ source: sourceOver(vault()) })
     await click(rowFor(el, 'Projects')!)
     expect(props.onOpenFile).toHaveBeenCalledWith(PROJECTS)
-    expect(labels(el)).toEqual(['Home', 'Projects', 'Uncategorized'])
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized'])
+    expect(storage.getTopicsExpanded(ROOT)).toEqual([])
+  })
+
+  it('the FIRST activation of a plain page opens it and leaves focus in the tree', async () => {
+    const pm = editorStub()
+    const { el, props } = await mount({ source: sourceOver(vault()) })
+    await click(chevrons(el, 'Expand Metrics')[0])
+    await click(rowFor(el, 'Revenue')!)
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(REVENUE)
+    // The walk stays armed: nothing reaches into the editor on the way in.
+    expect(document.activeElement).not.toBe(pm)
+  })
+
+  it('the SECOND activation of the plain page you are already reading COMMITS: the caret, not another open', async () => {
+    const pm = editorStub()
+    const { el, props } = await mount({ source: sourceOver(vault()), activeFile: REVENUE })
+    await click(chevrons(el, 'Expand Metrics')[0])
+    await click(rowFor(el, 'Revenue')!)
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(pm)
+  })
+})
+
+// ---------------------------------------------------------------- YAZ-921: the keyboard walk
+
+/**
+ * Walking the tree from the keyboard (YAZ-921). The whole lens is wrapped in ONE div carrying an
+ * `onKeyDown`, so every row's key press is answered in one place:
+ *
+ *  - ↓ / ↑ rove DOM focus across every `.tree__row` in DOCUMENT order — topics, pages and the
+ *    Uncategorized rows alike. From outside the rows ↓ enters at the first and ↑ at the last;
+ *    both ends CLAMP rather than wrap.
+ *  - ← folds the focused row and → unfolds it, through the same expanded / onExpandedChange
+ *    contract the chevron uses and WITHOUT ever opening the page (Enter is the visit). Only in
+ *    the direction there is somewhere to go, and only on a row with a REAL chevron: leaves and
+ *    the Uncategorized header (which carries no `data-path`) ignore both.
+ */
+describe('the keyboard walk (YAZ-921): ↑/↓ rove focus, ←/→ fold without visiting', () => {
+  it('every topic row carries its own data-path; the Uncategorized header carries none', async () => {
+    const { el } = await mount({ source: sourceOver(vault()) })
+    expect(rows(el).map((r) => r.dataset.path)).toEqual([HOME, METRICS, PROJECTS, undefined])
+  })
+
+  it('↓ enters at the first row and walks every visible row in document order, clamping at the end', async () => {
+    const { el } = await mount({ source: sourceOver(vault()) })
+    await click(chevrons(el, 'Expand Metrics')[0])
+    expect(focused(el)).toBeNull() // from OUTSIDE the rows
+    await press(host(el), 'ArrowDown')
+    expect(focused(el)).toBe('Home')
+    for (const next of ['Metrics', 'Churn', 'Revenue', 'Projects', 'Uncategorized']) {
+      await press(document.activeElement as Element, 'ArrowDown')
+      expect(focused(el)).toBe(next)
+    }
+    await press(document.activeElement as Element, 'ArrowDown')
+    expect(focused(el)).toBe('Uncategorized') // the end clamps; it never wraps round to Home
+  })
+
+  it('↑ enters at the LAST row and walks back up, clamping at the top', async () => {
+    const { el } = await mount({ source: sourceOver(vault()) })
+    await press(host(el), 'ArrowUp')
+    expect(focused(el)).toBe('Uncategorized')
+    for (const next of ['Projects', 'Metrics', 'Home']) {
+      await press(document.activeElement as Element, 'ArrowUp')
+      expect(focused(el)).toBe(next)
+    }
+    await press(document.activeElement as Element, 'ArrowUp')
+    expect(focused(el)).toBe('Home')
+  })
+
+  it('→ unfolds the focused row and ← folds it — through the 🔒 D4 bucket, and never opening it', async () => {
+    const { el, props } = await mount({ source: sourceOver(vault()) })
+    const metrics = rowFor(el, 'Metrics')!
+    metrics.focus()
+    await press(metrics, 'ArrowRight')
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Churn', 'Revenue', 'Projects', 'Uncategorized'])
+    expect(storage.getTopicsExpanded(ROOT)).toEqual([METRICS])
+    await press(metrics, 'ArrowLeft')
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized'])
+    expect(storage.getTopicsExpanded(ROOT)).toEqual([])
+    // The walk tidies the tree; it never visits. Enter (the row's own click) is the visit.
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+  })
+
+  it('each arrow acts in ONE direction only: → on an open row and ← on a closed one do nothing', async () => {
+    const { el } = await mount({ source: sourceOver(vault()) })
+    const metrics = rowFor(el, 'Metrics')!
+    metrics.focus()
+    await press(metrics, 'ArrowLeft') // already closed
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized'])
+    await press(metrics, 'ArrowRight')
+    await press(metrics, 'ArrowRight') // already open — not a toggle
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Churn', 'Revenue', 'Projects', 'Uncategorized'])
+    expect(storage.getTopicsExpanded(ROOT)).toEqual([METRICS])
+  })
+
+  it('a row with no REAL chevron ignores ←/→: the pinned Home, a leaf, and the Uncategorized header', async () => {
+    const { el } = await mount({ source: sourceOver(vault()) })
+    for (const label of ['Home', 'Projects', 'Uncategorized']) {
+      const row = rowFor(el, label)!
+      row.focus()
+      await press(row, 'ArrowRight')
+      await press(row, 'ArrowLeft')
+    }
+    // Nothing unfolded — the header's own section included, which ← / → must not drive.
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized'])
     expect(storage.getTopicsExpanded(ROOT)).toEqual([])
   })
 })
@@ -373,30 +613,34 @@ describe('the row gesture opens AND unfolds (⚡ YAZ-870, the amendment on 🔒 
 
 describe('the descent: guardedChildren only (⚡ D6), ordered per level by its OWN settings ([D5])', () => {
   it('orders each level by that level\'s folder page, falling back to alphabetical', async () => {
+    // The ordering lives on the folder page that OWNS the members, so since YAZ-920 it is pinned
+    // on a topic rather than on Home — which now owns nobody to order.
     const records = [
-      folder(HOME, ordered('[[Zulu]]')),
-      rec(`${ROOT}/Alpha.md`, belongs('[[Home]]')),
-      rec(`${ROOT}/Zulu.md`, belongs('[[Home]]')),
-      folder(`${ROOT}/Mid.md`, belongs('[[Home]]')),
+      folder(HOME),
+      folder(METRICS, { ...belongs('[[Home]]'), ...ordered('[[Zulu]]') }),
+      rec(`${ROOT}/Alpha.md`, belongs('[[Metrics]]')),
+      rec(`${ROOT}/Zulu.md`, belongs('[[Metrics]]')),
+      folder(`${ROOT}/Mid.md`, belongs('[[Metrics]]')),
       rec(`${ROOT}/Beta.md`, belongs('[[Mid]]')),
       rec(`${ROOT}/Aleph.md`, belongs('[[Mid]]')),
     ]
     const { el } = await mount({ source: sourceOver(records) })
-    await click(chevrons(el, 'Expand Home')[0])
-    // Home's own `order` places Zulu first; the unlisted rest follow alphabetically. (Every page
+    await click(chevrons(el, 'Expand Metrics')[0])
+    // Metrics' own `order` places Zulu first; the unlisted rest follow alphabetically. (Every page
     // here has a home and Home itself is a root, so there is no Uncategorized row at all.)
-    expect(labels(el)).toEqual(['Home', 'Zulu', 'Alpha', 'Mid'])
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Zulu', 'Alpha', 'Mid'])
     await click(chevrons(el, 'Expand Mid')[0])
-    // Mid declares no order at all, so ITS level is all-alphabetical — Home's order says nothing here.
-    expect(labels(el)).toEqual(['Home', 'Zulu', 'Alpha', 'Mid', 'Aleph', 'Beta'])
+    // Mid declares no order at all, so ITS level is all-alphabetical — Metrics' order says nothing here.
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Zulu', 'Alpha', 'Mid', 'Aleph', 'Beta'])
   })
 
   it('an A ↔ B loop renders FINITELY: the branch ends quietly where an ancestor comes round again', async () => {
-    const records = [folder(HOME), folder(`${ROOT}/A.md`, belongs('[[Home]]', '[[B]]')), folder(`${ROOT}/B.md`, belongs('[[A]]'))]
+    // A's parents are Projects AND B, so YAZ-920 promotes nothing here: the loop hangs off a root.
+    const records = [folder(PROJECTS), folder(`${ROOT}/A.md`, belongs('[[Projects]]', '[[B]]')), folder(`${ROOT}/B.md`, belongs('[[A]]'))]
     const { el } = await mount({ source: sourceOver(records) })
-    await click(chevrons(el, 'Expand Home')[0])
+    await click(chevrons(el, 'Expand Projects')[0])
     await click(chevrons(el, 'Expand A')[0])
-    expect(labels(el)).toEqual(['Home', 'A', 'B'])
+    expect(labels(el)).toEqual(['Projects', 'A', 'B'])
     // B's only member is A, already standing above it — so B offers no chevron at all.
     expect(chevrons(el, 'Expand B')).toHaveLength(0)
     // …and the count still tells the truth about B: A really does belong to it.
@@ -404,34 +648,40 @@ describe('the descent: guardedChildren only (⚡ D6), ordered per level by its O
   })
 
   it('a diamond renders under BOTH parents (a path guard, never a global visited set)', async () => {
-    const records = [folder(HOME), folder(PROJECTS), rec(`${ROOT}/Shared.md`, belongs('[[Home]]', '[[Projects]]'))]
+    const records = [
+      folder(HOME),
+      folder(METRICS, belongs('[[Home]]')),
+      folder(PROJECTS),
+      rec(`${ROOT}/Shared.md`, belongs('[[Metrics]]', '[[Projects]]')),
+    ]
     const { el } = await mount({ source: sourceOver(records) })
-    await click(chevrons(el, 'Expand Home')[0])
+    await click(chevrons(el, 'Expand Metrics')[0])
     await click(chevrons(el, 'Expand Projects')[0])
-    expect(labels(el)).toEqual(['Home', 'Shared', 'Projects', 'Shared'])
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Shared', 'Projects', 'Shared'])
   })
 
   it('expanding ONE occurrence of a multi-parent page expands them ALL (🔒 D4: keyed by page path)', async () => {
     const records = [
       folder(HOME),
+      folder(METRICS, belongs('[[Home]]')),
       folder(PROJECTS),
-      folder(`${ROOT}/Shared.md`, belongs('[[Home]]', '[[Projects]]')),
+      folder(`${ROOT}/Shared.md`, belongs('[[Metrics]]', '[[Projects]]')),
       rec(`${ROOT}/Leaf.md`, belongs('[[Shared]]')),
     ]
     const { el } = await mount({ source: sourceOver(records) })
-    await click(chevrons(el, 'Expand Home')[0])
+    await click(chevrons(el, 'Expand Metrics')[0])
     await click(chevrons(el, 'Expand Projects')[0])
-    expect(labels(el)).toEqual(['Home', 'Shared', 'Projects', 'Shared'])
-    await click(chevrons(el, 'Expand Shared')[0]) // the occurrence under Home
-    expect(labels(el)).toEqual(['Home', 'Shared', 'Leaf', 'Projects', 'Shared', 'Leaf'])
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Shared', 'Projects', 'Shared'])
+    await click(chevrons(el, 'Expand Shared')[0]) // the occurrence under Metrics
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Shared', 'Leaf', 'Projects', 'Shared', 'Leaf'])
   })
 
   it('a refetched snapshot rebuilds the tree in place — no fetch, no watcher of its own', async () => {
     const source = sourceOver(vault())
     const { el } = await mount({ source })
-    expect(labels(el)).toEqual(['Home', 'Projects', 'Uncategorized'])
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized'])
     await act(async () => source.update([...vault(), folder(`${ROOT}/Aha.md`)]))
-    expect(labels(el)).toEqual(['Home', 'Aha', 'Projects', 'Uncategorized'])
+    expect(labels(el)).toEqual(['Home', 'Aha', 'Metrics', 'Projects', 'Uncategorized'])
   })
 })
 
@@ -444,10 +694,10 @@ describe('Uncategorized (🔒 D7): a muted row that expands IN PLACE, minus what
     // this surface subtracts them because they are already on screen. Loose is what is left.
     expect(countOn(el, 'Uncategorized')).toBe('1')
     await click(rowFor(el, 'Uncategorized')!)
-    expect(labels(el)).toEqual(['Home', 'Projects', 'Uncategorized', 'Loose'])
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized', 'Loose'])
     expect(indentOf(el, 'Loose')).toBe('22px')
     await click(rowFor(el, 'Uncategorized')!)
-    expect(labels(el)).toEqual(['Home', 'Projects', 'Uncategorized'])
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized'])
   })
 
   it('is muted, and its rows open like any other (⌘-click included) — never a page of its own', async () => {
@@ -459,46 +709,53 @@ describe('Uncategorized (🔒 D7): a muted row that expands IN PLACE, minus what
     expect(props.onOpenFile).not.toHaveBeenCalled()
   })
 
-  it('hides itself entirely when every page has a home', async () => {
-    const records = [folder(HOME), rec(`${ROOT}/Revenue.md`, belongs('[[Home]]'))]
+  it('hides itself entirely when every page already stands somewhere', async () => {
+    // Metrics belongs to Home AND is promoted beside it (YAZ-920) — either way it is on screen,
+    // so the subtraction empties the section out and the muted row goes with it.
+    const records = [folder(HOME), folder(METRICS, belongs('[[Home]]'))]
     const { el } = await mount({ source: sourceOver(records) })
-    expect(labels(el)).toEqual(['Home'])
+    expect(labels(el)).toEqual(['Home', 'Metrics'])
   })
 })
 
 // ---------------------------------------------------------------- 🔒 D4: persistence
 
 describe('expansion persists through the per-vault storage bucket (🔒 D4)', () => {
-  it('restores the open pages from folders[root].topicsExpanded', async () => {
+  it('restores the open pages from folders[root].topicsExpanded, at every depth', async () => {
+    const SUB = `${ROOT}/Sub.md`
+    const deep = [...vault(), folder(SUB, belongs('[[Metrics]]')), rec(`${ROOT}/Deep.md`, belongs('[[Sub]]'))]
     const state = defaultAppState()
-    state.folders = { [ROOT]: { ...defaultFolderState(), topicsExpanded: [HOME, METRICS] } }
+    state.folders = { [ROOT]: { ...defaultFolderState(), topicsExpanded: [METRICS, SUB] } }
     await initStorage(state)
-    const { el } = await mount({ source: sourceOver(vault()) })
-    expect(labels(el)).toEqual(['Home', 'Metrics', 'Churn', 'Revenue', 'Projects', 'Uncategorized'])
+    const { el } = await mount({ source: sourceOver(deep) })
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Churn', 'Revenue', 'Sub', 'Deep', 'Projects', 'Uncategorized'])
     // Restoring is not a write: the value already on disk is not sent back.
     expect(bridgeSetFolder).not.toHaveBeenCalled()
   })
 
   it('writes PAGE PATHS back through the bucket on every toggle, keyed by this vault', async () => {
-    const { el } = await mount({ source: sourceOver(vault()) })
-    await click(chevrons(el, 'Expand Home')[0])
-    expect(storage.getTopicsExpanded(ROOT)).toEqual([HOME])
-    expect(bridgeSetFolder).toHaveBeenLastCalledWith(ROOT, { topicsExpanded: [HOME] })
+    // Two nested topics, since Home holds no fold of its own since YAZ-920.
+    const SUB = `${ROOT}/Sub.md`
+    const deep = [...vault(), folder(SUB, belongs('[[Metrics]]')), rec(`${ROOT}/Deep.md`, belongs('[[Sub]]'))]
+    const { el } = await mount({ source: sourceOver(deep) })
     await click(chevrons(el, 'Expand Metrics')[0])
-    expect(storage.getTopicsExpanded(ROOT)).toEqual([HOME, METRICS])
-    await click(chevrons(el, 'Collapse Home')[0])
     expect(storage.getTopicsExpanded(ROOT)).toEqual([METRICS])
     expect(bridgeSetFolder).toHaveBeenLastCalledWith(ROOT, { topicsExpanded: [METRICS] })
+    await click(chevrons(el, 'Expand Sub')[0])
+    expect(storage.getTopicsExpanded(ROOT)).toEqual([METRICS, SUB])
+    await click(chevrons(el, 'Collapse Metrics')[0])
+    expect(storage.getTopicsExpanded(ROOT)).toEqual([SUB])
+    expect(bridgeSetFolder).toHaveBeenLastCalledWith(ROOT, { topicsExpanded: [SUB] })
   })
 
   it('survives a remount — the lens switch away and back (the tree is unmounted meanwhile)', async () => {
     const first = await mount({ source: sourceOver(vault()) })
-    await click(chevrons(first.el, 'Expand Home')[0])
+    await click(chevrons(first.el, 'Expand Metrics')[0])
     act(() => root?.unmount())
     root = null
     container?.remove()
     const { el } = await mount({ source: sourceOver(vault()) })
-    expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized'])
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Churn', 'Revenue', 'Projects', 'Uncategorized'])
   })
 })
 
@@ -513,8 +770,9 @@ describe('the offer card (6C-, YAZ-849): un-adopted AND no Home, and nothing els
     expect(card(el)?.textContent).toContain('Your map starts here')
     expect(offerButton(el)?.textContent).toBe('Create Home')
     // First thing in the lens, and it REPLACES nothing: the tree still stands Projects up and
-    // still lists the orphan (there is never a silent fallback to Files).
-    expect(el.firstElementChild).toBe(card(el))
+    // still lists the orphan (there is never a silent fallback to Files). "First" is measured
+    // inside the walk's host div (YAZ-921), which is what the lens renders into now.
+    expect(host(el).firstElementChild).toBe(card(el))
     expect(labels(el)).toEqual(['Projects', 'Uncategorized'])
   })
 

@@ -58,8 +58,12 @@ export function PageTitle({ path, isHome, onRename, onNotice, onArrowDown }: Pag
   if (editing) {
     return (
       <div className="page-title">
-        <input
+        {/* A textarea, not an input (YAZ-918): a long name WRAPS at the title's own size while
+            edited — `field-sizing: content` grows it to the text; a file name has no newlines,
+            so Enter stays commit. */}
+        <textarea
           autoFocus
+          rows={1}
           className="page-title__input"
           defaultValue={name}
           spellCheck={false}

@@ -42,7 +42,24 @@ const Chevron = ({ d }: { d: string }) => (
  */
 export function TabBar({ tabs, active, onActivate, onClose, onMove, canBack, canForward, onBack, onForward }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
+  // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path.
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
   const activeRef = useRef<HTMLDivElement | null>(null)
+
+  // Any press or Escape outside the menu dismisses it — the menu's own button stops propagation.
+  useEffect(() => {
+    if (menu === null) return
+    const close = () => setMenu(null)
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenu(null)
+    }
+    window.addEventListener('mousedown', close)
+    window.addEventListener('keydown', key)
+    return () => {
+      window.removeEventListener('mousedown', close)
+      window.removeEventListener('keydown', key)
+    }
+  }, [menu])
 
   // Overflow polish (I3): tabs shrink to a floor and the strip scrolls, so scroll the active
   // tab fully into view on every activation. jsdom has no scrollIntoView — hence the `?.()`.
@@ -124,6 +141,10 @@ export function TabBar({ tabs, active, onActivate, onClose, onMove, canBack, can
                 e.preventDefault()
                 drop(insertionAt(e, i))
               }}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                setMenu({ x: e.clientX, y: e.clientY, path })
+              }}
             >
               <button
                 type="button"
@@ -146,6 +167,21 @@ export function TabBar({ tabs, active, onActivate, onClose, onMove, canBack, can
           )
         })}
       </div>
+      {menu !== null && (
+        <div className="ctx-menu" role="menu" style={{ left: menu.x, top: menu.y }} onMouseDown={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className="ctx-menu__item"
+            role="menuitem"
+            onClick={() => {
+              void navigator.clipboard.writeText(menu.path)
+              setMenu(null)
+            }}
+          >
+            Copy path
+          </button>
+        </div>
+      )}
     </div>
   )
 }

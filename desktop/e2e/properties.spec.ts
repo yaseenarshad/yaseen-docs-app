@@ -103,11 +103,12 @@ test('step 1 — the raw block edits in place, and the save is byte-for-byte the
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText('props-note-body')
 
-  // Block ONE: after the title, before the Crepe mount — and quiet, collapsed, counting keys.
+  // Block ZERO is the header ROW now (YAZ-918): the title and the panel share it, the chip at
+  // its right edge — then the Crepe mount. Quiet, collapsed, counting keys.
   const blocks = await layer(win)
     .locator('.editor-host')
     .evaluate((host) => Array.from(host.children).map((c) => c.className))
-  expect(blocks.slice(0, 3)).toEqual(['page-title', 'frontmatter-panel', 'editor-mount'])
+  expect(blocks.slice(0, 2)).toEqual(['page-header', 'editor-mount'])
   await expect(panelHeader(win)).toHaveText('Properties (3)')
   await expect(yaml(win)).toHaveCount(0)
   await shoot(win, 'props-01-collapsed')

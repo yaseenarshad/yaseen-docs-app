@@ -288,6 +288,11 @@ describe('CrepeHost empty frontmatter block (GRO-2216)', () => {
  * Links D (GRO-2193): the "Linked mentions" section is part of the MARKDOWN editor's scrollable
  * content — appended after the Crepe mount inside `.editor-host`, so it scrolls with the note —
  * and a page with no wikilink feed gets none.
+ *
+ * The scroller's own block ORDER is pinned here too, and YAZ-918 changed it: the title and the
+ * properties panel now share ONE `.page-header` row, so the host's children read
+ * `page-header, editor-mount, …` where they used to read `page-title, frontmatter-panel, …`.
+ * The header's two halves are pinned inside it, so nothing the old order said is given up.
  */
 describe('Editor backlinks section (Links D, GRO-2193)', () => {
   const record = (path: string, links: string[] = [], properties: Record<string, unknown> = {}): IndexRecord => {
@@ -321,16 +326,19 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     expect(el.querySelector('.backlinks')).toBeNull() // no snapshot yet → nothing at all
     feed(source, [record('/vault/other.md', ['note']), record(PATH)])
     const host = el.querySelector('.editor-host')
-    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'frontmatter-panel', 'editor-mount', 'backlinks'])
+    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'backlinks'])
+    // …and block zero is ONE row of two (YAZ-918): the title with the properties panel beside it.
+    expect([...(host?.querySelector('.page-header')?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'frontmatter-panel'])
     expect(host?.querySelector('.editor-mount .editor-instance')).not.toBeNull()
     expect(host?.querySelector('.backlinks__header')?.textContent).toBe('Linked mentions (1)')
   })
 
   /**
    * The folder page's contents block (YAZ-819, 🔒 D1) sits between the Crepe mount and the
-   * backlinks (only when the open record carries the flag) — the fourth of the scroller's five
-   * blocks since the properties panel took block ONE (⚡ YAZ-883). Order is the placement rule,
-   * so it is pinned as an order.
+   * backlinks (only when the open record carries the flag) — the third of the scroller's four
+   * blocks since the title and the properties panel became ONE `.page-header` row (YAZ-918,
+   * which amends ⚡ YAZ-883's "the panel is block one"). Order is the placement rule, so it is
+   * pinned as an order.
    */
   it('a FOLDER PAGE renders its contents between the mount and the backlinks', async () => {
     const source = createWikilinkResolveSource()
@@ -340,9 +348,10 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
       record(PATH, [], { folder_page: true }),
     ])
     const host = el.querySelector('.editor-host')
-    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'frontmatter-panel', 'editor-mount', 'folder-page-contents', 'backlinks'])
-    // fed the pages that belong to it, and no title row of its own — block zero already names
-    // the page (⚡ YAZ-888).
+    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'folder-page-contents', 'backlinks'])
+    expect([...(host?.querySelector('.page-header')?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'frontmatter-panel'])
+    // fed the pages that belong to it, and no title row of its own — the header row already
+    // names the page (⚡ YAZ-888, unchanged by the wrapping).
     // Q7's default view is the OUTLINE (YAZ-820/903), whose document names them as links.
     expect(el.querySelector('.outline-doc')?.textContent).toBe('- [[member]]')
   })
@@ -352,7 +361,7 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     const el = await mount(BODY, 1, { wikilinks: source })
     feed(source, [record('/vault/member.md', ['note'], { folder_pages: ['[[note]]'] }), record(PATH)])
     const host = el.querySelector('.editor-host')
-    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'frontmatter-panel', 'editor-mount', 'backlinks'])
+    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'backlinks'])
   })
 
 })

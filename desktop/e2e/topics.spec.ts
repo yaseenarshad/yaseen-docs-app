@@ -4,21 +4,29 @@
  *
  * Driven over the committed encyclopedia (`fixtures/bible-vault`), which since 7C- is a MIGRATED
  * vault: `tools/migrateFolderPages.mjs` turned its five `page_type` values into five folder pages
- * and gave them a `Home` to hang from, so the roots rule (🔒 D2) resolves `[[Home]]` and the whole
- * encyclopedia descends from ONE row. The disk still has `funnel-stages/`, `kpis/`, `problems/`,
+ * and gave them a `Home` to hang from. The disk still has `funnel-stages/`, `kpis/`, `problems/`,
  * `roles/`, `industries/` and `inbox/`; this lens never mentions any of them — that is the point.
  * The two `inbox/` notes carry no `folder_pages` entry at all and wait under Uncategorized.
  *
+ * ⚡ YAZ-920 AMENDS 🔒 D2, and it is the shape most of this file is now about: Home is a PINNED
+ * LEAF, not the umbrella the whole encyclopedia used to hang from. It still LEADS — resolved and
+ * flagged, wearing the house — but it counts nothing, unfolds nothing and never descends, while
+ * every folder page whose parents-minus-Home are EMPTY is PROMOTED to a root beside it,
+ * path-sorted. So the map opens flat, and every row that used to sit under Home sits one rung
+ * shallower. A topic with a real, non-Home parent is untouched: it still nests under that parent.
+ *
  * The arc, in order (serial by design — each step continues the previous state):
- *   1 the roots: Home alone, with the glyph and its direct-member count, collapsed
- *   2 the chevrons descend two rungs — Home's five folder pages in Home's own `order`, then
- *     Funnel Stages' three members in the [D5] fallback — each indented one rung further
- *   3 a row click OPENS the page (the file tree's own handler) AND unfolds a folder page in
- *     the same gesture (⚡ YAZ-870) — a second click never folds; the chevron never opens
+ *   1 the roots: the pinned leaf Home — house glyph, no count, no chevron — then the five
+ *     promoted topics beside it, glyphed and counted, all at the SAME root indent
+ *   2 the chevrons descend ONE rung, from the topics themselves — Funnel Stages' three members in
+ *     the [D5] fallback — and "Expand all" opens every topic while never naming Home
+ *   3 a row click OPENS the page (the file tree's own handler) AND unfolds a folder page in the
+ *     same gesture (⚡ YAZ-870); clicking the topic you are ALREADY reading folds it (⚡ YAZ-917);
+ *     the pinned leaf only ever opens
  *   4 the expansion survives quit → relaunch, in the main-owned `folders[root].topicsExpanded`
- *     bucket — PAGE PATHS, never written into any note's frontmatter
+ *     bucket — PAGE PATHS, never written into any note's frontmatter, and never Home's
  *   5 Uncategorized expands IN PLACE (🔒 D7, the locked deviation from the mockup), listing the
- *     two unfiled notes and subtracting both the root already on screen and everyone nested
+ *     two unfiled notes and subtracting everything the tree DRAWS — the pinned leaf included
  *   5b a member row carries the file tree's own menu, and Delete trashes the page (YAZ-865)
  *   5c "New note" ON a folder-page row births a MEMBER of it (8H, YAZ-869) — the new page shows
  *     up under that topic in the tree AND in the topic's own contents, without one hand-tag
@@ -27,7 +35,8 @@
  * a copy with `Home.md` deleted — a vault full of folder pages that answers `[[Home]]` with
  * nothing, which is exactly the shape 6C exists for.
  *   6 the OFFER: un-adopted + no Home → the card, and one click makes Home — whereupon the five
- *     orphaned topics stop being roots and snap underneath it
+ *     topics keep their places exactly (YAZ-920 promotes a Home-only member to a root) and Home
+ *     takes the pinned leaf's row above them
  *   7 the AUTO-CREATE: an ADOPTED copy grows its own Home on open, once, never overwritten
  *
  * Same harness as bible.spec.ts (temp `--user-data-dir`, a COPY of the fixture, `topics-` step
@@ -45,7 +54,11 @@ test.describe.configure({ mode: 'serial' })
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
 const HOME = 'Home.md'
 const FOLDER_PAGE = 'Funnel Stages.md'
-/** Home's members, in the `order` the migration wrote onto Home's outline view. */
+/**
+ * The five folder pages the migration made. Each says `folder_pages: ["[[Home]]"]` and nothing
+ * else, so YAZ-920 PROMOTES all five to roots beside the pinned leaf — PATH-sorted, which for
+ * five `.md` files at the vault root spells the same sequence Home's outline `order` used to.
+ */
 const TOPICS = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', 'Roles']
 /** Their direct-member counts, in the same order — the whole migrated map, on one line. */
 const TOPIC_COUNTS = ['3', '2', '5', '4', '3']
@@ -78,6 +91,8 @@ const topicRows = (w: Page) => w.locator('.sidebar__body .tree__row')
 const topicLabels = (w: Page) => w.locator('.sidebar__body .tree__row .tree__label')
 const rowFor = (w: Page, label: string) => topicRows(w).filter({ has: w.locator('.tree__label', { hasText: new RegExp(`^${label}$`) }) })
 const chevron = (w: Page, action: 'Expand' | 'Collapse', label: string) => w.locator(`.sidebar__body [aria-label="${action} ${label}"]`)
+/** The lens row's one fold-everything button (⚡ YAZ-873); its LABEL is the move it will make. */
+const foldAll = (w: Page, label: 'Expand all' | 'Collapse all') => w.locator(`.sidebar__expand-all[aria-label="${label}"]`)
 const uncategorizedRow = (w: Page) => w.locator('.sidebar__body .tree__row--muted')
 const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
 /** The VISIBLE tab layer — every visited tab keeps its own DOM mounted. */
@@ -89,9 +104,21 @@ const inlineInput = (w: Page) => w.locator('.sidebar__body .create-inline__input
 /** The folder page's contents block and its two skins — bible.spec.ts's own locators. */
 const contents = (w: Page) => layer(w).locator('.folder-page-contents')
 const viewTabs = (w: Page) => contents(w).locator('.view-tab__btn[role="tab"]')
-/** The outline is a DOCUMENT since YAZ-903: members render as its link LINES, not row buttons. */
+/** The outline is a DOCUMENT since YAZ-903: what it says is its bullet LINES, not row buttons. */
 const outlineLines = (w: Page) => contents(w).locator('.view-outline .editor-instance .content-dom > p')
+/** Its APPENDED rows: the members the document does not NAME — which, since ⚡ YAZ-919, is all of them. */
+const outlineRows = (w: Page) => contents(w).locator('.view-outline__link')
 const tableNames = (w: Page) => contents(w).locator('.view-row__link, .view-table__link')
+/**
+ * `KPIs.md`'s own body, migrated into its outline document the first time the page is opened
+ * (⚡ YAZ-919) — heading marker stripped, the blank line dropped. It names no member, so every
+ * member of KPIs stands in the appended section below it.
+ */
+const KPIS_BODY = [
+  'KPIs',
+  'The numbers the funnel is judged on. Each one names the stages it belongs to, so the same',
+  'metric can be owned jointly without anybody maintaining a second list.',
+]
 
 /** 6C's offer card and its one button. */
 const offerCard = (w: Page) => w.locator('.sidebar__body .topics-offer')
@@ -130,18 +157,36 @@ test.afterAll(async () => {
 
 // ---------------------------------------------------------------- 🔒 D2: the roots
 
-test('step 1 — the migrated shape: Home stands alone as the root, glyphed and counted, collapsed', async () => {
+test('step 1 — the migrated shape: Home a pinned LEAF, the five topics promoted to roots beside it', async () => {
   app = await launchApp({ userData, seedState: topicsState(vault, path.join(vault, HOME)) })
   win = await appWindow(app, 'w1')
 
   await expect(lensTab(win, 'Topics')).toHaveAttribute('aria-selected', 'true')
-  // `[[Home]]` resolves and carries the flag, so it leads — and the five folder pages the
-  // migration created all say they belong to it, so NONE of them is a root of its own. Collapsed
-  // by default: the whole encyclopedia is two rows.
-  await expect(topicLabels(win)).toHaveText(['Home', 'Uncategorized'])
+  // ⚡ YAZ-920 amends 🔒 D2. `[[Home]]` resolves and carries the flag, so it still LEADS — but the
+  // five folder pages the migration created say `[[Home]]` and nothing else, and a parents-minus-
+  // Home that comes out EMPTY is a promotion: all five stand as roots of their own, path-sorted,
+  // beside Home rather than one indent under it. Collapsed by default: seven rows, no descent.
+  await expect(topicLabels(win)).toHaveText(['Home', ...TOPICS, 'Uncategorized'])
+
   const root = rowFor(win, 'Home')
-  await expect(root.locator('.tree__glyph')).toBeVisible() // 🔒 D3: folder pages wear the folder-page glyph
-  await expect(root.locator('.tree__count')).toHaveText('5') // …and their DIRECT-member count
+  // THE HOUSE, not the folder-page glyph: `FolderPageGlyph` draws a `rect` and two `line`s, Home's
+  // front door two `path`s. Reading the shapes is the only way to tell the two SVGs apart at all.
+  await expect(root.locator('.tree__glyph')).toBeVisible()
+  await expect(root.locator('.tree__glyph path')).toHaveCount(2)
+  await expect(root.locator('.tree__glyph rect')).toHaveCount(0)
+  // …and it counts NOTHING and unfolds NOTHING — its members are the roots standing below it, so
+  // a count would double them and a chevron would open onto a second copy of the tree.
+  await expect(root.locator('.tree__count')).toHaveCount(0)
+  await expect(chevron(win, 'Expand', 'Home')).toHaveCount(0)
+  await expect(root.locator('.tree__chevron--none')).toHaveCount(1)
+
+  // The promoted topics are the ones that carry 🔒 D3's marks: the folder-page glyph (`rect`) and
+  // the DIRECT-member count. The whole migrated map, on one line — Home's row contributes none.
+  await expect(rowFor(win, 'Funnel Stages').locator('.tree__glyph rect')).toHaveCount(1)
+  await expect(win.locator('.sidebar__body .tree__count')).toHaveText([...TOPIC_COUNTS, String(ORPHANS.length)])
+  // 8 + depth * 14, the file tree's own indent: the leaf and all five promotions share depth 0.
+  for (const label of ['Home', ...TOPICS]) await expect(rowFor(win, label)).toHaveCSS('padding-left', '8px')
+
   // The folders on disk are nowhere here — that shape belongs to the other tab.
   // (Folder-page rows wear `.tree__row--dir` themselves: same class family, same colour.)
   await expect(rowFor(win, 'funnel-stages')).toHaveCount(0)
@@ -155,30 +200,65 @@ test('step 1 — the migrated shape: Home stands alone as the root, glyphed and 
 
 // ---------------------------------------------------------------- ⚡ D6 + [D5]: the descent
 
-test('step 2 — the chevrons descend two rungs: Home’s order, then the [D5] fallback', async () => {
-  await chevron(win, 'Expand', 'Home').click()
-  // Home's own outline `order` — written by the migration, not alphabetical (Funnel Stages leads).
-  await expect(topicLabels(win)).toHaveText(['Home', ...TOPICS, 'Uncategorized'])
-  await expect(win.locator('.sidebar__body .tree__count')).toHaveText(['5', ...TOPIC_COUNTS, String(ORPHANS.length)])
-
+test('step 2 — the chevrons descend ONE rung, from the topics themselves; “Expand all” never names Home', async () => {
   await chevron(win, 'Expand', 'Funnel Stages').click()
   // Funnel Stages declares no `order`, so its members fall through to alphabetical, one rung in.
   await expect(topicLabels(win)).toHaveText(['Home', 'Funnel Stages', ...MEMBERS, ...TOPICS.slice(1), 'Uncategorized'])
   await expect(rowFor(win, 'Funnel Stages').locator('.tree__chevron--open')).toHaveCount(1)
-  // 8 + depth * 14, the file tree's own indent: the root at 8, its topics at 22, their pages at 36.
+  // 8 + depth * 14 — and YAZ-920 took a whole rung out of every one of these: the members of a
+  // promoted topic sit at 22, where the topics themselves used to sit under the umbrella Home.
   await expect(rowFor(win, 'Home')).toHaveCSS('padding-left', '8px')
-  await expect(rowFor(win, 'Funnel Stages')).toHaveCSS('padding-left', '22px')
-  await expect(rowFor(win, 'Lead Gen')).toHaveCSS('padding-left', '36px')
+  await expect(rowFor(win, 'Funnel Stages')).toHaveCSS('padding-left', '8px')
+  await expect(rowFor(win, 'Lead Gen')).toHaveCSS('padding-left', '22px')
   // Leaves: no glyph, no count, nothing to expand.
   await expect(rowFor(win, 'Lead Gen').locator('.tree__glyph')).toHaveCount(0)
   await expect(rowFor(win, 'Lead Gen').locator('.tree__count')).toHaveCount(0)
   await expect(chevron(win, 'Expand', 'Lead Gen')).toHaveCount(0)
   await shoot(win, 'topics-02-nested-members')
+
+  // ⚡ YAZ-873's button, walking exactly the descent above (⚡ D6) — and YAZ-920's rule that the
+  // pinned leaf is never in it: all five topics open, all seventeen members show, and Home is
+  // still the chevron-less row it was. An "Expand all" that opened nothing would be a lie.
+  // (The button's LABEL is the move it will make, so it reads "Collapse all" while anything is
+  // open — folding first is how the expand-all half is reached at all.)
+  await foldAll(win, 'Collapse all').click()
+  await expect(topicLabels(win)).toHaveText(['Home', ...TOPICS, 'Uncategorized'])
+  await foldAll(win, 'Expand all').click()
+  await expect(topicLabels(win)).toHaveText([
+    'Home',
+    'Funnel Stages',
+    ...MEMBERS,
+    'Industries',
+    'PLG SaaS',
+    'VC-Backed B2B SaaS',
+    'KPIs',
+    ...KPI_MEMBERS,
+    'Problems',
+    'CRM Hygiene',
+    'Lead Quality Scoring',
+    'Nurture Sequencing',
+    'Stage Accuracy',
+    'Roles',
+    'CEO',
+    'Head of Sales',
+    'RevOps Lead',
+    'Uncategorized',
+  ])
+  await expect(chevron(win, 'Expand', 'Home')).toHaveCount(0)
+  await expect(chevron(win, 'Collapse', 'Home')).toHaveCount(0)
+  await shoot(win, 'topics-02b-expand-all')
+
+  // …and back down to the shape the rest of the arc continues from: everything folded, then the
+  // one topic step 3 and step 4 read again.
+  await foldAll(win, 'Collapse all').click()
+  await expect(topicLabels(win)).toHaveText(['Home', ...TOPICS, 'Uncategorized'])
+  await chevron(win, 'Expand', 'Funnel Stages').click()
+  await expect(topicLabels(win)).toHaveText(['Home', 'Funnel Stages', ...MEMBERS, ...TOPICS.slice(1), 'Uncategorized'])
 })
 
 // ---------------------------------------------------------------- 🔒 D3: the row gestures
 
-test('step 3 — a row click OPENS the page and unfolds it; the chevron only ever expands', async () => {
+test('step 3 — a row click OPENS the page and unfolds it; the topic you are reading folds; the leaf only opens', async () => {
   await rowFor(win, 'Lead Nurture').click()
   await expect(activeTab(win)).toHaveText('Lead Nurture')
   await expect(editorOf(win)).toContainText('Lead Nurture')
@@ -187,35 +267,45 @@ test('step 3 — a row click OPENS the page and unfolds it; the chevron only eve
   await rowFor(win, 'Industries').click()
   await expect(activeTab(win)).toHaveText('Industries')
   await expect(chevron(win, 'Collapse', 'Industries')).toHaveCount(1)
-  // …a second click never folds it back — the chevron keeps the collapse to itself.
+  // …and ⚡ YAZ-917 amends the add-only half of that ruling: YAZ-870 protected NAVIGATION from
+  // folding the tree, but a click on the topic you are ALREADY reading is not navigation — it
+  // folds like a second knock, and knocks again to unfold. The page never moves either way.
+  await rowFor(win, 'Industries').click()
+  await expect(chevron(win, 'Expand', 'Industries')).toHaveCount(1)
+  await expect(activeTab(win)).toHaveText('Industries')
   await rowFor(win, 'Industries').click()
   await expect(chevron(win, 'Collapse', 'Industries')).toHaveCount(1)
+  // The chevron is its own hit target, and it keeps the collapse whoever is on screen.
   await chevron(win, 'Collapse', 'Industries').click()
   await expect(chevron(win, 'Expand', 'Industries')).toHaveCount(1)
-
-  // The chevron is its own hit target: collapsing does not open Home over the tab above.
-  await chevron(win, 'Collapse', 'Home').click()
-  await expect(topicLabels(win)).toHaveText(['Home', 'Uncategorized'])
   await expect(activeTab(win)).toHaveText('Industries')
-  // 🔒 D4: expansion is keyed by PAGE, not by tree position — so Funnel Stages comes back open.
-  await chevron(win, 'Expand', 'Home').click()
-  await expect(topicLabels(win)).toHaveText(['Home', 'Funnel Stages', ...MEMBERS, ...TOPICS.slice(1), 'Uncategorized'])
+
+  // TOMBSTONE (YAZ-920): this step used to COLLAPSE HOME here and prove Funnel Stages came back
+  // open underneath it — 🔒 D4's keyed-by-page claim, made on the umbrella. Home unfolds nothing
+  // now, so what it proves instead is the pinned leaf's whole contract: the row OPENS the page,
+  // and the tree does not grow by a single row. D4's durable half is step 4's.
+  const before = await topicLabels(win).allTextContents()
+  await rowFor(win, 'Home').click()
+  await expect(activeTab(win)).toHaveText('Home')
+  await expect(topicLabels(win)).toHaveText(before)
   await shoot(win, 'topics-03-row-opens')
 })
 
 // ---------------------------------------------------------------- 🔒 D4: persistence
 
 test('step 4 — the expansion survives quit → relaunch, as PAGE PATHS in the app state', async () => {
-  const open = [path.join(vault, HOME), path.join(vault, FOLDER_PAGE)]
-  // A Set, so the bucket's ORDER is whatever the last toggle left (step 3 re-added Home): the
-  // durable claim is the membership, which is what the tree is rebuilt from.
+  // One entry: Funnel Stages, still open from step 2. YAZ-920 keeps Home out of this bucket by
+  // construction — a leaf has no chevron to click and its row records nothing — and step 3
+  // clicked that row, so its absence here is the pinned leaf proving itself a second time.
+  const open = [path.join(vault, FOLDER_PAGE)]
   const stored = async () => [...((await readState(userData)).folders?.[vault]?.topicsExpanded ?? [])].sort()
   await expect.poll(stored).toEqual([...open].sort())
+  expect(await stored()).not.toContain(path.join(vault, HOME))
 
   await quitApp(app)
   expect(await stored()).toEqual([...open].sort())
   // Session chrome, exactly like the `baseGroups` bucket: nothing about it reaches the page.
-  expect(await readFile(open[1], 'utf8')).not.toContain('topicsExpanded')
+  expect(await readFile(open[0], 'utf8')).not.toContain('topicsExpanded')
 
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
   win = await appWindow(app, 'w1')
@@ -225,7 +315,7 @@ test('step 4 — the expansion survives quit → relaunch, as PAGE PATHS in the 
 
 // ---------------------------------------------------------------- 🔒 D7: Uncategorized
 
-test('step 5 — Uncategorized expands IN PLACE, subtracting the root and everyone nested', async () => {
+test('step 5 — Uncategorized expands IN PLACE, subtracting everything the tree DRAWS', async () => {
   await expect(uncategorizedRow(win).locator('.tree__count')).toHaveText(String(ORPHANS.length))
   await expect(uncategorizedRow(win).locator('.tree__chevron--open')).toHaveCount(0)
   await uncategorizedRow(win).click()
@@ -240,9 +330,11 @@ test('step 5 — Uncategorized expands IN PLACE, subtracting the root and everyo
     'Uncategorized',
     ...ORPHANS,
   ])
-  // The folder page already standing as a root is NOT listed (this surface's own subtraction),
-  // and neither is anyone already nested under it.
-  await expect(rowFor(win, 'Home')).toHaveCount(1) // the root row only
+  // 🔒 D7 as ⚡ YAZ-920 restates it: the section holds what the tree does NOT DRAW, computed from
+  // the same guarded descent the rows come from. So the pinned leaf — drawn, though it descends
+  // into nothing — is not listed, and neither is a promoted root or anyone nested under one.
+  await expect(rowFor(win, 'Home')).toHaveCount(1) // the pinned leaf's row only
+  await expect(rowFor(win, 'KPIs')).toHaveCount(1) // the promoted root's row only
   await expect(rowFor(win, 'Lead Gen')).toHaveCount(1) // the nested row only
   await shoot(win, 'topics-05-uncategorized')
 
@@ -292,7 +384,9 @@ test('step 5c — “New note” on a FOLDER-PAGE row births a MEMBER of it, tre
   app = await launchApp({ userData, seedState: topicsState(own, path.join(own, HOME)) })
   win = await appWindow(app, 'w1')
 
-  await chevron(win, 'Expand', 'Home').click()
+  // No chevron to open first: YAZ-920 stands KPIs up as a root of its own, so it is on screen the
+  // moment the tree renders.
+  await expect(topicLabels(win)).toHaveText(['Home', ...TOPICS, 'Uncategorized'])
   await rowFor(win, 'KPIs').click({ button: 'right' })
   await menuItem(win, 'New note').click()
   await inlineInput(win).fill(NEW_KPI)
@@ -325,7 +419,10 @@ test('step 5c — “New note” on a FOLDER-PAGE row births a MEMBER of it, tre
   // THE TABLE: the same page, from KPIs' own contents block — both skins.
   await rowFor(win, 'KPIs').click()
   await expect(activeTab(win)).toHaveText('KPIs')
-  await expect(outlineLines(win)).toHaveText(WITH_NEW_KPI.map((n) => `[[${n}]]`))
+  // ⚡ YAZ-919: the document is KPIs' own migrated body and names nobody, so the newborn arrives
+  // in the APPENDED section — in its alphabetical place among the five that were already there.
+  await expect(outlineLines(win)).toHaveText(KPIS_BODY)
+  await expect(outlineRows(win)).toHaveText(WITH_NEW_KPI)
   await viewTabs(win).filter({ hasText: 'Table' }).click()
   await expect(tableNames(win)).toHaveCount(WITH_NEW_KPI.length)
   await expect(tableNames(win).filter({ hasText: `${NEW_KPI}.md` })).toHaveCount(1)
@@ -347,6 +444,7 @@ test('step 6 — an UN-ADOPTED folder is OFFERED a Home, never given one; one cl
   // It replaces nothing: with `[[Home]]` answering nothing, the five folder pages have no parents
   // of their own, so the roots rule stands every one of them up — path-sorted — underneath the card.
   await expect(topicLabels(win)).toHaveText([...TOPICS, 'Uncategorized'])
+  for (const label of TOPICS) await expect(rowFor(win, label)).toHaveCSS('padding-left', '8px')
   await shoot(win, 'topics-06-offer')
 
   await offerButton(win).click()
@@ -354,11 +452,17 @@ test('step 6 — an UN-ADOPTED folder is OFFERED a Home, never given one; one cl
   await expect.poll(() => onDisk(homeless, HOME)).toBe(HOME_BYTES)
   // Created AND opened, in the current tab.
   await expect(activeTab(win)).toHaveText('Home')
-  // The card retires the moment `[[Home]]` resolves — and the five topics stop being roots in the
-  // same breath, because their own `folder_pages: ["[[Home]]"]` now lands somewhere.
+  // The card retires the moment `[[Home]]` resolves. What YAZ-920 changes is what happens to the
+  // five: their own `folder_pages: ["[[Home]]"]` now lands somewhere, but a parent that IS Home
+  // subtracts to nothing, so they stay roots and stay exactly where they were — at the same
+  // indent, in the same path order. Home simply takes the pinned leaf's row above them, counting
+  // nothing and unfolding nothing. (Before YAZ-920 this list collapsed to two rows.)
   await expect(offerCard(win)).toHaveCount(0)
-  await expect(topicLabels(win)).toHaveText(['Home', 'Uncategorized'])
-  await expect(rowFor(win, 'Home').locator('.tree__count')).toHaveText('5')
+  await expect(topicLabels(win)).toHaveText(['Home', ...TOPICS, 'Uncategorized'])
+  for (const label of ['Home', ...TOPICS]) await expect(rowFor(win, label)).toHaveCSS('padding-left', '8px')
+  await expect(rowFor(win, 'Home').locator('.tree__count')).toHaveCount(0)
+  await expect(chevron(win, 'Expand', 'Home')).toHaveCount(0)
+  await expect(rowFor(win, 'Home').locator('.tree__glyph path')).toHaveCount(2) // the house, born with it
   // Making a Home does NOT adopt the folder: the app still owns nothing invisible in here.
   expect(await onDisk(homeless, `${VAULT_CONFIG_DIR}/properties.json`)).toBeNull()
   await shoot(win, 'topics-06-home-made')
@@ -375,10 +479,10 @@ test('step 7 — an ADOPTED vault grows its own Home on open: once, unasked, nev
 
   app = await launchApp({ userData, seedState: topicsState(adopted, null) })
   win = await appWindow(app, 'w1')
-  // Nobody clicked anything: Home is simply there, carrying exactly the flag, with the whole
-  // encyclopedia already hanging off it.
+  // Nobody clicked anything: Home is simply there, carrying exactly the flag, leading the five
+  // topics it is the (only) declared parent of — which YAZ-920 keeps standing beside it.
   await expect.poll(() => onDisk(adopted, HOME)).toBe(HOME_BYTES)
-  await expect(topicLabels(win)).toHaveText(['Home', 'Uncategorized'])
+  await expect(topicLabels(win)).toHaveText(['Home', ...TOPICS, 'Uncategorized'])
   await expect(offerCard(win)).toHaveCount(0) // an adopted vault is never offered
   await shoot(win, 'topics-07-auto-created')
   await quitApp(app)
@@ -389,7 +493,7 @@ test('step 7 — an ADOPTED vault grows its own Home on open: once, unasked, nev
   await writeFile(path.join(adopted, HOME), mine)
   app = await launchApp({ userData })
   win = await appWindow(app, 'w1')
-  await expect(topicLabels(win)).toHaveText(['Home', 'Uncategorized'])
+  await expect(topicLabels(win)).toHaveText(['Home', ...TOPICS, 'Uncategorized'])
   expect(await onDisk(adopted, HOME)).toBe(mine)
   await quitApp(app)
 })

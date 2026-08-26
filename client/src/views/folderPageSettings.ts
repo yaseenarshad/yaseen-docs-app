@@ -120,7 +120,13 @@ function readFolder(raw: unknown, problems: string[]): string | undefined {
 
 /** One folder page's config, as read off its frontmatter. Safe on ANY record, flagged or not. */
 export function folderPageSettings(record: IndexRecord): FolderPageSettings {
-  const raw = record.properties[SETTINGS_KEY]
+  return folderPageSettingsOf(record.properties)
+}
+
+/** The same read over bare frontmatter properties — for a caller holding the FILE's own bytes
+    rather than an index record (YAZ-919: the open page's seed outranks the snapshot). */
+export function folderPageSettingsOf(properties: Record<string, unknown>): FolderPageSettings {
+  const raw = properties[SETTINGS_KEY]
   const problems: string[] = []
   // Absent, or written as a bare `folder_page_settings:` — the page simply has no settings yet.
   if (raw === undefined || raw === null) return { columns: {}, views: defaultViews(), problems }
