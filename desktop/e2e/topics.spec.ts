@@ -13,7 +13,8 @@
  *   1 the roots: Home alone, with the glyph and its direct-member count, collapsed
  *   2 the chevrons descend two rungs — Home's five folder pages in Home's own `order`, then
  *     Funnel Stages' three members in the [D5] fallback — each indented one rung further
- *   3 a row click OPENS the page (the file tree's own handler), and the chevron never does
+ *   3 a row click OPENS the page (the file tree's own handler) AND unfolds a folder page in
+ *     the same gesture (⚡ YAZ-870) — a second click never folds; the chevron never opens
  *   4 the expansion survives quit → relaunch, in the main-owned `folders[root].topicsExpanded`
  *     bucket — PAGE PATHS, never written into any note's frontmatter
  *   5 Uncategorized expands IN PLACE (🔒 D7, the locked deviation from the mockup), listing the
@@ -158,15 +159,25 @@ test('step 2 — the chevrons descend two rungs: Home’s order, then the [D5] f
 
 // ---------------------------------------------------------------- 🔒 D3: the row gestures
 
-test('step 3 — a row click OPENS the page; the chevron only ever expands', async () => {
+test('step 3 — a row click OPENS the page and unfolds it; the chevron only ever expands', async () => {
   await rowFor(win, 'Lead Nurture').click()
   await expect(activeTab(win)).toHaveText('Lead Nurture')
   await expect(editorOf(win)).toContainText('Lead Nurture')
 
+  // ⚡ YAZ-870: a folder-page row opens AND unfolds in one gesture…
+  await rowFor(win, 'Industries').click()
+  await expect(activeTab(win)).toHaveText('Industries')
+  await expect(chevron(win, 'Collapse', 'Industries')).toHaveCount(1)
+  // …a second click never folds it back — the chevron keeps the collapse to itself.
+  await rowFor(win, 'Industries').click()
+  await expect(chevron(win, 'Collapse', 'Industries')).toHaveCount(1)
+  await chevron(win, 'Collapse', 'Industries').click()
+  await expect(chevron(win, 'Expand', 'Industries')).toHaveCount(1)
+
   // The chevron is its own hit target: collapsing does not open Home over the tab above.
   await chevron(win, 'Collapse', 'Home').click()
   await expect(topicLabels(win)).toHaveText(['Home', 'Uncategorized'])
-  await expect(activeTab(win)).toHaveText('Lead Nurture')
+  await expect(activeTab(win)).toHaveText('Industries')
   // 🔒 D4: expansion is keyed by PAGE, not by tree position — so Funnel Stages comes back open.
   await chevron(win, 'Expand', 'Home').click()
   await expect(topicLabels(win)).toHaveText(['Home', 'Funnel Stages', ...MEMBERS, ...TOPICS.slice(1), 'Uncategorized'])

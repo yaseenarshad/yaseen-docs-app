@@ -275,6 +275,44 @@ describe('the rows (🔒 D3): the file tree\'s two open handlers, a chevron of i
   })
 })
 
+// ---------------------------------------------------------------- ⚡ YAZ-870: the row unfolds
+
+describe('the row gesture opens AND unfolds (⚡ YAZ-870, the amendment on 🔒 D3)', () => {
+  it('a row click on a folder page opens it AND expands it in place', async () => {
+    const { el, props } = await mount({ source: sourceOver(vault()) })
+    await click(rowFor(el, 'Home')!)
+    expect(props.onOpenFile).toHaveBeenCalledWith(HOME)
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized'])
+    // …and through the same 🔒 D4 bucket a chevron expansion takes, so it persists.
+    expect(storage.getTopicsExpanded(ROOT)).toEqual([HOME])
+  })
+
+  it('a second click never collapses — the chevron keeps that gesture to itself', async () => {
+    const { el } = await mount({ source: sourceOver(vault()) })
+    await click(rowFor(el, 'Home')!)
+    await click(rowFor(el, 'Home')!)
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized'])
+    await click(chevrons(el, 'Collapse Home')[0])
+    expect(labels(el)).toEqual(['Home', 'Projects', 'Uncategorized'])
+  })
+
+  it('⌘-click still means "not now": a background tab, and the tree does not move', async () => {
+    const { el, props } = await mount({ source: sourceOver(vault()) })
+    await click(rowFor(el, 'Home')!, { metaKey: true })
+    expect(props.onOpenFileBackground).toHaveBeenCalledWith(HOME)
+    expect(labels(el)).toEqual(['Home', 'Projects', 'Uncategorized'])
+    expect(storage.getTopicsExpanded(ROOT)).toEqual([])
+  })
+
+  it('a folder page with nothing under it just opens — nothing to unfold, nothing recorded', async () => {
+    const { el, props } = await mount({ source: sourceOver(vault()) })
+    await click(rowFor(el, 'Projects')!)
+    expect(props.onOpenFile).toHaveBeenCalledWith(PROJECTS)
+    expect(labels(el)).toEqual(['Home', 'Projects', 'Uncategorized'])
+    expect(storage.getTopicsExpanded(ROOT)).toEqual([])
+  })
+})
+
 // ---------------------------------------------------------------- ⚡ D6 + [D5]: the descent
 
 describe('the descent: guardedChildren only (⚡ D6), ordered per level by its OWN settings ([D5])', () => {

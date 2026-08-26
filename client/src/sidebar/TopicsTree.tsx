@@ -24,6 +24,12 @@
  * user opened the PAGE. It is persisted per vault in the main-owned `folders[root].topicsExpanded`
  * bucket, `expanded`'s twin, so it survives a restart and is repaired by `store.renamePath`.
  *
+ * THE ROW UNFOLDS (⚡ YAZ-870, the amendment on 🔒 D3): clicking a folder-page row opens the page
+ * AND expands it in place — one gesture, both meanings. Add-only: a second click never folds
+ * (navigation must not close the tree under you; the chevron keeps the collapse), a ⌘-click
+ * (background open, "not now") leaves the tree alone, and a page with nothing under it records
+ * nothing. The chevron's own half of D3 stands untouched: expanding is still not opening.
+ *
  * UNCATEGORIZED (🔒 D7, the locked DEVIATION from the mockup): a muted row at the bottom that
  * EXPANDS IN PLACE — never a virtual page, never a main-pane view. It is the lookup's
  * carve-out-free `uncategorized()` minus whatever already stands as a root, which is this
@@ -192,6 +198,10 @@ export function TopicsTree({ root, source, activeFile, onOpenFile, onOpenFileBac
       return next
     })
 
+  // ⚡ YAZ-870: `toggle`'s add-only twin — the row gesture unfolds but never folds, so
+  // navigating to a page you are already on cannot close the tree under you.
+  const expand = (path: string): void => setExpanded((set) => (set.has(path) ? set : new Set(set).add(path)))
+
   const open = (path: string, e: React.MouseEvent): void => (e.metaKey ? onOpenFileBackground(path) : onOpenFile(path))
 
   /** The children to DESCEND into: the one door (⚡ D6), ordered by this parent's own settings. */
@@ -244,12 +254,17 @@ export function TopicsTree({ root, source, activeFile, onOpenFile, onOpenFileBac
               className={`tree__row${isFolderPage ? ' tree__row--dir' : ''}${active ? ' tree__row--active' : ''}`}
               style={{ paddingLeft: indent }}
               title={member.path}
-              onClick={(e) => open(member.path, e)}
+              onClick={(e) => {
+                open(member.path, e)
+                // ⚡ YAZ-870: opening a topic unfolds it too — foreground opens only (⌘ says
+                // "not now", so the tree stays put), and only when there is something to show.
+                if (isFolderPage && kids.length > 0 && !e.metaKey) expand(member.path)
+              }}
               onContextMenu={(e) => onRowContextMenu(member.path, e)}
             >
               {kids.length > 0 ? (
-                // 🔒 D3: the chevron is its OWN hit target — expanding a topic is not opening it,
-                // and the row around it stays the open gesture the file tree taught.
+                // 🔒 D3: the chevron is its OWN hit target — expanding a topic is not opening it.
+                // (The row around it opens AND unfolds since ⚡ YAZ-870; the chevron alone folds.)
                 <span
                   role="button"
                   className={`tree__chevron${isOpen ? ' tree__chevron--open' : ''}`}
