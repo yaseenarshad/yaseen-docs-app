@@ -264,6 +264,21 @@ describe('orderedMembers: the [D5] ordering rule, once', () => {
 })
 
 describe('outlineOrderOf', () => {
+  it('an edited outline answers from its DOCUMENT: link lines in document order, prose ignored (YAZ-905)', () => {
+    const settings = settingsOf({
+      views: [
+        {
+          type: 'outline',
+          name: 'Outline',
+          outline: '- Q3 focus\n    - [[LTV]]\n    - waiting on finance\n- [[CAC]]\n- see [[CAC]] inline',
+          order: ['[[Stale]]'],
+        },
+      ],
+    })
+    // The document wins over a stale order; a mid-prose link is not a line and names nobody.
+    expect(outlineOrderOf(settings)).toEqual(['[[LTV]]', '[[CAC]]'])
+  })
+
   it('returns the FIRST outline view\'s order', () => {
     const settings = settingsOf({
       views: [

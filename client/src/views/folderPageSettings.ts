@@ -12,7 +12,8 @@
  */
 import { FOLDER_NAME, PROPERTY_KINDS, type IndexRecord, type PropertyKind } from '@shared/types'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
-import { mapOutlineLinks } from './outlineDoc'
+import { isExactWikilink } from '../links/folderPages'
+import { mapOutlineLinks, parseOutline } from './outlineDoc'
 import type { ViewDef } from './viewSchema'
 import { writeProperty } from './writeProperty'
 
@@ -207,10 +208,20 @@ export function columnKindIn(settings: FolderPageSettings, key: string): ColumnD
   return settings.columns[key] ?? null
 }
 
-/** The FIRST outline view's raw wikilink list, or []. Non-strings are ignored — nothing here is trusted. */
+/**
+ * The FIRST outline view's member sequence, as raw wikilink strings, or []. An EDITED outline
+ * holds the sequence as its DOCUMENT (🔒 D2 — `order` retired with the first edit, YAZ-903), so
+ * the link lines are read in document order; a never-edited page still answers from `order`.
+ * One rule, both readers: the outline skin and the Topics tree cannot drift apart (YAZ-905 —
+ * the seam YAZ-904 found). Non-strings are ignored — nothing here is trusted.
+ */
 export function outlineOrderOf(settings: FolderPageSettings): string[] {
-  const order = settings.views.find((view) => view.type === 'outline')?.order
-  return Array.isArray(order) ? order.filter((entry: unknown): entry is string => typeof entry === 'string') : []
+  const view = settings.views.find((v) => v.type === 'outline')
+  if (typeof view?.outline === 'string')
+    return parseOutline(view.outline)
+      .map((line) => line.text)
+      .filter(isExactWikilink)
+  return Array.isArray(view?.order) ? view.order.filter((entry: unknown): entry is string => typeof entry === 'string') : []
 }
 
 /** Names sort the way the base engine sorts them: case- and accent-insensitive, numeric-aware. */

@@ -19,8 +19,8 @@
  *     and Uncategorized is exactly where the sidebar then puts it, while the table drops the row
  *   3 ORDER SURVIVES RESTART — rearranging the outline is ONE `folder_page_settings` write (not
  *     one member card is touched), and after quit → relaunch the document reads back as it was —
- *     while the Topics tree, still ordering by the [D5] `order` that the first edit RETIRES, keeps
- *     the same members in its own fallback order (the seam YAZ-904 found)
+ *     and the Topics tree reads the SAME arrangement off the document's link lines (YAZ-905
+ *     closed the seam YAZ-904 found: `outlineOrderOf` answers from an edited outline's document)
  *   4 LOOPS ARE SAFE EVERYWHERE — an `A ↔ B` loop hand-written on disk: the tree's walker descends
  *     into it and terminates, a page reachable down two branches repeats under both, and the
  *     outline — a flat document since YAZ-903 — has no descent left to hang
@@ -243,8 +243,8 @@ test('step 1 — one gesture, four surfaces: a link line writes the member’s c
     'Funnel Stages',
     'Lead Gen',
     'Lead Nurture',
-    'Pipeline Review Notes',
     'Sales-Conversion',
+    'Pipeline Review Notes', // where the caret put it — the tree reads the document's own order (YAZ-905)
     ...TOPICS.slice(1),
     'Uncategorized',
   ])
@@ -298,8 +298,8 @@ test('step 2 — dropping a page’s ONLY parent: the sheet promises Uncategoriz
     'Home',
     'Funnel Stages',
     'Lead Gen',
-    'Pipeline Review Notes',
     'Sales-Conversion',
+    'Pipeline Review Notes', // the tree reads the document's own order (YAZ-905)
     ...TOPICS.slice(1),
     'Uncategorized',
     'Lead Nurture',
@@ -336,16 +336,15 @@ test('step 3 — the outline IS the order now: rearranging it writes nobody’s 
     .toMatch(/\[\[Sales-Conversion\]\][\s\S]*\[\[Pipeline Review Notes\]\][\s\S]*\[\[Lead Gen\]\]/)
   expect(await md5(leadGen)).toBe(before)
 
-  // THE SIDEBAR, live — and THE SEAM YAZ-904 FOUND. The tree orders each level with
-  // `orderedMembers`, which reads the [D5] `order`… a key the outline's first edit RETIRES (the
-  // lazy migration). So the tree keeps the same MEMBERS, in its own fallback order (alphabetical),
-  // while the document keeps the arrangement: one set, two orderings, and no key shared any more.
+  // THE SIDEBAR, live — the seam YAZ-904 found, CLOSED (YAZ-905): `outlineOrderOf` reads an
+  // edited outline's DOCUMENT, so the tree rearranges exactly as the outline did. One set, one
+  // arrangement, two skins.
   await expect(topicLabels(win)).toHaveText([
     'Home',
     'Funnel Stages',
-    'Lead Gen',
-    'Pipeline Review Notes',
     'Sales-Conversion',
+    'Pipeline Review Notes',
+    'Lead Gen',
     ...TOPICS.slice(1),
     'Uncategorized',
   ])
@@ -360,9 +359,9 @@ test('step 3 — the outline IS the order now: rearranging it writes nobody’s 
   await expect(topicLabels(win)).toHaveText([
     'Home',
     'Funnel Stages',
-    'Lead Gen',
-    'Pipeline Review Notes',
     'Sales-Conversion',
+    'Pipeline Review Notes',
+    'Lead Gen',
     ...TOPICS.slice(1),
     'Uncategorized',
   ])
@@ -391,9 +390,9 @@ test('step 4 — a hand-written A ↔ B loop: the tree descends into it, termina
   await expect(topicLabels(win)).toHaveText([
     'Home',
     'Funnel Stages',
-    'Lead Gen',
-    'Pipeline Review Notes',
     'Sales-Conversion',
+    'Pipeline Review Notes',
+    'Lead Gen',
     ...TOPICS.slice(1),
     'Loop A',
     'Uncategorized',
@@ -406,9 +405,9 @@ test('step 4 — a hand-written A ↔ B loop: the tree descends into it, termina
   await expect(topicLabels(win)).toHaveText([
     'Home',
     'Funnel Stages',
-    'Lead Gen',
-    'Pipeline Review Notes',
     'Sales-Conversion',
+    'Pipeline Review Notes',
+    'Lead Gen',
     ...TOPICS.slice(1),
     'Loop A',
     'Loop B',
