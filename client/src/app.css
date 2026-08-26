@@ -579,6 +579,20 @@ button {
   border-bottom-color: var(--accent);
 }
 
+/* Expand / collapse all (YAZ-862) — the header collapse button's icon look, pushed to the far
+   end of the lens row so it reads as chrome and not as a third tab. */
+.sidebar__expand-all {
+  flex: none;
+  margin-left: auto;
+  padding: 0 8px;
+  color: var(--fg-muted);
+}
+
+.sidebar__expand-all:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
 /* Persistent search bar (YAZ-801) — its OWN row, never fused into the header or into the lens
    tabs above it: it is ALWAYS visible, on both lenses (YAZ-847). */
 .sidebar__search {

@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { fileKind } from '@shared/fileKind'
 import { SIDEBAR_LENSES, type SettingsState, type SidebarLens, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { createNewNote } from '../views/newNote'
-import { SearchIcon } from '../views/view/icons'
+import { ChevronsIcon, SearchIcon } from '../views/view/icons'
 import { writeProperty } from '../views/writeProperty'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
@@ -11,7 +11,7 @@ import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { FOLDER_PAGE_KEY, isFolderPage } from '../links/folderPages'
 import { countLinkReferences } from '../links/renameLinks'
-import { treeHasFile, treeReducer } from '../lib/treeState'
+import { allDirs, treeHasFile, treeReducer } from '../lib/treeState'
 import { SearchResults } from '../search/SearchResults'
 import { useSearchResults } from '../search/useSearchResults'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
@@ -252,6 +252,13 @@ export function Sidebar({
   // An index refresh can shrink the list under the keyboard's index (F1 finding 2, YAZ-808), so
   // every reader of the selection clamps: the highlight lands on the last row, not on nowhere.
   const sel = Math.min(selected, results.length - 1)
+
+  // Expand / collapse the whole tree (⚡ YAZ-862). "Any open" is measured against the CURRENT
+  // tree's dirs, never the raw `expanded` list: that one is persisted and can still name paths an
+  // external change took away, which would leave the button offering to collapse nothing.
+  const dirs = useMemo(() => (tree === null ? [] : allDirs(tree.tree)), [tree])
+  const anyExpanded = dirs.some((d) => expanded.includes(d))
+  const allLabel = anyExpanded ? 'Collapse all' : 'Expand all'
 
   const refresh = useCallback(() => {
     api.tree(root).then(
@@ -638,6 +645,21 @@ export function Sidebar({
             {LENS_LABEL[id]}
           </button>
         ))}
+        {/* One button for both directions (⚡ YAZ-862): anything open collapses everything, and
+            only a fully closed tree expands it. Gone — not disabled — while a query is typed
+            (the tree is not the body then) and on a vault with no folders to open. FILES only
+            here; YAZ-873 extends it to Topics. */}
+        {!searching && lens === 'files' && dirs.length > 0 && (
+          <button
+            type="button"
+            className="sidebar__expand-all"
+            aria-label={allLabel}
+            title={allLabel}
+            onClick={() => dispatch({ type: 'setAll', dirs: anyExpanded ? [] : dirs })}
+          >
+            <ChevronsIcon />
+          </button>
+        )}
       </div>
       {/* Persistent search bar (YAZ-739 A-, chrome v2 row 2 — 🔒 YAZ-797): always visible, never a
           tab or a view — on BOTH lenses (YAZ-847 keeps that rule). YAZ-750's filter affordance

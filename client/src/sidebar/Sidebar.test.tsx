@@ -872,6 +872,81 @@ describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
   })
 })
 
+/**
+ * Expand / collapse all (⚡ YAZ-862): ONE double-chevron button at the end of the lens row,
+ * replacing the whole expanded set in a single dispatch. Anything open means the click collapses;
+ * only a fully closed tree expands. It belongs to the FILES tree and to the tree BODY — so it is
+ * GONE (never disabled) on Topics, which YAZ-873 extends it to, while a query is typed, and in a
+ * vault with no folders to open.
+ */
+describe('expand / collapse all (⚡ YAZ-862)', () => {
+  const note = (path: string): TreeNode => ({ type: 'file', name: 'n.md', path, size: 1, mtime: 1, kind: 'markdown' })
+  /** Two depths of folder: docs/ holding deep/, notes/ empty beside it, and a note at the top. */
+  const NESTED = (v: string): TreeNode[] => [
+    {
+      type: 'dir',
+      name: 'docs',
+      path: `${v}/docs`,
+      children: [{ type: 'dir', name: 'deep', path: `${v}/docs/deep`, children: [note(`${v}/docs/deep/n.md`)] }],
+    },
+    { type: 'dir', name: 'notes', path: `${v}/notes`, children: [] },
+    note(`${v}/n.md`),
+  ]
+
+  // Expansion is persisted per ROOT in the app-state cache, which is module-level and outlives a
+  // test — so every mount here opens its OWN vault and therefore starts from an empty set.
+  let vaults = 0
+  const mountVault = async (nodes: (v: string) => TreeNode[] = NESTED, over: Partial<SidebarProps> = {}) => {
+    const vault = `/v-all-${++vaults}`
+    return mount({ root: vault, ...over }, (b) => b.tree.mockResolvedValue({ root: vault, tree: nodes(vault), generatedAt: 1 } as never))
+  }
+  const allButton = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sidebar__lenses .sidebar__expand-all')
+  const label = (el: HTMLElement) => allButton(el)?.getAttribute('aria-label') ?? null
+  const dirLabels = (el: HTMLElement) => [...el.querySelectorAll('.tree__row--dir .tree__label')].map((n) => n.textContent)
+  const dirRow = (el: HTMLElement, i: number) => el.querySelectorAll<HTMLButtonElement>('.tree__row--dir')[i]
+
+  it('a closed tree offers "Expand all", and one click opens every folder at every depth', async () => {
+    const { el } = await mountVault()
+    expect(dirLabels(el)).toEqual(['docs', 'notes'])
+    expect(label(el)).toBe('Expand all')
+    expect(allButton(el)?.title).toBe('Expand all')
+    act(() => allButton(el)?.click())
+    expect(dirLabels(el)).toEqual(['docs', 'deep', 'notes'])
+    expect(label(el)).toBe('Collapse all')
+    expect(allButton(el)?.title).toBe('Collapse all')
+  })
+
+  it('an open tree — fully or PARTLY — offers "Collapse all", and one click closes the lot', async () => {
+    const { el } = await mountVault()
+    act(() => allButton(el)?.click())
+    act(() => allButton(el)?.click())
+    expect(dirLabels(el)).toEqual(['docs', 'notes'])
+    expect(label(el)).toBe('Expand all')
+    // One open folder is enough — the button never offers to expand a tree that is already part way.
+    act(() => dirRow(el, 1)?.click())
+    expect(label(el)).toBe('Collapse all')
+    act(() => allButton(el)?.click())
+    expect(dirLabels(el)).toEqual(['docs', 'notes'])
+    expect(label(el)).toBe('Expand all')
+  })
+
+  it('there is no button while a query is typed, on the Topics lens, or in a vault with no folders', async () => {
+    const searched = await mountVault()
+    const input = searchInput(searched.el)!
+    await type(input, 'a')
+    expect(allButton(searched.el)).toBeNull()
+    await type(input, '')
+    expect(allButton(searched.el)).not.toBeNull() // back with the tree it belongs to
+
+    const topics = await mountVault(NESTED, { lens: 'topics' })
+    expect(allButton(topics.el)).toBeNull()
+
+    const flat = await mountVault((v) => [note(`${v}/n.md`)])
+    expect(flat.el.querySelector('.tree__row--file')).not.toBeNull()
+    expect(allButton(flat.el)).toBeNull()
+  })
+})
+
 describe('context menu order (GRO-2272 C1a)', () => {
   it('a FILE row renders utilities, then create actions, then Rename and Delete last', async () => {
     const { el } = await mount()
