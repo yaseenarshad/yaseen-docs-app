@@ -28,15 +28,12 @@ Execute the entire YAZ-813 tree (issues 1- through 8-, 33 subissues) to Done: th
   - [x] 6- YAZ-821 COMPLETE + MERGED to main (baa0794). 6A 98f8058 · 6B 3fc8359 · 6C 86c257a · 6D+6E baa0794. THE WHOLE APP SURFACE IS BUILT. e2e 98/98.
   - [x] 7- YAZ-822 COMPLETE. 7A 68aa029 (tools/migrateFolderPages.mjs — dry-run default, clean-tree gate, idempotent, four post-checks, 41 tests in its own `tools` vitest project) · 7C f9e7191 (the e2e fixture vault migrated BY THE SCRIPT ITSELF, so the fixtures and the migration can never disagree) · 7D ff99d9f (catches: templates' CONTENT migrates too; subdir-vault apply).
   - [x] 8A–8D, 8F, 8G. 8B 15ba133 (the dead word leaves the codebase — `bases` → `views`) · 8F 4f95f84 (the `confirmDelete` setting finally gates the sheet) · 8C 5ef0aa0 (crossCutting.spec.ts — six seams proven together; it FOUND the YAZ-859 counts-vs-chevron seam ruling) · 8G 4c62593 (the Topics context menu — the ⚡ amendment on YAZ-821) + 5c5381d (YAZ-864: renames rewrite nested settings links).
-- Now: [→] 8E (YAZ-861) — executing the consolidated 8D audit worklist: the trivial-fix class (de-NUL the React keys, delete the unreachable ViewsPane branch + dead CSS, `.view-view` → `.views-pane`, `BASES_HOTKEYS` → `VIEW_HOTKEYS`, `basesFixture` → `viewsFixture`, the report-don't-block notes line) plus the CONTRACTS / README / LAUNCH truth-pass.
-- Remaining:
-  - [ ] 8E closing evidence comment on YAZ-813 + Yasin's sign-off (the Goal's definition of Done)
-  - [ ] **TWO YASIN-GATED items, deliberately excluded from 8E** — do NOT execute without a ruling: (1) `walkFolderPage`'s deletion (the canonical linear walk, currently unused by any surface since every one of them recurses `guardedChildren` itself — but it is named in the D6 lock); (2) the `.obsidian/types.json` orphan chain (`IndexResponse.types`, `columnTyping`'s `types` param, `viewsFixture`'s write of that file).
+  - [x] 8E YAZ-861 COMPLETE (4585b94 worklist + a1bf7c3 finale). Both ⚡ rulings executed: walkFolderPage deleted (cases survive in the guard's suite) · .obsidian/types.json chain killed (no CACHE_VERSION bump — payload proof; exposed+fixed the latent liveCache watcher race) · writeMemberships→writeBelonging ('membership' greps ZERO). Hover probe REWORKED (continuous mouse sweep, per the YAZ-846 rule).
+  - [x] 8H YAZ-869 COMPLETE (a1bf7c3): Topics row births a MEMBER (memberFolder shared via scaffold.ts; createInTopic); New folder page there = sub-topic.
+- **WAVE COMPLETE (2026-08-25).** YAZ-823 Done · closing evidence comment posted on YAZ-813 (#comment-067c83c6) · YAZ-813 Done. Final gate at main a1bf7c3: unit 1751/1751 · tsc ×3 · e2e 107/107 twice, zero skips. Tags pushed: app `folder-pages-v1` (a1bf7c3) · vault `folder-pages-migrated` (fe8cd6d, incl. the 04-views dead-rung fix). Awaiting only Yasin's sign-off on the final DMG.
 
 ## Open Questions
-- UNCONFIRMED: `walkFolderPage`'s fate — every surface recurses `guardedChildren` directly, so the canonical linear walk has no caller; but D6 names it. Yasin-gated, NOT executed in 8E.
-- UNCONFIRMED: the `.obsidian/types.json` orphan chain (`IndexResponse.types` → `columnTyping`'s `types` param → `viewsFixture`'s write). Reading a foreign app's config file is a product question, not a cleanup. Yasin-gated, NOT executed in 8E.
-- Consciously LEFT in 8E, noted not asked: the `client/src/views/view/` DIRECTORY keeps its name (a rename is 33 files of churn for no truth gained — the files inside it are already honestly named).
+- None. Deferred by ruling (filed, not open): view CRUD YAZ-824 · copy-in-Finder-from-Topics. The `client/src/views/view/` directory keeps its name (33 files of churn for no truth).
 
 ## Working Set
 - Worktree: .claude/worktrees/folder-pages-813 (branch worktree-folder-pages-813, from main d38369f)
