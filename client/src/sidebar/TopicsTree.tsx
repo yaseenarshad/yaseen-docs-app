@@ -257,8 +257,9 @@ export function TopicsTree({ root, source, activeFile, onOpenFile, onOpenFileBac
               onClick={(e) => {
                 open(member.path, e)
                 // ⚡ YAZ-870: opening a topic unfolds it too — foreground opens only (⌘ says
-                // "not now", so the tree stays put), and only when there is something to show.
-                if (isFolderPage && kids.length > 0 && !e.metaKey) expand(member.path)
+                // "not now", so the tree stays put), and only when there is something to show
+                // (`kids` is already the guarded, folder-page-only answer: leaves have none).
+                if (kids.length > 0 && !e.metaKey) expand(member.path)
               }}
               onContextMenu={(e) => onRowContextMenu(member.path, e)}
             >
