@@ -8,8 +8,14 @@
  *     under `assets/drawings/` and leaves `![[<name>.excalidraw]]` at the caret, every other byte
  *     of the note untouched — twice in a row, and the second drawing gets its OWN file
  *     (create-only writes never overwrite, YAZ-876)
- *   … later units extend this same spec: the embed RENDERS as a preview (YAZ-878), and clicking
- *     it opens the editing modal that writes the scene back (YAZ-879). Add their steps below.
+ *   2 the two embeds RENDER as previews (YAZ-878): decorations only, so the note on disk is the
+ *     same bytes it was — the SVG stands where the raw `![[…]]` text is, which is hidden, never
+ *     duplicated beside it
+ *   3 a sidecar CORRUPTED on disk (the scene replaced by junk) reopens as the inert "broken
+ *     drawing" chip with its embed text visible and editable again — no crash, no rewrite: the
+ *     note is still byte-identical and the healthy drawing beside it still renders
+ *   … the last unit extends this same spec: clicking a preview opens the editing modal that
+ *     writes the scene back (YAZ-879). Add its steps below.
  *
  * Same harness as title.spec.ts (temp `--user-data-dir`, a COPY of a generated fixture vault,
  * `drawing-` step screenshots).
@@ -28,18 +34,83 @@ const NOTE_BODY = `# Drawings\n\ndrawing-note-body\n`
 const DRAWINGS_DIR = path.join('assets', 'drawings')
 /** `Drawing YYYY-MM-DD HH.mm.ss[ n].excalidraw` — the creator's clock name (client/src/drawings). */
 const DRAWING_NAME = /^Drawing \d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.\d{2}( \d+)?\.excalidraw$/
+/** What step 4 writes over a sidecar: still a `.excalidraw` file, no longer a scene. */
+const JUNK = 'this file is not a scene any more\n'
+
+/** Every field `restore()` needs, shared by both elements of `DRAWN_SCENE`. */
+const ELEMENT_BASE = {
+  angle: 0,
+  strokeColor: '#1e1e1e',
+  backgroundColor: 'transparent',
+  fillStyle: 'solid',
+  strokeWidth: 2,
+  strokeStyle: 'solid',
+  roughness: 1,
+  opacity: 100,
+  seed: 1,
+  version: 1,
+  versionNonce: 1,
+  isDeleted: false,
+  groupIds: [],
+  frameId: null,
+  roundness: null,
+  boundElements: null,
+  updated: 1,
+  link: null,
+  locked: false,
+}
+
+/** A real drawing: a box and a line of TEXT, which is what makes the font path matter (step 3). */
+const DRAWN_SCENE = `${JSON.stringify(
+  {
+    type: 'excalidraw',
+    version: 2,
+    source: 'yaseen-docs',
+    elements: [
+      { ...ELEMENT_BASE, id: 'box', type: 'rectangle', x: 0, y: 0, width: 240, height: 140 },
+      {
+        ...ELEMENT_BASE,
+        id: 'label',
+        type: 'text',
+        x: 20,
+        y: 40,
+        width: 200,
+        height: 30,
+        text: 'drawn-scene',
+        originalText: 'drawn-scene',
+        fontSize: 20,
+        fontFamily: 1,
+        textAlign: 'left',
+        verticalAlign: 'top',
+        containerId: null,
+        lineHeight: 1.25,
+      },
+    ],
+    appState: {},
+    files: {},
+  },
+  null,
+  2,
+)}\n`
 
 let userData: string
 let vaultSrc: string
 let vault: string
 let app: ElectronApplication
 let win: Page
+/** The two sidecars step 1 creates; steps 2 and 3 render and then corrupt them. */
+let first: string
+let second: string
 
 const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
 const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
 /** Crepe's OWN slash menu (YAZ-877 rides it — there is no second popup to find). */
 const slashMenu = (w: Page) => layer(w).locator('.milkdown-slash-menu')
 const slashItem = (w: Page, label: string) => slashMenu(w).locator('li').filter({ hasText: label })
+/** The YAZ-878 preview widget: one per `.excalidraw` embed, in its rendered / broken state. */
+const previews = (w: Page) => editorOf(w).locator('.drawing-preview')
+const rendered = (w: Page) => editorOf(w).locator('.drawing-preview--ready svg')
+const brokenChips = (w: Page) => editorOf(w).locator('.drawing-preview__broken')
 
 const readNote = () => readFile(path.join(vault, NOTE), 'utf8')
 const listDrawings = async () => (await readdir(path.join(vault, DRAWINGS_DIR)).catch(() => [])).sort()
@@ -82,7 +153,7 @@ test('step 1 — "/" offers Drawing; each pick writes its own empty scene and le
   await slashItem(win, 'Drawing').click()
 
   await expect.poll(listDrawings).toHaveLength(1)
-  const [first] = await listDrawings()
+  ;[first] = await listDrawings()
   expect(first).toMatch(DRAWING_NAME)
   // On disk it is a valid EMPTY Excalidraw scene, not a placeholder.
   const scene = JSON.parse(await readFile(path.join(vault, DRAWINGS_DIR, first), 'utf8')) as Record<string, unknown>
@@ -93,7 +164,10 @@ test('step 1 — "/" offers Drawing; each pick writes its own empty scene and le
   await shoot(win, 'drawing-02-embed-inserted')
 
   // --- second drawing: create-only writes never overwrite (YAZ-876) ---
-  await newBlockAfter(win, first)
+  // No re-click on the embed's paragraph: since YAZ-878 its text is under the preview, and the
+  // caret is already exactly where the insert left it (at the LIVE selection) — so Enter alone
+  // opens the next block, which is the real gesture anyway.
+  await win.keyboard.press('Enter')
   await win.keyboard.type('/')
   await expect(slashItem(win, 'Drawing')).toBeVisible()
   await slashItem(win, 'Drawing').click()
@@ -102,11 +176,85 @@ test('step 1 — "/" offers Drawing; each pick writes its own empty scene and le
   const both = await listDrawings()
   for (const name of both) expect(name).toMatch(DRAWING_NAME)
   expect(new Set(both).size).toBe(2)
-  const second = both.find((n) => n !== first) as string
+  second = both.find((n) => n !== first) as string
   // The first scene is still exactly where it was; the second is its own file.
   await expect.poll(readNote).toBe(`${NOTE_BODY}\n![[${first}]]\n\n![[${second}]]\n`)
   expect(await readFile(path.join(vault, DRAWINGS_DIR, first), 'utf8')).toBe(await readFile(path.join(vault, DRAWINGS_DIR, second), 'utf8'))
   await shoot(win, 'drawing-03-second-drawing')
 
+  await quitApp(app)
+})
+
+test('step 2 — both embeds render as previews: the SVG stands where the raw text is, and the note is untouched', async () => {
+  const before = await readNote()
+  app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
+  win = await appWindow(app, 'w1')
+  await expect(editorOf(win)).toContainText('drawing-note-body')
+
+  await expect(previews(win)).toHaveCount(2)
+  await expect(rendered(win)).toHaveCount(2)
+  // The embed text is still IN the document — decorations only — but NOT on screen: a preview
+  // standing next to its own `![[…]]` is exactly the duplication this rule forbids.
+  await expect(editorOf(win)).not.toContainText('![[', { useInnerText: true })
+  await expect(editorOf(win)).toContainText(`![[${first}]]`)
+  await expect(editorOf(win)).toContainText(`![[${second}]]`)
+  await shoot(win, 'drawing-04-previews')
+
+  expect(await readNote()).toBe(before)
+  await quitApp(app)
+})
+
+test('step 3 — a scene with real elements draws, TEXT INCLUDED, without a single request leaving the app', async () => {
+  const before = await readNote()
+  // What YAZ-879's modal will one day save: replace the first empty scene with a real drawing.
+  await writeFile(path.join(vault, DRAWINGS_DIR, first), DRAWN_SCENE)
+
+  app = await launchApp({ userData })
+  win = await appWindow(app, 'w1')
+  // 🔒 The offline rule: nothing about a preview may reach the network — the fonts a text
+  // element needs are the app's own copy under `app://yaseen/excalidraw-assets/`.
+  const external: string[] = []
+  win.on('request', (req) => {
+    if (/^https?:/i.test(req.url())) external.push(req.url())
+  })
+  await expect(editorOf(win)).toContainText('drawing-note-body')
+
+  await expect(rendered(win)).toHaveCount(2)
+  // The drawn scene has real extent — an empty one exports to a near-nothing SVG.
+  const box = await rendered(win).first().boundingBox()
+  expect(box?.width ?? 0).toBeGreaterThan(80)
+  expect(box?.height ?? 0).toBeGreaterThan(80)
+  // Its font arrived: exportToSvg only inlines an `@font-face` once the woff2 actually loaded,
+  // so a `data:` src IS the proof that the local asset path answered.
+  const svg = (await rendered(win).first().innerHTML()) || ''
+  expect(svg).toContain('@font-face')
+  expect(svg).toContain('src: url(data:')
+  await shoot(win, 'drawing-05-drawn-scene')
+
+  expect(external).toEqual([])
+  expect(await readNote()).toBe(before)
+  await quitApp(app)
+})
+
+test('step 4 — a corrupted sidecar becomes the inert broken chip; nothing crashes and nothing is rewritten', async () => {
+  const before = await readNote()
+  // The file is still there and still named a drawing — only its bytes are no longer a scene.
+  await writeFile(path.join(vault, DRAWINGS_DIR, first), JUNK)
+
+  app = await launchApp({ userData })
+  win = await appWindow(app, 'w1')
+  await expect(editorOf(win)).toContainText('drawing-note-body')
+
+  await expect(brokenChips(win)).toHaveCount(1)
+  await expect(brokenChips(win)).toHaveText('Broken drawing')
+  // The broken embed keeps its text VISIBLE — the line has to stay fixable by hand …
+  await expect(editorOf(win)).toContainText(`![[${first}]]`, { useInnerText: true })
+  // … and its healthy neighbour is unaffected.
+  await expect(rendered(win)).toHaveCount(1)
+  await shoot(win, 'drawing-06-broken-chip')
+
+  // No repair, no rewrite: the note is the same bytes and the junk is still junk.
+  expect(await readNote()).toBe(before)
+  expect(await readFile(path.join(vault, DRAWINGS_DIR, first), 'utf8')).toBe(JUNK)
   await quitApp(app)
 })

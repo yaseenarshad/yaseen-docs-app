@@ -138,6 +138,10 @@ function CrepeHost({
       // The slash menu's Drawing row (YAZ-877): this window's root is the only thing the creator
       // needs; failures ride the same passive notice as a failed link create.
       drawing: { create: () => createDrawing(root), onNotice },
+      // Drawing previews (YAZ-878): the root is all a preview needs — the embed's own target
+      // carries the rest and `readAsset` resolves it. The refresh feed and the click handler
+      // (`onOpenDrawing`) are YAZ-879's to thread; without them previews render and stay inert.
+      drawingPreview: { root },
     })
     crepeRef.current = crepe
     let controller: ReturnType<typeof attach> | null = null

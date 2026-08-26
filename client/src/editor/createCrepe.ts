@@ -52,6 +52,10 @@
  *  - Drawing slash item (YAZ-877, `drawingMenu.ts`): rides Crepe's OWN BlockEdit menu via
  *    `featureConfigs[BlockEdit].buildMenu` — never a parallel slash plugin. Registered only when
  *    `opts.drawing` supplies the creator, so a mount without it keeps the stock menu exactly.
+ *  - Drawing previews (YAZ-878, `drawing/drawingPreview.ts`): `![[x.excalidraw]]` renders as the
+ *    scene through inline decorations only (the match's text hidden, a widget in its place,
+ *    caret-inside reveals the raw syntax) — never a schema or serializer change. Registered only
+ *    when `opts.drawingPreview` gives it the vault root; every other embed is untouched.
  */
 import { Crepe, CrepeFeature } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -61,6 +65,7 @@ import { Selection } from '@milkdown/kit/prose/state'
 import { replaceAll } from '@milkdown/kit/utils'
 import { blockHandleGate } from './blockHandleGate'
 import { createBlockHandleMenu } from './blockHandleMenu'
+import { createDrawingPreview, type DrawingPreviewOptions } from './drawing/drawingPreview'
 import { drawingMenu, type DrawingCreator } from './drawingMenu'
 import { bulletThreading } from './outline/bulletThreading'
 import { features } from './featureConfig'
@@ -94,6 +99,8 @@ export interface CreateCrepeOptions {
   wikilinkNav?: WikilinkNav
   /** Drawing creator (YAZ-877): the host writes the sidecar, the item inserts the embed. Absent → NO Drawing row is added to the slash menu. */
   drawing?: DrawingCreator
+  /** Drawing previews (YAZ-878): the vault root to read scenes against, plus the optional refresh feed and click handler. Absent → `.excalidraw` embeds stay plain text. */
+  drawingPreview?: DrawingPreviewOptions
 }
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
@@ -122,6 +129,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createWikilink(wikilinks))
   if (opts.wikilinkNav !== undefined) crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav))
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource()))
+  if (opts.drawingPreview !== undefined) crepe.editor.use(createDrawingPreview(opts.drawingPreview))
   crepe.editor.use(blockHandleGate)
   // Numbers are manual-only (YAZ-793): typing "1. " never auto-converts; "- " / "* " bullets keep theirs.
   void crepe.editor.remove(wrapInOrderedListInputRule)
