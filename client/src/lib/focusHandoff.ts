@@ -1,5 +1,5 @@
 /**
- * THE FOCUS HANDOFF (YAZ-949) — the keyboard loop's two half-steps, in ONE place because three
+ * THE FOCUS HANDOFF (YAZ-961) — the keyboard loop's two half-steps, in ONE place because three
  * surfaces perform them: the Topics rows, the Files rows and the search list all hand focus INTO
  * the open document (a second Enter, the "take me in"), and `createCrepe`'s Escape hands it back
  * OUT to whichever sidebar the walk came from. Both answer a boolean so a caller that is a

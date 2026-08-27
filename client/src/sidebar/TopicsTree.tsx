@@ -268,7 +268,7 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
       return
     }
     if (path === activeFile) {
-      focusOpenDocument() // the VISIBLE document (YAZ-949): a folder page's outline, not its hidden body
+      focusOpenDocument() // the VISIBLE document (YAZ-961): a folder page's outline, not its hidden body
       return
     }
     onOpenFile(path)

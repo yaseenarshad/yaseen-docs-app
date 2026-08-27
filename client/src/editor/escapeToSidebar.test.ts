@@ -69,7 +69,7 @@ describe('Escape returns to the sidebar (YAZ-947)', () => {
     expect(document.activeElement).toBe(first)
   })
 
-  it('returns to the SEARCH BAR while a query stands — the list is driven from it (YAZ-949)', async () => {
+  it('returns to the SEARCH BAR while a query stands — the list is driven from it (YAZ-961)', async () => {
     // Search REPLACES the tree's body (🔒 D5), so there are no rows to land on: the walk lives
     // in the input, and the selection it drives is waiting there untouched.
     const input = document.createElement('input')

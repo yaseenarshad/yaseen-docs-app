@@ -139,7 +139,7 @@ export function Tree({
                 // First activation previews, second commits — the Topics rows' rule (YAZ-921):
                 // opening keeps focus on the row, re-activating the open page enters its text.
                 if (e.metaKey) onOpenFileBackground(node.path)
-                else if (node.path === activeFile) focusOpenDocument() // YAZ-949: the VISIBLE one
+                else if (node.path === activeFile) focusOpenDocument() // YAZ-961: the VISIBLE one
                 else onOpenFile(node.path)
               }}
               onContextMenu={(e) => onNodeContextMenu(node, e)}

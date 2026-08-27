@@ -742,7 +742,7 @@ describe('search results (YAZ-803)', () => {
     return pm
   }
 
-  it('a second Enter on the page ALREADY open commits the caret into it, and never re-opens it (YAZ-949)', async () => {
+  it('a second Enter on the page ALREADY open commits the caret into it, and never re-opens it (YAZ-961)', async () => {
     // The tree rows' rule (YAZ-921), on the search list: the first Enter previews — focus stays
     // in the bar, so the walk continues — and the second is the deliberate "take me in".
     const pm = editorStub()
@@ -753,7 +753,7 @@ describe('search results (YAZ-803)', () => {
     pm.remove()
   })
 
-  it('⌘-Enter on the open page still opens a background tab — never the commit (YAZ-949)', async () => {
+  it('⌘-Enter on the open page still opens a background tab — never the commit (YAZ-961)', async () => {
     const pm = editorStub()
     const { input, props } = await search('alph', { activeFile: '/v/Alpha.md' })
     await press(input, 'Enter', true)

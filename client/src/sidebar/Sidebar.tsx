@@ -804,7 +804,7 @@ export function Sidebar({
               e.preventDefault()
               const hit = results[sel]
               if (hit === undefined) return
-              // The tree rows' rule on the list (YAZ-949): the first Enter PREVIEWS — focus stays
+              // The tree rows' rule on the list (YAZ-961): the first Enter PREVIEWS — focus stays
               // in the bar, so ↑/↓ carry on — and a second Enter on the page already open is the
               // deliberate "take me in", handing the caret to the document (Esc brings it back).
               if (e.metaKey) onOpenFileBackground(hit.path)

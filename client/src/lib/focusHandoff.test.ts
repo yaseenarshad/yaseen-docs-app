@@ -1,5 +1,5 @@
 /**
- * THE FOCUS HANDOFF (YAZ-949): the two directions of the keyboard loop, pinned in one place
+ * THE FOCUS HANDOFF (YAZ-961): the two directions of the keyboard loop, pinned in one place
  * because three surfaces perform them — the Topics rows, the Files rows and the search list hand
  * focus INTO the open document; `createCrepe`'s Escape hands it BACK. jsdom has no layout, so
  * `offsetParent` is stubbed exactly as the tree suites stub it.
