@@ -463,6 +463,16 @@
   background: var(--bg);
 }
 
+.view-table .view-table__frozen {
+  position: sticky;
+  z-index: 1;
+  background: var(--bg);
+}
+
+.view-table thead th.view-table__frozen {
+  z-index: 3;
+}
+
 .view-table tbody td {
   height: var(--view-table-row-h, 28px);
 }
@@ -540,6 +550,10 @@
   border-top: 1px solid var(--border);
   border-right: none;
   border-bottom: none;
+}
+
+.view-table tfoot td.view-table__frozen {
+  z-index: 3;
 }
 
 .view-table__summary-btn {
@@ -793,6 +807,10 @@
   background: var(--accent-soft);
 }
 
+.view-table__row--drop td.view-table__frozen {
+  background: var(--accent-soft);
+}
+
 .view-drag__error {
   margin-left: 6px;
 }
@@ -997,7 +1015,15 @@
   text-overflow: ellipsis;
 }
 
-/* the Properties menu's List section (markerStyle / indentProperties / propertySeparator) */
+/* the Properties menu's Table/List settings sections */
+.view-table-settings {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--fg-muted);
+}
+
 .view-list-settings {
   display: flex;
   gap: 8px;

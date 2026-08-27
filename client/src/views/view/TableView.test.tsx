@@ -262,6 +262,61 @@ describe('column resize', () => {
   })
 })
 
+describe('frozen columns', () => {
+  const FROZEN_BASE = `views:
+  - type: table
+    name: T
+    frozenColumns: 2
+    order:
+      - file.name
+      - note.status
+      - note.priority
+    columnSize:
+      file.name: 120
+      note.status: 90
+`
+
+  it('sticks the first N real header, body and footer cells at cumulative live widths', () => {
+    const { el } = mount(FROZEN_BASE)
+    const header = [...el.querySelectorAll<HTMLElement>('.view-table thead th')]
+    const body = cells(bodyRows(el)[0])
+    const footer = [...el.querySelectorAll<HTMLElement>('.view-table tfoot td')]
+
+    for (const row of [header, body, footer]) {
+      expect(row.map((cell) => cell.classList.contains('view-table__frozen'))).toEqual([true, true, false])
+      expect(row.map((cell) => cell.style.left)).toEqual(['0px', '120px', ''])
+    }
+  })
+
+  it('moves later frozen columns during a resize preview and keeps the offset after the write', () => {
+    const { el, def } = mount(FROZEN_BASE)
+    const second = () => [
+      q<HTMLElement>(el, '.view-table thead th:nth-child(2)'),
+      q<HTMLElement>(el, '.view-table tbody tr:not(.view-table__spacer) td:nth-child(2)'),
+      q<HTMLElement>(el, '.view-table tfoot td:nth-child(2)'),
+    ]
+    expect(second().map((cell) => cell.style.left)).toEqual(['120px', '120px', '120px'])
+
+    mouse(el.querySelectorAll('.view-table__resize')[0], 'mousedown', 100)
+    mouse(window, 'mousemove', 160)
+    expect(second().map((cell) => cell.style.left)).toEqual(['180px', '180px', '180px'])
+    mouse(window, 'mouseup', 160)
+
+    expect(def().views[0].columnSize?.['file.name']).toBe(180)
+    expect(second().map((cell) => cell.style.left)).toEqual(['180px', '180px', '180px'])
+  })
+
+  it('renders malformed counts safely as zero and clamps oversized counts to every visible column', () => {
+    const malformed = mount(FROZEN_BASE.replace('frozenColumns: 2', 'frozenColumns: nope'))
+    expect(malformed.el.querySelector('.view-table__frozen')).toBeNull()
+
+    act(() => root?.unmount())
+    container?.remove()
+    const all = mount(FROZEN_BASE.replace('frozenColumns: 2', 'frozenColumns: 99'))
+    expect([...all.el.querySelectorAll('.view-table thead th')].every((cell) => cell.classList.contains('view-table__frozen'))).toBe(true)
+  })
+})
+
 describe('summary row', () => {
   const SUM_BASE = `summaries:
   Total: '"n=" + values.length'
@@ -342,12 +397,15 @@ describe('row height', () => {
 
 describe('windowing', () => {
   it('with more than 500 rows only a slice of <tr>s is in the DOM, padded by spacer rows', () => {
-    const { el } = mount('views:\n  - type: table\n    name: T\n', { records: manyRecords() })
+    const { el } = mount('views:\n  - type: table\n    name: T\n    frozenColumns: 1\n', { records: manyRecords() })
     expect(q(el, '.view-toolbar__count').textContent).toBe('600 items')
     expect(bodyRows(el).length).toBeLessThan(100)
     expect(links(el)[0]).toBe('n000.md')
     expect(links(el)).not.toContain('n599.md')
-    expect(el.querySelector('.view-table__spacer')).not.toBeNull()
+    const spacer = q<HTMLTableRowElement>(el, '.view-table__spacer')
+    expect(spacer).not.toBeNull()
+    expect(q<HTMLTableCellElement>(spacer, 'td').colSpan).toBe(1)
+    expect(spacer.querySelector('.view-table__frozen')).toBeNull()
   })
 
   it('scrolling moves the rendered slice', () => {

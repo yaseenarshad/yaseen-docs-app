@@ -32,6 +32,7 @@ export interface ViewDef {
   limit?: number
   summaries?: Record<string, string>
   columnSize?: Record<string, number>
+  frozenColumns?: number
   rowHeight?: string
   image?: string
   cardSize?: string | number
