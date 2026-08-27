@@ -8,9 +8,16 @@
  * SEEDED ONCE, from `markdown` at mount. The seed goes through YAZ-900's grammar
  * (`parseOutline` → `serializeOutline`), which is both the empty state — no bullets means ONE empty
  * bullet, so there is something to click and type into — and the guarantee the lock needs: the
- * initial document cannot be anything but bullets. Later `markdown` props are NOT pushed in; the
- * caller owns the string and remounts (a `key`) when it wants a different document, exactly as the
- * note editor remounts per file.
+ * initial document cannot be anything but bullets. Each seeded line's text goes in through the
+ * grammar's `escapeBlockStart`, so text that merely LOOKS like a block — `1. Title`, `# x` — stays
+ * the literal text the grammar promises instead of re-parsing into a node the lock drops (YAZ-964).
+ * Later `markdown` props are NOT pushed in; the caller owns the string and remounts (a `key`) when
+ * it wants a different document, exactly as the note editor remounts per file.
+ *
+ * THE GUARD is the escape's backstop, for the gap nobody has found yet: after the create, fewer
+ * bullets back than went in means Milkdown could not hold the seed, and a seed the parse cannot
+ * hold must never be written back as the truth. The editor goes read-only and reports through
+ * `onSeedLoss` — the loss is shown, never saved.
  *
  * ONCHANGE is the note editor's save idiom minus the disk: Crepe's listener debounces
  * `markdownUpdated` ~200ms, this adds the same 500ms `useAutosave` uses, and the caller owns the
@@ -24,7 +31,7 @@ import { createCrepe } from '../../editor/createCrepe'
 import type { WikilinkNav } from '../../editor/wikilink/wikilinkClick'
 import type { WikilinkCandidateSource } from '../../editor/wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
-import { parseOutline, serializeOutline } from '../outlineDoc'
+import { escapeBlockStart, parseOutline, serializeOutline } from '../outlineDoc'
 import '../../editor/outline/bullets.css'
 import '../../editor/outline/guideLines.css'
 import '../../editor/outline/outlineFolding.css'
@@ -39,6 +46,9 @@ export interface OutlineEditorProps {
   markdown: string
   /** Debounced serialised markdown after every committed edit; the caller owns the settings write. */
   onChange: (markdown: string) => void
+  /** Called ONCE, after mount, when the parsed document holds fewer lines than the seed — the
+      guard's report; the editor is already read-only when it fires. */
+  onSeedLoss?: () => void
   /** Wikilink resolve source (Links A): App's one per window — the very instance the note editor holds. */
   wikilinks?: WikilinkResolveSource
   /** `[[` picker candidates (Links B): same ownership and feed. */
@@ -51,13 +61,15 @@ export interface OutlineEditorProps {
   nav?: WikilinkNav
 }
 
-export function OutlineEditor({ markdown, onChange, wikilinks, wikilinkCandidates, nav }: OutlineEditorProps) {
+export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikilinkCandidates, nav }: OutlineEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   // The seed is the FIRST markdown only; later props never reach the mount effect (see the docblock).
   const seedRef = useRef(markdown)
   // Read at emit time so a re-rendered parent's fresh callback lands without remounting the editor.
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
+  const onSeedLossRef = useRef(onSeedLoss)
+  onSeedLossRef.current = onSeedLoss
 
   useEffect(() => {
     const host = hostRef.current
@@ -78,10 +90,11 @@ export function OutlineEditor({ markdown, onChange, wikilinks, wikilinkCandidate
       onChangeRef.current(md)
     }
 
-    const lines = parseOutline(seedRef.current)
+    const lines = parseOutline(seedRef.current).map((line) => ({ ...line, text: escapeBlockStart(line.text) }))
+    const seeded = lines.length > 0 ? lines : [{ depth: 0, text: '' }]
     const crepe = createCrepe({
       root: el,
-      defaultValue: serializeOutline(lines.length > 0 ? lines : [{ depth: 0, text: '' }]),
+      defaultValue: serializeOutline(seeded),
       features: outlineFeatures,
       onMarkdownUpdated: (md) => {
         pending = md
@@ -93,7 +106,13 @@ export function OutlineEditor({ markdown, onChange, wikilinks, wikilinkCandidate
     })
     lockToBullets(crepe)
 
-    const ready = crepe.create()
+    const ready = crepe.create().then(() => {
+      // The seed must survive the parse: fewer bullets back means Milkdown dropped content (YAZ-964).
+      if (parseOutline(crepe.getMarkdown()).length < seeded.length) {
+        crepe.setReadonly(true)
+        onSeedLossRef.current?.()
+      }
+    })
 
     return () => {
       if (timer !== null) clearTimeout(timer)

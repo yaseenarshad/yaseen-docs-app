@@ -79,6 +79,10 @@ export interface OutlineViewProps {
 /** Names sort the way the base engine sorts them: case- and accent-insensitive, numeric-aware. */
 const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true })
 
+/** What the editor's seed guard (YAZ-974) says out loud: read-only, and the note on disk is untouched. */
+const SEED_LOSS_MESSAGE =
+  'This outline contains a line the editor cannot display safely. The view is read-only and nothing was written — the file is untouched. Open the note itself to see everything.'
+
 export function OutlineView({
   folderPagePath,
   root,
@@ -129,7 +133,9 @@ export function OutlineView({
   const [seed, setSeed] = useState(0)
 
   const belonging = { path: folderPagePath, name: folderPageName, records: vaultRecords, resolve }
-  const report = (err: unknown): void => setError(err instanceof Error ? err.message : String(err))
+  /** A belonging write failed: the one error surface, wearing the write's own lead-in. */
+  const report = (err: unknown): void =>
+    setError(`Could not update the page's folder pages: ${err instanceof Error ? err.message : String(err)}`)
   /**
    * The records a diff side is about. A page cannot be its own member, in EITHER direction — the
    * exclusion the add row made (🔒 D4) — and a path with no record in the snapshot is nobody.
@@ -177,11 +183,19 @@ export function OutlineView({
     <div className="view-outline">
       {error !== null && (
         <p className="view-view__error" role="alert">
-          Could not update the page's folder pages: {error}
+          {error}
         </p>
       )}
       {/* `markdown` is read at MOUNT only (YAZ-901): every later edit comes back OUT through onChange. */}
-      <OutlineEditor key={seed} markdown={doc} onChange={commit} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} nav={nav} />
+      <OutlineEditor
+        key={seed}
+        markdown={doc}
+        onChange={commit}
+        onSeedLoss={() => setError(SEED_LOSS_MESSAGE)}
+        wikilinks={wikilinks}
+        wikilinkCandidates={wikilinkCandidates}
+        nav={nav}
+      />
       {appended.length > 0 && (
         <ul className="view-outline__list">
           {appended.map((member) => (
