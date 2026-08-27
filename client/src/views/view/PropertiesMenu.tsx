@@ -101,85 +101,92 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
           const i = shown.indexOf(key)
           const label = propertyLabel(def, key)
           const decl = folderPage.settings.columns[bare(key)]
+          const isNote = canonicalKey(key).startsWith('note.')
           return (
             <li key={key} className="view-prop">
-              <input
-                type="checkbox"
-                aria-label={`Show ${label}`}
-                checked={on}
-                disabled={canonicalKey(key) === 'file.name'}
-                onChange={() => toggle(key)}
-              />
-              {editing === key ? (
-                <TextField
-                  className="view-input view-prop__rename"
-                  aria-label="Display name"
-                  placeholder={bare(key)}
-                  autoFocus
-                  value={def.properties?.[entryKey(def, key)]?.displayName ?? ''}
-                  onCommit={(name) => setDisplayName(key, name)}
-                  onDone={() => setEditing(null)}
+              <div className="view-prop__identity">
+                <input
+                  type="checkbox"
+                  aria-label={`Show ${label}`}
+                  checked={on}
+                  disabled={canonicalKey(key) === 'file.name'}
+                  onChange={() => toggle(key)}
                 />
-              ) : (
-                <span className="view-prop__name">
-                  {label}
-                  {label !== key && <small>{key}</small>}
-                </span>
-              )}
-              <button type="button" className="view-rule__nav" aria-label={`Rename ${label}`} title="Display name" onClick={() => setEditing(key)}>
-                <PencilIcon />
-              </button>
-              {canonicalKey(key).startsWith('note.') && (
-                <select
-                  className="view-select"
-                  aria-label={`Type of ${label}`}
-                  value={decl?.kind ?? ''}
-                  onChange={(e) => setKind(bare(key), e.target.value as PropertyKind)}
-                >
-                  {/* Undeclared: the ladder's LOWER rungs decide — a placeholder, never a choice. */}
-                  <option value="" disabled>
-                    auto
-                  </option>
-                  {PROPERTY_KINDS.map((k) => (
-                    <option key={k} value={k}>
-                      {k}
-                    </option>
-                  ))}
-                </select>
-              )}
-              {(decl?.kind === 'link' || decl?.kind === 'multi-link') && (
-                <TextField
-                  className="view-input view-relation__target"
-                  aria-label={`Target of ${label}`}
-                  placeholder="Any page"
-                  value={decl.target ?? ''}
-                  onCommit={(target) => setTarget(bare(key), target)}
-                />
-              )}
-              {root !== null && canonicalKey(key).startsWith('note.') && (
-                <button
-                  type="button"
-                  className="view-rule__nav"
-                  aria-label={`Relation for ${label}`}
-                  title="Relation"
-                  aria-expanded={relationFor === key}
-                  onClick={() => setRelationFor(relationFor === key ? null : key)}
-                >
-                  <RelationIcon />
+                {editing === key ? (
+                  <TextField
+                    className="view-input view-prop__rename"
+                    aria-label="Display name"
+                    placeholder={bare(key)}
+                    autoFocus
+                    value={def.properties?.[entryKey(def, key)]?.displayName ?? ''}
+                    onCommit={(name) => setDisplayName(key, name)}
+                    onDone={() => setEditing(null)}
+                  />
+                ) : (
+                  <span className="view-prop__name">
+                    {label}
+                    {label !== key && <small>{key}</small>}
+                  </span>
+                )}
+                <button type="button" className="view-rule__nav" aria-label={`Rename ${label}`} title="Display name" onClick={() => setEditing(key)}>
+                  <PencilIcon />
                 </button>
+              </div>
+              {(isNote || on) && (
+                <div className="view-prop__controls">
+                  {isNote && (
+                    <select
+                      className="view-select"
+                      aria-label={`Type of ${label}`}
+                      value={decl?.kind ?? ''}
+                      onChange={(e) => setKind(bare(key), e.target.value as PropertyKind)}
+                    >
+                      {/* Undeclared: the ladder's LOWER rungs decide — a placeholder, never a choice. */}
+                      <option value="" disabled>
+                        auto
+                      </option>
+                      {PROPERTY_KINDS.map((k) => (
+                        <option key={k} value={k}>
+                          {k}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {(decl?.kind === 'link' || decl?.kind === 'multi-link') && (
+                    <TextField
+                      className="view-input view-relation__target"
+                      aria-label={`Target of ${label}`}
+                      placeholder="Any page"
+                      value={decl.target ?? ''}
+                      onCommit={(target) => setTarget(bare(key), target)}
+                    />
+                  )}
+                  {root !== null && isNote && (
+                    <button
+                      type="button"
+                      className="view-rule__nav"
+                      aria-label={`Relation for ${label}`}
+                      title="Relation"
+                      aria-expanded={relationFor === key}
+                      onClick={() => setRelationFor(relationFor === key ? null : key)}
+                    >
+                      <RelationIcon />
+                    </button>
+                  )}
+                  {on && (
+                    <>
+                      <button type="button" className="view-rule__nav" aria-label="Move up" disabled={i <= 0} onClick={() => move(key, -1)}>
+                        ↑
+                      </button>
+                      <button type="button" className="view-rule__nav" aria-label="Move down" disabled={i < 0 || i === shown.length - 1} onClick={() => move(key, 1)}>
+                        ↓
+                      </button>
+                    </>
+                  )}
+                </div>
               )}
               {relationFor === key && root !== null && (
                 <RelationEditor root={root} propKey={bare(key)} properties={properties} onDone={() => setRelationFor(null)} />
-              )}
-              {on && (
-                <>
-                  <button type="button" className="view-rule__nav" aria-label="Move up" disabled={i <= 0} onClick={() => move(key, -1)}>
-                    ↑
-                  </button>
-                  <button type="button" className="view-rule__nav" aria-label="Move down" disabled={i < 0 || i === shown.length - 1} onClick={() => move(key, 1)}>
-                    ↓
-                  </button>
-                </>
               )}
             </li>
           )

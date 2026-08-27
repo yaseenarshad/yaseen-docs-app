@@ -258,6 +258,18 @@ describe('properties menu', () => {
     expect(byLabel(openMenu(el, 'Properties'), 'Show owner')).toBeDefined()
   })
 
+  it('keeps a long column identity separate from its controls (YAZ-1006)', () => {
+    const name = 'campaign_narrative_summary'
+    const settings = { columns: { [name]: { kind: 'text' as const } }, views: [], problems: [] }
+    const { el } = mount(undefined, { folderPage: testFolderPage({ settings }) })
+    const pop = openMenu(el, 'Properties')
+    const row = byLabel(pop, `Show ${name}`).closest<HTMLElement>('.view-prop')
+    expect(row).not.toBeNull()
+    expect(q(row!, '.view-prop__identity .view-prop__name').firstChild?.textContent).toBe(name)
+    expect(byLabel(q(row!, '.view-prop__identity'), `Rename ${name}`)).toBeDefined()
+    expect(byLabel(q(row!, '.view-prop__controls'), `Type of ${name}`)).toBeDefined()
+  })
+
   it('+ Add column declares it and shows it, in ONE write (YAZ-896)', () => {
     const setColumns = vi.fn()
     const settings = { columns: { tag: { kind: 'text' as const } }, views: [], problems: [] }
