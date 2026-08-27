@@ -6,6 +6,8 @@ import { DrawingModal } from '../drawings/DrawingModal'
 import { createDrawingFeed } from '../drawings/drawingFeed'
 import { FolderPageContents } from '../views/FolderPageContents'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
+import { FindBar } from './find/FindBar'
+import { createFindChannel } from './find/findChannel'
 import { FrontmatterPanel } from './FrontmatterPanel'
 import { PageTitle } from './PageTitle'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
@@ -116,6 +118,12 @@ function CrepeHost({
    * without a remount. Stable identity — a new feed would silently orphan the subscription.
    */
   const drawingFeed = useMemo(() => createDrawingFeed(), [])
+  /**
+   * The CMD+F wiring (YAZ-968/969), ONE per host on the drawing feed's terms: the engine binds
+   * itself to this channel at view creation and the bar below drives it. Stable identity — a new
+   * channel would remount the editor and leave the bar talking to nothing.
+   */
+  const findChannel = useMemo(() => createFindChannel(), [])
   /** The target whose modal is open; the preview's click sets it, close clears it. */
   const [openDrawing, setOpenDrawing] = useState<string | null>(null)
 
@@ -154,6 +162,7 @@ function CrepeHost({
       // carries the rest and `readAsset` resolves it. Both live wires are YAZ-879's: the feed
       // the modal's save pokes, and the click that opens that modal.
       drawingPreview: { root, feed: drawingFeed, onOpenDrawing: setOpenDrawing },
+      find: findChannel,
     })
     crepeRef.current = crepe
     let controller: ReturnType<typeof attach> | null = null
@@ -212,7 +221,7 @@ function CrepeHost({
       unsubscribe()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, createBase, drawingFeed])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, createBase, drawingFeed, findChannel])
 
   // The Home guard's fact (⚡ YAZ-888): Home is whatever `[[Home]]` RESOLVES to (🔒 D1, YAZ-821)
   // — the window's own resolver, never a path check, so an aliased or nested Home is still Home.
@@ -272,6 +281,9 @@ function CrepeHost({
           <BacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
         )}
       </div>
+      {/* CMD+F (YAZ-969) floats OVER that scroller rather than in it: `section.editor` is the
+          positioned ancestor, so the bar holds its corner while the note scrolls under it. */}
+      <FindBar channel={findChannel} scope="note" hostRef={hostRef} />
       {/* The drawing editor (YAZ-879) — a MODAL over the window, never a node view inside the
           note. Keyed by target so reopening a different drawing is a fresh canvas, and the
           appearance is App's already-resolved one, read once (`appliedTheme`). */}

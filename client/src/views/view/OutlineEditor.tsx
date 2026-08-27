@@ -18,9 +18,11 @@
  * Milkdown (`- ` at four spaces becomes `* ` at two) is not a document change and never fires — and
  * on unmount the pending edit is flushed, so switching views never drops the last keystroke.
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { lockToBullets, outlineFeatures } from '../../editor/outline/bulletsOnly'
 import { createCrepe } from '../../editor/createCrepe'
+import { FindBar } from '../../editor/find/FindBar'
+import { createFindChannel } from '../../editor/find/findChannel'
 import type { WikilinkNav } from '../../editor/wikilink/wikilinkClick'
 import type { WikilinkCandidateSource } from '../../editor/wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
@@ -58,6 +60,12 @@ export function OutlineEditor({ markdown, onChange, wikilinks, wikilinkCandidate
   // Read at emit time so a re-rendered parent's fresh callback lands without remounting the editor.
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
+  /**
+   * This view's OWN CMD+F (YAZ-968/969), the note editor's wiring verbatim: one channel per mount,
+   * bound by the engine and driven by the bar below, whose claim is focus standing in this host
+   * (🔒 YAZ-967). Stable identity — a new channel would remount the editor.
+   */
+  const findChannel = useMemo(() => createFindChannel(), [])
 
   useEffect(() => {
     const host = hostRef.current
@@ -90,6 +98,7 @@ export function OutlineEditor({ markdown, onChange, wikilinks, wikilinkCandidate
       wikilinks,
       wikilinkCandidates,
       wikilinkNav: nav,
+      find: findChannel,
     })
     lockToBullets(crepe)
 
@@ -100,7 +109,11 @@ export function OutlineEditor({ markdown, onChange, wikilinks, wikilinkCandidate
       flush()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [wikilinks, wikilinkCandidates, nav])
+  }, [wikilinks, wikilinkCandidates, nav, findChannel])
 
-  return <div className="view-outline-editor" ref={hostRef} />
+  return (
+    <div className="view-outline-editor" ref={hostRef}>
+      <FindBar channel={findChannel} scope="outline" hostRef={hostRef} />
+    </div>
+  )
 }
