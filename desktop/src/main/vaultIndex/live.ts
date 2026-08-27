@@ -11,6 +11,8 @@ interface Entry {
   records: Map<string, IndexRecord>
   unsubscribe: () => void
   idle?: NodeJS.Timeout
+  /** Live scans the watcher has started but not finished — `getIndex` drains these before it answers (YAZ-986). */
+  inFlight: Set<Promise<unknown>>
   /** What the cold-start reconcile found (GRO-2223); dropped with the entry on idle eviction. */
   coldDiff?: ColdStartDiff
 }
@@ -39,15 +41,20 @@ async function walk(dir: string, out: string[]): Promise<void> {
 function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
   switch (ev.type) {
     case 'add':
-    case 'change':
+    case 'change': {
       if (!isMarkdown(ev.path)) return
-      void scanFile(root, ev.path)
+      const scan = scanFile(root, ev.path)
         .then(
           (record) => entry.records.set(ev.path, record),
           () => entry.records.delete(ev.path),
         )
-        .finally(() => schedulePersist(root, entry.records))
+        .finally(() => {
+          entry.inFlight.delete(scan)
+          schedulePersist(root, entry.records)
+        })
+      entry.inFlight.add(scan)
       return
+    }
     case 'unlink':
       entry.records.delete(ev.path)
       schedulePersist(root, entry.records)
@@ -71,7 +78,7 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
 // CACHE_VERSION bump here.)
 
 async function build(root: string): Promise<Entry> {
-  const entry: Entry = { records: new Map(), unsubscribe: () => undefined }
+  const entry: Entry = { records: new Map(), unsubscribe: () => undefined, inFlight: new Set() }
   const files: string[] = []
   // Persistent cache (GRO-2223): loaded BEFORE subscribing, overlapped with the walk — the cache
   // lives in userData, never the vault, so the watcher ordering below does not apply to it, and
@@ -130,6 +137,9 @@ export async function getIndex(root: string): Promise<IndexResponse> {
     entry = await scan
   }
   touch(root, entry)
+  // Drain scans the watcher has already started: a create that beat this call is in this snapshot,
+  // never invisible until the next fs event (YAZ-986) — the live twin of awaiting the first build.
+  if (entry.inFlight.size > 0) await Promise.all([...entry.inFlight])
   const records = [...entry.records.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
   return { root, records, generatedAt: Date.now() }
 }
