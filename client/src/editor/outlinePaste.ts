@@ -7,7 +7,8 @@
  *
  * `outlineToMarkdown()` translates that shape to real markdown (glyph rank + leading
  * indentation = depth, blanks between bullets dropped so it stays ONE list, content verbatim —
- * the trailing " ." junk is YAZ-936's call, not ours to strip silently), and the plugin inserts
+ * except the trailing " ." junk Slack appends: a period AFTER whitespace at line end is never
+ * real prose, so it is stripped, per the YAZ-933 decision), and the plugin inserts
  * the parsed markdown directly as a slice: the clipboard plugin's serialize-to-DOM-and-reparse
  * detour collapses the run of spaces the outline is meant to keep verbatim.
  *
@@ -42,7 +43,7 @@ export function outlineToMarkdown(text: string): string | null {
     const bullet = bullets[i]
     if (bullet) {
       const [, indent, glyph, content] = bullet
-      out.push(`${'  '.repeat(RANK[glyph] + Math.floor(indent.replace(/\t/g, '  ').length / 2))}- ${content}`)
+      out.push(`${'  '.repeat(RANK[glyph] + Math.floor(indent.replace(/\t/g, '  ').length / 2))}- ${content.replace(/[ \t]+\.$/, '')}`)
       afterBullet = true
     } else if (line.trim() === '') {
       // A blank between two bullets would split the list in two; anywhere else it is the

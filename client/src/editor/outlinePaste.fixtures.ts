@@ -21,15 +21,19 @@ export const SLACK_OUTLINE_SAMPLE = [
   '■ linking (wiki links) .',
 ].join('\n')
 
-/** What the translator must produce for SLACK_OUTLINE_SAMPLE (trailing " ." preserved — YAZ-936 decision pending). */
+/**
+ * What the translator must produce for SLACK_OUTLINE_SAMPLE. Trailing whitespace-then-period
+ * junk is STRIPPED (YAZ-933 decision, 2026-08-26): a period after whitespace at line end is
+ * never real prose. `to:.` has no space before the period, so it stays.
+ */
 export const SLACK_OUTLINE_EXPECTED = [
   'Phase 0) Business Wiki',
   '',
   '- this is the foundation to:.',
-  '  - 1) content (short form // long form)  .',
-  '  - 2) business (lead magnets // agents, automations we would build) .',
-  '- What is the business wiki? .',
-  '  - it’s my library of Alexandria // my mochi // my second brain for business .',
-  '    - database system .',
-  '    - linking (wiki links) .',
+  '  - 1) content (short form // long form)',
+  '  - 2) business (lead magnets // agents, automations we would build)',
+  '- What is the business wiki?',
+  '  - it’s my library of Alexandria // my mochi // my second brain for business',
+  '    - database system',
+  '    - linking (wiki links)',
 ].join('\n')

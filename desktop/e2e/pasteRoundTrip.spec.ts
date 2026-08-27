@@ -51,7 +51,7 @@ test('the Slack sample pastes IN as real nested lists, not flat • paragraphs',
   await expect(editor().locator('ul ul li').first()).toBeVisible()
   await expect(editor().locator('ul ul ul li').first()).toBeVisible()
   await expect(editor()).toContainText('this is the foundation to:.')
-  await expect(editor()).toContainText('database system .')
+  await expect(editor()).toContainText('database system')
   expect(await editor().textContent()).not.toContain('•')
   await shoot(win, 'pasteRoundTrip-1-pasted-nested')
 })
@@ -72,8 +72,8 @@ test('Select-All + copy puts markdown AND rich HTML back on the clipboard', asyn
   // the serializer's own (correct) escape — bare `1)` at item start would re-parse as an ordered
   // marker; pasting this markdown back reproduces `1) content …` exactly.
   expect(payload.text).toContain('* this is the foundation to:.')
-  expect(payload.text).toContain('  * 1\\) content (short form // long form)  .')
-  expect(payload.text).toContain('    * database system .')
+  expect(payload.text).toContain('  * 1\\) content (short form // long form)')
+  expect(payload.text).toContain('    * database system')
   expect(payload.text).not.toContain('•')
   // HTML side: genuinely nested list structure for rich targets (Linear, Docs).
   expect(payload.html).toContain('<ul')

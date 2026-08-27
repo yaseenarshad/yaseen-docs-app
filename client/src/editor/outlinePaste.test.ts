@@ -38,8 +38,9 @@ describe('outlineToMarkdown (pure)', () => {
     expect(outlineToMarkdown('- one\n  - two\n- three')).toBeNull()
   })
 
-  it('preserves trailing " ." content verbatim (strip is a pending decision, not silent behavior)', () => {
-    expect(outlineToMarkdown('• keep this .\n• and this  .')).toBe('- keep this .\n- and this  .')
+  it('strips the trailing " ." junk Slack appends — but only a period after whitespace (YAZ-933 decision)', () => {
+    expect(outlineToMarkdown('• junk here .\n• more junk  .')).toBe('- junk here\n- more junk')
+    expect(outlineToMarkdown('• real sentence.\n• ends with colon:.')).toBe('- real sentence.\n- ends with colon:.')
   })
 })
 
@@ -107,12 +108,12 @@ describe('outline paste wired into the editor (YAZ-937)', () => {
     expect(paste(view, { 'text/plain': SLACK_OUTLINE_SAMPLE })).toBe(true)
     expect(outlineOf(view)).toEqual([
       { depth: 0, text: 'this is the foundation to:.' },
-      { depth: 1, text: '1) content (short form // long form)  .' },
-      { depth: 1, text: '2) business (lead magnets // agents, automations we would build) .' },
-      { depth: 0, text: 'What is the business wiki? .' },
-      { depth: 1, text: 'it’s my library of Alexandria // my mochi // my second brain for business .' },
-      { depth: 2, text: 'database system .' },
-      { depth: 2, text: 'linking (wiki links) .' },
+      { depth: 1, text: '1) content (short form // long form)' },
+      { depth: 1, text: '2) business (lead magnets // agents, automations we would build)' },
+      { depth: 0, text: 'What is the business wiki?' },
+      { depth: 1, text: 'it’s my library of Alexandria // my mochi // my second brain for business' },
+      { depth: 2, text: 'database system' },
+      { depth: 2, text: 'linking (wiki links)' },
     ])
     expect(view.state.doc.textContent).toContain('Phase 0) Business Wiki')
     expect(view.state.doc.textContent).not.toContain('•')
