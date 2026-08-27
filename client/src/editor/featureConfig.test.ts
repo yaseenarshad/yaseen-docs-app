@@ -50,19 +50,18 @@ describe('Crepe feature allowlist', () => {
     expect(new Set([...ENABLED_FEATURES, ...DISABLED_FEATURES]).size).toBe(ALL_FEATURES.length)
   })
 
-  it('keeps the explicit v1 surface (ImageBlock, TopBar, AI off)', () => {
+  it('keeps the explicit surface (ImageBlock, TopBar, AI off — and Latex, since YAZ-977: dollars are dollars)', () => {
     expect(ENABLED_FEATURES).toEqual([
       CrepeFeature.BlockEdit,
       CrepeFeature.CodeMirror,
       CrepeFeature.Cursor,
-      CrepeFeature.Latex,
       CrepeFeature.LinkTooltip,
       CrepeFeature.ListItem,
       CrepeFeature.Placeholder,
       CrepeFeature.Table,
       CrepeFeature.Toolbar,
     ])
-    expect(DISABLED_FEATURES).toEqual([CrepeFeature.ImageBlock, CrepeFeature.TopBar, CrepeFeature.AI])
+    expect(DISABLED_FEATURES).toEqual([CrepeFeature.ImageBlock, CrepeFeature.Latex, CrepeFeature.TopBar, CrepeFeature.AI])
     for (const f of ALL_FEATURES) expect(features[f]).toBe((ENABLED_FEATURES as readonly string[]).includes(f))
   })
 

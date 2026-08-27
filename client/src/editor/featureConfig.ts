@@ -13,7 +13,6 @@ export const ENABLED_FEATURES = [
   CrepeFeature.BlockEdit,
   CrepeFeature.CodeMirror,
   CrepeFeature.Cursor,
-  CrepeFeature.Latex,
   CrepeFeature.LinkTooltip,
   CrepeFeature.ListItem,
   CrepeFeature.Placeholder,
@@ -24,6 +23,9 @@ export const ENABLED_FEATURES = [
 export const DISABLED_FEATURES = [
   /** Its serializer overwrites image alt text with the ratio ("![1.00](src)") — GRO-1961. */
   CrepeFeature.ImageBlock,
+  /** `$…$` is inline math to it, so `$500K–$1M` renders as a formula — this is a business
+      wiki, and dollars are dollars (YAZ-977). */
+  CrepeFeature.Latex,
   CrepeFeature.TopBar,
   CrepeFeature.AI,
 ] as const
