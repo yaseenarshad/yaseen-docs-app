@@ -11,6 +11,7 @@ import { applyBelonging, diffOutlineBelonging, outlineLinkTargets } from '../out
 import { ConfirmRemoveMember } from './ConfirmRemoveMember'
 import { FolderPageGlyph } from './icons'
 import { OutlineEditor } from './OutlineEditor'
+import { SyncFromFolder } from './SyncFromFolder'
 
 /**
  * The OUTLINE skin of a folder page's contents (YAZ-903 — the surface D4 of YAZ-818 asked for,
@@ -63,6 +64,10 @@ export interface OutlineViewProps {
   openBackground?: (path: string) => void
   /** The committed document — ONE settings write, through ViewsPane's `update`; `order` retires with it. */
   onDocument: (markdown: string) => void
+  /** The toolbar's "Sync from folder" (YAZ-953) is a sibling under `ViewsPane`, which owns the
+      one flag that opens this sheet — the document, and the append, stay here. */
+  syncing: boolean
+  onSyncDone: () => void
   /** The window's link feed (Links A), for the editor's own wikilink surfaces. */
   wikilinks?: WikilinkResolveSource
   /** `[[` picker candidates (Links B): same ownership and feed. */
@@ -84,6 +89,8 @@ export function OutlineView({
   onOpenFile,
   openBackground,
   onDocument,
+  syncing,
+  onSyncDone,
   wikilinks,
   wikilinkCandidates,
   nav,
@@ -91,7 +98,6 @@ export function OutlineView({
   const [error, setError] = useState<string | null>(null)
   /** The un-tag queue: one sheet at a time, in the order the edit dropped them. */
   const [pending, setPending] = useState<readonly IndexRecord[]>([])
-
   const folderPageName = folderPagePath.slice(folderPagePath.lastIndexOf('/') + 1).replace(/\.md$/i, '')
   // THE shared resolver, rooted (YAZ-846): keyed per records identity then per root, so this is
   // the very instance the wikilink decorations and backlinks hold — and a link line or a
@@ -113,6 +119,14 @@ export function OutlineView({
     const listed = new Set(order.map(resolve).filter((path): path is string => path !== null))
     return serializeOutline(fromOrder(order, records.filter((r) => !listed.has(r.path)).map((r) => r.basename)))
   })
+
+  /**
+   * Bumped ONLY by a write this component makes on the user's behalf (YAZ-954): the editor is
+   * seeded from `doc` at mount and never re-reads it — that is what keeps typing from being
+   * clobbered — so an appended line would sit on disk unseen until the page was reopened.
+   * Remounting IS reopening, and nothing the user typed is in flight when they approve a sheet.
+   */
+  const [seed, setSeed] = useState(0)
 
   const belonging = { path: folderPagePath, name: folderPageName, records: vaultRecords, resolve }
   const report = (err: unknown): void => setError(err instanceof Error ? err.message : String(err))
@@ -138,6 +152,20 @@ export function OutlineView({
     if (untag.length > 0) setPending((queue) => [...queue, ...untag])
   }
 
+  /**
+   * The approved entries (YAZ-953): depth-0 bullets at the END of the document, committed through
+   * `commit` — the outline's ONE door — so the belonging pass already there tags every newly-linked
+   * note, and nothing about that sync is written twice. Only the NEW lines go through
+   * `serializeOutline`: the document above is kept byte-for-byte, a parse → serialise of the whole
+   * thing would re-spell markers the user typed and drop the prose and blank lines it does not carry.
+   */
+  const appendLinks = (entries: { insert: string }[]): void => {
+    const lines = serializeOutline(entries.map(({ insert }) => ({ depth: 0, text: `[[${insert}]]` })))
+    onSyncDone()
+    setSeed((n) => n + 1)
+    commit(doc === '' ? lines : `${doc}\n${lines}`)
+  }
+
   const linked = useMemo(() => outlineLinkTargets(doc, resolve), [doc, resolve])
   const appended = useMemo(
     () => records.filter((r) => !linked.has(r.path)).sort((a, b) => collator.compare(a.basename, b.basename)),
@@ -153,7 +181,7 @@ export function OutlineView({
         </p>
       )}
       {/* `markdown` is read at MOUNT only (YAZ-901): every later edit comes back OUT through onChange. */}
-      <OutlineEditor markdown={doc} onChange={commit} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} nav={nav} />
+      <OutlineEditor key={seed} markdown={doc} onChange={commit} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} nav={nav} />
       {appended.length > 0 && (
         <ul className="view-outline__list">
           {appended.map((member) => (
@@ -192,6 +220,16 @@ export function OutlineView({
             </li>
           ))}
         </ul>
+      )}
+      {syncing && (
+        <SyncFromFolder
+          records={vaultRecords}
+          resolve={resolve}
+          outline={doc}
+          folderPagePath={folderPagePath}
+          onAdd={appendLinks}
+          onCancel={onSyncDone}
+        />
       )}
       {removing !== null && (
         // Keyed by the page: each queued un-tag is its OWN sheet, so focus starts on Cancel again.

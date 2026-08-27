@@ -2,7 +2,7 @@ import { type ReactNode, useCallback, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import type { FolderPageMode } from '../ViewsPane'
-import { ChevronsIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon } from './icons'
+import { ChevronsIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon, SyncIcon } from './icons'
 import { Popover } from './Popover'
 import { PropertiesMenu } from './PropertiesMenu'
 import { SortMenu } from './SortMenu'
@@ -38,6 +38,8 @@ export interface ToolbarProps {
    * for search to filter, so neither is offered.
    */
   documentView?: boolean
+  /** Opens the outline's "Sync from folder" sheet (YAZ-953); the sheet and the append are the outline's own. */
+  onSync: () => void
   /** The folder page bundle, for the Properties menu: its declarations, and the door they are written back through (YAZ-895). */
   folderPage: FolderPageMode
 }
@@ -53,7 +55,7 @@ export const countLabel = (shown: number, total: number): string =>
  * block, whose set IS the lookup and stores no filters (🔒 Q3) — so the button was never
  * rendered, and it and its menu are gone rather than permanently hidden.
  */
-export function Toolbar({ def, view, viewIndex, records, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, root = null, properties = null, documentView = false, folderPage }: ToolbarProps) {
+export function Toolbar({ def, view, viewIndex, records, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, root = null, properties = null, documentView = false, onSync, folderPage }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
   const close = useCallback(() => setOpen(null), [])
   const sorts = (view.sort?.length ?? 0) + (view.groupBy ? 1 : 0)
@@ -90,6 +92,12 @@ export function Toolbar({ def, view, viewIndex, records, shown, total, search, o
           <PlusIcon />
           New
         </button>
+        {/* The folder's notes are appended to the DOCUMENT (YAZ-953): no other skin has anywhere to put them. */}
+        {documentView && (
+          <button type="button" className="view-toolbar__btn" aria-label="Sync from folder" title="Sync from folder" onClick={onSync}>
+            <SyncIcon />
+          </button>
+        )}
         {button('sort', 'Sort', <SortIcon />, sorts, <SortMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} />)}
         {allGroupKeys.length > 0 && (
           <button

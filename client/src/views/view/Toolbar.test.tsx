@@ -16,6 +16,9 @@ import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderPage } from '../testFolderPage'
 import { TEST_RECORDS } from '../testRecords'
 
+/** The document skin's editor is a real Crepe instance; the toolbar's own chrome is what is under test. */
+vi.mock('./OutlineEditor', () => ({ OutlineEditor: () => null }))
+
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 /** YAZ-846: `folderPage` is required — the contents block is the only mount there is. */
@@ -471,6 +474,20 @@ describe('popover behaviour', () => {
     })
     draw()
     expect(el.querySelector('.view-popover')).toBeNull()
+  })
+})
+
+/**
+ * "Sync from folder" (YAZ-953). The gesture appends a disk folder's notes to the outline DOCUMENT,
+ * so the button rides that skin and no other: a table or a board has nothing to append them to.
+ */
+describe('sync from folder', () => {
+  const OUTLINE = 'views:\n  - type: outline\n    name: Outline\n'
+
+  it('the button is offered on the document skin, and only there', () => {
+    expect(mount().el.querySelector('[aria-label="Sync from folder"]')).toBeNull() // the table skin
+    expect(mount(OUTLINE).el.querySelector('[aria-label="Sync from folder"]')).toBeNull() // no folder page under it, no document
+    expect(byLabel(mount(OUTLINE, { thisFile: '/vault/Topic.md' }).el, 'Sync from folder')).toBeDefined()
   })
 })
 

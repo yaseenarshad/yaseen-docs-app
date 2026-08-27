@@ -271,6 +271,9 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
    * the locked ordering with property keys.
    */
   const outlineIndex = views.findIndex((v) => v.type === 'outline')
+  /** "Sync from folder" (YAZ-953): the toolbar's button and the outline's sheet are siblings, so
+      the one flag between them lives here. Never persisted — the folder is asked every time (🔒 3). */
+  const [syncing, setSyncing] = useState(false)
 
   // A folder page's views are switch-only (🔒 rule 4, YAZ-819): which view is active is session
   // state that never reaches the card, and view CRUD is not this block's gesture. The editable
@@ -297,6 +300,7 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
         root={root}
         properties={properties}
         documentView={outline}
+        onSync={() => setSyncing(true)}
         folderPage={folderPage}
       />
       {createError !== null && (
@@ -322,6 +326,8 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
           wikilinks={folderPage.wikilinks}
           wikilinkCandidates={folderPage.wikilinkCandidates}
           nav={folderPage.nav}
+          syncing={syncing}
+          onSyncDone={() => setSyncing(false)}
           // ONE `folder_page_settings` write, through the same door every config edit uses — the
           // door the retired drag wrote `order` through (YAZ-903). It lands on the FIRST outline
           // view because that is the one the seed was read from, and `order` RETIRES in the same

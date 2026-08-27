@@ -43,17 +43,24 @@ export interface LinkCandidate {
    * may omit it, and the matcher derives it on the fly when absent.
    */
   lower?: string
+  /**
+   * The record this row names (YAZ-957). Set by `linkCandidates`, absent on hand-built rows —
+   * without it a caller wanting "this note's name" has to match rows back by position or by
+   * resolving them, and both are wrong in a way that only shows up on a duplicate basename.
+   */
+  path?: string
 }
 
 /** A plain link name as a candidate: it matches, inserts and reads as itself. */
 export const nameCandidate = (name: string): LinkCandidate => ({ name, insert: name, label: name, lower: name.toLowerCase() })
 
 /** An alias of `note` (that note's own unambiguous name): typed as the alias, inserted piped. */
-const aliasCandidate = (alias: string, note: string): LinkCandidate => ({
+const aliasCandidate = (alias: string, note: string, path: string): LinkCandidate => ({
   name: alias,
   insert: `${note}|${alias}`,
   label: `${alias} — ${note}`,
   lower: alias.toLowerCase(),
+  path,
 })
 
 /**
@@ -132,6 +139,22 @@ export function linkCandidates(records: readonly IndexRecord[]): LinkCandidate[]
     // GRO-2197: no `[[X|X]]` row for an alias that IS the chosen name, no bracketed alias
     // whose piped insert would re-parse as a different link (module doc above).
     const aliases = r.aliases.filter((alias) => alias.toLowerCase() !== name.toLowerCase() && !/[[\]]/.test(alias))
-    return [nameCandidate(name), ...aliases.map(alias => aliasCandidate(alias, name))]
+    // The record rides along (YAZ-957) — added HERE, where it is known, so `nameCandidate` keeps
+    // its single argument and `names.map(nameCandidate)` can never pass an index as a path.
+    return [{ ...nameCandidate(name), path: r.path }, ...aliases.map(alias => aliasCandidate(alias, name, r.path))]
   })
+}
+
+/**
+ * Every indexed note's own link NAME, keyed by path — the ONE lookup behind both "Copy link"
+ * (YAZ-957) and sync-from-folder (YAZ-951), so the two can never spell one note two ways. The
+ * name is the shortest unambiguous one `linkCandidates` offers, which is exactly the text that
+ * links BACK to that record. Alias rows are skipped: they insert the piped `Note|Alias` form.
+ */
+export function linkNames(records: readonly IndexRecord[]): Map<string, string> {
+  const names = new Map<string, string>()
+  for (const candidate of linkCandidates(records)) {
+    if (candidate.insert === candidate.name && candidate.path !== undefined) names.set(candidate.path, candidate.insert)
+  }
+  return names
 }

@@ -11,8 +11,9 @@ import { writeProperty } from '../views/writeProperty'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
-import { basename } from '../lib/paths'
+import { basename, stripExt } from '../lib/paths'
 import { storage } from '../lib/storage'
+import { linkNames } from '../links/completion'
 import { FOLDER_PAGE_KEY, FOLDER_PAGES_KEY, folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { countLinkReferences } from '../links/renameLinks'
 import { allDirs, treeHasFile, treeReducer } from '../lib/treeState'
@@ -124,8 +125,8 @@ interface MenuTargets {
   rowKind: 'file' | 'dir' | null
   /** "Copy path" — the right-clicked row (file or folder), or the vault ROOT for blank space (GRO-2273). */
   copyPath: string | null
-  /** "Copy link" — FILE rows only; a folder link would only fail main's markdown guard (E3, GRO-2173). */
-  copyLinkPath: string | null
+  /** "Copy link" — the FILE row's own `[[wikilink]]`, resolved when the menu opens (E3 GRO-2173, YAZ-957). */
+  copyLinkText: string | null
   /** "Open in new window" — FILE rows only (D2, GRO-2168). */
   newWindowPath: string | null
   /** "Rename" — a concrete row only, NEVER blank space: the vault root is not renameable (E1b, GRO-2241). */
@@ -151,6 +152,16 @@ interface MenuTargets {
    */
   topicsAnchor: string | null
 }
+
+/**
+ * The name "Copy link" wraps in `[[…]]` (YAZ-957): this note's SHORTEST unambiguous link name,
+ * through `linkNames` — the ONE lookup sync-from-folder reads too, so the menu and the sync can
+ * never spell one note two ways. A note the snapshot has not indexed yet (created seconds ago,
+ * between the tree refresh and the index refetch) keeps its bare basename: the name that same
+ * rule gives an uncontested note, and the one it will have once the index catches up.
+ */
+const linkNameFor = (records: readonly IndexRecord[], path: string): string =>
+  linkNames(records).get(path) ?? stripExt(basename(path))
 
 /**
  * Notes and subfolders inside `dir`, counted RECURSIVELY from the already-loaded tree
@@ -443,7 +454,10 @@ export function Sidebar({
         // empty-Explorer menu does the same. Trailing separators are stripped so the copied
         // bytes match the root the rest of the app uses.
         copyPath: node?.path ?? root.replace(/\/+$/, ''),
-        copyLinkPath: filePath,
+        // "Copy link" copies the note's `[[wikilink]]` (YAZ-957), resolved HERE off the same
+        // snapshot `folderPageIsOn` reads and pinned into the menu's state: the menu that opens
+        // is about the row that was right-clicked, whatever the index does next.
+        copyLinkText: filePath === null ? null : `[[${linkNameFor(indexSource.records, filePath)}]]`,
         newWindowPath: filePath,
         renamePath: node?.path ?? null,
         deletePath: node?.path ?? null,
@@ -880,7 +894,7 @@ export function Sidebar({
           x={menu.x}
           y={menu.y}
           copyPath={menu.copyPath}
-          copyLinkPath={menu.copyLinkPath}
+          copyLinkText={menu.copyLinkText}
           newWindowPath={menu.newWindowPath}
           onOpenNewWindow={openFileNewWindow}
           renamePath={menu.renamePath}

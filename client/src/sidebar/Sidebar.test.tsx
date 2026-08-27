@@ -169,7 +169,15 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
   })
 })
 
-describe('Sidebar copy link (E3, GRO-2173)', () => {
+/**
+ * "Copy link" copies the note's `[[wikilink]]` (YAZ-957) — the text that pastes into another
+ * note and resolves back to the row that was right-clicked. It REPLACED the `yaseendocs://`
+ * deep link this item used to copy (E3, GRO-2173): main's protocol handler and its parser are
+ * untouched, but a wikilink is the link this vault's own notes are written in. The name is the
+ * SHORTEST unambiguous one — the same rule the `[[` picker completes over
+ * (`links/completion.ts`), read off the index snapshot when the menu opens.
+ */
+describe('Sidebar copy link (E3 GRO-2173, YAZ-957)', () => {
   /** jsdom has no navigator.clipboard; the menu items call writeText, so stub just that. */
   function installClipboard() {
     const writeText = vi.fn(async () => undefined)
@@ -177,20 +185,60 @@ describe('Sidebar copy link (E3, GRO-2173)', () => {
     return writeText
   }
 
-  it('the file row context menu offers "Copy link" next to "Copy path"; it puts the yaseendocs:// link on the clipboard and closes', async () => {
+  /** One index record for `path`, its folder derived from it — the snapshot the name is read off. */
+  const record = (path: string) => {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    const rel = path.slice('/v/'.length)
+    return {
+      path,
+      name,
+      basename: name.replace(/\.[^.]+$/, ''),
+      folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '',
+      ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [],
+    }
+  }
+  const feed = (...records: ReturnType<typeof record>[]): SidebarProps['indexSource'] =>
+    ({ resolve: null, records, subscribe: () => () => undefined }) as SidebarProps['indexSource']
+
+  it('the file row context menu offers "Copy link" next to "Copy path"; it puts the note\'s [[wikilink]] on the clipboard and closes', async () => {
     const writeText = installClipboard()
-    const { el } = await mount()
+    const { el } = await mount({ indexSource: feed(record('/v/a.md')) })
     act(() => void fileRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     const labels = menuItems(el).map((b) => b.textContent)
     expect(labels.indexOf('Copy link')).toBe(labels.indexOf('Copy path') + 1)
     act(() => itemByLabel(el, 'Copy link')?.click())
-    // The exact fileLink('/v/a.md') bytes — the link main's parseFileLink round-trips (links.test.ts).
-    expect(writeText).toHaveBeenCalledTimes(1)
-    expect(writeText).toHaveBeenCalledWith('yaseendocs:///v/a.md')
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('[[a]]')
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
-  it('folder rows and blank space get no "Copy link" (a folder link would only fail the markdown guard)', async () => {
+  it('a DUPLICATE basename copies the DISAMBIGUATED name, so the paste resolves back to the row that was right-clicked', async () => {
+    const writeText = installClipboard()
+    const DUPES: TreeNode[] = [
+      { type: 'dir', name: 'sub', path: '/v/sub', children: [{ type: 'file', name: 'a.md', path: '/v/sub/a.md', size: 1, mtime: 1, kind: 'markdown' }] },
+      { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
+    ]
+    const { el } = await mount({ indexSource: feed(record('/v/a.md'), record('/v/sub/a.md')) }, (b) =>
+      b.tree.mockImplementation(async (r: string) => ({ root: r, tree: DUPES, generatedAt: 1 })),
+    )
+    act(() => el.querySelector<HTMLButtonElement>('.tree__row--dir')?.click()) // expand `sub`
+    act(() => void el.querySelector('[title="/v/sub/a.md"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Copy link')?.click())
+    expect(writeText).toHaveBeenLastCalledWith('[[sub/a]]')
+    // …while the shallowest of the two keeps the bare name — the one the resolver gives it.
+    act(() => void el.querySelector('[title="/v/a.md"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Copy link')?.click())
+    expect(writeText).toHaveBeenLastCalledWith('[[a]]')
+  })
+
+  it('a row the index has not caught up with yet copies its bare name — a note seconds old still links', async () => {
+    const writeText = installClipboard()
+    const { el } = await mount() // the pre-first-index feed: no records at all
+    act(() => void fileRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Copy link')?.click())
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('[[a]]')
+  })
+
+  it('folder rows and blank space get no "Copy link" — neither is a note to name', async () => {
     installClipboard()
     const { el } = await mount()
     act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
@@ -1449,6 +1497,17 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     act(() => itemByLabel(el, 'Copy path')?.click())
     // The PAGE's path, never the vault root's — the blank-space fallback stays where it belongs.
     expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/Docs/Guide.md')
+  })
+
+  it('Copy link copies the PAGE\'s own [[wikilink]] — one item, one name, whichever lens opened it (YAZ-957)', async () => {
+    const writeText = installClipboard()
+    const { el } = await topics()
+    await expandDocs(el)
+    await rightClick(rowFor(el, 'Guide'))
+    act(() => itemByLabel(el, 'Copy link')?.click())
+    // Guide lives in a SUBFOLDER and still copies the BARE name: the shortest unambiguous one,
+    // never the path this lens exists to hide.
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('[[Guide]]')
   })
 
   it('Delete flows through the EXISTING pipeline: the same sheet, then onDeleteFile with the page\'s path', async () => {

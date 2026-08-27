@@ -135,16 +135,21 @@ describe('linkCandidates', () => {
   })
 
   it('a name row matches, inserts and reads as itself (lower precomputed for the ranking scan, GRO-2197)', () => {
-    expect(linkCandidates([rec('/vault/A.md')])).toEqual([{ name: 'A', insert: 'A', label: 'A', lower: 'a' }])
+    // `path` is the record this row names (YAZ-957): the back-pointer `linkNames` reads, so
+    // "this note's link name" needs neither a resolver nor a position match.
+    expect(linkCandidates([rec('/vault/A.md')])).toEqual([{ name: 'A', insert: 'A', label: 'A', lower: 'a', path: '/vault/A.md' }])
   })
 
   it('an alias adds a row after its note: typed as the alias, inserted PIPED, labelled with the note (GRO-2214)', () => {
-    const records = [rec('/vault/Customer Acquisition Cost.md', ['CAC', 'Acquisition Cost']), rec('/vault/Ideas.md')]
+    const CAC = '/vault/Customer Acquisition Cost.md'
+    const records = [rec(CAC, ['CAC', 'Acquisition Cost']), rec('/vault/Ideas.md')]
     expect(linkCandidates(records)).toEqual([
-      { name: 'Customer Acquisition Cost', insert: 'Customer Acquisition Cost', label: 'Customer Acquisition Cost', lower: 'customer acquisition cost' },
-      { name: 'CAC', insert: 'Customer Acquisition Cost|CAC', label: 'CAC — Customer Acquisition Cost', lower: 'cac' },
-      { name: 'Acquisition Cost', insert: 'Customer Acquisition Cost|Acquisition Cost', label: 'Acquisition Cost — Customer Acquisition Cost', lower: 'acquisition cost' },
-      { name: 'Ideas', insert: 'Ideas', label: 'Ideas', lower: 'ideas' },
+      // Every row carries the record it came from (YAZ-957) — the alias rows included, so an
+      // alias row and its note's own row agree on whose note they are.
+      { name: 'Customer Acquisition Cost', insert: 'Customer Acquisition Cost', label: 'Customer Acquisition Cost', lower: 'customer acquisition cost', path: CAC },
+      { name: 'CAC', insert: 'Customer Acquisition Cost|CAC', label: 'CAC — Customer Acquisition Cost', lower: 'cac', path: CAC },
+      { name: 'Acquisition Cost', insert: 'Customer Acquisition Cost|Acquisition Cost', label: 'Acquisition Cost — Customer Acquisition Cost', lower: 'acquisition cost', path: CAC },
+      { name: 'Ideas', insert: 'Ideas', label: 'Ideas', lower: 'ideas', path: '/vault/Ideas.md' },
     ])
     // Typing the alias offers the alias row only; typing the name offers the name row only.
     expect(matchLinkCandidates(linkCandidates(records), 'cac').map((c) => c.label)).toEqual(['CAC — Customer Acquisition Cost'])
