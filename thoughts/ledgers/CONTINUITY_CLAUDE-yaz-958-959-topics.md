@@ -19,7 +19,8 @@
 - D2 (YAZ-959): drop = move, confirm-gated. AMENDED in scope: the move is ONE atomic `folder_pages` write (filter old parent, append new), because two `applyBelonging` calls compute from one stale snapshot and clobber each other.
 - D3: native HTML5 drag; `tree__row--drop` highlight class reused from `Tree.tsx`.
 - D4: targets = folder-page rows only; reject self / current parent / own descendants. No reorder (outline owns order), no root-drop, no multi-select, no alt-drag in v1.
-- Scope locks (YAZ-989): no optimistic overlay in v1 (the 958 fix makes the echo reliable); no auto-expand on drag-hover; no edge-scroll; e2e drags via Playwright `dragTo` (board.spec.ts:61 proves it).
+- Scope locks (YAZ-989): no optimistic overlay in v1 (the 958 fix makes the echo reliable); no auto-expand on drag-hover; no edge-scroll.
+- ⚡ AMENDED in YAZ-992: `dragTo` is NOT reliable against HTML5 DnD (measured 117/120 — Chromium delivers only a fraction of a synthetic drag's `dragover` events). Drag e2e rests the pointer on the target, reissuing the move in `expect.poll` until the row arms (`topicsDrag.spec.ts` `dragRowOnto`/`litWhileResting`). Use that helper pattern, never bare `dragTo`, for tree drags.
 - The "from" of a move comes from the dragged ROW's parent in the tree (a page renders under every parent), never from `folderPagesOf`.
 
 ## State
@@ -27,14 +28,14 @@
 - Done:
   - [x] YAZ-985 A- scope: race pinned by `liveDrain.test.ts` (fails pre-fix)
   - [x] YAZ-986 B- fix: `live.ts` inFlight drain — `1303eb3`, 73/73 vaultIndex green
+  - [x] YAZ-987 C- e2e: three doorways proven — `a912091`, 5 consecutive green runs
+  - [x] YAZ-988 D- polish: contract in CONTRACTS.md — `8e9964c`; **YAZ-958 parent Done**
   - [x] YAZ-989 A- scope: five questions locked, D2 amended (one-write move)
-- Now: [→] YAZ-987 C- e2e (Opus drafting) · [→] YAZ-990 B- engine (Opus implementing against `topicsMove.test.ts`)
-- Next: YAZ-991 C- gesture (contract tests `ConfirmMove.test.tsx` already written)
-- Remaining:
-  - [ ] YAZ-992 D- e2e drag proofs
-  - [ ] YAZ-988 D- polish (958)
-  - [ ] YAZ-993 E- polish (959)
-  - [ ] Merge to main, suites green on main checkout
+  - [x] YAZ-990 B- engine: `topicsMove.ts` — `7114aeb`, 17/17 overseer tests
+  - [x] YAZ-991 C- gesture: drag + ConfirmMove + notice — `56cb4cc`, 292/292 sidebar, typecheck clean
+  - [x] YAZ-992 D- drag e2e: five proofs, bytes read back — `1b172cd`, 30/30 looped + overseer run
+  - [x] YAZ-993 E- polish: CONTRACTS.md drag contract + this ledger; slop scan clean; sibling e2e (topics/lenses/folderPages/board, 26 tests) green on the drag build
+- Now: [→] Merge to main, full suite green on the main checkout
 
 ## Open Questions
 
