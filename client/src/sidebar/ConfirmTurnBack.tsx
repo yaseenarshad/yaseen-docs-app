@@ -5,10 +5,11 @@ import { basename } from '../lib/paths'
  * The turn-back sheet's copy (🔒 D5, YAZ-817) — LOCKED verbatim, and PURE + separately tested,
  * exactly like `deleteConfirmMessage` next door, so the component around it stays trivial.
  *
- * What it has to say is the whole reason the reverse asks at all: turning back deletes ONE key
- * and nothing else (🔒 D3). Belonging is plain text each note writes about ITSELF — a
- * `folder_pages` entry naming this page — so no member is rewritten and no entry is dropped;
- * they simply stop counting for as long as the flag is gone, which is what puts a page with no
+ * What it has to say is the whole reason the reverse asks at all: turning back changes what the
+ * page means without deleting its content or memberships (🔒 D3). Belonging is plain text each
+ * note writes about ITSELF — a `folder_pages` entry naming this page — so no member is rewritten
+ * and no entry is dropped. They simply stop counting for as long as the flag is gone, which is
+ * what puts a page with no
  * other parent in Uncategorized meanwhile. Say that plainly, then say nothing is deleted.
  *
  * The page is named the way the delete sheet names its target — `basename`, extension and all —

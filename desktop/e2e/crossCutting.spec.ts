@@ -579,8 +579,8 @@ test('step 5 — turn a plain note into a folder page, feed it, and turn it back
   await shoot(win, 'cross-12-turn-back-sheet')
   await sheetBtn(win, 'Turn back').click()
 
-  // LOSSLESS BY CONSTRUCTION: one key deleted on ONE page, and the member's card is byte-identical
-  // — its `[[CAC]]` entry is still there, simply not counting for anybody while the flag is gone.
+  // The reverse touches ONE page atomically, and the member's card is byte-identical — its
+  // `[[CAC]]` entry is still there, simply not counting for anybody while the flag is gone.
   await expect.poll(() => read(CAC), { timeout: 10_000 }).not.toContain('folder_page:')
   expect(await read(ORPHAN_OUT)).toContain('[[CAC]]')
   expect(await md5(path.join(vault, ORPHAN_OUT))).toBe(memberBefore)

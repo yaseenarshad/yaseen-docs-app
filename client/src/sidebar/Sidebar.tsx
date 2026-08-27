@@ -4,10 +4,11 @@ import { SIDEBAR_LENSES, type SettingsState, type SidebarLens, type TreeNode, ty
 import { api, BridgeRequestError } from '../api'
 import type { IndexRecord } from '@shared/types'
 import { folderPageSettings } from '../views/folderPageSettings'
+import { restoreFolderBody } from '../views/migrateFolderBody'
 import { createNewNote } from '../views/newNote'
 import { memberFolder, newPageFromFolderPage } from '../views/scaffold'
 import { ChevronsIcon, SearchIcon } from '../views/view/icons'
-import { writeProperty } from '../views/writeProperty'
+import { transformFile, writeProperty } from '../views/writeProperty'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
@@ -617,16 +618,14 @@ export function Sidebar({
     [confirmingDelete, onDeleteFile, onChangeSettings, settings],
   )
 
-  // ---- Turn into / turn back (YAZ-840): context menu → ONE frontmatter key, both directions ----
+  // ---- Turn into / turn back (YAZ-840 / YAZ-1022): one conflict-safe file operation ----
 
   /**
-   * BOTH directions, ONE writer (🔒 D1 / 🔒 D3) — `on` is what the flag BECOMES. Forward writes exactly `folder_page: true` and
-   * NOTHING else — no settings block is stamped, because a folder page with no settings is a
-   * folder page and 4C's panel writes them when the user actually chooses something. Reverse
-   * deletes the key (`undefined`) and stops: `folder_page_settings` stays on disk, so a page
-   * turned back and then forward again returns with its columns and views intact, and every
-   * member's `folder_pages` entry is left untouched — the reverse is LOSSLESS by construction,
-   * not by cleanup.
+   * Forward writes exactly `folder_page: true` and NOTHING else. Reverse must also restore the
+   * Markdown body that YAZ-919 moved into the first outline, so `restoreFolderBody` removes that
+   * active outline value and the flag together while preserving every other setting and every
+   * member's own `folder_pages` entry. `transformFile` gives both changes one write and one
+   * retry-from-fresh-bytes boundary.
    *
    * An editor open on this file absorbs the write silently — the existing GRO-2186 behaviour,
    * nothing extra here. Failures take the sidebar's standing route for file-op failures: the
@@ -634,7 +633,10 @@ export function Sidebar({
    */
   const setFolderPageFlag = useCallback(
     (path: string, on: boolean) => {
-      writeProperty(path, FOLDER_PAGE_KEY, on ? true : undefined).catch((err: unknown) => {
+      const write = on
+        ? writeProperty(path, FOLDER_PAGE_KEY, true)
+        : transformFile(path, (content) => restoreFolderBody(content).content)
+      write.catch((err: unknown) => {
         const what = on ? `turn "${basename(path)}" into a folder page` : `turn "${basename(path)}" back into a normal page`
         onNotice(`Can't ${what}: ${err instanceof Error ? err.message : String(err)}`)
       })
