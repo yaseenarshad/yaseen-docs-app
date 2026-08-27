@@ -260,7 +260,11 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
       return
     }
     if (path === activeFile) {
-      document.querySelector<HTMLElement>('.editor-instance .ProseMirror')?.focus()
+      // The VISIBLE document, not the first in the DOM (YAZ-936): a folder page hides its body
+      // editor, so the commit lands in its outline — offsetParent answers "actually on screen".
+      Array.from(document.querySelectorAll<HTMLElement>('.editor-instance .ProseMirror'))
+        .find((el) => el.offsetParent !== null)
+        ?.focus()
       return
     }
     onOpenFile(path)
@@ -324,20 +328,19 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
               title={member.path}
               data-path={member.path}
               onClick={(e) => {
-                // YAZ-921 amends ⚡ YAZ-870's expand-only ruling: that ruling protected
-                // NAVIGATION from folding the tree — but a click on the TOPIC you are already
-                // reading is not navigation, so it toggles the fold like a second knock (both
-                // directions; `open`'s second-activation commit is for plain pages, which have
-                // text to enter — a topic's document IS its outline).
-                if (active && kids.length > 0 && !e.metaKey) {
+                // The MOUSE half (⚡ YAZ-870, amended by YAZ-921): a click opens AND unfolds
+                // (⌘ says "not now"), and a click on the TOPIC you are already reading toggles
+                // the fold — a second knock is not navigation. The KEYBOARD half (detail 0,
+                // Enter through the walk — YAZ-936) never moves the tree at all: Enter just
+                // opens the page, ←/→ are the fold gestures, so previewing topics never
+                // rearranges the panel underfoot.
+                const keyboard = e.detail === 0
+                if (!keyboard && active && kids.length > 0 && !e.metaKey) {
                   toggle(member.path)
                   return
                 }
                 open(member.path, e)
-                // ⚡ YAZ-870: opening a topic unfolds it too — foreground opens only (⌘ says
-                // "not now", so the tree stays put), and only when there is something to show
-                // (`kids` is already the guarded, folder-page-only answer: leaves have none).
-                if (kids.length > 0 && !e.metaKey) expand(member.path)
+                if (!keyboard && kids.length > 0 && !e.metaKey) expand(member.path)
               }}
               onContextMenu={(e) => onRowContextMenu(member.path, e)}
             >
