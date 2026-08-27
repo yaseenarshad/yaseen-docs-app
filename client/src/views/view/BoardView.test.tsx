@@ -238,3 +238,65 @@ describe('search interplay', () => {
     expect(q(el, '.view-toolbar__count').textContent).toBe('2 / 8 items')
   })
 })
+
+describe('inline new card row (YAZ-943): the Notion add, at the bottom of every column', () => {
+  const flush = () => act(async () => {})
+  const press = (input: HTMLElement, key: string) => {
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+    })
+    draw()
+  }
+  /** The column whose header value reads `label`. */
+  const colOf = (el: ParentNode, label: string): HTMLElement => {
+    const c = cols(el).find((c) => q(c, '.view-group__value').textContent === label)
+    if (c === undefined) throw new Error(`no column ${label}`)
+    return c
+  }
+
+  it('every column ends in a "New card" row; clicking it swaps in the name input', () => {
+    const { el } = mount(BOARD_BASE)
+    expect(cols(el).every((c) => c.querySelector('[aria-label="New card"]') !== null)).toBe(true)
+    click(byLabel(colOf(el, 'idea'), 'New card'))
+    expect(colOf(el, 'idea').querySelector('[aria-label="New card name"]')).not.toBeNull()
+    // Only the clicked column's row opened.
+    expect(colOf(el, 'drafting').querySelector('[aria-label="New card name"]')).toBeNull()
+  })
+
+  it("Enter creates the page with the typed name in THAT column's group, stays on the board, and keeps the input for the next add", async () => {
+    const create = vi.fn(() => Promise.resolve('/vault/Ship it.md'))
+    const { el, onOpenFile } = mount(BOARD_BASE, { folderPage: testFolderPage({ create }) })
+    click(byLabel(colOf(el, 'idea'), 'New card'))
+    const input = byLabel<HTMLInputElement>(colOf(el, 'idea'), 'New card name')
+    setValue(input, 'Ship it')
+    press(input, 'Enter')
+    await flush()
+    draw()
+    expect(create).toHaveBeenCalledTimes(1)
+    const [seed, name] = create.mock.calls[0] as unknown as [{ properties: Record<string, unknown> }, string]
+    expect(name).toBe('Ship it')
+    expect(seed.properties.status).toBe('idea') // the column's own group value rides the seed
+    expect(onOpenFile).not.toHaveBeenCalled() // inline add STAYS on the board
+    const again = byLabel<HTMLInputElement>(colOf(el, 'idea'), 'New card name')
+    expect(again.value).toBe('') // cleared, still open, ready for the next card
+  })
+
+  it('empty Enter creates nothing; Escape closes the input back to the row', async () => {
+    const create = vi.fn(() => Promise.resolve('/vault/x.md'))
+    const { el } = mount(BOARD_BASE, { folderPage: testFolderPage({ create }) })
+    click(byLabel(colOf(el, 'idea'), 'New card'))
+    const input = byLabel<HTMLInputElement>(colOf(el, 'idea'), 'New card name')
+    press(input, 'Enter')
+    await flush()
+    expect(create).not.toHaveBeenCalled()
+    press(input, 'Escape')
+    expect(colOf(el, 'idea').querySelector('[aria-label="New card name"]')).toBeNull()
+    expect(colOf(el, 'idea').querySelector('[aria-label="New card"]')).not.toBeNull()
+  })
+
+  it('a collapsed column hides its add row with its cards', () => {
+    const { el } = mount(BOARD_BASE)
+    click(toggleOf(el, 'idea'))
+    expect(colOf(el, 'idea').querySelector('[aria-label="New card"]')).toBeNull()
+  })
+})

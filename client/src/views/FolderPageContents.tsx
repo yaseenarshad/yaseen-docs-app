@@ -35,7 +35,7 @@ import { type ViewDef, type ParsedViews, parseViews } from './viewSchema'
 import { ViewsPane, type FolderPageMode } from './ViewsPane'
 import { splitFrontmatter, parseFrontmatter } from '@shared/frontmatter'
 import { DEFAULT_VIEWS, folderPageSettings, folderPageSettingsOf, writeFolderPageSettings, type FolderPageSettings } from './folderPageSettings'
-import { createNewNote, untitledName, type NewNoteSeed } from './newNote'
+import { createNewNote, freeName, type NewNoteSeed } from './newNote'
 import { memberFolder, newPageFromFolderPage } from './scaffold'
 import './views.css'
 import './folderPageContents.css'
@@ -203,7 +203,7 @@ export function FolderPageContents({
   const mode: FolderPageMode = {
     settings,
     vaultRecords: feed.records,
-    create: (seed) => createMember(root, record.basename, path, settings, feed.records, seed),
+    create: (seed, name) => createMember(root, record.basename, path, settings, feed.records, seed, name),
     // Columns (and, when the caller moves both, `views`) through the SAME one door — still ONE write.
     setColumns: (columns, views) => {
       setError(null)
@@ -244,8 +244,11 @@ export function FolderPageContents({
  * settings' `folder` (created level by level), and without one the page lands beside the folder
  * page itself. The create is the existing atomic content-at-create path.
  *
- * The name is the `Untitled` scheme, always: the outline's "+ Create 'X' here" row — the one
- * caller that ever passed a typed name — died with the picker-only add row in YAZ-903.
+ * The name is the `Untitled` scheme by default — EXCEPT when the caller already knows what the
+ * page is called (YAZ-943's inline board add types one). A typed name is tamed first: a '/' would
+ * park the page somewhere else entirely, so it becomes a space, and a name that is nothing but
+ * whitespace is no name at all and falls back to `Untitled`. Either way the same de-duplication
+ * runs over the folder's basenames, so a typed collision steps to " 2" like everything else.
  */
 async function createMember(
   root: string,
@@ -254,11 +257,13 @@ async function createMember(
   settings: FolderPageSettings,
   records: readonly IndexRecord[],
   seed: NewNoteSeed,
+  name?: string,
 ): Promise<string> {
   const parts = await newPageFromFolderPage(root, folderPageName, settings, seed.properties)
   const dir = await memberFolder(root, folderPagePath, settings)
   const taken = new Set(records.filter((r) => r.path.slice(0, r.path.lastIndexOf('/')) === dir).map((r) => r.basename))
-  const target = `${dir}/${untitledName(taken)}.md`
+  const tamed = (name ?? '').replaceAll('/', ' ').trim()
+  const target = `${dir}/${freeName(tamed === '' ? 'Untitled' : tamed, taken)}.md`
   await createNewNote(target, parts.properties, parts.body)
   return target
 }

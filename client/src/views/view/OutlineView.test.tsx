@@ -191,7 +191,7 @@ describe('the outline is the folder page’s skin — and only ever hers', () =>
     expect(el.querySelector('.view-outline')).not.toBeNull()
     expect(el.querySelector('.outline-doc')).not.toBeNull()
     expect(el.querySelector('.view-row__link')).toBeNull() // the old unknown-view placeholder
-    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table'])
+    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table', 'Board'])
   })
 
   it('a null `thisFile` keeps the placeholder rows — there is no folder page to be an outline of', () => {
@@ -280,7 +280,8 @@ describe('an edit stores the document and retires the order', () => {
     expect(path).toBe(FUNNELS) // the FOLDER PAGE's card
     expect(value).toEqual({
       folder: 'stages',
-      views: [{ type: 'outline', name: 'Outline', outline: '- [[Sales]]\n- [[Lead Gen]]' }, TABLE],
+      // The injected Board (YAZ-935) rides along in the write, harmlessly.
+      views: [{ type: 'outline', name: 'Outline', outline: '- [[Sales]]\n- [[Lead Gen]]' }, TABLE, { type: 'board', name: 'Board' }],
     })
     expect(el.querySelector('.view-view__error')).toBeNull()
   })

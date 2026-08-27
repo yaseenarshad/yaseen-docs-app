@@ -671,6 +671,10 @@
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
+  /* the transform transition is what PLAYS the FLIP (YAZ-944) once the hook clears its invert */
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.15s ease;
 }
 
 .view-board__title {
@@ -707,6 +711,32 @@
   text-overflow: ellipsis;
 }
 
+/* the inline add (YAZ-943): a quiet row, the same box as a card */
+.view-board__add,
+.view-board__add-input {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  text-align: left;
+  border-radius: 6px;
+}
+
+.view-board__add {
+  color: var(--fg-muted);
+}
+
+.view-board__add:hover {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.view-board__add-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
 .view-board__hint {
   margin: 48px auto;
   color: var(--fg-muted);
@@ -723,8 +753,11 @@
   cursor: grab;
 }
 
+/* picked up, not just faded: the card lifts off the column and tilts under the cursor */
 .view-board__card--drag {
   opacity: 0.4;
+  transform: rotate(2deg) scale(1.03);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
 }
 
 .view-board__col--drop {
@@ -746,6 +779,29 @@
 
 .view-drag__error {
   margin-left: 6px;
+}
+
+/* ---------- motion (YAZ-944) ---------- */
+
+/* a card that is NEW to the board arrives instead of blinking into place */
+.view-flip-enter {
+  animation: view-flip-enter 0.18s ease-out;
+}
+
+@keyframes view-flip-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* belt to the hook's own guard: no motion means no motion, even mid-animation */
+@media (prefers-reduced-motion: reduce) {
+  .view-board__card,
+  .view-flip-enter {
+    transition: none;
+    animation: none;
+  }
 }
 
 /* ---------- cards (4E) ---------- */

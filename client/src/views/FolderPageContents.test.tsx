@@ -84,6 +84,8 @@ const KPIS = '/vault/KPIs.md'
 const OUTSIDER = '/vault/Sub/Outsider.md'
 
 const TABLE = { type: 'table', name: 'Table', order: ['file.name', 'note.order', 'note.related'] }
+/** Injected at read (YAZ-935) — every parsed views list without a board gains this LAST. */
+const BOARD = { type: 'board', name: 'Board' }
 const SETTINGS = {
   columns: { order: { kind: 'number' }, related: { kind: 'multi-link', target: '[[KPIs]]' } },
   folder: 'stages',
@@ -250,7 +252,7 @@ describe('rows are the members, and only the members', () => {
 describe('the chrome is the views chrome, minus what a folder page cannot have', () => {
   it('both skins render and the tabs switch between them (🔒 Q7: outline first)', () => {
     const el = mount(FUNNELS)
-    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table'])
+    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table', 'Board'])
     expect(el.querySelector('.view-outline')).not.toBeNull() // YAZ-820's renderer
     expect(el.querySelector('.view-table')).toBeNull()
     selectView(el, 'Table')
@@ -291,7 +293,7 @@ describe('config edits are ONE settings write on the folder page', () => {
     expect(key).toBe('folder_page_settings')
     expect(value).toEqual({
       ...SETTINGS,
-      views: [SETTINGS.views[0], { ...TABLE, sort: [{ property: 'file.name', direction: 'ASC' }] }],
+      views: [SETTINGS.views[0], { ...TABLE, sort: [{ property: 'file.name', direction: 'ASC' }] }, BOARD],
     })
   })
 
@@ -323,7 +325,7 @@ describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
     mount(FUNNELS)
     act(() => captured.folderPage!.setColumns(COLUMNS))
     await flush()
-    expect(write).toHaveBeenCalledExactlyOnceWith(FUNNELS, 'folder_page_settings', { ...SETTINGS, columns: COLUMNS })
+    expect(write).toHaveBeenCalledExactlyOnceWith(FUNNELS, 'folder_page_settings', { ...SETTINGS, views: [...SETTINGS.views, BOARD], columns: COLUMNS })
   })
 
   it('columns AND views ride in that SAME single write when views are passed', async () => {
@@ -381,6 +383,19 @@ describe('New births a member from the declaration (🔒 Q5)', () => {
     expect(content).toBe('---\norder:\nrelated: []\nfolder_pages:\n  - "[[Funnel Stages]]"\n---\n')
     expect(content).not.toContain('folder_page:') // an ORDINARY page: the flag is never born here
     expect(onOpenFile).toHaveBeenCalledWith('/vault/stages/Untitled.md')
+  })
+
+  it('a TYPED name (YAZ-943) parks the page under that name, seeded the same, and dedups like Untitled', async () => {
+    mount(FUNNELS)
+    await expect(captured.folderPage!.create({ properties: {}, folder: null }, 'Ship it')).resolves.toBe('/vault/stages/Ship it.md')
+    // A member's basename is taken → the typed base steps to " 2", same scheme as Untitled.
+    await expect(captured.folderPage!.create({ properties: {}, folder: null }, 'Lead Gen')).resolves.toBe('/vault/stages/Lead Gen 2.md')
+  })
+
+  it('a typed name with path separators is tamed (slashes become spaces); whitespace-only falls back to Untitled', async () => {
+    mount(FUNNELS)
+    await expect(captured.folderPage!.create({ properties: {}, folder: null }, 'a/b')).resolves.toBe('/vault/stages/a b.md')
+    await expect(captured.folderPage!.create({ properties: {}, folder: null }, '   ')).resolves.toBe('/vault/stages/Untitled.md')
   })
 
   it('without a settings folder it lands beside the folder page itself', async () => {

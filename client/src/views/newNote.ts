@@ -80,10 +80,15 @@ export function deriveSeed(def: ViewSet, view: ViewDef): NewNoteSeed {
   return { properties, folder: folders.length === 1 ? folders[0] : null }
 }
 
-/** First free name in the locked scheme: `Untitled`, `Untitled 2`, `Untitled 3`… (`taken` = basenames in the folder). */
+/** First free name in the locked scheme: `base`, `base 2`, `base 3`… (`taken` = basenames in the folder). */
+export function freeName(base: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(base)) return base
+  for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`)) return `${base} ${n}`
+}
+
+/** The scheme over its default base — what a page with no typed name is called. */
 export function untitledName(taken: ReadonlySet<string>): string {
-  if (!taken.has('Untitled')) return 'Untitled'
-  for (let n = 2; ; n++) if (!taken.has(`Untitled ${n}`)) return `Untitled ${n}`
+  return freeName('Untitled', taken)
 }
 
 // TOMBSTONE (YAZ-846): `targetFolder(seedFolder, root, thisFile)` stood here — the plain 5D

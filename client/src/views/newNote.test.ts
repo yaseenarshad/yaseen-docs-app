@@ -6,7 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ViewSet, ViewDef, FilterNode } from './viewSchema'
-import { createNewNote, deriveSeed, seedContent, untitledName } from './newNote'
+import { createNewNote, deriveSeed, freeName, seedContent, untitledName } from './newNote'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -81,6 +81,18 @@ describe('untitledName', () => {
 
   it('fills gaps left by renames', () => {
     expect(untitledName(new Set(['Untitled', 'Untitled 3']))).toBe('Untitled 2')
+  })
+})
+
+describe('freeName (YAZ-943): the Untitled scheme, generalized to any typed base', () => {
+  it('the base when free, then base 2, base 3…', () => {
+    expect(freeName('Ship it', new Set())).toBe('Ship it')
+    expect(freeName('Ship it', new Set(['Ship it']))).toBe('Ship it 2')
+    expect(freeName('Ship it', new Set(['Ship it', 'Ship it 2']))).toBe('Ship it 3')
+  })
+
+  it('untitledName IS freeName("Untitled")', () => {
+    expect(freeName('Untitled', new Set(['Untitled']))).toBe(untitledName(new Set(['Untitled'])))
   })
 })
 

@@ -32,10 +32,10 @@ export interface FolderPageMode {
   vaultRecords: readonly IndexRecord[]
   /**
    * Birth from a folder page (🔒 Q5, YAZ-815): create a page from `seed` and resolve its path.
-   * The name is always the `Untitled` scheme — the outline add row that once typed one died in
-   * YAZ-903, and with it the `name` argument.
+   * The `Untitled` scheme is the DEFAULT name; the board's inline add (YAZ-943) already knows what
+   * the card is called, and that typed name rides the optional argument.
    */
-  create: (seed: NewNoteSeed) => Promise<string>
+  create: (seed: NewNoteSeed, name?: string) => Promise<string>
   /**
    * The declarations, back through the one door (YAZ-895) — ONE `folder_page_settings` write
    * (🔒 D3), failures in the host's own banner. `views` rides along so a caller can move the
@@ -216,7 +216,9 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
   // page births its members from its OWN declaration and parks them per its settings (🔒 Q5,
   // YAZ-815), which since YAZ-846 is the ONLY create path here: the seed still rides along, so a
   // group "+" seeds its group. The note opens once the create lands; a failure shows the alert.
-  const onNewNote = (group: Group | null) => {
+  // A `name` means the board's inline add (YAZ-943) — it already named the card and the caller is
+  // mid-typing in the column, so that create STAYS on the board and opens nothing.
+  const onNewNote = (group: Group | null, name?: string) => {
     const seed = deriveSeed(def, view)
     const groupKey = groupByKey(view)
     if (group !== null && groupKey !== null) {
@@ -233,8 +235,10 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
     }
     setCreateError(null)
     folderPage
-      .create(seed)
-      .then(onOpenFile)
+      .create(seed, name)
+      .then((path) => {
+        if (name === undefined) onOpenFile(path)
+      })
       .catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
   }
 

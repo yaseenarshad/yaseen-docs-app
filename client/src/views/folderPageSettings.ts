@@ -44,10 +44,11 @@ export interface FolderPageSettings {
   problems: string[]
 }
 
-/** 🔒 Q7 (YAZ-815): a folder page always has its two skins, OUTLINE FIRST. */
+/** 🔒 Q7 (YAZ-815, amended YAZ-935): a folder page always has its three skins, OUTLINE FIRST. */
 export const DEFAULT_VIEWS: readonly ViewDef[] = [
   { type: 'outline', name: 'Outline' },
   { type: 'table', name: 'Table' },
+  { type: 'board', name: 'Board' },
 ]
 
 const KINDS = new Set<string>(PROPERTY_KINDS)
@@ -107,7 +108,11 @@ function readViews(raw: unknown, problems: string[]): ViewDef[] {
     // Unknown view types and extra keys ride along untouched (`ViewDef`'s index signature).
     views.push(view as ViewDef)
   })
-  return views.length > 0 ? views : defaultViews()
+  if (views.length === 0) return defaultViews()
+  // 🔒 YAZ-935: every folder page has a Board skin. Lists persisted before Board existed gain one
+  // at READ time — never a file backfill; a later config write may persist it, harmlessly.
+  if (!views.some((v) => v.type === 'board')) views.push({ type: 'board', name: 'Board' })
+  return views
 }
 
 /** The shared folder grammar, and its rule: unusable at rest reads as absent. */

@@ -175,7 +175,7 @@ test('step 1 — the contents block sits between the note and its backlinks, hol
   // with NO document falls back to — this page has one now, and it names none of its three
   // members, so all three stand in the APPENDED section that exists for exactly that. Both
   // halves, deterministically, before anybody has typed anything.
-  await expect(viewTabs(contents(win))).toHaveText(['Outline', 'Table'])
+  await expect(viewTabs(contents(win))).toHaveText(['Outline', 'Table', 'Board'])
   await expect(outlineLines(contents(win))).toHaveText(BODY)
   await expect(outlineRows(contents(win))).toHaveText(MEMBERS)
   // …and the body really did LEAVE the file, which is the other half of "nothing disappears":

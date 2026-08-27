@@ -53,22 +53,24 @@ const resolverOver = (records: readonly IndexRecord[]): ResolveLink => {
   return (target) => byBase.get(stripBrackets(target).replace(/[#|].*$/, '').trim().toLowerCase()) ?? null
 }
 
-const OUTLINE_THEN_TABLE = [
+const OUTLINE_TABLE_BOARD = [
   { type: 'outline', name: 'Outline' },
   { type: 'table', name: 'Table' },
+  { type: 'board', name: 'Board' },
 ]
+const BOARD = { type: 'board', name: 'Board' }
 
-describe('defaults (Q7): a flagged page always has its two skins, outline first', () => {
+describe('defaults (Q7, amended YAZ-935): a flagged page always has its three skins, outline first', () => {
   it('a page with NO settings key renders with defaults and zero problems', () => {
     const settings = folderPageSettings(rec(METRICS, { folder_page: true }))
-    expect(settings.views).toEqual(OUTLINE_THEN_TABLE)
+    expect(settings.views).toEqual(OUTLINE_TABLE_BOARD)
     expect(settings.columns).toEqual({})
     expect(settings.folder).toBeUndefined()
     expect(settings.problems).toEqual([])
   })
 
   it('DEFAULT_VIEWS is outline first, and each parse hands back its own copy', () => {
-    expect(DEFAULT_VIEWS.map((v) => v.type)).toEqual(['outline', 'table'])
+    expect(DEFAULT_VIEWS.map((v) => v.type)).toEqual(['outline', 'table', 'board'])
     const a = folderPageSettings(rec(METRICS, { folder_page: true }))
     const b = folderPageSettings(rec(METRICS, { folder_page: true }))
     expect(a.views).not.toBe(b.views)
@@ -82,7 +84,7 @@ describe('defaults (Q7): a flagged page always has its two skins, outline first'
   ])('a settings key that is %s is ONE problem plus full defaults', (_label, value) => {
     const settings = settingsOf(value)
     expect(settings.problems).toHaveLength(1)
-    expect(settings.views).toEqual(OUTLINE_THEN_TABLE)
+    expect(settings.views).toEqual(OUTLINE_TABLE_BOARD)
     expect(settings.columns).toEqual({})
     expect(settings.folder).toBeUndefined()
   })
@@ -143,6 +145,7 @@ describe('views: parseViews\'s own assertion, mirrored', () => {
     expect(settings.views).toEqual([
       { type: 'outline', name: 'Outline', order: ['[[CAC]]', '[[LTV]]'] },
       { type: 'gantt', name: 'Table', columnSize: { owner: 120 }, zoom: 3 },
+      BOARD, // injected (YAZ-935): a persisted list without a board gains one at read time
     ])
     expect(settings.views[1].zoom).toBe(3)
     expect(settings.problems).toEqual([])
@@ -152,38 +155,54 @@ describe('views: parseViews\'s own assertion, mirrored', () => {
     const settings = settingsOf({
       views: [{ type: 'outline' }, { type: 'table', name: 'Table' }, 'table', { name: 'Nameless' }],
     })
-    expect(settings.views).toEqual([{ type: 'table', name: 'Table' }])
+    expect(settings.views).toEqual([{ type: 'table', name: 'Table' }, BOARD])
     expect(settings.problems).toHaveLength(3)
+  })
+
+  it('a persisted list WITHOUT a board gains the injected one LAST — no file backfill (YAZ-935)', () => {
+    const settings = settingsOf({ views: [{ type: 'table', name: 'My table' }] })
+    expect(settings.views).toEqual([{ type: 'table', name: 'My table' }, BOARD])
+    expect(settings.problems).toEqual([])
+  })
+
+  it('a persisted list WITH a board — whatever its name — passes through untouched (YAZ-935)', () => {
+    const views = [
+      { type: 'board', name: 'Kanban', groupBy: { property: 'note.status' } },
+      { type: 'table', name: 'Table' },
+    ]
+    const settings = settingsOf({ views })
+    expect(settings.views).toEqual(views)
+    expect(settings.problems).toEqual([])
   })
 
   it('a string outline rides along verbatim (🔒 D2: the view IS its markdown bullet list)', () => {
     const settings = settingsOf({ views: [{ type: 'outline', name: 'Outline', outline: '- [[CAC]]\n    - [[LTV]]' }] })
-    expect(settings.views).toEqual([{ type: 'outline', name: 'Outline', outline: '- [[CAC]]\n    - [[LTV]]' }])
+    expect(settings.views).toEqual([{ type: 'outline', name: 'Outline', outline: '- [[CAC]]\n    - [[LTV]]' }, BOARD])
     expect(settings.problems).toEqual([])
   })
 
   it('a non-string outline is a problem and only THAT key is dropped — the view stays', () => {
     const settings = settingsOf({ views: [{ type: 'outline', name: 'Outline', outline: ['[[CAC]]'], limit: 3 }] })
-    expect(settings.views).toEqual([{ type: 'outline', name: 'Outline', limit: 3 }])
+    expect(settings.views).toEqual([{ type: 'outline', name: 'Outline', limit: 3 }, BOARD])
     expect(settings.problems).toHaveLength(1)
     expect(settings.problems[0]).toContain('outline')
   })
 
   it('a non-list views is a problem and yields DEFAULT_VIEWS', () => {
     const settings = settingsOf({ views: 'table' })
-    expect(settings.views).toEqual(OUTLINE_THEN_TABLE)
+    expect(settings.views).toEqual(OUTLINE_TABLE_BOARD)
     expect(settings.problems).toHaveLength(1)
   })
 
   it('an empty list yields DEFAULT_VIEWS quietly — a folder page always has its two skins', () => {
     const settings = settingsOf({ views: [] })
-    expect(settings.views).toEqual(OUTLINE_THEN_TABLE)
+    expect(settings.views).toEqual(OUTLINE_TABLE_BOARD)
     expect(settings.problems).toEqual([])
   })
 
   it('views whose entries ALL fail fall back to DEFAULT_VIEWS, problems recorded', () => {
     const settings = settingsOf({ views: [{ type: 'outline' }] })
-    expect(settings.views).toEqual(OUTLINE_THEN_TABLE)
+    expect(settings.views).toEqual(OUTLINE_TABLE_BOARD)
     expect(settings.problems).toHaveLength(1)
   })
 })
@@ -320,7 +339,8 @@ describe('writeFolderPageSettings: ONE key, through the shared writer', () => {
     await expect(writeFolderPageSettings(METRICS, settings)).resolves.toEqual({ mtime: 200 })
 
     expect(write).toHaveBeenCalledTimes(1)
-    expect(write).toHaveBeenCalledWith(METRICS, 'folder_page_settings', raw)
+    // The injected Board persists on the first write — the accepted YAZ-935 side-effect.
+    expect(write).toHaveBeenCalledWith(METRICS, 'folder_page_settings', { ...raw, views: [...raw.views, BOARD] })
   })
 
   it('never serializes problems, and omits empty columns and an absent folder', async () => {
@@ -329,7 +349,7 @@ describe('writeFolderPageSettings: ONE key, through the shared writer', () => {
 
     await writeFolderPageSettings(METRICS, settings)
 
-    expect(write).toHaveBeenCalledWith(METRICS, 'folder_page_settings', { views: [{ type: 'table', name: 'Table' }] })
+    expect(write).toHaveBeenCalledWith(METRICS, 'folder_page_settings', { views: [{ type: 'table', name: 'Table' }, BOARD] })
   })
 
   it('writes undefined to DELETE the key when the caller explicitly asks for it', async () => {

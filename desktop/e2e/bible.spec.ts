@@ -269,7 +269,7 @@ test('step 1 — the migrated encyclopedia opens on Home, holding exactly its to
   // The map of an encyclopedia that maintains no list: the five folder pages say in their OWN
   // frontmatter that they belong to Home, and NOTHING on Home's side says it back.
   await expect(contents(win)).toBeVisible()
-  await expect(viewTabs(contents(win))).toHaveText(['Outline', 'Table'])
+  await expect(viewTabs(contents(win))).toHaveText(['Outline', 'Table', 'Board'])
   // ⚡ YAZ-919: what the outline DOCUMENT holds is Home's own body, migrated in on the first open
   // — so the page's prose is on screen and its file is frontmatter-only.
   await expect(outlineLines(contents(win))).toHaveText(HOME_BODY)
