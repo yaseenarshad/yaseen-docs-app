@@ -1,7 +1,7 @@
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { api, BridgeRequestError } from '../api'
 import { FOLDER_PAGES_KEY } from '../links/folderPages'
-import type { FolderPageSettings } from './folderPageSettings'
+import type { ColumnDecl, FolderPageSettings } from './folderPageSettings'
 
 /**
  * New-page scaffolding for folder pages (YAZ-832; 🔒 Q5/Q6 of YAZ-815). A folder page scaffolds
@@ -28,11 +28,16 @@ const belongsTo = (folderPageName: string): Record<string, unknown> => ({
   [FOLDER_PAGES_KEY]: [`[[${folderPageName}]]`],
 })
 
+/** The ONE empty-value rule for both newborn and existing members (🔒 Q5; YAZ-999). */
+export function emptyColumnValue(column: ColumnDecl): unknown {
+  return column.kind === 'list' || column.kind === 'multi-link' ? [] : null
+}
+
 /** Every declared column, empty (scalar kinds → null, list/multi-link → []), + `folder_pages` LAST (🔒 Q5). */
 export function scaffoldFromFolderPage(name: string, settings: FolderPageSettings): Record<string, unknown> {
   const properties: Record<string, unknown> = {}
   for (const [column, decl] of Object.entries(settings.columns)) {
-    properties[column] = decl.kind === 'list' || decl.kind === 'multi-link' ? [] : null
+    properties[column] = emptyColumnValue(decl)
   }
   return { ...properties, ...belongsTo(name) }
 }

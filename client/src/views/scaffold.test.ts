@@ -7,7 +7,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FolderPageSettings } from './folderPageSettings'
-import { ensureFolder, folderPageTemplatePath, memberFolder, newPageFromFolderPage, scaffoldFromFolderPage } from './scaffold'
+import { emptyColumnValue, ensureFolder, folderPageTemplatePath, memberFolder, newPageFromFolderPage, scaffoldFromFolderPage } from './scaffold'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -47,6 +47,14 @@ const METRICS: FolderPageSettings = {
 const EMPTY_COLUMNS = { owner: null, kpis: [], steps: [], due: null, done: null, score: null, unit: null }
 
 describe('scaffoldFromFolderPage (🔒 Q5)', () => {
+  it('uses one empty-value rule: list-like columns get [], every scalar gets null', () => {
+    expect(emptyColumnValue({ kind: 'list' })).toEqual([])
+    expect(emptyColumnValue({ kind: 'multi-link' })).toEqual([])
+    expect(emptyColumnValue({ kind: 'text' })).toBeNull()
+    expect(emptyColumnValue({ kind: 'number' })).toBeNull()
+    expect(emptyColumnValue({ kind: 'checkbox' })).toBeNull()
+  })
+
   it('every declared column empty — list/multi-link → [], scalar kinds → null — and folder_pages LAST', () => {
     const properties = scaffoldFromFolderPage('Metrics', METRICS)
     expect(properties).toEqual({ ...EMPTY_COLUMNS, folder_pages: ['[[Metrics]]'] })
