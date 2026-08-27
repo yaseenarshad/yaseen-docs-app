@@ -1,13 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { fileLink } from '@shared/links'
 
 interface ContextMenuProps {
   x: number
   y: number
   /** Absolute path of the right-clicked row (file or folder); null for blank space (GRO-2069). */
   copyPath: string | null
-  /** Absolute path of the right-clicked FILE row; null (folders, blank space) hides "Copy link" — a folder link would only fail main's markdown guard (E3, GRO-2173). */
-  copyLinkPath: string | null
+  /** The right-clicked FILE row's own `[[wikilink]]`, ready to copy; null (folders, blank space) hides "Copy link" — neither is a note to name (E3 GRO-2173, YAZ-957). */
+  copyLinkText: string | null
   /** Absolute path of the right-clicked FILE row; null (folders, blank space) hides "Open in new window" (D2, GRO-2168). */
   newWindowPath: string | null
   onOpenNewWindow: (path: string) => void
@@ -42,7 +41,7 @@ interface ContextMenuProps {
 }
 
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, onNewNote, onNewFolderPage, onNewFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, copyPath, copyLinkText, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, onNewNote, onNewFolderPage, onNewFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, onClose }: ContextMenuProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -115,13 +114,13 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
             Copy path
           </button>
         )}
-        {copyLinkPath !== null && (
+        {copyLinkText !== null && (
           <button
             type="button"
             className="ctx-menu__item"
             role="menuitem"
             onClick={() => {
-              void navigator.clipboard.writeText(fileLink(copyLinkPath))
+              void navigator.clipboard.writeText(copyLinkText)
               onClose()
             }}
           >

@@ -1287,6 +1287,52 @@ button {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
+/* Sync from folder (YAZ-952): the confirm sheet's shell, plus the two lists only it has —
+   the folder picker and the preview of what it would add. Both scroll; the sheet does not. */
+
+.sync__folders {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  max-height: 168px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.sync__folder {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 4px 8px;
+  font-size: 13px;
+  text-align: left;
+}
+
+.sync__folder:hover {
+  background: var(--bg-hover-row);
+}
+
+.sync__folder[aria-pressed='true'] {
+  background: var(--accent-soft);
+}
+
+.sync__count {
+  flex: none;
+  color: var(--fg-muted);
+}
+
+.sync__missing {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
 .create-inline {
   padding-right: 8px;
 }
