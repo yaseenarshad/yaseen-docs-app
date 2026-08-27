@@ -229,17 +229,43 @@ describe('collapse all groups', () => {
 })
 
 describe('properties menu', () => {
-  it('file.name is always shown (checkbox disabled); toggling another key writes view.order', () => {
+  it('a table can hide and re-show file.name through view.order', () => {
     const { el, onChange, def } = mount()
     const pop = openMenu(el, 'Properties')
     const name = byLabel<HTMLInputElement>(pop, 'Show file.name')
     expect(name.checked).toBe(true)
-    expect(name.disabled).toBe(true)
+    expect(name.disabled).toBe(false)
+
     click(byLabel(pop, 'Show status'))
-    expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().views[0].order).toEqual(['file.name', 'note.status'])
     expect(q(el, '[data-cell="0:1"]').textContent).toBe('idea')
-    click(byLabel(pop, 'Show status'))
+
+    click(byLabel(pop, 'Show file.name'))
+    expect(def().views[0].order).toEqual(['note.status'])
+    expect([...el.querySelectorAll('.view-table thead th')].map((th) => th.textContent)).toEqual(['status'])
+    expect(q(el, '[data-cell="0:0"]').textContent).toBe('idea')
+    expect(el.querySelector('.view-table__link')).toBeNull()
+
+    click(byLabel(pop, 'Show file.name'))
+    expect(def().views[0].order).toEqual(['note.status', 'file.name'])
+    expect([...el.querySelectorAll('.view-table thead th')].map((th) => th.textContent)).toEqual(['status', 'file.name'])
+    expect(el.querySelector('.view-table__link')).not.toBeNull()
+    expect(onChange).toHaveBeenCalledTimes(3)
+  })
+
+  it.each(['cards', 'list', 'board'])('keeps file.name disabled in %s views', (type) => {
+    const { el } = mount(`views:\n  - type: ${type}\n    name: V\n`)
+    expect(byLabel<HTMLInputElement>(openMenu(el, 'Properties'), 'Show file.name').disabled).toBe(true)
+  })
+
+  it('allows an empty table order and keeps Properties available to restore file.name', () => {
+    const { el, def } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n')
+    const pop = openMenu(el, 'Properties')
+    click(byLabel(pop, 'Show file.name'))
+    expect(def().views[0].order).toEqual([])
+    expect(el.querySelector('.view-table thead th')).toBeNull()
+    expect(byLabel<HTMLInputElement>(pop, 'Show file.name').checked).toBe(false)
+    click(byLabel(pop, 'Show file.name'))
     expect(def().views[0].order).toEqual(['file.name'])
   })
 
@@ -256,6 +282,18 @@ describe('properties menu', () => {
     const settings = { columns: { owner: { kind: 'link' as const } }, views: [], problems: [] }
     const { el } = mount(undefined, { folderPage: testFolderPage({ settings }) })
     expect(byLabel(openMenu(el, 'Properties'), 'Show owner')).toBeDefined()
+  })
+
+  it('keeps a long column identity separate from its controls (YAZ-1006)', () => {
+    const name = 'campaign_narrative_summary'
+    const settings = { columns: { [name]: { kind: 'text' as const } }, views: [], problems: [] }
+    const { el } = mount(undefined, { folderPage: testFolderPage({ settings }) })
+    const pop = openMenu(el, 'Properties')
+    const row = byLabel(pop, `Show ${name}`).closest<HTMLElement>('.view-prop')
+    expect(row).not.toBeNull()
+    expect(q(row!, '.view-prop__identity .view-prop__name').firstChild?.textContent).toBe(name)
+    expect(byLabel(q(row!, '.view-prop__identity'), `Rename ${name}`)).toBeDefined()
+    expect(byLabel(q(row!, '.view-prop__controls'), `Type of ${name}`)).toBeDefined()
   })
 
   it('+ Add column declares it and shows it, in ONE write (YAZ-896)', () => {
