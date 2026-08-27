@@ -287,6 +287,19 @@ describe('declared-column reconciliation (YAZ-999)', () => {
     expect(el.querySelector('.folder-page-contents')).not.toBeNull()
   })
 
+  it('clears a reconciliation failure after the next snapshot succeeds', async () => {
+    backfill.mockRejectedValueOnce(new Error('Could not initialize 1 column value: Sales.order'))
+    const el = mount(FUNNELS)
+    await flush()
+    expect(el.querySelector('[role="alert"]')).not.toBeNull()
+
+    feed([...vault(), rec('/vault/stages/Expansion.md', { folder_pages: ['[[Funnel Stages]]'] })])
+    await flush()
+
+    expect(backfill).toHaveBeenCalledTimes(2)
+    expect(el.querySelector('[role="alert"]')).toBeNull()
+  })
+
   it('never reconciles an ordinary page', async () => {
     mount(OTHER)
     await flush()
@@ -390,6 +403,10 @@ describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
     await flush()
     expect(q(el, '[role="alert"]').textContent).toContain('disk full')
     expect(el.querySelector('.view-outline')).not.toBeNull()
+
+    feed([...vault(), rec('/vault/stages/Expansion.md', { folder_pages: ['[[Funnel Stages]]'] })])
+    await flush()
+    expect(q(el, '[role="alert"]').textContent).toContain('disk full')
   })
 })
 

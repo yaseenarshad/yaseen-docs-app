@@ -1,10 +1,9 @@
 /**
- * THE TOPICS DRAG ENGINE (YAZ-990): what a drop is ALLOWED to do, and the ONE write that does it.
- * Pure — no React, no DOM, no index or disk read of its own. The view hands in the dragged row, the
- * row under the cursor and the snapshot's `folderPagesLookup`, and gets back a verdict; the drag
- * itself (hit-testing, the drop line, the cursor) is `TopicsTree`'s. The verdict carries its REASON
- * rather than a bare boolean so the surface can say why a drop is refused instead of just going
- * dead under the pointer.
+ * THE TOPICS DRAG ENGINE (YAZ-990): what a drop is ALLOWED to do and how a confirmed move is
+ * persisted. No React or DOM: the view hands in the dragged row, the row under the cursor and the
+ * snapshot's `folderPagesLookup`, and gets back a verdict; the drag itself (hit-testing, the drop
+ * line, the cursor) is `TopicsTree`'s. The verdict carries its REASON rather than a bare boolean so
+ * the surface can say why a drop is refused instead of just going dead under the pointer.
  *
  * THE TARGET RULES (🔒 D4 of the YAZ-959 scope), in this order: a target must be a FLAGGED folder
  * page — only a folder page holds members, so a plain row is no target at all; a row is never its
@@ -18,14 +17,15 @@
  * away) ends the descent quietly instead of hanging the drag, while a page reachable down two
  * branches is still found down either.
  *
- * THE MOVE IS ONE WRITE (locked): a single `folder_pages` write on the MEMBER's own frontmatter —
- * belonging stays child-declared (YAZ-825), so nothing is ever written to either folder page. The
- * old parent is filtered out through THE CLICK RULE (`entryTarget`, the very filter the × has used
- * since YAZ-820) and the new one appended, in one list. Deliberately NOT tag-then-untag via two
- * `applyBelonging` calls: both would compute from the SAME stale record snapshot and the second
- * write would clobber the first. Entries that count for nobody — prose, non-strings, dangling
- * links, the row's OTHER parents — survive verbatim and in place, and a list that already reads
- * correctly is not written at all.
+ * THE MEMBERSHIP MOVE IS ONE WRITE (locked): a single `folder_pages` write on the MEMBER's own
+ * frontmatter — belonging stays child-declared (YAZ-825), so nothing is written to either folder
+ * page. The old parent is filtered out through THE CLICK RULE (`entryTarget`, the very filter the
+ * × has used since YAZ-820) and the new one appended, in one list. Deliberately NOT tag-then-untag
+ * via two `applyBelonging` calls: both would compute from the SAME stale record snapshot and the
+ * second write would clobber the first. Entries that count for nobody — prose, non-strings,
+ * dangling links, the row's OTHER parents — survive verbatim and in place, and a list that already
+ * reads correctly is not written at all. YAZ-999 then reconciles the closed target's declarations
+ * through conditional missing-key writes; those never alter the membership list or existing values.
  */
 import type { IndexRecord } from '@shared/types'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'

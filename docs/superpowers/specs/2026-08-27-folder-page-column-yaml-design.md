@@ -1,7 +1,7 @@
 # Folder-page column YAML propagation design
 
-**Issue:** YAZ-999  
-**Approved:** 2026-08-27  
+**Issue:** YAZ-999
+**Approved:** 2026-08-27
 **Base:** `main@608395f26b15a1d3519bd6748c5308c2de8fa455`
 
 ## Outcome
@@ -47,11 +47,11 @@ Conflict handling is missing-aware: after a write conflict, reread the file and 
 - `client/src/views/FolderPageContents.tsx`: open-folder reconciliation and error reporting.
 - `client/src/sidebar/topicsMove.ts`: closed-target reconciliation after membership move.
 - `client/src/sidebar/TopicsTree.tsx`: supplies the target folder page's declarations.
-- `desktop/e2e/folderPageColumns.spec.ts`: on-disk lifecycle proof while preserving YAZ-995's public whole-cell click.
+- `desktop/e2e/folderPageColumns.spec.ts`: on-disk propagation proof around the shared cell-edit step; YAZ-1030 owns that step's selection/activation gesture.
 - `docs/CONTRACTS.md`: durable lifecycle contract.
 
 ## Verification contract
 
 Tests must prove missing-only writes, conflict preservation, correct empty values, direct-member filtering, all-attempted failure aggregation, open-folder reconciliation, closed-target moves, retype/removal retention, rejoin, multi-parent exact-key reuse, idempotency, and external-edit repair.
 
-The shared E2E must retain `await cell(contents(win), 0, 4).click()` plus typed number/member-file assertions from YAZ-995. Its former assertion that declaration leaves every member byte-identical is replaced: add backfills missing keys, while retype remains byte-identical after that backfill.
+The shared E2E replaces the former assertion that declaration leaves every member byte-identical: add backfills missing keys, while retype remains byte-identical after that backfill. YAZ-999 must not lock the adjacent cell-activation gesture; YAZ-1030 owns its selection/double-click contract.

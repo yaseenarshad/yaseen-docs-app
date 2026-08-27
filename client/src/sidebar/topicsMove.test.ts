@@ -128,7 +128,7 @@ describe('canDrop: the locked target rules (D4)', () => {
   })
 })
 
-describe('performMove: ONE write, the click rule deciding what leaves the list', () => {
+describe('performMove: one membership write, then closed-target reconciliation', () => {
   const FROM = { path: '/vault/From.md', name: 'From' }
   const TO = { path: '/vault/To.md', name: 'To', columns: { score: { kind: 'number' as const }, tags: { kind: 'list' as const } } }
   const records = [folder(FROM.path), folder(TO.path)]

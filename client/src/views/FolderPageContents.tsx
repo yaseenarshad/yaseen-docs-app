@@ -166,7 +166,8 @@ export function FolderPageContents({
     const seed = fileSettings ?? settings
     return seed === null ? null : folderPageViewSet(seed.views)
   })
-  const [error, setError] = useState<string | null>(null)
+  const [settingsError, setSettingsError] = useState<string | null>(null)
+  const [columnError, setColumnError] = useState<string | null>(null)
 
   /**
    * The open-folder half of YAZ-999's hybrid invariant. Settings/membership stay the source of
@@ -176,9 +177,15 @@ export function FolderPageContents({
   useEffect(() => {
     if (settings === null) return
     let current = true
-    backfillFolderPageColumns(members, settings.columns).catch((err: unknown) => {
-      if (current) setError(err instanceof Error ? err.message : String(err))
-    })
+    const clearOnSuccess = columnError !== null
+    backfillFolderPageColumns(members, settings.columns).then(
+      () => {
+        if (current && clearOnSuccess) setColumnError(null)
+      },
+      (err: unknown) => {
+        if (current) setColumnError(err instanceof Error ? err.message : String(err))
+      },
+    )
     return () => {
       current = false
     }
@@ -226,9 +233,9 @@ export function FolderPageContents({
   /** Every config change (sort, columns, widths, summaries…) is ONE settings write (🔒 D3). */
   const onChange = (next: ParsedViews): void => {
     setParsed(next)
-    setError(null)
+    setSettingsError(null)
     writeFolderPageSettings(path, { ...settings, views: next.def.views }).catch((err: unknown) =>
-      setError(err instanceof Error ? err.message : String(err)),
+      setSettingsError(err instanceof Error ? err.message : String(err)),
     )
   }
 
@@ -238,9 +245,9 @@ export function FolderPageContents({
     create: (seed, name) => createMember(root, record.basename, path, settings, feed.records, seed, name),
     // Columns (and, when the caller moves both, `views`) through the SAME one door — still ONE write.
     setColumns: (columns, views) => {
-      setError(null)
+      setSettingsError(null)
       writeFolderPageSettings(path, { ...settings, columns, views: views ?? settings.views }).catch((err: unknown) =>
-        setError(err instanceof Error ? err.message : String(err)),
+        setSettingsError(err instanceof Error ? err.message : String(err)),
       )
     },
     openBackground: onOpenFileBackground,
@@ -248,12 +255,13 @@ export function FolderPageContents({
     wikilinkCandidates,
     nav,
   }
+  const visibleError = settingsError ?? columnError
 
   return (
     <section className="folder-page-contents">
-      {error !== null && (
+      {visibleError !== null && (
         <p className="views-pane__error" role="alert">
-          Could not update the folder page: {error}
+          Could not update the folder page: {visibleError}
         </p>
       )}
       <ViewsPane

@@ -44,7 +44,7 @@ it('a concurrent writer adding the key wins after conflict', async () => {
 
 - [ ] **Step 2: Run the focused test and verify RED**
 
-Run: `npm test -- client/src/views/writeProperty.test.ts`  
+Run: `npm test -- client/src/views/writeProperty.test.ts`
 Expected: FAIL because `writePropertyIfMissing` is not exported.
 
 - [ ] **Step 3: Refactor the existing retry loop behind one transform helper and add `writePropertyIfMissing`**
@@ -72,7 +72,7 @@ Presence is `Object.prototype.hasOwnProperty.call(parseFrontmatter(splitFrontmat
 
 - [ ] **Step 4: Run focused tests and verify GREEN**
 
-Run: `npm test -- client/src/views/writeProperty.test.ts`  
+Run: `npm test -- client/src/views/writeProperty.test.ts`
 Expected: all tests pass.
 
 ### Task 2: Create the canonical reconciliation service
@@ -94,7 +94,7 @@ expect(emptyColumnValue({ kind: 'number' })).toBeNull()
 
 - [ ] **Step 2: Run the scaffold test and verify RED**
 
-Run: `npm test -- client/src/views/scaffold.test.ts`  
+Run: `npm test -- client/src/views/scaffold.test.ts`
 Expected: FAIL because `emptyColumnValue` is not exported.
 
 - [ ] **Step 3: Export the helper and make scaffolding use it**
@@ -124,14 +124,14 @@ Also reject after all writes settle, with an error listing the failure count and
 
 - [ ] **Step 5: Run the reconciliation test and verify RED**
 
-Run: `npm test -- client/src/views/folderPageColumns.test.ts`  
+Run: `npm test -- client/src/views/folderPageColumns.test.ts`
 Expected: FAIL because the module does not exist.
 
 - [ ] **Step 6: Implement the minimal service and verify GREEN**
 
 Use index presence only to skip obvious work. Each remaining call must use `writePropertyIfMissing` to protect against stale snapshots and races. Use `Promise.allSettled` so one bad page does not prevent the others.
 
-Run: `npm test -- client/src/views/scaffold.test.ts client/src/views/folderPageColumns.test.ts client/src/views/writeProperty.test.ts`  
+Run: `npm test -- client/src/views/scaffold.test.ts client/src/views/folderPageColumns.test.ts client/src/views/writeProperty.test.ts`
 Expected: all pass.
 
 ### Task 3: Reconcile every open folder page
@@ -154,7 +154,7 @@ expect(backfill.mock.calls[0]?.[0]).not.toEqual(expect.arrayContaining([expect.o
 
 - [ ] **Step 2: Run the focused test and verify RED**
 
-Run: `npm test -- client/src/views/FolderPageContents.test.tsx`  
+Run: `npm test -- client/src/views/FolderPageContents.test.tsx`
 Expected: FAIL because no reconciliation occurs.
 
 - [ ] **Step 3: Add one effect with cancellation-safe error reporting**
@@ -163,7 +163,7 @@ The effect depends on `members` and `settings`. It does not clear unrelated erro
 
 - [ ] **Step 4: Run the focused test and verify GREEN**
 
-Run: `npm test -- client/src/views/FolderPageContents.test.tsx`  
+Run: `npm test -- client/src/views/FolderPageContents.test.tsx`
 Expected: all pass.
 
 ### Task 4: Reconcile a confirmed move into a closed target
@@ -180,7 +180,7 @@ Pass target columns in the move target. Prove membership writes first, then the 
 
 - [ ] **Step 2: Run the engine test and verify RED**
 
-Run: `npm test -- client/src/sidebar/topicsMove.test.ts`  
+Run: `npm test -- client/src/sidebar/topicsMove.test.ts`
 Expected: FAIL because `performMove` does not reconcile.
 
 - [ ] **Step 3: Implement the closed-target call**
@@ -192,7 +192,7 @@ await backfillFolderPageColumns([child], to.columns)
 
 - [ ] **Step 4: Update the TopicsTree call/test with `folderPageSettings(move.target).columns`**
 
-Run: `npm test -- client/src/sidebar/topicsMove.test.ts client/src/sidebar/TopicsTree.test.tsx`  
+Run: `npm test -- client/src/sidebar/topicsMove.test.ts client/src/sidebar/TopicsTree.test.tsx`
 Expected: all pass.
 
 ### Task 5: Integrate the executable and written contracts
@@ -203,16 +203,11 @@ Expected: all pass.
 
 - [ ] **Step 1: Replace the old E2E “add touched nothing” snapshot**
 
-After step 1, parse every member and assert `unit_notes` is present and null while all unrelated keys/body remain. Save this post-backfill byte snapshot. In step 2, assert retyping leaves that snapshot byte-identical. Preserve:
+After step 1, parse every member and assert `unit_notes` is present and null while all unrelated keys/body remain. Save this post-backfill byte snapshot. In step 2, assert retyping leaves that snapshot byte-identical. Do not change or add expectations to step 3's cell-activation gesture: YAZ-1030 owns the selection/double-click contract; YAZ-999 owns only the surrounding YAML assertions.
 
-```ts
-await cell(contents(win), 0, 4).click()
-expect(props[COLUMN]).toBe(42)
-```
+- [ ] **Step 2: Add one pre-existing value before launch and prove it survives reconciliation**
 
-- [ ] **Step 2: Add one pre-existing value before launch and prove it survives declaration**
-
-Write a value to the copied fixture's subject before launching, then assert the added declaration does not replace it. Use another member for the empty-cell typed write if necessary so YAZ-995's empty-cell activation remains honest.
+Seed a legacy value under an already-declared key in the copied fixture, then assert the initial reconciliation and the later new-column backfill preserve it. Do not seed the new key itself: existing note keys are already offered by the Properties menu, so the duplicate-name guard correctly refuses "+ Add column" for them.
 
 - [ ] **Step 3: Update the folder-page contract text**
 
@@ -220,7 +215,7 @@ Document the hybrid triggers, latest-bytes missing check, direct-member boundary
 
 - [ ] **Step 4: Run focused non-Playwright verification**
 
-Run: `npm test -- client/src/views/writeProperty.test.ts client/src/views/scaffold.test.ts client/src/views/folderPageColumns.test.ts client/src/views/FolderPageContents.test.tsx client/src/sidebar/topicsMove.test.ts client/src/sidebar/TopicsTree.test.tsx`  
+Run: `npm test -- client/src/views/writeProperty.test.ts client/src/views/scaffold.test.ts client/src/views/folderPageColumns.test.ts client/src/views/FolderPageContents.test.tsx client/src/sidebar/topicsMove.test.ts client/src/sidebar/TopicsTree.test.tsx`
 Expected: all pass.
 
 ### Task 6: Verify, polish, and integrate
@@ -242,7 +237,7 @@ Expected: all commands exit 0.
 
 - [ ] **Step 2: Run the single desktop E2E when it will not disrupt Yasin**
 
-Run: `npx playwright test --config desktop/e2e/playwright.config.ts desktop/e2e/folderPageColumns.spec.ts`  
+Run: `npx playwright test --config desktop/e2e/playwright.config.ts desktop/e2e/folderPageColumns.spec.ts`
 Expected: the serial lifecycle passes. If automation would interfere, open the dev app and request the exact manual flow instead; record this limitation in Linear.
 
 - [ ] **Step 3: Perform the YAZ-1012 audit before cleanup**
