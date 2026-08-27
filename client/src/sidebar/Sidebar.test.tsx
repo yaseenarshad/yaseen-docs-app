@@ -328,7 +328,8 @@ describe('context menu target matrix (GRO-2296)', () => {
     expect(itemByLabel(el, 'Rename')).toBeUndefined()
     expect(itemByLabel(el, 'Copy link')).toBeUndefined()
     expect(itemByLabel(el, 'Open in new window')).toBeUndefined()
-    // The create actions are always available on blank space (they target the root).
+    // The create actions are always available on blank space (they target the root) — and the
+    // FILES lens keeps "New folder", which only the Topics lens drops (YAZ-948).
     expect(itemByLabel(el, 'New note')).toBeDefined()
     expect(itemByLabel(el, 'New folder')).toBeDefined()
   })
@@ -872,8 +873,23 @@ describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
     expect(el.querySelector('.tree')).not.toBeNull() // clearing lands on the lens that is now active
   })
 
-  it('right-clicking the Topics placeholder offers no menu — the blank-space menu is the TREE\'s', async () => {
+  /**
+   * YAZ-948 retires \u{1F512} YAZ-847's withholding: it kept the blank-space menu out of Topics only
+   * until that tree had a menu of its own to be consistent with, which YAZ-865 gave its rows.
+   * Blank space means the same thing in either lens — the vault ROOT — with ONE difference,
+   * ruled by Yasin: the Topics lens never offers "New folder", because a disk folder made from
+   * a lens that browses by MEANING lands where that lens cannot show it.
+   */
+  it('BLANK SPACE in Topics opens the same root-targeted menu — without "New folder"', async () => {
     const { el } = await mount({ lens: 'topics' })
+    act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(el.querySelector('.ctx-menu')).not.toBeNull()
+    expect(menuItems(el).map((b) => b.textContent)).toEqual(['Reveal in Finder', 'Copy path', 'New note', 'New folder page'])
+  })
+
+  it('a typed query still offers nothing on either lens — a result list has no root to target (YAZ-803)', async () => {
+    const { el } = await mount({ lens: 'topics' }, withIndex)
+    await type(searchInput(el)!, 'a')
     act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
@@ -1372,7 +1388,8 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
       'Copy link',
       'New note',
       'New folder page',
-      'New folder',
+      // …and NOT 'New folder' (YAZ-948, ruled by Yasin): this lens browses by MEANING, so a disk
+      // folder made from it would land where the lens cannot show it. The Files lens keeps it.
       // Home IS a folder page, so the ONE state-aware item shows the REVERSE label (🔒 D2).
       'Turn back into normal page',
       'Rename',
@@ -1539,13 +1556,16 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     expect(bridge.readFile).not.toHaveBeenCalled()
   })
 
-  it('"New folder" on a flagged row is untouched: a folder is never a member', async () => {
+  it('"New folder" is not offered from a Topics row at all (YAZ-948) — the create group keeps the rest', async () => {
+    // It USED to create beside the page's file (a folder is never a member, so the flag was
+    // irrelevant). YAZ-948 removes the item from this lens instead: browsing by meaning cannot
+    // show what a disk folder is, so the honest answer is not to offer it. Files keeps it.
     const { el, bridge } = await topicsWithMetrics()
     await rightClick(rowFor(el, 'Metrics'))
-    act(() => itemByLabel(el, 'New folder')?.click())
-    await commit(el, 'Archive')
-    expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith('/v/Archive') // beside Metrics' file
-    expect(bridge.createFile).not.toHaveBeenCalled()
+    expect(itemByLabel(el, 'New folder')).toBeUndefined()
+    expect(itemByLabel(el, 'New note')).toBeDefined()
+    expect(itemByLabel(el, 'New folder page')).toBeDefined()
+    expect(bridge.createDir).not.toHaveBeenCalled()
   })
 
   it('the FILES lens is untouched, even on a row whose file IS a folder page', async () => {
@@ -1569,19 +1589,32 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v/Loose.md' })
   })
 
-  it('the Uncategorized HEADER gets NO menu — there is no page behind it', async () => {
+  /**
+   * YAZ-948: ONE rule for this lens — a PAGE row opens that page's menu, and everything else in
+   * the body (blank space, the Uncategorized header, the offer card) opens the VAULT ROOT's, the
+   * same menu Files has always given its blank space. Neither the header nor the card is a page,
+   * so neither claims the event; they fall through to the body exactly as bare space does. What
+   * used to be "no menu at all" was never a decision about these two — it was 🔒 YAZ-847
+   * withholding the blank-space menu from the whole lens, which YAZ-948 retires.
+   */
+  it('the Uncategorized HEADER has no page behind it, so it opens the ROOT menu, not a page menu', async () => {
     const { el } = await topics()
     await rightClick(el.querySelector('.tree__row--muted'))
-    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(menuItems(el).map((b) => b.textContent)).toEqual(['Reveal in Finder', 'Copy path', 'New note', 'New folder page'])
+    // No page target anywhere in it: the row-only items stay absent.
+    expect(itemByLabel(el, 'Rename')).toBeUndefined()
+    expect(itemByLabel(el, 'Delete')).toBeUndefined()
   })
 
-  it('the offer card gets NO menu, and BLANK SPACE still falls through to Electron (the guard is untouched)', async () => {
+  it('the offer card and BLANK SPACE open that same root menu — nothing in this lens offers "New folder"', async () => {
     // Un-adopted AND nothing answers [[Home]]: the 6C card is up, over an otherwise bare lens.
     const { el } = await topics({ unadopted: true, indexSource: feedOver(LOOSE) })
     expect(el.querySelector('.topics-offer')).not.toBeNull()
     await rightClick(el.querySelector('.topics-offer'))
-    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(itemByLabel(el, 'New folder page')).toBeDefined()
+    expect(itemByLabel(el, 'New folder')).toBeUndefined()
     await rightClick(el.querySelector('.sidebar__body'))
-    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(itemByLabel(el, 'Copy path')).toBeDefined()
+    expect(itemByLabel(el, 'New folder')).toBeUndefined()
   })
 })

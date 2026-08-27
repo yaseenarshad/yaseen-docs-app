@@ -23,7 +23,12 @@ interface ContextMenuProps {
   onNewNote: () => void
   /** Create a note born a folder page — the flag and nothing else (🔒 D4 + D1, YAZ-841). */
   onNewFolderPage: () => void
-  onNewFolder: () => void
+  /**
+   * Create a DISK folder — null hides the item (YAZ-948). The Topics lens browses by meaning,
+   * never by disk location, so a folder made from it would land somewhere that lens cannot
+   * show: an item whose result is invisible is worse than an item that is not offered.
+   */
+  onNewFolder: (() => void) | null
   /**
    * The folder-page toggle's own target (🔒 D2, YAZ-817): MARKDOWN FILE rows only — null on
    * folders and on blank space, neither of which can carry the flag.
@@ -133,9 +138,11 @@ export function ContextMenu({ x, y, copyPath, copyLinkPath, newWindowPath, onOpe
         <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewFolderPage}>
           New folder page
         </button>
-        <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewFolder}>
-          New folder
-        </button>
+        {onNewFolder !== null && (
+          <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewFolder}>
+            New folder
+          </button>
+        )}
         {/* The folder-page toggle (🔒 D2, YAZ-817): ONE state-aware item, both directions. It
             acts ON the right-clicked page rather than creating beside it, so it sits after the
             create group — and above Rename, because the destructive pair keeps the bottom. The

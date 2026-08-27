@@ -806,10 +806,11 @@ export function Sidebar({
         />
       </div>
       {/* The blank-space menu is the TREE's ("New note" here creates in the vault root); the
-          results list has no such target, so right-clicking it offers nothing (YAZ-803) — and
-          neither does the Topics lens (🔒 YAZ-847): the blank-space menu belongs to Files, and
-          Topics' own menu is YAZ-848's to decide, not this issue's to invent. */}
-      <div className="sidebar__body" onContextMenu={(e) => (searching || lens === 'topics' ? undefined : openMenu(null, e))}>
+          results list has no such target, so right-clicking it offers nothing (YAZ-803).
+          BOTH lenses offer it since YAZ-948 — 🔒 YAZ-847 withheld it from Topics only until
+          that tree had a menu of its own to be consistent with, which YAZ-865 gave its rows.
+          Blank space means the same thing in either lens: the vault ROOT. */}
+      <div className="sidebar__body" onContextMenu={(e) => (searching ? undefined : openMenu(null, e))}>
         {searching ? (
           // A typed query replaces the ACTIVE TAB's body, whichever lens that is (🔒 D5).
           results.length > 0 ? (
@@ -881,7 +882,7 @@ export function Sidebar({
           onReveal={reveal}
           onNewNote={() => startCreate('file')}
           onNewFolderPage={() => startCreate('folderPage')}
-          onNewFolder={() => startCreate('dir')}
+          onNewFolder={lens === 'topics' ? null : () => startCreate('dir')}
           folderPagePath={menu.folderPagePath}
           folderPageIsOn={menu.folderPageIsOn}
           onToggleFolderPage={toggleFolderPage}
