@@ -56,6 +56,10 @@
  *    scene through inline decorations only (the match's text hidden, a widget in its place,
  *    caret-inside reveals the raw syntax) — never a schema or serializer change. Registered only
  *    when `opts.drawingPreview` gives it the vault root; every other embed is untouched.
+ *  - Outline paste (YAZ-937, `outlinePaste.ts`): a pasted Slack/Docs outline of `•`/`◦`/`■` glyphs
+ *    is translated to real markdown before it lands, so it arrives as a nested list instead of a
+ *    column of paragraphs. Registered as a DIRECT `handlePaste` prop — direct props run before
+ *    the clipboard plugin's — and it declines whenever the HTML payload has real list markup.
  */
 import { Crepe, CrepeFeature } from '@milkdown/crepe'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
@@ -73,6 +77,7 @@ import { features } from './featureConfig'
 import { listItemRoundTrip, normalizeEmptyItems, stripEmptyTaskBreaks } from './listItemRoundTrip'
 import { underline } from './marks/underline'
 import { multiBlockDrag } from './multiBlockDrag'
+import { outlinePaste } from './outlinePaste'
 import { guideLines } from './outline/guideLines'
 import { numberChildrenRow } from './outline/numberChildrenRow'
 import { obsidianHotkeys } from './outline/hotkeys'
@@ -182,6 +187,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   if (opts.wikilinkNav !== undefined) crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav))
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource()))
   if (opts.drawingPreview !== undefined) crepe.editor.use(createDrawingPreview(opts.drawingPreview))
+  crepe.editor.use(outlinePaste)
   crepe.editor.use(blockHandleGate)
   // Numbers are manual-only (YAZ-793): typing "1. " never auto-converts; "- " / "* " bullets keep theirs.
   void crepe.editor.remove(wrapInOrderedListInputRule)
