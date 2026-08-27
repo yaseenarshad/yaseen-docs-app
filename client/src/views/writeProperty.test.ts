@@ -4,7 +4,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { FrontmatterWriteError } from '@shared/frontmatter'
-import { writeProperty, writePropertyIfMissing } from './writeProperty'
+import { transformFile, writeProperty, writePropertyIfMissing } from './writeProperty'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -141,5 +141,34 @@ describe('writePropertyIfMissing (YAZ-999)', () => {
     await expect(writePropertyIfMissing(PATH, 'score', null)).rejects.toBeInstanceOf(FrontmatterWriteError)
 
     expect(writeFile).not.toHaveBeenCalled()
+  })
+})
+
+describe('transformFile', () => {
+  it('recomputes the whole transformation over fresh bytes after one conflict', async () => {
+    readFile
+      .mockResolvedValueOnce(file('first', 100))
+      .mockResolvedValueOnce(file('concurrent', 150))
+    writeFile.mockRejectedValueOnce(conflict(150)).mockResolvedValueOnce({ path: PATH, mtime: 300, size: 22 })
+
+    await expect(transformFile(PATH, (content) => `${content}-transformed`)).resolves.toEqual({ mtime: 300 })
+
+    expect(writeFile).toHaveBeenCalledTimes(2)
+    expect(writeFile).toHaveBeenLastCalledWith({
+      path: PATH,
+      content: 'concurrent-transformed',
+      expectedMtime: 150,
+    })
+  })
+
+  it('skips the retry write when the concurrent bytes already satisfy the transform', async () => {
+    readFile
+      .mockResolvedValueOnce(file('before', 100))
+      .mockResolvedValueOnce(file('after', 150))
+    writeFile.mockRejectedValueOnce(conflict(150))
+
+    await expect(transformFile(PATH, (content) => (content === 'before' ? 'after' : content))).resolves.toEqual({ mtime: 150 })
+
+    expect(writeFile).toHaveBeenCalledTimes(1)
   })
 })

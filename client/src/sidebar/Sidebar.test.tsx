@@ -12,10 +12,10 @@ import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_SETTINGS, type TreeNode, type WatchEvent } from '@shared/types'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 
-// The folder-page toggle writes through the shared one-key card writer (🔒 D1/D3, YAZ-817);
-// mocked here the way every other writeProperty caller's tests mock it.
-vi.mock('../views/writeProperty', () => ({ writeProperty: vi.fn() }))
-import { writeProperty } from '../views/writeProperty'
+// Forward uses the one-key writer; reverse uses its shared whole-file transform because the
+// migrated outline and flag must change atomically (YAZ-1022).
+vi.mock('../views/writeProperty', () => ({ transformFile: vi.fn(), writeProperty: vi.fn() }))
+import { transformFile, writeProperty } from '../views/writeProperty'
 import { countChildren, Sidebar } from './Sidebar'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -1261,19 +1261,19 @@ describe('New folder page (🔒 D4 / 🔒 D1, YAZ-841)', () => {
 
 /**
  * The folder-page toggle (YAZ-840 — 🔒 D1/D2/D3/D5 on YAZ-817): the first user-facing
- * folder-page gesture. ONE state-aware item on MARKDOWN FILE rows, both directions through the
- * one frontmatter key.
+ * folder-page gesture. ONE state-aware item on MARKDOWN FILE rows.
  *
  *  - forward (🔒 D1) is IMMEDIATE and writes exactly `folder_page: true` — no settings stamped,
  *    and no confirm to click through for something this same item undoes;
- *  - reverse (🔒 D5) asks first, and on confirm DELETES the key (🔒 D3) — `folder_page_settings`
- *    and every member note's `folder_pages` entry are left exactly where they are.
+ *  - reverse (🔒 D5) asks first, restores the migrated outline to the Markdown body, removes the
+ *    active outline value and flag together, and leaves every other setting and member entry.
  *
  * The flag state behind the label comes off the window's ALREADY-ON index feed (the same
  * snapshot WikilinkIndexBridge pushes at the wikilink resolver), read when the menu opens — no
  * second feed and no fetch of its own.
  */
 describe('folder-page toggle (YAZ-840)', () => {
+  const transform = vi.mocked(transformFile)
   const write = vi.mocked(writeProperty)
 
   const MIXED_TREE: TreeNode[] = [
@@ -1302,6 +1302,8 @@ describe('folder-page toggle (YAZ-840)', () => {
   const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
 
   beforeEach(() => {
+    transform.mockReset()
+    transform.mockResolvedValue({ mtime: 2 })
     write.mockReset()
     write.mockResolvedValue({ mtime: 2 })
   })
@@ -1336,6 +1338,7 @@ describe('folder-page toggle (YAZ-840)', () => {
     const { el } = await openOn('[title="/v/a.md"]', feed(record('/v/a.md')))
     await act(async () => itemByLabel(el, 'Turn into folder page')?.click())
     expect(write).toHaveBeenCalledExactlyOnceWith('/v/a.md', 'folder_page', true)
+    expect(transform).not.toHaveBeenCalled()
     expect(el.querySelector('.confirm')).toBeNull()
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
@@ -1357,11 +1360,12 @@ describe('folder-page toggle (YAZ-840)', () => {
     expect(el.querySelector('.confirm')).toBeNull()
   })
 
-  it('confirming DELETES the key — lossless, settings untouched (🔒 D3)', async () => {
+  it('confirming restores the body through one whole-file transform (🔒 D3)', async () => {
     const { el } = await openOn('[title="/v/a.md"]', feed(record('/v/a.md', { folder_page: true })))
     act(() => itemByLabel(el, 'Turn back into normal page')?.click())
     await act(async () => sheetBtn(el, 'Turn back')?.click())
-    expect(write).toHaveBeenCalledExactlyOnceWith('/v/a.md', 'folder_page', undefined)
+    expect(transform).toHaveBeenCalledExactlyOnceWith('/v/a.md', expect.any(Function))
+    expect(write).not.toHaveBeenCalled()
     expect(el.querySelector('.confirm')).toBeNull()
   })
 
@@ -1374,7 +1378,7 @@ describe('folder-page toggle (YAZ-840)', () => {
   })
 
   it('a failed turn-BACK names that direction in the notice', async () => {
-    write.mockRejectedValue(new Error('read-only volume'))
+    transform.mockRejectedValue(new Error('read-only volume'))
     const { el, props } = await openOn('[title="/v/a.md"]', feed(record('/v/a.md', { folder_page: true })))
     act(() => itemByLabel(el, 'Turn back into normal page')?.click())
     await act(async () => sheetBtn(el, 'Turn back')?.click())

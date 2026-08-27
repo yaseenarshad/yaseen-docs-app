@@ -6,9 +6,11 @@
  * reader of that grammar), prose becomes depth-0 text, blank lines drop, and the second run is a
  * no-op — the body is gone, so nothing can migrate twice. Pure: content in, content out.
  */
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
-import { migrateFolderBody } from './migrateFolderBody'
+import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { migrateFolderBody, restoreFolderBody } from './migrateFolderBody'
 
 /** The migrated outline of the FIRST outline view, read back the way every surface reads it. */
 const outlineOf = (content: string): string => {
@@ -193,5 +195,74 @@ describe('migrateFolderBody: heading markers cannot survive a bullets-only docum
   it('a lone # with no text, and a #hashtag word, are NOT headings — they stay verbatim', () => {
     const out = migrateFolderBody(page('- [[CAC]]', '#tag stays\n'))
     expect(outlineOf(out.content)).toBe('- #tag stays\n- [[CAC]]')
+  })
+})
+
+describe('restoreFolderBody: the outline becomes the normal page body (YAZ-1022)', () => {
+  it('removes the flag and active outline while preserving every other setting', () => {
+    const out = restoreFolderBody(page('- Growth plan\n    - [[CAC]]', ''))
+    const { properties } = parseFrontmatter(splitFrontmatter(out.content).frontmatter)
+    const settings = properties.folder_page_settings as { columns: unknown; views: { type: string; outline?: string }[] }
+
+    expect(out.changed).toBe(true)
+    expect(properties.folder_page).toBeUndefined()
+    expect(bodyOf(out.content)).toBe('- Growth plan\n    - [[CAC]]\n')
+    expect(settings.columns).toEqual({ stage: { kind: 'text' } })
+    expect(settings.views.map((view) => view.type)).toEqual(['outline', 'table'])
+    expect(settings.views[0].outline).toBeUndefined()
+  })
+
+  it('keeps an existing body first and separates the restored outline with one blank line', () => {
+    const out = restoreFolderBody(page('- Outline note', 'Existing body.\n'))
+
+    expect(bodyOf(out.content)).toBe('Existing body.\n\n- Outline note\n')
+  })
+
+  it('round-trips back into a folder page without duplicating the document', () => {
+    const first = migrateFolderBody(page(null, '# Growth\n\nDetails.\n'))
+    const restored = restoreFolderBody(first.content)
+    const enabledAgain = setFrontmatterProperty(restored.content, 'folder_page', true)
+    const second = migrateFolderBody(enabledAgain)
+
+    expect(outlineOf(second.content)).toBe(outlineOf(first.content))
+    expect(bodyOf(second.content)).toBe('')
+  })
+
+  it('refuses malformed owned settings instead of removing the flag around hidden content', () => {
+    const malformed = '---\nfolder_page: true\nfolder_page_settings: not-a-map\n---\n'
+
+    expect(() => restoreFolderBody(malformed)).toThrow('folder_page_settings is not a map')
+  })
+})
+
+describe('restoreFolderBody: real AI Curriculum regression (YAZ-1034)', () => {
+  it('restores the checked-in 123-line outline exactly and re-enables without duplication', () => {
+    const fixture = readFileSync(
+      resolve('desktop/e2e/fixtures/curriculum-vault/AI Curriculum.md'),
+      'utf8',
+    )
+    const originalOutline = outlineOf(fixture)
+    const before = parseFrontmatter(splitFrontmatter(fixture).frontmatter).properties
+
+    expect(originalOutline.split('\n')).toHaveLength(123)
+
+    const restored = restoreFolderBody(fixture)
+    const after = parseFrontmatter(splitFrontmatter(restored.content).frontmatter).properties
+    const afterSettings = after.folder_page_settings as { views: { type: string; name: string; outline?: string }[] }
+
+    expect(restored.changed).toBe(true)
+    expect(bodyOf(restored.content)).toBe(`${originalOutline}\n`)
+    expect(after.folder_page).toBeUndefined()
+    expect(after.folder_pages).toEqual(before.folder_pages)
+    expect(afterSettings.views.map(({ type, name }) => ({ type, name }))).toEqual([
+      { type: 'outline', name: 'Outline' },
+      { type: 'table', name: 'Table' },
+    ])
+    expect(afterSettings.views[0].outline).toBeUndefined()
+
+    const enabledAgain = setFrontmatterProperty(restored.content, 'folder_page', true)
+    const migratedAgain = migrateFolderBody(enabledAgain)
+    expect(outlineOf(migratedAgain.content)).toBe(originalOutline)
+    expect(bodyOf(migratedAgain.content)).toBe('')
   })
 })

@@ -1,13 +1,13 @@
 /**
- * THE FOLDER-PAGE BODY MIGRATION (YAZ-919). A folder page is title → outline now and its body
- * editor is hidden by CSS, so body text a page ALREADY carries would be invisible-but-present:
+ * THE FOLDER-PAGE BODY ROUND TRIP (YAZ-919 / YAZ-1022). A folder page is title → outline now
+ * and its body editor is hidden by CSS, so body text a page ALREADY carries would be invisible:
  * silent disappearance, which is the one thing this app never does. So it MOVES — once, at the
  * top of the page's outline document — and the body is emptied. The body is where it came from,
  * so once it is empty the migration can never run again: emptiness IS the marker, never a flag.
  *
- * PURE, deliberately: file content in, file content out, no I/O, no clock, no randomness. The
- * caller that reads and writes the file is the one door into a file (`hooks/useFile.ts`), and it
- * is the only thing that knows about disk.
+ * PURE, deliberately: file content in, file content out, no I/O, no clock, no randomness.
+ * `useFile` applies the forward migration; the sidebar applies the reverse through
+ * `transformFile`, which owns the optimistic disk write.
  *
  * THE BODY'S GRAMMAR is not re-spelled here. A line that is already a bullet stays one, at the
  * depth `outlineDoc`'s parse gives it (relative indentation, tabs = 4 spaces, `-`/`*`/`+` alike);
@@ -100,4 +100,60 @@ export function migrateFolderBody(content: string): FolderBodyMigration {
   // frontmatter block ALONE — everything after it is what the page just lost.
   const value = { ...settings, views: next.def.views }
   return { content: setFrontmatterProperty(frontmatter, SETTINGS_KEY, value), changed: true }
+}
+
+/** Keep existing body bytes first, then make the former outline a separate Markdown block. */
+function bodyWithOutline(body: string, outline: string, eol: string): string {
+  if (outline === '') return body
+  const normalized = eol === '\n' ? outline : outline.replace(/\n/g, eol)
+  const restored = normalized.endsWith(eol) ? normalized : `${normalized}${eol}`
+  if (body === '') return restored
+  if (body.endsWith(`${eol}${eol}`)) return `${body}${restored}`
+  return body.endsWith(eol) ? `${body}${eol}${restored}` : `${body}${eol}${eol}${restored}`
+}
+
+/**
+ * The reverse of `migrateFolderBody` (YAZ-1022): the visible first outline becomes the normal
+ * body, then its active value and the folder-page flag leave in the same pure transformation.
+ * The view and every other setting stay, so enabling the page again can migrate the body once
+ * without duplicating it.
+ */
+export function restoreFolderBody(content: string): FolderBodyMigration {
+  const unchanged: FolderBodyMigration = { content, changed: false }
+  const { frontmatter, body } = splitFrontmatter(content)
+  const parsedFrontmatter = parseFrontmatter(frontmatter)
+  if (parsedFrontmatter.error !== undefined) throw new Error(`Cannot turn this page back: ${parsedFrontmatter.error}`)
+  if (parsedFrontmatter.properties[FOLDER_PAGE_KEY] !== true) return unchanged
+
+  const withoutFlag = (): FolderBodyMigration => ({
+    content: setFrontmatterProperty(content, FOLDER_PAGE_KEY, undefined),
+    changed: true,
+  })
+  const raw = parsedFrontmatter.properties[SETTINGS_KEY]
+  if (raw === undefined || raw === null) return withoutFlag()
+  if (!isRecord(raw)) throw new Error('Cannot turn this page back: folder_page_settings is not a map')
+  if (raw.views === undefined) return withoutFlag()
+  if (!Array.isArray(raw.views)) throw new Error('Cannot turn this page back: folder_page_settings.views is not a list')
+
+  let parsed
+  try {
+    parsed = parseViews(stringify({ views: raw.views }))
+  } catch (err) {
+    throw new Error(`Cannot turn this page back: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  const index = parsed.def.views.findIndex((view: ViewDef) => view.type === 'outline')
+  if (index === -1) return withoutFlag()
+  const view = parsed.def.views[index]
+  if (!Object.prototype.hasOwnProperty.call(view, 'outline')) return withoutFlag()
+  if (typeof view.outline !== 'string') throw new Error('Cannot turn this page back: the first outline document is not text')
+
+  const outline = view.outline
+  const next = updateViews(parsed, (def) => {
+    delete def.views[index].outline
+  })
+  let staged = setFrontmatterProperty(content, SETTINGS_KEY, { ...raw, views: next.def.views })
+  staged = setFrontmatterProperty(staged, FOLDER_PAGE_KEY, undefined)
+  const nextFrontmatter = splitFrontmatter(staged).frontmatter
+  const eol = content.includes('\r\n') ? '\r\n' : '\n'
+  return { content: nextFrontmatter + bodyWithOutline(body, outline, eol), changed: true }
 }
