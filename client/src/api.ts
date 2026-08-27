@@ -44,6 +44,8 @@ export const api = {
   delete: (req: DeleteRequest) => call<DeleteResponse>(() => window.yaseenDocs.file.delete(req)),
   /** Reveal in the OS file manager, selected in its parent (GRO-2274); stale path → NOT_FOUND. */
   reveal: (req: RevealRequest) => call<RevealResponse>(() => window.yaseenDocs.shell.reveal(req)),
+  /** Open in VS Code via the `vscode://file` deep link (YAZ-963) — never a spawn; stale path → NOT_FOUND. */
+  openVsCode: (req: RevealRequest) => call<RevealResponse>(() => window.yaseenDocs.shell.openVsCode(req)),
   /** Bases property index for `root` (GRO-2129). */
   index: (root: string) => call<IndexResponse>(() => window.yaseenDocs.index(root)),
   /** The cold-start reconcile diff for `root` (Links E1c, GRO-2242); null before the first index build. */

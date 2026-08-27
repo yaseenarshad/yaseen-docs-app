@@ -766,6 +766,15 @@ export interface ShellApi {
    * unlike `delete`/`rename` there is no dot-entry or extension guard.
    */
   reveal(req: RevealRequest): Promise<RevealResponse>
+  /**
+   * Open `path` in VS Code through the OS deep link (`vscode://file/<path>`, every segment
+   * percent-encoded) — LOCKED: `shell.openExternal`, never a spawned process, so the app
+   * couples to the scheme rather than to an install location or a `code` on PATH, and the OS
+   * picks which VS Code answers. Files, folders and the vault root alike; what opening a folder
+   * means is VS Code's decision. Same request/response shape and the same read-only posture as
+   * `reveal`, stat included: a path that no longer exists rejects `NOT_FOUND`.
+   */
+  openVsCode(req: RevealRequest): Promise<RevealResponse>
 }
 
 /**
@@ -820,7 +829,7 @@ export interface YaseenDocsApi {
   link: LinkApi
   /** In-app file rename + the renamed push (Links E1, GRO-2194). */
   file: FileApi
-  /** OS-level actions (GRO-2274): Reveal in Finder today. */
+  /** OS-level actions: Reveal in Finder (GRO-2274) and Open in VS Code (YAZ-963). */
   shell: ShellApi
   /** Vault-local config in `<root>/.yaseendocs/` (Desktop J, GRO-2188). */
   vaultConfig: VaultConfigApi

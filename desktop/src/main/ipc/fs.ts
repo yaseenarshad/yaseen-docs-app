@@ -4,6 +4,7 @@ import { readAsset, writeAsset } from '../fs/assets'
 import { createDir, createFile } from '../fs/create'
 import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure } from '../fs/fsUtils'
+import { openInVsCode } from '../fs/openInVsCode'
 import { renameFile, repairRename } from '../fs/rename'
 import { removeEntry } from '../fs/remove'
 import { revealItem } from '../fs/reveal'
@@ -35,6 +36,9 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   // enveloped like every other handler so a stale row's NOT_FOUND reaches the renderer as a
   // passive notice instead of vanishing (showItemInFolder is silent on a missing path).
   handle(CH.shellReveal, revealItem)
+  // Open in VS Code (YAZ-963): reveal's twin in every respect — read-only, nothing to repair,
+  // nothing to broadcast, and enveloped for the same NOT_FOUND notice.
+  handle(CH.shellOpenVsCode, openInVsCode)
   // In-app rename/move (Links E1 GRO-2194, E1b GRO-2241). The SAME handler repairs the
   // store — every stored path at or under the renamed entry follows (window roots/files/
   // tabs, recents, folder state) — and then pushes `file:renamed` to EVERY window so open
