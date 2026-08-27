@@ -77,7 +77,7 @@ const SEED = [
 ].join('\n')
 
 describe('the outline seed survives the Milkdown parse (YAZ-964)', () => {
-  it.fails('renders every line the grammar parsed, block-look text as literal text', async () => {
+  it('renders every line the grammar parsed, block-look text as literal text', async () => {
     const host = await mount(SEED)
     const texts = bullets(host)
     // Every line arrives, in order, as the literal text the grammar promised — escapes render

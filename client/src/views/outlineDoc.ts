@@ -61,6 +61,38 @@ export function serializeOutline(lines: OutlineLine[]): string {
     .join('\n')
 }
 
+/** An ordered item opening the line: the digits, then a `.`/`)` delimiter and a space or the line's end. */
+const ORDERED_START = /^\d+(?=[.)](?:[ \t]|$))/
+
+/**
+ * Every other block opener, defused by ONE backslash before the line's first character: a nested
+ * bullet marker, one to six hashes, a quote, a fence, or a thematic break of three or more of the
+ * same mark. Seven hashes and `-foo` are no block to CommonMark either, so neither is touched.
+ */
+const BLOCK_START = /^(?:[-*+](?:[ \t]|$)|#{1,6}(?:[ \t]|$)|>|```|~~~|([-_*])(?:[ \t]*\1){2,}[ \t]*$)/
+
+/** Text that would re-parse as a BLOCK construct inside its bullet — an ordered item (`1. `),
+ * a nested marker (`- `), a heading (`# `), a quote (`> `), a fence or a thematic break — gets
+ * one backslash so Milkdown reads it as the literal text the outline grammar already says it is. */
+export function escapeBlockStart(text: string): string {
+  if (ORDERED_START.test(text)) return text.replace(ORDERED_START, '$&\\')
+  return BLOCK_START.test(text) ? `\\${text}` : text
+}
+
+/** Every bullet line's text in `markdown`, escaped by `escapeBlockStart`; other bytes untouched. */
+export function escapeOutlineMarkdown(markdown: string): string {
+  return markdown
+    .split('\n')
+    .map((raw) => {
+      const match = BULLET_LINE.exec(raw)
+      if (match === null) return raw
+      // Splice the text alone: the marker, the indentation and any trailing bytes stay as written.
+      const lead = match[1].length
+      return raw.slice(0, lead) + escapeBlockStart(match[3]) + raw.slice(lead + match[3].length)
+    })
+    .join('\n')
+}
+
 /** The path this LINE counts for, or null when it is text — the click rule, unchanged. */
 export function lineTarget(text: string, resolve: ResolveLink): string | null {
   return entryTarget(text, resolve)

@@ -8,9 +8,11 @@
  * SEEDED ONCE, from `markdown` at mount. The seed goes through YAZ-900's grammar
  * (`parseOutline` → `serializeOutline`), which is both the empty state — no bullets means ONE empty
  * bullet, so there is something to click and type into — and the guarantee the lock needs: the
- * initial document cannot be anything but bullets. Later `markdown` props are NOT pushed in; the
- * caller owns the string and remounts (a `key`) when it wants a different document, exactly as the
- * note editor remounts per file.
+ * initial document cannot be anything but bullets. Each seeded line's text goes in through the
+ * grammar's `escapeBlockStart`, so text that merely LOOKS like a block — `1. Title`, `# x` — stays
+ * the literal text the grammar promises instead of re-parsing into a node the lock drops (YAZ-964).
+ * Later `markdown` props are NOT pushed in; the caller owns the string and remounts (a `key`) when
+ * it wants a different document, exactly as the note editor remounts per file.
  *
  * ONCHANGE is the note editor's save idiom minus the disk: Crepe's listener debounces
  * `markdownUpdated` ~200ms, this adds the same 500ms `useAutosave` uses, and the caller owns the
@@ -24,7 +26,7 @@ import { createCrepe } from '../../editor/createCrepe'
 import type { WikilinkNav } from '../../editor/wikilink/wikilinkClick'
 import type { WikilinkCandidateSource } from '../../editor/wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugin'
-import { parseOutline, serializeOutline } from '../outlineDoc'
+import { escapeBlockStart, parseOutline, serializeOutline } from '../outlineDoc'
 import '../../editor/outline/bullets.css'
 import '../../editor/outline/guideLines.css'
 import '../../editor/outline/outlineFolding.css'
@@ -78,7 +80,7 @@ export function OutlineEditor({ markdown, onChange, wikilinks, wikilinkCandidate
       onChangeRef.current(md)
     }
 
-    const lines = parseOutline(seedRef.current)
+    const lines = parseOutline(seedRef.current).map((line) => ({ ...line, text: escapeBlockStart(line.text) }))
     const crepe = createCrepe({
       root: el,
       defaultValue: serializeOutline(lines.length > 0 ? lines : [{ depth: 0, text: '' }]),

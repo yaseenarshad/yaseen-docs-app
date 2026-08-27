@@ -22,6 +22,7 @@
 import { editorViewOptionsCtx, parserCtx } from '@milkdown/kit/core'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
+import { escapeOutlineMarkdown } from '../views/outlineDoc'
 
 /** Glyph → nesting rank; leading indentation adds to it (2 spaces or 1 tab = 1 level). */
 const RANK: Record<string, number> = { '•': 0, '◦': 1, '■': 2, '▪': 2 }
@@ -61,8 +62,12 @@ export function outlineToMarkdown(text: string): string | null {
 /** Does the HTML payload carry a real list? Then that list is the better answer, not our glyphs. */
 const hasListMarkup = (html: string): boolean => /<(?:ul|ol|li)\b/i.test(html)
 
-/** `- 1) x` would re-parse as a nested ordered list; the content is verbatim text, so keep it text. */
-const escapeItemMarkers = (markdown: string): string => markdown.replace(/^(\s*- \d+)([.)])/gm, '$1\\$2')
+/**
+ * `- 1) x` would re-parse as a nested ordered list; the content is verbatim text, so keep it text.
+ * The rule is the outline grammar's own (`views/outlineDoc.ts`), covering every block start — a
+ * heading, a quote, a fence, a break — and not `\d+[.)]` alone, so seed and paste armour alike.
+ */
+const escapeItemMarkers = escapeOutlineMarkdown
 
 export const outlinePaste = $prose((ctx) => {
   ctx.update(editorViewOptionsCtx, (prev) => ({
