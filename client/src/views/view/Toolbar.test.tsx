@@ -229,6 +229,51 @@ describe('collapse all groups', () => {
 })
 
 describe('properties menu', () => {
+  it('offers a Table-only Frozen columns select over the visible positional prefix', () => {
+    const { el } = mount('views:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - note.status\n      - note.priority\n  - type: cards\n    name: Cards\n')
+    const table = openMenu(el, 'Properties')
+    const select = byLabel<HTMLSelectElement>(table, 'Frozen columns')
+    expect([...select.options].map((option) => option.textContent)).toEqual(['None', '1 — through file.name', '2 — through status', '3 — through priority'])
+    expect(select.value).toBe('0')
+
+    click(byText(el, '[role="tab"]', 'Cards'))
+    expect(byLabel(el, 'Properties').getAttribute('aria-expanded')).toBe('true')
+    expect(q(el, '.view-popover').querySelector('[aria-label="Frozen columns"]')).toBeNull()
+  })
+
+  it('writes the selected frozen prefix once; choosing None deletes the optional key', () => {
+    const { el, onChange, def, yaml } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.status\n')
+    const select = byLabel<HTMLSelectElement>(openMenu(el, 'Properties'), 'Frozen columns')
+
+    setValue(select, '2')
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(def().views[0].frozenColumns).toBe(2)
+    expect(yaml()).toContain('frozenColumns: 2')
+
+    setValue(select, '0')
+    expect(onChange).toHaveBeenCalledTimes(2)
+    expect(def().views[0].frozenColumns).toBeUndefined()
+    expect(yaml()).not.toContain('frozenColumns')
+  })
+
+  it('clamps after hides, leaves restored columns outside the prefix, and follows reorder positionally', () => {
+    const { el, def } = mount('views:\n  - type: table\n    name: T\n    frozenColumns: 2\n    order:\n      - file.name\n      - note.status\n      - note.priority\n')
+    const pop = openMenu(el, 'Properties')
+
+    click(byLabel(pop, 'Show priority'))
+    expect(def().views[0].frozenColumns).toBe(2)
+    click(byLabel(pop, 'Show status'))
+    expect(def().views[0].order).toEqual(['file.name'])
+    expect(def().views[0].frozenColumns).toBe(1)
+
+    click(byLabel(pop, 'Show status'))
+    expect(def().views[0].order).toEqual(['file.name', 'note.status'])
+    expect(def().views[0].frozenColumns).toBe(1)
+    click([...pop.querySelectorAll('[aria-label="Move up"]')][1])
+    expect(def().views[0].order).toEqual(['note.status', 'file.name'])
+    expect(def().views[0].frozenColumns).toBe(1)
+  })
+
   it('a table can hide and re-show file.name through view.order', () => {
     const { el, onChange, def } = mount()
     const pop = openMenu(el, 'Properties')

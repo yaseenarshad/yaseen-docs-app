@@ -10,6 +10,7 @@ import { PencilIcon, RelationIcon } from './icons'
 import { markerStyleOf } from './ListView'
 import { allPropertyKeys } from './properties'
 import { TextField } from './TextField'
+import { frozenColumnCount } from './frozenColumns'
 
 export interface PropertiesMenuProps {
   def: ViewSet
@@ -55,7 +56,13 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
 
   const writeOrder = (order: string[]) =>
     onUpdate((d) => {
-      d.views[viewIndex].order = order
+      const next = d.views[viewIndex]
+      next.order = order
+      if (next.frozenColumns !== undefined) {
+        const count = frozenColumnCount(next.frozenColumns, order.length)
+        if (count === 0) delete next.frozenColumns
+        else next.frozenColumns = count
+      }
     })
   const toggle = (key: string) => writeOrder(isShown(key) ? shown.filter((k) => canonicalKey(k) !== canonicalKey(key)) : [...shown, key])
   const move = (key: string, dir: -1 | 1) => {
@@ -204,6 +211,33 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
           )
         }
       />
+      {view.type === 'table' && (
+        <>
+          <p className="view-menu__label">Table</p>
+          <label className="view-table-settings">
+            <span>Frozen columns</span>
+            <select
+              className="view-select"
+              aria-label="Frozen columns"
+              value={frozenColumnCount(view.frozenColumns, shown.length)}
+              onChange={(e) =>
+                onUpdate((d) => {
+                  const count = Number(e.target.value)
+                  if (count === 0) delete d.views[viewIndex].frozenColumns
+                  else d.views[viewIndex].frozenColumns = count
+                })
+              }
+            >
+              <option value={0}>None</option>
+              {shown.map((key, index) => (
+                <option key={key} value={index + 1}>
+                  {index + 1} — through {propertyLabel(def, key)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </>
+      )}
       {view.type === 'list' && (
         <>
           <p className="view-menu__label">List</p>

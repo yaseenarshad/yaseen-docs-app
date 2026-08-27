@@ -12,6 +12,7 @@ import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, groupKeyOf, summaryKindOf } from './GroupHeader'
 import { groupByKey, useGroupDrag } from './groupDrag'
 import { Popover } from './Popover'
+import { frozenColumnCount } from './frozenColumns'
 
 export interface TableViewProps {
   def: ViewSet
@@ -107,6 +108,15 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   )
   const rowH = ROW_HEIGHTS[view.rowHeight ?? ''] ?? ROW_HEIGHTS.short
   const widthOf = (key: string) => (drag?.key === key ? drag.width : view.columnSize?.[key] ?? DEFAULT_WIDTH)
+  const frozen = frozenColumnCount(view.frozenColumns, keys.length)
+  let left = 0
+  const frozenLeft = keys.map((key, index) => {
+    const offset = index < frozen ? left : undefined
+    left += widthOf(key)
+    return offset
+  })
+  const isFrozen = (index: number) => index < frozen
+  const frozenStyle = (index: number): CSSProperties | undefined => (isFrozen(index) ? { left: frozenLeft[index] } : undefined)
 
   // one flat display list (headers + visible data rows) so windowing and keyboard nav share it
   const collapsedSet = new Set(collapsed)
@@ -201,8 +211,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       >
         <thead>
           <tr>
-            {keys.map((key) => (
-              <th key={key} scope="col" style={{ width: widthOf(key) }}>
+            {keys.map((key, index) => (
+              <th key={key} scope="col" className={isFrozen(index) ? 'view-table__frozen' : undefined} style={{ width: widthOf(key), ...frozenStyle(index) }}>
                 {propertyLabel(def, key)}
                 <span
                   className={`view-table__resize${drag?.key === key ? ' view-table__resize--active' : ''}`}
@@ -248,7 +258,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   return (
                     <td
                       key={key}
-                      className={typeOf(v) === 'number' ? 'view-table__cell--num' : undefined}
+                      className={[typeOf(v) === 'number' && 'view-table__cell--num', isFrozen(c) && 'view-table__frozen'].filter(Boolean).join(' ') || undefined}
+                      style={frozenStyle(c)}
                       tabIndex={line.r === firstDataRow && c === 0 ? 0 : -1}
                       data-cell={`${line.r}:${c}`}
                       onClick={bares[c] === null ? undefined : activateEditorFromCell}
@@ -287,11 +298,11 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
         {groups === null && (
           <tfoot>
             <tr>
-              {keys.map((key) => {
+              {keys.map((key, index) => {
                 const label = propertyLabel(def, key)
                 const kind = summaryKindOf(view, key)
                 return (
-                  <td key={key} className="view-table__summary">
+                  <td key={key} className={`view-table__summary${isFrozen(index) ? ' view-table__frozen' : ''}`} style={frozenStyle(index)}>
                     <button
                       type="button"
                       className="view-table__summary-btn"

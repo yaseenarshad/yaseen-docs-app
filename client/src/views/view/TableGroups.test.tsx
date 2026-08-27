@@ -36,6 +36,7 @@ vi.mock('../../lib/storage', () => ({
 const GROUP_BASE = `views:
   - type: table
     name: T
+    frozenColumns: 1
     order:
       - file.name
       - note.priority
@@ -175,6 +176,7 @@ describe('grouped sections', () => {
     // a header row spans the whole table and owns no data cells
     expect(q<HTMLTableCellElement>(headers(el)[0], 'td').colSpan).toBe(2)
     expect(headers(el)[0].querySelector('[data-cell]')).toBeNull()
+    expect(headers(el)[0].querySelector('.view-table__frozen')).toBeNull()
   })
 
   it('the No value group is last and muted; a list property gives one header per element', () => {
