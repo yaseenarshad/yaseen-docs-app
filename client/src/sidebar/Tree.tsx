@@ -2,6 +2,7 @@ import type { TreeNode } from '@shared/types'
 import { stripExt } from '../lib/paths'
 import { CreateInline } from './CreateInline'
 import type { EntryKind } from './createEntry'
+import { focusOpenDocument } from '../lib/focusHandoff'
 import { RenameInline } from './RenameInline'
 
 /** Inline "New note"/"New folder page"/"New folder" input pending inside the tree (GRO-2022, YAZ-841). */
@@ -138,7 +139,7 @@ export function Tree({
                 // First activation previews, second commits — the Topics rows' rule (YAZ-921):
                 // opening keeps focus on the row, re-activating the open page enters its text.
                 if (e.metaKey) onOpenFileBackground(node.path)
-                else if (node.path === activeFile) document.querySelector<HTMLElement>('.editor-instance .ProseMirror')?.focus()
+                else if (node.path === activeFile) focusOpenDocument() // YAZ-949: the VISIBLE one
                 else onOpenFile(node.path)
               }}
               onContextMenu={(e) => onNodeContextMenu(node, e)}

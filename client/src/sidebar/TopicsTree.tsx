@@ -72,6 +72,7 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { MAX_TOPICS_EXPANDED_PAGES, type IndexRecord } from '@shared/types'
+import { focusOpenDocument } from '../lib/focusHandoff'
 import { folderPageSettings, orderedMembers } from '../views/folderPageSettings'
 import { FolderPageGlyph } from '../views/view/icons'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -267,11 +268,7 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
       return
     }
     if (path === activeFile) {
-      // The VISIBLE document, not the first in the DOM (YAZ-936): a folder page hides its body
-      // editor, so the commit lands in its outline — offsetParent answers "actually on screen".
-      Array.from(document.querySelectorAll<HTMLElement>('.editor-instance .ProseMirror'))
-        .find((el) => el.offsetParent !== null)
-        ?.focus()
+      focusOpenDocument() // the VISIBLE document (YAZ-949): a folder page's outline, not its hidden body
       return
     }
     onOpenFile(path)

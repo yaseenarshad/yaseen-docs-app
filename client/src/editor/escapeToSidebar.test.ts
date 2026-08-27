@@ -48,7 +48,7 @@ afterEach(async () => {
     await m.crepe.destroy()
     m.root.remove()
   }
-  document.querySelectorAll('.tree__row').forEach((el) => el.remove())
+  document.querySelectorAll('.tree__row, .sidebar__search-input').forEach((el) => el.remove())
   document.querySelectorAll(`.${WIKILINK_PICKER_CLASS}`).forEach((el) => el.remove())
 })
 
@@ -67,6 +67,19 @@ describe('Escape returns to the sidebar (YAZ-947)', () => {
     const { view } = await mount('words\n')
     expect(press(view, 'Escape')).toBe(true)
     expect(document.activeElement).toBe(first)
+  })
+
+  it('returns to the SEARCH BAR while a query stands — the list is driven from it (YAZ-949)', async () => {
+    // Search REPLACES the tree's body (🔒 D5), so there are no rows to land on: the walk lives
+    // in the input, and the selection it drives is waiting there untouched.
+    const input = document.createElement('input')
+    input.className = 'sidebar__search-input'
+    input.value = 'cac'
+    document.body.appendChild(input)
+    const { view } = await mount('words\n')
+    expect(press(view, 'Escape')).toBe(true)
+    expect(document.activeElement).toBe(input)
+    input.remove()
   })
 
   it('DECLINES with no tree on screen — Esc falls through untouched', async () => {

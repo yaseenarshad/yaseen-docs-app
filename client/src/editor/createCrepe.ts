@@ -67,7 +67,7 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import { turnIntoTextCommand, wrapInHeadingCommand, wrapInOrderedListInputRule } from '@milkdown/kit/preset/commonmark'
 import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
 import { Selection } from '@milkdown/kit/prose/state'
-import { replaceAll } from '@milkdown/kit/utils'
+import { $shortcut, replaceAll } from '@milkdown/kit/utils'
 import { blockHandleGate } from './blockHandleGate'
 import { createBlockHandleMenu } from './blockHandleMenu'
 import { createDrawingPreview, type DrawingPreviewOptions } from './drawing/drawingPreview'
@@ -84,7 +84,7 @@ import { obsidianHotkeys } from './outline/hotkeys'
 import { outlinerKeymap } from './outline/listCommands'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { createOutlineZoom, zoomKeymap, type ZoomOptions } from './outline/zoom'
-import { $shortcut } from '@milkdown/kit/utils'
+import { focusSidebar } from '../lib/focusHandoff'
 import { createWikilinkClick, type WikilinkNav } from './wikilink/wikilinkClick'
 import { createWikilinkPicker, createWikilinkCandidateSource, wikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { createWikilink, createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
@@ -165,13 +165,7 @@ const escapeToSidebar = $shortcut(() => ({
   EscapeToSidebar: {
     key: 'Escape',
     priority: 10,
-    onRun: () => () => {
-      const row =
-        document.querySelector<HTMLElement>('.tree__row--active') ?? document.querySelector<HTMLElement>('.tree__row')
-      if (row === null) return false
-      row.focus()
-      return true
-    },
+    onRun: () => () => focusSidebar(),
   },
 }))
 

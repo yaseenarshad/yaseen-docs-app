@@ -10,6 +10,7 @@ import { ChevronsIcon, SearchIcon } from '../views/view/icons'
 import { writeProperty } from '../views/writeProperty'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
+import { focusOpenDocument } from '../lib/focusHandoff'
 import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { FOLDER_PAGE_KEY, FOLDER_PAGES_KEY, folderPagesLookup, isFolderPage } from '../links/folderPages'
@@ -803,7 +804,11 @@ export function Sidebar({
               e.preventDefault()
               const hit = results[sel]
               if (hit === undefined) return
+              // The tree rows' rule on the list (YAZ-949): the first Enter PREVIEWS — focus stays
+              // in the bar, so ↑/↓ carry on — and a second Enter on the page already open is the
+              // deliberate "take me in", handing the caret to the document (Esc brings it back).
               if (e.metaKey) onOpenFileBackground(hit.path)
+              else if (hit.path === activeFile) focusOpenDocument()
               else onOpenFile(hit.path)
             }
           }}

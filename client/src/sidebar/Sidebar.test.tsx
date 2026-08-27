@@ -729,6 +729,39 @@ describe('search results (YAZ-803)', () => {
     expect(props.onOpenFile).not.toHaveBeenCalled()
   })
 
+  /** An editor stand-in: layoutless jsdom always answers `offsetParent: null`, so it declares its own. */
+  const editorStub = (): HTMLElement => {
+    const instance = document.createElement('div')
+    instance.className = 'editor-instance'
+    const pm = document.createElement('div')
+    pm.className = 'ProseMirror'
+    pm.tabIndex = -1
+    Object.defineProperty(pm, 'offsetParent', { get: () => document.body })
+    instance.appendChild(pm)
+    document.body.appendChild(instance)
+    return pm
+  }
+
+  it('a second Enter on the page ALREADY open commits the caret into it, and never re-opens it (YAZ-949)', async () => {
+    // The tree rows' rule (YAZ-921), on the search list: the first Enter previews — focus stays
+    // in the bar, so the walk continues — and the second is the deliberate "take me in".
+    const pm = editorStub()
+    const { input, props } = await search('alph', { activeFile: '/v/Alpha.md' })
+    await press(input, 'Enter')
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(pm)
+    pm.remove()
+  })
+
+  it('⌘-Enter on the open page still opens a background tab — never the commit (YAZ-949)', async () => {
+    const pm = editorStub()
+    const { input, props } = await search('alph', { activeFile: '/v/Alpha.md' })
+    await press(input, 'Enter', true)
+    expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith('/v/Alpha.md')
+    expect(document.activeElement).not.toBe(pm)
+    pm.remove()
+  })
+
   it('changing the query re-selects the top row', async () => {
     const { el, input } = await search('a')
     await press(input, 'ArrowDown')
