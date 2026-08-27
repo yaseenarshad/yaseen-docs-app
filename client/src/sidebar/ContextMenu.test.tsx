@@ -163,3 +163,30 @@ describe('folder-page toggle item (🔒 D2)', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 })
+
+/**
+ * Open in VS Code (YAZ-963): Reveal in Finder's sibling — same availability idiom (a path or
+ * nothing), grouped in the same OS-actions cluster, the click handing the caller the path.
+ */
+describe('Open in VS Code item (YAZ-963)', () => {
+  const labels = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => b.textContent)
+  const item = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === label)
+
+  it('renders beside Reveal in Finder when a path is offered', () => {
+    const el = mount(0, 0, { revealPath: '/v/a.md', openVsCodePath: '/v/a.md' })
+    expect(labels(el)).toContain('Reveal in Finder')
+    expect(labels(el)).toContain('Open in VS Code')
+  })
+
+  it('absent without a path — the same nothing Reveal shows', () => {
+    const el = mount(0, 0, {})
+    expect(labels(el)).not.toContain('Open in VS Code')
+  })
+
+  it('hands the click to the caller with the path', () => {
+    const onOpenVsCode = vi.fn()
+    const el = mount(0, 0, { openVsCodePath: '/v/Zeta', onOpenVsCode })
+    act(() => item(el, 'Open in VS Code')?.click())
+    expect(onOpenVsCode).toHaveBeenCalledExactlyOnceWith('/v/Zeta')
+  })
+})
