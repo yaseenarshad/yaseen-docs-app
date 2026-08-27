@@ -1181,8 +1181,10 @@ button {
   z-index: 40;
 }
 
+/* Shared layer for overlay-backed and standalone context menus. */
 .ctx-menu {
   position: fixed;
+  z-index: 40;
   min-width: 140px;
   padding: 4px;
   background: var(--bg);
@@ -1207,11 +1209,6 @@ button {
 .ctx-menu__item:disabled {
   opacity: 0.45;
   cursor: default;
-}
-
-/* Editor block-handle menu (YAZ-726): no .ctx-overlay beneath it, so it needs its own z-index. */
-.ctx-menu--editor {
-  z-index: 40;
 }
 
 /* Delete (GRO-2272): destructive, so it reads as such in BOTH themes — --danger is

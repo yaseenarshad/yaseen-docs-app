@@ -124,6 +124,15 @@ test('step 4 — quit and relaunch restores the tabs and the active tab', async 
   await shoot(win, 'i3-04-restored')
 })
 
+test('step 4b — the tab context menu sits above the editor and accepts a real click', async () => {
+  await activeTab(win).click({ button: 'right' })
+  const menu = win.locator('.ctx-menu')
+  await expect(menu).toBeVisible()
+  await menu.getByRole('menuitem', { name: 'Copy path', exact: true }).click()
+  await expect(menu).toHaveCount(0)
+  await shoot(win, 'i3-04b-tab-menu-click')
+})
+
 test('step 5 — the ⌘W ladder: tabs → empty state with the window ALIVE → window close', async () => {
   // A second window (⌘⇧N duplicate — it carries the same tabs) keeps the app alive while the
   // ladder closes the first one all the way down.
