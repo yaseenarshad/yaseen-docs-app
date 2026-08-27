@@ -186,6 +186,36 @@ describe('cells by type', () => {
   })
 })
 
+describe('editable cell activation', () => {
+  it('clicking a declared empty property cell opens its existing typed editor', () => {
+    const folderPage = testFolderPage({
+      settings: { columns: { empty_text: { kind: 'text' } }, views: [], problems: [] },
+    })
+    const { el } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.empty_text\n', {
+      folderPage,
+    })
+    const emptyCell = q<HTMLElement>(el, '[data-cell="0:1"]')
+    expect(emptyCell.textContent).toBe('')
+
+    click(emptyCell)
+
+    expect(byLabel<HTMLInputElement>(emptyCell, 'Edit empty_text').value).toBe('')
+  })
+
+  it('clicking the nested edit control activates it exactly once', () => {
+    const { el } = mount(TYPED_BASE)
+    const populatedCell = q<HTMLElement>(el, '[data-cell="0:1"]')
+    const control = q<HTMLElement>(populatedCell, '[data-edit]')
+    let clicks = 0
+    control.addEventListener('click', () => clicks++)
+
+    click(control)
+
+    expect(clicks).toBe(1)
+    expect(byLabel<HTMLInputElement>(populatedCell, 'Edit priority')).not.toBeNull()
+  })
+})
+
 describe('file.name link', () => {
   it('clicking the name cell link opens the note', () => {
     const { el, onOpenFile, onChange } = mount(TYPED_BASE)

@@ -173,7 +173,8 @@ async function flush(): Promise<void> {
 }
 
 const cell = (el: ParentNode, r: number, c: number) => q<HTMLElement>(el, `[data-cell="${r}:${c}"]`)
-const open = (el: ParentNode, r: number, c: number) => click(q(cell(el, r, c), '[data-edit]'))
+/** Open a table relation editor through its public whole-cell activation boundary. */
+const open = (el: ParentNode, r: number, c: number) => click(cell(el, r, c))
 const options = (el: ParentNode) => [...el.querySelectorAll('[role="option"]')].map((o) => o.textContent)
 
 /** Open the Properties popover and the relation editor for `key`. */

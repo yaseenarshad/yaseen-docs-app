@@ -130,8 +130,8 @@ async function flush(): Promise<void> {
 }
 
 const cell = (el: ParentNode, r: number, c: number) => q<HTMLElement>(el, `[data-cell="${r}:${c}"]`)
-/** Open a cell's editor by clicking its display. */
-const open = (el: ParentNode, r: number, c: number) => click(q(cell(el, r, c), '[data-edit]'))
+/** Open a table editor through its public whole-cell activation boundary. */
+const open = (el: ParentNode, r: number, c: number) => click(cell(el, r, c))
 
 // ---------- tests ----------
 
@@ -189,7 +189,7 @@ describe('typed commits', () => {
     const { el } = mount(EDIT_BASE)
     const box = q<HTMLInputElement>(cell(el, 0, 3), 'input[type="checkbox"]') // published: false
     expect(box.disabled).toBe(false)
-    click(box)
+    click(cell(el, 0, 3))
     expect(write).toHaveBeenCalledExactlyOnceWith(AGENTIC, 'published', true)
     expect(q<HTMLInputElement>(cell(el, 0, 3), 'input[type="checkbox"]').checked).toBe(true)
   })
@@ -220,6 +220,16 @@ describe('list editor', () => {
       'pillar',
       'new',
     ])
+  })
+
+  it('keeps commas inside one free-form item', () => {
+    const { el } = mount(EDIT_BASE)
+    open(el, 0, 5)
+    const input = byLabel<HTMLInputElement>(el, 'Edit tags')
+    setValue(input, 'alpha,beta')
+    press(input, 'Enter')
+    press(input, 'Enter')
+    expect(write).toHaveBeenCalledExactlyOnceWith(AGENTIC, 'tags', ['agentic', 'pillar', 'alpha,beta'])
   })
 
   it('removes chips, commits on blur and cancels on Esc', () => {

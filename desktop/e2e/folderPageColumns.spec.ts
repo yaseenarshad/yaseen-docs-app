@@ -184,7 +184,8 @@ test('step 3 — the retyped column edits as a number, onto the MEMBER’s own f
   await expect(propsMenu(contents(win))).toHaveCount(0)
 
   // Column 4 is the new one, row 0 is CAC (the row order asserted in step 1).
-  await cell(contents(win), 0, 4).locator('[data-edit]').click()
+  // Click the empty cell's centre, not its tiny private display control: the table owns activation.
+  await cell(contents(win), 0, 4).click()
   const input = win.locator('.view-cell-edit__input')
   await expect(input).toBeVisible()
   await input.fill('42')
