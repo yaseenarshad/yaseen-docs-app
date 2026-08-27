@@ -56,6 +56,9 @@
  *    scene through inline decorations only (the match's text hidden, a widget in its place,
  *    caret-inside reveals the raw syntax) — never a schema or serializer change. Registered only
  *    when `opts.drawingPreview` gives it the vault root; every other embed is untouched.
+ *  - CMD+F find (YAZ-968, `find/findInPage.ts`): matches + highlight decorations + fold-reveal,
+ *    driven through the `FindChannel` the host also gives the find bar. Registered only when
+ *    `opts.find` supplies that channel; every transaction it makes is metadata-only.
  *  - Outline paste (YAZ-937, `outlinePaste.ts`): a pasted Slack/Docs outline of `•`/`◦`/`■` glyphs
  *    is translated to real markdown before it lands, so it arrives as a nested list instead of a
  *    column of paragraphs. Registered as a DIRECT `handlePaste` prop — direct props run before
@@ -72,6 +75,8 @@ import { blockHandleGate } from './blockHandleGate'
 import { createBlockHandleMenu } from './blockHandleMenu'
 import { createDrawingPreview, type DrawingPreviewOptions } from './drawing/drawingPreview'
 import { drawingMenu, type DrawingCreator } from './drawingMenu'
+import type { FindChannel } from './find/findChannel'
+import { createFindInPage } from './find/findInPage'
 import { bulletThreading } from './outline/bulletThreading'
 import { features } from './featureConfig'
 import { listItemRoundTrip, normalizeEmptyItems, stripEmptyTaskBreaks } from './listItemRoundTrip'
@@ -98,6 +103,8 @@ export interface CreateCrepeOptions {
   folding?: OutlineFoldingOptions
   /** Zoom into a bullet (GRO-2029); `fileName` is the root breadcrumb. Defaults to an unnamed file. */
   zoom?: ZoomOptions
+  /** CMD+F channel (YAZ-968): the host's one channel per mount, shared with the find bar. Absent → no find engine at all. */
+  find?: FindChannel
   /** Wikilink resolve source (GRO-2190): App keeps it fed from the vault index. Defaults to a never-updated source (all links render resolved). */
   wikilinks?: WikilinkResolveSource
   /** `[[` picker candidates (GRO-2191): App keeps it fed from the vault index. Defaults to a never-updated source (empty picker — only Create rows). */
@@ -193,6 +200,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(listItemRoundTrip)
   crepe.editor.use(underline)
   crepe.editor.use(createOutlineFolding(opts.folding))
+  if (opts.find !== undefined) crepe.editor.use(createFindInPage(opts.find))
   crepe.editor.use(createOutlineZoom(opts.zoom ?? { fileName: 'Untitled' }))
   crepe.editor.use(guideLines)
   crepe.editor.use(bulletThreading)
@@ -219,7 +227,11 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     const cb = opts.onMarkdownUpdated
     crepe.on((listener) => {
       listener.markdownUpdated((_ctx, markdown, prev) => {
-        if (markdown !== prev) cb(postProcessMarkdown(markdown))
+        // Compared as it would be SAVED. Crepe's trailing empty paragraph (added on start-up to any
+        // document ending in a list) differs raw but vanishes in `postProcessMarkdown`, and an
+        // update the file would not notice is not an update (YAZ-968's save-path contract).
+        const next = postProcessMarkdown(markdown)
+        if (next !== postProcessMarkdown(prev)) cb(next)
       })
     })
   }
