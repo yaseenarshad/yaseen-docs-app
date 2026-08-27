@@ -10,6 +10,15 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { TabBar, type TabBarProps } from './TabBar'
 
+// The OS-action items call the bridge (YAZ-963): stub the verbs, keep BridgeRequestError real.
+vi.mock('../api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api')>()),
+  api: { reveal: vi.fn().mockResolvedValue({}), openVsCode: vi.fn().mockResolvedValue({}) },
+}))
+import { api, BridgeRequestError } from '../api'
+const reveal = vi.mocked(api.reveal)
+const openVsCode = vi.mocked(api.openVsCode)
+
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 let root: Root | null = null
@@ -169,7 +178,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
   const menuOf = (el: HTMLElement) => el.querySelector<HTMLElement>('.ctx-menu')
   const items = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
 
-  it('right-clicking a tab opens a role=menu at the pointer with the single Copy path item', () => {
+  it('right-clicking a tab opens a role=menu at the pointer with Copy path and the OS actions (YAZ-963)', () => {
     const el = mount(props)
     expect(menuOf(el)).toBeNull() // nothing until asked for
     const e = rightClick(tabAt(el, 0), 120, 42)
@@ -178,7 +187,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     expect(menu?.getAttribute('role')).toBe('menu')
     expect(menu?.style.left).toBe('120px')
     expect(menu?.style.top).toBe('42px')
-    expect(items(el).map((b) => b.textContent)).toEqual(['Copy path'])
+    expect(items(el).map((b) => b.textContent)).toEqual(['Copy path', 'Reveal in Finder', 'Open in VS Code'])
   })
 
   it('Copy path writes the tab\'s ABSOLUTE path — not the label — and closes the menu', () => {
@@ -267,5 +276,77 @@ describe('TabBar history buttons (YAZ-721, LOCKED D2: buttons only — no shortc
     act(() => btn(el, 'Forward')?.click())
     expect(onBack).toHaveBeenCalledTimes(1)
     expect(onForward).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * The OS actions on the tab (YAZ-963): the tab IS the file, so it offers Reveal in Finder and
+ * Open in VS Code beside Copy path — same absolute-path target, same close-on-click, and a
+ * NOT_FOUND surfacing through `onNotice` exactly as the sidebar's reveal does.
+ */
+describe('tab menu OS actions (YAZ-963)', () => {
+  let root2: Root | null = null
+  let host: HTMLElement | null = null
+  afterEach(() => {
+    act(() => root2?.unmount())
+    host?.remove()
+    root2 = null
+    host = null
+    reveal.mockClear()
+    openVsCode.mockClear()
+  })
+  const mountWith = (extra: Partial<TabBarProps> = {}): HTMLElement => {
+    host = document.createElement('div')
+    document.body.appendChild(host)
+    root2 = createRoot(host)
+    const base: TabBarProps = {
+      tabs: ['/vault/A.md', '/vault/sub/Deep Note.md'],
+      active: '/vault/A.md',
+      onActivate: vi.fn(),
+      onClose: vi.fn(),
+      onMove: vi.fn(),
+      canBack: false,
+      canForward: false,
+      onBack: vi.fn(),
+      onForward: vi.fn(),
+      ...extra,
+    }
+    act(() => root2?.render(<TabBar {...base} />))
+    return host
+  }
+  const tabAt = (el: HTMLElement, i: number) => [...el.querySelectorAll<HTMLElement>('.tabbar__tab')][i]
+  const rightClick = (target: Element): void => {
+    act(() => void target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
+  }
+  const itemNamed = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((b) => b.textContent === label)
+  const menuOf = (el: HTMLElement) => el.querySelector<HTMLElement>('.ctx-menu')
+
+  it('Reveal in Finder calls the bridge with the tab\'s absolute path and closes the menu', () => {
+    const el = mountWith()
+    rightClick(tabAt(el, 1))
+    act(() => itemNamed(el, 'Reveal in Finder')?.click())
+    expect(reveal).toHaveBeenCalledExactlyOnceWith({ path: '/vault/sub/Deep Note.md' })
+    expect(menuOf(el)).toBeNull()
+  })
+
+  it('Open in VS Code calls the bridge with the tab\'s absolute path and closes the menu', () => {
+    const el = mountWith()
+    rightClick(tabAt(el, 0))
+    act(() => itemNamed(el, 'Open in VS Code')?.click())
+    expect(openVsCode).toHaveBeenCalledExactlyOnceWith({ path: '/vault/A.md' })
+    expect(menuOf(el)).toBeNull()
+  })
+
+  it('a stale tab surfaces through onNotice instead of a silently dead item', async () => {
+    reveal.mockRejectedValueOnce(new BridgeRequestError('NOT_FOUND', 'gone'))
+    const onNotice = vi.fn()
+    const el = mountWith({ onNotice })
+    rightClick(tabAt(el, 0))
+    act(() => itemNamed(el, 'Reveal in Finder')?.click())
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(onNotice).toHaveBeenCalledTimes(1)
+    expect(String(onNotice.mock.calls[0][0])).toMatch(/no longer there|Can't reveal/i)
   })
 })

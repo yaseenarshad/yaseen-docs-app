@@ -19,6 +19,13 @@ interface ContextMenuProps {
   /** Row to reveal in Finder — file, folder, or the vault ROOT for blank space (GRO-2274). */
   revealPath: string | null
   onReveal: (path: string) => void
+  /**
+   * Row to open in VS Code — the SAME target rule as `revealPath` (YAZ-963): file, folder, or
+   * the vault ROOT for blank space. Optional, unlike its sibling: a mount that offers no VS Code
+   * target simply omits the pair and the item is not rendered.
+   */
+  openVsCodePath?: string | null
+  onOpenVsCode?: (path: string) => void
   onNewNote: () => void
   /** Create a note born a folder page — the flag and nothing else (🔒 D4 + D1, YAZ-841). */
   onNewFolderPage: () => void
@@ -41,7 +48,7 @@ interface ContextMenuProps {
 }
 
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, copyLinkText, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, onNewNote, onNewFolderPage, onNewFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, copyPath, copyLinkText, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, openVsCodePath, onOpenVsCode, onNewNote, onNewFolderPage, onNewFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, onClose }: ContextMenuProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -99,6 +106,22 @@ export function ContextMenu({ x, y, copyPath, copyLinkText, newWindowPath, onOpe
             }}
           >
             Reveal in Finder
+          </button>
+        )}
+        {/* Open in VS Code (YAZ-963): Reveal's sibling, so it sits directly beside it in the
+            same OS-actions group — same target rule, same read-only posture, same passive
+            notice when the row is stale. */}
+        {openVsCodePath != null && (
+          <button
+            type="button"
+            className="ctx-menu__item"
+            role="menuitem"
+            onClick={() => {
+              onOpenVsCode?.(openVsCodePath)
+              onClose()
+            }}
+          >
+            Open in VS Code
           </button>
         )}
         {copyPath !== null && (

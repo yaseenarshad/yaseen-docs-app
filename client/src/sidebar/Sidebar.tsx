@@ -135,6 +135,8 @@ interface MenuTargets {
   deletePath: string | null
   /** "Reveal in Finder" — the row, or the vault ROOT for blank space (GRO-2274); same target as `copyPath`. */
   revealPath: string | null
+  /** "Open in VS Code" — the same target rule again (YAZ-963); its OWN field, per this split's whole point. */
+  openVsCodePath: string | null
   /**
    * "Turn into folder page" / "Turn back into normal page" — MARKDOWN FILE rows only (🔒 D2,
    * YAZ-817). Its OWN field, not `newWindowPath` reused: that one is every file row, and a
@@ -462,6 +464,7 @@ export function Sidebar({
         renamePath: node?.path ?? null,
         deletePath: node?.path ?? null,
         revealPath: node?.path ?? root.replace(/\/+$/, ''),
+        openVsCodePath: node?.path ?? root.replace(/\/+$/, ''),
         folderPagePath: notePath,
         folderPageIsOn: notePath !== null && indexSource.records.some((r) => r.path === notePath && isFolderPage(r)),
         topicsAnchor,
@@ -549,6 +552,20 @@ export function Sidebar({
     (path: string) => {
       api.reveal({ path }).catch((err: unknown) => {
         onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't reveal "${basename(path)}" — it is no longer there` : `Can't reveal: ${err instanceof Error ? err.message : String(err)}`)
+      })
+    },
+    [onNotice],
+  )
+
+  /**
+   * Open in VS Code (YAZ-963): `reveal`'s twin, notice included. A dead `vscode://` URL opens
+   * an empty editor rather than reporting anything, so the stale-row `NOT_FOUND` is exactly as
+   * load-bearing here as it is above.
+   */
+  const openVsCode = useCallback(
+    (path: string) => {
+      api.openVsCode({ path }).catch((err: unknown) => {
+        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${basename(path)}" in VS Code — it is no longer there` : `Can't open in VS Code: ${err instanceof Error ? err.message : String(err)}`)
       })
     },
     [onNotice],
@@ -903,6 +920,8 @@ export function Sidebar({
           onDelete={askDelete}
           revealPath={menu.revealPath}
           onReveal={reveal}
+          openVsCodePath={menu.openVsCodePath}
+          onOpenVsCode={openVsCode}
           onNewNote={() => startCreate('file')}
           onNewFolderPage={() => startCreate('folderPage')}
           onNewFolder={lens === 'topics' ? null : () => startCreate('dir')}

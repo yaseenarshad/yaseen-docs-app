@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react'
+import { api, BridgeRequestError } from '../api'
 import { basename, stripExt } from '../lib/paths'
 import './tabs.css'
 
@@ -16,6 +17,11 @@ export interface TabBarProps {
   canForward: boolean
   onBack: () => void
   onForward: () => void
+  /**
+   * Where a failed OS action says so (YAZ-963) — App's passive notice. Optional: a mount with
+   * nowhere to show one loses the message, never the gesture.
+   */
+  onNotice?: (message: string) => void
 }
 
 /** In-flight drag state: the grabbed tab's index + the hovered insertion slot (0…tabs.length). */
@@ -40,9 +46,10 @@ const Chevron = ({ d }: { d: string }) => (
  * nowhere to go — buttons only, per LOCKED ruling D2: no shortcut, no menu item.
  * Presentational only — all state changes go through the `useTabs` callbacks.
  */
-export function TabBar({ tabs, active, onActivate, onClose, onMove, canBack, canForward, onBack, onForward }: TabBarProps) {
+export function TabBar({ tabs, active, onActivate, onClose, onMove, canBack, canForward, onBack, onForward, onNotice }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
-  // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path.
+  // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
+  // and since YAZ-963 that row's OS actions too (Reveal in Finder, Open in VS Code).
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
   const activeRef = useRef<HTMLDivElement | null>(null)
 
@@ -79,6 +86,20 @@ export function TabBar({ tabs, active, onActivate, onClose, onMove, canBack, can
     // The slot is an index in the WITH-dragged-tab list; past the grab point it shifts one left.
     const to = insertion > drag.from ? insertion - 1 : insertion
     if (to !== drag.from) onMove(drag.from, to)
+  }
+
+  /**
+   * The menu's OS actions (YAZ-963), the sidebar's `reveal` idiom on a tab: read-only, so the
+   * menu closes at once and there is nothing to confirm or repair — but a STALE tab (deleted or
+   * moved externally) rejects `NOT_FOUND`, and without the notice the item would just look
+   * broken. Both messages are the caller's, because "reveal" and "open … in VS Code" name the
+   * gesture differently in each half.
+   */
+  const osAction = (call: Promise<unknown>, stale: string, failed: string): void => {
+    setMenu(null)
+    call.catch((err: unknown) => {
+      onNotice?.(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? stale : `${failed}: ${err instanceof Error ? err.message : String(err)}`)
+    })
   }
 
   return (
@@ -179,6 +200,12 @@ export function TabBar({ tabs, active, onActivate, onClose, onMove, canBack, can
             }}
           >
             Copy path
+          </button>
+          <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => osAction(api.reveal({ path: menu.path }), `Can't reveal "${basename(menu.path)}" — it is no longer there`, "Can't reveal")}>
+            Reveal in Finder
+          </button>
+          <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => osAction(api.openVsCode({ path: menu.path }), `Can't open "${basename(menu.path)}" in VS Code — it is no longer there`, "Can't open in VS Code")}>
+            Open in VS Code
           </button>
         </div>
       )}

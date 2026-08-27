@@ -965,7 +965,7 @@ describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
     const { el } = await mount({ lens: 'topics' })
     act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(el.querySelector('.ctx-menu')).not.toBeNull()
-    expect(menuItems(el).map((b) => b.textContent)).toEqual(['Reveal in Finder', 'Copy path', 'New note', 'New folder page'])
+    expect(menuItems(el).map((b) => b.textContent)).toEqual(['Reveal in Finder', 'Open in VS Code', 'Copy path', 'New note', 'New folder page'])
   })
 
   it('a typed query still offers nothing on either lens — a result list has no root to target (YAZ-803)', async () => {
@@ -1144,6 +1144,7 @@ describe('context menu order (GRO-2272 C1a)', () => {
     expect(menuItems(el).map((b) => b.textContent?.replace('▸', '').trim())).toEqual([
       'Open in new window',
       'Reveal in Finder',
+      'Open in VS Code',
       'Copy path',
       'Copy link',
       'New note',
@@ -1465,6 +1466,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     expect(menuItems(el).map((b) => b.textContent)).toEqual([
       'Open in new window',
       'Reveal in Finder',
+      'Open in VS Code',
       'Copy path',
       'Copy link',
       'New note',
@@ -1719,7 +1721,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
   it('the Uncategorized HEADER has no page behind it, so it opens the ROOT menu, not a page menu', async () => {
     const { el } = await topics()
     await rightClick(el.querySelector('.tree__row--muted'))
-    expect(menuItems(el).map((b) => b.textContent)).toEqual(['Reveal in Finder', 'Copy path', 'New note', 'New folder page'])
+    expect(menuItems(el).map((b) => b.textContent)).toEqual(['Reveal in Finder', 'Open in VS Code', 'Copy path', 'New note', 'New folder page'])
     // No page target anywhere in it: the row-only items stay absent.
     expect(itemByLabel(el, 'Rename')).toBeUndefined()
     expect(itemByLabel(el, 'Delete')).toBeUndefined()
