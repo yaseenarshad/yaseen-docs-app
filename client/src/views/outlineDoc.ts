@@ -2,7 +2,9 @@
  * THE OUTLINE DOCUMENT (🔒 D2, YAZ-900): an outline view IS one markdown bullet list, free-form,
  * held as the single string `views[i].outline` — not a list of members with an order beside it.
  * This module owns that string's grammar and NOTHING else reads it as markdown: parse to lines,
- * serialise back, and ask one line whether it is a link.
+ * serialise back, ask one line whether it is a link — and armour a line's text for the two doors
+ * that DO re-read it as full markdown (the editor seed and the paste, YAZ-973): `escapeBlockStart`
+ * and `escapeOutlineMarkdown`, the one escape rule.
  *
  * DEPTH IS RELATIVE INDENTATION, the outliner rule the editor already follows
  * (`editor/listItemRoundTrip.ts` `unifySiblingMarkers`): a wider indent is exactly ONE level down
@@ -58,6 +60,41 @@ export function parseOutline(markdown: string): OutlineLine[] {
 export function serializeOutline(lines: OutlineLine[]): string {
   return lines
     .map(({ depth, text }) => `${INDENT.repeat(Math.max(0, depth))}-${text === '' ? '' : ` ${text}`}`)
+    .join('\n')
+}
+
+/** An ordered item opening the line: the digits, then a `.`/`)` delimiter and a space or the line's end. */
+const ORDERED_START = /^\d+(?=[.)](?:[ \t]|$))/
+
+/**
+ * Every other block opener, defused by ONE backslash before the line's first character: a nested
+ * bullet marker, one to six hashes, a quote, a fence, or a thematic break of three or more of the
+ * same mark. Seven hashes and `-foo` are no block to CommonMark either, so neither is touched.
+ * And one GFM block the CommonMark scan missed (YAZ-974): a footnote DEFINITION, `[^id]: …`, which
+ * leaves the list entirely and takes its bullet with it. A plain link reference (`[x]: /url`) is
+ * not one and stays literal text in the editor already, so the `^` is what the pattern insists on.
+ */
+const BLOCK_START = /^(?:[-*+](?:[ \t]|$)|#{1,6}(?:[ \t]|$)|>|```|~~~|\[\^[^\]]*\]:|([-_*])(?:[ \t]*\1){2,}[ \t]*$)/
+
+/** Text that would re-parse as a BLOCK construct inside its bullet — an ordered item (`1. `),
+ * a nested marker (`- `), a heading (`# `), a quote (`> `), a fence or a thematic break — gets
+ * one backslash so Milkdown reads it as the literal text the outline grammar already says it is. */
+export function escapeBlockStart(text: string): string {
+  if (ORDERED_START.test(text)) return text.replace(ORDERED_START, '$&\\')
+  return BLOCK_START.test(text) ? `\\${text}` : text
+}
+
+/** Every bullet line's text in `markdown`, escaped by `escapeBlockStart`; other bytes untouched. */
+export function escapeOutlineMarkdown(markdown: string): string {
+  return markdown
+    .split('\n')
+    .map((raw) => {
+      const match = BULLET_LINE.exec(raw)
+      if (match === null) return raw
+      // Splice the text alone: the marker, the indentation and any trailing bytes stay as written.
+      const lead = match[1].length
+      return raw.slice(0, lead) + escapeBlockStart(match[3]) + raw.slice(lead + match[3].length)
+    })
     .join('\n')
 }
 

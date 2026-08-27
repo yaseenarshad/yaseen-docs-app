@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { stripBrackets } from './expr'
-import { fromOrder, lineTarget, mapOutlineLinks, parseOutline, serializeOutline } from './outlineDoc'
+import { escapeBlockStart, escapeOutlineMarkdown, fromOrder, lineTarget, mapOutlineLinks, parseOutline, serializeOutline } from './outlineDoc'
 
 /** Basename → path, keyed like `makeResolver`: `stripBrackets`, `#`/`|` tail dropped, trimmed, lowered. */
 const resolverOver = (basenames: string[]): ResolveLink => {
@@ -158,5 +158,70 @@ describe('mapOutlineLinks: a rename reaches exact-wikilink LINES only', () => {
 
   it('padding inside the line survives: only the link text is spliced', () => {
     expect(mapOutlineLinks('-   [[B]]  ', toC)).toBe('-   [[C]]  ')
+  })
+})
+
+describe('escapeBlockStart: text that would re-parse as a BLOCK stays literal text (YAZ-973)', () => {
+  it('escapes ordered-list markers, keeping the digits', () => {
+    expect(escapeBlockStart('1. Title > Promise > Intro > Temp Check')).toBe('1\\. Title > Promise > Intro > Temp Check')
+    expect(escapeBlockStart('4. Level 1) Human (Good old Meat Machines)')).toBe('4\\. Level 1) Human (Good old Meat Machines)')
+    expect(escapeBlockStart('12) foo')).toBe('12\\) foo')
+    expect(escapeBlockStart('1.')).toBe('1\\.')
+  })
+
+  it('a number that is not a list marker is untouched', () => {
+    expect(escapeBlockStart('1.5 tokens per word')).toBe('1.5 tokens per word')
+    expect(escapeBlockStart('1.foo')).toBe('1.foo')
+    expect(escapeBlockStart('v2) see notes')).toBe('v2) see notes')
+  })
+
+  it('escapes bullet markers, headings, quotes, fences and thematic breaks', () => {
+    expect(escapeBlockStart('- foo')).toBe('\\- foo')
+    expect(escapeBlockStart('* foo')).toBe('\\* foo')
+    expect(escapeBlockStart('+ foo')).toBe('\\+ foo')
+    expect(escapeBlockStart('-')).toBe('\\-')
+    expect(escapeBlockStart('# Heading')).toBe('\\# Heading')
+    expect(escapeBlockStart('###### six')).toBe('\\###### six')
+    expect(escapeBlockStart('> quoted')).toBe('\\> quoted')
+    expect(escapeBlockStart('```')).toBe('\\```')
+    expect(escapeBlockStart('```js')).toBe('\\```js')
+    expect(escapeBlockStart('~~~')).toBe('\\~~~')
+    expect(escapeBlockStart('---')).toBe('\\---')
+    expect(escapeBlockStart('* * *')).toBe('\\* * *')
+    expect(escapeBlockStart('___')).toBe('\\___')
+  })
+
+  it('plain text, wikilinks, inline html, existing escapes and seven hashes pass through unchanged', () => {
+    expect(escapeBlockStart('hello world')).toBe('hello world')
+    expect(escapeBlockStart('')).toBe('')
+    expect(escapeBlockStart('[[Sub Note]]')).toBe('[[Sub Note]]')
+    expect(escapeBlockStart('**<u>Solving Business Problems with AI</u>**')).toBe('**<u>Solving Business Problems with AI</u>**')
+    expect(escapeBlockStart('2\\) what surface do you use?')).toBe('2\\) what surface do you use?')
+    expect(escapeBlockStart('\\*')).toBe('\\*')
+    expect(escapeBlockStart('####### seven is not a heading')).toBe('####### seven is not a heading')
+  })
+})
+
+describe('escapeOutlineMarkdown: every bullet line armored, every other byte untouched (YAZ-973)', () => {
+  it('escapes the text of each bullet line, preserving marker and indentation', () => {
+    expect(escapeOutlineMarkdown('- 1. a\n    - # b\n* 2) c')).toBe('- 1\\. a\n    - \\# b\n* 2\\) c')
+  })
+
+  it('non-bullet lines, blank lines and empty bullets survive byte-for-byte', () => {
+    expect(escapeOutlineMarkdown('- ok\nplain prose\n\n-\n- 1. x')).toBe('- ok\nplain prose\n\n-\n- 1\\. x')
+  })
+
+  it('a document with nothing to escape comes back identical', () => {
+    const doc = '- a\n    - b\n- [[Sub Note]]'
+    expect(escapeOutlineMarkdown(doc)).toBe(doc)
+  })
+})
+
+describe('escapeBlockStart: footnote definitions — the one GFM dropper the scan missed (YAZ-974)', () => {
+  it('escapes a footnote definition, and only a definition', () => {
+    expect(escapeBlockStart('[^1]: note')).toBe('\\[^1]: note')
+    expect(escapeBlockStart('[^long-name]: see below')).toBe('\\[^long-name]: see below')
+    // A plain link-reference-style line survives the editor as literal text already — untouched.
+    expect(escapeBlockStart('[x]: /url')).toBe('[x]: /url')
   })
 })
