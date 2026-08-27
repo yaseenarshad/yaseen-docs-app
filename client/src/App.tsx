@@ -473,7 +473,7 @@ export function App() {
         <div className="workspace">
           <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} candidates={wikilinkCandidates} onSnapshot={onIndexSnapshot} />
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
-          <TabBar tabs={tabs} active={file} onActivate={activate} onClose={closeTab} onMove={moveTab} canBack={canBack} canForward={canForward} onBack={back} onForward={forward} />
+          <TabBar tabs={tabs} active={file} onActivate={activate} onClose={closeTab} onMove={moveTab} canBack={canBack} canForward={canForward} onBack={back} onForward={forward} onNotice={setNotice} />
           <div className="tabstack">
             {mounted.length === 0 && <Editor root={root} path={null} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={propertyDecls} onRenameFile={requestRename} />}
             {mounted.map((path) => (
