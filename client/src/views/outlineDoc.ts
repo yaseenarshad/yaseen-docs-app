@@ -2,7 +2,9 @@
  * THE OUTLINE DOCUMENT (🔒 D2, YAZ-900): an outline view IS one markdown bullet list, free-form,
  * held as the single string `views[i].outline` — not a list of members with an order beside it.
  * This module owns that string's grammar and NOTHING else reads it as markdown: parse to lines,
- * serialise back, and ask one line whether it is a link.
+ * serialise back, ask one line whether it is a link — and armour a line's text for the two doors
+ * that DO re-read it as full markdown (the editor seed and the paste, YAZ-973): `escapeBlockStart`
+ * and `escapeOutlineMarkdown`, the one escape rule.
  *
  * DEPTH IS RELATIVE INDENTATION, the outliner rule the editor already follows
  * (`editor/listItemRoundTrip.ts` `unifySiblingMarkers`): a wider indent is exactly ONE level down
