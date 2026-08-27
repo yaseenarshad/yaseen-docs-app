@@ -461,3 +461,68 @@ describe('a member the document does not name still shows', () => {
     expect(memberWrites()).toEqual([[NURTURE, 'folder_pages', ['[[KPIs]]']]])
   })
 })
+
+// ---------- sync from folder (YAZ-953) ----------
+
+/**
+ * The toolbar's button opens the sheet the OUTLINE owns, and approving appends through `commit` —
+ * the one door — so the very pass that stores the document tags every newly-linked note. The
+ * vault root is the folder used here on purpose: its notes (`KPIs`, `Other`) are not members yet,
+ * so the tagging is visible, and the folder page itself is never offered among them.
+ */
+describe('sync from folder appends through the outline’s one door', () => {
+  /** The sheet's folder row, by the name it shows — `Vault root` for the root itself. */
+  const folderRow = (folder: string): HTMLElement =>
+    all<HTMLElement>(document.body, '.sync__folder').find((b) => b.firstElementChild?.textContent === folder)!
+
+  const openSheet = (el: ParentNode, folder: string): void => {
+    click(byLabel(el, 'Sync from folder'))
+    click(folderRow(folder))
+  }
+
+  it('the approved links land as depth-0 bullets at the END, and each newly-linked note is tagged', async () => {
+    const el = mount()
+    openSheet(el, 'Vault root')
+    click(sheetButton('Add'))
+    await flush()
+
+    expect(doc(el)).toBe('- [[Lead Gen]]\n- [[Nurture]]\n- [[Sales]]\n- [[KPIs]]\n- [[Other]]')
+    expect(settingsWrites()).toHaveLength(1)
+    // THE POINT (🔒 YAZ-950): the append travelled `commit`, so belonging synced for free.
+    expect(memberWrites()).toEqual([
+      [KPIS, 'folder_pages', ['[[Funnel Stages]]']],
+      [OTHER, 'folder_pages', ['[[Funnel Stages]]']],
+    ])
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('the document above is kept byte-for-byte — the markers, the blank line and the prose all survive', async () => {
+    const stored = '* [[Sales]]\n\n  free text about it'
+    const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: stored }, TABLE] }))
+    openSheet(el, 'Vault root')
+    click(sheetButton('Add'))
+    await flush()
+    expect(doc(el)).toBe(`${stored}\n- [[KPIs]]\n- [[Other]]`)
+  })
+
+  it('a folder with nothing missing offers no Add at all, and dismissing writes nothing', async () => {
+    const el = mount()
+    openSheet(el, 'stages')
+    expect(q(document.body, '[role="dialog"]').textContent).toContain('Nothing to add')
+    expect(texts(document.body, '.confirm__btn')).toEqual(['Dismiss'])
+    click(sheetButton('Dismiss'))
+    await flush()
+    expect(doc(el)).toBe('- [[Lead Gen]]\n- [[Nurture]]\n- [[Sales]]')
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  it('Cancel writes nothing at all', async () => {
+    const el = mount()
+    openSheet(el, 'Vault root')
+    click(sheetButton('Cancel'))
+    await flush()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(doc(el)).toBe('- [[Lead Gen]]\n- [[Nurture]]\n- [[Sales]]')
+    expect(write).not.toHaveBeenCalled()
+  })
+})

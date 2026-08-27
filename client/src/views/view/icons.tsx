@@ -70,6 +70,14 @@ export const ChevronsIcon = () => (
   </svg>
 )
 
+/** Circling arrows, for the toolbar's "Sync from folder" (YAZ-953). */
+export const SyncIcon = () => (
+  <svg {...svg}>
+    <path d="M15.3 2.7v4h-4M0.7 13.3v-4h4" />
+    <path d="M2.3 6a6 6 0 0 1 9.9-2.2l3.1 2.9M0.7 9.3l3.1 2.9A6 6 0 0 0 13.7 10" />
+  </svg>
+)
+
 /** Chain link, for the relation-column editor (5E, GRO-2217). */
 export const RelationIcon = () => (
   <svg {...svg}>
