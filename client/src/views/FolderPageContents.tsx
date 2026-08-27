@@ -170,24 +170,38 @@ export function FolderPageContents({
   // through the index (identical then, since `onChange` already applied it). JSON identity is the
   // honest comparison: every read hands back a fresh copy of the views.
   //
-  // A FILE-SEEDED mount (YAZ-919) treats the index as THE PAST until its stamp first matches the
-  // file's: snapshots older than the open file's own bytes must not overwrite the seed — that was
-  // the clobber that erased migrated text. An external edit landing inside that window is not
-  // lost, only late: its own echo still moves the stamp once the index has caught up.
+  // A FILE-SEEDED mount (YAZ-919) treats the index as THE PAST while it still says what it said
+  // AT MOUNT — that stale snapshot is the one that clobbered migrated text. Its FIRST movement
+  // is, by construction, the open file's own echo or something newer (a settings write made
+  // straight after opening jumps the index PAST the seed's bytes — waiting for an exact match
+  // gated the card shut forever: the add-a-column-then-never-see-it bug). So the first movement
+  // ends the past and is itself adopted.
   const stamp = settings === null ? '' : JSON.stringify(settings.views)
   const fileStamp = fileSettings === null ? null : JSON.stringify(fileSettings.views)
   const caughtUp = useRef(fileStamp === null) // no file seed → the index led from the start
+  /** The one stale snapshot this mount opened over — recorded on first sight, never trusted. */
+  const pastStamp = useRef<string | null>(null)
   const seen = useRef(fileStamp ?? stamp) // what the state above was built from: no rebuild on mount
   useEffect(() => {
     if (!caughtUp.current) {
-      if (stamp !== seen.current) return // still the past — the pre-migration bytes
-      caughtUp.current = true
-      return
+      if (stamp === '') return // nothing fed yet — nothing to judge
+      if (stamp !== fileStamp) {
+        // Between the migration's write and its echo the disk had exactly ONE earlier state, so
+        // the first snapshot that is not the seed IS the past; a second DIFFERENT one can only
+        // be the echo of a later write — our own settings write jumping the index PAST the
+        // seed's bytes (waiting for an exact seed match here gated the card shut forever: the
+        // add-a-column-then-never-see-it bug).
+        if (pastStamp.current === null || stamp === pastStamp.current) {
+          pastStamp.current = stamp
+          return
+        }
+      }
+      caughtUp.current = true // the seed's own echo, or something newer: the index leads now
     }
     if (seen.current === stamp) return
     seen.current = stamp
     setParsed(settings === null ? null : folderPageViewSet(settings.views))
-  }, [stamp, settings])
+  }, [stamp, settings, fileStamp])
 
   if (record === null || settings === null || parsed === null) return null
 

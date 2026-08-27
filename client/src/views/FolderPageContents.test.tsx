@@ -442,4 +442,36 @@ describe('the seed reads the OPEN file, not the snapshot (YAZ-919)', () => {
     const el = mount(FUNNELS)
     expect(doc(el)).not.toContain('Migrated line')
   })
+
+  it('a write landing BEFORE the index caught up still reaches the card — the past is one snapshot, not forever', () => {
+    // The gate exists to stop the STALE mount-time snapshot from clobbering the seed. But a
+    // settings write made right after opening moves the index STRAIGHT PAST the seed's bytes,
+    // so waiting for an exact seed match gated the card shut forever — a column added and then
+    // never seen (caught by the folderPageColumns e2e, red on main since YAZ-919). A SECOND,
+    // different snapshot can only be a later write's echo, so it is adopted.
+    const seedViews = [{ type: 'outline', name: 'Outline' }, TABLE]
+    const migrated = [
+      '---',
+      'folder_page: true',
+      'folder_page_settings:',
+      '  columns:',
+      '    order: { kind: number }',
+      '  views:',
+      '    - { type: outline, name: Outline }',
+      '    - { type: table, name: Table, order: [file.name, note.order] }',
+      '---',
+      '',
+    ].join('\n')
+    const el = mount(FUNNELS, vault({ ...SETTINGS, views: seedViews }), migrated)
+    selectView(el, 'Table')
+    expect(texts(el, '.view-table thead th')).toEqual(['file.name', 'order'])
+
+    // The user adds a column: our own write, echoing back through the index ahead of the seed.
+    const added = {
+      columns: { order: { kind: 'number' }, unit: { kind: 'text' } },
+      views: [{ type: 'outline', name: 'Outline' }, { type: 'table', name: 'Table', order: ['file.name', 'note.order', 'note.unit'] }],
+    }
+    act(() => feed(vault(added)))
+    expect(texts(el, '.view-table thead th')).toEqual(['file.name', 'order', 'unit'])
+  })
 })
