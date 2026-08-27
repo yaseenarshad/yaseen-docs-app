@@ -57,10 +57,16 @@ const FALLBACK_VIEWPORT = 600
 /** One display line: a group header row, or a data row with its `data-cell` row index (data rows only) and its group (null when ungrouped). */
 type Line = { header: Group; gk: string } | { row: Row; r: number; g: Group | null; gk: string | null }
 
-/** Let the table's full property-cell surface activate the shared editor without replaying direct control clicks. */
+/** Let a table property-cell double-click activate the shared editor exactly once. */
 function activateEditorFromCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
   if (event.target instanceof Element && event.target.closest('[data-edit]') !== null) return
   event.currentTarget.querySelector<HTMLElement>('[data-edit]')?.click()
+}
+
+/** A single click selects the cell without entering edit mode. */
+function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
+  if (event.target !== event.currentTarget) return
+  event.currentTarget.focus()
 }
 
 /**
@@ -68,7 +74,7 @@ function activateEditorFromCell(event: ReactMouseEvent<HTMLTableCellElement>): v
  * mouseup), typed cells, the `file.name` cell opening the note, a pinned summary row with a
  * click-to-pick kind per column (`view.summaries`), arrow-key cell navigation and windowing above
  * `WINDOW_AT` lines. Note-property cells edit inline (5B, GRO-2142): `EditableCell` per cell,
- * opened by a whole-cell click or Enter, typed by `cellEditor` over the view's rows. With `groupBy` (4C, GRO-2137) the groups render as sections in the same flat
+ * opened by a whole-cell double-click or Enter, typed by `cellEditor` over the view's rows. With `groupBy` (4C, GRO-2137) the groups render as sections in the same flat
  * tbody slice: one full-width `GroupHeader` row per group (its height = the data row height so the
  * spacer maths holds), collapsed sections keep the header and drop the rows, the total summary row
  * moves into the group headers, and `data-cell` indices count DATA rows only so arrow keys skip
@@ -183,7 +189,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       if (c === nameCol) {
         if (flat[r]) onOpenFile(flat[r].record.path)
       } else {
-        // start editing (or toggle the checkbox) exactly like a click on the cell (5B, GRO-2142)
+        // Start editing (or toggle the checkbox) through the same delegated control (5B, GRO-2142).
         ;(e.target as HTMLElement).querySelector<HTMLElement>('[data-edit]')?.click()
       }
       return
@@ -262,7 +268,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                       style={frozenStyle(c)}
                       tabIndex={line.r === firstDataRow && c === 0 ? 0 : -1}
                       data-cell={`${line.r}:${c}`}
-                      onClick={bares[c] === null ? undefined : activateEditorFromCell}
+                      onClick={bares[c] === null ? undefined : selectCell}
+                      onDoubleClick={bares[c] === null ? undefined : activateEditorFromCell}
                     >
                       {c === nameCol ? (
                         <>

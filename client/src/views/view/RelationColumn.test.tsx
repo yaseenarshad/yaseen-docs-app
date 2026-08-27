@@ -153,6 +153,16 @@ function click(el: Element): void {
   draw()
 }
 
+function doubleClick(el: Element): void {
+  act(() => {
+    const target = el as HTMLElement
+    target.click()
+    target.click()
+    el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+  })
+  draw()
+}
+
 function setValue(el: HTMLInputElement, value: string): void {
   const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
   act(() => {
@@ -173,8 +183,8 @@ async function flush(): Promise<void> {
 }
 
 const cell = (el: ParentNode, r: number, c: number) => q<HTMLElement>(el, `[data-cell="${r}:${c}"]`)
-/** Open a table relation editor through its public whole-cell activation boundary. */
-const open = (el: ParentNode, r: number, c: number) => click(cell(el, r, c))
+/** Open a table relation editor through its public double-click activation boundary. */
+const open = (el: ParentNode, r: number, c: number) => doubleClick(cell(el, r, c))
 const options = (el: ParentNode) => [...el.querySelectorAll('[role="option"]')].map((o) => o.textContent)
 
 /** Open the Properties popover and the relation editor for `key`. */

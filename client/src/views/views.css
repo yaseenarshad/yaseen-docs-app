@@ -482,6 +482,11 @@
   outline-offset: -1px;
 }
 
+/* The table cell owns mouse activation; double-click/Enter still invoke this control programmatically. */
+.view-table tbody td .view-cell-edit:has(> [data-edit]) {
+  pointer-events: none;
+}
+
 .view-table td.view-table__cell--num {
   text-align: right;
   font-variant-numeric: tabular-nums;
