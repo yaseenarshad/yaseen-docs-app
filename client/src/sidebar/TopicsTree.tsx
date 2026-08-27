@@ -63,9 +63,12 @@
  * opens the SAME `ContextMenu` a file row opens, on the page's own file. Not a menu of this
  * lens' own: the tree reports the row and the Sidebar — which owns the menu, its targets and
  * every pipeline behind them — does the rest, so copy/reveal/create/toggle/rename/delete can
- * never drift between the two readings of one vault. What gets NO menu: the Uncategorized
- * HEADER (no page behind it), the offer card, and blank space, whose menu stays the FILE tree's.
- * Still no drag.
+ * never drift between the two readings of one vault. Since YAZ-948 that includes BLANK SPACE and
+ * everything in the body that is not a page row — the Uncategorized header, the offer card —
+ * which all fall through to the same VAULT-ROOT menu the Files lens has always given its blank
+ * space, minus "New folder": a disk folder made from the lens that hides disk folders would land
+ * where this reading cannot show it. A create started there names no row, so its inline input is
+ * drawn at the top of the tree (`rootCreate`). Still no drag.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { MAX_TOPICS_EXPANDED_PAGES, type IndexRecord } from '@shared/types'
@@ -88,8 +91,12 @@ import type { PendingRename } from './Tree'
  */
 export interface PendingTopicCreate {
   kind: EntryKind
-  /** The right-clicked page's path; the input renders under that row's FIRST occurrence. */
-  anchorPath: string
+  /**
+   * The right-clicked page's path — the input renders under that row's FIRST occurrence — or
+   * NULL for a create started from blank space (YAZ-948), which has no row to hang from and
+   * means the vault ROOT: the input is drawn at the top of the tree, at the roots' own indent.
+   */
+  anchorPath: string | null
   onSubmit: (name: string) => Promise<void>
   onCancel: () => void
 }
@@ -292,6 +299,19 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
     return <RenameInline initial={record.basename} indent={indent} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
   }
 
+  /**
+   * The create input pending at the ROOT — a right-click on blank space, which names no row
+   * (YAZ-948). Claims the same one-input budget as `createUnder` below, so a pending create is
+   * drawn exactly once whichever gesture started it.
+   */
+  const rootCreate: ReactNode =
+    creating === null || creating.anchorPath !== null ? null : ((createRendered = true),
+    (
+      <li key="\u241Fnew">
+        <CreateInline kind={creating.kind} indent={8} onSubmit={creating.onSubmit} onCancel={creating.onCancel} />
+      </li>
+    ))
+
   /** The create input pending BESIDE this row, as its own `<li>`, or null. */
   const createUnder = (record: IndexRecord, indent: number): ReactNode => {
     if (creating === null || creating.anchorPath !== record.path || createRendered) return null
@@ -428,8 +448,11 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
           </button>
         </div>
       )}
-      {roots.length > 0 && (
+      {(roots.length > 0 || rootCreate !== null) && (
         <ul className="tree" role="tree" aria-label="Topics">
+          {/* A blank-space create belongs to the ROOT (YAZ-948), so it stands above the roots at
+              their own indent — and it is the whole tree when there are no roots yet. */}
+          {rootCreate}
           {rowsFor(roots, 0, [])}
         </ul>
       )}

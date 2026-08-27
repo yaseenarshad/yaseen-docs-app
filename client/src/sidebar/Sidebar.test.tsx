@@ -1477,6 +1477,33 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/Docs/Nearby.md')
   })
 
+  /**
+   * YAZ-948 follow-up (Yasin, dogfooding: "i just tried to click 'create folder page' and its not
+   * working"): the blank-space menu opened a create whose inline input had NOWHERE to draw. The
+   * Topics tree only ever rendered the input BESIDE its anchor row, and blank space has no row —
+   * so the item silently did nothing. A blank-space create is a ROOT create, so the input belongs
+   * at the top of the tree, above the roots, at their own indent.
+   */
+  it('"New folder page" from BLANK SPACE draws its input at the root and is born there', async () => {
+    const { el, bridge } = await topics()
+    await rightClick(el.querySelector('.sidebar__body'))
+    act(() => itemByLabel(el, 'New folder page')?.click())
+    const field = inlineInput(el)
+    expect(field).not.toBeNull() // the bug: no input rendered at all, so the click did nothing
+    expect(field?.closest('.tree')).not.toBeNull() // …and it belongs INSIDE the tree, not floating
+    await commit(el, 'Growth')
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Growth.md', content: '---\nfolder_page: true\n---\n' })
+  })
+
+  it('"New note" from BLANK SPACE lands in the vault root too — the same anchorless path', async () => {
+    const { el, bridge } = await topics()
+    await rightClick(el.querySelector('.sidebar__body'))
+    act(() => itemByLabel(el, 'New note')?.click())
+    expect(inlineInput(el)).not.toBeNull()
+    await commit(el, 'Loose thought')
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith('/v/Loose thought.md')
+  })
+
   it('"New folder page" on a LEAF Topics row is born with EXACTLY the flag, beside that page (🔒 D1)', async () => {
     const { el, bridge } = await topics()
     await expandDocs(el)

@@ -686,11 +686,15 @@ export function Sidebar({
           onCancel: cancelCreate,
         }
 
-  /** The SAME pending create, addressed the way the Topics tree can draw it: by the anchor row (YAZ-865). */
+  /**
+   * The SAME pending create, addressed the way the Topics tree can draw it: by the anchor row
+   * (YAZ-865) — or by NO row (YAZ-948), which is what a blank-space create has. A null anchor
+   * used to drop the create on the floor here: the menu item ran, the input had nowhere to
+   * render, and the gesture silently did nothing. Null now travels through and means the ROOT,
+   * which is where `targetDirFor` was sending the file all along.
+   */
   const topicsPending: PendingTopicCreate | null =
-    creating === null || creating.anchor === null
-      ? null
-      : { kind: creating.kind, anchorPath: creating.anchor, onSubmit: submitCreate, onCancel: cancelCreate }
+    creating === null ? null : { kind: creating.kind, anchorPath: creating.anchor, onSubmit: submitCreate, onCancel: cancelCreate }
 
   return (
     <aside className="sidebar">
