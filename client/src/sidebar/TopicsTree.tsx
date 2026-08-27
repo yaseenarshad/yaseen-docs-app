@@ -374,7 +374,12 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
       the index echo carries the new belonging, exactly as it carries every other change. */
   const runMove = async (move: PendingMove): Promise<void> => {
     try {
-      await performMove(move.child, move.fromPath, { path: move.target.path, name: move.target.basename }, resolve ?? NEVER)
+      await performMove(
+        move.child,
+        move.fromPath,
+        { path: move.target.path, name: move.target.basename, columns: folderPageSettings(move.target).columns },
+        resolve ?? NEVER,
+      )
     } catch (err: unknown) {
       // The sidebar's standing route for a failed file op (`setFolderPageFlag`'s idiom, YAZ-840):
       // the passive notice — never a second dialog on top of the one just dismissed.

@@ -30,6 +30,8 @@
 import type { IndexRecord } from '@shared/types'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { FOLDER_PAGES_KEY, entryTarget, folderPagesList, guardedChildren, type FolderPagesLookup } from '../links/folderPages'
+import { backfillFolderPageColumns } from '../views/folderPageColumns'
+import type { ColumnDecl } from '../views/folderPageSettings'
 import { writeProperty } from '../views/writeProperty'
 
 /** Whether this drop may happen, and — when it may not — which locked rule refused it. */
@@ -72,12 +74,15 @@ function unchanged(next: readonly unknown[], before: readonly unknown[]): boolea
 export async function performMove(
   child: IndexRecord,
   fromPath: string | null,
-  to: { path: string; name: string },
+  to: { path: string; name: string; columns: Readonly<Record<string, ColumnDecl>> },
   resolve: ResolveLink,
 ): Promise<void> {
   const entries = folderPagesList(child)
   const kept = fromPath === null ? entries : entries.filter((entry) => entryTarget(entry, resolve) !== fromPath)
   const next = kept.some((entry) => entryTarget(entry, resolve) === to.path) ? kept : [...kept, `[[${to.name}]]`]
-  if (unchanged(next, entries)) return
-  await writeProperty(child.path, FOLDER_PAGES_KEY, next)
+  if (!unchanged(next, entries)) await writeProperty(child.path, FOLDER_PAGES_KEY, next)
+  // YAZ-999's CLOSED-target half: the destination page may not be mounted, so its open-folder
+  // invariant cannot answer this gesture. Membership stays the source-of-truth write and lands
+  // first; then the shared missing-only operation fills the target's declarations.
+  await backfillFolderPageColumns([child], to.columns)
 }

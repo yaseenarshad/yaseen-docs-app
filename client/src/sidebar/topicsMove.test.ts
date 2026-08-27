@@ -15,10 +15,13 @@ import { stripBrackets } from '../views/expr'
 import { folderPagesLookup } from '../links/folderPages'
 
 vi.mock('../views/writeProperty', () => ({ writeProperty: vi.fn() }))
+vi.mock('../views/folderPageColumns', () => ({ backfillFolderPageColumns: vi.fn() }))
 import { writeProperty } from '../views/writeProperty'
+import { backfillFolderPageColumns } from '../views/folderPageColumns'
 import { canDrop, performMove } from './topicsMove'
 
 const write = vi.mocked(writeProperty)
+const backfill = vi.mocked(backfillFolderPageColumns)
 
 const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -48,7 +51,12 @@ const resolverOver = (records: readonly IndexRecord[]): ResolveLink => {
   return (target) => byBase.get(stripBrackets(target).replace(/[#|].*$/, '').trim().toLowerCase()) ?? null
 }
 
-beforeEach(() => write.mockReset())
+beforeEach(() => {
+  write.mockReset()
+  write.mockResolvedValue({ mtime: 2 })
+  backfill.mockReset()
+  backfill.mockResolvedValue()
+})
 
 describe('canDrop: the locked target rules (D4)', () => {
   const curriculum = folder('/vault/Curriculum.md')
@@ -122,13 +130,16 @@ describe('canDrop: the locked target rules (D4)', () => {
 
 describe('performMove: ONE write, the click rule deciding what leaves the list', () => {
   const FROM = { path: '/vault/From.md', name: 'From' }
-  const TO = { path: '/vault/To.md', name: 'To' }
+  const TO = { path: '/vault/To.md', name: 'To', columns: { score: { kind: 'number' as const }, tags: { kind: 'list' as const } } }
   const records = [folder(FROM.path), folder(TO.path)]
   const resolve = resolverOver(records)
 
   it('swaps the old parent for the new in a single folder_pages write', async () => {
-    await performMove(rec('/vault/Page.md', belongs('[[From]]')), FROM.path, TO, resolve)
+    const page = rec('/vault/Page.md', belongs('[[From]]'))
+    await performMove(page, FROM.path, TO, resolve)
     expect(write.mock.calls).toEqual([['/vault/Page.md', 'folder_pages', ['[[To]]']]])
+    expect(backfill).toHaveBeenCalledExactlyOnceWith([page], TO.columns)
+    expect(write.mock.invocationCallOrder[0]).toBeLessThan(backfill.mock.invocationCallOrder[0]!)
   })
 
   it('other parents and non-counting prose survive verbatim, in place', async () => {
@@ -155,7 +166,19 @@ describe('performMove: ONE write, the click rule deciding what leaves the list',
   })
 
   it('nothing to change writes nothing', async () => {
-    await performMove(rec('/vault/Page.md', belongs('[[To]]')), null, TO, resolve)
+    const page = rec('/vault/Page.md', belongs('[[To]]'))
+    await performMove(page, null, TO, resolve)
     expect(write).not.toHaveBeenCalled()
+    expect(backfill).toHaveBeenCalledExactlyOnceWith([page], TO.columns)
+  })
+
+  it('keeps the successful membership write and rejects when closed-target reconciliation fails', async () => {
+    const page = rec('/vault/Page.md', belongs('[[From]]'))
+    backfill.mockRejectedValueOnce(new Error('Could not initialize 1 column value: Page.score'))
+
+    await expect(performMove(page, FROM.path, TO, resolve)).rejects.toThrow('Page.score')
+
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Page.md', 'folder_pages', ['[[To]]'])
+    expect(backfill).toHaveBeenCalledExactlyOnceWith([page], TO.columns)
   })
 })

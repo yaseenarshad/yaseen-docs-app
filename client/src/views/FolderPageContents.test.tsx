@@ -19,6 +19,7 @@ import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '
 import { FolderPageContents } from './FolderPageContents'
 
 vi.mock('./writeProperty', () => ({ writeProperty: vi.fn() }))
+vi.mock('./folderPageColumns', () => ({ backfillFolderPageColumns: vi.fn() }))
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   api: { readFile: vi.fn(), createDir: vi.fn(), createFile: vi.fn() },
@@ -43,9 +44,11 @@ vi.mock('./view/OutlineEditor', () => ({
 
 import { api, BridgeRequestError } from '../api'
 import type { FolderPageMode, ViewsPaneProps } from './ViewsPane'
+import { backfillFolderPageColumns } from './folderPageColumns'
 import { writeProperty } from './writeProperty'
 
 const write = vi.mocked(writeProperty)
+const backfill = vi.mocked(backfillFolderPageColumns)
 const readFile = vi.mocked(api.readFile)
 const createDir = vi.mocked(api.createDir)
 const createFile = vi.mocked(api.createFile)
@@ -131,6 +134,7 @@ function mount(path: string, records: IndexRecord[] | null = vault(), fileConten
 beforeEach(() => {
   source = createWikilinkResolveSource()
   write.mockResolvedValue({ mtime: 2 })
+  backfill.mockResolvedValue()
   readFile.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'path does not exist')) // no template
   createDir.mockResolvedValue({ path: '/vault/stages' })
   createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
@@ -244,6 +248,49 @@ describe('rows are the members, and only the members', () => {
     // spellings never meet. The row shows because the resolver came from the whole snapshot.
     const el = mount(FUNNELS, vault({ views: [{ type: 'table', name: 'T', order: ['file.name'], filters: 'owner == link("Outsider")' }] }))
     expect(rowNames(el)).toEqual(['Lead Gen.md'])
+  })
+})
+
+describe('declared-column reconciliation (YAZ-999)', () => {
+  it('hands the invariant exactly the current DIRECT members and declaration', async () => {
+    mount(FUNNELS)
+    await flush()
+
+    expect(backfill).toHaveBeenCalledTimes(1)
+    const [members, columns] = backfill.mock.calls[0]!
+    expect(members.map((member) => member.path)).toEqual([LEAD, SALES])
+    expect(columns).toEqual(SETTINGS.columns)
+    expect(members.some((member) => member.path === OUTSIDER)).toBe(false)
+  })
+
+  it('runs again when membership or an externally-edited declaration changes', async () => {
+    mount(FUNNELS)
+    await flush()
+    backfill.mockClear()
+
+    const expansion = rec('/vault/stages/Expansion.md', { folder_pages: ['[[Funnel Stages]]'] })
+    feed([...vault({ ...SETTINGS, columns: { ...SETTINGS.columns, status: { kind: 'text' } } }), expansion])
+    await flush()
+
+    expect(backfill).toHaveBeenCalledTimes(1)
+    const [members, columns] = backfill.mock.calls[0]!
+    expect(new Set(members.map((member) => member.path))).toEqual(new Set([LEAD, SALES, expansion.path]))
+    expect(columns).toEqual({ ...SETTINGS.columns, status: { kind: 'text' } })
+  })
+
+  it('reports a partial reconciliation failure without taking the folder page down', async () => {
+    backfill.mockRejectedValueOnce(new Error('Could not initialize 1 column value: Sales.order'))
+    const el = mount(FUNNELS)
+    await flush()
+
+    expect(q(el, '[role="alert"]').textContent).toContain('Could not initialize 1 column value: Sales.order')
+    expect(el.querySelector('.folder-page-contents')).not.toBeNull()
+  })
+
+  it('never reconciles an ordinary page', async () => {
+    mount(OTHER)
+    await flush()
+    expect(backfill).not.toHaveBeenCalled()
   })
 })
 

@@ -35,6 +35,7 @@ import { type ViewDef, type ParsedViews, parseViews } from './viewSchema'
 import { ViewsPane, type FolderPageMode } from './ViewsPane'
 import { splitFrontmatter, parseFrontmatter } from '@shared/frontmatter'
 import { DEFAULT_VIEWS, folderPageSettings, folderPageSettingsOf, writeFolderPageSettings, type FolderPageSettings } from './folderPageSettings'
+import { backfillFolderPageColumns } from './folderPageColumns'
 import { createNewNote, freeName, type NewNoteSeed } from './newNote'
 import { memberFolder, newPageFromFolderPage } from './scaffold'
 import './views.css'
@@ -166,6 +167,23 @@ export function FolderPageContents({
     return seed === null ? null : folderPageViewSet(seed.views)
   })
   const [error, setError] = useState<string | null>(null)
+
+  /**
+   * The open-folder half of YAZ-999's hybrid invariant. Settings/membership stay the source of
+   * truth; once either snapshot moves, reconcile its current DIRECT members. The service rechecks
+   * latest file bytes, so a stale index can only cost a no-op read — never an overwrite.
+   */
+  useEffect(() => {
+    if (settings === null) return
+    let current = true
+    backfillFolderPageColumns(members, settings.columns).catch((err: unknown) => {
+      if (current) setError(err instanceof Error ? err.message : String(err))
+    })
+    return () => {
+      current = false
+    }
+  }, [members, settings])
+
   // Rebuilt when the CARD's own views move — an external edit, or our own write coming back
   // through the index (identical then, since `onChange` already applied it). JSON identity is the
   // honest comparison: every read hands back a fresh copy of the views.
@@ -235,7 +253,7 @@ export function FolderPageContents({
     <section className="folder-page-contents">
       {error !== null && (
         <p className="views-pane__error" role="alert">
-          Could not save the folder page's settings: {error}
+          Could not update the folder page: {error}
         </p>
       )}
       <ViewsPane

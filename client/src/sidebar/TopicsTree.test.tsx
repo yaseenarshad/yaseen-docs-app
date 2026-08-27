@@ -916,7 +916,12 @@ describe('the drag (YAZ-991): a row onto a folder-page row, and nothing written 
   })
 
   it('confirming runs the engine ONCE — the row\'s own parent as the source, the WINDOW\'s resolver — and moves no row itself', async () => {
-    const records = vault()
+    const columns = { score: { kind: 'number' as const } }
+    const records = vault().map((record) =>
+      record.path === PROJECTS
+        ? folder(PROJECTS, { folder_page_settings: { columns, views: [{ type: 'outline', name: 'Outline' }] } })
+        : record,
+    )
     const { el } = await mount({ source: sourceOver(records) })
     await click(chevrons(el, 'Expand Metrics')[0])
     await fire(rowFor(el, 'Revenue'), 'dragstart')
@@ -928,7 +933,7 @@ describe('the drag (YAZ-991): a row onto a folder-page row, and nothing written 
     expect(child).toBe(records.find((r) => r.path === REVENUE))
     expect(from).toBe(METRICS)
     // `path` is what a surviving entry must RESOLVE to; `name` is what a new entry is written as.
-    expect(to).toEqual({ path: PROJECTS, name: 'Projects' })
+    expect(to).toEqual({ path: PROJECTS, name: 'Projects', columns })
     // The window's own resolver, not the null stand-in: alias-aware and case-insensitive, every
     // spelling a click would follow — it is what filters the old parent out of the list.
     expect(resolve('[[metrics]]')).toBe(METRICS)
@@ -971,7 +976,7 @@ describe('the drag (YAZ-991): a row onto a folder-page row, and nothing written 
     const [child, from, to] = move.mock.calls[0]!
     expect(child).toBe(records.find((r) => r.path === LOOSE))
     expect(from).toBeNull()
-    expect(to).toEqual({ path: PROJECTS, name: 'Projects' })
+    expect(to).toEqual({ path: PROJECTS, name: 'Projects', columns: {} })
   })
 
   it('the pinned Home and the Uncategorized header are out of the gesture on BOTH sides', async () => {
