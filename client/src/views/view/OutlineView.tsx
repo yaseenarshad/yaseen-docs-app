@@ -120,6 +120,14 @@ export function OutlineView({
     return serializeOutline(fromOrder(order, records.filter((r) => !listed.has(r.path)).map((r) => r.basename)))
   })
 
+  /**
+   * Bumped ONLY by a write this component makes on the user's behalf (YAZ-954): the editor is
+   * seeded from `doc` at mount and never re-reads it — that is what keeps typing from being
+   * clobbered — so an appended line would sit on disk unseen until the page was reopened.
+   * Remounting IS reopening, and nothing the user typed is in flight when they approve a sheet.
+   */
+  const [seed, setSeed] = useState(0)
+
   const belonging = { path: folderPagePath, name: folderPageName, records: vaultRecords, resolve }
   const report = (err: unknown): void => setError(err instanceof Error ? err.message : String(err))
   /**
@@ -154,6 +162,7 @@ export function OutlineView({
   const appendLinks = (entries: { insert: string }[]): void => {
     const lines = serializeOutline(entries.map(({ insert }) => ({ depth: 0, text: `[[${insert}]]` })))
     onSyncDone()
+    setSeed((n) => n + 1)
     commit(doc === '' ? lines : `${doc}\n${lines}`)
   }
 
@@ -172,7 +181,7 @@ export function OutlineView({
         </p>
       )}
       {/* `markdown` is read at MOUNT only (YAZ-901): every later edit comes back OUT through onChange. */}
-      <OutlineEditor markdown={doc} onChange={commit} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} nav={nav} />
+      <OutlineEditor key={seed} markdown={doc} onChange={commit} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} nav={nav} />
       {appended.length > 0 && (
         <ul className="view-outline__list">
           {appended.map((member) => (
