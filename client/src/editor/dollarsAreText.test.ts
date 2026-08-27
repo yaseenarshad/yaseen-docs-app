@@ -59,7 +59,7 @@ const textOf = (crepe: Crepe): string =>
 const FLOOR_LINE = 'Floor: owners doing at least $500K–$1M/yr. Ideal: $2M–$10M+/yr, and even beyond.'
 
 describe('dollars are text (YAZ-977)', () => {
-  it.fails('renders the real Project-Brief line as written — no math node, dollars intact', async () => {
+  it('renders the real Project-Brief line as written — no math node, dollars intact', async () => {
     const crepe = await mount(FLOOR_LINE)
     expect(nodeNames(crepe).filter((name) => name.includes('math'))).toEqual([])
     expect(textOf(crepe)).toBe(FLOOR_LINE)
