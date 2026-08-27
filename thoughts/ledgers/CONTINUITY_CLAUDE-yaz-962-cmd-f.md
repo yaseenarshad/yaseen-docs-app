@@ -21,17 +21,17 @@ Ship Chrome-style CMD+F on both editor surfaces (normal pages + folder-page outl
   - [x] YAZ-967 A- Deep scope pass (findings + confirmed contract locked as Linear comments; zoom.ts needs NO edit — getZoomedItemPos already exported)
 - Done (cont.):
   - [x] YAZ-968 B- Find engine (Opus built; Fable verified 11/11 + 129 outline tests, NUL-scan clean, diff reviewed; 2 deviations approved: jsdom MacIntel platform, markdownUpdated compares post-processed forms)
-- Now: [→] YAZ-969 C- FindBar + host wiring (Opus building in background against FindBar.test.tsx)
-- Remaining:
-  - [ ] YAZ-970 D- Verify end to end (spec ALREADY AUTHORED at desktop/e2e/findInPage.spec.ts, desktop tsc clean; run after C)
-  - [ ] YAZ-971 E- Polish and anti-slop pass (evidence, not vibes)
-  - [ ] /commit, push, merge to main; Linear all Done
+- Done (cont.):
+  - [x] YAZ-969 C- FindBar + host wiring (7/7 contract; visibility amendment to the claim rule added during D — a hidden editor never claims CMD+F)
+  - [x] YAZ-970 D- e2e 5/5 + smoke/folderPageOutline regression 12/12; disk byte-identical after a real quit
+  - [x] YAZ-971 E- Polish pass closed with evidence
+  - [x] Merged to main as PR #3 (one trivial conflict with main's YAZ-964 seed guard, both sides kept); final gate on merged code: 2145 unit tests, 17/17 e2e, typecheck clean
+- Now: COMPLETE. Worktree and branch removed. Full handoff lives as the closeout comment on YAZ-962 (plus per-subissue closeouts on YAZ-967…971).
 
 ## Open Questions
-- UNCONFIRMED: exact e2e harness entry point (find during scope; same harness as YAZ-954).
+- None. (The e2e harness question resolved: desktop/e2e/helpers.ts, seededState with ABSOLUTE file paths.)
 
 ## Working Set
-- Worktree: /Users/yasin/Documents/GitHub/yaseen-milkdown/.claude/worktrees/yaz-962-cmd-f (branch worktree-yaz-962-cmd-f)
-- Linear helper: scratchpad/linear.py (state | comment | create | get)
+- Everything on main. Feature: client/src/editor/find/ (engine, channel, bar, css, both test contracts) + desktop/e2e/findInPage.spec.ts
 - Key files: client/src/editor/createCrepe.ts, client/src/editor/outline/outlineFolding.ts, client/src/editor/Editor.tsx, client/src/views/view/OutlineEditor.tsx
 - Tests: npx vitest run (root vitest.config.ts); e2e per scope findings
