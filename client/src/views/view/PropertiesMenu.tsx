@@ -34,8 +34,9 @@ function entryKey(def: ViewSet, key: string): string {
 }
 
 /**
- * Properties menu (GRO-2135): shown ⇄ hidden checklist (writes `view.order`, `file.name`
- * always shown), up/down to reorder, pencil to set `def.properties[key].displayName`.
+ * Properties menu (GRO-2135): shown ⇄ hidden checklist (writes `view.order`; tables may hide
+ * `file.name`, while other view types keep their existing checkbox behavior), up/down to reorder,
+ * pencil to set `def.properties[key].displayName`.
  * List views (4F, GRO-2140) get a trailing "List" section for how those properties display —
  * `markerStyle` / `indentProperties` / `propertySeparator`, one write per change, the default
  * value DELETES the key (like SortMenu clearing `sort` / `groupBy`).
@@ -109,7 +110,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
                   type="checkbox"
                   aria-label={`Show ${label}`}
                   checked={on}
-                  disabled={canonicalKey(key) === 'file.name'}
+                  disabled={canonicalKey(key) === 'file.name' && view.type !== 'table'}
                   onChange={() => toggle(key)}
                 />
                 {editing === key ? (
