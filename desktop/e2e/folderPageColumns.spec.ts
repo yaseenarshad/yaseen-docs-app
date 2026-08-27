@@ -12,10 +12,11 @@
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1 "+ Add column" declares `unit_notes` and SHOWS it, in one `folder_page_settings` write
- *     (🔒 D3): the header appears, the declaration lands on disk, and the Table view's `order`
- *     gains `note.unit_notes` — the three existing declarations untouched
+ *     (🔒 D3): the header appears, the declaration lands on disk, the Table view's `order`
+ *     gains `note.unit_notes`, and every direct member missing the key gets its empty scalar value
+ *     while a legacy value under an existing declaration survives unchanged
  *   2 the Type select retypes it `text` → `number`: the DECLARATION moves and nothing else does —
- *     🔒 C1, proven by byte-equality over every member file, across BOTH writes
+ *     🔒 C1, proven by byte-equality over every member file after step 1's backfill
  *   3 the retyped column edits as a NUMBER, and the value lands on the member's own card on disk
  *   4 "New" births a member from the declaration, `unit_notes` scaffolded empty among the rest
  *   5 quit → relaunch: the column and its declaration are on the page, not in the session
@@ -25,10 +26,10 @@
  * step screenshots).
  */
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
+import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '../../shared/frontmatter'
 import { appWindow, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -42,13 +43,18 @@ const MEMBERS = ['CAC', 'Gross Margin', 'MQL Volume', 'Sales Cycle Time', 'Win R
 /** The column this spec declares, and the member whose cell it fills. */
 const COLUMN = 'unit_notes'
 const SUBJECT = 'CAC'
+const RETAINED = 'Gross Margin'
+const RETAINED_KEY = 'funnel_stages'
+const RETAINED_VALUE = ['[[Legacy Stage]]']
 
 let userData: string
 let vault: string
 let app: ElectronApplication
 let win: Page
-/** Every member file's bytes before the first declaration write — step 2's C1 evidence. */
+/** Every member file before launch; includes RETAINED's seeded legacy declared value. */
 let memberBytes: Record<string, string>
+/** Every member file after missing-only backfill — step 2's no-migration baseline. */
+let backfilledMemberBytes: Record<string, string>
 
 /** The VISIBLE tab layer — every visited tab keeps its own DOM mounted. */
 const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
@@ -106,6 +112,9 @@ async function openProperties(): Promise<Locator> {
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'columns-userdata-'))
   vault = await copyVault(FIXTURE)
+  const retained = memberPath(RETAINED)
+  await writeFile(retained, setFrontmatterProperty(await readFile(retained, 'utf8'), RETAINED_KEY, RETAINED_VALUE), 'utf8')
+  memberBytes = await readMembers()
 })
 
 test.afterAll(async () => {
@@ -125,7 +134,8 @@ test('step 1 — "+ Add column" declares a column and shows it, in one settings 
   // The shipped shape this step adds to: four columns from the view's `order`, five members.
   await expect(headers(contents(win))).toHaveText(['file.name', 'kpi_category', 'unit', 'funnel_stages'])
   await expect(rowNames(contents(win))).toHaveText(named(...MEMBERS))
-  memberBytes = await readMembers() // C1's "before", taken before the FIRST declaration write
+  // Opening a declaration with an already-present legacy value never normalises or rewrites it.
+  await expect.poll(readMembers).toEqual(memberBytes)
 
   const menu = await openProperties()
   await menu.locator('.view-menu__action', { hasText: '+ Add column' }).click()
@@ -156,6 +166,29 @@ test('step 1 — "+ Add column" declares a column and shows it, in one settings 
     `note.${COLUMN}`,
   ])
   expect(settings.folder).toBe(KPIS) // the parking bin is not a column and never moves
+
+  // YAZ-999: the settings write is source-of-truth and its index echo triggers a missing-only
+  // reconciliation over DIRECT members.
+  await expect
+    .poll(async () => {
+      const bytes = await readMembers()
+      return Object.fromEntries(
+        MEMBERS.map((name) => [name, parseFrontmatter(splitFrontmatter(bytes[name]!).frontmatter).properties[COLUMN]]),
+      )
+    })
+    .toEqual(Object.fromEntries(MEMBERS.map((name) => [name, null])))
+
+  backfilledMemberBytes = await readMembers()
+  for (const name of MEMBERS) {
+    const before = splitFrontmatter(memberBytes[name]!)
+    const after = splitFrontmatter(backfilledMemberBytes[name]!)
+    const beforeProps = parseFrontmatter(before.frontmatter).properties
+    const afterProps = { ...parseFrontmatter(after.frontmatter).properties }
+    delete afterProps[COLUMN]
+    expect(afterProps).toEqual(beforeProps)
+    expect(after.body).toBe(before.body)
+  }
+  expect(parseFrontmatter(splitFrontmatter(backfilledMemberBytes[RETAINED]!).frontmatter).properties[RETAINED_KEY]).toEqual(RETAINED_VALUE)
 })
 
 test('step 2 — retyping moves the DECLARATION and nothing else: every member file is byte-identical', async () => {
@@ -170,8 +203,7 @@ test('step 2 — retyping moves the DECLARATION and nothing else: every member f
   await shoot(win, 'columns-03-retyped-number')
 
   // 🔒 C1 (locked): a retype never touches member files — no migration, no rewrite, not one byte.
-  // The comparison spans BOTH declaration writes, so the add is held to the same rule as the retype.
-  expect(await readMembers()).toEqual(memberBytes)
+  expect(await readMembers()).toEqual(backfilledMemberBytes)
 
   // `views` was not passed to this write, so the order it does not own is untouched.
   const settings = await settingsOnDisk()
@@ -202,9 +234,9 @@ test('step 3 — the retyped column edits as a number, onto the MEMBER’s own f
   expect(props[COLUMN]).toBe(42)
   await shoot(win, 'columns-04-number-cell-write')
 
-  // Only the edited member moved; the other four are still byte-identical to step 1's snapshot.
+  // Only the edited member moved; the other four are still byte-identical to the backfilled state.
   const now = await readMembers()
-  for (const name of MEMBERS.filter((n) => n !== SUBJECT)) expect(now[name]).toBe(memberBytes[name])
+  for (const name of MEMBERS.filter((n) => n !== SUBJECT)) expect(now[name]).toBe(backfilledMemberBytes[name])
 })
 
 test('step 4 — "New" births a member with the declared column scaffolded empty', async () => {
