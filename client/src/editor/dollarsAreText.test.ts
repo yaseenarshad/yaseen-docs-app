@@ -55,18 +55,27 @@ const textOf = (crepe: Crepe): string =>
     return doc.textBetween(0, doc.content.size, '\n')
   })
 
-/** Project-Brief.md line 16, verbatim — the line in the YAZ-977 screenshot. */
-const FLOOR_LINE = 'Floor: owners doing at least $500K–$1M/yr. Ideal: $2M–$10M+/yr, and even beyond.'
+/** Project-Brief.md's dollar lines (16, 32, 37), verbatim — line 16 is the YAZ-977 screenshot. */
+const REAL_LINES = [
+  'Floor: owners doing at least $500K–$1M/yr. Ideal: $2M–$10M+/yr, and even beyond.',
+  '**One audience, compounding.** Everything targets the same audience of $1M+/yr owners. The same lead flow and acquisition system carries through later phases; only the offer on the call changes.',
+  '**Pricing.** $3K initial build + $400/mo maintenance was a theoretical starting point only, expected to increase.',
+]
 
 describe('dollars are text (YAZ-977)', () => {
-  it('renders the real Project-Brief line as written — no math node, dollars intact', async () => {
-    const crepe = await mount(FLOOR_LINE)
-    expect(nodeNames(crepe).filter((name) => name.includes('math'))).toEqual([])
-    expect(textOf(crepe)).toBe(FLOOR_LINE)
+  it('renders every real Project-Brief dollar line as written — no math node, dollars intact', async () => {
+    for (const line of REAL_LINES) {
+      const crepe = await mount(line)
+      expect(nodeNames(crepe).filter((name) => name.includes('math'))).toEqual([])
+      // The VISIBLE text: `**` is a strong mark on screen, not characters — bytes are the round-trip test's claim.
+      expect(textOf(crepe)).toBe(line.replace(/\*\*/g, ''))
+    }
   })
 
-  it('round-trips the line byte-for-byte — the misrender never rewrote a file', async () => {
-    const crepe = await mount(FLOOR_LINE)
-    expect(getMarkdownForSave(crepe)).toBe(`${FLOOR_LINE}\n`)
+  it('round-trips every line byte-for-byte — the misrender never rewrote a file', async () => {
+    for (const line of REAL_LINES) {
+      const crepe = await mount(line)
+      expect(getMarkdownForSave(crepe)).toBe(`${line}\n`)
+    }
   })
 })
