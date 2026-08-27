@@ -84,6 +84,7 @@ import { obsidianHotkeys } from './outline/hotkeys'
 import { outlinerKeymap } from './outline/listCommands'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { createOutlineZoom, zoomKeymap, type ZoomOptions } from './outline/zoom'
+import { $shortcut } from '@milkdown/kit/utils'
 import { createWikilinkClick, type WikilinkNav } from './wikilink/wikilinkClick'
 import { createWikilinkPicker, createWikilinkCandidateSource, wikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { createWikilink, createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
@@ -154,6 +155,26 @@ function buildHeadingToolbar(builder: HeadingToolbarBuilder): void {
   })
 }
 
+/**
+ * Escape steps OUT of the text and back to the sidebar's active row (YAZ-936), so the keyboard
+ * walk resumes exactly where the page was picked. Priority 10 — anything that means something by
+ * Esc (the `[[` picker's dismiss at 100, menus) wins first; and it DECLINES when no tree row is
+ * on screen (collapsed sidebar), so Esc stays free everywhere else.
+ */
+const escapeToSidebar = $shortcut(() => ({
+  EscapeToSidebar: {
+    key: 'Escape',
+    priority: 10,
+    onRun: () => () => {
+      const row =
+        document.querySelector<HTMLElement>('.tree__row--active') ?? document.querySelector<HTMLElement>('.tree__row')
+      if (row === null) return false
+      row.focus()
+      return true
+    },
+  },
+}))
+
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
   const crepe = new Crepe({
     root: opts.root,
@@ -198,6 +219,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(wikilinkPickerKeymap)
   crepe.editor.use(outlinerKeymap)
   crepe.editor.use(obsidianHotkeys)
+  crepe.editor.use(escapeToSidebar)
   crepe.editor.use(zoomKeymap)
   if (opts.onMarkdownUpdated) {
     const cb = opts.onMarkdownUpdated

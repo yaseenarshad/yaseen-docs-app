@@ -190,7 +190,10 @@ const rowFor = (el: HTMLElement, label: string) => rows(el).find((r) => r.queryS
 const countOn = (el: HTMLElement, label: string) => rowFor(el, label)?.querySelector('.tree__count')?.textContent ?? null
 const indentOf = (el: HTMLElement, label: string) => rowFor(el, label)?.style.paddingLeft ?? null
 const chevrons = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLElement>(`[aria-label="${label}"]`)]
-const click = async (node: Element, init: MouseEventInit = {}) => act(async () => void node.dispatchEvent(new MouseEvent('click', { bubbles: true, ...init })))
+/** A real MOUSE click (`detail: 1`) — the browser's Enter-on-a-button synthetic click reports
+    `detail: 0`, which is how the rows tell the two modalities apart (YAZ-947); keyboard cases
+    pass `{ detail: 0 }` explicitly. */
+const click = async (node: Element, init: MouseEventInit = {}) => act(async () => void node.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1, ...init })))
 /** One key press, from wherever it is dispatched — the walk reads `document.activeElement` itself. */
 const press = async (node: Element, key: string) => act(async () => void node.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })))
 /** The label of the row DOM focus stands on, or null when focus is outside the rows. */
@@ -438,12 +441,16 @@ describe('the rows (🔒 D3): the file tree\'s two open handlers, a chevron of i
 describe('the row gesture: open + unfold (⚡ YAZ-870), then toggle or commit (YAZ-921)', () => {
   const REVENUE = `${ROOT}/Revenue.md`
   /** Stands in for the mounted editor, so a commit has a real caret target to land on. */
-  const editorStub = (): HTMLElement => {
+  /** A ProseMirror stand-in that models the browser's visibility answer (YAZ-947): the commit
+      gesture picks the first VISIBLE editor via `offsetParent`, which layoutless jsdom always
+      answers `null` — so the stub declares its own, like the browser would. */
+  const editorStub = (visible = true): HTMLElement => {
     const instance = document.createElement('div')
     instance.className = 'editor-instance'
     const pm = document.createElement('div')
     pm.className = 'ProseMirror'
     pm.tabIndex = -1
+    Object.defineProperty(pm, 'offsetParent', { get: () => (visible ? document.body : null) })
     instance.appendChild(pm)
     document.body.appendChild(instance)
     return pm
@@ -519,6 +526,35 @@ describe('the row gesture: open + unfold (⚡ YAZ-870), then toggle or commit (Y
     expect(props.onOpenFile).not.toHaveBeenCalled()
     expect(props.onOpenFileBackground).not.toHaveBeenCalled()
     expect(document.activeElement).toBe(pm)
+  })
+
+  it('keyboard Enter (detail 0) on a topic OPENS it and moves the tree not at all (YAZ-947)', async () => {
+    // Enter through the walk is a browser-synthetic click with detail 0 — the row's one tell.
+    // ←/→ are the only keyboard folds; previewing topics never rearranges the panel underfoot.
+    const { el, props } = await mount({ source: sourceOver(vault()) })
+    await click(rowFor(el, 'Metrics')!, { detail: 0 })
+    expect(props.onOpenFile).toHaveBeenCalledWith(METRICS)
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized'])
+    expect(storage.getTopicsExpanded(ROOT)).toEqual([])
+  })
+
+  it('keyboard Enter on the ACTIVE topic does not toggle either — it commits, like a plain page (YAZ-947)', async () => {
+    const pm = editorStub()
+    const { el, props } = await mount({ source: sourceOver(vault()), activeFile: METRICS })
+    await click(chevrons(el, 'Expand Metrics')[0])
+    await click(rowFor(el, 'Metrics')!, { detail: 0 })
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Churn', 'Revenue', 'Projects', 'Uncategorized']) // still open
+    expect(document.activeElement).toBe(pm)
+  })
+
+  it('the commit lands in the VISIBLE editor — a folder page hides its body, so the outline takes the caret (YAZ-947)', async () => {
+    const hiddenBody = editorStub(false)
+    const outline = editorStub()
+    const { el } = await mount({ source: sourceOver(vault()), activeFile: METRICS })
+    await click(rowFor(el, 'Metrics')!, { detail: 0 })
+    expect(document.activeElement).not.toBe(hiddenBody)
+    expect(document.activeElement).toBe(outline)
   })
 })
 
