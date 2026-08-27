@@ -306,10 +306,26 @@
 
 .view-prop {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px 0;
+}
+
+.view-prop__identity,
+.view-prop__controls {
+  display: flex;
   gap: 6px;
-  padding: 3px 0;
+  align-items: center;
+  min-width: 0;
+}
+
+.view-prop__identity {
+  align-items: flex-start;
+}
+
+.view-prop__controls {
   flex-wrap: wrap;
+  padding-left: 22px;
 }
 
 /* Relation editor for one column (5E, GRO-2217): a full-width row under the property. */
@@ -339,11 +355,11 @@
 .view-prop__name {
   flex: 1;
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 6px;
   min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .view-prop__name small {
