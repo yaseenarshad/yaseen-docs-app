@@ -61,6 +61,11 @@ type FoldMeta = number | 'fold-all' | 'unfold-all' | 'undo-fold' | FoldSetMeta
 interface FoldSetMeta {
   set: readonly number[]
   collapsed: boolean
+  /**
+   * A fold the USER did not ask for — CMD+F's fold-reveal (YAZ-968). It leaves `lastToggle` alone
+   * and carries no view-action stamp, so ⌘Z panic-undo (fold and zoom alike) is untouched by it.
+   */
+  silent?: boolean
 }
 
 /** Every fold transaction: the plugin meta plus the shared view-action stamp (zoom.ts watches for it). */
@@ -70,6 +75,21 @@ const foldTransaction = (state: EditorState, meta: FoldMeta) =>
 /** Whether the list_item starting at `itemPos` is currently folded (false when the plugin is absent). */
 export const isOutlineItemCollapsed = (state: EditorState, itemPos: number): boolean =>
   pluginKey.getState(state)?.collapsedItemPositions.has(itemPos) ?? false
+
+/**
+ * The collapsed items whose nested lists contain `pos` — everything hiding that position, from the
+ * nearest parent up. CMD+F (YAZ-968) reveals exactly these to show a match, and puts them back.
+ */
+export const collapsedItemsHiding = (state: EditorState, pos: number): number[] => {
+  const foldingState = pluginKey.getState(state)
+  if (!foldingState) return []
+  return foldingState.entries
+    .filter(
+      ({ itemPos, nestedListRanges }) =>
+        foldingState.collapsedItemPositions.has(itemPos) && nestedListRanges.some((range) => pos >= range.from && pos < range.to),
+    )
+    .map(({ itemPos }) => itemPos)
+}
 
 const foldAllCommand = (meta: 'fold-all' | 'unfold-all'): Command => (state, dispatch) => {
   const foldingState = pluginKey.getState(state)
@@ -127,6 +147,20 @@ export const toggleOutlineFoldChildren = (listPos: number): Command => (state, d
   dispatch?.(foldTransaction(state, { set, collapsed }))
   return true
 }
+
+/**
+ * Fold (`collapsed: true`) or unfold an explicit set of parent items at once. `silent` marks a fold
+ * the user did not ask for — CMD+F's fold-reveal (YAZ-968) — which must leave ⌘Z panic-undo (fold
+ * and zoom alike) exactly as it found it. Declines an empty set.
+ */
+export const setOutlineFoldSet =
+  (set: readonly number[], collapsed: boolean, options?: { silent?: boolean }): Command =>
+  (state, dispatch) => {
+    if (set.length === 0) return false
+    const meta: FoldSetMeta = { set, collapsed, silent: options?.silent }
+    dispatch?.(meta.silent === true ? state.tr.setMeta(pluginKey, meta) : foldTransaction(state, meta))
+    return true
+  }
 
 /** Collapse every parent item (GRO-2027 `Mod-Shift-u`); metadata-only transaction, the doc is untouched. */
 export const foldAllOutline: Command = foldAllCommand('fold-all')
@@ -275,7 +309,8 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
                 if (meta.collapsed && parentPositions.has(pos)) collapsedItemPositions.add(pos)
                 else if (!meta.collapsed) collapsedItemPositions.delete(pos)
               }
-              lastToggle = { kind: 'set', previousCollapsed }
+              // A silent set is not a user fold action: ⌘Z keeps whatever it was already pointing at.
+              if (meta.silent !== true) lastToggle = { kind: 'set', previousCollapsed }
             }
             return { entries, collapsedItemPositions, lastToggle }
           },
