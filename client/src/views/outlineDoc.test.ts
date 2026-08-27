@@ -216,3 +216,12 @@ describe('escapeOutlineMarkdown: every bullet line armored, every other byte unt
     expect(escapeOutlineMarkdown(doc)).toBe(doc)
   })
 })
+
+describe('escapeBlockStart: footnote definitions — the one GFM dropper the scan missed (YAZ-974)', () => {
+  it('escapes a footnote definition, and only a definition', () => {
+    expect(escapeBlockStart('[^1]: note')).toBe('\\[^1]: note')
+    expect(escapeBlockStart('[^long-name]: see below')).toBe('\\[^long-name]: see below')
+    // A plain link-reference-style line survives the editor as literal text already — untouched.
+    expect(escapeBlockStart('[x]: /url')).toBe('[x]: /url')
+  })
+})

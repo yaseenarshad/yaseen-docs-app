@@ -526,3 +526,16 @@ describe('sync from folder appends through the outline’s one door', () => {
     expect(write).not.toHaveBeenCalled()
   })
 })
+
+describe('the seed-loss banner (YAZ-974): the editor reports, the view warns through its one error surface', () => {
+  it('shows the read-only explanation when the editor reports a lossy seed', () => {
+    mount()
+    expect(editor.props?.onSeedLoss).toBeTypeOf('function')
+    act(() => editor.props?.onSeedLoss?.())
+    const alert = container?.querySelector('.view-view__error')
+    expect(alert?.textContent ?? '').toMatch(/read-only/i)
+    expect(alert?.textContent ?? '').toMatch(/file/i)
+    // The banner wears the guard's own words alone — never the belonging-write lead-in.
+    expect(alert?.textContent ?? '').not.toMatch(/could not update/i)
+  })
+})

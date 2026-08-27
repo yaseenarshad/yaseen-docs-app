@@ -46,12 +46,12 @@ async function waitFor(condition: () => boolean, timeoutMs = 5000): Promise<void
   }
 }
 
-async function mount(markdown: string): Promise<HTMLElement> {
+async function mount(markdown: string, extra: { onSeedLoss?: () => void } = {}): Promise<HTMLElement> {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
   await act(async () => {
-    root?.render(<OutlineEditor markdown={markdown} onChange={vi.fn()} />)
+    root?.render(<OutlineEditor markdown={markdown} onChange={vi.fn()} {...extra} />)
   })
   await waitFor(() => container?.querySelector('.ProseMirror') !== null)
   await tick(100)
@@ -94,5 +94,19 @@ describe('the outline seed survives the Milkdown parse (YAZ-964)', () => {
       '*',
       'Note: you click the buttons',
     ])
+  })
+})
+
+describe('the seed guard (YAZ-974): healthy seeds are untouched', () => {
+  it('a footnote-definition line renders as literal text', async () => {
+    const host = await mount('- above\n- [^1]: note\n- below')
+    expect(bullets(host)).toEqual(['above', '[^1]: note', 'below'])
+  })
+
+  it('a healthy seed stays editable and never reports loss', async () => {
+    const onSeedLoss = vi.fn()
+    const host = await mount(SEED, { onSeedLoss })
+    expect(onSeedLoss).not.toHaveBeenCalled()
+    expect(host.querySelector('.ProseMirror')?.getAttribute('contenteditable')).toBe('true')
   })
 })

@@ -68,8 +68,11 @@ const ORDERED_START = /^\d+(?=[.)](?:[ \t]|$))/
  * Every other block opener, defused by ONE backslash before the line's first character: a nested
  * bullet marker, one to six hashes, a quote, a fence, or a thematic break of three or more of the
  * same mark. Seven hashes and `-foo` are no block to CommonMark either, so neither is touched.
+ * And one GFM block the CommonMark scan missed (YAZ-974): a footnote DEFINITION, `[^id]: …`, which
+ * leaves the list entirely and takes its bullet with it. A plain link reference (`[x]: /url`) is
+ * not one and stays literal text in the editor already, so the `^` is what the pattern insists on.
  */
-const BLOCK_START = /^(?:[-*+](?:[ \t]|$)|#{1,6}(?:[ \t]|$)|>|```|~~~|([-_*])(?:[ \t]*\1){2,}[ \t]*$)/
+const BLOCK_START = /^(?:[-*+](?:[ \t]|$)|#{1,6}(?:[ \t]|$)|>|```|~~~|\[\^[^\]]*\]:|([-_*])(?:[ \t]*\1){2,}[ \t]*$)/
 
 /** Text that would re-parse as a BLOCK construct inside its bullet — an ordered item (`1. `),
  * a nested marker (`- `), a heading (`# `), a quote (`> `), a fence or a thematic break — gets
