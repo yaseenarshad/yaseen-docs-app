@@ -102,6 +102,16 @@ function click(el: Element): void {
   draw()
 }
 
+function doubleClick(el: Element): void {
+  act(() => {
+    const target = el as HTMLElement
+    target.click()
+    target.click()
+    el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+  })
+  draw()
+}
+
 /** Native prototype setter + bubbling event, so React's value tracker sees the change. */
 function setValue(el: HTMLInputElement, value: string): void {
   const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
@@ -130,8 +140,8 @@ async function flush(): Promise<void> {
 }
 
 const cell = (el: ParentNode, r: number, c: number) => q<HTMLElement>(el, `[data-cell="${r}:${c}"]`)
-/** Open a table editor through its public whole-cell activation boundary. */
-const open = (el: ParentNode, r: number, c: number) => click(cell(el, r, c))
+/** Open a table editor through its public double-click activation boundary. */
+const open = (el: ParentNode, r: number, c: number) => doubleClick(cell(el, r, c))
 
 // ---------- tests ----------
 
@@ -185,11 +195,15 @@ describe('typed commits', () => {
     expect(write).toHaveBeenCalledExactlyOnceWith(AGENTIC, 'priority', 5)
   })
 
-  it('the checkbox toggles and commits a boolean in one click', () => {
+  it('selects a checkbox without writing, then toggles and commits once on double-click', () => {
     const { el } = mount(EDIT_BASE)
     const box = q<HTMLInputElement>(cell(el, 0, 3), 'input[type="checkbox"]') // published: false
     expect(box.disabled).toBe(false)
     click(cell(el, 0, 3))
+    expect(write).not.toHaveBeenCalled()
+    expect(box.checked).toBe(false)
+
+    doubleClick(cell(el, 0, 3))
     expect(write).toHaveBeenCalledExactlyOnceWith(AGENTIC, 'published', true)
     expect(q<HTMLInputElement>(cell(el, 0, 3), 'input[type="checkbox"]').checked).toBe(true)
   })

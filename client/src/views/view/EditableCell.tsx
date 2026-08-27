@@ -30,8 +30,9 @@ export interface EditableCellProps {
 
 /**
  * One editable property cell (5B, GRO-2142), shared by table cells and card/list property
- * chips: the display (typed like a read-only cell) opens the editor on click — or on Enter,
- * via the host view clicking `[data-edit]` — Enter/blur commit through `writeProperty` (or the
+ * chips: cards/lists open the typed display directly, while the table host delegates double-click
+ * or Enter through `[data-edit]` after a single click only selects the cell. Enter/blur commit
+ * through `writeProperty` (or the
  * host's own `onCommit`, the properties panel's seam — ⚡ YAZ-884), Esc
  * cancels. Commits are optimistic: the committed raw value renders immediately and stays
  * until the index refetch delivers it (`raw` changes); a failed write reverts the cell and

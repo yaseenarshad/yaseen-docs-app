@@ -93,6 +93,16 @@ function click(el: Element): void {
   draw()
 }
 
+function doubleClick(el: Element): void {
+  act(() => {
+    const target = el as HTMLElement
+    target.click()
+    target.click()
+    el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+  })
+  draw()
+}
+
 function press(el: Element, key: string): void {
   act(() => el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })))
   draw()
@@ -187,7 +197,7 @@ describe('cells by type', () => {
 })
 
 describe('editable cell activation', () => {
-  it('clicking a declared empty property cell opens its existing typed editor', () => {
+  it('selects a declared empty property cell on click and opens its editor on double-click', () => {
     const folderPage = testFolderPage({
       settings: { columns: { empty_text: { kind: 'text' } }, views: [], problems: [] },
     })
@@ -198,11 +208,14 @@ describe('editable cell activation', () => {
     expect(emptyCell.textContent).toBe('')
 
     click(emptyCell)
+    expect(document.activeElement).toBe(emptyCell)
+    expect(emptyCell.querySelector('[aria-label="Edit empty_text"]')).toBeNull()
 
+    doubleClick(emptyCell)
     expect(byLabel<HTMLInputElement>(emptyCell, 'Edit empty_text').value).toBe('')
   })
 
-  it('clicking the nested edit control activates it exactly once', () => {
+  it('programmatic nested activation remains exactly once', () => {
     const { el } = mount(TYPED_BASE)
     const populatedCell = q<HTMLElement>(el, '[data-cell="0:1"]')
     const control = q<HTMLElement>(populatedCell, '[data-edit]')
