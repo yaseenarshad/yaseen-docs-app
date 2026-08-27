@@ -2,8 +2,8 @@
  * The Topics tree (6B-, YAZ-848): the folder-page tree in the sidebar. Each case pins ONE locked
  * rule — the roots rule (🔒 D2, amended by YAZ-920), the row gestures (🔒 D3, amended by
  * YAZ-921), the keyboard walk (YAZ-921), the guarded descent (⚡ D6 of YAZ-814) with its own
- * per-level ordering ([D5]), page-path expansion (🔒 D4) and its persistence, and the
- * Uncategorized section (🔒 D7).
+ * per-level ordering ([D5]), page-path expansion (🔒 D4) and its persistence, the Uncategorized
+ * section (🔒 D7), and the drag (YAZ-991) over YAZ-990's engine.
  *
  * THE YAZ-917 WAVE, which every fixture below is now shaped by: Home is a PINNED LEAF (YAZ-920) —
  * it leads the tree, wears a house instead of the folder glyph, counts nothing, offers no chevron
@@ -17,6 +17,15 @@
  * jsdom bridge stub, so the bucket, its patch and its restore are all exercised end to end.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+// The drag's ENGINE is landed and pinned on its own (YAZ-990, `topicsMove.test.ts`): only its ONE
+// write is mocked here, so a confirmed move is observable, while `canDrop` — which decides what
+// this view may even highlight — stays the real thing and can never be re-derived by the test.
+vi.mock('./topicsMove', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./topicsMove')>()),
+  performMove: vi.fn(),
+}))
+
 import { StrictMode, act, useEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MAX_TOPICS_EXPANDED_PAGES, defaultAppState, defaultFolderState, type AppState, type IndexRecord, type WindowIdentity } from '@shared/types'
@@ -24,9 +33,12 @@ import { stripBrackets } from '../views/expr'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { storage } from '../lib/storage'
 import { folderPagesLookup } from '../links/folderPages'
+import { performMove } from './topicsMove'
 import { TopicsTree, allExpandableTopics, topicRoots } from './TopicsTree'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+
+const move = vi.mocked(performMove)
 
 const ROOT = '/vault'
 
@@ -172,6 +184,9 @@ async function mount(over: Partial<OwnedProps> & { source: Props['source'] }) {
     onRowContextMenu: vi.fn(),
     renaming: null,
     creating: null,
+    // The panel's passive notice, handed down from the Sidebar (YAZ-991): the drag's one failure
+    // route, so a confirmed move that never reaches disk cannot vanish silently.
+    onNotice: vi.fn(),
     ...over,
   }
   await act(async () => root?.render(<StrictMode><Controlled {...props} /></StrictMode>))
@@ -840,5 +855,154 @@ describe('the offer card (6C-, YAZ-849): un-adopted AND no Home, and nothing els
     const { el } = await mount({ source: sourceOver([]), unadopted: true })
     expect(card(el)).toBeNull()
     expect(el.textContent).toBe('')
+  })
+})
+
+// ---------------------------------------------------------------- YAZ-991: the drag
+
+describe('the drag (YAZ-991): a row onto a folder-page row, and nothing written before the confirm', () => {
+  const REVENUE = `${ROOT}/Revenue.md`
+  const LOOSE = `${ROOT}/Loose.md`
+
+  /** Drag events bubble like the real thing; jsdom has no DragEvent, so the handlers guard
+      `dataTransfer` (Tree.tsx's idiom, pinned exactly this way in Sidebar.test.tsx). */
+  const fire = async (target: Element | null | undefined, type: string) =>
+    act(async () => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true })))
+  /** Whatever is currently lit as a drop target, by label — the file tree's own `tree__row--drop`. */
+  const dropping = (el: HTMLElement) =>
+    rows(el)
+      .filter((r) => r.classList.contains('tree__row--drop'))
+      .map((r) => r.querySelector('.tree__label')?.textContent ?? '')
+  /** A page stands under EVERY parent that claims it, so a row is picked by OCCURRENCE. */
+  const occurrence = (el: HTMLElement, label: string, at: number) =>
+    rows(el).filter((r) => r.querySelector('.tree__label')?.textContent === label)[at]
+  const sheetText = (el: HTMLElement) => el.querySelector('#confirm-move-text')?.textContent ?? null
+  const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
+
+  beforeEach(() => move.mockReset())
+
+  it('a valid folder-page row lights up; a row the ENGINE refuses never does, and a drop there does nothing', async () => {
+    const { el } = await mount({ source: sourceOver(vault()) })
+    await click(chevrons(el, 'Expand Metrics')[0])
+    await fire(rowFor(el, 'Revenue'), 'dragstart')
+    await fire(rowFor(el, 'Projects'), 'dragover')
+    expect(dropping(el)).toEqual(['Projects'])
+    await fire(rowFor(el, 'Projects'), 'dragleave')
+    expect(dropping(el)).toEqual([])
+    // Churn is a plain page — it holds nobody — and Metrics is Revenue's parent already: both are
+    // `canDrop`'s refusals, asked of the engine and never re-decided here.
+    await fire(rowFor(el, 'Churn'), 'dragover')
+    await fire(rowFor(el, 'Metrics'), 'dragover')
+    expect(dropping(el)).toEqual([])
+    await fire(rowFor(el, 'Churn'), 'drop')
+    expect(sheetText(el)).toBeNull()
+    expect(move).not.toHaveBeenCalled()
+  })
+
+  it('a drop opens the sheet — the page, the parent the ROW came from, the target — and Cancel writes nothing', async () => {
+    const { el } = await mount({ source: sourceOver(vault()) })
+    await click(chevrons(el, 'Expand Metrics')[0])
+    await fire(rowFor(el, 'Revenue'), 'dragstart')
+    await fire(rowFor(el, 'Projects'), 'dragover')
+    await fire(rowFor(el, 'Projects'), 'drop')
+    expect(sheetText(el)).toBe("Move 'Revenue' from 'Metrics' into 'Projects'? The file stays put — only its folder pages change.")
+    expect(dropping(el)).toEqual([]) // the highlight goes with the drag the sheet took over from
+    // While the sheet stands, the keyboard is ITS own: the walk behind it does not rove.
+    await press(sheetBtn(el, 'Cancel') as Element, 'ArrowDown')
+    expect(document.activeElement).toBe(sheetBtn(el, 'Cancel'))
+    await click(sheetBtn(el, 'Cancel') as Element)
+    expect(sheetText(el)).toBeNull()
+    expect(move).not.toHaveBeenCalled()
+  })
+
+  it('confirming runs the engine ONCE — the row\'s own parent as the source, the WINDOW\'s resolver — and moves no row itself', async () => {
+    const records = vault()
+    const { el } = await mount({ source: sourceOver(records) })
+    await click(chevrons(el, 'Expand Metrics')[0])
+    await fire(rowFor(el, 'Revenue'), 'dragstart')
+    await fire(rowFor(el, 'Projects'), 'dragover')
+    await fire(rowFor(el, 'Projects'), 'drop')
+    await click(sheetBtn(el, 'Move') as Element)
+    expect(move).toHaveBeenCalledTimes(1)
+    const [child, from, to, resolve] = move.mock.calls[0]!
+    expect(child).toBe(records.find((r) => r.path === REVENUE))
+    expect(from).toBe(METRICS)
+    // `path` is what a surviving entry must RESOLVE to; `name` is what a new entry is written as.
+    expect(to).toEqual({ path: PROJECTS, name: 'Projects' })
+    // The window's own resolver, not the null stand-in: alias-aware and case-insensitive, every
+    // spelling a click would follow — it is what filters the old parent out of the list.
+    expect(resolve('[[metrics]]')).toBe(METRICS)
+    // No optimistic re-render (YAZ-989): the row stands where it stood until the index echo says
+    // otherwise, and the sheet goes.
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Churn', 'Revenue', 'Projects', 'Uncategorized'])
+    expect(sheetText(el)).toBeNull()
+  })
+
+  it('the SAME page dragged from its OTHER parent leaves THAT one — the row instance decides, not the page', async () => {
+    const ARCHIVE = `${ROOT}/Archive.md`
+    const SHARED = `${ROOT}/Shared.md`
+    const records = [folder(HOME), folder(METRICS, belongs('[[Home]]')), folder(PROJECTS), folder(ARCHIVE), rec(SHARED, belongs('[[Metrics]]', '[[Projects]]'))]
+    const { el } = await mount({ source: sourceOver(records) })
+    await click(chevrons(el, 'Expand Metrics')[0])
+    await click(chevrons(el, 'Expand Projects')[0])
+    expect(labels(el)).toEqual(['Home', 'Archive', 'Metrics', 'Shared', 'Projects', 'Shared'])
+    await fire(occurrence(el, 'Shared', 1), 'dragstart') // the occurrence standing under Projects
+    await fire(rowFor(el, 'Archive'), 'dragover')
+    await fire(rowFor(el, 'Archive'), 'drop')
+    // …and the sheet answers the multi-parent question by name: Metrics is not part of this move.
+    expect(sheetText(el)).toBe(
+      "Move 'Shared' from 'Projects' into 'Archive'? The file stays put — only its folder pages change. It also stays in: Metrics.",
+    )
+    await click(sheetBtn(el, 'Move') as Element)
+    expect(move.mock.calls[0]?.[1]).toBe(PROJECTS)
+  })
+
+  it('a row in Uncategorized has no parent to leave: it confirms with a NULL source', async () => {
+    const records = vault()
+    const { el } = await mount({ source: sourceOver(records) })
+    await click(rowFor(el, 'Uncategorized')!)
+    await fire(rowFor(el, 'Loose'), 'dragstart')
+    await fire(rowFor(el, 'Projects'), 'dragover')
+    expect(dropping(el)).toEqual(['Projects'])
+    await fire(rowFor(el, 'Projects'), 'drop')
+    // Nothing to name as a source, so the sentence names none — and the drop GAINS a belonging.
+    expect(sheetText(el)).toBe("Move 'Loose' into 'Projects'? The file stays put — only its folder pages change.")
+    await click(sheetBtn(el, 'Move') as Element)
+    const [child, from, to] = move.mock.calls[0]!
+    expect(child).toBe(records.find((r) => r.path === LOOSE))
+    expect(from).toBeNull()
+    expect(to).toEqual({ path: PROJECTS, name: 'Projects' })
+  })
+
+  it('the pinned Home and the Uncategorized header are out of the gesture on BOTH sides', async () => {
+    const { el } = await mount({ source: sourceOver(vault()) })
+    expect(rowFor(el, 'Home')?.getAttribute('draggable')).toBe('false')
+    expect(rowFor(el, 'Metrics')?.getAttribute('draggable')).toBe('true')
+    // The muted header has no page behind it at all, so it is not even in the gesture's grammar.
+    expect(rowFor(el, 'Uncategorized')?.getAttribute('draggable')).toBeNull()
+    await click(rowFor(el, 'Uncategorized')!)
+    await fire(rowFor(el, 'Loose'), 'dragstart')
+    // Home IS a folder page and Loose belongs nowhere, so the ENGINE would allow this drop —
+    // the tree refuses it itself (YAZ-920): Home unfolds nothing, so a drop there is a root-drop
+    // in disguise, which v1 does not do.
+    await fire(rowFor(el, 'Home'), 'dragover')
+    await fire(rowFor(el, 'Uncategorized'), 'dragover')
+    expect(dropping(el)).toEqual([])
+    await fire(rowFor(el, 'Home'), 'drop')
+    expect(sheetText(el)).toBeNull()
+    expect(move).not.toHaveBeenCalled()
+  })
+
+  it('a confirmed move that never reaches disk says so through the panel notice — never silence', async () => {
+    move.mockRejectedValueOnce(new Error('EACCES'))
+    const onNotice = vi.fn()
+    const { el } = await mount({ source: sourceOver(vault()), onNotice })
+    await click(rowFor(el, 'Uncategorized')!)
+    await fire(rowFor(el, 'Loose'), 'dragstart')
+    await fire(rowFor(el, 'Projects'), 'dragover')
+    await fire(rowFor(el, 'Projects'), 'drop')
+    await click(sheetBtn(el, 'Move') as Element)
+    expect(onNotice).toHaveBeenCalledWith('Can\'t move "Loose" into "Projects": EACCES')
+    expect(sheetText(el)).toBeNull() // the failure is a notice, never a second dialog
   })
 })

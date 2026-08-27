@@ -68,7 +68,20 @@
  * which all fall through to the same VAULT-ROOT menu the Files lens has always given its blank
  * space, minus "New folder": a disk folder made from the lens that hides disk folders would land
  * where this reading cannot show it. A create started there names no row, so its inline input is
- * drawn at the top of the tree (`rootCreate`). Still no drag.
+ * drawn at the top of the tree (`rootCreate`).
+ *
+ * THE DRAG (YAZ-991, the gesture 🔒 YAZ-959 scopes over YAZ-990's engine): a row is dragged onto a
+ * FOLDER-PAGE row to change what it belongs to — the file tree's HTML5 idiom (`Tree.tsx`), the
+ * same `tree__row--drop` highlight — and it owns not one rule of its own: `canDrop` says which
+ * rows are targets and `performMove` does the ONE write, so this view can never drift from the
+ * engine. A row's SOURCE is the parent it RENDERS UNDER — a page standing under two topics is
+ * dragged out of whichever occurrence you grabbed — and null at the root and in Uncategorized,
+ * where no parent stands above it: that drop gains a belonging instead of swapping one. The
+ * pinned Home is neither dragged nor dropped onto wherever it renders (it descends into nothing,
+ * so a drop there would be a root-drop in disguise), and neither is the Uncategorized header,
+ * which has no page behind it. The drop itself writes NOTHING: it opens `ConfirmMove`, and only
+ * the confirm reaches disk. Nothing re-renders optimistically either — the moved row arrives with
+ * the next index snapshot, like every other change this tree draws.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { MAX_TOPICS_EXPANDED_PAGES, type IndexRecord } from '@shared/types'
@@ -77,10 +90,12 @@ import { folderPageSettings, orderedMembers } from '../views/folderPageSettings'
 import { FolderPageGlyph } from '../views/view/icons'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { folderPagesLookup, guardedChildren, type FolderPagesLookup } from '../links/folderPages'
+import { ConfirmMove } from './ConfirmMove'
 import { CreateInline } from './CreateInline'
 import type { EntryKind } from './createEntry'
 import { HOME_LINK } from './ensureHome'
 import { RenameInline } from './RenameInline'
+import { canDrop, performMove } from './topicsMove'
 import type { PendingRename } from './Tree'
 
 /**
@@ -100,6 +115,17 @@ export interface PendingTopicCreate {
   anchorPath: string | null
   onSubmit: (name: string) => Promise<void>
   onCancel: () => void
+}
+
+/**
+ * A drop waiting on its confirm sheet (YAZ-991): the dragged row, the parent that row rendered
+ * under (null at the root and in Uncategorized) and the folder-page row it landed on. Nothing is
+ * written while this stands — it IS the sheet's whole subject, and Cancel just drops it.
+ */
+interface PendingMove {
+  child: IndexRecord
+  fromPath: string | null
+  target: IndexRecord
 }
 
 export interface TopicsTreeProps {
@@ -137,6 +163,12 @@ export interface TopicsTreeProps {
   renaming: PendingRename | null
   /** The inline create input pending under one row (menu → New note / folder page / folder), or null. */
   creating: PendingTopicCreate | null
+  /**
+   * The sidebar's passive notice (YAZ-991), handed straight down: a confirmed move that fails to
+   * reach disk says so where every other failed file op in this panel says so — never a second
+   * dialog on top of the one just dismissed, and never silence.
+   */
+  onNotice: (message: string) => void
 }
 
 /** Stands in while the index has not landed; only ever paired with an empty snapshot. */
@@ -209,7 +241,7 @@ export function allExpandableTopics(records: readonly IndexRecord[], lookup: Fol
   return found.slice(0, MAX_TOPICS_EXPANDED_PAGES)
 }
 
-export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onOpenFile, onOpenFileBackground, unadopted, onCreateHome, onRowContextMenu, renaming, creating }: TopicsTreeProps) {
+export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onOpenFile, onOpenFileBackground, unadopted, onCreateHome, onRowContextMenu, renaming, creating, onNotice }: TopicsTreeProps) {
   // Subscribe once, re-read the whole feed on each poke; an unchanged snapshot keeps the previous
   // object, so index churn that changed nothing here costs no render (BacklinksSection's idiom).
   const [feed, setFeed] = useState<Feed>(() => ({ records: source.records, resolve: source.resolve }))
@@ -224,6 +256,14 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
   // bucket holds page paths (and is repaired as such on rename), and Uncategorized is not a page.
   // So it stays HERE while the expansion went up — the two are not the same kind of fact.
   const [showOrphans, setShowOrphans] = useState(false)
+
+  // THE DRAG (YAZ-991) lives entirely here — the tree already holds the records, the lookup and
+  // the resolver every step of it asks. The dragged row carries the parent it renders under; the
+  // highlight is keyed by PAGE PATH, like the expansion (🔒 D4), because the drop means the same
+  // thing at every occurrence of a page; and the pending drop is the sheet's whole subject.
+  const [dragging, setDragging] = useState<{ child: IndexRecord; fromPath: string | null } | null>(null)
+  const [dropPath, setDropPath] = useState<string | null>(null)
+  const [moving, setMoving] = useState<PendingMove | null>(null)
 
   const { records, resolve } = feed
   const lookup = useMemo(() => folderPagesLookup(records, resolve ?? NEVER), [records, resolve])
@@ -280,6 +320,68 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
     lookup.isFolderPage(parent) && parent.path !== homePath
       ? orderedMembers(guardedChildren(lookup, parent.path, trail), folderPageSettings(parent), resolve ?? NEVER)
       : []
+
+  /** One page's name for the sheet's copy — the outline's own way of naming a parent by path. */
+  const nameOf = (path: string): string => records.find((record) => record.path === path)?.basename ?? path
+
+  /**
+   * THE DRAG (YAZ-991) on ONE row, `fromPath` being the parent this occurrence renders under:
+   * `Tree.tsx`'s HTML5 idiom exactly — `dataTransfer` guarded, because jsdom's synthetic drags
+   * have none — and the engine's verdict (`canDrop`, never a rule re-derived here) deciding which
+   * rows accept a drop at all. An invalid row simply has no `dragover` handler, so it never
+   * `preventDefault`s and the browser refuses the drop for us. The pinned Home is out of the
+   * gesture on BOTH sides (YAZ-920: it descends into nothing, so a drop there is a root-drop in
+   * disguise, which v1 does not do). The drop opens the sheet and writes nothing.
+   */
+  const dragOn = (member: IndexRecord, fromPath: string | null) => {
+    const pinned = member.path === homePath
+    const target = !pinned && dragging !== null && canDrop(dragging.child, member, lookup).ok
+    return {
+      draggable: !pinned,
+      onDragStart: (e: React.DragEvent) => {
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+        setDragging({ child: member, fromPath })
+      },
+      onDragEnd: () => {
+        setDragging(null)
+        setDropPath(null)
+      },
+      onDragOver: target
+        ? (e: React.DragEvent) => {
+            e.preventDefault() // this row accepts the drop; without it the browser would refuse
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+            if (dropPath !== member.path) setDropPath(member.path)
+          }
+        : undefined,
+      onDragLeave: target
+        ? () => {
+            if (dropPath === member.path) setDropPath(null)
+          }
+        : undefined,
+      onDrop: target
+        ? (e: React.DragEvent) => {
+            e.preventDefault()
+            if (dragging === null) return
+            setMoving({ child: dragging.child, fromPath: dragging.fromPath, target: member })
+            setDragging(null)
+            setDropPath(null)
+          }
+        : undefined,
+    }
+  }
+
+  /** The confirmed move: the engine's ONE write, then the sheet goes. Nothing re-renders here —
+      the index echo carries the new belonging, exactly as it carries every other change. */
+  const runMove = async (move: PendingMove): Promise<void> => {
+    try {
+      await performMove(move.child, move.fromPath, { path: move.target.path, name: move.target.basename }, resolve ?? NEVER)
+    } catch (err: unknown) {
+      // The sidebar's standing route for a failed file op (`setFolderPageFlag`'s idiom, YAZ-840):
+      // the passive notice — never a second dialog on top of the one just dismissed.
+      onNotice(`Can't move "${move.child.basename}" into "${move.target.basename}": ${err instanceof Error ? err.message : String(err)}`)
+    }
+    setMoving(null)
+  }
 
   // A page stands under EVERY parent that claims it (⚡ D6), so one path can own several rows —
   // but an inline input is ONE input: two autofocused ones would fight, the second's mount
@@ -340,10 +442,13 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
           {inlineRename ?? (
             <button
               type="button"
-              className={`tree__row${isFolderPage ? ' tree__row--dir' : ''}${active ? ' tree__row--active' : ''}`}
+              className={`tree__row${isFolderPage ? ' tree__row--dir' : ''}${active ? ' tree__row--active' : ''}${dropPath === member.path ? ' tree__row--drop' : ''}`}
               style={{ paddingLeft: indent }}
               title={member.path}
               data-path={member.path}
+              // The row's SOURCE is the parent it renders under (YAZ-991) — the last ancestor on
+              // this occurrence's trail, and null for a ROOT row, which stands under nobody.
+              {...dragOn(member, ancestors[ancestors.length - 1] ?? null)}
               onClick={(e) => {
                 // The MOUSE half (⚡ YAZ-870, amended by YAZ-921): a click opens AND unfolds
                 // (⌘ says "not now"), and a click on the TOPIC you are already reading toggles
@@ -412,6 +517,10 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
   // click (the rows are buttons), so open/unfold/toggle need no second contract. From outside
   // the rows, ↓ enters at the top and ↑ at the bottom.
   const onTreeKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    // The move sheet stands INSIDE this div (it is the tree's own state), so while it is open the
+    // keyboard is entirely its own (YAZ-991): ↑/↓ must not rove — or ←/→ fold — the rows behind a
+    // modal whose focus lives on Cancel.
+    if (moving !== null) return
     // ←/→ fold and unfold the row underfoot WITHOUT visiting it (Enter is the visit) — the
     // ARIA-tree convention, and the only way to tidy topics mid-walk. Chevron-less leaves
     // (`--none`, and the pathless Uncategorized header) fold nothing.
@@ -475,11 +584,14 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
                       {inline ?? (
                         <button
                           type="button"
-                          className={`tree__row${record.path === activeFile ? ' tree__row--active' : ''}`}
+                          className={`tree__row${record.path === activeFile ? ' tree__row--active' : ''}${dropPath === record.path ? ' tree__row--drop' : ''}`}
                           style={{ paddingLeft: 8 + 14 }}
                           title={record.path}
                           onClick={(e) => open(record.path, e)}
                           onContextMenu={(e) => onRowContextMenu(record.path, e)}
+                          // Nothing stands above an unfiled row, so it is dragged out of NOWHERE
+                          // (YAZ-991): the drop gains a belonging rather than swapping one.
+                          {...dragOn(record, null)}
                         >
                           <span className="tree__chevron tree__chevron--none" />
                           <span className="tree__label">{record.basename}</span>
@@ -493,6 +605,23 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
             )}
           </li>
         </ul>
+      )}
+      {moving !== null && (
+        // 🔒 The drop asks before it writes (YAZ-959): the sheet names the page, the parent this
+        // ROW came from and the topic it landed on — and, because a page can belong to several
+        // folder pages, the ones this move leaves alone. `already-parent` is refused upstream, so
+        // the target itself can never be among them.
+        <ConfirmMove
+          page={moving.child.basename}
+          from={moving.fromPath === null ? null : nameOf(moving.fromPath)}
+          to={moving.target.basename}
+          others={lookup
+            .folderPagesOf(moving.child.path)
+            .filter((path) => path !== moving.fromPath)
+            .map(nameOf)}
+          onConfirm={() => void runMove(moving)}
+          onCancel={() => setMoving(null)}
+        />
       )}
     </div>
   )

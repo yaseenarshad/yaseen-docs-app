@@ -859,6 +859,7 @@ export function Sidebar({
             onRowContextMenu={openTopicsMenu}
             renaming={renaming}
             creating={topicsPending}
+            onNotice={onNotice}
           />
         ) : (
           <>
