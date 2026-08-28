@@ -34,8 +34,9 @@ export interface BoardViewProps {
  * Board view (4D, GRO-2138): `type: board` — OUR schema extension — renders the engine's groups
  * as kanban columns on one horizontally scrolling row. Each column is the shared `GroupHeader`
  * content (chevron, typed value, count, per-column summaries over the SHOWN cards) over the
- * group's cards: `file.name` as the title button → `onOpenFile`, then the view's other `order`
- * properties as small label/value rows typed like table cells. Column width follows `cardSize`
+ * group's cards: `file.name`, when present in `order`, as the title button → `onOpenFile`, then
+ * the view's other `order` properties as small label/value rows typed like table cells. Column
+ * width follows `cardSize`
  * (shared `cardWidth`: a number = px, presets small 220 / medium 280 / large 340, default
  * medium). Collapsing a column hides its cards and
  * keeps the header — same persisted state as the table's groups, never the page's card. Without
@@ -106,9 +107,11 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
                     className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}`}
                     {...dnd.source(row.record.path, g)}
                   >
-                    <button type="button" className="view-board__title" onClick={() => onOpenFile(row.record.path)}>
-                      {nameKey === undefined ? row.record.name : render(row.values[nameKey])}
-                    </button>
+                    {nameKey !== undefined && (
+                      <button type="button" className="view-board__title" onClick={() => onOpenFile(row.record.path)}>
+                        {render(row.values[nameKey])}
+                      </button>
+                    )}
                     {moveError?.path === row.record.path && (
                       <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>
                         Move failed
