@@ -432,6 +432,9 @@
 }
 
 .view-table {
+  --view-table-cell-pad-y: 3px;
+  --view-table-cell-pad-x: 8px;
+
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
@@ -440,7 +443,7 @@
 
 .view-table th,
 .view-table td {
-  padding: 3px 8px;
+  padding: var(--view-table-cell-pad-y) var(--view-table-cell-pad-x);
   overflow: hidden;
   text-align: left;
   text-overflow: ellipsis;
@@ -477,9 +480,57 @@
   height: var(--view-table-row-h, 28px);
 }
 
-.view-table tbody td:focus {
-  outline: 1px solid var(--accent);
+.view-table tbody td:focus,
+.view-table tbody td:has(> .view-cell-edit[data-editing]) {
+  outline-width: 1px;
+  outline-style: solid;
+  outline-color: var(--accent);
   outline-offset: -1px;
+}
+
+/* The real cell remains the only editing boundary; the shared editor simply fills it. */
+.view-table tbody td:has(> .view-cell-edit[data-editing]) {
+  padding: 0;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.view-table tbody td > .view-cell-edit[data-editing] {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: var(--view-table-row-h, 28px);
+  text-align: inherit;
+}
+
+.view-table tbody td > .view-cell-edit[data-editing] .view-cell-edit__input,
+.view-table tbody td > .view-cell-edit[data-editing] .view-cell-edit__link,
+.view-table tbody td > .view-cell-edit[data-editing] .view-cell-edit__chips {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  text-align: inherit;
+}
+
+.view-table tbody td > .view-cell-edit[data-editing] .view-cell-edit__input {
+  padding: var(--view-table-cell-pad-y) var(--view-table-cell-pad-x);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.view-table tbody td > .view-cell-edit[data-editing] .view-cell-edit__chips {
+  flex-wrap: nowrap;
+  padding: var(--view-table-cell-pad-y) var(--view-table-cell-pad-x);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.view-table tbody td > .view-cell-edit[data-editing] .view-cell-edit__chips .view-cell-edit__input {
+  width: auto;
+  padding: 0;
 }
 
 /* The table cell owns mouse activation; double-click/Enter still invoke this control programmatically. */

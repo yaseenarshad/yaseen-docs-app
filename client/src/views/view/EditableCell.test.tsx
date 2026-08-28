@@ -13,6 +13,7 @@ import { parseViews, type ParsedViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderPage } from '../testFolderPage'
 import { TEST_RECORDS } from '../testRecords'
+import '../views.css'
 
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn() }))
 import { writeProperty } from '../writeProperty'
@@ -321,6 +322,107 @@ describe('keyboard flow', () => {
     act(() => cell(el, 0, 1).focus())
     press(cell(el, 0, 1), 'Enter')
     expect(el.querySelector('[aria-label="Edit status"]')).not.toBeNull()
+  })
+
+  it('Enter toggles a checkbox exactly once without exposing edit mode', () => {
+    const { el } = mount(EDIT_BASE)
+    const td = cell(el, 0, 3)
+    act(() => td.focus())
+    press(td, 'Enter')
+    expect(write).toHaveBeenCalledExactlyOnceWith(AGENTIC, 'published', true)
+    expect(q(td, '.view-cell-edit').hasAttribute('data-editing')).toBe(false)
+  })
+})
+
+describe('full table-cell editing surface', () => {
+  it('marks scalar, link and chips roots only while their editor is open', () => {
+    const { el } = mount(EDIT_BASE)
+
+    for (const [column, label] of [
+      [1, 'Edit status'],
+      [6, 'Edit related'],
+      [5, 'Edit tags'],
+    ] as const) {
+      const td = cell(el, 0, column)
+      const closed = q<HTMLElement>(td, '.view-cell-edit')
+      expect(closed.hasAttribute('data-editing')).toBe(false)
+      open(el, 0, column)
+      expect(q<HTMLElement>(td, '.view-cell-edit').getAttribute('data-editing')).toBe('')
+      press(byLabel(el, label), 'Escape')
+      expect(q<HTMLElement>(td, '.view-cell-edit').hasAttribute('data-editing')).toBe(false)
+    }
+
+    expect(q(cell(el, 0, 3), '.view-cell-edit').hasAttribute('data-editing')).toBe(false)
+  })
+
+  it('uses the real td as the full-width square editing boundary without inline geometry', () => {
+    const { el } = mount(EDIT_BASE)
+    const td = cell(el, 0, 1)
+    open(el, 0, 1)
+    const wrapper = q<HTMLElement>(td, '.view-cell-edit[data-editing]')
+    const input = byLabel<HTMLInputElement>(td, 'Edit status')
+    const tdStyle = getComputedStyle(td)
+    const wrapperStyle = getComputedStyle(wrapper)
+    const inputStyle = getComputedStyle(input)
+    const tableStyle = getComputedStyle(q<HTMLElement>(el, '.view-table'))
+
+    expect(tdStyle.padding).toBe('0px')
+    expect(tdStyle.outlineStyle).toBe('solid')
+    expect(tdStyle.outlineWidth).toBe('1px')
+    expect(wrapperStyle.display).toBe('block')
+    expect(wrapperStyle.width).toBe('100%')
+    expect(wrapperStyle.minWidth).toBe('0px')
+    expect(wrapperStyle.height).toBe('var(--view-table-row-h, 28px)')
+    expect(inputStyle.width).toBe('100%')
+    expect(inputStyle.minWidth).toBe('0px')
+    expect(tableStyle.getPropertyValue('--view-table-cell-pad-y').trim()).toBe('3px')
+    expect(tableStyle.getPropertyValue('--view-table-cell-pad-x').trim()).toBe('8px')
+    expect(inputStyle.textAlign).toBe(tdStyle.textAlign)
+    expect(inputStyle.borderTopWidth).toBe('0px')
+    expect(inputStyle.borderRadius).toBe('0px')
+    expect(wrapper.getAttribute('style')).toBeNull()
+    expect(input.getAttribute('style')).toBeNull()
+  })
+
+  it('keeps chips on one contained row and lets completion escape only the active cell', () => {
+    const { el } = mount(EDIT_BASE)
+    const chipsTd = cell(el, 0, 5)
+    open(el, 0, 5)
+    const chips = q<HTMLElement>(chipsTd, '.view-cell-edit__chips')
+    const chipsStyle = getComputedStyle(chips)
+    expect(chipsStyle.flexWrap).toBe('nowrap')
+    expect(chipsStyle.overflowX).toBe('auto')
+    expect(chipsStyle.overflowY).toBe('hidden')
+    expect(chipsStyle.height).toBe('100%')
+    expect(getComputedStyle(q(chipsTd, '.view-cell-edit[data-editing]')).height).toBe('var(--view-table-row-h, 28px)')
+    press(byLabel(chipsTd, 'Edit tags'), 'Escape')
+
+    const linkTd = cell(el, 1, 6)
+    open(el, 1, 6)
+    setValue(byLabel<HTMLInputElement>(linkTd, 'Edit related'), '[[Cre')
+    expect(linkTd.querySelector('.view-cell-edit__complete')).not.toBeNull()
+    expect(getComputedStyle(linkTd).overflow).toBe('visible')
+    expect(getComputedStyle(q(el, '.view-table-wrap')).overflow).toBe('auto')
+  })
+
+  it('leaves cards and lists on the shared compact editor styling', () => {
+    const card = mount('views:\n  - type: cards\n    name: C\n    order:\n      - file.name\n      - note.status\n')
+    click(q(card.el, '.view-card__prop-value [data-edit]'))
+    const cardRoot = q<HTMLElement>(card.el, '.view-card__prop-value .view-cell-edit[data-editing]')
+    const cardInput = byLabel<HTMLInputElement>(card.el, 'Edit status')
+    expect(getComputedStyle(cardRoot).display).toBe('inline-block')
+    expect(getComputedStyle(cardInput).borderRadius).toBe('5px')
+
+    act(() => root?.unmount())
+    container?.remove()
+    const list = mount(
+      'views:\n  - type: list\n    name: L\n    indentProperties: true\n    order:\n      - file.name\n      - note.status\n',
+    )
+    click(q(list.el, '.view-list__prop-value [data-edit]'))
+    const listRoot = q<HTMLElement>(list.el, '.view-list__prop-value .view-cell-edit[data-editing]')
+    const listInput = byLabel<HTMLInputElement>(list.el, 'Edit status')
+    expect(getComputedStyle(listRoot).display).toBe('inline-block')
+    expect(getComputedStyle(listInput).borderRadius).toBe('5px')
   })
 })
 
