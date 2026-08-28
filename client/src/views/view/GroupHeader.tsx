@@ -17,6 +17,14 @@ import { canonicalKey } from './keys'
  */
 export const groupKeyOf = (key: Value | null): string => (key === null ? '∅' : `v:${render(key)}`)
 
+/**
+ * The same identity for an INNER group (YAZ-745), scoped by its outer's so the same inner value
+ * under two outers collapses independently. It is persisted in `baseGroups` like `groupKeyOf`,
+ * so the unit-separator encoding is a contract.
+ */
+export const nestedGroupKeyOf = (outerKey: Value | null, innerKey: Value | null): string =>
+  `${groupKeyOf(outerKey)}\u001f${groupKeyOf(innerKey)}`
+
 /** The stored summary kind for a column, whichever key form (`priority` / `note.priority`) the file uses. */
 export function summaryKindOf(view: ViewDef, key: string): string | undefined {
   const s = view.summaries

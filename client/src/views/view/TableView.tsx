@@ -9,7 +9,7 @@ import { BUILTIN_SUMMARIES, summarize } from '../summaries'
 import { cellEditor, columnTyping } from '../editorType'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, groupKeyOf, summaryKindOf } from './GroupHeader'
+import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf, summaryKindOf } from './GroupHeader'
 import { groupByKey, useGroupDrag } from './groupDrag'
 import { Popover } from './Popover'
 import { frozenColumnCount } from './frozenColumns'
@@ -59,8 +59,8 @@ const OVERSCAN = 10
 /** jsdom and the pre-measure first render have no viewport height; assume one screen. */
 const FALLBACK_VIEWPORT = 600
 
-/** One display line: a group header row, or a data row with its `data-cell` row index (data rows only) and its group (null when ungrouped). */
-type Line = { header: Group; gk: string } | { row: Row; r: number; g: Group | null; gk: string | null }
+/** One display line: a group header row (`nested` = an inner section, YAZ-745), or a data row with its `data-cell` row index (data rows only) and its group (null when ungrouped). */
+type Line = { header: Group; gk: string; nested?: true } | { row: Row; r: number; g: Group | null; gk: string | null }
 
 /** Let a table property-cell double-click activate the shared editor exactly once. */
 function activateEditorFromCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
@@ -141,7 +141,19 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     for (const g of groups) {
       const gk = groupKeyOf(g.key)
       lines.push({ header: g, gk })
-      if (!collapsedSet.has(gk)) for (const row of g.rows) lines.push({ row, r: flat.push(row) - 1, g, gk })
+      if (collapsedSet.has(gk)) continue
+      if (g.children === undefined) {
+        for (const row of g.rows) lines.push({ row, r: flat.push(row) - 1, g, gk })
+        continue
+      }
+      // Two levels (YAZ-745): the merge rule's direct rows sit right under the outer, then one
+      // indented section per child — still ONE flat list, so windowing and nav are untouched.
+      for (const row of g.direct ?? []) lines.push({ row, r: flat.push(row) - 1, g, gk })
+      for (const child of g.children) {
+        const ck = nestedGroupKeyOf(g.key, child.key)
+        lines.push({ header: child, gk: ck, nested: true })
+        if (!collapsedSet.has(ck)) for (const row of child.rows) lines.push({ row, r: flat.push(row) - 1, g: child, gk: ck })
+      }
     }
   }
 
@@ -255,7 +267,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 className={`view-table__group${dnd.over === line.gk ? ' view-table__group--drop' : ''}`}
                 {...dnd.target(line.header)}
               >
-                <td className="view-table__group-cell" colSpan={keys.length}>
+                <td className={`view-table__group-cell${line.nested === true ? ' view-table__group-cell--nested' : ''}`} colSpan={keys.length}>
                   <GroupHeader
                     def={def}
                     view={view}

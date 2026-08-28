@@ -14,7 +14,7 @@ import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/keys'
 import { type GroupSwap, type PendingMove, applyMoves, groupByKey } from './view/groupDrag'
-import { groupKeyOf } from './view/GroupHeader'
+import { groupKeyOf, nestedGroupKeyOf } from './view/GroupHeader'
 import { ListView } from './view/ListView'
 import { OutlineView } from './view/OutlineView'
 import { TableView } from './view/TableView'
@@ -168,8 +168,16 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
   const needle = (search ?? '').trim().toLowerCase()
   const matches = (r: Row) => Object.values(r.values).some((v) => render(v).toLowerCase().includes(needle))
   const rows = needle ? result.rows.filter(matches) : result.rows
-  // Search filters WITHIN each group; a group with no matching rows disappears (4C, GRO-2137).
-  const groups = result.groups === null ? null : needle ? result.groups.map((g) => ({ ...g, rows: g.rows.filter(matches) })).filter((g) => g.rows.length > 0) : result.groups
+  // Search filters WITHIN each group; a group with no matching rows disappears (4C, GRO-2137). A
+  // two-level group (YAZ-745) narrows each branch the same way — emptied children go, and `rows`
+  // stays the union of what is left beneath, so an outer whose whole branch missed drops too.
+  const narrow = (g: Group): Group => {
+    if (g.children === undefined) return { ...g, rows: g.rows.filter(matches) }
+    const children = g.children.map((c) => ({ ...c, rows: c.rows.filter(matches) })).filter((c) => c.rows.length > 0)
+    const direct = (g.direct ?? []).filter(matches)
+    return { ...g, rows: [...direct, ...children.flatMap((c) => c.rows)], children, direct }
+  }
+  const groups = result.groups === null ? null : needle ? result.groups.map(narrow).filter((g) => g.rows.length > 0) : result.groups
 
   // Collapse state lives per `<pagePath>::<viewName>` in the main-owned store — NEVER in the
   // page's own card, so toggling can not touch autosave. Session-only (keyed by view index)
@@ -185,10 +193,12 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
     writeCollapsed(collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key])
   }
   // Collapse / expand all (YAZ-744): every group the VIEW has, not the search-narrowed `groups` —
-  // a group hidden behind an active search must collapse with the rest. Above the store's cap the
-  // toggle hides rather than writing a list `setViewGroups` would silently truncate.
-  const allGroupKeys =
-    result.groups === null || result.groups.length > MAX_COLLAPSED_GROUP_KEYS ? [] : result.groups.map((g) => groupKeyOf(g.key))
+  // a group hidden behind an active search must collapse with the rest. Two levels (YAZ-745) go in
+  // document order, each outer before its children, and it is the KEY count that meets the store's
+  // cap: above it the toggle hides rather than writing a list `setViewGroups` would truncate.
+  const groupKeys =
+    result.groups === null ? [] : result.groups.flatMap((g) => [groupKeyOf(g.key), ...(g.children ?? []).map((c) => nestedGroupKeyOf(g.key, c.key))])
+  const allGroupKeys = groupKeys.length > MAX_COLLAPSED_GROUP_KEYS ? [] : groupKeys
 
   // A drop on a board column / table section (5C, GRO-2143): optimistic move now, one-key write
   // through 5A; a failed write drops the move (the card snaps back) and flags the card instead.

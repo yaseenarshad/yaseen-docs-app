@@ -675,6 +675,13 @@
   max-width: 100%;
 }
 
+/* an inner section (YAZ-745) is one 28px step in from the cell's 8px padding edge. The indent
+   rides the sticky offset, not cell padding: the cluster pins at `left` while the table scrolls
+   horizontally (YAZ-1043-46), so a padded one would slide back onto the outer's 8px. */
+.view-table__group-cell--nested > .view-group {
+  left: 36px;
+}
+
 .view-group {
   display: flex;
   gap: 8px;
