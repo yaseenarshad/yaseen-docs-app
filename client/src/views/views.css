@@ -596,7 +596,7 @@
 
 /* ---------- grouped table (4C) ---------- */
 
-.view-table__group-cell {
+.view-table td.view-table__group-cell {
   overflow: visible;
 }
 

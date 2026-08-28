@@ -186,8 +186,10 @@ test('step 4 — a grouped label stays left even when no data columns are frozen
   await contents(win).locator('.view-tab__btn[role="tab"]', { hasText: 'Table' }).click()
 
   await expect(table().locator('.view-table__frozen')).toHaveCount(0)
-  const group = table().locator('.view-table__group-cell > .view-group').first()
+  const groupCell = table().locator('.view-table__group-cell').first()
+  const group = groupCell.locator(':scope > .view-group')
   await expect(group).toBeVisible()
+  await expect(groupCell).toHaveCSS('overflow', 'visible')
   expect(await group.evaluate((node) => ({ position: getComputedStyle(node).position, left: getComputedStyle(node).left }))).toEqual({
     position: 'sticky',
     left: '8px',
