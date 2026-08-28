@@ -8,6 +8,7 @@ import { createWikilinkCandidateSource } from './editor/wikilink/wikilinkPicker'
 import { createWikilinkResolveSource } from './editor/wikilink/wikilinkPlugin'
 import { useProperties } from './views/useProperties'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
+import { useGithubSync } from './hooks/useGithubSync'
 import { useLinkEvents } from './hooks/useLinkEvents'
 import { useMenuEvents } from './hooks/useMenuEvents'
 import { usePickFolder } from './hooks/usePickFolder'
@@ -17,6 +18,7 @@ import { useExternalRenames } from './links/useExternalRenames'
 import { basename } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { storage } from './lib/storage'
+import { attentionCopy, buildSetupPrompt } from './lib/syncAttention'
 import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
 import { windowTitle } from './lib/windowTitle'
@@ -64,6 +66,24 @@ export function App() {
   // ONE per window, threaded down rather than re-fetched per surface. It is the editor ladder's
   // rung 2 inside a folder page's contents block (YAZ-846) — Editor → FolderPageContents.
   const { properties: propertyDecls } = useProperties(root)
+  // GitHub sync (YAZ-1081 3A/3B), owned here for the same reason: ONE per window. Two surfaces
+  // read it — the editor's chip (every mounted tab) and the settings cog's section — and they
+  // must never disagree, which two hooks watching the same root eventually would.
+  const githubSync = useGithubSync(root)
+  // The attention banner (3B): passive, exactly like the external-rename one — `role="status"`,
+  // explicit buttons, never a modal. Sync failing is not worth stealing focus over; the vault
+  // still works, and the note in front of the user is untouched.
+  //
+  // Dismissal is per-PROBLEM, not per-session: it resets on ANY transition of state or reason,
+  // so a retry that fails again — or a different failure — says so rather than staying silent
+  // because the user waved off an earlier one.
+  const [syncDismissed, setSyncDismissed] = useState(false)
+  const syncState = githubSync.status?.state ?? null
+  const syncReason = githubSync.status?.attention ?? null
+  useEffect(() => {
+    setSyncDismissed(false)
+  }, [syncState, syncReason])
+  const syncCopy = githubSync.status === null ? null : attentionCopy(githubSync.status)
   // ⌘K's half of the search-bar focus handshake (YAZ-801, wired in YAZ-804): `openSearch` sets it
   // (including the collapsed case, which un-collapses and mounts the sidebar with the flag already
   // true); the sidebar focuses its input and clears it through the callback.
@@ -441,6 +461,24 @@ export function App() {
           </button>
         </div>
       )}
+      {/* 3B: sync needs attention. Two of the five reasons are things this app cannot fix from
+          inside itself (git missing, credentials rejected), so the offer is a prompt to paste
+          into any LLM — an assistant that CAN drive the terminal — rather than a wizard. */}
+      {syncCopy !== null && !syncDismissed && root !== null && githubSync.status !== null && (
+        <div className="sync-banner" role="status">
+          <span className="sync-banner__text">
+            <strong>{syncCopy.title}</strong> {syncCopy.body}
+          </span>
+          {syncCopy.showSetupPrompt && (
+            <button type="button" onClick={() => void navigator.clipboard.writeText(buildSetupPrompt(root, githubSync.status?.attention ?? 'error'))}>
+              Copy setup prompt
+            </button>
+          )}
+          <button type="button" onClick={() => setSyncDismissed(true)}>
+            Dismiss
+          </button>
+        </div>
+      )}
       {root !== null && !sidebarCollapsed && (
         <Sidebar
           key={root}
@@ -472,6 +510,9 @@ export function App() {
           // 6C's offer (YAZ-849): the fact and the button, both App's, both straight through.
           unadopted={unadopted}
           onCreateHome={createHome}
+          // ONE useGithubSync per window (above): the cog's section and the editor's chip read
+          // the same status, so they can never disagree about what this vault is doing.
+          sync={{ status: githubSync.status, setEnabled: githubSync.setEnabled }}
         />
       )}
       {root !== null && !sidebarCollapsed && <div className={`sidebar-resize${resizing ? ' sidebar-resize--active' : ''}`} aria-hidden onMouseDown={startSidebarResize} />}
@@ -491,14 +532,14 @@ export function App() {
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
           <TabBar tabs={tabs} active={file} onActivate={activate} onClose={closeTab} onMove={moveTab} canBack={canBack} canForward={canForward} onBack={back} onForward={forward} onShowInSidebar={showInSidebar} onNotice={setNotice} />
           <div className="tabstack">
-            {mounted.length === 0 && <Editor root={root} path={null} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={propertyDecls} onRenameFile={requestRename} />}
+            {mounted.length === 0 && <Editor root={root} path={null} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={propertyDecls} onRenameFile={requestRename} sync={githubSync.status} onSyncNow={githubSync.syncNow} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility — see tabs.css
               // for why display:none would lose scroll positions.
               <div key={path} className={path === file ? 'tabstack__layer' : 'tabstack__layer tabstack__layer--hidden'}>
                 {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → openCurrent, ⌘ → openBackground; create failures land in the link-notice. */}
-                <Editor root={root} path={path} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={propertyDecls} onRenameFile={requestRename} />
+                <Editor root={root} path={path} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={propertyDecls} onRenameFile={requestRename} sync={githubSync.status} onSyncNow={githubSync.syncNow} />
               </div>
             ))}
           </div>

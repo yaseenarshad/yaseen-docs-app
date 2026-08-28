@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import { fileKind } from '@shared/fileKind'
-import { SIDEBAR_LENSES, type SettingsState, type SidebarLens, type TreeNode, type TreeResponse } from '@shared/types'
+import { SIDEBAR_LENSES, type GithubSyncStatus, type SettingsState, type SidebarLens, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import type { IndexRecord } from '@shared/types'
 import { folderPageSettings } from '../views/folderPageSettings'
@@ -109,6 +109,12 @@ interface SidebarProps {
   unadopted: boolean
   /** The offer card's button; App creates Home and opens it. */
   onCreateHome: () => void
+  /**
+   * GitHub sync (YAZ-1081 3B), straight through to the settings cog: App owns the ONE
+   * `useGithubSync` this window has, because the chip in the editor reads the same one.
+   * Absent → the cog renders without a GitHub Sync section.
+   */
+  sync?: { status: GithubSyncStatus | null; setEnabled: (enabled: boolean) => void }
 }
 
 /**
@@ -278,6 +284,7 @@ export function Sidebar({
   onSearchFocusHandled,
   unadopted,
   onCreateHome,
+  sync,
 }: SidebarProps) {
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -952,7 +959,7 @@ export function Sidebar({
         )}
       </div>
       <div className="sidebar__footer">
-        <SettingsCog settings={settings} onChange={onChangeSettings} />
+        <SettingsCog settings={settings} onChange={onChangeSettings} sync={sync} />
         <HotkeysButton />
       </div>
       {menu !== null && (

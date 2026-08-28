@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { FileApi, LinkApi, MenuApi, PropertiesApi, ShellApi, StateApi, VaultConfigApi, WatchEvent, WindowApi, YaseenDocsApi } from '@shared/types'
+import type { FileApi, GithubApi, GithubSyncStatus, LinkApi, MenuApi, PropertiesApi, ShellApi, StateApi, VaultConfigApi, WatchEvent, WindowApi, YaseenDocsApi } from '@shared/types'
 import { CH } from '../channels'
 
 const exposed: Record<string, unknown> = {}
@@ -13,7 +13,7 @@ vi.mock('electron', () => ({
  * typecheck. `as const satisfies` keeps each tuple's literal type (a plain `readonly (keyof T)[]`
  * annotation would widen it and make `Exhaustive<>` vacuous) while still rejecting typos.
  */
-const TOP = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'coldDiff', 'readAsset', 'writeAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'file', 'shell', 'vaultConfig', 'properties'] as const satisfies readonly (keyof YaseenDocsApi)[]
+const TOP = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'coldDiff', 'readAsset', 'writeAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'file', 'shell', 'vaultConfig', 'properties', 'github'] as const satisfies readonly (keyof YaseenDocsApi)[]
 const STATE = ['get', 'setSettings', 'setSidebarCollapsed', 'setSidebarWidth', 'setSidebarLens', 'pushRecent', 'removeRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange'] as const satisfies readonly (keyof StateApi)[]
 const WINDOW = ['identity', 'setIdentity', 'open', 'duplicate', 'closeSelf', 'onFlush'] as const satisfies readonly (keyof WindowApi)[]
 const MENU = ['onOpenFolder', 'onOpenRoot', 'onSearch', 'onCloseTab', 'onNextTab', 'onPrevTab'] as const satisfies readonly (keyof MenuApi)[]
@@ -22,6 +22,7 @@ const FILE = ['rename', 'repairRename', 'onRenamed', 'delete', 'onDeleted'] as c
 const SHELL = ['reveal', 'openVsCode'] as const satisfies readonly (keyof ShellApi)[]
 const VAULT_CONFIG = ['read', 'write', 'onChange'] as const satisfies readonly (keyof VaultConfigApi)[]
 const PROPERTIES = ['get', 'setProperty', 'removeProperty', 'onChange'] as const satisfies readonly (keyof PropertiesApi)[]
+const GITHUB = ['status', 'syncNow', 'setEnabled', 'onStatus'] as const satisfies readonly (keyof GithubApi)[]
 type Exhaustive<T, K extends readonly (keyof T)[]> = Exclude<keyof T, K[number]> extends never ? true : never
 const _top: Exhaustive<YaseenDocsApi, typeof TOP> = true
 const _state: Exhaustive<StateApi, typeof STATE> = true
@@ -32,7 +33,8 @@ const _file: Exhaustive<FileApi, typeof FILE> = true
 const _shell: Exhaustive<ShellApi, typeof SHELL> = true
 const _vaultConfig: Exhaustive<VaultConfigApi, typeof VAULT_CONFIG> = true
 const _properties: Exhaustive<PropertiesApi, typeof PROPERTIES> = true
-void [_top, _state, _window, _menu, _link, _file, _shell, _vaultConfig, _properties]
+const _github: Exhaustive<GithubApi, typeof GITHUB> = true
+void [_top, _state, _window, _menu, _link, _file, _shell, _vaultConfig, _properties, _github]
 
 describe('preload bridge', () => {
   it('installs window.yaseenDocs with every contract method', async () => {
@@ -48,6 +50,30 @@ describe('preload bridge', () => {
     for (const k of SHELL) expect(typeof api.shell[k], `shell.${k}`).toBe('function')
     for (const k of VAULT_CONFIG) expect(typeof api.vaultConfig[k], `vaultConfig.${k}`).toBe('function')
     for (const k of PROPERTIES) expect(typeof api.properties[k], `properties.${k}`).toBe('function')
+    for (const k of GITHUB) expect(typeof api.github[k], `github.${k}`).toBe('function')
+  })
+
+  it('github.setEnabled invokes github:set-enabled with the root and the flag (YAZ-1081)', async () => {
+    const { ipcRenderer } = await import('electron')
+    vi.mocked(ipcRenderer.invoke).mockResolvedValueOnce({ ok: true, value: { root: '/v', state: 'synced' } })
+    const { bridge } = await import('./index')
+    await expect(bridge.github.setEnabled('/v', true)).resolves.toEqual({ root: '/v', state: 'synced' })
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.githubSetEnabled, '/v', true)
+  })
+
+  it('forwards github:status-changed payloads to the listener and unsubscribes cleanly (YAZ-1081)', async () => {
+    const { ipcRenderer } = await import('electron')
+    const { bridge } = await import('./index')
+    const listener = vi.fn()
+    const off = bridge.github.onStatus(listener)
+    const calls = vi.mocked(ipcRenderer.on).mock.calls.filter(([ch]) => ch === CH.githubStatusChanged)
+    const call = calls[calls.length - 1]
+    expect(call).toBeDefined()
+    const emit = call?.[1] as unknown as (e: unknown, status: GithubSyncStatus) => void
+    emit(undefined, { root: '/v', state: 'pending' })
+    expect(listener).toHaveBeenCalledWith({ root: '/v', state: 'pending' })
+    off()
+    expect(vi.mocked(ipcRenderer.removeListener).mock.calls.some(([ch, l]) => ch === CH.githubStatusChanged && l === emit)).toBe(true)
   })
 
   it('forwards link:open-file paths to the listener and unsubscribes cleanly (E1, GRO-2171)', async () => {

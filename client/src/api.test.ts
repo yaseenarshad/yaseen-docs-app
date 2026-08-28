@@ -24,6 +24,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     shell: vi.fn(),
     vaultConfig: vi.fn(),
     properties: vi.fn(),
+    github: vi.fn(),
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return bridge
@@ -117,6 +118,25 @@ describe('api', () => {
     const err = (await api.properties.setProperty('/v', 'unit', { kind: 'text' }).catch((e: unknown) => e)) as BridgeRequestError
     expect(err).toBeInstanceOf(BridgeRequestError)
     expect(err.code).toBe('INVALID_CONFIG')
+  })
+
+  it('github calls delegate and pass the status through, onStatus included (YAZ-1081)', async () => {
+    const github = { status: vi.fn(), syncNow: vi.fn(), setEnabled: vi.fn(), onStatus: vi.fn() }
+    Object.defineProperty(window.yaseenDocs, 'github', { value: github, configurable: true })
+    github.status.mockResolvedValue({ root: '/v', state: 'off' })
+    await expect(api.github.status('/v')).resolves.toEqual({ root: '/v', state: 'off' })
+    expect(github.status).toHaveBeenCalledWith('/v')
+    github.setEnabled.mockResolvedValue({ root: '/v', state: 'synced' })
+    await expect(api.github.setEnabled('/v', true)).resolves.toEqual({ root: '/v', state: 'synced' })
+    expect(github.setEnabled).toHaveBeenCalledWith('/v', true)
+    await api.github.syncNow('/v')
+    expect(github.syncNow).toHaveBeenCalledWith('/v')
+    // onStatus is a pass-through, not a `call` wrapper: the unsubscribe must survive it.
+    const off = () => {}
+    github.onStatus.mockReturnValue(off)
+    const listener = vi.fn()
+    expect(api.github.onStatus(listener)).toBe(off)
+    expect(github.onStatus).toHaveBeenCalledWith(listener)
   })
 
   it('a BridgeError without path / mtime leaves those fields undefined', async () => {

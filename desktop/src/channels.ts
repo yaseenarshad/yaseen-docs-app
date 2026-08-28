@@ -53,6 +53,10 @@ export const CH = {
   propertiesSetProperty: 'properties:set-property',
   propertiesRemoveProperty: 'properties:remove-property',
   propertiesChanged: 'properties:changed',
+  githubStatus: 'github:status',
+  githubSyncNow: 'github:sync-now',
+  githubSetEnabled: 'github:set-enabled',
+  githubStatusChanged: 'github:status-changed',
   appFlush: 'app:flush',
   appFlushed: 'app:flushed',
 } as const

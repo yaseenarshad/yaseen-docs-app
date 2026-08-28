@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppState, FileDeletedEvent, FileRenamedEvent, PropertiesResponse, VaultConfigChange, WatchEvent, YaseenDocsApi } from '@shared/types'
+import type { AppState, FileDeletedEvent, FileRenamedEvent, GithubSyncStatus, PropertiesResponse, VaultConfigChange, WatchEvent, YaseenDocsApi } from '@shared/types'
 import { CH, type Envelope } from '../channels'
 
 /** invoke + unwrap: resolves the value or rejects with the plain `BridgeError` object. */
@@ -123,6 +123,13 @@ const api: YaseenDocsApi = {
     read: (root, name) => call(CH.vaultConfigRead, root, name),
     write: (root, name, value) => call(CH.vaultConfigWrite, root, name, value),
     onChange: on<VaultConfigChange>(CH.vaultConfigChanged),
+  },
+  // Per-vault GitHub sync over `.yaseendocs/github.json` (YAZ-1081); every window gets every status.
+  github: {
+    status: (root) => call(CH.githubStatus, root),
+    syncNow: (root) => call(CH.githubSyncNow, root),
+    setEnabled: (root, enabled) => call(CH.githubSetEnabled, root, enabled),
+    onStatus: on<GithubSyncStatus>(CH.githubStatusChanged),
   },
 }
 
