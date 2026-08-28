@@ -156,6 +156,15 @@ function installBridge(state: AppState, identity: WindowIdentity, files: Record<
       get: vi.fn(async (r: string) => ({ root: r, version: 1, properties: {} })),
       onChange: vi.fn(() => () => undefined),
     },
+    // Sync off (YAZ-1081 3A): App owns one `useGithubSync`, which subscribes on mount. `off` is
+    // the real default for a vault nobody switched on — no chip state to assert here, and no
+    // attention banner. The sync UI's own tests are SyncIndicator/SettingsPanel/syncAttention.
+    github: {
+      status: vi.fn(async (r: string) => ({ root: r, state: 'off' as const })),
+      syncNow: vi.fn(async (r: string) => ({ root: r, state: 'off' as const })),
+      setEnabled: vi.fn(async (r: string) => ({ root: r, state: 'off' as const })),
+      onStatus: vi.fn(() => () => undefined),
+    },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return {

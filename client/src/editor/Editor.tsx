@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { FileResponse, PropertiesResponse } from '@shared/types'
+import type { FileResponse, GithubSyncStatus, PropertiesResponse } from '@shared/types'
 import { api } from '../api'
 import { createDrawing } from '../drawings/createDrawing'
 import { DrawingModal } from '../drawings/DrawingModal'
@@ -19,6 +19,7 @@ import './outline/guideLines.css'
 import './outline/bulletThreading.css'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { SaveIndicator } from './SaveIndicator'
+import { SyncIndicator } from './SyncIndicator'
 import { useAutosave } from '../hooks/useAutosave'
 import { useFile } from '../hooks/useFile'
 import type { WatchSource } from '../hooks/useWatch'
@@ -61,9 +62,17 @@ interface EditorProps {
    * with it. Absent → the title renders and edits, but commits nothing (decoration-only mounts).
    */
   onRenameFile?: (oldPath: string, newPath: string) => void
+  /**
+   * This vault's GitHub sync status (YAZ-1081 3A, 🔒 D5), App-owned like `wikilinks`: ONE
+   * `useGithubSync` per window feeds every mounted tab. null while the first fetch is in
+   * flight — and undefined for mounts with no sync at all — so the chip simply does not render.
+   */
+  sync?: GithubSyncStatus | null
+  /** The chip's click (it IS the sync button); App passes `useGithubSync`'s `syncNow`. */
+  onSyncNow?: () => void
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileBackground, onNotice, createBase, wikilinks, wikilinkCandidates, properties, onRenameFile }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileBackground, onNotice, createBase, wikilinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow }: EditorProps) {
   const state = useFile(path)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   return (
@@ -72,7 +81,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileBackground, on
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} />
+        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} />
       )}
     </section>
   )
@@ -91,6 +100,8 @@ function CrepeHost({
   wikilinkCandidates,
   properties,
   onRenameFile,
+  sync,
+  onSyncNow,
 }: {
   root: string
   file: FileResponse
@@ -103,6 +114,8 @@ function CrepeHost({
   wikilinkCandidates?: WikilinkCandidateSource
   properties?: PropertiesResponse | null
   onRenameFile?: (oldPath: string, newPath: string) => void
+  sync?: GithubSyncStatus | null
+  onSyncNow?: () => void
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   // The live Crepe instance, for ArrowDown out of the title (⚡ YAZ-888) — the same
@@ -236,7 +249,13 @@ function CrepeHost({
 
   return (
     <>
-      <SaveIndicator status={autosave.status} />
+      {/* Two chips, one row (YAZ-1081 🔒 D5): the vault-wide sync chip sits immediately LEFT of
+          the per-tab save state. The row owns the top-right placement; each chip only styles
+          itself. The tab bar is not touched. */}
+      <div className="status-chips">
+        {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
+        <SaveIndicator status={autosave.status} />
+      </div>
       {autosave.conflictMtime !== null && (
         <div className="conflict-bar" role="alert">
           <span>File changed on disk.</span>

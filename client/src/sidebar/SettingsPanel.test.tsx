@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_SETTINGS, type SettingsState } from '@shared/types'
+import { DEFAULT_SETTINGS, type GithubSyncStatus, type SettingsState } from '@shared/types'
 import { SettingsCog } from './SettingsPanel'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -17,14 +17,18 @@ import { SettingsCog } from './SettingsPanel'
 let root: Root | null = null
 let container: HTMLElement | null = null
 
-function mount(settings: SettingsState) {
+function mount(settings: SettingsState, syncStatus?: GithubSyncStatus | null) {
   const onChange = vi.fn()
+  const setEnabled = vi.fn()
+  // `undefined` (the argument omitted) means no GitHub Sync section at all; an explicit `null`
+  // is the section present with its first status fetch still in flight.
+  const sync = syncStatus === undefined ? undefined : { status: syncStatus, setEnabled }
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<SettingsCog settings={settings} onChange={onChange} />))
+  act(() => root?.render(<SettingsCog settings={settings} onChange={onChange} sync={sync} />))
   act(() => container?.querySelector<HTMLButtonElement>('.settings__cog')?.click())
-  return { onChange, el: container }
+  return { onChange, setEnabled, el: container }
 }
 
 /** The Appearance row: first labelled row of the panel. */
@@ -129,5 +133,85 @@ describe('SettingsCog Files & Links section (Links C2-, GRO-2240)', () => {
     typeFolder(input, '  ')
     pressEnter(input)
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, newNoteLocation: 'folder', newNoteFolder: '' })
+  })
+})
+
+/**
+ * GitHub Sync (YAZ-1081 3B): the one section NOT backed by `SettingsState` — the switch lives
+ * per-vault in `.yaseendocs/github.json`, so it reads and writes through the engine. The panel
+ * therefore has no config prop: the STATUS is the switch's read-back, and the hint states what
+ * we detected about the repo rather than telling the user what they already know.
+ */
+/** Found through the section's own label, not by index: "Confirm before deleting" shares the options-row class. */
+const syncRow = (el: HTMLElement) => [...el.querySelectorAll('.settings__label')].find((l) => l.textContent === 'Sync this vault to GitHub')?.nextElementSibling ?? null
+const syncButtons = (el: HTMLElement) => [...(syncRow(el)?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
+const syncHint = (el: HTMLElement) => syncRow(el)?.nextElementSibling?.textContent
+const status = (extra: Partial<GithubSyncStatus> = {}): GithubSyncStatus => ({ root: '/vault', state: 'off', ...extra })
+
+describe('SettingsCog GitHub Sync section (YAZ-1081 3B)', () => {
+  it('is absent entirely when App passes no sync — the panel is unchanged for mounts without it', () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS })
+    expect([...el.querySelectorAll('.settings__section')].map((s) => s.textContent)).toEqual(['Files & Links'])
+    expect([...el.querySelectorAll('.settings__label')].map((l) => l.textContent)).not.toContain('Sync this vault to GitHub')
+  })
+
+  it('renders under its own heading with an On/Off row when the prop is there', () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status())
+    expect([...el.querySelectorAll('.settings__section')].map((s) => s.textContent)).toEqual(['Files & Links', 'GitHub Sync'])
+    expect([...el.querySelectorAll('.settings__label')].map((l) => l.textContent)).toContain('Sync this vault to GitHub')
+    expect(syncButtons(el).map((b) => b.textContent)).toEqual(['On', 'Off'])
+  })
+
+  it('an `off` status marks Off active', () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status())
+    expect(syncButtons(el).map((b) => b.classList.contains('settings__option--active'))).toEqual([false, true])
+  })
+
+  it.each(['synced', 'pending', 'syncing', 'attention'] as const)('an enabled `%s` status marks On active — the engine-stamped `enabled` is the read-back', (state) => {
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status({ state, enabled: true }))
+    expect(syncButtons(el).map((b) => b.classList.contains('settings__option--active'))).toEqual([true, false])
+  })
+
+  it('an enabled vault that is not syncable yet (`enabled` + `state: off` — no repo/remote) still reads On, so the click never looks ignored', () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status({ enabled: true }))
+    expect(syncButtons(el).map((b) => b.classList.contains('settings__option--active'))).toEqual([true, false])
+  })
+
+  it('a null status (first fetch in flight) reads as Off — the safe default, never an optimistic On', () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS }, null)
+    expect(syncButtons(el).map((b) => b.classList.contains('settings__option--active'))).toEqual([false, true])
+  })
+
+  it('clicking On calls setEnabled(true) and writes no SettingsState — this switch is not one of those', () => {
+    const { el, setEnabled, onChange } = mount({ ...DEFAULT_SETTINGS }, status())
+    syncButtons(el)[0].click()
+    expect(setEnabled).toHaveBeenCalledExactlyOnceWith(true)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('clicking Off calls setEnabled(false)', () => {
+    const { el, setEnabled } = mount({ ...DEFAULT_SETTINGS }, status({ state: 'synced' }))
+    syncButtons(el)[1].click()
+    expect(setEnabled).toHaveBeenCalledExactlyOnceWith(false)
+  })
+
+  it('a detected remote is stated as fact: repo and branch', () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status({ state: 'synced', repo: { remoteUrl: 'git@github.com:me/notes.git', branch: 'main' } }))
+    expect(syncHint(el)).toBe('repo git@github.com:me/notes.git · branch main')
+  })
+
+  it('a repo whose branch could not be read still names the remote', () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status({ repo: { remoteUrl: 'https://github.com/me/notes', branch: null } }))
+    expect(syncHint(el)).toBe('repo https://github.com/me/notes · branch —')
+  })
+
+  it('a repo with no remote points at GitHub Desktop rather than growing a remote-setup flow', () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status({ repo: { remoteUrl: null, branch: 'main' } }))
+    expect(syncHint(el)).toBe('This folder is a git repo with no GitHub remote — add one with GitHub Desktop, then turn sync on.')
+  })
+
+  it('a folder that is not a repo at all says so', () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status())
+    expect(syncHint(el)).toBe("This folder isn't a git repo — set it up with GitHub Desktop, then turn sync on.")
   })
 })

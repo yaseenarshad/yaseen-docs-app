@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { THREAD_WIDTHS, isValidNewNoteFolder, type NewNoteLocation, type SettingsState, type Theme } from '@shared/types'
+import { THREAD_WIDTHS, isValidNewNoteFolder, type GithubSyncStatus, type NewNoteLocation, type SettingsState, type Theme } from '@shared/types'
 
 /** Obsidian's Appearance control and order (Desktop K, GRO-2218); App resolves and applies it. */
 const THEME_OPTIONS: Array<{ label: string; value: Theme }> = [
@@ -39,17 +39,36 @@ const NEW_NOTE_LOCATION_OPTIONS: Array<{ label: string; value: NewNoteLocation }
   { label: 'In the folder specified below', value: 'folder' },
 ]
 
+/**
+ * What we DETECTED about this vault's repo (YAZ-1081 3B), stated as fact rather than advice.
+ * The two not-ready cases name GitHub Desktop deliberately: setting a remote up is a job for
+ * the tool the user already has, not a flow this app should grow.
+ */
+function repoHint(status: GithubSyncStatus | null): string {
+  const repo = status?.repo
+  if (repo === undefined) return "This folder isn't a git repo — set it up with GitHub Desktop, then turn sync on."
+  if (repo.remoteUrl === null) return 'This folder is a git repo with no GitHub remote — add one with GitHub Desktop, then turn sync on.'
+  return `repo ${repo.remoteUrl} · branch ${repo.branch ?? '—'}`
+}
+
 interface SettingsCogProps {
   settings: SettingsState
   onChange: (next: SettingsState) => void
+  /**
+   * GitHub sync (YAZ-1081 3B), optional because it is the ONE setting that is not part of
+   * `SettingsState`: the switch lives per-vault in `.yaseendocs/github.json`, so it is read and
+   * written through the engine rather than the app-wide settings object. Absent → no section.
+   */
+  sync?: { status: GithubSyncStatus | null; setEnabled: (enabled: boolean) => void }
 }
 
 /**
  * Cog pinned to the sidebar footer; opens the settings popover above it (GRO-2024).
  * Sections: Appearance/spacing/threading rows, then Files & Links (C2-, GRO-2240) — the
- * rollup home for Obsidian-modeled file/link settings; today: default location for new notes.
+ * rollup home for Obsidian-modeled file/link settings; today: default location for new notes —
+ * then GitHub Sync (YAZ-1081 3B): the per-vault switch plus the repo facts we detected.
  */
-export function SettingsCog({ settings, onChange }: SettingsCogProps) {
+export function SettingsCog({ settings, onChange, sync }: SettingsCogProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -229,6 +248,32 @@ export function SettingsCog({ settings, onChange }: SettingsCogProps) {
               }}
               onBlur={(e) => commitFolder(e.target.value)}
             />
+          )}
+          {sync !== undefined && (
+            <>
+              <p className="settings__section">GitHub Sync</p>
+              <p className="settings__label">Sync this vault to GitHub</p>
+              <div className="settings__options">
+                {[
+                  { label: 'On', value: true },
+                  { label: 'Off', value: false },
+                ].map(({ label, value }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    // `status.enabled` is the switch's honest read-back, stamped by the engine —
+                    // NOT `state`, which is `off` for a vault that is enabled but has no repo or
+                    // remote yet (the hint below explains those). A null status — first fetch
+                    // still in flight — reads as Off, the safe default.
+                    className={`settings__option${(sync.status?.enabled === true) === value ? ' settings__option--active' : ''}`}
+                    onClick={() => sync.setEnabled(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="settings__hint">{repoHint(sync.status)}</p>
+            </>
           )}
         </div>
       )}
