@@ -14,11 +14,15 @@
  * SILENTLY — `setOutlineFoldSet(..., { silent: true })`, which leaves ⌘Z panic-undo pointing at
  * whatever it pointed at before. `close()` puts every one of them back EXCEPT the ones hiding the
  * active match: the search hands the reader a landing, not a re-opened outline.
+ * Collapsed HEADING sections (YAZ-1140) hide matches the same way and get the same treatment, on
+ * their own books: two revealed sets, never merged, because the two kinds are separate plugin
+ * states and each must be handed back only its own positions.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type EditorState, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
+import { collapsedHeadingsHiding, setHeadingFoldSet } from '../outline/headingFolding'
 import { collapsedItemsHiding, setOutlineFoldSet } from '../outline/outlineFolding'
 import { getZoomedItemPos } from '../outline/zoom'
 import type { FindChannel, FindController, FindResult } from './findChannel'
@@ -40,18 +44,20 @@ interface FindState {
   activeIndex: number
   /** Items THIS search expanded; `close()` re-collapses all but the active match's. */
   revealed: ReadonlySet<number>
+  /** The same, for heading sections (YAZ-1140) — kept apart: the two plugins own different positions. */
+  revealedHeadings: ReadonlySet<number>
 }
 
 type FindMeta =
   | { type: 'query'; query: string }
   | { type: 'step'; delta: 1 | -1 }
-  | { type: 'revealed'; revealed: ReadonlySet<number> }
+  | { type: 'revealed'; revealed: ReadonlySet<number>; revealedHeadings: ReadonlySet<number> }
   | { type: 'clear' }
 
 /** Shared across instances: a PluginKey only identifies the plugin within one EditorState. */
 const findKey = new PluginKey<FindState>('mdapp-find-in-page')
 
-const EMPTY: FindState = { query: '', matches: [], activeIndex: -1, revealed: new Set() }
+const EMPTY: FindState = { query: '', matches: [], activeIndex: -1, revealed: new Set(), revealedHeadings: new Set() }
 
 /**
  * The block's text as runs of ADJACENT text nodes, each with its absolute start. Marks split text
@@ -112,6 +118,10 @@ const nextActive = (previous: FindState, meta: FindMeta | undefined, matches: re
   return index === -1 ? 0 : index
 }
 
+/** One revealed set across a transaction: the freshly reported one, else the old one mapped through any doc change. */
+const carryRevealed = (transaction: Transaction, reported: ReadonlySet<number> | undefined, previous: ReadonlySet<number>): ReadonlySet<number> =>
+  reported ?? (transaction.docChanged ? new Set([...previous].map((pos) => transaction.mapping.map(pos, 1))) : previous)
+
 /** The engine behind the channel's commands. Every step is metadata-only, and synchronous. */
 const createController = (view: EditorView): FindController => {
   const findState = (): FindState => findKey.getState(view.state) ?? EMPTY
@@ -129,24 +139,40 @@ const createController = (view: EditorView): FindController => {
   const fold = (positions: readonly number[], collapsed: boolean): void => {
     setOutlineFoldSet(positions, collapsed, { silent: true })(view.state, view.dispatch)
   }
+  const foldHeadings = (positions: readonly number[], collapsed: boolean): void => {
+    setHeadingFoldSet(positions, collapsed, { silent: true })(view.state, view.dispatch)
+  }
   /** The collapsed items hiding any of `positions`, as the document stands right now. */
   const hiders = (positions: readonly number[]): Set<number> => {
     const found = new Set<number>()
     for (const pos of positions) for (const item of collapsedItemsHiding(view.state, pos)) found.add(item)
     return found
   }
+  /** The same, for collapsed heading sections. */
+  const headingHiders = (positions: readonly number[]): Set<number> => {
+    const found = new Set<number>()
+    for (const pos of positions) for (const heading of collapsedHeadingsHiding(view.state, pos)) found.add(heading)
+    return found
+  }
+  const differs = (next: ReadonlySet<number>, previous: ReadonlySet<number>): boolean =>
+    next.size !== previous.size || [...next].some((pos) => !previous.has(pos))
   /**
    * Re-collapse what the search opened, then open what still hides a match: one pass covers both
    * the reveal and the re-collapse of an item the query has moved off. Both transactions land in
-   * the same synchronous turn, so the outline is never rendered half-way.
+   * the same synchronous turn, so the outline is never rendered half-way. Bullets and headings ride
+   * along together — a match can be hidden by either kind, or by both at once.
    */
   const reveal = (): void => {
-    const previous = findState().revealed
-    fold([...previous], true)
-    const revealed = hiders(findState().matches.map((match) => match.from))
+    const previous = findState()
+    fold([...previous.revealed], true)
+    foldHeadings([...previous.revealedHeadings], true)
+    const positions = findState().matches.map((match) => match.from)
+    const revealed = hiders(positions)
+    const revealedHeadings = headingHiders(positions)
     fold([...revealed], false)
-    if (revealed.size !== previous.size || [...revealed].some((pos) => !previous.has(pos)))
-      dispatchMeta({ type: 'revealed', revealed })
+    foldHeadings([...revealedHeadings], false)
+    if (differs(revealed, previous.revealed) || differs(revealedHeadings, previous.revealedHeadings))
+      dispatchMeta({ type: 'revealed', revealed, revealedHeadings })
   }
   /** jsdom has no `scrollIntoView` and the contract runs there, so the call stays optional. */
   const scrollToActive = (): void => {
@@ -170,11 +196,15 @@ const createController = (view: EditorView): FindController => {
       return result()
     },
     close: () => {
-      const { revealed } = findState()
+      const { revealed, revealedHeadings } = findState()
       const match = activeMatch()
       fold([...revealed], true)
+      foldHeadings([...revealedHeadings], true)
       // The landing stays open: whatever hides the active match is opened straight back.
-      if (match !== null) fold([...hiders([match.from])], false)
+      if (match !== null) {
+        fold([...hiders([match.from])], false)
+        foldHeadings([...headingHiders([match.from])], false)
+      }
       const transaction = view.state.tr.setMeta(findKey, { type: 'clear' } satisfies FindMeta)
       if (match !== null) transaction.setSelection(TextSelection.create(transaction.doc, match.from))
       view.dispatch(transaction)
@@ -196,15 +226,16 @@ const findPlugin = (channel: FindChannel) =>
             const query = meta?.type === 'query' ? meta.query : previous.query
             // Matches are RECOMPUTED, not mapped: an edit creates and destroys them, not just moves them.
             const recompute = meta?.type === 'query' || (transaction.docChanged && query !== '')
-            const revealed =
-              meta?.type === 'revealed'
-                ? meta.revealed
-                : transaction.docChanged
-                  ? new Set([...previous.revealed].map((pos) => transaction.mapping.map(pos, 1)))
-                  : previous.revealed
-            if (meta === undefined && !recompute && revealed === previous.revealed) return previous
+            const revealed = carryRevealed(transaction, meta?.type === 'revealed' ? meta.revealed : undefined, previous.revealed)
+            const revealedHeadings = carryRevealed(
+              transaction,
+              meta?.type === 'revealed' ? meta.revealedHeadings : undefined,
+              previous.revealedHeadings,
+            )
+            if (meta === undefined && !recompute && revealed === previous.revealed && revealedHeadings === previous.revealedHeadings)
+              return previous
             const matches = recompute ? findMatches(newState.doc, query, zoomedRange(transaction, oldState, newState)) : previous.matches
-            return { query, matches, activeIndex: nextActive(previous, meta, matches, newState.selection.from), revealed }
+            return { query, matches, activeIndex: nextActive(previous, meta, matches, newState.selection.from), revealed, revealedHeadings }
           },
         },
         props: {

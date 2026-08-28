@@ -13,6 +13,7 @@ import { PageTitle } from './PageTitle'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import './outline/outlineFolding.css'
+import './outline/headingFolding.css'
 import './outline/bullets.css'
 import './outline/zoom.css'
 import './outline/guideLines.css'
@@ -148,13 +149,29 @@ function CrepeHost({
     el.className = 'editor-instance'
     host.appendChild(el)
     const { frontmatter, body } = splitFrontmatter(file.content)
+    const storedFolds = storage.getFolds(root, file.path)
+    let bulletFoldKeys: readonly string[] = storedFolds.filter((k) => !k.startsWith('h:'))
+    let headingFoldKeys: readonly string[] = storedFolds.filter((k) => k.startsWith('h:'))
+    // One bucket, two writers (D3): each plugin reports its own keys; the union write means neither
+    // can wipe the other's. Heading keys are 'h:'-prefixed by the plugin itself, so they can't collide.
+    const writeFolds = () => storage.setFolds(root, file.path, [...bulletFoldKeys, ...headingFoldKeys])
     const crepe = createCrepe({
       root: el,
       defaultValue: body,
       onMarkdownUpdated: (md) => controller?.update(md),
       folding: {
-        initialCollapsedKeys: new Set(storage.getFolds(root, file.path)),
-        onCollapsedKeysChange: (keys) => storage.setFolds(root, file.path, keys),
+        initialCollapsedKeys: new Set(bulletFoldKeys),
+        onCollapsedKeysChange: (keys) => {
+          bulletFoldKeys = keys
+          writeFolds()
+        },
+      },
+      headingFolding: {
+        initialCollapsedKeys: new Set(headingFoldKeys),
+        onCollapsedKeysChange: (keys) => {
+          headingFoldKeys = keys
+          writeFolds()
+        },
       },
       zoom: { fileName: basename(file.path) },
       // Stable per window (App-owned): index updates flow INSIDE the sources, never remounting us.

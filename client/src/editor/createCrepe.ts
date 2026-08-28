@@ -59,6 +59,9 @@
  *  - CMD+F find (YAZ-968, `find/findInPage.ts`): matches + highlight decorations + fold-reveal,
  *    driven through the `FindChannel` the host also gives the find bar. Registered only when
  *    `opts.find` supplies that channel; every transaction it makes is metadata-only.
+ *  - Heading folding (YAZ-1140, `outline/headingFolding.ts` + `.css`): an H1-H3 chevron collapses
+ *    the heading's section — its following sibling blocks up to the next same-or-shallower heading
+ *    — through widget + node decorations only; metadata-only transactions, markdown untouched.
  *  - Outline paste (YAZ-937, `outlinePaste.ts`): a pasted Slack/Docs outline of `•`/`◦`/`■` glyphs
  *    is translated to real markdown before it lands, so it arrives as a nested list instead of a
  *    column of paragraphs. Registered as a DIRECT `handlePaste` prop — direct props run before
@@ -85,6 +88,8 @@ import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
 import { guideLines } from './outline/guideLines'
 import { numberChildrenRow } from './outline/numberChildrenRow'
+import { createHeadingFolding, type HeadingFoldingOptions } from './outline/headingFolding'
+import { headingHotkeys } from './outline/headingHotkeys'
 import { obsidianHotkeys } from './outline/hotkeys'
 import { outlinerKeymap } from './outline/listCommands'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
@@ -101,6 +106,8 @@ export interface CreateCrepeOptions {
   onMarkdownUpdated?: (markdown: string) => void
   /** Fold state for collapsible parent bullets: restore from / report to the caller (persisted per file). */
   folding?: OutlineFoldingOptions
+  /** Fold state for collapsible heading sections (YAZ-1140): same contract as `folding`, its own `h:`-prefixed key space. */
+  headingFolding?: HeadingFoldingOptions
   /** Zoom into a bullet (GRO-2029); `fileName` is the root breadcrumb. Defaults to an unnamed file. */
   zoom?: ZoomOptions
   /** CMD+F channel (YAZ-968): the host's one channel per mount, shared with the find bar. Absent → no find engine at all. */
@@ -200,6 +207,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(listItemRoundTrip)
   crepe.editor.use(underline)
   crepe.editor.use(createOutlineFolding(opts.folding))
+  crepe.editor.use(createHeadingFolding(opts.headingFolding))
   if (opts.find !== undefined) crepe.editor.use(createFindInPage(opts.find))
   crepe.editor.use(createOutlineZoom(opts.zoom ?? { fileName: 'Untitled' }))
   crepe.editor.use(guideLines)
@@ -220,6 +228,13 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // equal priorities in addition order — an OPEN [[ picker takes Enter, closed falls through.
   crepe.editor.use(wikilinkPickerKeymap)
   crepe.editor.use(outlinerKeymap)
+  // Beside obsidianHotkeys, the other half of the fold keymap. Both bind Mod-z at priority 100 and
+  // handlers run in registration order, but the order does not decide the winner: each fold plugin
+  // drops its pending undo the moment the OTHER kind's view action goes by (viewActions.ts), so at
+  // most one of them ever has a fold to revert and the other declines. Mod-ArrowUp/Down is
+  // order-independent too — the bullet handler consumes only inside list items, and the heading
+  // handler declines there.
+  crepe.editor.use(headingHotkeys)
   crepe.editor.use(obsidianHotkeys)
   crepe.editor.use(escapeToSidebar)
   crepe.editor.use(zoomKeymap)

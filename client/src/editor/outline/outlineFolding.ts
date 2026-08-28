@@ -10,8 +10,9 @@
  * Persistence is by stable fold key (see outlineFoldKeys.ts), not by position.
  * ⌘Z panic-undo (GRO-2075): the state also remembers the most recent fold action while it is
  * the latest USER action; `undoLastFold` (bound to Mod-z in hotkeys.ts) reverts exactly that.
- * A zoom (zoom.ts) is a view action too: it clears the pending fold undo (GRO-2091 B, see
- * viewActions.ts), so ⌘Z always reverts the single latest view action of either kind.
+ * Any other view action — a zoom (zoom.ts) or a heading fold (headingFolding.ts, YAZ-1140) —
+ * clears the pending fold undo (GRO-2091 B, see viewActions.ts), so ⌘Z always reverts the
+ * single latest view action of any kind.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
@@ -260,10 +261,11 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
             // transactions (e.g. Crepe's trailing paragraph) are not user actions: they keep the
             // pending fold alive, with positions mapped through their doc change.
             const appended = transaction.getMeta('appendedTransaction') !== undefined
+            const viewAction: unknown = transaction.getMeta(VIEW_ACTION_META)
             let lastToggle = previousState.lastToggle
             if (transaction.docChanged && !appended) lastToggle = null
-            // A zoom is the newer view action now (GRO-2091 B): ⌘Z belongs to it, not to this fold.
-            else if (transaction.getMeta(VIEW_ACTION_META) === 'zoom') lastToggle = null
+            // A newer view action of another kind — a zoom or a heading fold (YAZ-1140) — owns ⌘Z now.
+            else if (viewAction !== undefined && viewAction !== 'fold') lastToggle = null
             else if (transaction.docChanged && lastToggle !== null) {
               lastToggle =
                 lastToggle.kind === 'toggle'

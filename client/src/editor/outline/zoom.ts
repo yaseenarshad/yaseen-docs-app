@@ -299,8 +299,9 @@ export const createOutlineZoom = ({ fileName }: ZoomOptions) =>
               return { ...previous, itemPos: meta, undoLevel: transaction.getMeta(UNDO_META) ? undefined : previous.itemPos }
             }
             let { itemPos, undoLevel } = previous
-            // A fold is the newer view action now: ⌘Z belongs to it (viewActions.ts).
-            if (transaction.getMeta(VIEW_ACTION_META) === 'fold') undoLevel = undefined
+            // A newer view action of another kind — a bullet or heading fold (YAZ-1140) — owns ⌘Z now (viewActions.ts).
+            const viewAction: unknown = transaction.getMeta(VIEW_ACTION_META)
+            if (viewAction !== undefined && viewAction !== 'zoom') undoLevel = undefined
             if (transaction.docChanged) {
               // User edits hand ⌘Z back to history; plugin-appended transactions (Crepe's trailing
               // paragraph) are not user actions and only map the remembered position.
