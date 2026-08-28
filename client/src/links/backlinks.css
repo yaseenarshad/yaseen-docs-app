@@ -8,7 +8,7 @@
 
 .backlinks {
   width: 100%;
-  max-width: 1040px;
+  max-width: var(--content-max-width);
   margin: 0 auto;
   padding: 0 48px 64px;
 }

@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
-import { THREAD_WIDTHS, isValidNewNoteFolder, type GithubSyncStatus, type NewNoteLocation, type SettingsState, type Theme } from '@shared/types'
+import { THREAD_WIDTHS, isValidNewNoteFolder, type ContentWidth, type GithubSyncStatus, type NewNoteLocation, type SettingsState, type Theme } from '@shared/types'
 
 /** Obsidian's Appearance control and order (Desktop K, GRO-2218); App resolves and applies it. */
 const THEME_OPTIONS: Array<{ label: string; value: Theme }> = [
   { label: 'System', value: 'system' },
   { label: 'Light', value: 'light' },
   { label: 'Dark', value: 'dark' },
+]
+
+/** Global reading-surface width presets (YAZ-1176); App owns their exact CSS mapping. */
+const CONTENT_WIDTH_OPTIONS: Array<{ label: string; value: ContentWidth }> = [
+  { label: 'Narrow', value: 'narrow' },
+  { label: 'Medium', value: 'medium' },
+  { label: 'Full', value: 'full' },
 ]
 
 /** Google-Docs-style presets (GRO-2024 D4). blockGap is per-side padding: visual gap = 2×. */
@@ -121,6 +128,19 @@ export function SettingsCog({ settings, onChange, sync }: SettingsCogProps) {
                 type="button"
                 className={`settings__option${settings.theme === value ? ' settings__option--active' : ''}`}
                 onClick={() => onChange({ ...settings, theme: value })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="settings__label">Content width</p>
+          <div className="settings__row">
+            {CONTENT_WIDTH_OPTIONS.map(({ label, value }) => (
+              <button
+                key={value}
+                type="button"
+                className={`settings__option${settings.contentWidth === value ? ' settings__option--active' : ''}`}
+                onClick={() => onChange({ ...settings, contentWidth: value })}
               >
                 {label}
               </button>

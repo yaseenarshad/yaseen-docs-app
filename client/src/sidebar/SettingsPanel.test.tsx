@@ -33,6 +33,8 @@ function mount(settings: SettingsState, syncStatus?: GithubSyncStatus | null) {
 
 /** The Appearance row: first labelled row of the panel. */
 const appearanceButtons = (el: HTMLElement) => [...el.querySelectorAll('.settings__row')[0].querySelectorAll('button')]
+/** Content width follows Appearance and uses the same compact segmented control. */
+const contentWidthButtons = (el: HTMLElement) => [...el.querySelectorAll('.settings__row')[1].querySelectorAll('button')]
 
 afterEach(() => {
   act(() => root?.unmount())
@@ -59,6 +61,27 @@ describe('SettingsCog Appearance row (Desktop K, GRO-2218)', () => {
   it('marks Dark active when the stored theme is dark', () => {
     const { el } = mount({ ...DEFAULT_SETTINGS, theme: 'dark' })
     expect(appearanceButtons(el).map((b) => b.classList.contains('settings__option--active'))).toEqual([false, false, true])
+  })
+})
+
+describe('SettingsCog Content width row (YAZ-1176)', () => {
+  it('offers Narrow · Medium · Full in that order, with Narrow active by default', () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS })
+    expect(el.querySelectorAll('.settings__label')[1].textContent).toBe('Content width')
+    const buttons = contentWidthButtons(el)
+    expect(buttons.map((b) => b.textContent)).toEqual(['Narrow', 'Medium', 'Full'])
+    expect(buttons.map((b) => b.classList.contains('settings__option--active'))).toEqual([true, false, false])
+  })
+
+  it('clicking Full writes the whole settings object with only contentWidth changed', () => {
+    const { onChange, el } = mount({ ...DEFAULT_SETTINGS })
+    contentWidthButtons(el)[2].click()
+    expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, contentWidth: 'full' })
+  })
+
+  it('marks Medium active when the stored content width is medium', () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS, contentWidth: 'medium' })
+    expect(contentWidthButtons(el).map((b) => b.classList.contains('settings__option--active'))).toEqual([false, true, false])
   })
 })
 
