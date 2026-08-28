@@ -337,6 +337,44 @@ describe('the chrome is the views chrome, minus what a folder page cannot have',
   })
 })
 
+// ---------- the default view (YAZ-1104) ----------
+
+describe('the default view: a saved START, while which view is ACTIVE stays session state', () => {
+  it('a page with a defaultView opens on that view — and opening writes nothing', () => {
+    const el = mount(FUNNELS, vault({ ...SETTINGS, defaultView: 'Table' }))
+    expect(el.querySelector('.view-table')).not.toBeNull()
+    expect(el.querySelector('.view-outline')).toBeNull()
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  it('a stale saved name falls back to the first view, silently', () => {
+    const el = mount(FUNNELS, vault({ ...SETTINGS, defaultView: 'Ghost' }))
+    expect(el.querySelector('.view-outline')).not.toBeNull()
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  it('setDefaultView is ONE whole-key write carrying the name', async () => {
+    mount(FUNNELS)
+    act(() => captured.folderPage!.setDefaultView('Table'))
+    await flush()
+    expect(write).toHaveBeenCalledExactlyOnceWith(FUNNELS, 'folder_page_settings', {
+      ...SETTINGS,
+      views: [...SETTINGS.views, BOARD],
+      defaultView: 'Table',
+    })
+  })
+
+  it('setDefaultView(undefined) clears the key from the card', async () => {
+    mount(FUNNELS, vault({ ...SETTINGS, defaultView: 'Table' }))
+    act(() => captured.folderPage!.setDefaultView(undefined))
+    await flush()
+    expect(write).toHaveBeenCalledTimes(1)
+    const value = write.mock.calls[0][2] as Record<string, unknown>
+    expect(value).not.toHaveProperty('defaultView')
+    expect(value).toEqual({ ...SETTINGS, views: [...SETTINGS.views, BOARD] })
+  })
+})
+
 // ---------- the adapter (🔒 D3) ----------
 
 describe('config edits are ONE settings write on the folder page', () => {

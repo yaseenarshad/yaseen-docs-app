@@ -20,6 +20,9 @@ export function testFolderPage(over: Partial<FolderPageMode> = {}): FolderPageMo
     setColumns: () => {
       throw new Error('this test did not expect a column write')
     },
+    setDefaultView: () => {
+      throw new Error('this test did not expect a default-view write')
+    },
     ...over,
   }
 }

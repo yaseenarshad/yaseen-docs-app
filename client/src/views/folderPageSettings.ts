@@ -38,6 +38,8 @@ export interface FolderPageSettings {
   columns: Record<string, ColumnDecl>
   /** The parking bin for new members — undefined when absent OR unusable at rest. */
   folder?: string
+  /** View NAME a fresh open starts on (YAZ-1104) — undefined (or a stale name) means the first view. */
+  defaultView?: string
   /** Never empty: `DEFAULT_VIEWS` when the key declares none usable. `ViewDef` verbatim. */
   views: ViewDef[]
   /** Human one-liners a surface can show. Never thrown, never written back. */
@@ -123,6 +125,14 @@ function readFolder(raw: unknown, problems: string[]): string | undefined {
   return undefined
 }
 
+/** The saved starting view's NAME. Any string reads verbatim — staleness is the pane's concern. */
+function readDefaultView(raw: unknown, problems: string[]): string | undefined {
+  if (raw === undefined) return undefined
+  if (typeof raw === 'string') return raw
+  problems.push(`${SETTINGS_KEY}.defaultView must be a view name — ignoring it`)
+  return undefined
+}
+
 /** One folder page's config, as read off its frontmatter. Safe on ANY record, flagged or not. */
 export function folderPageSettings(record: IndexRecord): FolderPageSettings {
   return folderPageSettingsOf(record.properties)
@@ -142,6 +152,7 @@ export function folderPageSettingsOf(properties: Record<string, unknown>): Folde
   return {
     columns: readColumns(raw.columns, problems),
     folder: readFolder(raw.folder, problems),
+    defaultView: readDefaultView(raw.defaultView, problems),
     views: readViews(raw.views, problems),
     problems,
   }
@@ -279,6 +290,7 @@ function plain(settings: FolderPageSettings): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   if (Object.keys(settings.columns).length > 0) out.columns = settings.columns
   if (settings.folder !== undefined) out.folder = settings.folder
+  if (settings.defaultView !== undefined) out.defaultView = settings.defaultView
   out.views = settings.views
   return out
 }
