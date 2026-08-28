@@ -28,6 +28,8 @@ interface SidebarStubProps {
   lens: SidebarLens
   onLensChange: (lens: SidebarLens) => void
   onCollapse: () => void
+  revealRequest?: { id: number; path: string; lens: SidebarLens }
+  onRevealConsumed?: (id: number) => void
   /** 6C (YAZ-849): App's per-vault verdict + the offer card's button, both threaded to Topics. */
   unadopted: boolean
   onCreateHome: () => void
@@ -416,6 +418,54 @@ describe('App sidebar lens (🔒 D4, YAZ-847)', () => {
     act(() => el.querySelector<HTMLButtonElement>('.sidebar-reopen')?.click())
     expect(el.querySelector('[data-sidebar]')).not.toBeNull()
     expect(captured.sidebar?.lens).toBe('files')
+  })
+})
+
+describe('App Show in sidebar request ownership (YAZ-1023)', () => {
+  const rightClick = (target: Element) =>
+    act(() => void target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })))
+  const showInSidebar = (el: HTMLElement) =>
+    [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((item) => item.textContent === 'Show in sidebar')
+
+  it('opens a collapsed sidebar on the captured lens and targets an inactive tab without activating it', async () => {
+    const { bridge, el } = await mount(
+      { ...defaultAppState(), sidebarCollapsed: true, sidebarLens: 'files' },
+      { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] },
+    )
+    rightClick(el.querySelectorAll('.tabbar__tab')[1]!)
+    act(() => showInSidebar(el)?.click())
+    expect(bridge.state.setSidebarCollapsed).toHaveBeenCalledWith(false)
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: '/v/b.md', lens: 'files' })
+    expect(el.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('a')
+  })
+
+  it('gives repeated requests for the same path a new identity', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    const tab = el.querySelector('.tabbar__tab')!
+    rightClick(tab)
+    act(() => showInSidebar(el)?.click())
+    expect(captured.sidebar?.revealRequest?.id).toBe(1)
+    rightClick(tab)
+    act(() => showInSidebar(el)?.click())
+    expect(captured.sidebar?.revealRequest).toEqual({ id: 2, path: '/v/a.md', lens: 'topics' })
+  })
+
+  it('consumes handled work without replaying it after collapse/reopen, while later gestures keep monotonic IDs', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    rightClick(el.querySelector('.tabbar__tab')!)
+    act(() => showInSidebar(el)?.click())
+    expect(captured.sidebar?.revealRequest?.id).toBe(1)
+    act(() => captured.sidebar?.onRevealConsumed?.(1))
+    expect(captured.sidebar?.revealRequest).toBeNull()
+
+    act(() => captured.sidebar?.onCollapse())
+    act(() => el.querySelector<HTMLButtonElement>('.sidebar-reopen')?.click())
+    expect(captured.sidebar?.revealRequest).toBeNull()
+
+    rightClick(el.querySelector('.tabbar__tab')!)
+    act(() => showInSidebar(el)?.click())
+    expect(captured.sidebar?.revealRequest?.id).toBe(2)
   })
 })
 

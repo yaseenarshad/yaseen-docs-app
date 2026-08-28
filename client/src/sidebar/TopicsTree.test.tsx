@@ -34,7 +34,7 @@ import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wiki
 import { storage } from '../lib/storage'
 import { folderPagesLookup } from '../links/folderPages'
 import { performMove } from './topicsMove'
-import { TopicsTree, allExpandableTopics, topicRoots } from './TopicsTree'
+import { TopicsTree, allExpandableTopics, topicRevealPlan, topicRoots } from './TopicsTree'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -187,6 +187,7 @@ async function mount(over: Partial<OwnedProps> & { source: Props['source'] }) {
     // The panel's passive notice, handed down from the Sidebar (YAZ-991): the drag's one failure
     // route, so a confirmed move that never reaches disk cannot vanish silently.
     onNotice: vi.fn(),
+    revealRequest: null,
     ...over,
   }
   await act(async () => root?.render(<StrictMode><Controlled {...props} /></StrictMode>))
@@ -216,6 +217,67 @@ const focused = (el: HTMLElement) => rows(el).find((r) => r === document.activeE
 
 beforeEach(async () => {
   await initStorage()
+})
+
+describe('Show in sidebar reveal planning (YAZ-1064)', () => {
+  const SHARED = `${ROOT}/Shared.md`
+
+  it('unions only the ancestor topics needed for every multi-parent occurrence', () => {
+    const records = [
+      folder(HOME),
+      folder(METRICS, belongs('[[Home]]')),
+      folder(PROJECTS),
+      rec(SHARED, belongs('[[Metrics]]', '[[Projects]]')),
+      folder(`${ROOT}/Archive.md`),
+    ]
+    const resolve = resolverOver(records)
+    expect(topicRevealPlan(records, folderPagesLookup(records, resolve), resolve, SHARED)).toEqual({
+      found: true,
+      ancestors: [METRICS, PROJECTS],
+      uncategorized: false,
+    })
+  })
+
+  it('adds no expansion for a root and routes an undrawn note only to Uncategorized', () => {
+    const records = vault()
+    const resolve = resolverOver(records)
+    const lookup = folderPagesLookup(records, resolve)
+    expect(topicRevealPlan(records, lookup, resolve, METRICS)).toEqual({ found: true, ancestors: [], uncategorized: false })
+    expect(topicRevealPlan(records, lookup, resolve, `${ROOT}/Loose.md`)).toEqual({ found: true, ancestors: [], uncategorized: true })
+    expect(topicRevealPlan(records, lookup, resolve, `${ROOT}/Missing.md`)).toEqual({ found: false, ancestors: [], uncategorized: false })
+  })
+
+  it('opens the union for all occurrences while preserving an unrelated closed topic', async () => {
+    const SHARED_TOPIC = `${ROOT}/Shared Topic.md`
+    const LEAF = `${ROOT}/Leaf.md`
+    const ARCHIVE = `${ROOT}/Archive.md`
+    const records = [
+      folder(HOME),
+      folder(METRICS, belongs('[[Home]]')),
+      folder(PROJECTS),
+      folder(ARCHIVE),
+      folder(SHARED_TOPIC, belongs('[[Metrics]]', '[[Projects]]')),
+      rec(LEAF, belongs('[[Shared Topic]]')),
+      rec(`${ROOT}/Hidden.md`, belongs('[[Archive]]')),
+    ]
+    const { el } = await mount({ source: sourceOver(records), revealRequest: { id: 1, path: LEAF, lens: 'topics' } })
+    const revealed = rows(el).filter((row) => row.dataset.path === LEAF)
+    expect(revealed).toHaveLength(2)
+    expect(revealed.every((row) => row.classList.contains('tree__row--revealed'))).toBe(true)
+    expect(labels(el)).not.toContain('Hidden')
+  })
+
+  it('opens only Uncategorized when that is the target note\'s sole location', async () => {
+    const { el } = await mount({ source: sourceOver(vault()), revealRequest: { id: 1, path: `${ROOT}/Loose.md`, lens: 'topics' } })
+    expect(rowFor(el, 'Loose')?.classList.contains('tree__row--revealed')).toBe(true)
+    expect(labels(el)).not.toContain('Revenue')
+    expect(labels(el)).not.toContain('Churn')
+  })
+
+  it('reports one passive notice after a coherent Topics feed cannot show the path', async () => {
+    const { props } = await mount({ source: sourceOver(vault()), revealRequest: { id: 1, path: `${ROOT}/Missing.md`, lens: 'topics' } })
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t show "Missing.md" in Topics — it is no longer there')
+  })
 })
 
 afterEach(() => {

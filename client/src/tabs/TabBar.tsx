@@ -18,6 +18,8 @@ export interface TabBarProps {
   canForward: boolean
   onBack: () => void
   onForward: () => void
+  /** Reveal this exact tab in the sidebar without activating it. */
+  onShowInSidebar?: (path: string) => void
   /**
    * Where a failed OS action says so (YAZ-963) — App's passive notice. Optional: a mount with
    * nowhere to show one loses the message, never the gesture.
@@ -47,7 +49,7 @@ const Chevron = ({ d }: { d: string }) => (
  * nowhere to go — buttons only, per LOCKED ruling D2: no shortcut, no menu item.
  * Presentational only — all state changes go through the `useTabs` callbacks.
  */
-export function TabBar({ tabs, active, onActivate, onClose, onMove, canBack, canForward, onBack, onForward, onNotice }: TabBarProps) {
+export function TabBar({ tabs, active, onActivate, onClose, onMove, canBack, canForward, onBack, onForward, onShowInSidebar, onNotice }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
   // and since YAZ-963 that row's OS actions too (Reveal in Finder, Open in VS Code).
@@ -176,6 +178,17 @@ export function TabBar({ tabs, active, onActivate, onClose, onMove, canBack, can
       </div>
       {menu !== null && (
         <ContextMenuSurface x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
+          <button
+            type="button"
+            className="ctx-menu__item"
+            role="menuitem"
+            onClick={() => {
+              onShowInSidebar?.(menu.path)
+              setMenu(null)
+            }}
+          >
+            Show in sidebar
+          </button>
           <button
             type="button"
             className="ctx-menu__item"

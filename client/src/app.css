@@ -14,6 +14,8 @@
   --bg-hover-row: #e9e9ec;
   /* Directory rows in the tree: a touch softer than --fg. */
   --fg-dir: #444444;
+  --reveal-bg: #ffe36e;
+  --reveal-fg: #2d2500;
   /* Amber notice family: conflict bar + link-notice toast. */
   --notice-fg: #6b4e00;
   --notice-bg: #fff7df;
@@ -42,6 +44,8 @@
   --bg-hover: #333336;
   --bg-hover-row: #303034;
   --fg-dir: #b8b8bd;
+  --reveal-bg: #d9b72a;
+  --reveal-fg: #1e1900;
   --notice-fg: #e6c878;
   --notice-bg: #3a300f;
   --notice-border: #5c4d1d;
@@ -1400,6 +1404,13 @@ button {
 
 .tree__row--active:hover {
   background: var(--accent-soft);
+}
+
+.tree__row--revealed,
+.tree__row--revealed:hover,
+.tree__row--revealed:focus-visible {
+  background: var(--reveal-bg);
+  color: var(--reveal-fg);
 }
 
 /* Drag-a-file-onto-a-folder (E1b, GRO-2241): the hovered drop target — dir row or root header. */

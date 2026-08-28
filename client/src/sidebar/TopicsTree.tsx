@@ -83,7 +83,7 @@
  * the confirm reaches disk. Nothing re-renders optimistically either — the moved row arrives with
  * the next index snapshot, like every other change this tree draws.
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { MAX_TOPICS_EXPANDED_PAGES, type IndexRecord } from '@shared/types'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { folderPageSettings, orderedMembers } from '../views/folderPageSettings'
@@ -97,6 +97,7 @@ import { HOME_LINK } from './ensureHome'
 import { RenameInline } from './RenameInline'
 import { canDrop, performMove } from './topicsMove'
 import type { PendingRename } from './Tree'
+import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
 
 /**
  * The inline "New …" input pending BESIDE one Topics row (8G-, YAZ-865). The file tree's
@@ -137,6 +138,8 @@ export interface TopicsTreeProps {
    */
   expanded: ReadonlySet<string>
   onExpandedChange: (next: ReadonlySet<string>) => void
+  /** One request captured while Topics was the selected sidebar lens. */
+  revealRequest: SidebarRevealRequest | null
   /** The window's index feed: the snapshot AND the resolver built from it, always read together. */
   source: WikilinkResolveSource
   /** The open file, highlighted wherever it appears — including under two parents at once. */
@@ -241,7 +244,43 @@ export function allExpandableTopics(records: readonly IndexRecord[], lookup: Fol
   return found.slice(0, MAX_TOPICS_EXPANDED_PAGES)
 }
 
-export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onOpenFile, onOpenFileBackground, unadopted, onCreateHome, onRowContextMenu, renaming, creating, onNotice }: TopicsTreeProps) {
+export interface TopicRevealPlan {
+  found: boolean
+  ancestors: string[]
+  uncategorized: boolean
+}
+
+/** Expansion needed to draw every occurrence of `target`, following the tree's guarded graph. */
+export function topicRevealPlan(
+  records: readonly IndexRecord[],
+  lookup: FolderPagesLookup,
+  resolve: ResolveLink | null,
+  target: string,
+): TopicRevealPlan {
+  const ancestors: string[] = []
+  const seenAncestors = new Set<string>()
+  let rendered = false
+  const homePath = resolve === null ? null : resolve(HOME_LINK)
+
+  const visit = (page: IndexRecord, trail: readonly string[]): void => {
+    if (page.path === target) {
+      rendered = true
+      for (const ancestor of trail.slice(0, -1)) {
+        if (seenAncestors.has(ancestor)) continue
+        seenAncestors.add(ancestor)
+        ancestors.push(ancestor)
+      }
+    }
+    if (!lookup.isFolderPage(page) || page.path === homePath) return
+    for (const child of guardedChildren(lookup, page.path, trail)) visit(child, [...trail, child.path])
+  }
+
+  for (const root of topicRoots(records, lookup, resolve)) visit(root, [root.path])
+  const found = records.some((record) => record.path === target)
+  return { found, ancestors, uncategorized: found && !rendered }
+}
+
+export function TopicsTree({ expanded, onExpandedChange, revealRequest, source, activeFile, onOpenFile, onOpenFileBackground, unadopted, onCreateHome, onRowContextMenu, renaming, creating, onNotice }: TopicsTreeProps) {
   // Subscribe once, re-read the whole feed on each poke; an unchanged snapshot keeps the previous
   // object, so index churn that changed nothing here costs no render (BacklinksSection's idiom).
   const [feed, setFeed] = useState<Feed>(() => ({ records: source.records, resolve: source.resolve }))
@@ -256,6 +295,8 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
   // bucket holds page paths (and is repaired as such on rename), and Uncategorized is not a page.
   // So it stays HERE while the expansion went up — the two are not the same kind of fact.
   const [showOrphans, setShowOrphans] = useState(false)
+  const handledRevealId = useRef<number | null>(null)
+  const hostRef = useRef<HTMLDivElement>(null)
 
   // THE DRAG (YAZ-991) lives entirely here — the tree already holds the records, the lookup and
   // the resolver every step of it asks. The dragged row carries the parent it renders under; the
@@ -270,6 +311,12 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
   const roots = useMemo(() => topicRoots(records, lookup, resolve), [records, lookup, resolve])
   // YAZ-920: the pinned-leaf Home — its row opens the page and unfolds nothing.
   const homePath = resolve === null ? null : resolve(HOME_LINK)
+  const revealPlan = useMemo(
+    () => revealRequest?.lens === 'topics' && resolve !== null
+      ? topicRevealPlan(records, lookup, resolve, revealRequest.path)
+      : null,
+    [lookup, records, resolve, revealRequest],
+  )
   // 🔒 D7 as YAZ-920 amends it: Uncategorized is what the tree does NOT draw — the same guarded
   // descent the rows are drawn from, never "no parents" read off the index. A page reachable
   // only through the leaf Home (a Home-only note, an orphaned loop) surfaces here, not nowhere.
@@ -284,6 +331,28 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
     for (const root of roots) walk(root, [root.path])
     return records.filter((record) => !drawn.has(record.path))
   }, [records, lookup, roots, homePath])
+
+  useEffect(() => {
+    if (revealRequest?.lens !== 'topics' || revealPlan === null || handledRevealId.current === revealRequest.id) return
+    handledRevealId.current = revealRequest.id
+    if (!revealPlan.found) {
+      onNotice(revealMissingMessage(revealRequest.path, 'topics'))
+      return
+    }
+    const next = new Set(expanded)
+    for (const ancestor of revealPlan.ancestors) next.add(ancestor)
+    if (next.size !== expanded.size) onExpandedChange(next)
+    if (revealPlan.uncategorized) setShowOrphans(true)
+  }, [expanded, onExpandedChange, onNotice, revealPlan, revealRequest])
+
+  const revealReady =
+    revealPlan?.found === true &&
+    (revealPlan.uncategorized ? showOrphans : revealPlan.ancestors.every((ancestor) => expanded.has(ancestor)))
+
+  useEffect(() => {
+    if (!revealReady || revealRequest === null || hostRef.current === null) return
+    return flashTreeRows(hostRef.current, revealRequest.path) ?? undefined
+  }, [revealReady, revealRequest])
 
   // Pure computations over the prop since ⚡ YAZ-873 — the next set goes up, the owner decides.
   const toggle = (path: string): void => {
@@ -549,7 +618,7 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
   }
 
   return (
-    <div onKeyDown={onTreeKeyDown}>
+    <div ref={hostRef} onKeyDown={onTreeKeyDown}>
       {offerHome && (
         <div className="topics-offer">
           <p className="topics-offer__title">Your map starts here</p>
@@ -592,6 +661,7 @@ export function TopicsTree({ expanded, onExpandedChange, source, activeFile, onO
                           className={`tree__row${record.path === activeFile ? ' tree__row--active' : ''}${dropPath === record.path ? ' tree__row--drop' : ''}`}
                           style={{ paddingLeft: 8 + 14 }}
                           title={record.path}
+                          data-path={record.path}
                           onClick={(e) => open(record.path, e)}
                           onContextMenu={(e) => onRowContextMenu(record.path, e)}
                           // Nothing stands above an unfiled row, so it is dragged out of NOWHERE

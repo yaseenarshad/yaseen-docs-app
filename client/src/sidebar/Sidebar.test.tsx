@@ -76,6 +76,8 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     // "lens tabs" describe mounts each lens explicitly, including the default.
     lens: 'files',
     onLensChange: vi.fn(),
+    revealRequest: null,
+    onRevealConsumed: vi.fn(),
     settings: { ...DEFAULT_SETTINGS },
     onChangeSettings: vi.fn(),
     onRootMissing: vi.fn(),
@@ -337,6 +339,51 @@ describe('Sidebar stale tab activation (I3, GRO-2235)', () => {
     bridge.tree.mockImplementation(async (r: string) => ({ root: r, tree: TREE.filter((n) => n.path !== '/v/a.md'), generatedAt: 3 }))
     await act(async () => emit?.({ type: 'unlink', path: '/v/a.md' }))
     expect(props.onFileMissing).not.toHaveBeenCalled()
+  })
+})
+
+describe('Show in sidebar — Files reveal (YAZ-1063)', () => {
+  const TARGET = '/v/target/deep/Note.md'
+  const DEEP_TREE: TreeNode[] = [
+    {
+      type: 'dir', name: 'other', path: '/v/other',
+      children: [{ type: 'file', name: 'Keep.md', path: '/v/other/Keep.md', size: 1, mtime: 1, kind: 'markdown' }],
+    },
+    {
+      type: 'dir', name: 'target', path: '/v/target',
+      children: [{
+        type: 'dir', name: 'deep', path: '/v/target/deep',
+        children: [{ type: 'file', name: 'Note.md', path: TARGET, size: 1, mtime: 1, kind: 'markdown' }],
+      }],
+    },
+  ]
+  const withDeepTree = (bridge: ReturnType<typeof installBridge>) =>
+    bridge.tree.mockResolvedValue({ root: '/v', tree: DEEP_TREE, generatedAt: 1 })
+  const dirRow = (el: HTMLElement, label: string) =>
+    [...el.querySelectorAll<HTMLButtonElement>('.tree__row--dir')].find((row) => row.querySelector('.tree__label')?.textContent === label)
+
+  it('waits for the initial tree snapshot, then opens only the missing ancestor chain and exposes an exact-path row', async () => {
+    const { el, props } = await mount({ revealRequest: { id: 1, path: TARGET, lens: 'files' } }, withDeepTree)
+    expect(props.onRevealConsumed).toHaveBeenCalledExactlyOnceWith(1)
+    expect(dirRow(el, 'target')?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('true')
+    expect(dirRow(el, 'deep')?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('true')
+    expect(dirRow(el, 'other')?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('false')
+    expect(el.querySelector(`[data-path="${TARGET}"]`)?.classList.contains('tree__row--revealed')).toBe(true)
+  })
+
+  it('preserves unrelated expansion when a later request opens the target chain', async () => {
+    const { el, rerender } = await mount({}, withDeepTree)
+    act(() => dirRow(el, 'other')?.click())
+    expect(dirRow(el, 'other')?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('true')
+    await rerender({ revealRequest: { id: 1, path: TARGET, lens: 'files' } })
+    expect(dirRow(el, 'other')?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('true')
+    expect(dirRow(el, 'target')?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('true')
+    expect(dirRow(el, 'deep')?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('reports one passive notice when the loaded Files tree cannot show the path', async () => {
+    const { props } = await mount({ revealRequest: { id: 1, path: '/v/Missing.md', lens: 'files' } }, withDeepTree)
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t show "Missing.md" in Files — it is no longer there')
   })
 })
 
@@ -734,6 +781,19 @@ describe('search results (YAZ-803)', () => {
     await type(input, '')
     expect(el.querySelector('.search-results')).toBeNull()
     expect(el.querySelector('.tree__row--file')).not.toBeNull()
+  })
+
+  it('a reveal request for the current lens clears search so that lens tree can render', async () => {
+    const { el, input, rerender } = await search('a')
+    await rerender({ revealRequest: { id: 1, path: '/v/a.md', lens: 'files' } })
+    expect(input.value).toBe('')
+    expect(el.querySelector('.tree__row--file')).not.toBeNull()
+  })
+
+  it('a request pinned to another lens does not disturb the current search', async () => {
+    const { input, rerender } = await search('a')
+    await rerender({ revealRequest: { id: 1, path: '/v/a.md', lens: 'topics' } })
+    expect(input.value).toBe('a')
   })
 
   it('a query nothing matches says so, and still hides the tree', async () => {
