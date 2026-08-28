@@ -5,14 +5,21 @@
  * `onChange` swaps in the new `ParsedViews` and re-renders, so assertions read the YAML the
  * file would get (`serializeViews`) next to the DOM.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
+import { api, BridgeRequestError } from '../../api'
 import { type ViewSet, type ParsedViews, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderPage } from '../testFolderPage'
 import { TEST_RECORDS } from '../testRecords'
+
+vi.mock('../../api', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../api')>()
+  return { ...original, api: { ...original.api, reveal: vi.fn().mockResolvedValue({ path: '/vault/mock.md' }) } }
+})
+const reveal = vi.mocked(api.reveal)
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -111,6 +118,13 @@ function press(el: Element, key: string): void {
 function mouse(el: EventTarget, type: string, clientX: number): void {
   act(() => el.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX })))
   draw()
+}
+
+function rightClick(el: EventTarget, clientX = 0, clientY = 0): MouseEvent {
+  const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX, clientY })
+  act(() => void el.dispatchEvent(event))
+  draw()
+  return event
 }
 
 const headers = (el: ParentNode): string[] => [...el.querySelectorAll('.view-table th')].map((t) => t.textContent ?? '')
@@ -235,6 +249,153 @@ describe('file.name link', () => {
     click(q(el, '.view-table__link'))
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
     expect(onChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('table-row context menu (YAZ-1053)', () => {
+  const expectedPath = '/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md'
+  const menuItems = (el: ParentNode) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+  const itemNamed = (el: ParentNode, label: string) => menuItems(el).find((item) => item.textContent === label)
+  let writeText: ReturnType<typeof vi.fn>
+  const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+
+  beforeEach(() => {
+    reveal.mockReset().mockResolvedValue({ path: expectedPath })
+    writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true })
+  })
+
+  afterEach(() => {
+    if (clipboardDescriptor === undefined) delete (navigator as unknown as Record<string, unknown>).clipboard
+    else Object.defineProperty(navigator, 'clipboard', clipboardDescriptor)
+  })
+
+  it('selects the exact right-clicked cell first, then opens the table-owned actions at the pointer', () => {
+    const openBackground = vi.fn()
+    const { el, onOpenFile, onChange } = mount(TYPED_BASE, { folderPage: testFolderPage({ openBackground }) })
+    const cell = q<HTMLTableCellElement>(el, '[data-cell="0:0"]')
+    const event = rightClick(q(cell, '.view-table__link'), 120, 42)
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(cell)
+    expect(q<HTMLElement>(el, '.ctx-menu').style.left).toBe('120px')
+    expect(q<HTMLElement>(el, '.ctx-menu').style.top).toBe('42px')
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open in new tab', 'Copy path', 'Reveal in Finder'])
+    expect(onOpenFile).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('opens the exact row in a background tab without replacing the current page', () => {
+    const openBackground = vi.fn()
+    const { el, onOpenFile } = mount(TYPED_BASE, { folderPage: testFolderPage({ openBackground }) })
+    rightClick(q(el, '[data-cell="0:1"]'))
+    click(itemNamed(el, 'Open in new tab')!)
+
+    expect(openBackground).toHaveBeenCalledExactlyOnceWith(expectedPath)
+    expect(onOpenFile).not.toHaveBeenCalled()
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('copies and reveals the row absolute path, closing after either command', () => {
+    const { el } = mount(TYPED_BASE, { folderPage: testFolderPage({ openBackground: vi.fn() }) })
+    rightClick(q(el, '[data-cell="0:1"]'))
+    click(itemNamed(el, 'Copy path')!)
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(expectedPath)
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+
+    rightClick(q(el, '[data-cell="0:1"]'))
+    click(itemNamed(el, 'Reveal in Finder')!)
+    expect(reveal).toHaveBeenCalledExactlyOnceWith({ path: expectedPath })
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('reports a stale Reveal through the folder-page notice instead of failing silently', async () => {
+    const onNotice = vi.fn()
+    reveal.mockRejectedValueOnce(new BridgeRequestError('NOT_FOUND', 'gone'))
+    const { el } = mount(TYPED_BASE, { folderPage: testFolderPage({ openBackground: vi.fn(), onNotice }) })
+    rightClick(q(el, '[data-cell="0:0"]'))
+    click(itemNamed(el, 'Reveal in Finder')!)
+    await act(async () => Promise.resolve())
+
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith(`Can't reveal "Agentic Agency.md" — it is no longer there`)
+  })
+
+  it('retargets to the latest row and dismisses on Escape or an outside press', () => {
+    const { el } = mount(TYPED_BASE, { folderPage: testFolderPage({ openBackground: vi.fn() }) })
+    rightClick(q(el, '[data-cell="0:0"]'))
+    rightClick(q(el, '[data-cell="1:0"]'))
+    click(itemNamed(el, 'Copy path')!)
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/The Levels of an Agency.md')
+
+    rightClick(q(el, '[data-cell="0:0"]'))
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+
+    rightClick(q(el, '[data-cell="0:0"]'))
+    act(() => void document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('leaves the native menu alone inside an active typed editor', () => {
+    const { el } = mount(TYPED_BASE, { folderPage: testFolderPage({ openBackground: vi.fn() }) })
+    const cell = q<HTMLTableCellElement>(el, '[data-cell="0:1"]')
+    doubleClick(cell)
+    const event = rightClick(q(cell, '.view-cell-edit__input'))
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('still opens on a checkbox because selecting a boolean is not typed edit mode', () => {
+    const { el } = mount(TYPED_BASE, { folderPage: testFolderPage({ openBackground: vi.fn() }) })
+    const checkbox = q<HTMLInputElement>(el, '[data-cell="0:2"] input[type="checkbox"]')
+    const event = rightClick(checkbox)
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open in new tab', 'Copy path', 'Reveal in Finder'])
+  })
+
+  it('targets the rendered record when file.name is hidden, grouped, or windowed', () => {
+    const openBackground = vi.fn()
+    const hidden = mount('views:\n  - type: table\n    name: T\n    order:\n      - note.priority\n', { folderPage: testFolderPage({ openBackground }) })
+    rightClick(q(hidden.el, '[data-cell="0:0"]'))
+    click(itemNamed(hidden.el, 'Open in new tab')!)
+    expect(openBackground).toHaveBeenLastCalledWith(expectedPath)
+
+    act(() => root?.unmount())
+    container?.remove()
+    const grouped = mount('views:\n  - type: table\n    name: T\n    groupBy:\n      property: note.status\n', { folderPage: testFolderPage({ openBackground }) })
+    rightClick(q(grouped.el, '[data-cell="0:0"]'))
+    click(itemNamed(grouped.el, 'Open in new tab')!)
+    expect(openBackground).toHaveBeenLastCalledWith('/vault/Content Pillars/1. Agentic Agency/The Levels of an Agency.md')
+
+    act(() => root?.unmount())
+    container?.remove()
+    const windowedRecords = manyRecords()
+    const windowed = mount('views:\n  - type: table\n    name: T\n', { records: windowedRecords, folderPage: testFolderPage({ vaultRecords: windowedRecords, openBackground }) })
+    rightClick(q(windowed.el, '[data-cell="0:0"]'))
+    click(itemNamed(windowed.el, 'Open in new tab')!)
+    expect(openBackground).toHaveBeenLastCalledWith('/vault/n000.md')
+  })
+
+  it('keeps the exact record target when one page is fanned out into repeated grouped rows', () => {
+    const openBackground = vi.fn()
+    const { el } = mount('views:\n  - type: table\n    name: T\n    groupBy:\n      property: note.tags\n', { folderPage: testFolderPage({ openBackground }) })
+    const repeated = [...el.querySelectorAll<HTMLButtonElement>('.view-table__link')].filter((link) => link.textContent === 'Agentic Agency.md')
+    expect(repeated).toHaveLength(2)
+
+    rightClick(repeated[1])
+    click(itemNamed(el, 'Open in new tab')!)
+    expect(openBackground).toHaveBeenCalledExactlyOnceWith(expectedPath)
+  })
+
+  it('does not attach the row menu to headers, summaries, or spacer rows', () => {
+    const { el } = mount('views:\n  - type: table\n    name: T\n    summaries:\n      note.priority: Sum\n', { records: manyRecords(), folderPage: testFolderPage({ vaultRecords: manyRecords(), openBackground: vi.fn() }) })
+    for (const target of [q(el, 'thead th'), q(el, 'tfoot td'), q(el, '.view-table__spacer td')]) {
+      const event = rightClick(target)
+      expect(event.defaultPrevented).toBe(false)
+      expect(el.querySelector('.ctx-menu')).toBeNull()
+    }
   })
 })
 

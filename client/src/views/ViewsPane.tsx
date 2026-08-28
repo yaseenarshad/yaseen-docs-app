@@ -44,6 +44,8 @@ export interface FolderPageMode {
   setColumns: (columns: Record<string, ColumnDecl>, views?: ViewDef[]) => void
   /** ⌘-click on an outline row opens the page in a BACKGROUND tab (YAZ-820); absent → opens in place. */
   openBackground?: (path: string) => void
+  /** Passive notice surface for row actions that fail because a page moved or disappeared. */
+  onNotice?: (message: string) => void
   /**
    * The outline editor's own wikilink surfaces (YAZ-903) — the window's ONE resolve source, its
    * `[[` picker feed and the click-navigation contract, assembled by the host exactly as
@@ -351,6 +353,8 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
           onToggleGroup={onToggleGroup}
           onUpdate={update}
           onOpenFile={onOpenFile}
+          onOpenFileBackground={folderPage.openBackground}
+          onNotice={folderPage.onNotice}
           onMoveToGroup={onMoveToGroup}
           moveError={moveError}
           onNewInGroup={onNewNote}

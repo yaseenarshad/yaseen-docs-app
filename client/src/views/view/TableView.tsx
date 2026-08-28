@@ -13,6 +13,7 @@ import { GroupHeader, cellContent, groupKeyOf, summaryKindOf } from './GroupHead
 import { groupByKey, useGroupDrag } from './groupDrag'
 import { Popover } from './Popover'
 import { frozenColumnCount } from './frozenColumns'
+import { TableRowContextMenu } from './TableRowContextMenu'
 
 export interface TableViewProps {
   def: ViewSet
@@ -28,6 +29,10 @@ export interface TableViewProps {
   onToggleGroup: (key: string) => void
   onUpdate: Mutate
   onOpenFile: (path: string) => void
+  /** A row page action opens without replacing the current tab. */
+  onOpenFileBackground?: (path: string) => void
+  /** Passive reporting for a stale or failed OS action. */
+  onNotice?: (message: string) => void
   /** A drop on another section: `groupBy.property = value` (undefined deletes) via ViewsPane (5C, GRO-2143). */
   onMoveToGroup: (path: string, value: unknown) => void
   /** The last failed move, flagged inline on its row. */
@@ -82,12 +87,13 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup, root, properties = null, folderPage = null, vaultRecords }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, folderPage = null, vaultRecords }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   // Row drag between sections (5C, GRO-2143); disabled without groups.
   const dnd = useGroupDrag(groups === null ? null : groupByKey(view), onMoveToGroup)
   const [summaryFor, setSummaryFor] = useState<string | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; path: string } | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
 
   const keys = useMemo(() => propertyKeys(def, view, records), [def, view, records])
@@ -180,6 +186,17 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       else delete v.summaries
     })
 
+  /** Google-Sheets style: right-click selects the data cell, unless a typed editor owns it. */
+  const openRowMenu = (path: string) => (event: ReactMouseEvent<HTMLTableRowElement>): void => {
+    if (!(event.target instanceof Element)) return
+    if (event.target.closest('[data-editing]') !== null) return
+    const cell = event.target.closest<HTMLTableCellElement>('td[data-cell]')
+    if (cell === null) return
+    event.preventDefault()
+    cell.focus()
+    setRowMenu({ x: event.clientX, y: event.clientY, path })
+  }
+
   /** Arrow keys move between body cells (`data-cell="row:col"`); Enter on the name column opens the note. */
   const onKeyDown = (e: ReactKeyboardEvent) => {
     const at = (e.target as HTMLElement).dataset.cell
@@ -258,6 +275,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 key={line.gk === null ? line.row.record.path : `${line.gk}:${line.row.record.path}`}
                 className={line.gk !== null && dnd.over === line.gk ? 'view-table__row--drop' : undefined}
                 {...(line.g === null ? {} : { ...dnd.source(line.row.record.path, line.g), ...dnd.target(line.g) })}
+                onContextMenu={openRowMenu(line.row.record.path)}
               >
                 {keys.map((key, c) => {
                   const v = line.row.values[key]
@@ -350,6 +368,16 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           </tfoot>
         )}
       </table>
+      {rowMenu !== null && (
+        <TableRowContextMenu
+          x={rowMenu.x}
+          y={rowMenu.y}
+          path={rowMenu.path}
+          onOpenBackground={onOpenFileBackground}
+          onNotice={onNotice}
+          onClose={() => setRowMenu(null)}
+        />
+      )}
     </div>
   )
 }
