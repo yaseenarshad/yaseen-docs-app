@@ -256,6 +256,13 @@ export function FolderPageContents({
         setSettingsError(err instanceof Error ? err.message : String(err)),
       )
     },
+    // The saved START (YAZ-1104) through its own door — still ONE write, same banner.
+    setDefaultView: (name) => {
+      setSettingsError(null)
+      writeFolderPageSettings(path, { ...settings, defaultView: name }).catch((err: unknown) =>
+        setSettingsError(err instanceof Error ? err.message : String(err)),
+      )
+    },
     openBackground: onOpenFileBackground,
     onNotice,
     wikilinks: source,

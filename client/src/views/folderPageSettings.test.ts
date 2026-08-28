@@ -317,6 +317,41 @@ describe('outlineOrderOf', () => {
   })
 })
 
+describe('defaultView (YAZ-1104): the saved starting view', () => {
+  const write = vi.mocked(writeProperty)
+
+  it('reads a string name, and absent stays undefined — zero problems either way', () => {
+    expect(settingsOf({ defaultView: 'Table' }).defaultView).toBe('Table')
+    expect(settingsOf({ defaultView: 'Table' }).problems).toEqual([])
+    expect(settingsOf({}).defaultView).toBeUndefined()
+    expect(folderPageSettings(rec(METRICS, { folder_page: true })).defaultView).toBeUndefined()
+  })
+
+  it.each([
+    ['a number', 3],
+    ['a list', ['Table']],
+    ['a map', { name: 'Table' }],
+  ])('%s is ONE problem and reads as absent', (_label, value) => {
+    const settings = settingsOf({ defaultView: value })
+    expect(settings.defaultView).toBeUndefined()
+    expect(settings.problems).toHaveLength(1)
+  })
+
+  it("a name matching no view still reads verbatim — staleness is the pane's concern, not a problem", () => {
+    expect(settingsOf({ defaultView: 'Ghost' }).defaultView).toBe('Ghost')
+    expect(settingsOf({ defaultView: 'Ghost' }).problems).toEqual([])
+  })
+
+  it('round-trips to disk, and an unset value never reaches the key', async () => {
+    write.mockReset()
+    write.mockResolvedValue({ mtime: 200 })
+    await writeFolderPageSettings(METRICS, settingsOf({ defaultView: 'Table' }))
+    expect(write.mock.calls[0][2]).toMatchObject({ defaultView: 'Table' })
+    await writeFolderPageSettings(METRICS, settingsOf({}))
+    expect(write.mock.calls[1][2]).not.toHaveProperty('defaultView')
+  })
+})
+
 describe('writeFolderPageSettings: ONE key, through the shared writer', () => {
   const write = vi.mocked(writeProperty)
 

@@ -42,6 +42,11 @@ export interface FolderPageMode {
    * columns AND `view.order` in that same single write.
    */
   setColumns: (columns: Record<string, ColumnDecl>, views?: ViewDef[]) => void
+  /**
+   * The saved START (YAZ-1104), through its OWN door — ONE `folder_page_settings` write on the
+   * host (🔒 D3), never a views write. `undefined` clears the key: back to the first view.
+   */
+  setDefaultView: (name: string | undefined) => void
   /** ⌘-click on an outline row opens the page in a BACKGROUND tab (YAZ-820); absent → opens in place. */
   openBackground?: (path: string) => void
   /** Passive notice surface for row actions that fail because a page moved or disappeared. */
@@ -108,14 +113,19 @@ function seedGroupValue(properties: Record<string, unknown>, group: Group, key: 
  * everything else is the file.
  *
  * TOMBSTONE (YAZ-846, the amputation): `readOnly` (the read-only embed chrome), `initialView`
- * (which picked the starting tab for `![[X.base#View]]`), `types` (the ladder's rung 3, whose
+ * (which picked the starting tab for `![[X.base#View]]` — its JOB alone returned in YAZ-1104 as
+ * the `defaultView` seed below, deliberately), `types` (the ladder's rung 3, whose
  * whole `.obsidian/types.json` chain ⚡ YAZ-815 then deleted), `indexStatus` / `indexError` and the plain 5D
  * `createFromSeed` path all died here. Every one of them lost its production caller when YAZ-844
  * retired `.base`: the contents block is the ONLY mount, it hands over a snapshot already in hand
  * and it births through the declaration.
  */
 export function ViewsPane({ parsed, onChange, root, thisFile, records, properties = null, onOpenFile, folderPage }: ViewsPaneProps) {
-  const [active, setActive] = useState(0)
+  // The START may persist (YAZ-1104); which view is ACTIVE stays session state — 🔒 rule 4 holds,
+  // switching still writes nothing. A stale (or absent) saved name is -1 here, so it clamps to the first.
+  const [active, setActive] = useState(() =>
+    Math.max(0, parsed.def.views.findIndex((v) => v.name === folderPage.settings.defaultView)),
+  )
   const [search, setSearch] = useState<string | null>(null)
   /** Collapsed group keys per view, seeded from the store; a toggle replaces the entry here AND writes through storage. */
   const [collapsedByKey, setCollapsedByKey] = useState<Record<string, string[]>>({})

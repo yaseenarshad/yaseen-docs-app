@@ -616,9 +616,46 @@ describe('sync from folder', () => {
 })
 
 /**
- * `ViewTabs`' EDITABLE half, on its own mount (YAZ-846). ViewsPane passes `readOnly` — the folder
- * page's contents block is the only mount and its views are switch-only (🔒 rule 4) — so these
- * gestures are unreachable from the app today and are pinned here at the component's own edge:
- * each one must call its callback with the right arguments, which is what ViewsPane turns into the
- * ONE `folder_page_settings` write.
+ * The saved starting view (YAZ-1104). The START may persist as `folder_page_settings.defaultView`;
+ * which view is ACTIVE stays session state (🔒 rule 4) — the dropdown goes through its own door
+ * (`setDefaultView`, ONE settings write on the host) and never touches the views YAML.
  */
+describe('the default view', () => {
+  const settingsWith = (defaultView?: string) => ({ columns: {}, views: [], problems: [], defaultView })
+
+  it('seeds the starting tab from folderPage.settings.defaultView', () => {
+    const { el } = mount(YASIN_BASE, { folderPage: testFolderPage({ settings: settingsWith('View 2') }) })
+    expect(selected(el)).toBe('View 2')
+  })
+
+  it('a stale saved name starts on the first view', () => {
+    const { el } = mount(YASIN_BASE, { folderPage: testFolderPage({ settings: settingsWith('Ghost') }) })
+    expect(selected(el)).toBe('Table')
+  })
+
+  it('the properties menu ends with Page → Default view, listing First view then every view', () => {
+    const { el } = mount()
+    const menu = openMenu(el, 'Properties')
+    const select = byLabel<HTMLSelectElement>(menu, 'Default view')
+    expect([...select.options].map((o) => o.text)).toEqual(['First view', 'Table', 'View', 'View 2'])
+    expect(select.value).toBe('')
+  })
+
+  it('picking a view goes through the setDefaultView door — never a views write', () => {
+    const setDefaultView = vi.fn()
+    const { el, onChange } = mount(YASIN_BASE, { folderPage: testFolderPage({ setDefaultView }) })
+    setValue(byLabel<HTMLSelectElement>(openMenu(el, 'Properties'), 'Default view'), 'View')
+    expect(setDefaultView).toHaveBeenCalledExactlyOnceWith('View')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('the dropdown reflects the saved value, and First view clears it', () => {
+    const setDefaultView = vi.fn()
+    const { el } = mount(YASIN_BASE, { folderPage: testFolderPage({ settings: settingsWith('View'), setDefaultView }) })
+    const menu = openMenu(el, 'Properties')
+    const select = byLabel<HTMLSelectElement>(menu, 'Default view')
+    expect(select.value).toBe('View')
+    setValue(select, '')
+    expect(setDefaultView).toHaveBeenCalledExactlyOnceWith(undefined)
+  })
+})
