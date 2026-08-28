@@ -219,8 +219,13 @@ export function OutlineView({
     // The echo arrived: a page `records` no longer names is un-tagged for good, never held again.
     for (const path of untagging.current) if (!records.some((r) => r.path === path)) untagging.current.delete(path)
     const named = outlineLinkTargets(docRef.current, resolve)
-    const todo = appended.filter((r) => !named.has(r.path) && !untagging.current.has(r.path))
-    if (todo.length > 0) append(todo.map((r) => spellings.get(r.path) ?? r.basename))
+    // A member `spellings` cannot name (unreachable: members ride the same snapshot) is SKIPPED,
+    // never guessed at — a spelling that failed to resolve back would be appended again forever.
+    const todo = appended.flatMap((r) => {
+      const name = spellings.get(r.path)
+      return name !== undefined && !named.has(r.path) && !untagging.current.has(r.path) ? [name] : []
+    })
+    if (todo.length > 0) append(todo)
   }, [appended, pending, lossy, wake])
 
   const removing = pending.length > 0 ? pending[0] : null

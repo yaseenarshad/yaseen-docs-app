@@ -199,14 +199,20 @@ test('step 2 — resize, reorder and hide update the positional prefix without a
   // a chain rooted at `menu` would be re-rooted at the row and match nothing inside it.
   const unit = menu.locator('.view-prop').filter({ has: win.locator('[aria-label="Show unit"]') })
   await unit.locator('[aria-label="Move up"]').click()
+  // GATED ON DISK between menu actions (the outline spec's own no-sleep rule): each of these is a
+  // debounced settings write, and the next action must not race it — a write serialized from a
+  // stale snapshot resurrects the change before it (YAZ-1166, observed under full-suite load).
+  await expect.poll(async () => (await tableSettings()).order, { timeout: 10_000 }).toEqual(['file.name', 'note.unit', 'note.kpi_category', 'note.funnel_stages'])
   await expect(headers()).toHaveText(['file.name', 'unit', 'kpi_category', 'funnel_stages'])
   await expect(headers().nth(1)).toHaveClass(/view-table__frozen/)
 
   await unit.locator('[aria-label="Show unit"]').uncheck()
+  await expect.poll(async () => (await tableSettings()).order, { timeout: 10_000 }).toEqual(['file.name', 'note.kpi_category', 'note.funnel_stages'])
   await expect(headers()).toHaveText(['file.name', 'kpi_category', 'funnel_stages'])
   await expect(headers().nth(1)).toHaveClass(/view-table__frozen/)
 
   await menu.locator('[aria-label="Frozen columns"]').selectOption('3')
+  await expect.poll(async () => (await tableSettings()).frozenColumns, { timeout: 10_000 }).toBe(3)
   const funnel = menu.locator('.view-prop').filter({ has: win.locator('[aria-label="Show funnel_stages"]') })
   await funnel.locator('[aria-label="Show funnel_stages"]').uncheck()
   await expect(headers()).toHaveText(['file.name', 'kpi_category'])
