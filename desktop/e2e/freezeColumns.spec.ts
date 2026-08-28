@@ -1,6 +1,7 @@
 /**
- * Frozen Table columns (YAZ-742): the Properties menu persists one positional prefix count on the
- * folder page, and the existing semantic table sticks that prefix across header, body and footer.
+ * Frozen Table axes (YAZ-742, YAZ-1151): the Properties menu persists one positional prefix count
+ * on the folder page, the semantic table sticks that prefix across header/body/footer, and its
+ * existing header stays pinned while the outer note scrolls vertically.
  *
  * This is deliberately separate from folderPageColumns.spec.ts (YAZ-999 owns that shared column
  * propagation arc). It runs on a copy of the committed bible vault and a narrow app window so the
@@ -24,6 +25,7 @@ let app: ElectronApplication
 let win: Page
 
 const layer = (page: Page) => page.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
+const editorHost = () => layer(win).locator('.editor-host')
 const contents = (page: Page) => layer(page).locator('.folder-page-contents')
 const table = () => contents(win).locator('.view-table')
 const wrap = () => contents(win).locator('.view-table-wrap')
@@ -77,6 +79,15 @@ async function xPositions(cells: Locator): Promise<number[]> {
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'freeze-columns-userdata-'))
   vault = await copyVault(FIXTURE)
+  await Promise.all(
+    Array.from({ length: 30 }, (_, index) =>
+      writeFile(
+        path.join(vault, 'kpis', `Generated KPI ${String(index + 1).padStart(2, '0')}.md`),
+        `---\nfolder_pages:\n  - "[[KPIs]]"\nkpi_category: Generated\nunit: count\n---\n`,
+        'utf8',
+      ),
+    ),
+  )
 })
 
 test.afterAll(async () => {
@@ -84,9 +95,10 @@ test.afterAll(async () => {
   await Promise.all([userData, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — selecting two persists one prefix and holds it while the rest scrolls', async () => {
+test('step 1 — the header and selected prefix hold while the two scroll axes move', async () => {
   const state = seededState(vault, folderPagePath())
   state.windows[0].bounds.width = 760
+  state.windows[0].bounds.height = 520
   app = await launchApp({ userData, seedState: state })
   win = await appWindow(app, 'w1')
 
@@ -94,7 +106,7 @@ test('step 1 — selecting two persists one prefix and holds it while the rest s
   await contents(win).locator('.view-tab__btn[role="tab"]', { hasText: 'Table' }).click()
   await expect(headers()).toHaveText(['file.name', 'kpi_category', 'unit', 'funnel_stages'])
 
-  // The header's existing vertical freeze is unconditional — before and after any column choice.
+  // The vertical freeze is unconditional — before and after any column choice.
   expect(await headers().first().evaluate((cell) => ({ position: getComputedStyle(cell).position, top: getComputedStyle(cell).top }))).toEqual({ position: 'sticky', top: '0px' })
 
   const menu = await openProperties()
@@ -110,6 +122,49 @@ test('step 1 — selecting two persists one prefix and holds it while the rest s
     { position: 'sticky', left: '150px' },
     { position: 'sticky', left: '150px' },
   ])
+
+  const editingCell = firstBodyRow().nth(1)
+  await editingCell.dblclick()
+  await expect(editingCell.locator('[data-editing]')).toHaveCount(1)
+  await editorHost().evaluate((node) => {
+    const activeTable = node.querySelector('.view-table')
+    if (activeTable === null) throw new Error('table missing from editor host')
+    const hostTop = node.getBoundingClientRect().top + node.clientTop
+    node.scrollTop += activeTable.getBoundingClientRect().top - hostTop + 20
+  })
+  await expect
+    .poll(() =>
+      headers()
+        .nth(1)
+        .evaluate((cell) => {
+          const box = cell.getBoundingClientRect()
+          const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+          return hit === cell || (hit !== null && cell.contains(hit))
+        }),
+    )
+    .toBe(true)
+  await win.keyboard.press('Escape')
+
+  await editorHost().evaluate((node) => {
+    node.scrollTop = 320
+  })
+  await expect.poll(() => editorHost().evaluate((node) => node.scrollTop)).toBeGreaterThan(0)
+  await expect
+    .poll(async () => {
+      const [hostBox, headerBox] = await Promise.all([editorHost().boundingBox(), headers().first().boundingBox()])
+      if (hostBox === null || headerBox === null) return Number.POSITIVE_INFINITY
+      return Math.abs(headerBox.y - hostBox.y)
+    })
+    .toBeLessThan(2)
+  expect(
+    await headers()
+      .first()
+      .evaluate((cell) => {
+        const box = cell.getBoundingClientRect()
+        const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+        return hit === cell || (hit !== null && cell.contains(hit))
+      }),
+  ).toBe(true)
 
   const before = await xPositions(headers())
   await wrap().evaluate((node) => {

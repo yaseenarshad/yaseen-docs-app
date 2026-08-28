@@ -457,6 +457,12 @@
   border-right: none;
 }
 
+.view-table thead {
+  position: relative;
+  z-index: 3;
+  transform: translateY(var(--view-table-header-y, 0px));
+}
+
 .view-table thead th {
   position: sticky;
   top: 0;

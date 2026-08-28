@@ -1,4 +1,4 @@
-import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import { belongsToBasenames } from '../../links/folderPages'
@@ -74,6 +74,20 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
   event.currentTarget.focus()
 }
 
+/** The first ancestor above the horizontal Table wrapper that owns vertical scrolling. */
+function verticalScrollParent(node: HTMLElement): HTMLElement | null {
+  for (let parent = node.parentElement; parent !== null; parent = parent.parentElement) {
+    const overflow = getComputedStyle(parent).overflowY
+    if (overflow === 'auto' || overflow === 'scroll') return parent
+  }
+  return null
+}
+
+/** Native-sticky boundaries expressed as a counter-scroll offset for the existing `<thead>`. */
+function pinnedHeaderOffset(scrollerTop: number, tableTop: number, tableHeight: number, headerHeight: number): number {
+  return Math.max(0, Math.min(scrollerTop - tableTop, Math.max(0, tableHeight - headerHeight)))
+}
+
 /**
  * Table view (GRO-2136): sticky header with drag-to-resize columns (`view.columnSize`, written on
  * mouseup), typed cells, the `file.name` cell opening the note, a pinned summary row with a
@@ -97,6 +111,41 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const [scrollTop, setScrollTop] = useState(0)
   const [rowMenu, setRowMenu] = useState<{ x: number; y: number; path: string } | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current
+    if (wrap === null) return
+    const scroller = verticalScrollParent(wrap)
+    const table = wrap.querySelector<HTMLElement>('.view-table')
+    if (scroller === null || table === null) return
+    const header = table.querySelector<HTMLElement>('thead')
+    if (header === null) return
+
+    let frame = 0
+    const sync = () => {
+      frame = 0
+      const tableRect = table.getBoundingClientRect()
+      const scrollerTop = scroller.getBoundingClientRect().top + scroller.clientTop
+      const offset = pinnedHeaderOffset(scrollerTop, tableRect.top, tableRect.height, header.getBoundingClientRect().height)
+      wrap.style.setProperty('--view-table-header-y', `${offset}px`)
+    }
+    const schedule = () => {
+      if (frame === 0) frame = requestAnimationFrame(sync)
+    }
+    const observer = new ResizeObserver(schedule)
+
+    scroller.addEventListener('scroll', schedule, { passive: true })
+    observer.observe(scroller)
+    for (const block of scroller.children) observer.observe(block)
+    sync()
+
+    return () => {
+      scroller.removeEventListener('scroll', schedule)
+      observer.disconnect()
+      if (frame !== 0) cancelAnimationFrame(frame)
+      wrap.style.removeProperty('--view-table-header-y')
+    }
+  }, [])
 
   const keys = useMemo(() => propertyKeys(def, view, records), [def, view, records])
   const nameCol = keys.findIndex((k) => canonicalKey(k) === 'file.name')
