@@ -7,10 +7,10 @@
  * four-column KPI table genuinely overflows horizontally.
  */
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
+import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '../../shared/frontmatter'
 import { appWindow, copyVault, launchApp, quitApp, seededState } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -39,12 +39,23 @@ interface OnDiskView {
   order?: string[]
   columnSize?: Record<string, number>
   frozenColumns?: number
+  groupBy?: { property: string; direction?: 'ASC' | 'DESC' }
 }
 
 async function tableSettings(): Promise<OnDiskView> {
   const { frontmatter } = splitFrontmatter(await readFile(folderPagePath(), 'utf8'))
   const settings = (parseFrontmatter(frontmatter).properties.folder_page_settings ?? {}) as { views?: OnDiskView[] }
   return settings.views?.find((view) => view.type === 'table') ?? {}
+}
+
+async function updateTableSettings(update: (view: OnDiskView) => void): Promise<void> {
+  const content = await readFile(folderPagePath(), 'utf8')
+  const { frontmatter } = splitFrontmatter(content)
+  const settings = (parseFrontmatter(frontmatter).properties.folder_page_settings ?? {}) as { views?: OnDiskView[] }
+  const view = settings.views?.find((candidate) => candidate.type === 'table')
+  if (view === undefined) throw new Error('fixture has no Table view')
+  update(view)
+  await writeFile(folderPagePath(), setFrontmatterProperty(content, 'folder_page_settings', settings), 'utf8')
 }
 
 async function openProperties(): Promise<Locator> {
@@ -158,6 +169,39 @@ test('step 3 — the frozen prefix survives the real quit and relaunch path', as
   const menu = await openProperties()
   await expect(menu.locator('[aria-label="Frozen columns"]')).toHaveValue('2')
   expect((await tableSettings()).frozenColumns).toBe(2)
+
+  await quitApp(app)
+})
+
+test('step 4 — a grouped label stays left even when no data columns are frozen', async () => {
+  await updateTableSettings((view) => {
+    view.order = ['file.name', 'note.kpi_category', 'note.unit', 'note.funnel_stages']
+    view.groupBy = { property: 'note.kpi_category', direction: 'ASC' }
+    delete view.frozenColumns
+  })
+
+  app = await launchApp({ userData })
+  win = await appWindow(app, 'w1')
+  await expect(contents(win)).toBeVisible()
+  await contents(win).locator('.view-tab__btn[role="tab"]', { hasText: 'Table' }).click()
+
+  await expect(table().locator('.view-table__frozen')).toHaveCount(0)
+  const group = table().locator('.view-table__group-cell > .view-group').first()
+  await expect(group).toBeVisible()
+  expect(await group.evaluate((node) => ({ position: getComputedStyle(node).position, left: getComputedStyle(node).left }))).toEqual({
+    position: 'sticky',
+    left: '8px',
+  })
+
+  const before = await group.boundingBox()
+  if (before === null) throw new Error('group label has no bounding box')
+  await wrap().evaluate((node) => {
+    node.scrollLeft = 120
+  })
+  expect(await wrap().evaluate((node) => node.scrollLeft)).toBeGreaterThan(100)
+  const after = await group.boundingBox()
+  if (after === null) throw new Error('scrolled group label has no bounding box')
+  expect(Math.abs(after.x - before.x)).toBeLessThan(1)
 
   await quitApp(app)
 })

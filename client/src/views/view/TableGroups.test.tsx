@@ -174,7 +174,9 @@ describe('grouped sections', () => {
     // the pinned total row moves into the group headers (Obsidian behaviour)
     expect(el.querySelector('.view-table tfoot')).toBeNull()
     // a header row spans the whole table and owns no data cells
-    expect(q<HTMLTableCellElement>(headers(el)[0], 'td').colSpan).toBe(2)
+    const groupCell = q<HTMLTableCellElement>(headers(el)[0], 'td')
+    expect(groupCell.colSpan).toBe(2)
+    expect(groupCell.classList.contains('view-table__group-cell')).toBe(true)
     expect(headers(el)[0].querySelector('[data-cell]')).toBeNull()
     expect(headers(el)[0].querySelector('.view-table__frozen')).toBeNull()
   })
