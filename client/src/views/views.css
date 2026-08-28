@@ -596,6 +596,17 @@
 
 /* ---------- grouped table (4C) ---------- */
 
+.view-table__group-cell {
+  overflow: visible;
+}
+
+.view-table__group-cell > .view-group {
+  position: sticky;
+  left: 8px;
+  width: fit-content;
+  max-width: 100%;
+}
+
 .view-group {
   display: flex;
   gap: 8px;

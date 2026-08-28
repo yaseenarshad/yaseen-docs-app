@@ -238,7 +238,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 className={`view-table__group${dnd.over === line.gk ? ' view-table__group--drop' : ''}`}
                 {...dnd.target(line.header)}
               >
-                <td colSpan={keys.length}>
+                <td className="view-table__group-cell" colSpan={keys.length}>
                   <GroupHeader
                     def={def}
                     view={view}
