@@ -93,6 +93,16 @@ const bytes = (vaultPath: string, name: string): Promise<string> => readFile(pat
  */
 const minusBelonging = (text: string): string => text.replace(/folder_pages:\n(?: {2}- .*\n)*/, '')
 
+/**
+ * The empty columns a folder page's own DECLARATIONS scaffold onto a page that has just joined it
+ * (YAZ-999's missing-only reconciliation, for which a membership change is a trigger). `Roles`
+ * declares two, so a page dropped onto Roles may gain either or both — a SECOND write, made after
+ * the move's and by a different rule, and observably not always the same one (a run may land both,
+ * one, or neither before the read below). Cutting them out is what leaves the thing this file is
+ * actually about: everything THE MOVE was not allowed to touch, byte for byte, either way.
+ */
+const minusDeclared = (text: string): string => text.replace(/^(?:function|reports_to): null\n/gm, '')
+
 // ---------- lifecycle ----------
 
 /** A copy of the encyclopedia for one test's exclusive use; torn down with the rest. */
@@ -241,7 +251,7 @@ test('step 2 — a topic dragged under a topic nests there, and its members trav
   expect(await bytes(vault, 'Roles.md')).toBe(await bytes(FIXTURE, 'Roles.md'))
   // The rest of the page, byte for byte — including the whole `folder_page_settings` block, which
   // a re-serialised frontmatter would have been free to reflow and did not.
-  expect(minusBelonging(after)).toBe(minusBelonging(before))
+  expect(minusDeclared(minusBelonging(after))).toBe(minusBelonging(before))
 
   // THE TREE: Industries is no longer a root — a parent that is not Home takes it off that row
   // (YAZ-920) — and it stands among Roles' members, by name, with PLG SaaS and VC-Backed B2B SaaS
@@ -351,9 +361,11 @@ test('step 5 — an unfiled note dragged onto a topic gains its FIRST belonging 
 
   await chevron(win, 'Expand', 'Roles').click()
   // 🔒 D7: the section expands IN PLACE, and the newcomer waits in it with the two `inbox/` notes.
+  // Since YAZ-956 it expands as a MINI FILE TREE — disk folders first, then the loose note sitting
+  // at the vault root — so the shape below is disk location, and belonging is still only an entry.
   await expect(rowFor(win, 'Uncategorized').locator('.tree__count')).toHaveText('3')
   await rowFor(win, 'Uncategorized').click()
-  await expect(topicLabels(win)).toHaveText(['Home', ...TOPICS, ...ROLES, 'Uncategorized', 'Loose Thought', ...ORPHANS])
+  await expect(topicLabels(win)).toHaveText(['Home', ...TOPICS, ...ROLES, 'Uncategorized', 'inbox', ...ORPHANS, 'Loose Thought'])
 
   await dragRowOnto(rowFor(win, 'Loose Thought'), rowFor(win, 'Roles'), 'Roles')
 
@@ -362,12 +374,25 @@ test('step 5 — an unfiled note dragged onto a topic gains its FIRST belonging 
   await expect(sheetText(win)).toHaveText("Move 'Loose Thought' into 'Roles'? The file stays put — only its folder pages change.")
   await sheetBtn(win, 'Move').click()
 
-  // THE FILE, exactly: a fresh block, and BELOW IT the body this test wrote, byte for byte.
-  await expect.poll(() => onDisk(vault, LOOSE)).toBe(`---\nfolder_pages:\n  - "[[Roles]]"\n---\n${LOOSE_BODY}`)
+  // THE FILE, exactly: a fresh block, and BELOW IT the body this test wrote, byte for byte — with
+  // YAZ-999's own scaffolding cut out, because a page joining `Roles` also gains Roles' declared
+  // columns and that is a separate rule's write, not the drag's (see `minusDeclared`).
+  await expect.poll(() => onDisk(vault, LOOSE)).toContain('folder_pages:\n  - "[[Roles]]"\n')
+  expect(minusDeclared(await bytes(vault, LOOSE))).toBe(`---\nfolder_pages:\n  - "[[Roles]]"\n---\n${LOOSE_BODY}`)
 
   // THE TREE: it stands among Roles' members by name, and the section it came from is one shorter —
   // still open, because nothing about this move closed it.
-  await expect(topicLabels(win)).toHaveText(['Home', ...TOPICS, 'CEO', 'Head of Sales', 'Loose Thought', 'RevOps Lead', 'Uncategorized', ...ORPHANS])
+  await expect(topicLabels(win)).toHaveText([
+    'Home',
+    ...TOPICS,
+    'CEO',
+    'Head of Sales',
+    'Loose Thought',
+    'RevOps Lead',
+    'Uncategorized',
+    'inbox',
+    ...ORPHANS,
+  ])
   await expect(rowFor(win, 'Loose Thought')).toHaveCount(1)
   await expect(rowFor(win, 'Loose Thought')).toHaveCSS('padding-left', '22px')
   await expect(rowFor(win, 'Roles').locator('.tree__count')).toHaveText('4')

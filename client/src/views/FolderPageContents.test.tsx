@@ -160,11 +160,11 @@ const byLabel = <T extends HTMLElement>(el: ParentNode, label: string): T => q<T
 const texts = (el: ParentNode, sel: string): string[] => [...el.querySelectorAll(sel)].map((n) => n.textContent ?? '')
 const options = (el: ParentNode): (string | null)[] => [...el.querySelectorAll('[role="option"]')].map((o) => o.textContent)
 /**
- * Row names, whichever body is rendering: the outline's APPENDED members (YAZ-903, which name
- * pages the way a link does — no extension), the placeholder list, or the real table
- * (`file.name`, extension and all).
+ * Row names, whichever body is rendering: the placeholder list or the real table (`file.name`,
+ * extension and all). The outline has no rows at all since YAZ-1152 — a member it does not name is
+ * ADOPTED into the document instead.
  */
-const rowNames = (el: ParentNode): string[] => texts(el, '.view-outline__link, .view-row__link, .view-table__link')
+const rowNames = (el: ParentNode): string[] => texts(el, '.view-row__link, .view-table__link')
 /** The outline document the editor was seeded with (YAZ-903). */
 const doc = (el: ParentNode): string => q(el, '.outline-doc').textContent ?? ''
 
@@ -237,10 +237,10 @@ describe('rows are the members, and only the members', () => {
   it('a member added on the next snapshot lands in the block with no user action', () => {
     const el = mount(FUNNELS)
     feed([...vault(), rec('/vault/stages/Expansion.md', { folder_pages: ['[[Funnel Stages]]'] })])
-    // In the APPENDED section (YAZ-903): the document the user is typing into is never rewritten
-    // under them, and a member it does not name is a member all the same.
-    expect(rowNames(el)).toEqual(['Expansion'])
-    expect(doc(el)).toBe('- [[Lead Gen]]\n- [[Sales]]')
+    // ADOPTED into the document (YAZ-1152): a member it does not name is a member all the same, so
+    // the outline is made to name it — at the END, through the one door. No read-only rows left.
+    expect(doc(el)).toBe('- [[Lead Gen]]\n- [[Sales]]\n- [[Expansion]]')
+    expect(el.querySelector('.view-outline__list')).toBeNull()
   })
 
   it('the whole-vault resolver reaches the engine: a link pointing OUTSIDE the members resolves (🔒 D2)', () => {

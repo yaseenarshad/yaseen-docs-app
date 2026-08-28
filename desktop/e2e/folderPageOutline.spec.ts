@@ -1,8 +1,9 @@
 /**
- * THE FREE-FORM OUTLINE, end to end (YAZ-904; the surface landed in YAZ-900→903): a folder page's
- * outline view is no longer a list of member rows — it is ONE markdown bullet list the user types
- * into, a second Milkdown instance (`OutlineEditor`) holding `views[i].outline`, with the members
- * the document does not NAME appended below it as the read-only rows they always were.
+ * THE FREE-FORM OUTLINE, end to end (YAZ-904; the surface landed in YAZ-900→903, and ⚡ YAZ-1152
+ * finished it): a folder page's outline view is ONE markdown bullet list the user types into — a
+ * second Milkdown instance (`OutlineEditor`) holding `views[i].outline` — and it is the WHOLE
+ * surface. A member the document does not NAME is not listed beside it any more; it is WRITTEN
+ * INTO it (ADOPTION), as a depth-0 `[[link]]` line at the END.
  *
  * WHAT IS PROVEN HERE, and nowhere else: that the document and the vault agree. A line that is
  * exactly one resolving wikilink IS a membership — writing it tags the target's own card, deleting
@@ -13,33 +14,38 @@
  *
  * Driven through the REAL app over the committed encyclopedia fixture (`fixtures/bible-vault`), on
  * `Home` — the one folder page that SHIPS an outline `order`, which is what makes the lazy
- * migration visible: `order` is read by nobody, and retires the moment the first edit gives the
- * page a settings write.
+ * migration visible: `order` is read by nobody and retires with the page's FIRST settings write,
+ * which since YAZ-1152 is ADOPTION's own, made before the user has touched a key.
+ *
+ * ⚡ TOMBSTONE (YAZ-1152), because this file used to be the appended section's own proof: the
+ * read-only rows under the editor — `.view-outline__list` / `__row` / `__bullet` / `__link` /
+ * `__glyph` / `__count` / `__x` — do not exist. Those selectors match NOTHING, and the two claims
+ * they carried moved: membership-not-named is now a LINE of the document (step 1), and cancelling
+ * a removal RESTORES that line at the end rather than dropping the page into a section below
+ * (step 5, superseding the YAZ-903 "cancel does not put the text back" ruling).
  *
  * ⚡ YAZ-919 CHANGED WHERE THE DOCUMENT COMES FROM, and step 1 is the place that says so: `Home.md`
  * ships a BODY, and a folder page is title → outline now, so that body MOVES into
  * `views[0].outline` on the page's first open — heading marker stripped, blank lines dropped, one
- * bullet per surviving line, the file left frontmatter-only — and it is on screen from the first
- * paint. So the document under test is the page's own prose, `order` never seeds anything, and
- * the five members it does not NAME are the appended rows below it from the start. Everything
- * this file proves about link lines then happens ON TOP of that text, which is exactly where a
- * user's link lines live.
+ * bullet per surviving line, the file left frontmatter-only. That prose names NOBODY, so adoption
+ * immediately writes all five members in under it. Everything this file proves about link lines
+ * then happens ON TOP of that text, which is exactly where a user's link lines live.
  *
  * The arc, in order (serial by design — each step continues the previous state):
- *   1 the migrated body IS the document, on disk and on screen; then a TEXT line lands in
- *     `views[0].outline` ON TOP of it — the prose intact — `order` is GONE from that view (the
- *     lazy migration), and the Table — the membership set — has not moved
+ *   1 first open: the migrated body IS the document and ADOPTION appends the five topics to it —
+ *     one settings write that also retires `order` — with a TEXT line typed on top of both,
+ *     proving user prose and adopted links share one document (and the Table has not moved)
  *   2 `[[` opens the picker; picking a non-member turns the line into a wikilink, writes
  *     `folder_pages` onto the PICKED page's own card, and the page arrives as a Table row
  *   3 Tab indents: the nesting is in the document on disk and in the editor's own DOM (step 7
  *     reads it back after a relaunch)
- *   4 deleting the link line ASKS — the very sheet the × has used since YAZ-820 — and CONFIRM
- *     un-tags on disk, dropping the row from the Table
- *   5 the same deletion CANCELLED keeps the membership: the page moves into the appended
- *     `.view-outline__list` section, and the next edit never asks again
+ *   4 deleting the link line ASKS — the very sheet the × used to open — and CONFIRM un-tags on
+ *     disk, drops the Table row, and the line stays GONE: an un-tag in flight is never re-adopted
+ *   5 the same deletion CANCELLED keeps the membership, so adoption puts the line straight BACK at
+ *     the end of the document — and the next edit never asks again
  *   6 bullets-only (🔒 F3): `# heading` typed in a bullet stays six literal characters
- *   7 quit → relaunch: the text, the nesting and the membership are all on the page, not in the
- *     session
+ *   7 quit → relaunch: the text, the nesting and the adopted links are all on the page, not in the
+ *     session — byte for byte — and the membership facts read back off the Table
  *
  * DRIVING A PROSEMIRROR FROM PLAYWRIGHT is its own small craft — macOS caret keys, a wikilink's
  * hidden brackets, and ProseMirror's deferred read of the browser's selection all bite — so the
@@ -47,8 +53,8 @@
  * `writeOutlineLine` / `pickOutlineLink`), shared with every spec that types into an outline. Read
  * its docblock before changing a keystroke here.
  *
- * Nothing here sleeps: every debounced commit (500 ms, `OutlineEditor`'s own) is gated on the disk
- * state or on the UI consequence it causes.
+ * Nothing here sleeps: every debounced commit (500 ms, `OutlineEditor`'s own) and every adoption
+ * write is gated on the disk state or on the UI consequence it causes.
  *
  * Same harness as folderPages.spec.ts (temp `--user-data-dir`, a COPY of the fixture, `outline-`
  * step screenshots).
@@ -69,6 +75,7 @@ import {
   outlineLineIndex,
   outlineLines,
   outlineNested,
+  outlineSaid,
   pickOutlineLink,
   quitApp,
   seededState,
@@ -81,7 +88,11 @@ test.describe.configure({ mode: 'serial' })
 /** The committed encyclopedia. Copied per run; the source is never opened by the app. */
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
 const FOLDER_PAGE = 'Home.md'
-/** Home's members, in the `order` the folder-page migration wrote onto its outline view. */
+/**
+ * Home's members. The `order` the page ships names these five in this sequence — and ADOPTION's
+ * own order, alphabetical by basename through the base collator, happens to be the same, which is
+ * why nothing below has to say which of the two it is reading.
+ */
 const TOPICS = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', 'Roles']
 /** The page this spec tags into Home: a kpi, so it starts a NON-member that already belongs elsewhere. */
 const SUBJECT = 'CAC'
@@ -105,8 +116,10 @@ const BODY_ON_DISK = [
 ].join('\n')
 /** …and as the EDITOR re-serialises them, once the page has been typed into at all. */
 const BODY_COMMITTED = BODY_ON_DISK.split('\n').map((line) => line.replace(/^- /, '* '))
-/** Every member once step 5 has left CAC belonging but unnamed: the appended section's name order. */
-const APPENDED_WITH_SUBJECT = [SUBJECT, ...TOPICS]
+/** The five lines ADOPTION writes under it: depth-0, `serializeOutline`'s own `- ` marker, alphabetical. */
+const ADOPTED_ON_DISK = TOPICS.map((name) => `- [[${name}]]`).join('\n')
+/** Every name as a LINK LINE — how a membership reads inside the document, and on screen. */
+const asLinks = (...names: string[]) => names.map((n) => `[[${n}]]`)
 
 /** The two text lines the document grows; neither is a link, so neither means anything to membership. */
 const NOTE = 'Only the lines below that are links mean anything'
@@ -124,8 +137,9 @@ const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hid
 const contents = (w: Page) => layer(w).locator('.folder-page-contents')
 const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 const rowNames = (scope: Locator) => scope.locator('.view-table__link')
-/** The APPENDED section (YAZ-903): members the document does not name, still members. */
-const appended = (scope: Locator) => scope.locator('.view-outline__link')
+/** TOMBSTONE (YAZ-1152): every selector the appended section wore. It is gone, so these match nothing. */
+const appendedRows = (w: Page) =>
+  w.locator('.view-outline__list, .view-outline__row, .view-outline__link, .view-outline__glyph, .view-outline__count, .view-outline__x, [data-outline-row]')
 const sheet = (w: Page) => w.locator('[role="dialog"]')
 const sheetBtn = (w: Page, label: string) => sheet(w).locator('.confirm__btn', { hasText: label })
 const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
@@ -162,38 +176,46 @@ test.afterAll(async () => {
   await Promise.all([userData, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — the migrated body IS the document, and a text line lands on top of it in views[0].outline', async () => {
+test('step 1 — first open: the migrated body IS the document, adoption writes the five members into it, and `order` retires', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, FOLDER_PAGE)) })
   win = await appWindow(app, 'w1')
   await expect(contents(win)).toBeVisible()
 
-  // THE DOCUMENT, on the FIRST paint (⚡ YAZ-919): `Home.md` carried a body, and opening the page
-  // moved it into `views[0].outline` before the editor ever mounted — so what stands here is the
-  // page's own prose as bullets, not the [D5] member-link list a folder page with NO document
-  // falls back to. The five members are named nowhere in it, so all five stand appended below,
-  // each wearing the folder-page glyph and its own direct-member count.
-  await expect(outlineLines(contents(win))).toHaveText(BODY)
-  await expect(appended(contents(win))).toHaveText(TOPICS)
-  // …and it is on DISK, in `outlineDoc`'s own spelling — the whole string, never a `toContain`.
-  expect(await outlineOnDisk()).toBe(BODY_ON_DISK)
-  // The body LEFT the file in the same write: frontmatter, and nothing after it.
+  // THE FIRST OPEN, in two writes and no gestures. ⚡ YAZ-919 moves `Home.md`'s body into
+  // `views[0].outline` before the editor ever mounts; that prose names NOBODY, so ⚡ YAZ-1152's
+  // adoption immediately writes all five members in under it — depth-0 link lines at the END,
+  // alphabetical, spelled by `linkNames`. The whole VIEW is asserted as one object, which is how
+  // the third fact gets proven at the same time: `order` is GONE. Adoption's commit travels the
+  // outline's one door, so it IS the first edit the lazy migration was waiting for — and nothing
+  // else about the view moved.
+  await expect
+    .poll(outlineViewOnDisk, { timeout: 10_000 })
+    .toEqual({ type: 'outline', name: 'Outline', outline: `${BODY_ON_DISK}\n${ADOPTED_ON_DISK}` })
+  // The body LEFT the file in the same move: frontmatter, and nothing after it.
   expect((await read(FOLDER_PAGE)).trimEnd().endsWith('---')).toBe(true)
-  // `order` is untouched, because the lazy migration is spent by the first EDIT and the body move
-  // is not one — it read no `order` and wrote none. Nothing has retired yet.
-  expect((await outlineViewOnDisk()).order).toEqual(TOPICS.map((n) => `[[${n}]]`))
-  await shoot(win, 'outline-01-migrated-body')
 
+  // ON SCREEN it is ONE surface: the prose and the five memberships are bullets of the same
+  // editor, which is the whole of YAZ-1152. The read-only rows that used to carry the unnamed
+  // members are not merely empty — they do not exist, anywhere in the window.
+  await expect(outlineLines(contents(win))).toHaveText([...BODY, ...asLinks(...TOPICS)])
+  await expect(appendedRows(win)).toHaveCount(0)
+  await shoot(win, 'outline-01-adopted')
+
+  // …and the user's own text lives in the very same document, between the prose and the links.
   await typeOutlineLine(win, contents(win), BODY.length - 1, NOTE)
 
-  // ONE `folder_page_settings` write, debounced 500ms: the new line arrives AND `order` is deleted
-  // in the same write — the lazy migration, spent the first time the page is edited. The migrated
-  // prose is still every word of it, re-serialised by the editor: the commit writes what the
-  // editor was SEEDED with, so a document seeded from anywhere else would show up right here.
+  // ONE `folder_page_settings` write, debounced 500ms — and the editor re-serialises the WHOLE
+  // document, so this is where a line adoption had put there could have been lost: every one of
+  // them is still here, in Milkdown's own `* ` spelling, with the typed line among them.
   await expect.poll(outlineOnDisk, { timeout: 10_000 }).toContain(NOTE)
   const view = await outlineViewOnDisk()
-  expect(view.order).toBeUndefined()
-  expect(view.name).toBe('Outline') // the view itself is untouched — only its two content keys moved
-  expect(view.outline?.split('\n').filter((l) => l.trim() !== '')).toEqual([...BODY_COMMITTED, `* ${NOTE}`])
+  expect(view.order).toBeUndefined() // still retired: nothing puts [D5] back
+  expect(view.name).toBe('Outline') // the view itself is untouched — only its content key moved
+  expect(view.outline?.split('\n').filter((l) => l.trim() !== '')).toEqual([
+    ...BODY_COMMITTED,
+    `* ${NOTE}`,
+    ...TOPICS.map((n) => `* [[${n}]]`),
+  ])
 
   // TEXT MEANS NOTHING: the membership set is exactly what it was, so the Table has not moved.
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
@@ -212,20 +234,21 @@ test('step 2 — `[[` picks a page, and the LINK LINE tags it on that page’s o
 
   // The picker inserts PLAIN TEXT `[[CAC]]` — and that line, being exactly one resolving wikilink,
   // is a membership. The write lands on the PICKED page's card and it ADDS: `[[KPIs]]` survives.
-  await expect(outlineLines(contents(win)).last()).toHaveText(`[[${SUBJECT}]]`)
   await expect.poll(() => read(SUBJECT_FILE), { timeout: 10_000 }).toContain('[[Home]]')
   const after = await read(SUBJECT_FILE)
   expect(after).toContain('[[KPIs]]') // a page belongs to as many topics as it says
   expect(after).toContain('unit: currency') // every other key survives
   expect(after).toContain(`# ${SUBJECT}`) // and the body
-  // …and the folder page maintains no list of its own: only the document it holds mentions CAC.
+  // The DOCUMENT is where the new member stands — typed in by hand, above the five adoption
+  // wrote, and it is the only place this folder page mentions CAC at all.
+  await expect.poll(() => outlineSaid(contents(win))).toEqual([...BODY, NOTE, `[[${SUBJECT}]]`, ...asLinks(...TOPICS)])
   expect(await outlineOnDisk()).toContain(`* [[${SUBJECT}]]`)
+  await expect(appendedRows(win)).toHaveCount(0)
 
   // The membership set moved, so THIS time the Table did too.
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(rowNames(contents(win))).toHaveText(named(...TOPICS, SUBJECT))
   await viewTabs(contents(win)).filter({ hasText: 'Outline' }).click()
-  await expect(appended(contents(win))).toHaveText(TOPICS) // CAC is named by the document, so only the five are
   await shoot(win, 'outline-04-tagged')
 })
 
@@ -244,10 +267,10 @@ test('step 3 — Tab indents, and the nesting is in the document itself', async 
   await shoot(win, 'outline-05-nested')
 })
 
-test('step 4 — deleting the link line ASKS, and CONFIRM un-tags on disk', async () => {
+test('step 4 — deleting the link line ASKS, and CONFIRM un-tags on disk and leaves it gone', async () => {
   await clearOutlineLine(win, contents(win), await outlineLineIndex(contents(win), `[[${SUBJECT}]]`))
 
-  // The very sheet the hover × has used since YAZ-820 — a deletion is a QUESTION, never a write.
+  // The very sheet the hover × used to open — a deletion is a QUESTION, never a write.
   await expect(sheet(win)).toContainText(
     `Remove '${SUBJECT}' from 'Home'? The page is not deleted — its file stays put. It remains in: KPIs.`,
   )
@@ -257,17 +280,27 @@ test('step 4 — deleting the link line ASKS, and CONFIRM un-tags on disk', asyn
   await expect.poll(() => read(SUBJECT_FILE), { timeout: 10_000 }).not.toContain('[[Home]]')
   expect(await read(SUBJECT_FILE)).toContain('[[KPIs]]') // only THIS folder page's entry was dropped
   await expect(sheet(win)).toHaveCount(0)
-  await expect(appended(contents(win))).toHaveText(TOPICS) // not named, and not a member either
 
+  // AND IT STAYS GONE. This is adoption's sharpest edge: between the confirm and the index echo,
+  // `records` still names CAC — so an un-tag IN FLIGHT is held back, and by the time the echo
+  // arrives the page is not a member at all. The Table dropping the row IS that echo…
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(rowNames(contents(win))).toHaveText(named(...TOPICS))
+  // …and coming back re-MOUNTS the outline, which re-asks adoption's question from scratch against
+  // the snapshot that just arrived. Neither the document on disk nor the one on screen names CAC.
   await viewTabs(contents(win)).filter({ hasText: 'Outline' }).click()
+  await expect.poll(() => outlineSaid(contents(win))).toEqual([...BODY, NOTE, CHILD, ...asLinks(...TOPICS)])
+  expect(await outlineOnDisk()).not.toContain(`[[${SUBJECT}]]`)
   await shoot(win, 'outline-07-untagged')
 })
 
-test('step 5 — CANCEL keeps the membership: the page moves into the appended section, and is never asked about twice', async () => {
-  // Tag it again, so there is a membership to decline dropping.
-  await bulletAfterLine(win, contents(win), await outlineLineIndex(contents(win), NOTE))
+test('step 5 — CANCEL keeps the membership, so the line is RESTORED at the end, and never asked about twice', async () => {
+  // Tag it again, so there is a membership to decline dropping — on a line of its own at the very
+  // END, which is a DEPTH-0 line: a bullet opened under `NOTE` would be a sibling of the nested
+  // `CHILD`, and the deletion below would leave an empty NESTED bullet behind — a shape the seed
+  // guard (YAZ-974) refuses to re-display, which would make the re-seed this step is about
+  // read-only before it happened. Where the line goes is not what is being proven here.
+  await bulletAfterLine(win, contents(win), (await outlineLines(contents(win)).count()) - 1)
   await pickOutlineLink(win, SUBJECT)
   await expect.poll(() => read(SUBJECT_FILE), { timeout: 10_000 }).toContain('[[Home]]')
 
@@ -275,20 +308,24 @@ test('step 5 — CANCEL keeps the membership: the page moves into the appended s
   await expect(sheet(win)).toBeVisible()
   await sheetBtn(win, 'Cancel').click()
 
-  // 🔒 THE YAZ-903 RULING: cancel keeps the membership and does NOT put the text back. The page is
-  // a member the document does not NAME, so it joins the five already down there — in the
-  // appended section's own name order, which puts it first.
-  await expect(appended(contents(win))).toHaveText(APPENDED_WITH_SUBJECT)
+  // ⚡ THE YAZ-1152 AMENDMENT, superseding the YAZ-903 ruling this step used to pin. Cancel keeps
+  // the membership — the member's card was never touched — and a member the document does not name
+  // is ADOPTED, so the line comes straight back. Not where it was: at the END, which is where
+  // adoption always writes. The editor re-seeds on that write, so the restore is on screen too.
+  await expect.poll(() => outlineSaid(contents(win))).toEqual([...BODY, NOTE, CHILD, ...asLinks(...TOPICS), `[[${SUBJECT}]]`])
+  await expect.poll(outlineOnDisk, { timeout: 10_000 }).toContain(`- [[${SUBJECT}]]`)
+  expect((await outlineOnDisk()).trimEnd().endsWith(`- [[${SUBJECT}]]`)).toBe(true)
   expect(await read(SUBJECT_FILE)).toContain('[[Home]]')
-  expect(await outlineOnDisk()).not.toContain(`[[${SUBJECT}]]`)
-  await shoot(win, 'outline-08-cancelled-into-appended')
+  await shoot(win, 'outline-08-cancel-restores-the-line')
 
-  // …and `prev` advanced with the text, so the next keystroke does not re-ask a question already
-  // answered: an unrelated edit commits with no sheet at all.
+  // …and the restore travelled `commit` like every other write, so `prev` advanced: the next
+  // keystroke does not re-ask a question already answered. An unrelated edit commits with no sheet.
   await typeOutlineLine(win, contents(win), await outlineLineIndex(contents(win), NOTE), KEPT)
   await expect.poll(outlineOnDisk, { timeout: 10_000 }).toContain(KEPT)
   await expect(sheet(win)).toHaveCount(0)
-  await expect(appended(contents(win))).toHaveText(APPENDED_WITH_SUBJECT)
+  // Restored ONCE: adoption recomputes its todo against the document it just wrote, so the line it
+  // put back is not put back again by the next render.
+  expect((await outlineOnDisk()).match(/\[\[CAC\]\]/g)).toHaveLength(1)
 })
 
 test('step 6 — bullets-only: `# heading` typed in a bullet is six literal characters', async () => {
@@ -311,17 +348,20 @@ test('step 7 — the document lives on the page, not in the session: it survives
   await fileRow(win, 'Home').click()
   await expect(contents(win)).toBeVisible()
 
-  // The text, the nesting and the migrated prose, read back out of the one place they live — byte
-  // for byte the document the quit flushed, re-parsed into the same bullets it was typed as. The
-  // first line is still the body YAZ-919 moved in, three edits and a restart later.
-  expect(await outlineOnDisk()).toBe(document)
+  // The text, the nesting, the migrated prose and the adopted links, read back out of the one
+  // place they live — BYTE FOR BYTE the document the quit flushed. Adoption ran again on this
+  // mount and found nothing to do, which is the other half of the claim: a document that already
+  // names every member is never rewritten.
   await expect(outlineLines(contents(win)).filter({ hasText: NOTE })).toHaveCount(1)
   await expect(outlineNested(contents(win)).filter({ hasText: CHILD })).toHaveCount(1)
   await expect(outlineLines(contents(win)).first()).toHaveText(BODY[0])
-  // The membership step 5 declined to drop is still a membership — on the member's own card, in
-  // the appended section, and in the Table.
+  await expect(outlineLines(contents(win)).last()).toHaveText(`[[${SUBJECT}]]`)
+  expect(await outlineOnDisk()).toBe(document)
+  await expect(appendedRows(win)).toHaveCount(0)
+
+  // The membership step 5 declined to drop is still a membership — on the member's own card, and
+  // in the Table, which is the surface that answers "who belongs here" independently of the text.
   expect(await read(SUBJECT_FILE)).toContain('[[Home]]')
-  await expect(appended(contents(win))).toHaveText(APPENDED_WITH_SUBJECT)
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(rowNames(contents(win))).toHaveText(named(...TOPICS, SUBJECT))
   await shoot(win, 'outline-10-survives-relaunch')

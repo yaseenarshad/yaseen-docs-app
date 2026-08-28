@@ -23,6 +23,17 @@ const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
 const FOLDER_PAGE = 'Funnel Stages.md'
 /** Both belong NOWHERE in the fixture — every membership below is this gesture's doing. */
 const INBOX = ['inbox/Pipeline Review Notes.md', 'inbox/Positioning Draft.md']
+/**
+ * What the page's outline says before anybody clicks Sync: its own body, migrated in on the first
+ * open (YAZ-919), then its three members, ADOPTED in under it (⚡ YAZ-1152) — the state step 1
+ * waits for, so that "Cancel wrote nothing" is measured against a page that has finished writing.
+ */
+const BODY = [
+  'Funnel Stages',
+  'The stages a deal walks through, from first touch to closed-won. Every page that says it',
+  'belongs here shows up below — there is no list to maintain.',
+]
+const MEMBERS = ['Lead Gen', 'Lead Nurture', 'Sales-Conversion']
 
 let userData: string
 let vault: string
@@ -54,6 +65,11 @@ test('step 1 — Cancel is a true no-op: the sheet reports, and writes nothing a
   win = await appWindow(app, 'w1')
   await expect(contents(win)).toBeVisible()
 
+  // SETTLE FIRST (⚡ YAZ-1152). Opening a folder page is now two writes of its own: YAZ-919 moves
+  // the body into the outline, then ADOPTION writes in the three members that body does not name.
+  // "Cancel wrote nothing" is a claim about the bytes AFTER those, so the baseline is read once
+  // the document names every member — otherwise this file would be pinning a race, not a rule.
+  await expect.poll(() => said(contents(win))).toEqual([...BODY, ...MEMBERS.map((n) => `[[${n}]]`)])
   const before = await readFile(path.join(vault, FOLDER_PAGE), 'utf8')
   const said0 = await said(contents(win))
 

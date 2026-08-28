@@ -15,15 +15,17 @@
  *   1 THE FULL CIRCLE — tag a page by typing its link into the outline, then read the SAME fact off four
  *     places at once: the member's own file on disk, the Topics tree's nesting, the Table tab's
  *     rows, the outline's bullets (and Uncategorized shrinking by one, the fifth)
- *   2 THE LAST REMOVAL — the × on a member whose ONLY parent this is: the sheet says Uncategorized,
- *     and Uncategorized is exactly where the sidebar then puts it, while the table drops the row
+ *   2 THE LAST REMOVAL — deleting the line of a member whose ONLY parent this is: the sheet says
+ *     Uncategorized, and Uncategorized is exactly where the sidebar then puts it, while the table
+ *     drops the row (⚡ YAZ-1152 retired the hover × with the rows it lived on)
  *   3 ORDER SURVIVES RESTART — rearranging the outline is ONE `folder_page_settings` write (not
  *     one member card is touched), and after quit → relaunch the document reads back as it was —
  *     and the Topics tree reads the SAME arrangement off the document's link lines (YAZ-905
  *     closed the seam YAZ-904 found: `outlineOrderOf` answers from an edited outline's document)
  *   4 LOOPS ARE SAFE EVERYWHERE — an `A ↔ B` loop hand-written on disk: the tree's walker descends
  *     into it and terminates, a page reachable down two branches repeats under both, and the
- *     outline — a flat document since YAZ-903 — has no descent left to hang
+ *     outline — a flat document since YAZ-903, which since ⚡ YAZ-1152 ADOPTS both members of the
+ *     loop as plain link lines — has no descent left to hang
  *   5 TURN-INTO END TO END — the file tree's context menu makes a folder page, the block appears
  *     under its body, it nests in the tree, it takes a member; turning it BACK drops the member
  *     into Uncategorized and takes the block away, with not one member card rewritten
@@ -49,6 +51,7 @@ import {
   md5,
   outlineLineIndex,
   outlineLines,
+  outlineSaid,
   pickOutlineLink,
   quitApp,
   REPO_ROOT,
@@ -65,13 +68,14 @@ const FOLDERS = ['funnel-stages', 'inbox', 'industries', 'kpis', 'problems', 'ro
 
 const HOME = 'Home.md'
 const FOLDER_PAGE = 'Funnel Stages.md'
-/** Its members at the start, alphabetically — the appended section's own name order. */
+/** Its members at the start, alphabetically — the order ADOPTION writes them into the document in. */
 const MEMBERS = ['Lead Gen', 'Lead Nurture', 'Sales-Conversion']
 /**
  * ⚡ YAZ-919: `Funnel Stages.md` ships a BODY, and a folder page is title → outline now — so on
  * its first open that body MOVES into the outline document (heading marker stripped, blanks
- * dropped) and is on screen from the first paint. The document under every gesture below is
- * therefore the page's own prose, with the members it does not NAME appended underneath.
+ * dropped) and is on screen from the first paint. ⚡ YAZ-1152: the members that prose does not NAME
+ * are then written into the same document, as depth-0 link lines under it. So the document under
+ * every gesture below is the page's own prose followed by its whole membership, in text.
  */
 const BODY = [
   'Funnel Stages',
@@ -122,22 +126,6 @@ const contents = (w: Page) => layer(w).locator('.folder-page-contents')
 const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
 const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__link')
-/**
- * The outline's APPENDED rows (YAZ-903): members this folder page's DOCUMENT does not name. What
- * the document says is `outlineLines`, and its per-row glyph / count / × live only down here.
- */
-const outlineRows = (scope: Locator) => scope.locator('.view-outline__link')
-const outlineCounts = (scope: Locator) => scope.locator('.view-outline__count')
-/** One appended row, addressed by the name it shows — the only place a member carries an × (YAZ-820). */
-const outlineRow = (w: Page, name: string) =>
-  contents(w).locator('.view-outline__row').filter({ has: w.locator('.view-outline__link', { hasText: new RegExp(`^${name}$`) }) })
-/**
- * The document's lines that still say something. Clearing a line's TEXT leaves its bullet standing
- * (an empty level-1 bullet cannot be lifted out of a bullets-only document), so the blanks are
- * real, expected, and not what any assertion here is about.
- */
-const outlineSaid = async (scope: Locator): Promise<string[]> =>
-  (await outlineLines(scope).allTextContents()).filter((line) => line !== '')
 /** Every name as a LINK LINE, which is how a membership is spelled inside the document. */
 const asLinks = (...names: string[]) => names.map((n) => `[[${n}]]`)
 const sheet = (w: Page) => w.locator('[role="dialog"]')
@@ -222,10 +210,10 @@ test('step 1 — one gesture, four surfaces: a link line writes the member’s c
   ])
   await expect(uncategorizedRow(win).locator('.tree__count')).toHaveText('2') // the two `inbox/` notes
   await expect(contents(win)).toBeVisible()
-  // ⚡ YAZ-919: the document is the page's own migrated body, so the three members are named
-  // nowhere in it and stand in the appended section below — the same three, one surface further down.
-  await expect(outlineLines(contents(win))).toHaveText(BODY)
-  await expect(outlineRows(contents(win))).toHaveText(MEMBERS)
+  // ⚡ YAZ-919 gave this page its own body as the document; ⚡ YAZ-1152 then wrote the three members
+  // it does not NAME straight into it. So the same three pages the tree just listed are link lines
+  // under the prose — one surface further down, and now literally the same kind of thing.
+  await expect.poll(() => outlineLines(contents(win)).allTextContents()).toEqual([...BODY, ...asLinks(...MEMBERS)])
   await shoot(win, 'cross-01-both-surfaces')
 
   // THE GESTURE — one link line typed into the outline's DOCUMENT (YAZ-903, replacing the add row
@@ -249,19 +237,19 @@ test('step 1 — one gesture, four surfaces: a link line writes the member’s c
   expect(card).toContain('folder_pages:\n  - "[[Home]]"') // its own belonging, untouched
 
   // (b) THE OUTLINE — one more bullet, where the caret put it: the document is the order now, so
-  //     the new link line stands under the prose rather than sorted into the [D5] fallback. The
-  //     three members the document still does not name stay exactly where they were, appended.
-  await expect(outlineLines(contents(win))).toHaveText([...BODY, '[[Pipeline Review Notes]]'])
-  await expect(outlineRows(contents(win))).toHaveText(MEMBERS)
+  //     the new link line stands under the prose, ABOVE the three adoption wrote in. Nothing is
+  //     re-sorted by a typed line, and nothing adoption wrote is disturbed by one.
+  await expect(outlineLines(contents(win))).toHaveText([...BODY, '[[Pipeline Review Notes]]', ...asLinks(...MEMBERS)])
 
   // (c) THE TOPICS TREE — nested under the same folder page, one rung in, with the count moved and
   //     Uncategorized one shorter. The sidebar read the same frontmatter through the same lookup —
-  //     and the same [D5] rule: the one member the DOCUMENT names is placed first, and the three
-  //     it does not follow it alphabetically. One arrangement, two skins (YAZ-905).
+  //     and the same [D5] rule, which since ⚡ YAZ-1152 has nothing left to fall back to: the
+  //     document names every member now, so the tree is simply the document's own order, and the
+  //     typed line leads because that is where it was typed. One arrangement, two skins (YAZ-905).
   await expect(topicLabels(win)).toHaveText([
     'Home',
     'Funnel Stages',
-    'Pipeline Review Notes', // the only page the document names, so the only one placed
+    'Pipeline Review Notes', // first in the document, so first here
     'Lead Gen',
     'Lead Nurture',
     'Sales-Conversion',
@@ -293,12 +281,11 @@ test('step 2 — dropping a page’s ONLY parent: the sheet promises Uncategoriz
   // `Lead Nurture` belongs to `[[Funnel Stages]]` and nowhere else, so this is the copy's OTHER
   // form — the one that names Uncategorized instead of listing the folder pages left.
   //
-  // THE GESTURE, re-aimed twice. YAZ-903 made it "delete the LINE", because the document named
-  // every member and so nobody had an × any more. ⚡ YAZ-919 gave this page a document of its own
-  // prose, which names nobody — so `Lead Nurture` is an APPENDED row again, and an appended row is
-  // exactly where the hover × has lived since YAZ-820. Same sheet either way, which is the point:
-  // `folderPageOutline.spec.ts` step 4 owns the deleted-link-line half on a page that names one.
-  await outlineRow(win, 'Lead Nurture').locator('.view-outline__x').click()
+  // THE GESTURE, re-aimed three times and now settled. YAZ-903 made it "delete the LINE"; YAZ-919
+  // gave this page a document of its own prose that named nobody, which put the hover × back in
+  // play; ⚡ YAZ-1152 deleted the × and the row it lived on, because adoption writes every member
+  // into the document — so there is ONE gesture again, and this is it. Same sheet, either way.
+  await clearOutlineLine(win, contents(win), await outlineLineIndex(contents(win), '[[Lead Nurture]]'))
   await expect(sheet(win)).toContainText(
     "Remove 'Lead Nurture' from 'Funnel Stages'? The page is not deleted — its file stays put. It has no other folder pages, so it moves to Uncategorized.",
   )
@@ -310,27 +297,34 @@ test('step 2 — dropping a page’s ONLY parent: the sheet promises Uncategoriz
   expect(await read(ONLY_CHILD)).toContain('# Lead Nurture')
   expect(await read(ONLY_CHILD)).toContain('order: 2')
 
-  // THE BLOCK: gone from both skins — the document never named it, and it is no longer appended.
-  await expect.poll(() => outlineRows(contents(win)).allTextContents()).toEqual(['Lead Gen', 'Sales-Conversion'])
-  expect(await outlineSaid(contents(win))).toEqual([...BODY, '[[Pipeline Review Notes]]']) // the document is untouched
+  // THE BLOCK: gone, and STAYING gone — the line was deleted by the gesture, and the page it named
+  // is not a member any more, so adoption never writes it back. The three that are left are the
+  // three that belong.
+  await expect
+    .poll(() => outlineSaid(contents(win)))
+    .toEqual([...BODY, '[[Pipeline Review Notes]]', '[[Lead Gen]]', '[[Sales-Conversion]]'])
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(dataRows(contents(win))).toHaveCount(3)
   await expect(rowNames(contents(win))).toHaveText(named('Lead Gen', 'Sales-Conversion', 'Pipeline Review Notes'))
   await viewTabs(contents(win)).filter({ hasText: 'Outline' }).click()
 
   // THE SIDEBAR: the sheet said Uncategorized, and this is Uncategorized — two orphans again, this
-  // time a `funnel-stages/` page beside an `inbox/` one, path-sorted. Nothing was lost anywhere.
+  // time a `funnel-stages/` page beside an `inbox/` one. Since YAZ-956 the section opens as a MINI
+  // FILE TREE, so each orphan stands under the disk folder it actually lives in, path-sorted.
+  // Nothing was lost anywhere.
   await expect(uncategorizedRow(win).locator('.tree__count')).toHaveText('2')
   await uncategorizedRow(win).click()
   await expect(topicLabels(win)).toHaveText([
     'Home',
     'Funnel Stages',
-    'Pipeline Review Notes', // the tree reads the document's own order (YAZ-905), then [D5]
+    'Pipeline Review Notes', // the tree reads the document's own order (YAZ-905)
     'Lead Gen',
     'Sales-Conversion',
     ...TOPICS.slice(1),
     'Uncategorized',
+    'funnel-stages',
     'Lead Nurture',
+    'inbox',
     'Positioning Draft',
   ])
   await shoot(win, 'cross-05-uncategorized-caught-it')
@@ -348,42 +342,35 @@ test('step 3 — the outline IS the order now: rearranging it writes nobody’s 
   const leadGen = path.join(vault, 'funnel-stages', 'Lead Gen.md')
   const before = await md5(leadGen)
 
-  // `Lead Gen` to the BOTTOM. Since ⚡ YAZ-919 the document is this page's own prose and names one
-  // member, so the rearrangement is made the way the [D5] rule reads: NAMED members are placed
-  // first, in document order, and whatever is still unnamed follows alphabetically. Naming
-  // `Sales-Conversion` therefore pushes `Lead Gen` — the last unnamed page — to the bottom.
-  // Membership is a SET, so naming a page that already belongs changes nothing about belonging.
+  // `Lead Gen` to the BOTTOM — and since ⚡ YAZ-1152 the document names every member, so the move
+  // is made IN THE TEXT, in the two moves a document allows: write the line where it should go,
+  // then take away the one that was. The link SET never changes across either edit, which is why
+  // neither of them raises the un-tag sheet — and why the second edit cannot be read as a removal.
   await bulletAfterLine(win, contents(win), (await outlineLines(contents(win)).count()) - 1)
-  await pickOutlineLink(win, 'Sales-Conversion')
-  // …and then `Pipeline Review Notes` BELOW it, in the two moves a document allows: write the line
-  // where it should go, then take away the one that was. The link set never changes across either
-  // edit either — which is why not one of these three edits raises the un-tag sheet.
-  await bulletAfterLine(win, contents(win), (await outlineLines(contents(win)).count()) - 1)
-  await pickOutlineLink(win, 'Pipeline Review Notes')
-  await clearOutlineLine(win, contents(win), await outlineLineIndex(contents(win), '[[Pipeline Review Notes]]'))
+  await pickOutlineLink(win, 'Lead Gen')
+  await clearOutlineLine(win, contents(win), await outlineLineIndex(contents(win), '[[Lead Gen]]'))
   await expect
     .poll(() => outlineSaid(contents(win)))
-    .toEqual([...BODY, '[[Sales-Conversion]]', '[[Pipeline Review Notes]]'])
+    .toEqual([...BODY, '[[Pipeline Review Notes]]', '[[Sales-Conversion]]', '[[Lead Gen]]'])
   await expect(sheet(win)).toHaveCount(0)
-  await expect(outlineRows(contents(win))).toHaveText(['Lead Gen']) // the one page left unnamed
 
   // DISK: the new sequence is on the FOLDER PAGE's own card, inside `folder_page_settings` — the
   // one place 2A keeps it, alongside the migrated prose it was typed under — and the member is
   // byte-for-byte what it was.
   await expect
     .poll(() => read(FOLDER_PAGE), { timeout: 10_000 })
-    .toMatch(/\[\[Sales-Conversion\]\][\s\S]*\[\[Pipeline Review Notes\]\]/)
+    .toMatch(/\[\[Sales-Conversion\]\][\s\S]*\[\[Lead Gen\]\]/)
   expect(await read(FOLDER_PAGE)).toContain('The stages a deal walks through') // …and so is the body that moved in
   expect(await md5(leadGen)).toBe(before)
 
   // THE SIDEBAR, live — the seam YAZ-904 found, CLOSED (YAZ-905): `outlineOrderOf` reads an
   // edited outline's DOCUMENT, so the tree rearranges exactly as the outline did. One set, one
-  // arrangement, two skins — and `Lead Gen`, named nowhere, sits last on both.
+  // arrangement, two skins — and `Lead Gen`, moved to the bottom of the text, sits last on both.
   await expect(topicLabels(win)).toHaveText([
     'Home',
     'Funnel Stages',
-    'Sales-Conversion',
     'Pipeline Review Notes',
+    'Sales-Conversion',
     'Lead Gen',
     ...TOPICS.slice(1),
     'Uncategorized',
@@ -399,8 +386,8 @@ test('step 3 — the outline IS the order now: rearranging it writes nobody’s 
   await expect(topicLabels(win)).toHaveText([
     'Home',
     'Funnel Stages',
-    'Sales-Conversion',
     'Pipeline Review Notes',
+    'Sales-Conversion',
     'Lead Gen',
     ...TOPICS.slice(1),
     'Uncategorized',
@@ -409,8 +396,9 @@ test('step 3 — the outline IS the order now: rearranging it writes nobody’s 
   // Which view is active is SESSION state, so the reopened page is back on the first skin — and it
   // reads the arrangement back out of the document, exactly as it was left. The migrated prose is
   // still standing above it, a relaunch later: it lives on the page, not in the session.
-  await expect.poll(() => outlineSaid(contents(win))).toEqual([...BODY, '[[Sales-Conversion]]', '[[Pipeline Review Notes]]'])
-  await expect(outlineRows(contents(win))).toHaveText(['Lead Gen'])
+  await expect
+    .poll(() => outlineSaid(contents(win)))
+    .toEqual([...BODY, '[[Pipeline Review Notes]]', '[[Sales-Conversion]]', '[[Lead Gen]]'])
   await shoot(win, 'cross-07-order-restored')
 })
 
@@ -439,8 +427,8 @@ test('step 4 — a hand-written A ↔ B loop: the tree descends into it, termina
   await expect(topicLabels(win)).toHaveText([
     'Home',
     'Funnel Stages',
-    'Sales-Conversion',
     'Pipeline Review Notes',
+    'Sales-Conversion',
     'Lead Gen',
     'Industries',
     'KPIs',
@@ -462,8 +450,8 @@ test('step 4 — a hand-written A ↔ B loop: the tree descends into it, termina
   await expect(topicLabels(win)).toHaveText([
     'Home',
     'Funnel Stages',
-    'Sales-Conversion',
     'Pipeline Review Notes',
+    'Sales-Conversion',
     'Lead Gen',
     'Industries',
     'KPIs',
@@ -489,32 +477,31 @@ test('step 4 — a hand-written A ↔ B loop: the tree descends into it, termina
 
   // THE OUTLINE, from inside the loop — and the OTHER half of the YAZ-859 seam ruling, re-aimed.
   //
-  // TOMBSTONE (YAZ-904): the outline used to be the second EXPANSION-driven surface — chevrons,
-  // per-row counts, a guarded descent of its own — and this step used to prove the two walkers
-  // agreed inside the loop. That surface is gone: the outline is a DOCUMENT, seeded flat from the
-  // page's direct members, and it never recurses at all. So a loop cannot hang it, and there is no
-  // second walker left to disagree with the tree — which the assertions below say out loud. The
-  // honesty split itself (count = DIRECT members, chevron = the guarded question) is still proven,
-  // where it still exists: on the Topics tree, three assertions up.
+  // TOMBSTONE (YAZ-904 → ⚡ YAZ-1152): the outline used to be the second EXPANSION-driven surface —
+  // chevrons, per-row counts, a guarded descent of its own — and this step used to prove the two
+  // walkers agreed inside the loop. That surface is gone twice over: the outline is a DOCUMENT,
+  // and a member it does not name is now WRITTEN INTO it rather than listed beside it. Either way
+  // it is FLAT — a link line is a link line, it does not descend — so a loop cannot hang it, and
+  // there is no second walker left to disagree with the tree. The honesty split itself (count =
+  // DIRECT members, chevron = the guarded question) is still proven where it still exists: on the
+  // Topics tree, three assertions up, which is also where the counts this step used to read off
+  // the appended rows now live.
   await topicRow(win, 'Loop A').click()
   await expect(activeTab(win)).toHaveText('Loop A')
-  // Its one-line body, migrated in (⚡ YAZ-919) — and both members appended below it, FLAT: the
-  // section lists them, it does not descend into them, so the loop has nothing here to hang on.
-  await expect(outlineLines(contents(win))).toHaveText(['Loop A'])
-  await expect(outlineRows(contents(win))).toHaveText(['Loop B', 'Loop Leaf'])
-  // The honesty split again, on the surface that kept the counts: `Loop B` is a folder page, so
-  // its row carries its DIRECT-member count (Loop A and Loop Leaf, 2) even though Loop A is the
-  // page we are standing on; `Loop Leaf` is an ordinary page and carries none.
-  await expect(outlineCounts(contents(win))).toHaveText(['2'])
-  await expect(contents(win).locator('[aria-label="Expand Loop B"]')).toHaveCount(0) // and nothing to expand
+  // Its one-line body, migrated in (⚡ YAZ-919), and both members adopted under it (⚡ YAZ-1152) as
+  // plain depth-0 links: the document lists them, it does not descend into them.
+  await expect.poll(() => outlineLines(contents(win)).allTextContents()).toEqual(['Loop A', '[[Loop B]]', '[[Loop Leaf]]'])
+  // `Loop B` is a folder page and `Loop Leaf` is not, and inside the document that difference does
+  // not show at all — no glyph, no count, nothing to expand. The locked scoping decision.
+  await expect(win.locator('.view-outline__glyph, .view-outline__count, .view-outline__list')).toHaveCount(0)
+  await expect(contents(win).locator('[aria-label="Expand Loop B"]')).toHaveCount(0)
   await shoot(win, 'cross-09-loop-in-the-outline')
 
   // And from the OTHER end of the loop, so neither direction is the special case.
   await topicRow(win, 'Loop B').click()
   await expect(activeTab(win)).toHaveText('Loop B')
-  await expect(outlineLines(contents(win))).toHaveText(['Loop B'])
-  await expect(outlineRows(contents(win))).toHaveText(['Loop A', 'Loop Leaf'])
-  await expect(outlineCounts(contents(win))).toHaveText(['2'])
+  await expect.poll(() => outlineLines(contents(win)).allTextContents()).toEqual(['Loop B', '[[Loop A]]', '[[Loop Leaf]]'])
+  await expect(contents(win).locator('[aria-label="Expand Loop A"]')).toHaveCount(0)
 
   // Tidy the tree back up before step 5 reads it again — including KPIs, which step 5 expands.
   await treeChevron(win, 'Collapse', 'Loop A').click()
@@ -686,11 +673,10 @@ test('step 6 — a page_type vault, migrated by the real script, OPENS as a fold
   await expect(activeTab(win)).toHaveText('Channels')
   await expect(contents(win)).toBeVisible()
   // Both channel pages stand in the document the [D5] seed wrote, as plain link lines — the glyph
-  // and the direct-member count they used to wear moved to the APPENDED section with YAZ-903, and
-  // this page names every member it has, so nothing is appended (folderPages.spec.ts step 6 owns
-  // the glyph-and-count claim on the surface that kept it).
+  // and the direct-member count they used to wear moved to the appended section with YAZ-903 and
+  // then to the Topics tree with ⚡ YAZ-1152, which is where `folderPages.spec.ts` step 6 reads
+  // them. This page names every member it has, so adoption has nothing to add and writes nothing.
   await expect(outlineLines(contents(win))).toHaveText(asLinks('Newsletter', 'Website'))
-  await expect(outlineRows(contents(win))).toHaveCount(0)
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(rowNames(contents(win))).toHaveText(named('Newsletter', 'Website'))
   await shoot(win, 'cross-16-migrated-folder-page')
