@@ -49,7 +49,7 @@ export interface BoardViewProps {
  * THAT column's group without opening it — one input at a time, cleared and left open for the next.
  */
 export function BoardView({ def, view, viewIndex, records, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup }: BoardViewProps) {
-  const dnd = useGroupDrag(groupByKey(view), onMoveToGroup)
+  const dnd = useGroupDrag([groupByKey(view)], onMoveToGroup)
   /** One FLIP instance for the whole board (YAZ-944), so a card crossing columns MOVES. */
   const flipRoot = useFlip()
   /** The one open add row (YAZ-943) and what has been typed into it; null = every column shows its button. */

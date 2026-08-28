@@ -10,7 +10,7 @@ import { cellEditor, columnTyping } from '../editorType'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf, summaryKindOf } from './GroupHeader'
-import { groupByKey, useGroupDrag } from './groupDrag'
+import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, useGroupDrag } from './groupDrag'
 import { Popover } from './Popover'
 import { frozenColumnCount } from './frozenColumns'
 import { TableRowContextMenu } from './TableRowContextMenu'
@@ -33,12 +33,12 @@ export interface TableViewProps {
   onOpenFileBackground?: (path: string) => void
   /** Passive reporting for a stale or failed OS action. */
   onNotice?: (message: string) => void
-  /** A drop on another section: `groupBy.property = value` (undefined deletes) via ViewsPane (5C, GRO-2143). */
-  onMoveToGroup: (path: string, value: unknown) => void
+  /** A drop on another section: `groupBy.property = value` (undefined deletes) via ViewsPane (5C, GRO-2143); `drop` says which LEVEL, and carries the outer's write on a cross-outer inner drop (YAZ-1101). */
+  onMoveToGroup: (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => void
   /** The last failed move, flagged inline on its row. */
   moveError: { path: string; message: string } | null
-  /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. */
-  onNewInGroup?: (group: Group) => void
+  /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. `at` places the section for the level-aware seed (YAZ-1101). */
+  onNewInGroup?: (group: Group, name?: string, at?: GroupSpot) => void
   /** Vault root, so the picker's resolver is THE one the wikilink surfaces share (YAZ-846); null = name-and-relative-path resolution only. */
   root: string | null
   /** The vault's property declarations (5E, GRO-2217): vault-wide editor inference and relation targets. */
@@ -59,8 +59,8 @@ const OVERSCAN = 10
 /** jsdom and the pre-measure first render have no viewport height; assume one screen. */
 const FALLBACK_VIEWPORT = 600
 
-/** One display line: a group header row (`nested` = an inner section, YAZ-745), or a data row with its `data-cell` row index (data rows only) and its group (null when ungrouped). */
-type Line = { header: Group; gk: string; nested?: true } | { row: Row; r: number; g: Group | null; gk: string | null }
+/** One display line: a group header row (`nested` = an inner section, YAZ-745), or a data row with its `data-cell` row index (data rows only) and its group (null when ungrouped). `at` places that group for the level-aware drag / "+" (YAZ-1101). */
+type Line = { header: Group; gk: string; nested?: true; at: GroupSpot } | { row: Row; r: number; g: Group | null; gk: string | null; at: GroupSpot | null }
 
 /** Let a table property-cell double-click activate the shared editor exactly once. */
 function activateEditorFromCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
@@ -89,8 +89,10 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  */
 export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, folderPage = null, vaultRecords }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
-  // Row drag between sections (5C, GRO-2143); disabled without groups.
-  const dnd = useGroupDrag(groups === null ? null : groupByKey(view), onMoveToGroup)
+  // Row drag between sections (5C, GRO-2143); disabled without groups. One write key PER level
+  // (YAZ-1101): a level that is not a note property takes no drops and shows no "+".
+  const levelKeys = [groupByKey(view), groupByKey(view, 1)]
+  const dnd = useGroupDrag(groups === null ? [] : levelKeys, onMoveToGroup)
   const [summaryFor, setSummaryFor] = useState<string | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [rowMenu, setRowMenu] = useState<{ x: number; y: number; path: string } | null>(null)
@@ -136,23 +138,25 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   /** Visible data rows in display order; `data-cell` row indices index into this. */
   const flat: Row[] = []
   if (groups === null) {
-    for (const row of rows) lines.push({ row, r: flat.push(row) - 1, g: null, gk: null })
+    for (const row of rows) lines.push({ row, r: flat.push(row) - 1, g: null, gk: null, at: null })
   } else {
     for (const g of groups) {
       const gk = groupKeyOf(g.key)
-      lines.push({ header: g, gk })
+      const at: GroupSpot = { level: 0, outer: g }
+      lines.push({ header: g, gk, at })
       if (collapsedSet.has(gk)) continue
       if (g.children === undefined) {
-        for (const row of g.rows) lines.push({ row, r: flat.push(row) - 1, g, gk })
+        for (const row of g.rows) lines.push({ row, r: flat.push(row) - 1, g, gk, at })
         continue
       }
       // Two levels (YAZ-745): the merge rule's direct rows sit right under the outer, then one
       // indented section per child — still ONE flat list, so windowing and nav are untouched.
-      for (const row of g.direct ?? []) lines.push({ row, r: flat.push(row) - 1, g, gk })
+      for (const row of g.direct ?? []) lines.push({ row, r: flat.push(row) - 1, g, gk, at })
       for (const child of g.children) {
         const ck = nestedGroupKeyOf(g.key, child.key)
-        lines.push({ header: child, gk: ck, nested: true })
-        if (!collapsedSet.has(ck)) for (const row of child.rows) lines.push({ row, r: flat.push(row) - 1, g: child, gk: ck })
+        const inner: GroupSpot = { level: 1, outer: g }
+        lines.push({ header: child, gk: ck, nested: true, at: inner })
+        if (!collapsedSet.has(ck)) for (const row of child.rows) lines.push({ row, r: flat.push(row) - 1, g: child, gk: ck, at: inner })
       }
     }
   }
@@ -265,7 +269,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
               <tr
                 key={`group:${line.gk}`}
                 className={`view-table__group${dnd.over === line.gk ? ' view-table__group--drop' : ''}`}
-                {...dnd.target(line.header)}
+                {...dnd.target(line.header, line.at)}
               >
                 <td className={`view-table__group-cell${line.nested === true ? ' view-table__group-cell--nested' : ''}`} colSpan={keys.length}>
                   <GroupHeader
@@ -276,7 +280,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     rows={line.header.rows}
                     collapsed={collapsedSet.has(line.gk)}
                     onToggle={() => onToggleGroup(line.gk)}
-                    onNew={onNewInGroup === undefined ? undefined : () => onNewInGroup(line.header)}
+                    onNew={onNewInGroup === undefined || levelKeys[line.at.level] === null ? undefined : () => onNewInGroup(line.header, undefined, line.at)}
                   />
                 </td>
               </tr>
@@ -286,7 +290,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 // flat list (the windowing needs it), so the path alone is not a unique sibling key.
                 key={line.gk === null ? line.row.record.path : `${line.gk}:${line.row.record.path}`}
                 className={line.gk !== null && dnd.over === line.gk ? 'view-table__row--drop' : undefined}
-                {...(line.g === null ? {} : { ...dnd.source(line.row.record.path, line.g), ...dnd.target(line.g) })}
+                {...(line.g === null || line.at === null ? {} : { ...dnd.source(line.row.record.path, line.g, line.at), ...dnd.target(line.g, line.at) })}
                 onContextMenu={openRowMenu(line.row.record.path)}
               >
                 {keys.map((key, c) => {

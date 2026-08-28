@@ -13,7 +13,7 @@ import { writeProperty } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/keys'
-import { type GroupSwap, type PendingMove, applyMoves, groupByKey } from './view/groupDrag'
+import { type GroupDrop, type GroupSpot, type GroupSwap, type PendingMove, applyMoves, groupByKey } from './view/groupDrag'
 import { groupKeyOf, nestedGroupKeyOf } from './view/GroupHeader'
 import { ListView } from './view/ListView'
 import { OutlineView } from './view/OutlineView'
@@ -88,6 +88,18 @@ export interface ViewsPaneProps {
 }
 
 /**
+ * One group's own raw value into a new note's seed (5D, GRO-2144), for `key` = that group's LEVEL.
+ * Fanned out (D4): seed THIS group's own element as a one-item list — the first row's raw value is
+ * the neighbour's WHOLE list there, which would hand the new page someone else's values; `render()`
+ * gives a link back its `[[…]]` form, the same one the picker writes.
+ */
+function seedGroupValue(properties: Record<string, unknown>, group: Group, key: string | null): void {
+  if (key === null || group.key === null) return
+  const raw = group.fannedOut ? [render(group.key)] : group.rows[0]?.record.properties[key]
+  if (raw !== undefined) properties[key] = raw
+}
+
+/**
  * One set of views (GRO-2135): the toolbar (view switcher, sort / properties menus, search,
  * count) over the body — the real table for `type: table` (GRO-2136), the board for
  * `type: board` (4D, GRO-2138), the card grid for `type: cards` (4E, GRO-2139), the list for
@@ -134,8 +146,9 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
   useEffect(() => {
     setMoves((m) => {
       const kept = Object.entries(m).filter(([path, mv]) => {
-        const raw = records.find((r) => r.path === path)?.properties[mv.key]
-        return JSON.stringify(raw ?? null) === JSON.stringify(mv.prevRaw ?? null)
+        const props = records.find((r) => r.path === path)?.properties
+        // A two-write move is ONE unit (🔒 YAZ-745): it holds until the index has moved off BOTH raws.
+        return mv.some((w) => JSON.stringify(props?.[w.key] ?? null) === JSON.stringify(w.prevRaw ?? null))
       })
       return kept.length === Object.keys(m).length ? m : Object.fromEntries(kept)
     })
@@ -200,12 +213,15 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
     result.groups === null ? [] : result.groups.flatMap((g) => [groupKeyOf(g.key), ...(g.children ?? []).map((c) => nestedGroupKeyOf(g.key, c.key))])
   const allGroupKeys = groupKeys.length > MAX_COLLAPSED_GROUP_KEYS ? [] : groupKeys
 
-  // A drop on a board column / table section (5C, GRO-2143): optimistic move now, one-key write
-  // through 5A; a failed write drops the move (the card snaps back) and flags the card instead.
-  const onMoveToGroup = (path: string, value: unknown, swap?: GroupSwap) => {
-    const key = groupByKey(view)
+  // A drop on a board column / table section (5C, GRO-2143): optimistic move now, the write through
+  // 5A; a failed write drops the move (the card snaps back) and flags the card instead. `drop` names
+  // the LEVEL the row landed on (YAZ-1101) and may carry the outer's write — inner first, then the
+  // outer, both optimistic as ONE unit so either failing snaps the whole move back (🔒 YAZ-745).
+  const onMoveToGroup = (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => {
+    const key = groupByKey(view, drop?.level ?? 0)
     if (key === null) return
-    const prevRaw = records.find((r) => r.path === path)?.properties[key]
+    const props = records.find((r) => r.path === path)?.properties
+    const prevRaw = props?.[key]
     if (swap !== undefined) {
       // Fan-out (D3): edit the list rather than replace it. Elements are matched with the engine's
       // own `equals` over `fromYaml` and NO resolver — the exact comparison that decided the
@@ -215,9 +231,11 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
       if (swap.add !== null) next.push(render(swap.add))
       value = next
     }
+    const writes: PendingMove = [{ key, value, prevRaw }]
+    if (drop?.outer !== undefined) writes.push({ ...drop.outer, prevRaw: props?.[drop.outer.key] })
     setMoveError(null)
-    setMoves((m) => ({ ...m, [path]: { key, value, prevRaw } }))
-    writeProperty(path, key, value).catch((err: unknown) => {
+    setMoves((m) => ({ ...m, [path]: writes }))
+    Promise.all(writes.map((w) => writeProperty(path, w.key, w.value))).catch((err: unknown) => {
       setMoves((m) => Object.fromEntries(Object.entries(m).filter(([p]) => p !== path)))
       setMoveError({ path, message: err instanceof Error ? err.message : String(err) })
     })
@@ -230,20 +248,12 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
   // group "+" seeds its group. The note opens once the create lands; a failure shows the alert.
   // A `name` means the board's inline add (YAZ-943) — it already named the card and the caller is
   // mid-typing in the column, so that create STAYS on the board and opens nothing.
-  const onNewNote = (group: Group | null, name?: string) => {
+  const onNewNote = (group: Group | null, name?: string, at?: GroupSpot) => {
     const seed = deriveSeed(def, view)
-    const groupKey = groupByKey(view)
-    if (group !== null && groupKey !== null) {
-      // Fanned out (D4): seed THIS group's own element as a one-item list. The first row's raw
-      // value is the neighbour's WHOLE list there, which would hand the new page someone else's
-      // values; `render()` gives a link back its `[[…]]` form, the same one the picker writes.
-      const raw =
-        group.key === null
-          ? undefined
-          : group.fannedOut
-            ? [render(group.key)]
-            : group.rows[0]?.record.properties[groupKey]
-      if (raw !== undefined) seed.properties[groupKey] = raw
+    if (group !== null) {
+      seedGroupValue(seed.properties, group, groupByKey(view, at?.level ?? 0))
+      // 🔒 YAZ-745: an INNER "+" seeds the outer too, so the note lands in the very section clicked.
+      if (at !== undefined && at.level > 0) seedGroupValue(seed.properties, at.outer, groupByKey(view))
     }
     setCreateError(null)
     folderPage
