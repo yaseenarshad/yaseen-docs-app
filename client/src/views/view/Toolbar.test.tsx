@@ -206,6 +206,46 @@ describe('sort menu', () => {
     setValue(byLabel(pop, 'Group by'), '')
     expect(def().views[0].groupBy).toBeUndefined()
   })
+
+  it('a Then-by level writes the LIST form, omits the outer property, and clears back to the object form (YAZ-745)', () => {
+    const { el, def, yaml } = mount()
+    const pop = openMenu(el, 'Sort')
+    setValue(byLabel(pop, 'Group by'), 'note.status')
+    expect(def().views[0].groupBy).toEqual({ property: 'note.status', direction: 'ASC' })
+    const then = byLabel<HTMLSelectElement>(pop, 'Then group by')
+    expect([...then.options].map((o) => o.value)).not.toContain('note.status')
+    setValue(then, 'note.priority')
+    expect(def().views[0].groupBy).toEqual([
+      { property: 'note.status', direction: 'ASC' },
+      { property: 'note.priority', direction: 'ASC' },
+    ])
+    expect(yaml()).toContain('- property: note.status')
+    click(byLabel(pop, 'Then group direction'))
+    expect(def().views[0].groupBy).toEqual([
+      { property: 'note.status', direction: 'ASC' },
+      { property: 'note.priority', direction: 'DESC' },
+    ])
+    click(byLabel(pop, 'Group direction')) // the outer's chip still edits the outer alone
+    expect(def().views[0].groupBy).toEqual([
+      { property: 'note.status', direction: 'DESC' },
+      { property: 'note.priority', direction: 'DESC' },
+    ])
+    setValue(byLabel(pop, 'Then group by'), '')
+    expect(def().views[0].groupBy).toEqual({ property: 'note.status', direction: 'DESC' })
+  })
+
+  it('no Then-by without an outer; the outer moved onto the inner drops the inner; None clears both levels', () => {
+    const { el, def } = mount()
+    const pop = openMenu(el, 'Sort')
+    expect(pop.querySelector('[aria-label="Then group by"]')).toBeNull()
+    setValue(byLabel(pop, 'Group by'), 'note.status')
+    setValue(byLabel(pop, 'Then group by'), 'note.priority')
+    setValue(byLabel(pop, 'Group by'), 'note.priority')
+    expect(def().views[0].groupBy).toEqual({ property: 'note.priority', direction: 'ASC' })
+    setValue(byLabel(pop, 'Then group by'), 'note.status')
+    setValue(byLabel(pop, 'Group by'), '')
+    expect(def().views[0].groupBy).toBeUndefined()
+  })
 })
 
 describe('collapse all groups', () => {
