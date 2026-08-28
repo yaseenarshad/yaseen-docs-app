@@ -339,7 +339,33 @@ describe('properties menu', () => {
     expect(onChange).toHaveBeenCalledTimes(3)
   })
 
-  it.each(['cards', 'list', 'board'])('keeps file.name disabled in %s views', (type) => {
+  it('round-trips board file.name visibility through view.order', () => {
+    const { el, onChange, def } = mount(`views:
+  - type: board
+    name: B
+    order:
+      - file.name
+    groupBy:
+      property: note.status
+`)
+    const pop = openMenu(el, 'Properties')
+    const name = byLabel<HTMLInputElement>(pop, 'Show file.name')
+    expect(name.disabled).toBe(false)
+    expect(el.querySelectorAll('.view-board__title')).toHaveLength(8)
+
+    click(name)
+    expect(def().views[0].order).toEqual([])
+    expect(el.querySelector('.view-board__title')).toBeNull()
+    expect(el.querySelectorAll('.view-board__card')).toHaveLength(8)
+    expect(el.querySelector('.view-board__prop')).toBeNull()
+
+    click(byLabel(pop, 'Show file.name'))
+    expect(def().views[0].order).toEqual(['file.name'])
+    expect(el.querySelectorAll('.view-board__title')).toHaveLength(8)
+    expect(onChange).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['cards', 'list'])('keeps file.name disabled in %s views', (type) => {
     const { el } = mount(`views:\n  - type: ${type}\n    name: V\n`)
     expect(byLabel<HTMLInputElement>(openMenu(el, 'Properties'), 'Show file.name').disabled).toBe(true)
   })
