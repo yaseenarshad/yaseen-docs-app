@@ -47,7 +47,7 @@ export interface FolderPageMode {
    * host (🔒 D3), never a views write. `undefined` clears the key: back to the first view.
    */
   setDefaultView: (name: string | undefined) => void
-  /** ⌘-click on an outline row opens the page in a BACKGROUND tab (YAZ-820); absent → opens in place. */
+  /** ⌘-click on a table row opens the page in a BACKGROUND tab (YAZ-820); absent → opens in place. */
   openBackground?: (path: string) => void
   /** Passive notice surface for row actions that fail because a page moved or disappeared. */
   onNotice?: (message: string) => void
@@ -353,8 +353,6 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
           outline={views[outlineIndex].outline}
           vaultRecords={vaultRecords}
           records={records}
-          onOpenFile={onOpenFile}
-          openBackground={folderPage.openBackground}
           wikilinks={folderPage.wikilinks}
           wikilinkCandidates={folderPage.wikilinkCandidates}
           nav={folderPage.nav}

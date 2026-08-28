@@ -40,86 +40,13 @@
  */
 
 /*
- * ── The OUTLINE skin (YAZ-820, rewritten by YAZ-903) ──────────────────────────────────────────
- * Rendered by `view/OutlineView.tsx`, which only ever renders inside THIS block — which is why
- * the rules live in the folder page's own CSS file rather than in `views.css` beside the vault-
- * wide view skins. What is left after the editor took over the outline itself is the APPENDED
- * section: the read-only row for a member this document does not name — bullet, link, then the
- * folder-page glyph + direct-member count, and the hover ×.
+ * ── The OUTLINE skin (YAZ-820, rewritten by YAZ-903, emptied by YAZ-1152) ─────────────────────
+ * `view/OutlineView.tsx` has no chrome of its own left: the editor (`outlineEditor.css`) is the
+ * whole surface, and a member the document does not name is ADOPTED into it rather than rendered
+ * beside it. The block's own geometry above is all this file still owns.
  *
  * TOMBSTONE (YAZ-903): the indent well, the chevron and its always-same-width slot, the drag and
  * insertion-edge states and the whole add-row picker went with the surface that wore them.
+ * TOMBSTONE (YAZ-1152): `__list` / `__row` / `__bullet` / `__link` / `__glyph` / `__count` /
+ * `__x` — the APPENDED section's read-only row and its hover × — went with adoption.
  */
-
-.view-outline__list {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-}
-
-.view-outline__row {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
-  border-radius: 5px;
-}
-
-.view-outline__row:hover {
-  background: var(--accent-soft);
-}
-
-.view-outline__bullet {
-  flex: none;
-  width: 14px;
-  font-size: 13px;
-  color: var(--fg-muted);
-  text-align: center;
-}
-
-.view-outline__link {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--accent);
-  font-size: 13px;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.view-outline__link:hover {
-  text-decoration: underline;
-}
-
-.view-outline__glyph {
-  flex: none;
-  color: var(--fg-muted);
-}
-
-.view-outline__count {
-  flex: none;
-  font-size: 12px;
-  color: var(--fg-muted);
-}
-
-/* Hover-only — and it opens the sheet; it never removes on the click itself. */
-.view-outline__x {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  margin-left: auto;
-  border-radius: 4px;
-  color: transparent;
-  font-size: 14px;
-  line-height: 1;
-}
-
-.view-outline__row:hover .view-outline__x {
-  color: var(--fg-muted);
-}
-
-.view-outline__x:hover {
-  color: var(--danger);
-  background: var(--accent-soft);
-}

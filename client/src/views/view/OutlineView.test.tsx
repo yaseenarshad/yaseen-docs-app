@@ -11,12 +11,14 @@
  * Pinned here: the seed is `view.outline`, or the [D5] `order` frozen into a document when there is
  * none; one edit is ONE settings write that stores the document AND retires `order`; a link line
  * that appeared tags its page (never this folder page itself); a link line that vanished only asks,
- * through the sheet, one page at a time — Confirm un-tags, Cancel keeps the belonging and is never
- * asked again; and a member the document does not name still shows, in the appended section, with
- * its glyph, its count and its own ×.
+ * through the sheet, one page at a time — Confirm un-tags, Cancel keeps the belonging; and ADOPTION
+ * (YAZ-1152): a member the document does not NAME is WRITTEN INTO it — depth-0 `[[links]]` at the
+ * end, alphabetical, spelled by `linkNames`, ONE settings write — never while a remove sheet is
+ * pending, an un-tag is in flight, the editor holds the caret, or the seed was lossy. The
+ * read-only appended section is GONE: cancel restores the line by construction instead.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act } from 'react'
+import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
 import { resolverFor } from '../engine'
@@ -33,12 +35,17 @@ vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
   api: { readFile: vi.fn(), createDir: vi.fn(), createFile: vi.fn() },
 }))
-/** The editor, stubbed: what it was seeded with, and the door a debounced edit comes back through. */
+/** The editor, stubbed: what it was seeded with, and the door a debounced edit comes back through.
+    The host div is FOCUSABLE, carrying the real editor's class — the caret guard is pinned on it. */
 const editor = vi.hoisted(() => ({ props: null as OutlineEditorProps | null }))
 vi.mock('./OutlineEditor', () => ({
   OutlineEditor: (props: OutlineEditorProps) => {
     editor.props = props
-    return <pre className="outline-doc">{props.markdown}</pre>
+    return (
+      <div className="view-outline-editor" tabIndex={0}>
+        <pre className="outline-doc">{props.markdown}</pre>
+      </div>
+    )
   },
 }))
 
@@ -163,9 +170,6 @@ function q<T extends Element>(el: ParentNode, sel: string): T {
 
 const all = <T extends Element>(el: ParentNode, sel: string): T[] => [...el.querySelectorAll<T>(sel)]
 const texts = (el: ParentNode, sel: string): string[] => all(el, sel).map((n) => n.textContent ?? '')
-/** The APPENDED members — everything the document does not name. */
-const rowNames = (el: ParentNode): string[] => texts(el, '.view-outline__link')
-const rowFor = (el: ParentNode, path: string): HTMLElement => q<HTMLElement>(el, `[data-outline-row="${path}"]`)
 const byLabel = <T extends HTMLElement>(el: ParentNode, label: string): T => q<T>(el, `[aria-label="${label}"]`)
 /** The document the editor was seeded with. */
 const doc = (el: ParentNode): string => q(el, '.outline-doc').textContent ?? ''
@@ -228,7 +232,7 @@ describe('the outline is the folder page’s skin — and only ever hers', () =>
   it('the editor is handed the window’s link feed, and a nav whose identity survives a re-render', () => {
     const el = mount()
     const first = editor.props
-    expect(el.querySelector('.view-outline-editor')).toBeNull() // the stub stands in its place
+    expect(el.querySelector('.ProseMirror')).toBeNull() // the stub stands in the real editor's place
     feed([...vault(), rec('/vault/Late.md')])
     // A new snapshot re-renders the block; a NEW nav object would remount the editor and eat the caret.
     expect(editor.props?.nav).toBe(first?.nav)
@@ -241,9 +245,10 @@ describe('the outline is the folder page’s skin — and only ever hers', () =>
 // ---------- the seed (🔒 D2 + the lazy migration) ----------
 
 describe('the document is seeded once, from the card', () => {
-  it('a stored `outline` is the document, verbatim', () => {
-    const stored = '- [[Sales]]\n    - a note about it\n- free text'
+  it('a stored `outline` naming every member is the document, verbatim — adoption has nothing to add', () => {
+    const stored = '- [[Sales]]\n    - a note about it\n- [[Lead Gen]]\n- [[Nurture]]\n- free text'
     expect(doc(mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: stored }, TABLE] })))).toBe(stored)
+    expect(write).not.toHaveBeenCalled() // nothing to adopt, nothing written — no gratuitous writes
   })
 
   it('no `outline` migrates the [D5] `order`: its entries first, every unlisted member behind them', () => {
@@ -260,11 +265,6 @@ describe('the document is seeded once, from the card', () => {
     expect(doc(el)).toBe('- [[Gone]]\n- [[Nurture]]\n- [[Lead Gen]]\n- [[Sales]]')
   })
 
-  it('an empty stored document stays empty — the members ride the appended section instead', () => {
-    const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: '' }, TABLE] }))
-    expect(doc(el)).toBe('')
-    expect(rowNames(el)).toEqual(['Lead Gen', 'Nurture', 'Sales'])
-  })
 })
 
 // ---------- the commit (ONE settings write, and `order` retires) ----------
@@ -319,8 +319,8 @@ describe('a link line that appears tags its page, at once', () => {
   })
 
   it('a page that already belongs is not written at all — tagging is idempotent through the resolver', async () => {
-    mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: '' }, TABLE] }))
-    edit('- [[lead gen]]') // a different SPELLING of a member: the resolver already counts it
+    mount() // the seed names every member with its canonical spelling
+    edit('- [[Lead Gen]]\n- [[Nurture]]\n- [[Sales]]\n- [[lead gen]]') // a different SPELLING of a member
     await flush()
     expect(memberWrites()).toEqual([])
   })
@@ -351,12 +351,14 @@ describe('the confirm copy is a pure function', () => {
 })
 
 describe('a link line that vanishes only ASKS', () => {
-  it('the sheet opens and nothing is un-tagged on the edit itself', async () => {
-    mount()
+  it('the sheet opens and nothing is un-tagged on the edit itself — and adoption holds its breath', async () => {
+    const el = mount()
     edit('- [[Lead Gen]]\n- [[Sales]]') // Nurture dropped
     await flush()
     expect(q(document.body, '[role="dialog"]').textContent).toContain('It remains in: KPIs.')
     expect(memberWrites()).toEqual([])
+    // While the question stands, the document is NOT rewritten under it: no re-append yet.
+    expect(doc(el)).toBe('- [[Lead Gen]]\n- [[Sales]]')
   })
 
   it('Confirm removes ONLY this folder page’s entry, on the member’s own card', async () => {
@@ -375,25 +377,26 @@ describe('a link line that vanishes only ASKS', () => {
     expect(memberWrites()).toEqual([[LEAD, 'folder_pages', ['Funnel Stages']]])
   })
 
-  it('CANCEL KEEPS THE BELONGING — and the next edit does not ask again', async () => {
+  it('CANCEL KEEPS THE BELONGING — and adoption puts the line straight back', async () => {
     const el = mount()
     edit('- [[Lead Gen]]\n- [[Sales]]')
     click(sheetButton('Cancel'))
     await flush()
     expect(document.body.querySelector('[role="dialog"]')).toBeNull()
     expect(memberWrites()).toEqual([])
-    // Still a member: its card was never touched, so it shows in the appended section.
-    expect(rowNames(el)).toEqual(['Nurture'])
+    // Still a member: its card was never touched — so the document must name it again (YAZ-1152),
+    // at the END: cancel restores the line by construction, and the editor re-seeds to show it.
+    expect(doc(el)).toBe('- [[Lead Gen]]\n- [[Sales]]\n- [[Nurture]]')
 
-    // The document ADVANCED past the cancelled question: typing on does not re-open the sheet.
-    edit('- [[Lead Gen]]\n- [[Sales]]\n- and now some prose')
+    // The restore travelled `commit`, so `prev` advanced: typing on does not re-open the sheet.
+    edit('- [[Lead Gen]]\n- [[Sales]]\n- [[Nurture]]\n- and now some prose')
     await flush()
     expect(document.body.querySelector('[role="dialog"]')).toBeNull()
     expect(memberWrites()).toEqual([])
   })
 
   it('two pages dropped in ONE edit are asked one sheet at a time, in document order', async () => {
-    mount()
+    const el = mount()
     edit('- [[Sales]]') // Lead Gen and Nurture both gone
     expect(q(document.body, '[role="dialog"]').textContent).toContain("Remove 'Lead Gen'")
     click(sheetButton('Remove'))
@@ -403,62 +406,128 @@ describe('a link line that vanishes only ASKS', () => {
     await flush()
     expect(document.body.querySelector('[role="dialog"]')).toBeNull()
     expect(memberWrites()).toEqual([[LEAD, 'folder_pages', []]])
+    // The split verdict lands in the document: the cancelled page returns, the removed one — whose
+    // un-tag is still waiting for the index echo — must NOT be re-adopted while it is in flight.
+    expect(doc(el)).toBe('- [[Sales]]\n- [[Nurture]]')
+
+    // The echo arrives without Lead Gen: nothing more to adopt, the document is at rest.
+    feed(vault().filter((r) => r.path !== LEAD))
+    await flush()
+    expect(doc(el)).toBe('- [[Sales]]\n- [[Nurture]]')
   })
 })
 
-// ---------- the appended section (tagged elsewhere still shows) ----------
+// ---------- adoption (YAZ-1152: a member the document does not name is written into it) ----------
 
-describe('a member the document does not name still shows', () => {
-  it('the rows are alphabetical, and only the members the document leaves out', () => {
-    const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: '- [[Sales]]' }, TABLE] }))
-    expect(rowNames(el)).toEqual(['Lead Gen', 'Nurture'])
-    expect(el.textContent).not.toContain('Other') // never a member, never a row
-  })
+describe('a member the document does not name is ADOPTED into it', () => {
+  /** The stored-outline shorthand every adoption mount uses. */
+  const stored = (outline: string, records: IndexRecord[] = vault()) =>
+    records.map((r) => (r.path === FUNNELS ? rec(FUNNELS, { folder_page: true, folder_page_settings: { ...SETTINGS, views: [{ ...OUTLINE, outline }, TABLE] } }) : r))
+  const editorHost = (el: ParentNode): HTMLElement => q<HTMLElement>(el, '.view-outline-editor')
 
-  it('a member that arrives on the next snapshot lands here — the document is not rewritten under the user', () => {
-    const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: '- [[Sales]]' }, TABLE] }))
-    feed([...vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: '- [[Sales]]' }, TABLE] }), rec('/vault/stages/Expansion.md', { folder_pages: ['[[Funnel Stages]]'] })])
-    expect(rowNames(el)).toEqual(['Expansion', 'Lead Gen', 'Nurture'])
-    expect(doc(el)).toBe('- [[Sales]]')
-  })
-
-  it('a row that becomes a link line leaves the section on the next edit', async () => {
-    const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: '- [[Sales]]' }, TABLE] }))
-    edit('- [[Sales]]\n- [[Nurture]]')
+  it('an empty stored document adopts every member: depth-0 links, alphabetical, ONE settings write', async () => {
+    const el = mount(FUNNELS, stored(''))
     await flush()
-    expect(rowNames(el)).toEqual(['Lead Gen'])
+    expect(doc(el)).toBe('- [[Lead Gen]]\n- [[Nurture]]\n- [[Sales]]')
+    expect(settingsWrites()).toHaveLength(1)
+    // Every adopted page already belongs — the tag pass is idempotent through the resolver.
+    expect(memberWrites()).toEqual([])
   })
 
-  it('the glyph and the direct-member count ride folder-page rows ONLY', () => {
-    const el = mount(FUNNELS, nested())
-    expect(rowNames(el)).toEqual(['Alpha'])
-    expect(texts(el, '.view-outline__count')).toEqual(['2'])
-
-    const plain = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: '' }, TABLE] }))
-    expect(plain.querySelector('.view-outline__glyph')).toBeNull()
-    expect(plain.querySelector('.view-outline__count')).toBeNull()
+  it('a document naming some members adopts only the missing, at the END — the text above survives byte-for-byte', async () => {
+    const el = mount(FUNNELS, stored('* [[Sales]]\n\n  free text about it'))
+    await flush()
+    expect(doc(el)).toBe('* [[Sales]]\n\n  free text about it\n- [[Lead Gen]]\n- [[Nurture]]')
   })
 
-  it('a row opens its page — the standard two handlers', () => {
-    const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: '' }, TABLE] }))
-    click(q(rowFor(el, LEAD), '.view-outline__link'))
-    expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(LEAD)
-    expect(onOpenFileBackground).not.toHaveBeenCalled()
+  it('a member that arrives on the next snapshot is adopted — the read-only rows are gone for good', async () => {
+    const named = '- [[Lead Gen]]\n- [[Nurture]]\n- [[Sales]]'
+    const el = mount(FUNNELS, stored(named))
+    await flush()
+    expect(write).not.toHaveBeenCalled() // nothing missing at mount
 
-    click(q(rowFor(el, SALES), '.view-outline__link'), { metaKey: true })
-    expect(onOpenFileBackground).toHaveBeenCalledExactlyOnceWith(SALES)
-    expect(onOpenFile).toHaveBeenCalledTimes(1)
+    feed([...stored(named), rec('/vault/stages/Expansion.md', { folder_pages: ['[[Funnel Stages]]'] })])
+    await flush()
+    expect(doc(el)).toBe(`${named}\n- [[Expansion]]`)
+    expect(el.querySelector('.view-outline__list')).toBeNull() // the appended section does not exist
+    expect(settingsWrites()).toHaveLength(1)
+
+    // The echo of the very same snapshot has nothing left to adopt: no second write, ever.
+    feed([...stored(named), rec('/vault/stages/Expansion.md', { folder_pages: ['[[Funnel Stages]]'] })])
+    await flush()
+    expect(settingsWrites()).toHaveLength(1)
   })
 
-  it('the × opens the same sheet, and only Confirm writes', async () => {
-    const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: '' }, TABLE] }))
-    click(byLabel(el, 'Remove Nurture from Funnel Stages'))
-    expect(q(document.body, '[role="dialog"]').textContent).toContain('It remains in: KPIs.')
-    expect(write).not.toHaveBeenCalled()
+  it('an ambiguous basename is adopted under its folder-qualified spelling — the one that resolves BACK to the member', async () => {
+    const el = mount(FUNNELS, [
+      ...stored('- [[Lead Gen]]\n- [[Nurture]]\n- [[Sales]]'),
+      rec('/vault/Dup.md'), // the shallower page owns the bare name…
+      rec('/vault/stages/Dup.md', { folder_pages: ['[[Funnel Stages]]'] }), // …so the member cannot use it
+    ])
+    await flush()
+    expect(doc(el)).toBe('- [[Lead Gen]]\n- [[Nurture]]\n- [[Sales]]\n- [[stages/Dup]]')
+  })
 
+  it('the caret is never yanked: adoption WAITS while the editor holds focus, and lands on blur', async () => {
+    const el = mount(FUNNELS, stored('- [[Sales]]'))
+    await flush()
+    expect(doc(el)).toBe('- [[Sales]]\n- [[Lead Gen]]\n- [[Nurture]]') // mount adoption ran unfocused
+
+    act(() => editorHost(el).focus())
+    feed([...stored('- [[Sales]]'), rec('/vault/stages/Expansion.md', { folder_pages: ['[[Funnel Stages]]'] })])
+    await flush()
+    expect(doc(el)).toBe('- [[Sales]]\n- [[Lead Gen]]\n- [[Nurture]]') // held: the user is typing
+
+    act(() => editorHost(el).blur())
+    await flush()
+    expect(doc(el)).toBe('- [[Sales]]\n- [[Lead Gen]]\n- [[Nurture]]\n- [[Expansion]]')
+  })
+
+  it('a failed un-tag write restores the line — the page still belongs, so the document must say so', async () => {
+    write.mockImplementation((_path, key) =>
+      key === 'folder_pages' ? Promise.reject(new Error('read-only vault')) : Promise.resolve({ mtime: 2 }),
+    )
+    const el = mount()
+    edit('- [[Lead Gen]]\n- [[Sales]]') // Nurture dropped
     click(sheetButton('Remove'))
     await flush()
-    expect(memberWrites()).toEqual([[NURTURE, 'folder_pages', ['[[KPIs]]']]])
+    expect(q(el, '[role="alert"]').textContent).toContain('read-only vault')
+    expect(doc(el)).toBe('- [[Lead Gen]]\n- [[Sales]]\n- [[Nurture]]')
+  })
+
+  it('a lossy seed is never appended to: the guard said read-only, and adoption believes it', async () => {
+    const el = mount()
+    act(() => editor.props?.onSeedLoss?.())
+    feed([...vault(), rec('/vault/stages/Expansion.md', { folder_pages: ['[[Funnel Stages]]'] })])
+    await flush()
+    expect(write).not.toHaveBeenCalled()
+    expect(doc(el)).toBe('- [[Lead Gen]]\n- [[Nurture]]\n- [[Sales]]')
+  })
+
+  it('StrictMode’s double-invoked effects adopt ONCE — each member lands on exactly one line', async () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() =>
+      root?.render(
+        <StrictMode>
+          <FolderPageContents path={FUNNELS} root="/vault" source={source} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} />
+        </StrictMode>,
+      ),
+    )
+    feed(stored(''))
+    await flush()
+    expect(doc(container)).toBe('- [[Lead Gen]]\n- [[Nurture]]\n- [[Sales]]')
+    expect(settingsWrites()).toHaveLength(1)
+  })
+
+  it('a nested folder page is adopted as a plain link — no glyph, no count, no rows anywhere', async () => {
+    const el = mount(FUNNELS, nested())
+    await flush()
+    expect(doc(el)).toBe('- nothing yet\n- [[Alpha]]')
+    expect(el.querySelector('.view-outline__glyph')).toBeNull()
+    expect(el.querySelector('.view-outline__count')).toBeNull()
+    expect(el.querySelector('.view-outline__list')).toBeNull()
   })
 })
 
@@ -499,10 +568,11 @@ describe('sync from folder appends through the outline’s one door', () => {
   it('the document above is kept byte-for-byte — the markers, the blank line and the prose all survive', async () => {
     const stored = '* [[Sales]]\n\n  free text about it'
     const el = mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: stored }, TABLE] }))
+    await flush() // mount adoption appends the unnamed members first (YAZ-1152)
     openSheet(el, 'Vault root')
     click(sheetButton('Add'))
     await flush()
-    expect(doc(el)).toBe(`${stored}\n- [[KPIs]]\n- [[Other]]`)
+    expect(doc(el)).toBe(`${stored}\n- [[Lead Gen]]\n- [[Nurture]]\n- [[KPIs]]\n- [[Other]]`)
   })
 
   it('a folder with nothing missing offers no Add at all, and dismissing writes nothing', async () => {
