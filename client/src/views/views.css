@@ -499,6 +499,11 @@
   z-index: 2;
 }
 
+.view-table tbody td:not(.view-table__frozen):has(> .view-cell-edit[data-editing]) {
+  position: relative;
+  z-index: 2;
+}
+
 .view-table tbody td > .view-cell-edit[data-editing] {
   display: block;
   width: 100%;

@@ -442,6 +442,40 @@ describe('full table-cell editing surface', () => {
     ])
   })
 
+  it('gives a non-frozen active completion its own layer below sticky table chrome', () => {
+    const { el } = mount(`views:
+  - type: table
+    name: T
+    frozenColumns: 1
+    order:
+      - note.status
+      - note.related
+      - file.name
+`)
+    const frozenActive = cell(el, 0, 0)
+    open(el, 0, 0)
+    expect([getComputedStyle(frozenActive).position, getComputedStyle(frozenActive).zIndex]).toEqual(['sticky', '2'])
+    press(byLabel(frozenActive, 'Edit status'), 'Escape')
+
+    const active = cell(el, 1, 1)
+    open(el, 1, 1)
+    setValue(byLabel<HTMLInputElement>(active, 'Edit related'), '[[Cre')
+    expect(active.classList.contains('view-table__frozen')).toBe(false)
+    expect(active.querySelector('.view-cell-edit__complete')).not.toBeNull()
+    expect([getComputedStyle(active).position, getComputedStyle(active).zIndex]).toEqual(['relative', '2'])
+
+    const ordinaryHeader = q<HTMLElement>(el, '.view-table thead th:nth-child(2)')
+    const frozenHeader = q<HTMLElement>(el, '.view-table thead th:nth-child(1)')
+    const ordinaryFooter = q<HTMLElement>(el, '.view-table tfoot td:nth-child(2)')
+    const frozenFooter = q<HTMLElement>(el, '.view-table tfoot td:nth-child(1)')
+    expect([ordinaryHeader, frozenHeader, ordinaryFooter, frozenFooter].map((node) => getComputedStyle(node).zIndex)).toEqual([
+      '3',
+      '4',
+      '3',
+      '4',
+    ])
+  })
+
   it('keeps populated chips and a usable editor width from shrinking so horizontal overflow can engage', () => {
     const { el } = mount(EDIT_BASE)
     const td = cell(el, 0, 5)
