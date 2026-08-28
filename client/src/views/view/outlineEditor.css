@@ -7,9 +7,3 @@
   max-width: none;
   padding: 0;
 }
-
-/* The view's own CMD+F bar (YAZ-969) floats over this block, so this is the corner it holds —
-   the `section.editor` anchor the note editor's bar gets, at outline-view scale. */
-.view-outline-editor {
-  position: relative;
-}

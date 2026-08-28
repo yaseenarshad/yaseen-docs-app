@@ -76,6 +76,16 @@ describe('OutlineEditor (YAZ-901)', () => {
     expect(host.querySelector('.view-outline-editor > .editor-instance > .milkdown')).not.toBeNull()
   })
 
+  it('keeps the sticky find dock before the editor DOM appended by the mount effect', async () => {
+    const host = await mount('- a\n')
+    const outline = host.querySelector('.view-outline-editor')
+    const dock = outline?.querySelector('.find-bar-dock--outline') ?? null
+    const editor = outline?.querySelector('.editor-instance') ?? null
+    expect(outline?.firstElementChild).toBe(dock)
+    expect(dock?.nextElementSibling).toBe(editor)
+    expect(dock?.querySelector('.find-bar')).toBeNull()
+  })
+
   it('does not report the mount-time normalisation as a change', async () => {
     // Milkdown rewrites `- ` at four spaces as `* ` at two — a normalisation, not an edit, and a
     // caller that wrote it back would dirty the folder page's settings just by looking at it.
