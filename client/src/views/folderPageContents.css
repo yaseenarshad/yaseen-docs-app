@@ -35,7 +35,8 @@
  * `.view-table-wrap` keeps its own `overflow: auto` from views.css on purpose: with no height to
  * fill it takes the table's, so it never opens a second VERTICAL scroller inside the note — while
  * a table wider than the note's column still scrolls sideways in place instead of dragging the
- * whole page with it. The sticky header sticks to a scroller that never scrolls, i.e. nothing.
+ * whole page with it. TableView bridges the outer note's vertical scroll onto the existing header
+ * without taking horizontal ownership away from this wrapper (YAZ-1151).
  */
 
 /*

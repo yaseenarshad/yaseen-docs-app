@@ -43,18 +43,22 @@ let root: Root | null = null
 let container: HTMLElement | null = null
 let draw: () => void = () => {}
 
-function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
+function mount(text: string, props: Partial<ViewsPaneProps> = {}, options: { editorHost?: boolean } = {}) {
   let parsed = parseViews(text)
   const onOpenFile = vi.fn()
   const onChange = vi.fn((next: ParsedViews) => {
     parsed = next
   })
   container = document.createElement('div')
+  if (options.editorHost === true) {
+    container.className = 'editor-host'
+    container.style.overflowY = 'auto'
+  }
   document.body.appendChild(container)
   root = createRoot(container)
   draw = () =>
-    act(() =>
-      root?.render(
+    act(() => {
+      const pane = (
         <ViewsPane
           parsed={parsed}
           onChange={onChange}
@@ -64,9 +68,10 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
           folderPage={FOLDER_PAGE}
           onOpenFile={onOpenFile}
           {...props}
-        />,
-      ),
-    )
+        />
+      )
+      root?.render(options.editorHost === true ? <div className="folder-page-contents">{pane}</div> : pane)
+    })
   draw()
   const el = container
   return { el, onChange, onOpenFile, yaml: () => serializeViews(parsed), def: (): ViewSet => parsed.def }
@@ -77,6 +82,8 @@ afterEach(() => {
   root = null
   container?.remove()
   container = null
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 // ---------- DOM helpers ----------
@@ -132,6 +139,35 @@ const links = (el: ParentNode): string[] => [...el.querySelectorAll('.view-table
 /** Data rows only (spacers excluded). */
 const bodyRows = (el: ParentNode): HTMLTableRowElement[] => [...el.querySelectorAll<HTMLTableRowElement>('.view-table tbody tr:not(.view-table__spacer)')]
 const cells = (row: HTMLTableRowElement): HTMLTableCellElement[] => [...row.querySelectorAll('td')]
+
+const box = (top: number, height: number, width = 600): DOMRect => new DOMRect(0, top, width, height)
+
+function pinningHarness({ tableTop = -80, tableHeight = 600, frameId = 1 } = {}) {
+  const frames: FrameRequestCallback[] = []
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+    frames.push(callback)
+    return frameId
+  })
+  let top = tableTop
+  const { el } = mount(TYPED_BASE, {}, { editorHost: true })
+  const table = q<HTMLElement>(el, '.view-table')
+  const header = q<HTMLElement>(table, 'thead')
+  const wrap = q<HTMLElement>(el, '.view-table-wrap')
+  vi.spyOn(el, 'getBoundingClientRect').mockReturnValue(box(0, 400))
+  vi.spyOn(table, 'getBoundingClientRect').mockImplementation(() => box(top, tableHeight))
+  vi.spyOn(header, 'getBoundingClientRect').mockImplementation(() => box(top, 28))
+
+  return {
+    el,
+    frames,
+    wrap,
+    setTableTop: (next: number) => {
+      top = next
+    },
+    scroll: (times = 1) => act(() => Array.from({ length: times }, () => el.dispatchEvent(new Event('scroll')))),
+    flush: () => act(() => frames.shift()?.(0)),
+  }
+}
 
 /** 600 empty notes for the windowing tests. */
 function manyRecords(n = 600): IndexRecord[] {
@@ -433,6 +469,67 @@ describe('column resize', () => {
     expect(active()).toEqual([false, true, false, false, false, false])
     mouse(window, 'mouseup', 130)
     expect(active()).toEqual([false, false, false, false, false, false])
+  })
+})
+
+describe('vertical header pinning', () => {
+  it('counter-scrolls the existing header against the outer note scroller', () => {
+    const pinning = pinningHarness()
+
+    pinning.scroll()
+    expect(pinning.frames).toHaveLength(1)
+    pinning.flush()
+    expect(pinning.wrap.style.getPropertyValue('--view-table-header-y')).toBe('80px')
+  })
+
+  it('stays at the table start and releases at the table bottom', () => {
+    const pinning = pinningHarness({ tableTop: 40, tableHeight: 200 })
+
+    pinning.scroll()
+    pinning.flush()
+    expect(pinning.wrap.style.getPropertyValue('--view-table-header-y')).toBe('0px')
+
+    pinning.setTableTop(-400)
+    pinning.scroll()
+    pinning.flush()
+    expect(pinning.wrap.style.getPropertyValue('--view-table-header-y')).toBe('172px')
+  })
+
+  it('coalesces scroll events into one layout update per animation frame', () => {
+    const pinning = pinningHarness()
+
+    pinning.scroll(3)
+    expect(pinning.frames).toHaveLength(1)
+  })
+
+  it('removes its scroll work and pending frame on unmount', () => {
+    const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+    const pinning = pinningHarness({ frameId: 41 })
+
+    pinning.scroll()
+    expect(pinning.frames).toHaveLength(1)
+
+    act(() => root?.unmount())
+    root = null
+    expect(cancelFrame).toHaveBeenCalledWith(41)
+    expect(pinning.wrap.style.getPropertyValue('--view-table-header-y')).toBe('')
+
+    pinning.scroll()
+    expect(pinning.frames).toHaveLength(1)
+  })
+
+  it('observes the outer scroller blocks that can move the table', () => {
+    const observed: Element[] = []
+    class RecordingResizeObserver {
+      observe(target: Element) {
+        observed.push(target)
+      }
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', RecordingResizeObserver)
+
+    const pinning = pinningHarness()
+    expect(observed).toContain(pinning.el.firstElementChild)
   })
 })
 
