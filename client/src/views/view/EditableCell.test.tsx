@@ -405,20 +405,41 @@ describe('full table-cell editing surface', () => {
     expect(getComputedStyle(q(el, '.view-table-wrap')).overflow).toBe('auto')
   })
 
-  it('elevates only the active frozen body cell above ordinary frozen rows', () => {
-    const { el } = mount(EDIT_BASE.replace('name: T\n', 'name: T\n    frozenColumns: 7\n'))
-    const ordinary = cell(el, 0, 6)
-    const active = cell(el, 1, 6)
-    expect(ordinary.classList.contains('view-table__frozen')).toBe(true)
-    expect(active.classList.contains('view-table__frozen')).toBe(true)
+  it('keeps the active frozen completion within the complete body/header/footer stacking ladder', () => {
+    const { el } = mount(`views:
+  - type: table
+    name: T
+    frozenColumns: 1
+    order:
+      - note.related
+      - file.name
+      - note.status
+`)
+    const frozenBody = cell(el, 0, 0)
+    const activeFrozenBody = cell(el, 1, 0)
+    const frozenHeader = q<HTMLElement>(el, '.view-table thead th:nth-child(1)')
+    const ordinaryHeader = q<HTMLElement>(el, '.view-table thead th:nth-child(2)')
+    const frozenFooter = q<HTMLElement>(el, '.view-table tfoot td:nth-child(1)')
+    const ordinaryFooter = q<HTMLElement>(el, '.view-table tfoot td:nth-child(2)')
 
-    open(el, 1, 6)
-    setValue(byLabel<HTMLInputElement>(active, 'Edit related'), '[[Cre')
-    expect(active.querySelector('.view-cell-edit__complete')).not.toBeNull()
-    expect(getComputedStyle(ordinary).zIndex).toBe('1')
-    expect(getComputedStyle(active).position).toBe('sticky')
-    expect(getComputedStyle(active).zIndex).toBe('2')
-    expect(getComputedStyle(q(el, '.view-table thead .view-table__frozen')).zIndex).toBe('3')
+    open(el, 1, 0)
+    setValue(byLabel<HTMLInputElement>(activeFrozenBody, 'Edit related'), '[[Cre')
+    expect(activeFrozenBody.querySelector('.view-cell-edit__complete')).not.toBeNull()
+    expect([frozenBody, activeFrozenBody, ordinaryHeader, frozenHeader, ordinaryFooter, frozenFooter].map((node) => getComputedStyle(node).zIndex)).toEqual([
+      '1',
+      '2',
+      '3',
+      '4',
+      '3',
+      '4',
+    ])
+    expect([activeFrozenBody, ordinaryHeader, frozenHeader, ordinaryFooter, frozenFooter].map((node) => getComputedStyle(node).position)).toEqual([
+      'sticky',
+      'sticky',
+      'sticky',
+      'sticky',
+      'sticky',
+    ])
   })
 
   it('keeps populated chips and a usable editor width from shrinking so horizontal overflow can engage', () => {

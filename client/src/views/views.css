@@ -460,7 +460,7 @@
 .view-table thead th {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 3;
   font-weight: 600;
   color: var(--fg-muted);
   background: var(--bg);
@@ -473,7 +473,7 @@
 }
 
 .view-table thead th.view-table__frozen {
-  z-index: 3;
+  z-index: 4;
 }
 
 .view-table tbody td {
@@ -612,7 +612,7 @@
 .view-table tfoot td {
   position: sticky;
   bottom: 0;
-  z-index: 2;
+  z-index: 3;
   padding: 0;
   background: var(--bg);
   border-top: 1px solid var(--border);
@@ -621,7 +621,7 @@
 }
 
 .view-table tfoot td.view-table__frozen {
-  z-index: 3;
+  z-index: 4;
 }
 
 .view-table__summary-btn {
