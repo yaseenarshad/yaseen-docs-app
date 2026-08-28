@@ -9,4 +9,4 @@
  */
 export const VIEW_ACTION_META = 'mdapp-view-action'
 
-export type ViewAction = 'fold' | 'zoom'
+export type ViewAction = 'fold' | 'zoom' | 'heading-fold'

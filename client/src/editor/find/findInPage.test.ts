@@ -21,6 +21,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
+import { getHeadingFoldKey, HEADING_FOLDED_ATTR, isHeadingCollapsed, undoLastHeadingFold } from '../outline/headingFolding'
 import { OUTLINE_FOLDED_ATTR, undoLastFold } from '../outline/outlineFolding'
 import { getOutlineFoldKey } from '../outline/outlineFoldKeys'
 import { getZoomedItemPos } from '../outline/zoom'
@@ -75,6 +76,7 @@ const posOfText = (doc: ProseNode, needle: string): number => {
 const matchEls = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>(`.${FIND_MATCH_CLASS}`)]
 const activeEls = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>(`.${FIND_ACTIVE_CLASS}`)]
 const foldedEls = (root: HTMLElement) => [...root.querySelectorAll(`[${OUTLINE_FOLDED_ATTR}="true"]`)]
+const headingFoldedEls = (root: HTMLElement) => [...root.querySelectorAll(`[${HEADING_FOLDED_ATTR}="true"]`)]
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** The zoom test's keydown idiom: prosemirror-keymap reads key + keyCode off a real event. */
@@ -188,6 +190,44 @@ describe('fold reveal', () => {
     expect(matchEls(root)).toHaveLength(0)
     expect(channel.getState().open).toBe(false)
     expect(view.state.selection.from).toBe(posOfText(view.state.doc, 'apple one'))
+  })
+})
+
+/** The heading twin (YAZ-1140): a collapsed SECTION hides matches the same way a collapsed bullet does. */
+describe('heading fold reveal', () => {
+  const FOLDED_HEADINGS = `# Alpha
+
+hidden apple
+
+# Beta
+
+visible banana
+`
+  /** `Alpha` is the doc's first node, so its section folds from position 0. */
+  const ALPHA = 0
+
+  it('expands a collapsed heading section that hides a match, silently (⌘Z stays free)', async () => {
+    const { root, view, channel } = await mountFind(FOLDED_HEADINGS, {
+      headingFolding: { initialCollapsedKeys: new Set([getHeadingFoldKey('Alpha', 0)]) },
+    })
+    expect(headingFoldedEls(root).length).toBeGreaterThan(0)
+    channel.open()
+    channel.setQuery('apple')
+    expect(headingFoldedEls(root)).toHaveLength(0)
+    // Silent: the reveal is not a revertible fold action — panic-undo has nothing to grab.
+    expect(undoLastHeadingFold(view.state)).toBe(false)
+  })
+
+  it('re-collapses a revealed heading section when the query stops matching inside it', async () => {
+    const { root, view, channel } = await mountFind(FOLDED_HEADINGS, {
+      headingFolding: { initialCollapsedKeys: new Set([getHeadingFoldKey('Alpha', 0)]) },
+    })
+    channel.open()
+    channel.setQuery('apple')
+    expect(isHeadingCollapsed(view.state, ALPHA)).toBe(false)
+    channel.setQuery('banana')
+    expect(isHeadingCollapsed(view.state, ALPHA)).toBe(true)
+    expect(headingFoldedEls(root).length).toBeGreaterThan(0)
   })
 })
 

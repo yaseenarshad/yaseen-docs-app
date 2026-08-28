@@ -13,6 +13,7 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { FALLBACK_FONT_PX, LIST_INDENT_EM, STRIP_CENTRE_GAP, STRIP_HALF_WIDTH } from './outline/guideLines'
+import { HEADING_TOGGLE_CLASS } from './outline/headingFolding'
 import { OUTLINE_TOGGLE_CLASS } from './outline/outlineFolding'
 
 export const HANDLE_MUTED_CLASS = 'mdapp-handle-muted'
@@ -26,7 +27,8 @@ export function inStripBand(x: number, ulLeft: number, fontPx: number): boolean 
 /** Whether the point sits on a chevron or a strip band, given the element stack under it. */
 function overAffordance(view: EditorView, x: number, stack: readonly Element[]): boolean {
   for (const el of stack) {
-    if (el.classList.contains(OUTLINE_TOGGLE_CLASS)) return true
+    // Either fold chevron: the bullet one (outlineFolding.ts) or the heading one (YAZ-1140).
+    if (el.classList.contains(OUTLINE_TOGGLE_CLASS) || el.classList.contains(HEADING_TOGGLE_CLASS)) return true
     if (
       (el.tagName === 'UL' || el.tagName === 'OL') &&
       view.dom.contains(el) &&
