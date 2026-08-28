@@ -103,7 +103,7 @@ export function EditableCell({ path, propKey, raw, value, editor, basenames, onC
   const text = current === undefined || current === null ? '' : typeof current === 'string' ? current : String(current)
 
   return (
-    <span ref={wrapRef} className="view-cell-edit">
+    <span ref={wrapRef} className="view-cell-edit" data-editing={editing ? '' : undefined}>
       {!editing ? (
         <>
           <button
