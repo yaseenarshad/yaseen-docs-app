@@ -495,6 +495,10 @@
   text-overflow: clip;
 }
 
+.view-table tbody td.view-table__frozen:has(> .view-cell-edit[data-editing]) {
+  z-index: 2;
+}
+
 .view-table tbody td > .view-cell-edit[data-editing] {
   display: block;
   width: 100%;
@@ -528,8 +532,16 @@
   overflow-y: hidden;
 }
 
+.view-table tbody td > .view-cell-edit[data-editing] .view-cell-edit__chips > .view-table__chip {
+  flex-shrink: 0;
+}
+
 .view-table tbody td > .view-cell-edit[data-editing] .view-cell-edit__chips .view-cell-edit__input {
+  flex-grow: 1;
+  flex-shrink: 0;
+  flex-basis: 6ch;
   width: auto;
+  min-width: 6ch;
   padding: 0;
 }
 

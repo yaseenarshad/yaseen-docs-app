@@ -405,6 +405,41 @@ describe('full table-cell editing surface', () => {
     expect(getComputedStyle(q(el, '.view-table-wrap')).overflow).toBe('auto')
   })
 
+  it('elevates only the active frozen body cell above ordinary frozen rows', () => {
+    const { el } = mount(EDIT_BASE.replace('name: T\n', 'name: T\n    frozenColumns: 7\n'))
+    const ordinary = cell(el, 0, 6)
+    const active = cell(el, 1, 6)
+    expect(ordinary.classList.contains('view-table__frozen')).toBe(true)
+    expect(active.classList.contains('view-table__frozen')).toBe(true)
+
+    open(el, 1, 6)
+    setValue(byLabel<HTMLInputElement>(active, 'Edit related'), '[[Cre')
+    expect(active.querySelector('.view-cell-edit__complete')).not.toBeNull()
+    expect(getComputedStyle(ordinary).zIndex).toBe('1')
+    expect(getComputedStyle(active).position).toBe('sticky')
+    expect(getComputedStyle(active).zIndex).toBe('2')
+    expect(getComputedStyle(q(el, '.view-table thead .view-table__frozen')).zIndex).toBe('3')
+  })
+
+  it('keeps populated chips and a usable editor width from shrinking so horizontal overflow can engage', () => {
+    const { el } = mount(EDIT_BASE)
+    const td = cell(el, 0, 5)
+    open(el, 0, 5)
+    const chips = q<HTMLElement>(td, '.view-cell-edit__chips')
+    const input = byLabel<HTMLInputElement>(td, 'Edit tags')
+
+    expect([...chips.querySelectorAll<HTMLElement>('.view-table__chip')].map((chip) => getComputedStyle(chip).flexShrink)).toEqual([
+      '0',
+      '0',
+    ])
+    const inputStyle = getComputedStyle(input)
+    expect(inputStyle.flexShrink).toBe('0')
+    expect(parseFloat(inputStyle.minWidth)).toBeGreaterThan(0)
+    expect(inputStyle.flexBasis).toBe(inputStyle.minWidth)
+    expect(getComputedStyle(chips).overflowX).toBe('auto')
+    expect(getComputedStyle(chips).height).toBe('100%')
+  })
+
   it('leaves cards and lists on the shared compact editor styling', () => {
     const card = mount('views:\n  - type: cards\n    name: C\n    order:\n      - file.name\n      - note.status\n')
     click(q(card.el, '.view-card__prop-value [data-edit]'))
