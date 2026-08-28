@@ -1,4 +1,4 @@
-import type { AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, BridgeErrorCode, ColdStartDiffResponse, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileResponse, FileWriteRequest, FileWriteResponse, IndexResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RevealRequest, RevealResponse, TreeResponse } from '@shared/types'
+import type { AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, BridgeErrorCode, ColdStartDiffResponse, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileResponse, FileWriteRequest, FileWriteResponse, GithubSyncStatus, IndexResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RevealRequest, RevealResponse, TreeResponse } from '@shared/types'
 
 /** Typed failure from the main process (see docs/CONTRACTS.md "Bridge API"). */
 export class BridgeRequestError extends Error {
@@ -62,5 +62,12 @@ export const api = {
     setProperty: (root: string, name: string, def: PropertyDecl) => call<void>(() => window.yaseenDocs.properties.setProperty(root, name, def)),
     removeProperty: (root: string, name: string) => call<void>(() => window.yaseenDocs.properties.removeProperty(root, name)),
     onChange: (listener: (properties: PropertiesResponse) => void) => window.yaseenDocs.properties.onChange(listener),
+  },
+  /** Per-vault GitHub sync (YAZ-1081): off by default, toggled through `.yaseendocs/github.json`; every call answers the same status the push carries. */
+  github: {
+    status: (root: string) => call<GithubSyncStatus>(() => window.yaseenDocs.github.status(root)),
+    syncNow: (root: string) => call<GithubSyncStatus>(() => window.yaseenDocs.github.syncNow(root)),
+    setEnabled: (root: string, enabled: boolean) => call<GithubSyncStatus>(() => window.yaseenDocs.github.setEnabled(root, enabled)),
+    onStatus: (listener: (status: GithubSyncStatus) => void) => window.yaseenDocs.github.onStatus(listener),
   },
 }

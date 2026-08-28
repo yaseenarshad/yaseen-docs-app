@@ -1,9 +1,10 @@
-import { app, BrowserWindow, Menu, nativeTheme, net, protocol, screen, shell } from 'electron'
+import { app, BrowserWindow, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell } from 'electron'
 import { statSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fileLink, parseFileLink } from '@shared/links'
 import type { WindowEntry } from '@shared/types'
+import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
 import { createLinkQueue } from './linkQueue'
 import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, pickMenuTargetWindow, subscribeMenuRebuild } from './menu'
@@ -114,8 +115,16 @@ const manager = createWindowManager(store, {
  * is exactly the state the fallback exists for, so the last id must survive it.
  */
 let lastFocusedWcId: number | undefined
+
+/** The per-vault GitHub sync manager (YAZ-1081), created with the rest of the IPC once `ready` fires. */
+let gitSync: GitSyncManager | undefined
+
 app.on('browser-window-focus', (_event, win) => {
   lastFocusedWcId = win.webContents.id
+  // YAZ-1081 D2: focusing a vault's window is a PULL trigger — alt-tabbing back from another
+  // machine should converge without waiting out a timer. The manager's own cooldown throttles it.
+  const root = store.get().windows.find((w) => w.id === manager.idFor(win.webContents))?.root ?? null
+  if (root !== null) gitSync?.notifyFocus(root)
 })
 
 app.whenReady().then(() => {
@@ -150,13 +159,21 @@ app.whenReady().then(() => {
     Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate({ recents: store.get().recents, isDev: !app.isPackaged }, handlers)))
   applyMenu()
   subscribeMenuRebuild(store, applyMenu)
-  registerIpc(store, manager)
+  const sync = registerIpc(store, manager)
+  gitSync = sync
+  // YAZ-1081 D3: a lid that just opened is the other "the world moved on while you were away"
+  // moment, and the machine that edited the vault meanwhile is usually the other one. Wired here
+  // rather than at module scope because powerMonitor is only safe to touch after `ready`.
+  powerMonitor.on('resume', () => sync.notifyWake())
+  powerMonitor.on('unlock-screen', () => sync.notifyWake())
   manager.restoreAll()
   links.flush()
 })
 
 // Quit: flush every renderer sequentially (5s cap each, `windows[]` kept so relaunch restores them),
 // write the pending state, then exit for real — `app.exit` re-runs no quit events.
+// The ORDER is load-bearing for YAZ-1081 D2: the renderers flush FIRST, so the last sync commit
+// contains the edit the user made a second before quitting rather than leaving it for next launch.
 let quitting = false
 app.on('before-quit', (event) => {
   event.preventDefault()
@@ -164,7 +181,7 @@ app.on('before-quit', (event) => {
   quitting = true
   void manager
     .flushAllForQuit()
-    .then(() => Promise.all([store.flush(), flushIndexCache()]))
+    .then(() => Promise.all([store.flush(), flushIndexCache(), gitSync?.flushForQuit()]))
     .finally(() => app.exit(0))
 })
 
