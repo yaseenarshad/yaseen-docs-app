@@ -204,7 +204,8 @@ test('step 3 — a typed row writes ONE key, and a type declared there types the
   // opens the LIST editor it never had before.
   await fileRow(win, 'Topics').click()
   await expect(contents(win).locator('.view-table__link')).toHaveText([NOTE])
-  await contents(win).locator('[data-cell="0:1"] [data-edit]').click()
+  // The CELL owns mouse activation since YAZ-1030 (its display button is `pointer-events: none`).
+  await contents(win).locator('[data-cell="0:1"]').dblclick()
   await expect(contents(win).locator('.view-cell-edit__chips')).toBeVisible()
   await shoot(win, 'props-07-declared-column')
   await quitApp(app)

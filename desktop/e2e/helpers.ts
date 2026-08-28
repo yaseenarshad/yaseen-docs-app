@@ -277,6 +277,24 @@ export const outlineLines = (scope: Locator) => outlineEditor(scope).locator('.c
 /** Only the bullets nested at least one level in — what a Tab produces. */
 export const outlineNested = (scope: Locator) => outlineEditor(scope).locator('ul ul .content-dom > p')
 
+/**
+ * The bullets that still SAY something. Clearing a line's text leaves its bullet standing (an
+ * empty level-1 bullet cannot be lifted out of a bullets-only document), so the blanks are real,
+ * expected, and not what any assertion about a document's content is about. Read through
+ * `allTextContents` — `textContent`, never `innerText` — so a resolved link's hidden brackets count.
+ */
+export const outlineSaid = async (scope: Locator): Promise<string[]> =>
+  (await outlineLines(scope).allTextContents()).filter((line) => line !== '')
+
+/**
+ * Its LINK LINES, in document order: a bullet whose whole text is one `[[wikilink]]`. Since
+ * YAZ-1152 that is what a membership looks like inside the outline — adoption writes one per
+ * member the text does not already name — so this is how a spec asks the DOCUMENT who belongs
+ * here without caring what prose is standing above it.
+ */
+export const outlineLinkLines = async (scope: Locator): Promise<string[]> =>
+  (await outlineLines(scope).allTextContents()).filter((line) => /^\[\[[^[\]]+\]\]$/.test(line))
+
 /** The `[[` picker, while it is showing (Links B). */
 export const linkPicker = (w: Page) => w.locator('.wikilink-picker[data-show="true"]')
 

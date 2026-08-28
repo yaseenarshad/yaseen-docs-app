@@ -18,12 +18,12 @@
  *     folder page's members — the 🔒 D2 case, resolved over the WHOLE vault while the rows are
  *     only the members
  *   4 "New" births a member from the declaration, parks it per the settings, and it comes back —
- *     in the outline's APPENDED section, since the document standing there does not name it
+ *     ADOPTED into the outline's document, with no user action at all
  *   5 the OUTLINE tags a page (YAZ-820, re-aimed in YAZ-904): the `[[` picker writes a LINK LINE,
  *     and that line puts `folder_pages` onto the PICKED page's own file, on disk
  *   6 a member that is itself a folder page: PLAIN TEXT inside the document (no glyph, no count,
- *     no chevron — the locked scoping decision), and glyph + count on its APPENDED row once the
- *     document stops naming it — which a cancelled removal is exactly how to arrange
+ *     no chevron — the locked scoping decision), with the glyph and the direct-member count read
+ *     off the Topics tree, which is where they live now
  *   7 deleting the link line + confirm sheet un-tags it again — dropping ONLY this folder page's
  *     entry and leaving the other two exactly where they were
  *   8 the GROUPED table (YAZ-744, restored here in YAZ-846): a `groupBy` set through the Sort
@@ -42,8 +42,16 @@
  * the body migrates into the outline document on the page's first open, deterministically, on the
  * first paint. What stands in the editor is therefore the page's own prose, and the [D5]
  * member-link list these steps used to assert is the fallback a folder page with NO document
- * gets. The members are all still there — in the APPENDED section, which is what it is for — and
- * step 9 is the migration's own proof.
+ * gets. Step 9 is the migration's own proof.
+ *
+ * ⚡ TOMBSTONE (YAZ-1152, for steps 1/4/6/7): the APPENDED SECTION — the read-only row per member
+ * the document does not name, with its bullet, glyph, direct-member count and hover × — DOES NOT
+ * EXIST. Those members are ADOPTED into the document instead: depth-0 `[[link]]` lines at the end,
+ * alphabetical, written through the outline's one commit door before anybody types a key. So every
+ * "it is a row down there" assertion below became "it is a LINE up here", the glyph-and-count
+ * claim moved to the Topics tree (step 6, the only surface that still draws them), and the hover ×
+ * moved to deleting the line — the gesture that opens the very same sheet. Cancelling that sheet
+ * now RESTORES the line, which `folderPageOutline.spec.ts` step 5 owns end to end.
  *
  * Same harness as bible.spec.ts (temp `--user-data-dir`, a COPY of the fixture, `folder-` step
  * screenshots).
@@ -61,6 +69,7 @@ import {
   outlineEditor,
   outlineLineIndex,
   outlineLines,
+  outlineSaid,
   pickOutlineLink,
   quitApp,
   readState,
@@ -107,17 +116,18 @@ const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
 /** Row names, whichever body renders: the unknown-view placeholder list, or the real table. */
 const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__link')
-/**
- * The OUTLINE's APPENDED rows (YAZ-903): the members this folder page's document does not NAME,
- * still members, still wearing the glyph / count / hover × the whole outline used to. What the
- * document itself says is `outlineLines` — the editor's own bullets.
- */
-const outlineRows = (scope: Locator) => scope.locator('.view-outline__link')
-/** One appended row, addressed by the name it shows. */
-const outlineRow = (w: Page, name: string) =>
-  contents(w).locator('.view-outline__row').filter({ has: w.locator('.view-outline__link', { hasText: new RegExp(`^${name}$`) }) })
-/** Every member's name as a LINK LINE, which is how the seed spells the [D5] arrangement. */
+/** Every member's name as a LINK LINE, which is how a membership is spelled inside the document. */
 const asLinks = (...names: string[]) => names.map((n) => `[[${n}]]`)
+/**
+ * The sidebar's two lenses. This file navigates by the FILE tree (its seed says so) and steps over
+ * to Topics for one thing: the folder-page glyph and the DIRECT-member count, which since
+ * ⚡ YAZ-1152 are drawn there and nowhere else (step 6).
+ */
+const lensTab = (w: Page, label: 'Topics' | 'Files') => w.locator('.sidebar__lenses [role="tab"]', { hasText: label })
+const topicRow = (w: Page, label: string) =>
+  w.locator('.sidebar__body .tree__row').filter({ has: w.locator('.tree__label', { hasText: new RegExp(`^${label}$`) }) })
+const treeChevron = (w: Page, action: 'Expand' | 'Collapse', label: string) =>
+  w.locator(`.sidebar__body [aria-label="${action} ${label}"]`)
 const sheet = (w: Page) => w.locator('[role="dialog"]')
 const sheetBtn = (w: Page, label: string) => sheet(w).locator('.confirm__btn', { hasText: label })
 const cell = (scope: Locator, r: number, c: number) => scope.locator(`[data-cell="${r}:${c}"]`)
@@ -171,13 +181,11 @@ test('step 1 — the contents block sits between the note and its backlinks, hol
 
   // Q7: the folder page's two skins, outline FIRST (YAZ-820). The outline is a DOCUMENT (YAZ-903)
   // and YAZ-919 gave this page one on its very first paint: the body it has carried since the
-  // fixture was written, moved in whole. The [D5] member-link arrangement is what a folder page
-  // with NO document falls back to — this page has one now, and it names none of its three
-  // members, so all three stand in the APPENDED section that exists for exactly that. Both
-  // halves, deterministically, before anybody has typed anything.
+  // fixture was written, moved in whole. That prose names none of its three members — so
+  // ⚡ YAZ-1152's adoption writes all three INTO it, as link lines under the body, alphabetically.
+  // One surface, both halves, deterministically, before anybody has typed anything.
   await expect(viewTabs(contents(win))).toHaveText(['Outline', 'Table', 'Board'])
-  await expect(outlineLines(contents(win))).toHaveText(BODY)
-  await expect(outlineRows(contents(win))).toHaveText(MEMBERS)
+  await expect.poll(() => outlineLines(contents(win)).allTextContents()).toEqual([...BODY, ...asLinks(...MEMBERS)])
   // …and the body really did LEAVE the file, which is the other half of "nothing disappears":
   // frontmatter, and nothing after it.
   await expect
@@ -195,8 +203,10 @@ test('step 1 — the contents block sits between the note and its backlinks, hol
 })
 
 test('step 2 — a cell edited in the block writes the MEMBER’s own file on disk', async () => {
-  // Column 1 is `note.order`, typed `number` by the folder page's own declaration (🔒 Q8).
-  await cell(contents(win), 0, 1).locator('[data-edit]').click()
+  // Column 1 is `note.order`, typed `number` by the folder page's own declaration (🔒 Q8). The
+  // CELL owns mouse activation since YAZ-1030 (its display button is `pointer-events: none`), so
+  // the door in is a deliberate double-click.
+  await cell(contents(win), 0, 1).dblclick()
   const input = win.locator('.view-cell-edit__input')
   await expect(input).toBeVisible()
   await input.fill('9')
@@ -214,7 +224,7 @@ test('step 3 — the narrowed picker: a multi-link column targeting a folder pag
   // Column 2 is `related_stages`, declared `multi-link` with `target: "[[Funnel Stages]]"`. The
   // members are the ROWS here, but the picker resolves that target over the WHOLE vault (🔒 D2)
   // — fed the rows alone it would have found no folder page at all and widened to every page.
-  await cell(contents(win), 0, 2).locator('[data-edit]').click()
+  await cell(contents(win), 0, 2).dblclick()
   const input = win.locator('.view-cell-edit__input')
   await expect(input).toBeVisible()
   await input.pressSequentially('[[', { delay: 15 })
@@ -227,7 +237,7 @@ test('step 3 — the narrowed picker: a multi-link column targeting a folder pag
   await expect(input).toHaveCount(0)
 })
 
-test('step 4 — "New" births a member from the declaration, parked per the settings, and it comes back as a row', async () => {
+test('step 4 — "New" births a member from the declaration, parked per the settings, and it comes back as a LINE', async () => {
   await contents(win).locator('[aria-label="New note"]').click()
 
   // Parked in the settings' `folder`, born with every declared column empty and the belonging
@@ -257,11 +267,11 @@ test('step 4 — "New" births a member from the declaration, parked per the sett
   await fileRow(win, 'Funnel Stages').click()
   await expect(contents(win)).toBeVisible()
   // Which view is active is SESSION state, so the re-opened note is back on Q7's first skin — and
-  // the newborn arrives the YAZ-903 way: the DOCUMENT standing in the editor is this page's own
-  // migrated body (YAZ-919) and it names nobody at all, so Untitled simply joins the three
-  // members already standing in the appended section, in that section's own name order.
-  await expect(outlineLines(contents(win))).toHaveText(BODY)
-  await expect(outlineRows(contents(win))).toHaveText([...MEMBERS, 'Untitled'])
+  // the newborn arrives the ⚡ YAZ-1152 way: a member the document does not NAME is written into
+  // it, so `Untitled` is simply the next link line, in adoption's own alphabetical order, with
+  // nobody typing a thing. (The three that were adopted on the first open keep their places: the
+  // append is at the END, and it never re-writes what is already there.)
+  await expect.poll(() => outlineLines(contents(win)).allTextContents()).toEqual([...BODY, ...asLinks(...MEMBERS, 'Untitled')])
   await shoot(win, 'folder-06-new-member-row')
 })
 
@@ -270,7 +280,7 @@ const CAC = 'kpis/CAC.md'
 
 test('step 5 — the outline’s `[[` picker tags an existing page, on that page’s own file', async () => {
   await viewTabs(contents(win)).filter({ hasText: 'Outline' }).click()
-  await expect(outlineLines(contents(win))).toHaveText(BODY)
+  await expect(outlineLines(contents(win))).toHaveText([...BODY, ...asLinks(...MEMBERS, 'Untitled')])
 
   // The add row is gone (YAZ-903): the gesture is now typing `[[` in the document itself, which
   // is still picker-only in the sense that mattered — the picker narrows over REAL pages and
@@ -285,22 +295,25 @@ test('step 5 — the outline’s `[[` picker tags an existing page, on that page
   await expect.poll(() => readFile(cac, 'utf8'), { timeout: 10_000 }).toContain('[[Funnel Stages]]')
   expect(await readFile(cac, 'utf8')).toContain('[[KPIs]]') // a page belongs to as many topics as it says
   expect(await readFile(cac, 'utf8')).toContain('funnel_stages: ["[[Lead Gen]]"]') // every other key survives
-  await expect(outlineLines(contents(win))).toHaveText([...BODY, '[[CAC]]'])
-  // CAC is NAMED now, so it is the one member that is not appended — the four that are, are.
-  await expect(outlineRows(contents(win))).toHaveText([...MEMBERS, 'Untitled'])
+  // The typed line stands where the caret put it — under the prose, ABOVE the lines adoption
+  // wrote. Adoption appends at the END and reorders nothing, so the four that were there are
+  // exactly where they were: a document the user typed into is never rearranged under them.
+  await expect(outlineLines(contents(win))).toHaveText([...BODY, '[[CAC]]', ...asLinks(...MEMBERS, 'Untitled')])
   await shoot(win, 'folder-08-outline-tagged')
 })
 
-test('step 6 — a member that is itself a folder page: plain text in the document, glyph and count on its appended row', async () => {
+test('step 6 — a member that is itself a folder page: a plain link line in the document, glyph and count on the Topics tree', async () => {
   // TOMBSTONE (YAZ-904): a nested folder page used to EXPAND IN PLACE here, behind a chevron, with
   // its direct-member count on the row. That premise died with rows-are-pages — inside the
   // document a folder page's link is a plain wikilink and nothing more (the locked scoping
-  // decision), and the glyph and count live on the APPENDED row instead. Both halves below.
+  // decision), and the glyph and count moved to the APPENDED row.
   //
-  // TOMBSTONE (YAZ-919): and the member used to arrive already NAMED, because a document-less
-  // folder page fell back to the [D5] member-link list. This page's document is its own migrated
-  // body now and names nobody, so the naming is typed by hand — which is the honest gesture the
-  // fallback was standing in for anyway.
+  // ⚡ TOMBSTONE (YAZ-1152): and then the appended row died too, so there is no second surface left
+  // to compare against. Both halves survive, one on each side of the split the scoping decision
+  // always meant: the DOCUMENT holds a plain wikilink, and the TOPICS TREE — which is where a
+  // folder page's glyph and direct-member count have always been drawn honestly — holds the rest.
+  // The naming half needs no gesture at all any more: adoption wrote `[[Lead Gen]]` into this
+  // document on the page's first open, before it was even a folder page.
 
   // The sidebar's own gesture (YAZ-840) makes Lead Gen a folder page; forward never confirms.
   await fileRow(win, 'Lead Gen').click({ button: 'right' })
@@ -318,37 +331,31 @@ test('step 6 — a member that is itself a folder page: plain text in the docume
   // spell `[[Lead Gen]]` already, so a bare `toContain` would pass without a membership at all.
   await expect.poll(() => readFile(path.join(vault, CAC), 'utf8'), { timeout: 10_000 }).toContain('- "[[Lead Gen]]"')
 
-  // Back on Funnel Stages, and NAME the folder-page member: `Lead Gen` is already a member (its
-  // own card says so), so the line adds no belonging — it moves the row INTO the document, which
-  // is the half of this step the appended section cannot show.
+  // Back on Funnel Stages, where `[[Lead Gen]]` has been a LINE since the first open — becoming a
+  // folder page changed nothing about it, because the document holds text and text does not care.
   await fileRow(win, 'Funnel Stages').click()
-  await expect(outlineLines(contents(win))).toHaveText([...BODY, '[[CAC]]'])
-  await bulletAfterLine(win, contents(win), BODY.length)
-  await pickOutlineLink(win, 'Lead Gen')
-  await expect(outlineLines(contents(win))).toHaveText([...BODY, '[[CAC]]', '[[Lead Gen]]'])
-  // As a LINE it wears no glyph, no count and no chevron — the outline holds text, and nothing
-  // about a folder page shows through it. The three members left unnamed are still appended.
-  await expect(outlineEditor(contents(win)).locator('.view-outline__glyph, .view-outline__count')).toHaveCount(0)
+  await expect(outlineLines(contents(win))).toHaveText([...BODY, '[[CAC]]', ...asLinks(...MEMBERS, 'Untitled')])
+  // As a LINE it is an ordinary wikilink and nothing else: no glyph, no count, no chevron — the
+  // very selectors those badges used to wear match nothing anywhere in the window now.
+  await expect(outlineEditor(contents(win)).locator('.wikilink', { hasText: 'Lead Gen' })).toHaveCount(1)
+  await expect(win.locator('.view-outline__glyph, .view-outline__count, .view-outline__list')).toHaveCount(0)
   await expect(contents(win).locator('[aria-label="Expand Lead Gen"]')).toHaveCount(0)
-  await expect(outlineRows(contents(win))).toHaveText(['Lead Nurture', 'Sales-Conversion', 'Untitled'])
 
-  // Stop NAMING it and it becomes an appended row — which is where the glyph and the honest
-  // direct-member count (CAC, 1) do live. A cancelled removal is the way to arrange that: the
-  // membership is kept (🔒 the YAZ-903 ruling), only the text is gone.
-  await clearOutlineLine(win, contents(win), await outlineLineIndex(contents(win), '[[Lead Gen]]'))
-  await expect(sheet(win)).toBeVisible()
-  await sheetBtn(win, 'Cancel').click()
-  await expect(outlineRows(contents(win))).toHaveText(['Lead Gen', 'Lead Nurture', 'Sales-Conversion', 'Untitled'])
-  await expect(outlineRow(win, 'Lead Gen').locator('.view-outline__glyph')).toBeVisible()
-  await expect(outlineRow(win, 'Lead Gen').locator('.view-outline__count')).toHaveText('1')
+  // And the OTHER half, on the surface that kept it: the Topics tree draws a folder-page member
+  // with its glyph and its honest DIRECT-member count — CAC, and only CAC, so 1 — while the
+  // document above stays the plain text it is. One fact, two skins, neither pretending.
+  await lensTab(win, 'Topics').click()
+  await treeChevron(win, 'Expand', 'Funnel Stages').click()
+  await expect(topicRow(win, 'Lead Gen').locator('.tree__glyph')).toBeVisible()
+  await expect(topicRow(win, 'Lead Gen').locator('.tree__count')).toHaveText('1')
   expect(await readFile(path.join(vault, 'funnel-stages', 'Lead Gen.md'), 'utf8')).toContain('[[Funnel Stages]]')
   await shoot(win, 'folder-09-outline-folder-page-member')
+  await lensTab(win, 'Files').click() // back to the lens the rest of this file navigates by
 })
 
 test('step 7 — deleting the link line + sheet un-tags it, dropping ONLY this folder page’s entry', async () => {
-  // The × still exists — step 6 just proved it on Lead Gen's appended row — but a page the
-  // document NAMES is dropped by deleting its line, and that opens the very same sheet.
-  await expect(outlineRow(win, 'Lead Gen').locator('.view-outline__x')).toHaveCount(1)
+  // ⚡ YAZ-1152: there is no hover × any more — every membership is a LINE, and dropping one is
+  // deleting its line, which opens the very sheet the × used to. One gesture, one question.
   await clearOutlineLine(win, contents(win), await outlineLineIndex(contents(win), '[[CAC]]'))
   // The sheet names the OTHERS in entry order — the migrated `[[KPIs]]` first, then step 6's pick.
   await expect(sheet(win)).toContainText('The page is not deleted — its file stays put. It remains in: KPIs, Lead Gen.')
@@ -359,9 +366,9 @@ test('step 7 — deleting the link line + sheet un-tags it, dropping ONLY this f
   await expect.poll(() => readFile(cac, 'utf8'), { timeout: 10_000 }).not.toContain('[[Funnel Stages]]')
   expect(await readFile(cac, 'utf8')).toContain('[[KPIs]]') // the other two belongings are untouched
   expect(await readFile(cac, 'utf8')).toContain('[[Lead Gen]]')
-  // Gone from this folder page entirely: not a line, and not an appended row either — the four
-  // members that remain are all of them, and CAC is none of them.
-  await expect(outlineRows(contents(win))).toHaveText(['Lead Gen', 'Lead Nurture', 'Sales-Conversion', 'Untitled'])
+  // Gone from this folder page entirely — and it STAYS gone: an un-tag in flight is never
+  // re-adopted, so the only link lines left are the four pages that do belong here.
+  await expect.poll(() => outlineSaid(contents(win))).toEqual([...BODY, ...asLinks(...MEMBERS, 'Untitled')])
   await shoot(win, 'folder-11-outline-untagged')
 })
 

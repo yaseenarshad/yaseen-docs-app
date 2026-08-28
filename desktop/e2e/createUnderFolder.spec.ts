@@ -31,7 +31,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
+import { appWindow, copyVault, launchApp, outlineLinkLines, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -48,14 +48,22 @@ const WITH_NEW_ROLE = ['CEO', NEW_ROLE, 'Head of Sales', 'RevOps Lead']
 
 /** Doorway 2's topic. It declares no columns at all, so the newborn carries the belonging and nothing else. */
 const INDUSTRIES = ['PLG SaaS', 'VC-Backed B2B SaaS']
-/** The toolbar's "New" names nothing, so the page is born under the `Untitled` scheme — which also sorts in. */
+/** The toolbar's "New" names nothing, so the page is born under the `Untitled` scheme. */
 const NEW_INDUSTRY = 'Untitled'
-const WITH_NEW_INDUSTRY = ['PLG SaaS', NEW_INDUSTRY, 'VC-Backed B2B SaaS']
+/**
+ * Where the newborn lands in the TREE, for the two doorways whose folder page is OPEN when it is
+ * born (2 and 3): at the END. The tree reads its arrangement off the outline document (YAZ-905),
+ * an open page's document names every existing member (⚡ YAZ-1152 adopted them), and both rules
+ * that could place the newcomer put it last — [D5] sorts the unnamed behind the named, and the
+ * adoption that follows APPENDS. Doorway 1 opens no folder page at all, so its topic has no
+ * document and the alphabetical fallback still sorts the newborn INTO the list (`WITH_NEW_ROLE`).
+ */
+const WITH_NEW_INDUSTRY = [...INDUSTRIES, NEW_INDUSTRY]
 
 /** Doorway 3's topic — the one with a `kpi_category` to group a board by (board.spec.ts's own column). */
 const KPIS = ['CAC', 'Gross Margin', 'MQL Volume', 'Sales Cycle Time', 'Win Rate']
 const NEW_KPI = 'Pipeline Velocity'
-const WITH_NEW_KPI = ['CAC', 'Gross Margin', 'MQL Volume', NEW_KPI, 'Sales Cycle Time', 'Win Rate']
+const WITH_NEW_KPI = [...KPIS, NEW_KPI]
 
 let userData: string
 /** Every temp vault this file made, torn down together. */
@@ -78,8 +86,8 @@ const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hid
 const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
 const contents = (w: Page) => layer(w).locator('.folder-page-contents')
 const viewTab = (w: Page, label: string) => contents(w).locator('.view-tab__btn', { hasText: label })
-/** The OUTLINE's appended rows: the members this folder page's document does not NAME. */
-const outlineRows = (w: Page) => contents(w).locator('.view-outline__link')
+/** Every name as a LINK LINE — how a membership reads inside the outline document (⚡ YAZ-1152). */
+const asLinks = (...names: readonly string[]) => names.map((n) => `[[${n}]]`)
 const colOf = (w: Page, label: string): Locator =>
   contents(w).locator('.view-board__col').filter({ has: w.locator(`.view-group__value:text-is("${label}")`) })
 
@@ -107,12 +115,14 @@ async function openTopics(vaultPath: string, file: string | null): Promise<void>
 }
 
 /**
- * The folder page settled on screen: its members standing in the appended section, and the YAZ-919
- * body migration already written back to its own file. Both halves matter — the migration is a
- * WRITE, and a create fired while it is still in flight would be riding somebody else's fs event.
+ * The folder page SETTLED on screen: every member named by a link line of its document, and the
+ * YAZ-919 body migration already written back to its own file. Both halves matter — the migration
+ * is a WRITE, and so (since ⚡ YAZ-1152) is the ADOPTION that writes those link lines; a create
+ * fired while either is still in flight would be riding somebody else's fs event. Waiting on the
+ * lines is waiting on the last of the two, which is the whole job of this helper.
  */
 async function settledFolderPage(vaultPath: string, file: string, members: readonly string[]): Promise<void> {
-  await expect(outlineRows(win)).toHaveText(members)
+  await expect.poll(() => outlineLinkLines(contents(win))).toEqual(asLinks(...members))
   await expect.poll(() => onDisk(vaultPath, file).then((text) => text?.trimEnd().endsWith('---'))).toBe(true)
 }
 
@@ -172,7 +182,8 @@ test('step 2 — the folder page’s own “New”: the member appears in the tr
   // Born from the declaration — Industries declares no columns, so the belonging is the whole card.
   await expect.poll(() => onDisk(vault, path.join('industries', `${NEW_INDUSTRY}.md`))).toMatch(belongsTo('Industries'))
   // …and the sidebar hears about it without being asked: the tree was expanded before the click and
-  // has not been touched since, and the newborn takes its place between the two members.
+  // has not been touched since, and the newborn takes its place at the end of the two members —
+  // where this page's own document puts it (see `WITH_NEW_INDUSTRY`).
   await expect(topicLabels(win)).toHaveText(['Home', ...TOPICS.slice(0, 2), ...WITH_NEW_INDUSTRY, ...TOPICS.slice(2), 'Uncategorized'])
   await expect(rowFor(win, NEW_INDUSTRY)).toHaveCSS('padding-left', '22px')
   await expect(rowFor(win, 'Industries').locator('.tree__count')).toHaveText('3')

@@ -108,13 +108,13 @@ const contents = (w: Page) => layer(w).locator('.folder-page-contents')
 const viewTabs = (w: Page) => contents(w).locator('.view-tab__btn[role="tab"]')
 /** The outline is a DOCUMENT since YAZ-903: what it says is its bullet LINES, not row buttons. */
 const outlineLines = (w: Page) => contents(w).locator('.view-outline .editor-instance .content-dom > p')
-/** Its APPENDED rows: the members the document does not NAME — which, since ⚡ YAZ-919, is all of them. */
-const outlineRows = (w: Page) => contents(w).locator('.view-outline__link')
+/** Every name as a LINK LINE — how a membership reads inside the document (⚡ YAZ-1152). */
+const asLinks = (...names: string[]) => names.map((n) => `[[${n}]]`)
 const tableNames = (w: Page) => contents(w).locator('.view-row__link, .view-table__link')
 /**
  * `KPIs.md`'s own body, migrated into its outline document the first time the page is opened
  * (⚡ YAZ-919) — heading marker stripped, the blank line dropped. It names no member, so every
- * member of KPIs stands in the appended section below it.
+ * member of KPIs is ADOPTED into the document under it as a link line (⚡ YAZ-1152).
  */
 const KPIS_BODY = [
   'KPIs',
@@ -437,10 +437,10 @@ test('step 5c — “New note” on a FOLDER-PAGE row births a MEMBER of it, tre
   // THE TABLE: the same page, from KPIs' own contents block — both skins.
   await rowFor(win, 'KPIs').click()
   await expect(activeTab(win)).toHaveText('KPIs')
-  // ⚡ YAZ-919: the document is KPIs' own migrated body and names nobody, so the newborn arrives
-  // in the APPENDED section — in its alphabetical place among the five that were already there.
-  await expect(outlineLines(win)).toHaveText(KPIS_BODY)
-  await expect(outlineRows(win)).toHaveText(WITH_NEW_KPI)
+  // ⚡ YAZ-919: the document is KPIs' own migrated body and names nobody — so ⚡ YAZ-1152 ADOPTS
+  // every member into it, the newborn among them, in one alphabetical run under the prose. The
+  // page was opened for the first time here, so this is that write landing, with nobody typing.
+  await expect.poll(() => outlineLines(win).allTextContents()).toEqual([...KPIS_BODY, ...asLinks(...WITH_NEW_KPI)])
   await viewTabs(win).filter({ hasText: 'Table' }).click()
   await expect(tableNames(win)).toHaveCount(WITH_NEW_KPI.length)
   await expect(tableNames(win).filter({ hasText: `${NEW_KPI}.md` })).toHaveCount(1)

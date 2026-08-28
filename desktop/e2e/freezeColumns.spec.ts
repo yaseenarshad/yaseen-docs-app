@@ -195,7 +195,9 @@ test('step 2 — resize, reorder and hide update the positional prefix without a
   await expect(footer().nth(1)).toHaveCSS('left', '190px')
 
   const menu = await openProperties()
-  const unit = menu.locator('.view-prop').filter({ has: menu.locator('[aria-label="Show unit"]') })
+  // `has:` is queried STARTING FROM the outer match, so the inner locator has to be a bare one —
+  // a chain rooted at `menu` would be re-rooted at the row and match nothing inside it.
+  const unit = menu.locator('.view-prop').filter({ has: win.locator('[aria-label="Show unit"]') })
   await unit.locator('[aria-label="Move up"]').click()
   await expect(headers()).toHaveText(['file.name', 'unit', 'kpi_category', 'funnel_stages'])
   await expect(headers().nth(1)).toHaveClass(/view-table__frozen/)
@@ -205,7 +207,7 @@ test('step 2 — resize, reorder and hide update the positional prefix without a
   await expect(headers().nth(1)).toHaveClass(/view-table__frozen/)
 
   await menu.locator('[aria-label="Frozen columns"]').selectOption('3')
-  const funnel = menu.locator('.view-prop').filter({ has: menu.locator('[aria-label="Show funnel_stages"]') })
+  const funnel = menu.locator('.view-prop').filter({ has: win.locator('[aria-label="Show funnel_stages"]') })
   await funnel.locator('[aria-label="Show funnel_stages"]').uncheck()
   await expect(headers()).toHaveText(['file.name', 'kpi_category'])
   await expect.poll(async () => (await tableSettings()).frozenColumns, { timeout: 10_000 }).toBe(2)
