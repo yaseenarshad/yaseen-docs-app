@@ -251,6 +251,7 @@ export function FolderPageContents({
       )
     },
     openBackground: onOpenFileBackground,
+    onNotice,
     wikilinks: source,
     wikilinkCandidates,
     nav,

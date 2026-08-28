@@ -190,6 +190,22 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     expect(items(el).map((b) => b.textContent)).toEqual(['Copy path', 'Reveal in Finder', 'Open in VS Code'])
   })
 
+  it('clamps the menu inside the viewport when the pointer is near its right and bottom edges', () => {
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const width = this.classList.contains('ctx-menu') ? 160 : 0
+      const height = this.classList.contains('ctx-menu') ? 180 : 0
+      return { width, height, left: 0, top: 0, right: width, bottom: height, x: 0, y: 0, toJSON: () => ({}) } as DOMRect
+    })
+    try {
+      const el = mount(props)
+      rightClick(tabAt(el, 0), 1000, 700)
+      expect(menuOf(el)?.style.left).toBe('864px')
+      expect(menuOf(el)?.style.top).toBe('588px')
+    } finally {
+      rect.mockRestore()
+    }
+  })
+
   it('Copy path writes the tab\'s ABSOLUTE path — not the label — and closes the menu', () => {
     const el = mount(props)
     rightClick(tabAt(el, 1))
