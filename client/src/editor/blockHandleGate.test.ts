@@ -66,4 +66,39 @@ describe('own-editor scoping (YAZ-747)', () => {
       await b.crepe.destroy(); b.root.remove()
     }
   })
+
+  // A heading chevron (YAZ-1140) is the same kind of affordance as the bullet one: the handle must
+  // step aside so the click lands on it.
+  it('mutes the handle for a heading chevron too', async () => {
+    const { createCrepe } = await import('./createCrepe')
+    const { editorViewCtx } = await import('@milkdown/kit/core')
+    const { HANDLE_MUTED_CLASS } = await import('./blockHandleGate')
+    const { HEADING_TOGGLE_CLASS } = await import('./outline/headingFolding')
+
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: '# Section\n\nBody.\n' })
+    await crepe.create()
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    const handle = document.createElement('div')
+    handle.className = 'milkdown-block-handle'
+    view.dom.parentElement!.appendChild(handle)
+
+    const chevron = view.dom.querySelector(`.${HEADING_TOGGLE_CLASS}`)!
+    const originalFrom = document.elementsFromPoint
+    document.elementsFromPoint = () => [chevron]
+    try {
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX: 10, clientY: 10, bubbles: true }))
+      await new Promise((r) => requestAnimationFrame(() => r(null)))
+      expect(handle.classList.contains(HANDLE_MUTED_CLASS)).toBe(true)
+      document.elementsFromPoint = () => []
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX: 10, clientY: 10, bubbles: true }))
+      await new Promise((r) => requestAnimationFrame(() => r(null)))
+      expect(handle.classList.contains(HANDLE_MUTED_CLASS)).toBe(false)
+    } finally {
+      document.elementsFromPoint = originalFrom
+      await crepe.destroy()
+      root.remove()
+    }
+  })
 })

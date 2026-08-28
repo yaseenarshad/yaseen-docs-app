@@ -53,7 +53,8 @@ vi.mock('../views/view/OutlineEditor', () => ({
 }))
 
 import { api } from '../api'
-import { createCrepe, setMarkdown } from './createCrepe'
+import { storage } from '../lib/storage'
+import { createCrepe, setMarkdown, type CreateCrepeOptions } from './createCrepe'
 
 interface FakeCrepe {
   md: string
@@ -364,4 +365,48 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'backlinks'])
   })
 
+})
+
+/**
+ * One stored fold bucket, two plugins (YAZ-1140, 3A). `storage` is spied here (not mocked at the
+ * module level) so only these tests see it; the seam is the options object the faked `createCrepe`
+ * was called with, since neither fold plugin actually runs behind that fake.
+ */
+describe('CrepeHost fold persistence: bullets and headings share one bucket (YAZ-1140)', () => {
+  /** A mixed bucket as it comes off disk: a bullet key and a heading key ('h:'-prefixed by the plugin). */
+  const STORED = ['abc:0', 'h:def:0']
+
+  beforeEach(() => {
+    vi.spyOn(storage, 'getFolds').mockReturnValue([...STORED])
+    vi.spyOn(storage, 'setFolds').mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    vi.mocked(storage.getFolds).mockRestore()
+    vi.mocked(storage.setFolds).mockRestore()
+  })
+
+  /** The options the host handed the (faked) editor factory. */
+  function crepeOptions(): CreateCrepeOptions {
+    const call = createCrepeMock.mock.calls.at(-1)
+    if (call === undefined) throw new Error('createCrepe was not called')
+    return call[0] as unknown as CreateCrepeOptions
+  }
+
+  it('seeds each plugin with its own kind of key', async () => {
+    await mount(BODY)
+    const opts = crepeOptions()
+    expect([...(opts.folding?.initialCollapsedKeys ?? [])]).toEqual(['abc:0'])
+    expect([...(opts.headingFolding?.initialCollapsedKeys ?? [])]).toEqual(['h:def:0'])
+  })
+
+  it('writes the union on every report, so neither plugin pruning its keys can drop the other kind', async () => {
+    await mount(BODY)
+    const opts = crepeOptions()
+    opts.folding?.onCollapsedKeysChange?.(['zzz:1'])
+    expect(vi.mocked(storage.setFolds)).toHaveBeenLastCalledWith('/vault', PATH, ['zzz:1', 'h:def:0'])
+    // …and the other way round: the heading plugin dropping to none keeps the bullet key.
+    opts.headingFolding?.onCollapsedKeysChange?.([])
+    expect(vi.mocked(storage.setFolds)).toHaveBeenLastCalledWith('/vault', PATH, ['zzz:1'])
+  })
 })
