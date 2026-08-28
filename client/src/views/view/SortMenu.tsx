@@ -1,5 +1,5 @@
 import type { IndexRecord } from '@shared/types'
-import type { ViewSet, ViewDef, Mutate, SortSpec } from '../viewSchema'
+import { type ViewSet, type ViewDef, type Mutate, type SortSpec, groupByLevels } from '../viewSchema'
 import { propertyLabel } from '../engine'
 import { canonicalKey } from './keys'
 import { allPropertyKeys, withKey } from './properties'
@@ -18,7 +18,8 @@ const flip = (d: string | undefined): 'ASC' | 'DESC' => (d === 'DESC' ? 'ASC' : 
 export function SortMenu({ def, view, viewIndex, records, onUpdate }: SortMenuProps) {
   const keys = allPropertyKeys(def, view, records)
   const sort = view.sort ?? []
-  const groupBy = view.groupBy
+  // The menu edits the OUTER level only; a second level (YAZ-745) is written elsewhere.
+  const groupBy = groupByLevels(view)[0]
 
   const writeSort = (next: SortSpec[]) =>
     onUpdate((d) => {

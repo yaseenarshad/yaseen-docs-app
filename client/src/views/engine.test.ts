@@ -287,6 +287,126 @@ describe('runView: group by (GRO-2133 D6)', () => {
   })
 })
 
+describe('runView: nested group by (YAZ-745)', () => {
+  const rec = (name: string, properties: Record<string, unknown>) =>
+    ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, properties }) as IndexRecord
+  const T = (groupBy: ViewDef['groupBy'], recs: IndexRecord[], extra: Partial<ViewDef> = {}, def: Partial<ViewSet> = {}, opts: Parameters<typeof runView>[3] = {}) =>
+    runView({ views: [], ...def }, { type: 'table', name: 'T', groupBy, ...extra }, recs, opts)
+
+  it('two levels: rows sit under the innermost group; outer rows span the branch', () => {
+    const recs = [
+      rec('a1', { dept: '1 Lead Gen', proc: '2 Paid' }),
+      rec('a2', { dept: '1 Lead Gen', proc: '1 Cross' }),
+      rec('a3', { dept: '1 Lead Gen', proc: '2 Paid' }),
+      rec('b1', { dept: '2 Nurture', proc: '3 Email' }),
+    ]
+    const r = T([{ property: 'dept' }, { property: 'proc' }], recs)
+    expect(r.groups!.map(g => g.label)).toEqual(['1 Lead Gen', '2 Nurture'])
+    const lead = r.groups![0]
+    expect(lead.rows.map(x => x.record.basename)).toEqual(['a1', 'a2', 'a3'])
+    expect(lead.direct).toEqual([])
+    expect(lead.children!.map(c => c.label)).toEqual(['1 Cross', '2 Paid'])
+    expect(lead.children![1].rows.map(x => x.record.basename)).toEqual(['a1', 'a3'])
+    expect(lead.children![0].children).toBeUndefined() // two levels only
+    expect(r.groups![1].children!.map(c => c.label)).toEqual(['3 Email'])
+  })
+
+  it('each level has its own direction', () => {
+    const recs = [rec('x', { dept: 'A', proc: 'p1' }), rec('y', { dept: 'B', proc: 'p2' }), rec('z', { dept: 'A', proc: 'p2' })]
+    const r = T([{ property: 'dept', direction: 'DESC' }, { property: 'proc', direction: 'DESC' }], recs)
+    expect(r.groups!.map(g => g.label)).toEqual(['B', 'A'])
+    expect(r.groups![1].children!.map(c => c.label)).toEqual(['p2', 'p1'])
+  })
+
+  it('an inner value equal to its outer value merges: the row is direct, no child (merge rule)', () => {
+    const recs = [rec('solo', { dept: '3 Sales', proc: '3 Sales' }), rec('sub', { dept: '3 Sales', proc: '3.1 Close' })]
+    const r = T([{ property: 'dept' }, { property: 'proc' }], recs)
+    expect(r.groups!.map(g => g.label)).toEqual(['3 Sales'])
+    expect(r.groups![0].direct!.map(x => x.record.basename)).toEqual(['solo'])
+    expect(r.groups![0].children!.map(c => c.label)).toEqual(['3.1 Close'])
+    expect(r.groups![0].rows).toHaveLength(2)
+  })
+
+  it('No value applies per level, last at each level; a No-value outer can still nest', () => {
+    const recs = [rec('noInner', { dept: 'A' }), rec('inner', { dept: 'A', proc: 'p' }), rec('noOuter', { proc: 'q' })]
+    const r = T([{ property: 'dept' }, { property: 'proc' }], recs)
+    expect(r.groups!.map(g => g.label)).toEqual(['A', 'No value'])
+    const a = r.groups![0]
+    expect(a.children!.map(c => c.label)).toEqual(['p', 'No value'])
+    expect(a.children![1].key).toBe(null)
+    expect(a.children![1].rows.map(x => x.record.basename)).toEqual(['noInner'])
+    const nv = r.groups![1]
+    expect(nv.key).toBe(null)
+    expect(nv.children!.map(c => c.label)).toEqual(['q'])
+  })
+
+  it('the Problems case: a formula outer climbs the linked page parent; parentless merges to a plain top group', () => {
+    const fnPage = (name: string, parent: string | null) => rec(name, { parent })
+    const problem = (name: string, fn: string) => rec(name, { function: `[[${fn}]]` })
+    const pages = [fnPage('1 Lead Gen', null), fnPage('1.2 Paid', '[[1 Lead Gen]]'), fnPage('3 Sales', null)]
+    const probs = [problem('p1', '1.2 Paid'), problem('p2', '3 Sales'), problem('p3', '1.2 Paid')]
+    const r = runView(
+      { views: [], formulas: { top: 'if(function.asFile().properties.parent, function.asFile().properties.parent, function)' } },
+      { type: 'table', name: 'T', groupBy: [{ property: 'formula.top' }, { property: 'function' }] },
+      probs,
+      { resolve: resolverFor([...pages, ...probs]) },
+    )
+    expect(r.errors).toEqual([])
+    expect(r.groups!.map(g => g.label)).toEqual(['[[1 Lead Gen]]', '[[3 Sales]]'])
+    expect(r.groups![0].direct).toEqual([])
+    expect(r.groups![0].children!.map(c => c.label)).toEqual(['[[1.2 Paid]]'])
+    expect(r.groups![0].children![0].rows.map(x => x.record.basename)).toEqual(['p1', 'p3'])
+    expect(r.groups![1].direct!.map(x => x.record.basename)).toEqual(['p2'])
+    expect(r.groups![1].children).toEqual([])
+  })
+
+  it('a list at the inner level fans within the outer; the outer stays deduped (YAZ-671 per level)', () => {
+    const recs = [rec('multi', { dept: 'A', proc: ['p1', 'p2'] }), rec('one', { dept: 'A', proc: 'p1' })]
+    const r = T([{ property: 'dept' }, { property: 'proc' }], recs)
+    const a = r.groups![0]
+    expect(a.children!.map(c => c.label)).toEqual(['p1', 'p2'])
+    expect(a.children![0].rows.map(x => x.record.basename)).toEqual(['multi', 'one'])
+    expect(a.children![1].rows.map(x => x.record.basename)).toEqual(['multi'])
+    expect(a.children!.every(c => c.fannedOut)).toBe(true)
+    expect(a.fannedOut).toBe(false)
+    expect(a.rows).toHaveLength(2)
+  })
+
+  it('a list at the outer level fans the whole branch across outers', () => {
+    const recs = [rec('span', { dept: ['A', 'B'], proc: 'p' }), rec('only', { dept: 'A', proc: 'p' })]
+    const r = T([{ property: 'dept' }, { property: 'proc' }], recs)
+    expect(r.groups!.map(g => g.label)).toEqual(['A', 'B'])
+    expect(r.groups![0].rows).toHaveLength(2)
+    expect(r.groups![1].rows.map(x => x.record.basename)).toEqual(['span'])
+    expect(r.groups!.every(g => g.fannedOut)).toBe(true)
+    expect(r.groups![1].children![0].rows.map(x => x.record.basename)).toEqual(['span'])
+  })
+
+  it('a one-entry list behaves exactly like the single object; flat groups carry no children/direct; an empty list means no grouping', () => {
+    const rObj = run({ groupBy: { property: 'status' } })
+    const rList = run({ groupBy: [{ property: 'status' }] })
+    expect(rList.groups!.map(g => g.label)).toEqual(rObj.groups!.map(g => g.label))
+    expect(rObj.groups![0].children).toBeUndefined()
+    expect(rObj.groups![0].direct).toBeUndefined()
+    expect(rList.groups![0].children).toBeUndefined()
+    expect(run({ groupBy: [] }).groups).toBe(null)
+  })
+
+  it('summaries: an outer covers every row beneath it, a child covers its own rows', () => {
+    const recs = [rec('a', { dept: 'A', proc: 'p1' }), rec('b', { dept: 'A', proc: 'p2' }), rec('c', { dept: 'A' })]
+    const r = T([{ property: 'dept' }, { property: 'proc' }], recs, { summaries: { 'file.name': 'Count' } })
+    expect(r.groups![0].summaries['file.name']).toBe(3)
+    expect(r.groups![0].children!.map(c => c.summaries['file.name'])).toEqual([1, 1, 1])
+  })
+
+  it('entries beyond two are ignored in v1', () => {
+    const recs = [rec('a', { dept: 'A', proc: 'p', extra: 'x' })]
+    const r = T([{ property: 'dept' }, { property: 'proc' }, { property: 'extra' }], recs)
+    expect(r.groups![0].children![0].label).toBe('p')
+    expect(r.groups![0].children![0].children).toBeUndefined()
+  })
+})
+
 describe('propertyKeys / propertyLabel (GRO-2133)', () => {
   it('propertyKeys: view.order when set, else file.name + sorted note keys', () => {
     expect(propertyKeys(yasin, yasin.views[0], TEST_RECORDS)).toEqual(['file.name'])

@@ -83,6 +83,18 @@ const BOARD_SINK = `views:
     cardSize: small
 `
 
+/** Two-level grouping (YAZ-745): `groupBy` as an ordered list — first entry is the outer level. */
+const NESTED_SINK = `views:
+  - type: table
+    name: Nested
+    order:
+      - file.name
+    groupBy:
+      - property: departments
+        direction: ASC
+      - property: process
+`
+
 /** Multiset difference of lines: those only in `a` (removed) and only in `b` (added), in order. */
 function lineDiff(a: string, b: string): { removed: string[]; added: string[] } {
   const la = a.split('\n')
@@ -101,6 +113,7 @@ describe('parseViews / serializeViews round-trip', () => {
     ['yasin', YASIN_BASE],
     ['kitchen sink', KITCHEN_SINK],
     ['board', BOARD_SINK],
+    ['nested', NESTED_SINK],
   ])('%s fixture serialises byte-for-byte', (_name, text) => {
     expect(serializeViews(parseViews(text))).toBe(text)
   })
@@ -149,6 +162,11 @@ describe('parseViews def', () => {
     expect(def.views[0].groupBy).toEqual({ property: 'status' })
   })
 
+  it('a two-level groupBy parses as an ordered list (YAZ-745)', () => {
+    const { def } = parseViews(NESTED_SINK)
+    expect(def.views[0].groupBy).toEqual([{ property: 'departments', direction: 'ASC' }, { property: 'process' }])
+  })
+
   it('keeps unknown keys at the top level and inside views', () => {
     const { def } = parseViews(KITCHEN_SINK)
     expect(def.foo).toBe(1)
@@ -191,6 +209,16 @@ describe('updateViews', () => {
       delete def.views[2].indentProperties
     })
     expect(lineDiff(YASIN_BASE, serializeViews(after))).toEqual({ removed: ['    indentProperties: false'], added: [] })
+  })
+
+  it('switching groupBy between object and list forms round-trips cleanly (YAZ-745)', () => {
+    const after = updateViews(parseViews(KITCHEN_SINK), (def) => {
+      def.views[1].groupBy = [{ property: 'status', direction: 'DESC' }, { property: 'priority' }]
+    })
+    const out = serializeViews(after)
+    expect(parseViews(out).def.views[1].groupBy).toEqual([{ property: 'status', direction: 'DESC' }, { property: 'priority' }])
+    expect(serializeViews(parseViews(out))).toBe(out)
+    expect(out).toContain('# Top-level comment that must survive')
   })
 
   it('an array that changed length is replaced as a whole', () => {

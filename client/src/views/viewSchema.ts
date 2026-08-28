@@ -28,7 +28,8 @@ export interface ViewDef {
   /** 🔒 D2 (YAZ-867): an outline view's whole document — ONE markdown bullet list (`views/outlineDoc.ts`). */
   outline?: string
   sort?: SortSpec[]
-  groupBy?: GroupBySpec
+  /** Ordered levels, outer first; only the first two are honoured in v1 (YAZ-745). The single-object form stays valid. */
+  groupBy?: GroupBySpec | GroupBySpec[]
   limit?: number
   summaries?: Record<string, string>
   columnSize?: Record<string, number>
@@ -43,6 +44,10 @@ export interface ViewDef {
   propertySeparator?: string
   [extra: string]: unknown
 }
+
+/** A view's grouping levels, outer first, whichever form `groupBy` is written in. */
+export const groupByLevels = (view: ViewDef): GroupBySpec[] =>
+  Array.isArray(view.groupBy) ? view.groupBy : view.groupBy ? [view.groupBy] : []
 
 export interface ViewSet {
   filters?: FilterNode

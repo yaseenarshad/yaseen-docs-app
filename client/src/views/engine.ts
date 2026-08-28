@@ -1,5 +1,5 @@
 import type { IndexRecord } from '@shared/types'
-import type { ViewSet, ViewDef, FilterNode } from './viewSchema'
+import { type ViewSet, type ViewDef, type FilterNode, type GroupBySpec, groupByLevels } from './viewSchema'
 import {
   DateValue, DurationValue, ErrorValue, type Expr, FileValue, LinkValue, type Resolver, type Scope, type Value,
   compile, equals, evaluate, fromYaml, isTruthy, render, stripBrackets,
@@ -23,6 +23,7 @@ export interface Group {
   /** null for the trailing "No value" group. */
   key: Value | null
   label: string
+  /** EVERY row under the group — with two levels that is `direct` plus every child's rows. */
   rows: Row[]
   summaries: Record<string, Value>
   /**
@@ -31,6 +32,13 @@ export interface Group {
    * `total` (D2, deliberate). Consumers that write back through group identity read this.
    */
   fannedOut: boolean
+  /**
+   * The inner groups (YAZ-745): present — possibly empty — on every group when the view groups on
+   * two levels, absent in single-level mode. A child never has children of its own.
+   */
+  children?: Group[]
+  /** The rows the merge rule keeps directly under this group; same presence rule as `children`. */
+  direct?: Row[]
 }
 
 export interface EngineError {
@@ -367,13 +375,12 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
     }
     return out
   }
-  let groups: Group[] | null = null
-  if (view.groupBy && typeof view.groupBy.property === 'string') {
-    const { property, direction } = view.groupBy
+  /** One level over `list`: its distinct keys in the level's direction, then the value-less entries. */
+  const bucket = (list: Entry[], { property, direction }: GroupBySpec) => {
     const valued: { key: Value; entries: Entry[] }[] = []
     const noValue: Entry[] = []
     let fannedOut = false
-    for (const entry of kept) {
+    for (const entry of list) {
       const key = valueOf(entry, property)
       if (isNoValue(key)) {
         noValue.push(entry)
@@ -406,8 +413,35 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
       if (joined === 0) noValue.push(entry)
     }
     valued.sort((a, b) => compareValues(a.key, b.key, direction === 'DESC' ? 'DESC' : 'ASC'))
-    groups = valued.map(g => ({ key: g.key, label: render(g.key), rows: g.entries.map(e => e.row), summaries: summaryOf(g.entries), fannedOut }))
-    if (noValue.length) groups.push({ key: null, label: NO_VALUE, rows: noValue.map(e => e.row), summaries: summaryOf(noValue), fannedOut })
+    return { valued, noValue, fannedOut }
+  }
+  const groupOf = (key: Value | null, entries: Entry[], fannedOut: boolean): Group =>
+    ({ key, label: key === null ? NO_VALUE : render(key), rows: entries.map(e => e.row), summaries: summaryOf(entries), fannedOut })
+
+  let groups: Group[] | null = null
+  // Levels past the second are ignored in v1 (YAZ-745); a level without a property name is not one.
+  const levels = groupByLevels(view).filter(g => g && typeof g.property === 'string').slice(0, 2)
+  if (levels.length) {
+    const outer = bucket(kept, levels[0])
+    const branches: { key: Value | null; entries: Entry[] }[] = [...outer.valued]
+    if (outer.noValue.length) branches.push({ key: null, entries: outer.noValue })
+    if (levels.length === 1) {
+      groups = branches.map(b => groupOf(b.key, b.entries, outer.fannedOut))
+    } else {
+      const nested = branches.map(b => ({ ...b, inner: bucket(b.entries, levels[1]) }))
+      // Fan-out is a flag per LEVEL, not per branch: one list anywhere inside marks every inner group.
+      const innerFanned = nested.some(b => b.inner.fannedOut)
+      groups = nested.map(b => {
+        // MERGE RULE (YAZ-745): an inner key equal to its outer's is no child — its rows sit
+        // DIRECTLY under the outer, as do the value-less rows of a "No value" outer, which
+        // therefore never carries a "No value" child.
+        const merges = (key: Value): boolean => b.key !== null && equals(key, b.key)
+        const children = b.inner.valued.filter(x => !merges(x.key)).map(x => groupOf(x.key, x.entries, innerFanned))
+        if (b.key !== null && b.inner.noValue.length) children.push(groupOf(null, b.inner.noValue, innerFanned))
+        const direct = b.key === null ? b.inner.noValue : b.inner.valued.filter(x => merges(x.key)).flatMap(x => x.entries)
+        return { ...groupOf(b.key, b.entries, outer.fannedOut), children, direct: direct.map(e => e.row) }
+      })
+    }
   }
 
   return { rows: kept.map(e => e.row), groups, summaries: summaryOf(kept), errors, total }

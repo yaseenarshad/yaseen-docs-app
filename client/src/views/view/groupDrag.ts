@@ -1,6 +1,6 @@
 import { type DragEvent as ReactDragEvent, useEffect, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
-import type { ViewDef } from '../viewSchema'
+import { type ViewDef, groupByLevels } from '../viewSchema'
 import type { Group } from '../engine'
 import type { Value } from '../expr'
 import { canonicalKey } from './keys'
@@ -40,7 +40,7 @@ export interface PendingMove {
  * what a drop writes, and what the group "+" seeds. Null disables drag in both views.
  */
 export function groupByKey(view: ViewDef): string | null {
-  const property = view.groupBy?.property
+  const property = groupByLevels(view)[0]?.property
   if (typeof property !== 'string') return null
   const c = canonicalKey(property)
   return c.startsWith('note.') ? c.slice(5) : null

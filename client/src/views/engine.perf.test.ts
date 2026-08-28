@@ -54,4 +54,35 @@ describe('perf (GRO-2133)', () => {
     // caught HERE — at 150 ms it would have shipped.
     expect(ms).toBeLessThan(50)
   })
+
+  it('1000 records × 3-clause filter + sort + two-level groupBy under 50 ms', () => {
+    const records = Array.from({ length: 1000 }, (_, i) => record(i))
+    const def: ViewSet = {
+      views: [
+        {
+          type: 'table',
+          name: 'T',
+          filters: { and: ['file.ext == "md"', 'status != "done"', 'price > 10'] },
+          order: ['file.name', 'status', 'price'],
+          sort: [{ property: 'price', direction: 'DESC' }, { property: 'file.name', direction: 'ASC' }],
+          groupBy: [{ property: 'file.folder' }, { property: 'price' }],
+          summaries: { price: 'Sum' },
+        },
+      ],
+    }
+    const go = () => runView(def, def.views[0], records, { thisFile: records[0].path, root: '/vault' })
+    go() // warm-up (JIT)
+    const t0 = performance.now()
+    const r = go()
+    const ms = performance.now() - t0
+    expect(r.errors).toEqual([])
+    expect(r.groups).toHaveLength(7)
+    // No price equals a folder name and none is missing, so every row lands in exactly one child.
+    expect(r.groups!.every(g => g.direct!.length === 0)).toBe(true)
+    expect(r.groups!.every(g => g.children!.length === 39 && g.children!.reduce((n, c) => n + c.rows.length, 0) === g.rows.length)).toBe(true)
+    // eslint-disable-next-line no-console
+    console.log(`engine perf: 1000 records, two levels in ${ms.toFixed(1)} ms (${r.rows.length} kept)`)
+    // The inner level buckets each outer separately (YAZ-745), so the same budget must still hold.
+    expect(ms).toBeLessThan(50)
+  })
 })
