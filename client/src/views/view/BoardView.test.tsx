@@ -153,6 +153,13 @@ describe('board columns', () => {
       'List of Topics.md',
     ])
   })
+
+  it('a two-level groupBy list renders columns by the OUTER level only (YAZ-745: flat by outer)', () => {
+    const { el } = mount(BOARD_BASE.replace('    groupBy:\n      property: note.status\n', '    groupBy:\n      - property: note.status\n      - property: note.priority\n'))
+    expect(headerTexts(el)).toEqual(['drafting', 'idea', 'published', 'No value'])
+    expect(titles(el)).toHaveLength(8) // every card present: an outer group's rows are its whole branch
+    expect(el.querySelector('.view-table__group-cell--nested')).toBeNull()
+  })
 })
 
 describe('cards', () => {

@@ -220,6 +220,7 @@ describe('sort menu', () => {
       { property: 'note.priority', direction: 'ASC' },
     ])
     expect(yaml()).toContain('- property: note.status')
+    expect(byText(el, '.view-toolbar__badge', '3')).toBeDefined() // 1 sort + 2 grouping levels
     click(byLabel(pop, 'Then group direction'))
     expect(def().views[0].groupBy).toEqual([
       { property: 'note.status', direction: 'ASC' },

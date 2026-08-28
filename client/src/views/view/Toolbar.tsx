@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
-import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
+import { type ViewSet, type ViewDef, type Mutate, groupByLevels } from '../viewSchema'
 import type { FolderPageMode } from '../ViewsPane'
 import { ChevronsIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon, SyncIcon } from './icons'
 import { Popover } from './Popover'
@@ -58,7 +58,8 @@ export const countLabel = (shown: number, total: number): string =>
 export function Toolbar({ def, view, viewIndex, records, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, root = null, properties = null, documentView = false, onSync, folderPage }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
   const close = useCallback(() => setOpen(null), [])
-  const sorts = (view.sort?.length ?? 0) + (view.groupBy ? 1 : 0)
+  // Each grouping LEVEL is one rule in the badge (YAZ-745) — and an empty `groupBy: []` is none.
+  const sorts = (view.sort?.length ?? 0) + groupByLevels(view).length
   const allCollapsed = allGroupKeys.every((k) => collapsed.includes(k))
   const groupsLabel = allCollapsed ? 'Expand all groups' : 'Collapse all groups'
 
