@@ -178,7 +178,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
   const menuOf = (el: HTMLElement) => el.querySelector<HTMLElement>('.ctx-menu')
   const items = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
 
-  it('right-clicking a tab opens a role=menu at the pointer with Copy path and the OS actions (YAZ-963)', () => {
+  it('right-clicking a tab opens a role=menu at the pointer with Show in sidebar, Copy path, and the OS actions', () => {
     const el = mount(props)
     expect(menuOf(el)).toBeNull() // nothing until asked for
     const e = rightClick(tabAt(el, 0), 120, 42)
@@ -187,13 +187,24 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     expect(menu?.getAttribute('role')).toBe('menu')
     expect(menu?.style.left).toBe('120px')
     expect(menu?.style.top).toBe('42px')
-    expect(items(el).map((b) => b.textContent)).toEqual(['Copy path', 'Reveal in Finder', 'Open in VS Code'])
+    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+  })
+
+  it('Show in sidebar targets the right-clicked inactive tab, closes the menu, and never activates it', () => {
+    const onActivate = vi.fn()
+    const onShowInSidebar = vi.fn()
+    const el = mount({ ...props, onActivate, onShowInSidebar })
+    rightClick(tabAt(el, 1))
+    act(() => items(el)[0]?.click())
+    expect(onShowInSidebar).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md')
+    expect(onActivate).not.toHaveBeenCalled()
+    expect(menuOf(el)).toBeNull()
   })
 
   it('Copy path writes the tab\'s ABSOLUTE path — not the label — and closes the menu', () => {
     const el = mount(props)
     rightClick(tabAt(el, 1))
-    act(() => items(el)[0]?.click())
+    act(() => items(el)[1]?.click())
     expect(writeText).toHaveBeenCalledWith('/vault/sub/Deep Note.md')
     expect(menuOf(el)).toBeNull()
   })
@@ -202,7 +213,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     const el = mount(props)
     rightClick(tabAt(el, 0))
     rightClick(tabAt(el, 1))
-    act(() => items(el)[0]?.click())
+    act(() => items(el)[1]?.click())
     expect(writeText).toHaveBeenCalledTimes(1)
     expect(writeText).toHaveBeenCalledWith('/vault/sub/Deep Note.md')
   })
@@ -226,10 +237,10 @@ describe('TabBar right-click menu (YAZ-922)', () => {
   it('a press INSIDE the menu keeps it open (the item stops propagation, so the click can land)', () => {
     const el = mount(props)
     rightClick(tabAt(el, 0))
-    act(() => void items(el)[0]?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    act(() => void items(el)[1]?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
     expect(menuOf(el)).not.toBeNull()
     // …and the press that survived is followed by the click that actually copies.
-    act(() => items(el)[0]?.click())
+    act(() => items(el)[1]?.click())
     expect(writeText).toHaveBeenCalledWith('/vault/Note.md')
   })
 

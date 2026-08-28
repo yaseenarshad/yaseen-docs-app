@@ -23,6 +23,7 @@ import { windowTitle } from './lib/windowTitle'
 import { ConfirmRename, isNameChange } from './sidebar/ConfirmRename'
 import { useEnsureHome } from './sidebar/ensureHome'
 import { Sidebar, SidebarPanelIcon } from './sidebar/Sidebar'
+import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
 import { useTabs } from './tabs/useTabs'
 import { Welcome } from './Welcome'
@@ -48,6 +49,8 @@ export function App() {
   // open, so sidebar-local view state would reset on every collapse/reopen and every root
   // switch (the stale-mount lesson). One flag, `AppState.sidebarLens`; never a second one.
   const [sidebarLens, setSidebarLens] = useState(storage.getSidebarLens)
+  const sidebarRevealId = useRef(0)
+  const [sidebarRevealRequest, setSidebarRevealRequest] = useState<SidebarRevealRequest | null>(null)
   const [resizing, setResizing] = useState(false)
   const [settings, setSettings] = useState(storage.getSettings)
   const watch = useWatch(root)
@@ -189,6 +192,7 @@ export function App() {
     }
     storage.setRoot(path) // ONE identity write: { root, file: null, tabs: [] } (Tabs rule 13)
     storage.pushRecentRoot(path)
+    setSidebarRevealRequest(null)
     setRoot(path)
     // The folder's remembered file becomes the sole restored tab (D6); reset mirrors it down.
     resetTabs(path, storage.getLastFile(path))
@@ -210,6 +214,15 @@ export function App() {
     if (sidebarCollapsed) toggleSidebar()
     setPendingSearchFocus(true)
   }, [sidebarCollapsed, toggleSidebar])
+
+  const showInSidebar = useCallback((path: string) => {
+    if (sidebarCollapsed) toggleSidebar()
+    setSidebarRevealRequest({ id: ++sidebarRevealId.current, path, lens: sidebarLens })
+  }, [sidebarCollapsed, sidebarLens, toggleSidebar])
+
+  const consumeSidebarReveal = useCallback((id: number) => {
+    setSidebarRevealRequest((request) => request?.id === id ? null : request)
+  }, [])
 
   // File › Open Folder… / Open Recent (GRO-2161) reuse the same flows as the in-app buttons;
   // File › Close Tab and Window › Next/Previous Tab (GRO-2232) drive the tab model.
@@ -398,6 +411,7 @@ export function App() {
 
   const onRootMissing = useCallback(() => {
     storage.setRoot(null) // one identity write: { root: null, file: null, tabs: [] }
+    setSidebarRevealRequest(null)
     setRoot(null)
     resetTabs(null, null)
   }, [resetTabs])
@@ -440,6 +454,8 @@ export function App() {
           onCollapse={toggleSidebar}
           // The lens tabs (YAZ-847): App owns the value, the sidebar only renders the row.
           lens={sidebarLens}
+          revealRequest={sidebarRevealRequest}
+          onRevealConsumed={consumeSidebarReveal}
           onLensChange={changeLens}
           settings={settings}
           onChangeSettings={changeSettings}
@@ -473,7 +489,7 @@ export function App() {
         <div className="workspace">
           <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} candidates={wikilinkCandidates} onSnapshot={onIndexSnapshot} />
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
-          <TabBar tabs={tabs} active={file} onActivate={activate} onClose={closeTab} onMove={moveTab} canBack={canBack} canForward={canForward} onBack={back} onForward={forward} onNotice={setNotice} />
+          <TabBar tabs={tabs} active={file} onActivate={activate} onClose={closeTab} onMove={moveTab} canBack={canBack} canForward={canForward} onBack={back} onForward={forward} onShowInSidebar={showInSidebar} onNotice={setNotice} />
           <div className="tabstack">
             {mounted.length === 0 && <Editor root={root} path={null} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={propertyDecls} onRenameFile={requestRename} />}
             {mounted.map((path) => (

@@ -144,6 +144,7 @@ export function Tree({
               }}
               onContextMenu={(e) => onNodeContextMenu(node, e)}
               title={node.path}
+              data-path={node.path}
               draggable
               onDragStart={(e) => {
                 if (e.dataTransfer) {

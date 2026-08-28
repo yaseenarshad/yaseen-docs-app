@@ -17,7 +17,7 @@ import { storage } from '../lib/storage'
 import { linkNames } from '../links/completion'
 import { FOLDER_PAGE_KEY, FOLDER_PAGES_KEY, folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { countLinkReferences } from '../links/renameLinks'
-import { allDirs, treeHasFile, treeReducer } from '../lib/treeState'
+import { allDirs, ancestorDirs, treeHasFile, treeReducer } from '../lib/treeState'
 import { SearchResults } from '../search/SearchResults'
 import { useSearchResults } from '../search/useSearchResults'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
@@ -28,6 +28,7 @@ import { HotkeysButton } from './HotkeysPanel'
 import { SettingsCog } from './SettingsPanel'
 import { TopicsTree, allExpandableTopics, type PendingTopicCreate } from './TopicsTree'
 import { Tree, type PendingCreate, type PendingRename, type TreeFileMove } from './Tree'
+import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
 
 interface SidebarProps {
   root: string
@@ -50,6 +51,10 @@ interface SidebarProps {
   lens: SidebarLens
   /** A lens tab was clicked; App writes it through to the global state and passes the new value back down. */
   onLensChange: (lens: SidebarLens) => void
+  /** One tab-menu reveal, pinned to the lens selected when it was requested. */
+  revealRequest: SidebarRevealRequest | null
+  /** The request has been accepted into Sidebar-local work and must not replay after a remount. */
+  onRevealConsumed: (id: number) => void
   /** Editor spacing preferences shown in the footer cog (GRO-2024); App owns and applies them. */
   settings: SettingsState
   onChangeSettings: (next: SettingsState) => void
@@ -260,6 +265,8 @@ export function Sidebar({
   onCollapse,
   lens,
   onLensChange,
+  revealRequest,
+  onRevealConsumed,
   settings,
   onChangeSettings,
   onRootMissing,
@@ -301,7 +308,11 @@ export function Sidebar({
   // YAZ-803 swaps the BODY while it is non-empty; Sidebar is mounted `key={root}`, so it resets
   // on unmount and on a root switch without any clearing code.
   const [query, setQuery] = useState('')
+  const seenRevealId = useRef<number | null>(null)
+  const handledFilesRevealId = useRef<number | null>(null)
+  const [pendingReveal, setPendingReveal] = useState<SidebarRevealRequest | null>(null)
   const searchInput = useRef<HTMLInputElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
   // The highlighted result row (YAZ-803); the keyboard owns it, so it lives with the query.
   const [selected, setSelected] = useState(0)
 
@@ -313,6 +324,22 @@ export function Sidebar({
   // An index refresh can shrink the list under the keyboard's index (F1 finding 2, YAZ-808), so
   // every reader of the selection clamps: the highlight lands on the last row, not on nowhere.
   const sel = Math.min(selected, results.length - 1)
+
+  useEffect(() => {
+    if (revealRequest === null || seenRevealId.current === revealRequest.id) return
+    seenRevealId.current = revealRequest.id
+    onRevealConsumed(revealRequest.id)
+    if (revealRequest.lens !== lens) {
+      setPendingReveal(null)
+      return
+    }
+    setQuery('')
+    setPendingReveal(revealRequest)
+  }, [lens, onRevealConsumed, revealRequest])
+
+  useEffect(() => {
+    if (pendingReveal !== null && pendingReveal.lens !== lens) setPendingReveal(null)
+  }, [lens, pendingReveal])
 
   // Expand / collapse the whole tree (⚡ YAZ-862, BOTH lenses since ⚡ YAZ-873). "Any open" is
   // measured against what the CURRENT tree can actually unfold, never the raw persisted list:
@@ -380,6 +407,27 @@ export function Sidebar({
   useEffect(() => {
     if (activeFile !== null) dispatch({ type: 'expandTo', root, file: activeFile })
   }, [root, activeFile])
+
+  useEffect(() => {
+    if (tree === null || pendingReveal?.lens !== 'files' || handledFilesRevealId.current === pendingReveal.id) return
+    handledFilesRevealId.current = pendingReveal.id
+    if (!treeHasFile(tree.tree, pendingReveal.path)) {
+      onNotice(revealMissingMessage(pendingReveal.path, 'files'))
+      return
+    }
+    dispatch({ type: 'expandTo', root, file: pendingReveal.path })
+  }, [onNotice, pendingReveal, root, tree])
+
+  const filesRevealReady =
+    pendingReveal?.lens === 'files' &&
+    tree !== null &&
+    treeHasFile(tree.tree, pendingReveal.path) &&
+    ancestorDirs(root, pendingReveal.path).every((dir) => expanded.includes(dir))
+
+  useEffect(() => {
+    if (!filesRevealReady || pendingReveal === null || bodyRef.current === null) return
+    return flashTreeRows(bodyRef.current, pendingReveal.path) ?? undefined
+  }, [filesRevealReady, pendingReveal])
 
   // ⌘K's focus handshake (YAZ-801). Firing on MOUNT is deliberate, not a side effect to guard
   // against: ⌘K with the sidebar collapsed un-collapses it, so the sidebar mounts with the flag
@@ -852,7 +900,7 @@ export function Sidebar({
           BOTH lenses offer it since YAZ-948 — 🔒 YAZ-847 withheld it from Topics only until
           that tree had a menu of its own to be consistent with, which YAZ-865 gave its rows.
           Blank space means the same thing in either lens: the vault ROOT. */}
-      <div className="sidebar__body" onContextMenu={(e) => (searching ? undefined : openMenu(null, e))}>
+      <div ref={bodyRef} className="sidebar__body" onContextMenu={(e) => (searching ? undefined : openMenu(null, e))}>
         {searching ? (
           // A typed query replaces the ACTIVE TAB's body, whichever lens that is (🔒 D5).
           results.length > 0 ? (
@@ -869,6 +917,7 @@ export function Sidebar({
           <TopicsTree
             expanded={topicsExpanded}
             onExpandedChange={setTopicsExpanded}
+            revealRequest={pendingReveal}
             source={indexSource}
             activeFile={activeFile}
             onOpenFile={onOpenFile}
