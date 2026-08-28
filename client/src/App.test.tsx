@@ -54,6 +54,7 @@ import { App, LINK_NOTICE_MS } from './App'
 
 /** The full `window.yaseenDocs` surface the App tree touches, all observable. `files` backs readFile/writeFile (the E1c rewrite path). */
 function installBridge(state: AppState, identity: WindowIdentity, files: Record<string, { content: string; mtime: number }> = {}) {
+  const stateChanged = new Set<(next: AppState) => void>()
   const menuOpenRoot = new Set<(path: string) => void>()
   const menuSearch = new Set<() => void>()
   const menuCloseTab = new Set<() => void>()
@@ -104,7 +105,10 @@ function installBridge(state: AppState, identity: WindowIdentity, files: Record<
       setFolder: vi.fn(async () => undefined),
       setFolds: vi.fn(async () => undefined),
       setBaseGroups: vi.fn(async () => undefined),
-      onChange: vi.fn(() => () => undefined),
+      onChange: vi.fn((listener: (next: AppState) => void) => {
+        stateChanged.add(listener)
+        return () => stateChanged.delete(listener)
+      }),
     },
     window: {
       identity: vi.fn(async () => identity),
@@ -169,6 +173,7 @@ function installBridge(state: AppState, identity: WindowIdentity, files: Record<
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return {
     bridge,
+    emitStateChanged: (next: AppState) => stateChanged.forEach((listener) => listener(next)),
     emitOpenRoot: (path: string) => menuOpenRoot.forEach((l) => l(path)),
     emitSearch: () => menuSearch.forEach((l) => l()),
     emitCloseTab: () => menuCloseTab.forEach((l) => l()),
@@ -367,6 +372,21 @@ describe('App appearance (Desktop K, GRO-2218)', () => {
     await mount(state, { id: 'w1', root: '/v', file: null, tabs: [] })
     expect(document.documentElement.dataset.theme).toBe('dark')
     expect(document.getElementById(CREPE_THEME_STYLE_ID)?.textContent).toBe(frameDark)
+  })
+})
+
+describe('App content width (YAZ-1176)', () => {
+  it('exposes the stored preset on the app container from the first render', async () => {
+    const state: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, contentWidth: 'medium' } }
+    const { el } = await mount(state, { id: 'w1', root: '/v', file: null, tabs: [] })
+    expect(el.querySelector('.app')?.getAttribute('data-content-width')).toBe('medium')
+  })
+
+  it('applies another window\'s content-width change live through the existing state broadcast', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    expect(el.querySelector('.app')?.getAttribute('data-content-width')).toBe('narrow')
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, contentWidth: 'full' } }))
+    expect(el.querySelector('.app')?.getAttribute('data-content-width')).toBe('full')
   })
 })
 

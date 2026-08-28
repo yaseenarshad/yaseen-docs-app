@@ -349,6 +349,10 @@ export const SIDEBAR_MIN_W = 180
 export const SIDEBAR_MAX_W = 520
 export const SIDEBAR_DEFAULT_W = 260
 
+/** Global content-width presets, ordered exactly as shown in Settings (YAZ-1176). */
+export const CONTENT_WIDTHS = ['narrow', 'medium', 'full'] as const
+export type ContentWidth = (typeof CONTENT_WIDTHS)[number]
+
 /**
  * `AppState.settings` — app-global editor preferences (GRO-2024). Applied as CSS custom
  * properties on the app container; never written into the markdown on disk.
@@ -366,6 +370,8 @@ export interface SettingsState {
   threadColor: string | null
   /** Appearance (Desktop K, GRO-2218): explicit values win; `system` tracks the OS live. */
   theme: Theme
+  /** Global reading surface width (YAZ-1176): 1040px, 1440px, or fluid within the workspace. */
+  contentWidth: ContentWidth
   /** Files & Links (Links C2-, GRO-2240): where a BARE unresolved `[[link]]` creates its page. */
   newNoteLocation: NewNoteLocation
   /** Root-relative folder for `newNoteLocation: 'folder'` ('' = the vault root); ignored otherwise. Interpreted per-vault against each window's root. */
@@ -413,6 +419,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   threadWidth: 2,
   threadColor: null,
   theme: 'system',
+  contentWidth: 'narrow',
   newNoteLocation: 'root',
   newNoteFolder: '',
   confirmDelete: true,

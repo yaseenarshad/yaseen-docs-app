@@ -84,10 +84,19 @@ button {
 }
 
 .app {
+  --content-max-width: 1040px;
   position: relative; /* containing block for the floating sidebar-reopen button */
   display: flex;
   height: 100%;
   overflow: hidden;
+}
+
+.app[data-content-width='medium'] {
+  --content-max-width: 1440px;
+}
+
+.app[data-content-width='full'] {
+  --content-max-width: none;
 }
 
 /* ---------- editor ---------- */
@@ -123,7 +132,7 @@ button {
   align-items: baseline;
   column-gap: 24px;
   width: 100%;
-  max-width: 1040px;
+  max-width: var(--content-max-width);
   margin: 0 auto;
   padding: 32px 48px 0;
 }
@@ -409,7 +418,7 @@ button {
 /* Content column: centred, wide on large windows, fills the host on narrow ones (GRO-2007). */
 .editor-instance {
   width: 100%;
-  max-width: 1040px;
+  max-width: var(--content-max-width);
   margin: 0 auto;
   /* No lead-in of its own (YAZ-918): the properties panel left this slot for the title row, so
      the gap under the title is ProseMirror's 16px + the first paragraph's 4px — nothing more. */

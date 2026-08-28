@@ -11,7 +11,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   const m = await importOriginal<typeof import('node:fs/promises')>()
   return { ...m, rename: vi.fn(m.rename) }
 })
-const renames = () => vi.mocked(rename).mock.calls.filter(([, to]) => String(to).endsWith('yaseendocs.json'))
+const renames = () => vi.mocked(rename).mock.calls.filter(([, to]) => String(to) === file)
 
 let dir: string
 let file: string
@@ -95,6 +95,20 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings.theme).toBe('system')
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 2 } }))
     expect(createStore(file).get().settings.theme).toBe('system')
+  })
+
+  it('contentWidth: legacy state defaults to narrow; supported presets survive; junk falls back (YAZ-1176)', async () => {
+    const { contentWidth: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toMatchObject({ contentWidth: 'narrow' })
+
+    for (const contentWidth of ['narrow', 'medium', 'full']) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, contentWidth } }))
+      expect(createStore(file).get().settings).toMatchObject({ contentWidth })
+    }
+
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, contentWidth: 'wide' } }))
+    expect(createStore(file).get().settings).toMatchObject({ contentWidth: 'narrow' })
   })
 
   it('newNoteLocation/newNoteFolder: a pre-C2 file without the keys sanitizes to root + ""; junk falls back (GRO-2240)', async () => {

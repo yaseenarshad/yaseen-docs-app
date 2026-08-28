@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, isAbsolute } from 'node:path'
 import {
+  CONTENT_WIDTHS,
   DEFAULT_SETTINGS,
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
@@ -18,6 +19,7 @@ import {
   isSidebarLens,
   isValidNewNoteFolder,
   type AppState,
+  type ContentWidth,
   type FolderState,
   type NewNoteLocation,
   type RecentRoots,
@@ -98,6 +100,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   threadWidth: (v): v is number => isFiniteNumber(v) && THREAD_WIDTHS.includes(v),
   threadColor: (v): v is string | null => v === null || isHexColour(v),
   theme: (v): v is Theme => typeof v === 'string' && (THEMES as readonly string[]).includes(v),
+  contentWidth: (v): v is ContentWidth => typeof v === 'string' && (CONTENT_WIDTHS as readonly string[]).includes(v),
   newNoteLocation: (v): v is NewNoteLocation => typeof v === 'string' && (NEW_NOTE_LOCATIONS as readonly string[]).includes(v),
   newNoteFolder: (v): v is string => typeof v === 'string' && isValidNewNoteFolder(v),
   confirmDelete: (v): v is boolean => typeof v === 'boolean',

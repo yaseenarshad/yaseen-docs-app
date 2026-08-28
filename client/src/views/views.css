@@ -2,7 +2,7 @@
 
 /*
  * TOMBSTONE (YAZ-861): `.view-view`'s own geometry block lived here — a full-pane content column
- * (`max-width: 1040px; margin: 0 auto; padding: 32px 48px 120px`) plus `flex: 1; min-height: 0` to
+ * (its own fixed max-width, centred margin, and document padding) plus `flex: 1; min-height: 0` to
  * fill the window. It was written for a main pane that no longer exists: since the `.base`
  * retirement (YAZ-846) the ONE mount is the note's contents block, which overrode the column and
  * the padding on the very next rule it met. The values that actually apply now live where they are
