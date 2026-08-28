@@ -24,13 +24,30 @@
   color: #1f1f1f;
 }
 
-/* The bar floats over the scroller, anchored by the positioned ancestor the host gives it
-   (`section.editor` for a note, `.view-outline-editor` for an outline view). One quiet row. */
-.find-bar {
+/* A zero-height dock keeps the floating bar out of document flow. Notes anchor to their page;
+   outlines stick to their outer editor scroller so the bar follows the reader through the view. */
+.find-bar-dock {
+  z-index: 3;
+  height: 0;
+  pointer-events: none;
+}
+
+.find-bar-dock--note {
   position: absolute;
   top: 8px;
+  right: 0;
+  left: 0;
+}
+
+.find-bar-dock--outline {
+  position: sticky;
+  top: 8px;
+}
+
+.find-bar {
+  position: absolute;
+  top: 0;
   right: 16px;
-  z-index: 3;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -40,6 +57,7 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  pointer-events: auto;
 }
 
 .find-bar__input {

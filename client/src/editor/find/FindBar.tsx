@@ -73,44 +73,48 @@ export function FindBar({ channel, scope, hostRef }: FindBarProps) {
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [channel, scope, hostRef])
 
-  if (!state.open) return null
-
   /** The buttons act on the search; the caret stays where the reader left it, in the query. */
   const hold = (event: MouseEvent): void => event.preventDefault()
 
+  // Keep the zero-height dock mounted while closed: OutlineEditor appends its editor in an effect,
+  // so this existing first child is what gives the outline's sticky bar its top anchor.
   return (
-    <div className="find-bar">
-      <input
-        ref={inputRef}
-        className="find-bar__input"
-        type="text"
-        aria-label="Find in page"
-        placeholder="Find"
-        spellCheck={false}
-        value={state.query}
-        onInput={(event) => channel.setQuery(event.currentTarget.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') {
-            event.preventDefault()
-            if (event.shiftKey) channel.prev()
-            else channel.next()
-          } else if (event.key === 'Escape') {
-            event.preventDefault()
-            channel.close()
-          }
-        }}
-      />
-      {/* Nothing has been asked yet on an empty query, so there is no count to answer with. */}
-      {state.query !== '' && <span className="find-bar__count">{state.total === 0 ? '0 of 0' : `${state.activeIndex + 1} of ${state.total}`}</span>}
-      <button type="button" className="find-bar__btn find-bar__btn--prev" aria-label="Previous match" onMouseDown={hold} onClick={() => channel.prev()}>
-        <Chevron />
-      </button>
-      <button type="button" className="find-bar__btn" aria-label="Next match" onMouseDown={hold} onClick={() => channel.next()}>
-        <Chevron />
-      </button>
-      <button type="button" className="find-bar__btn find-bar__btn--close" aria-label="Close find" onMouseDown={hold} onClick={() => channel.close()}>
-        ×
-      </button>
+    <div className={`find-bar-dock find-bar-dock--${scope}`}>
+      {state.open && (
+        <div className="find-bar">
+          <input
+            ref={inputRef}
+            className="find-bar__input"
+            type="text"
+            aria-label="Find in page"
+            placeholder="Find"
+            spellCheck={false}
+            value={state.query}
+            onInput={(event) => channel.setQuery(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                if (event.shiftKey) channel.prev()
+                else channel.next()
+              } else if (event.key === 'Escape') {
+                event.preventDefault()
+                channel.close()
+              }
+            }}
+          />
+          {/* Nothing has been asked yet on an empty query, so there is no count to answer with. */}
+          {state.query !== '' && <span className="find-bar__count">{state.total === 0 ? '0 of 0' : `${state.activeIndex + 1} of ${state.total}`}</span>}
+          <button type="button" className="find-bar__btn find-bar__btn--prev" aria-label="Previous match" onMouseDown={hold} onClick={() => channel.prev()}>
+            <Chevron />
+          </button>
+          <button type="button" className="find-bar__btn" aria-label="Next match" onMouseDown={hold} onClick={() => channel.next()}>
+            <Chevron />
+          </button>
+          <button type="button" className="find-bar__btn find-bar__btn--close" aria-label="Close find" onMouseDown={hold} onClick={() => channel.close()}>
+            ×
+          </button>
+        </div>
+      )}
     </div>
   )
 }
