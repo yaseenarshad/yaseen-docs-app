@@ -38,6 +38,13 @@ export interface FolderPageSettings {
   columns: Record<string, ColumnDecl>
   /** The parking bin for new members — undefined when absent OR unusable at rest. */
   folder?: string
+  /**
+   * The page's named formulas, `ViewSet.formulas` verbatim (YAZ-745): a `formula.<name>` key is a
+   * column, a sort AND a grouping level, so a folder page that declares none can not group on one.
+   * Undefined when absent; a non-map, or an entry that is not a string, is a problem and dropped —
+   * the expression itself is never parsed here (a bad one is the engine's own reported cell error).
+   */
+  formulas?: Record<string, string>
   /** Never empty: `DEFAULT_VIEWS` when the key declares none usable. `ViewDef` verbatim. */
   views: ViewDef[]
   /** Human one-liners a surface can show. Never thrown, never written back. */
@@ -115,6 +122,21 @@ function readViews(raw: unknown, problems: string[]): ViewDef[] {
   return views
 }
 
+/** `name → expression`, tolerant like the rest: a bad map is absent, a bad entry is dropped. */
+function readFormulas(raw: unknown, problems: string[]): Record<string, string> | undefined {
+  if (raw === undefined) return undefined
+  if (!isRecord(raw)) {
+    problems.push(`${SETTINGS_KEY}.formulas must be a map of named expressions — ignoring it`)
+    return undefined
+  }
+  const formulas: Record<string, string> = {}
+  for (const [name, expr] of Object.entries(raw)) {
+    if (typeof expr === 'string') formulas[name] = expr
+    else problems.push(`${SETTINGS_KEY}.formulas.${name} must be an expression — ignoring that formula`)
+  }
+  return formulas
+}
+
 /** The shared folder grammar, and its rule: unusable at rest reads as absent. */
 function readFolder(raw: unknown, problems: string[]): string | undefined {
   if (raw === undefined) return undefined
@@ -142,6 +164,7 @@ export function folderPageSettingsOf(properties: Record<string, unknown>): Folde
   return {
     columns: readColumns(raw.columns, problems),
     folder: readFolder(raw.folder, problems),
+    formulas: readFormulas(raw.formulas, problems),
     views: readViews(raw.views, problems),
     problems,
   }
@@ -279,6 +302,7 @@ function plain(settings: FolderPageSettings): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   if (Object.keys(settings.columns).length > 0) out.columns = settings.columns
   if (settings.folder !== undefined) out.folder = settings.folder
+  if (settings.formulas !== undefined) out.formulas = settings.formulas
   out.views = settings.views
   return out
 }

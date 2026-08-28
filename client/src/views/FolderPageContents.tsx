@@ -92,10 +92,14 @@ interface Feed {
  * stands behind it but the note's own card. The round trip through the ONE parser is deliberate: `ParsedViews`
  * carries the yaml Document every config edit is written into (`updateViews`), so it has to be a
  * real parse. No `filters` are ever put in: a folder page's set IS the lookup (🔒 Q3, YAZ-815).
+ *
+ * The settings' `formulas` come in beside them (YAZ-745): `formula.<name>` is a column, a sort and
+ * a GROUPING LEVEL, all read off `def.formulas` — so a folder page whose formulas stopped at the
+ * settings could declare a level the engine could only answer `unknown formula` to.
  */
-function folderPageViewSet(views: readonly ViewDef[]): ParsedViews {
+function folderPageViewSet(views: readonly ViewDef[], formulas: Record<string, string> | undefined): ParsedViews {
   try {
-    return parseViews(stringify({ views }))
+    return parseViews(stringify(formulas === undefined ? { views } : { formulas, views }))
   } catch {
     // Report-don't-block: a hand-edited view YAML cannot take the note's editor down with it —
     // the page still renders, on the defaults it would have had with no settings at all.
@@ -164,7 +168,7 @@ export function FolderPageContents({
   }, [fileContent])
   const [parsed, setParsed] = useState<ParsedViews | null>(() => {
     const seed = fileSettings ?? settings
-    return seed === null ? null : folderPageViewSet(seed.views)
+    return seed === null ? null : folderPageViewSet(seed.views, seed.formulas)
   })
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [columnError, setColumnError] = useState<string | null>(null)
@@ -201,8 +205,10 @@ export function FolderPageContents({
   // straight after opening jumps the index PAST the seed's bytes — waiting for an exact match
   // gated the card shut forever: the add-a-column-then-never-see-it bug). So the first movement
   // ends the past and is itself adopted.
-  const stamp = settings === null ? '' : JSON.stringify(settings.views)
-  const fileStamp = fileSettings === null ? null : JSON.stringify(fileSettings.views)
+  // Both halves of what `folderPageViewSet` builds, so an edited FORMULA rebuilds the def exactly
+  // as an edited view does — and the two stamps stay comparable, which the catch-up below needs.
+  const stamp = settings === null ? '' : JSON.stringify([settings.views, settings.formulas ?? null])
+  const fileStamp = fileSettings === null ? null : JSON.stringify([fileSettings.views, fileSettings.formulas ?? null])
   const caughtUp = useRef(fileStamp === null) // no file seed → the index led from the start
   /** The one stale snapshot this mount opened over — recorded on first sight, never trusted. */
   const pastStamp = useRef<string | null>(null)
@@ -225,7 +231,7 @@ export function FolderPageContents({
     }
     if (seen.current === stamp) return
     seen.current = stamp
-    setParsed(settings === null ? null : folderPageViewSet(settings.views))
+    setParsed(settings === null ? null : folderPageViewSet(settings.views, settings.formulas))
   }, [stamp, settings, fileStamp])
 
   if (record === null || settings === null || parsed === null) return null
