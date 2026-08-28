@@ -152,11 +152,10 @@ interface MenuTargets {
   /** That row's flag when the menu opened, off the window's index snapshot; picks the label. */
   folderPageIsOn: boolean
   /**
-   * The TOPICS row this menu was opened from (8G-, YAZ-865), or null for every file-tree row and
-   * for blank space. Only the create group reads it, and only to know WHERE to draw its inline
-   * input: the Topics tree has no folder rows to nest one inside, so the input is anchored to
-   * the right-clicked row. `targetDir` above still decides where the file actually lands, and it
-   * is the file tree's own rule either way — beside the right-clicked page.
+   * The TOPICS row this menu was opened from (8G-, YAZ-865; YAZ-1080), or null for every
+   * file-tree row and blank space. The create group uses it only to place the one inline input:
+   * beneath a page or Uncategorized disk-folder row. `targetDir` still decides where the entry
+   * lands through the file tree's own rule.
    */
   topicsAnchor: string | null
 }
@@ -289,11 +288,10 @@ export function Sidebar({
   // and a restart alike. A lens switch never touches it: this state outlives the tree's mount.
   const [topicsExpanded, setTopicsExpanded] = useState<ReadonlySet<string>>(() => new Set(storage.getTopicsExpanded(root)))
   const [menu, setMenu] = useState<MenuTargets | null>(null)
-  // `anchor` is the TOPICS row the create was asked from (8G-, YAZ-865); null on the file tree,
-  // where the input nests inside `parentDir`'s own children instead. `intoFolderPage` is that same
-  // row WHEN it is a flagged folder page (8H, YAZ-869) — the birth then declares belonging instead
-  // of landing beside a file. Pinned when the menu opened, off the same snapshot read that picked
-  // the toggle's label (GRO-2296): the create is about the row that was right-clicked.
+  // `anchor` is the TOPICS page or disk-folder row the create was asked from; null on the file
+  // tree, where the input nests inside `parentDir`'s own children instead. `intoFolderPage` is
+  // that same row only WHEN it is a flagged PAGE (8H, YAZ-869) — a disk folder has no record and
+  // therefore keeps plain filesystem creation. Pinned when the menu opens (GRO-2296).
   const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string; anchor: string | null; intoFolderPage: string | null } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir' } | null>(null)
   // The delete confirm sheet's target (GRO-2272 `C3-`); null when the sheet is closed.
@@ -523,13 +521,11 @@ export function Sidebar({
   )
 
   /**
-   * A Topics row's right-click (8G-, YAZ-865 — the ⚡ amendment on YAZ-821, ruled by Yasin):
-   * the SAME menu, opened on the page's own FILE. Every item then resolves its own target from
-   * that one path exactly as it does for a file row (GRO-2296) — including the folder-page
-   * toggle, whose label the row's flag picks off the same snapshot the tree itself is drawn
-   * from. The anchor rides along so the create group knows where to draw its inline input.
+   * A Topics row's right-click: the SAME menu, opened on the page FILE (YAZ-865) or projected
+   * disk DIRECTORY (YAZ-1080). Every item resolves its own target from that shared `MenuRow`;
+   * the anchor rides along so the create group knows where to draw its inline input.
    */
-  const openTopicsMenu = useCallback((path: string, e: React.MouseEvent) => openMenu({ type: 'file', path }, e, path), [openMenu])
+  const openTopicsMenu = useCallback((row: MenuRow, e: React.MouseEvent) => openMenu(row, e, row.path), [openMenu])
 
   /** Context menu "Open in new window" (D2, GRO-2168): a fresh window on {root, file}; this one untouched. (⌘-click opens a background tab instead since I3.) */
   const openFileNewWindow = useCallback(
@@ -915,6 +911,7 @@ export function Sidebar({
           // expansion, pending create/rename, drag) lives in this component and is waiting
           // untouched below.
           <TopicsTree
+            root={root}
             expanded={topicsExpanded}
             onExpandedChange={setTopicsExpanded}
             revealRequest={pendingReveal}
@@ -976,7 +973,9 @@ export function Sidebar({
           onOpenVsCode={openVsCode}
           onNewNote={() => startCreate('file')}
           onNewFolderPage={() => startCreate('folderPage')}
-          onNewFolder={lens === 'topics' ? null : () => startCreate('dir')}
+          // Topics PAGE rows and blank space still browse by meaning and offer no disk-folder
+          // birth (YAZ-948). YAZ-1080's explicit disk-folder rows are the honest exception.
+          onNewFolder={lens === 'topics' && menu.rowKind !== 'dir' ? null : () => startCreate('dir')}
           folderPagePath={menu.folderPagePath}
           folderPageIsOn={menu.folderPageIsOn}
           onToggleFolderPage={toggleFolderPage}

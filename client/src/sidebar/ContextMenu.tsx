@@ -30,9 +30,9 @@ interface ContextMenuProps {
   /** Create a note born a folder page — the flag and nothing else (🔒 D4 + D1, YAZ-841). */
   onNewFolderPage: () => void
   /**
-   * Create a DISK folder — null hides the item (YAZ-948). The Topics lens browses by meaning,
-   * never by disk location, so a folder made from it would land somewhere that lens cannot
-   * show: an item whose result is invisible is worse than an item that is not offered.
+   * Create a DISK folder — null hides the item (YAZ-948). Topics pages and blank space still
+   * browse by meaning and omit it; YAZ-1080's explicit Uncategorized disk-folder targets reuse
+   * the Files directory menu and therefore supply it.
    */
   onNewFolder: (() => void) | null
   /**

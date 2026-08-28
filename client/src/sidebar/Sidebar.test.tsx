@@ -1478,6 +1478,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
   const DOCS = record('/v/Docs.md', { folder_page: true, folder_pages: ['[[Home]]'] })
   const GUIDE = record('/v/Docs/Guide.md', { folder_pages: ['[[Docs]]'] })
   const LOOSE = record('/v/Loose.md')
+  const INBOX_NOTE = record('/v/inbox/Loose.md')
   /**
    * A folder page that DECLARES things (8H, YAZ-869): two columns for the scaffold to empty out
    * and a parking `folder`, so a birth from its row has something to prove beyond "it happened".
@@ -1501,6 +1502,8 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     }) as SidebarProps['indexSource']
 
   const topics = (over: Partial<SidebarProps> = {}) => mount({ lens: 'topics', indexSource: feedOver(HOME, DOCS, GUIDE, LOOSE), ...over })
+  const topicsWithInbox = (over: Partial<SidebarProps> = {}) =>
+    mount({ lens: 'topics', indexSource: feedOver(HOME, DOCS, GUIDE, INBOX_NOTE), ...over })
   const rowFor = (el: HTMLElement, label: string) =>
     [...el.querySelectorAll<HTMLButtonElement>('.tree__row')].find((r) => r.querySelector('.tree__label')?.textContent === label)
   const rightClick = (node: Element | null | undefined) => act(() => void node?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
@@ -1772,6 +1775,75 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     expect(itemByLabel(el, 'Turn into folder page')).toBeDefined()
     act(() => itemByLabel(el, 'Reveal in Finder')?.click())
     expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v/Loose.md' })
+  })
+
+  it('an Uncategorized DISK FOLDER opens the exact applicable Files folder menu', async () => {
+    const { el } = await topicsWithInbox()
+    act(() => el.querySelector<HTMLButtonElement>('.tree__row--muted')?.click())
+    await rightClick(rowFor(el, 'inbox'))
+
+    expect(menuItems(el).map((button) => button.textContent)).toEqual([
+      'Reveal in Finder',
+      'Open in VS Code',
+      'Copy path',
+      'New note',
+      'New folder page',
+      'New folder',
+      'Rename',
+      'Delete',
+    ])
+  })
+
+  it('folder utilities target the selected disk folder rather than the vault root', async () => {
+    const writeText = installClipboard()
+    const { el, bridge } = await topicsWithInbox()
+    act(() => el.querySelector<HTMLButtonElement>('.tree__row--muted')?.click())
+
+    await rightClick(rowFor(el, 'inbox'))
+    act(() => itemByLabel(el, 'Copy path')?.click())
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/inbox')
+
+    await rightClick(rowFor(el, 'inbox'))
+    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/v/inbox' })
+  })
+
+  it('folder Rename replaces that mini-tree row and commits through the shared directory pipeline', async () => {
+    const { el, props } = await topicsWithInbox()
+    act(() => el.querySelector<HTMLButtonElement>('.tree__row--muted')?.click())
+    await rightClick(rowFor(el, 'inbox'))
+    act(() => itemByLabel(el, 'Rename')?.click())
+
+    expect(inlineInput(el)?.value).toBe('inbox')
+    expect(rowFor(el, 'inbox')).toBeUndefined()
+    await commit(el, 'Archive')
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/inbox', '/v/Archive')
+  })
+
+  it('folder create actions draw beneath the selected branch and use it as the filesystem parent', async () => {
+    const { el, bridge } = await topicsWithInbox()
+    act(() => el.querySelector<HTMLButtonElement>('.tree__row--muted')?.click())
+    act(() => rowFor(el, 'inbox')?.click()) // create must reopen a collapsed target, as Files does
+    await rightClick(rowFor(el, 'inbox'))
+    act(() => itemByLabel(el, 'New note')?.click())
+
+    expect(inlineInput(el)?.placeholder).toBe('New note')
+    expect(inlineInput(el)?.parentElement?.style.paddingLeft).toBe('36px')
+    await commit(el, 'Nearby')
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith('/v/inbox/Nearby.md')
+  })
+
+  it('New folder remains hidden from Topics pages and blank space but works on a disk-folder row', async () => {
+    const { el, bridge } = await topicsWithInbox()
+    act(() => el.querySelector<HTMLButtonElement>('.tree__row--muted')?.click())
+
+    await rightClick(rowFor(el, 'Loose'))
+    expect(itemByLabel(el, 'New folder')).toBeUndefined()
+    await rightClick(rowFor(el, 'inbox'))
+    act(() => itemByLabel(el, 'New folder')?.click())
+    expect(inlineInput(el)?.placeholder).toBe('New folder')
+    await commit(el, 'Later')
+    expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith('/v/inbox/Later')
   })
 
   /**

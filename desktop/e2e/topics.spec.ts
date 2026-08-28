@@ -25,11 +25,13 @@
  *     the pinned leaf only ever opens
  *   4 the expansion survives quit → relaunch, in the main-owned `folders[root].topicsExpanded`
  *     bucket — PAGE PATHS, never written into any note's frontmatter, and never Home's
- *   5 Uncategorized expands IN PLACE (🔒 D7, the locked deviation from the mockup), listing the
- *     two unfiled notes and subtracting everything the tree DRAWS — the pinned leaf included
+ *   5 Uncategorized expands IN PLACE (🔒 D7, the locked deviation from the mockup), showing the
+ *     two unfiled notes under their collapsible inbox disk folder and subtracting everything the
+ *     tree DRAWS — the pinned leaf included
  *   5b a member row carries the file tree's own menu, and Delete trashes the page (YAZ-865)
  *   5c "New note" ON a folder-page row births a MEMBER of it (8H, YAZ-869) — the new page shows
  *     up under that topic in the tree AND in the topic's own contents, without one hand-tag
+ *   5d an Uncategorized disk folder carries the applicable Files DIRECTORY menu (YAZ-1080)
  *
  * Then HOME'S BIRTH (6C-, YAZ-849). The migrated fixture HAS a Home, so both steps below run over
  * a copy with `Home.md` deleted — a vault full of folder pages that answers `[[Home]]` with
@@ -320,14 +322,15 @@ test('step 5 — Uncategorized expands IN PLACE, subtracting everything the tree
   await expect(uncategorizedRow(win).locator('.tree__chevron--open')).toHaveCount(0)
   await uncategorizedRow(win).click()
   await expect(uncategorizedRow(win).locator('.tree__chevron--open')).toHaveCount(1) // the chevron turns with it
-  // The two unfiled notes, and nothing else: one carries frontmatter without a `folder_pages`
-  // entry, the other carries none at all — belonging is an entry, never an inference from disk.
+  // The two unfiled notes, and nothing else, under the one disk folder they already share. Disk
+  // location organizes this mini tree; belonging still comes only from a folder_pages entry.
   await expect(topicLabels(win)).toHaveText([
     'Home',
     'Funnel Stages',
     ...MEMBERS,
     ...TOPICS.slice(1),
     'Uncategorized',
+    'inbox',
     ...ORPHANS,
   ])
   // 🔒 D7 as ⚡ YAZ-920 restates it: the section holds what the tree does NOT DRAW, computed from
@@ -336,6 +339,21 @@ test('step 5 — Uncategorized expands IN PLACE, subtracting everything the tree
   await expect(rowFor(win, 'Home')).toHaveCount(1) // the pinned leaf's row only
   await expect(rowFor(win, 'KPIs')).toHaveCount(1) // the promoted root's row only
   await expect(rowFor(win, 'Lead Gen')).toHaveCount(1) // the nested row only
+
+  // YAZ-1080: this is a real disk-directory target using the ONE shared sidebar menu. Keep the
+  // exact applicable action set pinned here; file-only link/window/toggle actions must not leak.
+  await rowFor(win, 'inbox').click({ button: 'right' })
+  await expect(win.locator('.ctx-menu [role="menuitem"]')).toHaveText([
+    'Reveal in Finder',
+    'Open in VS Code',
+    'Copy path',
+    'New note',
+    'New folder page',
+    'New folder',
+    'Rename',
+    'Delete',
+  ])
+  await win.keyboard.press('Escape')
   await shoot(win, 'topics-05-uncategorized')
 
   // It never becomes a page: clicking an orphan opens the ORPHAN, and there is no Uncategorized tab.

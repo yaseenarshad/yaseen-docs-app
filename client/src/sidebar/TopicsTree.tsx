@@ -43,7 +43,11 @@
  * EXPANDS IN PLACE — never a virtual page, never a main-pane view. As YAZ-920 amends it, the
  * section holds what the tree does NOT draw — computed from the same guarded descent the rows
  * come from, never "no parents" read off the index — so a page reachable only through the
- * pinned-leaf Home (which unfolds nothing) surfaces here instead of vanishing.
+ * pinned-leaf Home (which unfolds nothing) surfaces here instead of vanishing. YAZ-956 gives
+ * those pages a pruned mini-Files hierarchy from their existing `IndexRecord.folder`: only
+ * branches that contain an Uncategorized page appear, all start open, and disk-folder folds live
+ * only for this mount. Folder rows organize on normal activation and use the shared Files
+ * directory menu on right-click; pages keep every Topics gesture.
  *
  * FEED: the window's ONE `WikilinkResolveSource` — the same records + resolver pair backlinks,
  * the contents block and the folder-page toggle read. A refetched index pokes it and the whole
@@ -63,12 +67,13 @@
  * opens the SAME `ContextMenu` a file row opens, on the page's own file. Not a menu of this
  * lens' own: the tree reports the row and the Sidebar — which owns the menu, its targets and
  * every pipeline behind them — does the rest, so copy/reveal/create/toggle/rename/delete can
- * never drift between the two readings of one vault. Since YAZ-948 that includes BLANK SPACE and
- * everything in the body that is not a page row — the Uncategorized header, the offer card —
- * which all fall through to the same VAULT-ROOT menu the Files lens has always given its blank
- * space, minus "New folder": a disk folder made from the lens that hides disk folders would land
- * where this reading cannot show it. A create started there names no row, so its inline input is
- * drawn at the top of the tree (`rootCreate`).
+ * never drift between the two readings of one vault. Since YAZ-948 BLANK SPACE, the
+ * Uncategorized header and the offer card fall through to the same VAULT-ROOT menu the Files
+ * lens has always given its blank space, minus "New folder". A create started there names no
+ * row, so its inline input is drawn at the top of the tree (`rootCreate`). YAZ-1080 gives the
+ * mini-tree's DISK folders the existing Files directory menu on their absolute path; they share
+ * its utilities/create/rename/delete pipelines without inheriting filesystem drag or topic
+ * membership semantics.
  *
  * THE DRAG (YAZ-991, the gesture 🔒 YAZ-959 scopes over YAZ-990's engine): a row is dragged onto a
  * FOLDER-PAGE row to change what it belongs to — the file tree's HTML5 idiom (`Tree.tsx`), the
@@ -92,7 +97,7 @@ import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wiki
 import { folderPagesLookup, guardedChildren, type FolderPagesLookup } from '../links/folderPages'
 import { ConfirmMove } from './ConfirmMove'
 import { CreateInline } from './CreateInline'
-import type { EntryKind } from './createEntry'
+import type { EntryKind, MenuRow } from './createEntry'
 import { HOME_LINK } from './ensureHome'
 import { RenameInline } from './RenameInline'
 import { canDrop, performMove } from './topicsMove'
@@ -100,11 +105,10 @@ import type { PendingRename } from './Tree'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
 
 /**
- * The inline "New …" input pending BESIDE one Topics row (8G-, YAZ-865). The file tree's
- * `PendingCreate` carries a `parentDir` because it has folder rows to nest the input inside;
- * this tree has none — a page's folder on disk is exactly what this reading hides — so the
- * input is anchored to the ROW the create was asked from and lines up with it. Where the file
- * LANDS is unchanged and still the Sidebar's: beside the right-clicked page (`targetDirFor`).
+ * The inline "New …" input pending beneath one Topics row (8G-, YAZ-865; YAZ-1080). The anchor
+ * is either a page row, a disk-folder row in Uncategorized, or null for blank space. Where the
+ * file LANDS remains the Sidebar's `targetDirFor` decision; this type only tells the recursive
+ * renderer where the one visible input belongs.
  */
 export interface PendingTopicCreate {
   kind: EntryKind
@@ -133,11 +137,12 @@ export interface TopicsTreeProps {
   /**
    * The open PAGE PATHS (🔒 D4). Owned by the Sidebar since ⚡ YAZ-873 — which restores it from
    * the per-vault bucket, writes it back, and needs the very same set for its expand-all button —
-   * so this tree is CONTROLLED: it computes the next set and hands it up, nothing more. (The
-   * `root` this tree used to take went with the bucket: keying it is the owner's job now.)
+   * so this tree is CONTROLLED: it computes the next set and hands it up, nothing more.
    */
   expanded: ReadonlySet<string>
   onExpandedChange: (next: ReadonlySet<string>) => void
+  /** Vault root, used only to turn projected relative disk folders into filesystem menu targets. */
+  root: string
   /** One request captured while Topics was the selected sidebar lens. */
   revealRequest: SidebarRevealRequest | null
   /** The window's index feed: the snapshot AND the resolver built from it, always read together. */
@@ -156,12 +161,11 @@ export interface TopicsTreeProps {
   /** The card's one button: App runs the same create the auto-path runs, then opens the page. */
   onCreateHome: () => void
   /**
-   * A PAGE row was right-clicked (8G-, YAZ-865): the Sidebar opens its ONE `ContextMenu` on that
-   * page's file. Every member row gets it, at any depth and under Uncategorized too; the
-   * Uncategorized HEADER and the offer card do not, and blank space is left to bubble so the
-   * body's guard can hand it on unchanged.
+   * A PAGE or Uncategorized DISK-FOLDER row was right-clicked: the Sidebar opens its ONE
+   * `ContextMenu` on that exact file/directory target. The header and offer card still name no
+   * row; blank space is left to bubble so the body's root-menu guard can handle it unchanged.
    */
-  onRowContextMenu: (path: string, e: React.MouseEvent) => void
+  onRowContextMenu: (row: MenuRow, e: React.MouseEvent) => void
   /** The one page currently renamed inline (menu → Rename), or null. The file tree's own type. */
   renaming: PendingRename | null
   /** The inline create input pending under one row (menu → New note / folder page / folder), or null. */
@@ -178,6 +182,76 @@ export interface TopicsTreeProps {
 const NEVER: ResolveLink = () => null
 
 const byPath = (a: IndexRecord, b: IndexRecord): number => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
+
+export interface UncategorizedDiskFolder {
+  name: string
+  /** Vault-relative folder path, matching `IndexRecord.folder`. */
+  path: string
+  folders: UncategorizedDiskFolder[]
+  pages: IndexRecord[]
+}
+
+export interface UncategorizedDiskTree {
+  folders: UncategorizedDiskFolder[]
+  pages: IndexRecord[]
+}
+
+interface MutableUncategorizedDiskFolder {
+  name: string
+  path: string
+  folders: Map<string, MutableUncategorizedDiskFolder>
+  pages: IndexRecord[]
+}
+
+const byNameCi = <T extends { name: string }>(a: T, b: T): number => a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+
+/**
+ * A pruned Files-shaped projection of the pages this surface has already classified as
+ * Uncategorized. A branch exists only because at least one page created it; disk folders that
+ * contain no Uncategorized page can therefore never leak into this lens.
+ */
+export function uncategorizedDiskTree(records: readonly IndexRecord[]): UncategorizedDiskTree {
+  const root: MutableUncategorizedDiskFolder = { name: '', path: '', folders: new Map(), pages: [] }
+
+  for (const record of records) {
+    let parent = root
+    let folderPath = ''
+    for (const name of record.folder.split('/').filter(Boolean)) {
+      folderPath = folderPath === '' ? name : `${folderPath}/${name}`
+      let folder = parent.folders.get(name)
+      if (folder === undefined) {
+        folder = { name, path: folderPath, folders: new Map(), pages: [] }
+        parent.folders.set(name, folder)
+      }
+      parent = folder
+    }
+    parent.pages.push(record)
+  }
+
+  const finish = (folder: MutableUncategorizedDiskFolder): UncategorizedDiskTree => ({
+    folders: [...folder.folders.values()].sort(byNameCi).map((child) => ({ ...finish(child), name: child.name, path: child.path })),
+    pages: [...folder.pages].sort(byNameCi),
+  })
+
+  return finish(root)
+}
+
+/** Every vault-relative directory that must be open to draw a record in `folder`. */
+const diskFolderAncestors = (folder: string): string[] => {
+  const paths: string[] = []
+  let path = ''
+  for (const name of folder.split('/').filter(Boolean)) {
+    path = path === '' ? name : `${path}/${name}`
+    paths.push(path)
+  }
+  return paths
+}
+
+/** One normalized boundary between the vault root and the projection's relative disk paths. */
+const diskRootPrefix = (root: string): string => `${root.replace(/\/+$/, '')}/`
+
+/** The projection stays vault-relative; filesystem actions cross to an absolute path here. */
+const absoluteDiskFolder = (root: string, folder: string): string => `${diskRootPrefix(root)}${folder}`
 
 /** The resolver and the records it was built from, always read together (BacklinksSection's idiom). */
 interface Feed {
@@ -280,7 +354,7 @@ export function topicRevealPlan(
   return { found, ancestors, uncategorized: found && !rendered }
 }
 
-export function TopicsTree({ expanded, onExpandedChange, revealRequest, source, activeFile, onOpenFile, onOpenFileBackground, unadopted, onCreateHome, onRowContextMenu, renaming, creating, onNotice }: TopicsTreeProps) {
+export function TopicsTree({ root, expanded, onExpandedChange, revealRequest, source, activeFile, onOpenFile, onOpenFileBackground, unadopted, onCreateHome, onRowContextMenu, renaming, creating, onNotice }: TopicsTreeProps) {
   // Subscribe once, re-read the whole feed on each poke; an unchanged snapshot keeps the previous
   // object, so index churn that changed nothing here costs no render (BacklinksSection's idiom).
   const [feed, setFeed] = useState<Feed>(() => ({ records: source.records, resolve: source.resolve }))
@@ -297,6 +371,10 @@ export function TopicsTree({ expanded, onExpandedChange, revealRequest, source, 
   const [showOrphans, setShowOrphans] = useState(false)
   const handledRevealId = useRef<number | null>(null)
   const hostRef = useRef<HTMLDivElement>(null)
+  // Disk-folder folds are a second, equally local fact. Store only the exceptions because every
+  // populated branch starts open; hiding and reopening Uncategorized preserves them for this
+  // mount, while switching away from Topics naturally resets the mini tree.
+  const [collapsedUncategorizedFolders, setCollapsedUncategorizedFolders] = useState<ReadonlySet<string>>(() => new Set())
 
   // THE DRAG (YAZ-991) lives entirely here — the tree already holds the records, the lookup and
   // the resolver every step of it asks. The dragged row carries the parent it renders under; the
@@ -331,6 +409,11 @@ export function TopicsTree({ expanded, onExpandedChange, revealRequest, source, 
     for (const root of roots) walk(root, [root.path])
     return records.filter((record) => !drawn.has(record.path))
   }, [records, lookup, roots, homePath])
+  const orphanDiskTree = useMemo(() => uncategorizedDiskTree(orphans), [orphans])
+  const revealDiskFolders = useMemo(() => {
+    if (revealPlan?.uncategorized !== true || revealRequest === null) return []
+    return diskFolderAncestors(records.find((record) => record.path === revealRequest.path)?.folder ?? '')
+  }, [records, revealPlan, revealRequest])
 
   useEffect(() => {
     if (revealRequest?.lens !== 'topics' || revealPlan === null || handledRevealId.current === revealRequest.id) return
@@ -342,12 +425,39 @@ export function TopicsTree({ expanded, onExpandedChange, revealRequest, source, 
     const next = new Set(expanded)
     for (const ancestor of revealPlan.ancestors) next.add(ancestor)
     if (next.size !== expanded.size) onExpandedChange(next)
-    if (revealPlan.uncategorized) setShowOrphans(true)
-  }, [expanded, onExpandedChange, onNotice, revealPlan, revealRequest])
+    if (revealPlan.uncategorized) {
+      setShowOrphans(true)
+      setCollapsedUncategorizedFolders((current) => {
+        if (!revealDiskFolders.some((folder) => current.has(folder))) return current
+        const opened = new Set(current)
+        for (const folder of revealDiskFolders) opened.delete(folder)
+        return opened
+      })
+    }
+  }, [expanded, onExpandedChange, onNotice, revealDiskFolders, revealPlan, revealRequest])
+
+  // Files opens a directory before drawing its create input. The mini-tree keeps the same
+  // complete gesture by retiring that one collapsed exception when a folder-anchored create
+  // arrives from the shared menu; page anchors simply do not name an entry in this set.
+  useEffect(() => {
+    const anchorPath = creating?.anchorPath
+    if (anchorPath === null || anchorPath === undefined) return
+    const prefix = diskRootPrefix(root)
+    if (!anchorPath.startsWith(prefix)) return
+    const folder = anchorPath.slice(prefix.length)
+    setCollapsedUncategorizedFolders((current) => {
+      if (!current.has(folder)) return current
+      const opened = new Set(current)
+      opened.delete(folder)
+      return opened
+    })
+  }, [creating?.anchorPath, root])
 
   const revealReady =
     revealPlan?.found === true &&
-    (revealPlan.uncategorized ? showOrphans : revealPlan.ancestors.every((ancestor) => expanded.has(ancestor)))
+    (revealPlan.uncategorized
+      ? showOrphans && revealDiskFolders.every((folder) => !collapsedUncategorizedFolders.has(folder))
+      : revealPlan.ancestors.every((ancestor) => expanded.has(ancestor)))
 
   useEffect(() => {
     if (!revealReady || revealRequest === null || hostRef.current === null) return
@@ -464,12 +574,11 @@ export function TopicsTree({ expanded, onExpandedChange, revealRequest, source, 
   let renameRendered = false
   let createRendered = false
 
-  /** The rename input in place of THIS row's label, or null when this row is not the one. */
-  const renameOn = (record: IndexRecord, indent: number): ReactNode => {
-    if (renaming === null || renaming.path !== record.path || renameRendered) return null
+  /** The rename input in place of THIS file or disk-folder row, or null when it is not the target. */
+  const renameOn = (path: string, initial: string, indent: number): ReactNode => {
+    if (renaming === null || renaming.path !== path || renameRendered) return null
     renameRendered = true
-    // `basename` is already the name minus its extension, which is exactly the file tree's prefill.
-    return <RenameInline initial={record.basename} indent={indent} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
+    return <RenameInline initial={initial} indent={indent} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
   }
 
   /**
@@ -485,19 +594,90 @@ export function TopicsTree({ expanded, onExpandedChange, revealRequest, source, 
       </li>
     ))
 
-  /** The create input pending BESIDE this row, as its own `<li>`, or null. */
-  const createUnder = (record: IndexRecord, indent: number): ReactNode => {
-    if (creating === null || creating.anchorPath !== record.path || createRendered) return null
+  /** The create input pending beneath this page or disk-folder anchor, as its own `<li>`. */
+  const createUnder = (anchorPath: string, indent: number): ReactNode => {
+    if (creating === null || creating.anchorPath !== anchorPath || createRendered) return null
     createRendered = true
     return (
       // `␟` (U+241F) separates the key's parts: a printable character that cannot appear in a
       // path or a name, so the key stays unique. It replaces a literal NUL, which did the same
       // job but made this file grep-invisible — `grep` treats a NUL byte as binary and skips it.
-      <li key={`${record.path}␟new`}>
+      <li key={`${anchorPath}␟new`}>
         <CreateInline kind={creating.kind} indent={indent} onSubmit={creating.onSubmit} onCancel={creating.onCancel} />
       </li>
     )
   }
+
+  const toggleUncategorizedFolder = (path: string): void => {
+    setCollapsedUncategorizedFolders((current) => {
+      const next = new Set(current)
+      if (!next.delete(path)) next.add(path)
+      return next
+    })
+  }
+
+  const uncategorizedPageRow = (record: IndexRecord, depth: number): ReactNode[] => {
+    const indent = 8 + depth * 14
+    const inline = renameOn(record.path, record.basename, indent)
+    const born = createUnder(record.path, indent)
+    const row = (
+      <li key={record.path} role="treeitem" aria-selected={record.path === activeFile}>
+        {inline ?? (
+          <button
+            type="button"
+            className={`tree__row${record.path === activeFile ? ' tree__row--active' : ''}${dropPath === record.path ? ' tree__row--drop' : ''}`}
+            style={{ paddingLeft: indent }}
+            title={record.path}
+            data-path={record.path}
+            onClick={(e) => open(record.path, e)}
+            onContextMenu={(e) => onRowContextMenu({ type: 'file', path: record.path }, e)}
+            // Disk ancestry remains visual organization, not TOPIC belonging: however deeply
+            // this page sits on disk, a topic drop still gains a belonging from a null source.
+            {...dragOn(record, null)}
+          >
+            <span className="tree__chevron tree__chevron--none" />
+            <span className="tree__label">{record.basename}</span>
+          </button>
+        )}
+      </li>
+    )
+    return born === null ? [row] : [row, born]
+  }
+
+  const uncategorizedRows = (tree: UncategorizedDiskTree, depth: number): ReactNode[] => [
+    ...tree.folders.map((folder) => {
+      const path = absoluteDiskFolder(root, folder.path)
+      const indent = 8 + depth * 14
+      const born = createUnder(path, 8 + (depth + 1) * 14)
+      const isOpen = born !== null || !collapsedUncategorizedFolders.has(folder.path)
+      const inline = renameOn(path, folder.name, indent)
+      return (
+        <li key={folder.path} role="treeitem" aria-expanded={isOpen}>
+          {inline ?? (
+            <button
+              type="button"
+              className="tree__row tree__row--dir"
+              style={{ paddingLeft: indent }}
+              title={path}
+              data-uncategorized-folder={folder.path}
+              onClick={() => toggleUncategorizedFolder(folder.path)}
+              onContextMenu={(e) => onRowContextMenu({ type: 'dir', path }, e)}
+            >
+              <span className={`tree__chevron${isOpen ? ' tree__chevron--open' : ''}`} />
+              <span className="tree__label">{folder.name}</span>
+            </button>
+          )}
+          {isOpen && (
+            <ul className="tree" role="group">
+              {born}
+              {uncategorizedRows(folder, depth + 1)}
+            </ul>
+          )}
+        </li>
+      )
+    }),
+    ...tree.pages.flatMap((record) => uncategorizedPageRow(record, depth)),
+  ]
 
   const rowsFor = (members: readonly IndexRecord[], depth: number, ancestors: readonly string[]): ReactNode[] =>
     members.flatMap((member) => {
@@ -509,7 +689,7 @@ export function TopicsTree({ expanded, onExpandedChange, revealRequest, source, 
       const isOpen = kids.length > 0 && expanded.has(member.path)
       const active = member.path === activeFile
       const indent = 8 + depth * 14
-      const inlineRename = renameOn(member, indent)
+      const inlineRename = renameOn(member.path, member.basename, indent)
       const row = (
         <li key={trail.join('>')} role="treeitem" aria-expanded={kids.length > 0 ? isOpen : undefined} aria-selected={active}>
           {/* Rename (YAZ-865) replaces the row exactly as it does in the file tree — never beside it. */}
@@ -538,7 +718,7 @@ export function TopicsTree({ expanded, onExpandedChange, revealRequest, source, 
                 open(member.path, e)
                 if (!keyboard && kids.length > 0 && !e.metaKey) expand(member.path)
               }}
-              onContextMenu={(e) => onRowContextMenu(member.path, e)}
+              onContextMenu={(e) => onRowContextMenu({ type: 'file', path: member.path }, e)}
             >
               {kids.length > 0 ? (
                 // 🔒 D3: the chevron is its OWN hit target — expanding a topic is not opening it.
@@ -577,7 +757,7 @@ export function TopicsTree({ expanded, onExpandedChange, revealRequest, source, 
       )
       // The create input sits directly under the row it was asked from — a SIBLING on disk, so
       // it wears that row's own indent — and above whatever the row is expanded onto.
-      const born = createUnder(member, indent)
+      const born = createUnder(member.path, indent)
       const below = isOpen ? rowsFor(kids, depth + 1, trail) : []
       return born === null ? [row, ...below] : [row, born, ...below]
     })
@@ -600,8 +780,16 @@ export function TopicsTree({ expanded, onExpandedChange, revealRequest, source, 
     // (`--none`, and the pathless Uncategorized header) fold nothing.
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       const row = document.activeElement
-      if (!(row instanceof HTMLElement) || row.dataset.path === undefined) return
+      if (!(row instanceof HTMLElement)) return
       if (row.querySelector('.tree__chevron:not(.tree__chevron--none)') === null) return
+      const diskFolder = row.dataset.uncategorizedFolder
+      if (diskFolder !== undefined) {
+        e.preventDefault()
+        const isOpen = !collapsedUncategorizedFolders.has(diskFolder)
+        if (e.key === 'ArrowLeft' ? isOpen : !isOpen) toggleUncategorizedFolder(diskFolder)
+        return
+      }
+      if (row.dataset.path === undefined) return
       e.preventDefault()
       const isOpen = expanded.has(row.dataset.path)
       if (e.key === 'ArrowLeft' ? isOpen : !isOpen) toggle(row.dataset.path)
@@ -647,35 +835,9 @@ export function TopicsTree({ expanded, onExpandedChange, revealRequest, source, 
             </button>
             {showOrphans && (
               <ul className="tree" role="group">
-                {/* An unfiled note is a PAGE like any other, so it carries the same menu, the
-                    same inline rename and the same create-beside as a nested row (YAZ-865) —
-                    only the muted HEADER above has no page behind it and so offers nothing. */}
-                {orphans.flatMap((record) => {
-                  const inline = renameOn(record, 8 + 14)
-                  const born = createUnder(record, 8 + 14)
-                  const row = (
-                    <li key={record.path} role="treeitem" aria-selected={record.path === activeFile}>
-                      {inline ?? (
-                        <button
-                          type="button"
-                          className={`tree__row${record.path === activeFile ? ' tree__row--active' : ''}${dropPath === record.path ? ' tree__row--drop' : ''}`}
-                          style={{ paddingLeft: 8 + 14 }}
-                          title={record.path}
-                          data-path={record.path}
-                          onClick={(e) => open(record.path, e)}
-                          onContextMenu={(e) => onRowContextMenu(record.path, e)}
-                          // Nothing stands above an unfiled row, so it is dragged out of NOWHERE
-                          // (YAZ-991): the drop gains a belonging rather than swapping one.
-                          {...dragOn(record, null)}
-                        >
-                          <span className="tree__chevron tree__chevron--none" />
-                          <span className="tree__label">{record.basename}</span>
-                        </button>
-                      )}
-                    </li>
-                  )
-                  return born === null ? [row] : [row, born]
-                })}
+                {/* Pages keep every Topics gesture at every disk depth. Folder rows fold this
+                    projection and share Files directory actions, but never topic drag semantics. */}
+                {uncategorizedRows(orphanDiskTree, 1)}
               </ul>
             )}
           </li>

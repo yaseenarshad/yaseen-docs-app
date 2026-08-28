@@ -34,7 +34,7 @@ import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wiki
 import { storage } from '../lib/storage'
 import { folderPagesLookup } from '../links/folderPages'
 import { performMove } from './topicsMove'
-import { TopicsTree, allExpandableTopics, topicRevealPlan, topicRoots } from './TopicsTree'
+import { TopicsTree, allExpandableTopics, topicRevealPlan, topicRoots, uncategorizedDiskTree } from './TopicsTree'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -161,7 +161,7 @@ function Controlled({ root, ...props }: OwnedProps) {
     if (stored.length === next.length && stored.every((path, i) => path === next[i])) return
     storage.setTopicsExpanded(root, next)
   }, [root, expanded])
-  return <TopicsTree {...props} expanded={expanded} onExpandedChange={setExpanded} />
+  return <TopicsTree root={root} {...props} expanded={expanded} onExpandedChange={setExpanded} />
 }
 
 async function mount(over: Partial<OwnedProps> & { source: Props['source'] }) {
@@ -191,7 +191,9 @@ async function mount(over: Partial<OwnedProps> & { source: Props['source'] }) {
     ...over,
   }
   await act(async () => root?.render(<StrictMode><Controlled {...props} /></StrictMode>))
-  return { el, props }
+  const rerender = async (next: Partial<OwnedProps>) =>
+    act(async () => root?.render(<StrictMode><Controlled {...props} {...next} /></StrictMode>))
+  return { el, props, rerender }
 }
 
 /**
@@ -272,6 +274,19 @@ describe('Show in sidebar reveal planning (YAZ-1064)', () => {
     expect(rowFor(el, 'Loose')?.classList.contains('tree__row--revealed')).toBe(true)
     expect(labels(el)).not.toContain('Revenue')
     expect(labels(el)).not.toContain('Churn')
+  })
+
+  it('reopens collapsed disk ancestors before revealing a nested Uncategorized note', async () => {
+    const nested = rec(`${ROOT}/inbox/deep/Alpha.md`)
+    const { el, rerender } = await mount({ source: sourceOver([nested]) })
+    await click(rowFor(el, 'Uncategorized')!)
+    await click(rowFor(el, 'inbox')!)
+    expect(rowFor(el, 'Alpha')).toBeUndefined()
+
+    await rerender({ revealRequest: { id: 1, path: nested.path, lens: 'topics' } })
+    expect(rowFor(el, 'inbox')?.parentElement?.getAttribute('aria-expanded')).toBe('true')
+    expect(rowFor(el, 'deep')?.parentElement?.getAttribute('aria-expanded')).toBe('true')
+    expect(rowFor(el, 'Alpha')).toBeDefined()
   })
 
   it('reports one passive notice after a coherent Topics feed cannot show the path', async () => {
@@ -800,7 +815,166 @@ describe('the descent: guardedChildren only (⚡ D6), ordered per level by its O
 
 // ---------------------------------------------------------------- 🔒 D7: Uncategorized
 
+describe('the Uncategorized disk projection (YAZ-956)', () => {
+  it('keeps root pages direct and builds only populated folders, directories then pages case-insensitively', () => {
+    const records = [
+      rec(`${ROOT}/z-root.md`),
+      rec(`${ROOT}/Alpha.md`),
+      rec(`${ROOT}/Zeta/deep/Beta.md`),
+      rec(`${ROOT}/alpha/deep/zebra.md`),
+      rec(`${ROOT}/alpha/deep/Apple.md`),
+      rec(`${ROOT}/alpha/Gamma.md`),
+    ]
+
+    expect(uncategorizedDiskTree(records)).toEqual({
+      folders: [
+        {
+          name: 'alpha',
+          path: 'alpha',
+          folders: [
+            {
+              name: 'deep',
+              path: 'alpha/deep',
+              folders: [],
+              pages: [records[4], records[3]],
+            },
+          ],
+          pages: [records[5]],
+        },
+        {
+          name: 'Zeta',
+          path: 'Zeta',
+          folders: [
+            {
+              name: 'deep',
+              path: 'Zeta/deep',
+              folders: [],
+              pages: [records[2]],
+            },
+          ],
+          pages: [],
+        },
+      ],
+      pages: [records[1], records[0]],
+    })
+  })
+})
+
 describe('Uncategorized (🔒 D7): a muted row that expands IN PLACE, minus whatever already shows', () => {
+  it('renders a Files-shaped hierarchy, default-open, and remembers folder folds while the section is hidden', async () => {
+    const records = [
+      rec(`${ROOT}/Root.md`),
+      rec(`${ROOT}/inbox/Zed.md`),
+      rec(`${ROOT}/inbox/deep/Alpha.md`),
+    ]
+    const { el } = await mount({ source: sourceOver(records) })
+
+    await click(rowFor(el, 'Uncategorized')!)
+    expect(labels(el)).toEqual(['Uncategorized', 'inbox', 'deep', 'Alpha', 'Zed', 'Root'])
+    expect(rowFor(el, 'inbox')).toMatchObject({ className: expect.stringContaining('tree__row--dir') })
+    expect(rowFor(el, 'inbox')?.getAttribute('aria-expanded')).toBe(null)
+    expect(rowFor(el, 'inbox')?.parentElement?.getAttribute('aria-expanded')).toBe('true')
+    expect(indentOf(el, 'inbox')).toBe('22px')
+    expect(indentOf(el, 'deep')).toBe('36px')
+    expect(indentOf(el, 'Alpha')).toBe('50px')
+    expect(indentOf(el, 'Zed')).toBe('36px')
+    expect(indentOf(el, 'Root')).toBe('22px')
+
+    await click(rowFor(el, 'deep')!)
+    expect(labels(el)).toEqual(['Uncategorized', 'inbox', 'deep', 'Zed', 'Root'])
+    await click(rowFor(el, 'Uncategorized')!)
+    await click(rowFor(el, 'Uncategorized')!)
+    expect(labels(el)).toEqual(['Uncategorized', 'inbox', 'deep', 'Zed', 'Root'])
+  })
+
+  it('walks disk folders with Up/Down and folds them with Left/Right without opening a page', async () => {
+    const records = [rec(`${ROOT}/inbox/Zed.md`), rec(`${ROOT}/inbox/deep/Alpha.md`)]
+    const { el, props } = await mount({ source: sourceOver(records) })
+    await click(rowFor(el, 'Uncategorized')!)
+
+    rowFor(el, 'inbox')!.focus()
+    await press(rowFor(el, 'inbox')!, 'ArrowLeft')
+    expect(labels(el)).toEqual(['Uncategorized', 'inbox'])
+    expect(focused(el)).toBe('inbox')
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+
+    await press(rowFor(el, 'inbox')!, 'ArrowRight')
+    expect(labels(el)).toEqual(['Uncategorized', 'inbox', 'deep', 'Alpha', 'Zed'])
+    await press(rowFor(el, 'inbox')!, 'ArrowDown')
+    expect(focused(el)).toBe('deep')
+  })
+
+  it('reports disk folders as absolute directory menu targets while nested pages remain file targets', async () => {
+    const nested = rec(`${ROOT}/inbox/deep/Alpha.md`)
+    const { el, props } = await mount({ source: sourceOver([nested]) })
+    await click(rowFor(el, 'Uncategorized')!)
+
+    expect(rowFor(el, 'inbox')?.getAttribute('draggable')).toBeNull()
+    expect(rowFor(el, 'inbox')?.dataset.path).toBeUndefined()
+    expect(rowFor(el, 'inbox')?.dataset.uncategorizedFolder).toBe('inbox')
+    await act(async () => void rowFor(el, 'inbox')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(props.onRowContextMenu).toHaveBeenCalledWith(
+      { type: 'dir', path: `${ROOT}/inbox` },
+      expect.objectContaining({ type: 'contextmenu' }),
+    )
+
+    expect(rowFor(el, 'Alpha')?.getAttribute('draggable')).toBe('true')
+    await act(async () => void rowFor(el, 'Alpha')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(props.onRowContextMenu).toHaveBeenCalledWith(
+      { type: 'file', path: nested.path },
+      expect.objectContaining({ type: 'contextmenu' }),
+    )
+    await click(rowFor(el, 'Alpha')!, { metaKey: true })
+    expect(props.onOpenFileBackground).toHaveBeenCalledWith(nested.path)
+  })
+
+  it('renders a folder rename in place at the folder row depth', async () => {
+    const { el } = await mount({
+      source: sourceOver([rec(`${ROOT}/inbox/deep/Alpha.md`)]),
+      renaming: { path: `${ROOT}/inbox`, onSubmit: vi.fn(async () => undefined), onCancel: vi.fn() },
+    })
+    await click(rowFor(el, 'Uncategorized')!)
+
+    const field = el.querySelector<HTMLInputElement>('.create-inline__input')
+    expect(field?.value).toBe('inbox')
+    expect(field?.parentElement?.style.paddingLeft).toBe('22px')
+    expect(rowFor(el, 'inbox')).toBeUndefined()
+    expect(rowFor(el, 'deep')).toBeDefined()
+  })
+
+  it('renders a folder-anchored create once beneath that folder at the child depth', async () => {
+    const { el } = await mount({
+      source: sourceOver([rec(`${ROOT}/inbox/deep/Alpha.md`)]),
+      creating: { kind: 'file', anchorPath: `${ROOT}/inbox`, onSubmit: vi.fn(async () => undefined), onCancel: vi.fn() },
+    })
+    await click(rowFor(el, 'Uncategorized')!)
+
+    const fields = el.querySelectorAll<HTMLInputElement>('.create-inline__input')
+    expect(fields).toHaveLength(1)
+    expect(fields[0]?.placeholder).toBe('New note')
+    expect(fields[0]?.parentElement?.style.paddingLeft).toBe('36px')
+    expect(fields[0]?.closest('ul')?.parentElement?.querySelector(':scope > .tree__row .tree__label')?.textContent).toBe('inbox')
+  })
+
+  it('rebuilds from live snapshots and resets disk-folder folds only on a true remount', async () => {
+    const initial = [rec(`${ROOT}/inbox/deep/Alpha.md`)]
+    const source = sourceOver(initial)
+    const first = await mount({ source })
+    await click(rowFor(first.el, 'Uncategorized')!)
+    await click(rowFor(first.el, 'inbox')!)
+
+    await act(async () => source.update([...initial, rec(`${ROOT}/later/Beta.md`), rec(`${ROOT}/Root.md`)]))
+    expect(labels(first.el)).toEqual(['Uncategorized', 'inbox', 'later', 'Beta', 'Root'])
+
+    act(() => root?.unmount())
+    root = null
+    container?.remove()
+    const { el } = await mount({ source })
+    await click(rowFor(el, 'Uncategorized')!)
+    expect(labels(el)).toEqual(['Uncategorized', 'inbox', 'deep', 'Alpha', 'later', 'Beta', 'Root'])
+  })
+
   it('counts and lists the orphans, subtracting the folder pages standing as roots', async () => {
     const { el } = await mount({ source: sourceOver(vault()) })
     // Home and Projects have no parents either, so the carve-out-free lookup calls them orphans —
