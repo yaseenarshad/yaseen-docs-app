@@ -1285,13 +1285,23 @@
   text-overflow: ellipsis;
 }
 
-/* the Properties menu's Table/List settings sections */
-.view-table-settings {
+/* the Properties menu's per-view and Page settings rows */
+.view-settings-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   color: var(--fg-muted);
+}
+
+.view-width-setting {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.view-width-setting .view-input {
+  width: 72px;
 }
 
 .view-list-settings {
