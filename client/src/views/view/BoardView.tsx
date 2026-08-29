@@ -183,7 +183,7 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
         return (
           <section
             key={gk}
-            className={`view-board__col${isOver ? ' view-board__col--drop' : ''}`}
+            className={`view-board__col${g.children === undefined ? '' : ' view-board__col--nested'}${isOver ? ' view-board__col--drop' : ''}`}
             {...(g.children === undefined ? dnd.target(g, outerAt) : {})}
           >
             {g.children === undefined ? (

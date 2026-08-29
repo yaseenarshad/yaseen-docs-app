@@ -802,6 +802,16 @@
   border-radius: 8px;
 }
 
+.view-board__col--nested {
+  background: transparent;
+}
+
+.view-board__col-header {
+  background: var(--bg-side);
+  border: 2px solid var(--fg-muted);
+  border-radius: 8px;
+}
+
 .view-board__col .view-group {
   padding: 2px 4px 6px;
 }
@@ -815,6 +825,7 @@
 
 .view-board__subgroup {
   padding: 6px;
+  background: var(--bg-side);
   border: 1px solid var(--border);
   border-radius: 6px;
 }

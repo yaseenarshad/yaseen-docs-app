@@ -190,6 +190,7 @@ describe('board columns', () => {
     expect(headerTexts(el)).toEqual(['A', 'B', 'C'])
 
     const a = cols(el)[0]
+    expect(a.classList).toContain('view-board__col--nested')
     expect([...a.querySelectorAll(':scope > .view-board__cards .view-board__title')].map((n) => n.textContent)).toEqual(['alphaDirect.md'])
     const inner = [...a.querySelectorAll<HTMLElement>(':scope > .view-board__subgroups > .view-board__subgroup')]
     expect(inner.map((section) => q(section, '.view-group__value').textContent)).toEqual(['p1', 'p2'])
@@ -199,9 +200,18 @@ describe('board columns', () => {
 })
 
 describe('nested Board styling contract', () => {
+  it('keeps the parent surface on its header instead of filling the nested column', () => {
+    expect(viewsCss).toMatch(/\.view-board__col--nested\s*\{[^}]*background:\s*transparent;/s)
+    expect(viewsCss).toMatch(
+      /\.view-board__col-header\s*\{[^}]*background:\s*var\(--bg-side\);[^}]*border:\s*2px solid var\(--fg-muted\);/s,
+    )
+  })
+
   it('uses the existing view tokens for a compact child stack and its drop state', () => {
     expect(viewsCss).toMatch(/\.view-board__subgroups\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*gap:\s*8px;/s)
-    expect(viewsCss).toMatch(/\.view-board__subgroup\s*\{[^}]*border:\s*1px solid var\(--border\);[^}]*border-radius:\s*6px;/s)
+    expect(viewsCss).toMatch(
+      /\.view-board__subgroup\s*\{[^}]*background:\s*var\(--bg-side\);[^}]*border:\s*1px solid var\(--border\);[^}]*border-radius:\s*6px;/s,
+    )
     expect(viewsCss).toMatch(/\.view-board__subgroup--drop\s*\{[^}]*outline:\s*1px dashed var\(--accent\);/s)
   })
 })
