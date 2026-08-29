@@ -435,18 +435,22 @@ ${cardStyle}
     expect(q(rows[1], '.view-board__prop-name').textContent).toBe('tags')
   })
 
-  it('join chains consecutive properties onto ONE line after the title, dash class on every joined item', () => {
+  it('join chains consecutive properties onto ONE line after the title, an en-dash element between items', () => {
     const { el } = mount(STYLED('      - file.name\n      - note.priority\n      - note.tags', '      note.priority: { join: true, bold: true }\n      note.tags: { join: true }'))
     const card = cardIn(el)
     const rows = linesIn(card)
     expect(rows).toHaveLength(1)
     const kids = [...rows[0].children]
-    expect(kids).toHaveLength(3)
-    expect(kids[0].classList.contains('view-board__title')).toBe(true)
-    expect(kids[0].classList.contains('view-board__joined')).toBe(false)
-    expect(kids[1].classList.contains('view-board__joined')).toBe(true)
-    expect(kids[1].classList.contains('view-board__prop--bold')).toBe(true)
-    expect(kids[2].classList.contains('view-board__joined')).toBe(true)
+    // item, dash, item, dash, item — the dash is its OWN flex child, never a pseudo inside one
+    expect(kids.map((k) => k.className.split(' ')[0])).toEqual([
+      'view-board__title',
+      'view-board__dash',
+      'view-board__prop',
+      'view-board__dash',
+      'view-board__prop',
+    ])
+    expect(kids[1].textContent).toBe('\u2013')
+    expect(kids[2].classList.contains('view-board__prop--bold')).toBe(true)
   })
 
   it('the title is UN-PINNED: it renders at its order position and can itself join (2 - Title.md)', () => {
@@ -456,9 +460,9 @@ ${cardStyle}
     expect(rows).toHaveLength(1)
     const kids = [...rows[0].children]
     expect(kids[0].classList.contains('view-board__prop')).toBe(true)
-    expect(kids[1].classList.contains('view-board__title')).toBe(true)
-    expect(kids[1].classList.contains('view-board__joined')).toBe(true)
-    click(kids[1])
+    expect(kids[1].classList.contains('view-board__dash')).toBe(true)
+    expect(kids[2].classList.contains('view-board__title')).toBe(true)
+    click(kids[2])
     expect(onOpenFile).toHaveBeenCalledTimes(1)
   })
 
@@ -469,8 +473,10 @@ ${cardStyle}
     expect(card.querySelector('.view-board__title')).toBeNull()
     expect(rows).toHaveLength(1)
     const kids = [...rows[0].children]
-    expect(kids[0].classList.contains('view-board__joined')).toBe(false)
-    expect(kids[1].classList.contains('view-board__joined')).toBe(true)
+    // no dash BEFORE the first item (its join was the no-op), one between the two
+    expect(kids[0].classList.contains('view-board__prop')).toBe(true)
+    expect(rows[0].querySelectorAll('.view-board__dash')).toHaveLength(1)
+    expect(kids[1].classList.contains('view-board__dash')).toBe(true)
   })
 
   it('the title button ignores bold/underline/hideLabel styling', () => {
@@ -497,18 +503,19 @@ ${cardStyle}
       { records: NESTED_RECORDS },
     )
     const sub = q<HTMLElement>(el, '.view-board__subgroup .view-board__card')
-    const joined = q<HTMLElement>(sub, '.view-board__joined')
+    expect(q(sub, '.view-board__dash')).toBeDefined()
+    const joined = q<HTMLElement>(sub, '.view-board__dash + .view-board__prop')
     expect(joined.classList.contains('view-board__prop--bold')).toBe(true)
     expect(joined.querySelector('.view-board__prop-name')).toBeNull()
     const direct = q<HTMLElement>(el, '.view-board__col > .view-board__cards .view-board__card')
-    expect(q<HTMLElement>(direct, '.view-board__joined').classList.contains('view-board__prop--bold')).toBe(true)
+    expect(q<HTMLElement>(direct, '.view-board__dash + .view-board__prop').classList.contains('view-board__prop--bold')).toBe(true)
   })
 
   it('the styling contract: line, joined dash, bold and underline live in views.css', () => {
     expect(viewsCss).toMatch(/\.view-board__prop--bold\s*\{[^}]*font-weight:\s*600/s)
     expect(viewsCss).toMatch(/\.view-board__prop--underline\s*\{[^}]*text-decoration:\s*underline/s)
     expect(viewsCss).toMatch(/\.view-board__line\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*baseline/s)
-    expect(viewsCss).toMatch(/\.view-board__joined::before\s*\{[^}]*content:\s*['"]\\2013['"];[^}]*color:\s*var\(--fg-muted\)/s)
+    expect(viewsCss).toMatch(/\.view-board__dash\s*\{[^}]*color:\s*var\(--fg-muted\)/s)
     expect(viewsCss).not.toMatch(/view-board__inline--/)
   })
 })

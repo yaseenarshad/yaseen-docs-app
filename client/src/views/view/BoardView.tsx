@@ -96,18 +96,21 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
     return acc
   }, [])
   const width = cardWidth(view.cardSize)
-  /** One item on a line: the title button, or a label/value row. Every item but the line's first is `joined` — the dash itself is CSS. */
-  const cardItem = (key: string, row: Row, joined: boolean) => {
-    const dash = joined ? ' view-board__joined' : ''
+  /**
+   * One item on a line: the title button, or a label/value row. The dash between joined items is
+   * its OWN element — a pseudo on a flex row would become that row's first flex child and drag
+   * the row's internal 8px gap in after itself (the lopsided "App– Sam" bug).
+   */
+  const cardItem = (key: string, row: Row) => {
     if (key === nameKey)
       return (
-        <button key={key} type="button" className={`view-board__title${dash}`} onClick={() => onOpenFile(row.record.path)}>
+        <button key={key} type="button" className="view-board__title" onClick={() => onOpenFile(row.record.path)}>
           {render(row.values[key])}
         </button>
       )
     const style = styleOf(key)
     return (
-      <div key={key} className={`view-board__prop${styleClasses(style)}${dash}`}>
+      <div key={key} className={`view-board__prop${styleClasses(style)}`}>
         {style.hideLabel !== true && <span className="view-board__prop-name">{propertyLabel(def, key)}</span>}
         <span className="view-board__prop-value">{cellContent(row.values[key])}</span>
       </div>
@@ -131,7 +134,18 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
         >
           {lines.map((line, i) => (
             <Fragment key={line[0]}>
-              <div className="view-board__line">{line.map((key, item) => cardItem(key, row, item > 0))}</div>
+              <div className="view-board__line">
+                {line.map((key, item) => (
+                  <Fragment key={key}>
+                    {item > 0 && (
+                      <span className="view-board__dash" aria-hidden>
+                        &ndash;
+                      </span>
+                    )}
+                    {cardItem(key, row)}
+                  </Fragment>
+                ))}
+              </div>
               {i === 0 && moveChip(row)}
             </Fragment>
           ))}

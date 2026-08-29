@@ -69,8 +69,8 @@ test('step 3 — Hide label drops the muted label; the value stays', async () =>
 
 test('step 4 — join glues the value onto the row above, dash-separated, durable on disk', async () => {
   await contents().locator('[aria-label="Join unit to the row above"]').click()
-  const line = firstCard().locator('.view-board__line', { has: win.locator('.view-board__joined') })
-  await expect(line.locator('.view-board__joined')).toBeVisible()
+  const line = firstCard().locator('.view-board__line', { has: win.locator('.view-board__dash') })
+  await expect(line.locator('.view-board__dash')).toBeVisible()
   await expect.poll(async () => /join: true/.test(await kpis())).toBe(true)
   await shoot(win, 'cardstyle-04-join')
 })

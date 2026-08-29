@@ -901,8 +901,8 @@
 /* Card rows (YAZ-1217): one flex line per unjoined property; joined items carry the muted dash. */
 .view-board__line {
   display: flex;
-  /* Tight, symmetric around the bare dash: the gap IS the dash's breathing room. */
-  gap: 1px;
+  /* Tight, symmetric around the dash: the gap IS its breathing room, both sides. */
+  gap: 3px;
   align-items: baseline;
   overflow: hidden;
   white-space: nowrap;
@@ -912,8 +912,10 @@
   margin-top: 4px;
 }
 
-.view-board__joined::before {
-  content: '\2013';
+/* The en-dash separator element between joined items — its own flex child, so the line's gap
+   spaces it EVENLY (a pseudo on a flex row would inherit that row's internal 8px gap instead). */
+.view-board__dash {
+  flex: none;
   color: var(--fg-muted);
 }
 
