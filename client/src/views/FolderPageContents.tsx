@@ -213,6 +213,14 @@ export function FolderPageContents({
   /** The one stale snapshot this mount opened over — recorded on first sight, never trusted. */
   const pastStamp = useRef<string | null>(null)
   const seen = useRef(fileStamp ?? stamp) // what the state above was built from: no rebuild on mount
+  /**
+   * Stamps of `onChange` writes whose index echoes are still in flight (YAZ-1241). Echoes come
+   * back in write order, so an arriving snapshot found in this queue is OUR OWN stale write —
+   * `parsed` already holds a state at least as new, and rebuilding from it would hand a menu
+   * mid-edit an older def to edit (the two-gestures-in-a-second data loss YAZ-1234 caught).
+   * Consuming one drains everything before it, so a coalesced index emit still matches.
+   */
+  const pending = useRef<string[]>([])
   useEffect(() => {
     if (!caughtUp.current) {
       if (stamp === '') return // nothing fed yet — nothing to judge
@@ -230,6 +238,13 @@ export function FolderPageContents({
       caughtUp.current = true // the seed's own echo, or something newer: the index leads now
     }
     if (seen.current === stamp) return
+    const echo = pending.current.indexOf(stamp)
+    if (echo !== -1) {
+      pending.current.splice(0, echo + 1)
+      seen.current = stamp // a replayed emit of this state must no-op above, not read as external
+      return
+    }
+    pending.current = [] // a real external edit outranks every unechoed local write: disk wins
     seen.current = stamp
     setParsed(settings === null ? null : folderPageViewSet(settings.views, settings.formulas))
   }, [stamp, settings, fileStamp])
@@ -240,6 +255,8 @@ export function FolderPageContents({
   const onChange = (next: ParsedViews): void => {
     setParsed(next)
     setSettingsError(null)
+    // What this write will stamp as when the index returns it (YAZ-1241) — formulas ride unchanged.
+    pending.current.push(JSON.stringify([next.def.views, settings.formulas ?? null]))
     writeFolderPageSettings(path, { ...settings, views: next.def.views }).catch((err: unknown) =>
       setSettingsError(err instanceof Error ? err.message : String(err)),
     )

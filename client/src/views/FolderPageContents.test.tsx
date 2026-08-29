@@ -420,6 +420,45 @@ describe('config edits are ONE settings write on the folder page', () => {
     expect(emptied).toEqual({ ...SETTINGS, views: [...SETTINGS.views, BOARD] })
   })
 
+  it('a write echo arriving after a newer optimistic edit does not take it back (YAZ-1241)', async () => {
+    const setSelect = (el: HTMLSelectElement, value: string): void => {
+      const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+      act(() => {
+        set?.call(el, value)
+        el.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+    }
+    const settingsOf = (call: number): unknown => write.mock.calls[call][2]
+
+    const el = mount(FUNNELS)
+    selectView(el, 'Table')
+    click(byLabel(el, 'Filter'))
+    click([...el.querySelectorAll<HTMLElement>('.view-menu__action')].find((b) => b.textContent === 'Add rule')!)
+    await flush() // write 1: the default `file.name contains ""` rule
+    setSelect(byLabel<HTMLSelectElement>(el, 'Property'), 'note.order')
+    await flush() // write 2: the rule re-targeted
+    expect(write).toHaveBeenCalledTimes(2)
+    expect(byLabel<HTMLSelectElement>(el, 'Property').value).toBe('note.order')
+
+    // Write 1's echo lands AFTER write 2's optimistic state — the race YAZ-1234 caught in the
+    // DOM. It is OUR OWN stale write, not an external edit: it must not rebuild anything.
+    feed(vault(settingsOf(0)))
+    expect(byLabel<HTMLSelectElement>(el, 'Property').value).toBe('note.order')
+
+    // The next gesture edits what the menu renders — the property edit must survive it.
+    setSelect(byLabel<HTMLSelectElement>(el, 'Operator'), 'isEmpty')
+    await flush() // write 3
+    const third = (settingsOf(2) as { views: { filters?: unknown }[] }).views[1]
+    expect(JSON.stringify(third.filters)).toContain('note.order')
+
+    // The remaining echoes drain in order; an external edit afterwards still adopts as always.
+    feed(vault(settingsOf(1)))
+    feed(vault(settingsOf(2)))
+    expect(byLabel<HTMLSelectElement>(el, 'Property').value).toBe('note.order')
+    feed(vault({ ...SETTINGS, views: [SETTINGS.views[0], { ...TABLE, filters: { and: ['note.order == 9'] } }, BOARD] }))
+    expect(q<HTMLInputElement>(el, '[aria-label="Value"]').value).toBe('9')
+  })
+
   it('the edit shows immediately, without waiting for the index to come back', async () => {
     const el = mount(FUNNELS)
     selectView(el, 'Table')
@@ -600,5 +639,58 @@ describe('the seed reads the OPEN file, not the snapshot (YAZ-919)', () => {
     }
     act(() => feed(vault(added)))
     expect(texts(el, '.view-table thead th')).toEqual(['file.name', 'order', 'unit'])
+  })
+})
+
+// ---------- the write-echo guard vs rapid gestures (YAZ-1241) ----------
+
+describe('the write-echo guard vs rapid gestures (YAZ-1241)', () => {
+  /** Toolbar.test.tsx's setter: native prototype + bubbling change, so React's value tracker sees it. */
+  function setSelect(el: HTMLSelectElement, value: string): void {
+    const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+    act(() => {
+      set?.call(el, value)
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+  }
+
+  const addRule = (el: ParentNode): void =>
+    click([...el.querySelectorAll<HTMLElement>('.view-menu__action')].find((b) => b.textContent === 'Add rule')!)
+
+  it('the echo of an EARLIER write never takes back a newer gesture', async () => {
+    const el = mount(FUNNELS)
+    selectView(el, 'Table')
+    click(byLabel(el, 'Filter'))
+    addRule(el)
+    await flush()
+    const first = write.mock.calls[0][2] as Record<string, unknown>
+
+    setSelect(byLabel<HTMLSelectElement>(el, 'Property'), 'note.order')
+    await flush()
+    expect(write).toHaveBeenCalledTimes(2)
+    expect(byLabel<HTMLSelectElement>(el, 'Property').value).toBe('note.order')
+
+    // Write 1's echo lands AFTER write 2's optimistic state — the race YAZ-1234 caught live.
+    console.log('PROBE first written views:', JSON.stringify(first))
+    feed(vault(first))
+    console.log('PROBE select after echo:', byLabel<HTMLSelectElement>(el, 'Property').value)
+    expect(byLabel<HTMLSelectElement>(el, 'Property').value).toBe('note.order') // NOT reverted to file.name
+    expect(write).toHaveBeenCalledTimes(2) // and no write was born from a reverted render
+
+    // Write 2's own echo is the state already on screen: adopted silently, nothing moves.
+    feed(vault(write.mock.calls[1][2] as Record<string, unknown>))
+    expect(byLabel<HTMLSelectElement>(el, 'Property').value).toBe('note.order')
+  })
+
+  it('a genuinely external edit still rebuilds, even while a write is in flight', async () => {
+    const el = mount(FUNNELS)
+    selectView(el, 'Table')
+    click(byLabel(el, 'Filter'))
+    addRule(el)
+    await flush()
+
+    // An outside editor rewrites the card before our echo arrives: disk truth wins.
+    feed(vault({ ...SETTINGS, views: [SETTINGS.views[0], { ...TABLE, filters: { and: ['note.order == 1'] } }] }))
+    expect(byLabel<HTMLSelectElement>(el, 'Property').value).toBe('note.order')
   })
 })

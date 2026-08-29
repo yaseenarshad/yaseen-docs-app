@@ -113,39 +113,19 @@ const boardScript = (w: Page): Promise<string[]> =>
     )
 
 /**
- * Waits until the menu has SETTLED on `value` — said it, and still says it a beat later.
- *
- * The menu edits the rule it is currently RENDERING, and what it renders is the folder page's own
- * card coming back through the index: the optimistic paint lands at once, a snapshot taken before
- * the write briefly takes it back, and the write's own echo puts it back for good. A second gesture
- * fired inside that window is read off the PREVIOUS row and silently undoes the first — so every
- * gesture below waits for the app's own answer rather than for its optimistic one.
+ * The builder's whole gesture on the ACTIVE view: Add rule, then property · operator · value, each
+ * its own write, fired at Playwright speed. The pace is deliberate (YAZ-1241): a stale write echo
+ * must never hand the menu an older row to edit, so nothing here waits out the index round-trip.
  */
-async function settled(w: Page, read: () => Promise<string | null>, value: string): Promise<void> {
-  await expect
-    .poll(
-      async () => {
-        const first = await read().catch(() => null)
-        await w.waitForTimeout(600)
-        return first === value && (await read().catch(() => null)) === value
-      },
-      { timeout: 20_000 },
-    )
-    .toBe(true)
-}
-
-/** The builder's whole gesture on the ACTIVE view: Add rule, then property · operator · value, each its own write. */
 async function addRule(w: Page, property: string, op: string, value: string): Promise<void> {
   await filterBtn(w).click()
   await menu(w).locator('.view-menu__action', { hasText: 'Add rule' }).click()
-  await settled(w, () => badge(w).textContent(), '1')
+  await expect(badge(w)).toHaveText('1')
   await field(w, 'Property').selectOption(property)
-  await settled(w, () => field(w, 'Property').inputValue(), property)
   await field(w, 'Operator').selectOption(op)
-  await settled(w, () => field(w, 'Operator').inputValue(), op)
   await field(w, 'Value').fill(value)
   await field(w, 'Value').press('Enter')
-  await settled(w, () => field(w, 'Value').inputValue(), value)
+  await expect(field(w, 'Value')).toHaveValue(value)
   await filterBtn(w).click() // the trigger toggles its own popover shut
 }
 
@@ -153,7 +133,7 @@ async function addRule(w: Page, property: string, op: string, value: string): Pr
 async function removeRule(w: Page): Promise<void> {
   await filterBtn(w).click()
   await menu(w).locator('[aria-label="Remove rule"]').click()
-  await settled(w, () => menu(w).locator('.view-menu__empty').textContent(), 'No filters')
+  await expect(menu(w).locator('.view-menu__empty')).toHaveText('No filters')
   await filterBtn(w).click()
 }
 
