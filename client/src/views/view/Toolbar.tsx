@@ -4,7 +4,7 @@ import { type ViewSet, type ViewDef, type Mutate, groupByLevels } from '../viewS
 import type { EngineError } from '../engine'
 import type { FolderPageMode } from '../ViewsPane'
 import { countRules } from './filterRows'
-import { ChevronsIcon, FilterIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon, SyncIcon } from './icons'
+import { ChevronsIcon, EyeIcon, FilterIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon, SyncIcon } from './icons'
 import { FilterMenu } from './FilterMenu'
 import { Popover } from './Popover'
 import { PropertiesMenu } from './PropertiesMenu'
@@ -124,6 +124,19 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
             onClick={() => onSetAllGroups(allCollapsed ? [] : allGroupKeys)}
           >
             <ChevronsIcon />
+          </button>
+        )}
+        {(view.type === 'table' || view.type === 'board') && !documentView && (
+          <button
+            type="button"
+            className={`view-toolbar__btn${view.preview === true ? ' view-toolbar__btn--on' : ''}`}
+            aria-label="Preview on hover"
+            title="Preview on hover"
+            aria-pressed={view.preview === true}
+            // Off CLEANS the key — absent is off, and the YAML carries no dead `preview: false`.
+            onClick={() => onUpdate((d) => (view.preview === true ? delete d.views[viewIndex].preview : (d.views[viewIndex].preview = true)))}
+          >
+            <EyeIcon />
           </button>
         )}
         {!documentView &&

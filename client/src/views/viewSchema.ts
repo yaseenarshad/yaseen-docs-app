@@ -44,6 +44,8 @@ export interface ViewDef {
   propertySeparator?: string
   /** Board card styling (YAZ-1206, reshaped by YAZ-1217): per canonical property key — bold/underline the value's row, hide its label, or `join` it onto the row being built instead of starting a new one. */
   cardStyle?: Record<string, { bold?: boolean; underline?: boolean; hideLabel?: boolean; join?: boolean }>
+  /** Preview mode (YAZ-1244): hovering a table row / board card pops a read-only preview of the page. Absent is off. */
+  preview?: boolean
   [extra: string]: unknown
 }
 

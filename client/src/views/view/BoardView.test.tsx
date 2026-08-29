@@ -16,12 +16,28 @@ import { type ParsedViews, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderPage } from '../testFolderPage'
 import { TEST_RECORDS } from '../testRecords'
+import { OPEN_DELAY_MS } from './PreviewCard'
 import viewsCss from '../views.css?inline'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 /** YAZ-846: `folderPage` is required — the contents block is the only mount there is. */
 const FOLDER_PAGE = testFolderPage()
+
+/** Preview mode's fetch and Crepe (YAZ-1244) are stand-ins here — the real render is PreviewCard.crepe.test.tsx's. */
+vi.mock('../../api', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../api')>()
+  return {
+    ...original,
+    api: { ...original.api, readFile: vi.fn(async (path: string) => ({ path, content: `body of ${path}\n`, mtime: 1, size: 1 })) },
+  }
+})
+vi.mock('../../editor/createCrepe', () => ({
+  createCrepe: vi.fn((opts: { root: HTMLElement; defaultValue?: string }) => {
+    opts.root.textContent = opts.defaultValue ?? ''
+    return { create: vi.fn(async () => {}), setReadonly: vi.fn(), destroy: vi.fn() }
+  }),
+}))
 
 /** In-memory stand-in for the main-owned store: collapse state must go through here, not the file. */
 const { groupStore } = vi.hoisted(() => ({ groupStore: new Map<string, string[]>() }))
@@ -517,5 +533,43 @@ ${cardStyle}
     expect(viewsCss).toMatch(/\.view-board__line\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*baseline/s)
     expect(viewsCss).toMatch(/\.view-board__dash\s*\{[^}]*color:\s*var\(--fg-muted\)/s)
     expect(viewsCss).not.toMatch(/view-board__inline--/)
+  })
+})
+
+/**
+ * Preview mode's wiring (YAZ-1244): `preview: true` hands every card `usePreview`'s hover pair;
+ * absent attaches nothing. A drag start shuts the card. The card's own timing/cache matrix is
+ * PreviewCard.test.tsx's.
+ */
+describe('preview mode (YAZ-1244)', () => {
+  const PREVIEW_BOARD = `${BOARD_BASE}    preview: true\n`
+  const settle = (ms: number) => act(async () => new Promise((resolve) => setTimeout(resolve, ms)).then(() => undefined))
+  const hover = (el: Element) => act(() => void el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+  const previewCard = (): HTMLElement | null => document.body.querySelector('.view-preview')
+
+  it("resting on a card opens the preview with that page's body", async () => {
+    const { el } = mount(PREVIEW_BOARD)
+    hover(q<HTMLElement>(el, '.view-board__card'))
+    await settle(OPEN_DELAY_MS + 50)
+    expect(previewCard()).not.toBeNull()
+    expect(previewCard()!.textContent).toContain('body of /vault/')
+  })
+
+  it('preview off: hovering opens nothing', async () => {
+    const { el } = mount(BOARD_BASE)
+    hover(q<HTMLElement>(el, '.view-board__card'))
+    await settle(OPEN_DELAY_MS + 50)
+    expect(previewCard()).toBeNull()
+  })
+
+  it('a drag start closes the preview', async () => {
+    const { el } = mount(PREVIEW_BOARD)
+    const target = q<HTMLElement>(el, '.view-board__card')
+    hover(target)
+    await settle(OPEN_DELAY_MS + 50)
+    expect(previewCard()).not.toBeNull()
+    act(() => void target.dispatchEvent(new Event('dragstart', { bubbles: true, cancelable: true })))
+    draw()
+    expect(previewCard()).toBeNull()
   })
 })

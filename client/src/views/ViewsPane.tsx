@@ -396,6 +396,7 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
           properties={properties}
           folderPage={folderPage.settings}
           vaultRecords={vaultRecords}
+          preview={view.preview === true}
         />
       ) : view.type === 'board' ? (
         <BoardView
@@ -411,6 +412,7 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
           onMoveToGroup={onMoveToGroup}
           moveError={moveError}
           onNewInGroup={onNewNote}
+          preview={view.preview === true}
         />
       ) : view.type === 'cards' ? (
         <CardsView
