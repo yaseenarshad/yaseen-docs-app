@@ -262,6 +262,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const cell = event.target.closest<HTMLTableCellElement>('td[data-cell]')
     if (cell === null) return
     event.preventDefault()
+    close()
     cell.focus()
     setRowMenu({ x: event.clientX, y: event.clientY, path })
   }

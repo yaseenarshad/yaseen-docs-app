@@ -44,7 +44,9 @@ export function PageContextMenu({ x, y, path, onOpenBackground, onNotice, onClos
         className="ctx-menu__item"
         role="menuitem"
         onClick={() => {
-          void navigator.clipboard.writeText(path)
+          void navigator.clipboard.writeText(path).catch((error: unknown) => {
+            onNotice?.(`Can't copy path: ${error instanceof Error ? error.message : String(error)}`)
+          })
           onClose()
         }}
       >

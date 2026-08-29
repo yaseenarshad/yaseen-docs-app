@@ -36,3 +36,32 @@ it('exports reusable page actions through PageContextMenu', () => {
   act(() => root.unmount())
   host.remove()
 })
+
+it('reports a clipboard rejection passively without leaving an unhandled promise', async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+  const writeText = vi.fn().mockRejectedValue(new Error('clipboard permission denied'))
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  const onNotice = vi.fn()
+  const onClose = vi.fn()
+
+  try {
+    act(() => {
+      root.render(<PageContextMenu x={12} y={34} path="/vault/note.md" onNotice={onNotice} onClose={onClose} />)
+    })
+    const copy = [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Copy path')
+    act(() => copy?.click())
+    await act(async () => Promise.resolve())
+
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('/vault/note.md')
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith("Can't copy path: clipboard permission denied")
+  } finally {
+    act(() => root.unmount())
+    host.remove()
+    if (descriptor === undefined) delete (navigator as unknown as Record<string, unknown>).clipboard
+    else Object.defineProperty(navigator, 'clipboard', descriptor)
+  }
+})

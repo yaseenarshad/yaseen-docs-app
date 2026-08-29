@@ -154,6 +154,7 @@ export function BoardView({
     ) : null
   const openCardMenu = (event: ReactMouseEvent, row: Row): void => {
     event.preventDefault()
+    close()
     setMenu({ x: event.clientX, y: event.clientY, path: row.record.path })
   }
   const cardList = (rows: readonly Row[], group: Group, at: GroupSpot, isOver = false) => (

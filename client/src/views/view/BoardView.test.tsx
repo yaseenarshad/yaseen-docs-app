@@ -20,12 +20,6 @@ import { TEST_RECORDS } from '../testRecords'
 import { OPEN_DELAY_MS } from './PreviewCard'
 import viewsCss from '../views.css?inline'
 
-vi.mock('../../api', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../../api')>()
-  return { ...original, api: { ...original.api, reveal: vi.fn().mockResolvedValue({ path: '/vault/mock.md' }) } }
-})
-const reveal = vi.mocked(api.reveal)
-
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 /** YAZ-846: `folderPage` is required — the contents block is the only mount there is. */
@@ -36,9 +30,14 @@ vi.mock('../../api', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../api')>()
   return {
     ...original,
-    api: { ...original.api, readFile: vi.fn(async (path: string) => ({ path, content: `body of ${path}\n`, mtime: 1, size: 1 })) },
+    api: {
+      ...original.api,
+      reveal: vi.fn().mockResolvedValue({ path: '/vault/mock.md' }),
+      readFile: vi.fn(async (path: string) => ({ path, content: `body of ${path}\n`, mtime: 1, size: 1 })),
+    },
   }
 })
+const reveal = vi.mocked(api.reveal)
 vi.mock('../../editor/createCrepe', () => ({
   createCrepe: vi.fn((opts: { root: HTMLElement; defaultValue?: string }) => {
     opts.root.textContent = opts.defaultValue ?? ''
@@ -792,5 +791,20 @@ describe('preview mode (YAZ-1244)', () => {
     act(() => void target.dispatchEvent(new Event('dragstart', { bubbles: true, cancelable: true })))
     draw()
     expect(previewCard()).toBeNull()
+  })
+
+  it('a secondary click closes the preview and opens page actions for that exact card', async () => {
+    const openBackground = vi.fn()
+    const { el } = mount(PREVIEW_BOARD, { folderPage: testFolderPage({ openBackground }) })
+    const target = cardNamed(el, 'Agentic Agency.md')
+    hover(target)
+    await settle(OPEN_DELAY_MS + 50)
+    expect(previewCard()).not.toBeNull()
+
+    rightClick(target)
+    expect(previewCard()).toBeNull()
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open in new tab', 'Copy path', 'Reveal in Finder'])
+    click(itemNamed(el, 'Open in new tab')!)
+    expect(openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
   })
 })
