@@ -11,10 +11,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import type { IndexRecord } from '@shared/types'
 import { type ParsedViews, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderPage } from '../testFolderPage'
 import { TEST_RECORDS } from '../testRecords'
+import viewsCss from '../views.css?inline'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -53,6 +55,35 @@ const NO_GROUP_BASE = `views:
       - file.name
       - note.priority
 `
+
+const NESTED_BOARD = `views:
+  - type: board
+    name: B
+    order:
+      - file.name
+      - note.n
+    groupBy:
+      - property: note.dept
+      - property: note.proc
+    summaries:
+      note.n: Sum
+`
+
+const rec = (name: string, properties: Record<string, unknown>): IndexRecord => ({
+  ...TEST_RECORDS[0],
+  path: `/vault/${name}.md`,
+  name: `${name}.md`,
+  basename: name,
+  properties,
+})
+
+const NESTED_RECORDS: IndexRecord[] = [
+  rec('alpha1', { dept: 'A', proc: 'p1', n: 2 }),
+  rec('alpha2', { dept: 'A', proc: 'p2', n: 4 }),
+  rec('alphaDirect', { dept: 'A', proc: 'A', n: 1 }),
+  rec('beta1', { dept: 'B', proc: 'p1', n: 8 }),
+  rec('loner', { dept: 'C', proc: 'C', n: 16 }),
+]
 
 let root: Root | null = null
 let container: HTMLElement | null = null
@@ -154,11 +185,24 @@ describe('board columns', () => {
     ])
   })
 
-  it('a two-level groupBy list renders columns by the OUTER level only (YAZ-745: flat by outer)', () => {
-    const { el } = mount(BOARD_BASE.replace('    groupBy:\n      property: note.status\n', '    groupBy:\n      - property: note.status\n      - property: note.priority\n'))
-    expect(headerTexts(el)).toEqual(['drafting', 'idea', 'published', 'No value'])
-    expect(titles(el)).toHaveLength(8) // every card present: an outer group's rows are its whole branch
-    expect(el.querySelector('.view-table__group-cell--nested')).toBeNull()
+  it('a two-level Board renders direct cards first, then stacked inner subgroup sections in each outer column', () => {
+    const { el } = mount(NESTED_BOARD, { records: NESTED_RECORDS })
+    expect(headerTexts(el)).toEqual(['A', 'B', 'C'])
+
+    const a = cols(el)[0]
+    expect([...a.querySelectorAll(':scope > .view-board__cards .view-board__title')].map((n) => n.textContent)).toEqual(['alphaDirect.md'])
+    const inner = [...a.querySelectorAll<HTMLElement>(':scope > .view-board__subgroups > .view-board__subgroup')]
+    expect(inner.map((section) => q(section, '.view-group__value').textContent)).toEqual(['p1', 'p2'])
+    expect(inner.map((section) => q(section, '.view-board__title').textContent)).toEqual(['alpha1.md', 'alpha2.md'])
+    expect(titles(el)).toEqual(['alphaDirect.md', 'alpha1.md', 'alpha2.md', 'beta1.md', 'loner.md'])
+  })
+})
+
+describe('nested Board styling contract', () => {
+  it('uses the existing view tokens for a compact child stack and its drop state', () => {
+    expect(viewsCss).toMatch(/\.view-board__subgroups\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*gap:\s*8px;/s)
+    expect(viewsCss).toMatch(/\.view-board__subgroup\s*\{[^}]*border:\s*1px solid var\(--border\);[^}]*border-radius:\s*6px;/s)
+    expect(viewsCss).toMatch(/\.view-board__subgroup--drop\s*\{[^}]*outline:\s*1px dashed var\(--accent\);/s)
   })
 })
 
@@ -230,6 +274,20 @@ describe('collapse', () => {
     expect(titles(again.el)).toContain('Agentic Agency.md')
     expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::B', [])
   })
+
+  it('an inner chevron hides only that subgroup and persists under its outer-scoped key', async () => {
+    const { storage } = await import('../../lib/storage')
+    const { el, onChange } = mount(NESTED_BOARD, { records: NESTED_RECORDS })
+    const p1 = [...el.querySelectorAll<HTMLElement>('[aria-label="Toggle group p1"]')]
+    expect(p1).toHaveLength(2)
+    click(p1[0])
+
+    const sections = [...el.querySelectorAll<HTMLElement>('.view-board__subgroup')]
+    expect(sections[0].querySelector('.view-board__title')).toBeNull()
+    expect(q(sections[2], '.view-board__title').textContent).toBe('beta1.md')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::B', [`v:A\u001fv:p1`])
+  })
 })
 
 describe('search interplay', () => {
@@ -260,6 +318,13 @@ describe('inline new card row (YAZ-943): the Notion add, at the bottom of every 
     if (c === undefined) throw new Error(`no column ${label}`)
     return c
   }
+  const subgroupOf = (col: ParentNode, label: string): HTMLElement => {
+    const section = [...col.querySelectorAll<HTMLElement>('.view-board__subgroup')].find(
+      (candidate) => q(candidate, '.view-group__value').textContent === label,
+    )
+    if (section === undefined) throw new Error(`no subgroup ${label}`)
+    return section
+  }
 
   it('every column ends in a "New card" row; clicking it swaps in the name input', () => {
     const { el } = mount(BOARD_BASE)
@@ -286,6 +351,26 @@ describe('inline new card row (YAZ-943): the Notion add, at the bottom of every 
     expect(onOpenFile).not.toHaveBeenCalled() // inline add STAYS on the board
     const again = byLabel<HTMLInputElement>(colOf(el, 'idea'), 'New card name')
     expect(again.value).toBe('') // cleared, still open, ready for the next card
+  })
+
+  it('a nested Board puts named inline add inside child sections and seeds both group levels', async () => {
+    const create = vi.fn(() => Promise.resolve('/vault/Ship it.md'))
+    const { el, onOpenFile } = mount(NESTED_BOARD, { records: NESTED_RECORDS, folderPage: testFolderPage({ create }) })
+    const a = colOf(el, 'A')
+    const p2 = subgroupOf(a, 'p2')
+
+    expect(a.querySelector(':scope > [aria-label="New card"]')).toBeNull()
+    click(byLabel(p2, 'New card'))
+    const input = byLabel<HTMLInputElement>(p2, 'New card name')
+    setValue(input, 'Ship it')
+    press(input, 'Enter')
+    await flush()
+
+    expect(create).toHaveBeenCalledTimes(1)
+    const [createdSeed, name] = create.mock.calls[0] as unknown as [{ properties: Record<string, unknown> }, string]
+    expect(createdSeed.properties).toEqual({ proc: 'p2', dept: 'A' })
+    expect(name).toBe('Ship it')
+    expect(onOpenFile).not.toHaveBeenCalled()
   })
 
   it('empty Enter creates nothing; Escape closes the input back to the row', async () => {

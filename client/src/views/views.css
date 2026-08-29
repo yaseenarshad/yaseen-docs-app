@@ -783,6 +783,32 @@
   padding: 2px 4px 6px;
 }
 
+.view-board__subgroups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.view-board__subgroup {
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.view-board__subgroup > .view-group {
+  padding: 0 0 6px;
+}
+
+.view-board__subgroup .view-board__cards {
+  gap: 6px;
+}
+
+.view-board__subgroup--drop {
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+}
+
 .view-board__cards {
   display: flex;
   flex-direction: column;

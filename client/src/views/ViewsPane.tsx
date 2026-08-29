@@ -9,7 +9,7 @@ import { type Group, type Row, propertyKeys, resolverFor, runView } from './engi
 import { equals, fromYaml, render } from './expr'
 import type { ColumnDecl, FolderPageSettings } from './folderPageSettings'
 import { type NewNoteSeed, deriveSeed } from './newNote'
-import { writeProperty } from './writeProperty'
+import { writeProperties, writeProperty } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/keys'
@@ -223,8 +223,9 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
     result.groups === null ? [] : result.groups.flatMap((g) => [groupKeyOf(g.key), ...(g.children ?? []).map((c) => nestedGroupKeyOf(g.key, c.key))])
   const allGroupKeys = groupKeys.length > MAX_COLLAPSED_GROUP_KEYS ? [] : groupKeys
 
-  // A drop on a board column / table section (5C, GRO-2143): optimistic move now, the write through
-  // 5A; a failed write drops the move (the card snaps back) and flags the card instead. `drop` names
+  // A drop on a board column / table section (5C, GRO-2143): optimistic move now, then 5B writes
+  // every changed key in one guarded transformation; a failure drops the move (the card snaps back)
+  // and flags the card instead. `drop` names
   // the LEVEL the row landed on (YAZ-1101) and may carry the outer's write — inner first, then the
   // outer, both optimistic as ONE unit so either failing snaps the whole move back (🔒 YAZ-745).
   const onMoveToGroup = (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => {
@@ -245,7 +246,8 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
     if (drop?.outer !== undefined) writes.push({ ...drop.outer, prevRaw: props?.[drop.outer.key] })
     setMoveError(null)
     setMoves((m) => ({ ...m, [path]: writes }))
-    Promise.all(writes.map((w) => writeProperty(path, w.key, w.value))).catch((err: unknown) => {
+    const commit = writes.length === 1 ? writeProperty(path, writes[0].key, writes[0].value) : writeProperties(path, writes)
+    commit.catch((err: unknown) => {
       setMoves((m) => Object.fromEntries(Object.entries(m).filter(([p]) => p !== path)))
       setMoveError({ path, message: err instanceof Error ? err.message : String(err) })
     })
