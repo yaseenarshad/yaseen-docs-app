@@ -292,6 +292,9 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
    */
   const notes = [...folderPage.settings.problems, ...result.errors.map((e) => `${e.where}: ${e.message}`)]
 
+  /** The `filters` half of that channel ALSO surfaces inside the Filter menu, where it is edited (YAZ-1229). */
+  const filterErrors = result.errors.filter((e) => e.where.includes('filters'))
+
   /**
    * The folder page's OUTLINE (YAZ-820). `thisFile` IS the folder page's path here
    * (`FolderPageContents` passes it) and it roots the ancestor guard, so a null one falls through
@@ -321,6 +324,7 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
         view={view}
         viewIndex={index}
         records={records}
+        filterErrors={filterErrors}
         shown={rows.length}
         total={result.total}
         search={search}

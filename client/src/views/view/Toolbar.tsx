@@ -1,20 +1,25 @@
 import { type ReactNode, useCallback, useState } from 'react'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, type Mutate, groupByLevels } from '../viewSchema'
+import type { EngineError } from '../engine'
 import type { FolderPageMode } from '../ViewsPane'
-import { ChevronsIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon, SyncIcon } from './icons'
+import { countRules } from './filterRows'
+import { ChevronsIcon, FilterIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon, SyncIcon } from './icons'
+import { FilterMenu } from './FilterMenu'
 import { Popover } from './Popover'
 import { PropertiesMenu } from './PropertiesMenu'
 import { SortMenu } from './SortMenu'
 import { ViewTabs, type ViewTabsProps } from './ViewTabs'
 
-type Menu = 'sort' | 'properties'
+type Menu = 'filter' | 'sort' | 'properties'
 
 export interface ToolbarProps {
   def: ViewSet
   view: ViewDef
   viewIndex: number
   records: readonly IndexRecord[]
+  /** The engine's `*.filters` errors, shown inside the Filter menu (YAZ-1229). */
+  filterErrors: readonly EngineError[]
   /** Rows in the body after search / limit, and the pre-limit total. */
   shown: number
   total: number
@@ -49,13 +54,13 @@ export const countLabel = (shown: number, total: number): string =>
   shown === total ? `${total} item${total === 1 ? '' : 's'}` : `${shown} / ${total} items`
 
 /**
- * View chrome (GRO-2135): tabs on the left; Sort / Properties / Search buttons and the count on
- * the right. TOMBSTONE (YAZ-846): there was a **Filter** button first among them, opening
- * `view/FilterMenu.tsx`. The only surface that mounts these views is a folder page's contents
- * block, whose set IS the lookup and stores no filters (🔒 Q3) — so the button was never
- * rendered, and it and its menu are gone rather than permanently hidden.
+ * View chrome (GRO-2135): tabs on the left; Filter / Sort / Properties / Search buttons and the
+ * count on the right. The **Filter** button RETURNED in YAZ-1226-1229 (YAZ-1218), first among the
+ * right-side actions, opening `view/FilterMenu.tsx`. It edits THIS view's `filters` and no other
+ * (D1): the surface that mounts these views is a folder page's contents block, whose set IS the
+ * lookup (🔒 Q3) — so there is no set-level filter for it to offer.
  */
-export function Toolbar({ def, view, viewIndex, records, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, root = null, properties = null, documentView = false, onSync, folderPage }: ToolbarProps) {
+export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, root = null, properties = null, documentView = false, onSync, folderPage }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
   const close = useCallback(() => setOpen(null), [])
   // Each grouping LEVEL is one rule in the badge (YAZ-745) — and an empty `groupBy: []` is none.
@@ -63,11 +68,11 @@ export function Toolbar({ def, view, viewIndex, records, shown, total, search, o
   const allCollapsed = allGroupKeys.every((k) => collapsed.includes(k))
   const groupsLabel = allCollapsed ? 'Expand all groups' : 'Collapse all groups'
 
-  const button = (menu: Menu, label: string, icon: ReactNode, badge: number, body: ReactNode) => (
+  const button = (menu: Menu, label: string, icon: ReactNode, badge: number, body: ReactNode, extraClass?: string) => (
     <div className="view-toolbar__menu">
       <button
         type="button"
-        className={`view-toolbar__btn${badge ? ' view-toolbar__btn--on' : ''}`}
+        className={`view-toolbar__btn${badge ? ' view-toolbar__btn--on' : ''}${extraClass ? ` ${extraClass}` : ''}`}
         aria-label={label}
         title={label}
         aria-haspopup="dialog"
@@ -99,6 +104,16 @@ export function Toolbar({ def, view, viewIndex, records, shown, total, search, o
             <SyncIcon />
           </button>
         )}
+        {/* An outline is a DOCUMENT, not rows (YAZ-903): there is nothing there to filter. */}
+        {!documentView &&
+          button(
+            'filter',
+            'Filter',
+            <FilterIcon />,
+            countRules(view.filters),
+            <FilterMenu def={def} view={view} viewIndex={viewIndex} records={records} errors={filterErrors} properties={properties} folderPage={folderPage} onUpdate={onUpdate} />,
+            filterErrors.length > 0 ? 'view-toolbar__btn--error' : undefined,
+          )}
         {button('sort', 'Sort', <SortIcon />, sorts, <SortMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} />)}
         {allGroupKeys.length > 0 && (
           <button

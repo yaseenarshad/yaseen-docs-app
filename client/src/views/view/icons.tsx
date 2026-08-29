@@ -36,6 +36,13 @@ export const PlusIcon = () => (
   </svg>
 )
 
+/** Funnel, for the toolbar's Filter menu (YAZ-1227). */
+export const FilterIcon = () => (
+  <svg {...svg}>
+    <path d="M2.5 3h11L9.2 8.2v4.4l-2.4 1.2V8.2z" />
+  </svg>
+)
+
 export const SortIcon = () => (
   <svg {...svg}>
     <path d="M5 2.5v11M2.5 11 5 13.5 7.5 11M11 13.5v-11M8.5 5 11 2.5 13.5 5" />

@@ -116,6 +116,17 @@
   border-radius: 7px;
 }
 
+/* A `filters` block the engine could not compile (YAZ-1229) — the accent badge would read as a
+   healthy count, so the button and its badge both turn red, as `.save-indicator--error` does. */
+.view-toolbar__btn--error {
+  color: var(--danger);
+}
+
+.view-toolbar__btn--error .view-toolbar__badge {
+  color: var(--bg);
+  background: var(--danger);
+}
+
 .view-toolbar__search-input {
   width: 150px;
   margin-left: 4px;
@@ -176,8 +187,60 @@
 }
 
 /* ---------- menu internals ---------- */
-/* The Filter menu's own chrome went with it in YAZ-846: `__errors`, `__head`, the All/Any/None
-   and scope segments (`.view-seg*`) and the raw-expression rows (`.view-rule__code` / `__expr`). */
+
+.view-menu__errors {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  list-style: none;
+  font-size: 12px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 7%, var(--bg));
+  border-radius: 5px;
+}
+
+.view-menu__head {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.view-seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-side);
+  border-radius: 6px;
+}
+
+.view-seg__opt {
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  border-radius: 4px;
+}
+
+.view-seg__opt[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.view-rule__code {
+  flex: 1;
+  overflow-x: auto;
+  padding: 3px 6px;
+  font-size: 12px;
+  background: var(--bg-side);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.view-rule__expr {
+  width: 100%;
+  margin-top: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
 
 .view-menu__list {
   margin: 0;

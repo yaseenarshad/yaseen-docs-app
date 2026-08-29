@@ -4,9 +4,10 @@
  * assertion can read the YAML the file would get (`serializeViews`) next to the DOM.
  *
  * YAZ-846: the mount is a FOLDER PAGE's contents block, because that is the only mount there is.
- * Two consequences run through this file — the **Filter** menu is gone (a folder page's set IS
- * the lookup, 🔒 Q3), and the tabs are SWITCH-ONLY — the editable tab half was deleted with its
- * last reachable surface (view management is parked on YAZ-824).
+ * Two consequences run through this file — the **Filter** menu edits THIS view's `filters` and
+ * nothing else (D1, YAZ-1227: a folder page's set IS the lookup, 🔒 Q3), and the tabs are
+ * SWITCH-ONLY — the editable tab half was deleted with its last reachable surface (view
+ * management is parked on YAZ-824).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -164,6 +165,142 @@ describe('view switcher', () => {
     draw()
     expect(el.querySelector('[role="menu"]')).toBeNull()
     expect(onChange).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * The Filter menu, back from the YAZ-846 amputation (YAZ-1227 / YAZ-1228 / YAZ-1229). Every write
+ * lands on `views[i].filters` and nowhere else (D1), and the engine's own compile errors are read
+ * where they are edited as well as on the muted footnote.
+ */
+describe('filter menu (YAZ-1227-1229)', () => {
+  const RULE = `views:
+  - type: table
+    name: T
+    filters:
+      and:
+        - note.status == "idea"
+    order:
+      - file.name
+`
+  const TWO = `views:
+  - type: table
+    name: T
+    filters:
+      and:
+        - note.status == "idea"
+        - note.priority > 1
+`
+
+  it('the button leads the actions row, and an unfiltered view opens empty and unbadged', () => {
+    const { el, onChange } = mount()
+    const actions = q(el, '.view-toolbar__actions')
+    expect([...actions.querySelectorAll('.view-toolbar__btn')].map((b) => b.getAttribute('aria-label'))).toEqual([
+      'New note',
+      'Filter',
+      'Sort',
+      'Properties',
+      'Search',
+    ])
+    const pop = openMenu(el, 'Filter')
+    expect(byText(pop, 'p', 'No filters')).toBeDefined()
+    expect(byLabel(el, 'Filter').querySelector('.view-toolbar__badge')).toBeNull()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('an outline is a DOCUMENT, not rows: no button at all', () => {
+    const { el } = mount('views:\n  - type: outline\n    name: Outline\n', { thisFile: '/vault/Topic.md' })
+    expect(el.querySelector('[aria-label="Filter"]')).toBeNull()
+  })
+
+  it('Add rule writes the match-everything default, in ONE write', () => {
+    const { el, onChange, def, yaml } = mount()
+    click(byText(openMenu(el, 'Filter'), 'button', 'Add rule'))
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(def().views[0].filters).toEqual({ and: ['file.name.contains("")'] })
+    expect(yaml()).toContain('filters:')
+    expect(yaml()).toContain('and:')
+    expect(yaml()).toContain('file.name.contains("")')
+  })
+
+  it('a stored expression round-trips into its builder row and counts in the badge', () => {
+    const { el } = mount(RULE)
+    const pop = openMenu(el, 'Filter')
+    expect(byLabel<HTMLSelectElement>(pop, 'Property').value).toBe('note.status')
+    expect(byLabel<HTMLSelectElement>(pop, 'Operator').value).toBe('is')
+    expect(byLabel<HTMLInputElement>(pop, 'Value').value).toBe('idea')
+    expect(byText(el, '.view-toolbar__badge', '1')).toBeDefined()
+    expect(byLabel(el, 'Filter').classList.contains('view-toolbar__btn--on')).toBe(true)
+  })
+
+  it('a new property re-validates the operator and drops a value of another kind', () => {
+    const { el, onChange, def } = mount(RULE)
+    const pop = openMenu(el, 'Filter')
+    setValue(byLabel(pop, 'Property'), 'note.priority') // TEST_RECORDS types it number
+    expect(onChange).toHaveBeenCalledTimes(1)
+    // `is` is not legal on a number, so the first legal one takes over; the text value is cleared,
+    // and an empty number renders as the `0` `ruleToExpr` writes for one.
+    expect(def().views[0].filters).toEqual({ and: ['note.priority == 0'] })
+    expect(byLabel<HTMLSelectElement>(pop, 'Operator').value).toBe('eq')
+    expect(byLabel<HTMLInputElement>(pop, 'Value').value).toBe('0')
+  })
+
+  it('Any rewrites the conjunction over the same items', () => {
+    const { el, onChange, def, yaml } = mount(TWO)
+    click(byText(openMenu(el, 'Filter'), 'button', 'Any'))
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(def().views[0].filters).toEqual({ or: ['note.status == "idea"', 'note.priority > 1'] })
+    expect(yaml()).toContain('or:')
+  })
+
+  it('with no rules to join, a conjunction click writes nothing', () => {
+    const { el, onChange } = mount()
+    click(byText(openMenu(el, 'Filter'), 'button', 'Any'))
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('removing the last rule deletes the key', () => {
+    const { el, def, yaml } = mount(RULE)
+    click(byLabel(openMenu(el, 'Filter'), 'Remove rule'))
+    expect(def().views[0].filters).toBeUndefined()
+    expect(yaml()).not.toContain('filters:')
+  })
+
+  it('Advanced shows each string rule raw, and commits what is typed there verbatim', () => {
+    const { el, def } = mount(RULE)
+    const pop = openMenu(el, 'Filter')
+    expect(pop.querySelector('[aria-label="Expression"]')).toBeNull()
+    click(q(pop, '.view-menu__toggle input'))
+    expect(byLabel<HTMLInputElement>(pop, 'Expression').value).toBe('note.status == "idea"')
+    type(byLabel(pop, 'Expression'), 'note.status.contains("dr")')
+    expect(def().views[0].filters).toEqual({ and: ['note.status.contains("dr")'] })
+  })
+
+  it('an item the builder cannot show stays raw, and × still removes it', () => {
+    const { el, def } = mount(`views:
+  - type: table
+    name: T
+    filters:
+      and:
+        - or:
+            - a == "1"
+            - b == "2"
+`)
+    const pop = openMenu(el, 'Filter')
+    expect(q(pop, '.view-rule__code')).toBeDefined()
+    expect(pop.querySelector('[aria-label="Property"]')).toBeNull()
+    click(byLabel(pop, 'Remove rule'))
+    expect(def().views[0].filters).toBeUndefined()
+  })
+
+  it('a filters block the engine could not compile reddens the button and says so inside the menu', () => {
+    const { el } = mount('views:\n  - type: table\n    name: T\n    filters: 1 +\n    order:\n      - file.name\n')
+    expect(byLabel(el, 'Filter').classList.contains('view-toolbar__btn--error')).toBe(true)
+    const errors = q<HTMLElement>(openMenu(el, 'Filter'), '.view-menu__errors')
+    expect(errors.getAttribute('role')).toBe('alert')
+    expect(errors.textContent).toBe('views[0].filters unexpected end of input')
+    // and the muted footnote still carries it too (YAZ-861) — the menu is an addition, not a move
+    expect(q(el, '.views-pane__notes').textContent).toBe('views[0].filters: unexpected end of input')
   })
 })
 
