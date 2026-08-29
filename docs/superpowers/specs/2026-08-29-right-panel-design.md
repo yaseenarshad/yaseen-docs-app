@@ -404,7 +404,11 @@ Run focused suites throughout implementation, then the full suite. Do not run he
 
 ### Isolated manual proof
 
-Use a separately opened dev app or pointed Computer Use without taking over Yasin's active computer:
+Immediately before merge eligibility, create a focused YAZ-966 demo vault under `/Users/yasin/Desktop` and launch the feature build against it with a dedicated Electron user-data profile. The profile must isolate windows, tabs, right-panel identity, and settings from Yasin's normal Yaseen Docs state. Leave the app and demo vault available for Yasin; do not delete the visible fixtures or isolated profile until he confirms testing is finished.
+
+The demo vault contains readable instructions plus linked notes and folder-page fixtures for empty/one/many right items, duplicate basenames in different folders, long titles, deep links and right history, Board direct/nested/repeated/hidden-title cards, Table menus, drag ordering/cancellation, persistence, and rename/delete. It contains no unrelated feature demo.
+
+Use that separately opened dev app or pointed Computer Use without taking over Yasin's active computer:
 
 1. Show/hide an empty panel.
 2. Open several pages from Board and the shared menu; confirm one expanded Editor.
@@ -416,6 +420,8 @@ Use a separately opened dev app or pointed Computer Use without taking over Yasi
 8. Reload and duplicate the window; verify independent restored identities.
 9. Rename and delete active and collapsed right items; verify no old-path write or resurrection.
 10. Confirm Table editing and Board group drag/preview remain intact.
+
+Record the demo path, isolated launch/profile method, exact branch commit, checklist, and Yasin's observed result in YAZ-1279. Wait for his result and fix/relaunch any failed case before merging to `main`.
 
 ## Explicit Exclusions
 
@@ -438,5 +444,6 @@ The feature is complete only when:
 - isolated manual verification passes without disruptive Playwright;
 - the read-only YAZ-1277 anti-slop audit is recorded;
 - every justified YAZ-1277 finding is applied, rejected, or deferred with rationale under YAZ-1278;
+- YAZ-1279's Desktop demo vault and isolated-profile dev app are ready, and Yasin has had the requested pre-merge test opportunity;
 - Linear contains implementation evidence and all parent/child statuses reflect reality;
 - the final branch is committed, pushed, merged to `main`, and pushed.
