@@ -1,4 +1,4 @@
-import { type CSSProperties, Fragment, useState } from 'react'
+import { type CSSProperties, Fragment, type MouseEvent as ReactMouseEvent, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
@@ -10,6 +10,7 @@ import { useFlip } from './flip'
 import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, useGroupDrag } from './groupDrag'
 import { usePreview } from './PreviewCard'
 import { allPropertyKeys } from './properties'
+import { PageContextMenu } from './PageContextMenu'
 
 export interface BoardViewProps {
   def: ViewSet
@@ -23,6 +24,10 @@ export interface BoardViewProps {
   onToggleGroup: (key: string) => void
   onUpdate: Mutate
   onOpenFile: (path: string) => void
+  /** Open a card's page without replacing the current folder page. */
+  onOpenFileBackground?: (path: string) => void
+  /** Passive notice surface for page actions that fail because a card moved or disappeared. */
+  onNotice?: (message: string) => void
   /** A drop on another section, including nested level metadata, via ViewsPane's existing optimistic write path. */
   onMoveToGroup: (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => void
   /** The last failed move, flagged inline on its card. */
@@ -62,7 +67,23 @@ export interface BoardViewProps {
 const styleClasses = (style: NonNullable<ViewDef['cardStyle']>[string]) =>
   `${style.bold === true ? ' view-board__prop--bold' : ''}${style.underline === true ? ' view-board__prop--underline' : ''}`
 
-export function BoardView({ def, view, viewIndex, records, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup, preview = false }: BoardViewProps) {
+export function BoardView({
+  def,
+  view,
+  viewIndex,
+  records,
+  groups,
+  collapsed,
+  onToggleGroup,
+  onUpdate,
+  onOpenFile,
+  onOpenFileBackground,
+  onNotice,
+  onMoveToGroup,
+  moveError,
+  onNewInGroup,
+  preview = false,
+}: BoardViewProps) {
   const { rowProps, card, close } = usePreview(preview)
   const levelKeys = [groupByKey(view), groupByKey(view, 1)]
   const dnd = useGroupDrag(levelKeys, onMoveToGroup)
@@ -70,6 +91,8 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
   const flipRoot = useFlip()
   /** The one open add row (YAZ-943) and what has been typed into it; null = every column shows its button. */
   const [adding, setAdding] = useState<{ key: string; name: string } | null>(null)
+  /** The exact rendered record targeted by the latest whole-card secondary click. */
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
   if (groups === null) {
     const fallback = allPropertyKeys(def, view, records).find((k) => !canonicalKey(k).startsWith('file.')) ?? 'file.folder'
     return (
@@ -127,6 +150,10 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
         Move failed
       </span>
     ) : null
+  const openCardMenu = (event: ReactMouseEvent, row: Row): void => {
+    event.preventDefault()
+    setMenu({ x: event.clientX, y: event.clientY, path: row.record.path })
+  }
   const cardList = (rows: readonly Row[], group: Group, at: GroupSpot, isOver = false) => (
     <ul className="view-board__cards">
       {rows.map((row) => (
@@ -139,6 +166,7 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
           // Capture phase so the preview closes ALONGSIDE the drag wiring's own onDragStart rather
           // than replacing it (YAZ-1244): a card must never hang over a drag.
           onDragStartCapture={close}
+          onContextMenu={(event) => openCardMenu(event, row)}
         >
           {lines.map((line, i) => (
             <Fragment key={line[0]}>
@@ -275,6 +303,16 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
           )
         })}
       </div>
+      {menu !== null && (
+        <PageContextMenu
+          x={menu.x}
+          y={menu.y}
+          path={menu.path}
+          onOpenBackground={onOpenFileBackground}
+          onNotice={onNotice}
+          onClose={() => setMenu(null)}
+        />
+      )}
       {/* Outside the horizontal scroller on purpose (YAZ-1244): the card is placed against the viewport. */}
       {card}
     </>
