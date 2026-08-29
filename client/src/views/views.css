@@ -371,6 +371,29 @@
   flex: 1;
 }
 
+/* Drag-to-reorder a shown property (YAZ-1207): the 6-dot grip, and TabBar's accent insertion edge. */
+.view-prop__handle {
+  cursor: grab;
+}
+
+.view-prop--dragging {
+  opacity: 0.4;
+}
+
+.view-prop--insert-before {
+  box-shadow: 0 -2px 0 0 var(--accent);
+}
+
+.view-prop--insert-after {
+  box-shadow: 0 2px 0 0 var(--accent);
+}
+
+/* Card-style toggles (YAZ-1206): pressed = accent chip, like an active filter. */
+.view-card-toggle[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
 /* ---------- body (placeholder rows for non-table views; their real bodies land in later units) ---------- */
 
 .views-pane__error {
@@ -862,6 +885,32 @@
 .view-board__prop-value {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Card styles (YAZ-1206): per-property flags from view.cardStyle. */
+.view-board__title-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.view-board__prop--bold {
+  font-weight: 600;
+}
+
+.view-board__prop--underline {
+  text-decoration: underline;
+}
+
+/* The baked-in dash: an inline value carries a muted dash on its title-facing side. */
+.view-board__inline--right::before {
+  content: '\2013\00a0';
+  color: var(--fg-muted);
+}
+
+.view-board__inline--left::after {
+  content: '\00a0\2013';
+  color: var(--fg-muted);
 }
 
 /* the inline add (YAZ-943): a quiet row, the same box as a card */

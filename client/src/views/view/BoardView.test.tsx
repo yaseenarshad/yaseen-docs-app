@@ -392,3 +392,111 @@ describe('inline new card row (YAZ-943): the Notion add, at the bottom of every 
     expect(colOf(el, 'idea').querySelector('[aria-label="New card"]')).toBeNull()
   })
 })
+
+describe('card styles (YAZ-1206): per-property cardStyle on board cards', () => {
+  const STYLED = (cardStyle: string) => `views:
+  - type: board
+    name: B
+    order:
+      - file.name
+      - note.priority
+      - note.tags
+    groupBy:
+      property: note.status
+    cardStyle:
+${cardStyle}
+`
+  const cardIn = (el: ParentNode): HTMLElement => q<HTMLElement>(el, '.view-board__card')
+
+  it('bold and underline restyle the whole stacked row; labels stay', () => {
+    const { el } = mount(STYLED('      note.priority: { bold: true }\n      note.tags: { underline: true }'))
+    const card = cardIn(el)
+    const rows = [...card.querySelectorAll<HTMLElement>('.view-board__prop')]
+    expect(rows.map((r) => q(r, '.view-board__prop-name').textContent)).toEqual(['priority', 'tags'])
+    expect(rows[0].classList.contains('view-board__prop--bold')).toBe(true)
+    expect(rows[0].classList.contains('view-board__prop--underline')).toBe(false)
+    expect(rows[1].classList.contains('view-board__prop--underline')).toBe(true)
+  })
+
+  it('hideLabel drops the muted label span and keeps the value', () => {
+    const { el } = mount(STYLED('      note.priority: { hideLabel: true }'))
+    const card = cardIn(el)
+    const rows = [...card.querySelectorAll<HTMLElement>('.view-board__prop')]
+    expect(rows).toHaveLength(2)
+    expect(rows[0].querySelector('.view-board__prop-name')).toBeNull()
+    expect(q(rows[0], '.view-board__prop-value').textContent).not.toBe('')
+    expect(q(rows[1], '.view-board__prop-name').textContent).toBe('tags')
+  })
+
+  it('inline: right renders the value after the title in the title row, off the stacked rows', () => {
+    const { el } = mount(STYLED('      note.priority: { inline: right, bold: true }'))
+    const card = cardIn(el)
+    const row = q<HTMLElement>(card, '.view-board__title-row')
+    const kids = [...row.children]
+    expect(kids[0].classList.contains('view-board__title')).toBe(true)
+    expect(kids[1].classList.contains('view-board__inline--right')).toBe(true)
+    expect(kids[1].classList.contains('view-board__prop--bold')).toBe(true)
+    // priority is no longer a stacked row; tags still is
+    expect([...card.querySelectorAll('.view-board__prop .view-board__prop-name')].map((n) => n.textContent)).toEqual(['tags'])
+  })
+
+  it('inline: left renders the value before the title', () => {
+    const { el } = mount(STYLED('      note.priority: { inline: left }'))
+    const kids = [...q<HTMLElement>(cardIn(el), '.view-board__title-row').children]
+    expect(kids[0].classList.contains('view-board__inline--left')).toBe(true)
+    expect(kids[1].classList.contains('view-board__title')).toBe(true)
+  })
+
+  it('a hidden file.name (YAZ-1175) keeps inline values on their own top row, with NO dash side class', () => {
+    const { el } = mount(`views:
+  - type: board
+    name: B
+    order:
+      - note.priority
+    groupBy:
+      property: note.status
+    cardStyle:
+      note.priority: { inline: right }
+`)
+    const card = cardIn(el)
+    expect(card.querySelector('.view-board__title')).toBeNull()
+    const row = q<HTMLElement>(card, '.view-board__title-row')
+    const span = row.children[0]
+    expect(span.classList.contains('view-board__prop-value')).toBe(true)
+    expect(span.classList.contains('view-board__inline--right')).toBe(false)
+    expect(span.classList.contains('view-board__inline--left')).toBe(false)
+  })
+
+  it('cardStyle reaches cards inside subgroup sections through the shared cardList (YAZ-1177)', () => {
+    const { el } = mount(
+      `views:
+  - type: board
+    name: B
+    order:
+      - file.name
+      - note.n
+    groupBy:
+      - property: note.dept
+      - property: note.proc
+    cardStyle:
+      note.n: { bold: true, hideLabel: true }
+`,
+      { records: NESTED_RECORDS },
+    )
+    const sub = q<HTMLElement>(el, '.view-board__subgroup .view-board__card')
+    const row = q<HTMLElement>(sub, '.view-board__prop')
+    expect(row.classList.contains('view-board__prop--bold')).toBe(true)
+    expect(row.querySelector('.view-board__prop-name')).toBeNull()
+    // and the outer direct card too
+    const direct = q<HTMLElement>(el, '.view-board__col > .view-board__cards .view-board__card')
+    expect(q<HTMLElement>(direct, '.view-board__prop').classList.contains('view-board__prop--bold')).toBe(true)
+  })
+
+  it('the styling contract: bold, underline, title row and the baked-in dash live in views.css', () => {
+    expect(viewsCss).toMatch(/\.view-board__prop--bold\s*\{[^}]*font-weight:\s*600/s)
+    expect(viewsCss).toMatch(/\.view-board__prop--underline\s*\{[^}]*text-decoration:\s*underline/s)
+    expect(viewsCss).toMatch(/\.view-board__title-row\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*baseline/s)
+    expect(viewsCss).toMatch(/\.view-board__inline--right::before\s*\{[^}]*content:\s*['"]\\2013\\00a0['"];[^}]*color:\s*var\(--fg-muted\)/s)
+    expect(viewsCss).toMatch(/\.view-board__inline--left::after\s*\{[^}]*content:\s*['"]\\00a0\\2013['"];[^}]*color:\s*var\(--fg-muted\)/s)
+  })
+})

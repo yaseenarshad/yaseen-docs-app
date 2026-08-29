@@ -85,6 +85,20 @@ export const RelationIcon = () => (
   </svg>
 )
 
+/** 6-dot grip, for dragging a shown property into place (YAZ-1207) — dots, so filled, not stroked. */
+export const DragHandleIcon = () => (
+  <svg {...svg}>
+    <g fill="currentColor" stroke="none">
+      <circle cx="6" cy="4" r="1" />
+      <circle cx="10" cy="4" r="1" />
+      <circle cx="6" cy="8" r="1" />
+      <circle cx="10" cy="8" r="1" />
+      <circle cx="6" cy="12" r="1" />
+      <circle cx="10" cy="12" r="1" />
+    </g>
+  </svg>
+)
+
 const TYPE_GLYPHS: Record<string, ReactElement> = {
   table: (
     <>

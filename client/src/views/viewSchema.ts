@@ -42,6 +42,8 @@ export interface ViewDef {
   indentProperties?: boolean
   markerStyle?: string
   propertySeparator?: string
+  /** Board card styling (YAZ-1206): per canonical property key — bold/underline the value's row, hide its label, or inline it with the title. */
+  cardStyle?: Record<string, { bold?: boolean; underline?: boolean; hideLabel?: boolean; inline?: 'left' | 'right' }>
   [extra: string]: unknown
 }
 

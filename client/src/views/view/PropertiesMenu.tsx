@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type DragEvent } from 'react'
 import { PROPERTY_KINDS, PROPERTY_NAME, type IndexRecord, type PropertiesResponse, type PropertyDecl, type PropertyKind } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import type { ColumnDecl } from '../folderPageSettings'
@@ -6,7 +6,7 @@ import type { FolderPageMode } from '../ViewsPane'
 import { propertyKeys, propertyLabel } from '../engine'
 import { properties as propertiesApi } from '../useProperties'
 import { canonicalKey } from './keys'
-import { PencilIcon, RelationIcon } from './icons'
+import { DragHandleIcon, PencilIcon, RelationIcon } from './icons'
 import { markerStyleOf } from './ListView'
 import { allPropertyKeys } from './properties'
 import { TextField } from './TextField'
@@ -27,6 +27,9 @@ export interface PropertiesMenuProps {
 
 const bare = (key: string): string => (key.startsWith('note.') ? key.slice(5) : key)
 
+/** One property's card styling (YAZ-1206), keyed by canonical key under `view.cardStyle`. */
+type CardStyle = NonNullable<ViewDef['cardStyle']>[string]
+
 /** The `def.properties` entry a key's display name lives in: as written, bare, or `note.`-prefixed; else the bare form. */
 function entryKey(def: ViewSet, key: string): string {
   const b = bare(key)
@@ -36,8 +39,10 @@ function entryKey(def: ViewSet, key: string): string {
 
 /**
  * Properties menu (GRO-2135): shown ⇄ hidden checklist (writes `view.order`; Table and Board views
- * may hide `file.name`, while Cards and List keep their existing behavior), up/down to reorder,
- * pencil to set `def.properties[key].displayName`.
+ * may hide `file.name`, while Cards and List keep their existing behavior), a 6-dot grip to
+ * reorder (YAZ-1207: the ↑↓ arrows are gone), pencil to set `def.properties[key].displayName`.
+ * Board views add five per-row card-style toggles (YAZ-1206) writing `view.cardStyle` — bold,
+ * underline, hide label, inline left/right of the title (one setting: the active side clears).
  * List views (4F, GRO-2140) get a trailing "List" section for how those properties display —
  * `markerStyle` / `indentProperties` / `propertySeparator`, one write per change, the default
  * value DELETES the key (like SortMenu clearing `sort` / `groupBy`).
@@ -50,6 +55,8 @@ function entryKey(def: ViewSet, key: string): string {
 export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root = null, properties = null, folderPage }: PropertiesMenuProps) {
   const [editing, setEditing] = useState<string | null>(null)
   const [relationFor, setRelationFor] = useState<string | null>(null)
+  /** The drag in flight (YAZ-1207): `from` is an index in `shown`, `to` the insertion slot it would land in. */
+  const [drag, setDrag] = useState<{ from: number; to: number } | null>(null)
   const shown = propertyKeys(def, view, records)
   const keys = allPropertyKeys(def, view, records, folderPage.settings.columns)
   const isShown = (key: string) => shown.some((k) => canonicalKey(k) === canonicalKey(key))
@@ -65,11 +72,22 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
       }
     })
   const toggle = (key: string) => writeOrder(isShown(key) ? shown.filter((k) => canonicalKey(k) !== canonicalKey(key)) : [...shown, key])
-  const move = (key: string, dir: -1 | 1) => {
-    const i = shown.indexOf(key)
+  /** The slot a pointer at `clientY` over shown row `i` means: before (i) or after (i+1) it. */
+  const insertionAt = (e: DragEvent<HTMLElement>, i: number): number => {
+    const r = e.currentTarget.getBoundingClientRect()
+    return e.clientY < r.top + r.height / 2 ? i : i + 1
+  }
+  /**
+   * Reorder (YAZ-1207), TabBar's move rule (GRO-2235): the slot is an index in the WITH-dragged-row
+   * list, so past the grab point it shifts one left. ONE `writeOrder` — never a bypass, it is what
+   * keeps `frozenColumns` following positionally.
+   */
+  const move = (from: number, insertion: number) => {
+    const to = insertion > from ? insertion - 1 : insertion
+    if (to === from) return
     const next = [...shown]
-    next.splice(i, 1)
-    next.splice(i + dir, 0, key)
+    const [key] = next.splice(from, 1)
+    next.splice(to, 0, key)
     writeOrder(next)
   }
   /**
@@ -101,6 +119,32 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
       else delete d.properties
     })
 
+  const cardStyleOf = (key: string): CardStyle => view.cardStyle?.[canonicalKey(key)] ?? {}
+  /** One cardStyle write (YAZ-1206): flags that fall back to absent delete themselves; an empty entry, then an empty map, deletes too — the YAML default-deletes rule. */
+  const writeCardStyle = (key: string, edit: (style: CardStyle) => void) =>
+    onUpdate((d) => {
+      const v = d.views[viewIndex]
+      const k = canonicalKey(key)
+      const style: CardStyle = { ...v.cardStyle?.[k] }
+      edit(style)
+      const map = { ...v.cardStyle }
+      if (Object.keys(style).length) map[k] = style
+      else delete map[k]
+      if (Object.keys(map).length) v.cardStyle = map
+      else delete v.cardStyle
+    })
+  const toggleCardFlag = (key: string, flag: 'bold' | 'underline' | 'hideLabel') =>
+    writeCardStyle(key, (style) => {
+      if (style[flag] === true) delete style[flag]
+      else style[flag] = true
+    })
+  /** Left ⇄ right are one setting, so the active side clears it rather than fighting its twin. */
+  const setInlineSide = (key: string, side: 'left' | 'right') =>
+    writeCardStyle(key, (style) => {
+      if (style.inline === side) delete style.inline
+      else style.inline = side
+    })
+
   return (
     <div className="view-menu">
       <ul className="view-menu__list">
@@ -110,9 +154,58 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
           const label = propertyLabel(def, key)
           const decl = folderPage.settings.columns[bare(key)]
           const isNote = canonicalKey(key).startsWith('note.')
+          const cls = ['view-prop']
+          if (drag !== null && i >= 0) {
+            if (drag.from === i) cls.push('view-prop--dragging')
+            // The insertion indicator: an accent edge on the row the drop would land before — or
+            // after the LAST row for the end slot.
+            if (drag.to === i) cls.push('view-prop--insert-before')
+            if (drag.to === shown.length && i === shown.length - 1) cls.push('view-prop--insert-after')
+          }
           return (
-            <li key={key} className="view-prop">
+            <li
+              key={key}
+              className={cls.join(' ')}
+              onDragOver={(e) => {
+                if (drag === null || i < 0) return
+                e.preventDefault()
+                if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+                const to = insertionAt(e, i)
+                if (drag.to !== to) setDrag({ ...drag, to })
+              }}
+              onDrop={(e) => {
+                if (drag === null || i < 0) return
+                e.preventDefault()
+                setDrag(null)
+                move(drag.from, insertionAt(e, i))
+              }}
+            >
               <div className="view-prop__identity">
+                {on && (
+                  <button
+                    type="button"
+                    className="view-rule__nav view-prop__handle"
+                    aria-label={`Reorder ${label}`}
+                    title="Reorder"
+                    draggable
+                    onDragStart={(e) => {
+                      // The groupDrag idiom: `dataTransfer` guarded — jsdom's synthetic drags have none.
+                      e.dataTransfer?.setData('text/plain', key)
+                      if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+                      setDrag({ from: i, to: i })
+                    }}
+                    onDragEnd={() => setDrag(null)}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                      e.preventDefault()
+                      if (e.key === 'ArrowUp') {
+                        if (i > 0) move(i, i - 1)
+                      } else if (i < shown.length - 1) move(i, i + 2)
+                    }}
+                  >
+                    <DragHandleIcon />
+                  </button>
+                )}
                 <input
                   type="checkbox"
                   aria-label={`Show ${label}`}
@@ -140,26 +233,25 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
                   <PencilIcon />
                 </button>
               </div>
-              {(isNote || on) && (
+              {/* Note-only since YAZ-1207: the ↑↓ arrows were the shown row's other reason to have this line. */}
+              {isNote && (
                 <div className="view-prop__controls">
-                  {isNote && (
-                    <select
-                      className="view-select"
-                      aria-label={`Type of ${label}`}
-                      value={decl?.kind ?? ''}
-                      onChange={(e) => setKind(bare(key), e.target.value as PropertyKind)}
-                    >
-                      {/* Undeclared: the ladder's LOWER rungs decide — a placeholder, never a choice. */}
-                      <option value="" disabled>
-                        auto
+                  <select
+                    className="view-select"
+                    aria-label={`Type of ${label}`}
+                    value={decl?.kind ?? ''}
+                    onChange={(e) => setKind(bare(key), e.target.value as PropertyKind)}
+                  >
+                    {/* Undeclared: the ladder's LOWER rungs decide — a placeholder, never a choice. */}
+                    <option value="" disabled>
+                      auto
+                    </option>
+                    {PROPERTY_KINDS.map((k) => (
+                      <option key={k} value={k}>
+                        {k}
                       </option>
-                      {PROPERTY_KINDS.map((k) => (
-                        <option key={k} value={k}>
-                          {k}
-                        </option>
-                      ))}
-                    </select>
-                  )}
+                    ))}
+                  </select>
                   {(decl?.kind === 'link' || decl?.kind === 'multi-link') && (
                     <TextField
                       className="view-input view-relation__target"
@@ -168,6 +260,61 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
                       value={decl.target ?? ''}
                       onCommit={(target) => setTarget(bare(key), target)}
                     />
+                  )}
+                  {/* Card styling (YAZ-1206) belongs to the property, so it rides this line — shown board rows only. */}
+                  {view.type === 'board' && on && (
+                    <>
+                      <button
+                        type="button"
+                        className="view-rule__nav view-card-toggle"
+                        aria-label={`Bold ${label} on cards`}
+                        title={`Bold ${label} on cards`}
+                        aria-pressed={cardStyleOf(key).bold === true}
+                        onClick={() => toggleCardFlag(key, 'bold')}
+                      >
+                        <b>B</b>
+                      </button>
+                      <button
+                        type="button"
+                        className="view-rule__nav view-card-toggle"
+                        aria-label={`Underline ${label} on cards`}
+                        title={`Underline ${label} on cards`}
+                        aria-pressed={cardStyleOf(key).underline === true}
+                        onClick={() => toggleCardFlag(key, 'underline')}
+                      >
+                        <u>U</u>
+                      </button>
+                      <button
+                        type="button"
+                        className="view-rule__nav view-card-toggle"
+                        aria-label={`Hide ${label} label on cards`}
+                        title={`Hide ${label} label on cards`}
+                        aria-pressed={cardStyleOf(key).hideLabel === true}
+                        onClick={() => toggleCardFlag(key, 'hideLabel')}
+                      >
+                        –L
+                      </button>
+                      <button
+                        type="button"
+                        className="view-rule__nav view-card-toggle"
+                        aria-label={`Show ${label} left of the title`}
+                        title={`Show ${label} left of the title`}
+                        aria-pressed={cardStyleOf(key).inline === 'left'}
+                        onClick={() => setInlineSide(key, 'left')}
+                      >
+                        ⇤
+                      </button>
+                      <button
+                        type="button"
+                        className="view-rule__nav view-card-toggle"
+                        aria-label={`Show ${label} right of the title`}
+                        title={`Show ${label} right of the title`}
+                        aria-pressed={cardStyleOf(key).inline === 'right'}
+                        onClick={() => setInlineSide(key, 'right')}
+                      >
+                        ⇥
+                      </button>
+                    </>
                   )}
                   {root !== null && isNote && (
                     <button
@@ -180,16 +327,6 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
                     >
                       <RelationIcon />
                     </button>
-                  )}
-                  {on && (
-                    <>
-                      <button type="button" className="view-rule__nav" aria-label="Move up" disabled={i <= 0} onClick={() => move(key, -1)}>
-                        ↑
-                      </button>
-                      <button type="button" className="view-rule__nav" aria-label="Move down" disabled={i < 0 || i === shown.length - 1} onClick={() => move(key, 1)}>
-                        ↓
-                      </button>
-                    </>
                   )}
                 </div>
               )}

@@ -310,7 +310,7 @@ describe('properties menu', () => {
     click(byLabel(pop, 'Show status'))
     expect(def().views[0].order).toEqual(['file.name', 'note.status'])
     expect(def().views[0].frozenColumns).toBe(1)
-    click([...pop.querySelectorAll('[aria-label="Move up"]')][1])
+    press(byLabel(pop, 'Reorder status'), 'ArrowUp')
     expect(def().views[0].order).toEqual(['note.status', 'file.name'])
     expect(def().views[0].frozenColumns).toBe(1)
   })
@@ -381,12 +381,10 @@ describe('properties menu', () => {
     expect(def().views[0].order).toEqual(['file.name'])
   })
 
-  it('up/down reorder the shown keys only', () => {
+  it('the grip reorders the shown keys only (YAZ-1207: arrows are gone)', () => {
     const { el, def } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.status\n      - note.priority\n')
     const pop = openMenu(el, 'Properties')
-    const ups = [...pop.querySelectorAll<HTMLButtonElement>('[aria-label="Move up"]')]
-    expect(ups[0].disabled).toBe(true) // file.name row
-    click(ups[2]) // note.priority above note.status
+    press(byLabel(pop, 'Reorder priority'), 'ArrowUp') // note.priority above note.status
     expect(def().views[0].order).toEqual(['file.name', 'note.priority', 'note.status'])
   })
 
@@ -683,5 +681,160 @@ describe('the default view', () => {
     expect(select.value).toBe('View')
     setValue(select, '')
     expect(setDefaultView).toHaveBeenCalledExactlyOnceWith(undefined)
+  })
+})
+
+describe('properties drag-to-reorder (YAZ-1207)', () => {
+  const THREE = 'views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.status\n      - note.priority\n'
+  /** TabBar's jsdom reduction, vertical: all-zero rects mean the midpoint test is the SIGN of clientY. */
+  const fire = (target: Element, type: string, clientY = 0) =>
+    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })))
+  const grip = (pop: ParentNode, label: string) => byLabel<HTMLButtonElement>(pop, `Reorder ${label}`)
+  const rowOf = (pop: ParentNode, label: string): HTMLElement => {
+    const row = grip(pop, label).closest<HTMLElement>('.view-prop')
+    if (row === null) throw new Error(`no row for ${label}`)
+    return row
+  }
+
+  it('every SHOWN row has a grip — file.name included — hidden rows have none, and the arrows are gone', () => {
+    const { el } = mount(THREE)
+    const pop = openMenu(el, 'Properties')
+    expect(grip(pop, 'file.name')).toBeDefined()
+    expect(grip(pop, 'status')).toBeDefined()
+    expect(grip(pop, 'priority')).toBeDefined()
+    // the menu offers more keys than the three shown ones; only shown rows carry grips
+    expect(pop.querySelectorAll('[aria-label^="Reorder "]')).toHaveLength(3)
+    expect(pop.querySelectorAll('.view-prop').length).toBeGreaterThan(3)
+    expect(pop.querySelector('[aria-label="Move up"]')).toBeNull()
+    expect(pop.querySelector('[aria-label="Move down"]')).toBeNull()
+  })
+
+  it('dragging file.name past the last row writes it last, in ONE write, with drag and insertion classes', () => {
+    const { el, def, onChange } = mount(THREE)
+    const pop = openMenu(el, 'Properties')
+    fire(grip(pop, 'file.name'), 'dragstart')
+    expect(rowOf(pop, 'file.name').classList.contains('view-prop--dragging')).toBe(true)
+    fire(rowOf(pop, 'priority'), 'dragover', 5) // below priority's midpoint → the end slot
+    expect(rowOf(pop, 'priority').classList.contains('view-prop--insert-after')).toBe(true)
+    fire(rowOf(pop, 'priority'), 'drop', 5)
+    expect(def().views[0].order).toEqual(['note.status', 'note.priority', 'file.name'])
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(pop.querySelector('.view-prop--dragging')).toBeNull()
+    expect(pop.querySelector('.view-prop--insert-after')).toBeNull()
+  })
+
+  it('dragging the last row above the first inserts BEFORE it', () => {
+    const { el, def } = mount(THREE)
+    const pop = openMenu(el, 'Properties')
+    fire(grip(pop, 'priority'), 'dragstart')
+    fire(rowOf(pop, 'file.name'), 'dragover', -5)
+    expect(rowOf(pop, 'file.name').classList.contains('view-prop--insert-before')).toBe(true)
+    fire(rowOf(pop, 'file.name'), 'drop', -5)
+    expect(def().views[0].order).toEqual(['note.priority', 'file.name', 'note.status'])
+  })
+
+  it('dropping on the grabbed slot is a no-op and dragend clears an abandoned drag', () => {
+    const { el, onChange } = mount(THREE)
+    const pop = openMenu(el, 'Properties')
+    fire(grip(pop, 'status'), 'dragstart')
+    fire(rowOf(pop, 'status'), 'drop', -5) // before itself = its own slot
+    expect(onChange).not.toHaveBeenCalled()
+    fire(grip(pop, 'status'), 'dragstart')
+    fire(grip(pop, 'status'), 'dragend')
+    expect(pop.querySelector('.view-prop--dragging')).toBeNull()
+  })
+
+  it('ArrowDown/ArrowUp on the grip nudge one step; the ends are no-ops', () => {
+    const { el, def, onChange } = mount(THREE)
+    const pop = openMenu(el, 'Properties')
+    press(grip(pop, 'file.name'), 'ArrowDown')
+    expect(def().views[0].order).toEqual(['note.status', 'file.name', 'note.priority'])
+    press(grip(pop, 'file.name'), 'ArrowUp')
+    expect(def().views[0].order).toEqual(['file.name', 'note.status', 'note.priority'])
+    press(grip(pop, 'file.name'), 'ArrowUp') // already first
+    press(grip(pop, 'priority'), 'ArrowDown') // already last
+    expect(onChange).toHaveBeenCalledTimes(2)
+  })
+
+  it('a drag reorder keeps frozenColumns following positionally, like the arrows did', () => {
+    const { el, def } = mount('views:\n  - type: table\n    name: T\n    frozenColumns: 2\n    order:\n      - file.name\n      - note.status\n      - note.priority\n')
+    const pop = openMenu(el, 'Properties')
+    fire(grip(pop, 'priority'), 'dragstart')
+    fire(rowOf(pop, 'file.name'), 'dragover', -5)
+    fire(rowOf(pop, 'file.name'), 'drop', -5)
+    expect(def().views[0].order).toEqual(['note.priority', 'file.name', 'note.status'])
+    expect(def().views[0].frozenColumns).toBe(2)
+  })
+})
+describe('card style toggles (YAZ-1206): per-property cardStyle writes on board views', () => {
+  const BOARD = `views:
+  - type: board
+    name: B
+    order:
+      - file.name
+      - note.status
+      - note.priority
+    groupBy:
+      property: note.status
+`
+  it('board rows carry B / U / hide-label / inline toggles for shown note rows — never for file.name or non-boards', () => {
+    const { el } = mount(BOARD)
+    const pop = openMenu(el, 'Properties')
+    expect(byLabel(pop, 'Bold status on cards')).toBeDefined()
+    expect(byLabel(pop, 'Underline status on cards')).toBeDefined()
+    expect(byLabel(pop, 'Hide status label on cards')).toBeDefined()
+    expect(byLabel(pop, 'Show status left of the title')).toBeDefined()
+    expect(byLabel(pop, 'Show status right of the title')).toBeDefined()
+    expect(pop.querySelector('[aria-label="Bold file.name on cards"]')).toBeNull()
+  })
+
+  it('non-board views offer no card-style toggles', () => {
+    const { el } = mount() // YASIN_BASE, table active
+    const pop = openMenu(el, 'Properties')
+    expect(pop.querySelector('[aria-label^="Bold "]')).toBeNull()
+  })
+
+  it('toggling writes one cardStyle entry per click and toggling off cleans the YAML completely', () => {
+    const { el, onChange, def, yaml } = mount(BOARD)
+    const pop = openMenu(el, 'Properties')
+    click(byLabel(pop, 'Bold status on cards'))
+    expect(def().views[0].cardStyle).toEqual({ 'note.status': { bold: true } })
+    click(byLabel(pop, 'Underline status on cards'))
+    expect(def().views[0].cardStyle).toEqual({ 'note.status': { bold: true, underline: true } })
+    expect(onChange).toHaveBeenCalledTimes(2)
+    click(byLabel(pop, 'Underline status on cards'))
+    click(byLabel(pop, 'Bold status on cards'))
+    expect(def().views[0].cardStyle).toBeUndefined()
+    expect(yaml()).not.toContain('cardStyle')
+  })
+
+  it('inline left/right are mutually exclusive and clicking the active side clears it', () => {
+    const { el, def } = mount(BOARD)
+    const pop = openMenu(el, 'Properties')
+    click(byLabel(pop, 'Show priority right of the title'))
+    expect(def().views[0].cardStyle).toEqual({ 'note.priority': { inline: 'right' } })
+    click(byLabel(pop, 'Show priority left of the title'))
+    expect(def().views[0].cardStyle).toEqual({ 'note.priority': { inline: 'left' } })
+    click(byLabel(pop, 'Show priority left of the title'))
+    expect(def().views[0].cardStyle).toBeUndefined()
+  })
+
+  it('pressed state reflects the YAML', () => {
+    const { el } = mount(`views:
+  - type: board
+    name: B
+    order:
+      - file.name
+      - note.status
+    groupBy:
+      property: note.status
+    cardStyle:
+      note.status: { bold: true, inline: right }
+`)
+    const pop = openMenu(el, 'Properties')
+    expect(byLabel(pop, 'Bold status on cards').getAttribute('aria-pressed')).toBe('true')
+    expect(byLabel(pop, 'Show status right of the title').getAttribute('aria-pressed')).toBe('true')
+    expect(byLabel(pop, 'Show status left of the title').getAttribute('aria-pressed')).toBe('false')
+    expect(byLabel(pop, 'Underline status on cards').getAttribute('aria-pressed')).toBe('false')
   })
 })

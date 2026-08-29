@@ -49,8 +49,13 @@ export interface BoardViewProps {
  * card carries an inline error chip. Nested targets are siblings of the outer target rather than
  * descendants, so one bubbled drop cannot dispatch at both levels. Images are 4E. A single-level
  * column — or each writable inner section in a nested Board — ends in the Notion inline add
- * (YAZ-943): Enter births the named page into that exact section without opening it.
+ * (YAZ-943): Enter births the named page into that exact section without opening it. Per-property
+ * `cardStyle` (YAZ-1206) bolds/underlines a value, hides its label, or lifts it onto the title row.
  */
+/** The `cardStyle` flags that read the same on a stacked row and an inline value (YAZ-1206). */
+const styleClasses = (style: NonNullable<ViewDef['cardStyle']>[string]) =>
+  `${style.bold === true ? ' view-board__prop--bold' : ''}${style.underline === true ? ' view-board__prop--underline' : ''}`
+
 export function BoardView({ def, view, viewIndex, records, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup }: BoardViewProps) {
   const levelKeys = [groupByKey(view), groupByKey(view, 1)]
   const dnd = useGroupDrag(levelKeys, onMoveToGroup)
@@ -81,7 +86,17 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
   const keys = propertyKeys(def, view, records)
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const rest = keys.filter((k) => k !== nameKey)
+  const styleOf = (key: string) => view.cardStyle?.[canonicalKey(key)] ?? {}
+  const inlineLeft = rest.filter((k) => styleOf(k).inline === 'left')
+  const inlineRight = rest.filter((k) => styleOf(k).inline === 'right')
+  const stacked = rest.filter((k) => styleOf(k).inline === undefined)
   const width = cardWidth(view.cardSize)
+  /** `side` only when a title is there to separate from: no title, no dash (YAZ-1175 amendment). */
+  const inlineValue = (key: string, row: Row, side: string) => (
+    <span key={key} className={`view-board__prop-value${nameKey === undefined ? '' : side}${styleClasses(styleOf(key))}`}>
+      {cellContent(row.values[key])}
+    </span>
+  )
   const cardList = (rows: readonly Row[], group: Group, at: GroupSpot, isOver = false) => (
     <ul className="view-board__cards">
       {rows.map((row) => (
@@ -91,19 +106,25 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
           className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}`}
           {...dnd.source(row.record.path, group, at)}
         >
-          {nameKey !== undefined && (
-            <button type="button" className="view-board__title" onClick={() => onOpenFile(row.record.path)}>
-              {render(row.values[nameKey])}
-            </button>
+          {(nameKey !== undefined || inlineLeft.length + inlineRight.length > 0) && (
+            <div className="view-board__title-row">
+              {inlineLeft.map((key) => inlineValue(key, row, ' view-board__inline--left'))}
+              {nameKey !== undefined && (
+                <button type="button" className="view-board__title" onClick={() => onOpenFile(row.record.path)}>
+                  {render(row.values[nameKey])}
+                </button>
+              )}
+              {inlineRight.map((key) => inlineValue(key, row, ' view-board__inline--right'))}
+            </div>
           )}
           {moveError?.path === row.record.path && (
             <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>
               Move failed
             </span>
           )}
-          {rest.map((key) => (
-            <div key={key} className="view-board__prop">
-              <span className="view-board__prop-name">{propertyLabel(def, key)}</span>
+          {stacked.map((key) => (
+            <div key={key} className={`view-board__prop${styleClasses(styleOf(key))}`}>
+              {styleOf(key).hideLabel !== true && <span className="view-board__prop-name">{propertyLabel(def, key)}</span>}
               <span className="view-board__prop-value">{cellContent(row.values[key])}</span>
             </div>
           ))}
