@@ -7,6 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ViewSet, ViewDef, FilterNode } from './viewSchema'
 import { createNewNote, deriveSeed, freeName, seedContent, untitledName } from './newNote'
+import { ruleToExpr } from './view/filterRows'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -69,6 +70,28 @@ describe('deriveSeed', () => {
   it('zero or several inFolder rules leave the folder null (view-folder rule)', () => {
     expect(seed({ and: ['status == "idea"'] }).folder).toBeNull()
     expect(seed({ and: ['file.inFolder("A")', 'file.inFolder("B")'] }).folder).toBeNull()
+  })
+
+  // The strings the Filter menu actually writes (YAZ-1236): built through `ruleToExpr`, never typed
+  // out here, so the seed is pinned to the BUILDER's grammar and moves with it.
+  it('a menu-built equality rule seeds its property', () => {
+    const s = seed({ and: [ruleToExpr({ property: 'note.status', op: 'is', value: 'Done' })] })
+    expect(s.properties).toEqual({ status: 'Done' })
+  })
+
+  it('a D5-guarded ordering rule seeds nothing — its leaf is the `&&` guard, not an equality', () => {
+    const s = seed({ and: [ruleToExpr({ property: 'note.priority', op: 'lt', value: '3' })] })
+    expect(s.properties).toEqual({})
+  })
+
+  it('a menu-built nested group contributes nothing while its top-level sibling still seeds', () => {
+    const s = seed({
+      and: [
+        ruleToExpr({ property: 'note.status', op: 'is', value: 'Done' }),
+        { or: [ruleToExpr({ property: 'note.priority', op: 'eq', value: '1' })] },
+      ],
+    })
+    expect(s.properties).toEqual({ status: 'Done' })
   })
 })
 

@@ -327,11 +327,11 @@ describe('the chrome is the views chrome, minus what a folder page cannot have',
     expect(write).not.toHaveBeenCalled()
   })
 
-  it('the tabs are switch-only (no add, no view menu) and there is no Filter button (🔒 Q3)', () => {
+  it('the tabs are switch-only (no add, no view menu); the outline, a document, offers no Filter (YAZ-1218)', () => {
     const el = mount(FUNNELS)
     expect(el.querySelector('[aria-label="Add view"]')).toBeNull()
     expect(el.querySelector('[aria-label="View menu"]')).toBeNull()
-    expect(el.querySelector('[aria-label="Filter"]')).toBeNull()
+    expect(el.querySelector('[aria-label="Filter"]')).toBeNull() // documentView — rows-bearing views offer it
     expect(el.querySelector('[aria-label="Sort"]')).not.toBeNull() // the rest of the toolbar is untouched
     expect(el.querySelector('[aria-label="New note"]')).not.toBeNull()
   })
@@ -393,6 +393,31 @@ describe('config edits are ONE settings write on the folder page', () => {
       ...SETTINGS,
       views: [SETTINGS.views[0], { ...TABLE, sort: [{ property: 'file.name', direction: 'ASC' }] }, BOARD],
     })
+  })
+
+  it('a filter edit uses that same door, and emptying it deletes the key (YAZ-1235)', async () => {
+    const el = mount(FUNNELS)
+    selectView(el, 'Table')
+    click(byLabel(el, 'Filter'))
+    click([...el.querySelectorAll<HTMLElement>('.view-menu__action')].find((b) => b.textContent === 'Add rule')!)
+    await flush()
+
+    expect(write).toHaveBeenCalledTimes(1)
+    const [path, key, value] = write.mock.calls[0]
+    expect(path).toBe(FUNNELS)
+    expect(key).toBe('folder_page_settings')
+    expect(value).toEqual({
+      ...SETTINGS,
+      views: [SETTINGS.views[0], { ...TABLE, filters: { and: ['file.name.contains("")'] } }, BOARD],
+    })
+
+    click(byLabel(el, 'Remove rule'))
+    await flush()
+
+    expect(write).toHaveBeenCalledTimes(2)
+    const emptied = write.mock.calls[1][2] as { views: Record<string, unknown>[] }
+    expect(emptied.views[1]).not.toHaveProperty('filters') // empty deletes the key, never `filters: {}`
+    expect(emptied).toEqual({ ...SETTINGS, views: [...SETTINGS.views, BOARD] })
   })
 
   it('the edit shows immediately, without waiting for the index to come back', async () => {

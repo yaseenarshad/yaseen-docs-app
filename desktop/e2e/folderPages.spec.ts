@@ -196,8 +196,8 @@ test('step 1 — the contents block sits between the note and its backlinks, hol
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(dataRows(contents(win))).toHaveCount(3)
   await expect(rowNames(contents(win))).toHaveText(named(...MEMBERS))
-  // The set IS the lookup, so there is no filter to offer (🔒 Q3) and the views are switch-only.
-  await expect(contents(win).locator('[aria-label="Filter"]')).toHaveCount(0)
+  // Per-view filters returned in YAZ-1218 (🔒 Q3 amended): the button is offered; the views stay switch-only.
+  await expect(contents(win).locator('[aria-label="Filter"]')).toHaveCount(1)
   await expect(contents(win).locator('[aria-label="Add view"]')).toHaveCount(0)
   await shoot(win, 'folder-02-contents-table')
 })
