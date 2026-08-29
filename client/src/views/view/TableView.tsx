@@ -14,7 +14,7 @@ import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, useGroupDra
 import { Popover } from './Popover'
 import { usePreview } from './PreviewCard'
 import { frozenColumnCount } from './frozenColumns'
-import { TableRowContextMenu } from './TableRowContextMenu'
+import { PageContextMenu } from './PageContextMenu'
 
 export interface TableViewProps {
   def: ViewSet
@@ -262,6 +262,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const cell = event.target.closest<HTMLTableCellElement>('td[data-cell]')
     if (cell === null) return
     event.preventDefault()
+    close()
     cell.focus()
     setRowMenu({ x: event.clientX, y: event.clientY, path })
   }
@@ -443,7 +444,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           )}
         </table>
         {rowMenu !== null && (
-          <TableRowContextMenu
+          <PageContextMenu
             x={rowMenu.x}
             y={rowMenu.y}
             path={rowMenu.path}

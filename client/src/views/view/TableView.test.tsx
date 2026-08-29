@@ -757,4 +757,23 @@ describe('preview mode (YAZ-1244)', () => {
     draw()
     expect(card()).toBeNull()
   })
+
+  it('a secondary click closes the preview and opens page actions for that exact row', async () => {
+    const openBackground = vi.fn()
+    const { el } = mount(PREVIEW_BASE, { folderPage: testFolderPage({ openBackground }) })
+    const target = firstRow(el)
+    hover(target)
+    await settle(OPEN_DELAY_MS + 50)
+    expect(card()).not.toBeNull()
+
+    rightClick(q(target, 'td[data-cell]'))
+    expect(card()).toBeNull()
+    expect([...el.querySelectorAll('.ctx-menu [role="menuitem"]')].map((item) => item.textContent)).toEqual([
+      'Open in new tab',
+      'Copy path',
+      'Reveal in Finder',
+    ])
+    click([...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((item) => item.textContent === 'Open in new tab')!)
+    expect(openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
+  })
 })

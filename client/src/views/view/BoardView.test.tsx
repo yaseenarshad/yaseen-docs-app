@@ -8,10 +8,11 @@
  * the file. Collapse persists per `<basePath>::<viewName>` through `storage` (mocked here),
  * never through `onChange`; search narrows cards and drops empty columns like the table.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
+import { api, BridgeRequestError } from '../../api'
 import { type ParsedViews, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderPage } from '../testFolderPage'
@@ -29,9 +30,14 @@ vi.mock('../../api', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../api')>()
   return {
     ...original,
-    api: { ...original.api, readFile: vi.fn(async (path: string) => ({ path, content: `body of ${path}\n`, mtime: 1, size: 1 })) },
+    api: {
+      ...original.api,
+      reveal: vi.fn().mockResolvedValue({ path: '/vault/mock.md' }),
+      readFile: vi.fn(async (path: string) => ({ path, content: `body of ${path}\n`, mtime: 1, size: 1 })),
+    },
   }
 })
+const reveal = vi.mocked(api.reveal)
 vi.mock('../../editor/createCrepe', () => ({
   createCrepe: vi.fn((opts: { root: HTMLElement; defaultValue?: string }) => {
     opts.root.textContent = opts.defaultValue ?? ''
@@ -162,6 +168,19 @@ function click(el: Element): void {
   draw()
 }
 
+function rightClick(el: EventTarget, clientX = 0, clientY = 0): MouseEvent {
+  const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX, clientY })
+  act(() => void el.dispatchEvent(event))
+  draw()
+  return event
+}
+
+/** Drag events bubble like the browser's; jsdom has no DragEvent, and the handlers guard dataTransfer. */
+function drag(el: Element, type: string): void {
+  act(() => void el.dispatchEvent(new Event(type, { bubbles: true, cancelable: true })))
+  draw()
+}
+
 /** Native prototype setter + bubbling event, so React's value tracker sees the change. */
 function setValue(el: HTMLInputElement, value: string): void {
   const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
@@ -177,6 +196,17 @@ const headerTexts = (el: ParentNode): string[] => cols(el).map((c) => q(c, '.vie
 const titles = (el: ParentNode): string[] => [...el.querySelectorAll('.view-board__title')].map((b) => b.textContent ?? '')
 const toggleOf = (el: ParentNode, label: string): HTMLElement => byLabel(el, `Toggle group ${label}`)
 const colWidth = (el: ParentNode): string => q<HTMLElement>(el, '.view-board').style.getPropertyValue('--view-board-col-w')
+const menuItems = (el: ParentNode): HTMLButtonElement[] => [
+  ...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]'),
+]
+const itemNamed = (el: ParentNode, label: string): HTMLButtonElement | undefined =>
+  menuItems(el).find((item) => item.textContent === label)
+const cardNamed = (el: ParentNode, title: string): HTMLElement => {
+  const titleButton = [...el.querySelectorAll<HTMLElement>('.view-board__title')].find((candidate) => candidate.textContent === title)
+  const card = titleButton?.closest<HTMLElement>('.view-board__card')
+  if (card === null || card === undefined) throw new Error(`missing card ${title}`)
+  return card
+}
 
 // ---------- tests ----------
 
@@ -247,6 +277,196 @@ describe('cards', () => {
     expect([...gold.querySelectorAll('.view-board__prop-value')][0].textContent).toBe('')
     click(q(card, '.view-board__title'))
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
+  })
+})
+
+describe('Board-card page context menu (YAZ-1243)', () => {
+  const agenticPath = '/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md'
+  const levelsPath = '/vault/Content Pillars/1. Agentic Agency/The Levels of an Agency.md'
+  let writeText: ReturnType<typeof vi.fn>
+  const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+
+  beforeEach(() => {
+    reveal.mockReset().mockResolvedValue({ path: agenticPath })
+    writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true })
+  })
+
+  afterEach(() => {
+    if (clipboardDescriptor === undefined) delete (navigator as unknown as Record<string, unknown>).clipboard
+    else Object.defineProperty(navigator, 'clipboard', clipboardDescriptor)
+  })
+
+  it('opens the shared actions from any point in a rendered card, at the pointer, without opening or editing it', () => {
+    const openBackground = vi.fn()
+    const { el, onOpenFile, onChange } = mount(BOARD_BASE, { folderPage: testFolderPage({ openBackground }) })
+    const card = cardNamed(el, 'Agentic Agency.md')
+    const event = rightClick(q(card, '.view-board__prop-value'), 120, 42)
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(q<HTMLElement>(el, '.ctx-menu').style.left).toBe('120px')
+    expect(q<HTMLElement>(el, '.ctx-menu').style.top).toBe('42px')
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open in new tab', 'Copy path', 'Reveal in Finder'])
+    expect(onOpenFile).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+    expect(el.querySelector('.view-cell-edit__input, .view-table__selected')).toBeNull()
+  })
+
+  it('opens in the background, copies, and reveals the exact absolute card path, closing after every action', () => {
+    const openBackground = vi.fn()
+    const { el, onOpenFile } = mount(BOARD_BASE, { folderPage: testFolderPage({ openBackground }) })
+    const card = cardNamed(el, 'Agentic Agency.md')
+
+    rightClick(card)
+    click(itemNamed(el, 'Open in new tab')!)
+    expect(openBackground).toHaveBeenCalledExactlyOnceWith(agenticPath)
+    expect(onOpenFile).not.toHaveBeenCalled()
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+
+    rightClick(card)
+    click(itemNamed(el, 'Copy path')!)
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(agenticPath)
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+
+    rightClick(card)
+    click(itemNamed(el, 'Reveal in Finder')!)
+    expect(reveal).toHaveBeenCalledExactlyOnceWith({ path: agenticPath })
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('reports a stale Reveal through the folder-page passive notice', async () => {
+    const onNotice = vi.fn()
+    reveal.mockRejectedValueOnce(new BridgeRequestError('NOT_FOUND', 'gone'))
+    const { el } = mount(BOARD_BASE, { folderPage: testFolderPage({ openBackground: vi.fn(), onNotice }) })
+    rightClick(cardNamed(el, 'Agentic Agency.md'))
+    click(itemNamed(el, 'Reveal in Finder')!)
+    await act(async () => Promise.resolve())
+
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith(`Can't reveal "Agentic Agency.md" — it is no longer there`)
+  })
+
+  it('retargets to the latest card and dismisses on Escape or an outside press', () => {
+    const { el } = mount(BOARD_BASE, { folderPage: testFolderPage({ openBackground: vi.fn() }) })
+    rightClick(cardNamed(el, 'Agentic Agency.md'))
+    rightClick(cardNamed(el, 'The Levels of an Agency.md'))
+    click(itemNamed(el, 'Copy path')!)
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(levelsPath)
+
+    rightClick(cardNamed(el, 'Agentic Agency.md'))
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+
+    rightClick(cardNamed(el, 'Agentic Agency.md'))
+    act(() => void document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('dismisses a card menu when switching between Board tabs without resetting the whole Board', () => {
+    const { el } = mount(`views:
+  - type: board
+    name: Board A
+    order: [file.name]
+    groupBy: { property: note.status }
+  - type: board
+    name: Board B
+    order: [file.name]
+    groupBy: { property: note.pillar }
+`)
+    const tab = (name: string): HTMLElement => {
+      const button = [...el.querySelectorAll<HTMLElement>('.view-tab__btn')].find((candidate) => candidate.textContent === name)
+      if (button === undefined) throw new Error(`missing tab ${name}`)
+      return button
+    }
+
+    rightClick(cardNamed(el, 'Agentic Agency.md'))
+    expect(el.querySelector('.ctx-menu')).not.toBeNull()
+    click(tab('Board B')) // `.click()` emits no outside mousedown: the view change must own dismissal.
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    click(tab('Board A'))
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('keeps the record path when file.name is hidden, cards are nested, or one record is fanned out', () => {
+    const openBackground = vi.fn()
+    const hidden = mount(
+      'views:\n  - type: board\n    name: B\n    order:\n      - note.priority\n    groupBy:\n      property: note.status\n',
+      { folderPage: testFolderPage({ openBackground }) },
+    )
+    rightClick(q(hidden.el, '.view-board__card'))
+    click(itemNamed(hidden.el, 'Open in new tab')!)
+    expect(openBackground).toHaveBeenLastCalledWith(levelsPath)
+
+    unmount()
+    const nested = mount(NESTED_BOARD, { records: NESTED_RECORDS, folderPage: testFolderPage({ openBackground }) })
+    rightClick(cardNamed(nested.el, 'alphaDirect.md'))
+    click(itemNamed(nested.el, 'Open in new tab')!)
+    expect(openBackground).toHaveBeenLastCalledWith('/vault/alphaDirect.md')
+    rightClick(cardNamed(nested.el, 'alpha1.md'))
+    click(itemNamed(nested.el, 'Open in new tab')!)
+    expect(openBackground).toHaveBeenLastCalledWith('/vault/alpha1.md')
+
+    unmount()
+    const fanned = mount('views:\n  - type: board\n    name: B\n    order:\n      - file.name\n    groupBy:\n      property: note.tags\n', {
+      folderPage: testFolderPage({ openBackground }),
+    })
+    const repeated = [...fanned.el.querySelectorAll<HTMLElement>('.view-board__title')].filter(
+      (title) => title.textContent === 'Agentic Agency.md',
+    )
+    expect(repeated).toHaveLength(2)
+    rightClick(q(repeated[1].closest<HTMLElement>('.view-board__card')!, '.view-board__line'))
+    click(itemNamed(fanned.el, 'Open in new tab')!)
+    expect(openBackground).toHaveBeenLastCalledWith(agenticPath)
+  })
+
+  it('keeps the exact record target on an otherwise-empty card shell', () => {
+    const openBackground = vi.fn()
+    const { el } = mount('views:\n  - type: board\n    name: B\n    order: []\n    groupBy:\n      property: note.status\n', {
+      folderPage: testFolderPage({ openBackground }),
+    })
+    const shell = q<HTMLElement>(el, '.view-board__card')
+    expect(shell.querySelector('.view-board__line')).toBeNull()
+
+    expect(rightClick(shell).defaultPrevented).toBe(true)
+    click(itemNamed(el, 'Open in new tab')!)
+    expect(openBackground).toHaveBeenCalledExactlyOnceWith(levelsPath)
+  })
+
+  it('leaves headers, add controls, placeholders, the no-group hint, and other view types on their native menu', () => {
+    const openBackground = vi.fn()
+    const { el } = mount(BOARD_BASE, { folderPage: testFolderPage({ openBackground }) })
+    const firstCard = cardNamed(el, 'Agentic Agency.md')
+    const drafting = cols(el)[0]
+    const idea = cols(el)[1]
+
+    for (const target of [q(el, '.view-group'), byLabel(el, 'New card')]) {
+      expect(rightClick(target).defaultPrevented).toBe(false)
+      expect(el.querySelector('.ctx-menu')).toBeNull()
+    }
+    click(byLabel(el, 'New card'))
+    expect(rightClick(byLabel(el, 'New card name')).defaultPrevented).toBe(false)
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    drag(firstCard, 'dragstart')
+    drag(drafting, 'dragover')
+    expect(rightClick(q(el, '.view-board__placeholder')).defaultPrevented).toBe(false)
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    drag(firstCard, 'dragend')
+
+    unmount()
+    const nested = mount(NESTED_BOARD, { records: NESTED_RECORDS, folderPage: testFolderPage({ openBackground }) })
+    expect(rightClick(q(nested.el, '.view-board__subgroup > .view-group')).defaultPrevented).toBe(false)
+    expect(nested.el.querySelector('.ctx-menu')).toBeNull()
+
+    unmount()
+    const hint = mount(NO_GROUP_BASE, { folderPage: testFolderPage({ openBackground }) })
+    expect(rightClick(q(hint.el, '.view-board__hint')).defaultPrevented).toBe(false)
+    expect(hint.el.querySelector('.ctx-menu')).toBeNull()
+
+    unmount()
+    const list = mount('views:\n  - type: list\n    name: L\n    order:\n      - file.name\n', {
+      folderPage: testFolderPage({ openBackground }),
+    })
+    expect(rightClick(q(list.el, '.view-list__item')).defaultPrevented).toBe(false)
+    expect(list.el.querySelector('.ctx-menu')).toBeNull()
   })
 })
 
@@ -571,5 +791,20 @@ describe('preview mode (YAZ-1244)', () => {
     act(() => void target.dispatchEvent(new Event('dragstart', { bubbles: true, cancelable: true })))
     draw()
     expect(previewCard()).toBeNull()
+  })
+
+  it('a secondary click closes the preview and opens page actions for that exact card', async () => {
+    const openBackground = vi.fn()
+    const { el } = mount(PREVIEW_BOARD, { folderPage: testFolderPage({ openBackground }) })
+    const target = cardNamed(el, 'Agentic Agency.md')
+    hover(target)
+    await settle(OPEN_DELAY_MS + 50)
+    expect(previewCard()).not.toBeNull()
+
+    rightClick(target)
+    expect(previewCard()).toBeNull()
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open in new tab', 'Copy path', 'Reveal in Finder'])
+    click(itemNamed(el, 'Open in new tab')!)
+    expect(openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
   })
 })

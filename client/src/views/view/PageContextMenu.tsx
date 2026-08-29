@@ -2,7 +2,7 @@ import { api, BridgeRequestError } from '../../api'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
 import { basename } from '../../lib/paths'
 
-interface TableRowContextMenuProps {
+interface PageContextMenuProps {
   x: number
   y: number
   path: string
@@ -11,8 +11,8 @@ interface TableRowContextMenuProps {
   onClose: () => void
 }
 
-/** Page actions owned by a folder-page table row; positioning and dismissal stay action-free. */
-export function TableRowContextMenu({ x, y, path, onOpenBackground, onNotice, onClose }: TableRowContextMenuProps) {
+/** Page actions shared by folder-page views; positioning and dismissal stay action-free. */
+export function PageContextMenu({ x, y, path, onOpenBackground, onNotice, onClose }: PageContextMenuProps) {
   const reveal = (): void => {
     onClose()
     api.reveal({ path }).catch((error: unknown) => {
@@ -44,7 +44,9 @@ export function TableRowContextMenu({ x, y, path, onOpenBackground, onNotice, on
         className="ctx-menu__item"
         role="menuitem"
         onClick={() => {
-          void navigator.clipboard.writeText(path)
+          void navigator.clipboard.writeText(path).catch((error: unknown) => {
+            onNotice?.(`Can't copy path: ${error instanceof Error ? error.message : String(error)}`)
+          })
           onClose()
         }}
       >

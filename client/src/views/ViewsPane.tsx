@@ -409,6 +409,8 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
           onToggleGroup={onToggleGroup}
           onUpdate={update}
           onOpenFile={onOpenFile}
+          onOpenFileBackground={folderPage.openBackground}
+          onNotice={folderPage.onNotice}
           onMoveToGroup={onMoveToGroup}
           moveError={moveError}
           onNewInGroup={onNewNote}
