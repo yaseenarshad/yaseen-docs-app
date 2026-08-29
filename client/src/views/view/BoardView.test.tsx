@@ -362,6 +362,31 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
+  it('dismisses a card menu when switching between Board tabs without resetting the whole Board', () => {
+    const { el } = mount(`views:
+  - type: board
+    name: Board A
+    order: [file.name]
+    groupBy: { property: note.status }
+  - type: board
+    name: Board B
+    order: [file.name]
+    groupBy: { property: note.pillar }
+`)
+    const tab = (name: string): HTMLElement => {
+      const button = [...el.querySelectorAll<HTMLElement>('.view-tab__btn')].find((candidate) => candidate.textContent === name)
+      if (button === undefined) throw new Error(`missing tab ${name}`)
+      return button
+    }
+
+    rightClick(cardNamed(el, 'Agentic Agency.md'))
+    expect(el.querySelector('.ctx-menu')).not.toBeNull()
+    click(tab('Board B')) // `.click()` emits no outside mousedown: the view change must own dismissal.
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    click(tab('Board A'))
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
   it('keeps the record path when file.name is hidden, cards are nested, or one record is fanned out', () => {
     const openBackground = vi.fn()
     const hidden = mount(

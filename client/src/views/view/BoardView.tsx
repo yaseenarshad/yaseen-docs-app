@@ -1,4 +1,4 @@
-import { type CSSProperties, Fragment, type MouseEvent as ReactMouseEvent, useState } from 'react'
+import { type CSSProperties, Fragment, type MouseEvent as ReactMouseEvent, useEffect, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
@@ -93,6 +93,8 @@ export function BoardView({
   const [adding, setAdding] = useState<{ key: string; name: string } | null>(null)
   /** The exact rendered record targeted by the latest whole-card secondary click. */
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
+  /** ViewsPane reuses this component between Board tabs; no action may retain the previous Board's record. */
+  useEffect(() => setMenu(null), [viewIndex])
   if (groups === null) {
     const fallback = allPropertyKeys(def, view, records).find((k) => !canonicalKey(k).startsWith('file.')) ?? 'file.folder'
     return (
