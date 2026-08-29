@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 /**
  * Hotkey reference (GRO-2067 Q4): keyboard-icon button beside the settings cog; the popover
  * lists every binding from this single source-of-truth list. When a keymap changes anywhere
- * (hotkeys.ts, headingHotkeys.ts, zoom.ts, marks/underline.ts, listCommands.ts, views/view/*, the application
+ * (hotkeys.ts, foldAllHotkeys.ts, headingHotkeys.ts, zoom.ts, marks/underline.ts, listCommands.ts, views/view/*, the application
  * menu in desktop/src/main/menu.ts), update HOTKEYS (or VIEW_HOTKEYS / WINDOW_HOTKEYS) with it —
  * `VIEW_HOTKEYS` is the folder-page view surface's own set (table / cards / outline bindings); it
  * was `BASES_HOTKEYS` under the heading "Bases" until YAZ-861 renamed both to what they describe.
@@ -17,8 +17,8 @@ export interface HotkeyEntry {
 
 export const HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘↑ / ⌘↓', label: 'Fold / unfold the bullet or heading section at the caret' },
-  { keys: '⌘⇧U', label: 'Fold all bullets' },
-  { keys: '⌘⇧I', label: 'Unfold all bullets' },
+  { keys: '⌘⇧U', label: 'Fold all bullets and headings' },
+  { keys: '⌘⇧I', label: 'Unfold all bullets and headings' },
   { keys: '⌘Z', label: 'Undo — also reverts the latest fold or zoom' },
   { keys: '⌘⇧Z', label: 'Redo' },
   { keys: '⌘.', label: 'Zoom into the bullet at the caret' },

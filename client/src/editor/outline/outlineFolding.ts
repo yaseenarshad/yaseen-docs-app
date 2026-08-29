@@ -10,12 +10,13 @@
  * Persistence is by stable fold key (see outlineFoldKeys.ts), not by position.
  * ⌘Z panic-undo (GRO-2075): the state also remembers the most recent fold action while it is
  * the latest USER action; `undoLastFold` (bound to Mod-z in hotkeys.ts) reverts exactly that.
- * Any other view action — a zoom (zoom.ts) or a heading fold (headingFolding.ts, YAZ-1140) —
- * clears the pending fold undo (GRO-2091 B, see viewActions.ts), so ⌘Z always reverts the
- * single latest view action of any kind.
+ * Any foreign view action — a zoom (zoom.ts) or an individual heading fold (headingFolding.ts,
+ * YAZ-1140) — clears the pending fold undo (GRO-2091 B, see viewActions.ts). The one deliberate
+ * exception is `document-fold`: foldAllHotkeys.ts updates bullets + headings atomically, so both
+ * halves remain eligible and one ⌘Z restores both exact prior sets.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import { type Command, type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { type Command, type EditorState, Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { findNestedLists, innermostItemPos, itemLabelText, LIST_NODE_NAMES } from './listNodes'
@@ -92,12 +93,20 @@ export const collapsedItemsHiding = (state: EditorState, pos: number): number[] 
     .map(({ itemPos }) => itemPos)
 }
 
-const foldAllCommand = (meta: 'fold-all' | 'unfold-all'): Command => (state, dispatch) => {
+/** Add this plugin's half of a document-wide fold-all transaction without dispatching it. */
+export const addOutlineFoldAllMeta = (state: EditorState, transaction: Transaction, collapsed: boolean): boolean => {
   const foldingState = pluginKey.getState(state)
   if (!foldingState || foldingState.entries.length === 0) return false
   const allCollapsed = foldingState.entries.every(({ itemPos }) => foldingState.collapsedItemPositions.has(itemPos))
-  if (meta === 'fold-all' ? allCollapsed : foldingState.collapsedItemPositions.size === 0) return false
-  dispatch?.(foldTransaction(state, meta))
+  if (collapsed ? allCollapsed : foldingState.collapsedItemPositions.size === 0) return false
+  transaction.setMeta(pluginKey, collapsed ? 'fold-all' : 'unfold-all')
+  return true
+}
+
+const foldAllCommand = (meta: 'fold-all' | 'unfold-all'): Command => (state, dispatch) => {
+  const transaction = state.tr
+  if (!addOutlineFoldAllMeta(state, transaction, meta === 'fold-all')) return false
+  dispatch?.(transaction.setMeta(VIEW_ACTION_META, 'fold' satisfies ViewAction))
   return true
 }
 
@@ -168,13 +177,18 @@ export const foldAllOutline: Command = foldAllCommand('fold-all')
 /** Expand every parent item (GRO-2027 `Mod-Shift-i`). */
 export const unfoldAllOutline: Command = foldAllCommand('unfold-all')
 
-/**
- * ⌘Z panic-undo (GRO-2075): revert the most recent fold action iff no document change
- * happened after it; returns false otherwise so ProseMirror's own undo runs.
- */
-export const undoLastFold: Command = (state, dispatch) => {
+/** Add this plugin's half of a combined fold undo without dispatching it. Declines when stale. */
+export const addOutlineFoldUndoMeta = (state: EditorState, transaction: Transaction): boolean => {
   if (!pluginKey.getState(state)?.lastToggle) return false
-  dispatch?.(foldTransaction(state, 'undo-fold'))
+  transaction.setMeta(pluginKey, 'undo-fold')
+  return true
+}
+
+/** ⌘Z: revert the latest eligible bullet fold, otherwise let ProseMirror's undo run. */
+export const undoLastFold: Command = (state, dispatch) => {
+  const transaction = state.tr
+  if (!addOutlineFoldUndoMeta(state, transaction)) return false
+  dispatch?.(transaction.setMeta(VIEW_ACTION_META, 'fold' satisfies ViewAction))
   return true
 }
 
@@ -265,7 +279,7 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
             let lastToggle = previousState.lastToggle
             if (transaction.docChanged && !appended) lastToggle = null
             // A newer view action of another kind — a zoom or a heading fold (YAZ-1140) — owns ⌘Z now.
-            else if (viewAction !== undefined && viewAction !== 'fold') lastToggle = null
+            else if (viewAction !== undefined && viewAction !== 'fold' && viewAction !== 'document-fold') lastToggle = null
             else if (transaction.docChanged && lastToggle !== null) {
               lastToggle =
                 lastToggle.kind === 'toggle'

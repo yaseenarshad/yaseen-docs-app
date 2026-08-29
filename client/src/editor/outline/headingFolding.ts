@@ -15,11 +15,12 @@
  * Persistence is by stable fold key: `h:` + the bullet scheme (outlineFoldKeys.ts), so the two key
  * spaces can never collide even though they hash labels the same way.
  * ⌘Z panic-undo (the GRO-2075 protocol): the state remembers the most recent fold action while it
- * is the latest USER action, and drops it the moment a FOREIGN view action goes by — a bullet fold
- * or a zoom (see viewActions.ts) — so ⌘Z always reverts the single latest view action of any kind.
+ * is the latest USER action, and drops it when a foreign view action goes by — an individual bullet
+ * fold or a zoom (see viewActions.ts). `document-fold` is deliberately shared: foldAllHotkeys.ts
+ * updates headings + bullets atomically, and one ⌘Z restores both exact prior sets.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import { type Command, type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { type Command, type EditorState, Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { innermostItemPos, LIST_NODE_NAMES } from './listNodes'
@@ -65,8 +66,8 @@ export const HEADING_FOLDED_ATTR = 'data-heading-folded'
 /** Shared across instances: a PluginKey only identifies the plugin within one EditorState. */
 const pluginKey = new PluginKey<HeadingFoldingState>('mdapp-heading-folding')
 
-/** Transaction meta understood by the plugin: toggle one heading (by position), fold/unfold an explicit set (`FoldSetMeta`), or revert the latest fold. */
-type FoldMeta = number | 'undo-fold' | FoldSetMeta
+/** Transaction meta understood by the plugin: toggle one heading, fold/unfold all or an explicit set, or revert the latest fold. */
+type FoldMeta = number | 'fold-all' | 'unfold-all' | 'undo-fold' | FoldSetMeta
 interface FoldSetMeta {
   set: readonly number[]
   collapsed: boolean
@@ -105,6 +106,16 @@ export const collapsedHeadingsHiding = (state: EditorState, pos: number): number
         sectionBlockRanges.some((range) => pos >= range.from && pos < range.to),
     )
     .map(({ headingPos }) => headingPos)
+}
+
+/** Add this plugin's half of a document-wide fold-all transaction without dispatching it. */
+export const addHeadingFoldAllMeta = (state: EditorState, transaction: Transaction, collapsed: boolean): boolean => {
+  const foldingState = pluginKey.getState(state)
+  if (!foldingState || foldingState.entries.length === 0) return false
+  const allCollapsed = foldingState.entries.every(({ headingPos }) => foldingState.collapsedHeadingPositions.has(headingPos))
+  if (collapsed ? allCollapsed : foldingState.collapsedHeadingPositions.size === 0) return false
+  transaction.setMeta(pluginKey, collapsed ? 'fold-all' : 'unfold-all')
+  return true
 }
 
 /**
@@ -146,13 +157,18 @@ export const setHeadingFoldSet =
     return true
   }
 
-/**
- * ⌘Z panic-undo (GRO-2075): revert the most recent heading fold iff no document change
- * happened after it; returns false otherwise so the next handler (or ProseMirror's own undo) runs.
- */
-export const undoLastHeadingFold: Command = (state, dispatch) => {
+/** Add this plugin's half of a combined fold undo without dispatching it. Declines when stale. */
+export const addHeadingFoldUndoMeta = (state: EditorState, transaction: Transaction): boolean => {
   if (!pluginKey.getState(state)?.lastToggle) return false
-  dispatch?.(foldTransaction(state, 'undo-fold'))
+  transaction.setMeta(pluginKey, 'undo-fold')
+  return true
+}
+
+/** ⌘Z: revert the latest eligible heading fold, otherwise let the next undo handler run. */
+export const undoLastHeadingFold: Command = (state, dispatch) => {
+  const transaction = state.tr
+  if (!addHeadingFoldUndoMeta(state, transaction)) return false
+  dispatch?.(transaction.setMeta(VIEW_ACTION_META, 'heading-fold' satisfies ViewAction))
   return true
 }
 
@@ -272,7 +288,7 @@ export const createHeadingFolding = ({ initialCollapsedKeys = new Set(), onColla
             let lastToggle = previousState.lastToggle
             if (transaction.docChanged && !appended) lastToggle = null
             // A bullet fold or a zoom is the newer view action now: ⌘Z belongs to it, not to this fold.
-            else if (viewAction !== undefined && viewAction !== 'heading-fold') lastToggle = null
+            else if (viewAction !== undefined && viewAction !== 'heading-fold' && viewAction !== 'document-fold') lastToggle = null
             else if (transaction.docChanged && lastToggle !== null) {
               lastToggle =
                 lastToggle.kind === 'toggle'
@@ -286,6 +302,18 @@ export const createHeadingFolding = ({ initialCollapsedKeys = new Set(), onColla
             }
 
             const meta: FoldMeta | undefined = transaction.getMeta(pluginKey)
+            if (meta === 'fold-all')
+              return {
+                entries,
+                collapsedHeadingPositions: headingPositions,
+                lastToggle: { kind: 'set', previousCollapsed: collapsedHeadingPositions },
+              }
+            if (meta === 'unfold-all')
+              return {
+                entries,
+                collapsedHeadingPositions: new Set(),
+                lastToggle: { kind: 'set', previousCollapsed: collapsedHeadingPositions },
+              }
             if (meta === 'undo-fold' && lastToggle !== null) {
               if (lastToggle.kind === 'set') {
                 const restored = new Set([...lastToggle.previousCollapsed].filter((p) => headingPositions.has(p)))

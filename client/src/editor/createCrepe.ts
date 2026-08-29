@@ -17,8 +17,8 @@
  *  - Empty list items round-trip as bare markers, never `* <br />` (GRO-2012,
  *    `listItemRoundTrip.ts`): `<br />` opened an HTML block that swallowed nested children.
  *    Empty task items are `* [ ]` on disk and `* [ ] <br />` inside Milkdown (GRO-2018).
- *  - Obsidian hotkeys (GRO-2027, `outline/hotkeys.ts`): Mod-Enter task cycle, Mod-Shift-u/i
- *    fold/unfold all, Mod-Shift-x strikethrough.
+ *  - Obsidian hotkeys (GRO-2027, `outline/hotkeys.ts` + `outline/foldAllHotkeys.ts`): Mod-Enter
+ *    task cycle, Mod-Shift-u/i fold/unfold all bullets + headings, Mod-Shift-x strikethrough.
  *  - Underline mark (GRO-2028, `marks/underline.ts`): Mod-u ↔ `<u>text</u>` inline HTML.
  *  - Zoom into a bullet (GRO-2029, `outline/zoom.ts`): view-state-only decorations + breadcrumbs;
  *    glyph click / Mod-. / Mod-Shift-. ; never a document change.
@@ -90,6 +90,7 @@ import { guideLines } from './outline/guideLines'
 import { numberChildrenRow } from './outline/numberChildrenRow'
 import { createHeadingFolding, type HeadingFoldingOptions } from './outline/headingFolding'
 import { headingHotkeys } from './outline/headingHotkeys'
+import { foldAllHotkeys } from './outline/foldAllHotkeys'
 import { obsidianHotkeys } from './outline/hotkeys'
 import { outlinerKeymap } from './outline/listCommands'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
@@ -228,12 +229,12 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // equal priorities in addition order — an OPEN [[ picker takes Enter, closed falls through.
   crepe.editor.use(wikilinkPickerKeymap)
   crepe.editor.use(outlinerKeymap)
-  // Beside obsidianHotkeys, the other half of the fold keymap. Both bind Mod-z at priority 100 and
-  // handlers run in registration order, but the order does not decide the winner: each fold plugin
-  // drops its pending undo the moment the OTHER kind's view action goes by (viewActions.ts), so at
-  // most one of them ever has a fold to revert and the other declines. Mod-ArrowUp/Down is
-  // order-independent too — the bullet handler consumes only inside list items, and the heading
-  // handler declines there.
+  // The document-wide coordinator runs first: it owns Mod-Shift-U/I and consumes Mod-z only when
+  // BOTH fold plugins are pending from that one atomic gesture. Individual heading/bullet folds
+  // fall through to their existing undo handlers; foreign view actions still clear stale pending
+  // state through viewActions.ts. Mod-ArrowUp/Down remains order-independent: the bullet handler
+  // consumes only inside list items, and the heading handler declines there.
+  crepe.editor.use(foldAllHotkeys)
   crepe.editor.use(headingHotkeys)
   crepe.editor.use(obsidianHotkeys)
   crepe.editor.use(escapeToSidebar)

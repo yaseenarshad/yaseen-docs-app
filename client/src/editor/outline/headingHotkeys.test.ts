@@ -56,7 +56,7 @@ afterEach(async () => {
 /** ProseMirror resolves `Mod` from `navigator.platform` (jsdom: not mac → Ctrl). */
 const IS_MAC = /Mac/.test(navigator.platform)
 
-type Key = 'Mod-z' | 'Mod-ArrowUp' | 'Mod-ArrowDown'
+type Key = 'Mod-z' | 'Mod-Shift-u' | 'Mod-Shift-i' | 'Mod-ArrowUp' | 'Mod-ArrowDown'
 const NAMED_KEY_CODES: Record<string, number> = { ArrowUp: 38, ArrowDown: 40 }
 
 function press(crepe: Crepe, key: Key): boolean {
@@ -69,6 +69,7 @@ function press(crepe: Crepe, key: Key): boolean {
       code: named ? letter : `Key${letter.toUpperCase()}`,
       keyCode: NAMED_KEY_CODES[letter] ?? letter.toUpperCase().charCodeAt(0),
       ...(IS_MAC ? { metaKey: true } : { ctrlKey: true }),
+      shiftKey: key.includes('Shift'),
       bubbles: true,
       cancelable: true,
     }
@@ -132,6 +133,38 @@ describe('Mod-ArrowUp / Mod-ArrowDown on headings', () => {
     expect(bulletFolded(root)).toBe(1)
     expect(headingFolded(root)).toBe(0)
     expect(headingToggle(root, 'Top').getAttribute('aria-expanded')).toBe('true')
+  })
+})
+
+describe('Mod-Shift-u / Mod-Shift-i across bullets and headings', () => {
+  it('folds both kinds in one action and Mod-z restores both exact prior sets', async () => {
+    const { crepe, root } = await mount(MIXED)
+    const before = getMarkdownForSave(crepe)
+
+    expect(press(crepe, 'Mod-Shift-u')).toBe(true)
+    expect(headingFolded(root)).toBeGreaterThan(0)
+    expect(bulletFolded(root)).toBe(1)
+
+    expect(press(crepe, 'Mod-z')).toBe(true)
+    expect(headingFolded(root)).toBe(0)
+    expect(bulletFolded(root)).toBe(0)
+    expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+
+  it('unfolds both kinds in one action and Mod-z restores both exact prior sets', async () => {
+    const { crepe, root } = await mount(MIXED)
+    headingToggle(root, 'Top').click()
+    root.querySelector<HTMLButtonElement>(`.${OUTLINE_TOGGLE_CLASS}`)!.click()
+    expect(headingFolded(root)).toBeGreaterThan(0)
+    expect(bulletFolded(root)).toBe(1)
+
+    expect(press(crepe, 'Mod-Shift-i')).toBe(true)
+    expect(headingFolded(root)).toBe(0)
+    expect(bulletFolded(root)).toBe(0)
+
+    expect(press(crepe, 'Mod-z')).toBe(true)
+    expect(headingFolded(root)).toBeGreaterThan(0)
+    expect(bulletFolded(root)).toBe(1)
   })
 })
 

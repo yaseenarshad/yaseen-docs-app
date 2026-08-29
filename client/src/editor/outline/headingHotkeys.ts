@@ -8,7 +8,7 @@
  *                  latest VIEW action; declines otherwise so the bullet fold undo, zoom undo and
  *                  finally history's own `Mod-z` get the key in turn.
  *
- * No fold-all bindings: ⌘⇧U / ⌘⇧I stay bullets-only in v1.
+ * Fold-all bindings live in foldAllHotkeys.ts because one transaction coordinates headings + bullets.
  * Registered with priority 100 (above Crepe's 50), like `hotkeys.ts`, and BEFORE it — see the
  * ordering note in `createCrepe.ts`.
  */

@@ -8,6 +8,8 @@ describe('HOTKEYS source of truth', () => {
     for (const expected of ['⌘↑ / ⌘↓', '⌘⇧U', '⌘⇧I', '⌘Z', '⌘⇧Z', '⌘.', '⌘⇧.', '⌘⏎', '⌘U', '⌘⇧X', 'Tab / ⇧Tab']) {
       expect(keys).toContain(expected)
     }
+    expect(HOTKEYS.find((h) => h.keys === '⌘⇧U')?.label).toMatch(/bullets and headings/i)
+    expect(HOTKEYS.find((h) => h.keys === '⌘⇧I')?.label).toMatch(/bullets and headings/i)
   })
 
   it('covers the folder-page view bindings', () => {

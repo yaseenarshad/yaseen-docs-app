@@ -7,9 +7,7 @@
  *                  first block touches the selection change, so a parent whose text sits above the
  *                  selection stays as it is. Outside list items the key falls through (Crepe's
  *                  table `Mod-Enter` = exit table, CodeMirror's = exit code block are untouched).
- *  - `Mod-Shift-u` fold every parent item, `Mod-Shift-i` unfold all — through the GRO-2011 plugin's
- *                  meta API (`foldAllOutline` / `unfoldAllOutline`), so the plugin stays the single
- *                  owner of fold state and persistence goes through `onCollapsedKeysChange`.
+ *  - `Mod-Shift-u` / `Mod-Shift-i` are coordinated across bullets + headings by foldAllHotkeys.ts.
  *  - `Mod-ArrowUp` / `Mod-ArrowDown` (GRO-2092, Logseq's defaults) fold / unfold the caret's item;
  *                  consumed inside any list item (leaf = no-op), falls through outside lists so the
  *                  native ⌘↑/⌘↓ document jump still works in prose.
@@ -27,7 +25,7 @@ import { toggleStrikethroughCommand } from '@milkdown/kit/preset/gfm'
 import type { NodeType } from '@milkdown/kit/prose/model'
 import type { Command, EditorState } from '@milkdown/kit/prose/state'
 import { $shortcut } from '@milkdown/kit/utils'
-import { foldAllOutline, setOutlineFoldAtSelection, undoLastFold, unfoldAllOutline } from './outlineFolding'
+import { setOutlineFoldAtSelection, undoLastFold } from './outlineFolding'
 
 /** Priority above Crepe's list/table/base keymaps (default 50). */
 const PRIORITY = 100
@@ -77,8 +75,6 @@ export const obsidianHotkeys = $shortcut((ctx: Ctx) => {
     CycleTask: { key: 'Mod-Enter', priority: PRIORITY, onRun: () => cycleTaskCommand(itemType) },
     FoldItem: { key: 'Mod-ArrowUp', priority: PRIORITY, onRun: () => setOutlineFoldAtSelection(true) },
     UnfoldItem: { key: 'Mod-ArrowDown', priority: PRIORITY, onRun: () => setOutlineFoldAtSelection(false) },
-    FoldAll: { key: 'Mod-Shift-u', priority: PRIORITY, onRun: () => foldAllOutline },
-    UnfoldAll: { key: 'Mod-Shift-i', priority: PRIORITY, onRun: () => unfoldAllOutline },
     UndoFold: { key: 'Mod-z', priority: PRIORITY, onRun: () => undoLastFold },
     Strikethrough: { key: 'Mod-Shift-x', priority: PRIORITY, onRun: () => strike },
   }
