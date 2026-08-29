@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, parseViews } from './viewSchema'
 import { type ViewResult, makeResolver, propertyKeys, propertyLabel, resolverFor, runView } from './engine'
+import { type Rule, fromGroup, ruleToExpr } from './view/filterRows'
 import { DateValue, ErrorValue, FileValue } from './expr'
 import { TEST_RECORDS } from './testRecords'
 
@@ -162,6 +163,55 @@ describe('runView: filters (GRO-2133)', () => {
     expect(run({ filters: 'file.hasLink(this)', sort: [] }, {}, { thisFile: null }).rows).toHaveLength(0)
     expect(run({ filters: 'file.hasLink(this)', sort: [] }, {}, { thisFile: '/vault/nope.md' }).rows).toHaveLength(0)
     expect(run({ filters: 'this.basename == "Agentic Agency"', sort: [] }, {}, { thisFile: AGENTIC }).rows).toHaveLength(8)
+  })
+})
+
+describe('runView: filters built by the Filter model (YAZ-1225)', () => {
+  /** One model-built rule as the whole filter; every case must evaluate error-free. */
+  const byRule = (rule: Rule): ViewResult => run({ filters: ruleToExpr(rule), sort: [] })
+
+  it.each<{ rule: Rule; rows: string[] }>([
+    { rule: { property: 'note.status', op: 'is', value: 'idea' }, rows: ['Agentic Agency', 'The Gold In Your Archive'] },
+    { rule: { property: 'note.status', op: 'contains', value: 'ish' }, rows: ['Creator Economy', 'VSL-v1'] },
+    { rule: { property: 'note.status', op: 'isNotEmpty', value: '' }, rows: ['Agentic Agency', 'The Levels of an Agency', 'Creator Economy', 'The Gold In Your Archive', 'VSL-v1'] },
+    { rule: { property: 'note.priority', op: 'gt', value: '1' }, rows: ['Agentic Agency', 'Creator Economy'] },
+    { rule: { property: 'note.priority', op: 'isEmpty', value: '' }, rows: ['The Gold In Your Archive', 'Attribution', 'Tech & Silicon Valley', 'List of Topics', 'VSL-v1'] },
+    // Missing values coerce to 0 in ordering comparisons (`toNumber(null)`), so every undated
+    // note also matches `dateBefore` today. Pinned as-is pending D5 (YAZ-1218) — Notion excludes empties.
+    { rule: { property: 'note.date', op: 'dateBefore', value: '2026-08-01' }, rows: ['The Levels of an Agency', 'Creator Economy', 'The Gold In Your Archive', 'Attribution', 'Tech & Silicon Valley', 'List of Topics', 'VSL-v1'] },
+    { rule: { property: 'note.date', op: 'isNotEmpty', value: '' }, rows: ['Agentic Agency', 'Creator Economy'] },
+    { rule: { property: 'note.published', op: 'checked', value: '' }, rows: ['Creator Economy'] },
+    { rule: { property: 'note.published', op: 'unchecked', value: '' }, rows: ['Agentic Agency'] },
+    // A list `contains` matches whole elements via equals; a scalar value falls to the string method.
+    { rule: { property: 'note.tags', op: 'contains', value: 'pillar' }, rows: ['Agentic Agency'] },
+    { rule: { property: 'note.tags', op: 'contains', value: 'creator' }, rows: ['The Gold In Your Archive'] },
+    // A link value equals its plain target name (the 1B matrix's link `is`).
+    { rule: { property: 'note.related', op: 'is', value: 'Agentic Agency' }, rows: ['The Levels of an Agency'] },
+    { rule: { property: 'file.tags', op: 'hasTag', value: 'pillar' }, rows: ['Agentic Agency'] },
+    { rule: { property: 'file.links', op: 'hasLink', value: 'Agentic Agency' }, rows: ['The Levels of an Agency', 'List of Topics'] },
+  ])('$rule.property $rule.op "$rule.value"', ({ rule, rows }) => {
+    const r = byRule(rule)
+    expect(r.errors).toEqual([])
+    expect(names(r)).toEqual(rows)
+  })
+
+  it('fromGroup conjunctions narrow through runView: or, and, not', () => {
+    const idea = ruleToExpr({ property: 'note.status', op: 'is', value: 'idea' })
+    const drafting = ruleToExpr({ property: 'note.status', op: 'is', value: 'drafting' })
+    expect(run({ filters: fromGroup({ conj: 'or', items: [idea, drafting] }), sort: [] }).rows).toHaveLength(3)
+    expect(run({ filters: fromGroup({ conj: 'and', items: [idea, 'file.inFolder("Content Pillars")'] }), sort: [] }).rows).toHaveLength(2)
+    expect(run({ filters: fromGroup({ conj: 'not', items: [idea] }), sort: [] }).rows).toHaveLength(6)
+  })
+
+  it('a multi-link list filters by containment through equals (link ↔ string)', () => {
+    const records = TEST_RECORDS.map(r =>
+      r.basename === 'List of Topics' ? { ...r, properties: { people: ['[[Agentic Agency]]', '[[Yasin]]'] } } : r,
+    )
+    const v: ViewDef = { ...yasin.views[0], filters: ruleToExpr({ property: 'note.people', op: 'contains', value: 'Yasin' }), sort: [] }
+    const d: ViewSet = { ...yasin, views: [v, ...yasin.views.slice(1)] }
+    const r = runView(d, v, records, {})
+    expect(r.errors).toEqual([])
+    expect(names(r)).toEqual(['List of Topics'])
   })
 })
 
