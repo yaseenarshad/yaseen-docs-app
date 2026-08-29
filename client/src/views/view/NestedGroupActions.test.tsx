@@ -17,10 +17,11 @@ import type { NewNoteSeed } from '../newNote'
 import { testFolderPage } from '../testFolderPage'
 import { TEST_RECORDS } from '../testRecords'
 
-vi.mock('../writeProperty', () => ({ writeProperty: vi.fn() }))
-import { writeProperty } from '../writeProperty'
+vi.mock('../writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.fn() }))
+import { writeProperties, writeProperty } from '../writeProperty'
 
 const write = vi.mocked(writeProperty)
+const writeMany = vi.mocked(writeProperties)
 const create = vi.fn<(seed: NewNoteSeed, name?: string) => Promise<string>>()
 const seed = (n = 0): Record<string, unknown> => create.mock.calls[n][0].properties
 
@@ -36,6 +37,8 @@ const NESTED_TABLE = `views:
       - property: note.proc
 `
 
+const NESTED_BOARD = NESTED_TABLE.replace('type: table', 'type: board').replace('name: T', 'name: B')
+
 /** A formula outer over the same data: the outer level cannot be written, the inner can. */
 const FORMULA_OUTER_TABLE = `formulas:
   top: dept
@@ -48,6 +51,8 @@ views:
       - property: formula.top
       - property: note.proc
 `
+
+const FORMULA_OUTER_BOARD = FORMULA_OUTER_TABLE.replace('type: table', 'type: board').replace('name: T', 'name: B')
 
 const rec = (name: string, properties: Record<string, unknown>): IndexRecord => ({
   ...TEST_RECORDS[0],
@@ -104,6 +109,8 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
 beforeEach(() => {
   write.mockReset()
   write.mockResolvedValue({ mtime: 1 })
+  writeMany.mockReset()
+  writeMany.mockResolvedValue({ mtime: 1 })
   create.mockReset()
   create.mockResolvedValue('/vault/Untitled.md')
 })
@@ -139,6 +146,13 @@ function rowOf(el: ParentNode, name: string): HTMLElement {
   return tr
 }
 
+function cardOf(el: ParentNode, name: string): HTMLElement {
+  const btn = [...el.querySelectorAll<HTMLElement>('.view-board__title')].find((candidate) => candidate.textContent === name)
+  const card = btn?.closest<HTMLElement>('.view-board__card')
+  if (!card) throw new Error(`missing card ${name}`)
+  return card
+}
+
 /** All section header rows for a label, in document order (inner labels repeat across outers). */
 const headersOf = (el: ParentNode, label: string): HTMLElement[] =>
   [...el.querySelectorAll<HTMLElement>('tr.view-table__group')].filter(
@@ -165,6 +179,24 @@ function nestedSections(el: ParentNode): Record<string, string[]> {
 }
 
 describe('drag at each level (YAZ-1101)', () => {
+  it('a Board drop between inner groups under the same outer writes the inner property only', () => {
+    const { el } = mount(NESTED_BOARD)
+    fire(cardOf(el, 'alpha1.md'), 'dragstart')
+    fire(cardOf(el, 'alpha2.md'), 'drop')
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/alpha1.md', 'proc', 'p2')
+  })
+
+  it('a Board cross-outer inner drop writes each property once without bubbling into the outer target', () => {
+    const { el } = mount(NESTED_BOARD)
+    fire(cardOf(el, 'alpha2.md'), 'dragstart')
+    fire(cardOf(el, 'beta1.md'), 'drop')
+    expect(writeMany).toHaveBeenCalledExactlyOnceWith('/vault/alpha2.md', [
+      { key: 'proc', value: 'p1', prevRaw: 'p2' },
+      { key: 'dept', value: 'B', prevRaw: 'A' },
+    ])
+    expect(write).not.toHaveBeenCalled()
+  })
+
   it('a drop between inner groups under the same outer writes the inner property only', () => {
     const { el } = mount(NESTED_TABLE)
     fire(rowOf(el, 'alpha1.md'), 'dragstart')
@@ -177,17 +209,18 @@ describe('drag at each level (YAZ-1101)', () => {
     const { el, setRecords } = mount(NESTED_TABLE)
     fire(rowOf(el, 'alpha2.md'), 'dragstart')
     fire(rowOf(el, 'beta1.md'), 'drop')
-    expect(write.mock.calls).toEqual([
-      ['/vault/alpha2.md', 'proc', 'p1'],
-      ['/vault/alpha2.md', 'dept', 'B'],
+    expect(writeMany).toHaveBeenCalledExactlyOnceWith('/vault/alpha2.md', [
+      { key: 'proc', value: 'p1', prevRaw: 'p2' },
+      { key: 'dept', value: 'B', prevRaw: 'A' },
     ])
+    expect(write).not.toHaveBeenCalled()
     // optimistic: already under B/p1, and it stays put through resolve + refetch
     expect(nestedSections(el)['B/p1']).toContain('alpha2.md')
     await flush()
     expect(nestedSections(el)['B/p1']).toContain('alpha2.md')
     setRecords(NESTED_RECORDS.map((r) => (r.basename === 'alpha2' ? { ...r, properties: { dept: 'B', proc: 'p1' } } : r)))
     expect(nestedSections(el)['B/p1']).toContain('alpha2.md')
-    expect(write).toHaveBeenCalledTimes(2)
+    expect(writeMany).toHaveBeenCalledTimes(1)
   })
 
   it('a drop on an outer header writes the outer property only; the inner value rides along', () => {
@@ -208,6 +241,15 @@ describe('drag at each level (YAZ-1101)', () => {
 })
 
 describe('the header "+" at each level (YAZ-1101)', () => {
+  it('a Board inner "+" seeds BOTH properties through the same level-aware create contract', () => {
+    const { el } = mount(NESTED_BOARD)
+    const plus = [...el.querySelectorAll<HTMLElement>('[aria-label="New note in group p1"]')]
+    expect(plus).toHaveLength(2)
+    act(() => plus[1].click()) // B's p1
+    draw()
+    expect(seed()).toEqual({ proc: 'p1', dept: 'B' })
+  })
+
   it('an inner "+" seeds BOTH properties so the note lands where the user clicked', () => {
     const { el } = mount(NESTED_TABLE)
     const plus = [...el.querySelectorAll<HTMLElement>('[aria-label="New note in group p1"]')]
@@ -234,6 +276,20 @@ describe('the header "+" at each level (YAZ-1101)', () => {
 })
 
 describe('a formula level disables its own actions only (YAZ-1101)', () => {
+  it('a Board formula outer has no add/drop action while its writable child level keeps both', () => {
+    const { el } = mount(FORMULA_OUTER_BOARD)
+    const outerA = [...el.querySelectorAll<HTMLElement>('.view-board__col-header')].find(
+      (header) => header.querySelector('.view-group__value')?.textContent === 'A',
+    )
+    if (outerA === undefined) throw new Error('missing outer A')
+    expect(outerA.querySelector('[aria-label^="New note"]')).toBeNull()
+    expect(el.querySelector('.view-board__subgroup [aria-label="New note in group p1"]')).not.toBeNull()
+
+    fire(cardOf(el, 'alpha2.md'), 'dragstart')
+    fire(cardOf(el, 'beta1.md'), 'drop')
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/alpha2.md', 'proc', 'p1')
+  })
+
   it('the outer has no "+" and rejects drops; inner drag still writes, without the outer', () => {
     const { el } = mount(FORMULA_OUTER_TABLE)
     // outer headers (A, B) carry no "+"; inner headers (p1, p2) keep theirs

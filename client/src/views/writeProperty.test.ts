@@ -4,7 +4,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { FrontmatterWriteError } from '@shared/frontmatter'
-import { transformFile, writeProperty, writePropertyIfMissing } from './writeProperty'
+import { transformFile, writeProperties, writeProperty, writePropertyIfMissing } from './writeProperty'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -91,6 +91,26 @@ describe('writeProperty', () => {
     await expect(writeProperty(PATH, 'status', 'done')).rejects.toBeInstanceOf(FrontmatterWriteError)
 
     expect(writeFile).not.toHaveBeenCalled()
+  })
+})
+
+describe('writeProperties', () => {
+  it('commits several keys in one guarded whole-file write', async () => {
+    readFile.mockResolvedValue(file('---\nproc: Intake\ndept: Finance\n---\nBody\n', 100))
+    writeFile.mockResolvedValue({ path: PATH, mtime: 200, size: 38 })
+
+    await expect(
+      writeProperties(PATH, [
+        { key: 'proc', value: 'Review' },
+        { key: 'dept', value: 'Ops' },
+      ]),
+    ).resolves.toEqual({ mtime: 200 })
+
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({
+      path: PATH,
+      content: '---\nproc: Review\ndept: Ops\n---\nBody\n',
+      expectedMtime: 100,
+    })
   })
 })
 

@@ -30,9 +30,11 @@
  *     while the eight-column table is scrolled to its right edge
  *   4 regression: a single-level `groupBy` — the LIST form with one entry, the shape that could
  *     have started nesting by accident — renders flat, with no nested cell anywhere
+ *   5 the same plain-column hierarchy renders inside one Board column per outer value; both
+ *     collapse scopes, named child creation, and an atomic cross-outer child drag work end to end
  *
  * Same harness as folderPages.spec.ts (temp `--user-data-dir`, a COPY of the committed fixture,
- * `nested-` step screenshots). Nothing here touches drag or the group "+".
+ * `nested-` step screenshots).
  */
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
@@ -75,6 +77,14 @@ const groupRow = (w: Page, name: string) =>
     .locator('.view-table__group')
     .filter({ has: w.locator('.view-group__value', { hasText: new RegExp(`^${name}$`) }) })
 const nestedCells = (w: Page) => contents(w).locator('.view-table__group-cell--nested')
+const boardCol = (w: Page, name: string) =>
+  contents(w)
+    .locator('.view-board__col')
+    .filter({ has: w.locator('.view-board__col-header > .view-group .view-group__value', { hasText: new RegExp(`^${name}$`) }) })
+const boardSubgroup = (w: Page, col: Locator, name: string) =>
+  col
+    .locator(':scope > .view-board__subgroups > .view-board__subgroup')
+    .filter({ has: w.locator('.view-group__value', { hasText: new RegExp(`^${name}$`) }) })
 
 /**
  * THE WHOLE TABLE BODY AS ONE SCRIPT, in DOM order — because two-level grouping is a statement
@@ -92,6 +102,28 @@ const tableScript = (w: Page): Promise<string[]> =>
         if (cell === null) return [`- ${tr.querySelector('.view-table__link')?.textContent ?? '?'}`]
         const indent = cell.classList.contains('view-table__group-cell--nested') ? '  ' : ''
         return [`${indent}# ${cell.querySelector('.view-group__value')?.textContent ?? ''} (${cell.querySelector('.view-group__count')?.textContent ?? ''})`]
+      }),
+    )
+
+/** The Board hierarchy in reading order: one outer column, its direct cards, then child sections. */
+const boardScript = (w: Page): Promise<string[]> =>
+  contents(w)
+    .locator('.view-board')
+    .evaluate((board) =>
+      Array.from(board.querySelectorAll<HTMLElement>(':scope > .view-board__col')).flatMap((col) => {
+        const outer = col.querySelector(':scope > .view-board__col-header > .view-group')
+        const lines = [`# ${outer?.querySelector('.view-group__value')?.textContent ?? ''} (${outer?.querySelector('.view-group__count')?.textContent ?? ''})`]
+        for (const card of Array.from(col.querySelectorAll(':scope > .view-board__cards > .view-board__card'))) {
+          lines.push(`- ${card.querySelector('.view-board__title')?.textContent ?? '?'}`)
+        }
+        for (const section of Array.from(col.querySelectorAll<HTMLElement>(':scope > .view-board__subgroups > .view-board__subgroup'))) {
+          const header = section.querySelector(':scope > .view-group')
+          lines.push(`  # ${header?.querySelector('.view-group__value')?.textContent ?? ''} (${header?.querySelector('.view-group__count')?.textContent ?? ''})`)
+          for (const card of Array.from(section.querySelectorAll(':scope > .view-board__cards > .view-board__card'))) {
+            lines.push(`  - ${card.querySelector('.view-board__title')?.textContent ?? '?'}`)
+          }
+        }
+        return lines
       }),
     )
 
@@ -218,7 +250,8 @@ test('step 3 — two plain columns, and a per-level sticky label at the table’
     '# Finance (1)',
     '  # Intake (1)',
     '- Invoice sync.md',
-    '# Ops (2)',
+    '# Ops (3)',
+    '- Ops dashboard.md',
     '  # Intake (1)',
     '- Ticket triage.md',
     '  # Review (1)',
@@ -277,12 +310,65 @@ test('step 4 — a single-level groupBy still renders flat, with no nested cell 
   await expect.poll(() => tableScript(win), { timeout: 15_000 }).toEqual([
     '# Finance (1)',
     '- Invoice sync.md',
-    '# Ops (2)',
+    '# Ops (3)',
+    '- Ops dashboard.md',
     '- Shift handover.md',
     '- Ticket triage.md',
   ])
   await expect(nestedCells(win)).toHaveCount(0)
   await shoot(win, 'nested-07-single-level-flat')
+})
+
+test('step 5 — nested Board layout, both collapse scopes, named child creation, and cross-outer drag', async () => {
+  await viewTabs(contents(win)).filter({ hasText: 'Board' }).evaluate((button) => (button as HTMLButtonElement).click())
+  await expect.poll(() => boardScript(win), { timeout: 15_000 }).toEqual([
+    '# Finance (1)',
+    '  # Intake (1)',
+    '  - Invoice sync.md',
+    '# Ops (3)',
+    '- Ops dashboard.md',
+    '  # Intake (1)',
+    '  - Ticket triage.md',
+    '  # Review (1)',
+    '  - Shift handover.md',
+  ])
+
+  const ops = boardCol(win, 'Ops')
+  const intake = boardSubgroup(win, ops, 'Intake')
+  await intake.locator(':scope > .view-group .view-group__toggle').click()
+  await expect(intake.locator('.view-board__card')).toHaveCount(0)
+  await expect(boardSubgroup(win, ops, 'Review').locator('.view-board__card', { hasText: 'Shift handover.md' })).toBeVisible()
+  await ops.locator(':scope > .view-board__col-header .view-group__toggle').click()
+  await expect(ops.locator(':scope > .view-board__subgroups')).toHaveCount(0)
+  await ops.locator(':scope > .view-board__col-header .view-group__toggle').click()
+  await expect(boardSubgroup(win, ops, 'Intake').locator('.view-board__card')).toHaveCount(0)
+  await boardSubgroup(win, ops, 'Intake').locator(':scope > .view-group .view-group__toggle').click()
+
+  const financeIntake = boardSubgroup(win, boardCol(win, 'Finance'), 'Intake')
+  await financeIntake.locator('[aria-label="New card"]').click()
+  const input = financeIntake.locator('[aria-label="New card name"]')
+  await input.fill('Reconcile invoices')
+  await input.press('Enter')
+  const created = path.join(vault, 'automations', 'Reconcile invoices.md')
+  await expect
+    .poll(async () => {
+      const text = await readFile(created, 'utf8').catch(() => '')
+      return text.includes('dept: Finance') && text.includes('proc: Intake') && text.includes('[[Automations]]')
+    })
+    .toBe(true)
+  const createdCard = financeIntake.locator('.view-board__card', { hasText: 'Reconcile invoices.md' })
+  await expect(createdCard).toBeVisible()
+
+  const opsReview = boardSubgroup(win, ops, 'Review')
+  await createdCard.dragTo(opsReview)
+  await expect(opsReview.locator('.view-board__card', { hasText: 'Reconcile invoices.md' })).toBeVisible()
+  await expect
+    .poll(async () => {
+      const text = await readFile(created, 'utf8')
+      return text.includes('dept: Ops') && text.includes('proc: Review')
+    })
+    .toBe(true)
+  await shoot(win, 'nested-08-board-subgroups')
 
   await quitApp(app)
 })

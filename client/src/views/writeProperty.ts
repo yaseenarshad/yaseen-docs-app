@@ -3,6 +3,11 @@ import { BridgeRequestError, api } from '../api'
 
 export type ContentTransform = (content: string) => string
 
+export interface PropertyWrite {
+  key: string
+  value: unknown
+}
+
 /**
  * Apply one pure whole-file transformation with the shared no-op and optimistic-concurrency
  * contract: write against the bytes just read, then re-read and recompute once on conflict.
@@ -24,14 +29,14 @@ export async function transformFile(path: string, transform: ContentTransform): 
   }
 }
 
-/**
- * Change one frontmatter key of a note on disk (GRO-2141). This is the surgical one-key
- * specialization of `transformFile`; conflict retry and no-op handling stay in one place.
- *
- * `FrontmatterWriteError` (broken frontmatter) propagates and nothing is written.
- */
+/** Apply several frontmatter changes in one guarded whole-file transformation. */
+export async function writeProperties(path: string, writes: readonly PropertyWrite[]): Promise<{ mtime: number }> {
+  return transformFile(path, (content) => writes.reduce((next, { key, value }) => setFrontmatterProperty(next, key, value), content))
+}
+
+/** Change one frontmatter key; the one-key specialization of `writeProperties` (GRO-2141). */
 export async function writeProperty(path: string, key: string, value: unknown): Promise<{ mtime: number }> {
-  return transformFile(path, (content) => setFrontmatterProperty(content, key, value))
+  return writeProperties(path, [{ key, value }])
 }
 
 /**

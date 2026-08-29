@@ -1,13 +1,13 @@
 import { type CSSProperties, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
-import { type Group, propertyKeys, propertyLabel } from '../engine'
+import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
 import { render } from '../expr'
 import { cardWidth } from './cardWidth'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, groupKeyOf } from './GroupHeader'
+import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf } from './GroupHeader'
 import { useFlip } from './flip'
-import { groupByKey, useGroupDrag } from './groupDrag'
+import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, useGroupDrag } from './groupDrag'
 import { allPropertyKeys } from './properties'
 
 export interface BoardViewProps {
@@ -22,19 +22,20 @@ export interface BoardViewProps {
   onToggleGroup: (key: string) => void
   onUpdate: Mutate
   onOpenFile: (path: string) => void
-  /** A drop on another column: `groupBy.property = value` (undefined deletes) via ViewsPane (5C, GRO-2143). */
-  onMoveToGroup: (path: string, value: unknown) => void
+  /** A drop on another section, including nested level metadata, via ViewsPane's existing optimistic write path. */
+  onMoveToGroup: (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => void
   /** The last failed move, flagged inline on its card. */
   moveError: { path: string; message: string } | null
-  /** Create a note seeded with a column's group value (5D, GRO-2144); absent → no "+" on headers and no add row. A `name` is the inline add's typed one (YAZ-943). */
-  onNewInGroup?: (group: Group, name?: string) => void
+  /** Create a note seeded at one group level; nested spots let ViewsPane seed the outer too. A `name` is the inline add's typed one. */
+  onNewInGroup?: (group: Group, name?: string, at?: GroupSpot) => void
 }
 
 /**
  * Board view (4D, GRO-2138): `type: board` — OUR schema extension — renders the engine's groups
- * as kanban columns on one horizontally scrolling row. Each column is the shared `GroupHeader`
- * content (chevron, typed value, count, per-column summaries over the SHOWN cards) over the
- * group's cards: `file.name`, when present in `order`, as the title button → `onOpenFile`, then
+ * as kanban columns on one horizontally scrolling row. With two group levels, each outer remains
+ * one column: merge-rule `direct` cards come first, then compact inner sections stack vertically.
+ * Every level uses the shared `GroupHeader` (chevron, typed value, count, per-section summaries)
+ * over its cards: `file.name`, when present in `order`, as the title button → `onOpenFile`, then
  * the view's other `order` properties as small label/value rows typed like table cells. Column
  * width follows `cardSize`
  * (shared `cardWidth`: a number = px, presets small 220 / medium 280 / large 340, default
@@ -45,12 +46,14 @@ export interface BoardViewProps {
  * simpler and the Sort menu can change it after). Dragging a card to another column (5C,
  * GRO-2143) writes the group property through `onMoveToGroup` — the hovered column shows a
  * dashed placeholder, the own column is never a target, Esc cancels — and a failed move's
- * card carries an inline error chip. Images are 4E. Every column ends in the Notion inline add
- * (YAZ-943): a quiet "New card" row that swaps in a name input, and Enter births that page into
- * THAT column's group without opening it — one input at a time, cleared and left open for the next.
+ * card carries an inline error chip. Nested targets are siblings of the outer target rather than
+ * descendants, so one bubbled drop cannot dispatch at both levels. Images are 4E. A single-level
+ * column — or each writable inner section in a nested Board — ends in the Notion inline add
+ * (YAZ-943): Enter births the named page into that exact section without opening it.
  */
 export function BoardView({ def, view, viewIndex, records, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onMoveToGroup, moveError, onNewInGroup }: BoardViewProps) {
-  const dnd = useGroupDrag([groupByKey(view)], onMoveToGroup)
+  const levelKeys = [groupByKey(view), groupByKey(view, 1)]
+  const dnd = useGroupDrag(levelKeys, onMoveToGroup)
   /** One FLIP instance for the whole board (YAZ-944), so a card crossing columns MOVES. */
   const flipRoot = useFlip()
   /** The one open add row (YAZ-943) and what has been typed into it; null = every column shows its button. */
@@ -79,6 +82,63 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const rest = keys.filter((k) => k !== nameKey)
   const width = cardWidth(view.cardSize)
+  const cardList = (rows: readonly Row[], group: Group, at: GroupSpot, isOver = false) => (
+    <ul className="view-board__cards">
+      {rows.map((row) => (
+        <li
+          key={row.record.path}
+          data-flip-key={row.record.path}
+          className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}`}
+          {...dnd.source(row.record.path, group, at)}
+        >
+          {nameKey !== undefined && (
+            <button type="button" className="view-board__title" onClick={() => onOpenFile(row.record.path)}>
+              {render(row.values[nameKey])}
+            </button>
+          )}
+          {moveError?.path === row.record.path && (
+            <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>
+              Move failed
+            </span>
+          )}
+          {rest.map((key) => (
+            <div key={key} className="view-board__prop">
+              <span className="view-board__prop-name">{propertyLabel(def, key)}</span>
+              <span className="view-board__prop-value">{cellContent(row.values[key])}</span>
+            </div>
+          ))}
+        </li>
+      ))}
+      {isOver && <li className="view-board__placeholder" aria-hidden />}
+    </ul>
+  )
+  const inlineAdd = (group: Group, key: string, at?: GroupSpot) => {
+    if (onNewInGroup === undefined) return null
+    return adding?.key === key ? (
+      <input
+        className="view-board__add-input"
+        aria-label="New card name"
+        placeholder="New card"
+        autoFocus
+        value={adding.name}
+        onChange={(e) => setAdding({ key, name: e.target.value })}
+        onBlur={() => setAdding(null)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') setAdding(null)
+          if (e.key !== 'Enter') return
+          const name = adding.name.trim()
+          // An empty Enter is a no-op, not an `Untitled` card: the row is asking for a name.
+          if (name === '') return
+          onNewInGroup(group, name, at)
+          setAdding({ key, name: '' })
+        }}
+      />
+    ) : (
+      <button type="button" className="view-board__add" aria-label="New card" onClick={() => setAdding({ key, name: '' })}>
+        + New card
+      </button>
+    )
+  }
 
   return (
     <div className="view-board" ref={flipRoot} style={{ '--view-board-col-w': `${width}px` } as CSSProperties}>
@@ -86,74 +146,78 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
         const gk = groupKeyOf(g.key)
         const isCollapsed = collapsed.includes(gk)
         const isOver = dnd.over === gk
+        const outerAt: GroupSpot = { level: 0, outer: g }
+        const header = (
+          <GroupHeader
+            def={def}
+            view={view}
+            columns={keys}
+            groupKey={g.key}
+            rows={g.rows}
+            collapsed={isCollapsed}
+            onToggle={() => onToggleGroup(gk)}
+            onNew={onNewInGroup === undefined || levelKeys[0] === null ? undefined : () => onNewInGroup(g)}
+          />
+        )
         return (
-          <section key={gk} className={`view-board__col${isOver ? ' view-board__col--drop' : ''}`} {...dnd.target(g)}>
-            <GroupHeader
-              def={def}
-              view={view}
-              columns={keys}
-              groupKey={g.key}
-              rows={g.rows}
-              collapsed={isCollapsed}
-              onToggle={() => onToggleGroup(gk)}
-              onNew={onNewInGroup === undefined ? undefined : () => onNewInGroup(g)}
-            />
-            {!isCollapsed && (
-              <ul className="view-board__cards">
-                {g.rows.map((row) => (
-                  <li
-                    key={row.record.path}
-                    data-flip-key={row.record.path}
-                    className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}`}
-                    {...dnd.source(row.record.path, g)}
-                  >
-                    {nameKey !== undefined && (
-                      <button type="button" className="view-board__title" onClick={() => onOpenFile(row.record.path)}>
-                        {render(row.values[nameKey])}
-                      </button>
-                    )}
-                    {moveError?.path === row.record.path && (
-                      <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>
-                        Move failed
-                      </span>
-                    )}
-                    {rest.map((key) => (
-                      <div key={key} className="view-board__prop">
-                        <span className="view-board__prop-name">{propertyLabel(def, key)}</span>
-                        <span className="view-board__prop-value">{cellContent(row.values[key])}</span>
-                      </div>
-                    ))}
-                  </li>
-                ))}
-                {isOver && <li className="view-board__placeholder" aria-hidden />}
-              </ul>
+          <section
+            key={gk}
+            className={`view-board__col${isOver ? ' view-board__col--drop' : ''}`}
+            {...(g.children === undefined ? dnd.target(g, outerAt) : {})}
+          >
+            {g.children === undefined ? (
+              header
+            ) : (
+              <div className="view-board__col-header" {...dnd.target(g, outerAt)}>
+                {header}
+              </div>
             )}
-            {!isCollapsed &&
-              onNewInGroup !== undefined &&
-              (adding?.key === gk ? (
-                <input
-                  className="view-board__add-input"
-                  aria-label="New card name"
-                  placeholder="New card"
-                  autoFocus
-                  value={adding.name}
-                  onChange={(e) => setAdding({ key: gk, name: e.target.value })}
-                  onBlur={() => setAdding(null)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') setAdding(null)
-                    if (e.key !== 'Enter') return
-                    const name = adding.name.trim()
-                    // An empty Enter is a no-op, not an `Untitled` card: the row is asking for a name.
-                    if (name === '') return
-                    onNewInGroup(g, name)
-                    setAdding({ key: gk, name: '' })
-                  }}
-                />
-              ) : (
-                <button type="button" className="view-board__add" aria-label="New card" onClick={() => setAdding({ key: gk, name: '' })}>
-                  + New card
-                </button>
-              ))}
+            {!isCollapsed && (
+              <>
+                {g.children === undefined ? (
+                  cardList(g.rows, g, outerAt, isOver)
+                ) : (
+                  <>
+                    {(g.direct?.length ?? 0) > 0 && cardList(g.direct ?? [], g, outerAt, isOver)}
+                    {g.children.length > 0 && (
+                      <div className="view-board__subgroups">
+                        {g.children.map((child) => {
+                          const ck = nestedGroupKeyOf(g.key, child.key)
+                          const childCollapsed = collapsed.includes(ck)
+                          const childOver = dnd.over === ck
+                          const innerAt: GroupSpot = { level: 1, outer: g }
+                          return (
+                            <section
+                              key={ck}
+                              className={`view-board__subgroup${childOver ? ' view-board__subgroup--drop' : ''}`}
+                              {...dnd.target(child, innerAt)}
+                            >
+                              <GroupHeader
+                                def={def}
+                                view={view}
+                                columns={keys}
+                                groupKey={child.key}
+                                rows={child.rows}
+                                collapsed={childCollapsed}
+                                onToggle={() => onToggleGroup(ck)}
+                                onNew={
+                                  onNewInGroup === undefined || levelKeys[1] === null
+                                    ? undefined
+                                    : () => onNewInGroup(child, undefined, innerAt)
+                                }
+                              />
+                              {!childCollapsed && cardList(child.rows, child, innerAt, childOver)}
+                              {!childCollapsed && levelKeys[1] !== null && inlineAdd(child, ck, innerAt)}
+                            </section>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+            {!isCollapsed && g.children === undefined && levelKeys[0] !== null && inlineAdd(g, gk)}
           </section>
         )
       })}

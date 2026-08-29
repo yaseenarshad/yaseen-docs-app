@@ -51,4 +51,16 @@ folder_page_settings:
           direction: ASC
       groupBy:
         - property: note.dept
+    - type: board
+      name: Board
+      order:
+        - file.name
+        - note.owner
+        - note.status
+      sort:
+        - property: file.name
+          direction: ASC
+      groupBy:
+        - property: note.dept
+        - property: note.proc
 ---
