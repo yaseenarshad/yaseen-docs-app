@@ -394,6 +394,19 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(openBackground).toHaveBeenLastCalledWith(agenticPath)
   })
 
+  it('keeps the exact record target on an otherwise-empty card shell', () => {
+    const openBackground = vi.fn()
+    const { el } = mount('views:\n  - type: board\n    name: B\n    order: []\n    groupBy:\n      property: note.status\n', {
+      folderPage: testFolderPage({ openBackground }),
+    })
+    const shell = q<HTMLElement>(el, '.view-board__card')
+    expect(shell.querySelector('.view-board__line')).toBeNull()
+
+    expect(rightClick(shell).defaultPrevented).toBe(true)
+    click(itemNamed(el, 'Open in new tab')!)
+    expect(openBackground).toHaveBeenCalledExactlyOnceWith(levelsPath)
+  })
+
   it('leaves headers, add controls, placeholders, the no-group hint, and other view types on their native menu', () => {
     const openBackground = vi.fn()
     const { el } = mount(BOARD_BASE, { folderPage: testFolderPage({ openBackground }) })
