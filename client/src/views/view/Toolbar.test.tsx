@@ -276,19 +276,20 @@ describe('filter menu (YAZ-1227-1229)', () => {
     expect(def().views[0].filters).toEqual({ and: ['note.status.contains("dr")'] })
   })
 
+  // A well-formed `or` is a GROUP since YAZ-1231, so the raw fallback is proved on what stays odd:
+  // a conjunction whose value is not a list is neither a rule nor a group the menu could edit.
   it('an item the builder cannot show stays raw, and × still removes it', () => {
     const { el, def } = mount(`views:
   - type: table
     name: T
     filters:
       and:
-        - or:
-            - a == "1"
-            - b == "2"
+        - or: a == "1"
 `)
     const pop = openMenu(el, 'Filter')
-    expect(q(pop, '.view-rule__code')).toBeDefined()
+    expect(q(pop, '.view-rule__code').textContent).toBe('{"or":"a == \\"1\\""}')
     expect(pop.querySelector('[aria-label="Property"]')).toBeNull()
+    expect(pop.querySelector('.view-rule-group')).toBeNull()
     click(byLabel(pop, 'Remove rule'))
     expect(def().views[0].filters).toBeUndefined()
   })
@@ -301,6 +302,138 @@ describe('filter menu (YAZ-1227-1229)', () => {
     expect(errors.textContent).toBe('views[0].filters unexpected end of input')
     // and the muted footnote still carries it too (YAZ-861) — the menu is an addition, not a move
     expect(q(el, '.views-pane__notes').textContent).toBe('views[0].filters: unexpected end of input')
+  })
+
+  /**
+   * ONE level of nesting is editable (YAZ-1231): a top-level conjunction becomes a group block with
+   * its own All/Any/None, its own rows and its own Add rule. Everything deeper stays the raw row it
+   * already was — the menu edits what it understands and never destroys what it does not.
+   */
+  describe('nested groups (YAZ-1231)', () => {
+    const NESTED = `views:
+  - type: table
+    name: T
+    filters:
+      and:
+        - note.status == "idea"
+        - or:
+            - note.priority > 1
+            - note.published == true
+`
+    /** The group block of the open menu (there is only ever one — the design is one level deep). */
+    const groupOf = (pop: ParentNode): HTMLElement => q<HTMLElement>(pop, '.view-rule-group')
+
+    it('a stored conjunction renders as a group of rows, not as one raw item', () => {
+      const { el, onChange } = mount(NESTED)
+      const pop = openMenu(el, 'Filter')
+      const list = q(pop, '.view-menu__list')
+      expect([...list.children].map((c) => c.className)).toEqual(['view-rule', 'view-rule-group'])
+      const group = groupOf(pop)
+      expect(byLabel(group, 'Match (group)').querySelector('[aria-pressed="true"]')?.textContent).toBe('Any')
+      expect(group.querySelectorAll('.view-rule')).toHaveLength(2)
+      expect(group.querySelector('.view-rule__code')).toBeNull()
+      // the badge counts LEAVES, so the group's two rules are two of the three
+      expect(byText(el, '.view-toolbar__badge', '3')).toBeDefined()
+      expect(onChange).not.toHaveBeenCalled()
+    })
+
+    it('Add group appends an `or` holding the match-everything default, in ONE write', () => {
+      const { el, onChange, def, yaml } = mount()
+      click(byText(openMenu(el, 'Filter'), 'button', 'Add group'))
+      expect(onChange).toHaveBeenCalledTimes(1)
+      expect(def().views[0].filters).toEqual({ and: [{ or: ['file.name.contains("")'] }] })
+      expect(yaml()).toContain('and:')
+      expect(yaml()).toContain('or:')
+      expect(yaml()).toContain('file.name.contains("")')
+    })
+
+    it("the group's own conjunction rewrites the group and leaves the outer one alone", () => {
+      const { el, onChange, def, yaml } = mount(NESTED)
+      click(byText(groupOf(openMenu(el, 'Filter')), 'button', 'None'))
+      expect(onChange).toHaveBeenCalledTimes(1)
+      expect(def().views[0].filters).toEqual({
+        and: ['note.status == "idea"', { not: ['note.priority > 1', 'note.published == true'] }],
+      })
+      expect(yaml()).toContain('not:')
+    })
+
+    it("the group's Add rule lands INSIDE the group", () => {
+      const { el, def, yaml } = mount(NESTED)
+      click(byText(groupOf(openMenu(el, 'Filter')), 'button', 'Add rule'))
+      expect(def().views[0].filters).toEqual({
+        and: ['note.status == "idea"', { or: ['note.priority > 1', 'note.published == true', 'file.name.contains("")'] }],
+      })
+      expect(yaml()).toContain('- file.name.contains("")')
+    })
+
+    it('emptying a group removes it, and Remove group removes it with its rules still in it', () => {
+      const one = mount(`views:
+  - type: table
+    name: T
+    filters:
+      and:
+        - note.status == "idea"
+        - or:
+            - note.priority > 1
+`)
+      click(byLabel(groupOf(openMenu(one.el, 'Filter')), 'Remove rule'))
+      expect(one.def().views[0].filters).toEqual({ and: ['note.status == "idea"'] })
+      expect(one.el.querySelector('.view-rule-group')).toBeNull()
+
+      const two = mount(NESTED)
+      click(byLabel(groupOf(openMenu(two.el, 'Filter')), 'Remove group'))
+      expect(two.def().views[0].filters).toEqual({ and: ['note.status == "idea"'] })
+      expect(two.el.querySelector('.view-rule-group')).toBeNull()
+    })
+
+    it('a conjunction INSIDE a group is one level too deep: it stays a raw row in place', () => {
+      const { el, def } = mount(`views:
+  - type: table
+    name: T
+    filters:
+      and:
+        - or:
+            - note.a == "1"
+            - and:
+                - note.b == "2"
+`)
+      const group = groupOf(openMenu(el, 'Filter'))
+      expect(group.querySelectorAll('.view-rule-group')).toHaveLength(0)
+      expect(q(group, '.view-rule__code').textContent).toBe('{"and":["note.b == \\"2\\""]}')
+      expect(group.querySelectorAll('.view-rule')).toHaveLength(2)
+      expect(def().views[0].filters).toEqual({ and: [{ or: ['note.a == "1"', { and: ['note.b == "2"'] }] }] })
+    })
+  })
+
+  /** A text value offers what the vault already holds for its property (YAZ-1232) — a native datalist. */
+  describe('value suggestions (YAZ-1232)', () => {
+    const options = (pop: ParentNode): string[] => [...q(pop, 'datalist').querySelectorAll('option')].map((o) => o.value)
+
+    it("a note property's text value lists the values TEST_RECORDS hold for it, in first-seen order", () => {
+      const pop = openMenu(mount(RULE).el, 'Filter')
+      const list = q<HTMLDataListElement>(pop, 'datalist')
+      expect(byLabel<HTMLInputElement>(pop, 'Value').getAttribute('list')).toBe(list.id)
+      expect(options(pop)).toEqual(['idea', 'drafting', 'published'])
+    })
+
+    it("file.folder lists the vault's folders, and the root's '' is not one of them", () => {
+      const pop = openMenu(mount('views:\n  - type: table\n    name: T\n    filters:\n      and:\n        - file.inFolder("Content Pillars")\n').el, 'Filter')
+      expect(byLabel<HTMLSelectElement>(pop, 'Operator').value).toBe('inFolder')
+      expect(options(pop)).toEqual([
+        'Content Pillars/1. Agentic Agency',
+        'Content Pillars/2. Creator Economy',
+        'Content Pillars/3. Trust Economy & Paid Ads',
+        'Content Pillars/4. Tech & Silicon Valley',
+        'Content Pillars',
+      ])
+    })
+
+    it('a number value has nothing to suggest', () => {
+      const pop = openMenu(mount('views:\n  - type: table\n    name: T\n    filters:\n      and:\n        - note.priority > 1\n').el, 'Filter')
+      expect(byLabel<HTMLInputElement>(pop, 'Value').type).toBe('number')
+      expect(byLabel(pop, 'Value').getAttribute('list')).toBeNull()
+      expect(pop.querySelector('datalist')).toBeNull()
+    })
   })
 })
 

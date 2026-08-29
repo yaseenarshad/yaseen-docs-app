@@ -158,13 +158,15 @@ export function ruleToExpr(rule: Rule): string {
     case 'isNotEmpty': return `!${a}.isEmpty()`
     case 'eq': return `${a} == ${num(value)}`
     case 'ne': return `${a} != ${num(value)}`
-    case 'lt': return `${a} < ${num(value)}`
-    case 'gt': return `${a} > ${num(value)}`
-    case 'le': return `${a} <= ${num(value)}`
-    case 'ge': return `${a} >= ${num(value)}`
+    // Ordering operators carry an emptiness guard (D5, YAZ-1218): `toNumber(null)` is 0, so a bare
+    // comparison would match rows with NO value — Notion and Airtable both exclude empties here.
+    case 'lt': return `!${a}.isEmpty() && ${a} < ${num(value)}`
+    case 'gt': return `!${a}.isEmpty() && ${a} > ${num(value)}`
+    case 'le': return `!${a}.isEmpty() && ${a} <= ${num(value)}`
+    case 'ge': return `!${a}.isEmpty() && ${a} >= ${num(value)}`
     case 'dateIs': return `${a} == date(${quote(value)})`
-    case 'dateBefore': return `${a} < date(${quote(value)})`
-    case 'dateAfter': return `${a} > date(${quote(value)})`
+    case 'dateBefore': return `!${a}.isEmpty() && ${a} < date(${quote(value)})`
+    case 'dateAfter': return `!${a}.isEmpty() && ${a} > date(${quote(value)})`
     case 'checked': return `${a} == true`
     case 'unchecked': return `${a} == false`
   }
@@ -206,7 +208,31 @@ function numberOf(e: Expr): number | null {
   return null
 }
 
-/** Inverse of `ruleToExpr` for every string in its grammar; null for anything the builder cannot show. */
+const ORDERING = new Set<OperatorId>(['lt', 'gt', 'le', 'ge', 'dateBefore', 'dateAfter'])
+
+/** A plain comparison (`p == "x"`, `p < 3`, `p > date("…")`) as a rule; null otherwise. */
+function binaryRule(e: Expr): Rule | null {
+  if (e.type !== 'binary') return null
+  const property = propertyOf(e.left)
+  if (property === null) return null
+  const r = e.right
+  if (r.type === 'str') return e.op === '==' ? { property, op: 'is', value: r.value } : e.op === '!=' ? { property, op: 'isNot', value: r.value } : null
+  if (r.type === 'bool') return e.op === '==' ? { property, op: r.value ? 'checked' : 'unchecked', value: '' } : null
+  if (r.type === 'call' && r.name === 'date') {
+    const value = strArg(r.args)
+    const op = DATE_OP[e.op]
+    return value !== null && op !== undefined ? { property, op, value } : null
+  }
+  const n = numberOf(r)
+  const op = NUM_OP[e.op]
+  return n !== null && op !== undefined ? { property, op, value: String(n) } : null
+}
+
+/**
+ * Inverse of `ruleToExpr` for every string in its grammar; null for anything the builder cannot
+ * show. An UNGUARDED ordering comparison (hand-written) still reads back as its rule — the menu's
+ * next write normalizes it to the guarded form.
+ */
 export function exprToRule(src: string): Rule | null {
   const e = compile(src).expr
   if (e === undefined) return null
@@ -222,20 +248,15 @@ export function exprToRule(src: string): Rule | null {
     return null
   }
   if (e.type === 'method') return methodRule(e)
-  if (e.type !== 'binary') return null
-  const property = propertyOf(e.left)
-  if (property === null) return null
-  const r = e.right
-  if (r.type === 'str') return e.op === '==' ? { property, op: 'is', value: r.value } : e.op === '!=' ? { property, op: 'isNot', value: r.value } : null
-  if (r.type === 'bool') return e.op === '==' ? { property, op: r.value ? 'checked' : 'unchecked', value: '' } : null
-  if (r.type === 'call' && r.name === 'date') {
-    const value = strArg(r.args)
-    const op = DATE_OP[e.op]
-    return value !== null && op !== undefined ? { property, op, value } : null
+  // The D5 guard: `!p.isEmpty() && p <op> v`, the form ruleToExpr writes for ordering operators.
+  if (e.type === 'binary' && e.op === '&&') {
+    const g = e.left
+    if (g.type !== 'unary' || g.op !== '!') return null
+    const guard = methodRule(g.operand)
+    const rule = binaryRule(e.right)
+    return guard?.op === 'isEmpty' && rule !== null && guard.property === rule.property && ORDERING.has(rule.op) ? rule : null
   }
-  const n = numberOf(r)
-  const op = NUM_OP[e.op]
-  return n !== null && op !== undefined ? { property, op, value: String(n) } : null
+  return binaryRule(e)
 }
 
 // ---------- filter trees ----------

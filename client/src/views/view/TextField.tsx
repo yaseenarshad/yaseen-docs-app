@@ -10,6 +10,8 @@ interface TextFieldProps {
   placeholder?: string
   type?: 'text' | 'date' | 'number'
   inputMode?: 'decimal'
+  /** `id` of a `datalist` the caller renders — value suggestions (YAZ-1232). */
+  list?: string
   autoFocus?: boolean
   'aria-label'?: string
 }

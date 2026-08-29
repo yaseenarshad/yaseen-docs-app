@@ -176,9 +176,9 @@ describe('runView: filters built by the Filter model (YAZ-1225)', () => {
     { rule: { property: 'note.status', op: 'isNotEmpty', value: '' }, rows: ['Agentic Agency', 'The Levels of an Agency', 'Creator Economy', 'The Gold In Your Archive', 'VSL-v1'] },
     { rule: { property: 'note.priority', op: 'gt', value: '1' }, rows: ['Agentic Agency', 'Creator Economy'] },
     { rule: { property: 'note.priority', op: 'isEmpty', value: '' }, rows: ['The Gold In Your Archive', 'Attribution', 'Tech & Silicon Valley', 'List of Topics', 'VSL-v1'] },
-    // Missing values coerce to 0 in ordering comparisons (`toNumber(null)`), so every undated
-    // note also matches `dateBefore` today. Pinned as-is pending D5 (YAZ-1218) — Notion excludes empties.
-    { rule: { property: 'note.date', op: 'dateBefore', value: '2026-08-01' }, rows: ['The Levels of an Agency', 'Creator Economy', 'The Gold In Your Archive', 'Attribution', 'Tech & Silicon Valley', 'List of Topics', 'VSL-v1'] },
+    // D5 (YAZ-1218): ordering operators carry an emptiness guard, so an undated note never
+    // matches `dateBefore` — the Notion/Airtable behavior. `toNumber(null)` is 0 without it.
+    { rule: { property: 'note.date', op: 'dateBefore', value: '2026-08-01' }, rows: ['Creator Economy'] },
     { rule: { property: 'note.date', op: 'isNotEmpty', value: '' }, rows: ['Agentic Agency', 'Creator Economy'] },
     { rule: { property: 'note.published', op: 'checked', value: '' }, rows: ['Creator Economy'] },
     { rule: { property: 'note.published', op: 'unchecked', value: '' }, rows: ['Agentic Agency'] },

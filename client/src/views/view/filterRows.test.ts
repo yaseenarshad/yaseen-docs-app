@@ -18,15 +18,15 @@ const CASES: { type: PropertyType; property: string; op: OperatorId; value: stri
   { type: 'text', property: 'note.status', op: 'isNotEmpty', value: '', expr: '!note.status.isEmpty()' },
   { type: 'number', property: 'note.priority', op: 'eq', value: '3', expr: 'note.priority == 3' },
   { type: 'number', property: 'note.priority', op: 'ne', value: '3', expr: 'note.priority != 3' },
-  { type: 'number', property: 'note.priority', op: 'lt', value: '3', expr: 'note.priority < 3' },
-  { type: 'number', property: 'note.priority', op: 'gt', value: '3', expr: 'note.priority > 3' },
-  { type: 'number', property: 'note.priority', op: 'le', value: '3', expr: 'note.priority <= 3' },
-  { type: 'number', property: 'note.priority', op: 'ge', value: '3', expr: 'note.priority >= 3' },
+  { type: 'number', property: 'note.priority', op: 'lt', value: '3', expr: '!note.priority.isEmpty() && note.priority < 3' },
+  { type: 'number', property: 'note.priority', op: 'gt', value: '3', expr: '!note.priority.isEmpty() && note.priority > 3' },
+  { type: 'number', property: 'note.priority', op: 'le', value: '3', expr: '!note.priority.isEmpty() && note.priority <= 3' },
+  { type: 'number', property: 'note.priority', op: 'ge', value: '3', expr: '!note.priority.isEmpty() && note.priority >= 3' },
   { type: 'number', property: 'note.priority', op: 'isEmpty', value: '', expr: 'note.priority.isEmpty()' },
   { type: 'number', property: 'note.priority', op: 'isNotEmpty', value: '', expr: '!note.priority.isEmpty()' },
   { type: 'date', property: 'note.date', op: 'dateIs', value: '2026-08-01', expr: 'note.date == date("2026-08-01")' },
-  { type: 'date', property: 'note.date', op: 'dateBefore', value: '2026-08-01', expr: 'note.date < date("2026-08-01")' },
-  { type: 'date', property: 'note.date', op: 'dateAfter', value: '2026-08-01', expr: 'note.date > date("2026-08-01")' },
+  { type: 'date', property: 'note.date', op: 'dateBefore', value: '2026-08-01', expr: '!note.date.isEmpty() && note.date < date("2026-08-01")' },
+  { type: 'date', property: 'note.date', op: 'dateAfter', value: '2026-08-01', expr: '!note.date.isEmpty() && note.date > date("2026-08-01")' },
   { type: 'date', property: 'note.date', op: 'isEmpty', value: '', expr: 'note.date.isEmpty()' },
   { type: 'date', property: 'note.date', op: 'isNotEmpty', value: '', expr: '!note.date.isEmpty()' },
   { type: 'checkbox', property: 'note.published', op: 'checked', value: '', expr: 'note.published == true' },
@@ -83,9 +83,13 @@ describe('ruleToExpr / exprToRule round trip (GRO-2135)', () => {
   it('a bare property and a negative / non-numeric number value', () => {
     expect(ruleToExpr({ property: 'status', op: 'is', value: 'x' })).toBe('note.status == "x"')
     expect(exprToRule('status == "x"')).toEqual({ property: 'note.status', op: 'is', value: 'x' })
-    expect(ruleToExpr({ property: 'note.n', op: 'lt', value: '-2' })).toBe('note.n < -2')
+    expect(ruleToExpr({ property: 'note.n', op: 'lt', value: '-2' })).toBe('!note.n.isEmpty() && note.n < -2')
+    expect(ruleToExpr({ property: 'note.n', op: 'gt', value: 'abc' })).toBe('!note.n.isEmpty() && note.n > 0')
+  })
+
+  it('an UNGUARDED ordering comparison (hand-written) still reads back as its rule (D5)', () => {
     expect(exprToRule('note.n < -2')).toEqual({ property: 'note.n', op: 'lt', value: '-2' })
-    expect(ruleToExpr({ property: 'note.n', op: 'gt', value: 'abc' })).toBe('note.n > 0')
+    expect(exprToRule('note.date > date("2026-08-01")')).toEqual({ property: 'note.date', op: 'dateAfter', value: '2026-08-01' })
   })
 
   it('returns null for expressions the builder cannot show', () => {
@@ -101,6 +105,10 @@ describe('ruleToExpr / exprToRule round trip (GRO-2135)', () => {
       '!file.hasTag("x")',
       'note.a ==',
       '',
+      // Guard forms that are NOT the one ruleToExpr writes (D5): wrong property, non-ordering right side.
+      '!note.a.isEmpty() && note.b < 3',
+      '!note.a.isEmpty() && note.a == "x"',
+      'note.a.isEmpty() && note.a < 3',
     ]) expect(exprToRule(src), src).toBeNull()
   })
 })

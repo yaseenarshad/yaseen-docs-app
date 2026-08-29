@@ -258,6 +258,21 @@
   gap: 4px;
 }
 
+/* one nested group (YAZ-1231): a boxed level of its own, inside the top-level rule list */
+.view-rule-group {
+  margin: 4px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.view-rule-group__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
 .view-rule__remove,
 .view-rule__nav {
   flex: none;
