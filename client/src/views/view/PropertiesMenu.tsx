@@ -386,7 +386,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
             <span className="view-width-setting">
               <TextField
                 className="view-input"
-                aria-label="Column width"
+                aria-label="Column width in pixels"
                 type="number"
                 inputMode="decimal"
                 min={180}

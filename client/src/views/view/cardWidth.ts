@@ -1,7 +1,7 @@
 /**
  * `view.cardSize` → card / column width px, shared by Board (4D) and Cards (4E). Obsidian's
- * cards view stores a NUMBER (px); our board presets small/medium/large (GRO-2119 locked
- * design) map to 220/280/340. Anything else = medium.
+ * cards view stores a NUMBER (px); legacy small/medium/large compatibility values map to
+ * 220/280/340. Anything else = medium.
  */
 export const CARD_WIDTHS: Record<string, number> = { small: 220, medium: 280, large: 340 }
 

@@ -3,7 +3,8 @@
  * `type: board` (our schema extension) renders the engine's groups as columns — one column
  * per group with the shared header content (chevron, typed value, count, per-column
  * summaries), cards beneath (`file.name` title button + the other `order` properties as
- * label/value rows). Column width follows `cardSize` (small 220 / medium 280 / large 340).
+ * label/value rows). Column width follows numeric `cardSize`; legacy small/medium/large values
+ * remain readable as 220/280/340.
  * No `groupBy` → a centered hint whose button writes a sensible default group-by through
  * the file. Collapse persists per `<basePath>::<viewName>` through `storage` (mocked here),
  * never through `onChange`; search narrows cards and drops empty columns like the table.
@@ -179,7 +180,7 @@ const openProperties = (el: ParentNode): HTMLElement => {
   click(byLabel(el, 'Properties'))
   return q(el, '.view-popover')
 }
-const widthField = (el: ParentNode): HTMLInputElement => byLabel(el, 'Column width')
+const widthField = (el: ParentNode): HTMLInputElement => byLabel(el, 'Column width in pixels')
 
 // ---------- tests ----------
 
@@ -254,7 +255,7 @@ describe('cards', () => {
 })
 
 describe('cardSize', () => {
-  it('column width follows cardSize: small 220, default medium 280, large 340', () => {
+  it('reads legacy cardSize values: small 220, absent 280, large 340', () => {
     const { el } = mount(BOARD_BASE)
     expect(colWidth(el)).toBe('280px')
     unmount()
@@ -283,10 +284,10 @@ describe('cardSize', () => {
 
   it('offers Column width only for Board views', () => {
     const { el } = mount(BOARD_BASE)
-    expect(openProperties(el).querySelector('[aria-label="Column width"]')).not.toBeNull()
+    expect(openProperties(el).querySelector('[aria-label="Column width in pixels"]')).not.toBeNull()
     unmount()
     const cards = mount(BOARD_BASE.replace('type: board', 'type: cards'))
-    expect(openProperties(cards.el).querySelector('[aria-label="Column width"]')).toBeNull()
+    expect(openProperties(cards.el).querySelector('[aria-label="Column width in pixels"]')).toBeNull()
   })
 
   it('persists 400 once and every outer column keeps the shared rendered width', () => {

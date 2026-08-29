@@ -382,7 +382,7 @@ describe('config edits are ONE settings write on the folder page', () => {
     const el = mount(FUNNELS)
     selectView(el, 'Board')
     click(byLabel(el, 'Properties'))
-    const width = byLabel<HTMLInputElement>(el, 'Column width')
+    const width = byLabel<HTMLInputElement>(el, 'Column width in pixels')
     setValue(width, '400')
     press(width, 'Enter')
     await flush()
