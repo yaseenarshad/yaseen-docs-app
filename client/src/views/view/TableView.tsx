@@ -12,8 +12,9 @@ import { canonicalKey } from './keys'
 import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf, summaryKindOf } from './GroupHeader'
 import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, useGroupDrag } from './groupDrag'
 import { Popover } from './Popover'
+import { usePreview } from './PreviewCard'
 import { frozenColumnCount } from './frozenColumns'
-import { TableRowContextMenu } from './TableRowContextMenu'
+import { PageContextMenu } from './PageContextMenu'
 
 export interface TableViewProps {
   def: ViewSet
@@ -47,6 +48,8 @@ export interface TableViewProps {
   folderPage?: FolderPageSettings | null
   /** The WHOLE index snapshot (🔒 D2, YAZ-819) — `records` is only the MEMBERS: link resolution and the link pickers read this, never the rows alone. */
   vaultRecords: readonly IndexRecord[]
+  /** Preview mode (`view.preview`, YAZ-1244): resting on a data row pops its page read-only. */
+  preview?: boolean
 }
 
 const DEFAULT_WIDTH = 150
@@ -101,8 +104,9 @@ function pinnedHeaderOffset(scrollerTop: number, tableTop: number, tableHeight: 
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, folderPage = null, vaultRecords }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, folderPage = null, vaultRecords, preview = false }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
+  const { rowProps, card, close } = usePreview(preview)
   // Row drag between sections (5C, GRO-2143); disabled without groups. One write key PER level
   // (YAZ-1101): a level that is not a note property takes no drops and shows no "+".
   const levelKeys = [groupByKey(view), groupByKey(view, 1)]
@@ -258,6 +262,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const cell = event.target.closest<HTMLTableCellElement>('td[data-cell]')
     if (cell === null) return
     event.preventDefault()
+    close()
     cell.focus()
     setRowMenu({ x: event.clientX, y: event.clientY, path })
   }
@@ -291,158 +296,166 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   )
 
   return (
-    <div ref={wrapRef} className="view-table-wrap" onScroll={windowed ? (e) => setScrollTop(e.currentTarget.scrollTop) : undefined}>
-      <table
-        className="view-table"
-        style={{ width: keys.reduce((w, k) => w + widthOf(k), 0), '--view-table-row-h': `${rowH}px` } as CSSProperties}
-        onKeyDown={onKeyDown}
-      >
-        <thead>
-          <tr>
-            {keys.map((key, index) => (
-              <th key={key} scope="col" className={isFrozen(index) ? 'view-table__frozen' : undefined} style={{ width: widthOf(key), ...frozenStyle(index) }}>
-                {propertyLabel(def, key)}
-                <span
-                  className={`view-table__resize${drag?.key === key ? ' view-table__resize--active' : ''}`}
-                  aria-hidden
-                  onMouseDown={startResize(key)}
-                />
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {first > 0 && spacer('top', first * rowH)}
-          {visible.map((line) =>
-            'header' in line ? (
-              <tr
-                key={`group:${line.gk}`}
-                className={`view-table__group${dnd.over === line.gk ? ' view-table__group--drop' : ''}`}
-                {...dnd.target(line.header, line.at)}
-              >
-                <td className={`view-table__group-cell${line.nested === true ? ' view-table__group-cell--nested' : ''}`} colSpan={keys.length}>
-                  <GroupHeader
-                    def={def}
-                    view={view}
-                    columns={keys}
-                    groupKey={line.header.key}
-                    rows={line.header.rows}
-                    collapsed={collapsedSet.has(line.gk)}
-                    onToggle={() => onToggleGroup(line.gk)}
-                    onNew={onNewInGroup === undefined || levelKeys[line.at.level] === null ? undefined : () => onNewInGroup(line.header, undefined, line.at)}
+    <>
+      <div ref={wrapRef} className="view-table-wrap" onScroll={windowed ? (e) => setScrollTop(e.currentTarget.scrollTop) : undefined}>
+        <table
+          className="view-table"
+          style={{ width: keys.reduce((w, k) => w + widthOf(k), 0), '--view-table-row-h': `${rowH}px` } as CSSProperties}
+          onKeyDown={onKeyDown}
+        >
+          <thead>
+            <tr>
+              {keys.map((key, index) => (
+                <th key={key} scope="col" className={isFrozen(index) ? 'view-table__frozen' : undefined} style={{ width: widthOf(key), ...frozenStyle(index) }}>
+                  {propertyLabel(def, key)}
+                  <span
+                    className={`view-table__resize${drag?.key === key ? ' view-table__resize--active' : ''}`}
+                    aria-hidden
+                    onMouseDown={startResize(key)}
                   />
-                </td>
-              </tr>
-            ) : (
-              <tr
-                // Fan-out (YAZ-671): the same record can sit in several groups, and the tbody is ONE
-                // flat list (the windowing needs it), so the path alone is not a unique sibling key.
-                key={line.gk === null ? line.row.record.path : `${line.gk}:${line.row.record.path}`}
-                className={line.gk !== null && dnd.over === line.gk ? 'view-table__row--drop' : undefined}
-                {...(line.g === null || line.at === null ? {} : { ...dnd.source(line.row.record.path, line.g, line.at), ...dnd.target(line.g, line.at) })}
-                onContextMenu={openRowMenu(line.row.record.path)}
-              >
-                {keys.map((key, c) => {
-                  const v = line.row.values[key]
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {first > 0 && spacer('top', first * rowH)}
+            {visible.map((line) =>
+              'header' in line ? (
+                <tr
+                  key={`group:${line.gk}`}
+                  className={`view-table__group${dnd.over === line.gk ? ' view-table__group--drop' : ''}`}
+                  {...dnd.target(line.header, line.at)}
+                >
+                  <td className={`view-table__group-cell${line.nested === true ? ' view-table__group-cell--nested' : ''}`} colSpan={keys.length}>
+                    <GroupHeader
+                      def={def}
+                      view={view}
+                      columns={keys}
+                      groupKey={line.header.key}
+                      rows={line.header.rows}
+                      collapsed={collapsedSet.has(line.gk)}
+                      onToggle={() => onToggleGroup(line.gk)}
+                      onNew={onNewInGroup === undefined || levelKeys[line.at.level] === null ? undefined : () => onNewInGroup(line.header, undefined, line.at)}
+                    />
+                  </td>
+                </tr>
+              ) : (
+                <tr
+                  // Fan-out (YAZ-671): the same record can sit in several groups, and the tbody is ONE
+                  // flat list (the windowing needs it), so the path alone is not a unique sibling key.
+                  key={line.gk === null ? line.row.record.path : `${line.gk}:${line.row.record.path}`}
+                  className={line.gk !== null && dnd.over === line.gk ? 'view-table__row--drop' : undefined}
+                  {...(line.g === null || line.at === null ? {} : { ...dnd.source(line.row.record.path, line.g, line.at), ...dnd.target(line.g, line.at) })}
+                  {...rowProps(line.row.record)}
+                  // Capture phase so the preview closes ALONGSIDE the drag wiring's own onDragStart
+                  // rather than replacing it (YAZ-1244): a card must never hang over a drag.
+                  onDragStartCapture={close}
+                  onContextMenu={openRowMenu(line.row.record.path)}
+                >
+                  {keys.map((key, c) => {
+                    const v = line.row.values[key]
+                    return (
+                      <td
+                        key={key}
+                        className={[typeOf(v) === 'number' && 'view-table__cell--num', isFrozen(c) && 'view-table__frozen'].filter(Boolean).join(' ') || undefined}
+                        style={frozenStyle(c)}
+                        tabIndex={line.r === firstDataRow && c === 0 ? 0 : -1}
+                        data-cell={`${line.r}:${c}`}
+                        onClick={bares[c] === null ? undefined : selectCell}
+                        onDoubleClick={bares[c] === null ? undefined : activateEditorFromCell}
+                      >
+                        {c === nameCol ? (
+                          <>
+                            <button type="button" className="view-table__link" onClick={() => onOpenFile(line.row.record.path)}>
+                              {render(v)}
+                            </button>
+                            {moveError?.path === line.row.record.path && (
+                              <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>
+                                Move failed
+                              </span>
+                            )}
+                          </>
+                        ) : bares[c] !== null ? (
+                          <EditableCell
+                            path={line.row.record.path}
+                            propKey={bares[c]}
+                            raw={line.row.record.properties[bares[c]]}
+                            value={v}
+                            editor={cellEditor(line.row.record.properties[bares[c]], typings[c])}
+                            basenames={linkNames[c] ?? basenames}
+                          />
+                        ) : (
+                          cellContent(v)
+                        )}
+                      </td>
+                    )
+                  })}
+                </tr>
+              ),
+            )}
+            {windowed && lines.length - first - count > 0 && spacer('bottom', (lines.length - first - count) * rowH)}
+          </tbody>
+          {groups === null && (
+            <tfoot>
+              <tr>
+                {keys.map((key, index) => {
+                  const label = propertyLabel(def, key)
+                  const kind = summaryKindOf(view, key)
                   return (
-                    <td
-                      key={key}
-                      className={[typeOf(v) === 'number' && 'view-table__cell--num', isFrozen(c) && 'view-table__frozen'].filter(Boolean).join(' ') || undefined}
-                      style={frozenStyle(c)}
-                      tabIndex={line.r === firstDataRow && c === 0 ? 0 : -1}
-                      data-cell={`${line.r}:${c}`}
-                      onClick={bares[c] === null ? undefined : selectCell}
-                      onDoubleClick={bares[c] === null ? undefined : activateEditorFromCell}
-                    >
-                      {c === nameCol ? (
-                        <>
-                          <button type="button" className="view-table__link" onClick={() => onOpenFile(line.row.record.path)}>
-                            {render(v)}
-                          </button>
-                          {moveError?.path === line.row.record.path && (
-                            <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>
-                              Move failed
-                            </span>
-                          )}
-                        </>
-                      ) : bares[c] !== null ? (
-                        <EditableCell
-                          path={line.row.record.path}
-                          propKey={bares[c]}
-                          raw={line.row.record.properties[bares[c]]}
-                          value={v}
-                          editor={cellEditor(line.row.record.properties[bares[c]], typings[c])}
-                          basenames={linkNames[c] ?? basenames}
-                        />
-                      ) : (
-                        cellContent(v)
+                    <td key={key} className={`view-table__summary${isFrozen(index) ? ' view-table__frozen' : ''}`} style={frozenStyle(index)}>
+                      <button
+                        type="button"
+                        className="view-table__summary-btn"
+                        aria-label={`Summarize ${label}`}
+                        aria-haspopup="dialog"
+                        aria-expanded={summaryFor === key}
+                        onClick={() => setSummaryFor(summaryFor === key ? null : key)}
+                      >
+                        {kind !== undefined && (
+                          <>
+                            <span className="view-table__summary-kind">{kind}</span>
+                            <span>{render(summarize(kind, rows.map((r) => r.values[key]), def.summaries))}</span>
+                          </>
+                        )}
+                      </button>
+                      {summaryFor === key && (
+                        <Popover label={`${label} summary`} className="view-table__summary-pop" onClose={() => setSummaryFor(null)}>
+                          {['None', ...BUILTIN_SUMMARIES, ...Object.keys(def.summaries ?? {})].map((k) => (
+                            <button
+                              key={k}
+                              type="button"
+                              className="view-popover__item"
+                              aria-pressed={k === (kind ?? 'None')}
+                              onClick={() => {
+                                setSummary(key, k === 'None' ? null : k)
+                                setSummaryFor(null)
+                              }}
+                            >
+                              {k}
+                            </button>
+                          ))}
+                        </Popover>
                       )}
                     </td>
                   )
                 })}
               </tr>
-            ),
+            </tfoot>
           )}
-          {windowed && lines.length - first - count > 0 && spacer('bottom', (lines.length - first - count) * rowH)}
-        </tbody>
-        {groups === null && (
-          <tfoot>
-            <tr>
-              {keys.map((key, index) => {
-                const label = propertyLabel(def, key)
-                const kind = summaryKindOf(view, key)
-                return (
-                  <td key={key} className={`view-table__summary${isFrozen(index) ? ' view-table__frozen' : ''}`} style={frozenStyle(index)}>
-                    <button
-                      type="button"
-                      className="view-table__summary-btn"
-                      aria-label={`Summarize ${label}`}
-                      aria-haspopup="dialog"
-                      aria-expanded={summaryFor === key}
-                      onClick={() => setSummaryFor(summaryFor === key ? null : key)}
-                    >
-                      {kind !== undefined && (
-                        <>
-                          <span className="view-table__summary-kind">{kind}</span>
-                          <span>{render(summarize(kind, rows.map((r) => r.values[key]), def.summaries))}</span>
-                        </>
-                      )}
-                    </button>
-                    {summaryFor === key && (
-                      <Popover label={`${label} summary`} className="view-table__summary-pop" onClose={() => setSummaryFor(null)}>
-                        {['None', ...BUILTIN_SUMMARIES, ...Object.keys(def.summaries ?? {})].map((k) => (
-                          <button
-                            key={k}
-                            type="button"
-                            className="view-popover__item"
-                            aria-pressed={k === (kind ?? 'None')}
-                            onClick={() => {
-                              setSummary(key, k === 'None' ? null : k)
-                              setSummaryFor(null)
-                            }}
-                          >
-                            {k}
-                          </button>
-                        ))}
-                      </Popover>
-                    )}
-                  </td>
-                )
-              })}
-            </tr>
-          </tfoot>
+        </table>
+        {rowMenu !== null && (
+          <PageContextMenu
+            x={rowMenu.x}
+            y={rowMenu.y}
+            path={rowMenu.path}
+            onOpenBackground={onOpenFileBackground}
+            onNotice={onNotice}
+            onClose={() => setRowMenu(null)}
+          />
         )}
-      </table>
-      {rowMenu !== null && (
-        <TableRowContextMenu
-          x={rowMenu.x}
-          y={rowMenu.y}
-          path={rowMenu.path}
-          onOpenBackground={onOpenFileBackground}
-          onNotice={onNotice}
-          onClose={() => setRowMenu(null)}
-        />
-      )}
-    </div>
+      </div>
+      {/* Outside the scroller on purpose (YAZ-1244): the card is placed against the viewport. */}
+      {card}
+    </>
   )
 }

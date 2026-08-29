@@ -14,12 +14,29 @@ import { type ViewSet, type ParsedViews, parseViews, serializeViews } from '../v
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderPage } from '../testFolderPage'
 import { TEST_RECORDS } from '../testRecords'
+import { OPEN_DELAY_MS } from './PreviewCard'
 
 vi.mock('../../api', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../api')>()
-  return { ...original, api: { ...original.api, reveal: vi.fn().mockResolvedValue({ path: '/vault/mock.md' }) } }
+  return {
+    ...original,
+    api: {
+      ...original.api,
+      reveal: vi.fn().mockResolvedValue({ path: '/vault/mock.md' }),
+      // Preview mode's fetch (YAZ-1244): a body for every path, so the hover card always has content.
+      readFile: vi.fn(async (path: string) => ({ path, content: `body of ${path}\n`, mtime: 1, size: 1 })),
+    },
+  }
 })
 const reveal = vi.mocked(api.reveal)
+
+/** Preview mode's Crepe (YAZ-1244) is a stand-in here — the real render is PreviewCard.crepe.test.tsx's. */
+vi.mock('../../editor/createCrepe', () => ({
+  createCrepe: vi.fn((opts: { root: HTMLElement; defaultValue?: string }) => {
+    opts.root.textContent = opts.defaultValue ?? ''
+    return { create: vi.fn(async () => {}), setReadonly: vi.fn(), destroy: vi.fn() }
+  }),
+}))
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -696,5 +713,67 @@ describe('windowing', () => {
     const { el } = mount('views:\n  - type: table\n    name: T\n', { records: manyRecords(500) })
     expect(bodyRows(el)).toHaveLength(500)
     expect(el.querySelector('.view-table__spacer')).toBeNull()
+  })
+})
+
+/**
+ * Preview mode's wiring (YAZ-1244): `preview: true` on the view hands every data row `usePreview`'s
+ * hover pair; absent attaches nothing at all. A drag start shuts the card — moving a row and
+ * peeking at one are different gestures. The card's own timing/cache matrix is PreviewCard.test.tsx's.
+ */
+describe('preview mode (YAZ-1244)', () => {
+  const PREVIEW_BASE = 'views:\n  - type: table\n    name: T\n    preview: true\n    order:\n      - file.name\n'
+  const PREVIEW_GROUPED = `${PREVIEW_BASE}    groupBy:\n      property: note.status\n`
+  const settle = (ms: number) => act(async () => new Promise((resolve) => setTimeout(resolve, ms)).then(() => undefined))
+  const hover = (el: Element) => act(() => void el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+  const firstRow = (el: ParentNode): HTMLElement => {
+    const row = q<HTMLElement>(el, 'td[data-cell]').closest('tr')
+    if (row === null) throw new Error('no data row')
+    return row
+  }
+  const card = (): HTMLElement | null => document.body.querySelector('.view-preview')
+
+  it("resting on a row opens the card with that page's body", async () => {
+    const { el } = mount(PREVIEW_BASE)
+    hover(firstRow(el))
+    await settle(OPEN_DELAY_MS + 50)
+    expect(card()).not.toBeNull()
+    expect(card()!.textContent).toContain('body of /vault/')
+  })
+
+  it('preview off: hovering opens nothing', async () => {
+    const { el } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n')
+    hover(firstRow(el))
+    await settle(OPEN_DELAY_MS + 50)
+    expect(card()).toBeNull()
+  })
+
+  it('a drag start closes the card', async () => {
+    const { el } = mount(PREVIEW_GROUPED)
+    hover(firstRow(el))
+    await settle(OPEN_DELAY_MS + 50)
+    expect(card()).not.toBeNull()
+    act(() => void firstRow(el).dispatchEvent(new Event('dragstart', { bubbles: true, cancelable: true })))
+    draw()
+    expect(card()).toBeNull()
+  })
+
+  it('a secondary click closes the preview and opens page actions for that exact row', async () => {
+    const openBackground = vi.fn()
+    const { el } = mount(PREVIEW_BASE, { folderPage: testFolderPage({ openBackground }) })
+    const target = firstRow(el)
+    hover(target)
+    await settle(OPEN_DELAY_MS + 50)
+    expect(card()).not.toBeNull()
+
+    rightClick(q(target, 'td[data-cell]'))
+    expect(card()).toBeNull()
+    expect([...el.querySelectorAll('.ctx-menu [role="menuitem"]')].map((item) => item.textContent)).toEqual([
+      'Open in new tab',
+      'Copy path',
+      'Reveal in Finder',
+    ])
+    click([...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((item) => item.textContent === 'Open in new tab')!)
+    expect(openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
   })
 })

@@ -92,6 +92,14 @@ export const RelationIcon = () => (
   </svg>
 )
 
+/** Eye, for the toolbar's preview-on-hover toggle (YAZ-1244). */
+export const EyeIcon = () => (
+  <svg {...svg}>
+    <path d="M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4-6.5-4-6.5-4z" />
+    <circle cx="8" cy="8" r="1.8" />
+  </svg>
+)
+
 /** 6-dot grip, for dragging a shown property into place (YAZ-1207) — dots, so filled, not stroked. */
 export const DragHandleIcon = () => (
   <svg {...svg}>
