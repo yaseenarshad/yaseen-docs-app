@@ -901,7 +901,8 @@
 /* Card rows (YAZ-1217): one flex line per unjoined property; joined items carry the muted dash. */
 .view-board__line {
   display: flex;
-  gap: 8px;
+  /* Tight, symmetric around the bare dash: the gap IS the dash's breathing room. */
+  gap: 5px;
   align-items: baseline;
   overflow: hidden;
   white-space: nowrap;
@@ -912,7 +913,7 @@
 }
 
 .view-board__joined::before {
-  content: '\2013\00a0';
+  content: '\2013';
   color: var(--fg-muted);
 }
 

@@ -508,7 +508,7 @@ ${cardStyle}
     expect(viewsCss).toMatch(/\.view-board__prop--bold\s*\{[^}]*font-weight:\s*600/s)
     expect(viewsCss).toMatch(/\.view-board__prop--underline\s*\{[^}]*text-decoration:\s*underline/s)
     expect(viewsCss).toMatch(/\.view-board__line\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*baseline/s)
-    expect(viewsCss).toMatch(/\.view-board__joined::before\s*\{[^}]*content:\s*['"]\\2013\\00a0['"];[^}]*color:\s*var\(--fg-muted\)/s)
+    expect(viewsCss).toMatch(/\.view-board__joined::before\s*\{[^}]*content:\s*['"]\\2013['"];[^}]*color:\s*var\(--fg-muted\)/s)
     expect(viewsCss).not.toMatch(/view-board__inline--/)
   })
 })
