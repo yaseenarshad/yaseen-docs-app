@@ -29,14 +29,14 @@ export function TextField({ value, onCommit, normalize, onDone, ...rest }: TextF
   const finish = (commit: boolean) => {
     if (done.current) return
     done.current = true
-    if (commit) {
+    if (commit && draft !== value) {
       const next = normalize === undefined ? draft : normalize(draft)
       if (next === null) setDraft(value)
       else {
         setDraft(next)
         if (next !== value) onCommit(next)
       }
-    } else setDraft(value)
+    } else if (!commit) setDraft(value)
     onDone?.()
   }
 

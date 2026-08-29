@@ -312,6 +312,25 @@ describe('cardSize', () => {
     expect(yaml()).toContain('cardSize: 400')
   })
 
+  it('focus and blur leave an untouched legacy numeric width below 180 unchanged with no write', () => {
+    const { el, onChange, yaml } = mount(BOARD_BASE.replace('name: B', 'name: B\n    cardSize: 100'))
+    const input = widthField(openProperties(el))
+    expect(input.value).toBe('100')
+    blur(input)
+    expect(input.value).toBe('100')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(yaml()).toContain('cardSize: 100')
+  })
+
+  it('a changed draft still normalizes before comparison and visibly restores the canonical value', () => {
+    const { el, onChange } = mount(BOARD_BASE)
+    const input = widthField(openProperties(el))
+    setValue(input, '280.4')
+    press(input, 'Enter')
+    expect(input.value).toBe('280')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
   it('the Board normalizer rejects an invalid draft directly', () => {
     expect(normalizeBoardWidth('not-a-width')).toBeNull()
   })
