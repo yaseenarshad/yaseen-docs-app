@@ -1,8 +1,8 @@
 /**
- * BOARD CARD STYLES, END TO END (YAZ-1206): the per-property `cardStyle` flags proven against
- * the REAL app over the committed encyclopedia. The Properties menu's new toggles write ONE
+ * BOARD CARD STYLES, END TO END (YAZ-1206/YAZ-1217): the per-property `cardStyle` flags proven
+ * against the REAL app over the committed encyclopedia. The Properties menu's toggles write ONE
  * `cardStyle` entry per click into the KPIs folder page on disk; the board's cards restyle
- * live — bold, hidden label, and the inline-with-title value carrying its baked-in dash.
+ * live — bold, hidden label, and the JOIN model gluing a value onto the row above with a dash.
  * Same harness as its siblings (temp `--user-data-dir`, COPY of the fixture, step
  * screenshots); serial by design — each step continues the previous state.
  */
@@ -36,7 +36,7 @@ test.afterAll(async () => {
   await quitApp(app)
 })
 
-test('step 1 — a grouped board shows plain cards; the Properties menu carries the style toggles', async () => {
+test('step 1 — a grouped board shows plain cards; note rows carry B/U/–L/join, file.name only join', async () => {
   await contents().locator('.view-tab__btn', { hasText: 'Board' }).click()
   await contents().locator('[aria-label="Sort"]').click()
   await contents().locator('[aria-label="Group by"]').selectOption({ label: 'kpi_category' })
@@ -44,7 +44,10 @@ test('step 1 — a grouped board shows plain cards; the Properties menu carries 
   await expect(contents().locator('.view-board__col')).toHaveCount(2)
   await contents().locator('[aria-label="Properties"]').click()
   await expect(contents().locator('[aria-label="Bold unit on cards"]')).toBeVisible()
+  await expect(contents().locator('[aria-label="Join unit to the row above"]')).toBeVisible()
+  await expect(contents().locator('[aria-label="Join file.name to the row above"]')).toBeVisible()
   await expect(contents().locator('[aria-label="Bold file.name on cards"]')).toHaveCount(0)
+  await expect(contents().locator('[aria-label$=" of the title"]')).toHaveCount(0)
   await shoot(win, 'cardstyle-01-toggles')
 })
 
@@ -64,18 +67,21 @@ test('step 3 — Hide label drops the muted label; the value stays', async () =>
   await shoot(win, 'cardstyle-03-hidelabel')
 })
 
-test('step 4 — inline right lifts the value beside the title with the dash side class', async () => {
-  await contents().locator('[aria-label="Show unit right of the title"]').click()
-  const row = firstCard().locator('.view-board__title-row')
-  await expect(row.locator('.view-board__title')).toBeVisible()
-  await expect(row.locator('.view-board__inline--right')).toBeVisible()
-  await expect.poll(async () => /inline: right/.test(await kpis())).toBe(true)
-  await shoot(win, 'cardstyle-04-inline')
+test('step 4 — join glues the value onto the row above, dash-separated, durable on disk', async () => {
+  await contents().locator('[aria-label="Join unit to the row above"]').click()
+  const line = firstCard().locator('.view-board__line', { has: win.locator('.view-board__joined') })
+  await expect(line.locator('.view-board__joined')).toBeVisible()
+  await expect.poll(async () => /join: true/.test(await kpis())).toBe(true)
+  await shoot(win, 'cardstyle-04-join')
 })
 
 test('step 5 — untoggling everything cleans cardStyle out of the YAML completely', async () => {
-  await contents().locator('[aria-label="Show unit right of the title"]').click()
+  // One durable write per click, awaited like a human clicks: each toggle-off is a separate
+  // whole-settings write, and firing all three concurrently can land them out of order.
+  await contents().locator('[aria-label="Join unit to the row above"]').click()
+  await expect.poll(async () => /join: true/.test(await kpis())).toBe(false)
   await contents().locator('[aria-label="Hide unit label on cards"]').click()
+  await expect.poll(async () => /hideLabel: true/.test(await kpis())).toBe(false)
   await contents().locator('[aria-label="Bold unit on cards"]').click()
   await expect.poll(async () => (await kpis()).includes('cardStyle')).toBe(false)
   await expect(firstCard().locator('.view-board__prop--bold')).toHaveCount(0)

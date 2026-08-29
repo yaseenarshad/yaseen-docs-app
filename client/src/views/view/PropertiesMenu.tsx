@@ -41,8 +41,9 @@ function entryKey(def: ViewSet, key: string): string {
  * Properties menu (GRO-2135): shown ⇄ hidden checklist (writes `view.order`; Table and Board views
  * may hide `file.name`, while Cards and List keep their existing behavior), a 6-dot grip to
  * reorder (YAZ-1207: the ↑↓ arrows are gone), pencil to set `def.properties[key].displayName`.
- * Board views add five per-row card-style toggles (YAZ-1206) writing `view.cardStyle` — bold,
- * underline, hide label, inline left/right of the title (one setting: the active side clears).
+ * Board views add four per-row card-style toggles (YAZ-1206/YAZ-1217) writing `view.cardStyle` —
+ * bold, underline, hide label, and ⤴ join onto the row above; the shown `file.name` row carries
+ * ONLY ⤴, since the title takes part in the card's layout and never in its text styling.
  * List views (4F, GRO-2140) get a trailing "List" section for how those properties display —
  * `markerStyle` / `indentProperties` / `propertySeparator`, one write per change, the default
  * value DELETES the key (like SortMenu clearing `sort` / `groupBy`).
@@ -133,16 +134,10 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
       if (Object.keys(map).length) v.cardStyle = map
       else delete v.cardStyle
     })
-  const toggleCardFlag = (key: string, flag: 'bold' | 'underline' | 'hideLabel') =>
+  const toggleCardFlag = (key: string, flag: 'bold' | 'underline' | 'hideLabel' | 'join') =>
     writeCardStyle(key, (style) => {
       if (style[flag] === true) delete style[flag]
       else style[flag] = true
-    })
-  /** Left ⇄ right are one setting, so the active side clears it rather than fighting its twin. */
-  const setInlineSide = (key: string, side: 'left' | 'right') =>
-    writeCardStyle(key, (style) => {
-      if (style.inline === side) delete style.inline
-      else style.inline = side
     })
 
   return (
@@ -154,6 +149,8 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
           const label = propertyLabel(def, key)
           const decl = folderPage.settings.columns[bare(key)]
           const isNote = canonicalKey(key).startsWith('note.')
+          /** The title's row: no declaration, no relation, no text styling — only the join toggle, and only on a board (YAZ-1217). */
+          const isName = canonicalKey(key) === 'file.name'
           const cls = ['view-prop']
           if (drag !== null && i >= 0) {
             if (drag.from === i) cls.push('view-prop--dragging')
@@ -233,86 +230,84 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
                   <PencilIcon />
                 </button>
               </div>
-              {/* Note-only since YAZ-1207: the ↑↓ arrows were the shown row's other reason to have this line. */}
-              {isNote && (
+              {/* Note rows since YAZ-1207 (the ↑↓ arrows were the shown row's other reason to have this line), plus the shown board title for its join toggle alone. */}
+              {(isNote || (isName && view.type === 'board' && on)) && (
                 <div className="view-prop__controls">
-                  <select
-                    className="view-select"
-                    aria-label={`Type of ${label}`}
-                    value={decl?.kind ?? ''}
-                    onChange={(e) => setKind(bare(key), e.target.value as PropertyKind)}
-                  >
-                    {/* Undeclared: the ladder's LOWER rungs decide — a placeholder, never a choice. */}
-                    <option value="" disabled>
-                      auto
-                    </option>
-                    {PROPERTY_KINDS.map((k) => (
-                      <option key={k} value={k}>
-                        {k}
-                      </option>
-                    ))}
-                  </select>
-                  {(decl?.kind === 'link' || decl?.kind === 'multi-link') && (
-                    <TextField
-                      className="view-input view-relation__target"
-                      aria-label={`Target of ${label}`}
-                      placeholder="Any page"
-                      value={decl.target ?? ''}
-                      onCommit={(target) => setTarget(bare(key), target)}
-                    />
+                  {isNote && (
+                    <>
+                      <select
+                        className="view-select"
+                        aria-label={`Type of ${label}`}
+                        value={decl?.kind ?? ''}
+                        onChange={(e) => setKind(bare(key), e.target.value as PropertyKind)}
+                      >
+                        {/* Undeclared: the ladder's LOWER rungs decide — a placeholder, never a choice. */}
+                        <option value="" disabled>
+                          auto
+                        </option>
+                        {PROPERTY_KINDS.map((k) => (
+                          <option key={k} value={k}>
+                            {k}
+                          </option>
+                        ))}
+                      </select>
+                      {(decl?.kind === 'link' || decl?.kind === 'multi-link') && (
+                        <TextField
+                          className="view-input view-relation__target"
+                          aria-label={`Target of ${label}`}
+                          placeholder="Any page"
+                          value={decl.target ?? ''}
+                          onCommit={(target) => setTarget(bare(key), target)}
+                        />
+                      )}
+                    </>
                   )}
-                  {/* Card styling (YAZ-1206) belongs to the property, so it rides this line — shown board rows only. */}
+                  {/* Card styling (YAZ-1206) belongs to the property, so it rides this line — shown board rows only; the title gets ⤴ alone, since it takes part in the LAYOUT and never in text styling (YAZ-1217). */}
                   {view.type === 'board' && on && (
                     <>
+                      {isNote && (
+                        <>
+                          <button
+                            type="button"
+                            className="view-rule__nav view-card-toggle"
+                            aria-label={`Bold ${label} on cards`}
+                            title={`Bold ${label} on cards`}
+                            aria-pressed={cardStyleOf(key).bold === true}
+                            onClick={() => toggleCardFlag(key, 'bold')}
+                          >
+                            <b>B</b>
+                          </button>
+                          <button
+                            type="button"
+                            className="view-rule__nav view-card-toggle"
+                            aria-label={`Underline ${label} on cards`}
+                            title={`Underline ${label} on cards`}
+                            aria-pressed={cardStyleOf(key).underline === true}
+                            onClick={() => toggleCardFlag(key, 'underline')}
+                          >
+                            <u>U</u>
+                          </button>
+                          <button
+                            type="button"
+                            className="view-rule__nav view-card-toggle"
+                            aria-label={`Hide ${label} label on cards`}
+                            title={`Hide ${label} label on cards`}
+                            aria-pressed={cardStyleOf(key).hideLabel === true}
+                            onClick={() => toggleCardFlag(key, 'hideLabel')}
+                          >
+                            –L
+                          </button>
+                        </>
+                      )}
                       <button
                         type="button"
                         className="view-rule__nav view-card-toggle"
-                        aria-label={`Bold ${label} on cards`}
-                        title={`Bold ${label} on cards`}
-                        aria-pressed={cardStyleOf(key).bold === true}
-                        onClick={() => toggleCardFlag(key, 'bold')}
+                        aria-label={`Join ${label} to the row above`}
+                        title={`Join ${label} to the row above`}
+                        aria-pressed={cardStyleOf(key).join === true}
+                        onClick={() => toggleCardFlag(key, 'join')}
                       >
-                        <b>B</b>
-                      </button>
-                      <button
-                        type="button"
-                        className="view-rule__nav view-card-toggle"
-                        aria-label={`Underline ${label} on cards`}
-                        title={`Underline ${label} on cards`}
-                        aria-pressed={cardStyleOf(key).underline === true}
-                        onClick={() => toggleCardFlag(key, 'underline')}
-                      >
-                        <u>U</u>
-                      </button>
-                      <button
-                        type="button"
-                        className="view-rule__nav view-card-toggle"
-                        aria-label={`Hide ${label} label on cards`}
-                        title={`Hide ${label} label on cards`}
-                        aria-pressed={cardStyleOf(key).hideLabel === true}
-                        onClick={() => toggleCardFlag(key, 'hideLabel')}
-                      >
-                        –L
-                      </button>
-                      <button
-                        type="button"
-                        className="view-rule__nav view-card-toggle"
-                        aria-label={`Show ${label} left of the title`}
-                        title={`Show ${label} left of the title`}
-                        aria-pressed={cardStyleOf(key).inline === 'left'}
-                        onClick={() => setInlineSide(key, 'left')}
-                      >
-                        ⇤
-                      </button>
-                      <button
-                        type="button"
-                        className="view-rule__nav view-card-toggle"
-                        aria-label={`Show ${label} right of the title`}
-                        title={`Show ${label} right of the title`}
-                        aria-pressed={cardStyleOf(key).inline === 'right'}
-                        onClick={() => setInlineSide(key, 'right')}
-                      >
-                        ⇥
+                        ⤴
                       </button>
                     </>
                   )}

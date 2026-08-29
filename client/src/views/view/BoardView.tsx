@@ -1,4 +1,4 @@
-import { type CSSProperties, useState } from 'react'
+import { type CSSProperties, Fragment, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
@@ -50,9 +50,12 @@ export interface BoardViewProps {
  * descendants, so one bubbled drop cannot dispatch at both levels. Images are 4E. A single-level
  * column — or each writable inner section in a nested Board — ends in the Notion inline add
  * (YAZ-943): Enter births the named page into that exact section without opening it. Per-property
- * `cardStyle` (YAZ-1206) bolds/underlines a value, hides its label, or lifts it onto the title row.
+ * `cardStyle` (YAZ-1206) bolds/underlines a value and hides its label; its `join` flag is the whole
+ * LAYOUT (YAZ-1217, left/right is gone): a card is `.view-board__line` rows following `order`, each
+ * key starting one unless `join` continues the line being built — so position IS ordering and the
+ * title is un-pinned: `file.name` sits at its order position, can be joined onto and can itself join.
  */
-/** The `cardStyle` flags that read the same on a stacked row and an inline value (YAZ-1206). */
+/** The text flags a note row carries (YAZ-1206); the title takes part in the layout only (YAZ-1217). */
 const styleClasses = (style: NonNullable<ViewDef['cardStyle']>[string]) =>
   `${style.bold === true ? ' view-board__prop--bold' : ''}${style.underline === true ? ' view-board__prop--underline' : ''}`
 
@@ -85,18 +88,38 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
 
   const keys = propertyKeys(def, view, records)
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
-  const rest = keys.filter((k) => k !== nameKey)
   const styleOf = (key: string) => view.cardStyle?.[canonicalKey(key)] ?? {}
-  const inlineLeft = rest.filter((k) => styleOf(k).inline === 'left')
-  const inlineRight = rest.filter((k) => styleOf(k).inline === 'right')
-  const stacked = rest.filter((k) => styleOf(k).inline === undefined)
+  /** The card's ROWS (YAZ-1217): each ordered key starts a line, `join` appends it to the one being built — so a join with no line yet is a harmless no-op. */
+  const lines = keys.reduce<string[][]>((acc, key) => {
+    if (styleOf(key).join === true && acc.length > 0) acc[acc.length - 1].push(key)
+    else acc.push([key])
+    return acc
+  }, [])
   const width = cardWidth(view.cardSize)
-  /** `side` only when a title is there to separate from: no title, no dash (YAZ-1175 amendment). */
-  const inlineValue = (key: string, row: Row, side: string) => (
-    <span key={key} className={`view-board__prop-value${nameKey === undefined ? '' : side}${styleClasses(styleOf(key))}`}>
-      {cellContent(row.values[key])}
-    </span>
-  )
+  /** One item on a line: the title button, or a label/value row. Every item but the line's first is `joined` — the dash itself is CSS. */
+  const cardItem = (key: string, row: Row, joined: boolean) => {
+    const dash = joined ? ' view-board__joined' : ''
+    if (key === nameKey)
+      return (
+        <button key={key} type="button" className={`view-board__title${dash}`} onClick={() => onOpenFile(row.record.path)}>
+          {render(row.values[key])}
+        </button>
+      )
+    const style = styleOf(key)
+    return (
+      <div key={key} className={`view-board__prop${styleClasses(style)}${dash}`}>
+        {style.hideLabel !== true && <span className="view-board__prop-name">{propertyLabel(def, key)}</span>}
+        <span className="view-board__prop-value">{cellContent(row.values[key])}</span>
+      </div>
+    )
+  }
+  /** A failed move's inline chip (5C, GRO-2143), under the card's first line. */
+  const moveChip = (row: Row) =>
+    moveError?.path === row.record.path ? (
+      <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>
+        Move failed
+      </span>
+    ) : null
   const cardList = (rows: readonly Row[], group: Group, at: GroupSpot, isOver = false) => (
     <ul className="view-board__cards">
       {rows.map((row) => (
@@ -106,28 +129,14 @@ export function BoardView({ def, view, viewIndex, records, groups, collapsed, on
           className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}`}
           {...dnd.source(row.record.path, group, at)}
         >
-          {(nameKey !== undefined || inlineLeft.length + inlineRight.length > 0) && (
-            <div className="view-board__title-row">
-              {inlineLeft.map((key) => inlineValue(key, row, ' view-board__inline--left'))}
-              {nameKey !== undefined && (
-                <button type="button" className="view-board__title" onClick={() => onOpenFile(row.record.path)}>
-                  {render(row.values[nameKey])}
-                </button>
-              )}
-              {inlineRight.map((key) => inlineValue(key, row, ' view-board__inline--right'))}
-            </div>
-          )}
-          {moveError?.path === row.record.path && (
-            <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>
-              Move failed
-            </span>
-          )}
-          {stacked.map((key) => (
-            <div key={key} className={`view-board__prop${styleClasses(styleOf(key))}`}>
-              {styleOf(key).hideLabel !== true && <span className="view-board__prop-name">{propertyLabel(def, key)}</span>}
-              <span className="view-board__prop-value">{cellContent(row.values[key])}</span>
-            </div>
+          {lines.map((line, i) => (
+            <Fragment key={line[0]}>
+              <div className="view-board__line">{line.map((key, item) => cardItem(key, row, item > 0))}</div>
+              {i === 0 && moveChip(row)}
+            </Fragment>
           ))}
+          {/* An empty `order` leaves a blank card shell with no line to hang the chip under — it still drags, so it still reports. */}
+          {lines.length === 0 && moveChip(row)}
         </li>
       ))}
       {isOver && <li className="view-board__placeholder" aria-hidden />}

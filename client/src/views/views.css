@@ -878,11 +878,11 @@
   text-decoration: underline;
 }
 
+/* The vertical rhythm lives on the LINE (YAZ-1217): a row inside one must not add its own. */
 .view-board__prop {
   display: flex;
   gap: 8px;
   align-items: baseline;
-  margin-top: 4px;
   overflow: hidden;
   white-space: nowrap;
 }
@@ -898,30 +898,31 @@
   text-overflow: ellipsis;
 }
 
-/* Card styles (YAZ-1206): per-property flags from view.cardStyle. */
-.view-board__title-row {
+/* Card rows (YAZ-1217): one flex line per unjoined property; joined items carry the muted dash. */
+.view-board__line {
   display: flex;
   gap: 8px;
   align-items: baseline;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
+.view-board__line + .view-board__line {
+  margin-top: 4px;
+}
+
+.view-board__joined::before {
+  content: '\2013\00a0';
+  color: var(--fg-muted);
+}
+
+/* The text flags from view.cardStyle (YAZ-1206) — note rows only, never the title. */
 .view-board__prop--bold {
   font-weight: 600;
 }
 
 .view-board__prop--underline {
   text-decoration: underline;
-}
-
-/* The baked-in dash: an inline value carries a muted dash on its title-facing side. */
-.view-board__inline--right::before {
-  content: '\2013\00a0';
-  color: var(--fg-muted);
-}
-
-.view-board__inline--left::after {
-  content: '\00a0\2013';
-  color: var(--fg-muted);
 }
 
 /* the inline add (YAZ-943): a quiet row, the same box as a card */

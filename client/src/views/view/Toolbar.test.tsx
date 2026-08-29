@@ -766,7 +766,8 @@ describe('properties drag-to-reorder (YAZ-1207)', () => {
     expect(def().views[0].frozenColumns).toBe(2)
   })
 })
-describe('card style toggles (YAZ-1206): per-property cardStyle writes on board views', () => {
+
+describe('card style toggles (YAZ-1206/YAZ-1217): per-property cardStyle writes on board views', () => {
   const BOARD = `views:
   - type: board
     name: B
@@ -777,21 +778,23 @@ describe('card style toggles (YAZ-1206): per-property cardStyle writes on board 
     groupBy:
       property: note.status
 `
-  it('board rows carry B / U / hide-label / inline toggles for shown note rows — never for file.name or non-boards', () => {
+  it('note rows carry B / U / hide-label / join; the file.name row carries ONLY join; non-boards none', () => {
     const { el } = mount(BOARD)
     const pop = openMenu(el, 'Properties')
     expect(byLabel(pop, 'Bold status on cards')).toBeDefined()
     expect(byLabel(pop, 'Underline status on cards')).toBeDefined()
     expect(byLabel(pop, 'Hide status label on cards')).toBeDefined()
-    expect(byLabel(pop, 'Show status left of the title')).toBeDefined()
-    expect(byLabel(pop, 'Show status right of the title')).toBeDefined()
+    expect(byLabel(pop, 'Join status to the row above')).toBeDefined()
+    expect(byLabel(pop, 'Join file.name to the row above')).toBeDefined()
     expect(pop.querySelector('[aria-label="Bold file.name on cards"]')).toBeNull()
+    expect(pop.querySelector('[aria-label$=" of the title"]')).toBeNull() // the old left/right pair is gone
   })
 
   it('non-board views offer no card-style toggles', () => {
     const { el } = mount() // YASIN_BASE, table active
     const pop = openMenu(el, 'Properties')
     expect(pop.querySelector('[aria-label^="Bold "]')).toBeNull()
+    expect(pop.querySelector('[aria-label^="Join "]')).toBeNull()
   })
 
   it('toggling writes one cardStyle entry per click and toggling off cleans the YAML completely', () => {
@@ -799,24 +802,23 @@ describe('card style toggles (YAZ-1206): per-property cardStyle writes on board 
     const pop = openMenu(el, 'Properties')
     click(byLabel(pop, 'Bold status on cards'))
     expect(def().views[0].cardStyle).toEqual({ 'note.status': { bold: true } })
-    click(byLabel(pop, 'Underline status on cards'))
-    expect(def().views[0].cardStyle).toEqual({ 'note.status': { bold: true, underline: true } })
+    click(byLabel(pop, 'Join status to the row above'))
+    expect(def().views[0].cardStyle).toEqual({ 'note.status': { bold: true, join: true } })
     expect(onChange).toHaveBeenCalledTimes(2)
-    click(byLabel(pop, 'Underline status on cards'))
+    click(byLabel(pop, 'Join status to the row above'))
     click(byLabel(pop, 'Bold status on cards'))
     expect(def().views[0].cardStyle).toBeUndefined()
     expect(yaml()).not.toContain('cardStyle')
   })
 
-  it('inline left/right are mutually exclusive and clicking the active side clears it', () => {
-    const { el, def } = mount(BOARD)
+  it("file.name's join round-trips through its canonical cardStyle key", () => {
+    const { el, def, yaml } = mount(BOARD)
     const pop = openMenu(el, 'Properties')
-    click(byLabel(pop, 'Show priority right of the title'))
-    expect(def().views[0].cardStyle).toEqual({ 'note.priority': { inline: 'right' } })
-    click(byLabel(pop, 'Show priority left of the title'))
-    expect(def().views[0].cardStyle).toEqual({ 'note.priority': { inline: 'left' } })
-    click(byLabel(pop, 'Show priority left of the title'))
+    click(byLabel(pop, 'Join file.name to the row above'))
+    expect(def().views[0].cardStyle).toEqual({ 'file.name': { join: true } })
+    click(byLabel(pop, 'Join file.name to the row above'))
     expect(def().views[0].cardStyle).toBeUndefined()
+    expect(yaml()).not.toContain('cardStyle')
   })
 
   it('pressed state reflects the YAML', () => {
@@ -829,12 +831,12 @@ describe('card style toggles (YAZ-1206): per-property cardStyle writes on board 
     groupBy:
       property: note.status
     cardStyle:
-      note.status: { bold: true, inline: right }
+      note.status: { bold: true, join: true }
 `)
     const pop = openMenu(el, 'Properties')
     expect(byLabel(pop, 'Bold status on cards').getAttribute('aria-pressed')).toBe('true')
-    expect(byLabel(pop, 'Show status right of the title').getAttribute('aria-pressed')).toBe('true')
-    expect(byLabel(pop, 'Show status left of the title').getAttribute('aria-pressed')).toBe('false')
+    expect(byLabel(pop, 'Join status to the row above').getAttribute('aria-pressed')).toBe('true')
     expect(byLabel(pop, 'Underline status on cards').getAttribute('aria-pressed')).toBe('false')
+    expect(byLabel(pop, 'Join file.name to the row above').getAttribute('aria-pressed')).toBe('false')
   })
 })

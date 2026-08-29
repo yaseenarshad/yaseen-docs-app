@@ -403,78 +403,81 @@ describe('inline new card row (YAZ-943): the Notion add, at the bottom of every 
   })
 })
 
-describe('card styles (YAZ-1206): per-property cardStyle on board cards', () => {
-  const STYLED = (cardStyle: string) => `views:
+describe('card layout (YAZ-1206/YAZ-1217): cardStyle rows and the join model', () => {
+  const STYLED = (order: string, cardStyle: string) => `views:
   - type: board
     name: B
     order:
-      - file.name
-      - note.priority
-      - note.tags
+${order}
     groupBy:
       property: note.status
     cardStyle:
 ${cardStyle}
 `
   const cardIn = (el: ParentNode): HTMLElement => q<HTMLElement>(el, '.view-board__card')
+  const linesIn = (card: HTMLElement): HTMLElement[] => [...card.querySelectorAll<HTMLElement>('.view-board__line')]
 
-  it('bold and underline restyle the whole stacked row; labels stay', () => {
-    const { el } = mount(STYLED('      note.priority: { bold: true }\n      note.tags: { underline: true }'))
+  it('bold and underline restyle a row; labels stay; each unjoined property is its own line', () => {
+    const { el } = mount(STYLED('      - file.name\n      - note.priority\n      - note.tags', '      note.priority: { bold: true }\n      note.tags: { underline: true }'))
     const card = cardIn(el)
     const rows = [...card.querySelectorAll<HTMLElement>('.view-board__prop')]
     expect(rows.map((r) => q(r, '.view-board__prop-name').textContent)).toEqual(['priority', 'tags'])
     expect(rows[0].classList.contains('view-board__prop--bold')).toBe(true)
-    expect(rows[0].classList.contains('view-board__prop--underline')).toBe(false)
     expect(rows[1].classList.contains('view-board__prop--underline')).toBe(true)
+    expect(linesIn(card)).toHaveLength(3)
   })
 
   it('hideLabel drops the muted label span and keeps the value', () => {
-    const { el } = mount(STYLED('      note.priority: { hideLabel: true }'))
-    const card = cardIn(el)
-    const rows = [...card.querySelectorAll<HTMLElement>('.view-board__prop')]
-    expect(rows).toHaveLength(2)
+    const { el } = mount(STYLED('      - file.name\n      - note.priority\n      - note.tags', '      note.priority: { hideLabel: true }'))
+    const rows = [...cardIn(el).querySelectorAll<HTMLElement>('.view-board__prop')]
     expect(rows[0].querySelector('.view-board__prop-name')).toBeNull()
-    expect(q(rows[0], '.view-board__prop-value').textContent).not.toBe('')
+    expect(q(rows[0], '.view-board__prop-value')).toBeDefined()
     expect(q(rows[1], '.view-board__prop-name').textContent).toBe('tags')
   })
 
-  it('inline: right renders the value after the title in the title row, off the stacked rows', () => {
-    const { el } = mount(STYLED('      note.priority: { inline: right, bold: true }'))
+  it('join chains consecutive properties onto ONE line after the title, dash class on every joined item', () => {
+    const { el } = mount(STYLED('      - file.name\n      - note.priority\n      - note.tags', '      note.priority: { join: true, bold: true }\n      note.tags: { join: true }'))
     const card = cardIn(el)
-    const row = q<HTMLElement>(card, '.view-board__title-row')
-    const kids = [...row.children]
+    const rows = linesIn(card)
+    expect(rows).toHaveLength(1)
+    const kids = [...rows[0].children]
+    expect(kids).toHaveLength(3)
     expect(kids[0].classList.contains('view-board__title')).toBe(true)
-    expect(kids[1].classList.contains('view-board__inline--right')).toBe(true)
+    expect(kids[0].classList.contains('view-board__joined')).toBe(false)
+    expect(kids[1].classList.contains('view-board__joined')).toBe(true)
     expect(kids[1].classList.contains('view-board__prop--bold')).toBe(true)
-    // priority is no longer a stacked row; tags still is
-    expect([...card.querySelectorAll('.view-board__prop .view-board__prop-name')].map((n) => n.textContent)).toEqual(['tags'])
+    expect(kids[2].classList.contains('view-board__joined')).toBe(true)
   })
 
-  it('inline: left renders the value before the title', () => {
-    const { el } = mount(STYLED('      note.priority: { inline: left }'))
-    const kids = [...q<HTMLElement>(cardIn(el), '.view-board__title-row').children]
-    expect(kids[0].classList.contains('view-board__inline--left')).toBe(true)
-    expect(kids[1].classList.contains('view-board__title')).toBe(true)
-  })
-
-  it('a hidden file.name (YAZ-1175) keeps inline values on their own top row, with NO dash side class', () => {
-    const { el } = mount(`views:
-  - type: board
-    name: B
-    order:
-      - note.priority
-    groupBy:
-      property: note.status
-    cardStyle:
-      note.priority: { inline: right }
-`)
+  it('the title is UN-PINNED: it renders at its order position and can itself join (2 - Title.md)', () => {
+    const { el, onOpenFile } = mount(STYLED('      - note.priority\n      - file.name', '      note.priority: { hideLabel: true }\n      file.name: { join: true }'))
     const card = cardIn(el)
+    const rows = linesIn(card)
+    expect(rows).toHaveLength(1)
+    const kids = [...rows[0].children]
+    expect(kids[0].classList.contains('view-board__prop')).toBe(true)
+    expect(kids[1].classList.contains('view-board__title')).toBe(true)
+    expect(kids[1].classList.contains('view-board__joined')).toBe(true)
+    click(kids[1])
+    expect(onOpenFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('join works the same with file.name hidden, and on the FIRST property it is a no-op', () => {
+    const { el } = mount(STYLED('      - note.priority\n      - note.tags', '      note.priority: { join: true }\n      note.tags: { join: true }'))
+    const card = cardIn(el)
+    const rows = linesIn(card)
     expect(card.querySelector('.view-board__title')).toBeNull()
-    const row = q<HTMLElement>(card, '.view-board__title-row')
-    const span = row.children[0]
-    expect(span.classList.contains('view-board__prop-value')).toBe(true)
-    expect(span.classList.contains('view-board__inline--right')).toBe(false)
-    expect(span.classList.contains('view-board__inline--left')).toBe(false)
+    expect(rows).toHaveLength(1)
+    const kids = [...rows[0].children]
+    expect(kids[0].classList.contains('view-board__joined')).toBe(false)
+    expect(kids[1].classList.contains('view-board__joined')).toBe(true)
+  })
+
+  it('the title button ignores bold/underline/hideLabel styling', () => {
+    const { el } = mount(STYLED('      - file.name\n      - note.priority', '      file.name: { bold: true, underline: true, hideLabel: true }'))
+    const title = q<HTMLElement>(cardIn(el), '.view-board__title')
+    expect(title.classList.contains('view-board__prop--bold')).toBe(false)
+    expect(title.classList.contains('view-board__prop--underline')).toBe(false)
   })
 
   it('cardStyle reaches cards inside subgroup sections through the shared cardList (YAZ-1177)', () => {
@@ -489,24 +492,23 @@ ${cardStyle}
       - property: note.dept
       - property: note.proc
     cardStyle:
-      note.n: { bold: true, hideLabel: true }
+      note.n: { join: true, bold: true, hideLabel: true }
 `,
       { records: NESTED_RECORDS },
     )
     const sub = q<HTMLElement>(el, '.view-board__subgroup .view-board__card')
-    const row = q<HTMLElement>(sub, '.view-board__prop')
-    expect(row.classList.contains('view-board__prop--bold')).toBe(true)
-    expect(row.querySelector('.view-board__prop-name')).toBeNull()
-    // and the outer direct card too
+    const joined = q<HTMLElement>(sub, '.view-board__joined')
+    expect(joined.classList.contains('view-board__prop--bold')).toBe(true)
+    expect(joined.querySelector('.view-board__prop-name')).toBeNull()
     const direct = q<HTMLElement>(el, '.view-board__col > .view-board__cards .view-board__card')
-    expect(q<HTMLElement>(direct, '.view-board__prop').classList.contains('view-board__prop--bold')).toBe(true)
+    expect(q<HTMLElement>(direct, '.view-board__joined').classList.contains('view-board__prop--bold')).toBe(true)
   })
 
-  it('the styling contract: bold, underline, title row and the baked-in dash live in views.css', () => {
+  it('the styling contract: line, joined dash, bold and underline live in views.css', () => {
     expect(viewsCss).toMatch(/\.view-board__prop--bold\s*\{[^}]*font-weight:\s*600/s)
     expect(viewsCss).toMatch(/\.view-board__prop--underline\s*\{[^}]*text-decoration:\s*underline/s)
-    expect(viewsCss).toMatch(/\.view-board__title-row\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*baseline/s)
-    expect(viewsCss).toMatch(/\.view-board__inline--right::before\s*\{[^}]*content:\s*['"]\\2013\\00a0['"];[^}]*color:\s*var\(--fg-muted\)/s)
-    expect(viewsCss).toMatch(/\.view-board__inline--left::after\s*\{[^}]*content:\s*['"]\\00a0\\2013['"];[^}]*color:\s*var\(--fg-muted\)/s)
+    expect(viewsCss).toMatch(/\.view-board__line\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*baseline/s)
+    expect(viewsCss).toMatch(/\.view-board__joined::before\s*\{[^}]*content:\s*['"]\\2013\\00a0['"];[^}]*color:\s*var\(--fg-muted\)/s)
+    expect(viewsCss).not.toMatch(/view-board__inline--/)
   })
 })
