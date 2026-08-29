@@ -29,7 +29,7 @@ export interface PropertiesMenuProps {
 const bare = (key: string): string => (key.startsWith('note.') ? key.slice(5) : key)
 
 /** Board's width editor accepts finite numbers, then rounds and clamps only its lower bound. */
-const normalizeBoardWidth = (draft: string): string | null => {
+export const normalizeBoardWidth = (draft: string): string | null => {
   if (draft.trim() === '') return null
   const width = Number(draft)
   return Number.isFinite(width) ? String(Math.max(180, Math.round(width))) : null

@@ -16,6 +16,7 @@ import { type ParsedViews, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderPage } from '../testFolderPage'
 import { TEST_RECORDS } from '../testRecords'
+import { normalizeBoardWidth } from './PropertiesMenu'
 import viewsCss from '../views.css?inline'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -300,6 +301,19 @@ describe('cardSize', () => {
     expect(cols(el)).toHaveLength(4)
     expect(cols(el).every((col) => col.parentElement?.style.getPropertyValue('--view-board-col-w') === '400px')).toBe(true)
     expect(viewsCss).toMatch(/\.view-board__col\s*\{[^}]*width:\s*var\(--view-board-col-w,\s*280px\);/s)
+  })
+
+  it('persists a valid width exactly once when blur is the only commit gesture', () => {
+    const { el, onChange, yaml } = mount(BOARD_BASE)
+    const input = widthField(openProperties(el))
+    setValue(input, '400')
+    blur(input)
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(yaml()).toContain('cardSize: 400')
+  })
+
+  it('the Board normalizer rejects an invalid draft directly', () => {
+    expect(normalizeBoardWidth('not-a-width')).toBeNull()
   })
 
   it('deletes cardSize when the normalized width is 280, and an unchanged 280 writes nothing', () => {
