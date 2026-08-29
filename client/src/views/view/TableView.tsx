@@ -14,7 +14,7 @@ import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, useGroupDra
 import { Popover } from './Popover'
 import { usePreview } from './PreviewCard'
 import { frozenColumnCount } from './frozenColumns'
-import { TableRowContextMenu } from './TableRowContextMenu'
+import { PageContextMenu } from './PageContextMenu'
 
 export interface TableViewProps {
   def: ViewSet
@@ -443,7 +443,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
           )}
         </table>
         {rowMenu !== null && (
-          <TableRowContextMenu
+          <PageContextMenu
             x={rowMenu.x}
             y={rowMenu.y}
             path={rowMenu.path}
