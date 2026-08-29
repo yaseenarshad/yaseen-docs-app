@@ -902,7 +902,7 @@
 .view-board__line {
   display: flex;
   /* Tight, symmetric around the bare dash: the gap IS the dash's breathing room. */
-  gap: 5px;
+  gap: 3px;
   align-items: baseline;
   overflow: hidden;
   white-space: nowrap;
