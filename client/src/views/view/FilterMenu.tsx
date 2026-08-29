@@ -191,6 +191,17 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
     )
   }
 
+  /** The All / Any / None segmented control, at either level. */
+  const seg = (label: string, current: Conjunction, pick: (c: Conjunction) => void) => (
+    <div className="view-seg" role="group" aria-label={label}>
+      {CONJUNCTIONS.map((c) => (
+        <button key={c.id} type="button" className="view-seg__opt" aria-pressed={current === c.id} onClick={() => pick(c.id)}>
+          {c.label}
+        </button>
+      ))}
+    </div>
+  )
+
   /**
    * One nested group (YAZ-1231): its own conjunction over its own rows, written back through the
    * top level's `setItem`. Emptying it removes it, so a group is never left as a dangling key.
@@ -208,19 +219,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
     return (
       <li key={i} className="view-rule-group">
         <div className="view-rule-group__head">
-          <div className="view-seg" role="group" aria-label="Match (group)">
-            {CONJUNCTIONS.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                className="view-seg__opt"
-                aria-pressed={nested.conj === c.id}
-                onClick={() => writeGroup({ ...nested, conj: c.id })}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
+          {seg('Match (group)', nested.conj, (c) => writeGroup({ ...nested, conj: c }))}
           <button type="button" className="view-rule__remove" aria-label="Remove group" title="Remove group" onClick={() => removeItem(i)}>
             ×
           </button>
@@ -248,15 +247,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
           ))}
         </ul>
       )}
-      <div className="view-menu__head">
-        <div className="view-seg" role="group" aria-label="Match">
-          {CONJUNCTIONS.map((c) => (
-            <button key={c.id} type="button" className="view-seg__opt" aria-pressed={conj === c.id} onClick={() => setConj(c.id)}>
-              {c.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <div className="view-menu__head">{seg('Match', conj, setConj)}</div>
       {group.items.length === 0 ? (
         <p className="view-menu__empty">No filters</p>
       ) : (
@@ -268,16 +259,18 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
         </ul>
       )}
       <div className="view-menu__foot">
-        <button type="button" className="view-menu__action" onClick={() => write({ conj, items: [...group.items, ruleToExpr(NEW_RULE)] })}>
-          Add rule
-        </button>
-        <button
-          type="button"
-          className="view-menu__action"
-          onClick={() => write({ conj, items: [...group.items, { or: [ruleToExpr(NEW_RULE)] }] })}
-        >
-          Add group
-        </button>
+        <div className="view-menu__actions">
+          <button type="button" className="view-menu__action" onClick={() => write({ conj, items: [...group.items, ruleToExpr(NEW_RULE)] })}>
+            Add rule
+          </button>
+          <button
+            type="button"
+            className="view-menu__action"
+            onClick={() => write({ conj, items: [...group.items, { or: [ruleToExpr(NEW_RULE)] }] })}
+          >
+            Add group
+          </button>
+        </div>
         <label className="view-menu__toggle">
           <input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />
           Advanced

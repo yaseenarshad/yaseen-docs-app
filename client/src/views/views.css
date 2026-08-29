@@ -349,6 +349,11 @@
   margin-top: 8px;
 }
 
+.view-menu__actions {
+  display: flex;
+  gap: 8px;
+}
+
 .view-menu__action {
   padding: 3px 8px;
   font-size: 12px;
