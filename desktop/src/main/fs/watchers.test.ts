@@ -73,10 +73,26 @@ describe('shared watchers', () => {
     expect(await a.next()).toEqual({ type: 'unlink', path: file })
   })
 
-  it('ignores non-vault files and dot-entries; reports new directories', async () => {
+  it.each([
+    ['JSON', 'text'],
+    ['PY', 'text'],
+    ['pdf', 'pdf'],
+  ])('emits add / change / unlink for supported .%s files (%s)', async (extension) => {
     const a = openWatch(root)
     await a.next()
-    await writeFile(path.join(root, 'alpha', 'ignored.txt'), 'x')
+    const file = path.join(root, 'alpha', `watched.${extension}`)
+    await writeFile(file, 'v1')
+    expect(await a.next()).toMatchObject({ type: 'add', path: file })
+    await writeFile(file, 'v2 longer')
+    expect(await a.next()).toMatchObject({ type: 'change', path: file })
+    await rm(file)
+    expect(await a.next()).toEqual({ type: 'unlink', path: file })
+  })
+
+  it('ignores unknown files and dot-entries; reports new directories', async () => {
+    const a = openWatch(root)
+    await a.next()
+    await writeFile(path.join(root, 'alpha', 'ignored.bin'), 'x')
     await writeFile(path.join(root, 'alpha', 'ignored.base'), 'views: []\n')
     await mkdir(path.join(root, '.cache'))
     await writeFile(path.join(root, '.cache', 'c.md'), 'x')

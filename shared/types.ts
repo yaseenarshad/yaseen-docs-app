@@ -14,7 +14,7 @@ export type BridgeErrorCode =
   | 'NOT_FOUND' // path does not exist
   | 'NOT_A_DIRECTORY' // expected a directory
   | 'NOT_A_FILE' // expected a regular file
-  | 'UNSUPPORTED_EXTENSION' // file extension is not markdown
+  | 'UNSUPPORTED_EXTENSION' // file extension is not supported by the requested capability
   | 'ALREADY_EXISTS' // create target already exists
   | 'FORBIDDEN' // OS permission denied
   | 'TOO_LARGE' // file exceeds MAX_FILE_BYTES
@@ -23,12 +23,70 @@ export type BridgeErrorCode =
   | 'INVALID_CONFIG' // a vault config file (e.g. .yaseendocs/properties.json) is unusable; the mutation is refused, the file never touched
 
 export const MARKDOWN_EXTENSIONS = ['.md', '.markdown'] as const
-/**
- * The kinds of file the vault serves. Markdown is the only one (YAZ-844 retired `.base`);
- * the name survives because `fileKind()` is the ONE extension classifier the tree, watcher,
- * index and file calls all ask, and `markdown` reads better at every call site than `true`.
- */
-export type FileKind = 'markdown'
+export const TEXT_VIEW_EXTENSIONS = [
+  '.txt',
+  '.log',
+  '.csv',
+  '.tsv',
+  '.json',
+  '.jsonc',
+  '.jsonl',
+  '.ndjson',
+  '.yaml',
+  '.yml',
+  '.toml',
+  '.ini',
+  '.cfg',
+  '.conf',
+  '.xml',
+  '.env',
+  '.properties',
+  '.lock',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.ts',
+  '.tsx',
+  '.py',
+  '.rb',
+  '.go',
+  '.rs',
+  '.java',
+  '.kt',
+  '.kts',
+  '.c',
+  '.h',
+  '.cc',
+  '.cpp',
+  '.hpp',
+  '.cs',
+  '.swift',
+  '.php',
+  '.sh',
+  '.bash',
+  '.zsh',
+  '.fish',
+  '.ps1',
+  '.sql',
+  '.html',
+  '.htm',
+  '.css',
+  '.scss',
+  '.sass',
+  '.less',
+  '.vue',
+  '.svelte',
+  '.graphql',
+  '.gql',
+  '.mdx',
+  '.rst',
+  '.tex',
+] as const
+export const PDF_EXTENSIONS = ['.pdf'] as const
+
+/** The file kinds visible in the Files tree; only `markdown` is writable and semantic. */
+export type FileKind = 'markdown' | 'text' | 'pdf'
 export const MAX_FILE_BYTES = 10 * 1024 * 1024
 
 // ---------- tree(root) ----------
@@ -48,13 +106,13 @@ export type TreeNode =
       size: number
       /** mtime in epoch ms. */
       mtime: number
-      /** `markdown` for `.md`/`.markdown` — the only kind the tree serves (see `shared/fileKind.ts`). */
+      /** Shared, case-insensitive extension classification (see `shared/fileKind.ts`). */
       kind: FileKind
     }
 
 export interface TreeResponse {
   root: string
-  /** Recursive tree of the root. Only vault files (`.md`/`.markdown` → `kind: 'markdown'`) are included; every directory shows, vault files or not (GRO-2022). Hidden (dot) entries and `node_modules` skipped. */
+  /** Recursive tree of the root. Supported markdown/text/PDF files are included; every directory shows, supported files or not (GRO-2022). Hidden (dot) entries and `node_modules` skipped. */
   tree: TreeNode[]
   /** Main-process time (epoch ms) when the tree was computed. */
   generatedAt: number

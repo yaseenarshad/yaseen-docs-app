@@ -2,7 +2,9 @@ import { randomBytes } from 'node:crypto'
 import { readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { BridgeError, TreeNode } from '@shared/types'
-import { fileKind } from '@shared/fileKind'
+import { fileKind, isMarkdown, isSupportedFile } from '@shared/fileKind'
+
+export { isMarkdown, isSupportedFile } from '@shared/fileKind'
 
 /**
  * Thrown by the fs layer; `ipc/envelope.ts` turns it into the `BridgeError` the renderer sees.
@@ -38,18 +40,9 @@ export function requireAbsPath(p: unknown, param: string): string {
   return path.resolve(p)
 }
 
-export function isMarkdown(name: string): boolean {
-  return fileKind(name) === 'markdown'
-}
-
-/** The files the tree, watcher and file calls serve — markdown, and nothing else (YAZ-844). */
-export function isVaultFile(name: string): boolean {
-  return fileKind(name) !== null
-}
-
-/** Throws UNSUPPORTED_EXTENSION unless `p` is a vault file by extension. */
-export function requireVaultFile(p: string): void {
-  if (!isVaultFile(p)) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .md/.markdown files are served', { path: p })
+/** Throws unless `p` has the only editable/creatable extension kind. */
+export function requireMarkdownFile(p: string): void {
+  if (!isMarkdown(p)) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .md/.markdown files are editable', { path: p })
 }
 
 /** Dot-entries and node_modules are invisible to every call. */
@@ -102,10 +95,9 @@ export async function requireDir(dir: string): Promise<void> {
 }
 
 /**
- * Recursive tree of vault files (`.md`/`.markdown`, each tagged with its `kind`) under
- * `dir`. Dirs first, then files, each sorted case-insensitively; every dir shows even with no
- * vault file beneath, so freshly created folders are visible (GRO-2022 D1). Unreadable subdirs
- * are skipped.
+ * Recursive tree of supported markdown, text, and PDF files under `dir`. Dirs first, then files,
+ * each sorted case-insensitively; every dir shows even with no supported file beneath, so freshly
+ * created folders are visible (GRO-2022 D1). Unreadable subdirs are skipped.
  */
 export async function buildTree(dir: string): Promise<TreeNode[]> {
   const entries = await readdir(dir, { withFileTypes: true })

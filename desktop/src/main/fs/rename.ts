@@ -7,9 +7,9 @@ import { BridgeFailure, fsCall, requireAbsPath } from './fsUtils'
 /**
  * In-app rename/move (Links E1 GRO-2194 + E1b GRO-2241 — decision E, GRO-2096: automatic
  * link updates, no prompt). E1b lifted E1's two guards: files may move BETWEEN folders,
- * and directories rename/move too (`kind: 'dir'` in the response). A file must keep a vault
- * extension on both ends (`.md` ↔ `.markdown` is the one kind there is); extension rules do
- * not apply to directories.
+ * and directories rename/move too (`kind: 'dir'` in the response). A file must keep the same
+ * supported `FileKind` on both ends (`.md` ↔ `.markdown` is allowed because both are Markdown);
+ * extension rules do not apply to directories.
  *
  * E1b refusals: the target's parent must already EXIST (`NOT_FOUND`, attributed to the
  * parent — never a mkdir here; the sidebar gesture only offers existing folders);
@@ -43,8 +43,12 @@ export async function renameFile(req: unknown): Promise<RenameFileResponse> {
       if (newP.startsWith(`${oldP}${path.sep}`)) throw new BridgeFailure('BAD_REQUEST', 'a folder cannot move inside itself', { path: newP })
     } else {
       if (!src.isFile()) throw new BridgeFailure('NOT_A_FILE', 'expected a file', { path: oldP })
-      if (fileKind(oldP) === null) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .md/.markdown files can be renamed', { path: oldP })
-      if (fileKind(newP) === null) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'the new name must keep a .md/.markdown extension', { path: newP })
+      const oldKind = fileKind(oldP)
+      const newKind = fileKind(newP)
+      if (oldKind === null) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only supported files can be renamed', { path: oldP })
+      if (newKind === null || newKind !== oldKind) {
+        throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'the new name must keep the same supported file kind', { path: newP })
+      }
     }
     // The target's parent must already exist — E1b never creates folders on the way.
     const parentP = path.dirname(newP)
@@ -86,8 +90,11 @@ export async function repairRename(req: unknown): Promise<RenameFileResponse> {
     } else {
       if (!dst.isFile()) throw new BridgeFailure('NOT_A_FILE', 'expected a file', { path: newP })
       const oldKind = fileKind(oldP)
-      if (oldKind === null || fileKind(newP) === null) {
-        throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .md/.markdown files can be repaired', { path: oldKind === null ? oldP : newP })
+      const newKind = fileKind(newP)
+      if (oldKind === null || newKind === null || oldKind !== newKind) {
+        throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'rename repair requires the same supported file kind', {
+          path: oldKind === null ? oldP : newP,
+        })
       }
     }
     const src = await stat(oldP).catch(() => null)

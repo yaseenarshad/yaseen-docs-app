@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { mkdir, readdir, readFile as fsReadFile, utimes } from 'node:fs/promises'
+import { mkdir, readdir, readFile as fsReadFile, utimes, writeFile as fsWriteFile } from 'node:fs/promises'
 import path from 'node:path'
 import { readFile, writeFile } from './file'
 import { failure, makeFixture } from './testFixture'
@@ -50,6 +50,14 @@ describe('writeFile', () => {
     expect(await code(writeFile({ path: path.join(root, 'x.txt'), content: '' }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(writeFile(undefined as never))).toBe('BAD_REQUEST')
     expect(await code(writeFile('{not json' as never))).toBe('BAD_REQUEST')
+  })
+
+  it.each(['existing.json', 'existing.py', 'existing.pdf'])('refuses to write %s and preserves the original bytes', async (name) => {
+    const file = path.join(root, name)
+    const original = Buffer.from(`original:${name}`)
+    await fsWriteFile(file, original)
+    expect(await code(writeFile({ path: file, content: 'clobber' }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await fsReadFile(file)).toEqual(original)
   })
 
   it('NOT_FOUND when parent dir does not exist', async () => {

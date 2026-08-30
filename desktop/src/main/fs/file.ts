@@ -1,12 +1,12 @@
 import { readFile as fsReadFile, stat } from 'node:fs/promises'
 import type { FileResponse, FileWriteRequest, FileWriteResponse } from '@shared/types'
 import { MAX_FILE_BYTES } from '@shared/types'
-import { BridgeFailure, atomicWrite, fsCall, requireAbsPath, requireVaultFile } from './fsUtils'
+import { BridgeFailure, atomicWrite, fsCall, requireAbsPath, requireMarkdownFile } from './fsUtils'
 
 /** `window.yaseenDocs.readFile(path)`: raw UTF-8 content of a vault file, frontmatter included. */
 export async function readFile(path: string): Promise<FileResponse> {
   const p = requireAbsPath(path, 'path')
-  requireVaultFile(p)
+  requireMarkdownFile(p)
   return fsCall(p, async () => {
     const st = await stat(p)
     if (!st.isFile()) throw new BridgeFailure('NOT_A_FILE', 'expected a file', { path: p })
@@ -26,7 +26,7 @@ export async function writeFile(req: FileWriteRequest): Promise<FileWriteRespons
   if (typeof raw !== 'object' || raw === null) throw new BridgeFailure('BAD_REQUEST', 'request must be an object')
   const { path, content, expectedMtime } = raw as Record<string, unknown>
   const p = requireAbsPath(path, 'path')
-  requireVaultFile(p)
+  requireMarkdownFile(p)
   if (typeof content !== 'string') throw new BridgeFailure('BAD_REQUEST', "'content' must be a string", { path: p })
   if (expectedMtime !== undefined && typeof expectedMtime !== 'number') {
     throw new BridgeFailure('BAD_REQUEST', "'expectedMtime' must be a number", { path: p })
