@@ -18,6 +18,7 @@ export const CH = {
   fileDeleted: 'file:deleted',
   shellReveal: 'shell:reveal',
   shellOpenVsCode: 'shell:openVsCode',
+  shellOpenLink: 'shell:open-link',
   dialogPickFolder: 'dialog:pick-folder',
   watchSubscribe: 'watch:subscribe',
   watchUnsubscribe: 'watch:unsubscribe',

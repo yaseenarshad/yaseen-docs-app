@@ -715,6 +715,13 @@ export interface RevealResponse {
   path: string
 }
 
+/** Standard Markdown link intent; main validates and resolves it before any OS side effect. */
+export interface OpenLinkRequest {
+  href: string
+  /** Absolute current-note path, required only when `href` is relative. */
+  sourcePath?: string
+}
+
 /** In-app delete (GRO-2272): the absolute path of the entry to move to the system Trash. */
 export interface DeleteRequest {
   path: string
@@ -881,6 +888,8 @@ export interface ShellApi {
    * `reveal`, stat included: a path that no longer exists rejects `NOT_FOUND`.
    */
   openVsCode(req: RevealRequest): Promise<RevealResponse>
+  /** Open a validated Markdown-link target through the OS; never creates an Electron window. */
+  openLink(req: OpenLinkRequest): Promise<void>
 }
 
 /**

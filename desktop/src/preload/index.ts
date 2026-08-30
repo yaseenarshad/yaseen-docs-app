@@ -106,6 +106,7 @@ const api: YaseenDocsApi = {
   shell: {
     reveal: (req) => call(CH.shellReveal, req),
     openVsCode: (req) => call(CH.shellOpenVsCode, req),
+    openLink: (req) => call(CH.shellOpenLink, req),
   },
   // Vault-wide property declarations over `.yaseendocs/properties.json` (YAZ-835).
   properties: {
