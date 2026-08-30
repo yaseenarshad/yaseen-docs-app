@@ -167,6 +167,8 @@ Include web, mail, tel, FTP, relative files, encoded spaces, nested files, missi
 
 Use `YASEEN_DOCS_USER_DATA_DIR` for isolation and launch the worktree dev build on the demo vault. Leave it open and give Yasin the short manual checklist.
 
-- [ ] **Step 3: Record acceptance and finish git/Linear**
+- [x] **Step 3: Record acceptance and finish git/Linear**
 
 After manual acceptance, commit focused files, push `codex/yaz-1309-external-links`, merge to updated `main`, rerun verification on merged `main`, push `main`, and mark YAZ-1312 through YAZ-1315 plus YAZ-1309 Done with evidence comments.
+
+Manual acceptance was confirmed by Yasin. The implementation landed on `main` in merge commit `0e72c5b`; post-merge verification passed 189 test files / 2,820 tests, TypeScript checking, the production build, and `git diff --check`.
