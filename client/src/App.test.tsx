@@ -69,7 +69,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const menuPrevTab = new Set<() => void>()
   const linkOpenFile = new Set<(path: string) => void>()
   const linkNotice = new Set<(message: string) => void>()
-  const fileRenamed = new Set<(ev: { oldPath: string; newPath: string }) => void>()
+  const fileRenamed = new Set<(ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void>()
   const fileDeleted = new Set<(ev: { path: string; kind: 'file' | 'dir' }) => void>()
   const menuSub = (set: Set<() => void>) =>
     vi.fn((l: () => void) => {
@@ -151,7 +151,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     file: {
       rename: vi.fn(async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => ({ oldPath, newPath })),
       repairRename: vi.fn(async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => ({ oldPath, newPath, kind: 'file' as const })),
-      onRenamed: vi.fn((l: (ev: { oldPath: string; newPath: string }) => void) => {
+      onRenamed: vi.fn((l: (ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void) => {
         fileRenamed.add(l)
         return () => fileRenamed.delete(l)
       }),
@@ -188,7 +188,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitPrevTab: () => menuPrevTab.forEach((l) => l()),
     emitLinkOpenFile: (path: string) => linkOpenFile.forEach((l) => l(path)),
     emitLinkNotice: (message: string) => linkNotice.forEach((l) => l(message)),
-    emitFileRenamed: (oldPath: string, newPath: string) => fileRenamed.forEach((l) => l({ oldPath, newPath })),
+    emitFileRenamed: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => fileRenamed.forEach((l) => l({ oldPath, newPath, kind })),
     emitFileDeleted: (path: string, kind: 'file' | 'dir' = 'file') => fileDeleted.forEach((l) => l({ path, kind })),
   }
 }
@@ -368,6 +368,31 @@ describe('App rename push (Links E1, GRO-2194)', () => {
     vi.mocked(bridge.window.setIdentity).mockClear()
     await act(async () => emitFileRenamed('/other/B.md', '/other/C.md'))
     expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+  })
+
+  it('carries before one workspace repair and follows right-panel file/directory paths', async () => {
+    const order: string[] = []
+    const carry = vi.spyOn(continuity, 'carryEditorAcrossRename').mockImplementation(() => void order.push('carry'))
+    const { bridge, el, emitFileRenamed } = await mount(defaultAppState(), {
+      id: 'w1',
+      root: '/v',
+      file: '/v/main.md',
+      tabs: ['/v/main.md'],
+      rightPanel: { open: true, width: 440, items: ['/v/Docs/a.md'], expanded: '/v/Docs/a.md' },
+    })
+    vi.mocked(bridge.window.setIdentity).mockImplementation(async () => void order.push('workspace'))
+    await act(async () => emitFileRenamed('/v/Docs/a.md', '/v/Docs/b.md', 'file'))
+    expect(order).toEqual(['carry', 'workspace'])
+    expect(el.querySelector('.right-panel__header')?.textContent).toContain('b')
+
+    await act(async () => emitFileRenamed('/v/Docs', '/v/Notes', 'dir'))
+    expect(el.querySelector('.right-panel__header')?.getAttribute('title')).toBe('/v/Notes/b.md')
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({
+      tabs: ['/v/main.md'],
+      file: '/v/main.md',
+      rightPanel: { open: true, width: 440, items: ['/v/Notes/b.md'], expanded: '/v/Notes/b.md' },
+    })
+    carry.mockRestore()
   })
 })
 
@@ -916,26 +941,31 @@ describe('App root-missing (C2, GRO-2164)', () => {
 
 /**
  * Delete wiring (GRO-2272 `B3-`). The ordering test is the point of this block: retire the
- * editor BEFORE the tab remap, because removing a tab unmounts its editor and the unmount
+ * editor BEFORE the workspace remap, because removing a page unmounts its editor and the unmount
  * flush would write the buffer back to disk, recreating the file that was just trashed.
  */
 describe('in-app delete (GRO-2272)', () => {
-  it('retires the editor BEFORE remapping tabs — asserted by call order, not by reading the code', async () => {
+  it('retires the editor BEFORE remapping the workspace — asserted by call order, not by reading the code', async () => {
     const order: string[] = []
     const retireSpy = vi.spyOn(continuity, 'retireDeletedPath').mockImplementation(() => void order.push('retire'))
     const files = { '/v/a.md': { content: '# a', mtime: 1 }, '/v/b.md': { content: '# b', mtime: 1 } }
-    const b = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] }, files)
+    const b = installBridge(defaultAppState(), {
+      id: 'w1',
+      root: '/v',
+      file: '/v/b.md',
+      tabs: ['/v/b.md'],
+      rightPanel: { open: true, width: 440, items: ['/v/a.md'], expanded: '/v/a.md' },
+    }, files)
     await storage.init()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
     await act(async () => root?.render(<App />))
-    // setIdentity is the tab-model mirror: its first call AFTER the event is the remap.
-    b.bridge.window.setIdentity.mockImplementation(async () => void order.push('tabs'))
+    // setIdentity is the workspace mirror: its first call AFTER the event is the remap.
+    b.bridge.window.setIdentity.mockImplementation(async () => void order.push('workspace'))
     await act(async () => b.emitFileDeleted('/v/a.md'))
     expect(order[0]).toBe('retire')
-    expect(order).toContain('tabs')
-    expect(order.indexOf('retire')).toBeLessThan(order.indexOf('tabs'))
+    expect(order).toEqual(['retire', 'workspace'])
     retireSpy.mockRestore()
   })
 

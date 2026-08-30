@@ -452,7 +452,7 @@ describe('createStore: mutations', () => {
     store.upsertWindow(win('w1'))
     store.upsertWindow(win('w2', { root: '/v' }))
     store.upsertWindow(win('w1', { root: '/other', file: '/other/a.md' }))
-    expect(store.get().windows).toEqual([win('w1', { root: '/other', file: '/other/a.md' }), win('w2', { root: '/v' })])
+    expect(store.get().windows).toEqual([win('w1', { root: '/other', file: '/other/a.md', tabs: ['/other/a.md'] }), win('w2', { root: '/v' })])
     store.removeWindow('w1')
     expect(store.get().windows).toEqual([win('w2', { root: '/v' })])
     store.removeWindow('nope')

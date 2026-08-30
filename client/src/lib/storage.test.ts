@@ -232,7 +232,7 @@ describe('storage', () => {
     expect(storage.getTabs()).toEqual([])
   })
 
-  /** The boot expression (tabs/useTabs.ts bootTabs): `hashFilePath(hash) ?? storage.getFile() ?? storage.getLastFile(root)`. */
+  /** The workspace boot precedence: `hashFilePath(hash) ?? storage.getFile() ?? storage.getLastFile(root)`. */
   const bootFile = (hash: string, root: string) => hashFilePath(hash) ?? storage.getFile() ?? storage.getLastFile(root)
 
   it('boot precedence (GRO-2160): identity file wins over the folder lastFile, a pasted hash beats both', async () => {

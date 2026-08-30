@@ -78,7 +78,7 @@ export function flushRenamedDir(dir: string): Promise<void> {
 }
 
 /**
- * The `file:renamed` kind-`dir` step (E1b), run BEFORE the prefix tab remap: every editor
+ * The `file:renamed` kind-`dir` step (E1b), run BEFORE the prefix workspace remap: every editor
  * under the old dir is carried to ITS new path — same capture/retire/stash discipline as
  * `carryEditorAcrossRename`, once per affected open path.
  */
@@ -90,7 +90,7 @@ export function carryEditorsAcrossDirRename(oldDir: string, newDir: string): voi
 }
 
 /**
- * The `file:renamed` step, run BEFORE the tab remap unmounts the old editor: capture a dirty
+ * The `file:renamed` step, run BEFORE the workspace remap unmounts the old editor: capture a dirty
  * buffer into the new path's stash and retire the old handle. No editor at `oldPath` → no-op.
  */
 function carryEditorBuffer(oldPath: string, newPath: string): void {
@@ -118,7 +118,7 @@ export function takeRenameBuffer(path: string): RenameBuffer | null {
 }
 
 /**
- * The `file:deleted` step (GRO-2272), run BEFORE the tab remap unmounts the editor: retire
+ * The `file:deleted` step (GRO-2272), run BEFORE the workspace remap unmounts the editor: retire
  * the editor at `path` so it can never write again, and drop any buffer stashed for it.
  *
  * Deliberately NOT `carryEditorAcrossRename`, which sits a few lines above and looks like the

@@ -42,13 +42,13 @@ export const LINK_NOTICE_MS = 4000
 
 export function App() {
   const [root, setRoot] = useState<string | null>(storage.getRoot)
-  // Tabs (I2, GRO-2234): the renderer-owned tab model, seeded from the boot identity snapshot
+  // Workspace (Tabs I2 + YAZ-966): one renderer-owned model, seeded from the boot identity snapshot
   // (a pasted `#/abs/path.md` URL wins as the active tab — bootTabs). The ACTIVE tab is this
   // window's `file`: title, URL hash and the sidebar highlight all follow it.
   const {
     tabs, active: file, mounted, openCurrent, openBackground, activate, close: closeTab, move: moveTab,
     closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs,
-    renamePath: renameTabPath, renameDirPath: renameDirTabs, deletePath: deleteTabPath, deleteDirPath: deleteDirTabs,
+    renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
     moveRight, transferMainToRight, transferRightToMain,
     rightBack, rightForward, canRightBack, canRightForward, setRightOpen, setRightWidth,
@@ -297,11 +297,11 @@ export function App() {
   const relLabel = useCallback((p: string) => (root !== null && p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p), [root])
 
   // In-app rename (Links E1 GRO-2194, folders E1b GRO-2241). `file:renamed` reaches EVERY
-  // window (originator included): BEFORE the tab remap unmounts the old-path editor(s), a
+  // window (originator included): BEFORE the workspace remap unmounts the old-path editor(s), a
   // dirty buffer is carried into the new path and the old controller retired (no flush to
-  // the old path — see lib/renameContinuity.ts); then the tab follows in place, and
-  // title/URL-hash track the active tab through the existing effects above. A `dir` event
-  // is a PREFIX remap: every open editor and tab under the folder follows, and a window
+  // the old path — see lib/renameContinuity.ts); then its main/right owner follows in place,
+  // and title/URL-hash track the active main tab through the existing effects above. A `dir`
+  // event is a PREFIX remap: every open editor and workspace path under the folder follows, and a window
   // ROOTED at (or under) the folder — a subfolder opened as a vault — follows too (main's
   // store repair already moved its WindowEntry.root; setRoot only mirrors it locally, so
   // no identity write that could clobber the repaired file/tabs).
@@ -314,14 +314,14 @@ export function App() {
         if (kind === 'dir') {
           carryEditorsAcrossDirRename(oldPath, newPath)
           const movedRoot = root !== null && (root === oldPath || root.startsWith(`${oldPath}/`)) ? newPath + root.slice(oldPath.length) : undefined
-          renameDirTabs(oldPath, newPath, movedRoot)
+          renameWorkspaceDir(oldPath, newPath, movedRoot)
           if (movedRoot !== undefined) setRoot(movedRoot)
           return
         }
         carryEditorAcrossRename(oldPath, newPath)
-        renameTabPath(oldPath, newPath)
+        renameWorkspacePath(oldPath, newPath)
       }),
-    [renameTabPath, renameDirTabs, root, suppressRenameHypothesis],
+    [renameWorkspacePath, renameWorkspaceDir, root, suppressRenameHypothesis],
   )
 
   /**
@@ -396,7 +396,7 @@ export function App() {
   /**
    * In-app delete landed (GRO-2272). Reaches EVERY window, originator included.
    *
-   * ORDER IS NOT NEGOTIABLE: retire the editor, THEN remap tabs. Removing a tab unmounts its
+   * ORDER IS NOT NEGOTIABLE: retire the editor, THEN remap the workspace. Removing a page owner unmounts its
    * editor, and `useAutosave`'s unmount cleanup flushes the live buffer to disk — which would
    * recreate the file that was just trashed. Retiring first makes that flush a no-op. Reverse
    * these two lines and the delete silently fails a second later.
@@ -409,13 +409,13 @@ export function App() {
       window.yaseenDocs.file.onDeleted(({ path, kind }) => {
         if (kind === 'dir') {
           retireDeletedDir(path)
-          deleteDirTabs(path)
+          deleteWorkspaceDir(path)
           return
         }
         retireDeletedPath(path)
-        deleteTabPath(path)
+        deleteWorkspacePath(path)
       }),
-    [deleteTabPath, deleteDirTabs],
+    [deleteWorkspacePath, deleteWorkspaceDir],
   )
 
   /**
