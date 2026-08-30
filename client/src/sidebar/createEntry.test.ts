@@ -108,6 +108,21 @@ describe('renamedPath (Links E1, GRO-2194)', () => {
     expect(renamedPath('/r/report.final.PDF', 'summary.final')).toBe('/r/summary.final.PDF')
   })
 
+  it.each([
+    ['schema.graphql.ts', 'schema.graphql'],
+    ['report.json.pdf', 'report.json'],
+    ['Guide.txt.md', 'Guide.txt'],
+  ])('round-trips an unchanged compound filename exactly: %s', (name, input) => {
+    expect(renameInputName(name)).toBe(input)
+    expect(renamedPath(`/r/${name}`, input)).toBe(`/r/${name}`)
+  })
+
+  it('still honors intentional compound-name renames with an explicit supported suffix', () => {
+    expect(renamedPath('/r/schema.graphql.ts', 'schema.py')).toBe('/r/schema.py')
+    expect(renamedPath('/r/report.json.pdf', 'summary.PDF')).toBe('/r/summary.PDF')
+    expect(renamedPath('/r/Guide.txt.md', 'Manual.markdown')).toBe('/r/Manual.markdown')
+  })
+
   it('appends the current suffix to unrecognized dotted names but leaves recognized cross-kind suffixes explicit', () => {
     expect(renamedPath('/r/B.md', 'C.bin')).toBe('/r/C.bin.md')
     expect(renamedPath('/r/data.json', 'profile.bin')).toBe('/r/profile.bin.json')

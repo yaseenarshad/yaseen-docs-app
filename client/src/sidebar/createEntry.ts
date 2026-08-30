@@ -66,6 +66,8 @@ export function renamedPath(oldPath: string, newName: string, kind: 'file' | 'di
   const dir = oldPath.slice(0, oldPath.lastIndexOf('/'))
   let final = newName.trim()
   if (kind === 'dir') return `${dir}/${final}`
+  const oldName = oldPath.slice(oldPath.lastIndexOf('/') + 1)
+  if (final === renameInputName(oldName)) return oldPath
   if (fileKind(final) === null) final += oldPath.slice(oldPath.lastIndexOf('.'))
   return `${dir}/${final}`
 }

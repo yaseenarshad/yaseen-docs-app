@@ -294,6 +294,20 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
     expect(props.onRenameFile).not.toHaveBeenCalled()
   })
 
+  it('submitting an unchanged compound view-only basename preserves the full filename as a no-op', async () => {
+    const node: TreeNode = { type: 'file', name: 'schema.graphql.ts', path: '/v/schema.graphql.ts', size: 1, mtime: 1, kind: 'text' }
+    const { props, el } = await mount({}, (bridge) =>
+      bridge.tree.mockResolvedValue({ root: '/v', tree: [node], generatedAt: 1 }),
+    )
+    act(() => void el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Rename')?.click())
+    const input = el.querySelector<HTMLInputElement>('.create-inline__input')
+    expect(input?.value).toBe('schema.graphql')
+    act(() => input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    await act(async () => undefined)
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+  })
+
   it('a FOLDER row\'s context menu offers "Rename"; committing routes old→new (no extension logic) through onRenameFile', async () => {
     const { props, el } = await mount()
     act(() => void dirRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
