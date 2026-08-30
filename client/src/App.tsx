@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type SettingsState, type SidebarLens } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
@@ -39,6 +39,19 @@ function syncHash(path: string | null): void {
 
 /** A can't-open-link notice (E1, GRO-2171) dismisses itself after this long. */
 export const LINK_NOTICE_MS = 4000
+
+/**
+ * Keeps the current-page navigation function stable for the lifetime of one retained right
+ * editor. Crepe's lifecycle effect depends on this callback; creating it inside App's map would
+ * destroy and rebuild every right-side editor whenever any header expanded or collapsed.
+ */
+function RightWorkspaceEditor({ path, navigate, ...props }: Omit<ComponentProps<typeof Editor>, 'onOpenFile'> & {
+  path: string
+  navigate: (from: string, to: string) => void
+}) {
+  const openFile = useCallback((to: string) => navigate(path, to), [navigate, path])
+  return <Editor {...props} path={path} onOpenFile={openFile} />
+}
 
 export function App() {
   const [root, setRoot] = useState<string | null>(storage.getRoot)
@@ -630,10 +643,10 @@ export function App() {
                   data-testid={`right-layer-${path}`}
                   className={path === rightPanel.expanded ? 'right-panel__editor-layer' : 'right-panel__editor-layer right-panel__editor-layer--hidden'}
                 >
-                  <Editor
+                  <RightWorkspaceEditor
                     {...editorCommon}
                     path={path}
-                    onOpenFile={(to) => navigateRight(path, to)}
+                    navigate={navigateRight}
                     onOpenFileBackground={openRightBackground}
                   />
                 </div>

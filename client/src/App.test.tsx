@@ -35,15 +35,21 @@ interface SidebarStubProps {
   onCreateHome: () => void
 }
 
-const captured = vi.hoisted(() => ({ sidebar: null as SidebarStubProps | null }))
+const captured = vi.hoisted(() => ({
+  sidebar: null as SidebarStubProps | null,
+  editorOpeners: [] as { path: string | null; open: (path: string) => void }[],
+}))
 
 vi.mock('./editor/Editor', () => ({
-  Editor: ({ root, path, onOpenFile, onOpenFileBackground }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void }) => (
-    <div data-editor data-root={root} data-path={path ?? ''}>
-      <button type="button" data-open-right-current onClick={() => onOpenFile('/v/c.md')} />
-      <button type="button" data-open-right-background onClick={() => onOpenFileBackground?.('/v/d.md')} />
-    </div>
-  ),
+  Editor: ({ root, path, onOpenFile, onOpenFileBackground }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void }) => {
+    captured.editorOpeners.push({ path, open: onOpenFile })
+    return (
+      <div data-editor data-root={root} data-path={path ?? ''}>
+        <button type="button" data-open-right-current onClick={() => onOpenFile('/v/c.md')} />
+        <button type="button" data-open-right-background onClick={() => onOpenFileBackground?.('/v/d.md')} />
+      </div>
+    )
+  },
 }))
 vi.mock('./sidebar/Sidebar', () => ({
   SidebarPanelIcon: () => null,
@@ -227,6 +233,7 @@ afterEach(() => {
   container?.remove()
   container = null
   captured.sidebar = null
+  captured.editorOpeners = []
   history.replaceState(null, '', '/')
   delete document.documentElement.dataset.theme
   document.getElementById(CREPE_THEME_STYLE_ID)?.remove()
@@ -765,6 +772,24 @@ describe('App right-panel shell (YAZ-1272)', () => {
     act(() => [...el.querySelectorAll<HTMLButtonElement>('.right-panel__header')][1]?.click())
     expect(el.querySelector('[data-testid="right-layer-/v/c.md"]')?.classList.contains('right-panel__editor-layer--hidden')).toBe(true)
     expect(el.querySelector('[data-testid="right-layer-/v/d.md"]')?.classList.contains('right-panel__editor-layer--hidden')).toBe(false)
+  })
+
+  it('keeps each retained right editor navigation callback stable across header switches', async () => {
+    captured.editorOpeners = []
+    const { el } = await mount(defaultAppState(), {
+      id: 'w1',
+      root: '/v',
+      file: '/v/a.md',
+      tabs: ['/v/a.md'],
+      rightPanel: { open: true, width: 440, items: ['/v/b.md', '/v/c.md'], expanded: '/v/b.md' },
+    })
+    const before = captured.editorOpeners.filter((entry) => entry.path === '/v/b.md').at(-1)?.open
+    expect(before).toBeDefined()
+
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.right-panel__header')][1]?.click())
+
+    const after = captured.editorOpeners.filter((entry) => entry.path === '/v/b.md').at(-1)?.open
+    expect(after).toBe(before)
   })
 
   it('wires the keyboard-equivalent move commands through one-owner workspace transfers', async () => {
