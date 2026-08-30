@@ -259,6 +259,41 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
     act(() => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true })))
   const dirRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.tree__row--dir')
 
+  it.each([
+    ['data.json', 'profile.json', 'text'],
+    ['report.PDF', 'brief.PDF', 'pdf'],
+  ] as const)('renames view-only %s without duplicating its extension', async (name, nextName, kind) => {
+    const node: TreeNode = { type: 'file', name, path: `/v/${name}`, size: 1, mtime: 1, kind }
+    const { props, el } = await mount({}, (bridge) =>
+      bridge.tree.mockResolvedValue({ root: '/v', tree: [node], generatedAt: 1 }),
+    )
+    const row = el.querySelector<HTMLButtonElement>(`.tree__row--file[title="/v/${name}"]`)
+    act(() => void row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Rename')?.click())
+    const input = el.querySelector<HTMLInputElement>('.create-inline__input')
+    expect(input?.value).toBe(name.slice(0, name.lastIndexOf('.')))
+    act(() => {
+      input!.value = nextName
+      input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    await act(async () => undefined)
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith(`/v/${name}`, `/v/${nextName}`, 'file')
+  })
+
+  it('submitting an unchanged view-only basename is a no-op', async () => {
+    const node: TreeNode = { type: 'file', name: 'data.json', path: '/v/data.json', size: 1, mtime: 1, kind: 'text' }
+    const { props, el } = await mount({}, (bridge) =>
+      bridge.tree.mockResolvedValue({ root: '/v', tree: [node], generatedAt: 1 }),
+    )
+    act(() => void el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Rename')?.click())
+    const input = el.querySelector<HTMLInputElement>('.create-inline__input')
+    expect(input?.value).toBe('data')
+    act(() => input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    await act(async () => undefined)
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+  })
+
   it('a FOLDER row\'s context menu offers "Rename"; committing routes old→new (no extension logic) through onRenameFile', async () => {
     const { props, el } = await mount()
     act(() => void dirRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))

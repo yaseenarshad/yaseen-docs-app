@@ -4,9 +4,12 @@ import type { RenameFileResponse } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import { BridgeFailure, fsCall, requireAbsPath } from './fsUtils'
 
-async function hasExactDirectoryEntry(filePath: string): Promise<boolean> {
+export async function hasExactDirectoryEntry(
+  filePath: string,
+  readNames: (directory: string) => Promise<string[]> = readdir,
+): Promise<boolean> {
   try {
-    return (await readdir(path.dirname(filePath))).includes(path.basename(filePath))
+    return (await readNames(path.dirname(filePath))).includes(path.basename(filePath))
   } catch (err) {
     if (['ENOENT', 'ENOTDIR'].includes((err as NodeJS.ErrnoException).code ?? '')) return false
     throw err

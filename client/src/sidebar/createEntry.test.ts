@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
-import { entryPath, renamedPath, targetDirFor, validateEntryName } from './createEntry'
+import { entryPath, renamedPath, renameInputName, targetDirFor, validateEntryName } from './createEntry'
 
 const dir = (path: string): TreeNode => ({ type: 'dir', name: path.split('/').pop()!, path, children: [] })
 const file = (path: string): TreeNode => ({ type: 'file', name: path.split('/').pop()!, path, size: 0, mtime: 1, kind: 'markdown' })
@@ -49,6 +49,18 @@ describe('targetDirFor', () => {
   })
 })
 
+describe('renameInputName', () => {
+  it('removes exactly one recognized suffix for Markdown, JSON, and mixed-case PDF names', () => {
+    expect(renameInputName('B.markdown')).toBe('B')
+    expect(renameInputName('data.json')).toBe('data')
+    expect(renameInputName('report.PDF')).toBe('report')
+  })
+
+  it('leaves unsupported suffixes intact', () => {
+    expect(renameInputName('archive.bin')).toBe('archive.bin')
+  })
+})
+
 describe('renamedPath (Links E1, GRO-2194)', () => {
   it('same parent dir; the OLD file extension re-appends when no markdown one is typed', () => {
     expect(renamedPath('/r/sub/B.md', 'C')).toBe('/r/sub/C.md')
@@ -64,6 +76,27 @@ describe('renamedPath (Links E1, GRO-2194)', () => {
 
   it('an unchanged name round-trips to the same path (the caller treats it as a no-op)', () => {
     expect(renamedPath('/r/B.md', 'B')).toBe('/r/B.md')
+  })
+
+  it('round-trips unchanged JSON and PDF names without duplicating their extensions', () => {
+    expect(renamedPath('/r/data.json', 'data.json')).toBe('/r/data.json')
+    expect(renamedPath('/r/report.PDF', 'report.PDF')).toBe('/r/report.PDF')
+  })
+
+  it('preserves or appends the current view-only suffix when a bare basename is typed', () => {
+    expect(renamedPath('/r/data.json', 'profile')).toBe('/r/profile.json')
+    expect(renamedPath('/r/report.PDF', 'brief')).toBe('/r/brief.PDF')
+  })
+
+  it('respects explicit supported extensions, including mixed-case same-kind text extensions', () => {
+    expect(renamedPath('/r/data.JSON', 'profile.json')).toBe('/r/profile.json')
+    expect(renamedPath('/r/data.JSON', 'profile.Py')).toBe('/r/profile.Py')
+    expect(renamedPath('/r/report.pdf', 'brief.PDF')).toBe('/r/brief.PDF')
+  })
+
+  it('leaves explicit unsupported and cross-kind suffixes for main-process validation', () => {
+    expect(renamedPath('/r/data.json', 'profile.bin')).toBe('/r/profile.bin')
+    expect(renamedPath('/r/data.json', 'profile.pdf')).toBe('/r/profile.pdf')
   })
 
   it('a DIRECTORY renames with no extension logic at all (E1b, GRO-2241)', () => {

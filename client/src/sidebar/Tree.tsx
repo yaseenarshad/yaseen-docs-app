@@ -1,7 +1,7 @@
 import type { TreeNode } from '@shared/types'
 import { stripExt } from '../lib/paths'
 import { CreateInline } from './CreateInline'
-import type { EntryKind } from './createEntry'
+import { renameInputName, type EntryKind } from './createEntry'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { RenameInline } from './RenameInline'
 
@@ -125,9 +125,9 @@ export function Tree({
           </li>
         ) : renaming !== null && renaming.path === node.path ? (
           // Inline rename (Links E1, GRO-2194): the input replaces the row, prefilled with
-          // the name minus its extension (the extension re-appends on commit).
+          // the name minus its supported extension (the exact current suffix re-appends on commit).
           <li key={node.path} role="treeitem">
-            <RenameInline initial={stripExt(node.name)} indent={8 + depth * 14 + 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
+            <RenameInline initial={renameInputName(node.name)} indent={8 + depth * 14 + 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
           </li>
         ) : (
           <li key={node.path} role="treeitem" aria-selected={node.path === activeFile}>
