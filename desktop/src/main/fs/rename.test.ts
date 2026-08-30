@@ -83,6 +83,26 @@ describe('renameFile (Links E1, GRO-2194)', () => {
     expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
     expect(await readFile(newPath, 'utf8')).toBe(`content:${oldName}`)
   })
+
+  it('allows a text file to change extension and move folders while remaining text', async () => {
+    const oldPath = path.join(root, 'move-source.json')
+    const newPath = path.join(root, 'Empty', 'move-target.py')
+    await writeFile(oldPath, '{"move":true}')
+    expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
+    expect(await readFile(newPath, 'utf8')).toBe('{"move":true}')
+    await expect(stat(oldPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it.each([
+    ['Case-Only.JSON', 'case-only.json'],
+    ['Case-Only.PDF', 'case-only.pdf'],
+  ])('allows a same-kind case-only view-only rename %s → %s', async (oldName, newName) => {
+    const oldPath = path.join(root, oldName)
+    const newPath = path.join(root, newName)
+    await writeFile(oldPath, `content:${oldName}`)
+    expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
+    expect(await readFile(newPath, 'utf8')).toBe(`content:${oldName}`)
+  })
 })
 
 describe('renameFile (Links E1b, GRO-2241: cross-directory file move + folder rename)', () => {
@@ -194,6 +214,13 @@ describe('repairRename (Links E1c, GRO-2242: validate a rename that ALREADY happ
     const oldPath = path.join(root, oldName)
     const newPath = path.join(root, newName)
     await writeFile(newPath, `landed:${newName}`)
+    expect(await repairRename({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
+  })
+
+  it('allows an external repair across two extensions of the same text kind', async () => {
+    const oldPath = path.join(root, 'repair-moved.json')
+    const newPath = path.join(root, 'Empty', 'repair-moved.py')
+    await writeFile(newPath, 'print("moved")\n')
     expect(await repairRename({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
   })
 

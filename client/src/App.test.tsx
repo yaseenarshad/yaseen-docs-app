@@ -12,6 +12,7 @@ import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
 import * as continuity from './lib/renameContinuity'
+import * as renameLinks from './links/renameLinks'
 import { storage } from './lib/storage'
 
 interface SidebarStubProps {
@@ -1000,6 +1001,28 @@ describe('App rename door (⚡ YAZ-888)', () => {
     const { el } = await mount(defaultAppState(), identity(), {}, feed)
     await act(async () => void captured.sidebar?.onRenameFile('/v/A.md', '/v/A2.md'))
     expect(sheetText(el)).toBe("Rename 'A' to 'A2'? No other notes link to it.")
+  })
+
+  it('classifies a supported view-only path as a file without adding it to the semantic index', async () => {
+    const semanticRecords = [record('/v/A.md', { links: ['data.json'] })]
+    const count = vi.spyOn(renameLinks, 'countLinkReferences')
+    try {
+      const { el } = await mount(defaultAppState(), identity(), {}, (b) =>
+        b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 }),
+      )
+      await act(async () => void captured.sidebar?.onRenameFile('/v/data.json', '/v/data-v2.json'))
+
+      expect(semanticRecords.some((record) => record.path === '/v/data.json')).toBe(false)
+      expect(count).toHaveBeenCalledWith({
+        root: '/v',
+        oldPath: '/v/data.json',
+        kind: 'file',
+        records: semanticRecords,
+      })
+      expect(sheetText(el)).toBe("Rename 'data.json' to 'data-v2.json'? No other notes link to it.")
+    } finally {
+      count.mockRestore()
+    }
   })
 })
 

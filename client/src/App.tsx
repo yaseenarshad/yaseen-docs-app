@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type SettingsState, type SidebarLens } from '@shared/types'
+import { fileKind } from '@shared/fileKind'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -407,9 +408,9 @@ export function App() {
     async (oldPath: string, newPath: string): Promise<void> => {
       if (root === null || !isNameChange(oldPath, newPath)) return renameFile(oldPath, newPath)
       const records = wikilinks.records
-      // The kind the count needs, asked of the very snapshot the count reads: a markdown file IS
-      // a record, a folder never is. Before the first index lands both modes count 0 alike.
-      const kind = records.some((r) => r.path === oldPath) ? 'file' : 'dir'
+      // File-vs-directory is a filesystem capability, not semantic-index membership: supported
+      // view-only files deliberately never become IndexRecords but still use file-mode rename rules.
+      const kind = fileKind(oldPath) === null ? 'dir' : 'file'
       setPendingRename({ oldPath, newPath, count: countLinkReferences({ root, oldPath, kind, records }) })
     },
     [root, renameFile, wikilinks],
