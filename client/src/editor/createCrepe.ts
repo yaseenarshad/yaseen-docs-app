@@ -52,11 +52,12 @@
  *    mousedown/mouseup so the selection/focus don't jump. First row: Number children ↔ Bullet
  *    children (YAZ-729, `outline/numberChildrenRow.ts`), disabled when the item has no direct
  *    child list.
- *  - Numbers are manual-only (YAZ-793): upstream's `1. ` input rule is removed so typing a number
- *    never auto-converts a line into a numbered list; `- ` / `* ` bullet rules stay.
+ *  - Numbers are manual-only (YAZ-793/YAZ-1329): right-click Number children is the only editor
+ *    conversion command. The `1. ` input rule, `Mod-Alt-7` keymap and slash-menu Ordered List row
+ *    are removed; real ordered Markdown still parses, and `* 6) text` stays literal bullet text.
  *  - Drawing slash item (YAZ-877, `drawingMenu.ts`): rides Crepe's OWN BlockEdit menu via
  *    `featureConfigs[BlockEdit].buildMenu` — never a parallel slash plugin. Registered only when
- *    `opts.drawing` supplies the creator, so a mount without it keeps the stock menu exactly.
+ *    `opts.drawing` supplies the creator; the shared config always omits Ordered List.
  *  - Drawing previews (YAZ-878, `drawing/drawingPreview.ts`): `![[x.excalidraw]]` renders as the
  *    scene through inline decorations only (the match's text hidden, a widget in its place,
  *    caret-inside reveals the raw syntax) — never a schema or serializer change. Registered only
@@ -75,7 +76,12 @@
 import { Crepe, CrepeFeature } from '@milkdown/crepe'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
-import { turnIntoTextCommand, wrapInHeadingCommand, wrapInOrderedListInputRule } from '@milkdown/kit/preset/commonmark'
+import {
+  orderedListKeymap,
+  turnIntoTextCommand,
+  wrapInHeadingCommand,
+  wrapInOrderedListInputRule,
+} from '@milkdown/kit/preset/commonmark'
 import { extendListItemSchemaForTask } from '@milkdown/kit/preset/gfm'
 import { Selection } from '@milkdown/kit/prose/state'
 import { $shortcut, replaceAll } from '@milkdown/kit/utils'
@@ -87,7 +93,12 @@ import type { FindChannel } from './find/findChannel'
 import { createFindInPage } from './find/findInPage'
 import { bulletThreading } from './outline/bulletThreading'
 import { features } from './featureConfig'
-import { listItemRoundTrip, normalizeEmptyItems, stripEmptyTaskBreaks } from './listItemRoundTrip'
+import {
+  listItemRoundTrip,
+  normalizeEmptyItems,
+  restoreSameLineOrderedMarkers,
+  stripEmptyTaskBreaks,
+} from './listItemRoundTrip'
 import { underline } from './marks/underline'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
@@ -201,9 +212,13 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     defaultValue: normalizeEmptyItems(opts.defaultValue ?? ''),
     features: { ...features, ...opts.features },
     featureConfigs: {
-      // Crepe feature customisation #1 (YAZ-877): the BlockEdit menu gains a Drawing row when
-      // the host supplies a creator. No creator → no config, stock menu.
-      ...(opts.drawing === undefined ? {} : { [CrepeFeature.BlockEdit]: { buildMenu: drawingMenu(opts.drawing) } }),
+      // Crepe feature customisation #1 (YAZ-1329/YAZ-877): Number children is the only editor
+      // command that creates ordered children, so the stock Ordered List row is absent. Drawing
+      // still composes into this same BlockEdit config when the host supplies a creator.
+      [CrepeFeature.BlockEdit]: {
+        listGroup: { orderedList: null },
+        ...(opts.drawing === undefined ? {} : { buildMenu: drawingMenu(opts.drawing) }),
+      },
       // #2 (YAZ-923): the selection toolbar SAYS the block's level — a Heading group whose
       // active button is the answer to "what is this?", and whose click is the switch. The
       // markdown stays the source of truth; these call the same commands typing `##` does.
@@ -236,8 +251,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   if (opts.drawingPreview !== undefined) crepe.editor.use(createDrawingPreview(opts.drawingPreview))
   crepe.editor.use(outlinePaste)
   crepe.editor.use(blockHandleGate)
-  // Numbers are manual-only (YAZ-793): typing "1. " never auto-converts; "- " / "* " bullets keep theirs.
-  void crepe.editor.remove(wrapInOrderedListInputRule)
+  // Numbers are manual-only (YAZ-793/YAZ-1329): only the explicit block-handle command creates
+  // ordered children. Typing, slash-menu and keyboard conversion paths are all absent.
+  void crepe.editor.remove([wrapInOrderedListInputRule, ...orderedListKeymap])
   crepe.editor.use(createBlockHandleMenu(numberChildrenRow))
   crepe.editor.use(multiBlockDrag)
   // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs
@@ -298,11 +314,13 @@ export function focusEditor(crepe: Crepe): void {
 }
 
 export function postProcessMarkdown(md: string): string {
-  return stripEmptyTaskBreaks(
-    md
-      .replace(/(!?)\\\[\\\[/g, '$1[[')
-      // Crepe's trailing plugin keeps an empty paragraph after a final heading/list/code
-      // block; remark would serialise it as an extra blank line. Contract: single final \n.
-      .replace(/\n{2,}$/, '\n'),
+  return restoreSameLineOrderedMarkers(
+    stripEmptyTaskBreaks(
+      md
+        .replace(/(!?)\\\[\\\[/g, '$1[[')
+        // Crepe's trailing plugin keeps an empty paragraph after a final heading/list/code
+        // block; remark would serialise it as an extra blank line. Contract: single final \n.
+        .replace(/\n{2,}$/, '\n'),
+    ),
   )
 }

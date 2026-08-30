@@ -7,6 +7,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync } from 'node:fs'
 import { basename } from 'node:path'
+import { editorViewCtx } from '@milkdown/kit/core'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
 import { splitFrontmatter } from '@shared/frontmatter'
 
@@ -81,6 +82,17 @@ async function roundTrip(markdown: string): Promise<string> {
   await crepe.destroy()
   root.remove()
   return out
+}
+
+async function documentJson(markdown: string): Promise<Record<string, unknown>> {
+  const root = document.createElement('div')
+  document.body.appendChild(root)
+  const crepe = createCrepe({ root, defaultValue: markdown })
+  await crepe.create()
+  const json = crepe.editor.ctx.get(editorViewCtx).state.doc.toJSON() as Record<string, unknown>
+  await crepe.destroy()
+  root.remove()
+  return json
 }
 
 function headings(md: string): string[] {
@@ -165,10 +177,33 @@ describe('locked editor rules (createCrepe)', () => {
     expect(await roundTrip('1. [ ]\n2. [ ] b\n')).toBe('1. [ ]\n2. [ ] b\n')
     // a task whose text happens to start with a bracket is not an empty task
     expect(await roundTrip('* [ ] [x] literal\n')).toBe('* [ ] \\[x] literal\n')
-    // `* 1) text` on one line is a list-first item and stays that way
-    expect(await roundTrip('* 1) one\n* 2) two\n')).toBe('* 1. one\n* 2. two\n')
+    // A number immediately after a bullet is literal text, never a nested ordered list.
+    expect(await roundTrip('* 1) one\n* 2. two\n')).toBe('* 1) one\n* 2. two\n')
+    expect(await roundTrip('- 6. Paid\n- 7. Lead\n')).toBe('* 6. Paid\n* 7. Lead\n')
+    // Real ordered Markdown remains supported: it is also what Number children writes.
+    expect(await roundTrip('1. one\n2. two\n')).toBe('1. one\n2. two\n')
     // empty paragraphs outside list items are unchanged
     expect(await roundTrip('x\n\n<br />\n\ny\n')).toBe('x\n\n<br />\n\ny\n')
+  })
+  it('parses a reported same-line number as the parent bullet text, with one direct child list', async () => {
+    const json = await documentJson('* 5) Competitor Ad Intelligence Engine\n  * Automation Tools\n')
+    expect(json).toMatchObject({
+      content: [
+        {
+          type: 'bullet_list',
+          content: [
+            {
+              type: 'list_item',
+              content: [
+                { type: 'paragraph', content: [{ type: 'text', text: '5) Competitor Ad Intelligence Engine' }] },
+                { type: 'bullet_list' },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    expect(JSON.stringify(json)).not.toContain('ordered_list')
   })
   it('ends with exactly one newline even when the trailing plugin appends an empty paragraph', async () => {
     expect(await roundTrip('# H\n\n* a\n')).toBe('# H\n\n* a\n')

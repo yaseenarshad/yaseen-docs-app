@@ -2,7 +2,8 @@
  * THE REAL FILE, end to end (YAZ-975 — the proof YAZ-964 demanded): `AI Curriculum.md`, copied
  * VERBATIM from the vault that hit the bug (fixtures/curriculum-vault), not a sanitized
  * approximation — 123 outline lines including the 24 `1.`-spelled ones the seed used to drop, the
- * escaped `1\)` / `\*` / `\=` survivors, inline `<u>` HTML and one `<br />` spacer.
+ * escaped `1\)` / `\*` / `\=` survivors, inline `<u>` HTML and one `<br />` spacer. YAZ-1329
+ * canonicalizes the numeric same-line escape away on the first real save; the other escapes stay.
  *
  * WHAT IS PROVEN, in order (serial — each step continues the last):
  *   1 open: every line the grammar parses RENDERS (123 bullets, the once-dropped spellings among
@@ -10,7 +11,7 @@
  *     editor has mounted, so a mere look can never be the edit that destroys)
  *   2 one real edit: a line typed at the end lands on disk as line 124, and EVERY original line's
  *     text survives around it — compared whole-array, escape-insensitively, because the commit
- *     re-spells `1.` as `1\.` (Decision 1) and the `<br />` spacer as an empty bullet (Decision A);
+ *     keeps same-line `1.` visible without an escape (YAZ-1329) and the `<br />` spacer as an empty bullet (Decision A);
  *     the file stays frontmatter-only
  *   3 quit → relaunch: the converged spelling reloads to the same 124 rendered lines — the
  *     round-trip is a fixed point, not a slow mutation
@@ -106,16 +107,16 @@ test('step 2 — one edit writes line 124 and every original line survives on di
   expect(committed).toHaveLength(124)
 
   // EVERY original line, in order, then the new one — compared escape-insensitively, because the
-  // commit converges to Milkdown's spelling: `1.` → `1\.` (Decision 1), and the `<br />` spacer
+  // commit converges to YAZ-1329's visible same-line spelling, and the `<br />` spacer
   // serialises as the empty bullet it renders as (Decision A). Nothing else may change.
   const spelledAsCommitted = (text: string): string => (text === SPACER ? '' : text.replace(/\\/g, ''))
   expect(committed.map((text) => text.replace(/\\/g, ''))).toEqual([...originalTexts.map(spelledAsCommitted), ADDED])
 
-  // The once-dropped lines are on disk in their converged spelling, the survivor kept its escape.
+  // Numeric same-line text is canonical without an escape; visible delimiters and text survive.
   const outline = await outlineOnDisk()
-  expect(outline).toContain('1\\. Title > Promise > Intro > Temp Check')
-  expect(outline).toContain('4\\. Level 1) Human (Good old Meat Machines)')
-  expect(outline).toContain('1\\) have a subscription?')
+  expect(outline).toContain('1. Title > Promise > Intro > Temp Check')
+  expect(outline).toContain('4. Level 1) Human (Good old Meat Machines)')
+  expect(outline).toContain('1) have a subscription?')
   // The file is still title → outline: frontmatter, and nothing after it.
   expect((await readFile(path.join(vault, FILE), 'utf8')).trimEnd().endsWith('---')).toBe(true)
   await shoot(win, 'realfile-02-edit-preserves-all')

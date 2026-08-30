@@ -1,7 +1,7 @@
 /**
  * Numbered bullets (YAZ-732, C2): the block-handle context menu's "Number children" row flips a
  * bullet's direct child list to an ordered list (and back), without touching text — the
- * hand-typed `1\) Setup` prefix stays (D2). Proven through the REAL app: menu → GUI labels →
+ * hand-typed `1) Setup` prefix stays (D2). Proven through the REAL app: menu → GUI labels →
  * autosaved markdown on disk → the system clipboard (`1.` markers, `<ol>`) → one-step undo.
  * Serial: the steps share one app and the real clipboard.
  */
@@ -14,7 +14,8 @@ import { appWindow, buildFixtureVault, copyVault, launchApp, seededState, shoot 
 test.describe.configure({ mode: 'serial' })
 
 const NOTE = 'Numbered.md'
-// The editor writes a hand-typed `1) x` prefix as `1\) x` — a raw `* 1) x` is a nested ordered list in CommonMark.
+// The fixture includes legacy explicit escapes; YAZ-1329 canonicalizes them away when the row is
+// saved as a bullet, while preserving the visible `1) x` text and preventing CommonMark nesting.
 const NOTE_BODY = '# Numbered\n\n* Fundamentals\n  * 1\\) Setup\n    * deep\n  * 2\\) VS Code\n  * 3\\) WisprFlow\n'
 const CHILDREN = ['1) Setup', '2) VS Code', '3) WisprFlow']
 
@@ -149,7 +150,7 @@ test('step 4 — one undo restores the bullets in the GUI and on disk', async ()
   await win.keyboard.press('ControlOrMeta+z')
   for (const text of CHILDREN) await expect(labelOf(rowOf(win, text))).toHaveClass(/\bbullet\b/)
   await expect.poll(diskHasNumbers, { timeout: 10_000 }).toBe(false)
-  expect(await readFile(notePath, 'utf8')).toMatch(/^ *\* 1\\\) Setup$/m)
+  expect(await readFile(notePath, 'utf8')).toMatch(/^ *\* 1\) Setup$/m)
 })
 
 test('step 5 — re-number, then the row reads "Bullet children" and flips back', async () => {

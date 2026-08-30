@@ -1,4 +1,4 @@
-/** Numbers are manual-only (YAZ-793): the upstream `1. ` input rule is removed; bullet rules stay. */
+/** Numbers are manual-only (YAZ-793/YAZ-1329): typing and Mod-Alt-7 cannot create them; bullet rules stay. */
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { afterEach, expect, test } from 'vitest'
@@ -43,4 +43,22 @@ test('typing "- " at line start still creates a bullet list', async () => {
   typeAtStart(view, '- ')
   expect(view.state.doc.firstChild?.type.name).toBe('bullet_list')
   expect(getMarkdownForSave(crepe)).toBe('* hello\n')
+})
+
+test('Mod-Alt-7 does not create a numbered list', async () => {
+  const { crepe, view } = await mount()
+  const isMac = /Mac/.test(navigator.platform)
+  const event = new KeyboardEvent('keydown', {
+    key: '7',
+    code: 'Digit7',
+    keyCode: 55,
+    altKey: true,
+    ...(isMac ? { metaKey: true } : { ctrlKey: true }),
+    bubbles: true,
+    cancelable: true,
+  })
+  const handled = view.someProp('handleKeyDown', (handler) => handler(view, event)) ?? false
+  expect(handled).toBe(false)
+  expect(view.state.doc.firstChild?.type.name).toBe('paragraph')
+  expect(getMarkdownForSave(crepe)).toBe('hello\n')
 })
