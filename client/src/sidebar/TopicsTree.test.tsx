@@ -28,7 +28,7 @@ vi.mock('./topicsMove', async (importOriginal) => ({
 
 import { StrictMode, act, useEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MAX_TOPICS_EXPANDED_PAGES, defaultAppState, defaultFolderState, type AppState, type IndexRecord, type WindowIdentity } from '@shared/types'
+import { MAX_TOPICS_EXPANDED_PAGES, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type WindowIdentity } from '@shared/types'
 import { stripBrackets } from '../views/expr'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { storage } from '../lib/storage'
@@ -135,7 +135,7 @@ async function initStorage(state: AppState = defaultAppState()): Promise<void> {
   bridgeSetFolder = vi.fn(async () => undefined)
   const bridge = {
     state: { get: vi.fn(async () => state), setFolder: bridgeSetFolder, onChange: vi.fn(() => () => undefined) },
-    window: { identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: ROOT, file: null, tabs: [] })) },
+    window: { identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: ROOT, file: null, tabs: [], rightPanel: defaultRightPanelIdentity() })) },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   await storage.init()

@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_TOPICS_EXPANDED_PAGES, addRecentRoot, defaultAppState, type AppState, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_TOPICS_EXPANDED_PAGES, addRecentRoot, defaultAppState, defaultRightPanelIdentity, type AppState, type WindowIdentity } from '@shared/types'
 import { storage } from './storage'
 import { hashFilePath } from './urlHash'
 
 /** A fake `window.yaseenDocs` with just the state / window halves the storage module talks to. */
-function installBridge(state: AppState, identity: WindowIdentity) {
+type IdentityFixture = Omit<WindowIdentity, 'rightPanel'> & Partial<Pick<WindowIdentity, 'rightPanel'>>
+
+function installBridge(state: AppState, identity: IdentityFixture) {
   let listener: ((s: AppState) => void) | null = null
   const bridge = {
     state: {
@@ -26,7 +28,7 @@ function installBridge(state: AppState, identity: WindowIdentity) {
       }),
     },
     window: {
-      identity: vi.fn(async () => identity),
+      identity: vi.fn(async (): Promise<WindowIdentity> => ({ ...identity, rightPanel: identity.rightPanel ?? defaultRightPanelIdentity() })),
       setIdentity: vi.fn(async () => undefined),
       open: vi.fn(),
       duplicate: vi.fn(),
@@ -72,7 +74,8 @@ describe('storage.init', () => {
       recents: [{ path: '/v', lastOpened: 5 }],
       folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, topicsExpanded: ['/v/Metrics.md'] } },
     }
-    b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    const rightPanel = { open: true, width: 520, items: ['/v/b.md'], expanded: '/v/b.md' }
+    b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], rightPanel })
     await storage.init()
     expect(b.bridge.state.get).toHaveBeenCalledTimes(1)
     expect(b.bridge.window.identity).toHaveBeenCalledTimes(1)
@@ -80,6 +83,8 @@ describe('storage.init', () => {
     expect(storage.getRoot()).toBe('/v')
     expect(storage.getFile()).toBe('/v/a.md')
     expect(storage.getTabs()).toEqual(['/v/a.md'])
+    expect(storage.getRightPanel()).toEqual(rightPanel)
+    expect(storage.getRightPanel()).not.toBe(rightPanel)
     expect(storage.getSettings()).toEqual({ ...DEFAULT_SETTINGS, lineSpacing: 2 })
     expect(storage.getSidebarCollapsed()).toBe(true)
     expect(storage.getRecentRoots()).toEqual([{ path: '/v', lastOpened: 5 }])
@@ -121,7 +126,7 @@ describe('storage', () => {
     expect(storage.getRoot()).toBeNull()
     storage.setRoot('/notes')
     expect(storage.getRoot()).toBe('/notes')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes', file: null, tabs: [] })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes', file: null, tabs: [], rightPanel: defaultRightPanelIdentity() })
     storage.setTabs('/notes', ['/notes/a.md'], '/notes/a.md')
     storage.setRoot('/notes')
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes' })
@@ -129,9 +134,23 @@ describe('storage', () => {
     expect(storage.getTabs()).toEqual(['/notes/a.md'])
     storage.setRoot(null)
     expect(storage.getRoot()).toBeNull()
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [] })
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity() })
     expect(storage.getFile()).toBeNull()
     expect(storage.getTabs()).toEqual([])
+  })
+
+  it('setWorkspace mirrors main and right identity in one call and keeps independent item arrays', () => {
+    const rightPanel = { open: true, width: 600, items: ['/v/b.md'], expanded: '/v/b.md' }
+    storage.setWorkspace('/v', ['/v/a.md'], '/v/a.md', rightPanel)
+    expect(storage.getTabs()).toEqual(['/v/a.md'])
+    expect(storage.getRightPanel()).toEqual(rightPanel)
+    expect(storage.getRightPanel().items).not.toBe(rightPanel.items)
+    expect(b.bridge.window.setIdentity).toHaveBeenCalledTimes(1)
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({
+      tabs: ['/v/a.md'],
+      file: '/v/a.md',
+      rightPanel,
+    })
   })
 
   it('recent roots are MRU in the cache and pushed through the bridge', () => {

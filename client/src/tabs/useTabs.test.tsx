@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { defaultAppState, type AppState, type WindowIdentity } from '@shared/types'
+import { defaultAppState, defaultRightPanelIdentity, type AppState, type WindowIdentity } from '@shared/types'
 import { storage } from '../lib/storage'
 import { bootTabs, tabsReducer, useTabs, type TabsState, type UseTabs } from './useTabs'
 
@@ -246,7 +246,9 @@ describe('tabsReducer', () => {
 })
 
 /** A fake `window.yaseenDocs` with just the surface storage touches (the storage.test.ts pattern). */
-function installBridge(app: AppState, identity: WindowIdentity) {
+type IdentityFixture = Omit<WindowIdentity, 'rightPanel'> & Partial<Pick<WindowIdentity, 'rightPanel'>>
+
+function installBridge(app: AppState, identity: IdentityFixture) {
   const bridge = {
     state: {
       get: vi.fn(async () => app),
@@ -254,7 +256,7 @@ function installBridge(app: AppState, identity: WindowIdentity) {
       onChange: vi.fn(() => () => undefined),
     },
     window: {
-      identity: vi.fn(async () => identity),
+      identity: vi.fn(async (): Promise<WindowIdentity> => ({ ...identity, rightPanel: identity.rightPanel ?? defaultRightPanelIdentity() })),
       setIdentity: vi.fn(async () => undefined),
     },
   }

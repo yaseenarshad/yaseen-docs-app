@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { MenuItemConstructorOptions } from 'electron'
-import type { RecentRoots, WindowEntry } from '@shared/types'
+import { defaultRightPanelIdentity, type RecentRoots, type WindowEntry } from '@shared/types'
 import { CH } from '../channels'
 import { createStore, type Store } from './store'
 import { HELP_URL, buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, pickMenuTargetWindow, subscribeMenuRebuild, type ContextMenuActions, type MenuHandlers, type MenuHost } from './menu'
@@ -299,7 +299,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', file: '/vaults/notes/a.md', tabs: ['/vaults/notes/a.md'], bounds: { x: 0, y: 0, width: 800, height: 600 } }
+const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', file: '/vaults/notes/a.md', tabs: ['/vaults/notes/a.md'], rightPanel: defaultRightPanelIdentity(), bounds: { x: 0, y: 0, width: 800, height: 600 } }
 
 function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, dirExists: (p: string) => boolean = () => true) {
   const windows = { idFor: vi.fn(), openWindow: vi.fn(), duplicateWindow: vi.fn() }

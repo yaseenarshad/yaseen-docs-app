@@ -5,9 +5,11 @@ import {
   addRecentRoot,
   defaultAppState,
   defaultFolderState,
+  defaultRightPanelIdentity,
   type AppState,
   type FolderState,
   type RecentRoots,
+  type RightPanelIdentity,
   type SettingsState,
   type SidebarLens,
   type WindowIdentity,
@@ -22,7 +24,7 @@ import {
  */
 
 let state: AppState = defaultAppState()
-let identity: WindowIdentity = { id: '', root: null, file: null, tabs: [] }
+let identity: WindowIdentity = { id: '', root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity() }
 let unsubscribe: (() => void) | null = null
 const listeners = new Set<() => void>()
 
@@ -69,7 +71,9 @@ export const storage = {
   getRoot: (): string | null => identity.root,
   /** Changing the root clears this window's file AND tab list in the same write (Tabs rule 13, GRO-2234); re-setting the same root keeps them. */
   setRoot(root: string | null): void {
-    const patch = root === identity.root ? { root } : { root, file: null, tabs: [] as string[] }
+    const patch = root === identity.root
+      ? { root }
+      : { root, file: null, tabs: [] as string[], rightPanel: defaultRightPanelIdentity() }
     identity = { ...identity, ...patch }
     send('window.setIdentity', () => window.yaseenDocs.window.setIdentity(patch))
   },
@@ -113,6 +117,9 @@ export const storage = {
   /** Valid AT BOOT only (like `getFile`): the renderer owns tab state after boot (Tabs I2, GRO-2234). */
   getTabs: (): string[] => identity.tabs,
 
+  /** Durable right-panel identity at boot; clone the ordered list so callers cannot mutate the cache. */
+  getRightPanel: (): RightPanelIdentity => ({ ...identity.rightPanel, items: [...identity.rightPanel.items] }),
+
   getLastFile: (root: string): string | null => folderOf(root).lastFile,
 
   /**
@@ -133,6 +140,22 @@ export const storage = {
       send('state.setFolder', () => window.yaseenDocs.state.setFolder(root, { lastFile: file }))
     }
     send('window.setIdentity', () => window.yaseenDocs.window.setIdentity({ tabs: [...tabs], file }))
+  },
+
+  /** One durable mirror for the complete main/right workspace identity. */
+  setWorkspace(root: string | null, tabs: readonly string[], file: string | null, rightPanel: RightPanelIdentity): void {
+    const fileChanged = file !== identity.file
+    const nextRight = { ...rightPanel, items: [...rightPanel.items] }
+    identity = { ...identity, file, tabs: [...tabs], rightPanel: nextRight }
+    if (root !== null && fileChanged) {
+      patchFolder(root, { lastFile: file })
+      send('state.setFolder', () => window.yaseenDocs.state.setFolder(root, { lastFile: file }))
+    }
+    send('window.setIdentity', () => window.yaseenDocs.window.setIdentity({
+      tabs: [...tabs],
+      file,
+      rightPanel: { ...nextRight, items: [...nextRight.items] },
+    }))
   },
 
   /** Already validated field-by-field by the main process on load (`desktop/src/main/store.ts`). */

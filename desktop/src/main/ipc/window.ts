@@ -1,8 +1,8 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import type { WindowEntry, WindowIdentity } from '@shared/types'
+import type { RightPanelIdentity, WindowEntry, WindowIdentity } from '@shared/types'
 import { CH } from '../../channels'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
-import { isRecord, normalizeTabs, type Store } from '../store'
+import { isRecord, normalizeRightPanel, normalizeTabs, type Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
 import { handle, handleWithEvent } from './envelope'
 
@@ -22,6 +22,23 @@ function optionalTabs(raw: Record<string, unknown>): string[] | undefined {
   return v.map((t, i) => requireAbsPath(t, `tabs[${i}]`))
 }
 
+/** `rightPanel` is an all-or-nothing identity patch; store normalization repairs its invariants. */
+function optionalRightPanel(raw: Record<string, unknown>): RightPanelIdentity | undefined {
+  const value = raw.rightPanel
+  if (value === undefined) return undefined
+  if (!isRecord(value)
+    || typeof value.open !== 'boolean'
+    || typeof value.width !== 'number'
+    || !Number.isFinite(value.width)
+    || !Array.isArray(value.items)
+    || (value.expanded !== null && typeof value.expanded !== 'string')) {
+    throw new BridgeFailure('BAD_REQUEST', "'rightPanel' must be a complete panel identity")
+  }
+  const items = value.items.map((item, i) => requireAbsPath(item, `rightPanel.items[${i}]`))
+  const expanded = value.expanded === null ? null : requireAbsPath(value.expanded, 'rightPanel.expanded')
+  return { open: value.open, width: value.width, items, expanded }
+}
+
 /**
  * The `window.*` half of `window.yaseenDocs`. The caller is resolved through the window lookup
  * (`webContents.id` → window id) and answered from `AppState.windows`. `open` / `duplicate`
@@ -38,8 +55,8 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   }
 
   handleWithEvent(CH.windowIdentity, async (e): Promise<WindowIdentity> => {
-    const { id, root, file, tabs } = entryFor(e)
-    return { id, root, file, tabs }
+    const { id, root, file, tabs, rightPanel } = entryFor(e)
+    return { id, root, file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] } }
   })
 
   handleWithEvent(CH.windowSetIdentity, async (e, patch: unknown) => {
@@ -47,15 +64,18 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const root = optionalPath(patch, 'root')
     const file = optionalPath(patch, 'file')
     const tabs = optionalTabs(patch)
+    const rightPanel = optionalRightPanel(patch)
     const entry = entryFor(e)
     // The tabs invariant holds on the entry AS WRITTEN (GRO-2232): the loader's repair rule,
     // applied to whichever of `file` / `tabs` the patch left untouched.
     const nextFile = file !== undefined ? file : entry.file
+    const nextTabs = normalizeTabs(tabs ?? entry.tabs, nextFile)
     store.upsertWindow({
       ...entry,
       ...(root !== undefined ? { root } : {}),
       file: nextFile,
-      tabs: normalizeTabs(tabs ?? entry.tabs, nextFile),
+      tabs: nextTabs,
+      rightPanel: normalizeRightPanel(rightPanel ?? entry.rightPanel, nextTabs),
     })
   })
 

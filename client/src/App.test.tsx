@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, type AppState, type IndexRecord, type SidebarLens, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type SidebarLens, type WindowIdentity } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -53,7 +53,9 @@ import { App, LINK_NOTICE_MS } from './App'
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 /** The full `window.yaseenDocs` surface the App tree touches, all observable. `files` backs readFile/writeFile (the E1c rewrite path). */
-function installBridge(state: AppState, identity: WindowIdentity, files: Record<string, { content: string; mtime: number }> = {}) {
+type IdentityFixture = Omit<WindowIdentity, 'rightPanel'> & Partial<Pick<WindowIdentity, 'rightPanel'>>
+
+function installBridge(state: AppState, identity: IdentityFixture, files: Record<string, { content: string; mtime: number }> = {}) {
   const stateChanged = new Set<(next: AppState) => void>()
   const menuOpenRoot = new Set<(path: string) => void>()
   const menuSearch = new Set<() => void>()
@@ -111,7 +113,7 @@ function installBridge(state: AppState, identity: WindowIdentity, files: Record<
       }),
     },
     window: {
-      identity: vi.fn(async () => identity),
+      identity: vi.fn(async (): Promise<WindowIdentity> => ({ ...identity, rightPanel: identity.rightPanel ?? defaultRightPanelIdentity() })),
       setIdentity: vi.fn(async () => undefined),
       open: vi.fn(),
       duplicate: vi.fn(),
@@ -191,7 +193,7 @@ let container: HTMLElement | null = null
 
 async function mount(
   state: AppState,
-  identity: WindowIdentity,
+  identity: IdentityFixture,
   files: Record<string, { content: string; mtime: number }> = {},
   /** Runs BEFORE the first render, for stubs the mount itself consumes (the index, the `.yaseendocs` probe). */
   tweak?: (b: ReturnType<typeof installBridge>) => void,
@@ -744,7 +746,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
   }
   /** A references B by name; R references Docs/N by path — one file case, one folder case. */
   const records = [record('/v/A.md', { links: ['B'] }), record('/v/B.md'), record('/v/R.md', { links: ['Docs/N'] }), record('/v/Docs/N.md')]
-  const identity = (): WindowIdentity => ({ id: 'w1', root: '/v', file: null, tabs: [] })
+  const identity = (): IdentityFixture => ({ id: 'w1', root: '/v', file: null, tabs: [] })
   const feed = (b: ReturnType<typeof installBridge>) => b.bridge.index.mockResolvedValue({ root: '/v', records, generatedAt: 1 })
   const sheetText = (el: HTMLElement) => el.querySelector('.confirm__text')?.textContent
   const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
@@ -882,7 +884,7 @@ describe('in-app delete (GRO-2272)', () => {
 describe('Home is born on vault open (6C-, YAZ-849)', () => {
   const HOME = '/v/Home.md'
   const DOTFOLDER = '/v/.yaseendocs'
-  const identity = (): WindowIdentity => ({ id: 'w1', root: '/v', file: null, tabs: [] })
+  const identity = (): IdentityFixture => ({ id: 'w1', root: '/v', file: null, tabs: [] })
 
   const homeRecord = (): IndexRecord => ({
     path: HOME,
