@@ -48,7 +48,8 @@ export function App() {
     tabs, active: file, mounted, openCurrent, openBackground, activate, close: closeTab, move: moveTab,
     closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs,
     renamePath: renameTabPath, renameDirPath: renameDirTabs, deletePath: deleteTabPath, deleteDirPath: deleteDirTabs,
-    rightPanel, toggleRight, closeRight, rightBack, rightForward, canRightBack, canRightForward, setRightOpen, setRightWidth,
+    rightPanel, rightMounted, openRightBackground, navigateRight, toggleRight, closeRight,
+    rightBack, rightForward, canRightBack, canRightForward, setRightOpen, setRightWidth,
   } = useWorkspace(root)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
@@ -454,6 +455,19 @@ export function App() {
   // The ACTIVE file vanished on disk: close its tab, ⌘W-style (a neighbour takes over).
   const onFileMissing = useCallback(() => void closeActive(), [closeActive])
 
+  const editorCommon = root === null ? null : {
+    root,
+    watch,
+    onNotice: setNotice,
+    createBase,
+    wikilinks,
+    wikilinkCandidates,
+    properties: propertyDecls,
+    onRenameFile: requestRename,
+    sync: githubSync.status,
+    onSyncNow: githubSync.syncNow,
+  }
+
   return (
     <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth}>
       {notice !== null && (
@@ -548,14 +562,14 @@ export function App() {
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
           <TabBar tabs={tabs} active={file} onActivate={activate} onClose={closeTab} onMove={moveTab} canBack={canBack} canForward={canForward} onBack={back} onForward={forward} onShowInSidebar={showInSidebar} onNotice={setNotice} />
           <div className="tabstack">
-            {mounted.length === 0 && <Editor root={root} path={null} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={propertyDecls} onRenameFile={requestRename} sync={githubSync.status} onSyncNow={githubSync.syncNow} />}
+            {mounted.length === 0 && editorCommon !== null && <Editor {...editorCommon} path={null} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility — see tabs.css
               // for why display:none would lose scroll positions.
               <div key={path} className={path === file ? 'tabstack__layer' : 'tabstack__layer tabstack__layer--hidden'}>
                 {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → openCurrent, ⌘ → openBackground; create failures land in the link-notice. */}
-                <Editor root={root} path={path} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={propertyDecls} onRenameFile={requestRename} sync={githubSync.status} onSyncNow={githubSync.syncNow} />
+                {editorCommon !== null && <Editor {...editorCommon} path={path} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
               </div>
             ))}
           </div>
@@ -575,7 +589,26 @@ export function App() {
           onClose={closeRight}
           onHide={() => setRightOpen(false)}
           onResizeCommit={setRightWidth}
-        />
+        >
+          {editorCommon !== null && (
+            <div className="right-panel__editor-stack">
+              {rightMounted.map((path) => (
+                <div
+                  key={path}
+                  data-testid={`right-layer-${path}`}
+                  className={path === rightPanel.expanded ? 'right-panel__editor-layer' : 'right-panel__editor-layer right-panel__editor-layer--hidden'}
+                >
+                  <Editor
+                    {...editorCommon}
+                    path={path}
+                    onOpenFile={(to) => navigateRight(path, to)}
+                    onOpenFileBackground={openRightBackground}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </RightPanel>
       )}
       {root !== null && !rightPanel.open && (
         <button type="button" className="right-panel-reopen" aria-label="Show right panel" title="Show right panel" onClick={() => setRightOpen(true)}>
