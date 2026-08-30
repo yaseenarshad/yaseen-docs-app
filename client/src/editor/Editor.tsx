@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FileResponse, GithubSyncStatus, PropertiesResponse } from '@shared/types'
+import { fileKind } from '@shared/fileKind'
 import { api } from '../api'
 import { createDrawing } from '../drawings/createDrawing'
 import { DrawingModal } from '../drawings/DrawingModal'
@@ -30,6 +31,7 @@ import { takeRenameBuffer } from '../lib/renameContinuity'
 import { appliedTheme } from '../lib/theme'
 import { storage } from '../lib/storage'
 import { HOME_LINK } from '../sidebar/ensureHome'
+import { TextViewer } from '../viewers/TextViewer'
 
 interface EditorProps {
   /** Open root folder; fold state is persisted per root + file. */
@@ -76,11 +78,44 @@ interface EditorProps {
 }
 
 export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, createBase, wikilinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow }: EditorProps) {
+  if (path === null) {
+    return (
+      <section className="editor">
+        <p className="editor-msg">Select a file from the sidebar.</p>
+      </section>
+    )
+  }
+  const kind = fileKind(path)
+  if (kind === 'text') {
+    return (
+      <section className="editor">
+        <TextViewer path={path} watch={watch} />
+      </section>
+    )
+  }
+  if (kind === 'pdf') {
+    return (
+      <section className="editor">
+        <p className="editor-msg">PDF viewer loading support…</p>
+      </section>
+    )
+  }
+  if (kind === null) {
+    return (
+      <section className="editor">
+        <p className="editor-msg editor-msg--error">Unsupported file type.</p>
+      </section>
+    )
+  }
+  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} />
+}
+
+/** Markdown-only owner: loading, Crepe, migration, autosave, frontmatter, folder pages, and backlinks. */
+function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, createBase, wikilinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow }: EditorProps & { path: string }) {
   const state = useFile(path)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   return (
     <section className="editor">
-      {state.status === 'idle' && <p className="editor-msg">Select a file from the sidebar.</p>}
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
