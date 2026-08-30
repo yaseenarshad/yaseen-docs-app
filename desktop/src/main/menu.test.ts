@@ -299,7 +299,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', file: '/vaults/notes/a.md', tabs: ['/vaults/notes/a.md'], bounds: { x: 0, y: 0, width: 800, height: 600 } }
+const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', file: '/vaults/notes/a.md', tabs: ['/vaults/notes/a.md'], sidebarCollapsed: false, bounds: { x: 0, y: 0, width: 800, height: 600 } }
 
 function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, dirExists: (p: string) => boolean = () => true) {
   const windows = { idFor: vi.fn(), openWindow: vi.fn(), duplicateWindow: vi.fn() }
@@ -390,12 +390,14 @@ describe('createMenuHandlers', () => {
     }).not.toThrow()
   })
 
-  it('toggleSidebar flips the global setting in the store', () => {
-    const { handlers } = makeHandlers(undefined)
+  it('toggleSidebar tells only the focused renderer to run its window-local toggle', () => {
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers } = makeHandlers(wc)
     handlers.toggleSidebar()
-    expect(store.get().sidebarCollapsed).toBe(true)
-    handlers.toggleSidebar()
-    expect(store.get().sidebarCollapsed).toBe(false)
+    expect(wc.send).toHaveBeenCalledExactlyOnceWith(CH.menuToggleSidebar)
+
+    const { handlers: unfocused } = makeHandlers(undefined)
+    expect(() => unfocused.toggleSidebar()).not.toThrow()
   })
 
   it('openHelp opens the repo README', () => {
@@ -413,7 +415,7 @@ describe('subscribeMenuRebuild', () => {
     const rebuild = vi.fn()
     subscribeMenuRebuild(store, rebuild)
 
-    store.setSidebarCollapsed(true)
+    store.setSidebarWidth(321)
     store.setSettings(store.get().settings)
     store.upsertWindow(ENTRY)
     store.setFolder('/vaults/notes', { lastFile: null })

@@ -22,7 +22,7 @@ import {
  */
 
 let state: AppState = defaultAppState()
-let identity: WindowIdentity = { id: '', root: null, file: null, tabs: [] }
+let identity: WindowIdentity = { id: '', root: null, file: null, tabs: [], sidebarCollapsed: false }
 let unsubscribe: (() => void) | null = null
 const listeners = new Set<() => void>()
 
@@ -142,10 +142,11 @@ export const storage = {
     send('state.setSettings', () => window.yaseenDocs.state.setSettings(settings))
   },
 
-  getSidebarCollapsed: (): boolean => state.sidebarCollapsed,
+  /** Sidebar visibility is window identity; global state broadcasts cannot change another window. */
+  getSidebarCollapsed: (): boolean => identity.sidebarCollapsed,
   setSidebarCollapsed(collapsed: boolean): void {
-    state = { ...state, sidebarCollapsed: collapsed }
-    send('state.setSidebarCollapsed', () => window.yaseenDocs.state.setSidebarCollapsed(collapsed))
+    identity = { ...identity, sidebarCollapsed: collapsed }
+    send('window.setIdentity', () => window.yaseenDocs.window.setIdentity({ sidebarCollapsed: collapsed }))
   },
 
   /** Already clamped to [SIDEBAR_MIN_W, SIDEBAR_MAX_W] by the main process on load and on write. */

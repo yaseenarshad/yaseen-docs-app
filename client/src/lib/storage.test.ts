@@ -10,7 +10,6 @@ function installBridge(state: AppState, identity: WindowIdentity) {
     state: {
       get: vi.fn(async () => state),
       setSettings: vi.fn(async () => undefined),
-      setSidebarCollapsed: vi.fn(async () => undefined),
       setSidebarWidth: vi.fn(async () => undefined),
       setSidebarLens: vi.fn(async () => undefined),
       pushRecent: vi.fn(async () => undefined),
@@ -40,7 +39,7 @@ const flushMicrotasks = () => new Promise((r) => setTimeout(r, 0))
 
 let b: ReturnType<typeof installBridge>
 beforeEach(async () => {
-  b = installBridge(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] })
+  b = installBridge(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [], sidebarCollapsed: false })
   await storage.init()
 })
 afterEach(() => {
@@ -68,11 +67,10 @@ describe('storage.init', () => {
     const seeded: AppState = {
       ...defaultAppState(),
       settings: { ...DEFAULT_SETTINGS, lineSpacing: 2 },
-      sidebarCollapsed: true,
       recents: [{ path: '/v', lastOpened: 5 }],
       folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, topicsExpanded: ['/v/Metrics.md'] } },
     }
-    b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarCollapsed: true })
     await storage.init()
     expect(b.bridge.state.get).toHaveBeenCalledTimes(1)
     expect(b.bridge.window.identity).toHaveBeenCalledTimes(1)
@@ -109,7 +107,7 @@ describe('storage.init', () => {
 
   it('re-initialising drops the previous change subscription', async () => {
     const first = b
-    b = installBridge(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [] })
+    b = installBridge(defaultAppState(), { id: 'w1', root: null, file: null, tabs: [], sidebarCollapsed: false })
     await storage.init()
     expect(first.hasListener()).toBe(false)
     expect(b.hasListener()).toBe(true)
@@ -219,12 +217,12 @@ describe('storage', () => {
   it('boot precedence (GRO-2160): identity file wins over the folder lastFile, a pasted hash beats both', async () => {
     // Two windows on the same folder: w2 restored on b.md while the folder's lastFile is a.md.
     const seeded: AppState = { ...defaultAppState(), folders: { '/v': { expanded: [], lastFile: '/v/a.md', folds: {}, baseGroups: {}, topicsExpanded: [] } } }
-    b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/b.md', tabs: ['/v/b.md'] })
+    b = installBridge(seeded, { id: 'w2', root: '/v', file: '/v/b.md', tabs: ['/v/b.md'], sidebarCollapsed: false })
     await storage.init()
     expect(bootFile('', '/v')).toBe('/v/b.md')
     expect(bootFile('#/v/c.md', '/v')).toBe('/v/c.md')
     // A fresh window on the folder (identity file null) still falls back to the folder's lastFile.
-    b = installBridge(seeded, { id: 'w3', root: '/v', file: null, tabs: [] })
+    b = installBridge(seeded, { id: 'w3', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
     await storage.init()
     expect(bootFile('', '/v')).toBe('/v/a.md')
   })
@@ -289,14 +287,14 @@ describe('storage', () => {
     expect(b.bridge.state.setFolder).toHaveBeenLastCalledWith('/r2', { topicsExpanded: many.slice(0, MAX_TOPICS_EXPANDED_PAGES) })
   })
 
-  it('sidebarCollapsed defaults to false and round-trips through the bridge', () => {
+  it('sidebarCollapsed is this window identity and round-trips through window.setIdentity', () => {
     expect(storage.getSidebarCollapsed()).toBe(false)
     storage.setSidebarCollapsed(true)
     expect(storage.getSidebarCollapsed()).toBe(true)
-    expect(b.bridge.state.setSidebarCollapsed).toHaveBeenLastCalledWith(true)
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ sidebarCollapsed: true })
     storage.setSidebarCollapsed(false)
     expect(storage.getSidebarCollapsed()).toBe(false)
-    expect(b.bridge.state.setSidebarCollapsed).toHaveBeenLastCalledWith(false)
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ sidebarCollapsed: false })
   })
 
   it('sidebarLens defaults to topics and round-trips through the bridge (YAZ-847)', () => {
@@ -323,14 +321,13 @@ describe('storage', () => {
     const next: AppState = {
       ...defaultAppState(),
       settings: { ...DEFAULT_SETTINGS, threadWidth: 3 },
-      sidebarCollapsed: true,
       sidebarLens: 'files',
       folders: { '/v': { expanded: [], lastFile: null, folds: { '/v/a.md': ['z'] }, baseGroups: {}, topicsExpanded: [] } },
     }
     b.emit(next)
     expect(seen).toHaveBeenCalledTimes(1)
     expect(storage.getSettings().threadWidth).toBe(3)
-    expect(storage.getSidebarCollapsed()).toBe(true)
+    expect(storage.getSidebarCollapsed()).toBe(false) // another window's global-state broadcast cannot change this identity
     expect(storage.getSidebarLens()).toBe('files') // another window's lens switch lands here (global, D9)
     expect(storage.getFolds('/v', '/v/a.md')).toEqual(['z'])
     off()

@@ -22,6 +22,14 @@ function optionalTabs(raw: Record<string, unknown>): string[] | undefined {
   return v.map((t, i) => requireAbsPath(t, `tabs[${i}]`))
 }
 
+/** `sidebarCollapsed`: absent (untouched), or a boolean. */
+function optionalSidebarCollapsed(raw: Record<string, unknown>): boolean | undefined {
+  const v = raw.sidebarCollapsed
+  if (v === undefined) return undefined
+  if (typeof v !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'sidebarCollapsed' must be a boolean")
+  return v
+}
+
 /**
  * The `window.*` half of `window.yaseenDocs`. The caller is resolved through the window lookup
  * (`webContents.id` → window id) and answered from `AppState.windows`. `open` / `duplicate`
@@ -38,8 +46,8 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   }
 
   handleWithEvent(CH.windowIdentity, async (e): Promise<WindowIdentity> => {
-    const { id, root, file, tabs } = entryFor(e)
-    return { id, root, file, tabs }
+    const { id, root, file, tabs, sidebarCollapsed } = entryFor(e)
+    return { id, root, file, tabs, sidebarCollapsed }
   })
 
   handleWithEvent(CH.windowSetIdentity, async (e, patch: unknown) => {
@@ -47,6 +55,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const root = optionalPath(patch, 'root')
     const file = optionalPath(patch, 'file')
     const tabs = optionalTabs(patch)
+    const sidebarCollapsed = optionalSidebarCollapsed(patch)
     const entry = entryFor(e)
     // The tabs invariant holds on the entry AS WRITTEN (GRO-2232): the loader's repair rule,
     // applied to whichever of `file` / `tabs` the patch left untouched.
@@ -54,6 +63,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     store.upsertWindow({
       ...entry,
       ...(root !== undefined ? { root } : {}),
+      ...(sidebarCollapsed !== undefined ? { sidebarCollapsed } : {}),
       file: nextFile,
       tabs: normalizeTabs(tabs ?? entry.tabs, nextFile),
     })

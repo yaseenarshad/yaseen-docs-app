@@ -35,11 +35,12 @@ export const VIEW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: 'Esc', label: 'Cancel a card drag' },
 ]
 
-/** App-menu window & tab shortcuts (B3 GRO-2161, Tabs GRO-2232/2235, ⌘K search YAZ-804) + the Open Recent open-beside gesture (GRO-2211). */
+/** App/window shortcuts: menu-owned B3/Tabs/⌘K, renderer-owned ⌘B (YAZ-1280), plus Open Recent's open-beside gesture. */
 export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘⇧N', label: 'New window — same folder and tabs' },
   { keys: '⌘⇧O', label: 'Open folder…' },
   { keys: '⌘K', label: 'Search the vault' },
+  { keys: '⌘B', label: 'Toggle sidebar outside editing surfaces' },
   { keys: '⌘W', label: 'Close tab — on the last tab it empties the window, then closes it' },
   { keys: '⌘⇧W', label: 'Close window' },
   { keys: '⌃Tab / ⌃⇧Tab', label: 'Next / previous tab' },
