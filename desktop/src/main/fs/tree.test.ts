@@ -29,7 +29,9 @@ describe('tree', () => {
     expect(names(alpha.children)).toEqual(['a.md'])
     const assetsOnly = body.tree[1]
     if (assetsOnly.type !== 'dir') throw new Error('expected dir')
-    expect(assetsOnly.children).toEqual([])
+    expect(assetsOnly.children).toEqual([
+      expect.objectContaining({ type: 'file', name: 'img.png', kind: 'image' }),
+    ])
     const all = flatten(body.tree)
     expect(all).toContain(path.join(root, 'notes.txt'))
     expect(all.some((p) => p.includes('.obsidian') || p.includes('.git') || p.includes('node_modules'))).toBe(false)
@@ -38,11 +40,14 @@ describe('tree', () => {
     expect(all.some((p) => p.includes('.yaseendocs'))).toBe(false)
   })
 
-  it('discovers JSON, Python, and PDF with exact kinds while leaving arbitrary binaries hidden', async () => {
+  it('discovers text, PDF, and raster images with exact kinds while leaving arbitrary binaries and SVG hidden', async () => {
     const candidates = [
       [path.join(root, 'data.JSON'), '{}', 'text'],
       [path.join(root, 'tool.py'), 'print("ok")\n', 'text'],
       [path.join(root, 'report.PDF'), '%PDF-1.7', 'pdf'],
+      [path.join(root, 'photo.png'), 'png', 'image'],
+      [path.join(root, 'cover.WEBP'), 'webp', 'image'],
+      [path.join(root, 'vector.svg'), '<svg/>', null],
       [path.join(root, 'archive.zip'), 'binary', null],
     ] as const
     try {
@@ -51,6 +56,9 @@ describe('tree', () => {
       expect(all.find((node) => node.name === 'data.JSON')?.kind).toBe('text')
       expect(all.find((node) => node.name === 'tool.py')?.kind).toBe('text')
       expect(all.find((node) => node.name === 'report.PDF')?.kind).toBe('pdf')
+      expect(all.find((node) => node.name === 'photo.png')?.kind).toBe('image')
+      expect(all.find((node) => node.name === 'cover.WEBP')?.kind).toBe('image')
+      expect(all.some((node) => node.name === 'vector.svg')).toBe(false)
       expect(all.some((node) => node.name === 'archive.zip')).toBe(false)
     } finally {
       await Promise.all(candidates.map(([file]) => rm(file, { force: true })))

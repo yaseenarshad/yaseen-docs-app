@@ -124,12 +124,14 @@ describe('getIndex: incremental updates from the watcher', () => {
     await cleanup()
   })
 
-  it('never scans or indexes supported JSON/PDF add, change, or unlink events', async () => {
+  it('never scans or indexes supported text/PDF/image add, change, or unlink events', async () => {
     await watcherReady(root)
     const baseline = (await getIndex(root)).records.map((record) => record.path)
     for (const [name, first, second] of [
       ['view-only.json', '{"version":1}', '{"version":2,"changed":true}'],
       ['view-only.pdf', '%PDF-1.7\nfirst', '%PDF-1.7\nsecond revision'],
+      ['view-only.png', 'png-first', 'png-second'],
+      ['view-only.WEBP', 'webp-first', 'webp-second'],
     ] as const) {
       const file = path.join(root, name)
       vi.mocked(scanFile).mockClear()

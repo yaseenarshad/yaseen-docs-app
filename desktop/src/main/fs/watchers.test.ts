@@ -77,6 +77,8 @@ describe('shared watchers', () => {
     ['JSON', 'text'],
     ['PY', 'text'],
     ['pdf', 'pdf'],
+    ['PNG', 'image'],
+    ['WEBP', 'image'],
   ])('emits add / change / unlink for supported .%s files (%s)', async (extension) => {
     const a = openWatch(root)
     await a.next()
@@ -94,6 +96,7 @@ describe('shared watchers', () => {
     await a.next()
     await writeFile(path.join(root, 'alpha', 'ignored.bin'), 'x')
     await writeFile(path.join(root, 'alpha', 'ignored.base'), 'views: []\n')
+    await writeFile(path.join(root, 'alpha', 'ignored.svg'), '<svg/>')
     await mkdir(path.join(root, '.cache'))
     await writeFile(path.join(root, '.cache', 'c.md'), 'x')
     await mkdir(path.join(root, 'newdir'))
