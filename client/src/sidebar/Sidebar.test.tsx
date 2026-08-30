@@ -11,6 +11,8 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_SETTINGS, type TreeNode, type WatchEvent } from '@shared/types'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
+import { buildViewOnlyCatalog } from '../links/viewOnlyCatalog'
+import { createViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 
 // Forward uses the one-key writer; reverse uses its shared whole-file transform because the
 // migrated outline and flag must change atomically (YAZ-1022).
@@ -88,6 +90,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     // The window's already-on index feed (WikilinkIndexBridge's source): empty unless a test
     // hands over a snapshot, which is exactly the pre-first-index state.
     indexSource: { resolve: null, records: [], subscribe: () => () => undefined },
+    viewOnlyLinks: createViewOnlyLinkSource(),
     pendingSearchFocus: false,
     onSearchFocusHandled: vi.fn(),
     // 6C (YAZ-849): App's per-vault verdict, threaded to the Topics lens. False = adopted, the
@@ -255,6 +258,57 @@ describe('Sidebar copy link (E3 GRO-2173, YAZ-957)', () => {
   }
   const feed = (...records: ReturnType<typeof record>[]): SidebarProps['indexSource'] =>
     ({ resolve: null, records, subscribe: () => () => undefined }) as SidebarProps['indexSource']
+
+  const VIEW_LINK_TREE: TreeNode[] = [
+    { type: 'file', name: 'data.json', path: '/v/data.json', size: 1, mtime: 1, kind: 'text' },
+    { type: 'dir', name: 'deep', path: '/v/deep', children: [
+      { type: 'file', name: 'data.JSON', path: '/v/deep/data.JSON', size: 1, mtime: 1, kind: 'text' },
+      { type: 'file', name: 'Outbound Lead Qualifier.json', path: '/v/deep/Outbound Lead Qualifier.json', size: 1, mtime: 1, kind: 'text' },
+    ] },
+  ]
+
+  it('copies catalog-owned explicit-extension spellings for view-only rows, including duplicates and spaces', async () => {
+    const writeText = installClipboard()
+    const viewOnlyLinks = createViewOnlyLinkSource()
+    viewOnlyLinks.update(buildViewOnlyCatalog('/v', VIEW_LINK_TREE))
+    const { el } = await mount({ viewOnlyLinks }, (bridge) => {
+      bridge.tree.mockResolvedValue({ root: '/v', tree: VIEW_LINK_TREE, generatedAt: 1 })
+    })
+
+    act(() => void el.querySelector('[title="/v/data.json"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Copy link')?.click())
+    expect(writeText).toHaveBeenLastCalledWith('[[data.json]]')
+
+    act(() => el.querySelector<HTMLButtonElement>('.tree__row--dir')?.click())
+    act(() => void el.querySelector('[title="/v/deep/data.JSON"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Copy link')?.click())
+    expect(writeText).toHaveBeenLastCalledWith('[[deep/data.JSON]]')
+
+    act(() => void el.querySelector('[title="/v/deep/Outbound Lead Qualifier.json"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Copy link')?.click())
+    expect(writeText).toHaveBeenLastCalledWith('[[Outbound Lead Qualifier.json]]')
+  })
+
+  it('hides view-only Copy link before the catalog is ready and after the target is removed', async () => {
+    installClipboard()
+    const viewOnlyLinks = createViewOnlyLinkSource()
+    const { el } = await mount({ viewOnlyLinks }, (bridge) => {
+      bridge.tree.mockResolvedValue({ root: '/v', tree: VIEW_LINK_TREE, generatedAt: 1 })
+    })
+    const row = () => el.querySelector('[title="/v/data.json"]')
+    act(() => void row()?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
+    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+
+    viewOnlyLinks.update(buildViewOnlyCatalog('/v', VIEW_LINK_TREE))
+    act(() => void row()?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(itemByLabel(el, 'Copy link')).toBeDefined()
+    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+
+    viewOnlyLinks.update(buildViewOnlyCatalog('/v', []))
+    act(() => void row()?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
+  })
 
   it('the file row context menu offers "Copy link" next to "Copy path"; it puts the note\'s [[wikilink]] on the clipboard and closes', async () => {
     const writeText = installClipboard()

@@ -10,6 +10,7 @@ import { memberFolder, newPageFromFolderPage } from '../views/scaffold'
 import { ChevronsIcon, SearchIcon } from '../views/view/icons'
 import { transformFile, writeProperty } from '../views/writeProperty'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { basename, stripExt } from '../lib/paths'
@@ -92,6 +93,8 @@ interface SidebarProps {
    * bytes would not change. Report-don't-block: nothing is lost, and the next right-click is right.
    */
   indexSource: WikilinkResolveSource
+  /** App's separate catalog-backed source for navigation-only text/PDF link spellings. */
+  viewOnlyLinks: ViewOnlyLinkSource
   /**
    * ⌘K asked for the search bar (YAZ-801): the bar focuses its input. True at MOUNT is the
    * ⌘K-while-collapsed path (App un-collapses, so the sidebar mounts with it already set), not an
@@ -280,6 +283,7 @@ export function Sidebar({
   onDeleteFile,
   onNotice,
   indexSource,
+  viewOnlyLinks,
   pendingSearchFocus,
   onSearchFocusHandled,
   unadopted,
@@ -496,6 +500,7 @@ export function Sidebar({
       // HERE, once, off the window's snapshot: the menu that opens is about the row that was
       // right-clicked, and pinning the boolean into the menu's state is what keeps it that way.
       const notePath = filePath !== null && fileKind(filePath) === 'markdown' ? filePath : null
+      const viewOnlyLinkName = filePath === null || notePath !== null ? null : viewOnlyLinks.linkName(filePath)
       setMenu({
         x: e.clientX,
         y: e.clientY,
@@ -510,9 +515,11 @@ export function Sidebar({
         // empty-Explorer menu does the same. Trailing separators are stripped so the copied
         // bytes match the root the rest of the app uses.
         copyPath: node?.path ?? root.replace(/\/+$/, ''),
-        // "Copy link" stays Markdown-only until YAZ-1310 supplies the separate view-only
-        // catalog spelling. Never derive a view-only link from the semantic Markdown index.
-        copyLinkText: notePath === null ? null : `[[${linkNameFor(indexSource.records, notePath)}]]`,
+        // Markdown keeps its semantic index spelling. View-only files cross the explicit
+        // catalog boundary instead; pre-catalog, missing, directories and unknown files hide it.
+        copyLinkText: notePath !== null
+          ? `[[${linkNameFor(indexSource.records, notePath)}]]`
+          : viewOnlyLinkName === null ? null : `[[${viewOnlyLinkName}]]`,
         newWindowPath: filePath,
         renamePath: node?.path ?? null,
         deletePath: node?.path ?? null,
@@ -523,7 +530,7 @@ export function Sidebar({
         topicsAnchor,
       })
     },
-    [root, indexSource],
+    [root, indexSource, viewOnlyLinks],
   )
 
   /**
