@@ -46,8 +46,9 @@ const Chevron = ({ d }: { d: string }) => (
 
 /**
  * The window tab strip (Tabs I2/I3, GRO-2234/2235): one tab per open file, ViewTabs' tablist
- * semantics (role=tab, aria-selected, active underline). Labels are basenames without the
- * vault extension; the full path lives in the title tooltip. Tabs reorder by HTML5 drag (the
+ * semantics (role=tab, aria-selected, active underline). Labels hide only Markdown's vault
+ * extension; view-only labels keep their extension and every full path lives in the title
+ * tooltip. Tabs reorder by HTML5 drag (the
  * groupDrag idiom: `dataTransfer` guarded — jsdom's synthetic drags have none) with an accent
  * insertion indicator; the strip scrolls when full and keeps the ACTIVE tab in view. Left of
  * the strip sit the ◀ ▶ history buttons (YAZ-721), disabled when the active tab's stack has

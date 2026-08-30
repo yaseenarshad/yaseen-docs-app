@@ -611,6 +611,36 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(layers(el)).toEqual([['/v/b.md', false]])
   })
 
+  it.each([
+    ['/v/data.json', '/v/report.PDF', ['data.json', 'report.PDF'], 'data.json — v'],
+    ['/v/report.PDF', '/v/data.json', ['report.PDF', 'data.json'], 'report.PDF — v'],
+  ] as const)('restores view-only tabs with exact extension labels and title for %s', async (active, other, labels, title) => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: active, tabs: [active, other] })
+    expect(stripLabels(el)).toEqual(labels)
+    expect(activeLabel(el)).toBe(labels[0])
+    expect(layers(el)).toEqual([[active, false]])
+    expect(document.title).toBe(title)
+  })
+
+  it('routes text/PDF through current and background tabs without adding duplicate paths', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/data.json', tabs: ['/v/data.json'] })
+    act(() => captured.sidebar?.onOpenFileBackground('/v/report.PDF'))
+    act(() => captured.sidebar?.onOpenFileBackground('/v/report.PDF'))
+    expect(stripLabels(el)).toEqual(['data.json', 'report.PDF'])
+    expect(activeLabel(el)).toBe('data.json')
+    expect(layers(el)).toEqual([['/v/data.json', false]])
+
+    act(() => captured.sidebar?.onOpenFile('/v/report.PDF'))
+    expect(stripLabels(el)).toEqual(['data.json', 'report.PDF'])
+    expect(activeLabel(el)).toBe('report.PDF')
+    expect(layers(el)).toEqual([
+      ['/v/data.json', true],
+      ['/v/report.PDF', false],
+    ])
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/data.json', '/v/report.PDF'], file: '/v/report.PDF', rightPanel: defaultRightPanelIdentity() })
+    expect(document.title).toBe('report.PDF — v')
+  })
+
   it('a pasted #hash wins as the active tab and is prepended when missing from the stored tabs (rule 12)', async () => {
     history.replaceState(null, '', '#/v/pasted.md')
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })

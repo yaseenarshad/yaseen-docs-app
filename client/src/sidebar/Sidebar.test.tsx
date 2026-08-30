@@ -171,6 +171,60 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
   })
 })
 
+describe('Sidebar view-only file routing (YAZ-1301)', () => {
+  const VIEW_ONLY_TREE: TreeNode[] = [
+    { type: 'file', name: 'data.json', path: '/v/data.json', size: 1, mtime: 1, kind: 'text' },
+    { type: 'file', name: 'report.PDF', path: '/v/report.PDF', size: 1, mtime: 1, kind: 'pdf' },
+  ]
+  const withViewOnlyTree = (bridge: ReturnType<typeof installBridge>) =>
+    bridge.tree.mockResolvedValue({ root: '/v', tree: VIEW_ONLY_TREE, generatedAt: 1 })
+
+  it('shows exact extensions, selects the active file, and routes plain and command clicks through the existing tab callbacks', async () => {
+    const { el, props } = await mount({ activeFile: '/v/data.json' }, withViewOnlyTree)
+    const rows = [...el.querySelectorAll<HTMLButtonElement>('.tree__row--file')]
+    expect(rows.map((row) => row.textContent)).toEqual(['data.json', 'report.PDF'])
+    expect(rows[0]?.closest('[role="treeitem"]')?.getAttribute('aria-selected')).toBe('true')
+    expect(rows[1]?.closest('[role="treeitem"]')?.getAttribute('aria-selected')).toBe('false')
+
+    act(() => rows[1]?.click())
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/report.PDF')
+    act(() => void rows[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })))
+    expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith('/v/data.json')
+  })
+
+  it.each([
+    ['/v/data.json'],
+    ['/v/report.PDF'],
+  ] as const)('keeps %s on the standard file menu while hiding semantic Markdown actions', async (path) => {
+    const { bridge, el, props } = await mount({ settings: { ...DEFAULT_SETTINGS, confirmDelete: false } }, withViewOnlyTree)
+    const row = el.querySelector(`[title="${path}"]`)
+
+    act(() => void row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(expect.arrayContaining([
+      'Open in new window',
+      'Reveal in Finder',
+      'Open in VS Code',
+      'Copy path',
+      'Rename',
+      'Delete',
+    ]))
+    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
+    expect(itemByLabel(el, 'Turn into folder page')).toBeUndefined()
+    expect(itemByLabel(el, 'Turn back into normal page')).toBeUndefined()
+
+    act(() => itemByLabel(el, 'Open in new window')?.click())
+    expect(bridge.window.open).toHaveBeenCalledExactlyOnceWith({ root: '/v', file: path })
+
+    act(() => void row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path })
+
+    act(() => void row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Delete')?.click())
+    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith(path)
+  })
+})
+
 /**
  * "Copy link" copies the note's `[[wikilink]]` (YAZ-957) — the text that pastes into another
  * note and resolves back to the row that was right-clicked. It REPLACED the `yaseendocs://`

@@ -510,10 +510,9 @@ export function Sidebar({
         // empty-Explorer menu does the same. Trailing separators are stripped so the copied
         // bytes match the root the rest of the app uses.
         copyPath: node?.path ?? root.replace(/\/+$/, ''),
-        // "Copy link" copies the note's `[[wikilink]]` (YAZ-957), resolved HERE off the same
-        // snapshot `folderPageIsOn` reads and pinned into the menu's state: the menu that opens
-        // is about the row that was right-clicked, whatever the index does next.
-        copyLinkText: filePath === null ? null : `[[${linkNameFor(indexSource.records, filePath)}]]`,
+        // "Copy link" stays Markdown-only until YAZ-1310 supplies the separate view-only
+        // catalog spelling. Never derive a view-only link from the semantic Markdown index.
+        copyLinkText: notePath === null ? null : `[[${linkNameFor(indexSource.records, notePath)}]]`,
         newWindowPath: filePath,
         renamePath: node?.path ?? null,
         deletePath: node?.path ?? null,
