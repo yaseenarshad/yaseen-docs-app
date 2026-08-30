@@ -88,6 +88,9 @@ function expectNoNav(nav: NavMocks): void {
 }
 
 beforeEach(() => {
+  // Milkdown's resolved clock promises retain defensive 3 s timeout callbacks. Keep them inside
+  // this jsdom lifetime so a full parallel suite cannot execute them after teardown.
+  vi.useFakeTimers()
   vi.clearAllMocks()
   createDir.mockImplementation(async (path: string) => ({ path }))
   createFile.mockImplementation(async (req) => ({ path: req as string, mtime: 1, size: 0 }))
@@ -98,6 +101,8 @@ afterEach(async () => {
     await m.crepe.destroy()
     m.root.remove()
   }
+  vi.runOnlyPendingTimers()
+  vi.useRealTimers()
 })
 
 describe('wikilink click: resolved links (GRO-2192)', () => {
