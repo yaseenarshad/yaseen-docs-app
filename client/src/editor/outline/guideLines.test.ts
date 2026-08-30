@@ -1,9 +1,9 @@
 /**
- * List guide lines (GRO-2030, click semantics GRO-2107): the line is CSS-only, so these tests
+ * List guide lines (GRO-2030, click semantics GRO-2107/YAZ-1317): the line is CSS-only, so these tests
  * cover the TS wiring — a mousedown whose `clientX` falls in the strip left of a nested list
- * (only reachable through the strip pseudo, whose hits target the list element) folds / unfolds
- * the parent items ALONGSIDE the line (the list's direct children that have children) via the
- * GRO-2011 plugin — never the line's owner — without moving the caret or touching the markdown.
+ * (only reachable through the strip pseudo, whose hits target the list element) collapses parent
+ * items ALONGSIDE the line or recursively unfolds every parent below them via the GRO-2011 plugin
+ * — never the line's owner — without moving the caret or touching the markdown.
  * jsdom rects are all zeros and `font-size` is empty, so the strip centre resolves from the 16px
  * fallback: 0 - (2.15 * 16 / 2 + 5) = -22.2.
  */
@@ -20,6 +20,17 @@ const OUTLINE = `* Parent
     * Grandchild A
   * Child B
     * Grandchild B
+  * Leaf child
+* Leaf
+`
+
+const DEEP_OUTLINE = `* Parent
+  * Child A
+    * Grandchild A
+      * Great-grandchild A
+  * Child B
+    * Grandchild B
+      * Great-grandchild B
   * Leaf child
 * Leaf
 `
@@ -77,6 +88,29 @@ const foldItemOf = (crepe: Crepe, root: HTMLElement, label: string) =>
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 describe('guide lines: click → fold', () => {
+  it('unfolds every descendant parent when all direct parents are collapsed', async () => {
+    const { crepe, root } = await mount({ defaultValue: DEEP_OUTLINE })
+    foldItemOf(crepe, root, 'Grandchild A')
+    foldItemOf(crepe, root, 'Grandchild B')
+    expect(foldedLabels(root)).toEqual(['Grandchild A', 'Grandchild B'])
+
+    const list = nestedListOf(root, 'Parent')
+    mouse(list, 'mousedown', STRIP_X)
+    mouse(nestedListOf(root, 'Parent'), 'mousedown', STRIP_X)
+
+    expect(folded(root)).toHaveLength(0)
+  })
+
+  it('preserves descendant folds when a direct child is reopened independently after line collapse', async () => {
+    const { crepe, root } = await mount({ defaultValue: DEEP_OUTLINE })
+    foldItemOf(crepe, root, 'Grandchild A')
+
+    mouse(nestedListOf(root, 'Parent'), 'mousedown', STRIP_X)
+    foldItemOf(crepe, root, 'Child A')
+
+    expect(foldedLabels(root)).toEqual(['Grandchild A', 'Child B'])
+  })
+
   it('mousedown in the strip folds the parent items alongside the line (not its owner); again unfolds them', async () => {
     const { root } = await mount()
     const list = nestedListOf(root, 'Parent')
