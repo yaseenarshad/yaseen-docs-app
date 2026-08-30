@@ -5,7 +5,52 @@
  * in guideLines.test.ts ('mixed markers').
  */
 import { describe, expect, it } from 'vitest'
-import { normalizeEmptyItems, unifySiblingMarkers } from './listItemRoundTrip'
+import {
+  escapeSameLineOrderedMarkers,
+  normalizeEmptyItems,
+  restoreSameLineOrderedMarkers,
+  unifySiblingMarkers,
+} from './listItemRoundTrip'
+
+describe('same-line numeric bullet text (YAZ-1329)', () => {
+  it('armors immediate `6)` / `6.` text after a bullet marker, at every indent', () => {
+    expect(escapeSameLineOrderedMarkers('- 6) Paid\n  * 7. Lead\n\t+ 8) Deep\n')).toBe(
+      '- 6\\) Paid\n  * 7\\. Lead\n\t+ 8\\) Deep\n',
+    )
+  })
+
+  it('restores the source spelling on save and is idempotent in both directions', () => {
+    const source = '* 1) one\n* 2. two\n'
+    const armored = '* 1\\) one\n* 2\\. two\n'
+    expect(escapeSameLineOrderedMarkers(source)).toBe(armored)
+    expect(escapeSameLineOrderedMarkers(armored)).toBe(armored)
+    expect(restoreSameLineOrderedMarkers(armored)).toBe(source)
+    expect(restoreSameLineOrderedMarkers(source)).toBe(source)
+  })
+
+  it('handles a delimiter-only item and preserves CRLF line endings', () => {
+    expect(escapeSameLineOrderedMarkers('- 1)\r\n* 2.\r\n')).toBe('- 1\\)\r\n* 2\\.\r\n')
+  })
+
+  it('does not reinterpret real ordered lists, decimals, prose, or fenced examples', () => {
+    const markdown = [
+      '1. real ordered item',
+      '- 6.5 hours',
+      'Paragraph 7) stays prose',
+      '```md',
+      '- 8) example in a fence',
+      '```',
+      '',
+    ].join('\n')
+    expect(escapeSameLineOrderedMarkers(markdown)).toBe(markdown)
+  })
+
+  it('keeps nested, tilde, and longer fenced examples byte-identical', () => {
+    const markdown = '* Parent\n  ~~~~md\n  - 8) tilde example\n  ~~~~\n    `````\n    * 9. deep example\n    `````\n'
+    expect(escapeSameLineOrderedMarkers(markdown)).toBe(markdown)
+    expect(restoreSameLineOrderedMarkers(markdown)).toBe(markdown)
+  })
+})
 
 describe('unifySiblingMarkers (GRO-2112)', () => {
   it('gives a sibling the marker of the previous bullet at its indent', () => {

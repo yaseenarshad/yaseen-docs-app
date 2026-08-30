@@ -65,7 +65,7 @@ describe('Crepe feature allowlist', () => {
     for (const f of ALL_FEATURES) expect(features[f]).toBe((ENABLED_FEATURES as readonly string[]).includes(f))
   })
 
-  it('createCrepe() loads exactly the allowlisted features, with or without the BlockEdit menu config', async () => {
+  it('createCrepe() loads exactly the allowlisted features, with or without a Drawing menu extension', async () => {
     const plain = await mountedMenuItems({})
     expect(sorted(plain.features)).toEqual(sorted(ENABLED_FEATURES))
     await plain.teardown()
@@ -80,10 +80,12 @@ describe('Crepe feature allowlist', () => {
     // Sanity: the stock menu is really being read (Image is off with ImageBlock, Table is on).
     expect(plain.items).toContain('Table')
     expect(plain.items).not.toContain('Drawing')
+    expect(plain.items).not.toContain('Ordered List')
     await plain.teardown()
 
     const withDrawing = await mountedMenuItems({ drawing: { create: vi.fn() } })
     expect(withDrawing.items).toContain('Drawing')
+    expect(withDrawing.items).not.toContain('Ordered List')
     // Appended to Crepe's own advanced group — the stock rows keep their order ahead of it.
     expect(withDrawing.items.indexOf('Drawing')).toBe(withDrawing.items.length - 1)
     expect(withDrawing.items.filter((l) => l === 'Drawing')).toHaveLength(1)

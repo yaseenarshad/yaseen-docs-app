@@ -13,7 +13,8 @@
  *  2. parse: a listItem whose nested list starts on a later line (`* ` + children — what
  *     Obsidian writes for an empty parent) gets an empty leading paragraph, instead of
  *     becoming a list_item that starts with a bullet_list and serialising as `* * child`.
- *     `* 1) text` on ONE line (a real vault idiom) is left as the list-first item it was.
+ *     A numeric marker immediately after a bullet is armored before parsing (see 6), so it is
+ *     paragraph text rather than a nested ordered list.
  *  3. load: `normalizeEmptyItems()` rewrites `* <br />` lines (written by earlier builds) to
  *     bare markers so their children are not swallowed, and Obsidian's empty task `* [ ] ` /
  *     `* [ ]` (text `[ ]` for remark, round-tripped as `* \[ ]`) to `* [ ] <br />` so it stays a
@@ -22,6 +23,9 @@
  *     reaches the disk, and 3 restores the checkbox on the next load.
  *  5. load (GRO-2112): `unifySiblingMarkers()` makes `-` / `*` / `+` siblings at one indent share a
  *     marker so they parse as ONE list (see its docblock).
+ *  6. load/save (YAZ-1329): `* 6) text` / `* 6. text` are bullet text, not an implicit ordered
+ *     child. Load temporarily escapes that inner delimiter for CommonMark; save restores the
+ *     visible source spelling. Real ordered lines (`6. text`) remain structural.
  */
 import { paragraphSchema } from '@milkdown/kit/preset/commonmark'
 import type { Node as MdNode } from '@milkdown/kit/transformer'
@@ -48,7 +52,7 @@ const emptyParagraphFirstInListItem = paragraphSchema.extendSchema((prev) => (ct
   }
 })
 
-/** An item whose nested list starts on a LATER line (`* ` + children); `* 1) x` on one line is left as is. */
+/** An item whose nested list starts on a LATER line (`* ` + children). */
 const isEmptyParent = (item: MdParent): boolean => {
   const first = item.children?.[0]
   if (first?.type !== 'list') return false
@@ -75,9 +79,50 @@ const LEGACY_EMPTY_ITEM = new RegExp(String.raw`^(${MARKER}) <br />[ \t]*$`, 'gm
 const EMPTY_TASK_ITEM = new RegExp(String.raw`^(${MARKER} \[[ xX]\])[ \t]*$`, 'gm')
 const EMPTY_TASK_ITEM_BREAK = new RegExp(String.raw`^(${MARKER} \[[ xX]\]) <br />$`, 'gm')
 
+const SAME_LINE_ORDERED_MARKER = /^([ \t]*[-*+][ \t]+\d+)([.)])(?=[ \t\r]|$)/
+const ESCAPED_SAME_LINE_ORDERED_MARKER = /^([ \t]*[-*+][ \t]+\d+)\\([.)])(?=[ \t\r]|$)/
+const FENCE_BOUNDARY = /^[ \t]*(`{3,}|~{3,})/
+
+/** Transform ordinary Markdown lines while leaving complete fenced code blocks byte-identical. */
+const mapOutsideFences = (markdown: string, transform: (line: string) => string): string => {
+  let fence: { marker: '`' | '~'; length: number } | null = null
+  return markdown
+    .split('\n')
+    .map((line) => {
+      const boundary = FENCE_BOUNDARY.exec(line)
+      if (fence !== null) {
+        if (
+          boundary !== null &&
+          boundary[1][0] === fence.marker &&
+          boundary[1].length >= fence.length &&
+          line.slice(boundary[0].length).trim() === ''
+        ) {
+          fence = null
+        }
+        return line
+      }
+      if (boundary !== null) {
+        fence = { marker: boundary[1][0] as '`' | '~', length: boundary[1].length }
+        return line
+      }
+      return transform(line)
+    })
+    .join('\n')
+}
+
+/** Before parsing: make an immediate inner `6)` / `6.` delimiter literal to CommonMark. */
+export const escapeSameLineOrderedMarkers = (markdown: string): string =>
+  mapOutsideFences(markdown, (line) => line.replace(SAME_LINE_ORDERED_MARKER, '$1\\$2'))
+
+/** Before writing: canonicalize the same-line delimiter to its visible, unescaped spelling. */
+export const restoreSameLineOrderedMarkers = (markdown: string): string =>
+  mapOutsideFences(markdown, (line) => line.replace(ESCAPED_SAME_LINE_ORDERED_MARKER, '$1$2'))
+
 /** Before parsing: `* <br />` → bare marker; empty task `* [ ]` → `* [ ] <br />` (keeps the checkbox). */
 export const normalizeEmptyItems = (markdown: string): string =>
-  unifySiblingMarkers(markdown.replace(LEGACY_EMPTY_ITEM, '$1').replace(EMPTY_TASK_ITEM, '$1 <br />'))
+  unifySiblingMarkers(
+    escapeSameLineOrderedMarkers(markdown).replace(LEGACY_EMPTY_ITEM, '$1').replace(EMPTY_TASK_ITEM, '$1 <br />'),
+  )
 
 /** A bullet line, including a bare empty marker (`*` / `-` alone, what rule 8 writes). */
 const BULLET_LINE = /^(\s*)([-*+])(?:\s|$)/

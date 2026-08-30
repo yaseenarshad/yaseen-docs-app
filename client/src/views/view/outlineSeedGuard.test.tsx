@@ -1,7 +1,8 @@
 /**
  * THE SEED GUARD under FAULT INJECTION (YAZ-974): the guard exists for the escape gap nobody has
  * found yet — so the test MAKES one. `escapeBlockStart` is mocked to the identity, the seed
- * carries a `1. doomed` line, and the parse drops it exactly as YAZ-964 did. The guard's whole
+ * carries a `# doomed` line, and the parse drops it exactly as YAZ-964 did. (The old `1. doomed`
+ * fault is now deliberately safe under YAZ-1329's same-line numeric bullet boundary.) The guard's whole
  * contract is then asserted: the loss is reported ONCE, the editor is read-only, and `onChange`
  * never fires — a lossy load can never write.
  *
@@ -54,7 +55,7 @@ describe('the seed guard: a lossy load can never write (YAZ-974)', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     await act(async () => {
-      root?.render(<OutlineEditor markdown={'- above\n- 1. doomed\n- below'} onChange={onChange} onSeedLoss={onSeedLoss} />)
+      root?.render(<OutlineEditor markdown={'- above\n- # doomed\n- below'} onChange={onChange} onSeedLoss={onSeedLoss} />)
     })
     await waitFor(() => container?.querySelector('.ProseMirror') !== null)
     // Past the create, the guard's verdict and both debounce windows (200ms + 500ms).
