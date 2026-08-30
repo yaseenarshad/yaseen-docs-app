@@ -93,12 +93,21 @@ export function carryEditorsAcrossDirRename(oldDir: string, newDir: string): voi
  * The `file:renamed` step, run BEFORE the tab remap unmounts the old editor: capture a dirty
  * buffer into the new path's stash and retire the old handle. No editor at `oldPath` → no-op.
  */
-export function carryEditorAcrossRename(oldPath: string, newPath: string): void {
+function carryEditorBuffer(oldPath: string, newPath: string): void {
   const handle = handles.get(oldPath)
   if (handle === undefined) return
   const buffer = handle.capture()
   handle.retire()
   if (buffer !== null) buffers.set(newPath, buffer)
+}
+
+export function carryEditorAcrossRename(oldPath: string, newPath: string): void {
+  carryEditorBuffer(oldPath, newPath)
+}
+
+/** Same-path handoff before React moves one editable owner between main and right panes. */
+export function carryEditorAcrossPane(path: string): void {
+  carryEditorBuffer(path, path)
 }
 
 /** Consume the stashed buffer for a freshly mounting editor at `path`; null when none. */

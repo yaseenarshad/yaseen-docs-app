@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { defaultRightPanelIdentity, type RightPanelIdentity } from '@shared/types'
 import { storage } from '../lib/storage'
+import { carryEditorAcrossPane } from '../lib/renameContinuity'
 import { hashFilePath } from '../lib/urlHash'
 
 /**
@@ -573,6 +574,12 @@ export function useWorkspace(root: string | null): UseWorkspace {
     const prevState = stateRef.current
     const nextState = workspaceReducer(prevState, action)
     if (nextState === prevState) return
+    for (const path of prevState.tabs) {
+      if (nextState.rightPanel.items.includes(path)) carryEditorAcrossPane(path)
+    }
+    for (const path of prevState.rightPanel.items) {
+      if (nextState.tabs.includes(path)) carryEditorAcrossPane(path)
+    }
     stateRef.current = nextState
     setState(nextState)
     // ONE explicit write per durable change carries both owners and the active main file.

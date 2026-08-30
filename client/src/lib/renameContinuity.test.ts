@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { _resetRenameContinuity, carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, registerRenameContinuity, retireDeletedDir, retireDeletedPath, takeRenameBuffer, type RenameContinuityHandle } from './renameContinuity'
+import { _resetRenameContinuity, carryEditorAcrossPane, carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, registerRenameContinuity, retireDeletedDir, retireDeletedPath, takeRenameBuffer, type RenameContinuityHandle } from './renameContinuity'
 
 afterEach(() => _resetRenameContinuity())
 
@@ -11,6 +11,15 @@ const handle = (over: Partial<RenameContinuityHandle> = {}): RenameContinuityHan
 })
 
 describe('renameContinuity (Links E1, GRO-2194)', () => {
+  it('pane transfer captures, retires, and exposes a dirty buffer at the same path', () => {
+    const h = handle({ capture: vi.fn(() => ({ frontmatter: '---\n---\n', body: 'newest keystrokes' })) })
+    registerRenameContinuity('/v/a.md', h)
+    carryEditorAcrossPane('/v/a.md')
+    expect(h.capture).toHaveBeenCalledTimes(1)
+    expect(h.retire).toHaveBeenCalledTimes(1)
+    expect(takeRenameBuffer('/v/a.md')).toEqual({ frontmatter: '---\n---\n', body: 'newest keystrokes' })
+  })
+
   it('flushRenamedPath flushes the registered handle and resolves without one', async () => {
     const h = handle()
     registerRenameContinuity('/v/a.md', h)

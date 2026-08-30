@@ -9,6 +9,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { defaultAppState, defaultRightPanelIdentity, type AppState, type WindowIdentity } from '@shared/types'
 import { storage } from '../lib/storage'
+import { _resetRenameContinuity, registerRenameContinuity, takeRenameBuffer } from '../lib/renameContinuity'
 import { bootTabs, bootWorkspace, tabsReducer, useWorkspace, workspaceReducer, type TabsState, type UseWorkspace, type WorkspaceState } from './useWorkspace'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -265,6 +266,7 @@ function installBridge(app: AppState, identity: IdentityFixture) {
 }
 
 afterEach(() => {
+  _resetRenameContinuity()
   history.replaceState(null, '', '/')
   delete (window as unknown as Record<string, unknown>).yaseenDocs
   vi.restoreAllMocks()
@@ -378,6 +380,19 @@ describe('useWorkspace legacy main-tab mirror', () => {
       file: null,
       rightPanel: { open: true, width: 440, items: ['/v/a.md'], expanded: '/v/a.md' },
     })
+  })
+
+  it('captures and retires the source editor before mirroring a pane transfer', () => {
+    act(() => latest.openCurrent('/v/a.md'))
+    bridge.window.setIdentity.mockClear()
+    const capture = vi.fn(() => ({ frontmatter: '---\n---\n', body: 'dirty' }))
+    const retire = vi.fn()
+    registerRenameContinuity('/v/a.md', { flush: vi.fn(async () => undefined), capture, retire })
+    act(() => latest.openRight('/v/a.md'))
+    expect(capture).toHaveBeenCalledTimes(1)
+    expect(retire).toHaveBeenCalledTimes(1)
+    expect(capture.mock.invocationCallOrder[0]).toBeLessThan(bridge.window.setIdentity.mock.invocationCallOrder[0])
+    expect(takeRenameBuffer('/v/a.md')).toEqual({ frontmatter: '---\n---\n', body: 'dirty' })
   })
 
   it('move mirrors the reorder as ONE {tabs, file} write with the active file unchanged; a no-op move mirrors nothing', () => {
