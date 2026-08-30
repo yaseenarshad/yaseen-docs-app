@@ -38,6 +38,8 @@ interface EditorProps {
   watch: WatchSource
   /** Bases open their row links through this (GRO-2135); App passes `openFile`. */
   onOpenFile: (path: string) => void
+  /** Folder-page Table/Board actions open a member in the window's right panel. */
+  onOpenFileRight?: (path: string) => void
   /**
    * ⌘-click on an editor wiki link (Links C, GRO-2192) opens a background tab; App passes
    * the tabs API's `openBackground`. Absent → wiki-link clicks stay plain editing.
@@ -73,7 +75,7 @@ interface EditorProps {
   onSyncNow?: () => void
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileBackground, onNotice, createBase, wikilinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, createBase, wikilinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow }: EditorProps) {
   const state = useFile(path)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   return (
@@ -82,7 +84,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileBackground, on
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} />
+        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} />
       )}
     </section>
   )
@@ -94,6 +96,7 @@ function CrepeHost({
   file,
   watch,
   onOpenFile,
+  onOpenFileRight,
   onOpenFileBackground,
   onNotice,
   createBase,
@@ -108,6 +111,7 @@ function CrepeHost({
   file: FileResponse
   watch: WatchSource
   onOpenFile: (path: string) => void
+  onOpenFileRight?: (path: string) => void
   onOpenFileBackground?: (path: string) => void
   onNotice?: (message: string) => void
   createBase?: () => string
@@ -311,7 +315,7 @@ function CrepeHost({
         </div>
         <div className="editor-mount" ref={hostRef} />
         {wikilinks !== undefined && (
-          <FolderPageContents path={file.path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileBackground={onOpenFileBackground} wikilinkCandidates={wikilinkCandidates} createBase={createBase} onNotice={onNotice} fileContent={file.content} />
+          <FolderPageContents path={file.path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} wikilinkCandidates={wikilinkCandidates} createBase={createBase} onNotice={onNotice} fileContent={file.content} />
         )}
         {wikilinks !== undefined && (
           <BacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />

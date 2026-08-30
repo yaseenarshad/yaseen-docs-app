@@ -49,6 +49,8 @@ export interface FolderPageMode {
   setDefaultView: (name: string | undefined) => void
   /** ⌘-click on a table row opens the page in a BACKGROUND tab (YAZ-820); absent → opens in place. */
   openBackground?: (path: string) => void
+  /** Shared Table/Board action that opens the exact page in the window's right panel. */
+  openRight?: (path: string) => void
   /** Passive notice surface for row actions that fail because a page moved or disappeared. */
   onNotice?: (message: string) => void
   /**
@@ -387,6 +389,7 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
           onToggleGroup={onToggleGroup}
           onUpdate={update}
           onOpenFile={onOpenFile}
+          onOpenFileRight={folderPage.openRight}
           onOpenFileBackground={folderPage.openBackground}
           onNotice={folderPage.onNotice}
           onMoveToGroup={onMoveToGroup}
@@ -409,6 +412,7 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
           onToggleGroup={onToggleGroup}
           onUpdate={update}
           onOpenFile={onOpenFile}
+          onOpenFileRight={folderPage.openRight}
           onOpenFileBackground={folderPage.openBackground}
           onNotice={folderPage.onNotice}
           onMoveToGroup={onMoveToGroup}

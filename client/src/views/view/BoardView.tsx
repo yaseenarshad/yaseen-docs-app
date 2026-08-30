@@ -24,6 +24,8 @@ export interface BoardViewProps {
   onToggleGroup: (key: string) => void
   onUpdate: Mutate
   onOpenFile: (path: string) => void
+  /** Open a card page in the window's right panel. */
+  onOpenFileRight?: (path: string) => void
   /** Open a card's page without replacing the current folder page. */
   onOpenFileBackground?: (path: string) => void
   /** Passive notice surface for page actions that fail because a card moved or disappeared. */
@@ -77,6 +79,7 @@ export function BoardView({
   onToggleGroup,
   onUpdate,
   onOpenFile,
+  onOpenFileRight,
   onOpenFileBackground,
   onNotice,
   onMoveToGroup,
@@ -311,6 +314,7 @@ export function BoardView({
           x={menu.x}
           y={menu.y}
           path={menu.path}
+          onOpenRight={onOpenFileRight}
           onOpenBackground={onOpenFileBackground}
           onNotice={onNotice}
           onClose={() => setMenu(null)}

@@ -9,6 +9,7 @@ it('exports reusable page actions through PageContextMenu', () => {
   const host = document.createElement('div')
   document.body.appendChild(host)
   const root = createRoot(host)
+  const onOpenRight = vi.fn()
   const onOpenBackground = vi.fn()
   const onClose = vi.fn()
 
@@ -18,6 +19,7 @@ it('exports reusable page actions through PageContextMenu', () => {
         x={12}
         y={34}
         path="/vault/note.md"
+        onOpenRight={onOpenRight}
         onOpenBackground={onOpenBackground}
         onClose={onClose}
       />,
@@ -25,13 +27,29 @@ it('exports reusable page actions through PageContextMenu', () => {
   })
 
   expect([...host.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)).toEqual([
+    'Open in right panel',
+    'Open in new tab',
+    'Copy path',
+    'Reveal in Finder',
+  ])
+  act(() => (host.querySelector('[role="menuitem"]') as HTMLButtonElement).click())
+  expect(onOpenRight).toHaveBeenCalledExactlyOnceWith('/vault/note.md')
+  expect(onOpenBackground).not.toHaveBeenCalled()
+  expect(onClose).toHaveBeenCalledOnce()
+
+  act(() => {
+    root.render(
+      <PageContextMenu x={12} y={34} path="/vault/note.md" onOpenBackground={onOpenBackground} onClose={onClose} />,
+    )
+  })
+  expect([...host.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)).toEqual([
     'Open in new tab',
     'Copy path',
     'Reveal in Finder',
   ])
   act(() => (host.querySelector('[role="menuitem"]') as HTMLButtonElement).click())
   expect(onOpenBackground).toHaveBeenCalledExactlyOnceWith('/vault/note.md')
-  expect(onClose).toHaveBeenCalledOnce()
+  expect(onClose).toHaveBeenCalledTimes(2)
 
   act(() => root.unmount())
   host.remove()

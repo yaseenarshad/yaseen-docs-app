@@ -6,13 +6,14 @@ interface PageContextMenuProps {
   x: number
   y: number
   path: string
+  onOpenRight?: (path: string) => void
   onOpenBackground?: (path: string) => void
   onNotice?: (message: string) => void
   onClose: () => void
 }
 
 /** Page actions shared by folder-page views; positioning and dismissal stay action-free. */
-export function PageContextMenu({ x, y, path, onOpenBackground, onNotice, onClose }: PageContextMenuProps) {
+export function PageContextMenu({ x, y, path, onOpenRight, onOpenBackground, onNotice, onClose }: PageContextMenuProps) {
   const reveal = (): void => {
     onClose()
     api.reveal({ path }).catch((error: unknown) => {
@@ -26,6 +27,19 @@ export function PageContextMenu({ x, y, path, onOpenBackground, onNotice, onClos
 
   return (
     <ContextMenuSurface x={x} y={y} onClose={onClose}>
+      {onOpenRight !== undefined && (
+        <button
+          type="button"
+          className="ctx-menu__item"
+          role="menuitem"
+          onClick={() => {
+            onOpenRight(path)
+            onClose()
+          }}
+        >
+          Open in right panel
+        </button>
+      )}
       {onOpenBackground !== undefined && (
         <button
           type="button"

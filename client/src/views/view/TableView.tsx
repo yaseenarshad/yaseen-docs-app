@@ -30,6 +30,8 @@ export interface TableViewProps {
   onToggleGroup: (key: string) => void
   onUpdate: Mutate
   onOpenFile: (path: string) => void
+  /** Open a row page in the window's right panel. */
+  onOpenFileRight?: (path: string) => void
   /** A row page action opens without replacing the current tab. */
   onOpenFileBackground?: (path: string) => void
   /** Passive reporting for a stale or failed OS action. */
@@ -104,7 +106,7 @@ function pinnedHeaderOffset(scrollerTop: number, tableTop: number, tableHeight: 
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, folderPage = null, vaultRecords, preview = false }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, folderPage = null, vaultRecords, preview = false }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   const { rowProps, card, close } = usePreview(preview)
   // Row drag between sections (5C, GRO-2143); disabled without groups. One write key PER level
@@ -448,6 +450,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             x={rowMenu.x}
             y={rowMenu.y}
             path={rowMenu.path}
+            onOpenRight={onOpenFileRight}
             onOpenBackground={onOpenFileBackground}
             onNotice={onNotice}
             onClose={() => setRowMenu(null)}

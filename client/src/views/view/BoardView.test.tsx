@@ -298,18 +298,30 @@ describe('Board-card page context menu (YAZ-1243)', () => {
   })
 
   it('opens the shared actions from any point in a rendered card, at the pointer, without opening or editing it', () => {
+    const openRight = vi.fn()
     const openBackground = vi.fn()
-    const { el, onOpenFile, onChange } = mount(BOARD_BASE, { folderPage: testFolderPage({ openBackground }) })
+    const { el, onOpenFile, onChange } = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight, openBackground }) })
     const card = cardNamed(el, 'Agentic Agency.md')
     const event = rightClick(q(card, '.view-board__prop-value'), 120, 42)
 
     expect(event.defaultPrevented).toBe(true)
     expect(q<HTMLElement>(el, '.ctx-menu').style.left).toBe('120px')
     expect(q<HTMLElement>(el, '.ctx-menu').style.top).toBe('42px')
-    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open in new tab', 'Copy path', 'Reveal in Finder'])
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open in right panel', 'Open in new tab', 'Copy path', 'Reveal in Finder'])
     expect(onOpenFile).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
     expect(el.querySelector('.view-cell-edit__input, .view-table__selected')).toBeNull()
+  })
+
+  it('opens the exact card in the right panel without replacing the current page', () => {
+    const openRight = vi.fn()
+    const { el, onOpenFile } = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight }) })
+    rightClick(cardNamed(el, 'Agentic Agency.md'))
+    click(itemNamed(el, 'Open in right panel')!)
+
+    expect(openRight).toHaveBeenCalledExactlyOnceWith(agenticPath)
+    expect(onOpenFile).not.toHaveBeenCalled()
+    expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
   it('opens in the background, copies, and reveals the exact absolute card path, closing after every action', () => {
@@ -387,48 +399,48 @@ describe('Board-card page context menu (YAZ-1243)', () => {
   })
 
   it('keeps the record path when file.name is hidden, cards are nested, or one record is fanned out', () => {
-    const openBackground = vi.fn()
+    const openRight = vi.fn()
     const hidden = mount(
       'views:\n  - type: board\n    name: B\n    order:\n      - note.priority\n    groupBy:\n      property: note.status\n',
-      { folderPage: testFolderPage({ openBackground }) },
+      { folderPage: testFolderPage({ openRight }) },
     )
     rightClick(q(hidden.el, '.view-board__card'))
-    click(itemNamed(hidden.el, 'Open in new tab')!)
-    expect(openBackground).toHaveBeenLastCalledWith(levelsPath)
+    click(itemNamed(hidden.el, 'Open in right panel')!)
+    expect(openRight).toHaveBeenLastCalledWith(levelsPath)
 
     unmount()
-    const nested = mount(NESTED_BOARD, { records: NESTED_RECORDS, folderPage: testFolderPage({ openBackground }) })
+    const nested = mount(NESTED_BOARD, { records: NESTED_RECORDS, folderPage: testFolderPage({ openRight }) })
     rightClick(cardNamed(nested.el, 'alphaDirect.md'))
-    click(itemNamed(nested.el, 'Open in new tab')!)
-    expect(openBackground).toHaveBeenLastCalledWith('/vault/alphaDirect.md')
+    click(itemNamed(nested.el, 'Open in right panel')!)
+    expect(openRight).toHaveBeenLastCalledWith('/vault/alphaDirect.md')
     rightClick(cardNamed(nested.el, 'alpha1.md'))
-    click(itemNamed(nested.el, 'Open in new tab')!)
-    expect(openBackground).toHaveBeenLastCalledWith('/vault/alpha1.md')
+    click(itemNamed(nested.el, 'Open in right panel')!)
+    expect(openRight).toHaveBeenLastCalledWith('/vault/alpha1.md')
 
     unmount()
     const fanned = mount('views:\n  - type: board\n    name: B\n    order:\n      - file.name\n    groupBy:\n      property: note.tags\n', {
-      folderPage: testFolderPage({ openBackground }),
+      folderPage: testFolderPage({ openRight }),
     })
     const repeated = [...fanned.el.querySelectorAll<HTMLElement>('.view-board__title')].filter(
       (title) => title.textContent === 'Agentic Agency.md',
     )
     expect(repeated).toHaveLength(2)
     rightClick(q(repeated[1].closest<HTMLElement>('.view-board__card')!, '.view-board__line'))
-    click(itemNamed(fanned.el, 'Open in new tab')!)
-    expect(openBackground).toHaveBeenLastCalledWith(agenticPath)
+    click(itemNamed(fanned.el, 'Open in right panel')!)
+    expect(openRight).toHaveBeenLastCalledWith(agenticPath)
   })
 
   it('keeps the exact record target on an otherwise-empty card shell', () => {
-    const openBackground = vi.fn()
+    const openRight = vi.fn()
     const { el } = mount('views:\n  - type: board\n    name: B\n    order: []\n    groupBy:\n      property: note.status\n', {
-      folderPage: testFolderPage({ openBackground }),
+      folderPage: testFolderPage({ openRight }),
     })
     const shell = q<HTMLElement>(el, '.view-board__card')
     expect(shell.querySelector('.view-board__line')).toBeNull()
 
     expect(rightClick(shell).defaultPrevented).toBe(true)
-    click(itemNamed(el, 'Open in new tab')!)
-    expect(openBackground).toHaveBeenCalledExactlyOnceWith(levelsPath)
+    click(itemNamed(el, 'Open in right panel')!)
+    expect(openRight).toHaveBeenCalledExactlyOnceWith(levelsPath)
   })
 
   it('leaves headers, add controls, placeholders, the no-group hint, and other view types on their native menu', () => {

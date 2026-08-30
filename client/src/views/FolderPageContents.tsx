@@ -57,6 +57,8 @@ export interface FolderPageContentsProps {
   properties?: PropertiesResponse | null
   /** A row link opens the member; the create opens the new page. */
   onOpenFile: (path: string) => void
+  /** Table/Board page actions open the exact member in the window's right panel. */
+  onOpenFileRight?: (path: string) => void
   /** ⌘-click on an outline row (YAZ-820) — the window's background-tab open; absent → opens in place. */
   onOpenFileBackground?: (path: string) => void
   /**
@@ -113,6 +115,7 @@ export function FolderPageContents({
   source,
   properties = null,
   onOpenFile,
+  onOpenFileRight,
   onOpenFileBackground,
   wikilinkCandidates,
   createBase,
@@ -280,6 +283,7 @@ export function FolderPageContents({
         setSettingsError(err instanceof Error ? err.message : String(err)),
       )
     },
+    openRight: onOpenFileRight,
     openBackground: onOpenFileBackground,
     onNotice,
     wikilinks: source,

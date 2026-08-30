@@ -48,7 +48,7 @@ export function App() {
     tabs, active: file, mounted, openCurrent, openBackground, activate, close: closeTab, move: moveTab,
     closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs,
     renamePath: renameTabPath, renameDirPath: renameDirTabs, deletePath: deleteTabPath, deleteDirPath: deleteDirTabs,
-    rightPanel, rightMounted, openRightBackground, navigateRight, toggleRight, closeRight,
+    rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
     rightBack, rightForward, canRightBack, canRightForward, setRightOpen, setRightWidth,
   } = useWorkspace(root)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
@@ -463,6 +463,7 @@ export function App() {
     wikilinks,
     wikilinkCandidates,
     properties: propertyDecls,
+    onOpenFileRight: openRight,
     onRenameFile: requestRename,
     sync: githubSync.status,
     onSyncNow: githubSync.syncNow,
