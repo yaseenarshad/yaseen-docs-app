@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
-import { SIDEBAR_MAX_W, SIDEBAR_MIN_W, type SettingsState, type SidebarLens } from '@shared/types'
+import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type SettingsState, type SidebarLens } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -27,6 +27,7 @@ import { useEnsureHome } from './sidebar/ensureHome'
 import { Sidebar, SidebarPanelIcon } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
+import { RightPanel } from './right-panel/RightPanel'
 import { useWorkspace } from './workspace/useWorkspace'
 import { Welcome } from './Welcome'
 
@@ -43,7 +44,12 @@ export function App() {
   // Tabs (I2, GRO-2234): the renderer-owned tab model, seeded from the boot identity snapshot
   // (a pasted `#/abs/path.md` URL wins as the active tab — bootTabs). The ACTIVE tab is this
   // window's `file`: title, URL hash and the sidebar highlight all follow it.
-  const { tabs, active: file, mounted, openCurrent, openBackground, activate, close: closeTab, move: moveTab, closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs, renamePath: renameTabPath, renameDirPath: renameDirTabs, deletePath: deleteTabPath, deleteDirPath: deleteDirTabs } = useWorkspace(root)
+  const {
+    tabs, active: file, mounted, openCurrent, openBackground, activate, close: closeTab, move: moveTab,
+    closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs,
+    renamePath: renameTabPath, renameDirPath: renameDirTabs, deletePath: deleteTabPath, deleteDirPath: deleteDirTabs,
+    rightPanel, toggleRight, closeRight, rightBack, rightForward, canRightBack, canRightForward, setRightOpen, setRightWidth,
+  } = useWorkspace(root)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
   // The sidebar's active LENS (🔒 D4, YAZ-847): App-owned and globally persisted, for the same
@@ -54,6 +60,7 @@ export function App() {
   const sidebarRevealId = useRef(0)
   const [sidebarRevealRequest, setSidebarRevealRequest] = useState<SidebarRevealRequest | null>(null)
   const [resizing, setResizing] = useState(false)
+  const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
   const [settings, setSettings] = useState(storage.getSettings)
   const watch = useWatch(root)
   // Wikilinks (Links A, GRO-2190): ONE resolve source per window — a stable object every
@@ -101,6 +108,15 @@ export function App() {
       }),
     [],
   )
+
+  useEffect(() => {
+    const resize = () => setWindowWidth(window.innerWidth)
+    window.addEventListener('resize', resize)
+    return () => window.removeEventListener('resize', resize)
+  }, [])
+
+  const visibleSidebarWidth = root !== null && !sidebarCollapsed ? sidebarWidth : 0
+  const rightOverlay = rightPanel.open && windowWidth < visibleSidebarWidth + rightPanel.width + MAIN_WORKSPACE_MIN_W
 
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed((collapsed) => {
@@ -544,6 +560,27 @@ export function App() {
             ))}
           </div>
         </div>
+      )}
+      {root !== null && rightPanel.open && (
+        <RightPanel
+          items={rightPanel.items}
+          expanded={rightPanel.expanded}
+          width={rightPanel.width}
+          overlay={rightOverlay}
+          canBack={canRightBack}
+          canForward={canRightForward}
+          onBack={rightBack}
+          onForward={rightForward}
+          onToggle={toggleRight}
+          onClose={closeRight}
+          onHide={() => setRightOpen(false)}
+          onResizeCommit={setRightWidth}
+        />
+      )}
+      {root !== null && !rightPanel.open && (
+        <button type="button" className="right-panel-reopen" aria-label="Show right panel" title="Show right panel" onClick={() => setRightOpen(true)}>
+          ‹
+        </button>
       )}
       {/* The name-change confirm (⚡ YAZ-888): App's, not the sidebar's, because the door is
           App's — the title and the tree both reach it, and one sheet answers for both. */}

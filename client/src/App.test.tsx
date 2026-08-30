@@ -226,6 +226,7 @@ afterEach(() => {
   delete document.documentElement.dataset.theme
   document.getElementById(CREPE_THEME_STYLE_ID)?.remove()
   delete (window as unknown as Record<string, unknown>).yaseenDocs
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 })
   vi.restoreAllMocks()
 })
 
@@ -665,6 +666,47 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => captured.sidebar?.onFileMissing())
     expect(stripLabels(el)).toEqual(['b'])
     expect(activeLabel(el)).toBe('b')
+  })
+})
+
+describe('App right-panel shell (YAZ-1272)', () => {
+  it('restores the shell and switches between split and overlay from available width', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1400 })
+    const identity = {
+      id: 'w1',
+      root: '/v',
+      file: '/v/a.md',
+      tabs: ['/v/a.md'],
+      rightPanel: { open: true, width: 440, items: ['/v/b.md'], expanded: '/v/b.md' },
+    }
+    const { el } = await mount(defaultAppState(), identity)
+    expect(el.querySelector('[aria-label="Right panel"]')).not.toBeNull()
+    expect(el.querySelector('.right-panel--overlay')).toBeNull()
+    expect(el.querySelector('.right-panel__header')?.textContent).toBe('b')
+    act(() => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 900 })
+      window.dispatchEvent(new Event('resize'))
+    })
+    expect(el.querySelector('.right-panel--overlay')).not.toBeNull()
+  })
+
+  it('shows the right-edge reopen control when hidden and mirrors one open-state change', async () => {
+    const { bridge, el } = await mount(defaultAppState(), {
+      id: 'w1',
+      root: '/v',
+      file: '/v/a.md',
+      tabs: ['/v/a.md'],
+      rightPanel: defaultRightPanelIdentity(),
+    })
+    const show = el.querySelector<HTMLButtonElement>('[aria-label="Show right panel"]')
+    expect(show).not.toBeNull()
+    act(() => show?.click())
+    expect(el.querySelector('[aria-label="Right panel"]')).not.toBeNull()
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({
+      tabs: ['/v/a.md'],
+      file: '/v/a.md',
+      rightPanel: { ...defaultRightPanelIdentity(), open: true },
+    })
   })
 })
 
