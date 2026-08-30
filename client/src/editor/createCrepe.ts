@@ -23,7 +23,8 @@
  *  - Zoom into a bullet (GRO-2029, `outline/zoom.ts`): view-state-only decorations + breadcrumbs;
  *    glyph click / Mod-. / Mod-Shift-. ; never a document change.
  *  - List guide lines (GRO-2030, `outline/guideLines.ts` + `.css`): CSS vertical lines on nested
- *    lists; clicking a line toggles the parent's fold (meta-only, same as the chevron).
+ *    lists; clicking a line collapses its direct parent bullets or recursively unfolds their
+ *    descendants (meta-only, markdown untouched).
  *  - Multi-block drag (GRO-2019, `multiBlockDrag.ts`): handle-drag inside a multi-block
  *    selection moves the whole selection; single-block drag stays Crepe's.
  *  - Bullet threading (GRO-2094, `outline/bulletThreading.ts` + `.css`): root → caret path

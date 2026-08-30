@@ -8,9 +8,10 @@
  * pointer over the strip targets the list element at a `clientX` LEFT of its border box —
  * that is the whole detection: no extra DOM, no layout shift, chevron and glyph (separate
  * elements) are never involved. This plugin turns those strip hits into behaviour:
- *  - mousedown → fold / unfold the parent items directly inside the list (`toggleOutlineFoldChildren`,
- *    GRO-2107; meta-only transaction, markdown untouched) and swallow the event so the caret
- *    never moves — the list's owner folds only via its chevron, ⌘↑ or the line one level up;
+ *  - mousedown → collapse the parent items directly inside the list, or recursively unfold every
+ *    parent below them (`toggleOutlineFoldChildren`, GRO-2107/YAZ-1317; meta-only transaction,
+ *    markdown untouched), and swallow the event so the caret never moves — the list's owner folds
+ *    only via its chevron, ⌘↑ or the line one level up;
  *  - mousemove/mouseleave → `outline-guide-hover` on the list, so ONLY strip hover highlights
  *    the line (CSS `ul:hover::before` would light up while merely editing text inside).
  */

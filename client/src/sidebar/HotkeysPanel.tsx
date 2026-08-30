@@ -50,7 +50,7 @@ export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
 
 export const MOUSE_TIPS: readonly HotkeyEntry[] = [
   { keys: 'Click glyph', label: 'Zoom into that bullet' },
-  { keys: 'Click line', label: 'Fold / unfold the bullets along that line' },
+  { keys: 'Click line', label: 'Collapse direct children / fully expand their subtree' },
   { keys: 'Click chevron', label: 'Fold / unfold that bullet or heading section' },
   { keys: 'Drag 6 dots', label: 'Move block — a multi-block selection moves together' },
   { keys: '/', label: 'Block menu, in an empty paragraph' },

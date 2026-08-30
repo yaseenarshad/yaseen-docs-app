@@ -138,22 +138,27 @@ export const setOutlineFoldAtSelection = (collapsed: boolean): Command => (state
 }
 
 /**
- * Guide-line click (GRO-2107): fold / unfold the parent items DIRECTLY inside the list at
- * `listPos` — the bullets the line runs alongside — never the list's owner. Any of them expanded →
- * collapse all of them, else expand all. Leaves are skipped; an all-leaf list declines.
+ * Guide-line click (GRO-2107, YAZ-1317): the direct parent items inside the list decide the
+ * direction. Any of them expanded → collapse those direct parents; all collapsed → unfold every
+ * parent in the list's subtree. The list's owner and leaves are untouched; an all-leaf list declines.
  */
 export const toggleOutlineFoldChildren = (listPos: number): Command => (state, dispatch) => {
   const foldingState = pluginKey.getState(state)
   const list = state.doc.nodeAt(listPos)
   if (!foldingState || !list || !LIST_NODE_NAMES.has(list.type.name)) return false
-  const parents = new Set(foldingState.entries.map((entry) => entry.itemPos))
-  const set: number[] = []
+  const parentPositions = new Set(foldingState.entries.map((entry) => entry.itemPos))
+  const directParents: number[] = []
   list.forEach((_child, offset) => {
     const pos = listPos + 1 + offset
-    if (parents.has(pos)) set.push(pos)
+    if (parentPositions.has(pos)) directParents.push(pos)
   })
-  if (set.length === 0) return false
-  const collapsed = set.some((pos) => !foldingState.collapsedItemPositions.has(pos))
+  if (directParents.length === 0) return false
+  const collapsed = directParents.some((pos) => !foldingState.collapsedItemPositions.has(pos))
+  const set = collapsed
+    ? directParents
+    : foldingState.entries
+        .filter(({ itemPos }) => itemPos > listPos && itemPos < listPos + list.nodeSize)
+        .map(({ itemPos }) => itemPos)
   dispatch?.(foldTransaction(state, { set, collapsed }))
   return true
 }
