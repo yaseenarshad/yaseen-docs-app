@@ -29,7 +29,7 @@ export interface MenuHandlers {
   nextTab(): void
   /** Window › Previous Tab (⌃⇧Tab / ⌘⇧[, GRO-2232): the focused window's renderer activates the tab to the left. */
   prevTab(): void
-  /** View › Toggle Sidebar: global setting (D9); `state:changed` re-renders every window. */
+  /** View › Toggle Sidebar: ask only the focused renderer to toggle its window identity. */
   toggleSidebar(): void
   openHelp(): void
 }
@@ -241,7 +241,7 @@ export function createMenuHandlers(store: Store, windows: MenuWindows, host: Men
       host.focusedWebContents()?.send(CH.menuPrevTab)
     },
     toggleSidebar() {
-      store.setSidebarCollapsed(!store.get().sidebarCollapsed)
+      host.focusedWebContents()?.send(CH.menuToggleSidebar)
     },
     openHelp() {
       host.openExternal(HELP_URL)

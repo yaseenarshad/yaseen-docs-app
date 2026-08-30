@@ -51,7 +51,7 @@ describe('registerStateIpc', () => {
   it('registers every state channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual(
-      [CH.stateGet, CH.stateSetSettings, CH.stateSetSidebarCollapsed, CH.stateSetSidebarWidth, CH.stateSetSidebarLens, CH.statePushRecent, CH.stateRemoveRecent, CH.stateSetFolder, CH.stateSetFolds, CH.stateSetBaseGroups].sort(),
+      [CH.stateGet, CH.stateSetSettings, CH.stateSetSidebarWidth, CH.stateSetSidebarLens, CH.statePushRecent, CH.stateRemoveRecent, CH.stateSetFolder, CH.stateSetFolds, CH.stateSetBaseGroups].sort(),
     )
   })
 
@@ -68,13 +68,6 @@ describe('registerStateIpc', () => {
     expect(await registered(CH.stateSetSettings)({ sender }, { lineSpacing: 1 })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CH.stateSetSettings)({ sender }, 'nope')).toEqual(bad('BAD_REQUEST'))
     expect(store.get().settings).toEqual(next)
-  })
-
-  it('state:set-sidebar-collapsed only takes a boolean', async () => {
-    expect(await registered(CH.stateSetSidebarCollapsed)({ sender }, true)).toEqual(ok(undefined))
-    expect(store.get().sidebarCollapsed).toBe(true)
-    expect(await registered(CH.stateSetSidebarCollapsed)({ sender }, 'true')).toEqual(bad('BAD_REQUEST'))
-    expect(store.get().sidebarCollapsed).toBe(true)
   })
 
   it('state:set-sidebar-width only takes a finite number, clamped', async () => {
@@ -160,7 +153,7 @@ describe('registerStateIpc', () => {
     const halfGone = fakeWindow({ wcDestroyed: true })
     const other = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([live, gone, halfGone, other] as unknown as BrowserWindow[])
-    await registered(CH.stateSetSidebarCollapsed)({ sender }, true)
+    await registered(CH.stateSetSidebarWidth)({ sender }, 321)
     expect(live.webContents.send).toHaveBeenCalledTimes(1)
     expect(live.webContents.send).toHaveBeenCalledWith(CH.stateChanged, store.get())
     expect(other.webContents.send).toHaveBeenCalledWith(CH.stateChanged, store.get())

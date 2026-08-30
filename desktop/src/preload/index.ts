@@ -55,7 +55,6 @@ const api: YaseenDocsApi = {
   state: {
     get: () => call(CH.stateGet),
     setSettings: (settings) => call(CH.stateSetSettings, settings),
-    setSidebarCollapsed: (collapsed) => call(CH.stateSetSidebarCollapsed, collapsed),
     setSidebarWidth: (width) => call(CH.stateSetSidebarWidth, width),
     setSidebarLens: (lens) => call(CH.stateSetSidebarLens, lens),
     pushRecent: (path) => call(CH.statePushRecent, path),
@@ -83,6 +82,7 @@ const api: YaseenDocsApi = {
     onOpenFolder: on<void>(CH.menuOpenFolder),
     onOpenRoot: on<string>(CH.menuOpenRoot),
     onSearch: on<void>(CH.menuSearch),
+    onToggleSidebar: on<void>(CH.menuToggleSidebar),
     onCloseTab: on<void>(CH.menuCloseTab),
     onNextTab: on<void>(CH.menuNextTab),
     onPrevTab: on<void>(CH.menuPrevTab),

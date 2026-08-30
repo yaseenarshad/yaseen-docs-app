@@ -14,9 +14,9 @@ vi.mock('electron', () => ({
  * annotation would widen it and make `Exhaustive<>` vacuous) while still rejecting typos.
  */
 const TOP = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'coldDiff', 'readAsset', 'writeAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'file', 'shell', 'vaultConfig', 'properties', 'github'] as const satisfies readonly (keyof YaseenDocsApi)[]
-const STATE = ['get', 'setSettings', 'setSidebarCollapsed', 'setSidebarWidth', 'setSidebarLens', 'pushRecent', 'removeRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange'] as const satisfies readonly (keyof StateApi)[]
+const STATE = ['get', 'setSettings', 'setSidebarWidth', 'setSidebarLens', 'pushRecent', 'removeRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange'] as const satisfies readonly (keyof StateApi)[]
 const WINDOW = ['identity', 'setIdentity', 'open', 'duplicate', 'closeSelf', 'onFlush'] as const satisfies readonly (keyof WindowApi)[]
-const MENU = ['onOpenFolder', 'onOpenRoot', 'onSearch', 'onCloseTab', 'onNextTab', 'onPrevTab'] as const satisfies readonly (keyof MenuApi)[]
+const MENU = ['onOpenFolder', 'onOpenRoot', 'onSearch', 'onToggleSidebar', 'onCloseTab', 'onNextTab', 'onPrevTab'] as const satisfies readonly (keyof MenuApi)[]
 const LINK = ['onOpenFile', 'onNotice'] as const satisfies readonly (keyof LinkApi)[]
 const FILE = ['rename', 'repairRename', 'onRenamed', 'delete', 'onDeleted'] as const satisfies readonly (keyof FileApi)[]
 const SHELL = ['reveal', 'openVsCode'] as const satisfies readonly (keyof ShellApi)[]
@@ -175,6 +175,21 @@ describe('preload bridge', () => {
     expect(listener).toHaveBeenCalledTimes(1)
     off()
     expect(vi.mocked(ipcRenderer.removeListener).mock.calls.some(([ch, l]) => ch === CH.menuSearch && l === emit)).toBe(true)
+  })
+
+  it('forwards menu:toggle-sidebar to the listener and unsubscribes cleanly (YAZ-1280)', async () => {
+    const { ipcRenderer } = await import('electron')
+    const { bridge } = await import('./index')
+    const listener = vi.fn()
+    const off = bridge.menu.onToggleSidebar(listener)
+    const calls = vi.mocked(ipcRenderer.on).mock.calls.filter(([ch]) => ch === CH.menuToggleSidebar)
+    const call = calls[calls.length - 1]
+    expect(call).toBeDefined()
+    const emit = call?.[1] as unknown as (e: unknown) => void
+    emit(undefined)
+    expect(listener).toHaveBeenCalledTimes(1)
+    off()
+    expect(vi.mocked(ipcRenderer.removeListener).mock.calls.some(([ch, l]) => ch === CH.menuToggleSidebar && l === emit)).toBe(true)
   })
 
   it('forwards menu:open-root paths to the listener and unsubscribes cleanly (GRO-2161)', async () => {

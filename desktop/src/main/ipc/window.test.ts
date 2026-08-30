@@ -22,7 +22,7 @@ function registered(channel: string): Handler {
 const ok = (value: unknown) => ({ ok: true, value })
 const bad = (code: string) => expect.objectContaining({ ok: false, error: expect.objectContaining({ code }) })
 const bounds = { x: 10, y: 20, width: 800, height: 600 }
-const entry: WindowEntry = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], bounds }
+const entry: WindowEntry = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarCollapsed: false, bounds }
 
 let dir: string
 let store: Store
@@ -70,8 +70,8 @@ describe('registerWindowIpc', () => {
     expect(channels).toEqual([CH.windowIdentity, CH.windowSetIdentity, CH.windowOpen, CH.windowDuplicate, CH.windowCloseSelf].sort())
   })
 
-  it('window:identity answers { id, root, file, tabs } for a registered sender', async () => {
-    expect(await registered(CH.windowIdentity)({ sender })).toEqual(ok({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }))
+  it('window:identity answers the complete per-window identity for a registered sender', async () => {
+    expect(await registered(CH.windowIdentity)({ sender })).toEqual(ok({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarCollapsed: false }))
   })
 
   it('window:identity rejects an unregistered sender (BAD_REQUEST) and a window the state no longer has (NOT_FOUND)', async () => {
@@ -83,12 +83,12 @@ describe('registerWindowIpc', () => {
   it('window:set-identity merges root / file into the entry, keeping id and bounds; tabs follow the invariant', async () => {
     // file → null clears tabs (tabs [] ⇔ file null); a new file not in tabs is prepended.
     expect(await registered(CH.windowSetIdentity)({ sender }, { root: '/other', file: null })).toEqual(ok(undefined))
-    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', file: null, tabs: [], bounds }])
+    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', file: null, tabs: [], sidebarCollapsed: false, bounds }])
     expect(await registered(CH.windowSetIdentity)({ sender }, { file: '/other/b.md' })).toEqual(ok(undefined))
-    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', file: '/other/b.md', tabs: ['/other/b.md'], bounds }])
+    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', file: '/other/b.md', tabs: ['/other/b.md'], sidebarCollapsed: false, bounds }])
     // Unknown keys cannot touch id / bounds.
     expect(await registered(CH.windowSetIdentity)({ sender }, { id: 'hijack', bounds: { x: 0, y: 0, width: 1, height: 1 } })).toEqual(ok(undefined))
-    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', file: '/other/b.md', tabs: ['/other/b.md'], bounds }])
+    expect(store.get().windows).toEqual([{ id: 'w1', root: '/other', file: '/other/b.md', tabs: ['/other/b.md'], sidebarCollapsed: false, bounds }])
   })
 
   it('window:set-identity accepts a tabs patch: de-duplicated, and the active file is prepended when missing (GRO-2232)', async () => {
@@ -99,7 +99,14 @@ describe('registerWindowIpc', () => {
     expect(store.get().windows[0].tabs).toEqual(['/v/a.md', '/v/b.md', '/v/c.md'])
     // file and tabs patched together: the new file leads.
     expect(await registered(CH.windowSetIdentity)({ sender }, { file: '/v/b.md', tabs: ['/v/b.md', '/v/c.md'] })).toEqual(ok(undefined))
-    expect(store.get().windows[0]).toEqual({ id: 'w1', root: '/v', file: '/v/b.md', tabs: ['/v/b.md', '/v/c.md'], bounds })
+    expect(store.get().windows[0]).toEqual({ id: 'w1', root: '/v', file: '/v/b.md', tabs: ['/v/b.md', '/v/c.md'], sidebarCollapsed: false, bounds })
+  })
+
+  it('window:set-identity validates and patches sidebar visibility without changing other identity or bounds', async () => {
+    expect(await registered(CH.windowSetIdentity)({ sender }, { sidebarCollapsed: true })).toEqual(ok(undefined))
+    expect(store.get().windows).toEqual([{ ...entry, sidebarCollapsed: true }])
+    expect(await registered(CH.windowSetIdentity)({ sender }, { sidebarCollapsed: 'true' })).toEqual(bad('BAD_REQUEST'))
+    expect(store.get().windows).toEqual([{ ...entry, sidebarCollapsed: true }])
   })
 
   it('window:set-identity rejects the whole call on any bad tabs element, leaving the entry untouched', async () => {

@@ -280,7 +280,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   }
 
   const openWindow = (opts: OpenWindowOptions): void => {
-    open({ id: randomUUID(), root: opts.root, file: opts.file, tabs: opts.file === null ? [] : [opts.file], bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
+    open({ id: randomUUID(), root: opts.root, file: opts.file, tabs: opts.file === null ? [] : [opts.file], sidebarCollapsed: false, bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
   }
 
   const focusWindow = (win: ManagedWindow): void => {
@@ -303,7 +303,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       let entries = store.get().windows
       if (entries.length === 0) {
         // First launch: one window on the Welcome screen (root null; the screen itself is C2).
-        const first: WindowEntry = { id: randomUUID(), root: null, file: null, tabs: [], bounds: { ...DEFAULT_BOUNDS } }
+        const first: WindowEntry = { id: randomUUID(), root: null, file: null, tabs: [], sidebarCollapsed: false, bounds: { ...DEFAULT_BOUNDS } }
         store.upsertWindow(first)
         entries = [first]
       }
@@ -320,8 +320,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
 
     duplicateWindow(from) {
       const cascaded = { ...from.bounds, x: from.bounds.x + WINDOW_CASCADE_PX, y: from.bounds.y + WINDOW_CASCADE_PX }
-      // The copy carries the whole tab set (GRO-2232): same folder, same file, same tabs — `from` already satisfies the invariant.
-      open({ id: randomUUID(), root: from.root, file: from.file, tabs: [...from.tabs], bounds: clampBounds(cascaded, host.workAreas()) })
+      // The copy carries the whole window identity: tabs and sidebar start equal, then persist independently.
+      open({ id: randomUUID(), root: from.root, file: from.file, tabs: [...from.tabs], sidebarCollapsed: from.sidebarCollapsed, bounds: clampBounds(cascaded, host.workAreas()) })
     },
 
     closeWindow(id) {
