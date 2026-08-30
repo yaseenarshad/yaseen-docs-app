@@ -228,6 +228,15 @@ describe('wikilink picker: navigate / insert', () => {
     expect(getMarkdownForSave(crepe)).toBe('X[[sub/Note]]\n')
   })
 
+  it('view-only candidates insert the explicit extension and spaces verbatim', async () => {
+    const { crepe } = await mount('X\n', source('Outbound Lead Qualifier.json', 'tool.PY', 'report.PDF'))
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, '[[outbound')
+    expect(rows()).toEqual(['Outbound Lead Qualifier.json'])
+    press(crepe, 'Enter')
+    expect(getMarkdownForSave(crepe)).toBe('X[[Outbound Lead Qualifier.json]]\n')
+  })
+
   it('mid-text triggers only replace [[fragment up to the caret; trailing text stays', async () => {
     const { crepe } = await mount('before after\n', source('Alpha'))
     caret(crepe, posOf(crepe, ' after'))

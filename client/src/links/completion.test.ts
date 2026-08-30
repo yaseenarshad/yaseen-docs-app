@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { resolverFor } from '../views/engine'
-import { MAX_SUGGESTIONS, linkCandidates, matchLinkCandidates, matchLinkNames, nameCandidate, trailingLinkFragment } from './completion'
+import { MAX_SUGGESTIONS, linkCandidates, matchLinkCandidates, matchLinkNames, mergeLinkCandidates, nameCandidate, trailingLinkFragment } from './completion'
 
 const rec = (path: string, aliases: string[] = []): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -193,5 +193,26 @@ describe('matchLinkNames (plain-name surfaces)', () => {
   it('is the candidate matcher over bare names', () => {
     expect(matchLinkNames(['Alpha', 'Beta'], 'a')).toEqual(['Alpha', 'Beta'])
     expect(matchLinkCandidates(['Alpha', 'Beta'].map(nameCandidate), 'a').map((c) => c.insert)).toEqual(['Alpha', 'Beta'])
+  })
+})
+
+describe('mergeLinkCandidates (YAZ-1310)', () => {
+  it('reserves explicit view-only spellings while leaving semantic aliases and unrelated Markdown rows intact', () => {
+    const markdown = [
+      { ...nameCandidate('data.json'), path: '/vault/data.json.md' },
+      { name: 'JSON alias', insert: 'data.json|JSON alias', label: 'JSON alias — data.json', path: '/vault/data.json.md' },
+      { name: 'data.json', insert: 'Note|data.json', label: 'data.json — Note', path: '/vault/Note.md' },
+      { ...nameCandidate('Note'), path: '/vault/Note.md' },
+    ]
+    const viewOnly = [
+      { ...nameCandidate('data.json'), path: '/vault/data.json' },
+      { ...nameCandidate('deep/tool.PY'), path: '/vault/deep/tool.PY' },
+    ]
+    expect(mergeLinkCandidates(markdown, viewOnly).map((candidate) => candidate.insert)).toEqual([
+      'Note|data.json',
+      'Note',
+      'data.json',
+      'deep/tool.PY',
+    ])
   })
 })

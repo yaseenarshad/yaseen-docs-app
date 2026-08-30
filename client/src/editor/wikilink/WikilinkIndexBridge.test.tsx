@@ -9,20 +9,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { IndexRecord, IndexResponse, WatchEvent } from '@shared/types'
+import type { IndexRecord, IndexResponse, TreeNode, TreeResponse, WatchEvent } from '@shared/types'
 import type { WatchListener, WatchSource } from '../../hooks/useWatch'
 import { createWikilinkCandidateSource, type MutableWikilinkCandidateSource } from './wikilinkPicker'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from './wikilinkPlugin'
+import { createViewOnlyLinkSource, type MutableViewOnlyLinkSource } from './viewOnlyLinkSource'
 import { WikilinkIndexBridge } from './WikilinkIndexBridge'
 
 vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
-  api: { index: vi.fn() },
+  api: { index: vi.fn(), tree: vi.fn() },
 }))
 
 import { api } from '../../api'
 
 const indexFn = vi.mocked(api.index)
+const treeFn = vi.mocked(api.tree)
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -47,12 +49,15 @@ const rec = (path: string, aliases: string[] = []): IndexRecord => {
 }
 
 const response = (...paths: string[]): IndexResponse => ({ root: '/vault', records: paths.map((p) => rec(p)), generatedAt: 1 })
+const viewNode = (path: string, kind: 'text' | 'pdf'): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, kind, size: 1, mtime: 1 })
+const treeResponse = (...nodes: TreeNode[]): TreeResponse => ({ root: '/vault', tree: nodes, generatedAt: 1 })
 
 let root: Root | null = null
 let container: HTMLElement | null = null
 let listeners: WatchListener[] = []
 let source: MutableWikilinkResolveSource
 let candidates: MutableWikilinkCandidateSource
+let viewOnly: MutableViewOnlyLinkSource
 
 const watch: WatchSource = {
   subscribe: (l) => {
@@ -67,7 +72,7 @@ function mount(): void {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<WikilinkIndexBridge root="/vault" watch={watch} source={source} candidates={candidates} />))
+  act(() => root?.render(<WikilinkIndexBridge root="/vault" watch={watch} source={source} candidates={candidates} viewOnly={viewOnly} />))
 }
 
 async function flush(): Promise<void> {
@@ -87,7 +92,9 @@ beforeEach(() => {
   vi.useFakeTimers()
   source = createWikilinkResolveSource()
   candidates = createWikilinkCandidateSource()
+  viewOnly = createViewOnlyLinkSource()
   indexFn.mockResolvedValue(response('/vault/Note.md', '/vault/deep/Other.md'))
+  treeFn.mockResolvedValue(treeResponse(viewNode('/vault/data.json', 'text'), viewNode('/vault/deep/report.PDF', 'pdf')))
 })
 
 afterEach(() => {
@@ -137,13 +144,13 @@ describe('WikilinkIndexBridge', () => {
     expect(candidates.candidates).toEqual([]) // pending: nothing yet
     await flush()
     // Candidates are rows, not strings, since E2 (GRO-2214) — the inserted text is the pin.
-    expect(candidates.candidates.map((c) => c.insert)).toEqual(['Note', 'deep/Note', 'Other'])
+    expect(candidates.candidates.map((c) => c.insert)).toEqual(['Note', 'deep/Note', 'Other', 'data.json', 'report.PDF'])
     const wake = vi.fn()
     candidates.subscribe(wake)
     indexFn.mockResolvedValue(response('/vault/Note.md', '/vault/New.md'))
     await emitPastDebounce({ type: 'add', path: '/vault/New.md', mtime: 2 })
     expect(wake).toHaveBeenCalled()
-    expect(candidates.candidates.map((c) => c.insert)).toEqual(['Note', 'New'])
+    expect(candidates.candidates.map((c) => c.insert)).toEqual(['Note', 'New', 'data.json', 'report.PDF'])
   })
 
   it('the snapshot RECORDS ride into the resolve source with the resolver (Links D, GRO-2193)', async () => {
@@ -173,12 +180,45 @@ describe('WikilinkIndexBridge', () => {
     expect(candidates.candidates.map((c) => c.label)).toEqual([
       'Customer Acquisition Cost',
       'CAC — Customer Acquisition Cost',
+      'data.json',
+      'report.PDF',
     ])
 
     // Dropping the alias from the frontmatter unresolves `[[CAC]]` again on the next snapshot.
     indexFn.mockResolvedValue({ root: '/vault', records: [rec('/vault/Customer Acquisition Cost.md')], generatedAt: 2 })
     await emitPastDebounce({ type: 'change', path: '/vault/Customer Acquisition Cost.md', mtime: 2 })
     expect(source.resolve?.('CAC')).toBeNull()
-    expect(candidates.candidates.map((c) => c.label)).toEqual(['Customer Acquisition Cost'])
+    expect(candidates.candidates.map((c) => c.label)).toEqual(['Customer Acquisition Cost', 'data.json', 'report.PDF'])
+  })
+
+  it('feeds a separate view-only source and merges only picker candidates, reserving explicit collisions', async () => {
+    const semantic = response('/vault/data.json.md', '/vault/Note.md')
+    indexFn.mockResolvedValue(semantic)
+    mount()
+    expect(viewOnly.ready).toBe(false)
+    await flush()
+
+    expect(source.records).toBe(semantic.records)
+    expect(source.resolve?.('data.json')).toBe('/vault/data.json.md') // semantic source is unchanged
+    expect(viewOnly.resolve?.('data.json')).toBe('/vault/data.json')
+    expect(viewOnly.targets.map((target) => target.path)).toEqual(['/vault/data.json', '/vault/deep/report.PDF'])
+    expect(candidates.candidates.map((candidate) => candidate.insert)).toEqual(['Note', 'data.json', 'report.PDF'])
+    expect('records' in viewOnly).toBe(false)
+  })
+
+  it('refreshes the catalog and merged picker on structural view-only events without touching semantic identity', async () => {
+    const semantic = response('/vault/Note.md')
+    indexFn.mockResolvedValue(semantic)
+    mount()
+    await flush()
+    const semanticResolve = source.resolve
+    treeFn.mockResolvedValueOnce(treeResponse(viewNode('/vault/data.json', 'text'), viewNode('/vault/tool.PY', 'text')))
+    await emitPastDebounce({ type: 'add', path: '/vault/tool.PY', mtime: 2 })
+    expect(treeFn).toHaveBeenCalledTimes(2)
+    expect(indexFn).toHaveBeenCalledTimes(1)
+    expect(source.records).toBe(semantic.records)
+    expect(source.resolve).toBe(semanticResolve)
+    expect(viewOnly.resolve?.('tool.py')).toBe('/vault/tool.PY')
+    expect(candidates.candidates.map((candidate) => candidate.insert)).toEqual(['Note', 'data.json', 'tool.PY'])
   })
 })

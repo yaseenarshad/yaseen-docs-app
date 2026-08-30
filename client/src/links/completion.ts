@@ -54,6 +54,18 @@ export interface LinkCandidate {
 /** A plain link name as a candidate: it matches, inserts and reads as itself. */
 export const nameCandidate = (name: string): LinkCandidate => ({ name, insert: name, label: name, lower: name.toLowerCase() })
 
+/**
+ * Picker-only composition: explicit view-only targets reserve their exact spelling, while
+ * semantic aliases whose DISPLAY happens to match remain valid. Resolution sources stay split.
+ */
+export function mergeLinkCandidates(markdown: readonly LinkCandidate[], viewOnly: readonly LinkCandidate[]): LinkCandidate[] {
+  const reserved = new Set(viewOnly.map((candidate) => candidate.insert.toLowerCase()))
+  return [
+    ...markdown.filter((candidate) => !reserved.has(candidate.insert.split('|', 1)[0].toLowerCase())),
+    ...viewOnly,
+  ]
+}
+
 /** An alias of `note` (that note's own unambiguous name): typed as the alias, inserted piped. */
 const aliasCandidate = (alias: string, note: string, path: string): LinkCandidate => ({
   name: alias,

@@ -18,9 +18,11 @@ import type { IndexRecord } from '@shared/types'
 import { resolverFor } from '../../views/engine'
 import { useIndex } from '../../views/useIndex'
 import type { WatchSource } from '../../hooks/useWatch'
-import { linkCandidates } from '../../links/completion'
+import { useViewOnlyCatalog } from '../../hooks/useViewOnlyCatalog'
+import { linkCandidates, mergeLinkCandidates } from '../../links/completion'
 import type { MutableWikilinkCandidateSource } from './wikilinkPicker'
 import type { MutableWikilinkResolveSource } from './wikilinkPlugin'
+import type { MutableViewOnlyLinkSource } from './viewOnlyLinkSource'
 
 export interface WikilinkIndexBridgeProps {
   root: string
@@ -28,6 +30,8 @@ export interface WikilinkIndexBridgeProps {
   source: MutableWikilinkResolveSource
   /** The `[[` picker's candidates (GRO-2191), fed from the same ready snapshots. */
   candidates?: MutableWikilinkCandidateSource
+  /** Separate navigation-only catalog. Omitted mounts retain the semantic-only behavior. */
+  viewOnly?: MutableViewOnlyLinkSource
   /**
    * Every READY snapshot, verbatim (Links E1c, GRO-2242): the external-rename detector diffs
    * consecutive snapshots — this component already sees them all, so no second `useIndex`
@@ -36,7 +40,7 @@ export interface WikilinkIndexBridgeProps {
   onSnapshot?: (records: IndexRecord[]) => void
 }
 
-export function WikilinkIndexBridge({ root, watch, source, candidates, onSnapshot }: WikilinkIndexBridgeProps): null {
+export function WikilinkIndexBridge({ root, watch, source, candidates, viewOnly, onSnapshot }: WikilinkIndexBridgeProps) {
   const { status, records } = useIndex(root, watch)
   useEffect(() => {
     // Only a READY snapshot feeds the sources: while the first fetch is pending (or a refetch
@@ -47,8 +51,26 @@ export function WikilinkIndexBridge({ root, watch, source, candidates, onSnapsho
     // The snapshot rides ALONG with the resolver (Links D, GRO-2193): the backlinks section
     // reads both off the same source, so N and the resolution behind it always agree.
     source.update((target) => resolve(target)?.record.path ?? null, records)
-    candidates?.update(linkCandidates(records))
+    candidates?.update(mergeLinkCandidates(linkCandidates(records), viewOnly?.catalog?.candidates ?? []))
     onSnapshot?.(records)
-  }, [status, records, root, source, candidates, onSnapshot])
+  }, [status, records, root, source, candidates, viewOnly, onSnapshot])
+  return viewOnly === undefined ? null : (
+    <ViewOnlyCatalogBridge root={root} watch={watch} source={source} candidates={candidates} viewOnly={viewOnly} />
+  )
+}
+
+function ViewOnlyCatalogBridge({ root, watch, source, candidates, viewOnly }: {
+  root: string
+  watch: WatchSource
+  source: MutableWikilinkResolveSource
+  candidates?: MutableWikilinkCandidateSource
+  viewOnly: MutableViewOnlyLinkSource
+}): null {
+  const state = useViewOnlyCatalog(root, watch)
+  useEffect(() => {
+    if (state.status !== 'ready') return
+    viewOnly.update(state.catalog)
+    candidates?.update(mergeLinkCandidates(linkCandidates(source.records), state.catalog.candidates))
+  }, [state.status, state.catalog, source, candidates, viewOnly])
   return null
 }
