@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
-import type { OpenWindowOptions, RecentRoots, WindowBounds, WindowEntry } from '@shared/types'
+import { defaultRightPanelIdentity, type OpenWindowOptions, type RecentRoots, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CH } from '../channels'
 import type { Store } from './store'
 
@@ -280,7 +280,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   }
 
   const openWindow = (opts: OpenWindowOptions): void => {
-    open({ id: randomUUID(), root: opts.root, file: opts.file, tabs: opts.file === null ? [] : [opts.file], sidebarCollapsed: false, bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
+    open({ id: randomUUID(), root: opts.root, file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, bounds: clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
   }
 
   const focusWindow = (win: ManagedWindow): void => {
@@ -303,7 +303,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       let entries = store.get().windows
       if (entries.length === 0) {
         // First launch: one window on the Welcome screen (root null; the screen itself is C2).
-        const first: WindowEntry = { id: randomUUID(), root: null, file: null, tabs: [], sidebarCollapsed: false, bounds: { ...DEFAULT_BOUNDS } }
+        const first: WindowEntry = { id: randomUUID(), root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, bounds: { ...DEFAULT_BOUNDS } }
         store.upsertWindow(first)
         entries = [first]
       }
@@ -318,10 +318,19 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
 
     openWindow,
 
-    duplicateWindow(from) {
-      const cascaded = { ...from.bounds, x: from.bounds.x + WINDOW_CASCADE_PX, y: from.bounds.y + WINDOW_CASCADE_PX }
-      // The copy carries the whole window identity: tabs and sidebar start equal, then persist independently.
-      open({ id: randomUUID(), root: from.root, file: from.file, tabs: [...from.tabs], sidebarCollapsed: from.sidebarCollapsed, bounds: clampBounds(cascaded, host.workAreas()) })
+      duplicateWindow(from) {
+        const cascaded = { ...from.bounds, x: from.bounds.x + WINDOW_CASCADE_PX, y: from.bounds.y + WINDOW_CASCADE_PX }
+        // Clone both ordered path lists so the new window's durable identity cannot alias the source;
+        // sidebar visibility is copied by value and then persists independently.
+        open({
+          id: randomUUID(),
+          root: from.root,
+          file: from.file,
+          tabs: [...from.tabs],
+          rightPanel: { ...from.rightPanel, items: [...from.rightPanel.items] },
+          sidebarCollapsed: from.sidebarCollapsed,
+          bounds: clampBounds(cascaded, host.workAreas()),
+        })
     },
 
     closeWindow(id) {

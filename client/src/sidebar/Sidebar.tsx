@@ -35,7 +35,7 @@ interface SidebarProps {
   activeFile: string | null
   watch: WatchSource
   onOpenFile: (path: string) => void
-  /** ⌘-click on a file row (I3 LOCKED ruling, GRO-2235): open in a background tab; App passes `useTabs`' openBackground. */
+  /** ⌘-click on a file row (I3 LOCKED ruling, GRO-2235): open in a background tab; App passes the workspace's openBackground. */
   onOpenFileBackground: (path: string) => void
   onPickFolder: () => void
   /** True while the native folder dialog is open; the "change" button is disabled meanwhile. */
@@ -743,7 +743,7 @@ export function Sidebar({
       const target = `${dir}/${basename(path)}`
       if (target === path) return // dropped into its own folder: nothing to do
       // The SAME rename flow as the context menu — never-overwrite and every failure as a
-      // passive notice come with it; link updates and the tab remap ride the same pipeline.
+      // passive notice come with it; link updates and the workspace remap ride the same pipeline.
       void onRenameFile(path, target)
     },
     [dragging, onRenameFile],

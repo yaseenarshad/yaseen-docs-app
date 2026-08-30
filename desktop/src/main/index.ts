@@ -10,11 +10,13 @@ import { createLinkQueue } from './linkQueue'
 import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, pickMenuTargetWindow, subscribeMenuRebuild } from './menu'
 import { createStore } from './store'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
+import { applyUserDataOverride } from './userData'
 import { flushIndexCache, initIndexCache } from './vaultIndex'
 import { createWindowManager } from './windows'
 
 // Before anything reads app.getPath('userData'): the workspace is named "desktop", the app is not.
 app.setName('Yaseen Docs')
+applyUserDataOverride(app, process.env.YASEEN_DOCS_USER_DATA_DIR)
 
 /** One running instance (GRO-2160): a second launch focuses the first; a link in its argv routes (E1). */
 const isPrimaryInstance = app.requestSingleInstanceLock()

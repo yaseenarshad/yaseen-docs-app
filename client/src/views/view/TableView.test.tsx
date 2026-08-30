@@ -324,8 +324,9 @@ describe('table-row context menu (YAZ-1053)', () => {
   })
 
   it('selects the exact right-clicked cell first, then opens the table-owned actions at the pointer', () => {
+    const openRight = vi.fn()
     const openBackground = vi.fn()
-    const { el, onOpenFile, onChange } = mount(TYPED_BASE, { folderPage: testFolderPage({ openBackground }) })
+    const { el, onOpenFile, onChange } = mount(TYPED_BASE, { folderPage: testFolderPage({ openRight, openBackground }) })
     const cell = q<HTMLTableCellElement>(el, '[data-cell="0:0"]')
     const event = rightClick(q(cell, '.view-table__link'), 120, 42)
 
@@ -333,9 +334,27 @@ describe('table-row context menu (YAZ-1053)', () => {
     expect(document.activeElement).toBe(cell)
     expect(q<HTMLElement>(el, '.ctx-menu').style.left).toBe('120px')
     expect(q<HTMLElement>(el, '.ctx-menu').style.top).toBe('42px')
-    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open in new tab', 'Copy path', 'Reveal in Finder'])
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open in right panel', 'Open in new tab', 'Copy path', 'Reveal in Finder'])
     expect(onOpenFile).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('opens the exact row in the right panel without replacing the current page', () => {
+    const openRight = vi.fn()
+    const { el, onOpenFile } = mount(TYPED_BASE, { folderPage: testFolderPage({ openRight }) })
+    rightClick(q(el, '[data-cell="0:1"]'))
+    click(itemNamed(el, 'Open in right panel')!)
+
+    expect(openRight).toHaveBeenCalledExactlyOnceWith(expectedPath)
+    expect(onOpenFile).not.toHaveBeenCalled()
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+
+  it('does not turn an ordinary cell click into a right-panel open', () => {
+    const openRight = vi.fn()
+    const { el } = mount(TYPED_BASE, { folderPage: testFolderPage({ openRight }) })
+    click(q(el, '[data-cell="0:1"]'))
+    expect(openRight).not.toHaveBeenCalled()
   })
 
   it('opens the exact row in a background tab without replacing the current page', () => {
@@ -409,37 +428,37 @@ describe('table-row context menu (YAZ-1053)', () => {
   })
 
   it('targets the rendered record when file.name is hidden, grouped, or windowed', () => {
-    const openBackground = vi.fn()
-    const hidden = mount('views:\n  - type: table\n    name: T\n    order:\n      - note.priority\n', { folderPage: testFolderPage({ openBackground }) })
+    const openRight = vi.fn()
+    const hidden = mount('views:\n  - type: table\n    name: T\n    order:\n      - note.priority\n', { folderPage: testFolderPage({ openRight }) })
     rightClick(q(hidden.el, '[data-cell="0:0"]'))
-    click(itemNamed(hidden.el, 'Open in new tab')!)
-    expect(openBackground).toHaveBeenLastCalledWith(expectedPath)
+    click(itemNamed(hidden.el, 'Open in right panel')!)
+    expect(openRight).toHaveBeenLastCalledWith(expectedPath)
 
     act(() => root?.unmount())
     container?.remove()
-    const grouped = mount('views:\n  - type: table\n    name: T\n    groupBy:\n      property: note.status\n', { folderPage: testFolderPage({ openBackground }) })
+    const grouped = mount('views:\n  - type: table\n    name: T\n    groupBy:\n      property: note.status\n', { folderPage: testFolderPage({ openRight }) })
     rightClick(q(grouped.el, '[data-cell="0:0"]'))
-    click(itemNamed(grouped.el, 'Open in new tab')!)
-    expect(openBackground).toHaveBeenLastCalledWith('/vault/Content Pillars/1. Agentic Agency/The Levels of an Agency.md')
+    click(itemNamed(grouped.el, 'Open in right panel')!)
+    expect(openRight).toHaveBeenLastCalledWith('/vault/Content Pillars/1. Agentic Agency/The Levels of an Agency.md')
 
     act(() => root?.unmount())
     container?.remove()
     const windowedRecords = manyRecords()
-    const windowed = mount('views:\n  - type: table\n    name: T\n', { records: windowedRecords, folderPage: testFolderPage({ vaultRecords: windowedRecords, openBackground }) })
+    const windowed = mount('views:\n  - type: table\n    name: T\n', { records: windowedRecords, folderPage: testFolderPage({ vaultRecords: windowedRecords, openRight }) })
     rightClick(q(windowed.el, '[data-cell="0:0"]'))
-    click(itemNamed(windowed.el, 'Open in new tab')!)
-    expect(openBackground).toHaveBeenLastCalledWith('/vault/n000.md')
+    click(itemNamed(windowed.el, 'Open in right panel')!)
+    expect(openRight).toHaveBeenLastCalledWith('/vault/n000.md')
   })
 
   it('keeps the exact record target when one page is fanned out into repeated grouped rows', () => {
-    const openBackground = vi.fn()
-    const { el } = mount('views:\n  - type: table\n    name: T\n    groupBy:\n      property: note.tags\n', { folderPage: testFolderPage({ openBackground }) })
+    const openRight = vi.fn()
+    const { el } = mount('views:\n  - type: table\n    name: T\n    groupBy:\n      property: note.tags\n', { folderPage: testFolderPage({ openRight }) })
     const repeated = [...el.querySelectorAll<HTMLButtonElement>('.view-table__link')].filter((link) => link.textContent === 'Agentic Agency.md')
     expect(repeated).toHaveLength(2)
 
     rightClick(repeated[1])
-    click(itemNamed(el, 'Open in new tab')!)
-    expect(openBackground).toHaveBeenCalledExactlyOnceWith(expectedPath)
+    click(itemNamed(el, 'Open in right panel')!)
+    expect(openRight).toHaveBeenCalledExactlyOnceWith(expectedPath)
   })
 
   it('does not attach the row menu to headers, summaries, or spacer rows', () => {

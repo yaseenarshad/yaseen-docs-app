@@ -64,7 +64,7 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   // fs work, then `store.removePath` repair, then one broadcast to every window — with two
   // differences that are the point of the feature:
   //  - it REMOVES rather than remaps, so a window whose active file went is left on an heir
-  //    tab (store.removePath picks it with useTabs' own ladder);
+  //    tab (store.removePath picks it with the workspace's own ladder);
   //  - there is NO link rewriting anywhere downstream (LOCKED decision C): notes referencing
   //    the deleted page stay byte-identical and their [[links]] simply go unresolved.
   // Like rename, the vault index needs no push: the watcher's unlink / unlinkDir echo heals

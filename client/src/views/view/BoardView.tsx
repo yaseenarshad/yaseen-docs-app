@@ -1,4 +1,4 @@
-import { type CSSProperties, Fragment, type MouseEvent as ReactMouseEvent, useEffect, useState } from 'react'
+import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
@@ -23,7 +23,8 @@ export interface BoardViewProps {
   collapsed: readonly string[]
   onToggleGroup: (key: string) => void
   onUpdate: Mutate
-  onOpenFile: (path: string) => void
+  /** Open a card page in the window's right panel. */
+  onOpenFileRight?: (path: string) => void
   /** Open a card's page without replacing the current folder page. */
   onOpenFileBackground?: (path: string) => void
   /** Passive notice surface for page actions that fail because a card moved or disappeared. */
@@ -76,7 +77,7 @@ export function BoardView({
   collapsed,
   onToggleGroup,
   onUpdate,
-  onOpenFile,
+  onOpenFileRight,
   onOpenFileBackground,
   onNotice,
   onMoveToGroup,
@@ -93,6 +94,18 @@ export function BoardView({
   const [adding, setAdding] = useState<{ key: string; name: string } | null>(null)
   /** The exact rendered record targeted by the latest whole-card secondary click. */
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
+  /** Browser click tails after secondary-click and drag gestures must not become page opens. */
+  const suppressClick = useRef(false)
+  const suppressOnce = () => {
+    suppressClick.current = true
+    queueMicrotask(() => {
+      suppressClick.current = false
+    })
+  }
+  const openCard = (row: Row): void => {
+    if (suppressClick.current) return
+    onOpenFileRight?.(row.record.path)
+  }
   /** ViewsPane reuses this component between Board tabs; no action may retain the previous Board's record. */
   useEffect(() => setMenu(null), [viewIndex])
   if (groups === null) {
@@ -133,7 +146,15 @@ export function BoardView({
   const cardItem = (key: string, row: Row) => {
     if (key === nameKey)
       return (
-        <button key={key} type="button" className="view-board__title" onClick={() => onOpenFile(row.record.path)}>
+        <button
+          key={key}
+          type="button"
+          className="view-board__title"
+          onClick={(event) => {
+            event.stopPropagation()
+            openCard(row)
+          }}
+        >
           {render(row.values[key])}
         </button>
       )
@@ -154,44 +175,69 @@ export function BoardView({
     ) : null
   const openCardMenu = (event: ReactMouseEvent, row: Row): void => {
     event.preventDefault()
+    suppressOnce()
     close()
     setMenu({ x: event.clientX, y: event.clientY, path: row.record.path })
   }
+  const dragSource = (row: Row, group: Group, at: GroupSpot): Record<string, unknown> => {
+    const source = dnd.source(row.record.path, group, at)
+    const onDragEnd = source.onDragEnd as ((event: ReactDragEvent) => void) | undefined
+    if (onDragEnd === undefined) return source
+    return {
+      ...source,
+      onDragEnd: (event: ReactDragEvent) => {
+        onDragEnd(event)
+        suppressOnce()
+      },
+    }
+  }
   const cardList = (rows: readonly Row[], group: Group, at: GroupSpot, isOver = false) => (
     <ul className="view-board__cards">
-      {rows.map((row) => (
-        <li
-          key={row.record.path}
-          data-flip-key={row.record.path}
-          className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}`}
-          {...dnd.source(row.record.path, group, at)}
-          {...rowProps(row.record)}
-          // Capture phase so the preview closes ALONGSIDE the drag wiring's own onDragStart rather
-          // than replacing it (YAZ-1244): a card must never hang over a drag.
-          onDragStartCapture={close}
-          onContextMenu={(event) => openCardMenu(event, row)}
-        >
-          {lines.map((line, i) => (
-            <Fragment key={line[0]}>
-              <div className="view-board__line">
-                {line.map((key, item) => (
-                  <Fragment key={key}>
-                    {item > 0 && (
-                      <span className="view-board__dash" aria-hidden>
-                        &ndash;
-                      </span>
-                    )}
-                    {cardItem(key, row)}
-                  </Fragment>
-                ))}
-              </div>
-              {i === 0 && moveChip(row)}
-            </Fragment>
-          ))}
-          {/* An empty `order` leaves a blank card shell with no line to hang the chip under — it still drags, so it still reports. */}
-          {lines.length === 0 && moveChip(row)}
-        </li>
-      ))}
+      {rows.map((row) => {
+        const fallbackOpenSurface = nameKey === undefined
+        return (
+          <li
+            key={row.record.path}
+            data-flip-key={row.record.path}
+            className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}`}
+            {...dragSource(row, group, at)}
+            {...rowProps(row.record)}
+            role={fallbackOpenSurface ? 'button' : undefined}
+            tabIndex={fallbackOpenSurface ? 0 : undefined}
+            aria-label={fallbackOpenSurface ? `Open ${row.record.name} in right panel` : undefined}
+            onClick={() => openCard(row)}
+            onKeyDown={(event) => {
+              if (!fallbackOpenSurface || event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
+              event.preventDefault()
+              openCard(row)
+            }}
+            // Capture phase so the preview closes ALONGSIDE the drag wiring's own onDragStart rather
+            // than replacing it (YAZ-1244): a card must never hang over a drag.
+            onDragStartCapture={close}
+            onContextMenu={(event) => openCardMenu(event, row)}
+          >
+            {lines.map((line, i) => (
+              <Fragment key={line[0]}>
+                <div className="view-board__line">
+                  {line.map((key, item) => (
+                    <Fragment key={key}>
+                      {item > 0 && (
+                        <span className="view-board__dash" aria-hidden>
+                          &ndash;
+                        </span>
+                      )}
+                      {cardItem(key, row)}
+                    </Fragment>
+                  ))}
+                </div>
+                {i === 0 && moveChip(row)}
+              </Fragment>
+            ))}
+            {/* An empty `order` leaves a blank card shell with no line to hang the chip under — it still drags, so it still reports. */}
+            {lines.length === 0 && moveChip(row)}
+          </li>
+        )
+      })}
       {isOver && <li className="view-board__placeholder" aria-hidden />}
     </ul>
   )
@@ -311,6 +357,7 @@ export function BoardView({
           x={menu.x}
           y={menu.y}
           path={menu.path}
+          onOpenRight={onOpenFileRight}
           onOpenBackground={onOpenFileBackground}
           onNotice={onNotice}
           onClose={() => setMenu(null)}

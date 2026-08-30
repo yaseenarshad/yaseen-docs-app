@@ -349,6 +349,26 @@ export const SIDEBAR_MIN_W = 180
 export const SIDEBAR_MAX_W = 520
 export const SIDEBAR_DEFAULT_W = 260
 
+/** Per-window right-panel geometry. Width persists even while the panel is hidden. */
+export const RIGHT_PANEL_MIN_W = 320
+export const RIGHT_PANEL_MAX_W = 720
+export const RIGHT_PANEL_DEFAULT_W = 440
+/** Main workspace width reserved before the right panel switches to temporary overlay mode. */
+export const MAIN_WORKSPACE_MIN_W = 360
+
+export interface RightPanelIdentity {
+  open: boolean
+  width: number
+  /** Absolute page paths in visible header order; disjoint from the window's main `tabs`. */
+  items: string[]
+  /** The one expanded right item, or null when all headers are collapsed. */
+  expanded: string | null
+}
+
+export function defaultRightPanelIdentity(): RightPanelIdentity {
+  return { open: false, width: RIGHT_PANEL_DEFAULT_W, items: [], expanded: null }
+}
+
 /** Global content-width presets, ordered exactly as shown in Settings (YAZ-1176). */
 export const CONTENT_WIDTHS = ['narrow', 'medium', 'full'] as const
 export type ContentWidth = (typeof CONTENT_WIDTHS)[number]
@@ -448,6 +468,7 @@ export interface WindowEntry {
   root: string | null
   file: string | null
   tabs: string[]
+  rightPanel: RightPanelIdentity
   /** Whether this window's sidebar is hidden (YAZ-1280); independent from every other window. */
   sidebarCollapsed: boolean
   bounds: WindowBounds
@@ -717,6 +738,7 @@ export interface WindowIdentity {
   file: string | null
   /** Open tabs left→right (GRO-2232); `file` is the active one (same invariants as `WindowEntry.tabs`). */
   tabs: string[]
+  rightPanel: RightPanelIdentity
   /** Whether this window's sidebar is hidden (YAZ-1280). */
   sidebarCollapsed: boolean
 }
@@ -756,7 +778,7 @@ export interface WindowApi {
    * re-enforces the tabs invariant against the entry as written (GRO-2232): a non-null `file`
    * missing from `tabs` is prepended; `file: null` clears `tabs`.
    */
-  setIdentity(patch: Partial<Pick<WindowIdentity, 'root' | 'file' | 'tabs' | 'sidebarCollapsed'>>): Promise<void>
+  setIdentity(patch: Partial<Pick<WindowIdentity, 'root' | 'file' | 'tabs' | 'rightPanel' | 'sidebarCollapsed'>>): Promise<void>
   open(opts: OpenWindowOptions): Promise<void>
   /** `⌘⇧N`: same folder, same file, new window (GRO-2167). */
   duplicate(): Promise<void>

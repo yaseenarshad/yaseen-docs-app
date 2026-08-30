@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, MAX_TOPICS_EXPANDED_PAGES, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, addRecentRoot, defaultAppState, type AppState, type WindowEntry } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, MAX_RECENT_ROOTS, MAX_TOPICS_EXPANDED_PAGES, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, addRecentRoot, defaultAppState, defaultRightPanelIdentity, type AppState, type WindowEntry } from '@shared/types'
 import { createStore } from './store'
 
 // `rename` is the atomic write's last step: one rename = one write to disk.
@@ -28,7 +28,7 @@ afterEach(async () => {
 const seed = (v: unknown) => writeFile(file, typeof v === 'string' ? v : JSON.stringify(v))
 const onDisk = async (): Promise<AppState> => JSON.parse(await readFile(file, 'utf8')) as AppState
 const bounds = { x: 1, y: 2, width: 300, height: 200 }
-const win = (id: string, extra: Partial<WindowEntry> = {}): WindowEntry => ({ id, root: null, file: null, tabs: [], sidebarCollapsed: false, bounds, ...extra })
+const win = (id: string, extra: Partial<WindowEntry> = {}): WindowEntry => ({ id, root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, bounds, ...extra })
 /** A seed with every field valid, to vary one field at a time. */
 const valid = (over: Record<string, unknown> = {}) => ({ ...defaultAppState(), ...over })
 
@@ -239,6 +239,38 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().windows[0].tabs).toEqual(['/v/a.md'])
   })
 
+  it('rightPanel: a legacy entry gains the closed empty default without changing state version 1', async () => {
+    const legacy = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], bounds }
+    await seed(valid({ windows: [legacy] }))
+    expect(createStore(file).get().windows[0]).toMatchObject({
+      rightPanel: { open: false, width: 440, items: [], expanded: null },
+    })
+  })
+
+  it('rightPanel: normalizes geometry, absolute unique items, expanded membership, and exclusive ownership', async () => {
+    await seed(valid({
+      windows: [{
+        ...win('w1', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }),
+        rightPanel: {
+          open: true,
+          width: 9_999,
+          items: ['/v/a.md', '/v/b.md', 'relative.md', '/v/b.md'],
+          expanded: '/v/a.md',
+        },
+      }],
+    }))
+    expect(createStore(file).get().windows[0]).toMatchObject({
+      rightPanel: { open: true, width: 720, items: ['/v/b.md'], expanded: null },
+    })
+
+    await seed(valid({
+      windows: [{ ...win('w2'), rightPanel: { open: 'yes', width: Number.NaN, items: 'nope', expanded: 3 } }],
+    }))
+    expect(createStore(file).get().windows[0]).toMatchObject({
+      rightPanel: { open: false, width: 440, items: [], expanded: null },
+    })
+  })
+
   it('folders: each folder entry falls back field by field; junk folds are dropped and capped', async () => {
     await seed(
       valid({
@@ -441,7 +473,7 @@ describe('createStore: mutations', () => {
     store.upsertWindow(win('w1'))
     store.upsertWindow(win('w2', { root: '/v' }))
     store.upsertWindow(win('w1', { root: '/other', file: '/other/a.md' }))
-    expect(store.get().windows).toEqual([win('w1', { root: '/other', file: '/other/a.md' }), win('w2', { root: '/v' })])
+    expect(store.get().windows).toEqual([win('w1', { root: '/other', file: '/other/a.md', tabs: ['/other/a.md'] }), win('w2', { root: '/v' })])
     store.removeWindow('w1')
     expect(store.get().windows).toEqual([win('w2', { root: '/v' })])
     store.removeWindow('nope')
@@ -471,6 +503,18 @@ describe('createStore: mutations', () => {
       store.renamePath(OLD, NEW)
       expect(store.get().windows[0].tabs).toEqual([NEW])
       expect(store.get().windows[0].file).toBe(NEW)
+    })
+
+    it('remaps right-panel items and expanded while preserving order', () => {
+      const store = createStore(file)
+      store.upsertWindow({
+        ...win('w1', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }),
+        rightPanel: { open: true, width: 440, items: [OLD, '/v/x.md'], expanded: OLD },
+      } as unknown as WindowEntry)
+      store.renamePath(OLD, NEW)
+      expect(store.get().windows[0]).toMatchObject({
+        rightPanel: { open: true, width: 440, items: [NEW, '/v/x.md'], expanded: NEW },
+      })
     })
 
     it('remaps folders: lastFile, topicsExpanded pages, fold keys and baseGroups keys (base rename)', () => {
@@ -534,6 +578,26 @@ describe('createStore: mutations', () => {
         win('w1', { root: '/v', file: '/v/x.md', tabs: ['/v/x.md'] }),
         win('w2', { root: '/other', file: '/other/a.md', tabs: ['/other/a.md'] }),
       ])
+    })
+
+    it('drops deleted right items and promotes the next item, then the previous, then null', () => {
+      const store = createStore(file)
+      store.upsertWindow({
+        ...win('w1', { root: '/v', file: '/v/main.md', tabs: ['/v/main.md'] }),
+        rightPanel: { open: true, width: 440, items: ['/v/left.md', GONE, '/v/right.md'], expanded: GONE },
+      } as unknown as WindowEntry)
+      store.removePath(GONE)
+      expect(store.get().windows[0].rightPanel).toEqual({
+        open: true,
+        width: 440,
+        items: ['/v/left.md', '/v/right.md'],
+        expanded: '/v/right.md',
+      })
+
+      store.removePath('/v/right.md')
+      expect(store.get().windows[0].rightPanel.expanded).toBe('/v/left.md')
+      store.removePath('/v/left.md')
+      expect(store.get().windows[0].rightPanel).toEqual({ open: true, width: 440, items: [], expanded: null })
     })
 
     it('leaves window ROOT alone — the renderer onRootMissing probe owns that repair', () => {

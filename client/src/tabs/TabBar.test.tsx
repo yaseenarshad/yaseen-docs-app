@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { TabBar, type TabBarProps } from './TabBar'
+import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 
 // The OS-action items call the bridge (YAZ-963): stub the verbs, keep BridgeRequestError real.
 vi.mock('../api', async (importOriginal) => ({
@@ -131,6 +132,57 @@ describe('TabBar drag-to-reorder (I3, GRO-2235)', () => {
     fire(tabAt(el, 1), 'dragend')
     expect(el.querySelector('.tabbar__tab--dragging')).toBeNull()
   })
+
+  it('writes the private main-owner payload instead of exposing a text/plain path', () => {
+    const data = {
+      types: [] as string[],
+      effectAllowed: 'none',
+      setData: vi.fn(),
+      getData: vi.fn(() => ''),
+    } as unknown as DataTransfer
+    const el = mount({ tabs: TABS, active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), ...noNav })
+    const event = new MouseEvent('dragstart', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'dataTransfer', { value: data })
+    act(() => void tabAt(el, 0).dispatchEvent(event))
+    expect(data.setData).toHaveBeenCalledExactlyOnceWith(
+      WORKSPACE_PAGE_MIME,
+      JSON.stringify({ path: '/v/a.md', owner: 'main' }),
+    )
+    expect(data.effectAllowed).toBe('move')
+  })
+
+  it('accepts one validated right-owner drop at a before/end insertion slot and ignores foreign data', () => {
+    const onDropPage = vi.fn()
+    const el = mount({ tabs: TABS, active: '/v/a.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), onDropPage, ...noNav })
+    const fireData = (target: Element, type: string, data: DataTransfer, clientX = 0): MouseEvent => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX })
+      Object.defineProperty(event, 'dataTransfer', { value: data })
+      act(() => void target.dispatchEvent(event))
+      return event
+    }
+    const data = {
+      types: [WORKSPACE_PAGE_MIME],
+      effectAllowed: 'move',
+      dropEffect: 'none',
+      getData: vi.fn(() => JSON.stringify({ path: '/v/right.md', owner: 'right' })),
+      setData: vi.fn(),
+    } as unknown as DataTransfer
+    expect(fireData(tabAt(el, 1), 'dragover', data, -5).defaultPrevented).toBe(true)
+    expect(tabAt(el, 1).classList.contains('tabbar__tab--insert-before')).toBe(true)
+    fireData(tabAt(el, 1), 'drop', data, -5)
+    expect(onDropPage).toHaveBeenCalledExactlyOnceWith({ path: '/v/right.md', owner: 'right' }, 1)
+
+    fireData(tabAt(el, 2), 'dragover', data, 5)
+    expect(tabAt(el, 2).classList.contains('tabbar__tab--insert-after')).toBe(true)
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(el.querySelector('.tabbar__tab--insert-after')).toBeNull()
+    expect(onDropPage).toHaveBeenCalledTimes(1)
+
+    const foreign = { ...data, types: ['text/plain'] } as unknown as DataTransfer
+    expect(fireData(el.querySelector('.tabbar')!, 'dragover', foreign).defaultPrevented).toBe(false)
+    fireData(el.querySelector('.tabbar')!, 'drop', foreign)
+    expect(onDropPage).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('TabBar keeps the active tab in view (I3 overflow polish)', () => {
@@ -198,6 +250,16 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     act(() => items(el)[0]?.click())
     expect(onShowInSidebar).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md')
     expect(onActivate).not.toHaveBeenCalled()
+    expect(menuOf(el)).toBeNull()
+  })
+
+  it('Move to right panel transfers the exact tab and closes the menu', () => {
+    const onMoveToRight = vi.fn()
+    const el = mount({ ...props, onMoveToRight })
+    rightClick(tabAt(el, 1))
+    const move = items(el).find((item) => item.textContent === 'Move to right panel')
+    act(() => move?.click())
+    expect(onMoveToRight).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md')
     expect(menuOf(el)).toBeNull()
   })
 

@@ -8,6 +8,9 @@ import {
   MAX_RECENT_ROOTS,
   MAX_TOPICS_EXPANDED_PAGES,
   NEW_NOTE_LOCATIONS,
+  RIGHT_PANEL_DEFAULT_W,
+  RIGHT_PANEL_MAX_W,
+  RIGHT_PANEL_MIN_W,
   SIDEBAR_DEFAULT_W,
   SIDEBAR_MAX_W,
   SIDEBAR_MIN_W,
@@ -16,6 +19,7 @@ import {
   addRecentRoot,
   defaultAppState,
   defaultFolderState,
+  defaultRightPanelIdentity,
   isSidebarLens,
   isValidNewNoteFolder,
   type AppState,
@@ -23,6 +27,7 @@ import {
   type FolderState,
   type NewNoteLocation,
   type RecentRoots,
+  type RightPanelIdentity,
   type SettingsState,
   type SidebarLens,
   type Theme,
@@ -48,7 +53,7 @@ export interface Store {
   setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded'>>): void
   setFolds(root: string, file: string, keys: readonly string[]): void
   setBaseGroups(root: string, key: string, collapsed: readonly string[]): void
-  upsertWindow(entry: WindowEntry): void
+  upsertWindow(entry: Omit<WindowEntry, 'rightPanel'> & Partial<Pick<WindowEntry, 'rightPanel'>>): void
   removeWindow(id: string): void
   /**
    * Repair every stored reference to a just-renamed file OR directory (Links E1 GRO-2194,
@@ -87,6 +92,7 @@ const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Num
 const isStringOrNull = (v: unknown): v is string | null => v === null || typeof v === 'string'
 const isHexColour = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v)
 const clampSidebarWidth = (w: number): number => Math.min(SIDEBAR_MAX_W, Math.max(SIDEBAR_MIN_W, w))
+const clampRightPanelWidth = (w: number): number => Math.min(RIGHT_PANEL_MAX_W, Math.max(RIGHT_PANEL_MIN_W, w))
 
 export const isRecentRoots = (v: unknown): v is RecentRoots =>
   Array.isArray(v) && v.every((x) => isRecord(x) && typeof x.path === 'string' && isFiniteNumber(x.lastOpened))
@@ -123,8 +129,8 @@ export const isSettings = (v: unknown): v is SettingsState => isRecord(v) && SET
 export const isWindowBounds = (v: unknown): v is WindowBounds =>
   isRecord(v) && isFiniteNumber(v.x) && isFiniteNumber(v.y) && isFiniteNumber(v.width) && isFiniteNumber(v.height)
 
-/** Core v1 shape; additive `tabs` and `sidebarCollapsed` fields are repaired separately. */
-type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { tabs?: unknown; sidebarCollapsed?: unknown }
+/** Core v1 shape; additive window-identity fields are repaired separately. */
+type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { tabs?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown }
 const isStoredWindowEntry = (v: unknown): v is StoredWindowEntry =>
   isRecord(v) && typeof v.id === 'string' && isStringOrNull(v.root) && isStringOrNull(v.file) && isWindowBounds(v.bounds)
 
@@ -147,6 +153,24 @@ export function normalizeTabs(tabs: readonly string[], file: string | null): str
   return out
 }
 
+/** Repair the additive v1 right-panel shape and enforce one editable owner per window. */
+export function normalizeRightPanel(raw: unknown, tabs: readonly string[]): RightPanelIdentity {
+  if (!isRecord(raw)) return defaultRightPanelIdentity()
+  const tabSet = new Set(tabs)
+  const seen = new Set<string>()
+  const items = (Array.isArray(raw.items) ? raw.items : []).filter((value): value is string => {
+    if (typeof value !== 'string' || !isAbsolute(value) || tabSet.has(value) || seen.has(value)) return false
+    seen.add(value)
+    return true
+  })
+  return {
+    open: raw.open === true,
+    width: isFiniteNumber(raw.width) ? clampRightPanelWidth(raw.width) : RIGHT_PANEL_DEFAULT_W,
+    items,
+    expanded: typeof raw.expanded === 'string' && items.includes(raw.expanded) ? raw.expanded : null,
+  }
+}
+
 function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean): WindowEntry[] {
   if (!Array.isArray(raw)) return []
   const seen = new Set<string>()
@@ -157,8 +181,9 @@ function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean): WindowE
     // Junk `tabs` elements (non-strings, relative paths) drop; a missing/invalid list repairs from `file`.
     const rawTabs: unknown = (w as { tabs?: unknown }).tabs
     const tabs = normalizeTabs(Array.isArray(rawTabs) ? rawTabs.filter((t): t is string => typeof t === 'string' && isAbsolute(t)) : [], w.file)
+    const rightPanel = normalizeRightPanel((w as { rightPanel?: unknown }).rightPanel, tabs)
     const sidebarCollapsed = typeof w.sidebarCollapsed === 'boolean' ? w.sidebarCollapsed : legacySidebarCollapsed
-    out.push({ id: w.id, root: w.root, file: w.file, tabs, sidebarCollapsed, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
+    out.push({ id: w.id, root: w.root, file: w.file, tabs, rightPanel, sidebarCollapsed, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
   }
   return out
 }
@@ -332,7 +357,9 @@ export function createStore(filePath: string): Store {
     },
 
     upsertWindow(entry) {
-      const windows = state.windows.some((w) => w.id === entry.id) ? state.windows.map((w) => (w.id === entry.id ? entry : w)) : [...state.windows, entry]
+      const tabs = normalizeTabs(entry.tabs, entry.file)
+      const normalized: WindowEntry = { ...entry, tabs, rightPanel: normalizeRightPanel(entry.rightPanel, tabs) }
+      const windows = state.windows.some((w) => w.id === entry.id) ? state.windows.map((w) => (w.id === entry.id ? normalized : w)) : [...state.windows, normalized]
       commit({ ...state, windows })
     },
 
@@ -367,7 +394,18 @@ export function createStore(filePath: string): Store {
       const windows = state.windows.map((w) => {
         const root = w.root === null ? null : remap(w.root)
         const file = w.file === null ? null : remap(w.file)
-        return { ...w, root, file, tabs: normalizeTabs(w.tabs.map(remap), file) }
+        const tabs = normalizeTabs(w.tabs.map(remap), file)
+        return {
+          ...w,
+          root,
+          file,
+          tabs,
+          rightPanel: normalizeRightPanel({
+            ...w.rightPanel,
+            items: w.rightPanel.items.map(remap),
+            expanded: w.rightPanel.expanded === null ? null : remap(w.rightPanel.expanded),
+          }, tabs),
+        }
       })
       const recents = state.recents.map((r) => ({ ...r, path: remap(r.path) }))
       const folders = Object.fromEntries(
@@ -416,7 +454,7 @@ export function createStore(filePath: string): Store {
         let file = w.file
         if (file !== null && gone(file)) {
           changed = true
-          // The active file itself went. Pick an HEIR with the same ladder useTabs uses —
+          // The active file itself went. Pick an HEIR with the same ladder useWorkspace uses —
           // right neighbour, else left — rather than nulling `file`: normalizeTabs returns []
           // for a null file, which would throw away the window's SURVIVING tabs. The renderer
           // picks the same heir a moment later and mirrors it down, but the store is also the
@@ -424,7 +462,22 @@ export function createStore(filePath: string): Store {
           const i = w.tabs.indexOf(file)
           file = w.tabs.slice(i + 1).find((t) => !gone(t)) ?? [...w.tabs.slice(0, i)].reverse().find((t) => !gone(t)) ?? null
         }
-        return { ...w, file, tabs: normalizeTabs(tabs, file) }
+        const normalizedTabs = normalizeTabs(tabs, file)
+        const rightItems = drop(w.rightPanel.items)
+        let expanded = w.rightPanel.expanded
+        if (expanded !== null && gone(expanded)) {
+          changed = true
+          const i = w.rightPanel.items.indexOf(expanded)
+          expanded = w.rightPanel.items.slice(i + 1).find((item) => !gone(item))
+            ?? [...w.rightPanel.items.slice(0, i)].reverse().find((item) => !gone(item))
+            ?? null
+        }
+        return {
+          ...w,
+          file,
+          tabs: normalizedTabs,
+          rightPanel: normalizeRightPanel({ ...w.rightPanel, items: rightItems, expanded }, normalizedTabs),
+        }
       })
       const recents = state.recents.filter((r) => !gone(r.path))
       if (recents.length !== state.recents.length) changed = true

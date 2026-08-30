@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, type AppState, type IndexRecord, type SidebarLens, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type SidebarLens, type WindowIdentity } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -35,10 +35,21 @@ interface SidebarStubProps {
   onCreateHome: () => void
 }
 
-const captured = vi.hoisted(() => ({ sidebar: null as SidebarStubProps | null }))
+const captured = vi.hoisted(() => ({
+  sidebar: null as SidebarStubProps | null,
+  editorOpeners: [] as { path: string | null; open: (path: string) => void }[],
+}))
 
 vi.mock('./editor/Editor', () => ({
-  Editor: ({ root, path }: { root: string; path: string | null }) => <div data-editor data-root={root} data-path={path ?? ''} />,
+  Editor: ({ root, path, onOpenFile, onOpenFileBackground }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void }) => {
+    captured.editorOpeners.push({ path, open: onOpenFile })
+    return (
+      <div data-editor data-root={root} data-path={path ?? ''}>
+        <button type="button" data-open-right-current onClick={() => onOpenFile('/v/c.md')} />
+        <button type="button" data-open-right-background onClick={() => onOpenFileBackground?.('/v/d.md')} />
+      </div>
+    )
+  },
 }))
 vi.mock('./sidebar/Sidebar', () => ({
   SidebarPanelIcon: () => null,
@@ -53,10 +64,9 @@ import { App, LINK_NOTICE_MS } from './App'
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 /** The full `window.yaseenDocs` surface the App tree touches, all observable. `files` backs readFile/writeFile (the E1c rewrite path). */
-type TestWindowIdentity = Omit<WindowIdentity, 'sidebarCollapsed'> & Partial<Pick<WindowIdentity, 'sidebarCollapsed'>>
+type IdentityFixture = Omit<WindowIdentity, 'rightPanel' | 'sidebarCollapsed'> & Partial<Pick<WindowIdentity, 'rightPanel' | 'sidebarCollapsed'>>
 
-function installBridge(state: AppState, identity: TestWindowIdentity, files: Record<string, { content: string; mtime: number }> = {}) {
-  const windowIdentity: WindowIdentity = { sidebarCollapsed: false, ...identity }
+function installBridge(state: AppState, identity: IdentityFixture, files: Record<string, { content: string; mtime: number }> = {}) {
   const stateChanged = new Set<(next: AppState) => void>()
   const menuOpenRoot = new Set<(path: string) => void>()
   const menuSearch = new Set<() => void>()
@@ -66,7 +76,7 @@ function installBridge(state: AppState, identity: TestWindowIdentity, files: Rec
   const menuPrevTab = new Set<() => void>()
   const linkOpenFile = new Set<(path: string) => void>()
   const linkNotice = new Set<(message: string) => void>()
-  const fileRenamed = new Set<(ev: { oldPath: string; newPath: string }) => void>()
+  const fileRenamed = new Set<(ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void>()
   const fileDeleted = new Set<(ev: { path: string; kind: 'file' | 'dir' }) => void>()
   const menuSub = (set: Set<() => void>) =>
     vi.fn((l: () => void) => {
@@ -114,7 +124,11 @@ function installBridge(state: AppState, identity: TestWindowIdentity, files: Rec
       }),
     },
     window: {
-      identity: vi.fn(async () => windowIdentity),
+      identity: vi.fn(async (): Promise<WindowIdentity> => ({
+        ...identity,
+        rightPanel: identity.rightPanel ?? defaultRightPanelIdentity(),
+        sidebarCollapsed: identity.sidebarCollapsed ?? false,
+      })),
       setIdentity: vi.fn(async () => undefined),
       open: vi.fn(),
       duplicate: vi.fn(),
@@ -148,7 +162,7 @@ function installBridge(state: AppState, identity: TestWindowIdentity, files: Rec
     file: {
       rename: vi.fn(async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => ({ oldPath, newPath })),
       repairRename: vi.fn(async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => ({ oldPath, newPath, kind: 'file' as const })),
-      onRenamed: vi.fn((l: (ev: { oldPath: string; newPath: string }) => void) => {
+      onRenamed: vi.fn((l: (ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void) => {
         fileRenamed.add(l)
         return () => fileRenamed.delete(l)
       }),
@@ -186,7 +200,7 @@ function installBridge(state: AppState, identity: TestWindowIdentity, files: Rec
     emitPrevTab: () => menuPrevTab.forEach((l) => l()),
     emitLinkOpenFile: (path: string) => linkOpenFile.forEach((l) => l(path)),
     emitLinkNotice: (message: string) => linkNotice.forEach((l) => l(message)),
-    emitFileRenamed: (oldPath: string, newPath: string) => fileRenamed.forEach((l) => l({ oldPath, newPath })),
+    emitFileRenamed: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => fileRenamed.forEach((l) => l({ oldPath, newPath, kind })),
     emitFileDeleted: (path: string, kind: 'file' | 'dir' = 'file') => fileDeleted.forEach((l) => l({ path, kind })),
   }
 }
@@ -196,7 +210,7 @@ let container: HTMLElement | null = null
 
 async function mount(
   state: AppState,
-  identity: TestWindowIdentity,
+  identity: IdentityFixture,
   files: Record<string, { content: string; mtime: number }> = {},
   /** Runs BEFORE the first render, for stubs the mount itself consumes (the index, the `.yaseendocs` probe). */
   tweak?: (b: ReturnType<typeof installBridge>) => void,
@@ -225,10 +239,12 @@ afterEach(() => {
   container?.remove()
   container = null
   captured.sidebar = null
+  captured.editorOpeners = []
   history.replaceState(null, '', '/')
   delete document.documentElement.dataset.theme
   document.getElementById(CREPE_THEME_STYLE_ID)?.remove()
   delete (window as unknown as Record<string, unknown>).yaseenDocs
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 })
   vi.restoreAllMocks()
 })
 
@@ -304,7 +320,10 @@ describe('App openRoot (C3, GRO-2165)', () => {
     expect(bridge.state.pushRecent).toHaveBeenCalledWith('/w')
     // The window entry records the switch (D6, tabs rule 13): ONE write clears root's file+tabs,
     // then ONE {tabs, file} write restores the folder's remembered file.
-    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [] }], [{ tabs: ['/w/b.md'], file: '/w/b.md' }]])
+    expect(bridge.window.setIdentity.mock.calls).toEqual([
+      [{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity() }],
+      [{ tabs: ['/w/b.md'], file: '/w/b.md', rightPanel: defaultRightPanelIdentity() }],
+    ])
   })
 
   it('switching to a folder with no remembered last file leaves no file open', async () => {
@@ -312,7 +331,7 @@ describe('App openRoot (C3, GRO-2165)', () => {
     await act(async () => emitOpenRoot('/w'))
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('')
     expect(location.hash).toBe('')
-    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [] }]])
+    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity() }]])
   })
 
   it('a dead recent chosen from the menu drops the MRU entry and leaves the window on its folder', async () => {
@@ -352,7 +371,7 @@ describe('App deep links (E1, GRO-2171)', () => {
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('/v/sub/linked.md')
     expect(location.hash).toBe('#/v/sub/linked.md')
     expect(bridge.state.setFolder).toHaveBeenCalledWith('/v', { lastFile: '/v/sub/linked.md' })
-    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ tabs: ['/v/sub/linked.md'], file: '/v/sub/linked.md' })
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ tabs: ['/v/sub/linked.md'], file: '/v/sub/linked.md', rightPanel: defaultRightPanelIdentity() })
   })
 
   it('link:notice shows the transient banner, which dismisses itself after LINK_NOTICE_MS', async () => {
@@ -380,7 +399,7 @@ describe('App rename push (Links E1, GRO-2194)', () => {
     expect(location.hash).toBe('#/v/C.md')
     expect(document.title).toBe('C — v')
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
-    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ tabs: ['/v/C.md', '/v/x.md'], file: '/v/C.md' })
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ tabs: ['/v/C.md', '/v/x.md'], file: '/v/C.md', rightPanel: defaultRightPanelIdentity() })
   })
 
   it('a rename of a file this window does not show changes nothing (no identity write)', async () => {
@@ -388,6 +407,31 @@ describe('App rename push (Links E1, GRO-2194)', () => {
     vi.mocked(bridge.window.setIdentity).mockClear()
     await act(async () => emitFileRenamed('/other/B.md', '/other/C.md'))
     expect(bridge.window.setIdentity).not.toHaveBeenCalled()
+  })
+
+  it('carries before one workspace repair and follows right-panel file/directory paths', async () => {
+    const order: string[] = []
+    const carry = vi.spyOn(continuity, 'carryEditorAcrossRename').mockImplementation(() => void order.push('carry'))
+    const { bridge, el, emitFileRenamed } = await mount(defaultAppState(), {
+      id: 'w1',
+      root: '/v',
+      file: '/v/main.md',
+      tabs: ['/v/main.md'],
+      rightPanel: { open: true, width: 440, items: ['/v/Docs/a.md'], expanded: '/v/Docs/a.md' },
+    })
+    vi.mocked(bridge.window.setIdentity).mockImplementation(async () => void order.push('workspace'))
+    await act(async () => emitFileRenamed('/v/Docs/a.md', '/v/Docs/b.md', 'file'))
+    expect(order).toEqual(['carry', 'workspace'])
+    expect(el.querySelector('.right-panel__header')?.textContent).toContain('b')
+
+    await act(async () => emitFileRenamed('/v/Docs', '/v/Notes', 'dir'))
+    expect(el.querySelector('.right-panel__header')?.getAttribute('title')).toBe('/v/Notes/b.md')
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({
+      tabs: ['/v/main.md'],
+      file: '/v/main.md',
+      rightPanel: { open: true, width: 440, items: ['/v/Notes/b.md'], expanded: '/v/Notes/b.md' },
+    })
+    carry.mockRestore()
   })
 })
 
@@ -587,7 +631,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(stripLabels(el)).toEqual(['a', 'b'])
     expect(activeLabel(el)).toBe('a') // activation (and so focus) never moves
     expect(layers(el)).toEqual([['/v/a.md', false]]) // b's editor lazy-mounts on first activation
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/a.md' })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
   })
 
   it('dragging a tab reorders the strip through the reducer and mirrors ONE {tabs, file} write (I3)', async () => {
@@ -598,7 +642,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => void tabB.dispatchEvent(new MouseEvent('drop', { bubbles: true, cancelable: true, clientX: 5 })))
     expect(stripLabels(el)).toEqual(['b', 'a'])
     expect(activeLabel(el)).toBe('a') // reorder never activates
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/b.md', '/v/a.md'], file: '/v/a.md' })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/b.md', '/v/a.md'], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
   })
 
   it('a sidebar click opens in the CURRENT tab: the active tab is replaced in place and its editor unmounts (rule 4)', async () => {
@@ -607,7 +651,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(stripLabels(el)).toEqual(['b', 'x'])
     expect(layers(el)).toEqual([['/v/b.md', false]]) // a's editor is GONE (→ autosave flush on unmount)
     // ONE explicit identity write carries BOTH halves — never the legacy {file}-only patch.
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/b.md', '/v/x.md'], file: '/v/b.md' })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/b.md', '/v/x.md'], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
     expect(bridge.state.setFolder).toHaveBeenLastCalledWith('/v', { lastFile: '/v/b.md' })
   })
 
@@ -619,7 +663,7 @@ describe('App tabs (I2, GRO-2234)', () => {
       ['/v/a.md', true],
       ['/v/b.md', false],
     ])
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/b.md' })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
     // Title and hash follow the ACTIVE tab (rule 12).
     expect(document.title).toBe('b — v')
     expect(location.hash).toBe('#/v/b.md')
@@ -656,7 +700,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => emitCloseTab())
     expect(stripLabels(el)).toEqual([])
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('') // empty state renders
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: [], file: null })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: [], file: null, rightPanel: defaultRightPanelIdentity() })
     expect(bridge.window.closeSelf).not.toHaveBeenCalled() // the window stays alive
     act(() => emitCloseTab())
     expect(bridge.window.closeSelf).toHaveBeenCalledTimes(1) // zero tabs: the WINDOW closes
@@ -691,6 +735,142 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => captured.sidebar?.onFileMissing())
     expect(stripLabels(el)).toEqual(['b'])
     expect(activeLabel(el)).toBe('b')
+  })
+})
+
+describe('App right-panel shell (YAZ-1272)', () => {
+  it('restores the shell and switches between split and overlay from available width', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1400 })
+    const identity = {
+      id: 'w1',
+      root: '/v',
+      file: '/v/a.md',
+      tabs: ['/v/a.md'],
+      rightPanel: { open: true, width: 440, items: ['/v/b.md'], expanded: '/v/b.md' },
+    }
+    const { el } = await mount(defaultAppState(), identity)
+    expect(el.querySelector('[aria-label="Right panel"]')).not.toBeNull()
+    expect(el.querySelector('.right-panel--overlay')).toBeNull()
+    expect(el.querySelector('.right-panel__header')?.textContent).toBe('b')
+    act(() => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 900 })
+      window.dispatchEvent(new Event('resize'))
+    })
+    expect(el.querySelector('.right-panel--overlay')).not.toBeNull()
+  })
+
+  it('shows the right-edge reopen control when hidden and mirrors one open-state change', async () => {
+    const { bridge, el } = await mount(defaultAppState(), {
+      id: 'w1',
+      root: '/v',
+      file: '/v/a.md',
+      tabs: ['/v/a.md'],
+      rightPanel: defaultRightPanelIdentity(),
+    })
+    const show = el.querySelector<HTMLButtonElement>('[aria-label="Show right panel"]')
+    expect(show).not.toBeNull()
+    act(() => show?.click())
+    expect(el.querySelector('[aria-label="Right panel"]')).not.toBeNull()
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({
+      tabs: ['/v/a.md'],
+      file: '/v/a.md',
+      rightPanel: { ...defaultRightPanelIdentity(), open: true },
+    })
+  })
+
+  it('hosts the existing Editor in retained right layers with right-local plain and background navigation', async () => {
+    const { el } = await mount(defaultAppState(), {
+      id: 'w1',
+      root: '/v',
+      file: '/v/a.md',
+      tabs: ['/v/a.md'],
+      rightPanel: { open: true, width: 440, items: ['/v/b.md'], expanded: '/v/b.md' },
+    })
+    expect(el.querySelectorAll('[data-editor][data-path="/v/a.md"]')).toHaveLength(1)
+    expect(el.querySelectorAll('[data-editor][data-path="/v/b.md"]')).toHaveLength(1)
+    const rightB = el.querySelector<HTMLElement>('[data-testid="right-layer-/v/b.md"]')
+    expect(rightB).not.toBeNull()
+    act(() => rightB?.querySelector<HTMLButtonElement>('[data-open-right-current]')?.click())
+    expect(el.querySelector('[data-testid="right-layer-/v/b.md"]')).toBeNull()
+    expect(el.querySelector('[data-testid="right-layer-/v/c.md"]')).not.toBeNull()
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Back in right panel"]')?.click())
+    expect(el.querySelector('[data-testid="right-layer-/v/b.md"]')).not.toBeNull()
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Forward in right panel"]')?.click())
+    const rightC = el.querySelector<HTMLElement>('[data-testid="right-layer-/v/c.md"]')
+    expect(rightC).not.toBeNull()
+    act(() => rightC?.querySelector<HTMLButtonElement>('[data-open-right-background]')?.click())
+    expect([...el.querySelectorAll('.right-panel__header')].map((header) => header.textContent)).toEqual(['c', 'd'])
+    expect(el.querySelector('[data-testid="right-layer-/v/d.md"]')).toBeNull()
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.right-panel__header')][1]?.click())
+    expect(el.querySelector('[data-testid="right-layer-/v/c.md"]')?.classList.contains('right-panel__editor-layer--hidden')).toBe(true)
+    expect(el.querySelector('[data-testid="right-layer-/v/d.md"]')?.classList.contains('right-panel__editor-layer--hidden')).toBe(false)
+  })
+
+  it('keeps each retained right editor navigation callback stable across header switches', async () => {
+    captured.editorOpeners = []
+    const { el } = await mount(defaultAppState(), {
+      id: 'w1',
+      root: '/v',
+      file: '/v/a.md',
+      tabs: ['/v/a.md'],
+      rightPanel: { open: true, width: 440, items: ['/v/b.md', '/v/c.md'], expanded: '/v/b.md' },
+    })
+    const before = captured.editorOpeners.filter((entry) => entry.path === '/v/b.md').at(-1)?.open
+    expect(before).toBeDefined()
+
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.right-panel__header')][1]?.click())
+
+    const after = captured.editorOpeners.filter((entry) => entry.path === '/v/b.md').at(-1)?.open
+    expect(after).toBe(before)
+  })
+
+  it('does not rerender retained editor trees when only a right header collapses or expands', async () => {
+    captured.editorOpeners = []
+    const { el } = await mount(defaultAppState(), {
+      id: 'w1',
+      root: '/v',
+      file: '/v/a.md',
+      tabs: ['/v/a.md'],
+      rightPanel: { open: true, width: 440, items: ['/v/b.md'], expanded: '/v/b.md' },
+    })
+    const count = (path: string) => captured.editorOpeners.filter((entry) => entry.path === path).length
+    const before = { main: count('/v/a.md'), right: count('/v/b.md') }
+
+    const header = el.querySelector<HTMLButtonElement>('.right-panel__header')!
+    act(() => header.click())
+    expect({ main: count('/v/a.md'), right: count('/v/b.md') }).toEqual(before)
+
+    act(() => header.click())
+    expect({ main: count('/v/a.md'), right: count('/v/b.md') }).toEqual(before)
+  })
+
+  it('wires the keyboard-equivalent move commands through one-owner workspace transfers', async () => {
+    const { el, bridge } = await mount(defaultAppState(), {
+      id: 'w1',
+      root: '/v',
+      file: '/v/a.md',
+      tabs: ['/v/a.md', '/v/b.md'],
+      rightPanel: { open: true, width: 440, items: ['/v/c.md'], expanded: '/v/c.md' },
+    })
+    const tabA = el.querySelector<HTMLElement>('[role="tab"][title="/v/a.md"]')?.closest<HTMLElement>('.tabbar__tab')
+    act(() => void tabA?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    const moveToRight = [...el.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Move to right panel')
+    act(() => moveToRight?.click())
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({
+      tabs: ['/v/b.md'],
+      file: '/v/b.md',
+      rightPanel: { open: true, width: 440, items: ['/v/c.md', '/v/a.md'], expanded: '/v/a.md' },
+    })
+
+    const rightC = [...el.querySelectorAll<HTMLElement>('.right-panel__header')].find((item) => item.textContent?.includes('c'))
+    act(() => void rightC?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    const moveToMain = [...el.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Move to main tabs')
+    act(() => moveToMain?.click())
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({
+      tabs: ['/v/b.md', '/v/c.md'],
+      file: '/v/c.md',
+      rightPanel: { open: true, width: 440, items: ['/v/a.md'], expanded: '/v/a.md' },
+    })
   })
 })
 
@@ -775,7 +955,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
   }
   /** A references B by name; R references Docs/N by path — one file case, one folder case. */
   const records = [record('/v/A.md', { links: ['B'] }), record('/v/B.md'), record('/v/R.md', { links: ['Docs/N'] }), record('/v/Docs/N.md')]
-  const identity = (): WindowIdentity => ({ id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
+  const identity = (): IdentityFixture => ({ id: 'w1', root: '/v', file: null, tabs: [] })
   const feed = (b: ReturnType<typeof installBridge>) => b.bridge.index.mockResolvedValue({ root: '/v', records, generatedAt: 1 })
   const sheetText = (el: HTMLElement) => el.querySelector('.confirm__text')?.textContent
   const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
@@ -832,32 +1012,37 @@ describe('App root-missing (C2, GRO-2164)', () => {
     expect(el.querySelector('.welcome__title')?.textContent).toBe('Yaseen Docs')
     expect(el.querySelector('[data-sidebar]')).toBeNull()
     expect(el.querySelector('[data-editor]')).toBeNull()
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [] })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity() })
   })
 })
 
 /**
  * Delete wiring (GRO-2272 `B3-`). The ordering test is the point of this block: retire the
- * editor BEFORE the tab remap, because removing a tab unmounts its editor and the unmount
+ * editor BEFORE the workspace remap, because removing a page unmounts its editor and the unmount
  * flush would write the buffer back to disk, recreating the file that was just trashed.
  */
 describe('in-app delete (GRO-2272)', () => {
-  it('retires the editor BEFORE remapping tabs — asserted by call order, not by reading the code', async () => {
+  it('retires the editor BEFORE remapping the workspace — asserted by call order, not by reading the code', async () => {
     const order: string[] = []
     const retireSpy = vi.spyOn(continuity, 'retireDeletedPath').mockImplementation(() => void order.push('retire'))
     const files = { '/v/a.md': { content: '# a', mtime: 1 }, '/v/b.md': { content: '# b', mtime: 1 } }
-    const b = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] }, files)
+    const b = installBridge(defaultAppState(), {
+      id: 'w1',
+      root: '/v',
+      file: '/v/b.md',
+      tabs: ['/v/b.md'],
+      rightPanel: { open: true, width: 440, items: ['/v/a.md'], expanded: '/v/a.md' },
+    }, files)
     await storage.init()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
     await act(async () => root?.render(<App />))
-    // setIdentity is the tab-model mirror: its first call AFTER the event is the remap.
-    b.bridge.window.setIdentity.mockImplementation(async () => void order.push('tabs'))
+    // setIdentity is the workspace mirror: its first call AFTER the event is the remap.
+    b.bridge.window.setIdentity.mockImplementation(async () => void order.push('workspace'))
     await act(async () => b.emitFileDeleted('/v/a.md'))
     expect(order[0]).toBe('retire')
-    expect(order).toContain('tabs')
-    expect(order.indexOf('retire')).toBeLessThan(order.indexOf('tabs'))
+    expect(order).toEqual(['retire', 'workspace'])
     retireSpy.mockRestore()
   })
 
@@ -913,7 +1098,7 @@ describe('in-app delete (GRO-2272)', () => {
 describe('Home is born on vault open (6C-, YAZ-849)', () => {
   const HOME = '/v/Home.md'
   const DOTFOLDER = '/v/.yaseendocs'
-  const identity = (): WindowIdentity => ({ id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
+  const identity = (): IdentityFixture => ({ id: 'w1', root: '/v', file: null, tabs: [] })
 
   const homeRecord = (): IndexRecord => ({
     path: HOME,

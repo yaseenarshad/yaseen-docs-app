@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
-import { SIDEBAR_MAX_W, SIDEBAR_MIN_W, type SettingsState, type SidebarLens } from '@shared/types'
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
+import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type SettingsState, type SidebarLens } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -28,7 +28,9 @@ import { useEnsureHome } from './sidebar/ensureHome'
 import { Sidebar, SidebarPanelIcon } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
-import { useTabs } from './tabs/useTabs'
+import { RightPanel } from './right-panel/RightPanel'
+import type { PageDrag } from './workspace/pageDrag'
+import { useWorkspace } from './workspace/useWorkspace'
 import { Welcome } from './Welcome'
 
 /** Reflect the open file in the URL (GRO-2069); replaceState keeps Back sane. */
@@ -39,12 +41,37 @@ function syncHash(path: string | null): void {
 /** A can't-open-link notice (E1, GRO-2171) dismisses itself after this long. */
 export const LINK_NOTICE_MS = 4000
 
+// A workspace state change still re-renders App, but unchanged retained editors must not render
+// with it: a folder page's Board runs layout animation after every render, so an unrelated right
+// header click would otherwise remeasure and visibly nudge its cards.
+const RetainedEditor = memo(Editor)
+
+/**
+ * Keeps the current-page navigation function stable for the lifetime of one retained right
+ * editor. Crepe's lifecycle effect depends on this callback; creating it inside App's map would
+ * destroy and rebuild every right-side editor whenever any header expanded or collapsed.
+ */
+function RightWorkspaceEditor({ path, navigate, ...props }: Omit<ComponentProps<typeof Editor>, 'onOpenFile'> & {
+  path: string
+  navigate: (from: string, to: string) => void
+}) {
+  const openFile = useCallback((to: string) => navigate(path, to), [navigate, path])
+  return <RetainedEditor {...props} path={path} onOpenFile={openFile} />
+}
+
 export function App() {
   const [root, setRoot] = useState<string | null>(storage.getRoot)
-  // Tabs (I2, GRO-2234): the renderer-owned tab model, seeded from the boot identity snapshot
+  // Workspace (Tabs I2 + YAZ-966): one renderer-owned model, seeded from the boot identity snapshot
   // (a pasted `#/abs/path.md` URL wins as the active tab — bootTabs). The ACTIVE tab is this
   // window's `file`: title, URL hash and the sidebar highlight all follow it.
-  const { tabs, active: file, mounted, openCurrent, openBackground, activate, close: closeTab, move: moveTab, closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs, renamePath: renameTabPath, renameDirPath: renameDirTabs, deletePath: deleteTabPath, deleteDirPath: deleteDirTabs } = useTabs(root)
+  const {
+    tabs, active: file, mounted, openCurrent, openBackground, activate, close: closeTab, move: moveTab,
+    closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs,
+    renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
+    rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
+    moveRight, transferMainToRight, transferRightToMain,
+    rightBack, rightForward, canRightBack, canRightForward, setRightOpen, setRightWidth,
+  } = useWorkspace(root)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const sidebarCollapsedRef = useRef(sidebarCollapsed)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
@@ -55,6 +82,7 @@ export function App() {
   const sidebarRevealId = useRef(0)
   const [sidebarRevealRequest, setSidebarRevealRequest] = useState<SidebarRevealRequest | null>(null)
   const [resizing, setResizing] = useState(false)
+  const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
   const [settings, setSettings] = useState(storage.getSettings)
   const watch = useWatch(root)
   // Wikilinks (Links A, GRO-2190): ONE resolve source per window — a stable object every
@@ -102,6 +130,15 @@ export function App() {
       }),
     [],
   )
+
+  useEffect(() => {
+    const resize = () => setWindowWidth(window.innerWidth)
+    window.addEventListener('resize', resize)
+    return () => window.removeEventListener('resize', resize)
+  }, [])
+
+  const visibleSidebarWidth = root !== null && !sidebarCollapsed ? sidebarWidth : 0
+  const rightOverlay = rightPanel.open && windowWidth < visibleSidebarWidth + rightPanel.width + MAIN_WORKSPACE_MIN_W
 
   const toggleSidebar = useCallback(() => {
     const next = !sidebarCollapsedRef.current
@@ -289,11 +326,11 @@ export function App() {
   const relLabel = useCallback((p: string) => (root !== null && p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p), [root])
 
   // In-app rename (Links E1 GRO-2194, folders E1b GRO-2241). `file:renamed` reaches EVERY
-  // window (originator included): BEFORE the tab remap unmounts the old-path editor(s), a
+  // window (originator included): BEFORE the workspace remap unmounts the old-path editor(s), a
   // dirty buffer is carried into the new path and the old controller retired (no flush to
-  // the old path — see lib/renameContinuity.ts); then the tab follows in place, and
-  // title/URL-hash track the active tab through the existing effects above. A `dir` event
-  // is a PREFIX remap: every open editor and tab under the folder follows, and a window
+  // the old path — see lib/renameContinuity.ts); then its main/right owner follows in place,
+  // and title/URL-hash track the active main tab through the existing effects above. A `dir`
+  // event is a PREFIX remap: every open editor and workspace path under the folder follows, and a window
   // ROOTED at (or under) the folder — a subfolder opened as a vault — follows too (main's
   // store repair already moved its WindowEntry.root; setRoot only mirrors it locally, so
   // no identity write that could clobber the repaired file/tabs).
@@ -306,14 +343,14 @@ export function App() {
         if (kind === 'dir') {
           carryEditorsAcrossDirRename(oldPath, newPath)
           const movedRoot = root !== null && (root === oldPath || root.startsWith(`${oldPath}/`)) ? newPath + root.slice(oldPath.length) : undefined
-          renameDirTabs(oldPath, newPath, movedRoot)
+          renameWorkspaceDir(oldPath, newPath, movedRoot)
           if (movedRoot !== undefined) setRoot(movedRoot)
           return
         }
         carryEditorAcrossRename(oldPath, newPath)
-        renameTabPath(oldPath, newPath)
+        renameWorkspacePath(oldPath, newPath)
       }),
-    [renameTabPath, renameDirTabs, root, suppressRenameHypothesis],
+    [renameWorkspacePath, renameWorkspaceDir, root, suppressRenameHypothesis],
   )
 
   /**
@@ -388,7 +425,7 @@ export function App() {
   /**
    * In-app delete landed (GRO-2272). Reaches EVERY window, originator included.
    *
-   * ORDER IS NOT NEGOTIABLE: retire the editor, THEN remap tabs. Removing a tab unmounts its
+   * ORDER IS NOT NEGOTIABLE: retire the editor, THEN remap the workspace. Removing a page owner unmounts its
    * editor, and `useAutosave`'s unmount cleanup flushes the live buffer to disk — which would
    * recreate the file that was just trashed. Retiring first makes that flush a no-op. Reverse
    * these two lines and the delete silently fails a second later.
@@ -401,13 +438,13 @@ export function App() {
       window.yaseenDocs.file.onDeleted(({ path, kind }) => {
         if (kind === 'dir') {
           retireDeletedDir(path)
-          deleteDirTabs(path)
+          deleteWorkspaceDir(path)
           return
         }
         retireDeletedPath(path)
-        deleteTabPath(path)
+        deleteWorkspacePath(path)
       }),
-    [deleteTabPath, deleteDirTabs],
+    [deleteWorkspacePath, deleteWorkspaceDir],
   )
 
   /**
@@ -448,6 +485,33 @@ export function App() {
   }, [resetTabs])
   // The ACTIVE file vanished on disk: close its tab, ⌘W-style (a neighbour takes over).
   const onFileMissing = useCallback(() => void closeActive(), [closeActive])
+
+  const editorCommon = root === null ? null : {
+    root,
+    watch,
+    onNotice: setNotice,
+    createBase,
+    wikilinks,
+    wikilinkCandidates,
+    properties: propertyDecls,
+    onOpenFileRight: openRight,
+    onRenameFile: requestRename,
+    sync: githubSync.status,
+    onSyncNow: githubSync.syncNow,
+  }
+
+  const dropOnMain = (page: PageDrag, at: number): void => {
+    if (page.owner === 'right') transferRightToMain(page.path, at)
+  }
+  const dropOnRight = (page: PageDrag, at: number): void => {
+    if (page.owner === 'main') {
+      transferMainToRight(page.path, at)
+      return
+    }
+    const from = rightPanel.items.indexOf(page.path)
+    if (from === -1) return
+    moveRight(from, at > from ? at - 1 : at)
+  }
 
   return (
     <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth}>
@@ -541,20 +605,76 @@ export function App() {
         <div className="workspace">
           <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} candidates={wikilinkCandidates} onSnapshot={onIndexSnapshot} />
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
-          <TabBar tabs={tabs} active={file} onActivate={activate} onClose={closeTab} onMove={moveTab} canBack={canBack} canForward={canForward} onBack={back} onForward={forward} onShowInSidebar={showInSidebar} onNotice={setNotice} />
+          <TabBar
+            tabs={tabs}
+            active={file}
+            onActivate={activate}
+            onClose={closeTab}
+            onMove={moveTab}
+            onDropPage={dropOnMain}
+            onMoveToRight={(path) => transferMainToRight(path, rightPanel.items.length)}
+            canBack={canBack}
+            canForward={canForward}
+            onBack={back}
+            onForward={forward}
+            onShowInSidebar={showInSidebar}
+            onNotice={setNotice}
+          />
           <div className="tabstack">
-            {mounted.length === 0 && <Editor root={root} path={null} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={propertyDecls} onRenameFile={requestRename} sync={githubSync.status} onSyncNow={githubSync.syncNow} />}
+            {mounted.length === 0 && editorCommon !== null && <RetainedEditor {...editorCommon} path={null} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility — see tabs.css
               // for why display:none would lose scroll positions.
               <div key={path} className={path === file ? 'tabstack__layer' : 'tabstack__layer tabstack__layer--hidden'}>
                 {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → openCurrent, ⌘ → openBackground; create failures land in the link-notice. */}
-                <Editor root={root} path={path} watch={watch} onOpenFile={openCurrent} onOpenFileBackground={openBackground} onNotice={setNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={propertyDecls} onRenameFile={requestRename} sync={githubSync.status} onSyncNow={githubSync.syncNow} />
+                {editorCommon !== null && <RetainedEditor {...editorCommon} path={path} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
               </div>
             ))}
           </div>
         </div>
+      )}
+      {root !== null && rightPanel.open && (
+        <RightPanel
+          items={rightPanel.items}
+          expanded={rightPanel.expanded}
+          width={rightPanel.width}
+          overlay={rightOverlay}
+          canBack={canRightBack}
+          canForward={canRightForward}
+          onBack={rightBack}
+          onForward={rightForward}
+          onToggle={toggleRight}
+          onClose={closeRight}
+          onHide={() => setRightOpen(false)}
+          onResizeCommit={setRightWidth}
+          onDropPage={dropOnRight}
+          onMoveToMain={(path) => transferRightToMain(path, tabs.length)}
+        >
+          {editorCommon !== null && (
+            <div className="right-panel__editor-stack">
+              {rightMounted.map((path) => (
+                <div
+                  key={path}
+                  data-testid={`right-layer-${path}`}
+                  className={path === rightPanel.expanded ? 'right-panel__editor-layer' : 'right-panel__editor-layer right-panel__editor-layer--hidden'}
+                >
+                  <RightWorkspaceEditor
+                    {...editorCommon}
+                    path={path}
+                    navigate={navigateRight}
+                    onOpenFileBackground={openRightBackground}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </RightPanel>
+      )}
+      {root !== null && !rightPanel.open && (
+        <button type="button" className="right-panel-reopen" aria-label="Show right panel" title="Show right panel" onClick={() => setRightOpen(true)}>
+          ‹
+        </button>
       )}
       {/* The name-change confirm (⚡ YAZ-888): App's, not the sidebar's, because the door is
           App's — the title and the tree both reach it, and one sheet answers for both. */}
