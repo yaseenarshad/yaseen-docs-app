@@ -88,6 +88,7 @@ export const PDF_EXTENSIONS = ['.pdf'] as const
 /** The file kinds visible in the Files tree; only `markdown` is writable and semantic. */
 export type FileKind = 'markdown' | 'text' | 'pdf'
 export const MAX_FILE_BYTES = 10 * 1024 * 1024
+export const MAX_PDF_BYTES = 50 * 1024 * 1024
 
 // ---------- tree(root) ----------
 
@@ -202,8 +203,16 @@ export interface ColdStartDiffResponse {
 
 export interface FileResponse {
   path: string
-  /** Raw UTF-8 file contents, byte-for-byte (frontmatter included; client splits it). */
+  /** UTF-8 file contents; Markdown includes frontmatter and supported view-only text is strictly decoded. */
   content: string
+  mtime: number
+  size: number
+}
+
+/** Dedicated binary response for the native PDF viewer; never base64-encoded or sent through `readFile`. */
+export interface PdfResponse {
+  path: string
+  data: Uint8Array
   mtime: number
   size: number
 }
@@ -970,6 +979,7 @@ export interface LinkApi {
 export interface YaseenDocsApi {
   tree(root: string): Promise<TreeResponse>
   readFile(path: string): Promise<FileResponse>
+  readPdf(path: string): Promise<PdfResponse>
   writeFile(req: FileWriteRequest): Promise<FileWriteResponse>
   createDir(path: string): Promise<CreateDirResponse>
   createFile(req: string | CreateFileRequest): Promise<CreateFileResponse>

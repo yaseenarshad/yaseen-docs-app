@@ -84,7 +84,7 @@ const manager = createWindowManager(store, {
       ...entry.bounds,
       // The backing store matches the theme (K, GRO-2218): no white flash on dark launches.
       backgroundColor: windowBackgroundColor(store.get().settings.theme, nativeTheme.shouldUseDarkColors),
-      webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+      webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, plugins: true },
     })
     win.webContents.setWindowOpenHandler(createWindowOpenHandler(openLink))
     // Electron ships no default context menu (YAZ-672), so the spellchecker's squiggles would

@@ -1,17 +1,31 @@
 import { readFile as fsReadFile, stat } from 'node:fs/promises'
 import type { FileResponse, FileWriteRequest, FileWriteResponse } from '@shared/types'
 import { MAX_FILE_BYTES } from '@shared/types'
-import { BridgeFailure, atomicWrite, fsCall, requireAbsPath, requireMarkdownFile } from './fsUtils'
+import { BridgeFailure, atomicWrite, fsCall, requireAbsPath, requireMarkdownFile, requireTextReadableFile } from './fsUtils'
+
+const strictUtf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
+
+function decodeViewOnlyText(bytes: Uint8Array, path: string): string {
+  let content: string
+  try {
+    content = strictUtf8.decode(bytes)
+  } catch {
+    throw new BridgeFailure('IO_ERROR', 'file is not valid UTF-8 text', { path })
+  }
+  if (content.includes('\0')) throw new BridgeFailure('IO_ERROR', 'text file contains NUL bytes', { path })
+  return content
+}
 
 /** `window.yaseenDocs.readFile(path)`: raw UTF-8 content of a vault file, frontmatter included. */
 export async function readFile(path: string): Promise<FileResponse> {
   const p = requireAbsPath(path, 'path')
-  requireMarkdownFile(p)
+  const kind = requireTextReadableFile(p)
   return fsCall(p, async () => {
     const st = await stat(p)
     if (!st.isFile()) throw new BridgeFailure('NOT_A_FILE', 'expected a file', { path: p })
     if (st.size > MAX_FILE_BYTES) throw new BridgeFailure('TOO_LARGE', `file exceeds ${MAX_FILE_BYTES} bytes`, { path: p })
-    return { path: p, content: await fsReadFile(p, 'utf8'), mtime: st.mtimeMs, size: st.size }
+    const content = kind === 'markdown' ? await fsReadFile(p, 'utf8') : decodeViewOnlyText(await fsReadFile(p), p)
+    return { path: p, content, mtime: st.mtimeMs, size: st.size }
   })
 }
 

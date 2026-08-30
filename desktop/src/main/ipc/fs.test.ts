@@ -59,7 +59,7 @@ describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc(store, windows)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsColdDiff, CH.fsDelete, CH.fsIndex, CH.fsRead, CH.fsReadAsset, CH.fsWriteAsset, CH.fsRename, CH.fileRepairRename, CH.fsTree, CH.fsWrite, CH.shellReveal, CH.shellOpenVsCode, CH.shellOpenLink].sort())
+    expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsColdDiff, CH.fsDelete, CH.fsIndex, CH.fsRead, CH.fsReadPdf, CH.fsReadAsset, CH.fsWriteAsset, CH.fsRename, CH.fileRepairRename, CH.fsTree, CH.fsWrite, CH.shellReveal, CH.shellOpenVsCode, CH.shellOpenLink].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
@@ -84,6 +84,22 @@ describe('registerFsIpc', () => {
     expect(Buffer.from(value.data, 'base64').toString('utf8')).toBe('png')
     const missing = await registered(CH.fsReadAsset)({ sender: {} }, root, 'missing.png')
     expect(missing).toEqual({ ok: false, error: { code: 'NOT_FOUND', message: 'no asset with this name under the root', path: 'missing.png' } })
+  })
+
+  it('fs:read-pdf answers with PDF bytes as Uint8Array and envelopes binary-boundary failures', async () => {
+    const file = path.join(root, 'ipc-report.pdf')
+    const bytes = Uint8Array.from([0x25, 0x50, 0x44, 0x46, 0x00, 0xff])
+    await writeFile(file, bytes)
+
+    const ok = await registered(CH.fsReadPdf)({ sender: {} }, file)
+    expect(ok.ok).toBe(true)
+    if (!ok.ok) throw new Error('expected ok')
+    expect((ok.value as { data: Uint8Array }).data).toBeInstanceOf(Uint8Array)
+    expect((ok.value as { data: Uint8Array }).data).toEqual(bytes)
+    expect(await registered(CH.fsReadPdf)({ sender: {} }, path.join(root, 'A.md'))).toEqual({
+      ok: false,
+      error: { code: 'UNSUPPORTED_EXTENSION', message: 'only PDF files can be read as PDF', path: path.join(root, 'A.md') },
+    })
   })
 
   it('fs:write-asset writes a drawing sidecar and envelopes its failures (YAZ-876)', async () => {

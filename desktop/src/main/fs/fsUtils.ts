@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { BridgeError, TreeNode } from '@shared/types'
+import type { BridgeError, FileKind, TreeNode } from '@shared/types'
 import { fileKind, isMarkdown, isSupportedFile } from '@shared/fileKind'
 
 export { isMarkdown, isSupportedFile } from '@shared/fileKind'
@@ -43,6 +43,15 @@ export function requireAbsPath(p: unknown, param: string): string {
 /** Throws unless `p` has the only editable/creatable extension kind. */
 export function requireMarkdownFile(p: string): void {
   if (!isMarkdown(p)) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .md/.markdown files are editable', { path: p })
+}
+
+/** Returns the kind for files that can cross the UTF-8 text bridge. PDFs use their own binary bridge. */
+export function requireTextReadableFile(p: string): Extract<FileKind, 'markdown' | 'text'> {
+  const kind = fileKind(p)
+  if (kind !== 'markdown' && kind !== 'text') {
+    throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only Markdown and supported text files can be read as text', { path: p })
+  }
+  return kind
 }
 
 /** Dot-entries and node_modules are invisible to every call. */

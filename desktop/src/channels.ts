@@ -4,6 +4,7 @@ import type { BridgeError } from '@shared/types'
 export const CH = {
   fsTree: 'fs:tree',
   fsRead: 'fs:read',
+  fsReadPdf: 'fs:read-pdf',
   fsWrite: 'fs:write',
   fsCreateDir: 'fs:create-dir',
   fsCreateFile: 'fs:create-file',
