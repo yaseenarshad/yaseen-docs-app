@@ -51,6 +51,12 @@ describe('readFile', () => {
     expect((await readFile(file)).content).toBe('# �(\n')
   })
 
+  it('retains the existing leading BOM behavior for Markdown', async () => {
+    const file = path.join(root, 'legacy-bom.md')
+    await fsWriteFile(file, Buffer.from('\ufeff# Title\n', 'utf8'))
+    expect((await readFile(file)).content).toBe('\ufeff# Title\n')
+  })
+
   it('rejects view-only text above the existing 10 MiB limit', async () => {
     const file = path.join(root, 'oversized.txt')
     await fsWriteFile(file, Buffer.alloc(MAX_FILE_BYTES + 1, 0x61))

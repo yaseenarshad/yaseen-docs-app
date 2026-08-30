@@ -22,7 +22,8 @@ describe('readPdf', () => {
 
     expect(response.path).toBe(file)
     expect(response.data).toBeInstanceOf(Uint8Array)
-    expect(response.data).toEqual(bytes)
+    expect(Buffer.isBuffer(response.data)).toBe(true)
+    expect(response.data).toEqual(Buffer.from(bytes))
     expect(response.size).toBe(bytes.byteLength)
     expect(response.mtime).toBeGreaterThan(0)
     expect(response).not.toHaveProperty('mime')

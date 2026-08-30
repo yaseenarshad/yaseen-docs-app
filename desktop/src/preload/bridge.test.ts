@@ -61,20 +61,22 @@ describe('preload bridge', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.githubSetEnabled, '/v', true)
   })
 
-  it('readPdf forwards the absolute path on fs:read-pdf and preserves Uint8Array bytes', async () => {
+  it('readPdf forwards the absolute path and receives structured-cloned Uint8Array bytes', async () => {
     const { ipcRenderer } = await import('electron')
-    const bytes = Uint8Array.from([0x25, 0x50, 0x44, 0x46, 0xff])
-    vi.mocked(ipcRenderer.invoke).mockResolvedValueOnce({
+    const bytes = Buffer.from([0x25, 0x50, 0x44, 0x46, 0xff])
+    vi.mocked(ipcRenderer.invoke).mockResolvedValueOnce(structuredClone({
       ok: true,
       value: { path: '/v/report.pdf', data: bytes, mtime: 4, size: bytes.byteLength },
-    })
+    }))
     const { bridge } = await import('./index')
 
     const response = await bridge.readPdf('/v/report.pdf')
 
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.fsReadPdf, '/v/report.pdf')
     expect(response.data).toBeInstanceOf(Uint8Array)
-    expect(response.data).toBe(bytes)
+    expect(Buffer.isBuffer(response.data)).toBe(false)
+    expect(response.data).toEqual(Uint8Array.from(bytes))
+    expect(response.data).not.toBe(bytes)
   })
 
   it('forwards github:status-changed payloads to the listener and unsubscribes cleanly (YAZ-1081)', async () => {

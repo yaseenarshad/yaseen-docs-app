@@ -95,7 +95,8 @@ describe('registerFsIpc', () => {
     expect(ok.ok).toBe(true)
     if (!ok.ok) throw new Error('expected ok')
     expect((ok.value as { data: Uint8Array }).data).toBeInstanceOf(Uint8Array)
-    expect((ok.value as { data: Uint8Array }).data).toEqual(bytes)
+    expect(Buffer.isBuffer((ok.value as { data: Uint8Array }).data)).toBe(true)
+    expect((ok.value as { data: Uint8Array }).data).toEqual(Buffer.from(bytes))
     expect(await registered(CH.fsReadPdf)({ sender: {} }, path.join(root, 'A.md'))).toEqual({
       ok: false,
       error: { code: 'UNSUPPORTED_EXTENSION', message: 'only PDF files can be read as PDF', path: path.join(root, 'A.md') },

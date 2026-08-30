@@ -1,7 +1,8 @@
-import { readFile as fsReadFile, stat } from 'node:fs/promises'
+import { stat } from 'node:fs/promises'
 import type { FileResponse, FileWriteRequest, FileWriteResponse } from '@shared/types'
 import { MAX_FILE_BYTES } from '@shared/types'
 import { BridgeFailure, atomicWrite, fsCall, requireAbsPath, requireMarkdownFile, requireTextReadableFile } from './fsUtils'
+import { readBoundedRegularFile } from './boundedRead'
 
 const strictUtf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
 
@@ -20,13 +21,9 @@ function decodeViewOnlyText(bytes: Uint8Array, path: string): string {
 export async function readFile(path: string): Promise<FileResponse> {
   const p = requireAbsPath(path, 'path')
   const kind = requireTextReadableFile(p)
-  return fsCall(p, async () => {
-    const st = await stat(p)
-    if (!st.isFile()) throw new BridgeFailure('NOT_A_FILE', 'expected a file', { path: p })
-    if (st.size > MAX_FILE_BYTES) throw new BridgeFailure('TOO_LARGE', `file exceeds ${MAX_FILE_BYTES} bytes`, { path: p })
-    const content = kind === 'markdown' ? await fsReadFile(p, 'utf8') : decodeViewOnlyText(await fsReadFile(p), p)
-    return { path: p, content, mtime: st.mtimeMs, size: st.size }
-  })
+  const snapshot = await readBoundedRegularFile(p, MAX_FILE_BYTES, `file exceeds ${MAX_FILE_BYTES} bytes`)
+  const content = kind === 'markdown' ? snapshot.data.toString('utf8') : decodeViewOnlyText(snapshot.data, p)
+  return { path: p, content, mtime: snapshot.mtime, size: snapshot.size }
 }
 
 /**
