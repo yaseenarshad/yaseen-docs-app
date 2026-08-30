@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { TreeNode } from '@shared/types'
 import { tree } from './tree'
@@ -14,12 +15,12 @@ const flatten = (nodes: TreeNode[]): string[] =>
   nodes.flatMap((n) => (n.type === 'dir' ? [n.path, ...flatten(n.children)] : [n.path]))
 
 describe('tree', () => {
-  it('returns dirs first then files, case-insensitive, only vault files (.md/.markdown), all dirs shown', async () => {
+  it('returns dirs first then supported files, case-insensitive, with all dirs shown', async () => {
     const body = await tree(root)
     expect(body.root).toBe(root)
     expect(typeof body.generatedAt).toBe('number')
-    // Every dir shows, vault files or not (GRO-2022 D1): Empty and assets-only included, files still markdown-only
-    expect(names(body.tree)).toEqual(['alpha', 'assets-only', 'Empty', 'Zeta', 'A.md', 'b.md'])
+    // Every dir shows, supported files or not (GRO-2022 D1): Empty and assets-only included.
+    expect(names(body.tree)).toEqual(['alpha', 'assets-only', 'Empty', 'Zeta', 'A.md', 'b.md', 'notes.txt'])
     const zeta = body.tree[3]
     if (zeta.type !== 'dir') throw new Error('expected dir')
     expect(names(zeta.children)).toEqual(['inner', 'z.markdown'])
@@ -28,13 +29,40 @@ describe('tree', () => {
     expect(names(alpha.children)).toEqual(['a.md'])
     const assetsOnly = body.tree[1]
     if (assetsOnly.type !== 'dir') throw new Error('expected dir')
-    expect(assetsOnly.children).toEqual([])
+    expect(assetsOnly.children).toEqual([
+      expect.objectContaining({ type: 'file', name: 'img.png', kind: 'image' }),
+    ])
     const all = flatten(body.tree)
-    expect(all).not.toContain(path.join(root, 'notes.txt'))
+    expect(all).toContain(path.join(root, 'notes.txt'))
     expect(all.some((p) => p.includes('.obsidian') || p.includes('.git') || p.includes('node_modules'))).toBe(false)
     expect(all).not.toContain(path.join(root, '.hidden.md'))
     // `.yaseendocs/` (vault-local config, GRO-2188) never reaches the tree — the sidebar renders the tree as-is.
     expect(all.some((p) => p.includes('.yaseendocs'))).toBe(false)
+  })
+
+  it('discovers text, PDF, and raster images with exact kinds while leaving arbitrary binaries and SVG hidden', async () => {
+    const candidates = [
+      [path.join(root, 'data.JSON'), '{}', 'text'],
+      [path.join(root, 'tool.py'), 'print("ok")\n', 'text'],
+      [path.join(root, 'report.PDF'), '%PDF-1.7', 'pdf'],
+      [path.join(root, 'photo.png'), 'png', 'image'],
+      [path.join(root, 'cover.WEBP'), 'webp', 'image'],
+      [path.join(root, 'vector.svg'), '<svg/>', null],
+      [path.join(root, 'archive.zip'), 'binary', null],
+    ] as const
+    try {
+      await Promise.all(candidates.map(([file, content]) => writeFile(file, content)))
+      const all = files(await tree(root))
+      expect(all.find((node) => node.name === 'data.JSON')?.kind).toBe('text')
+      expect(all.find((node) => node.name === 'tool.py')?.kind).toBe('text')
+      expect(all.find((node) => node.name === 'report.PDF')?.kind).toBe('pdf')
+      expect(all.find((node) => node.name === 'photo.png')?.kind).toBe('image')
+      expect(all.find((node) => node.name === 'cover.WEBP')?.kind).toBe('image')
+      expect(all.some((node) => node.name === 'vector.svg')).toBe(false)
+      expect(all.some((node) => node.name === 'archive.zip')).toBe(false)
+    } finally {
+      await Promise.all(candidates.map(([file]) => rm(file, { force: true })))
+    }
   })
 
   it('file nodes carry size, mtime and kind', async () => {
@@ -58,3 +86,9 @@ describe('tree', () => {
     expect((await failure(tree(path.join(root, 'b.md')))).code).toBe('NOT_A_DIRECTORY')
   })
 })
+
+type FileNode = Extract<TreeNode, { type: 'file' }>
+const files = (body: Awaited<ReturnType<typeof tree>>): FileNode[] => {
+  const collect = (nodes: TreeNode[]): FileNode[] => nodes.flatMap((node) => (node.type === 'dir' ? collect(node.children) : [node]))
+  return collect(body.tree)
+}

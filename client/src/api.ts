@@ -1,4 +1,4 @@
-import type { AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, BridgeErrorCode, ColdStartDiffResponse, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileResponse, FileWriteRequest, FileWriteResponse, GithubSyncStatus, IndexResponse, OpenLinkRequest, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RevealRequest, RevealResponse, TreeResponse } from '@shared/types'
+import type { AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, BridgeErrorCode, ColdStartDiffResponse, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileResponse, FileWriteRequest, FileWriteResponse, GithubSyncStatus, ImageResponse, IndexResponse, OpenLinkRequest, PdfResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RevealRequest, RevealResponse, TreeResponse } from '@shared/types'
 
 /** Typed failure from the main process (see docs/CONTRACTS.md "Bridge API"). */
 export class BridgeRequestError extends Error {
@@ -33,6 +33,8 @@ async function call<T>(fn: () => Promise<T>): Promise<T> {
 export const api = {
   tree: (root: string) => call<TreeResponse>(() => window.yaseenDocs.tree(root)),
   readFile: (path: string) => call<FileResponse>(() => window.yaseenDocs.readFile(path)),
+  readPdf: (path: string) => call<PdfResponse>(() => window.yaseenDocs.readPdf(path)),
+  readImage: (path: string) => call<ImageResponse>(() => window.yaseenDocs.readImage(path)),
   writeFile: (body: FileWriteRequest) => call<FileWriteResponse>(() => window.yaseenDocs.writeFile(body)),
   createDir: (path: string) => call<CreateDirResponse>(() => window.yaseenDocs.createDir(path)),
   createFile: (req: string | CreateFileRequest) => call<CreateFileResponse>(() => window.yaseenDocs.createFile(req)),

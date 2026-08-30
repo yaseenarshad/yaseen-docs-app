@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BridgeFailure } from './fsUtils'
 
-/** Creates a temp vault (markdown, plus non-vault files that must stay invisible) and returns its root; caller removes it via `cleanup`. */
+/** Creates a temp vault with Markdown, supported view-only text, hidden entries, and unsupported assets; caller removes it via `cleanup`. */
 export async function makeFixture(): Promise<{ root: string; cleanup: () => Promise<void> }> {
   const root = await mkdtemp(path.join(tmpdir(), 'mdapp-'))
   await mkdir(path.join(root, 'Zeta', 'inner'), { recursive: true })

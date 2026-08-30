@@ -1,18 +1,29 @@
-import { readFile as fsReadFile, stat } from 'node:fs/promises'
+import { stat } from 'node:fs/promises'
 import type { FileResponse, FileWriteRequest, FileWriteResponse } from '@shared/types'
 import { MAX_FILE_BYTES } from '@shared/types'
-import { BridgeFailure, atomicWrite, fsCall, requireAbsPath, requireVaultFile } from './fsUtils'
+import { BridgeFailure, atomicWrite, fsCall, requireAbsPath, requireMarkdownFile, requireTextReadableFile } from './fsUtils'
+import { readBoundedRegularFile } from './boundedRead'
 
-/** `window.yaseenDocs.readFile(path)`: raw UTF-8 content of a vault file, frontmatter included. */
+const strictUtf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
+
+function decodeViewOnlyText(bytes: Uint8Array, path: string): string {
+  let content: string
+  try {
+    content = strictUtf8.decode(bytes)
+  } catch {
+    throw new BridgeFailure('IO_ERROR', 'file is not valid UTF-8 text', { path })
+  }
+  if (content.includes('\0')) throw new BridgeFailure('IO_ERROR', 'text file contains NUL bytes', { path })
+  return content
+}
+
+/** Reads Markdown with its legacy UTF-8 semantics or approved view-only text with strict UTF-8 decoding. */
 export async function readFile(path: string): Promise<FileResponse> {
   const p = requireAbsPath(path, 'path')
-  requireVaultFile(p)
-  return fsCall(p, async () => {
-    const st = await stat(p)
-    if (!st.isFile()) throw new BridgeFailure('NOT_A_FILE', 'expected a file', { path: p })
-    if (st.size > MAX_FILE_BYTES) throw new BridgeFailure('TOO_LARGE', `file exceeds ${MAX_FILE_BYTES} bytes`, { path: p })
-    return { path: p, content: await fsReadFile(p, 'utf8'), mtime: st.mtimeMs, size: st.size }
-  })
+  const kind = requireTextReadableFile(p)
+  const snapshot = await readBoundedRegularFile(p, MAX_FILE_BYTES, `file exceeds ${MAX_FILE_BYTES} bytes`)
+  const content = kind === 'markdown' ? snapshot.data.toString('utf8') : decodeViewOnlyText(snapshot.data, p)
+  return { path: p, content, mtime: snapshot.mtime, size: snapshot.size }
 }
 
 /**
@@ -26,7 +37,7 @@ export async function writeFile(req: FileWriteRequest): Promise<FileWriteRespons
   if (typeof raw !== 'object' || raw === null) throw new BridgeFailure('BAD_REQUEST', 'request must be an object')
   const { path, content, expectedMtime } = raw as Record<string, unknown>
   const p = requireAbsPath(path, 'path')
-  requireVaultFile(p)
+  requireMarkdownFile(p)
   if (typeof content !== 'string') throw new BridgeFailure('BAD_REQUEST', "'content' must be a string", { path: p })
   if (expectedMtime !== undefined && typeof expectedMtime !== 'number') {
     throw new BridgeFailure('BAD_REQUEST', "'expectedMtime' must be a number", { path: p })

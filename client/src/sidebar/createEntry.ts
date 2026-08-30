@@ -4,6 +4,7 @@
  * The UI (context menu + inline input) lives in Sidebar/Tree; the main process
  * enforces the same rules again (absolute path, vault extension, no overwrite).
  */
+import { fileKind } from '@shared/fileKind'
 
 /**
  * What the inline input creates: a markdown note, a folder, or a FOLDER PAGE (🔒 D4, YAZ-841)
@@ -48,16 +49,27 @@ export function targetDirFor(node: MenuRow | null, root: string): string {
   return node.path.slice(0, node.path.lastIndexOf('/'))
 }
 
+/** Rename-field prefill: Markdown hides its suffix; view-only files show their full filename. */
+export function renameInputName(fileName: string): string {
+  const name = fileName.slice(fileName.lastIndexOf('/') + 1)
+  if (fileKind(name) !== 'markdown') return name
+  return name.slice(0, name.lastIndexOf('.'))
+}
+
 /**
  * Absolute path for the sidebar's inline rename (Links E1, GRO-2194; folders E1b, GRO-2241):
- * same parent directory. For a FILE, `entryPath`'s extension re-append idiom — a typed
- * markdown extension is kept, anything else gets the old file's own extension appended.
- * For a DIRECTORY there is no extension logic at all.
+ * same parent directory. Markdown keeps only an explicit Markdown suffix; any other visible name
+ * inherits the old Markdown suffix. View-only files keep any explicit supported suffix and append
+ * the old exact suffix only when none is recognized. Directories have no extension logic.
  */
 export function renamedPath(oldPath: string, newName: string, kind: 'file' | 'dir' = 'file'): string {
   const dir = oldPath.slice(0, oldPath.lastIndexOf('/'))
   let final = newName.trim()
   if (kind === 'dir') return `${dir}/${final}`
-  if (!/\.(md|markdown)$/i.test(final)) final += oldPath.slice(oldPath.lastIndexOf('.'))
+  const oldName = oldPath.slice(oldPath.lastIndexOf('/') + 1)
+  if (final === renameInputName(oldName)) return oldPath
+  const oldKind = fileKind(oldPath)
+  const newKind = fileKind(final)
+  if (oldKind === 'markdown' ? newKind !== 'markdown' : newKind === null) final += oldPath.slice(oldPath.lastIndexOf('.'))
   return `${dir}/${final}`
 }

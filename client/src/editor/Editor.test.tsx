@@ -15,10 +15,13 @@ import { resolverFor } from '../views/engine'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
 import { Editor } from './Editor'
 import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
+import * as frontmatter from '@shared/frontmatter'
+import * as folderMigration from '../views/migrateFolderBody'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { readFile: vi.fn(), writeFile: vi.fn(), openLink: vi.fn(), index: vi.fn(), properties: { get: vi.fn(), onChange: vi.fn() } },
+  api: { readFile: vi.fn(), readPdf: vi.fn(), readImage: vi.fn(), writeFile: vi.fn(), openLink: vi.fn(), index: vi.fn(), properties: { get: vi.fn(), onChange: vi.fn() } },
 }))
 
 vi.mock('./createCrepe', () => {
@@ -62,6 +65,8 @@ interface FakeCrepe {
 }
 
 const readFile = vi.mocked(api.readFile)
+const readPdf = vi.mocked(api.readPdf)
+const readImage = vi.mocked(api.readImage)
 const writeFile = vi.mocked(api.writeFile)
 const openLink = vi.mocked(api.openLink)
 const createCrepeMock = vi.mocked(createCrepe)
@@ -90,14 +95,14 @@ const watch: WatchSource = {
 }
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; viewOnlyLinks?: ViewOnlyLinkSource; onRenameFile?: (oldPath: string, newPath: string) => void } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} wikilinks={extra.wikilinks} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} wikilinks={extra.wikilinks} viewOnlyLinks={extra.viewOnlyLinks} onRenameFile={extra.onRenameFile} />))
   await settle()
   await settle()
   return container
@@ -145,6 +150,13 @@ function diskHas(content: string, mtime: number): void {
 let flushListeners: Array<() => Promise<void> | void> = []
 beforeEach(() => {
   vi.useFakeTimers()
+  Object.defineProperty(globalThis, 'createImageBitmap', {
+    configurable: true,
+    value: vi.fn(async () => ({ width: 16, height: 9, close: vi.fn() })),
+  })
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: vi.fn(), clearRect: vi.fn() } as never)
+  Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:editor-pdf') })
+  Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
   writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 99, size: body.content.length }))
   Object.defineProperty(window, 'yaseenDocs', {
     value: {
@@ -169,10 +181,76 @@ afterEach(() => {
   container = null
   listeners = []
   flushListeners = []
+  delete (URL as unknown as Record<string, unknown>).createObjectURL
+  delete (URL as unknown as Record<string, unknown>).revokeObjectURL
+  delete (globalThis as unknown as Record<string, unknown>).createImageBitmap
   delete (window as unknown as Record<string, unknown>).yaseenDocs
   // reset (not clear): a failing test must not leak queued mockResolvedValueOnce reads into the next mount.
   vi.resetAllMocks()
   vi.useRealTimers()
+})
+
+describe('Editor file-kind dispatch (YAZ-1299)', () => {
+  it('threads the navigation-only source only into the Markdown Crepe owner', async () => {
+    const viewOnlyLinks = createViewOnlyLinkSource()
+    await mount(BODY, 1, { viewOnlyLinks })
+    expect((createCrepeMock.mock.calls.at(-1)?.[0] as CreateCrepeOptions | undefined)?.viewOnlyLinks).toBe(viewOnlyLinks)
+  })
+
+  it('routes mixed-case view-only text around every Markdown-only owner', async () => {
+    const source = createWikilinkResolveSource()
+    const subscribe = vi.spyOn(source, 'subscribe')
+    const split = vi.spyOn(frontmatter, 'splitFrontmatter')
+    const migrate = vi.spyOn(folderMigration, 'migrateFolderBody')
+    const rename = vi.fn()
+    const el = await mount('---\nfolder_page: true\n---\nraw\r\n\ttext\r\n', 1, { path: '/vault/data.JSON', wikilinks: source, onRenameFile: rename })
+
+    expect(readFile).toHaveBeenCalledExactlyOnceWith('/vault/data.JSON')
+    expect(createCrepeMock).not.toHaveBeenCalled()
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(flushListeners).toHaveLength(0) // no autosave owner
+    expect(split).not.toHaveBeenCalled()
+    expect(migrate).not.toHaveBeenCalled()
+    expect(subscribe).not.toHaveBeenCalled() // no backlinks/home semantic feed
+    expect(rename).not.toHaveBeenCalled()
+    expect(el.querySelector('.page-title')).toBeNull()
+    expect(el.querySelector('.frontmatter-panel')).toBeNull()
+    expect(el.querySelector('.folder-page-contents')).toBeNull()
+    expect(el.querySelector('.backlinks')).toBeNull()
+    expect(el.querySelector('.text-viewer')).not.toBeNull()
+
+    split.mockRestore()
+    migrate.mockRestore()
+    subscribe.mockRestore()
+  })
+
+  it('routes mixed-case PDFs through the dedicated bridge and native viewer without mounting either text or editor stack', async () => {
+    const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46])
+    readPdf.mockResolvedValueOnce({ path: '/vault/report.PDF', data: bytes, mtime: 1, size: bytes.byteLength })
+    const el = await mount('%PDF-1.7', 1, { path: '/vault/report.PDF' })
+
+    expect(readFile).not.toHaveBeenCalled()
+    expect(readPdf).toHaveBeenCalledExactlyOnceWith('/vault/report.PDF')
+    expect(createCrepeMock).not.toHaveBeenCalled()
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(flushListeners).toHaveLength(0)
+    expect(el.querySelector('iframe.pdf-viewer__frame')?.getAttribute('title')).toBe('report.PDF')
+  })
+
+  it('routes mixed-case raster images through the exact binary viewer without mounting the Markdown stack', async () => {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
+    readImage.mockResolvedValueOnce({ path: '/vault/photo.PNG', data: bytes, mime: 'image/png', mtime: 1, size: bytes.byteLength })
+    const el = await mount('not text', 1, { path: '/vault/photo.PNG' })
+
+    expect(readFile).not.toHaveBeenCalled()
+    expect(readPdf).not.toHaveBeenCalled()
+    expect(readImage).toHaveBeenCalledExactlyOnceWith('/vault/photo.PNG')
+    expect(createCrepeMock).not.toHaveBeenCalled()
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(flushListeners).toHaveLength(0)
+    expect(el.querySelector('canvas.image-viewer__canvas')).not.toBeNull()
+    expect(el.querySelector('.page-title, .frontmatter-panel, .folder-page-contents, .backlinks')).toBeNull()
+  })
 })
 
 describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {

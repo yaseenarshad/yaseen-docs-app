@@ -9,12 +9,11 @@ export type FileState =
   /** `prev` is the previously open file, kept on screen until the new one is ready (no blank flash). */
   | { status: 'loading'; path: string; prev: FileResponse | null }
   | { status: 'ready'; path: string; file: FileResponse }
-  | { status: 'error'; path: string; message: string }
+  | { status: 'error'; path: string; message: string; prev: FileResponse | null }
 
 /**
- * THE ONE DOOR a file comes through (YAZ-919): every tab open, sidebar click and wikilink click
- * ends in an `Editor` mount, and every `Editor` mount reads its bytes here — so the folder-page
- * body migration is asked here, ONCE, and no surface has to remember to run it.
+ * THE ONE DOOR Markdown and supported text bytes come through (YAZ-919): each eligible `Editor`
+ * mount reads here, and the kind guard below asks for folder-page migration only for Markdown.
  *
  * The migrated bytes go to disk BEFORE the editor sees them, and the editor is handed the mtime
  * of THAT write: autosave attaches to `file.mtime` and suppresses the watcher echo by comparing
@@ -34,8 +33,8 @@ async function migrateOnOpen(file: FileResponse): Promise<FileResponse> {
   }
 }
 
-/** Loads a file once per `path` (reloads after an external change are handled by the editor itself). */
-export function useFile(path: string | null): FileState {
+/** Loads once per path/revision; a revision refresh retains the last readable snapshot. */
+export function useFile(path: string | null, revision = 0): FileState {
   const [state, setState] = useState<FileState>({ status: 'idle' })
   useEffect(() => {
     if (path === null) {
@@ -43,7 +42,11 @@ export function useFile(path: string | null): FileState {
       return
     }
     let cancelled = false
-    setState((s) => ({ status: 'loading', path, prev: s.status === 'ready' ? s.file : s.status === 'loading' ? s.prev : null }))
+    setState((current) => ({
+      status: 'loading',
+      path,
+      prev: current.status === 'ready' ? current.file : current.status === 'loading' || current.status === 'error' ? current.prev : null,
+    }))
     api.readFile(path).then(migrateOnOpen).then(
       (file) => {
         if (!cancelled) setState({ status: 'ready', path, file })
@@ -51,12 +54,17 @@ export function useFile(path: string | null): FileState {
       (err: unknown) => {
         if (cancelled) return
         const message = err instanceof BridgeRequestError ? `${err.code}: ${err.message}` : 'Failed to load file'
-        setState({ status: 'error', path, message })
+        setState((current) => ({
+          status: 'error',
+          path,
+          message,
+          prev: current.status === 'loading' && current.path === path ? current.prev : null,
+        }))
       },
     )
     return () => {
       cancelled = true
     }
-  }, [path])
+  }, [path, revision])
   return state
 }

@@ -1,11 +1,18 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { IndexRecord } from '@shared/types'
 import { TEST_RECORDS } from '../../../../client/src/views/testRecords'
 import { makeViewsFixture } from '../fs/viewsFixture'
-import { activeWatcherRoots } from '../fs/watchers'
+import { activeWatcherRoots, subscribe } from '../fs/watchers'
 import { _evictAll, _setIdleMs, getIndex } from './index'
+import { scanFile } from './scan'
+
+// Passthrough spy: preserves index behavior while proving view-only watcher events never scan.
+vi.mock('./scan', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('./scan')>()
+  return { ...mod, scanFile: vi.fn(mod.scanFile) }
+})
 
 const until = async (pred: () => Promise<boolean> | boolean, ms = 3000) => {
   const t0 = Date.now()
@@ -16,6 +23,36 @@ const until = async (pred: () => Promise<boolean> | boolean, ms = 3000) => {
 }
 
 const byName = (records: IndexRecord[], name: string) => records.find((r) => r.name === name)
+
+const watcherReady = (root: string): Promise<void> =>
+  new Promise((resolve) => {
+    let off: (() => void) | null = null
+    let fired = false
+    off = subscribe(root, (ev) => {
+      if (ev.type !== 'ready') return
+      fired = true
+      off?.()
+      resolve()
+    })
+    if (fired) off()
+  })
+
+async function mutateAndWaitForFileEvent(root: string, type: 'add' | 'change' | 'unlink', file: string, mutate: () => Promise<void>): Promise<void> {
+  let off = (): void => undefined
+  const seen = new Promise<void>((resolve) => {
+    off = subscribe(root, (ev) => {
+      if (ev.type !== type || !('path' in ev) || ev.path !== file) return
+      off()
+      resolve()
+    })
+  })
+  try {
+    await mutate()
+    await seen
+  } finally {
+    off()
+  }
+}
 
 describe('getIndex: cold scan', () => {
   let root: string
@@ -85,6 +122,32 @@ describe('getIndex: incremental updates from the watcher', () => {
   afterAll(async () => {
     _evictAll()
     await cleanup()
+  })
+
+  it('never scans or indexes supported text/PDF/image add, change, or unlink events', async () => {
+    await watcherReady(root)
+    const baseline = (await getIndex(root)).records.map((record) => record.path)
+    for (const [name, first, second] of [
+      ['view-only.json', '{"version":1}', '{"version":2,"changed":true}'],
+      ['view-only.pdf', '%PDF-1.7\nfirst', '%PDF-1.7\nsecond revision'],
+      ['view-only.png', 'png-first', 'png-second'],
+      ['view-only.WEBP', 'webp-first', 'webp-second'],
+    ] as const) {
+      const file = path.join(root, name)
+      vi.mocked(scanFile).mockClear()
+
+      await mutateAndWaitForFileEvent(root, 'add', file, () => writeFile(file, first))
+      expect(scanFile).not.toHaveBeenCalled()
+      expect((await getIndex(root)).records.map((record) => record.path)).toEqual(baseline)
+
+      await mutateAndWaitForFileEvent(root, 'change', file, () => writeFile(file, second))
+      expect(scanFile).not.toHaveBeenCalled()
+      expect((await getIndex(root)).records.map((record) => record.path)).toEqual(baseline)
+
+      await mutateAndWaitForFileEvent(root, 'unlink', file, () => rm(file))
+      expect(scanFile).not.toHaveBeenCalled()
+      expect((await getIndex(root)).records.map((record) => record.path)).toEqual(baseline)
+    }
   })
 
   it('a changed note is re-scanned in place', async () => {

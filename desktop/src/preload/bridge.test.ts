@@ -13,7 +13,7 @@ vi.mock('electron', () => ({
  * typecheck. `as const satisfies` keeps each tuple's literal type (a plain `readonly (keyof T)[]`
  * annotation would widen it and make `Exhaustive<>` vacuous) while still rejecting typos.
  */
-const TOP = ['tree', 'readFile', 'writeFile', 'createDir', 'createFile', 'index', 'coldDiff', 'readAsset', 'writeAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'file', 'shell', 'vaultConfig', 'properties', 'github'] as const satisfies readonly (keyof YaseenDocsApi)[]
+const TOP = ['tree', 'readFile', 'readPdf', 'readImage', 'writeFile', 'createDir', 'createFile', 'index', 'coldDiff', 'readAsset', 'writeAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'file', 'shell', 'vaultConfig', 'properties', 'github'] as const satisfies readonly (keyof YaseenDocsApi)[]
 const STATE = ['get', 'setSettings', 'setSidebarWidth', 'setSidebarLens', 'pushRecent', 'removeRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange'] as const satisfies readonly (keyof StateApi)[]
 const WINDOW = ['identity', 'setIdentity', 'open', 'duplicate', 'closeSelf', 'onFlush'] as const satisfies readonly (keyof WindowApi)[]
 const MENU = ['onOpenFolder', 'onOpenRoot', 'onSearch', 'onToggleSidebar', 'onCloseTab', 'onNextTab', 'onPrevTab'] as const satisfies readonly (keyof MenuApi)[]
@@ -59,6 +59,41 @@ describe('preload bridge', () => {
     const { bridge } = await import('./index')
     await expect(bridge.github.setEnabled('/v', true)).resolves.toEqual({ root: '/v', state: 'synced' })
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.githubSetEnabled, '/v', true)
+  })
+
+  it('readPdf forwards the absolute path and receives structured-cloned Uint8Array bytes', async () => {
+    const { ipcRenderer } = await import('electron')
+    const bytes = Buffer.from([0x25, 0x50, 0x44, 0x46, 0xff])
+    vi.mocked(ipcRenderer.invoke).mockResolvedValueOnce(structuredClone({
+      ok: true,
+      value: { path: '/v/report.pdf', data: bytes, mtime: 4, size: bytes.byteLength },
+    }))
+    const { bridge } = await import('./index')
+
+    const response = await bridge.readPdf('/v/report.pdf')
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.fsReadPdf, '/v/report.pdf')
+    expect(response.data).toBeInstanceOf(Uint8Array)
+    expect(Buffer.isBuffer(response.data)).toBe(false)
+    expect(response.data).toEqual(Uint8Array.from(bytes))
+    expect(response.data).not.toBe(bytes)
+  })
+
+  it('readImage forwards the exact absolute path and receives structured-cloned bytes + MIME', async () => {
+    const { ipcRenderer } = await import('electron')
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff])
+    vi.mocked(ipcRenderer.invoke).mockResolvedValueOnce(structuredClone({
+      ok: true,
+      value: { path: '/v/pixel.png', data: bytes, mime: 'image/png', mtime: 5, size: bytes.byteLength },
+    }))
+    const { bridge } = await import('./index')
+
+    const response = await bridge.readImage('/v/pixel.png')
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.fsReadImage, '/v/pixel.png')
+    expect(response).toMatchObject({ path: '/v/pixel.png', mime: 'image/png', size: bytes.byteLength })
+    expect(response.data).toEqual(Uint8Array.from(bytes))
+    expect(Buffer.isBuffer(response.data)).toBe(false)
   })
 
   it('forwards github:status-changed payloads to the listener and unsubscribes cleanly (YAZ-1081)', async () => {

@@ -4,8 +4,10 @@ import { readAsset, writeAsset } from '../fs/assets'
 import { createDir, createFile } from '../fs/create'
 import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure } from '../fs/fsUtils'
+import { readImage } from '../fs/image'
 import { openInVsCode } from '../fs/openInVsCode'
 import { openLink } from '../fs/openLink'
+import { readPdf } from '../fs/pdf'
 import { renameFile, repairRename } from '../fs/rename'
 import { removeEntry } from '../fs/remove'
 import { revealItem } from '../fs/reveal'
@@ -20,6 +22,8 @@ import { handle, handleWithEvent } from './envelope'
 export function registerFsIpc(store: Store, windows: WindowLookup): void {
   handle(CH.fsTree, tree)
   handle(CH.fsRead, readFile)
+  handle(CH.fsReadPdf, readPdf)
+  handle(CH.fsReadImage, readImage)
   handle(CH.fsWrite, writeFile)
   handle(CH.fsCreateDir, createDir)
   handle(CH.fsCreateFile, createFile)

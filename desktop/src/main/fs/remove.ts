@@ -20,9 +20,9 @@ import { BridgeFailure, fsCall, isSkipped, requireAbsPath } from './fsUtils'
  *    `.trash`, and `node_modules`) are invisible infrastructure, so deleting one through a UI
  *    that never showed it is refused (`BAD_REQUEST`). The check reuses `isSkipped` rather than
  *    testing for a leading dot, so this guard cannot drift from the rule that justifies it;
- *  - the extension-kind rules do NOT apply (nothing is being renamed), and there is
- *    deliberately no `isVaultFile` gate: the tree shows EVERY folder regardless of what is
- *    inside it, so every folder must be deletable;
+ *  - the extension-kind rules do NOT apply (nothing is being renamed), and deletion is not
+ *    restricted to the supported-file discovery set: the tree shows EVERY folder regardless of
+ *    what is inside it, so every folder must be deletable;
  *  - the calling window's own vault root is refused upstream in `ipc/fs.ts`, which is the
  *    only layer that knows who is calling — same split as rename.
  *

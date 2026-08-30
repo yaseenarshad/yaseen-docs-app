@@ -15,9 +15,12 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import type { TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
+import { buildViewOnlyCatalog } from '../../links/viewOnlyCatalog'
 import { createCrepe } from '../createCrepe'
 import { WIKILINK_CLASS, WIKILINK_UNRESOLVED_CLASS, createWikilinkResolveSource } from './wikilinkPlugin'
+import { createViewOnlyLinkSource, type MutableViewOnlyLinkSource } from './viewOnlyLinkSource'
 
 vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
@@ -43,16 +46,23 @@ const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 /** Resolver used across the suite: only 'Known' exists, at /vault/Known.md. */
 const resolveKnown = (target: string) => (target === 'Known' ? '/vault/Known.md' : null)
 
-async function mount(markdown: string, resolve?: (target: string) => string | null, createBase: () => string = () => '') {
+async function mount(markdown: string, resolve?: (target: string) => string | null, createBase: () => string = () => '', viewOnly?: MutableViewOnlyLinkSource) {
   const source = createWikilinkResolveSource()
   if (resolve !== undefined) source.update(resolve)
   const nav: NavMocks = { root: '/vault', createBase, openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() }
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown, wikilinks: source, wikilinkNav: nav })
+  const crepe = createCrepe({ root, defaultValue: markdown, wikilinks: source, viewOnlyLinks: viewOnly, wikilinkNav: nav })
   await crepe.create()
   mounted.push({ crepe, root })
   return { crepe, root, nav, source }
+}
+
+const viewNode = (path: string, kind: 'text' | 'pdf' | 'image'): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, kind, size: 1, mtime: 1 })
+function viewSource(...nodes: TreeNode[]): MutableViewOnlyLinkSource {
+  const source = createViewOnlyLinkSource()
+  source.update(buildViewOnlyCatalog('/vault', nodes))
+  return source
 }
 
 function viewOf(crepe: Crepe): EditorView {
@@ -78,6 +88,9 @@ function expectNoNav(nav: NavMocks): void {
 }
 
 beforeEach(() => {
+  // Milkdown's resolved clock promises retain defensive 3 s timeout callbacks. Keep them inside
+  // this jsdom lifetime so a full parallel suite cannot execute them after teardown.
+  vi.useFakeTimers()
   vi.clearAllMocks()
   createDir.mockImplementation(async (path: string) => ({ path }))
   createFile.mockImplementation(async (req) => ({ path: req as string, mtime: 1, size: 0 }))
@@ -88,6 +101,8 @@ afterEach(async () => {
     await m.crepe.destroy()
     m.root.remove()
   }
+  vi.runOnlyPendingTimers()
+  vi.useRealTimers()
 })
 
 describe('wikilink click: resolved links (GRO-2192)', () => {
@@ -125,6 +140,82 @@ describe('wikilink click: resolved links (GRO-2192)', () => {
     mousedown(linkSpan(root, 'Known'))
     expect(nav.openCurrent).toHaveBeenCalledTimes(2)
     expect(nav.openCurrent).toHaveBeenLastCalledWith('/vault/Known.md')
+    expect(createFile).not.toHaveBeenCalled()
+  })
+})
+
+describe('wikilink click: navigation-only view files (YAZ-1310)', () => {
+  it('defaults to a passive pre-catalog source so recognized targets can never create Markdown', async () => {
+    const { root, nav } = await mount('x [[missing.json]] y\n', resolveKnown)
+    mousedown(linkSpan(root, 'missing.json'))
+    expect(nav.onNotice).toHaveBeenCalledWith('File catalog is still loading — try that link again in a moment')
+    expect(createFile).not.toHaveBeenCalled()
+    expect(createDir).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['data.json', '/vault/data.json', 'text'],
+    ['tool.py', '/vault/tool.PY', 'text'],
+    ['REPORT.pdf', '/vault/report.PDF', 'pdf'],
+    ['photo.png', '/vault/photo.PNG', 'image'],
+    ['Outbound Lead Qualifier.json', '/vault/deep/Outbound Lead Qualifier.json', 'text'],
+    ['deep/data.JSON', '/vault/deep/data.JSON', 'text'],
+  ] as const)('opens %s in the current viewer without invoking Markdown creation', async (target, path, kind) => {
+    const views = viewSource(
+      viewNode('/vault/data.json', 'text'),
+      viewNode('/vault/tool.PY', 'text'),
+      viewNode('/vault/report.PDF', 'pdf'),
+      viewNode('/vault/photo.PNG', 'image'),
+      viewNode('/vault/deep/Outbound Lead Qualifier.json', 'text'),
+      viewNode('/vault/deep/data.JSON', 'text'),
+    )
+    const { root, nav } = await mount(`x [[${target}]] y\n`, resolveKnown, () => '', views)
+    mousedown(linkSpan(root, target))
+    expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(path)
+    expect(createFile).not.toHaveBeenCalled()
+    expect(createDir).not.toHaveBeenCalled()
+  })
+
+  it('uses |text only for display and preserves command-click background navigation for images', async () => {
+    const views = viewSource(viewNode('/vault/deep/Launch Photo.PNG', 'image'))
+    const { root, nav } = await mount('x [[Launch Photo.PNG|Launch art]] y\n', resolveKnown, () => '', views)
+    mousedown(linkSpan(root, 'Launch art'), { metaKey: true })
+    expect(nav.openBackground).toHaveBeenCalledExactlyOnceWith('/vault/deep/Launch Photo.PNG')
+    expect(nav.openCurrent).not.toHaveBeenCalled()
+    expect(createFile).not.toHaveBeenCalled()
+  })
+
+  it('pre-catalog and missing recognized targets notice passively and never create Markdown', async () => {
+    const loading = createViewOnlyLinkSource()
+    const first = await mount('x [[missing.png]] y\n', resolveKnown, () => '', loading)
+    mousedown(linkSpan(first.root, 'missing.png'))
+    expect(first.nav.onNotice).toHaveBeenCalledWith('File catalog is still loading — try that link again in a moment')
+
+    const empty = viewSource()
+    const second = await mount('x [[missing.png]] y\n', resolveKnown, () => '', empty)
+    mousedown(linkSpan(second.root, 'missing.png'))
+    expect(second.nav.onNotice).toHaveBeenCalledWith('Can\'t open "missing.png": file not found')
+    expect(createFile).not.toHaveBeenCalled()
+    expect(createDir).not.toHaveBeenCalled()
+  })
+
+  it('a removed target restyles unresolved and cannot fall through to create-on-click', async () => {
+    const views = viewSource(viewNode('/vault/data.json', 'text'))
+    const { root, nav } = await mount('x [[data.json]] y\n', resolveKnown, () => '', views)
+    expect(linkSpan(root, 'data.json').classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(false)
+    views.update(buildViewOnlyCatalog('/vault', []))
+    expect(linkSpan(root, 'data.json').classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(true)
+    mousedown(linkSpan(root, 'data.json'))
+    expect(nav.onNotice).toHaveBeenCalledWith('Can\'t open "data.json": file not found')
+    expect(createFile).not.toHaveBeenCalled()
+  })
+
+  it('headings/blocks on view-only targets stay unresolved and never gain Markdown semantics', async () => {
+    const views = viewSource(viewNode('/vault/data.json', 'text'))
+    const { root, nav } = await mount('x [[data.json#heading]] y\n', resolveKnown, () => '', views)
+    expect(linkSpan(root, 'data.json').classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(true)
+    mousedown(linkSpan(root, 'heading'))
+    expect(nav.onNotice).toHaveBeenCalledWith('Can\'t open "data.json#heading": headings and blocks aren\'t supported for read-only files')
     expect(createFile).not.toHaveBeenCalled()
   })
 })

@@ -7,12 +7,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type SidebarLens, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type SidebarLens, type TreeNode, type TreeResponse, type WindowIdentity } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
 import * as continuity from './lib/renameContinuity'
+import * as renameLinks from './links/renameLinks'
 import { storage } from './lib/storage'
+import type { MutableViewOnlyLinkSource, ViewOnlyLinkSource } from './editor/wikilink/viewOnlyLinkSource'
 
 interface SidebarStubProps {
   root: string
@@ -22,7 +24,7 @@ interface SidebarStubProps {
   onRootMissing: () => void
   onFileMissing: () => void
   /** The ONE rename door (⚡ YAZ-888): the inline rename AND the drag-move both arrive through it. */
-  onRenameFile: (oldPath: string, newPath: string) => Promise<void>
+  onRenameFile: (oldPath: string, newPath: string, kind: 'file' | 'dir') => Promise<void>
   pendingSearchFocus: boolean
   /** The lens tabs (YAZ-847): App owns the value and the write-through; the sidebar only reports clicks. */
   lens: SidebarLens
@@ -33,16 +35,19 @@ interface SidebarStubProps {
   /** 6C (YAZ-849): App's per-vault verdict + the offer card's button, both threaded to Topics. */
   unadopted: boolean
   onCreateHome: () => void
+  viewOnlyLinks: ViewOnlyLinkSource
 }
 
 const captured = vi.hoisted(() => ({
   sidebar: null as SidebarStubProps | null,
   editorOpeners: [] as { path: string | null; open: (path: string) => void }[],
+  viewOnlyLinks: [] as Array<ViewOnlyLinkSource | undefined>,
 }))
 
 vi.mock('./editor/Editor', () => ({
-  Editor: ({ root, path, onOpenFile, onOpenFileBackground }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void }) => {
+  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource }) => {
     captured.editorOpeners.push({ path, open: onOpenFile })
+    captured.viewOnlyLinks.push(viewOnlyLinks)
     return (
       <div data-editor data-root={root} data-path={path ?? ''}>
         <button type="button" data-open-right-current onClick={() => onOpenFile('/v/c.md')} />
@@ -84,7 +89,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       return () => set.delete(l)
     })
   const bridge = {
-    tree: vi.fn(async (root: string) => ({ root, tree: [], generatedAt: 1 })),
+    tree: vi.fn(async (root: string): Promise<TreeResponse> => ({ root, tree: [], generatedAt: 1 })),
     // Empty index (GRO-2190): WikilinkIndexBridge reads it for wikilink resolution.
     index: vi.fn(async (root: string) => ({ root, records: [] as IndexRecord[], generatedAt: 1 })),
     // No cold diff by default (E1c, GRO-2242): the external-rename tests stub a hit.
@@ -240,6 +245,7 @@ afterEach(() => {
   container = null
   captured.sidebar = null
   captured.editorOpeners = []
+  captured.viewOnlyLinks = []
   history.replaceState(null, '', '/')
   delete document.documentElement.dataset.theme
   document.getElementById(CREPE_THEME_STYLE_ID)?.remove()
@@ -610,6 +616,47 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(layers(el)).toEqual([['/v/b.md', false]])
   })
 
+  it('owns one ready navigation-only source and threads that same object to retained editors', async () => {
+    await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    const sources = captured.viewOnlyLinks.filter((source): source is ViewOnlyLinkSource => source !== undefined)
+    expect(sources.length).toBeGreaterThan(0)
+    expect(new Set(sources).size).toBe(1)
+    expect(sources[0]?.ready).toBe(true)
+    expect('records' in sources[0]!).toBe(false)
+    expect(captured.sidebar?.viewOnlyLinks).toBe(sources[0])
+  })
+
+  it.each([
+    ['/v/data.json', '/v/report.PDF', ['data.json', 'report.PDF'], 'data.json — v'],
+    ['/v/report.PDF', '/v/data.json', ['report.PDF', 'data.json'], 'report.PDF — v'],
+    ['/v/photo.PNG', '/v/data.json', ['photo.PNG', 'data.json'], 'photo.PNG — v'],
+  ] as const)('restores view-only tabs with exact extension labels and title for %s', async (active, other, labels, title) => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: active, tabs: [active, other] })
+    expect(stripLabels(el)).toEqual(labels)
+    expect(activeLabel(el)).toBe(labels[0])
+    expect(layers(el)).toEqual([[active, false]])
+    expect(document.title).toBe(title)
+  })
+
+  it('routes text/PDF through current and background tabs without adding duplicate paths', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/data.json', tabs: ['/v/data.json'] })
+    act(() => captured.sidebar?.onOpenFileBackground('/v/report.PDF'))
+    act(() => captured.sidebar?.onOpenFileBackground('/v/report.PDF'))
+    expect(stripLabels(el)).toEqual(['data.json', 'report.PDF'])
+    expect(activeLabel(el)).toBe('data.json')
+    expect(layers(el)).toEqual([['/v/data.json', false]])
+
+    act(() => captured.sidebar?.onOpenFile('/v/report.PDF'))
+    expect(stripLabels(el)).toEqual(['data.json', 'report.PDF'])
+    expect(activeLabel(el)).toBe('report.PDF')
+    expect(layers(el)).toEqual([
+      ['/v/data.json', true],
+      ['/v/report.PDF', false],
+    ])
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/data.json', '/v/report.PDF'], file: '/v/report.PDF', rightPanel: defaultRightPanelIdentity() })
+    expect(document.title).toBe('report.PDF — v')
+  })
+
   it('a pasted #hash wins as the active tab and is prepended when missing from the stored tabs (rule 12)', async () => {
     history.replaceState(null, '', '#/v/pasted.md')
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
@@ -963,7 +1010,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
   it('a NAME change asks first, with the honest count — and confirming runs the whole pipeline', async () => {
     const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
     const { bridge, el } = await mount(defaultAppState(), identity(), files, feed)
-    await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md'))
+    await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
     expect(sheetText(el)).toBe("Rename 'B' to 'B2'? Links in 1 note will be updated.")
     expect(bridge.file.rename).not.toHaveBeenCalled() // nothing moves before the beat
 
@@ -975,7 +1022,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
 
   it('a MOVE stays silent: no sheet, the rename runs straight through', async () => {
     const { bridge, el } = await mount(defaultAppState(), identity(), {}, feed)
-    await act(async () => await captured.sidebar?.onRenameFile('/v/B.md', '/v/Docs/B.md'))
+    await act(async () => await captured.sidebar?.onRenameFile('/v/B.md', '/v/Docs/B.md', 'file'))
     expect(el.querySelector('.confirm')).toBeNull()
     expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/B.md', newPath: '/v/Docs/B.md' })
   })
@@ -983,23 +1030,235 @@ describe('App rename door (⚡ YAZ-888)', () => {
   it('Cancel renames nothing and rewrites nothing', async () => {
     const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
     const { bridge, el } = await mount(defaultAppState(), identity(), files, feed)
-    await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md'))
+    await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
     await act(async () => sheetBtn(el, 'Cancel')?.click())
     expect(el.querySelector('.confirm')).toBeNull()
     expect(bridge.file.rename).not.toHaveBeenCalled()
     expect(files['/v/A.md'].content).toBe('See [[B]].\n')
   })
 
+  it('clears an open rename confirmation when the window switches roots', async () => {
+    const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), identity(), {}, feed)
+    await act(async () => void await captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
+    expect(sheetText(el)).toContain("Rename 'B' to 'B2'?")
+
+    await act(async () => emitOpenRoot('/w'))
+
+    expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/w')
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(bridge.file.rename).not.toHaveBeenCalled()
+  })
+
+  it('silently cancels a deferred old-root catalog request after a root switch', async () => {
+    const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), identity(), {}, feed)
+    const oldRootRename = captured.sidebar?.onRenameFile
+    let resolveOldTree!: (response: TreeResponse) => void
+    bridge.tree.mockImplementation((path: string): Promise<TreeResponse> => path === '/v'
+      ? new Promise((resolve) => { resolveOldTree = resolve })
+      : Promise.resolve({ root: path, tree: [], generatedAt: 2 }))
+    let request!: Promise<void>
+    await act(async () => {
+      request = oldRootRename?.('/v/data.json', '/v/data-v2.json', 'file') ?? Promise.resolve()
+      await Promise.resolve()
+    })
+
+    await act(async () => emitOpenRoot('/w'))
+    await act(async () => {
+      resolveOldTree({
+        root: '/v',
+        tree: [{ type: 'file', name: 'data.json', path: '/v/data.json', kind: 'text', size: 1, mtime: 1 }],
+        generatedAt: 1,
+      })
+      await request
+    })
+
+    expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/w')
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(el.querySelector('.link-notice')).toBeNull()
+    expect(bridge.file.rename).not.toHaveBeenCalled()
+  })
+
   it('a FOLDER rename asks too, and its count is the DIR-mode one — pathed links only', async () => {
     const { el } = await mount(defaultAppState(), identity(), {}, feed)
-    await act(async () => void captured.sidebar?.onRenameFile('/v/Docs', '/v/Notes'))
+    await act(async () => void captured.sidebar?.onRenameFile('/v/Docs', '/v/Notes', 'dir'))
     expect(sheetText(el)).toBe("Rename 'Docs' to 'Notes'? Links in 1 note will be updated.")
   })
 
   it('a page nobody links to says so rather than promising an update of nothing', async () => {
     const { el } = await mount(defaultAppState(), identity(), {}, feed)
-    await act(async () => void captured.sidebar?.onRenameFile('/v/A.md', '/v/A2.md'))
+    await act(async () => void captured.sidebar?.onRenameFile('/v/A.md', '/v/A2.md', 'file'))
     expect(sheetText(el)).toBe("Rename 'A' to 'A2'? No other notes link to it.")
+  })
+
+  it('classifies an image as a navigation-only file without adding it to the semantic index', async () => {
+    const semanticRecords = [record('/v/A.md', { links: ['photo.png'] })]
+    const files = { '/v/A.md': { content: 'See [[photo.png]].\n', mtime: 1 } }
+    const count = vi.spyOn(renameLinks, 'countLinkReferences')
+    try {
+      const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
+        b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 })
+        b.bridge.tree.mockImplementation(async () => ({
+          root: '/v',
+          tree: [{ type: 'file', name: 'photo.png', path: '/v/photo.png', kind: 'image', size: 1, mtime: 1 }] as TreeNode[],
+          generatedAt: 1,
+        }))
+      })
+      const treeReadsBeforeRename = bridge.tree.mock.calls.filter(([path]) => path === '/v').length
+      await act(async () => void captured.sidebar?.onRenameFile('/v/photo.png', '/v/photo-v2.png', 'file'))
+
+      expect(semanticRecords.some((record) => record.path === '/v/photo.png')).toBe(false)
+      expect(count).toHaveBeenCalledWith(expect.objectContaining({
+        root: '/v',
+        oldPath: '/v/photo.png',
+        kind: 'file',
+        records: semanticRecords,
+        viewOnlyCatalog: expect.objectContaining({ entries: [expect.objectContaining({ path: '/v/photo.png', kind: 'image' })] }),
+      }))
+      expect(sheetText(el)).toBe("Rename 'photo.png' to 'photo-v2.png'? Links in 1 note will be updated.")
+      expect(bridge.tree.mock.calls.filter(([path]) => path === '/v')).toHaveLength(treeReadsBeforeRename)
+
+      ;(captured.sidebar?.viewOnlyLinks as MutableViewOnlyLinkSource | undefined)?.reset()
+      await act(async () => sheetBtn(el, 'Rename')?.click())
+      expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/photo.png', newPath: '/v/photo-v2.png' })
+      expect(files['/v/A.md'].content).toBe('See [[photo-v2.png]].\n')
+    } finally {
+      count.mockRestore()
+    }
+  })
+
+  it('fetches and pins a fresh catalog when a view-only rename starts before the catalog is ready', async () => {
+    const semanticRecords = [record('/v/A.md', { links: ['data.json'] })]
+    const files = { '/v/A.md': { content: '[[data.json]]\n', mtime: 1 } }
+    let rootReads = 0
+    const pending = new Promise<TreeResponse>(() => undefined)
+    const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
+      b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 })
+      b.bridge.tree.mockImplementation(async (path: string): Promise<TreeResponse> => {
+        if (path !== '/v') return { root: path, tree: [], generatedAt: 1 }
+        rootReads++
+        if (rootReads <= 2) return pending
+        return {
+          root: '/v',
+          tree: [{ type: 'file', name: 'data.json', path: '/v/data.json', kind: 'text', size: 1, mtime: 1 }],
+          generatedAt: 2,
+        }
+      })
+    })
+
+    await act(async () => void await captured.sidebar?.onRenameFile('/v/data.json', '/v/data-v2.json', 'file'))
+    expect(rootReads).toBe(3)
+    expect(sheetText(el)).toBe("Rename 'data.json' to 'data-v2.json'? Links in 1 note will be updated.")
+    expect(bridge.file.rename).not.toHaveBeenCalled()
+
+    await act(async () => sheetBtn(el, 'Rename')?.click())
+    expect(files['/v/A.md'].content).toBe('[[data-v2.json]]\n')
+  })
+
+  it('fresh-snapshots directory descendants and rewrites their explicit links after confirmation', async () => {
+    const semanticRecords = [record('/v/A.md', { links: ['Old/data.json'] })]
+    const files = { '/v/A.md': { content: '[[Old/data.json]]\n', mtime: 1 } }
+    let rootReads = 0
+    const pending = new Promise<TreeResponse>(() => undefined)
+    const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
+      b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 })
+      b.bridge.tree.mockImplementation(async (path: string): Promise<TreeResponse> => {
+        if (path !== '/v') return { root: path, tree: [], generatedAt: 1 }
+        rootReads++
+        if (rootReads <= 2) return pending
+        return {
+          root: '/v',
+          tree: [{ type: 'dir', name: 'Old', path: '/v/Old', children: [
+            { type: 'file', name: 'data.json', path: '/v/Old/data.json', kind: 'text', size: 1, mtime: 1 },
+          ] }],
+          generatedAt: 2,
+        }
+      })
+      b.bridge.file.rename.mockImplementation(async ({ oldPath, newPath }) => ({ oldPath, newPath, kind: 'dir' }))
+    })
+
+    await act(async () => void await captured.sidebar?.onRenameFile('/v/Old', '/v/New', 'dir'))
+    expect(rootReads).toBe(3)
+    expect(sheetText(el)).toBe("Rename 'Old' to 'New'? Links in 1 note will be updated.")
+    await act(async () => sheetBtn(el, 'Rename')?.click())
+    expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/Old', newPath: '/v/New' })
+    expect(files['/v/A.md'].content).toBe('[[New/data.json]]\n')
+  })
+
+  it('always refreshes a ready directory catalog so newly visible descendants count and rewrite', async () => {
+    const semanticRecords = [record('/v/A.md', { links: ['Old/data.json'] })]
+    const files = { '/v/A.md': { content: '[[Old/data.json]]\n', mtime: 1 } }
+    const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
+      b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 })
+      b.bridge.tree.mockResolvedValue({
+        root: '/v',
+        tree: [{ type: 'dir', name: 'Old', path: '/v/Old', children: [] }],
+        generatedAt: 1,
+      })
+      b.bridge.file.rename.mockImplementation(async ({ oldPath, newPath }) => ({ oldPath, newPath, kind: 'dir' }))
+    })
+    const readsBeforeRename = bridge.tree.mock.calls.filter(([path]) => path === '/v').length
+    bridge.tree.mockResolvedValue({
+      root: '/v',
+      tree: [{ type: 'dir', name: 'Old', path: '/v/Old', children: [
+        { type: 'file', name: 'data.json', path: '/v/Old/data.json', kind: 'text', size: 1, mtime: 2 },
+      ] }],
+      generatedAt: 2,
+    })
+
+    await act(async () => void await captured.sidebar?.onRenameFile('/v/Old', '/v/New', 'dir'))
+
+    expect(bridge.tree.mock.calls.filter(([path]) => path === '/v')).toHaveLength(readsBeforeRename + 1)
+    expect(sheetText(el)).toBe("Rename 'Old' to 'New'? Links in 1 note will be updated.")
+    await act(async () => sheetBtn(el, 'Rename')?.click())
+    expect(files['/v/A.md'].content).toBe('[[New/data.json]]\n')
+  })
+
+  it('fails closed with a passive notice when the required fresh rename catalog cannot load', async () => {
+    const { bridge, el } = await mount(defaultAppState(), identity(), {}, (b) => {
+      b.bridge.tree.mockImplementation(async (path: string): Promise<TreeResponse> => {
+        if (path === '/v') throw new Error('tree unavailable')
+        return { root: path, tree: [], generatedAt: 1 }
+      })
+    })
+
+    await act(async () => void await captured.sidebar?.onRenameFile('/v/data.json', '/v/data-v2.json', 'file'))
+    expect(bridge.tree.mock.calls.filter(([path]) => path === '/v')).toHaveLength(3)
+    expect(bridge.file.rename).not.toHaveBeenCalled()
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(el.querySelector('.link-notice')?.textContent).toBe("Can't rename: couldn't load the current file list")
+  })
+
+  it('rejects a catalog response for a different root before confirmation or mutation', async () => {
+    const { bridge, el } = await mount(defaultAppState(), identity(), {}, (b) => {
+      b.bridge.tree.mockResolvedValue({ root: '/other', tree: [], generatedAt: 1 })
+    })
+
+    await act(async () => void await captured.sidebar?.onRenameFile('/v/data.json', '/v/data-v2.json', 'file'))
+
+    expect(bridge.file.rename).not.toHaveBeenCalled()
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(el.querySelector('.link-notice')?.textContent).toBe("Can't rename: couldn't load the current file list")
+  })
+
+  it('uses directory-prefix semantics for a directory whose name looks like a supported file', async () => {
+    const semanticRecords = [record('/v/R.md', { links: ['Archive.json/N'] }), record('/v/Archive.json/N.md')]
+    const count = vi.spyOn(renameLinks, 'countLinkReferences')
+    try {
+      const { el } = await mount(defaultAppState(), identity(), {}, (b) =>
+        b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 }),
+      )
+      await act(async () => void captured.sidebar?.onRenameFile('/v/Archive.json', '/v/Renamed.json', 'dir'))
+
+      expect(count).toHaveBeenCalledWith({
+        root: '/v',
+        oldPath: '/v/Archive.json',
+        kind: 'dir',
+        records: semanticRecords,
+      })
+      expect(sheetText(el)).toBe("Rename 'Archive.json' to 'Renamed.json'? Links in 1 note will be updated.")
+    } finally {
+      count.mockRestore()
+    }
   })
 })
 

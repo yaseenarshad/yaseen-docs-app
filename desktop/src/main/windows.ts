@@ -339,9 +339,10 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     },
 
     routeToFile(path, rootOverride) {
-      // Validate first (E1): markdown only, and the file must exist. Anything off → notice, never a dialog.
-      if (fileKind(path) !== 'markdown') {
-        linkNotice(`Can't open ${path}: not a markdown file`)
+      // Validate first (E1): a supported file kind and a live regular file. Anything off →
+      // notice, never a dialog; renderer dispatch decides Markdown editor vs read-only viewer.
+      if (fileKind(path) === null) {
+        linkNotice(`Can't open ${path}: unsupported file type`)
         return
       }
       if (!host.exists(path)) {

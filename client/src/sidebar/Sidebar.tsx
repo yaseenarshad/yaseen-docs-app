@@ -10,6 +10,7 @@ import { memberFolder, newPageFromFolderPage } from '../views/scaffold'
 import { ChevronsIcon, SearchIcon } from '../views/view/icons'
 import { transformFile, writeProperty } from '../views/writeProperty'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { basename, stripExt } from '../lib/paths'
@@ -69,7 +70,7 @@ interface SidebarProps {
    * failure to the passive notice — this promise never rejects, so the inline input just
    * closes.
    */
-  onRenameFile: (oldPath: string, newPath: string) => Promise<void>
+  onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>
   /**
    * Context-menu "Delete" confirmed (GRO-2272): App moves the entry to the system Trash and
    * routes ANY failure to the passive notice — this promise never rejects, so the sheet just
@@ -92,6 +93,8 @@ interface SidebarProps {
    * bytes would not change. Report-don't-block: nothing is lost, and the next right-click is right.
    */
   indexSource: WikilinkResolveSource
+  /** App's separate catalog-backed source for navigation-only text/PDF link spellings. */
+  viewOnlyLinks: ViewOnlyLinkSource
   /**
    * ⌘K asked for the search bar (YAZ-801): the bar focuses its input. True at MOUNT is the
    * ⌘K-while-collapsed path (App un-collapses, so the sidebar mounts with it already set), not an
@@ -280,6 +283,7 @@ export function Sidebar({
   onDeleteFile,
   onNotice,
   indexSource,
+  viewOnlyLinks,
   pendingSearchFocus,
   onSearchFocusHandled,
   unadopted,
@@ -496,6 +500,7 @@ export function Sidebar({
       // HERE, once, off the window's snapshot: the menu that opens is about the row that was
       // right-clicked, and pinning the boolean into the menu's state is what keeps it that way.
       const notePath = filePath !== null && fileKind(filePath) === 'markdown' ? filePath : null
+      const viewOnlyLinkName = filePath === null || notePath !== null ? null : viewOnlyLinks.linkName(filePath)
       setMenu({
         x: e.clientX,
         y: e.clientY,
@@ -510,10 +515,11 @@ export function Sidebar({
         // empty-Explorer menu does the same. Trailing separators are stripped so the copied
         // bytes match the root the rest of the app uses.
         copyPath: node?.path ?? root.replace(/\/+$/, ''),
-        // "Copy link" copies the note's `[[wikilink]]` (YAZ-957), resolved HERE off the same
-        // snapshot `folderPageIsOn` reads and pinned into the menu's state: the menu that opens
-        // is about the row that was right-clicked, whatever the index does next.
-        copyLinkText: filePath === null ? null : `[[${linkNameFor(indexSource.records, filePath)}]]`,
+        // Markdown keeps its semantic index spelling. View-only files cross the explicit
+        // catalog boundary instead; pre-catalog, missing, directories and unknown files hide it.
+        copyLinkText: notePath !== null
+          ? `[[${linkNameFor(indexSource.records, notePath)}]]`
+          : viewOnlyLinkName === null ? null : `[[${viewOnlyLinkName}]]`,
         newWindowPath: filePath,
         renamePath: node?.path ?? null,
         deletePath: node?.path ?? null,
@@ -524,7 +530,7 @@ export function Sidebar({
         topicsAnchor,
       })
     },
-    [root, indexSource],
+    [root, indexSource, viewOnlyLinks],
   )
 
   /**
@@ -724,7 +730,7 @@ export function Sidebar({
       if (target === renamingEntry.path) return // same name = no-op
       // App owns the whole flow (and routes failures to the passive notice — never a dialog);
       // the tree row follows via the watcher's unlink+add refresh.
-      await onRenameFile(renamingEntry.path, target)
+      await onRenameFile(renamingEntry.path, target, renamingEntry.kind)
     },
     [renamingEntry, onRenameFile],
   )
@@ -744,7 +750,7 @@ export function Sidebar({
       if (target === path) return // dropped into its own folder: nothing to do
       // The SAME rename flow as the context menu — never-overwrite and every failure as a
       // passive notice come with it; link updates and the workspace remap ride the same pipeline.
-      void onRenameFile(path, target)
+      void onRenameFile(path, target, 'file')
     },
     [dragging, onRenameFile],
   )

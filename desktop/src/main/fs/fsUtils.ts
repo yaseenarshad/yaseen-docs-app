@@ -1,8 +1,10 @@
 import { randomBytes } from 'node:crypto'
 import { readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { BridgeError, TreeNode } from '@shared/types'
-import { fileKind } from '@shared/fileKind'
+import type { BridgeError, FileKind, TreeNode } from '@shared/types'
+import { fileKind, isMarkdown, isSupportedFile } from '@shared/fileKind'
+
+export { isMarkdown, isSupportedFile } from '@shared/fileKind'
 
 /**
  * Thrown by the fs layer; `ipc/envelope.ts` turns it into the `BridgeError` the renderer sees.
@@ -38,18 +40,18 @@ export function requireAbsPath(p: unknown, param: string): string {
   return path.resolve(p)
 }
 
-export function isMarkdown(name: string): boolean {
-  return fileKind(name) === 'markdown'
+/** Throws unless `p` has the only editable/creatable extension kind. */
+export function requireMarkdownFile(p: string): void {
+  if (!isMarkdown(p)) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .md/.markdown files are editable', { path: p })
 }
 
-/** The files the tree, watcher and file calls serve — markdown, and nothing else (YAZ-844). */
-export function isVaultFile(name: string): boolean {
-  return fileKind(name) !== null
-}
-
-/** Throws UNSUPPORTED_EXTENSION unless `p` is a vault file by extension. */
-export function requireVaultFile(p: string): void {
-  if (!isVaultFile(p)) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .md/.markdown files are served', { path: p })
+/** Returns the kind for files that can cross the UTF-8 text bridge. PDFs use their own binary bridge. */
+export function requireTextReadableFile(p: string): Extract<FileKind, 'markdown' | 'text'> {
+  const kind = fileKind(p)
+  if (kind !== 'markdown' && kind !== 'text') {
+    throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only Markdown and supported text files can be read as text', { path: p })
+  }
+  return kind
 }
 
 /** Dot-entries and node_modules are invisible to every call. */
@@ -102,10 +104,9 @@ export async function requireDir(dir: string): Promise<void> {
 }
 
 /**
- * Recursive tree of vault files (`.md`/`.markdown`, each tagged with its `kind`) under
- * `dir`. Dirs first, then files, each sorted case-insensitively; every dir shows even with no
- * vault file beneath, so freshly created folders are visible (GRO-2022 D1). Unreadable subdirs
- * are skipped.
+ * Recursive tree of supported markdown, text, and PDF files under `dir`. Dirs first, then files,
+ * each sorted case-insensitively; every dir shows even with no supported file beneath, so freshly
+ * created folders are visible (GRO-2022 D1). Unreadable subdirs are skipped.
  */
 export async function buildTree(dir: string): Promise<TreeNode[]> {
   const entries = await readdir(dir, { withFileTypes: true })

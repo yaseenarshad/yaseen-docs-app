@@ -1,15 +1,27 @@
-import { rename, stat } from 'node:fs/promises'
+import { readdir, rename, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { RenameFileResponse } from '@shared/types'
-import { fileKind } from '@shared/fileKind'
+import { canRenameWithoutConversion, fileKind } from '@shared/fileKind'
 import { BridgeFailure, fsCall, requireAbsPath } from './fsUtils'
+
+export async function hasExactDirectoryEntry(
+  filePath: string,
+  readNames: (directory: string) => Promise<string[]> = readdir,
+): Promise<boolean> {
+  try {
+    return (await readNames(path.dirname(filePath))).includes(path.basename(filePath))
+  } catch (err) {
+    if (['ENOENT', 'ENOTDIR'].includes((err as NodeJS.ErrnoException).code ?? '')) return false
+    throw err
+  }
+}
 
 /**
  * In-app rename/move (Links E1 GRO-2194 + E1b GRO-2241 — decision E, GRO-2096: automatic
  * link updates, no prompt). E1b lifted E1's two guards: files may move BETWEEN folders,
- * and directories rename/move too (`kind: 'dir'` in the response). A file must keep a vault
- * extension on both ends (`.md` ↔ `.markdown` is the one kind there is); extension rules do
- * not apply to directories.
+ * and directories rename/move too (`kind: 'dir'` in the response). A file must keep the same
+ * supported `FileKind` on both ends (`.md` ↔ `.markdown` is allowed because both are Markdown);
+ * extension rules do not apply to directories.
  *
  * E1b refusals: the target's parent must already EXIST (`NOT_FOUND`, attributed to the
  * parent — never a mkdir here; the sidebar gesture only offers existing folders);
@@ -43,8 +55,11 @@ export async function renameFile(req: unknown): Promise<RenameFileResponse> {
       if (newP.startsWith(`${oldP}${path.sep}`)) throw new BridgeFailure('BAD_REQUEST', 'a folder cannot move inside itself', { path: newP })
     } else {
       if (!src.isFile()) throw new BridgeFailure('NOT_A_FILE', 'expected a file', { path: oldP })
-      if (fileKind(oldP) === null) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .md/.markdown files can be renamed', { path: oldP })
-      if (fileKind(newP) === null) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'the new name must keep a .md/.markdown extension', { path: newP })
+      const oldKind = fileKind(oldP)
+      if (oldKind === null) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only supported files can be renamed', { path: oldP })
+      if (!canRenameWithoutConversion(oldP, newP)) {
+        throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'the new name must preserve the supported file encoding', { path: newP })
+      }
     }
     // The target's parent must already exist — E1b never creates folders on the way.
     const parentP = path.dirname(newP)
@@ -64,11 +79,13 @@ export async function renameFile(req: unknown): Promise<RenameFileResponse> {
  * Validate a rename that ALREADY happened on disk (Links E1c, GRO-2242): an external mover beat
  * us to the filesystem, the user confirmed the detected hypothesis, and the caller (ipc/fs.ts)
  * wants to reuse E1's downstream — store repair + the `file:renamed` push — without touching the
- * disk. Mirrors `renameFile`'s posture MINUS the rename itself: `newPath` must EXIST (its stat
- * derives `kind`), `oldPath` must NOT (a live old path means the hypothesis was wrong — refuse,
- * never guess), and the extension / dot-name rules match `renameFile`, so a repair can never
- * claim a transition the real rename would have refused. No vault-root guard: nothing moves, and
- * a window rooted at an externally renamed folder is exactly what the store repair heals.
+ * disk. Mirrors `renameFile`'s posture MINUS the rename itself: `newPath` must EXIST with that
+ * exact directory-entry spelling (its stat derives `kind`), `oldPath` must have no exact entry
+ * (a live old spelling means the hypothesis was wrong — refuse, never guess), and the extension /
+ * dot-name rules match `renameFile`, so a repair can never claim a transition the real rename
+ * would have refused. Exact entry checks matter for case-only renames on case-insensitive filesystems,
+ * where `stat(oldPath)` aliases the already-renamed `newPath`. No vault-root guard: nothing moves,
+ * and a window rooted at an externally renamed folder is exactly what the store repair heals.
  */
 export async function repairRename(req: unknown): Promise<RenameFileResponse> {
   if (typeof req !== 'object' || req === null) throw new BridgeFailure('BAD_REQUEST', 'request must be an object')
@@ -78,6 +95,8 @@ export async function repairRename(req: unknown): Promise<RenameFileResponse> {
   if (oldP === newP) throw new BridgeFailure('BAD_REQUEST', 'the new path is the same as the old one', { path: newP })
   return fsCall(newP, async () => {
     const dst = await stat(newP) // missing → ENOENT → NOT_FOUND: nothing actually landed at the new path
+    if (await hasExactDirectoryEntry(oldP)) throw new BridgeFailure('BAD_REQUEST', 'the old path still exists on disk', { path: oldP })
+    if (!(await hasExactDirectoryEntry(newP))) throw new BridgeFailure('NOT_FOUND', 'path does not exist', { path: newP })
     const kind = dst.isDirectory() ? ('dir' as const) : ('file' as const)
     if (kind === 'dir') {
       if (path.basename(oldP).startsWith('.') || path.basename(newP).startsWith('.')) {
@@ -86,12 +105,12 @@ export async function repairRename(req: unknown): Promise<RenameFileResponse> {
     } else {
       if (!dst.isFile()) throw new BridgeFailure('NOT_A_FILE', 'expected a file', { path: newP })
       const oldKind = fileKind(oldP)
-      if (oldKind === null || fileKind(newP) === null) {
-        throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .md/.markdown files can be repaired', { path: oldKind === null ? oldP : newP })
+      if (!canRenameWithoutConversion(oldP, newP)) {
+        throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'rename repair requires the same supported file encoding', {
+          path: oldKind === null ? oldP : newP,
+        })
       }
     }
-    const src = await stat(oldP).catch(() => null)
-    if (src !== null) throw new BridgeFailure('BAD_REQUEST', 'the old path still exists on disk', { path: oldP })
     return { oldPath: oldP, newPath: newP, kind }
   })
 }

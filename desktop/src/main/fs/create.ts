@@ -1,6 +1,6 @@
 import { mkdir, stat, writeFile } from 'node:fs/promises'
 import type { CreateDirResponse, CreateFileRequest, CreateFileResponse } from '@shared/types'
-import { fileKind } from '@shared/fileKind'
+import { isMarkdown } from '@shared/fileKind'
 import { BridgeFailure, fsCall, requireAbsPath } from './fsUtils'
 
 /**
@@ -21,7 +21,7 @@ export async function createFile(req: string | CreateFileRequest): Promise<Creat
   const raw: unknown = req
   const isReq = typeof raw === 'object' && raw !== null
   const p = requireAbsPath(isReq ? (raw as Record<string, unknown>).path : raw, 'path')
-  if (fileKind(p) === null) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .md/.markdown files can be created', { path: p })
+  if (!isMarkdown(p)) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .md/.markdown files can be created', { path: p })
   const content = isReq ? (raw as Record<string, unknown>).content : undefined
   if (content !== undefined && typeof content !== 'string') throw new BridgeFailure('BAD_REQUEST', "'content' must be a string", { path: p })
   return fsCall(p, async () => {

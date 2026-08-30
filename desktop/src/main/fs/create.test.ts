@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { createDir, createFile } from './create'
 import { failure, makeFixture } from './testFixture'
@@ -43,7 +43,18 @@ describe('createFile', () => {
 
   it('UNSUPPORTED_EXTENSION for other extensions', async () => {
     expect(await code(createFile(path.join(root, 'note.txt')))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await code(createFile(path.join(root, 'data.json')))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await code(createFile(path.join(root, 'script.py')))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await code(createFile(path.join(root, 'report.pdf')))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(createFile(path.join(root, 'Topics.base')))).toBe('UNSUPPORTED_EXTENSION')
+  })
+
+  it.each(['existing.json', 'existing.py', 'existing.pdf'])('refuses existing %s before mutation and preserves its bytes', async (name) => {
+    const file = path.join(root, name)
+    const original = Buffer.from(`original:${name}`)
+    await writeFile(file, original)
+    expect(await code(createFile({ path: file, content: 'clobber' }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await readFile(file)).toEqual(original)
   })
 
   it('ALREADY_EXISTS and never overwrites', async () => {

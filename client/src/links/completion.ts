@@ -25,6 +25,7 @@
  * this is recorded rather than fixed.
  */
 import type { IndexRecord } from '@shared/types'
+import { isViewOnly } from '@shared/fileKind'
 
 /** Suggestion cap shared by every completion surface (was EditableCell's local constant). */
 export const MAX_SUGGESTIONS = 8
@@ -53,6 +54,19 @@ export interface LinkCandidate {
 
 /** A plain link name as a candidate: it matches, inserts and reads as itself. */
 export const nameCandidate = (name: string): LinkCandidate => ({ name, insert: name, label: name, lower: name.toLowerCase() })
+
+/**
+ * Picker-only composition: every recognized view-only TARGET spelling belongs to the
+ * navigation-only route, even before its catalog entry exists. Semantic aliases whose DISPLAY
+ * happens to match remain valid because their target (before `|`) is still an ordinary note.
+ * Resolution sources stay split.
+ */
+export function mergeLinkCandidates(markdown: readonly LinkCandidate[], viewOnly: readonly LinkCandidate[]): LinkCandidate[] {
+  return [
+    ...markdown.filter((candidate) => !isViewOnly(candidate.insert.split('|', 1)[0].trim())),
+    ...viewOnly,
+  ]
+}
 
 /** An alias of `note` (that note's own unambiguous name): typed as the alias, inserted piped. */
 const aliasCandidate = (alias: string, note: string, path: string): LinkCandidate => ({

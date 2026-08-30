@@ -31,6 +31,7 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { createFromLink } from './createFromLink'
 import { WIKILINK_CLASS, WIKILINK_RE, eachPlainRun, linkPageName, type WikilinkResolveSource } from './wikilinkPlugin'
+import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
 
 /** How clicks leave the editor: App threads this window's tabs API + notice setter (via Editor). */
 export interface WikilinkNav {
@@ -74,7 +75,7 @@ export function wikilinkInnerAt(doc: ProseNode, pos: number): string | null {
   return found
 }
 
-export function createWikilinkClick(source: WikilinkResolveSource, nav: WikilinkNav) {
+export function createWikilinkClick(source: WikilinkResolveSource, nav: WikilinkNav, viewOnly?: ViewOnlyLinkSource) {
   return $prose(
     () =>
       new Plugin({
@@ -96,6 +97,22 @@ export function createWikilinkClick(source: WikilinkResolveSource, nav: Wikilink
               if (page === '') return true // same-file [[#h]] — the heading jump is GRO-2239, not this unit
               const background = event.metaKey
               const open = background ? nav.openBackground : nav.openCurrent
+              const viewSource = viewOnly
+              const viewTarget = viewSource === undefined ? null : viewOnlyLinkTarget(inner)
+              if (viewTarget !== null && viewSource !== undefined) {
+                if (viewTarget.hasSubtarget) {
+                  nav.onNotice(`Can't open "${viewTarget.raw}": headings and blocks aren't supported for read-only files`)
+                  return true
+                }
+                if (viewSource.resolve === null) {
+                  nav.onNotice('File catalog is still loading — try that link again in a moment')
+                  return true
+                }
+                const viewPath = viewSource.resolve(viewTarget.page)
+                if (viewPath === null) nav.onNotice(`Can't open "${viewTarget.page}": file not found`)
+                else open(viewPath)
+                return true
+              }
               const resolve = source.resolve
               // Pre-index window: every link renders resolved but nothing can be resolved yet;
               // creating here could shadow an existing note, so the gesture is swallowed — but

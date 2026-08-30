@@ -1,7 +1,7 @@
 import type { TreeNode } from '@shared/types'
 import { stripExt } from '../lib/paths'
 import { CreateInline } from './CreateInline'
-import type { EntryKind } from './createEntry'
+import { renameInputName, type EntryKind } from './createEntry'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { RenameInline } from './RenameInline'
 
@@ -124,10 +124,10 @@ export function Tree({
             {expanded.has(node.path) && <Tree nodes={node.children} dirPath={node.path} depth={depth + 1} {...recurse} />}
           </li>
         ) : renaming !== null && renaming.path === node.path ? (
-          // Inline rename (Links E1, GRO-2194): the input replaces the row, prefilled with
-          // the name minus its extension (the extension re-appends on commit).
+          // Inline rename (Links E1, GRO-2194): Markdown hides its suffix and re-appends it on
+          // commit; view-only files show the full filename so their extension stays explicit.
           <li key={node.path} role="treeitem">
-            <RenameInline initial={stripExt(node.name)} indent={8 + depth * 14 + 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
+            <RenameInline initial={renameInputName(node.name)} indent={8 + depth * 14 + 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
           </li>
         ) : (
           <li key={node.path} role="treeitem" aria-selected={node.path === activeFile}>

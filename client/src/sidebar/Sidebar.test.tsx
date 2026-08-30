@@ -11,6 +11,8 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_SETTINGS, type TreeNode, type WatchEvent } from '@shared/types'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
+import { buildViewOnlyCatalog } from '../links/viewOnlyCatalog'
+import { createViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 
 // Forward uses the one-key writer; reverse uses its shared whole-file transform because the
 // migrated outline and flag must change atomically (YAZ-1022).
@@ -88,6 +90,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     // The window's already-on index feed (WikilinkIndexBridge's source): empty unless a test
     // hands over a snapshot, which is exactly the pre-first-index state.
     indexSource: { resolve: null, records: [], subscribe: () => () => undefined },
+    viewOnlyLinks: createViewOnlyLinkSource(),
     pendingSearchFocus: false,
     onSearchFocusHandled: vi.fn(),
     // 6C (YAZ-849): App's per-vault verdict, threaded to the Topics lens. False = adopted, the
@@ -171,6 +174,60 @@ describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
   })
 })
 
+describe('Sidebar view-only file routing (YAZ-1301)', () => {
+  const VIEW_ONLY_TREE: TreeNode[] = [
+    { type: 'file', name: 'data.json', path: '/v/data.json', size: 1, mtime: 1, kind: 'text' },
+    { type: 'file', name: 'report.PDF', path: '/v/report.PDF', size: 1, mtime: 1, kind: 'pdf' },
+  ]
+  const withViewOnlyTree = (bridge: ReturnType<typeof installBridge>) =>
+    bridge.tree.mockResolvedValue({ root: '/v', tree: VIEW_ONLY_TREE, generatedAt: 1 })
+
+  it('shows exact extensions, selects the active file, and routes plain and command clicks through the existing tab callbacks', async () => {
+    const { el, props } = await mount({ activeFile: '/v/data.json' }, withViewOnlyTree)
+    const rows = [...el.querySelectorAll<HTMLButtonElement>('.tree__row--file')]
+    expect(rows.map((row) => row.textContent)).toEqual(['data.json', 'report.PDF'])
+    expect(rows[0]?.closest('[role="treeitem"]')?.getAttribute('aria-selected')).toBe('true')
+    expect(rows[1]?.closest('[role="treeitem"]')?.getAttribute('aria-selected')).toBe('false')
+
+    act(() => rows[1]?.click())
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/report.PDF')
+    act(() => void rows[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })))
+    expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith('/v/data.json')
+  })
+
+  it.each([
+    ['/v/data.json'],
+    ['/v/report.PDF'],
+  ] as const)('keeps %s on the standard file menu while hiding semantic Markdown actions', async (path) => {
+    const { bridge, el, props } = await mount({ settings: { ...DEFAULT_SETTINGS, confirmDelete: false } }, withViewOnlyTree)
+    const row = el.querySelector(`[title="${path}"]`)
+
+    act(() => void row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(expect.arrayContaining([
+      'Open in new window',
+      'Reveal in Finder',
+      'Open in VS Code',
+      'Copy path',
+      'Rename',
+      'Delete',
+    ]))
+    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
+    expect(itemByLabel(el, 'Turn into folder page')).toBeUndefined()
+    expect(itemByLabel(el, 'Turn back into normal page')).toBeUndefined()
+
+    act(() => itemByLabel(el, 'Open in new window')?.click())
+    expect(bridge.window.open).toHaveBeenCalledExactlyOnceWith({ root: '/v', file: path })
+
+    act(() => void row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Reveal in Finder')?.click())
+    expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path })
+
+    act(() => void row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Delete')?.click())
+    expect(props.onDeleteFile).toHaveBeenCalledExactlyOnceWith(path)
+  })
+})
+
 /**
  * "Copy link" copies the note's `[[wikilink]]` (YAZ-957) — the text that pastes into another
  * note and resolves back to the row that was right-clicked. It REPLACED the `yaseendocs://`
@@ -201,6 +258,62 @@ describe('Sidebar copy link (E3 GRO-2173, YAZ-957)', () => {
   }
   const feed = (...records: ReturnType<typeof record>[]): SidebarProps['indexSource'] =>
     ({ resolve: null, records, subscribe: () => () => undefined }) as SidebarProps['indexSource']
+
+  const VIEW_LINK_TREE: TreeNode[] = [
+    { type: 'file', name: 'data.json', path: '/v/data.json', size: 1, mtime: 1, kind: 'text' },
+    { type: 'file', name: 'photo.PNG', path: '/v/photo.PNG', size: 1, mtime: 1, kind: 'image' },
+    { type: 'dir', name: 'deep', path: '/v/deep', children: [
+      { type: 'file', name: 'data.JSON', path: '/v/deep/data.JSON', size: 1, mtime: 1, kind: 'text' },
+      { type: 'file', name: 'Outbound Lead Qualifier.json', path: '/v/deep/Outbound Lead Qualifier.json', size: 1, mtime: 1, kind: 'text' },
+    ] },
+  ]
+
+  it('copies catalog-owned explicit-extension spellings for view-only rows, including duplicates and spaces', async () => {
+    const writeText = installClipboard()
+    const viewOnlyLinks = createViewOnlyLinkSource()
+    viewOnlyLinks.update(buildViewOnlyCatalog('/v', VIEW_LINK_TREE))
+    const { el } = await mount({ viewOnlyLinks }, (bridge) => {
+      bridge.tree.mockResolvedValue({ root: '/v', tree: VIEW_LINK_TREE, generatedAt: 1 })
+    })
+
+    act(() => void el.querySelector('[title="/v/data.json"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Copy link')?.click())
+    expect(writeText).toHaveBeenLastCalledWith('[[data.json]]')
+
+    act(() => void el.querySelector('[title="/v/photo.PNG"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Copy link')?.click())
+    expect(writeText).toHaveBeenLastCalledWith('[[photo.PNG]]')
+
+    act(() => el.querySelector<HTMLButtonElement>('.tree__row--dir')?.click())
+    act(() => void el.querySelector('[title="/v/deep/data.JSON"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Copy link')?.click())
+    expect(writeText).toHaveBeenLastCalledWith('[[deep/data.JSON]]')
+
+    act(() => void el.querySelector('[title="/v/deep/Outbound Lead Qualifier.json"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Copy link')?.click())
+    expect(writeText).toHaveBeenLastCalledWith('[[Outbound Lead Qualifier.json]]')
+  })
+
+  it('hides view-only Copy link before the catalog is ready and after the target is removed', async () => {
+    installClipboard()
+    const viewOnlyLinks = createViewOnlyLinkSource()
+    const { el } = await mount({ viewOnlyLinks }, (bridge) => {
+      bridge.tree.mockResolvedValue({ root: '/v', tree: VIEW_LINK_TREE, generatedAt: 1 })
+    })
+    const row = () => el.querySelector('[title="/v/data.json"]')
+    act(() => void row()?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
+    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+
+    viewOnlyLinks.update(buildViewOnlyCatalog('/v', VIEW_LINK_TREE))
+    act(() => void row()?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(itemByLabel(el, 'Copy link')).toBeDefined()
+    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+
+    viewOnlyLinks.update(buildViewOnlyCatalog('/v', []))
+    act(() => void row()?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
+  })
 
   it('the file row context menu offers "Copy link" next to "Copy path"; it puts the note\'s [[wikilink]] on the clipboard and closes', async () => {
     const writeText = installClipboard()
@@ -259,6 +372,55 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
     act(() => void target?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true })))
   const dirRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.tree__row--dir')
 
+  it.each([
+    ['data.json', 'profile', '/v/profile.json', 'text'],
+    ['report.PDF', 'brief.PDF', '/v/brief.PDF', 'pdf'],
+  ] as const)('shows the full view-only filename for %s and renames it deterministically', async (name, nextName, target, kind) => {
+    const node: TreeNode = { type: 'file', name, path: `/v/${name}`, size: 1, mtime: 1, kind }
+    const { props, el } = await mount({}, (bridge) =>
+      bridge.tree.mockResolvedValue({ root: '/v', tree: [node], generatedAt: 1 }),
+    )
+    const row = el.querySelector<HTMLButtonElement>(`.tree__row--file[title="/v/${name}"]`)
+    act(() => void row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Rename')?.click())
+    const input = el.querySelector<HTMLInputElement>('.create-inline__input')
+    expect(input?.value).toBe(name)
+    act(() => {
+      input!.value = nextName
+      input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    await act(async () => undefined)
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith(`/v/${name}`, target, 'file')
+  })
+
+  it('submitting an unchanged full view-only filename is a no-op', async () => {
+    const node: TreeNode = { type: 'file', name: 'data.json', path: '/v/data.json', size: 1, mtime: 1, kind: 'text' }
+    const { props, el } = await mount({}, (bridge) =>
+      bridge.tree.mockResolvedValue({ root: '/v', tree: [node], generatedAt: 1 }),
+    )
+    act(() => void el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Rename')?.click())
+    const input = el.querySelector<HTMLInputElement>('.create-inline__input')
+    expect(input?.value).toBe('data.json')
+    act(() => input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    await act(async () => undefined)
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+  })
+
+  it('submitting an unchanged compound view-only filename is a no-op', async () => {
+    const node: TreeNode = { type: 'file', name: 'schema.graphql.ts', path: '/v/schema.graphql.ts', size: 1, mtime: 1, kind: 'text' }
+    const { props, el } = await mount({}, (bridge) =>
+      bridge.tree.mockResolvedValue({ root: '/v', tree: [node], generatedAt: 1 }),
+    )
+    act(() => void el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Rename')?.click())
+    const input = el.querySelector<HTMLInputElement>('.create-inline__input')
+    expect(input?.value).toBe('schema.graphql.ts')
+    act(() => input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    await act(async () => undefined)
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+  })
+
   it('a FOLDER row\'s context menu offers "Rename"; committing routes old→new (no extension logic) through onRenameFile', async () => {
     const { props, el } = await mount()
     act(() => void dirRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
@@ -270,7 +432,7 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
       input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     })
     await act(async () => undefined)
-    expect(props.onRenameFile).toHaveBeenCalledWith('/v/sub', '/v/archive')
+    expect(props.onRenameFile).toHaveBeenCalledWith('/v/sub', '/v/archive', 'dir')
   })
 
   it('dragging a file row onto a folder row moves it there (onRenameFile old→new parent); the target highlights while hovered', async () => {
@@ -279,7 +441,7 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
     fire(dirRow(el), 'dragover')
     expect(dirRow(el)?.classList.contains('tree__row--drop')).toBe(true)
     fire(dirRow(el), 'drop')
-    expect(props.onRenameFile).toHaveBeenCalledWith('/v/a.md', '/v/sub/a.md')
+    expect(props.onRenameFile).toHaveBeenCalledWith('/v/a.md', '/v/sub/a.md', 'file')
     expect(el.querySelector('.tree__row--drop')).toBeNull() // drag state cleared
   })
 
@@ -1598,7 +1760,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     expect(inlineInput(el)?.value).toBe('Guide') // the name minus its extension — the file tree's prefill
     expect(rowFor(el, 'Guide')).toBeUndefined() // …IN PLACE of the row, never beside it
     await commit(el, 'Manual')
-    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/Docs/Guide.md', '/v/Docs/Manual.md')
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/Docs/Guide.md', '/v/Docs/Manual.md', 'file')
   })
 
   it('a page standing under TWO parents renames through ONE input — two autofocused ones would fight', async () => {
@@ -1817,7 +1979,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     expect(inlineInput(el)?.value).toBe('inbox')
     expect(rowFor(el, 'inbox')).toBeUndefined()
     await commit(el, 'Archive')
-    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/inbox', '/v/Archive')
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/inbox', '/v/Archive', 'dir')
   })
 
   it('folder create actions draw beneath the selected branch and use it as the filesystem parent', async () => {

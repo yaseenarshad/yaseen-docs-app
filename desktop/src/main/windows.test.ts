@@ -453,6 +453,13 @@ describe('createWindowManager: routeToFile (E1)', () => {
     expect(w1.webContents.send).toHaveBeenCalledWith(CH.linkOpenFile, '/v/A.MARKDOWN')
   })
 
+  it.each(['/v/data.json', '/v/tool.PY', '/v/report.pdf'])('routes supported view-only file %s through the existing window', (file) => {
+    const { manager, created, w1 } = seedRouting()
+    manager.routeToFile(file)
+    expect(w1.webContents.send).toHaveBeenCalledWith(CH.linkOpenFile, file)
+    expect(created).toHaveLength(2)
+  })
+
   it('no containing window: a new window on the most recent recents folder containing the file, persisted', () => {
     const { manager, created } = seedRouting()
     store.pushRecent('/w', 1)
@@ -490,14 +497,13 @@ describe('createWindowManager: routeToFile (E1)', () => {
     expect(created[2].entry.file).toBe('/v/deeper/n.md')
   })
 
-  it('a non-markdown path opens nothing: a live window is focused and told to show a notice (no dialog)', () => {
+  it('an unsupported path opens nothing and reports “unsupported file type” passively', () => {
     const { manager, created, w1 } = seedRouting()
     manager.routeToFile('/v/archive.zip')
     expect(created).toHaveLength(2)
     expect(w1.focusCount).toBe(1)
     const notices = sentOn(w1, CH.linkNotice)
-    expect(notices).toHaveLength(1)
-    expect(typeof notices[0][1]).toBe('string')
+    expect(notices).toEqual([[CH.linkNotice, "Can't open /v/archive.zip: unsupported file type"]])
     expect(sentOn(w1, CH.linkOpenFile)).toHaveLength(0)
   })
 
@@ -506,6 +512,15 @@ describe('createWindowManager: routeToFile (E1)', () => {
     manager.routeToFile('/v/gone.md')
     expect(created).toHaveLength(2)
     expect(sentOn(w1, CH.linkNotice)).toHaveLength(1)
+    expect(sentOn(w1, CH.linkOpenFile)).toHaveLength(0)
+  })
+
+  it('a directory with a supported-looking suffix is refused passively by the regular-file probe', () => {
+    const directory = '/v/folder.pdf'
+    const { manager, created, w1 } = seedRouting((candidate) => candidate !== directory)
+    manager.routeToFile(directory)
+    expect(created).toHaveLength(2)
+    expect(sentOn(w1, CH.linkNotice)).toEqual([[CH.linkNotice, `Can't open ${directory}: file not found`]])
     expect(sentOn(w1, CH.linkOpenFile)).toHaveLength(0)
   })
 

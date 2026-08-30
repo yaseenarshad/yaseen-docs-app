@@ -147,8 +147,8 @@ describe('readAsset drawings', () => {
  * `writeAsset(req)` (YAZ-876, the Excalidraw embed's asset pipe — YAZ-852): drawings ONLY, an
  * EXPLICIT vault-relative path (writes are never fuzzy — no basename search), parent folders made
  * on the way, and `file.ts`'s write semantics: atomic tmp+rename, `expectedMtime` → `CONFLICT`,
- * and a create mode that never overwrites. The md-only vault-file guard is deliberately untouched:
- * this rides the asset pipe, so drawings stay out of the tree, the index and the watcher.
+ * and a create mode that never overwrites. This rides the dedicated asset capability rather than
+ * supported-file discovery, so drawings stay out of the tree, the index, and the watcher.
  */
 describe('writeAsset', () => {
   let vault: string

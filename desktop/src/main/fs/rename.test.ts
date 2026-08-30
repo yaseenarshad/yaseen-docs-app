@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { renameFile, repairRename } from './rename'
+import { hasExactDirectoryEntry, renameFile, repairRename } from './rename'
 import { failure, makeFixture } from './testFixture'
 
 let root: string
@@ -48,14 +48,84 @@ describe('renameFile (Links E1, GRO-2194)', () => {
     expect(await code(renameFile({ oldPath: path.join(root, 'b.md'), newPath: path.join(root, 'b.md') }))).toBe('BAD_REQUEST')
   })
 
-  it('UNSUPPORTED_EXTENSION on non-vault paths, NOT_FOUND on a missing source, NOT_ABSOLUTE / BAD_REQUEST on bad input', async () => {
-    expect(await code(renameFile({ oldPath: path.join(root, 'notes.txt'), newPath: path.join(root, 'other.txt') }))).toBe('UNSUPPORTED_EXTENSION')
+  it('UNSUPPORTED_EXTENSION on unsupported paths, NOT_FOUND on a missing source, NOT_ABSOLUTE / BAD_REQUEST on bad input', async () => {
+    const unsupportedPath = path.join(root, 'unsupported.bin')
+    await writeFile(unsupportedPath, 'unsupported')
+    expect(await code(renameFile({ oldPath: unsupportedPath, newPath: path.join(root, 'other.bin') }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(renameFile({ oldPath: path.join(root, 'b.md'), newPath: path.join(root, 'b.txt') }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(renameFile({ oldPath: path.join(root, 'b.md'), newPath: path.join(root, 'b.base') }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(renameFile({ oldPath: path.join(root, 'missing.md'), newPath: path.join(root, 'other.md') }))).toBe('NOT_FOUND')
     expect(await code(renameFile({ oldPath: 'relative.md', newPath: path.join(root, 'other.md') }))).toBe('NOT_ABSOLUTE')
     expect(await code(renameFile(undefined))).toBe('BAD_REQUEST')
     expect(await code(renameFile({ oldPath: path.join(root, 'b.md') }))).toBe('BAD_REQUEST')
+  })
+
+  it.each([
+    ['text', 'source.json', 'target.pdf'],
+    ['text to markdown', 'source.py', 'target.md'],
+    ['pdf to text', 'source.pdf', 'target.json'],
+    ['supported to unknown', 'source.json', 'target.bin'],
+  ])('refuses cross-kind rename (%s) before mutation', async (_label, oldName, newName) => {
+    const oldPath = path.join(root, oldName)
+    const newPath = path.join(root, newName)
+    const original = Buffer.from(`original:${oldName}`)
+    await writeFile(oldPath, original)
+    expect(await code(renameFile({ oldPath, newPath }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await readFile(oldPath)).toEqual(original)
+    await expect(stat(newPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it.each([
+    ['same-kind.json', 'renamed.json'],
+    ['same-kind.pdf', 'renamed.pdf'],
+  ])('allows same-kind view-only rename %s → %s', async (oldName, newName) => {
+    const oldPath = path.join(root, oldName)
+    const newPath = path.join(root, newName)
+    await writeFile(oldPath, `content:${oldName}`)
+    expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
+    expect(await readFile(newPath, 'utf8')).toBe(`content:${oldName}`)
+  })
+
+  it('allows a text file to change extension and move folders while remaining text', async () => {
+    const oldPath = path.join(root, 'move-source.json')
+    const newPath = path.join(root, 'Empty', 'move-target.py')
+    await writeFile(oldPath, '{"move":true}')
+    expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
+    expect(await readFile(newPath, 'utf8')).toBe('{"move":true}')
+    await expect(stat(oldPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it.each([
+    ['image-source.png', 'image-renamed.PNG'],
+    ['photo-source.jpg', 'photo-renamed.jpeg'],
+  ])('allows an image rename when the encoded format is preserved: %s → %s', async (oldName, newName) => {
+    const oldPath = path.join(root, oldName)
+    const newPath = path.join(root, newName)
+    const original = Buffer.from(`encoded:${oldName}`)
+    await writeFile(oldPath, original)
+    expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
+    expect(await readFile(newPath)).toEqual(original)
+  })
+
+  it('refuses an image extension change that would claim an encoding conversion', async () => {
+    const oldPath = path.join(root, 'not-converted.png')
+    const newPath = path.join(root, 'not-converted.jpg')
+    const original = Buffer.from('png bytes')
+    await writeFile(oldPath, original)
+    expect(await code(renameFile({ oldPath, newPath }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await readFile(oldPath)).toEqual(original)
+    await expect(stat(newPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it.each([
+    ['Case-Only.JSON', 'case-only.json'],
+    ['Case-Only.PDF', 'case-only.pdf'],
+  ])('allows a same-kind case-only view-only rename %s → %s', async (oldName, newName) => {
+    const oldPath = path.join(root, oldName)
+    const newPath = path.join(root, newName)
+    await writeFile(oldPath, `content:${oldName}`)
+    expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
+    expect(await readFile(newPath, 'utf8')).toBe(`content:${oldName}`)
   })
 })
 
@@ -135,15 +205,75 @@ describe('repairRename (Links E1c, GRO-2242: validate a rename that ALREADY happ
     expect(err.path).toBe(path.join(root, 'GoneNew.md'))
   })
 
-  it("mirrors renameFile's file rules: vault extensions only, same-path and bad input refused", async () => {
+  it("mirrors renameFile's supported-kind rules; same-path and bad input are refused", async () => {
     await writeFile(path.join(root, 'Ext.base'), 'views: []\n')
     expect(await code(repairRename({ oldPath: path.join(root, 'Ext.md'), newPath: path.join(root, 'Ext.base') }))).toBe('UNSUPPORTED_EXTENSION')
-    await writeFile(path.join(root, 'ext.txt'), 'txt')
-    expect(await code(repairRename({ oldPath: path.join(root, 'old.txt'), newPath: path.join(root, 'ext.txt') }))).toBe('UNSUPPORTED_EXTENSION')
+    await writeFile(path.join(root, 'ext.bin'), 'binary')
+    expect(await code(repairRename({ oldPath: path.join(root, 'old.bin'), newPath: path.join(root, 'ext.bin') }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(repairRename({ oldPath: path.join(root, 'ExtNew.md'), newPath: path.join(root, 'ExtNew.md') }))).toBe('BAD_REQUEST') // same path
     expect(await code(repairRename({ oldPath: 'relative.md', newPath: path.join(root, 'ExtNew.md') }))).toBe('NOT_ABSOLUTE')
     expect(await code(repairRename(undefined))).toBe('BAD_REQUEST')
     expect(await code(repairRename({ newPath: path.join(root, 'ExtNew.md') }))).toBe('BAD_REQUEST')
+  })
+
+  it.each([
+    ['old.json', 'new.pdf'],
+    ['old.py', 'new.md'],
+    ['old.pdf', 'new.json'],
+    ['old.json', 'new.bin'],
+  ])('refuses cross-kind repair %s → %s', async (oldName, newName) => {
+    const oldPath = path.join(root, oldName)
+    const newPath = path.join(root, newName)
+    const original = Buffer.from(`landed:${newName}`)
+    await writeFile(newPath, original)
+    expect(await code(repairRename({ oldPath, newPath }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await readFile(newPath)).toEqual(original)
+    await expect(stat(oldPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it.each([
+    ['repair-old.json', 'repair-new.json'],
+    ['repair-old.pdf', 'repair-new.pdf'],
+  ])('allows same-kind view-only repair %s → %s', async (oldName, newName) => {
+    const oldPath = path.join(root, oldName)
+    const newPath = path.join(root, newName)
+    await writeFile(newPath, `landed:${newName}`)
+    expect(await repairRename({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
+  })
+
+  it('allows an external repair across two extensions of the same text kind', async () => {
+    const oldPath = path.join(root, 'repair-moved.json')
+    const newPath = path.join(root, 'Empty', 'repair-moved.py')
+    await writeFile(newPath, 'print("moved")\n')
+    expect(await repairRename({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
+  })
+
+  it.each([
+    ['repair-image-old.webp', 'repair-image-new.WEBP'],
+    ['repair-photo-old.jpeg', 'repair-photo-new.jpg'],
+  ])('allows an image repair when the encoded format is preserved: %s → %s', async (oldName, newName) => {
+    const oldPath = path.join(root, oldName)
+    const newPath = path.join(root, newName)
+    await writeFile(newPath, `landed:${newName}`)
+    expect(await repairRename({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
+  })
+
+  it('refuses an image repair that would claim an encoding conversion', async () => {
+    const oldPath = path.join(root, 'repair-not-converted.gif')
+    const newPath = path.join(root, 'repair-not-converted.webp')
+    const original = Buffer.from('gif bytes')
+    await writeFile(newPath, original)
+    expect(await code(repairRename({ oldPath, newPath }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await readFile(newPath)).toEqual(original)
+  })
+
+  it('distinguishes exact entry spelling deterministically when host stat would alias a case-only rename', async () => {
+    const oldPath = path.join(root, 'Repair-Case-Only.JSON')
+    const newPath = path.join(root, 'repair-case-only.json')
+    const readNames = async () => ['repair-case-only.json']
+
+    expect(await hasExactDirectoryEntry(oldPath, readNames)).toBe(false)
+    expect(await hasExactDirectoryEntry(newPath, readNames)).toBe(true)
   })
 
   it("mirrors renameFile's dot-dir refusal for directories", async () => {

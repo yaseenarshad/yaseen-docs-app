@@ -46,6 +46,7 @@
  *    afterwards. The referencing-set probe therefore resolves BY NAME ONLY (`makeResolves`).
  */
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { isViewOnly } from '@shared/fileKind'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { resolverFor } from '../views/engine'
@@ -53,6 +54,7 @@ import { folderPageSettingsLinks, mapFolderPageSettingsLinks } from '../views/fo
 import { WIKILINK_RE } from '../editor/wikilink/wikilinkPlugin'
 import { flushRenamedPath } from '../lib/renameContinuity'
 import { basename, stripExt } from '../lib/paths'
+import { buildViewOnlyCatalogFromEntries, type ViewOnlyCatalog } from './viewOnlyCatalog'
 
 /** Does this raw link target point at the renamed file? (Wired to THE shared resolver.) */
 export type ResolvesToOld = (target: string) => boolean
@@ -218,6 +220,8 @@ export interface UpdateLinksOptions {
   kind?: 'file' | 'dir'
   /** The PRE-rename index snapshot (fetched before `fs:rename` — see the module doc). */
   records: readonly IndexRecord[]
+  /** Separate PRE-rename text/PDF catalog; these targets never enter `records`. */
+  viewOnlyCatalog?: ViewOnlyCatalog | null
 }
 
 /**
@@ -233,7 +237,7 @@ export interface UpdateLinksOptions {
  * (share `newTarget`, not just `resolves`), which is a behaviour change, not a finishing-pass
  * fix — deferred with the rest of the E1c queue work.
  */
-function makeResolves({ root, oldPath, kind, records }: { root: string; oldPath: string; kind: 'file' | 'dir'; records: readonly IndexRecord[] }): {
+function makeResolves({ root, oldPath, kind, records, viewOnlyCatalog }: { root: string; oldPath: string; kind: 'file' | 'dir'; records: readonly IndexRecord[]; viewOnlyCatalog?: ViewOnlyCatalog | null }): {
   resolves: ResolvesToOld
   resolveTargetPath: (t: string) => string | null
 } {
@@ -248,7 +252,9 @@ function makeResolves({ root, oldPath, kind, records }: { root: string; oldPath:
   const resolveTargetPath = (t: string): string | null => {
     const hit = targetPaths.get(t)
     if (hit !== undefined) return hit
-    const resolved = resolver(t)?.record.path ?? null
+    // An explicit recognized non-Markdown extension belongs exclusively to the lightweight
+    // catalog. It must never acquire a semantic record/resolver fallback on a miss.
+    const resolved = isViewOnly(t) ? viewOnlyCatalog?.resolve(t) ?? null : resolver(t)?.record.path ?? null
     targetPaths.set(t, resolved)
     return resolved
   }
@@ -269,17 +275,17 @@ function makeResolves({ root, oldPath, kind, records }: { root: string; oldPath:
  * banner's N; N === 0 → no banner, nothing happens at all (the locked ruling). For an external
  * rename pass a PRE-rename snapshot (`preRenameRecords` synthesises one).
  */
-export function countLinkReferences({ root, oldPath, kind = 'file', records }: { root: string; oldPath: string; kind?: 'file' | 'dir'; records: readonly IndexRecord[] }): number {
-  const { resolves } = makeResolves({ root, oldPath, kind, records })
+export function countLinkReferences({ root, oldPath, kind = 'file', records, viewOnlyCatalog }: { root: string; oldPath: string; kind?: 'file' | 'dir'; records: readonly IndexRecord[]; viewOnlyCatalog?: ViewOnlyCatalog | null }): number {
+  const { resolves } = makeResolves({ root, oldPath, kind, records, viewOnlyCatalog })
   return records.filter(makeReferences(resolves)).length
 }
 
 /** Rewrite every referencing note on disk; see the module doc for the whole discipline. */
-export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'file', records }: UpdateLinksOptions): Promise<RenameRewriteSummary> {
+export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'file', records, viewOnlyCatalog }: UpdateLinksOptions): Promise<RenameRewriteSummary> {
   const prefix = `${oldPath}/`
   const mapMoved = kind === 'dir' ? (p: string) => (p.startsWith(prefix) ? newPath + p.slice(oldPath.length) : p) : (p: string) => (p === oldPath ? newPath : p)
   const relOf = (p: string) => (p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p)
-  const { resolves, resolveTargetPath } = makeResolves({ root, oldPath, kind, records })
+  const { resolves, resolveTargetPath } = makeResolves({ root, oldPath, kind, records, viewOnlyCatalog })
   // File mode: whether a bare form still wins AFTER the move is decided by RESOLUTION, not
   // text — the post-move record set (the moved record re-pathed) answers it (shallowest rule).
   const newName = basename(newPath)
@@ -293,10 +299,22 @@ export async function updateLinksAfterRename({ root, oldPath, newPath, kind = 'f
         )
       : records
   const postResolver = resolverFor(postRecords, root)
+  const postViewOnlyCatalog = viewOnlyCatalog === null || viewOnlyCatalog === undefined
+    ? null
+    : buildViewOnlyCatalogFromEntries(root, viewOnlyCatalog.entries.map((entry) => {
+        const path = mapMoved(entry.path)
+        return path === entry.path ? entry : { ...entry, path, name: basename(path) }
+      }))
   const newTarget: NewTarget = (target) => {
     const moved = mapMoved(resolveTargetPath(target) as string) // non-null: `resolves` vetted this target
     const movedName = basename(moved)
     const movedRel = relOf(moved)
+    if (isViewOnly(target)) {
+      // Keep the old form discipline: pathed remains pathed; bare remains bare only while the
+      // post-move catalog still awards that basename to this file, otherwise disambiguate.
+      if (target.includes('/')) return movedRel
+      return postViewOnlyCatalog?.resolve(movedName) === moved ? movedName : movedRel
+    }
     if (!target.includes('/')) {
       // Bare form (file mode only — dir mode filtered bare targets out above): keep it only
       // when the bare name still resolves to the moved file post-move; otherwise escalate

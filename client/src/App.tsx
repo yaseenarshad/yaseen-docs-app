@@ -1,11 +1,13 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
-import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type SettingsState, type SidebarLens } from '@shared/types'
+import { isViewOnly } from '@shared/fileKind'
+import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
 import { newNoteBase } from './editor/wikilink/createFromLink'
 import { createWikilinkCandidateSource } from './editor/wikilink/wikilinkPicker'
 import { createWikilinkResolveSource } from './editor/wikilink/wikilinkPlugin'
+import { createViewOnlyLinkSource } from './editor/wikilink/viewOnlyLinkSource'
 import { useProperties } from './views/useProperties'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
 import { useGithubSync } from './hooks/useGithubSync'
@@ -14,6 +16,7 @@ import { useMenuEvents } from './hooks/useMenuEvents'
 import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
 import { countLinkReferences, renameNotice, updateLinksAfterRename } from './links/renameLinks'
+import { buildViewOnlyCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { useExternalRenames } from './links/useExternalRenames'
 import { basename } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
@@ -87,10 +90,11 @@ export function App() {
   const watch = useWatch(root)
   // Wikilinks (Links A, GRO-2190): ONE resolve source per window — a stable object every
   // editor's wikilink plugin subscribes to; WikilinkIndexBridge (below) keeps it fed from the
-  // vault index, so index changes restyle links live without any editor remounting. The `[[`
-  // picker's candidate source (Links B, GRO-2191) works exactly the same way.
+  // vault index, so index changes restyle links live without any editor remounting. The stable
+  // navigation-only source beside it is tree-derived; only the picker's rows compose both feeds.
   const [wikilinks] = useState(createWikilinkResolveSource)
   const [wikilinkCandidates] = useState(createWikilinkCandidateSource)
+  const [viewOnlyLinks] = useState(createViewOnlyLinkSource)
   // The vault's property DECLARATIONS (YAZ-835), owned here for the same reason `wikilinks` is:
   // ONE per window, threaded down rather than re-fetched per surface. It is the editor ladder's
   // rung 2 inside a folder page's contents block (YAZ-846) — Editor → FolderPageContents.
@@ -361,7 +365,7 @@ export function App() {
    * passive notice — never a dialog, never a rejection back into the inline input.
    */
   const renameFile = useCallback(
-    async (oldPath: string, newPath: string): Promise<void> => {
+    async (oldPath: string, newPath: string, viewOnlyCatalog: ViewOnlyCatalog | null): Promise<void> => {
       const r = root
       if (r === null) return
       // (a) our own unsaved buffers travel WITH the file(s). The kind is unknown until the
@@ -382,7 +386,17 @@ export function App() {
         setNotice(exists ? `Can't rename: "${basename(newPath)}" already exists` : `Can't rename: ${err instanceof Error ? err.message : String(err)}`)
         return
       }
-      const summary = await updateLinksAfterRename({ root: r, oldPath, newPath, kind, records })
+      const hasMovedViewFile = viewOnlyCatalog?.entries.some((entry) =>
+        kind === 'dir' ? entry.path.startsWith(`${oldPath}/`) : entry.path === oldPath,
+      ) ?? false
+      const summary = await updateLinksAfterRename({
+        root: r,
+        oldPath,
+        newPath,
+        kind,
+        records,
+        ...(hasMovedViewFile ? { viewOnlyCatalog } : {}),
+      })
       if (summary.updated > 0 || summary.skipped > 0) setNotice(renameNotice(summary))
     },
     [root],
@@ -390,37 +404,86 @@ export function App() {
 
   /**
    * THE ONE DOOR (⚡ YAZ-888, amending decision E / GRO-2096 for NAME changes). Every rename
-   * gesture in the app arrives here as (oldPath, newPath) — the sidebar's inline rename, its
+   * gesture in the app arrives here as (oldPath, newPath, kind) — the sidebar's inline rename, its
    * drag-move, and the page title — so the rule is asked ONCE, here, and no surface reimplements
    * it: a changed NAME confirms first (the rename chains into the file on disk and then into
    * every note that links to it), a MOVE runs silently exactly as it always has (a confirm on
    * every drag would be hostile, and bare links keep resolving across a move anyway).
    *
-   * N is `countLinkReferences` over the window's OWN index snapshot — synchronous, no fetch, so
-   * the sheet opens in the same frame as the gesture. The rewrite itself re-reads a fresh
-   * snapshot inside `renameFile`; a vault that changed underneath between the two would move the
-   * count, which is why the copy promises what WILL be updated rather than an exact receipt.
+   * Markdown-only renames still count synchronously. A ready lightweight catalog may prove a
+   * view-only FILE; directories always read one fresh tree so newly arrived descendants count.
+   * The chosen snapshot is pinned through confirmation, and a root change cancels the request.
    */
-  const [pendingRename, setPendingRename] = useState<{ oldPath: string; newPath: string; count: number } | null>(null)
+  const [pendingRename, setPendingRename] = useState<{ root: string; oldPath: string; newPath: string; count: number; viewOnlyCatalog: ViewOnlyCatalog | null } | null>(null)
+  const renameRootGeneration = useRef(0)
+  useLayoutEffect(() => {
+    renameRootGeneration.current++
+    setPendingRename(null)
+  }, [root])
+
+  const catalogForRename = useCallback(async (oldPath: string, kind: TreeNode['type']): Promise<ViewOnlyCatalog | null | undefined> => {
+    if (root === null || (kind === 'file' && !isViewOnly(oldPath))) return null
+    const requestedRoot = root
+    const generation = renameRootGeneration.current
+    const current = viewOnlyLinks.catalog
+    if (kind === 'file' && current?.root === requestedRoot && current.entries.some((entry) => entry.path === oldPath)) return current
+    try {
+      const response = await api.tree(requestedRoot)
+      if (generation !== renameRootGeneration.current) return undefined
+      if (response.root !== requestedRoot) {
+        setNotice("Can't rename: couldn't load the current file list")
+        return undefined
+      }
+      const catalog = buildViewOnlyCatalog(requestedRoot, response.tree)
+      if (kind === 'file' && !catalog.entries.some((entry) => entry.path === oldPath)) {
+        setNotice(`Can't rename: "${basename(oldPath)}" is no longer in the current file list`)
+        return undefined
+      }
+      return catalog
+    } catch {
+      if (generation !== renameRootGeneration.current) return undefined
+      setNotice("Can't rename: couldn't load the current file list")
+      return undefined
+    }
+  }, [root, viewOnlyLinks])
 
   const requestRename = useCallback(
-    async (oldPath: string, newPath: string): Promise<void> => {
-      if (root === null || !isNameChange(oldPath, newPath)) return renameFile(oldPath, newPath)
+    async (oldPath: string, newPath: string, kind: TreeNode['type']): Promise<void> => {
+      if (root === null) return
+      const catalog = await catalogForRename(oldPath, kind)
+      if (catalog === undefined) return
+      if (!isNameChange(oldPath, newPath)) return renameFile(oldPath, newPath, catalog)
       const records = wikilinks.records
-      // The kind the count needs, asked of the very snapshot the count reads: a markdown file IS
-      // a record, a folder never is. Before the first index lands both modes count 0 alike.
-      const kind = records.some((r) => r.path === oldPath) ? 'file' : 'dir'
-      setPendingRename({ oldPath, newPath, count: countLinkReferences({ root, oldPath, kind, records }) })
+      const hasMovedViewFile = catalog?.entries.some((entry) =>
+        kind === 'file' ? entry.path === oldPath : entry.path.startsWith(`${oldPath}/`),
+      ) ?? false
+      // File-vs-directory comes from the concrete tree/editor gesture. Extension and semantic
+      // membership cannot answer it: `Archive.json` may be a directory, while a JSON file has no IndexRecord.
+      setPendingRename({
+        root,
+        oldPath,
+        newPath,
+        count: countLinkReferences({ root, oldPath, kind, records, ...(hasMovedViewFile ? { viewOnlyCatalog: catalog } : {}) }),
+        viewOnlyCatalog: catalog,
+      })
     },
-    [root, renameFile, wikilinks],
+    [root, catalogForRename, renameFile, wikilinks],
+  )
+  const requestEditorRename = useCallback(
+    (oldPath: string, newPath: string) => requestRename(oldPath, newPath, 'file'),
+    [requestRename],
   )
 
   const confirmRename = useCallback(() => {
     if (pendingRename === null) return
-    const { oldPath, newPath } = pendingRename
+    if (pendingRename.root !== root) {
+      setPendingRename(null)
+      return
+    }
+    const { oldPath, newPath, viewOnlyCatalog } = pendingRename
     setPendingRename(null)
-    void renameFile(oldPath, newPath)
-  }, [pendingRename, renameFile])
+    void renameFile(oldPath, newPath, viewOnlyCatalog)
+  }, [root, pendingRename, renameFile])
 
   /**
    * In-app delete landed (GRO-2272). Reaches EVERY window, originator included.
@@ -493,9 +556,10 @@ export function App() {
     createBase,
     wikilinks,
     wikilinkCandidates,
+    viewOnlyLinks,
     properties: propertyDecls,
     onOpenFileRight: openRight,
-    onRenameFile: requestRename,
+    onRenameFile: requestEditorRename,
     sync: githubSync.status,
     onSyncNow: githubSync.syncNow,
   }
@@ -580,6 +644,7 @@ export function App() {
           // The folder-page toggle's flag state (YAZ-840) reads the SAME per-window index source
           // WikilinkIndexBridge already feeds below — read-only, and no second feed.
           indexSource={wikilinks}
+          viewOnlyLinks={viewOnlyLinks}
           pendingSearchFocus={pendingSearchFocus}
           onSearchFocusHandled={searchFocusHandled}
           // 6C's offer (YAZ-849): the fact and the button, both App's, both straight through.
@@ -603,7 +668,7 @@ export function App() {
         </section>
       ) : (
         <div className="workspace">
-          <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} candidates={wikilinkCandidates} onSnapshot={onIndexSnapshot} />
+          <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} candidates={wikilinkCandidates} viewOnly={viewOnlyLinks} onSnapshot={onIndexSnapshot} />
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
           <TabBar
             tabs={tabs}

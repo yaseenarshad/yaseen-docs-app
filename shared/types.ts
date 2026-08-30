@@ -14,7 +14,7 @@ export type BridgeErrorCode =
   | 'NOT_FOUND' // path does not exist
   | 'NOT_A_DIRECTORY' // expected a directory
   | 'NOT_A_FILE' // expected a regular file
-  | 'UNSUPPORTED_EXTENSION' // file extension is not markdown
+  | 'UNSUPPORTED_EXTENSION' // file extension is not supported by the requested capability
   | 'ALREADY_EXISTS' // create target already exists
   | 'FORBIDDEN' // OS permission denied
   | 'TOO_LARGE' // file exceeds MAX_FILE_BYTES
@@ -23,13 +23,83 @@ export type BridgeErrorCode =
   | 'INVALID_CONFIG' // a vault config file (e.g. .yaseendocs/properties.json) is unusable; the mutation is refused, the file never touched
 
 export const MARKDOWN_EXTENSIONS = ['.md', '.markdown'] as const
-/**
- * The kinds of file the vault serves. Markdown is the only one (YAZ-844 retired `.base`);
- * the name survives because `fileKind()` is the ONE extension classifier the tree, watcher,
- * index and file calls all ask, and `markdown` reads better at every call site than `true`.
- */
-export type FileKind = 'markdown'
+export const TEXT_VIEW_EXTENSIONS = [
+  '.txt',
+  '.log',
+  '.csv',
+  '.tsv',
+  '.json',
+  '.jsonc',
+  '.jsonl',
+  '.ndjson',
+  '.yaml',
+  '.yml',
+  '.toml',
+  '.ini',
+  '.cfg',
+  '.conf',
+  '.xml',
+  '.env',
+  '.properties',
+  '.lock',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.ts',
+  '.tsx',
+  '.py',
+  '.rb',
+  '.go',
+  '.rs',
+  '.java',
+  '.kt',
+  '.kts',
+  '.c',
+  '.h',
+  '.cc',
+  '.cpp',
+  '.hpp',
+  '.cs',
+  '.swift',
+  '.php',
+  '.sh',
+  '.bash',
+  '.zsh',
+  '.fish',
+  '.ps1',
+  '.sql',
+  '.html',
+  '.htm',
+  '.css',
+  '.scss',
+  '.sass',
+  '.less',
+  '.vue',
+  '.svelte',
+  '.graphql',
+  '.gql',
+  '.mdx',
+  '.rst',
+  '.tex',
+] as const
+export const PDF_EXTENSIONS = ['.pdf'] as const
+export const IMAGE_VIEW_MIME = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.bmp': 'image/bmp',
+} as const
+export const IMAGE_VIEW_EXTENSIONS = Object.freeze(Object.keys(IMAGE_VIEW_MIME)) as readonly (keyof typeof IMAGE_VIEW_MIME)[]
+
+/** The file kinds visible in the Files tree; only `markdown` is writable and semantic. */
+export type FileKind = 'markdown' | 'text' | 'pdf' | 'image'
 export const MAX_FILE_BYTES = 10 * 1024 * 1024
+export const MAX_PDF_BYTES = 50 * 1024 * 1024
+export const MAX_IMAGE_BYTES = 50 * 1024 * 1024
 
 // ---------- tree(root) ----------
 
@@ -48,13 +118,13 @@ export type TreeNode =
       size: number
       /** mtime in epoch ms. */
       mtime: number
-      /** `markdown` for `.md`/`.markdown` — the only kind the tree serves (see `shared/fileKind.ts`). */
+      /** Shared, case-insensitive extension classification (see `shared/fileKind.ts`). */
       kind: FileKind
     }
 
 export interface TreeResponse {
   root: string
-  /** Recursive tree of the root. Only vault files (`.md`/`.markdown` → `kind: 'markdown'`) are included; every directory shows, vault files or not (GRO-2022). Hidden (dot) entries and `node_modules` skipped. */
+  /** Recursive tree of the root. Supported markdown/text/PDF/image files are included; every directory shows, supported files or not (GRO-2022). Hidden (dot) entries and `node_modules` skipped. */
   tree: TreeNode[]
   /** Main-process time (epoch ms) when the tree was computed. */
   generatedAt: number
@@ -144,8 +214,25 @@ export interface ColdStartDiffResponse {
 
 export interface FileResponse {
   path: string
-  /** Raw UTF-8 file contents, byte-for-byte (frontmatter included; client splits it). */
+  /** UTF-8 file contents; Markdown includes frontmatter and supported view-only text is strictly decoded. */
   content: string
+  mtime: number
+  size: number
+}
+
+/** Dedicated binary response for the native PDF viewer; never base64-encoded or sent through `readFile`. */
+export interface PdfResponse {
+  path: string
+  data: Uint8Array
+  mtime: number
+  size: number
+}
+
+/** Dedicated exact-path binary response for the static raster-image viewer. */
+export interface ImageResponse {
+  path: string
+  data: Uint8Array
+  mime: (typeof IMAGE_VIEW_MIME)[keyof typeof IMAGE_VIEW_MIME]
   mtime: number
   size: number
 }
@@ -158,8 +245,8 @@ export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'av
 /**
  * Drawing sidecars the asset pipe reads AND writes (Excalidraw embed, YAZ-852 / YAZ-876): scene
  * JSON standing on its own in the vault (`assets/drawings/` by default), a note holding only
- * `![[<name>.excalidraw]]`. Deliberately NOT a vault file — the tree, index and watcher stay
- * markdown-only (YAZ-844), so a drawing is invisible to the sidebar and rides this pipe alone.
+ * `![[<name>.excalidraw]]`. Deliberately unsupported by the shared file classifier, so the
+ * Files tree, supported-file watcher and Markdown index all omit it; it rides this pipe alone.
  */
 export const DRAWING_EXTENSIONS = ['excalidraw'] as const
 
@@ -899,7 +986,7 @@ export interface ShellApi {
 export interface LinkApi {
   /** A link resolved to this window: open `path` (guaranteed inside this window's root). Returns an unsubscribe. */
   onOpenFile(listener: (path: string) => void): () => void
-  /** A link could not be opened (bad URL, not markdown, missing file): show `message` unobtrusively. Returns an unsubscribe. */
+  /** A link could not be opened (bad URL, unsupported, missing or non-regular file): show `message` unobtrusively. Returns an unsubscribe. */
   onNotice(listener: (message: string) => void): () => void
 }
 
@@ -912,6 +999,8 @@ export interface LinkApi {
 export interface YaseenDocsApi {
   tree(root: string): Promise<TreeResponse>
   readFile(path: string): Promise<FileResponse>
+  readPdf(path: string): Promise<PdfResponse>
+  readImage(path: string): Promise<ImageResponse>
   writeFile(req: FileWriteRequest): Promise<FileWriteResponse>
   createDir(path: string): Promise<CreateDirResponse>
   createFile(req: string | CreateFileRequest): Promise<CreateFileResponse>
