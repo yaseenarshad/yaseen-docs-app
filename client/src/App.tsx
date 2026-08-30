@@ -410,25 +410,38 @@ export function App() {
    * every note that links to it), a MOVE runs silently exactly as it always has (a confirm on
    * every drag would be hostile, and bare links keep resolving across a move anyway).
    *
-   * Markdown-only renames still count synchronously. View-only files/directories use the ready
-   * lightweight catalog when it proves the target; otherwise this door reads one fresh tree
-   * BEFORE showing a sheet or mutating, then pins that same snapshot through confirmation.
+   * Markdown-only renames still count synchronously. A ready lightweight catalog may prove a
+   * view-only FILE; directories always read one fresh tree so newly arrived descendants count.
+   * The chosen snapshot is pinned through confirmation, and a root change cancels the request.
    */
-  const [pendingRename, setPendingRename] = useState<{ oldPath: string; newPath: string; count: number; viewOnlyCatalog: ViewOnlyCatalog | null } | null>(null)
+  const [pendingRename, setPendingRename] = useState<{ root: string; oldPath: string; newPath: string; count: number; viewOnlyCatalog: ViewOnlyCatalog | null } | null>(null)
+  const renameRootGeneration = useRef(0)
+  useLayoutEffect(() => {
+    renameRootGeneration.current++
+    setPendingRename(null)
+  }, [root])
 
   const catalogForRename = useCallback(async (oldPath: string, kind: TreeNode['type']): Promise<ViewOnlyCatalog | null | undefined> => {
     if (root === null || (kind === 'file' && !isViewOnly(oldPath))) return null
+    const requestedRoot = root
+    const generation = renameRootGeneration.current
     const current = viewOnlyLinks.catalog
-    if (current !== null && (kind === 'dir' || current.entries.some((entry) => entry.path === oldPath))) return current
+    if (kind === 'file' && current?.root === requestedRoot && current.entries.some((entry) => entry.path === oldPath)) return current
     try {
-      const response = await api.tree(root)
-      const catalog = buildViewOnlyCatalog(root, response.tree)
+      const response = await api.tree(requestedRoot)
+      if (generation !== renameRootGeneration.current) return undefined
+      if (response.root !== requestedRoot) {
+        setNotice("Can't rename: couldn't load the current file list")
+        return undefined
+      }
+      const catalog = buildViewOnlyCatalog(requestedRoot, response.tree)
       if (kind === 'file' && !catalog.entries.some((entry) => entry.path === oldPath)) {
         setNotice(`Can't rename: "${basename(oldPath)}" is no longer in the current file list`)
         return undefined
       }
       return catalog
     } catch {
+      if (generation !== renameRootGeneration.current) return undefined
       setNotice("Can't rename: couldn't load the current file list")
       return undefined
     }
@@ -447,6 +460,7 @@ export function App() {
       // File-vs-directory comes from the concrete tree/editor gesture. Extension and semantic
       // membership cannot answer it: `Archive.json` may be a directory, while a JSON file has no IndexRecord.
       setPendingRename({
+        root,
         oldPath,
         newPath,
         count: countLinkReferences({ root, oldPath, kind, records, ...(hasMovedViewFile ? { viewOnlyCatalog: catalog } : {}) }),
@@ -462,10 +476,14 @@ export function App() {
 
   const confirmRename = useCallback(() => {
     if (pendingRename === null) return
+    if (pendingRename.root !== root) {
+      setPendingRename(null)
+      return
+    }
     const { oldPath, newPath, viewOnlyCatalog } = pendingRename
     setPendingRename(null)
     void renameFile(oldPath, newPath, viewOnlyCatalog)
-  }, [pendingRename, renameFile])
+  }, [root, pendingRename, renameFile])
 
   /**
    * In-app delete landed (GRO-2272). Reaches EVERY window, originator included.

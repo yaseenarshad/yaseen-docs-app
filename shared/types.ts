@@ -225,8 +225,8 @@ export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'av
 /**
  * Drawing sidecars the asset pipe reads AND writes (Excalidraw embed, YAZ-852 / YAZ-876): scene
  * JSON standing on its own in the vault (`assets/drawings/` by default), a note holding only
- * `![[<name>.excalidraw]]`. Deliberately NOT a vault file — the tree, index and watcher stay
- * markdown-only (YAZ-844), so a drawing is invisible to the sidebar and rides this pipe alone.
+ * `![[<name>.excalidraw]]`. Deliberately unsupported by the shared file classifier, so the
+ * Files tree, supported-file watcher and Markdown index all omit it; it rides this pipe alone.
  */
 export const DRAWING_EXTENSIONS = ['excalidraw'] as const
 
@@ -966,7 +966,7 @@ export interface ShellApi {
 export interface LinkApi {
   /** A link resolved to this window: open `path` (guaranteed inside this window's root). Returns an unsubscribe. */
   onOpenFile(listener: (path: string) => void): () => void
-  /** A link could not be opened (bad URL, not markdown, missing file): show `message` unobtrusively. Returns an unsubscribe. */
+  /** A link could not be opened (bad URL, unsupported, missing or non-regular file): show `message` unobtrusively. Returns an unsubscribe. */
   onNotice(listener: (message: string) => void): () => void
 }
 

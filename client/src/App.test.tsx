@@ -1036,6 +1036,47 @@ describe('App rename door (⚡ YAZ-888)', () => {
     expect(files['/v/A.md'].content).toBe('See [[B]].\n')
   })
 
+  it('clears an open rename confirmation when the window switches roots', async () => {
+    const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), identity(), {}, feed)
+    await act(async () => void await captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
+    expect(sheetText(el)).toContain("Rename 'B' to 'B2'?")
+
+    await act(async () => emitOpenRoot('/w'))
+
+    expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/w')
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(bridge.file.rename).not.toHaveBeenCalled()
+  })
+
+  it('silently cancels a deferred old-root catalog request after a root switch', async () => {
+    const { bridge, el, emitOpenRoot } = await mount(defaultAppState(), identity(), {}, feed)
+    const oldRootRename = captured.sidebar?.onRenameFile
+    let resolveOldTree!: (response: TreeResponse) => void
+    bridge.tree.mockImplementation((path: string): Promise<TreeResponse> => path === '/v'
+      ? new Promise((resolve) => { resolveOldTree = resolve })
+      : Promise.resolve({ root: path, tree: [], generatedAt: 2 }))
+    let request!: Promise<void>
+    await act(async () => {
+      request = oldRootRename?.('/v/data.json', '/v/data-v2.json', 'file') ?? Promise.resolve()
+      await Promise.resolve()
+    })
+
+    await act(async () => emitOpenRoot('/w'))
+    await act(async () => {
+      resolveOldTree({
+        root: '/v',
+        tree: [{ type: 'file', name: 'data.json', path: '/v/data.json', kind: 'text', size: 1, mtime: 1 }],
+        generatedAt: 1,
+      })
+      await request
+    })
+
+    expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/w')
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(el.querySelector('.link-notice')).toBeNull()
+    expect(bridge.file.rename).not.toHaveBeenCalled()
+  })
+
   it('a FOLDER rename asks too, and its count is the DIR-mode one — pathed links only', async () => {
     const { el } = await mount(defaultAppState(), identity(), {}, feed)
     await act(async () => void captured.sidebar?.onRenameFile('/v/Docs', '/v/Notes', 'dir'))
@@ -1142,6 +1183,35 @@ describe('App rename door (⚡ YAZ-888)', () => {
     expect(files['/v/A.md'].content).toBe('[[New/data.json]]\n')
   })
 
+  it('always refreshes a ready directory catalog so newly visible descendants count and rewrite', async () => {
+    const semanticRecords = [record('/v/A.md', { links: ['Old/data.json'] })]
+    const files = { '/v/A.md': { content: '[[Old/data.json]]\n', mtime: 1 } }
+    const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
+      b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 })
+      b.bridge.tree.mockResolvedValue({
+        root: '/v',
+        tree: [{ type: 'dir', name: 'Old', path: '/v/Old', children: [] }],
+        generatedAt: 1,
+      })
+      b.bridge.file.rename.mockImplementation(async ({ oldPath, newPath }) => ({ oldPath, newPath, kind: 'dir' }))
+    })
+    const readsBeforeRename = bridge.tree.mock.calls.filter(([path]) => path === '/v').length
+    bridge.tree.mockResolvedValue({
+      root: '/v',
+      tree: [{ type: 'dir', name: 'Old', path: '/v/Old', children: [
+        { type: 'file', name: 'data.json', path: '/v/Old/data.json', kind: 'text', size: 1, mtime: 2 },
+      ] }],
+      generatedAt: 2,
+    })
+
+    await act(async () => void await captured.sidebar?.onRenameFile('/v/Old', '/v/New', 'dir'))
+
+    expect(bridge.tree.mock.calls.filter(([path]) => path === '/v')).toHaveLength(readsBeforeRename + 1)
+    expect(sheetText(el)).toBe("Rename 'Old' to 'New'? Links in 1 note will be updated.")
+    await act(async () => sheetBtn(el, 'Rename')?.click())
+    expect(files['/v/A.md'].content).toBe('[[New/data.json]]\n')
+  })
+
   it('fails closed with a passive notice when the required fresh rename catalog cannot load', async () => {
     const { bridge, el } = await mount(defaultAppState(), identity(), {}, (b) => {
       b.bridge.tree.mockImplementation(async (path: string): Promise<TreeResponse> => {
@@ -1152,6 +1222,18 @@ describe('App rename door (⚡ YAZ-888)', () => {
 
     await act(async () => void await captured.sidebar?.onRenameFile('/v/data.json', '/v/data-v2.json', 'file'))
     expect(bridge.tree.mock.calls.filter(([path]) => path === '/v')).toHaveLength(3)
+    expect(bridge.file.rename).not.toHaveBeenCalled()
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(el.querySelector('.link-notice')?.textContent).toBe("Can't rename: couldn't load the current file list")
+  })
+
+  it('rejects a catalog response for a different root before confirmation or mutation', async () => {
+    const { bridge, el } = await mount(defaultAppState(), identity(), {}, (b) => {
+      b.bridge.tree.mockResolvedValue({ root: '/other', tree: [], generatedAt: 1 })
+    })
+
+    await act(async () => void await captured.sidebar?.onRenameFile('/v/data.json', '/v/data-v2.json', 'file'))
+
     expect(bridge.file.rename).not.toHaveBeenCalled()
     expect(el.querySelector('.confirm')).toBeNull()
     expect(el.querySelector('.link-notice')?.textContent).toBe("Can't rename: couldn't load the current file list")
