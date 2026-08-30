@@ -49,10 +49,10 @@ export function targetDirFor(node: MenuRow | null, root: string): string {
   return node.path.slice(0, node.path.lastIndexOf('/'))
 }
 
-/** Rename-field prefill: hide the one recognized supported suffix, regardless of file kind. */
+/** Rename-field prefill: Markdown hides its suffix; view-only files show their full filename. */
 export function renameInputName(fileName: string): string {
   const name = fileName.slice(fileName.lastIndexOf('/') + 1)
-  if (fileKind(name) === null) return name
+  if (fileKind(name) !== 'markdown') return name
   return name.slice(0, name.lastIndexOf('.'))
 }
 

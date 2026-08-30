@@ -50,10 +50,17 @@ describe('targetDirFor', () => {
 })
 
 describe('renameInputName', () => {
-  it('removes exactly one recognized suffix for Markdown, JSON, and mixed-case PDF names', () => {
+  it('hides only the final Markdown suffix', () => {
     expect(renameInputName('B.markdown')).toBe('B')
-    expect(renameInputName('data.json')).toBe('data')
-    expect(renameInputName('report.PDF')).toBe('report')
+    expect(renameInputName('Guide.txt.md')).toBe('Guide.txt')
+  })
+
+  it('keeps the full filename for JSON, PDF, code, and compound view-only names', () => {
+    expect(renameInputName('data.json')).toBe('data.json')
+    expect(renameInputName('report.PDF')).toBe('report.PDF')
+    expect(renameInputName('tool.Py')).toBe('tool.Py')
+    expect(renameInputName('schema.graphql.ts')).toBe('schema.graphql.ts')
+    expect(renameInputName('report.json.pdf')).toBe('report.json.pdf')
   })
 
   it('leaves unsupported suffixes intact', () => {
@@ -96,8 +103,8 @@ describe('renamedPath (Links E1, GRO-2194)', () => {
 
   it.each([
     ['Version 1.0.md', 'Version 1.0'],
-    ['Release.1.json', 'Release.1'],
-    ['report.final.PDF', 'report.final'],
+    ['Release.1.json', 'Release.1.json'],
+    ['report.final.PDF', 'report.final.PDF'],
   ])('round-trips a dotted basename with its real supported suffix: %s', (name, input) => {
     expect(renameInputName(name)).toBe(input)
     expect(renamedPath(`/r/${name}`, input)).toBe(`/r/${name}`)
@@ -109,8 +116,8 @@ describe('renamedPath (Links E1, GRO-2194)', () => {
   })
 
   it.each([
-    ['schema.graphql.ts', 'schema.graphql'],
-    ['report.json.pdf', 'report.json'],
+    ['schema.graphql.ts', 'schema.graphql.ts'],
+    ['report.json.pdf', 'report.json.pdf'],
     ['Guide.txt.md', 'Guide.txt'],
   ])('round-trips an unchanged compound filename exactly: %s', (name, input) => {
     expect(renameInputName(name)).toBe(input)
