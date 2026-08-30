@@ -206,6 +206,21 @@ describe('WikilinkIndexBridge', () => {
     expect('records' in viewOnly).toBe(false)
   })
 
+  it('never offers a dead semantic data.json target before the view-only file exists, then offers only the real file', async () => {
+    const semantic = response('/vault/data.json.md', '/vault/Note.md')
+    indexFn.mockResolvedValue(semantic)
+    treeFn.mockResolvedValue(treeResponse())
+    mount()
+    await flush()
+    expect(source.resolve?.('data.json')).toBe('/vault/data.json.md') // semantic feed remains untouched
+    expect(candidates.candidates.map((candidate) => candidate.insert)).toEqual(['Note'])
+
+    treeFn.mockResolvedValueOnce(treeResponse(viewNode('/vault/data.json', 'text')))
+    await emitPastDebounce({ type: 'add', path: '/vault/data.json', mtime: 2 })
+    expect(candidates.candidates.map((candidate) => candidate.insert)).toEqual(['Note', 'data.json'])
+    expect(candidates.candidates.find((candidate) => candidate.insert === 'data.json')?.path).toBe('/vault/data.json')
+  })
+
   it('refreshes the catalog and merged picker on structural view-only events without touching semantic identity', async () => {
     const semantic = response('/vault/Note.md')
     indexFn.mockResolvedValue(semantic)

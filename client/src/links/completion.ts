@@ -25,6 +25,7 @@
  * this is recorded rather than fixed.
  */
 import type { IndexRecord } from '@shared/types'
+import { isViewOnly } from '@shared/fileKind'
 
 /** Suggestion cap shared by every completion surface (was EditableCell's local constant). */
 export const MAX_SUGGESTIONS = 8
@@ -55,13 +56,14 @@ export interface LinkCandidate {
 export const nameCandidate = (name: string): LinkCandidate => ({ name, insert: name, label: name, lower: name.toLowerCase() })
 
 /**
- * Picker-only composition: explicit view-only targets reserve their exact spelling, while
- * semantic aliases whose DISPLAY happens to match remain valid. Resolution sources stay split.
+ * Picker-only composition: every recognized view-only TARGET spelling belongs to the
+ * navigation-only route, even before its catalog entry exists. Semantic aliases whose DISPLAY
+ * happens to match remain valid because their target (before `|`) is still an ordinary note.
+ * Resolution sources stay split.
  */
 export function mergeLinkCandidates(markdown: readonly LinkCandidate[], viewOnly: readonly LinkCandidate[]): LinkCandidate[] {
-  const reserved = new Set(viewOnly.map((candidate) => candidate.insert.toLowerCase()))
   return [
-    ...markdown.filter((candidate) => !reserved.has(candidate.insert.split('|', 1)[0].toLowerCase())),
+    ...markdown.filter((candidate) => !isViewOnly(candidate.insert.split('|', 1)[0].trim())),
     ...viewOnly,
   ]
 }

@@ -197,6 +197,19 @@ describe('matchLinkNames (plain-name surfaces)', () => {
 })
 
 describe('mergeLinkCandidates (YAZ-1310)', () => {
+  it('suppresses recognized view-only targets even before a matching catalog entry exists', () => {
+    const markdown = [
+      { ...nameCandidate('data.json'), path: '/vault/data.json.md' },
+      { name: 'JSON alias', insert: 'data.json|JSON alias', label: 'JSON alias — data.json', path: '/vault/data.json.md' },
+      { name: 'data.json', insert: 'Note|data.json', label: 'data.json — Note', path: '/vault/Note.md' },
+      { ...nameCandidate('Note'), path: '/vault/Note.md' },
+    ]
+    expect(mergeLinkCandidates(markdown, []).map((candidate) => candidate.insert)).toEqual([
+      'Note|data.json',
+      'Note',
+    ])
+  })
+
   it('reserves explicit view-only spellings while leaving semantic aliases and unrelated Markdown rows intact', () => {
     const markdown = [
       { ...nameCandidate('data.json'), path: '/vault/data.json.md' },
