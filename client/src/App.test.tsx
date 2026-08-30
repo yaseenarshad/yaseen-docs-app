@@ -792,6 +792,26 @@ describe('App right-panel shell (YAZ-1272)', () => {
     expect(after).toBe(before)
   })
 
+  it('does not rerender retained editor trees when only a right header collapses or expands', async () => {
+    captured.editorOpeners = []
+    const { el } = await mount(defaultAppState(), {
+      id: 'w1',
+      root: '/v',
+      file: '/v/a.md',
+      tabs: ['/v/a.md'],
+      rightPanel: { open: true, width: 440, items: ['/v/b.md'], expanded: '/v/b.md' },
+    })
+    const count = (path: string) => captured.editorOpeners.filter((entry) => entry.path === path).length
+    const before = { main: count('/v/a.md'), right: count('/v/b.md') }
+
+    const header = el.querySelector<HTMLButtonElement>('.right-panel__header')!
+    act(() => header.click())
+    expect({ main: count('/v/a.md'), right: count('/v/b.md') }).toEqual(before)
+
+    act(() => header.click())
+    expect({ main: count('/v/a.md'), right: count('/v/b.md') }).toEqual(before)
+  })
+
   it('wires the keyboard-equivalent move commands through one-owner workspace transfers', async () => {
     const { el, bridge } = await mount(defaultAppState(), {
       id: 'w1',

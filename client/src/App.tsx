@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type SettingsState, type SidebarLens } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
@@ -40,6 +40,11 @@ function syncHash(path: string | null): void {
 /** A can't-open-link notice (E1, GRO-2171) dismisses itself after this long. */
 export const LINK_NOTICE_MS = 4000
 
+// A workspace state change still re-renders App, but unchanged retained editors must not render
+// with it: a folder page's Board runs layout animation after every render, so an unrelated right
+// header click would otherwise remeasure and visibly nudge its cards.
+const RetainedEditor = memo(Editor)
+
 /**
  * Keeps the current-page navigation function stable for the lifetime of one retained right
  * editor. Crepe's lifecycle effect depends on this callback; creating it inside App's map would
@@ -50,7 +55,7 @@ function RightWorkspaceEditor({ path, navigate, ...props }: Omit<ComponentProps<
   navigate: (from: string, to: string) => void
 }) {
   const openFile = useCallback((to: string) => navigate(path, to), [navigate, path])
-  return <Editor {...props} path={path} onOpenFile={openFile} />
+  return <RetainedEditor {...props} path={path} onOpenFile={openFile} />
 }
 
 export function App() {
@@ -605,14 +610,14 @@ export function App() {
             onNotice={setNotice}
           />
           <div className="tabstack">
-            {mounted.length === 0 && editorCommon !== null && <Editor {...editorCommon} path={null} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
+            {mounted.length === 0 && editorCommon !== null && <RetainedEditor {...editorCommon} path={null} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
             {mounted.map((path) => (
               // Every VISITED tab keeps its editor mounted so scroll/cursor/undo/unsaved buffer
               // survive a switch (rule 6); inactive layers hide via visibility — see tabs.css
               // for why display:none would lose scroll positions.
               <div key={path} className={path === file ? 'tabstack__layer' : 'tabstack__layer tabstack__layer--hidden'}>
                 {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → openCurrent, ⌘ → openBackground; create failures land in the link-notice. */}
-                {editorCommon !== null && <Editor {...editorCommon} path={path} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
+                {editorCommon !== null && <RetainedEditor {...editorCommon} path={path} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
               </div>
             ))}
           </div>
