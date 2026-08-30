@@ -69,7 +69,7 @@ interface SidebarProps {
    * failure to the passive notice — this promise never rejects, so the inline input just
    * closes.
    */
-  onRenameFile: (oldPath: string, newPath: string) => Promise<void>
+  onRenameFile: (oldPath: string, newPath: string, kind: TreeNode['type']) => Promise<void>
   /**
    * Context-menu "Delete" confirmed (GRO-2272): App moves the entry to the system Trash and
    * routes ANY failure to the passive notice — this promise never rejects, so the sheet just
@@ -724,7 +724,7 @@ export function Sidebar({
       if (target === renamingEntry.path) return // same name = no-op
       // App owns the whole flow (and routes failures to the passive notice — never a dialog);
       // the tree row follows via the watcher's unlink+add refresh.
-      await onRenameFile(renamingEntry.path, target)
+      await onRenameFile(renamingEntry.path, target, renamingEntry.kind)
     },
     [renamingEntry, onRenameFile],
   )
@@ -744,7 +744,7 @@ export function Sidebar({
       if (target === path) return // dropped into its own folder: nothing to do
       // The SAME rename flow as the context menu — never-overwrite and every failure as a
       // passive notice come with it; link updates and the workspace remap ride the same pipeline.
-      void onRenameFile(path, target)
+      void onRenameFile(path, target, 'file')
     },
     [dragging, onRenameFile],
   )

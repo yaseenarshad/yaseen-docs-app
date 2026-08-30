@@ -270,7 +270,7 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
       input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     })
     await act(async () => undefined)
-    expect(props.onRenameFile).toHaveBeenCalledWith('/v/sub', '/v/archive')
+    expect(props.onRenameFile).toHaveBeenCalledWith('/v/sub', '/v/archive', 'dir')
   })
 
   it('dragging a file row onto a folder row moves it there (onRenameFile old→new parent); the target highlights while hovered', async () => {
@@ -279,7 +279,7 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
     fire(dirRow(el), 'dragover')
     expect(dirRow(el)?.classList.contains('tree__row--drop')).toBe(true)
     fire(dirRow(el), 'drop')
-    expect(props.onRenameFile).toHaveBeenCalledWith('/v/a.md', '/v/sub/a.md')
+    expect(props.onRenameFile).toHaveBeenCalledWith('/v/a.md', '/v/sub/a.md', 'file')
     expect(el.querySelector('.tree__row--drop')).toBeNull() // drag state cleared
   })
 
@@ -1598,7 +1598,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     expect(inlineInput(el)?.value).toBe('Guide') // the name minus its extension — the file tree's prefill
     expect(rowFor(el, 'Guide')).toBeUndefined() // …IN PLACE of the row, never beside it
     await commit(el, 'Manual')
-    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/Docs/Guide.md', '/v/Docs/Manual.md')
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/Docs/Guide.md', '/v/Docs/Manual.md', 'file')
   })
 
   it('a page standing under TWO parents renames through ONE input — two autofocused ones would fight', async () => {
@@ -1817,7 +1817,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     expect(inlineInput(el)?.value).toBe('inbox')
     expect(rowFor(el, 'inbox')).toBeUndefined()
     await commit(el, 'Archive')
-    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/inbox', '/v/Archive')
+    expect(props.onRenameFile).toHaveBeenCalledExactlyOnceWith('/v/inbox', '/v/Archive', 'dir')
   })
 
   it('folder create actions draw beneath the selected branch and use it as the filesystem parent', async () => {

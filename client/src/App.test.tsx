@@ -23,7 +23,7 @@ interface SidebarStubProps {
   onRootMissing: () => void
   onFileMissing: () => void
   /** The ONE rename door (⚡ YAZ-888): the inline rename AND the drag-move both arrive through it. */
-  onRenameFile: (oldPath: string, newPath: string) => Promise<void>
+  onRenameFile: (oldPath: string, newPath: string, kind: 'file' | 'dir') => Promise<void>
   pendingSearchFocus: boolean
   /** The lens tabs (YAZ-847): App owns the value and the write-through; the sidebar only reports clicks. */
   lens: SidebarLens
@@ -964,7 +964,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
   it('a NAME change asks first, with the honest count — and confirming runs the whole pipeline', async () => {
     const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
     const { bridge, el } = await mount(defaultAppState(), identity(), files, feed)
-    await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md'))
+    await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
     expect(sheetText(el)).toBe("Rename 'B' to 'B2'? Links in 1 note will be updated.")
     expect(bridge.file.rename).not.toHaveBeenCalled() // nothing moves before the beat
 
@@ -976,7 +976,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
 
   it('a MOVE stays silent: no sheet, the rename runs straight through', async () => {
     const { bridge, el } = await mount(defaultAppState(), identity(), {}, feed)
-    await act(async () => await captured.sidebar?.onRenameFile('/v/B.md', '/v/Docs/B.md'))
+    await act(async () => await captured.sidebar?.onRenameFile('/v/B.md', '/v/Docs/B.md', 'file'))
     expect(el.querySelector('.confirm')).toBeNull()
     expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/B.md', newPath: '/v/Docs/B.md' })
   })
@@ -984,7 +984,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
   it('Cancel renames nothing and rewrites nothing', async () => {
     const files = { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }
     const { bridge, el } = await mount(defaultAppState(), identity(), files, feed)
-    await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md'))
+    await act(async () => void captured.sidebar?.onRenameFile('/v/B.md', '/v/B2.md', 'file'))
     await act(async () => sheetBtn(el, 'Cancel')?.click())
     expect(el.querySelector('.confirm')).toBeNull()
     expect(bridge.file.rename).not.toHaveBeenCalled()
@@ -993,13 +993,13 @@ describe('App rename door (⚡ YAZ-888)', () => {
 
   it('a FOLDER rename asks too, and its count is the DIR-mode one — pathed links only', async () => {
     const { el } = await mount(defaultAppState(), identity(), {}, feed)
-    await act(async () => void captured.sidebar?.onRenameFile('/v/Docs', '/v/Notes'))
+    await act(async () => void captured.sidebar?.onRenameFile('/v/Docs', '/v/Notes', 'dir'))
     expect(sheetText(el)).toBe("Rename 'Docs' to 'Notes'? Links in 1 note will be updated.")
   })
 
   it('a page nobody links to says so rather than promising an update of nothing', async () => {
     const { el } = await mount(defaultAppState(), identity(), {}, feed)
-    await act(async () => void captured.sidebar?.onRenameFile('/v/A.md', '/v/A2.md'))
+    await act(async () => void captured.sidebar?.onRenameFile('/v/A.md', '/v/A2.md', 'file'))
     expect(sheetText(el)).toBe("Rename 'A' to 'A2'? No other notes link to it.")
   })
 
@@ -1010,7 +1010,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
       const { el } = await mount(defaultAppState(), identity(), {}, (b) =>
         b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 }),
       )
-      await act(async () => void captured.sidebar?.onRenameFile('/v/data.json', '/v/data-v2.json'))
+      await act(async () => void captured.sidebar?.onRenameFile('/v/data.json', '/v/data-v2.json', 'file'))
 
       expect(semanticRecords.some((record) => record.path === '/v/data.json')).toBe(false)
       expect(count).toHaveBeenCalledWith({
@@ -1020,6 +1020,27 @@ describe('App rename door (⚡ YAZ-888)', () => {
         records: semanticRecords,
       })
       expect(sheetText(el)).toBe("Rename 'data.json' to 'data-v2.json'? No other notes link to it.")
+    } finally {
+      count.mockRestore()
+    }
+  })
+
+  it('uses directory-prefix semantics for a directory whose name looks like a supported file', async () => {
+    const semanticRecords = [record('/v/R.md', { links: ['Archive.json/N'] }), record('/v/Archive.json/N.md')]
+    const count = vi.spyOn(renameLinks, 'countLinkReferences')
+    try {
+      const { el } = await mount(defaultAppState(), identity(), {}, (b) =>
+        b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 }),
+      )
+      await act(async () => void captured.sidebar?.onRenameFile('/v/Archive.json', '/v/Renamed.json', 'dir'))
+
+      expect(count).toHaveBeenCalledWith({
+        root: '/v',
+        oldPath: '/v/Archive.json',
+        kind: 'dir',
+        records: semanticRecords,
+      })
+      expect(sheetText(el)).toBe("Rename 'Archive.json' to 'Renamed.json'? Links in 1 note will be updated.")
     } finally {
       count.mockRestore()
     }

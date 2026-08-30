@@ -1,6 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
-import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type SettingsState, type SidebarLens } from '@shared/types'
-import { fileKind } from '@shared/fileKind'
+import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -391,7 +390,7 @@ export function App() {
 
   /**
    * THE ONE DOOR (⚡ YAZ-888, amending decision E / GRO-2096 for NAME changes). Every rename
-   * gesture in the app arrives here as (oldPath, newPath) — the sidebar's inline rename, its
+   * gesture in the app arrives here as (oldPath, newPath, kind) — the sidebar's inline rename, its
    * drag-move, and the page title — so the rule is asked ONCE, here, and no surface reimplements
    * it: a changed NAME confirms first (the rename chains into the file on disk and then into
    * every note that links to it), a MOVE runs silently exactly as it always has (a confirm on
@@ -405,15 +404,18 @@ export function App() {
   const [pendingRename, setPendingRename] = useState<{ oldPath: string; newPath: string; count: number } | null>(null)
 
   const requestRename = useCallback(
-    async (oldPath: string, newPath: string): Promise<void> => {
+    async (oldPath: string, newPath: string, kind: TreeNode['type']): Promise<void> => {
       if (root === null || !isNameChange(oldPath, newPath)) return renameFile(oldPath, newPath)
       const records = wikilinks.records
-      // File-vs-directory is a filesystem capability, not semantic-index membership: supported
-      // view-only files deliberately never become IndexRecords but still use file-mode rename rules.
-      const kind = fileKind(oldPath) === null ? 'dir' : 'file'
+      // File-vs-directory comes from the concrete tree/editor gesture. Extension and semantic
+      // membership cannot answer it: `Archive.json` may be a directory, while a JSON file has no IndexRecord.
       setPendingRename({ oldPath, newPath, count: countLinkReferences({ root, oldPath, kind, records }) })
     },
     [root, renameFile, wikilinks],
+  )
+  const requestEditorRename = useCallback(
+    (oldPath: string, newPath: string) => requestRename(oldPath, newPath, 'file'),
+    [requestRename],
   )
 
   const confirmRename = useCallback(() => {
@@ -496,7 +498,7 @@ export function App() {
     wikilinkCandidates,
     properties: propertyDecls,
     onOpenFileRight: openRight,
-    onRenameFile: requestRename,
+    onRenameFile: requestEditorRename,
     sync: githubSync.status,
     onSyncNow: githubSync.syncNow,
   }

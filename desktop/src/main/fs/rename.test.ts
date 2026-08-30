@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { renameFile, repairRename } from './rename'
 import { failure, makeFixture } from './testFixture'
@@ -222,6 +222,17 @@ describe('repairRename (Links E1c, GRO-2242: validate a rename that ALREADY happ
     const newPath = path.join(root, 'Empty', 'repair-moved.py')
     await writeFile(newPath, 'print("moved")\n')
     expect(await repairRename({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
+  })
+
+  it('accepts an external case-only repair by exact directory-entry spelling on a case-insensitive filesystem', async () => {
+    const oldPath = path.join(root, 'Repair-Case-Only.JSON')
+    const newPath = path.join(root, 'repair-case-only.json')
+    await writeFile(oldPath, '{"case":"old"}')
+    await rename(oldPath, newPath) // the external rename has already happened
+    expect(await readdir(root)).toContain('repair-case-only.json')
+
+    expect(await repairRename({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
+    expect(await readFile(newPath, 'utf8')).toBe('{"case":"old"}')
   })
 
   it("mirrors renameFile's dot-dir refusal for directories", async () => {
