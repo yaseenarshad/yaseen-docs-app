@@ -84,11 +84,22 @@ export const TEXT_VIEW_EXTENSIONS = [
   '.tex',
 ] as const
 export const PDF_EXTENSIONS = ['.pdf'] as const
+export const IMAGE_VIEW_MIME = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.bmp': 'image/bmp',
+} as const
+export const IMAGE_VIEW_EXTENSIONS = Object.freeze(Object.keys(IMAGE_VIEW_MIME)) as readonly (keyof typeof IMAGE_VIEW_MIME)[]
 
 /** The file kinds visible in the Files tree; only `markdown` is writable and semantic. */
-export type FileKind = 'markdown' | 'text' | 'pdf'
+export type FileKind = 'markdown' | 'text' | 'pdf' | 'image'
 export const MAX_FILE_BYTES = 10 * 1024 * 1024
 export const MAX_PDF_BYTES = 50 * 1024 * 1024
+export const MAX_IMAGE_BYTES = 50 * 1024 * 1024
 
 // ---------- tree(root) ----------
 
@@ -113,7 +124,7 @@ export type TreeNode =
 
 export interface TreeResponse {
   root: string
-  /** Recursive tree of the root. Supported markdown/text/PDF files are included; every directory shows, supported files or not (GRO-2022). Hidden (dot) entries and `node_modules` skipped. */
+  /** Recursive tree of the root. Supported markdown/text/PDF/image files are included; every directory shows, supported files or not (GRO-2022). Hidden (dot) entries and `node_modules` skipped. */
   tree: TreeNode[]
   /** Main-process time (epoch ms) when the tree was computed. */
   generatedAt: number

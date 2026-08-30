@@ -49,7 +49,9 @@ describe('renameFile (Links E1, GRO-2194)', () => {
   })
 
   it('UNSUPPORTED_EXTENSION on unsupported paths, NOT_FOUND on a missing source, NOT_ABSOLUTE / BAD_REQUEST on bad input', async () => {
-    expect(await code(renameFile({ oldPath: path.join(root, 'assets-only', 'img.png'), newPath: path.join(root, 'other.png') }))).toBe('UNSUPPORTED_EXTENSION')
+    const unsupportedPath = path.join(root, 'unsupported.bin')
+    await writeFile(unsupportedPath, 'unsupported')
+    expect(await code(renameFile({ oldPath: unsupportedPath, newPath: path.join(root, 'other.bin') }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(renameFile({ oldPath: path.join(root, 'b.md'), newPath: path.join(root, 'b.txt') }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(renameFile({ oldPath: path.join(root, 'b.md'), newPath: path.join(root, 'b.base') }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(renameFile({ oldPath: path.join(root, 'missing.md'), newPath: path.join(root, 'other.md') }))).toBe('NOT_FOUND')
@@ -91,6 +93,28 @@ describe('renameFile (Links E1, GRO-2194)', () => {
     expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
     expect(await readFile(newPath, 'utf8')).toBe('{"move":true}')
     await expect(stat(oldPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it.each([
+    ['image-source.png', 'image-renamed.PNG'],
+    ['photo-source.jpg', 'photo-renamed.jpeg'],
+  ])('allows an image rename when the encoded format is preserved: %s → %s', async (oldName, newName) => {
+    const oldPath = path.join(root, oldName)
+    const newPath = path.join(root, newName)
+    const original = Buffer.from(`encoded:${oldName}`)
+    await writeFile(oldPath, original)
+    expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
+    expect(await readFile(newPath)).toEqual(original)
+  })
+
+  it('refuses an image extension change that would claim an encoding conversion', async () => {
+    const oldPath = path.join(root, 'not-converted.png')
+    const newPath = path.join(root, 'not-converted.jpg')
+    const original = Buffer.from('png bytes')
+    await writeFile(oldPath, original)
+    expect(await code(renameFile({ oldPath, newPath }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await readFile(oldPath)).toEqual(original)
+    await expect(stat(newPath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it.each([
@@ -222,6 +246,25 @@ describe('repairRename (Links E1c, GRO-2242: validate a rename that ALREADY happ
     const newPath = path.join(root, 'Empty', 'repair-moved.py')
     await writeFile(newPath, 'print("moved")\n')
     expect(await repairRename({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
+  })
+
+  it.each([
+    ['repair-image-old.webp', 'repair-image-new.WEBP'],
+    ['repair-photo-old.jpeg', 'repair-photo-new.jpg'],
+  ])('allows an image repair when the encoded format is preserved: %s → %s', async (oldName, newName) => {
+    const oldPath = path.join(root, oldName)
+    const newPath = path.join(root, newName)
+    await writeFile(newPath, `landed:${newName}`)
+    expect(await repairRename({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
+  })
+
+  it('refuses an image repair that would claim an encoding conversion', async () => {
+    const oldPath = path.join(root, 'repair-not-converted.gif')
+    const newPath = path.join(root, 'repair-not-converted.webp')
+    const original = Buffer.from('gif bytes')
+    await writeFile(newPath, original)
+    expect(await code(repairRename({ oldPath, newPath }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await readFile(newPath)).toEqual(original)
   })
 
   it('distinguishes exact entry spelling deterministically when host stat would alias a case-only rename', async () => {
