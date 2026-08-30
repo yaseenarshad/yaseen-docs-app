@@ -179,6 +179,29 @@ describe('PdfViewer (YAZ-1300)', () => {
     expect(revokeObjectURL).not.toHaveBeenCalled()
   })
 
+  it('transfers URL ownership exactly once when an existing viewer changes paths', async () => {
+    const nextPath = '/vault/next.pdf'
+    let resolveNext!: (file: PdfResponse) => void
+    readPdf
+      .mockResolvedValueOnce(response(new Uint8Array([1]), 1))
+      .mockReturnValueOnce(new Promise<PdfResponse>((done) => (resolveNext = done)))
+    const el = mount()
+    await flush()
+    expect(el.querySelector('iframe')?.getAttribute('src')).toBe('blob:pdf-1')
+
+    rerender(nextPath)
+    expect(revokeObjectURL.mock.calls).toEqual([['blob:pdf-1']])
+    expect(el.querySelector('iframe')).toBeNull()
+    resolveNext(response(new Uint8Array([2]), 2, nextPath))
+    await flush()
+    expect(el.querySelector('iframe')?.getAttribute('src')).toBe('blob:pdf-2')
+    expect(revokeObjectURL.mock.calls).toEqual([['blob:pdf-1']])
+
+    act(() => root?.unmount())
+    root = null
+    expect(revokeObjectURL.mock.calls).toEqual([['blob:pdf-1'], ['blob:pdf-2']])
+  })
+
   it('revokes the current URL exactly once on unmount after a replacement', async () => {
     readPdf.mockResolvedValueOnce(response(new Uint8Array([1]), 1))
     const el = mount()
@@ -194,7 +217,7 @@ describe('PdfViewer (YAZ-1300)', () => {
     expect(revokeObjectURL.mock.calls).toEqual([['blob:pdf-1'], ['blob:pdf-2']])
   })
 
-  it('keeps the prior native frame when a same-path refresh fails passively', async () => {
+  it('keeps the prior native frame below a passive refresh-error banner', async () => {
     readPdf
       .mockResolvedValueOnce(response(new Uint8Array([1]), 1))
       .mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'file changed while being read; try again'))
@@ -205,6 +228,8 @@ describe('PdfViewer (YAZ-1300)', () => {
     await flush()
     expect(el.querySelector('iframe')?.getAttribute('src')).toBe('blob:pdf-1')
     expect(el.querySelector('.pdf-viewer__error')?.textContent).toBe('IO_ERROR: file changed while being read; try again')
+    expect([...el.querySelectorAll('.pdf-viewer > *')].map((node) => node.className)).toEqual(['pdf-viewer__error', 'pdf-viewer__frame'])
+    expect(viewerCss).toMatch(/\.pdf-viewer\s*\{[^}]*flex-direction:\s*column/s)
     expect(revokeObjectURL).not.toHaveBeenCalled()
   })
 })
