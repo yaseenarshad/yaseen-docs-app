@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
-import { buildViewOnlyCatalog } from './viewOnlyCatalog'
+import { buildViewOnlyCatalog, buildViewOnlyCatalogFromEntries } from './viewOnlyCatalog'
 
 const file = (path: string, kind: 'markdown' | 'text' | 'pdf'): TreeNode => ({
   type: 'file',
@@ -70,5 +70,15 @@ describe('view-only catalog (YAZ-1310)', () => {
     expect(catalog.resolve('same.json')).toBe('/vault/a/SAME.JSON')
     expect(catalog.linkName('/vault/a/SAME.JSON')).toBe('SAME.JSON')
     expect(catalog.linkName('/vault/z/same.json')).toBe('z/same.json')
+  })
+
+  it('rebuilds the same deterministic lookup from an already-flattened rename snapshot', () => {
+    const initial = buildViewOnlyCatalog('/vault', tree)
+    const rebuilt = buildViewOnlyCatalogFromEntries('/vault', initial.entries.map((entry) =>
+      entry.path === '/vault/data.json' ? { ...entry, path: '/vault/moved/data.json' } : entry,
+    ))
+    expect(rebuilt.resolve('data.json')).toBe('/vault/deep/data.JSON')
+    expect(rebuilt.linkName('/vault/moved/data.json')).toBe('moved/data.json')
+    expect(rebuilt.candidates.map((candidate) => candidate.path)).toContain('/vault/moved/data.json')
   })
 })

@@ -366,6 +366,9 @@ export function App() {
     async (oldPath: string, newPath: string): Promise<void> => {
       const r = root
       if (r === null) return
+      // Pin the lightweight snapshot before fs:rename; its watcher may refresh away the old
+      // path immediately after the bridge succeeds, exactly like the semantic pre-rename index.
+      const viewOnlyCatalog = viewOnlyLinks.catalog
       // (a) our own unsaved buffers travel WITH the file(s). The kind is unknown until the
       // rename answers, so both run — each is a no-op for the other kind.
       await flushRenamedPath(oldPath)
@@ -384,10 +387,20 @@ export function App() {
         setNotice(exists ? `Can't rename: "${basename(newPath)}" already exists` : `Can't rename: ${err instanceof Error ? err.message : String(err)}`)
         return
       }
-      const summary = await updateLinksAfterRename({ root: r, oldPath, newPath, kind, records })
+      const hasMovedViewFile = viewOnlyCatalog?.entries.some((entry) =>
+        kind === 'dir' ? entry.path.startsWith(`${oldPath}/`) : entry.path === oldPath,
+      ) ?? false
+      const summary = await updateLinksAfterRename({
+        root: r,
+        oldPath,
+        newPath,
+        kind,
+        records,
+        ...(hasMovedViewFile ? { viewOnlyCatalog } : {}),
+      })
       if (summary.updated > 0 || summary.skipped > 0) setNotice(renameNotice(summary))
     },
-    [root],
+    [root, viewOnlyLinks],
   )
 
   /**
@@ -409,11 +422,19 @@ export function App() {
     async (oldPath: string, newPath: string, kind: TreeNode['type']): Promise<void> => {
       if (root === null || !isNameChange(oldPath, newPath)) return renameFile(oldPath, newPath)
       const records = wikilinks.records
+      const catalog = viewOnlyLinks.catalog
+      const hasMovedViewFile = catalog?.entries.some((entry) =>
+        kind === 'file' ? entry.path === oldPath : entry.path.startsWith(`${oldPath}/`),
+      ) ?? false
       // File-vs-directory comes from the concrete tree/editor gesture. Extension and semantic
       // membership cannot answer it: `Archive.json` may be a directory, while a JSON file has no IndexRecord.
-      setPendingRename({ oldPath, newPath, count: countLinkReferences({ root, oldPath, kind, records }) })
+      setPendingRename({
+        oldPath,
+        newPath,
+        count: countLinkReferences({ root, oldPath, kind, records, ...(hasMovedViewFile ? { viewOnlyCatalog: catalog } : {}) }),
+      })
     },
-    [root, renameFile, wikilinks],
+    [root, renameFile, wikilinks, viewOnlyLinks],
   )
   const requestEditorRename = useCallback(
     (oldPath: string, newPath: string) => requestRename(oldPath, newPath, 'file'),

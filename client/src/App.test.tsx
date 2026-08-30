@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type SidebarLens, type WindowIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type IndexRecord, type SidebarLens, type TreeNode, type TreeResponse, type WindowIdentity } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -89,7 +89,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       return () => set.delete(l)
     })
   const bridge = {
-    tree: vi.fn(async (root: string) => ({ root, tree: [], generatedAt: 1 })),
+    tree: vi.fn(async (root: string): Promise<TreeResponse> => ({ root, tree: [], generatedAt: 1 })),
     // Empty index (GRO-2190): WikilinkIndexBridge reads it for wikilink resolution.
     index: vi.fn(async (root: string) => ({ root, records: [] as IndexRecord[], generatedAt: 1 })),
     // No cold diff by default (E1c, GRO-2242): the external-rename tests stub a hit.
@@ -1050,21 +1050,32 @@ describe('App rename door (⚡ YAZ-888)', () => {
 
   it('classifies a supported view-only path as a file without adding it to the semantic index', async () => {
     const semanticRecords = [record('/v/A.md', { links: ['data.json'] })]
+    const files = { '/v/A.md': { content: 'See [[data.json]].\n', mtime: 1 } }
     const count = vi.spyOn(renameLinks, 'countLinkReferences')
     try {
-      const { el } = await mount(defaultAppState(), identity(), {}, (b) =>
-        b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 }),
-      )
+      const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
+        b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 })
+        b.bridge.tree.mockImplementation(async () => ({
+          root: '/v',
+          tree: [{ type: 'file', name: 'data.json', path: '/v/data.json', kind: 'text', size: 1, mtime: 1 }] as TreeNode[],
+          generatedAt: 1,
+        }))
+      })
       await act(async () => void captured.sidebar?.onRenameFile('/v/data.json', '/v/data-v2.json', 'file'))
 
       expect(semanticRecords.some((record) => record.path === '/v/data.json')).toBe(false)
-      expect(count).toHaveBeenCalledWith({
+      expect(count).toHaveBeenCalledWith(expect.objectContaining({
         root: '/v',
         oldPath: '/v/data.json',
         kind: 'file',
         records: semanticRecords,
-      })
-      expect(sheetText(el)).toBe("Rename 'data.json' to 'data-v2.json'? No other notes link to it.")
+        viewOnlyCatalog: expect.objectContaining({ entries: [expect.objectContaining({ path: '/v/data.json' })] }),
+      }))
+      expect(sheetText(el)).toBe("Rename 'data.json' to 'data-v2.json'? Links in 1 note will be updated.")
+
+      await act(async () => sheetBtn(el, 'Rename')?.click())
+      expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/data.json', newPath: '/v/data-v2.json' })
+      expect(files['/v/A.md'].content).toBe('See [[data-v2.json]].\n')
     } finally {
       count.mockRestore()
     }

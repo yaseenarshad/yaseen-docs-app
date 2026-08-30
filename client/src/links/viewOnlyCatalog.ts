@@ -27,6 +27,12 @@ function flatten(nodes: readonly TreeNode[], out: ViewOnlyEntry[]): void {
 export function buildViewOnlyCatalog(root: string, tree: readonly TreeNode[]): ViewOnlyCatalog {
   const entries: ViewOnlyEntry[] = []
   flatten(tree, entries)
+  return buildViewOnlyCatalogFromEntries(root, entries)
+}
+
+/** Rebuild lookup/spelling after a rename without re-reading or fabricating a filesystem tree. */
+export function buildViewOnlyCatalogFromEntries(root: string, source: readonly ViewOnlyEntry[]): ViewOnlyCatalog {
+  const entries = source.map((entry) => ({ ...entry }))
   entries.sort(pathOrder)
   const prefix = `${root.replace(/\/+$/, '')}/`
   const relative = (entry: ViewOnlyEntry): string => entry.path.startsWith(prefix) ? entry.path.slice(prefix.length) : entry.name

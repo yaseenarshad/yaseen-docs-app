@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
+import type { TreeNode } from '@shared/types'
+import { buildViewOnlyCatalog } from './viewOnlyCatalog'
 import {
   countLinkReferences,
   maskCode,
@@ -420,6 +422,63 @@ describe('updateLinksAfterRename across a cross-directory file MOVE (E1b)', () =
     ]
     expect(await updateLinksAfterRename({ root, oldPath: '/v/B.md', newPath: '/v/Deep/er/B.md', records })).toEqual({ updated: 1, skipped: 0 })
     expect(files['/v/A.md'].content).toBe('[[Deep/er/B]] here\n')
+  })
+})
+
+describe('view-only rename references stay outside the semantic index (YAZ-1310)', () => {
+  const root = '/v'
+  const viewFile = (path: string, kind: 'text' | 'pdf' = 'text'): TreeNode => ({
+    type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, kind, size: 1, mtime: 1,
+  })
+
+  it('counts and rewrites explicit-extension body/frontmatter links while preserving suffixes, aliases and code masks', async () => {
+    const content = '---\nsource: "[[data.json#meta|JSON source]]"\n---\n\n[[ data.json ]] [[data.json#row|shown]] `[[data.json]]`\n```\n[[data.json]]\n```\n'
+    const files = { '/v/A.md': { content, mtime: 1 } }
+    const bridge = installBridge(files)
+    const records = [rec('/v/A.md', { links: ['data.json'] })]
+    const viewOnlyCatalog = buildViewOnlyCatalog(root, [viewFile('/v/data.json')])
+
+    expect(records.some((record) => record.path === '/v/data.json')).toBe(false)
+    expect(countLinkReferences({ root, oldPath: '/v/data.json', records, viewOnlyCatalog })).toBe(1)
+    expect(await updateLinksAfterRename({ root, oldPath: '/v/data.json', newPath: '/v/data-v2.JSON', records, viewOnlyCatalog })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toContain('source: "[[data-v2.JSON#meta|JSON source]]"')
+    expect(files['/v/A.md'].content).toContain('[[data-v2.JSON]] [[data-v2.JSON#row|shown]] `[[data.json]]`')
+    expect(files['/v/A.md'].content).toContain('```\n[[data.json]]\n```')
+    expect(bridge.readFile).toHaveBeenCalledExactlyOnceWith('/v/A.md')
+    expect(bridge.writeFile).toHaveBeenCalledTimes(1)
+    expect(bridge.writeFile.mock.calls[0]?.[0].path).toBe('/v/A.md')
+  })
+
+  it.each([
+    ['/v/tool.py', '/v/tool-v2.PY', 'text'],
+    ['/v/report.pdf', '/v/report-v2.PDF', 'pdf'],
+  ] as const)('rewrites a supported %s link without a target IndexRecord', async (oldPath, newPath, kind) => {
+    const oldName = oldPath.slice(oldPath.lastIndexOf('/') + 1)
+    const newName = newPath.slice(newPath.lastIndexOf('/') + 1)
+    const files = { '/v/A.md': { content: `[[${oldName}]]\n`, mtime: 1 } }
+    installBridge(files)
+    const records = [rec('/v/A.md', { links: [oldName] })]
+    const viewOnlyCatalog = buildViewOnlyCatalog(root, [viewFile(oldPath, kind)])
+    expect(await updateLinksAfterRename({ root, oldPath, newPath, records, viewOnlyCatalog })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe(`[[${newName}]]\n`)
+  })
+
+  it('uses the post-move catalog to escalate a basename that a shallower duplicate wins', async () => {
+    const files = { '/v/A.md': { content: '[[data.json]]\n', mtime: 1 } }
+    installBridge(files)
+    const records = [rec('/v/A.md', { links: ['data.json'] })]
+    const viewOnlyCatalog = buildViewOnlyCatalog(root, [
+      viewFile('/v/data.json'),
+      { type: 'dir', name: 'other', path: '/v/other', children: [viewFile('/v/other/data.JSON')] },
+    ])
+    expect(await updateLinksAfterRename({
+      root,
+      oldPath: '/v/data.json',
+      newPath: '/v/z/deep/data.json',
+      records,
+      viewOnlyCatalog,
+    })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('[[z/deep/data.json]]\n')
   })
 })
 
