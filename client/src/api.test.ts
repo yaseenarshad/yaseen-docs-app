@@ -8,6 +8,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     tree: vi.fn(),
     readFile: vi.fn(),
     readPdf: vi.fn(),
+    readImage: vi.fn(),
     writeFile: vi.fn(),
     createDir: vi.fn(),
     createFile: vi.fn(),
@@ -55,6 +56,10 @@ describe('api', () => {
     await api.createFile('/v/n.md')
     expect(bridge.readFile).toHaveBeenCalledWith('/v/a.md')
     expect(bridge.readPdf).toHaveBeenCalledWith('/v/report.pdf')
+    const imageBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
+    bridge.readImage.mockResolvedValue({ path: '/v/pixel.png', data: imageBytes, mime: 'image/png', mtime: 7, size: imageBytes.byteLength })
+    await expect(api.readImage('/v/pixel.png')).resolves.toMatchObject({ path: '/v/pixel.png', data: imageBytes, mime: 'image/png' })
+    expect(bridge.readImage).toHaveBeenCalledWith('/v/pixel.png')
     expect(bridge.createDir).toHaveBeenCalledWith('/v/d')
     expect(bridge.createFile).toHaveBeenCalledWith('/v/n.md')
     bridge.index.mockResolvedValue({ root: '/v', records: [], generatedAt: 4 })
@@ -116,6 +121,13 @@ describe('api', () => {
     const err = await api.readPdf('/v/large.pdf').catch((e: unknown) => e)
     expect(err).toBeInstanceOf(BridgeRequestError)
     expect(err).toMatchObject({ code: 'TOO_LARGE', message: 'PDF exceeds 52428800 bytes', path: '/v/large.pdf' })
+  })
+
+  it('wraps readImage bridge errors without losing the image path', async () => {
+    bridge.readImage.mockRejectedValue({ code: 'TOO_LARGE', message: 'image exceeds 52428800 bytes', path: '/v/large.png' })
+    const err = await api.readImage('/v/large.png').catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(BridgeRequestError)
+    expect(err).toMatchObject({ code: 'TOO_LARGE', message: 'image exceeds 52428800 bytes', path: '/v/large.png' })
   })
 
   it('properties calls delegate and wrap INVALID_CONFIG like every other code (YAZ-835)', async () => {

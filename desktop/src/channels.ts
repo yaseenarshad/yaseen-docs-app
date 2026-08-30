@@ -5,6 +5,7 @@ export const CH = {
   fsTree: 'fs:tree',
   fsRead: 'fs:read',
   fsReadPdf: 'fs:read-pdf',
+  fsReadImage: 'fs:read-image',
   fsWrite: 'fs:write',
   fsCreateDir: 'fs:create-dir',
   fsCreateFile: 'fs:create-file',

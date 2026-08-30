@@ -228,6 +228,15 @@ export interface PdfResponse {
   size: number
 }
 
+/** Dedicated exact-path binary response for the static raster-image viewer. */
+export interface ImageResponse {
+  path: string
+  data: Uint8Array
+  mime: (typeof IMAGE_VIEW_MIME)[keyof typeof IMAGE_VIEW_MIME]
+  mtime: number
+  size: number
+}
+
 // ---------- readAsset(root, ref) / writeAsset(req) (Bases 4E, GRO-2139 — Desktop D10: bridge methods, never routes) ----------
 
 /** Allowed image extensions for `readAsset` (no dot); anything else rejects `UNSUPPORTED_EXTENSION`. */
@@ -991,6 +1000,7 @@ export interface YaseenDocsApi {
   tree(root: string): Promise<TreeResponse>
   readFile(path: string): Promise<FileResponse>
   readPdf(path: string): Promise<PdfResponse>
+  readImage(path: string): Promise<ImageResponse>
   writeFile(req: FileWriteRequest): Promise<FileWriteResponse>
   createDir(path: string): Promise<CreateDirResponse>
   createFile(req: string | CreateFileRequest): Promise<CreateFileResponse>

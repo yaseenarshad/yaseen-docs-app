@@ -59,7 +59,7 @@ describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc(store, windows)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsColdDiff, CH.fsDelete, CH.fsIndex, CH.fsRead, CH.fsReadPdf, CH.fsReadAsset, CH.fsWriteAsset, CH.fsRename, CH.fileRepairRename, CH.fsTree, CH.fsWrite, CH.shellReveal, CH.shellOpenVsCode, CH.shellOpenLink].sort())
+    expect(channels).toEqual([CH.fsCreateDir, CH.fsCreateFile, CH.fsColdDiff, CH.fsDelete, CH.fsIndex, CH.fsRead, CH.fsReadPdf, CH.fsReadImage, CH.fsReadAsset, CH.fsWriteAsset, CH.fsRename, CH.fileRepairRename, CH.fsTree, CH.fsWrite, CH.shellReveal, CH.shellOpenVsCode, CH.shellOpenLink].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
@@ -100,6 +100,22 @@ describe('registerFsIpc', () => {
     expect(await registered(CH.fsReadPdf)({ sender: {} }, path.join(root, 'A.md'))).toEqual({
       ok: false,
       error: { code: 'UNSUPPORTED_EXTENSION', message: 'only PDF files can be read as PDF', path: path.join(root, 'A.md') },
+    })
+  })
+
+  it('fs:read-image answers exact image bytes + MIME and envelopes unsupported paths', async () => {
+    const file = path.join(root, 'ipc-image.WEBP')
+    const bytes = Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0x00, 0xff])
+    await writeFile(file, bytes)
+
+    const ok = await registered(CH.fsReadImage)({ sender: {} }, file)
+    expect(ok.ok).toBe(true)
+    if (!ok.ok) throw new Error('expected ok')
+    expect(ok.value).toMatchObject({ path: file, mime: 'image/webp', size: bytes.byteLength })
+    expect((ok.value as { data: Uint8Array }).data).toEqual(Buffer.from(bytes))
+    expect(await registered(CH.fsReadImage)({ sender: {} }, path.join(root, 'A.md'))).toEqual({
+      ok: false,
+      error: { code: 'UNSUPPORTED_EXTENSION', message: 'only supported raster images can be read as images', path: path.join(root, 'A.md') },
     })
   })
 

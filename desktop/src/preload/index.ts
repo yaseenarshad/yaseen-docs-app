@@ -32,6 +32,7 @@ const api: YaseenDocsApi = {
   tree: (root) => call(CH.fsTree, root),
   readFile: (path) => call(CH.fsRead, path),
   readPdf: (path) => call(CH.fsReadPdf, path),
+  readImage: (path) => call(CH.fsReadImage, path),
   writeFile: (req) => call(CH.fsWrite, req),
   createDir: (path) => call(CH.fsCreateDir, path),
   createFile: (req) => call(CH.fsCreateFile, req),
