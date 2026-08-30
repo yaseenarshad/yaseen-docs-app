@@ -11,8 +11,8 @@ import { atomicWrite, BridgeFailure, byNameCi, fsCall, isSkipped, requireAbsPath
  * path to a local image or drawing under `root` and answer its bytes base64-encoded with a mime
  * derived from the extension; writes are drawings only (YAZ-876). Pure Node, no Electron import.
  *
- * Assets are deliberately NOT vault files — `requireVaultFile` (md-only, YAZ-844) is untouched
- * here, which is exactly what keeps a `.excalidraw` sidecar out of the tree, index and watcher.
+ * Assets use this dedicated pipe instead of the supported-file discovery/read capabilities;
+ * `.excalidraw` sidecars therefore stay out of the tree, index, and watcher.
  */
 
 const MIME: Record<string, string> = {
