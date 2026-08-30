@@ -130,6 +130,12 @@ describe('renamedPath (Links E1, GRO-2194)', () => {
     expect(renamedPath('/r/Guide.txt.md', 'Manual.markdown')).toBe('/r/Manual.markdown')
   })
 
+  it('preserves Markdown suffix ownership when the visible name ends in another supported suffix', () => {
+    expect(renameInputName('Guide.txt.md')).toBe('Guide.txt')
+    expect(renamedPath('/r/Guide.txt.md', 'Manual.txt')).toBe('/r/Manual.txt.md')
+    expect(renamedPath('/r/B.md', 'C.bin')).toBe('/r/C.bin.md')
+  })
+
   it('appends the current suffix to unrecognized dotted names but leaves recognized cross-kind suffixes explicit', () => {
     expect(renamedPath('/r/B.md', 'C.bin')).toBe('/r/C.bin.md')
     expect(renamedPath('/r/data.json', 'profile.bin')).toBe('/r/profile.bin.json')
