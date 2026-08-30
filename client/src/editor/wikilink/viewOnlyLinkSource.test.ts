@@ -31,4 +31,20 @@ describe('ViewOnlyLinkSource (YAZ-1310)', () => {
     source.update(buildViewOnlyCatalog('/vault', []))
     expect(wake).toHaveBeenCalledTimes(1)
   })
+
+  it('resets resolver, targets and readiness synchronously and wakes subscribers once', () => {
+    const source = createViewOnlyLinkSource()
+    source.update(buildViewOnlyCatalog('/vault', [node('/vault/data.json', 'text')]))
+    const wake = vi.fn()
+    source.subscribe(wake)
+
+    source.reset()
+
+    expect(source.ready).toBe(false)
+    expect(source.catalog).toBeNull()
+    expect(source.resolve).toBeNull()
+    expect(source.targets).toEqual([])
+    expect(source.linkName('/vault/data.json')).toBeNull()
+    expect(wake).toHaveBeenCalledTimes(1)
+  })
 })

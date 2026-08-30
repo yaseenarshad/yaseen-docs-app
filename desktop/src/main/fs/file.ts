@@ -17,7 +17,7 @@ function decodeViewOnlyText(bytes: Uint8Array, path: string): string {
   return content
 }
 
-/** `window.yaseenDocs.readFile(path)`: raw UTF-8 content of a vault file, frontmatter included. */
+/** Reads Markdown with its legacy UTF-8 semantics or approved view-only text with strict UTF-8 decoding. */
 export async function readFile(path: string): Promise<FileResponse> {
   const p = requireAbsPath(path, 'path')
   const kind = requireTextReadableFile(p)

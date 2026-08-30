@@ -98,7 +98,7 @@ Expected: failures because `FileKind` and the classifier are still Markdown-only
 
 - [ ] **Step 4: Expand the classifier, then immediately observe the mutation-gate reds**
 
-Add `TEXT_VIEW_EXTENSIONS`, `PDF_EXTENSIONS`, `FileKind = 'markdown' | 'text' | 'pdf'`, and pure shared helpers such as `isMarkdown`, `isReadableText`, `isViewOnly`, and `isSupportedFile`. Before changing guards, run the mutation suites and observe the expected safety failures caused by their old `fileKind() !== null` assumption:
+Add `TEXT_VIEW_EXTENSIONS`, `PDF_EXTENSIONS`, `FileKind = 'markdown' | 'text' | 'pdf'`, and pure shared helpers such as `isMarkdown`, `isViewOnly`, and `isSupportedFile`. Before changing guards, run the mutation suites and observe the expected safety failures caused by their old `fileKind() !== null` assumption:
 
 ```bash
 npx vitest run desktop/src/main/fs/file.test.ts desktop/src/main/fs/create.test.ts desktop/src/main/fs/rename.test.ts

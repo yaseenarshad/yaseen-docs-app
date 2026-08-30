@@ -14,7 +14,7 @@ import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
 import * as continuity from './lib/renameContinuity'
 import * as renameLinks from './links/renameLinks'
 import { storage } from './lib/storage'
-import type { ViewOnlyLinkSource } from './editor/wikilink/viewOnlyLinkSource'
+import type { MutableViewOnlyLinkSource, ViewOnlyLinkSource } from './editor/wikilink/viewOnlyLinkSource'
 
 interface SidebarStubProps {
   root: string
@@ -1061,6 +1061,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
           generatedAt: 1,
         }))
       })
+      const treeReadsBeforeRename = bridge.tree.mock.calls.filter(([path]) => path === '/v').length
       await act(async () => void captured.sidebar?.onRenameFile('/v/data.json', '/v/data-v2.json', 'file'))
 
       expect(semanticRecords.some((record) => record.path === '/v/data.json')).toBe(false)
@@ -1072,13 +1073,88 @@ describe('App rename door (⚡ YAZ-888)', () => {
         viewOnlyCatalog: expect.objectContaining({ entries: [expect.objectContaining({ path: '/v/data.json' })] }),
       }))
       expect(sheetText(el)).toBe("Rename 'data.json' to 'data-v2.json'? Links in 1 note will be updated.")
+      expect(bridge.tree.mock.calls.filter(([path]) => path === '/v')).toHaveLength(treeReadsBeforeRename)
 
+      ;(captured.sidebar?.viewOnlyLinks as MutableViewOnlyLinkSource | undefined)?.reset()
       await act(async () => sheetBtn(el, 'Rename')?.click())
       expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/data.json', newPath: '/v/data-v2.json' })
       expect(files['/v/A.md'].content).toBe('See [[data-v2.json]].\n')
     } finally {
       count.mockRestore()
     }
+  })
+
+  it('fetches and pins a fresh catalog when a view-only rename starts before the catalog is ready', async () => {
+    const semanticRecords = [record('/v/A.md', { links: ['data.json'] })]
+    const files = { '/v/A.md': { content: '[[data.json]]\n', mtime: 1 } }
+    let rootReads = 0
+    const pending = new Promise<TreeResponse>(() => undefined)
+    const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
+      b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 })
+      b.bridge.tree.mockImplementation(async (path: string): Promise<TreeResponse> => {
+        if (path !== '/v') return { root: path, tree: [], generatedAt: 1 }
+        rootReads++
+        if (rootReads <= 2) return pending
+        return {
+          root: '/v',
+          tree: [{ type: 'file', name: 'data.json', path: '/v/data.json', kind: 'text', size: 1, mtime: 1 }],
+          generatedAt: 2,
+        }
+      })
+    })
+
+    await act(async () => void await captured.sidebar?.onRenameFile('/v/data.json', '/v/data-v2.json', 'file'))
+    expect(rootReads).toBe(3)
+    expect(sheetText(el)).toBe("Rename 'data.json' to 'data-v2.json'? Links in 1 note will be updated.")
+    expect(bridge.file.rename).not.toHaveBeenCalled()
+
+    await act(async () => sheetBtn(el, 'Rename')?.click())
+    expect(files['/v/A.md'].content).toBe('[[data-v2.json]]\n')
+  })
+
+  it('fresh-snapshots directory descendants and rewrites their explicit links after confirmation', async () => {
+    const semanticRecords = [record('/v/A.md', { links: ['Old/data.json'] })]
+    const files = { '/v/A.md': { content: '[[Old/data.json]]\n', mtime: 1 } }
+    let rootReads = 0
+    const pending = new Promise<TreeResponse>(() => undefined)
+    const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
+      b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 })
+      b.bridge.tree.mockImplementation(async (path: string): Promise<TreeResponse> => {
+        if (path !== '/v') return { root: path, tree: [], generatedAt: 1 }
+        rootReads++
+        if (rootReads <= 2) return pending
+        return {
+          root: '/v',
+          tree: [{ type: 'dir', name: 'Old', path: '/v/Old', children: [
+            { type: 'file', name: 'data.json', path: '/v/Old/data.json', kind: 'text', size: 1, mtime: 1 },
+          ] }],
+          generatedAt: 2,
+        }
+      })
+      b.bridge.file.rename.mockImplementation(async ({ oldPath, newPath }) => ({ oldPath, newPath, kind: 'dir' }))
+    })
+
+    await act(async () => void await captured.sidebar?.onRenameFile('/v/Old', '/v/New', 'dir'))
+    expect(rootReads).toBe(3)
+    expect(sheetText(el)).toBe("Rename 'Old' to 'New'? Links in 1 note will be updated.")
+    await act(async () => sheetBtn(el, 'Rename')?.click())
+    expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/Old', newPath: '/v/New' })
+    expect(files['/v/A.md'].content).toBe('[[New/data.json]]\n')
+  })
+
+  it('fails closed with a passive notice when the required fresh rename catalog cannot load', async () => {
+    const { bridge, el } = await mount(defaultAppState(), identity(), {}, (b) => {
+      b.bridge.tree.mockImplementation(async (path: string): Promise<TreeResponse> => {
+        if (path === '/v') throw new Error('tree unavailable')
+        return { root: path, tree: [], generatedAt: 1 }
+      })
+    })
+
+    await act(async () => void await captured.sidebar?.onRenameFile('/v/data.json', '/v/data-v2.json', 'file'))
+    expect(bridge.tree.mock.calls.filter(([path]) => path === '/v')).toHaveLength(3)
+    expect(bridge.file.rename).not.toHaveBeenCalled()
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(el.querySelector('.link-notice')?.textContent).toBe("Can't rename: couldn't load the current file list")
   })
 
   it('uses directory-prefix semantics for a directory whose name looks like a supported file', async () => {

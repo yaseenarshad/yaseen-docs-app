@@ -28,6 +28,7 @@ export interface ViewOnlyLinkSource {
 
 export interface MutableViewOnlyLinkSource extends ViewOnlyLinkSource {
   update(catalog: ViewOnlyCatalog): void
+  reset(): void
 }
 
 export function createViewOnlyLinkSource(): MutableViewOnlyLinkSource {
@@ -45,6 +46,11 @@ export function createViewOnlyLinkSource(): MutableViewOnlyLinkSource {
     },
     update(catalog) {
       current = catalog
+      listeners.forEach((listener) => listener())
+    },
+    reset() {
+      if (current === null) return
+      current = null
       listeners.forEach((listener) => listener())
     },
   }

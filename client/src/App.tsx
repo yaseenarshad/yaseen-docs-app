@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
+import { isViewOnly } from '@shared/fileKind'
 import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
@@ -15,6 +16,7 @@ import { useMenuEvents } from './hooks/useMenuEvents'
 import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
 import { countLinkReferences, renameNotice, updateLinksAfterRename } from './links/renameLinks'
+import { buildViewOnlyCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { useExternalRenames } from './links/useExternalRenames'
 import { basename } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
@@ -88,8 +90,8 @@ export function App() {
   const watch = useWatch(root)
   // Wikilinks (Links A, GRO-2190): ONE resolve source per window — a stable object every
   // editor's wikilink plugin subscribes to; WikilinkIndexBridge (below) keeps it fed from the
-  // vault index, so index changes restyle links live without any editor remounting. The `[[`
-  // picker's candidate source (Links B, GRO-2191) works exactly the same way.
+  // vault index, so index changes restyle links live without any editor remounting. The stable
+  // navigation-only source beside it is tree-derived; only the picker's rows compose both feeds.
   const [wikilinks] = useState(createWikilinkResolveSource)
   const [wikilinkCandidates] = useState(createWikilinkCandidateSource)
   const [viewOnlyLinks] = useState(createViewOnlyLinkSource)
@@ -363,12 +365,9 @@ export function App() {
    * passive notice — never a dialog, never a rejection back into the inline input.
    */
   const renameFile = useCallback(
-    async (oldPath: string, newPath: string): Promise<void> => {
+    async (oldPath: string, newPath: string, viewOnlyCatalog: ViewOnlyCatalog | null): Promise<void> => {
       const r = root
       if (r === null) return
-      // Pin the lightweight snapshot before fs:rename; its watcher may refresh away the old
-      // path immediately after the bridge succeeds, exactly like the semantic pre-rename index.
-      const viewOnlyCatalog = viewOnlyLinks.catalog
       // (a) our own unsaved buffers travel WITH the file(s). The kind is unknown until the
       // rename answers, so both run — each is a no-op for the other kind.
       await flushRenamedPath(oldPath)
@@ -400,7 +399,7 @@ export function App() {
       })
       if (summary.updated > 0 || summary.skipped > 0) setNotice(renameNotice(summary))
     },
-    [root, viewOnlyLinks],
+    [root],
   )
 
   /**
@@ -411,18 +410,37 @@ export function App() {
    * every note that links to it), a MOVE runs silently exactly as it always has (a confirm on
    * every drag would be hostile, and bare links keep resolving across a move anyway).
    *
-   * N is `countLinkReferences` over the window's OWN index snapshot — synchronous, no fetch, so
-   * the sheet opens in the same frame as the gesture. The rewrite itself re-reads a fresh
-   * snapshot inside `renameFile`; a vault that changed underneath between the two would move the
-   * count, which is why the copy promises what WILL be updated rather than an exact receipt.
+   * Markdown-only renames still count synchronously. View-only files/directories use the ready
+   * lightweight catalog when it proves the target; otherwise this door reads one fresh tree
+   * BEFORE showing a sheet or mutating, then pins that same snapshot through confirmation.
    */
-  const [pendingRename, setPendingRename] = useState<{ oldPath: string; newPath: string; count: number } | null>(null)
+  const [pendingRename, setPendingRename] = useState<{ oldPath: string; newPath: string; count: number; viewOnlyCatalog: ViewOnlyCatalog | null } | null>(null)
+
+  const catalogForRename = useCallback(async (oldPath: string, kind: TreeNode['type']): Promise<ViewOnlyCatalog | null | undefined> => {
+    if (root === null || (kind === 'file' && !isViewOnly(oldPath))) return null
+    const current = viewOnlyLinks.catalog
+    if (current !== null && (kind === 'dir' || current.entries.some((entry) => entry.path === oldPath))) return current
+    try {
+      const response = await api.tree(root)
+      const catalog = buildViewOnlyCatalog(root, response.tree)
+      if (kind === 'file' && !catalog.entries.some((entry) => entry.path === oldPath)) {
+        setNotice(`Can't rename: "${basename(oldPath)}" is no longer in the current file list`)
+        return undefined
+      }
+      return catalog
+    } catch {
+      setNotice("Can't rename: couldn't load the current file list")
+      return undefined
+    }
+  }, [root, viewOnlyLinks])
 
   const requestRename = useCallback(
     async (oldPath: string, newPath: string, kind: TreeNode['type']): Promise<void> => {
-      if (root === null || !isNameChange(oldPath, newPath)) return renameFile(oldPath, newPath)
+      if (root === null) return
+      const catalog = await catalogForRename(oldPath, kind)
+      if (catalog === undefined) return
+      if (!isNameChange(oldPath, newPath)) return renameFile(oldPath, newPath, catalog)
       const records = wikilinks.records
-      const catalog = viewOnlyLinks.catalog
       const hasMovedViewFile = catalog?.entries.some((entry) =>
         kind === 'file' ? entry.path === oldPath : entry.path.startsWith(`${oldPath}/`),
       ) ?? false
@@ -432,9 +450,10 @@ export function App() {
         oldPath,
         newPath,
         count: countLinkReferences({ root, oldPath, kind, records, ...(hasMovedViewFile ? { viewOnlyCatalog: catalog } : {}) }),
+        viewOnlyCatalog: catalog,
       })
     },
-    [root, renameFile, wikilinks, viewOnlyLinks],
+    [root, catalogForRename, renameFile, wikilinks],
   )
   const requestEditorRename = useCallback(
     (oldPath: string, newPath: string) => requestRename(oldPath, newPath, 'file'),
@@ -443,9 +462,9 @@ export function App() {
 
   const confirmRename = useCallback(() => {
     if (pendingRename === null) return
-    const { oldPath, newPath } = pendingRename
+    const { oldPath, newPath, viewOnlyCatalog } = pendingRename
     setPendingRename(null)
-    void renameFile(oldPath, newPath)
+    void renameFile(oldPath, newPath, viewOnlyCatalog)
   }, [pendingRename, renameFile])
 
   /**

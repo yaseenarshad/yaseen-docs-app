@@ -20,10 +20,6 @@ export function isMarkdown(name: string): boolean {
   return fileKind(name) === 'markdown'
 }
 
-export function isReadableText(name: string): boolean {
-  return fileKind(name) === 'text'
-}
-
 export function isViewOnly(name: string): boolean {
   const kind = fileKind(name)
   return kind === 'text' || kind === 'pdf'

@@ -1,10 +1,7 @@
 /**
- * WikilinkIndexBridge (Links A, GRO-2190 + Links B, GRO-2191): the App-level glue that keeps
- * the wikilink resolve source AND the `[[` picker's candidate source fed from `useIndex`. The
- * bridge is mocked like useIndex.test.tsx; asserted here: the sources stay untouched until the
- * index is READY, resolve/candidate contents once it is (candidates as shortest unambiguous
- * names — duplicates folder-disambiguated — plus frontmatter alias rows, GRO-2214), and fresh
- * contents after a watch-driven refetch (which notifies subscribers).
+ * WikilinkIndexBridge: the App-level glue for the stable semantic index source, separate
+ * tree-derived view-only source, and their picker-only candidate composition. Tests pin live
+ * refresh, source isolation, and root-switch retirement in both async arrival orders.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -68,11 +65,15 @@ const watch: WatchSource = {
   },
 }
 
+function renderBridge(vault = '/vault'): void {
+  act(() => root?.render(<WikilinkIndexBridge root={vault} watch={watch} source={source} candidates={candidates} viewOnly={viewOnly} />))
+}
+
 function mount(): void {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<WikilinkIndexBridge root="/vault" watch={watch} source={source} candidates={candidates} viewOnly={viewOnly} />))
+  renderBridge()
 }
 
 async function flush(): Promise<void> {
@@ -235,5 +236,59 @@ describe('WikilinkIndexBridge', () => {
     expect(source.resolve).toBe(semanticResolve)
     expect(viewOnly.resolve?.('tool.py')).toBe('/vault/tool.PY')
     expect(candidates.candidates.map((candidate) => candidate.insert)).toEqual(['Note', 'data.json', 'tool.PY'])
+  })
+
+  it('clears the old view-only catalog and all merged rows immediately on a root change', async () => {
+    mount()
+    await flush()
+    expect(viewOnly.resolve?.('data.json')).toBe('/vault/data.json')
+    expect(candidates.candidates.map((candidate) => candidate.insert)).toContain('data.json')
+    const semanticSource = source
+    let resolveNextTree!: (response: TreeResponse) => void
+    treeFn.mockImplementation((vault) => vault === '/next'
+      ? new Promise((resolve) => { resolveNextTree = resolve })
+      : Promise.resolve(treeResponse()))
+    indexFn.mockImplementation(async (vault) => vault === '/next'
+      ? { root: vault, records: [rec('/next/New.md')], generatedAt: 2 }
+      : response('/vault/Note.md'))
+
+    renderBridge('/next')
+    expect(source).toBe(semanticSource)
+    expect(viewOnly.ready).toBe(false)
+    expect(viewOnly.resolve).toBeNull()
+    expect(viewOnly.targets).toEqual([])
+    expect(candidates.candidates).toEqual([])
+
+    await flush()
+    expect(source.resolve?.('New')).toBe('/next/New.md')
+    expect(candidates.candidates.map((candidate) => candidate.insert)).toEqual(['New'])
+    expect(candidates.candidates.map((candidate) => candidate.insert)).not.toContain('data.json')
+
+    resolveNextTree({ root: '/next', tree: [viewNode('/next/tool.py', 'text')], generatedAt: 2 })
+    await flush()
+    expect(viewOnly.resolve?.('tool.py')).toBe('/next/tool.py')
+    expect(candidates.candidates.map((candidate) => candidate.insert)).toEqual(['New', 'tool.py'])
+  })
+
+  it('never merges a new root catalog with the previous root semantic snapshot', async () => {
+    mount()
+    await flush()
+    let resolveNextIndex!: (response: IndexResponse) => void
+    treeFn.mockImplementation(async (vault) => vault === '/next'
+      ? { root: vault, tree: [viewNode('/next/tool.py', 'text')], generatedAt: 2 }
+      : treeResponse())
+    indexFn.mockImplementation((vault) => vault === '/next'
+      ? new Promise((resolve) => { resolveNextIndex = resolve })
+      : Promise.resolve(response('/vault/Old.md')))
+
+    renderBridge('/next')
+    await flush()
+    expect(viewOnly.resolve?.('tool.py')).toBe('/next/tool.py')
+    expect(candidates.candidates.map((candidate) => candidate.insert)).toEqual(['tool.py'])
+    expect(candidates.candidates.map((candidate) => candidate.insert)).not.toContain('Old')
+
+    resolveNextIndex({ root: '/next', records: [rec('/next/New.md')], generatedAt: 2 })
+    await flush()
+    expect(candidates.candidates.map((candidate) => candidate.insert)).toEqual(['New', 'tool.py'])
   })
 })
