@@ -27,7 +27,7 @@ import { useEnsureHome } from './sidebar/ensureHome'
 import { Sidebar, SidebarPanelIcon } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
-import { useTabs } from './tabs/useTabs'
+import { useWorkspace } from './workspace/useWorkspace'
 import { Welcome } from './Welcome'
 
 /** Reflect the open file in the URL (GRO-2069); replaceState keeps Back sane. */
@@ -43,7 +43,7 @@ export function App() {
   // Tabs (I2, GRO-2234): the renderer-owned tab model, seeded from the boot identity snapshot
   // (a pasted `#/abs/path.md` URL wins as the active tab — bootTabs). The ACTIVE tab is this
   // window's `file`: title, URL hash and the sidebar highlight all follow it.
-  const { tabs, active: file, mounted, openCurrent, openBackground, activate, close: closeTab, move: moveTab, closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs, renamePath: renameTabPath, renameDirPath: renameDirTabs, deletePath: deleteTabPath, deleteDirPath: deleteDirTabs } = useTabs(root)
+  const { tabs, active: file, mounted, openCurrent, openBackground, activate, close: closeTab, move: moveTab, closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs, renamePath: renameTabPath, renameDirPath: renameDirTabs, deletePath: deleteTabPath, deleteDirPath: deleteDirTabs } = useWorkspace(root)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
   // The sidebar's active LENS (🔒 D4, YAZ-847): App-owned and globally persisted, for the same

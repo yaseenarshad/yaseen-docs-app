@@ -275,7 +275,10 @@ describe('App openRoot (C3, GRO-2165)', () => {
     expect(bridge.state.pushRecent).toHaveBeenCalledWith('/w')
     // The window entry records the switch (D6, tabs rule 13): ONE write clears root's file+tabs,
     // then ONE {tabs, file} write restores the folder's remembered file.
-    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [] }], [{ tabs: ['/w/b.md'], file: '/w/b.md' }]])
+    expect(bridge.window.setIdentity.mock.calls).toEqual([
+      [{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity() }],
+      [{ tabs: ['/w/b.md'], file: '/w/b.md', rightPanel: defaultRightPanelIdentity() }],
+    ])
   })
 
   it('switching to a folder with no remembered last file leaves no file open', async () => {
@@ -283,7 +286,7 @@ describe('App openRoot (C3, GRO-2165)', () => {
     await act(async () => emitOpenRoot('/w'))
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('')
     expect(location.hash).toBe('')
-    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [] }]])
+    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity() }]])
   })
 
   it('a dead recent chosen from the menu drops the MRU entry and leaves the window on its folder', async () => {
@@ -323,7 +326,7 @@ describe('App deep links (E1, GRO-2171)', () => {
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('/v/sub/linked.md')
     expect(location.hash).toBe('#/v/sub/linked.md')
     expect(bridge.state.setFolder).toHaveBeenCalledWith('/v', { lastFile: '/v/sub/linked.md' })
-    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ tabs: ['/v/sub/linked.md'], file: '/v/sub/linked.md' })
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ tabs: ['/v/sub/linked.md'], file: '/v/sub/linked.md', rightPanel: defaultRightPanelIdentity() })
   })
 
   it('link:notice shows the transient banner, which dismisses itself after LINK_NOTICE_MS', async () => {
@@ -351,7 +354,7 @@ describe('App rename push (Links E1, GRO-2194)', () => {
     expect(location.hash).toBe('#/v/C.md')
     expect(document.title).toBe('C — v')
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
-    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ tabs: ['/v/C.md', '/v/x.md'], file: '/v/C.md' })
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ tabs: ['/v/C.md', '/v/x.md'], file: '/v/C.md', rightPanel: defaultRightPanelIdentity() })
   })
 
   it('a rename of a file this window does not show changes nothing (no identity write)', async () => {
@@ -558,7 +561,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(stripLabels(el)).toEqual(['a', 'b'])
     expect(activeLabel(el)).toBe('a') // activation (and so focus) never moves
     expect(layers(el)).toEqual([['/v/a.md', false]]) // b's editor lazy-mounts on first activation
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/a.md' })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
   })
 
   it('dragging a tab reorders the strip through the reducer and mirrors ONE {tabs, file} write (I3)', async () => {
@@ -569,7 +572,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => void tabB.dispatchEvent(new MouseEvent('drop', { bubbles: true, cancelable: true, clientX: 5 })))
     expect(stripLabels(el)).toEqual(['b', 'a'])
     expect(activeLabel(el)).toBe('a') // reorder never activates
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/b.md', '/v/a.md'], file: '/v/a.md' })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/b.md', '/v/a.md'], file: '/v/a.md', rightPanel: defaultRightPanelIdentity() })
   })
 
   it('a sidebar click opens in the CURRENT tab: the active tab is replaced in place and its editor unmounts (rule 4)', async () => {
@@ -578,7 +581,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(stripLabels(el)).toEqual(['b', 'x'])
     expect(layers(el)).toEqual([['/v/b.md', false]]) // a's editor is GONE (→ autosave flush on unmount)
     // ONE explicit identity write carries BOTH halves — never the legacy {file}-only patch.
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/b.md', '/v/x.md'], file: '/v/b.md' })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/b.md', '/v/x.md'], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
     expect(bridge.state.setFolder).toHaveBeenLastCalledWith('/v', { lastFile: '/v/b.md' })
   })
 
@@ -590,7 +593,7 @@ describe('App tabs (I2, GRO-2234)', () => {
       ['/v/a.md', true],
       ['/v/b.md', false],
     ])
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/b.md' })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: ['/v/a.md', '/v/b.md'], file: '/v/b.md', rightPanel: defaultRightPanelIdentity() })
     // Title and hash follow the ACTIVE tab (rule 12).
     expect(document.title).toBe('b — v')
     expect(location.hash).toBe('#/v/b.md')
@@ -627,7 +630,7 @@ describe('App tabs (I2, GRO-2234)', () => {
     act(() => emitCloseTab())
     expect(stripLabels(el)).toEqual([])
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('') // empty state renders
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: [], file: null })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ tabs: [], file: null, rightPanel: defaultRightPanelIdentity() })
     expect(bridge.window.closeSelf).not.toHaveBeenCalled() // the window stays alive
     act(() => emitCloseTab())
     expect(bridge.window.closeSelf).toHaveBeenCalledTimes(1) // zero tabs: the WINDOW closes
@@ -803,7 +806,7 @@ describe('App root-missing (C2, GRO-2164)', () => {
     expect(el.querySelector('.welcome__title')?.textContent).toBe('Yaseen Docs')
     expect(el.querySelector('[data-sidebar]')).toBeNull()
     expect(el.querySelector('[data-editor]')).toBeNull()
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [] })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity() })
   })
 })
 

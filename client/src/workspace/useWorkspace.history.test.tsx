@@ -4,7 +4,7 @@
  * them without changing any existing `useTabs.test.tsx` expectation beyond `history: {}`.
  */
 import { describe, expect, it } from 'vitest'
-import { tabsReducer, type TabsState } from './useTabs'
+import { tabsReducer, type TabsState } from './useWorkspace'
 
 const A = '/v/a.md'
 const B = '/v/b.md'
