@@ -94,8 +94,23 @@ describe('renamedPath (Links E1, GRO-2194)', () => {
     expect(renamedPath('/r/report.pdf', 'brief.PDF')).toBe('/r/brief.PDF')
   })
 
-  it('leaves explicit unsupported and cross-kind suffixes for main-process validation', () => {
-    expect(renamedPath('/r/data.json', 'profile.bin')).toBe('/r/profile.bin')
+  it.each([
+    ['Version 1.0.md', 'Version 1.0'],
+    ['Release.1.json', 'Release.1'],
+    ['report.final.PDF', 'report.final'],
+  ])('round-trips a dotted basename with its real supported suffix: %s', (name, input) => {
+    expect(renameInputName(name)).toBe(input)
+    expect(renamedPath(`/r/${name}`, input)).toBe(`/r/${name}`)
+  })
+
+  it('renames dotted basenames while preserving the old exact suffix', () => {
+    expect(renamedPath('/r/Release.1.json', 'Release.2')).toBe('/r/Release.2.json')
+    expect(renamedPath('/r/report.final.PDF', 'summary.final')).toBe('/r/summary.final.PDF')
+  })
+
+  it('appends the current suffix to unrecognized dotted names but leaves recognized cross-kind suffixes explicit', () => {
+    expect(renamedPath('/r/B.md', 'C.bin')).toBe('/r/C.bin.md')
+    expect(renamedPath('/r/data.json', 'profile.bin')).toBe('/r/profile.bin.json')
     expect(renamedPath('/r/data.json', 'profile.pdf')).toBe('/r/profile.pdf')
   })
 

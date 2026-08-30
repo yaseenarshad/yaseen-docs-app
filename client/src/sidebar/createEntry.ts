@@ -58,16 +58,14 @@ export function renameInputName(fileName: string): string {
 
 /**
  * Absolute path for the sidebar's inline rename (Links E1, GRO-2194; folders E1b, GRO-2241):
- * same parent directory. For a FILE, an explicit extension is kept for main-process kind
- * validation; a bare basename inherits the old file's supported suffix. For a DIRECTORY
- * there is no extension logic at all.
+ * same parent directory. For a FILE, a recognized supported extension is kept for main-process
+ * kind validation; otherwise the typed text is a basename and inherits the old file's exact
+ * supported suffix. For a DIRECTORY there is no extension logic at all.
  */
 export function renamedPath(oldPath: string, newName: string, kind: 'file' | 'dir' = 'file'): string {
   const dir = oldPath.slice(0, oldPath.lastIndexOf('/'))
   let final = newName.trim()
   if (kind === 'dir') return `${dir}/${final}`
-  const name = final.slice(final.lastIndexOf('/') + 1)
-  const hasExplicitExtension = name.lastIndexOf('.') > 0
-  if (fileKind(final) === null && !hasExplicitExtension) final += oldPath.slice(oldPath.lastIndexOf('.'))
+  if (fileKind(final) === null) final += oldPath.slice(oldPath.lastIndexOf('.'))
   return `${dir}/${final}`
 }
