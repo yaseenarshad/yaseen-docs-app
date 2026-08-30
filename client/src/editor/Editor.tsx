@@ -32,6 +32,7 @@ import { appliedTheme } from '../lib/theme'
 import { storage } from '../lib/storage'
 import { HOME_LINK } from '../sidebar/ensureHome'
 import { TextViewer } from '../viewers/TextViewer'
+import { PdfViewer } from '../viewers/PdfViewer'
 
 interface EditorProps {
   /** Open root folder; fold state is persisted per root + file. */
@@ -96,7 +97,7 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
   if (kind === 'pdf') {
     return (
       <section className="editor">
-        <p className="editor-msg">PDF viewer loading support…</p>
+        <PdfViewer path={path} watch={watch} />
       </section>
     )
   }

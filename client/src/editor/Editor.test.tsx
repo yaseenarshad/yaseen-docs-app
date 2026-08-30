@@ -20,7 +20,7 @@ import * as folderMigration from '../views/migrateFolderBody'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { readFile: vi.fn(), writeFile: vi.fn(), openLink: vi.fn(), index: vi.fn(), properties: { get: vi.fn(), onChange: vi.fn() } },
+  api: { readFile: vi.fn(), readPdf: vi.fn(), writeFile: vi.fn(), openLink: vi.fn(), index: vi.fn(), properties: { get: vi.fn(), onChange: vi.fn() } },
 }))
 
 vi.mock('./createCrepe', () => {
@@ -64,6 +64,7 @@ interface FakeCrepe {
 }
 
 const readFile = vi.mocked(api.readFile)
+const readPdf = vi.mocked(api.readPdf)
 const writeFile = vi.mocked(api.writeFile)
 const openLink = vi.mocked(api.openLink)
 const createCrepeMock = vi.mocked(createCrepe)
@@ -147,6 +148,8 @@ function diskHas(content: string, mtime: number): void {
 let flushListeners: Array<() => Promise<void> | void> = []
 beforeEach(() => {
   vi.useFakeTimers()
+  Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:editor-pdf') })
+  Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
   writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 99, size: body.content.length }))
   Object.defineProperty(window, 'yaseenDocs', {
     value: {
@@ -171,6 +174,8 @@ afterEach(() => {
   container = null
   listeners = []
   flushListeners = []
+  delete (URL as unknown as Record<string, unknown>).createObjectURL
+  delete (URL as unknown as Record<string, unknown>).revokeObjectURL
   delete (window as unknown as Record<string, unknown>).yaseenDocs
   // reset (not clear): a failing test must not leak queued mockResolvedValueOnce reads into the next mount.
   vi.resetAllMocks()
@@ -205,14 +210,17 @@ describe('Editor file-kind dispatch (YAZ-1299)', () => {
     subscribe.mockRestore()
   })
 
-  it('routes mixed-case PDFs to a passive skeleton without calling either file bridge or editor stack', async () => {
+  it('routes mixed-case PDFs through the dedicated bridge and native viewer without mounting either text or editor stack', async () => {
+    const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46])
+    readPdf.mockResolvedValueOnce({ path: '/vault/report.PDF', data: bytes, mtime: 1, size: bytes.byteLength })
     const el = await mount('%PDF-1.7', 1, { path: '/vault/report.PDF' })
 
     expect(readFile).not.toHaveBeenCalled()
+    expect(readPdf).toHaveBeenCalledExactlyOnceWith('/vault/report.PDF')
     expect(createCrepeMock).not.toHaveBeenCalled()
     expect(writeFile).not.toHaveBeenCalled()
     expect(flushListeners).toHaveLength(0)
-    expect(el.querySelector('.editor-msg')?.textContent).toBe('PDF viewer loading support…')
+    expect(el.querySelector('iframe.pdf-viewer__frame')?.getAttribute('title')).toBe('report.PDF')
   })
 })
 

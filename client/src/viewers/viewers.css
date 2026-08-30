@@ -63,3 +63,24 @@
   color: var(--danger);
   border-bottom: 1px solid var(--border);
 }
+
+.pdf-viewer {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pdf-viewer__frame {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+}
+
+.pdf-viewer__error {
+  margin: 0;
+  padding: 8px 16px;
+  color: var(--danger);
+}
