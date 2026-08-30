@@ -189,6 +189,13 @@ function CrepeHost({
         onOpenFileBackground === undefined
           ? undefined
           : { root, createBase: createBase ?? (() => ''), openCurrent: onOpenFile, openBackground: onOpenFileBackground, onNotice: onNotice ?? (() => undefined) },
+      // Standard Markdown links (YAZ-1309) leave through one typed host boundary. The active
+      // note path travels with the untouched href so main—not the renderer—owns relative-file
+      // resolution, protocol validation, and the choice of OS API.
+      markdownLinkNav: {
+        open: (href) => api.openLink({ href, sourcePath: file.path }),
+        onNotice: onNotice ?? (() => undefined),
+      },
       // The slash menu's Drawing row (YAZ-877): this window's root is the only thing the creator
       // needs; failures ride the same passive notice as a failed link create.
       drawing: { create: () => createDrawing(root), onNotice },

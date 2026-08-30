@@ -42,6 +42,10 @@
  *    `[[name]]` text. Its keymap MUST be `use`d before `outlinerKeymap`: both bind Enter at
  *    priority 100 and equal priorities run in addition order — the picker wins while open and
  *    declines (falls through) while closed.
+ *  - Standard Markdown links (YAZ-1309, `markdownLink.ts`): unmodified primary mousedown opens
+ *    through the host before caret placement; right-click offers Edit/Copy/Remove. Edit/remove
+ *    reuse Crepe's link-tooltip API, including one logical range when formatting splits the DOM
+ *    anchor. Registered only when `opts.markdownLinkNav` supplies the host boundary.
  *  - Block handle menu (YAZ-726, `blockHandleMenu.ts`): right-click on the 6-dot handle opens a
  *    `.ctx-menu` popup; rows are data from a provider; capture-suppresses Crepe's right-button
  *    mousedown/mouseup so the selection/focus don't jump. First row: Number children ↔ Bullet
@@ -99,6 +103,7 @@ import { focusSidebar } from '../lib/focusHandoff'
 import { createWikilinkClick, type WikilinkNav } from './wikilink/wikilinkClick'
 import { createWikilinkPicker, createWikilinkCandidateSource, wikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { createWikilink, createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { createMarkdownLink, type MarkdownLinkNav } from './markdownLink'
 
 export interface CreateCrepeOptions {
   root: HTMLElement
@@ -119,6 +124,8 @@ export interface CreateCrepeOptions {
   wikilinkCandidates?: WikilinkCandidateSource
   /** Wikilink click navigation (GRO-2192): tabs API + create-on-click handlers. Absent → links render but clicks fall through to plain editing (the click plugin is not registered). */
   wikilinkNav?: WikilinkNav
+  /** Standard Markdown link actions (YAZ-1309): primary click opens; right-click edits/copies/removes. Absent → Crepe's stock behavior. */
+  markdownLinkNav?: MarkdownLinkNav
   /** Drawing creator (YAZ-877): the host writes the sidecar, the item inserts the embed. Absent → NO Drawing row is added to the slash menu. */
   drawing?: DrawingCreator
   /** Drawing previews (YAZ-878): the vault root to read scenes against, plus the optional refresh feed and click handler. Absent → `.excalidraw` embeds stay plain text. */
@@ -217,6 +224,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   const wikilinks = opts.wikilinks ?? createWikilinkResolveSource()
   crepe.editor.use(createWikilink(wikilinks))
   if (opts.wikilinkNav !== undefined) crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav))
+  if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav))
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource()))
   if (opts.drawingPreview !== undefined) crepe.editor.use(createDrawingPreview(opts.drawingPreview))
   crepe.editor.use(outlinePaste)

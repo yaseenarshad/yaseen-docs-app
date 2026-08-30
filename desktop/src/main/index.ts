@@ -7,12 +7,14 @@ import type { WindowEntry } from '@shared/types'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
 import { createLinkQueue } from './linkQueue'
+import { openLink } from './fs/openLink'
 import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, pickMenuTargetWindow, subscribeMenuRebuild } from './menu'
 import { createStore } from './store'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
 import { applyUserDataOverride } from './userData'
 import { flushIndexCache, initIndexCache } from './vaultIndex'
 import { createWindowManager } from './windows'
+import { createWindowOpenHandler } from './windowOpenPolicy'
 
 // Before anything reads app.getPath('userData'): the workspace is named "desktop", the app is not.
 app.setName('Yaseen Docs')
@@ -84,6 +86,7 @@ const manager = createWindowManager(store, {
       backgroundColor: windowBackgroundColor(store.get().settings.theme, nativeTheme.shouldUseDarkColors),
       webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
     })
+    win.webContents.setWindowOpenHandler(createWindowOpenHandler(openLink))
     // Electron ships no default context menu (YAZ-672), so the spellchecker's squiggles would
     // otherwise be unactionable; the template itself is pure and lives in menu.ts.
     win.webContents.on('context-menu', (_event, params) =>

@@ -19,7 +19,7 @@ const WINDOW = ['identity', 'setIdentity', 'open', 'duplicate', 'closeSelf', 'on
 const MENU = ['onOpenFolder', 'onOpenRoot', 'onSearch', 'onToggleSidebar', 'onCloseTab', 'onNextTab', 'onPrevTab'] as const satisfies readonly (keyof MenuApi)[]
 const LINK = ['onOpenFile', 'onNotice'] as const satisfies readonly (keyof LinkApi)[]
 const FILE = ['rename', 'repairRename', 'onRenamed', 'delete', 'onDeleted'] as const satisfies readonly (keyof FileApi)[]
-const SHELL = ['reveal', 'openVsCode'] as const satisfies readonly (keyof ShellApi)[]
+const SHELL = ['reveal', 'openVsCode', 'openLink'] as const satisfies readonly (keyof ShellApi)[]
 const VAULT_CONFIG = ['read', 'write', 'onChange'] as const satisfies readonly (keyof VaultConfigApi)[]
 const PROPERTIES = ['get', 'setProperty', 'removeProperty', 'onChange'] as const satisfies readonly (keyof PropertiesApi)[]
 const GITHUB = ['status', 'syncNow', 'setEnabled', 'onStatus'] as const satisfies readonly (keyof GithubApi)[]
@@ -112,6 +112,16 @@ describe('preload bridge', () => {
     const { bridge } = await import('./index')
     await expect(bridge.file.rename({ oldPath: '/v/a.md', newPath: '/v/b.md' })).resolves.toEqual({ oldPath: '/v/a.md', newPath: '/v/b.md' })
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.fsRename, { oldPath: '/v/a.md', newPath: '/v/b.md' })
+  })
+
+  it('shell.openLink invokes shell:open-link with href and source note', async () => {
+    const { ipcRenderer } = await import('electron')
+    vi.mocked(ipcRenderer.invoke).mockResolvedValueOnce({ ok: true, value: undefined })
+    const { bridge } = await import('./index')
+    const req = { href: 'JSONs/example.json', sourcePath: '/vault/Note.md' }
+
+    await expect(bridge.shell.openLink(req)).resolves.toBeUndefined()
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(CH.shellOpenLink, req)
   })
 
   it('file.repairRename invokes file:repair-rename with the request (Links E1c, GRO-2242)', async () => {

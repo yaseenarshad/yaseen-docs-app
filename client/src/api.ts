@@ -1,4 +1,4 @@
-import type { AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, BridgeErrorCode, ColdStartDiffResponse, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileResponse, FileWriteRequest, FileWriteResponse, GithubSyncStatus, IndexResponse, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RevealRequest, RevealResponse, TreeResponse } from '@shared/types'
+import type { AssetResponse, AssetWriteRequest, AssetWriteResponse, BridgeError, BridgeErrorCode, ColdStartDiffResponse, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, FileResponse, FileWriteRequest, FileWriteResponse, GithubSyncStatus, IndexResponse, OpenLinkRequest, PickFolderResponse, PropertiesResponse, PropertyDecl, RenameFileRequest, RenameFileResponse, RevealRequest, RevealResponse, TreeResponse } from '@shared/types'
 
 /** Typed failure from the main process (see docs/CONTRACTS.md "Bridge API"). */
 export class BridgeRequestError extends Error {
@@ -46,6 +46,8 @@ export const api = {
   reveal: (req: RevealRequest) => call<RevealResponse>(() => window.yaseenDocs.shell.reveal(req)),
   /** Open in VS Code via the `vscode://file` deep link (YAZ-963) — never a spawn; stale path → NOT_FOUND. */
   openVsCode: (req: RevealRequest) => call<RevealResponse>(() => window.yaseenDocs.shell.openVsCode(req)),
+  /** Open a standard Markdown-link target through the OS; main owns validation and resolution. */
+  openLink: (req: OpenLinkRequest) => call<void>(() => window.yaseenDocs.shell.openLink(req)),
   /** Bases property index for `root` (GRO-2129). */
   index: (root: string) => call<IndexResponse>(() => window.yaseenDocs.index(root)),
   /** The cold-start reconcile diff for `root` (Links E1c, GRO-2242); null before the first index build. */

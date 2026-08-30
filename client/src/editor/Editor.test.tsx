@@ -18,7 +18,7 @@ import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikil
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { readFile: vi.fn(), writeFile: vi.fn(), index: vi.fn(), properties: { get: vi.fn(), onChange: vi.fn() } },
+  api: { readFile: vi.fn(), writeFile: vi.fn(), openLink: vi.fn(), index: vi.fn(), properties: { get: vi.fn(), onChange: vi.fn() } },
 }))
 
 vi.mock('./createCrepe', () => {
@@ -63,6 +63,7 @@ interface FakeCrepe {
 
 const readFile = vi.mocked(api.readFile)
 const writeFile = vi.mocked(api.writeFile)
+const openLink = vi.mocked(api.openLink)
 const createCrepeMock = vi.mocked(createCrepe)
 const setMarkdownMock = vi.mocked(setMarkdown)
 const openFile = vi.fn()
@@ -408,5 +409,18 @@ describe('CrepeHost fold persistence: bullets and headings share one bucket (YAZ
     // …and the other way round: the heading plugin dropping to none keeps the bullet key.
     opts.headingFolding?.onCollapsedKeysChange?.([])
     expect(vi.mocked(storage.setFolds)).toHaveBeenLastCalledWith('/vault', PATH, ['zzz:1'])
+  })
+})
+
+describe('CrepeHost standard Markdown link routing (YAZ-1309)', () => {
+  it('binds every href to the mounted note path before crossing the bridge', async () => {
+    await mount(BODY)
+    const call = createCrepeMock.mock.calls.at(-1)
+    if (call === undefined) throw new Error('createCrepe was not called')
+    const opts = call[0] as unknown as CreateCrepeOptions
+
+    await opts.markdownLinkNav?.open('../assets/report.pdf')
+
+    expect(openLink).toHaveBeenCalledWith({ href: '../assets/report.pdf', sourcePath: PATH })
   })
 })
