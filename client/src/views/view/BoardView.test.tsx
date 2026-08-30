@@ -263,8 +263,9 @@ describe('nested Board styling contract', () => {
 })
 
 describe('cards', () => {
-  it('a card is the file name title over label/value rows rendered by type; the title opens the note', () => {
-    const { el, onOpenFile } = mount(BOARD_BASE)
+  it('a card is the file name title over label/value rows rendered by type; the title opens the page on the right', () => {
+    const openRight = vi.fn()
+    const { el, onOpenFile } = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight }) })
     const card = q<HTMLElement>(cols(el)[1], '.view-board__card') // idea → Agentic Agency
     expect(q(card, '.view-board__title').textContent).toBe('Agentic Agency.md')
     // the order properties minus file.name, as label/value rows
@@ -276,7 +277,58 @@ describe('cards', () => {
     const gold = [...cols(el)[1].querySelectorAll<HTMLElement>('.view-board__card')][1]
     expect([...gold.querySelectorAll('.view-board__prop-value')][0].textContent).toBe('')
     click(q(card, '.view-board__title'))
-    expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
+    expect(openRight).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
+    expect(onOpenFile).not.toHaveBeenCalled()
+  })
+
+  it('primary-click opens direct, nested, repeated, and empty-shell cards on the right by exact record path', () => {
+    const openRight = vi.fn()
+    const direct = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight }) })
+    click(q(cardNamed(direct.el, 'Agentic Agency.md'), '.view-board__prop-value'))
+    expect(openRight).toHaveBeenLastCalledWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
+
+    unmount()
+    const nested = mount(NESTED_BOARD, { records: NESTED_RECORDS, folderPage: testFolderPage({ openRight }) })
+    click(cardNamed(nested.el, 'alpha1.md'))
+    expect(openRight).toHaveBeenLastCalledWith('/vault/alpha1.md')
+
+    unmount()
+    const fanned = mount('views:\n  - type: board\n    name: B\n    order:\n      - file.name\n    groupBy:\n      property: note.tags\n', {
+      folderPage: testFolderPage({ openRight }),
+    })
+    const repeated = [...fanned.el.querySelectorAll<HTMLElement>('.view-board__title')].filter(
+      (title) => title.textContent === 'Agentic Agency.md',
+    )
+    click(repeated[1].closest<HTMLElement>('.view-board__card')!)
+    expect(openRight).toHaveBeenLastCalledWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
+
+    unmount()
+    const empty = mount('views:\n  - type: board\n    name: B\n    order: []\n    groupBy:\n      property: note.status\n', {
+      folderPage: testFolderPage({ openRight }),
+    })
+    const emptyCard = q<HTMLElement>(empty.el, '.view-board__card')
+    expect(emptyCard.getAttribute('role')).toBe('button')
+    expect(emptyCard.getAttribute('aria-label')).toBe('Open The Levels of an Agency.md in right panel')
+    click(emptyCard)
+    expect(openRight).toHaveBeenLastCalledWith('/vault/Content Pillars/1. Agentic Agency/The Levels of an Agency.md')
+    act(() => void emptyCard.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+    expect(openRight).toHaveBeenCalledTimes(5)
+  })
+
+  it('suppresses the synthetic primary click after a secondary click or completed group drag', () => {
+    const openRight = vi.fn()
+    const { el } = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight }) })
+    const card = cardNamed(el, 'Agentic Agency.md')
+
+    rightClick(card, 120, 42)
+    click(card)
+    expect(openRight).not.toHaveBeenCalled()
+
+    act(() => void document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    drag(card, 'dragstart')
+    drag(card, 'dragend')
+    click(card)
+    expect(openRight).not.toHaveBeenCalled()
   })
 })
 
@@ -585,12 +637,14 @@ describe('inline new card row (YAZ-943): the Notion add, at the bottom of every 
   }
 
   it('every column ends in a "New card" row; clicking it swaps in the name input', () => {
-    const { el } = mount(BOARD_BASE)
+    const openRight = vi.fn()
+    const { el } = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight }) })
     expect(cols(el).every((c) => c.querySelector('[aria-label="New card"]') !== null)).toBe(true)
     click(byLabel(colOf(el, 'idea'), 'New card'))
     expect(colOf(el, 'idea').querySelector('[aria-label="New card name"]')).not.toBeNull()
     // Only the clicked column's row opened.
     expect(colOf(el, 'drafting').querySelector('[aria-label="New card name"]')).toBeNull()
+    expect(openRight).not.toHaveBeenCalled()
   })
 
   it("Enter creates the page with the typed name in THAT column's group, stays on the board, and keeps the input for the next add", async () => {
@@ -702,7 +756,11 @@ ${cardStyle}
   })
 
   it('the title is UN-PINNED: it renders at its order position and can itself join (2 - Title.md)', () => {
-    const { el, onOpenFile } = mount(STYLED('      - note.priority\n      - file.name', '      note.priority: { hideLabel: true }\n      file.name: { join: true }'))
+    const openRight = vi.fn()
+    const { el, onOpenFile } = mount(
+      STYLED('      - note.priority\n      - file.name', '      note.priority: { hideLabel: true }\n      file.name: { join: true }'),
+      { folderPage: testFolderPage({ openRight }) },
+    )
     const card = cardIn(el)
     const rows = linesIn(card)
     expect(rows).toHaveLength(1)
@@ -711,7 +769,8 @@ ${cardStyle}
     expect(kids[1].classList.contains('view-board__dash')).toBe(true)
     expect(kids[2].classList.contains('view-board__title')).toBe(true)
     click(kids[2])
-    expect(onOpenFile).toHaveBeenCalledTimes(1)
+    expect(openRight).toHaveBeenCalledTimes(1)
+    expect(onOpenFile).not.toHaveBeenCalled()
   })
 
   it('join works the same with file.name hidden, and on the FIRST property it is a no-op', () => {

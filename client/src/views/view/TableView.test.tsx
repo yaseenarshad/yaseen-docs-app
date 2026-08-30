@@ -350,6 +350,13 @@ describe('table-row context menu (YAZ-1053)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
+  it('does not turn an ordinary cell click into a right-panel open', () => {
+    const openRight = vi.fn()
+    const { el } = mount(TYPED_BASE, { folderPage: testFolderPage({ openRight }) })
+    click(q(el, '[data-cell="0:1"]'))
+    expect(openRight).not.toHaveBeenCalled()
+  })
+
   it('opens the exact row in a background tab without replacing the current page', () => {
     const openBackground = vi.fn()
     const { el, onOpenFile } = mount(TYPED_BASE, { folderPage: testFolderPage({ openBackground }) })
