@@ -785,7 +785,7 @@ describe('App right-panel shell (YAZ-1272)', () => {
       rightPanel: { open: true, width: 440, items: ['/v/c.md', '/v/a.md'], expanded: '/v/a.md' },
     })
 
-    const rightC = [...el.querySelectorAll<HTMLElement>('.right-panel__item')].find((item) => item.textContent?.includes('c'))
+    const rightC = [...el.querySelectorAll<HTMLElement>('.right-panel__header')].find((item) => item.textContent?.includes('c'))
     act(() => void rightC?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
     const moveToMain = [...el.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Move to main tabs')
     act(() => moveToMain?.click())

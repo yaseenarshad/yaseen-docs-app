@@ -455,7 +455,7 @@ export function createStore(filePath: string): Store {
         let file = w.file
         if (file !== null && gone(file)) {
           changed = true
-          // The active file itself went. Pick an HEIR with the same ladder useTabs uses —
+          // The active file itself went. Pick an HEIR with the same ladder useWorkspace uses —
           // right neighbour, else left — rather than nulling `file`: normalizeTabs returns []
           // for a null file, which would throw away the window's SURVIVING tabs. The renderer
           // picks the same heir a moment later and mirrors it down, but the store is also the

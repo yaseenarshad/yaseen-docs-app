@@ -135,7 +135,7 @@ describe('RightPanel', () => {
     } as unknown as DataTransfer
     const start = new MouseEvent('dragstart', { bubbles: true, cancelable: true })
     Object.defineProperty(start, 'dataTransfer', { value: writeData })
-    act(() => void items[0].dispatchEvent(start))
+    act(() => void items[0].querySelector<HTMLElement>('.right-panel__header')?.dispatchEvent(start))
     expect(writeData.setData).toHaveBeenCalledExactlyOnceWith(
       WORKSPACE_PAGE_MIME,
       JSON.stringify({ path: '/v/Alpha.md', owner: 'right' }),
@@ -171,10 +171,53 @@ describe('RightPanel', () => {
     expect(onDropPage).toHaveBeenCalledTimes(2)
   })
 
+  it('uses the full empty viewer as a validated slot-zero drop target', () => {
+    const onDropPage = vi.fn()
+    const el = mount({ ...base(), items: [], expanded: null, children: undefined, onDropPage })
+    const viewer = el.querySelector<HTMLElement>('.right-panel__viewer')!
+    const data = {
+      types: [WORKSPACE_PAGE_MIME],
+      effectAllowed: 'move',
+      dropEffect: 'none',
+      getData: vi.fn(() => JSON.stringify({ path: '/v/Main.md', owner: 'main' })),
+      setData: vi.fn(),
+    } as unknown as DataTransfer
+    const fire = (type: string): MouseEvent => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'dataTransfer', { value: data })
+      act(() => void viewer.dispatchEvent(event))
+      return event
+    }
+
+    expect(fire('dragover').defaultPrevented).toBe(true)
+    expect(viewer.classList.contains('right-panel__viewer--drop-empty')).toBe(true)
+    fire('drop')
+    expect(onDropPage).toHaveBeenCalledExactlyOnceWith({ path: '/v/Main.md', owner: 'main' }, 0)
+  })
+
+  it('keeps close outside the header drag and move-menu surfaces', () => {
+    const onMoveToMain = vi.fn()
+    const el = mount({ ...base(), onMoveToMain })
+    const item = el.querySelector<HTMLElement>('.right-panel__item')!
+    const header = item.querySelector<HTMLButtonElement>('.right-panel__header')!
+    const close = item.querySelector<HTMLButtonElement>('.right-panel__close')!
+    expect(item.draggable).toBe(false)
+    expect(header.draggable).toBe(true)
+
+    act(() => void close.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    expect(el.querySelector('[role="menu"]')).toBeNull()
+
+    const data = { types: [] as string[], effectAllowed: 'none', setData: vi.fn(), getData: vi.fn(() => '') } as unknown as DataTransfer
+    const start = new MouseEvent('dragstart', { bubbles: true, cancelable: true })
+    Object.defineProperty(start, 'dataTransfer', { value: data })
+    act(() => void close.dispatchEvent(start))
+    expect(data.setData).not.toHaveBeenCalled()
+  })
+
   it('moves a right header back to main tabs through its exact-path context action', () => {
     const onMoveToMain = vi.fn()
     const el = mount({ ...base(), onMoveToMain })
-    const beta = [...el.querySelectorAll<HTMLElement>('.right-panel__item')][1]
+    const beta = [...el.querySelectorAll<HTMLElement>('.right-panel__header')][1]
     act(() => void beta.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 30 })))
     const move = [...el.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Move to main tabs')
     act(() => move?.click())

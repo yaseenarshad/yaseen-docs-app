@@ -135,6 +135,10 @@
   flex-direction: column;
 }
 
+.right-panel__viewer--drop-empty {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
 .right-panel__empty {
   margin: auto;
   padding: 24px;

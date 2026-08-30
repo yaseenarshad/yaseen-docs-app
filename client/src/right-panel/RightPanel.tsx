@@ -201,19 +201,8 @@ export function RightPanel({ items, expanded, width, overlay, canBack, canForwar
             <li
               key={path}
               className={cls.join(' ')}
-              draggable
-              onDragStart={(event) => {
-                if (event.dataTransfer) writePageDrag(event.dataTransfer, { path, owner: 'right' })
-                setDropAt(null)
-              }}
-              onDragEnd={() => setDropAt(null)}
               onDragOver={(event) => hoverDrop(event, insertionAt(event, index))}
               onDrop={(event) => dropPage(event, insertionAt(event, index))}
-              onContextMenu={(event) => {
-                if (onMoveToMain === undefined) return
-                event.preventDefault()
-                setMenu({ x: event.clientX, y: event.clientY, path })
-              }}
             >
               <button
                 ref={(node) => {
@@ -224,6 +213,17 @@ export function RightPanel({ items, expanded, width, overlay, canBack, canForwar
                 className="right-panel__header"
                 aria-expanded={isExpanded}
                 title={path}
+                draggable
+                onDragStart={(event) => {
+                  if (event.dataTransfer) writePageDrag(event.dataTransfer, { path, owner: 'right' })
+                  setDropAt(null)
+                }}
+                onDragEnd={() => setDropAt(null)}
+                onContextMenu={(event) => {
+                  if (onMoveToMain === undefined) return
+                  event.preventDefault()
+                  setMenu({ x: event.clientX, y: event.clientY, path })
+                }}
                 onClick={() => onToggle(path)}
               >
                 <Chevron d={isExpanded ? 'm4 6 4 4 4-4' : 'm6 4 4 4-4 4'} />
@@ -236,7 +236,18 @@ export function RightPanel({ items, expanded, width, overlay, canBack, canForwar
           )
         })}
       </ul>
-      <div className="right-panel__viewer">
+      <div
+        className={`right-panel__viewer${items.length === 0 && dropAt === 0 ? ' right-panel__viewer--drop-empty' : ''}`}
+        onDragOver={(event) => {
+          if (items.length === 0) hoverDrop(event, 0)
+        }}
+        onDrop={(event) => {
+          if (items.length === 0) dropPage(event, 0)
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropAt(null)
+        }}
+      >
         {items.length === 0 ? <p className="right-panel__empty">Open a page in the right panel</p> : children}
       </div>
       {menu !== null && (
