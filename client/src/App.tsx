@@ -6,6 +6,7 @@ import { Editor } from './editor/Editor'
 import { newNoteBase } from './editor/wikilink/createFromLink'
 import { createWikilinkCandidateSource } from './editor/wikilink/wikilinkPicker'
 import { createWikilinkResolveSource } from './editor/wikilink/wikilinkPlugin'
+import { createViewOnlyLinkSource } from './editor/wikilink/viewOnlyLinkSource'
 import { useProperties } from './views/useProperties'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
 import { useGithubSync } from './hooks/useGithubSync'
@@ -91,6 +92,7 @@ export function App() {
   // picker's candidate source (Links B, GRO-2191) works exactly the same way.
   const [wikilinks] = useState(createWikilinkResolveSource)
   const [wikilinkCandidates] = useState(createWikilinkCandidateSource)
+  const [viewOnlyLinks] = useState(createViewOnlyLinkSource)
   // The vault's property DECLARATIONS (YAZ-835), owned here for the same reason `wikilinks` is:
   // ONE per window, threaded down rather than re-fetched per surface. It is the editor ladder's
   // rung 2 inside a folder page's contents block (YAZ-846) — Editor → FolderPageContents.
@@ -496,6 +498,7 @@ export function App() {
     createBase,
     wikilinks,
     wikilinkCandidates,
+    viewOnlyLinks,
     properties: propertyDecls,
     onOpenFileRight: openRight,
     onRenameFile: requestEditorRename,
@@ -606,7 +609,7 @@ export function App() {
         </section>
       ) : (
         <div className="workspace">
-          <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} candidates={wikilinkCandidates} onSnapshot={onIndexSnapshot} />
+          <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} candidates={wikilinkCandidates} viewOnly={viewOnlyLinks} onSnapshot={onIndexSnapshot} />
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
           <TabBar
             tabs={tabs}

@@ -36,6 +36,7 @@ import { Plugin, PluginKey, type EditorState, type Selection } from '@milkdown/k
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import type { IndexRecord } from '@shared/types'
+import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
 import './wikilink.css'
 
 export const WIKILINK_CLASS = 'wikilink'
@@ -156,15 +157,24 @@ function hide(out: Decoration[], from: number, to: number): void {
 }
 
 /** Decorations for one collapsed match: `[[inner]]` starting at `start`. */
-function decorate(out: Decoration[], start: number, inner: string, resolve: ResolveLink | null): void {
+function linkIsResolved(inner: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): boolean {
+  const viewSource = viewOnly
+  const viewTarget = viewSource === undefined ? null : viewOnlyLinkTarget(inner)
+  if (viewTarget !== null && viewSource !== undefined) {
+    if (viewTarget.hasSubtarget) return false
+    return viewSource.resolve === null || viewSource.resolve(viewTarget.page) !== null
+  }
+  const target = linkPageName(inner)
+  return source.resolve === null || target === '' || source.resolve(target) !== null
+}
+
+function decorate(out: Decoration[], start: number, inner: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): void {
   // A match whose display would be EMPTY ([[Note|]], [[|]], [[#]]) gets NO decorations at all:
   // hiding every character would leave a zero-width invisible run the click handler cannot see
   // and only exact caret placement can recover — raw-and-editable, the revealed state, is the
   // consistent answer (FN12, GRO-2197).
   if (linkDisplayText(inner) === '') return
-  const target = linkPageName(inner)
-  // An empty target ([[#heading]]) is a same-file link: always resolved.
-  const resolved = resolve === null || target === '' || resolve(target) !== null
+  const resolved = linkIsResolved(inner, source, viewOnly)
   const cls = resolved ? WIKILINK_CLASS : `${WIKILINK_CLASS} ${WIKILINK_UNRESOLVED_CLASS}`
   const innerStart = start + 2
   const end = innerStart + inner.length + 2
@@ -199,7 +209,7 @@ function touches(sel: Selection, from: number, to: number): boolean {
   return sel.from <= to && sel.to >= from
 }
 
-function build(state: EditorState, source: WikilinkResolveSource): DecorationSet {
+function build(state: EditorState, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): DecorationSet {
   const decorations: Decoration[] = []
   const sel = state.selection
   state.doc.descendants((node, pos) => {
@@ -211,7 +221,7 @@ function build(state: EditorState, source: WikilinkResolveSource): DecorationSet
         const from = runPos + m.index
         const to = from + m[0].length
         if (touches(sel, from, to)) continue // caret inside/adjacent → raw, editable syntax
-        decorate(decorations, from, m[2], source.resolve)
+        decorate(decorations, from, m[2], source, viewOnly)
       }
     })
     return false
@@ -219,15 +229,15 @@ function build(state: EditorState, source: WikilinkResolveSource): DecorationSet
   return decorations.length === 0 ? DecorationSet.empty : DecorationSet.create(state.doc, decorations)
 }
 
-export function createWikilink(source: WikilinkResolveSource) {
+export function createWikilink(source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource) {
   return $prose(
     () =>
       new Plugin({
         key: wikilinkKey,
         state: {
-          init: (_, state) => build(state, source),
+          init: (_, state) => build(state, source, viewOnly),
           apply: (tr, set, _old, state) =>
-            tr.docChanged || tr.selectionSet || tr.getMeta(wikilinkKey) !== undefined ? build(state, source) : set,
+            tr.docChanged || tr.selectionSet || tr.getMeta(wikilinkKey) !== undefined ? build(state, source, viewOnly) : set,
         },
         props: {
           decorations: (state) => wikilinkKey.getState(state),
@@ -236,7 +246,15 @@ export function createWikilink(source: WikilinkResolveSource) {
           const unsubscribe = source.subscribe(() => {
             editorView.dispatch(editorView.state.tr.setMeta(wikilinkKey, 'resolver-updated'))
           })
-          return { destroy: unsubscribe }
+          const unsubscribeViewOnly = viewOnly?.subscribe(() => {
+            editorView.dispatch(editorView.state.tr.setMeta(wikilinkKey, 'view-only-resolver-updated'))
+          })
+          return {
+            destroy: () => {
+              unsubscribe()
+              unsubscribeViewOnly?.()
+            },
+          }
         },
       }),
   )

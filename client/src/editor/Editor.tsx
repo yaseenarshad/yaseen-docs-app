@@ -13,6 +13,7 @@ import { FrontmatterPanel } from './FrontmatterPanel'
 import { PageTitle } from './PageTitle'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import type { ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import './outline/outlineFolding.css'
 import './outline/headingFolding.css'
 import './outline/bullets.css'
@@ -58,6 +59,8 @@ interface EditorProps {
   createBase?: () => string
   /** Wikilink resolve source (GRO-2190): App owns ONE per window, fed by WikilinkIndexBridge. */
   wikilinks?: WikilinkResolveSource
+  /** Separate navigation-only resolver for supported non-Markdown files. */
+  viewOnlyLinks?: ViewOnlyLinkSource
   /** `[[` picker candidates (GRO-2191): same ownership and feed as `wikilinks`. */
   wikilinkCandidates?: WikilinkCandidateSource
   /** The vault's property declarations (YAZ-835), App-owned like `wikilinks`: typing rung 2 for a folder page's contents block (YAZ-846). */
@@ -78,7 +81,7 @@ interface EditorProps {
   onSyncNow?: () => void
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, createBase, wikilinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, createBase, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow }: EditorProps) {
   if (path === null) {
     return (
       <section className="editor">
@@ -108,11 +111,11 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
       </section>
     )
   }
-  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} />
+  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} />
 }
 
 /** Markdown-only owner: loading, Crepe, migration, autosave, frontmatter, folder pages, and backlinks. */
-function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, createBase, wikilinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow }: EditorProps & { path: string }) {
+function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, createBase, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow }: EditorProps & { path: string }) {
   const state = useFile(path)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   return (
@@ -120,7 +123,7 @@ function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpen
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} />
+        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} />
       )}
     </section>
   )
@@ -137,6 +140,7 @@ function CrepeHost({
   onNotice,
   createBase,
   wikilinks,
+  viewOnlyLinks,
   wikilinkCandidates,
   properties,
   onRenameFile,
@@ -152,6 +156,7 @@ function CrepeHost({
   onNotice?: (message: string) => void
   createBase?: () => string
   wikilinks?: WikilinkResolveSource
+  viewOnlyLinks?: ViewOnlyLinkSource
   wikilinkCandidates?: WikilinkCandidateSource
   properties?: PropertiesResponse | null
   onRenameFile?: (oldPath: string, newPath: string) => void
@@ -216,6 +221,7 @@ function CrepeHost({
       zoom: { fileName: basename(file.path) },
       // Stable per window (App-owned): index updates flow INSIDE the sources, never remounting us.
       wikilinks,
+      viewOnlyLinks,
       wikilinkCandidates,
       // Wiki-link click navigation (Links C, GRO-2192): plain click → current tab, ⌘ → background
       // tab, unresolved → create (bare targets under App's createBase getter — the Files & Links
@@ -298,7 +304,7 @@ function CrepeHost({
       unsubscribe()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, createBase, drawingFeed, findChannel])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, createBase, drawingFeed, findChannel])
 
   // The Home guard's fact (⚡ YAZ-888): Home is whatever `[[Home]]` RESOLVES to (🔒 D1, YAZ-821)
   // — the window's own resolver, never a path check, so an aliased or nested Home is still Home.

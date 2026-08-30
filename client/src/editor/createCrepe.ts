@@ -105,6 +105,7 @@ import { createWikilinkClick, type WikilinkNav } from './wikilink/wikilinkClick'
 import { createWikilinkPicker, createWikilinkCandidateSource, wikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { createWikilink, createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { createMarkdownLink, type MarkdownLinkNav } from './markdownLink'
+import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 
 export interface CreateCrepeOptions {
   root: HTMLElement
@@ -121,6 +122,8 @@ export interface CreateCrepeOptions {
   find?: FindChannel
   /** Wikilink resolve source (GRO-2190): App keeps it fed from the vault index. Defaults to a never-updated source (all links render resolved). */
   wikilinks?: WikilinkResolveSource
+  /** Navigation-only view-file resolver; never carries semantic records. */
+  viewOnlyLinks?: ViewOnlyLinkSource
   /** `[[` picker candidates (GRO-2191): App keeps it fed from the vault index. Defaults to a never-updated source (empty picker — only Create rows). */
   wikilinkCandidates?: WikilinkCandidateSource
   /** Wikilink click navigation (GRO-2192): tabs API + create-on-click handlers. Absent → links render but clicks fall through to plain editing (the click plugin is not registered). */
@@ -223,8 +226,11 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(bulletThreading)
   // ONE resolve source instance feeds both the decorations and the click plugin's routing.
   const wikilinks = opts.wikilinks ?? createWikilinkResolveSource()
-  crepe.editor.use(createWikilink(wikilinks))
-  if (opts.wikilinkNav !== undefined) crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav))
+  // A missing catalog must stay passive: recognized non-Markdown targets can never fall through
+  // to Markdown creation, including in isolated createCrepe consumers outside App.
+  const viewOnlyLinks = opts.viewOnlyLinks ?? createViewOnlyLinkSource()
+  crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks))
+  if (opts.wikilinkNav !== undefined) crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav, viewOnlyLinks))
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav))
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource()))
   if (opts.drawingPreview !== undefined) crepe.editor.use(createDrawingPreview(opts.drawingPreview))

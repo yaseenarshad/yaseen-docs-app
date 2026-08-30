@@ -14,6 +14,7 @@ import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
 import * as continuity from './lib/renameContinuity'
 import * as renameLinks from './links/renameLinks'
 import { storage } from './lib/storage'
+import type { ViewOnlyLinkSource } from './editor/wikilink/viewOnlyLinkSource'
 
 interface SidebarStubProps {
   root: string
@@ -39,11 +40,13 @@ interface SidebarStubProps {
 const captured = vi.hoisted(() => ({
   sidebar: null as SidebarStubProps | null,
   editorOpeners: [] as { path: string | null; open: (path: string) => void }[],
+  viewOnlyLinks: [] as Array<ViewOnlyLinkSource | undefined>,
 }))
 
 vi.mock('./editor/Editor', () => ({
-  Editor: ({ root, path, onOpenFile, onOpenFileBackground }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void }) => {
+  Editor: ({ root, path, onOpenFile, onOpenFileBackground, viewOnlyLinks }: { root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; viewOnlyLinks?: ViewOnlyLinkSource }) => {
     captured.editorOpeners.push({ path, open: onOpenFile })
+    captured.viewOnlyLinks.push(viewOnlyLinks)
     return (
       <div data-editor data-root={root} data-path={path ?? ''}>
         <button type="button" data-open-right-current onClick={() => onOpenFile('/v/c.md')} />
@@ -241,6 +244,7 @@ afterEach(() => {
   container = null
   captured.sidebar = null
   captured.editorOpeners = []
+  captured.viewOnlyLinks = []
   history.replaceState(null, '', '/')
   delete document.documentElement.dataset.theme
   document.getElementById(CREPE_THEME_STYLE_ID)?.remove()
@@ -609,6 +613,15 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(stripLabels(el)).toEqual(['a', 'b'])
     expect(activeLabel(el)).toBe('b')
     expect(layers(el)).toEqual([['/v/b.md', false]])
+  })
+
+  it('owns one ready navigation-only source and threads that same object to retained editors', async () => {
+    await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    const sources = captured.viewOnlyLinks.filter((source): source is ViewOnlyLinkSource => source !== undefined)
+    expect(sources.length).toBeGreaterThan(0)
+    expect(new Set(sources).size).toBe(1)
+    expect(sources[0]?.ready).toBe(true)
+    expect('records' in sources[0]!).toBe(false)
   })
 
   it.each([

@@ -15,6 +15,7 @@ import { resolverFor } from '../views/engine'
 import type { WatchListener, WatchSource } from '../hooks/useWatch'
 import { Editor } from './Editor'
 import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import * as frontmatter from '@shared/frontmatter'
 import * as folderMigration from '../views/migrateFolderBody'
 
@@ -93,14 +94,14 @@ const watch: WatchSource = {
 }
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; onRenameFile?: (oldPath: string, newPath: string) => void } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; viewOnlyLinks?: ViewOnlyLinkSource; onRenameFile?: (oldPath: string, newPath: string) => void } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} wikilinks={extra.wikilinks} onRenameFile={extra.onRenameFile} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} wikilinks={extra.wikilinks} viewOnlyLinks={extra.viewOnlyLinks} onRenameFile={extra.onRenameFile} />))
   await settle()
   await settle()
   return container
@@ -183,6 +184,12 @@ afterEach(() => {
 })
 
 describe('Editor file-kind dispatch (YAZ-1299)', () => {
+  it('threads the navigation-only source only into the Markdown Crepe owner', async () => {
+    const viewOnlyLinks = createViewOnlyLinkSource()
+    await mount(BODY, 1, { viewOnlyLinks })
+    expect((createCrepeMock.mock.calls.at(-1)?.[0] as CreateCrepeOptions | undefined)?.viewOnlyLinks).toBe(viewOnlyLinks)
+  })
+
   it('routes mixed-case view-only text around every Markdown-only owner', async () => {
     const source = createWikilinkResolveSource()
     const subscribe = vi.spyOn(source, 'subscribe')
