@@ -64,12 +64,13 @@ import { App, LINK_NOTICE_MS } from './App'
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 /** The full `window.yaseenDocs` surface the App tree touches, all observable. `files` backs readFile/writeFile (the E1c rewrite path). */
-type IdentityFixture = Omit<WindowIdentity, 'rightPanel'> & Partial<Pick<WindowIdentity, 'rightPanel'>>
+type IdentityFixture = Omit<WindowIdentity, 'rightPanel' | 'sidebarCollapsed'> & Partial<Pick<WindowIdentity, 'rightPanel' | 'sidebarCollapsed'>>
 
 function installBridge(state: AppState, identity: IdentityFixture, files: Record<string, { content: string; mtime: number }> = {}) {
   const stateChanged = new Set<(next: AppState) => void>()
   const menuOpenRoot = new Set<(path: string) => void>()
   const menuSearch = new Set<() => void>()
+  const menuToggleSidebar = new Set<() => void>()
   const menuCloseTab = new Set<() => void>()
   const menuNextTab = new Set<() => void>()
   const menuPrevTab = new Set<() => void>()
@@ -110,7 +111,6 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     state: {
       get: vi.fn(async () => state),
       setSettings: vi.fn(async () => undefined),
-      setSidebarCollapsed: vi.fn(async () => undefined),
       setSidebarWidth: vi.fn(async () => undefined),
       setSidebarLens: vi.fn(async () => undefined),
       pushRecent: vi.fn(async () => undefined),
@@ -124,7 +124,11 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       }),
     },
     window: {
-      identity: vi.fn(async (): Promise<WindowIdentity> => ({ ...identity, rightPanel: identity.rightPanel ?? defaultRightPanelIdentity() })),
+      identity: vi.fn(async (): Promise<WindowIdentity> => ({
+        ...identity,
+        rightPanel: identity.rightPanel ?? defaultRightPanelIdentity(),
+        sidebarCollapsed: identity.sidebarCollapsed ?? false,
+      })),
       setIdentity: vi.fn(async () => undefined),
       open: vi.fn(),
       duplicate: vi.fn(),
@@ -138,6 +142,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         return () => menuOpenRoot.delete(l)
       }),
       onSearch: menuSub(menuSearch),
+      onToggleSidebar: menuSub(menuToggleSidebar),
       onCloseTab: menuSub(menuCloseTab),
       onNextTab: menuSub(menuNextTab),
       onPrevTab: menuSub(menuPrevTab),
@@ -189,6 +194,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitStateChanged: (next: AppState) => stateChanged.forEach((listener) => listener(next)),
     emitOpenRoot: (path: string) => menuOpenRoot.forEach((l) => l(path)),
     emitSearch: () => menuSearch.forEach((l) => l()),
+    emitToggleSidebar: () => menuToggleSidebar.forEach((l) => l()),
     emitCloseTab: () => menuCloseTab.forEach((l) => l()),
     emitNextTab: () => menuNextTab.forEach((l) => l()),
     emitPrevTab: () => menuPrevTab.forEach((l) => l()),
@@ -240,6 +246,32 @@ afterEach(() => {
   delete (window as unknown as Record<string, unknown>).yaseenDocs
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 })
   vi.restoreAllMocks()
+})
+
+describe('App per-window sidebar visibility (YAZ-1280)', () => {
+  it('boots from window identity and View › Toggle Sidebar reuses the one local toggle path', async () => {
+    const { bridge, el, emitToggleSidebar } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true })
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    act(() => emitToggleSidebar())
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: false })
+  })
+
+  it('plain Cmd+B on app chrome prevents default, toggles once, and the listener is removed on unmount', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
+    const event = new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true })
+    act(() => void el.querySelector('.app')?.dispatchEvent(event))
+    expect(event.defaultPrevented).toBe(true)
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(bridge.window.setIdentity).toHaveBeenCalledExactlyOnceWith({ sidebarCollapsed: true })
+
+    act(() => root?.unmount())
+    root = null
+    const afterUnmount = new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true })
+    document.body.dispatchEvent(afterUnmount)
+    expect(afterUnmount.defaultPrevented).toBe(false)
+    expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('App on a null root (C2, GRO-2164)', () => {
@@ -454,7 +486,7 @@ describe('App sidebar resize (YAZ-738)', () => {
     act(() => drag(el, 50 - 260))
     expect(el.querySelector('[data-sidebar]')).toBeNull()
     expect(sideW(el)).toBe('260px')
-    expect(bridge.state.setSidebarCollapsed).toHaveBeenCalledWith(true)
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: true })
     expect(bridge.state.setSidebarWidth).not.toHaveBeenCalled()
   })
 })
@@ -501,12 +533,12 @@ describe('App Show in sidebar request ownership (YAZ-1023)', () => {
 
   it('opens a collapsed sidebar on the captured lens and targets an inactive tab without activating it', async () => {
     const { bridge, el } = await mount(
-      { ...defaultAppState(), sidebarCollapsed: true, sidebarLens: 'files' },
-      { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] },
+      { ...defaultAppState(), sidebarLens: 'files' },
+      { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: true },
     )
     rightClick(el.querySelectorAll('.tabbar__tab')[1]!)
     act(() => showInSidebar(el)?.click())
-    expect(bridge.state.setSidebarCollapsed).toHaveBeenCalledWith(false)
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: false })
     expect(captured.sidebar?.lens).toBe('files')
     expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: '/v/b.md', lens: 'files' })
     expect(el.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('a')
@@ -543,11 +575,11 @@ describe('App Show in sidebar request ownership (YAZ-1023)', () => {
 
 describe('App ⌘K search (D4, YAZ-804)', () => {
   it('from a collapsed sidebar it un-collapses through the global setting and mounts the sidebar with the focus flag already true', async () => {
-    const { bridge, el, emitSearch } = await mount({ ...defaultAppState(), sidebarCollapsed: true }, { id: 'w1', root: '/v', file: null, tabs: [] })
+    const { bridge, el, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true })
     expect(el.querySelector('[data-sidebar]')).toBeNull()
     act(() => emitSearch())
     expect(el.querySelector('[data-sidebar]')).not.toBeNull()
-    expect(bridge.state.setSidebarCollapsed).toHaveBeenCalledWith(false) // collapse state is global (D9)
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: false })
     expect(captured.sidebar?.pendingSearchFocus).toBe(true)
   })
 
@@ -556,7 +588,7 @@ describe('App ⌘K search (D4, YAZ-804)', () => {
     expect(captured.sidebar?.pendingSearchFocus).toBe(false)
     act(() => emitSearch())
     expect(captured.sidebar?.pendingSearchFocus).toBe(true)
-    expect(bridge.state.setSidebarCollapsed).not.toHaveBeenCalled()
+    expect(bridge.window.setIdentity).not.toHaveBeenCalledWith({ sidebarCollapsed: false })
   })
 })
 

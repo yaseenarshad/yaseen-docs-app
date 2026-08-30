@@ -335,7 +335,7 @@ export const MAX_TOPICS_EXPANDED_PAGES = 500
 /**
  * `AppState.sidebarLens` — which lens the sidebar's chrome-v2 ROW 1 tabs show (YAZ-847):
  * `topics` (the folder-page tree, an empty shell until YAZ-848) or `files` (the file explorer).
- * GLOBAL, exactly like `sidebarCollapsed` / `sidebarWidth`: the tabs are window chrome, not
+ * GLOBAL, like `sidebarWidth` but unlike per-window `sidebarCollapsed`: the tabs are not
  * per-folder view state, so there is no per-root keying and no `FolderState` entry. Default
  * `topics` — a pre-847 state file simply gains it.
  */
@@ -469,6 +469,8 @@ export interface WindowEntry {
   file: string | null
   tabs: string[]
   rightPanel: RightPanelIdentity
+  /** Whether this window's sidebar is hidden (YAZ-1280); independent from every other window. */
+  sidebarCollapsed: boolean
   bounds: WindowBounds
 }
 
@@ -501,7 +503,6 @@ export interface FolderState {
 export interface AppState {
   version: 1
   settings: SettingsState
-  sidebarCollapsed: boolean
   /** Sidebar width in px, within [SIDEBAR_MIN_W, SIDEBAR_MAX_W]. */
   sidebarWidth: number
   /** Which sidebar lens is showing (YAZ-847); global, default `topics`, junk → `topics`. */
@@ -514,7 +515,7 @@ export interface AppState {
 
 /** A fresh default state (a factory, so no caller can mutate a shared constant). */
 export function defaultAppState(): AppState {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarCollapsed: false, sidebarWidth: SIDEBAR_DEFAULT_W, sidebarLens: 'topics', recents: [], windows: [], folders: {} }
+  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, sidebarLens: 'topics', recents: [], windows: [], folders: {} }
 }
 
 export function defaultFolderState(): FolderState {
@@ -738,6 +739,8 @@ export interface WindowIdentity {
   /** Open tabs left→right (GRO-2232); `file` is the active one (same invariants as `WindowEntry.tabs`). */
   tabs: string[]
   rightPanel: RightPanelIdentity
+  /** Whether this window's sidebar is hidden (YAZ-1280). */
+  sidebarCollapsed: boolean
 }
 
 export interface OpenWindowOptions {
@@ -749,7 +752,6 @@ export interface OpenWindowOptions {
 export interface StateApi {
   get(): Promise<AppState>
   setSettings(settings: SettingsState): Promise<void>
-  setSidebarCollapsed(collapsed: boolean): Promise<void>
   /** Clamped to [SIDEBAR_MIN_W, SIDEBAR_MAX_W] by the main process. */
   setSidebarWidth(width: number): Promise<void>
   /** The active sidebar lens (YAZ-847); anything but a `SidebarLens` is `BAD_REQUEST`. */
@@ -776,7 +778,7 @@ export interface WindowApi {
    * re-enforces the tabs invariant against the entry as written (GRO-2232): a non-null `file`
    * missing from `tabs` is prepended; `file: null` clears `tabs`.
    */
-  setIdentity(patch: Partial<Pick<WindowIdentity, 'root' | 'file' | 'tabs' | 'rightPanel'>>): Promise<void>
+  setIdentity(patch: Partial<Pick<WindowIdentity, 'root' | 'file' | 'tabs' | 'rightPanel' | 'sidebarCollapsed'>>): Promise<void>
   open(opts: OpenWindowOptions): Promise<void>
   /** `⌘⇧N`: same folder, same file, new window (GRO-2167). */
   duplicate(): Promise<void>
@@ -803,6 +805,8 @@ export interface MenuApi {
   onOpenRoot(listener: (path: string) => void): () => void
   /** File › Search Vault (⌘K) targeted this window: focus the sidebar search bar (YAZ-804). Returns an unsubscribe. */
   onSearch(listener: () => void): () => void
+  /** View › Toggle Sidebar targeted this window (YAZ-1280). Returns an unsubscribe. */
+  onToggleSidebar(listener: () => void): () => void
   /** File › Close Tab (⌘W) targeted this window: close the active tab (GRO-2232). Returns an unsubscribe. */
   onCloseTab(listener: () => void): () => void
   /** Window › Next Tab (⌃Tab / ⌘⇧]) targeted this window: activate the tab to the right (GRO-2232). Returns an unsubscribe. */

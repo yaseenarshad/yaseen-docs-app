@@ -33,10 +33,6 @@ export function registerStateIpc(store: Store): void {
     if (!isSettings(settings)) throw new BridgeFailure('BAD_REQUEST', "'settings' must be a complete SettingsState")
     store.setSettings(settings)
   })
-  handle(CH.stateSetSidebarCollapsed, async (collapsed: unknown) => {
-    if (typeof collapsed !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'collapsed' must be a boolean")
-    store.setSidebarCollapsed(collapsed)
-  })
   handle(CH.stateSetSidebarWidth, async (width: unknown) => {
     if (typeof width !== 'number' || !Number.isFinite(width)) throw new BridgeFailure('BAD_REQUEST', "'width' must be a finite number")
     store.setSidebarWidth(width)

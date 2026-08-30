@@ -112,7 +112,7 @@ function CardCover({ root, cover }: { root: string | null; cover: Cover }) {
  * failed load → neutral placeholder, never a broken image), `file.name` as the title button →
  * `onOpenFile`, then the view's other `order` properties as small label/value rows typed like
  * table cells. Grid columns are `repeat(auto-fill, minmax(<cardWidth>px, 1fr))` — `cardSize` is
- * Obsidian's numeric px or the board's small/medium/large presets (one shared mapping).
+ * Obsidian's numeric px or legacy small/medium/large compatibility values (one shared mapping).
  * `imageFit` (cover|contain) and `imageAspectRatio` (number, default 1:1) land as CSS custom
  * properties on the grid. Grouped results render 4C sections — the shared `GroupHeader` over
  * each group's grid, with the SAME persisted collapse state as the table/board (never the

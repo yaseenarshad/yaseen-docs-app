@@ -28,7 +28,7 @@ afterEach(async () => {
 const seed = (v: unknown) => writeFile(file, typeof v === 'string' ? v : JSON.stringify(v))
 const onDisk = async (): Promise<AppState> => JSON.parse(await readFile(file, 'utf8')) as AppState
 const bounds = { x: 1, y: 2, width: 300, height: 200 }
-const win = (id: string, extra: Partial<WindowEntry> = {}): WindowEntry => ({ id, root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), bounds, ...extra })
+const win = (id: string, extra: Partial<WindowEntry> = {}): WindowEntry => ({ id, root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, bounds, ...extra })
 /** A seed with every field valid, to vary one field at a time. */
 const valid = (over: Record<string, unknown> = {}) => ({ ...defaultAppState(), ...over })
 
@@ -58,11 +58,10 @@ describe('createStore: loading', () => {
     const state: AppState = {
       version: 1,
       settings: { ...DEFAULT_SETTINGS, lineSpacing: 2, threadColor: '#00aaff' },
-      sidebarCollapsed: true,
       sidebarWidth: 320,
       sidebarLens: 'files',
       recents: [{ path: '/v', lastOpened: 5 }],
-      windows: [win('w1', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] })],
+      windows: [win('w1', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: true })],
       folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, topicsExpanded: ['/v/Metrics.md'] } },
     }
     await seed(state)
@@ -127,11 +126,36 @@ describe('createStore: loading', () => {
     }
   })
 
-  it('sidebarCollapsed only honours booleans', async () => {
-    await seed(valid({ sidebarCollapsed: 'true' }))
-    expect(createStore(file).get().sidebarCollapsed).toBe(false)
-    await seed(valid({ sidebarCollapsed: true }))
-    expect(createStore(file).get().sidebarCollapsed).toBe(true)
+  it('sidebarCollapsed migrates from the legacy global value into each window, while a per-window boolean wins', async () => {
+    await seed(
+      valid({
+        sidebarCollapsed: true,
+        windows: [
+          { id: 'legacy', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], bounds },
+          { id: 'new', root: '/v', file: null, tabs: [], bounds, sidebarCollapsed: false },
+        ],
+      }),
+    )
+    const store = createStore(file)
+    const loaded = store.get() as unknown as { sidebarCollapsed?: unknown; windows: Array<{ sidebarCollapsed: boolean }> }
+    expect(loaded).not.toHaveProperty('sidebarCollapsed')
+    expect(loaded.windows.map((w) => w.sidebarCollapsed)).toEqual([true, false])
+
+    // The next write completes the additive-within-v1 migration rather than preserving a
+    // shadow global value that could later become a second source of truth.
+    store.setSidebarWidth(321)
+    await store.flush()
+    const persisted = JSON.parse(await readFile(file, 'utf8')) as { sidebarCollapsed?: unknown; windows: Array<{ sidebarCollapsed: boolean }> }
+    expect(persisted).not.toHaveProperty('sidebarCollapsed')
+    expect(persisted.windows.map((w) => w.sidebarCollapsed)).toEqual([true, false])
+  })
+
+  it('sidebarCollapsed migration treats a missing or non-boolean legacy value as open', async () => {
+    await seed(valid({ windows: [{ id: 'missing', root: null, file: null, tabs: [], bounds }] }))
+    expect((createStore(file).get().windows[0] as unknown as { sidebarCollapsed: boolean }).sidebarCollapsed).toBe(false)
+
+    await seed(valid({ sidebarCollapsed: 'true', windows: [{ id: 'junk', root: null, file: null, tabs: [], bounds }] }))
+    expect((createStore(file).get().windows[0] as unknown as { sidebarCollapsed: boolean }).sidebarCollapsed).toBe(false)
   })
 
   it('sidebarWidth clamps a finite number and defaults when it is missing or junk', async () => {
@@ -326,7 +350,7 @@ describe('createStore: loading', () => {
 })
 
 describe('createStore: mutations', () => {
-  it('setSettings / setSidebarCollapsed replace the value and notify listeners synchronously with the new state', () => {
+  it('setSettings replaces the value and notifies listeners synchronously with the new state', () => {
     const store = createStore(file)
     const seen: AppState[] = []
     const off = store.onChange((s) => seen.push(s))
@@ -336,12 +360,9 @@ describe('createStore: mutations', () => {
     expect(seen[0]).toBe(store.get())
     expect(store.get().settings.blockGap).toBe(12)
     expect(before.settings.blockGap).toBe(DEFAULT_SETTINGS.blockGap) // snapshots are immutable
-    store.setSidebarCollapsed(true)
-    expect(store.get().sidebarCollapsed).toBe(true)
-    expect(seen).toHaveLength(2)
     off()
-    store.setSidebarCollapsed(false)
-    expect(seen).toHaveLength(2)
+    store.setSettings(DEFAULT_SETTINGS)
+    expect(seen).toHaveLength(1)
   })
 
   it('setSidebarLens replaces the lens and notifies, leaving the rest of the state alone (YAZ-847)', () => {
@@ -353,7 +374,7 @@ describe('createStore: mutations', () => {
     expect(store.get().sidebarLens).toBe('files')
     expect(seen).toHaveLength(1)
     expect(seen[0]).toBe(store.get())
-    expect(store.get().sidebarCollapsed).toBe(false)
+    expect(store.get().windows).toEqual([])
     expect(store.get().sidebarWidth).toBe(SIDEBAR_DEFAULT_W)
     store.setSidebarLens('topics')
     expect(store.get().sidebarLens).toBe('topics')
@@ -724,10 +745,21 @@ describe('createStore: mutations', () => {
 })
 
 describe('createStore: persistence', () => {
+  it('restores opposite sidebar values for two windows after a real flush and reload (YAZ-1280)', async () => {
+    const store = createStore(file)
+    store.upsertWindow(win('open', { root: '/v', sidebarCollapsed: false }))
+    store.upsertWindow(win('closed', { root: '/w', sidebarCollapsed: true }))
+    await store.flush()
+    expect(createStore(file).get().windows.map(({ id, sidebarCollapsed }) => ({ id, sidebarCollapsed }))).toEqual([
+      { id: 'open', sidebarCollapsed: false },
+      { id: 'closed', sidebarCollapsed: true },
+    ])
+  })
+
   it('coalesces a burst of changes into one debounced atomic write that matches get()', async () => {
     vi.useFakeTimers()
     const store = createStore(file)
-    store.setSidebarCollapsed(true)
+    store.setSidebarWidth(321)
     store.pushRecent('/v', 1)
     store.setFolds('/v', '/v/a.md', ['k1'])
     await vi.advanceTimersByTimeAsync(100)

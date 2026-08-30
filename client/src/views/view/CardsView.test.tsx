@@ -3,9 +3,9 @@
  * responsive grid — an optional cover from the view's `image` property (colour block / external
  * URL / local vault asset through `api.readAsset` → `data:` URL, mocked here; missing or failing
  * → neutral placeholder), `file.name` as the title button, then the other `order` properties as
- * typed label/value rows. Card width follows `cardSize` (Obsidian's numeric px, or the board's
- * small/medium/large presets — one shared mapping); `imageFit` / `imageAspectRatio` land as CSS
- * custom properties. Grouped results render 4C sections with the same persisted collapse state
+ * typed label/value rows. Card width follows `cardSize` (Obsidian's numeric px, or the legacy
+ * small/medium/large compatibility values — one shared mapping); `imageFit` / `imageAspectRatio`
+ * land as CSS custom properties. Grouped results render 4C sections with the same persisted collapse state
  * as the table/board; search narrows cards and drops empty groups.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -193,12 +193,15 @@ describe('grid', () => {
 })
 
 describe('cardSize', () => {
-  it('numeric px is honored; the board presets map through the shared widths; default medium 280', () => {
+  it('numeric px is honored; legacy values map through the shared widths; absent defaults to 280', () => {
     const { el } = mount(CARDS_BASE)
     expect(gridVar(el, '--view-card-w')).toBe('280px')
     unmount()
     const numeric = mount(CARDS_BASE.replace('name: C', 'name: C\n    cardSize: 200'))
     expect(gridVar(numeric.el, '--view-card-w')).toBe('200px')
+    unmount()
+    const belowBoardMinimum = mount(CARDS_BASE.replace('name: C', 'name: C\n    cardSize: 100'))
+    expect(gridVar(belowBoardMinimum.el, '--view-card-w')).toBe('100px')
     unmount()
     const small = mount(CARDS_BASE.replace('name: C', 'name: C\n    cardSize: small'))
     expect(gridVar(small.el, '--view-card-w')).toBe('220px')

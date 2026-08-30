@@ -11,6 +11,7 @@ import { markerStyleOf } from './ListView'
 import { allPropertyKeys } from './properties'
 import { TextField } from './TextField'
 import { frozenColumnCount } from './frozenColumns'
+import { cardWidth } from './cardWidth'
 
 export interface PropertiesMenuProps {
   def: ViewSet
@@ -26,6 +27,13 @@ export interface PropertiesMenuProps {
 }
 
 const bare = (key: string): string => (key.startsWith('note.') ? key.slice(5) : key)
+
+/** Board's width editor accepts finite numbers, then rounds and clamps only its lower bound. */
+export const normalizeBoardWidth = (draft: string): string | null => {
+  if (draft.trim() === '') return null
+  const width = Number(draft)
+  return Number.isFinite(width) ? String(Math.max(180, Math.round(width))) : null
+}
 
 /** One property's card styling (YAZ-1206), keyed by canonical key under `view.cardStyle`. */
 type CardStyle = NonNullable<ViewDef['cardStyle']>[string]
@@ -346,7 +354,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
       {view.type === 'table' && (
         <>
           <p className="view-menu__label">Table</p>
-          <label className="view-table-settings">
+          <label className="view-settings-row">
             <span>Frozen columns</span>
             <select
               className="view-select"
@@ -367,6 +375,34 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
                 </option>
               ))}
             </select>
+          </label>
+        </>
+      )}
+      {view.type === 'board' && (
+        <>
+          <p className="view-menu__label">Board</p>
+          <label className="view-settings-row">
+            <span>Column width</span>
+            <span className="view-width-setting">
+              <TextField
+                className="view-input"
+                aria-label="Column width in pixels"
+                type="number"
+                inputMode="decimal"
+                min={180}
+                step={1}
+                value={String(cardWidth(view.cardSize))}
+                normalize={normalizeBoardWidth}
+                onCommit={(next) =>
+                  onUpdate((d) => {
+                    const active = d.views[viewIndex]
+                    if (Number(next) === 280) delete active.cardSize
+                    else active.cardSize = Number(next)
+                  })
+                }
+              />
+              <span>px</span>
+            </span>
           </label>
         </>
       )}
@@ -420,7 +456,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
       )}
       {/* The folder-page-level setting (YAZ-1104) — the saved START, through its own door; never a views write. */}
       <p className="view-menu__label">Page</p>
-      <label className="view-table-settings">
+      <label className="view-settings-row">
         <span>Default view</span>
         <select
           className="view-select"

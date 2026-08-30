@@ -378,6 +378,21 @@ describe('the default view: a saved START, while which view is ACTIVE stays sess
 // ---------- the adapter (🔒 D3) ----------
 
 describe('config edits are ONE settings write on the folder page', () => {
+  it('a Board column-width edit is one whole-key folder_page_settings write', async () => {
+    const el = mount(FUNNELS)
+    selectView(el, 'Board')
+    click(byLabel(el, 'Properties'))
+    const width = byLabel<HTMLInputElement>(el, 'Column width in pixels')
+    setValue(width, '400')
+    press(width, 'Enter')
+    await flush()
+
+    expect(write).toHaveBeenCalledExactlyOnceWith(FUNNELS, 'folder_page_settings', {
+      ...SETTINGS,
+      views: [...SETTINGS.views, { ...BOARD, cardSize: 400 }],
+    })
+  })
+
   it('a sort change goes back through the one door, whole-key, views verbatim', async () => {
     const el = mount(FUNNELS)
     selectView(el, 'Table')

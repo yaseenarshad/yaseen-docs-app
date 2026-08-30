@@ -39,6 +39,14 @@ function optionalRightPanel(raw: Record<string, unknown>): RightPanelIdentity | 
   return { open: value.open, width: value.width, items, expanded }
 }
 
+/** `sidebarCollapsed`: absent (untouched), or a boolean. */
+function optionalSidebarCollapsed(raw: Record<string, unknown>): boolean | undefined {
+  const v = raw.sidebarCollapsed
+  if (v === undefined) return undefined
+  if (typeof v !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'sidebarCollapsed' must be a boolean")
+  return v
+}
+
 /**
  * The `window.*` half of `window.yaseenDocs`. The caller is resolved through the window lookup
  * (`webContents.id` → window id) and answered from `AppState.windows`. `open` / `duplicate`
@@ -55,8 +63,8 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   }
 
   handleWithEvent(CH.windowIdentity, async (e): Promise<WindowIdentity> => {
-    const { id, root, file, tabs, rightPanel } = entryFor(e)
-    return { id, root, file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] } }
+    const { id, root, file, tabs, rightPanel, sidebarCollapsed } = entryFor(e)
+    return { id, root, file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed }
   })
 
   handleWithEvent(CH.windowSetIdentity, async (e, patch: unknown) => {
@@ -65,6 +73,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const file = optionalPath(patch, 'file')
     const tabs = optionalTabs(patch)
     const rightPanel = optionalRightPanel(patch)
+    const sidebarCollapsed = optionalSidebarCollapsed(patch)
     const entry = entryFor(e)
     // The tabs invariant holds on the entry AS WRITTEN (GRO-2232): the loader's repair rule,
     // applied to whichever of `file` / `tabs` the patch left untouched.
@@ -73,6 +82,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     store.upsertWindow({
       ...entry,
       ...(root !== undefined ? { root } : {}),
+      ...(sidebarCollapsed !== undefined ? { sidebarCollapsed } : {}),
       file: nextFile,
       tabs: nextTabs,
       rightPanel: normalizeRightPanel(rightPanel ?? entry.rightPanel, nextTabs),

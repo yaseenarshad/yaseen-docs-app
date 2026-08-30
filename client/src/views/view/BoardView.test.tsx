@@ -3,7 +3,8 @@
  * `type: board` (our schema extension) renders the engine's groups as columns — one column
  * per group with the shared header content (chevron, typed value, count, per-column
  * summaries), cards beneath (`file.name` title button + the other `order` properties as
- * label/value rows). Column width follows `cardSize` (small 220 / medium 280 / large 340).
+ * label/value rows). Column width follows numeric `cardSize`; legacy small/medium/large values
+ * remain readable as 220/280/340.
  * No `groupBy` → a centered hint whose button writes a sensible default group-by through
  * the file. Collapse persists per `<basePath>::<viewName>` through `storage` (mocked here),
  * never through `onChange`; search narrows cards and drops empty columns like the table.
@@ -17,6 +18,7 @@ import { type ParsedViews, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderPage } from '../testFolderPage'
 import { TEST_RECORDS } from '../testRecords'
+import { normalizeBoardWidth } from './PropertiesMenu'
 import { OPEN_DELAY_MS } from './PreviewCard'
 import viewsCss from '../views.css?inline'
 
@@ -191,11 +193,29 @@ function setValue(el: HTMLInputElement, value: string): void {
   draw()
 }
 
+function press(el: Element, key: string): void {
+  act(() => el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })))
+  draw()
+}
+
+function blur(el: Element): void {
+  act(() => {
+    ;(el as HTMLElement).focus()
+    ;(el as HTMLElement).blur()
+  })
+  draw()
+}
+
 const cols = (el: ParentNode): HTMLElement[] => [...el.querySelectorAll<HTMLElement>('.view-board__col')]
 const headerTexts = (el: ParentNode): string[] => cols(el).map((c) => q(c, '.view-group__value').textContent ?? '')
 const titles = (el: ParentNode): string[] => [...el.querySelectorAll('.view-board__title')].map((b) => b.textContent ?? '')
 const toggleOf = (el: ParentNode, label: string): HTMLElement => byLabel(el, `Toggle group ${label}`)
 const colWidth = (el: ParentNode): string => q<HTMLElement>(el, '.view-board').style.getPropertyValue('--view-board-col-w')
+const openProperties = (el: ParentNode): HTMLElement => {
+  click(byLabel(el, 'Properties'))
+  return q(el, '.view-popover')
+}
+const widthField = (el: ParentNode): HTMLInputElement => byLabel(el, 'Column width in pixels')
 const menuItems = (el: ParentNode): HTMLButtonElement[] => [
   ...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]'),
 ]
@@ -535,7 +555,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
 })
 
 describe('cardSize', () => {
-  it('column width follows cardSize: small 220, default medium 280, large 340', () => {
+  it('reads legacy cardSize values: small 220, absent 280, large 340', () => {
     const { el } = mount(BOARD_BASE)
     expect(colWidth(el)).toBe('280px')
     unmount()
@@ -544,6 +564,141 @@ describe('cardSize', () => {
     unmount()
     const large = mount(BOARD_BASE.replace('name: B', 'name: B\n    cardSize: large'))
     expect(colWidth(large.el)).toBe('340px')
+  })
+
+  it.each([
+    ['absent', BOARD_BASE, '280'],
+    ['numeric', BOARD_BASE.replace('name: B', 'name: B\n    cardSize: 400'), '400'],
+    ['legacy preset', BOARD_BASE.replace('name: B', 'name: B\n    cardSize: small'), '220'],
+    ['legacy numeric below the editor minimum', BOARD_BASE.replace('name: B', 'name: B\n    cardSize: 100'), '100'],
+  ])('shows the %s width without writing on open', (_label, text, expected) => {
+    const { el, onChange } = mount(text)
+    const input = widthField(openProperties(el))
+    expect(input.value).toBe(expected)
+    expect(input.type).toBe('number')
+    expect(input.min).toBe('180')
+    expect(input.step).toBe('1')
+    expect(input.parentElement?.textContent).toContain('px')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('offers Column width only for Board views', () => {
+    const { el } = mount(BOARD_BASE)
+    expect(openProperties(el).querySelector('[aria-label="Column width in pixels"]')).not.toBeNull()
+    unmount()
+    const cards = mount(BOARD_BASE.replace('type: board', 'type: cards'))
+    expect(openProperties(cards.el).querySelector('[aria-label="Column width in pixels"]')).toBeNull()
+  })
+
+  it('persists 400 once and every outer column keeps the shared rendered width', () => {
+    const { el, onChange, yaml } = mount(BOARD_BASE)
+    const input = widthField(openProperties(el))
+    setValue(input, '400')
+    press(input, 'Enter')
+    blur(input)
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(yaml()).toContain('cardSize: 400')
+    expect(colWidth(el)).toBe('400px')
+    expect(cols(el)).toHaveLength(4)
+    expect(cols(el).every((col) => col.parentElement?.style.getPropertyValue('--view-board-col-w') === '400px')).toBe(true)
+    expect(viewsCss).toMatch(/\.view-board__col\s*\{[^}]*width:\s*var\(--view-board-col-w,\s*280px\);/s)
+  })
+
+  it('persists a valid width exactly once when blur is the only commit gesture', () => {
+    const { el, onChange, yaml } = mount(BOARD_BASE)
+    const input = widthField(openProperties(el))
+    setValue(input, '400')
+    blur(input)
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(yaml()).toContain('cardSize: 400')
+  })
+
+  it('focus and blur leave an untouched legacy numeric width below 180 unchanged with no write', () => {
+    const { el, onChange, yaml } = mount(BOARD_BASE.replace('name: B', 'name: B\n    cardSize: 100'))
+    const input = widthField(openProperties(el))
+    expect(input.value).toBe('100')
+    blur(input)
+    expect(input.value).toBe('100')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(yaml()).toContain('cardSize: 100')
+  })
+
+  it('a changed draft still normalizes before comparison and visibly restores the canonical value', () => {
+    const { el, onChange } = mount(BOARD_BASE)
+    const input = widthField(openProperties(el))
+    setValue(input, '280.4')
+    press(input, 'Enter')
+    expect(input.value).toBe('280')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('the Board normalizer rejects an invalid draft directly', () => {
+    expect(normalizeBoardWidth('not-a-width')).toBeNull()
+  })
+
+  it('deletes cardSize when the normalized width is 280, and an unchanged 280 writes nothing', () => {
+    const seeded = mount(BOARD_BASE.replace('name: B', 'name: B\n    cardSize: 400'))
+    const seededInput = widthField(openProperties(seeded.el))
+    setValue(seededInput, '280')
+    press(seededInput, 'Enter')
+    expect(seeded.onChange).toHaveBeenCalledTimes(1)
+    expect(seeded.yaml()).not.toContain('cardSize')
+
+    unmount()
+    const absent = mount(BOARD_BASE)
+    const absentInput = widthField(openProperties(absent.el))
+    setValue(absentInput, '280')
+    press(absentInput, 'Enter')
+    expect(absent.onChange).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['rounds decimals', '250.6', '251', '251px'],
+    ['clamps below the minimum', '100', '180', '180px'],
+    ['keeps huge finite values without a maximum', '999999999', '999999999', '999999999px'],
+  ])('%s', (_label, draft, stored, rendered) => {
+    const { el, onChange, yaml } = mount(BOARD_BASE)
+    const input = widthField(openProperties(el))
+    expect(input.max).toBe('')
+    setValue(input, draft)
+    press(input, 'Enter')
+    expect(input.value).toBe(stored)
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(yaml()).toContain(`cardSize: ${stored}`)
+    expect(colWidth(el)).toBe(rendered)
+  })
+
+  it('restores empty, non-finite and escaped drafts without writing, then accepts a valid edit', () => {
+    const { el, onChange, yaml } = mount(BOARD_BASE)
+    const input = widthField(openProperties(el))
+
+    setValue(input, '')
+    blur(input)
+    expect(input.value).toBe('280')
+    expect(onChange).not.toHaveBeenCalled()
+
+    setValue(input, '1e9999')
+    blur(input)
+    expect(input.value).toBe('280')
+    expect(onChange).not.toHaveBeenCalled()
+
+    setValue(input, '500')
+    press(input, 'Escape')
+    expect(input.value).toBe('280')
+    expect(onChange).not.toHaveBeenCalled()
+
+    setValue(input, '400')
+    press(input, 'Enter')
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(yaml()).toContain('cardSize: 400')
+  })
+
+  it('nested boards use the same shared outer-column geometry', () => {
+    const { el } = mount(NESTED_BOARD.replace('name: B', 'name: B\n    cardSize: 400'), { records: NESTED_RECORDS })
+    expect(colWidth(el)).toBe('400px')
+    expect(cols(el)).toHaveLength(3)
+    expect(cols(el).every((col) => col.classList.contains('view-board__col'))).toBe(true)
+    expect(cols(el)[0].classList).toContain('view-board__col--nested')
   })
 })
 

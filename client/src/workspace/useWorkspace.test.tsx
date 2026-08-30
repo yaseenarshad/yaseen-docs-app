@@ -247,7 +247,7 @@ describe('tabsReducer', () => {
 })
 
 /** A fake `window.yaseenDocs` with just the surface storage touches (the storage.test.ts pattern). */
-type IdentityFixture = Omit<WindowIdentity, 'rightPanel'> & Partial<Pick<WindowIdentity, 'rightPanel'>>
+type IdentityFixture = Omit<WindowIdentity, 'rightPanel' | 'sidebarCollapsed'> & Partial<Pick<WindowIdentity, 'rightPanel' | 'sidebarCollapsed'>>
 
 function installBridge(app: AppState, identity: IdentityFixture) {
   const bridge = {
@@ -257,7 +257,11 @@ function installBridge(app: AppState, identity: IdentityFixture) {
       onChange: vi.fn(() => () => undefined),
     },
     window: {
-      identity: vi.fn(async (): Promise<WindowIdentity> => ({ ...identity, rightPanel: identity.rightPanel ?? defaultRightPanelIdentity() })),
+      identity: vi.fn(async (): Promise<WindowIdentity> => ({
+        ...identity,
+        rightPanel: identity.rightPanel ?? defaultRightPanelIdentity(),
+        sidebarCollapsed: identity.sidebarCollapsed ?? false,
+      })),
       setIdentity: vi.fn(async () => undefined),
     },
   }
@@ -279,20 +283,20 @@ describe('bootTabs (rules 12/15)', () => {
   }
 
   it('restores the stored tabs with the identity file active; only the active tab mounts', async () => {
-    installBridge(seeded, { id: 'w1', root: '/v', file: '/v/b.md', tabs: ['/v/a.md', '/v/b.md'] })
+    installBridge(seeded, { id: 'w1', root: '/v', file: '/v/b.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: false })
     await storage.init()
     expect(bootTabs('/v')).toEqual(state(['/v/a.md', '/v/b.md'], '/v/b.md'))
   })
 
   it('a pasted #hash wins as active and is PREPENDED when missing from the stored tabs', async () => {
-    installBridge(seeded, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    installBridge(seeded, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarCollapsed: false })
     await storage.init()
     history.replaceState(null, '', '#/v/pasted.md')
     expect(bootTabs('/v')).toEqual(state(['/v/pasted.md', '/v/a.md'], '/v/pasted.md'))
   })
 
   it('a fresh window falls back to the folder lastFile; a null root (Welcome) is empty', async () => {
-    installBridge(seeded, { id: 'w1', root: '/v', file: null, tabs: [] })
+    installBridge(seeded, { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
     await storage.init()
     expect(bootTabs('/v')).toEqual(state(['/v/last.md'], '/v/last.md'))
     expect(bootTabs(null)).toEqual(state([], null))
@@ -332,7 +336,7 @@ describe('useWorkspace legacy main-tab mirror', () => {
   }
 
   beforeEach(async () => {
-    bridge = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    bridge = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
     await storage.init()
     reactRoot = createRoot(document.createElement('div'))
     act(() => reactRoot?.render(<Probe root="/v" />))

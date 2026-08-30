@@ -18,6 +18,7 @@ import { useExternalRenames } from './links/useExternalRenames'
 import { basename } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { storage } from './lib/storage'
+import { ownsSidebarHotkey } from './lib/sidebarHotkey'
 import { attentionCopy, buildSetupPrompt } from './lib/syncAttention'
 import { resolveTheme, useSystemPrefersDark } from './lib/theme'
 import { fileHash } from './lib/urlHash'
@@ -72,11 +73,11 @@ export function App() {
     rightBack, rightForward, canRightBack, canRightForward, setRightOpen, setRightWidth,
   } = useWorkspace(root)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
+  const sidebarCollapsedRef = useRef(sidebarCollapsed)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
-  // The sidebar's active LENS (🔒 D4, YAZ-847): App-owned and globally persisted, for the same
-  // reason `sidebarCollapsed` is — the Sidebar is mounted `key={root}` and only while it is
-  // open, so sidebar-local view state would reset on every collapse/reopen and every root
-  // switch (the stale-mount lesson). One flag, `AppState.sidebarLens`; never a second one.
+  // The sidebar's active LENS (🔒 D4, YAZ-847): App-owned and globally persisted because the
+  // Sidebar is mounted `key={root}` and only while open; sidebar-local view state would reset on
+  // every collapse/reopen and root switch. One `AppState.sidebarLens`; never a second flag.
   const [sidebarLens, setSidebarLens] = useState(storage.getSidebarLens)
   const sidebarRevealId = useRef(0)
   const [sidebarRevealRequest, setSidebarRevealRequest] = useState<SidebarRevealRequest | null>(null)
@@ -118,12 +119,12 @@ export function App() {
   const [pendingSearchFocus, setPendingSearchFocus] = useState(false)
   const searchFocusHandled = useCallback(() => setPendingSearchFocus(false), [])
 
-  // Settings and the sidebar toggle are global (D9): a change made in another window lands here live.
+  // Settings, sidebar width and lens are global. Visibility is window identity and never follows
+  // another renderer's `state:changed` broadcast (YAZ-1280).
   useEffect(
     () =>
       storage.subscribe(() => {
         setSettings(storage.getSettings())
-        setSidebarCollapsed(storage.getSidebarCollapsed())
         setSidebarWidth(storage.getSidebarWidth())
         setSidebarLens(storage.getSidebarLens())
       }),
@@ -140,11 +141,22 @@ export function App() {
   const rightOverlay = rightPanel.open && windowWidth < visibleSidebarWidth + rightPanel.width + MAIN_WORKSPACE_MIN_W
 
   const toggleSidebar = useCallback(() => {
-    setSidebarCollapsed((collapsed) => {
-      storage.setSidebarCollapsed(!collapsed)
-      return !collapsed
-    })
+    const next = !sidebarCollapsedRef.current
+    sidebarCollapsedRef.current = next
+    storage.setSidebarCollapsed(next)
+    setSidebarCollapsed(next)
   }, [])
+
+  // Renderer bubble phase is deliberate: Milkdown and other focused tools get first ownership.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (!ownsSidebarHotkey(event)) return
+      event.preventDefault()
+      toggleSidebar()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [toggleSidebar])
 
   // Dragging past 60% of the minimum reads as "close it" rather than "make it tiny" — the
   // sidebar collapses and the remembered width stays whatever it was before the drag.
@@ -264,9 +276,8 @@ export function App() {
     if (!closeActive()) void window.yaseenDocs.window.closeSelf()
   }, [closeActive])
 
-  // ⌘K (D4, YAZ-804): un-collapse the sidebar when it is hidden — through `toggleSidebar`, since
-  // collapse state is GLOBAL across windows (D9, recorded on YAZ-800) and must be persisted the
-  // one way — then ask the sidebar to focus its search bar (it mounts with the flag already true).
+  // ⌘K (D4, YAZ-804): un-collapse this window through the one persisted toggle path, then ask
+  // the sidebar to focus its search bar (it mounts with the flag already true).
   const openSearch = useCallback(() => {
     if (sidebarCollapsed) toggleSidebar()
     setPendingSearchFocus(true)
@@ -283,7 +294,7 @@ export function App() {
 
   // File › Open Folder… / Open Recent (GRO-2161) reuse the same flows as the in-app buttons;
   // File › Close Tab and Window › Next/Previous Tab (GRO-2232) drive the tab model.
-  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openRoot, onSearch: openSearch, onCloseTab: closeTabOrWindow, onNextTab: nextTab, onPrevTab: prevTab })
+  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openRoot, onSearch: openSearch, onToggleSidebar: toggleSidebar, onCloseTab: closeTabOrWindow, onNextTab: nextTab, onPrevTab: prevTab })
 
   // Deep links (E1, GRO-2171): a routed link behaves like a sidebar click (Tabs rule 10) —
   // it activates the file's tab when already open, else opens it in the CURRENT tab;

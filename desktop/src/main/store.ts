@@ -46,7 +46,6 @@ import { atomicWrite } from './fs/fsUtils'
 export interface Store {
   get(): AppState
   setSettings(settings: SettingsState): void
-  setSidebarCollapsed(collapsed: boolean): void
   setSidebarWidth(width: number): void
   setSidebarLens(lens: SidebarLens): void
   pushRecent(path: string, now?: number): void
@@ -130,8 +129,9 @@ export const isSettings = (v: unknown): v is SettingsState => isRecord(v) && SET
 export const isWindowBounds = (v: unknown): v is WindowBounds =>
   isRecord(v) && isFiniteNumber(v.x) && isFiniteNumber(v.y) && isFiniteNumber(v.width) && isFiniteNumber(v.height)
 
-/** Core v1 shape; `tabs` (GRO-2232) is additive-within-v1 and repaired separately, so legacy entries still pass. */
-export const isWindowEntry = (v: unknown): v is WindowEntry =>
+/** Core v1 shape; additive window-identity fields are repaired separately. */
+type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { tabs?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown }
+const isStoredWindowEntry = (v: unknown): v is StoredWindowEntry =>
   isRecord(v) && typeof v.id === 'string' && isStringOrNull(v.root) && isStringOrNull(v.file) && isWindowBounds(v.bounds)
 
 /**
@@ -171,18 +171,19 @@ export function normalizeRightPanel(raw: unknown, tabs: readonly string[]): Righ
   }
 }
 
-function sanitizeWindows(raw: unknown): WindowEntry[] {
+function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean): WindowEntry[] {
   if (!Array.isArray(raw)) return []
   const seen = new Set<string>()
   const out: WindowEntry[] = []
   for (const w of raw) {
-    if (!isWindowEntry(w) || seen.has(w.id)) continue
+    if (!isStoredWindowEntry(w) || seen.has(w.id)) continue
     seen.add(w.id)
     // Junk `tabs` elements (non-strings, relative paths) drop; a missing/invalid list repairs from `file`.
     const rawTabs: unknown = (w as { tabs?: unknown }).tabs
     const tabs = normalizeTabs(Array.isArray(rawTabs) ? rawTabs.filter((t): t is string => typeof t === 'string' && isAbsolute(t)) : [], w.file)
     const rightPanel = normalizeRightPanel((w as { rightPanel?: unknown }).rightPanel, tabs)
-    out.push({ id: w.id, root: w.root, file: w.file, tabs, rightPanel, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
+    const sidebarCollapsed = typeof w.sidebarCollapsed === 'boolean' ? w.sidebarCollapsed : legacySidebarCollapsed
+    out.push({ id: w.id, root: w.root, file: w.file, tabs, rightPanel, sidebarCollapsed, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
   }
   return out
 }
@@ -222,15 +223,17 @@ function sanitizeFolders(raw: unknown): Record<string, FolderState> {
 /** Null when the document is not a version-1 state object at all (→ treated as corrupt). */
 function sanitizeState(raw: unknown): AppState | null {
   if (!isRecord(raw) || raw.version !== 1) return null
+  // YAZ-1280 migration: a v1 file's retired global value seeds only windows that do not yet
+  // have their own value. The returned state omits the old key, so the next write completes it.
+  const legacySidebarCollapsed = raw.sidebarCollapsed === true
   return {
     version: 1,
     settings: sanitizeSettings(raw.settings),
-    sidebarCollapsed: raw.sidebarCollapsed === true,
     sidebarWidth: isFiniteNumber(raw.sidebarWidth) ? clampSidebarWidth(raw.sidebarWidth) : SIDEBAR_DEFAULT_W,
     // A pre-847 file has no lens at all; missing or junk both read as the default (YAZ-847).
     sidebarLens: isSidebarLens(raw.sidebarLens) ? raw.sidebarLens : 'topics',
     recents: isRecentRoots(raw.recents) ? raw.recents.slice(0, MAX_RECENT_ROOTS) : [],
-    windows: sanitizeWindows(raw.windows),
+    windows: sanitizeWindows(raw.windows, legacySidebarCollapsed),
     folders: sanitizeFolders(raw.folders),
   }
 }
@@ -305,10 +308,6 @@ export function createStore(filePath: string): Store {
 
     setSettings(settings) {
       commit({ ...state, settings: sanitizeSettings(settings) })
-    },
-
-    setSidebarCollapsed(collapsed) {
-      commit({ ...state, sidebarCollapsed: collapsed })
     },
 
     setSidebarWidth(width) {
