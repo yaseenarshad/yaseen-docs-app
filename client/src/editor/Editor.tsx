@@ -34,6 +34,7 @@ import { storage } from '../lib/storage'
 import { HOME_LINK } from '../sidebar/ensureHome'
 import { TextViewer } from '../viewers/TextViewer'
 import { PdfViewer } from '../viewers/PdfViewer'
+import { ImageViewer } from '../viewers/ImageViewer'
 
 interface EditorProps {
   /** Open root folder; fold state is persisted per root + file. */
@@ -101,6 +102,13 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
     return (
       <section className="editor">
         <PdfViewer path={path} watch={watch} />
+      </section>
+    )
+  }
+  if (kind === 'image') {
+    return (
+      <section className="editor">
+        <ImageViewer key={path} path={path} watch={watch} />
       </section>
     )
   }

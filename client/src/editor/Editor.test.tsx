@@ -21,7 +21,7 @@ import * as folderMigration from '../views/migrateFolderBody'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { readFile: vi.fn(), readPdf: vi.fn(), writeFile: vi.fn(), openLink: vi.fn(), index: vi.fn(), properties: { get: vi.fn(), onChange: vi.fn() } },
+  api: { readFile: vi.fn(), readPdf: vi.fn(), readImage: vi.fn(), writeFile: vi.fn(), openLink: vi.fn(), index: vi.fn(), properties: { get: vi.fn(), onChange: vi.fn() } },
 }))
 
 vi.mock('./createCrepe', () => {
@@ -66,6 +66,7 @@ interface FakeCrepe {
 
 const readFile = vi.mocked(api.readFile)
 const readPdf = vi.mocked(api.readPdf)
+const readImage = vi.mocked(api.readImage)
 const writeFile = vi.mocked(api.writeFile)
 const openLink = vi.mocked(api.openLink)
 const createCrepeMock = vi.mocked(createCrepe)
@@ -149,6 +150,11 @@ function diskHas(content: string, mtime: number): void {
 let flushListeners: Array<() => Promise<void> | void> = []
 beforeEach(() => {
   vi.useFakeTimers()
+  Object.defineProperty(globalThis, 'createImageBitmap', {
+    configurable: true,
+    value: vi.fn(async () => ({ width: 16, height: 9, close: vi.fn() })),
+  })
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: vi.fn(), clearRect: vi.fn() } as never)
   Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:editor-pdf') })
   Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
   writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 99, size: body.content.length }))
@@ -177,6 +183,7 @@ afterEach(() => {
   flushListeners = []
   delete (URL as unknown as Record<string, unknown>).createObjectURL
   delete (URL as unknown as Record<string, unknown>).revokeObjectURL
+  delete (globalThis as unknown as Record<string, unknown>).createImageBitmap
   delete (window as unknown as Record<string, unknown>).yaseenDocs
   // reset (not clear): a failing test must not leak queued mockResolvedValueOnce reads into the next mount.
   vi.resetAllMocks()
@@ -228,6 +235,21 @@ describe('Editor file-kind dispatch (YAZ-1299)', () => {
     expect(writeFile).not.toHaveBeenCalled()
     expect(flushListeners).toHaveLength(0)
     expect(el.querySelector('iframe.pdf-viewer__frame')?.getAttribute('title')).toBe('report.PDF')
+  })
+
+  it('routes mixed-case raster images through the exact binary viewer without mounting the Markdown stack', async () => {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
+    readImage.mockResolvedValueOnce({ path: '/vault/photo.PNG', data: bytes, mime: 'image/png', mtime: 1, size: bytes.byteLength })
+    const el = await mount('not text', 1, { path: '/vault/photo.PNG' })
+
+    expect(readFile).not.toHaveBeenCalled()
+    expect(readPdf).not.toHaveBeenCalled()
+    expect(readImage).toHaveBeenCalledExactlyOnceWith('/vault/photo.PNG')
+    expect(createCrepeMock).not.toHaveBeenCalled()
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(flushListeners).toHaveLength(0)
+    expect(el.querySelector('canvas.image-viewer__canvas')).not.toBeNull()
+    expect(el.querySelector('.page-title, .frontmatter-panel, .folder-page-contents, .backlinks')).toBeNull()
   })
 })
 
