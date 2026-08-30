@@ -381,7 +381,7 @@ export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): Workspa
     case 'open-right-background':
       return openRight(s, a.path, false, a.at)
     case 'transfer-main-to-right':
-      return openRight(s, a.path, true, a.at)
+      return s.tabs.includes(a.path) ? openRight(s, a.path, true, a.at) : s
     case 'transfer-right-to-main': {
       if (!s.rightPanel.items.includes(a.path)) return s
       const without = closeRight(s, a.path)

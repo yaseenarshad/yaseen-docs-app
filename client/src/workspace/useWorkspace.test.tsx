@@ -523,6 +523,24 @@ describe('workspaceReducer right-panel ownership', () => {
     expectInvariants(next)
   })
 
+  it('transfers main to an exact right slot, reorders right locally, and rejects stale sources', () => {
+    const start = workspace({
+      rightPanel: { open: true, width: 440, items: ['/v/c.md', '/v/d.md'], expanded: '/v/c.md' },
+      rightMounted: ['/v/c.md'],
+    })
+    const transferred = workspaceReducer(start, { type: 'transfer-main-to-right', path: '/v/b.md', at: 1 })
+    expect(transferred.rightPanel.items).toEqual(['/v/c.md', '/v/b.md', '/v/d.md'])
+    expect(transferred.tabs).toEqual(['/v/a.md'])
+    expect(workspaceReducer(transferred, { type: 'move-right', from: 0, to: 2 }).rightPanel.items).toEqual([
+      '/v/b.md',
+      '/v/d.md',
+      '/v/c.md',
+    ])
+    expect(workspaceReducer(start, { type: 'transfer-main-to-right', path: '/v/stale.md', at: 0 })).toBe(start)
+    expect(workspaceReducer(start, { type: 'transfer-right-to-main', path: '/v/stale.md', at: 0 })).toBe(start)
+    expectInvariants(transferred)
+  })
+
   it('navigates inside one right slot, records local history, then walks back and forward', () => {
     const start = workspace({
       rightPanel: { open: true, width: 440, items: ['/v/c.md'], expanded: '/v/c.md' },

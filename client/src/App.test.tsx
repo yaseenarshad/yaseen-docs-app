@@ -741,6 +741,35 @@ describe('App right-panel shell (YAZ-1272)', () => {
     expect(el.querySelector('[data-testid="right-layer-/v/c.md"]')?.classList.contains('right-panel__editor-layer--hidden')).toBe(true)
     expect(el.querySelector('[data-testid="right-layer-/v/d.md"]')?.classList.contains('right-panel__editor-layer--hidden')).toBe(false)
   })
+
+  it('wires the keyboard-equivalent move commands through one-owner workspace transfers', async () => {
+    const { el, bridge } = await mount(defaultAppState(), {
+      id: 'w1',
+      root: '/v',
+      file: '/v/a.md',
+      tabs: ['/v/a.md', '/v/b.md'],
+      rightPanel: { open: true, width: 440, items: ['/v/c.md'], expanded: '/v/c.md' },
+    })
+    const tabA = el.querySelector<HTMLElement>('[role="tab"][title="/v/a.md"]')?.closest<HTMLElement>('.tabbar__tab')
+    act(() => void tabA?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    const moveToRight = [...el.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Move to right panel')
+    act(() => moveToRight?.click())
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({
+      tabs: ['/v/b.md'],
+      file: '/v/b.md',
+      rightPanel: { open: true, width: 440, items: ['/v/c.md', '/v/a.md'], expanded: '/v/a.md' },
+    })
+
+    const rightC = [...el.querySelectorAll<HTMLElement>('.right-panel__item')].find((item) => item.textContent?.includes('c'))
+    act(() => void rightC?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    const moveToMain = [...el.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Move to main tabs')
+    act(() => moveToMain?.click())
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({
+      tabs: ['/v/b.md', '/v/c.md'],
+      file: '/v/c.md',
+      rightPanel: { open: true, width: 440, items: ['/v/a.md'], expanded: '/v/a.md' },
+    })
+  })
 })
 
 describe('App external-rename banner (Links E1c, GRO-2242)', () => {

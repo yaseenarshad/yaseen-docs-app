@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { api, BridgeRequestError } from '../api'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { basename, stripExt } from '../lib/paths'
+import { readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import './tabs.css'
 
 export interface TabBarProps {
@@ -13,6 +14,10 @@ export interface TabBarProps {
   onClose: (path: string) => void
   /** Drag-to-reorder (I3, GRO-2235): the tab at `from` lands at final index `to`. */
   onMove: (from: number, to: number) => void
+  /** A validated page dropped from the right panel at a tab insertion slot. */
+  onDropPage?: (page: PageDrag, at: number) => void
+  /** Context-menu equivalent of dragging this tab into the right panel. */
+  onMoveToRight?: (path: string) => void
   /** History (YAZ-721): the active tab's own back/forward stack has somewhere to go. */
   canBack: boolean
   canForward: boolean
@@ -47,10 +52,11 @@ const Chevron = ({ d }: { d: string }) => (
  * insertion indicator; the strip scrolls when full and keeps the ACTIVE tab in view. Left of
  * the strip sit the ◀ ▶ history buttons (YAZ-721), disabled when the active tab's stack has
  * nowhere to go — buttons only, per LOCKED ruling D2: no shortcut, no menu item.
- * Presentational only — all state changes go through the `useTabs` callbacks.
+ * Presentational only — all durable state changes go through workspace callbacks.
  */
-export function TabBar({ tabs, active, onActivate, onClose, onMove, canBack, canForward, onBack, onForward, onShowInSidebar, onNotice }: TabBarProps) {
+export function TabBar({ tabs, active, onActivate, onClose, onMove, onDropPage, onMoveToRight, canBack, canForward, onBack, onForward, onShowInSidebar, onNotice }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
+  const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
   // and since YAZ-963 that row's OS actions too (Reveal in Finder, Open in VS Code).
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
@@ -61,6 +67,21 @@ export function TabBar({ tabs, active, onActivate, onClose, onMove, canBack, can
   useEffect(() => {
     activeRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
   }, [active])
+  useEffect(() => {
+    if (externalOver === null) return
+    const clear = () => setExternalOver(null)
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') clear()
+    }
+    window.addEventListener('dragend', clear)
+    window.addEventListener('drop', clear)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('dragend', clear)
+      window.removeEventListener('drop', clear)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [externalOver])
 
   /** The insertion slot a pointer at `clientX` over tab `i` means: before (i) or after (i+1) it. */
   const insertionAt = (e: DragEvent, i: number): number => {
@@ -74,6 +95,20 @@ export function TabBar({ tabs, active, onActivate, onClose, onMove, canBack, can
     // The slot is an index in the WITH-dragged-tab list; past the grab point it shifts one left.
     const to = insertion > drag.from ? insertion - 1 : insertion
     if (to !== drag.from) onMove(drag.from, to)
+  }
+
+  const externalPage = (event: DragEvent): PageDrag | null => {
+    if (drag !== null || onDropPage === undefined || event.dataTransfer === null) return null
+    const page = readPageDrag(event.dataTransfer)
+    return page?.owner === 'right' && !tabs.includes(page.path) ? page : null
+  }
+
+  const dropExternal = (event: DragEvent, insertion: number): void => {
+    const page = externalPage(event)
+    setExternalOver(null)
+    if (page === null) return
+    event.preventDefault()
+    onDropPage?.(page, insertion)
   }
 
   /**
@@ -101,19 +136,31 @@ export function TabBar({ tabs, active, onActivate, onClose, onMove, canBack, can
         </button>
       </div>
       <div
-        className="tabbar"
+        className={`tabbar${externalOver === 0 && tabs.length === 0 ? ' tabbar--drop-empty' : ''}`}
         role="tablist"
         aria-label="Open files"
         onDragOver={(e) => {
           // The empty strip tail: only direct hits — tab hovers are handled (and marked) per tab.
-          if (drag === null || e.target !== e.currentTarget) return
+          if (e.target !== e.currentTarget) return
+          if (drag !== null) {
+            e.preventDefault()
+            if (drag.over !== tabs.length) setDrag({ ...drag, over: tabs.length })
+            return
+          }
+          if (externalPage(e) === null) return
           e.preventDefault()
-          if (drag.over !== tabs.length) setDrag({ ...drag, over: tabs.length })
+          if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+          if (externalOver !== tabs.length) setExternalOver(tabs.length)
         }}
         onDrop={(e) => {
-          if (drag === null || e.target !== e.currentTarget) return
-          e.preventDefault()
-          drop(tabs.length)
+          if (e.target !== e.currentTarget) return
+          if (drag !== null) {
+            e.preventDefault()
+            drop(tabs.length)
+          } else dropExternal(e, tabs.length)
+        }}
+        onDragLeave={(e) => {
+          if (e.target === e.currentTarget && !e.currentTarget.contains(e.relatedTarget as Node | null)) setExternalOver(null)
         }}
       >
         {tabs.map((path, i) => {
@@ -124,8 +171,9 @@ export function TabBar({ tabs, active, onActivate, onClose, onMove, canBack, can
           if (drag !== null && drag.from === i) cls.push('tabbar__tab--dragging')
           // The insertion indicator: an accent edge on the tab the drop would land before —
           // or after the LAST tab for the end slot.
-          if (drag?.over === i) cls.push('tabbar__tab--insert-before')
-          if (drag !== null && drag.over === tabs.length && i === tabs.length - 1) cls.push('tabbar__tab--insert-after')
+          const over = drag?.over ?? externalOver
+          if (over === i) cls.push('tabbar__tab--insert-before')
+          if (over === tabs.length && i === tabs.length - 1) cls.push('tabbar__tab--insert-after')
           return (
             <div
               key={path}
@@ -133,22 +181,33 @@ export function TabBar({ tabs, active, onActivate, onClose, onMove, canBack, can
               className={cls.join(' ')}
               draggable
               onDragStart={(e) => {
-                e.dataTransfer?.setData('text/plain', path)
-                if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+                if (e.dataTransfer) writePageDrag(e.dataTransfer, { path, owner: 'main' })
+                setExternalOver(null)
                 setDrag({ from: i, over: null })
               }}
-              onDragEnd={() => setDrag(null)}
+              onDragEnd={() => {
+                setDrag(null)
+                setExternalOver(null)
+              }}
               onDragOver={(e) => {
-                if (drag === null) return
+                const over = insertionAt(e, i)
+                if (drag !== null) {
+                  e.preventDefault()
+                  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+                  if (drag.over !== over) setDrag({ ...drag, over })
+                  return
+                }
+                if (externalPage(e) === null) return
                 e.preventDefault()
                 if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-                const over = insertionAt(e, i)
-                if (drag.over !== over) setDrag({ ...drag, over })
+                if (externalOver !== over) setExternalOver(over)
               }}
               onDrop={(e) => {
-                if (drag === null) return
-                e.preventDefault()
-                drop(insertionAt(e, i))
+                const at = insertionAt(e, i)
+                if (drag !== null) {
+                  e.preventDefault()
+                  drop(at)
+                } else dropExternal(e, at)
               }}
               onContextMenu={(e) => {
                 e.preventDefault()
@@ -178,6 +237,19 @@ export function TabBar({ tabs, active, onActivate, onClose, onMove, canBack, can
       </div>
       {menu !== null && (
         <ContextMenuSurface x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
+          {onMoveToRight !== undefined && (
+            <button
+              type="button"
+              className="ctx-menu__item"
+              role="menuitem"
+              onClick={() => {
+                onMoveToRight(menu.path)
+                setMenu(null)
+              }}
+            >
+              Move to right panel
+            </button>
+          )}
           <button
             type="button"
             className="ctx-menu__item"

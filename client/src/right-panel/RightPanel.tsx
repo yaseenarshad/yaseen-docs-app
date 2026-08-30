@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { RIGHT_PANEL_MAX_W, RIGHT_PANEL_MIN_W } from '@shared/types'
+import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { basename, stripExt } from '../lib/paths'
+import { readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import './right-panel.css'
 
 export interface RightPanelProps {
@@ -16,6 +18,8 @@ export interface RightPanelProps {
   onClose(path: string): void
   onHide(): void
   onResizeCommit(width: number): void
+  onDropPage?: (page: PageDrag, at: number) => void
+  onMoveToMain?: (path: string) => void
   children?: ReactNode
 }
 
@@ -29,14 +33,34 @@ const Chevron = ({ d }: { d: string }) => (
   </svg>
 )
 
-export function RightPanel({ items, expanded, width, overlay, canBack, canForward, onBack, onForward, onToggle, onClose, onHide, onResizeCommit, children }: RightPanelProps) {
+export function RightPanel({ items, expanded, width, overlay, canBack, canForward, onBack, onForward, onToggle, onClose, onHide, onResizeCommit, onDropPage, onMoveToMain, children }: RightPanelProps) {
   const [previewWidth, setPreviewWidth] = useState(width)
+  const [dropAt, setDropAt] = useState<number | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
   const headerRefs = useRef(new Map<string, HTMLButtonElement>())
   const hideRef = useRef<HTMLButtonElement | null>(null)
   const resizeCleanup = useRef<(() => void) | null>(null)
 
   useEffect(() => setPreviewWidth(width), [width])
   useEffect(() => () => resizeCleanup.current?.(), [])
+  useEffect(() => {
+    if (menu !== null && !items.includes(menu.path)) setMenu(null)
+  }, [items, menu])
+  useEffect(() => {
+    if (dropAt === null) return
+    const clear = () => setDropAt(null)
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') clear()
+    }
+    window.addEventListener('dragend', clear)
+    window.addEventListener('drop', clear)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('dragend', clear)
+      window.removeEventListener('drop', clear)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [dropAt])
 
   const startResize = (event: ReactMouseEvent): void => {
     event.preventDefault()
@@ -87,6 +111,35 @@ export function RightPanel({ items, expanded, width, overlay, canBack, canForwar
     })
   }
 
+  const insertionAt = (event: DragEvent, index: number): number => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    return event.clientY < rect.top + rect.height / 2 ? index : index + 1
+  }
+
+  const pageFrom = (event: DragEvent): PageDrag | null => {
+    if (onDropPage === undefined || event.dataTransfer === null) return null
+    const page = readPageDrag(event.dataTransfer)
+    if (page === null) return null
+    if (page.owner === 'main' && items.includes(page.path)) return null
+    if (page.owner === 'right' && !items.includes(page.path)) return null
+    return page
+  }
+
+  const hoverDrop = (event: DragEvent, at: number): void => {
+    if (pageFrom(event) === null) return
+    event.preventDefault()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+    if (dropAt !== at) setDropAt(at)
+  }
+
+  const dropPage = (event: DragEvent, at: number): void => {
+    const page = pageFrom(event)
+    setDropAt(null)
+    if (page === null) return
+    event.preventDefault()
+    onDropPage?.(page, at)
+  }
+
   return (
     <aside
       className={`right-panel${overlay ? ' right-panel--overlay' : ''}`}
@@ -124,12 +177,44 @@ export function RightPanel({ items, expanded, width, overlay, canBack, canForwar
           <Chevron d="m11 4-4 4 4 4" />
         </button>
       </div>
-      <ul className="right-panel__headers" aria-label="Open pages in right panel">
+      <ul
+        className={`right-panel__headers${dropAt === items.length && items.length === 0 ? ' right-panel__headers--drop-empty' : ''}`}
+        aria-label="Open pages in right panel"
+        onDragOver={(event) => {
+          if (event.target === event.currentTarget) hoverDrop(event, items.length)
+        }}
+        onDrop={(event) => {
+          if (event.target === event.currentTarget) dropPage(event, items.length)
+        }}
+        onDragLeave={(event) => {
+          if (event.target === event.currentTarget && !event.currentTarget.contains(event.relatedTarget as Node | null)) setDropAt(null)
+        }}
+      >
         {items.map((path, index) => {
           const label = stripExt(basename(path))
           const isExpanded = path === expanded
+          const cls = ['right-panel__item']
+          if (isExpanded) cls.push('right-panel__item--expanded')
+          if (dropAt === index) cls.push('right-panel__item--insert-before')
+          if (dropAt === items.length && index === items.length - 1) cls.push('right-panel__item--insert-after')
           return (
-            <li key={path} className={`right-panel__item${isExpanded ? ' right-panel__item--expanded' : ''}`}>
+            <li
+              key={path}
+              className={cls.join(' ')}
+              draggable
+              onDragStart={(event) => {
+                if (event.dataTransfer) writePageDrag(event.dataTransfer, { path, owner: 'right' })
+                setDropAt(null)
+              }}
+              onDragEnd={() => setDropAt(null)}
+              onDragOver={(event) => hoverDrop(event, insertionAt(event, index))}
+              onDrop={(event) => dropPage(event, insertionAt(event, index))}
+              onContextMenu={(event) => {
+                if (onMoveToMain === undefined) return
+                event.preventDefault()
+                setMenu({ x: event.clientX, y: event.clientY, path })
+              }}
+            >
               <button
                 ref={(node) => {
                   if (node === null) headerRefs.current.delete(path)
@@ -154,6 +239,21 @@ export function RightPanel({ items, expanded, width, overlay, canBack, canForwar
       <div className="right-panel__viewer">
         {items.length === 0 ? <p className="right-panel__empty">Open a page in the right panel</p> : children}
       </div>
+      {menu !== null && (
+        <ContextMenuSurface x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
+          <button
+            type="button"
+            className="ctx-menu__item"
+            role="menuitem"
+            onClick={() => {
+              onMoveToMain?.(menu.path)
+              setMenu(null)
+            }}
+          >
+            Move to main tabs
+          </button>
+        </ContextMenuSurface>
+      )}
     </aside>
   )
 }

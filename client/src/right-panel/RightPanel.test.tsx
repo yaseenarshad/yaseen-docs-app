@@ -2,6 +2,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RightPanel, type RightPanelProps } from './RightPanel'
+import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -119,5 +120,65 @@ describe('RightPanel', () => {
     act(() => panel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     expect(overlay.onHide).toHaveBeenCalledOnce()
     expect(el.textContent).toContain('Open a page in the right panel')
+  })
+
+  it('writes private right-owner drag data and dispatches validated main/right drops at exact slots', () => {
+    const onDropPage = vi.fn()
+    const props = { ...base(), onDropPage }
+    const el = mount(props)
+    const items = [...el.querySelectorAll<HTMLElement>('.right-panel__item')]
+    const writeData = {
+      types: [] as string[],
+      effectAllowed: 'none',
+      setData: vi.fn(),
+      getData: vi.fn(() => ''),
+    } as unknown as DataTransfer
+    const start = new MouseEvent('dragstart', { bubbles: true, cancelable: true })
+    Object.defineProperty(start, 'dataTransfer', { value: writeData })
+    act(() => void items[0].dispatchEvent(start))
+    expect(writeData.setData).toHaveBeenCalledExactlyOnceWith(
+      WORKSPACE_PAGE_MIME,
+      JSON.stringify({ path: '/v/Alpha.md', owner: 'right' }),
+    )
+
+    const fireData = (target: Element, type: string, owner: 'main' | 'right', clientY = 0): MouseEvent => {
+      const data = {
+        types: [WORKSPACE_PAGE_MIME],
+        effectAllowed: 'move',
+        dropEffect: 'none',
+        getData: vi.fn(() => JSON.stringify({ path: owner === 'main' ? '/v/Main.md' : '/v/Alpha.md', owner })),
+        setData: vi.fn(),
+      } as unknown as DataTransfer
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientY })
+      Object.defineProperty(event, 'dataTransfer', { value: data })
+      act(() => void target.dispatchEvent(event))
+      return event
+    }
+    expect(fireData(items[1], 'dragover', 'main', -5).defaultPrevented).toBe(true)
+    expect(items[1].classList.contains('right-panel__item--insert-before')).toBe(true)
+    fireData(items[1], 'drop', 'main', -5)
+    expect(onDropPage).toHaveBeenLastCalledWith({ path: '/v/Main.md', owner: 'main' }, 1)
+
+    fireData(items[0], 'dragover', 'main', -5)
+    act(() => void window.dispatchEvent(new Event('dragend')))
+    expect(el.querySelector('.right-panel__item--insert-before')).toBeNull()
+    expect(onDropPage).toHaveBeenCalledTimes(1)
+
+    fireData(el.querySelector('.right-panel__headers')!, 'dragover', 'right')
+    expect(items[1].classList.contains('right-panel__item--insert-after')).toBe(true)
+    fireData(el.querySelector('.right-panel__headers')!, 'drop', 'right')
+    expect(onDropPage).toHaveBeenLastCalledWith({ path: '/v/Alpha.md', owner: 'right' }, 2)
+    expect(onDropPage).toHaveBeenCalledTimes(2)
+  })
+
+  it('moves a right header back to main tabs through its exact-path context action', () => {
+    const onMoveToMain = vi.fn()
+    const el = mount({ ...base(), onMoveToMain })
+    const beta = [...el.querySelectorAll<HTMLElement>('.right-panel__item')][1]
+    act(() => void beta.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 30 })))
+    const move = [...el.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Move to main tabs')
+    act(() => move?.click())
+    expect(onMoveToMain).toHaveBeenCalledExactlyOnceWith('/v/Beta.md')
+    expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 })

@@ -28,6 +28,7 @@ import { Sidebar, SidebarPanelIcon } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
 import { RightPanel } from './right-panel/RightPanel'
+import type { PageDrag } from './workspace/pageDrag'
 import { useWorkspace } from './workspace/useWorkspace'
 import { Welcome } from './Welcome'
 
@@ -49,6 +50,7 @@ export function App() {
     closeActive, next: nextTab, prev: prevTab, back, forward, canBack, canForward, reset: resetTabs,
     renamePath: renameTabPath, renameDirPath: renameDirTabs, deletePath: deleteTabPath, deleteDirPath: deleteDirTabs,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
+    moveRight, transferMainToRight, transferRightToMain,
     rightBack, rightForward, canRightBack, canRightForward, setRightOpen, setRightWidth,
   } = useWorkspace(root)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
@@ -469,6 +471,19 @@ export function App() {
     onSyncNow: githubSync.syncNow,
   }
 
+  const dropOnMain = (page: PageDrag, at: number): void => {
+    if (page.owner === 'right') transferRightToMain(page.path, at)
+  }
+  const dropOnRight = (page: PageDrag, at: number): void => {
+    if (page.owner === 'main') {
+      transferMainToRight(page.path, at)
+      return
+    }
+    const from = rightPanel.items.indexOf(page.path)
+    if (from === -1) return
+    moveRight(from, at > from ? at - 1 : at)
+  }
+
   return (
     <div className="app" style={settingsVars} data-threading={settings.bulletThreading ? 'on' : 'off'} data-content-width={settings.contentWidth}>
       {notice !== null && (
@@ -561,7 +576,21 @@ export function App() {
         <div className="workspace">
           <WikilinkIndexBridge root={root} watch={watch} source={wikilinks} candidates={wikilinkCandidates} onSnapshot={onIndexSnapshot} />
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
-          <TabBar tabs={tabs} active={file} onActivate={activate} onClose={closeTab} onMove={moveTab} canBack={canBack} canForward={canForward} onBack={back} onForward={forward} onShowInSidebar={showInSidebar} onNotice={setNotice} />
+          <TabBar
+            tabs={tabs}
+            active={file}
+            onActivate={activate}
+            onClose={closeTab}
+            onMove={moveTab}
+            onDropPage={dropOnMain}
+            onMoveToRight={(path) => transferMainToRight(path, rightPanel.items.length)}
+            canBack={canBack}
+            canForward={canForward}
+            onBack={back}
+            onForward={forward}
+            onShowInSidebar={showInSidebar}
+            onNotice={setNotice}
+          />
           <div className="tabstack">
             {mounted.length === 0 && editorCommon !== null && <Editor {...editorCommon} path={null} onOpenFile={openCurrent} onOpenFileBackground={openBackground} />}
             {mounted.map((path) => (
@@ -590,6 +619,8 @@ export function App() {
           onClose={closeRight}
           onHide={() => setRightOpen(false)}
           onResizeCommit={setRightWidth}
+          onDropPage={dropOnRight}
+          onMoveToMain={(path) => transferRightToMain(path, tabs.length)}
         >
           {editorCommon !== null && (
             <div className="right-panel__editor-stack">
