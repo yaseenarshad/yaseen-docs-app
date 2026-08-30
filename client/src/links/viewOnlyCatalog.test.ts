@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
 import { buildViewOnlyCatalog, buildViewOnlyCatalogFromEntries } from './viewOnlyCatalog'
 
-const file = (path: string, kind: 'markdown' | 'text' | 'pdf'): TreeNode => ({
+const file = (path: string, kind: 'markdown' | 'text' | 'pdf' | 'image'): TreeNode => ({
   type: 'file',
   name: path.slice(path.lastIndexOf('/') + 1),
   path,
@@ -15,6 +15,7 @@ describe('view-only catalog (YAZ-1310)', () => {
   const tree: TreeNode[] = [
     file('/vault/Guide.md', 'markdown'),
     file('/vault/data.json', 'text'),
+    file('/vault/photo.PNG', 'image'),
     { type: 'dir', name: 'deep', path: '/vault/deep', children: [
       file('/vault/deep/data.JSON', 'text'),
       file('/vault/deep/tool.PY', 'text'),
@@ -24,13 +25,14 @@ describe('view-only catalog (YAZ-1310)', () => {
     { type: 'dir', name: 'z', path: '/vault/z', children: [file('/vault/z/data.json', 'text')] },
   ]
 
-  it('flattens only text/PDF nodes in deterministic path order', () => {
+  it('flattens every non-Markdown viewer kind in deterministic path order', () => {
     expect(buildViewOnlyCatalog('/vault', tree).entries).toEqual([
       { path: '/vault/data.json', name: 'data.json', kind: 'text' },
       { path: '/vault/deep/data.JSON', name: 'data.JSON', kind: 'text' },
       { path: '/vault/deep/nested/Outbound Lead Qualifier.json', name: 'Outbound Lead Qualifier.json', kind: 'text' },
       { path: '/vault/deep/report.PDF', name: 'report.PDF', kind: 'pdf' },
       { path: '/vault/deep/tool.PY', name: 'tool.PY', kind: 'text' },
+      { path: '/vault/photo.PNG', name: 'photo.PNG', kind: 'image' },
       { path: '/vault/z/data.json', name: 'data.json', kind: 'text' },
     ])
   })
@@ -41,6 +43,7 @@ describe('view-only catalog (YAZ-1310)', () => {
     expect(catalog.resolve('deep/TOOL.PY')).toBeNull() // pathed targets are exact
     expect(catalog.resolve('REPORT.pdf')).toBe('/vault/deep/report.PDF')
     expect(catalog.resolve('Outbound Lead Qualifier.JSON')).toBe('/vault/deep/nested/Outbound Lead Qualifier.json')
+    expect(catalog.resolve('PHOTO.png')).toBe('/vault/photo.PNG')
     expect(catalog.resolve('Guide.md')).toBeNull()
   })
 
@@ -58,6 +61,7 @@ describe('view-only catalog (YAZ-1310)', () => {
       ['Outbound Lead Qualifier.json', '/vault/deep/nested/Outbound Lead Qualifier.json'],
       ['report.PDF', '/vault/deep/report.PDF'],
       ['tool.PY', '/vault/deep/tool.PY'],
+      ['photo.PNG', '/vault/photo.PNG'],
       ['z/data.json', '/vault/z/data.json'],
     ])
   })

@@ -58,7 +58,7 @@ async function mount(markdown: string, resolve?: (target: string) => string | nu
   return { crepe, root, nav, source }
 }
 
-const viewNode = (path: string, kind: 'text' | 'pdf'): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, kind, size: 1, mtime: 1 })
+const viewNode = (path: string, kind: 'text' | 'pdf' | 'image'): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, kind, size: 1, mtime: 1 })
 function viewSource(...nodes: TreeNode[]): MutableViewOnlyLinkSource {
   const source = createViewOnlyLinkSource()
   source.update(buildViewOnlyCatalog('/vault', nodes))
@@ -157,6 +157,7 @@ describe('wikilink click: navigation-only view files (YAZ-1310)', () => {
     ['data.json', '/vault/data.json', 'text'],
     ['tool.py', '/vault/tool.PY', 'text'],
     ['REPORT.pdf', '/vault/report.PDF', 'pdf'],
+    ['photo.png', '/vault/photo.PNG', 'image'],
     ['Outbound Lead Qualifier.json', '/vault/deep/Outbound Lead Qualifier.json', 'text'],
     ['deep/data.JSON', '/vault/deep/data.JSON', 'text'],
   ] as const)('opens %s in the current viewer without invoking Markdown creation', async (target, path, kind) => {
@@ -164,6 +165,7 @@ describe('wikilink click: navigation-only view files (YAZ-1310)', () => {
       viewNode('/vault/data.json', 'text'),
       viewNode('/vault/tool.PY', 'text'),
       viewNode('/vault/report.PDF', 'pdf'),
+      viewNode('/vault/photo.PNG', 'image'),
       viewNode('/vault/deep/Outbound Lead Qualifier.json', 'text'),
       viewNode('/vault/deep/data.JSON', 'text'),
     )
@@ -174,25 +176,25 @@ describe('wikilink click: navigation-only view files (YAZ-1310)', () => {
     expect(createDir).not.toHaveBeenCalled()
   })
 
-  it('uses |text only for display and preserves command-click background navigation', async () => {
-    const views = viewSource(viewNode('/vault/deep/Outbound Lead Qualifier.json', 'text'))
-    const { root, nav } = await mount('x [[Outbound Lead Qualifier.json|Lead JSON]] y\n', resolveKnown, () => '', views)
-    mousedown(linkSpan(root, 'Lead JSON'), { metaKey: true })
-    expect(nav.openBackground).toHaveBeenCalledExactlyOnceWith('/vault/deep/Outbound Lead Qualifier.json')
+  it('uses |text only for display and preserves command-click background navigation for images', async () => {
+    const views = viewSource(viewNode('/vault/deep/Launch Photo.PNG', 'image'))
+    const { root, nav } = await mount('x [[Launch Photo.PNG|Launch art]] y\n', resolveKnown, () => '', views)
+    mousedown(linkSpan(root, 'Launch art'), { metaKey: true })
+    expect(nav.openBackground).toHaveBeenCalledExactlyOnceWith('/vault/deep/Launch Photo.PNG')
     expect(nav.openCurrent).not.toHaveBeenCalled()
     expect(createFile).not.toHaveBeenCalled()
   })
 
   it('pre-catalog and missing recognized targets notice passively and never create Markdown', async () => {
     const loading = createViewOnlyLinkSource()
-    const first = await mount('x [[data.json]] y\n', resolveKnown, () => '', loading)
-    mousedown(linkSpan(first.root, 'data.json'))
+    const first = await mount('x [[missing.png]] y\n', resolveKnown, () => '', loading)
+    mousedown(linkSpan(first.root, 'missing.png'))
     expect(first.nav.onNotice).toHaveBeenCalledWith('File catalog is still loading — try that link again in a moment')
 
     const empty = viewSource()
-    const second = await mount('x [[missing.json]] y\n', resolveKnown, () => '', empty)
-    mousedown(linkSpan(second.root, 'missing.json'))
-    expect(second.nav.onNotice).toHaveBeenCalledWith('Can\'t open "missing.json": file not found')
+    const second = await mount('x [[missing.png]] y\n', resolveKnown, () => '', empty)
+    mousedown(linkSpan(second.root, 'missing.png'))
+    expect(second.nav.onNotice).toHaveBeenCalledWith('Can\'t open "missing.png": file not found')
     expect(createFile).not.toHaveBeenCalled()
     expect(createDir).not.toHaveBeenCalled()
   })

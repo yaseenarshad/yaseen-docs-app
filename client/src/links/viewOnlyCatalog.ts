@@ -4,7 +4,7 @@ import { nameCandidate, type LinkCandidate } from './completion'
 export interface ViewOnlyEntry {
   path: string
   name: string
-  kind: Extract<FileKind, 'text' | 'pdf'>
+  kind: Exclude<FileKind, 'markdown'>
 }
 
 export interface ViewOnlyCatalog {
@@ -20,7 +20,7 @@ const pathOrder = (a: ViewOnlyEntry, b: ViewOnlyEntry): number => (a.path < b.pa
 function flatten(nodes: readonly TreeNode[], out: ViewOnlyEntry[]): void {
   for (const node of nodes) {
     if (node.type === 'dir') flatten(node.children, out)
-    else if (node.kind === 'text' || node.kind === 'pdf') out.push({ path: node.path, name: node.name, kind: node.kind })
+    else if (node.kind !== 'markdown') out.push({ path: node.path, name: node.name, kind: node.kind })
   }
 }
 

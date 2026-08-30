@@ -261,6 +261,7 @@ describe('Sidebar copy link (E3 GRO-2173, YAZ-957)', () => {
 
   const VIEW_LINK_TREE: TreeNode[] = [
     { type: 'file', name: 'data.json', path: '/v/data.json', size: 1, mtime: 1, kind: 'text' },
+    { type: 'file', name: 'photo.PNG', path: '/v/photo.PNG', size: 1, mtime: 1, kind: 'image' },
     { type: 'dir', name: 'deep', path: '/v/deep', children: [
       { type: 'file', name: 'data.JSON', path: '/v/deep/data.JSON', size: 1, mtime: 1, kind: 'text' },
       { type: 'file', name: 'Outbound Lead Qualifier.json', path: '/v/deep/Outbound Lead Qualifier.json', size: 1, mtime: 1, kind: 'text' },
@@ -278,6 +279,10 @@ describe('Sidebar copy link (E3 GRO-2173, YAZ-957)', () => {
     act(() => void el.querySelector('[title="/v/data.json"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     act(() => itemByLabel(el, 'Copy link')?.click())
     expect(writeText).toHaveBeenLastCalledWith('[[data.json]]')
+
+    act(() => void el.querySelector('[title="/v/photo.PNG"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    act(() => itemByLabel(el, 'Copy link')?.click())
+    expect(writeText).toHaveBeenLastCalledWith('[[photo.PNG]]')
 
     act(() => el.querySelector<HTMLButtonElement>('.tree__row--dir')?.click())
     act(() => void el.querySelector('[title="/v/deep/data.JSON"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))

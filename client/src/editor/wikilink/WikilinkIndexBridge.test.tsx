@@ -46,7 +46,7 @@ const rec = (path: string, aliases: string[] = []): IndexRecord => {
 }
 
 const response = (...paths: string[]): IndexResponse => ({ root: '/vault', records: paths.map((p) => rec(p)), generatedAt: 1 })
-const viewNode = (path: string, kind: 'text' | 'pdf'): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, kind, size: 1, mtime: 1 })
+const viewNode = (path: string, kind: 'text' | 'pdf' | 'image'): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, kind, size: 1, mtime: 1 })
 const treeResponse = (...nodes: TreeNode[]): TreeResponse => ({ root: '/vault', tree: nodes, generatedAt: 1 })
 
 let root: Root | null = null
@@ -205,6 +205,19 @@ describe('WikilinkIndexBridge', () => {
     expect(viewOnly.targets.map((target) => target.path)).toEqual(['/vault/data.json', '/vault/deep/report.PDF'])
     expect(candidates.candidates.map((candidate) => candidate.insert)).toEqual(['Note', 'data.json', 'report.PDF'])
     expect('records' in viewOnly).toBe(false)
+  })
+
+  it('feeds images only through the tree catalog and picker, never through semantic records', async () => {
+    treeFn.mockResolvedValueOnce(treeResponse(viewNode('/vault/photo.PNG', 'image')))
+    mount()
+    await flush()
+
+    expect(source.records.map((record) => record.path)).toEqual(['/vault/Note.md', '/vault/deep/Other.md'])
+    expect(source.records.some((record) => record.path === '/vault/photo.PNG')).toBe(false)
+    expect(source.resolve?.('photo.PNG')).toBeNull()
+    expect(viewOnly.resolve?.('photo.png')).toBe('/vault/photo.PNG')
+    expect(viewOnly.targets).toEqual([{ path: '/vault/photo.PNG', name: 'photo.PNG', kind: 'image' }])
+    expect(candidates.candidates.map((candidate) => candidate.insert)).toEqual(['Note', 'Other', 'photo.PNG'])
   })
 
   it('never offers a dead semantic data.json target before the view-only file exists, then offers only the real file', async () => {

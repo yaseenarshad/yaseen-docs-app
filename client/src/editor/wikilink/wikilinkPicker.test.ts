@@ -228,13 +228,22 @@ describe('wikilink picker: navigate / insert', () => {
     expect(getMarkdownForSave(crepe)).toBe('X[[sub/Note]]\n')
   })
 
-  it('view-only candidates insert the explicit extension and spaces verbatim', async () => {
-    const { crepe } = await mount('X\n', source('Outbound Lead Qualifier.json', 'tool.PY', 'report.PDF'))
+  it('view-only candidates, including images, insert the explicit extension and spaces verbatim', async () => {
+    const { crepe } = await mount('X\n', source('Outbound Lead Qualifier.json', 'tool.PY', 'report.PDF', 'Launch Photo.PNG'))
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[outbound')
     expect(rows()).toEqual(['Outbound Lead Qualifier.json'])
     press(crepe, 'Enter')
     expect(getMarkdownForSave(crepe)).toBe('X[[Outbound Lead Qualifier.json]]\n')
+  })
+
+  it('filters and inserts an image candidate with its explicit extension', async () => {
+    const { crepe } = await mount('X\n', source('data.json', 'Launch Photo.PNG'))
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, '[[launch')
+    expect(rows()).toEqual(['Launch Photo.PNG'])
+    press(crepe, 'Enter')
+    expect(getMarkdownForSave(crepe)).toBe('X[[Launch Photo.PNG]]\n')
   })
 
   it('mid-text triggers only replace [[fragment up to the caret; trailing text stays', async () => {

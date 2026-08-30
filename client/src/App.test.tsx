@@ -629,6 +629,7 @@ describe('App tabs (I2, GRO-2234)', () => {
   it.each([
     ['/v/data.json', '/v/report.PDF', ['data.json', 'report.PDF'], 'data.json — v'],
     ['/v/report.PDF', '/v/data.json', ['report.PDF', 'data.json'], 'report.PDF — v'],
+    ['/v/photo.PNG', '/v/data.json', ['photo.PNG', 'data.json'], 'photo.PNG — v'],
   ] as const)('restores view-only tabs with exact extension labels and title for %s', async (active, other, labels, title) => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: active, tabs: [active, other] })
     expect(stripLabels(el)).toEqual(labels)
@@ -1089,37 +1090,37 @@ describe('App rename door (⚡ YAZ-888)', () => {
     expect(sheetText(el)).toBe("Rename 'A' to 'A2'? No other notes link to it.")
   })
 
-  it('classifies a supported view-only path as a file without adding it to the semantic index', async () => {
-    const semanticRecords = [record('/v/A.md', { links: ['data.json'] })]
-    const files = { '/v/A.md': { content: 'See [[data.json]].\n', mtime: 1 } }
+  it('classifies an image as a navigation-only file without adding it to the semantic index', async () => {
+    const semanticRecords = [record('/v/A.md', { links: ['photo.png'] })]
+    const files = { '/v/A.md': { content: 'See [[photo.png]].\n', mtime: 1 } }
     const count = vi.spyOn(renameLinks, 'countLinkReferences')
     try {
       const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
         b.bridge.index.mockResolvedValue({ root: '/v', records: semanticRecords, generatedAt: 1 })
         b.bridge.tree.mockImplementation(async () => ({
           root: '/v',
-          tree: [{ type: 'file', name: 'data.json', path: '/v/data.json', kind: 'text', size: 1, mtime: 1 }] as TreeNode[],
+          tree: [{ type: 'file', name: 'photo.png', path: '/v/photo.png', kind: 'image', size: 1, mtime: 1 }] as TreeNode[],
           generatedAt: 1,
         }))
       })
       const treeReadsBeforeRename = bridge.tree.mock.calls.filter(([path]) => path === '/v').length
-      await act(async () => void captured.sidebar?.onRenameFile('/v/data.json', '/v/data-v2.json', 'file'))
+      await act(async () => void captured.sidebar?.onRenameFile('/v/photo.png', '/v/photo-v2.png', 'file'))
 
-      expect(semanticRecords.some((record) => record.path === '/v/data.json')).toBe(false)
+      expect(semanticRecords.some((record) => record.path === '/v/photo.png')).toBe(false)
       expect(count).toHaveBeenCalledWith(expect.objectContaining({
         root: '/v',
-        oldPath: '/v/data.json',
+        oldPath: '/v/photo.png',
         kind: 'file',
         records: semanticRecords,
-        viewOnlyCatalog: expect.objectContaining({ entries: [expect.objectContaining({ path: '/v/data.json' })] }),
+        viewOnlyCatalog: expect.objectContaining({ entries: [expect.objectContaining({ path: '/v/photo.png', kind: 'image' })] }),
       }))
-      expect(sheetText(el)).toBe("Rename 'data.json' to 'data-v2.json'? Links in 1 note will be updated.")
+      expect(sheetText(el)).toBe("Rename 'photo.png' to 'photo-v2.png'? Links in 1 note will be updated.")
       expect(bridge.tree.mock.calls.filter(([path]) => path === '/v')).toHaveLength(treeReadsBeforeRename)
 
       ;(captured.sidebar?.viewOnlyLinks as MutableViewOnlyLinkSource | undefined)?.reset()
       await act(async () => sheetBtn(el, 'Rename')?.click())
-      expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/data.json', newPath: '/v/data-v2.json' })
-      expect(files['/v/A.md'].content).toBe('See [[data-v2.json]].\n')
+      expect(bridge.file.rename).toHaveBeenCalledWith({ oldPath: '/v/photo.png', newPath: '/v/photo-v2.png' })
+      expect(files['/v/A.md'].content).toBe('See [[photo-v2.png]].\n')
     } finally {
       count.mockRestore()
     }
