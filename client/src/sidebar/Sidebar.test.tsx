@@ -2037,3 +2037,132 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     expect(itemByLabel(el, 'New folder')).toBeUndefined()
   })
 })
+
+/**
+ * Multi-select (YAZ-1334 → YAZ-1336). Shift+click TOGGLES a file row in/out of a path-keyed
+ * selection (🔒 D2 amended: toggle-accumulate, range is out of v1) — it never opens, never
+ * previews. Selection is Sidebar-owned view state (🔒 D1): plain click, Escape, and a lens
+ * switch all clear it; ⌘-click's LOCKED background-open gesture (I3) ignores it entirely.
+ */
+describe('Sidebar multi-select via shift+click (YAZ-1336)', () => {
+  const MULTI_TREE: TreeNode[] = [
+    { type: 'dir', name: 'sub', path: '/v/sub', children: [] },
+    { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
+    { type: 'file', name: 'b.md', path: '/v/b.md', size: 1, mtime: 1, kind: 'markdown' },
+    { type: 'file', name: 'c.md', path: '/v/c.md', size: 1, mtime: 1, kind: 'markdown' },
+  ]
+  const withMultiTree = (bridge: ReturnType<typeof installBridge>) =>
+    bridge.tree.mockResolvedValue({ root: '/v', tree: MULTI_TREE, generatedAt: 1 })
+  const rowByPath = (el: HTMLElement, path: string) =>
+    el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
+  const shiftClick = (row: HTMLElement | null) =>
+    act(() => void row?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
+  const selectedPaths = (el: HTMLElement) =>
+    [...el.querySelectorAll<HTMLElement>('.tree__row--selected')].map((r) => r.dataset.path)
+
+  it('shift+click toggles file rows into and out of the selection without opening anything', async () => {
+    const { el, props } = await mount({}, withMultiTree)
+    shiftClick(rowByPath(el, '/v/a.md'))
+    shiftClick(rowByPath(el, '/v/b.md'))
+    expect(selectedPaths(el)).toEqual(['/v/a.md', '/v/b.md'])
+    expect(rowByPath(el, '/v/a.md')?.closest('[role="treeitem"]')?.getAttribute('aria-selected')).toBe('true')
+    shiftClick(rowByPath(el, '/v/a.md'))
+    expect(selectedPaths(el)).toEqual(['/v/b.md'])
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+  })
+
+  it('plain click clears the selection and opens the clicked file as before', async () => {
+    const { el, props } = await mount({}, withMultiTree)
+    shiftClick(rowByPath(el, '/v/a.md'))
+    shiftClick(rowByPath(el, '/v/b.md'))
+    act(() => rowByPath(el, '/v/c.md')?.click())
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/c.md')
+    expect(selectedPaths(el)).toEqual([])
+  })
+
+  it('⌘-click keeps the selection intact and still opens a background tab (LOCKED I3)', async () => {
+    const { el, props } = await mount({}, withMultiTree)
+    shiftClick(rowByPath(el, '/v/a.md'))
+    act(() => void rowByPath(el, '/v/b.md')?.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })))
+    expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith('/v/b.md')
+    expect(selectedPaths(el)).toEqual(['/v/a.md'])
+  })
+
+  it('shift+click on a dir row selects nothing — only file rows are selectable', async () => {
+    // Dir rows carry no data-path, so target the row by its class — not rowByPath, which would
+    // find nothing and pass vacuously.
+    const { el } = await mount({}, withMultiTree)
+    shiftClick(el.querySelector<HTMLElement>('.tree__row--dir'))
+    expect(el.querySelectorAll('.tree__row--selected').length).toBe(0)
+  })
+
+  it('Escape clears the selection', async () => {
+    const { el } = await mount({}, withMultiTree)
+    shiftClick(rowByPath(el, '/v/a.md'))
+    expect(selectedPaths(el)).toEqual(['/v/a.md'])
+    act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(selectedPaths(el)).toEqual([])
+  })
+
+  it('switching lens clears the selection', async () => {
+    const { el, rerender } = await mount({}, withMultiTree)
+    shiftClick(rowByPath(el, '/v/a.md'))
+    await rerender({ lens: 'topics' })
+    await rerender({ lens: 'files' })
+    expect(selectedPaths(el)).toEqual([])
+  })
+})
+
+/** The other two ways a selection ends (YAZ-1336), and the one press that must NOT be taken. */
+describe('Sidebar multi-select: search, Escape-when-empty, and the prune', () => {
+  const selectedRows = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('.tree__row--selected')]
+  const shiftClick = (row: HTMLElement | null) =>
+    act(() => void row?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
+
+  it('a typed query ends it: the tree comes back with nothing selected', async () => {
+    const { el } = await mount()
+    shiftClick(fileRow(el))
+    expect(selectedRows(el)).toHaveLength(1)
+    // 🔒 the flat-list ruling (YAZ-739): a query REPLACES the tree, so a selection cannot survive
+    // underneath it and be waiting when the query clears.
+    await type(searchInput(el) as HTMLInputElement, 'a')
+    expect(el.querySelector('.tree')).toBeNull()
+    await type(searchInput(el) as HTMLInputElement, '')
+    expect(el.querySelector('.tree')).not.toBeNull()
+    expect(selectedRows(el)).toHaveLength(0)
+  })
+
+  it('Escape with NOTHING selected is left alone — the key still belongs to everyone else', async () => {
+    const { el } = await mount()
+    const body = el.querySelector('.sidebar__body') as HTMLElement
+    const spare = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    act(() => void body.dispatchEvent(spare))
+    expect(spare.defaultPrevented).toBe(false)
+    // With a selection standing it IS the selection's key: taken, not passed on.
+    shiftClick(fileRow(el))
+    const taken = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    act(() => void body.dispatchEvent(taken))
+    expect(taken.defaultPrevented).toBe(true)
+    expect(selectedRows(el)).toHaveLength(0)
+  })
+
+  it('a file that leaves the tree leaves the selection with it, and the rest stays selected', async () => {
+    const A: TreeNode = { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' }
+    const B: TreeNode = { type: 'file', name: 'b.md', path: '/v/b.md', size: 1, mtime: 1, kind: 'markdown' }
+    let emit: ((ev: WatchEvent) => void) | undefined
+    const watch = {
+      subscribe: (l: (ev: WatchEvent) => void) => {
+        emit = l
+        return () => undefined
+      },
+    }
+    const { el, bridge } = await mount({ watch }, (b) => b.tree.mockResolvedValue({ root: '/v', tree: [A, B], generatedAt: 1 }))
+    for (const row of el.querySelectorAll<HTMLElement>('.tree__row--file')) shiftClick(row)
+    expect(selectedRows(el)).toHaveLength(2)
+    // b is deleted on disk: the watcher-driven refresh brings the tree that no longer has it.
+    bridge.tree.mockResolvedValue({ root: '/v', tree: [A], generatedAt: 2 })
+    await act(async () => emit?.({ type: 'unlink', path: '/v/b.md' }))
+    expect(selectedRows(el).map((r) => r.dataset.path)).toEqual(['/v/a.md'])
+  })
+})

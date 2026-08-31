@@ -32,6 +32,7 @@ import { MAX_TOPICS_EXPANDED_PAGES, defaultAppState, defaultFolderState, default
 import { stripBrackets } from '../views/expr'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { storage } from '../lib/storage'
+import { EMPTY_SELECTION } from '../lib/selection'
 import { folderPagesLookup } from '../links/folderPages'
 import { performMove } from './topicsMove'
 import { TopicsTree, allExpandableTopics, topicRevealPlan, topicRoots, uncategorizedDiskTree } from './TopicsTree'
@@ -174,6 +175,10 @@ async function mount(over: Partial<OwnedProps> & { source: Props['source'] }) {
     activeFile: null,
     onOpenFile: vi.fn(),
     onOpenFileBackground: vi.fn(),
+    // Multi-select (YAZ-1336): the SIDEBAR owns the set and this lens only draws it, so the
+    // default is nothing selected and the two gestures are spies — the "shift+click" describe
+    // hands over a populated set of its own.
+    selection: { paths: EMPTY_SELECTION, toggle: vi.fn(), clear: vi.fn() },
     // 6C's offer (YAZ-849): every case below runs on an ADOPTED vault, where the card never
     // shows; the "the offer card" describe is the one that flips this.
     unadopted: false,
@@ -1245,5 +1250,73 @@ describe('the drag (YAZ-991): a row onto a folder-page row, and nothing written 
     await click(sheetBtn(el, 'Move') as Element)
     expect(onNotice).toHaveBeenCalledWith('Can\'t move "Loose" into "Projects": EACCES')
     expect(sheetText(el)).toBeNull() // the failure is a notice, never a second dialog
+  })
+})
+
+describe('multi-select (YAZ-1336): shift+click, path-keyed across every occurrence', () => {
+  const SHARED = `${ROOT}/Shared.md`
+  /** A diamond: one page claimed by two topics, so it renders TWICE (⚡ D6 of YAZ-814). */
+  const diamond = (): IndexRecord[] => [
+    folder(HOME),
+    folder(METRICS, belongs('[[Home]]')),
+    folder(PROJECTS),
+    rec(SHARED, belongs('[[Metrics]]', '[[Projects]]')),
+  ]
+  const selectionOver = (paths: readonly string[]) => ({ paths: new Set(paths), toggle: vi.fn(), clear: vi.fn() })
+  const selectedLabels = (el: HTMLElement) =>
+    rows(el)
+      .filter((r) => r.classList.contains('tree__row--selected'))
+      .map((r) => r.querySelector('.tree__label')?.textContent ?? '')
+
+  it('🔒 D3: ONE selected path lights up EVERY row that draws it — a page under two parents shows selected under both', async () => {
+    const { el } = await mount({ source: sourceOver(diamond()), selection: selectionOver([SHARED]) })
+    await click(chevrons(el, 'Expand Metrics')[0])
+    await click(chevrons(el, 'Expand Projects')[0])
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Shared', 'Projects', 'Shared'])
+    expect(selectedLabels(el)).toEqual(['Shared', 'Shared'])
+    // The `<li>` says the same thing wherever the page stands, beside the active file's own flag.
+    expect(
+      rows(el)
+        .filter((r) => r.querySelector('.tree__label')?.textContent === 'Shared')
+        .map((r) => r.closest('[role="treeitem"]')?.getAttribute('aria-selected')),
+    ).toEqual(['true', 'true'])
+  })
+
+  it('🔒 D2: shift+click toggles the row and does nothing else — no open, and no fold either way', async () => {
+    const selection = selectionOver([])
+    // Metrics is the OPEN topic and stands unfolded: a plain click there would FOLD it (YAZ-921),
+    // and a plain click on the closed Projects would unfold it (⚡ YAZ-870). Shift does neither.
+    const { el, props } = await mount({ source: sourceOver(diamond()), selection, activeFile: METRICS })
+    await click(chevrons(el, 'Expand Metrics')[0])
+    await click(rowFor(el, 'Shared') as Element, { shiftKey: true })
+    await click(rowFor(el, 'Metrics') as Element, { shiftKey: true })
+    await click(rowFor(el, 'Projects') as Element, { shiftKey: true })
+    expect(selection.toggle.mock.calls).toEqual([[SHARED], [METRICS], [PROJECTS]])
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Shared', 'Projects'])
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+    expect(selection.clear).not.toHaveBeenCalled()
+  })
+
+  it('an Uncategorized page row plays by the same two rules', async () => {
+    const selection = selectionOver([`${ROOT}/Loose.md`])
+    const { el, props } = await mount({ source: sourceOver(vault()), selection })
+    await click(rowFor(el, 'Uncategorized') as Element)
+    expect(selectedLabels(el)).toEqual(['Loose'])
+    await click(rowFor(el, 'Loose') as Element, { shiftKey: true })
+    expect(selection.toggle).toHaveBeenCalledExactlyOnceWith(`${ROOT}/Loose.md`)
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+  })
+
+  it('a PLAIN click starts the selection over before it opens; ⌘-click leaves it alone', async () => {
+    const selection = selectionOver([SHARED])
+    const { el, props } = await mount({ source: sourceOver(diamond()), selection })
+    await click(chevrons(el, 'Expand Metrics')[0])
+    await click(rowFor(el, 'Shared') as Element, { metaKey: true })
+    expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith(SHARED)
+    expect(selection.clear).not.toHaveBeenCalled()
+    await click(rowFor(el, 'Shared') as Element)
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(SHARED)
+    expect(selection.clear).toHaveBeenCalledOnce()
   })
 })

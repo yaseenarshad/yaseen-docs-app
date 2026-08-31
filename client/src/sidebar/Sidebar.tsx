@@ -18,6 +18,7 @@ import { storage } from '../lib/storage'
 import { linkNames } from '../links/completion'
 import { FOLDER_PAGE_KEY, FOLDER_PAGES_KEY, folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { countLinkReferences } from '../links/renameLinks'
+import { EMPTY_SELECTION, selectionReducer } from '../lib/selection'
 import { allDirs, ancestorDirs, treeHasFile, treeReducer } from '../lib/treeState'
 import { SearchResults } from '../search/SearchResults'
 import { useSearchResults } from '../search/useSearchResults'
@@ -28,7 +29,7 @@ import { entryPath, renamedPath, targetDirFor, type EntryKind, type MenuRow } fr
 import { HotkeysButton } from './HotkeysPanel'
 import { SettingsCog } from './SettingsPanel'
 import { TopicsTree, allExpandableTopics, type PendingTopicCreate } from './TopicsTree'
-import { Tree, type PendingCreate, type PendingRename, type TreeFileMove } from './Tree'
+import { Tree, type PendingCreate, type PendingRename, type TreeFileMove, type TreeSelection } from './Tree'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
 
 interface SidebarProps {
@@ -298,6 +299,11 @@ export function Sidebar({
   // main-owned per-vault bucket, so it opens where it was left — across a lens switch, a window
   // and a restart alike. A lens switch never touches it: this state outlives the tree's mount.
   const [topicsExpanded, setTopicsExpanded] = useState<ReadonlySet<string>>(() => new Set(storage.getTopicsExpanded(root)))
+  // Multi-select (YAZ-1336, 🔒 D1): the selected file PATHS, shared by BOTH lenses — one entry per
+  // path however many rows draw it (🔒 D3). It lives HERE and nowhere else on purpose: this
+  // component is mounted `key={root}` and only while the sidebar is open, so a selection is
+  // honestly about rows currently on screen and cannot outlive them (a collapse ends it).
+  const [selectedPaths, dispatchSelection] = useReducer(selectionReducer, EMPTY_SELECTION)
   const [menu, setMenu] = useState<MenuTargets | null>(null)
   // `anchor` is the TOPICS page or disk-folder row the create was asked from; null on the file
   // tree, where the input nests inside `parentDir`'s own children instead. `intoFolderPage` is
@@ -416,6 +422,22 @@ export function Sidebar({
   useEffect(() => {
     if (activeFile !== null) dispatch({ type: 'expandTo', root, file: activeFile })
   }, [root, activeFile])
+
+  // A selection is about the rows on screen (YAZ-1336), so whatever REPLACES them ends it: the
+  // other lens is a different reading of the vault, and a typed query swaps the body for the flat
+  // list entirely (🔒 the flat-list ruling on YAZ-739). `clear` on an empty selection returns the
+  // same set, so the mount pass and every ordinary render below cost nothing.
+  useEffect(() => {
+    dispatchSelection({ type: 'clear' })
+  }, [lens, searching])
+
+  // The loaded tree is the canonical disk truth for BOTH lenses — Topics draws the same files —
+  // so a path it no longer has cannot stay selected. Reference-stable when nothing was dropped,
+  // which is every refresh that changed something else.
+  useEffect(() => {
+    if (tree === null) return
+    dispatchSelection({ type: 'prune', exists: (path) => treeHasFile(tree.tree, path) })
+  }, [tree])
 
   useEffect(() => {
     if (tree === null || pendingReveal?.lens !== 'files' || handledFilesRevealId.current === pendingReveal.id) return
@@ -767,6 +789,13 @@ export function Sidebar({
     drop: dropOnDir,
   }
 
+  /** The multi-select as both trees take it (YAZ-1336): the set, plus its two gestures. */
+  const selection: TreeSelection = {
+    paths: selectedPaths,
+    toggle: (path) => dispatchSelection({ type: 'toggle', path }),
+    clear: () => dispatchSelection({ type: 'clear' }),
+  }
+
   const pending: PendingCreate | null =
     creating === null
       ? null
@@ -909,7 +938,20 @@ export function Sidebar({
           BOTH lenses offer it since YAZ-948 — 🔒 YAZ-847 withheld it from Topics only until
           that tree had a menu of its own to be consistent with, which YAZ-865 gave its rows.
           Blank space means the same thing in either lens: the vault ROOT. */}
-      <div ref={bodyRef} className="sidebar__body" onContextMenu={(e) => (searching ? undefined : openMenu(null, e))}>
+      <div
+        ref={bodyRef}
+        className="sidebar__body"
+        onContextMenu={(e) => (searching ? undefined : openMenu(null, e))}
+        // Escape drops the multi-select (YAZ-1336) — and ONLY when there is one: with nothing
+        // selected the key still belongs to everyone else listening for it, so this must neither
+        // swallow it nor stop it travelling.
+        onKeyDown={(e) => {
+          if (e.key !== 'Escape' || selectedPaths.size === 0) return
+          e.preventDefault()
+          e.stopPropagation()
+          dispatchSelection({ type: 'clear' })
+        }}
+      >
         {searching ? (
           // A typed query replaces the ACTIVE TAB's body, whichever lens that is (🔒 D5).
           results.length > 0 ? (
@@ -932,6 +974,7 @@ export function Sidebar({
             activeFile={activeFile}
             onOpenFile={onOpenFile}
             onOpenFileBackground={onOpenFileBackground}
+            selection={selection}
             unadopted={unadopted}
             onCreateHome={onCreateHome}
             onRowContextMenu={openTopicsMenu}
@@ -959,6 +1002,7 @@ export function Sidebar({
                 pending={pending}
                 renaming={renaming}
                 move={fileMove}
+                selection={selection}
               />
             )}
           </>

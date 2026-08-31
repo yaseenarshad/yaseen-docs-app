@@ -101,7 +101,7 @@ import type { EntryKind, MenuRow } from './createEntry'
 import { HOME_LINK } from './ensureHome'
 import { RenameInline } from './RenameInline'
 import { canDrop, performMove } from './topicsMove'
-import type { PendingRename } from './Tree'
+import type { PendingRename, TreeSelection } from './Tree'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
 
 /**
@@ -152,6 +152,12 @@ export interface TopicsTreeProps {
   onOpenFile: (path: string) => void
   /** ⌘-click (I3, GRO-2235): a background tab of THIS window — the file tree's other handler. */
   onOpenFileBackground: (path: string) => void
+  /**
+   * Multi-select (YAZ-1336), the file tree's own state handed to this lens too: keyed by PATH
+   * (🔒 D1), so a page standing under two parents shows selected on BOTH occurrences (🔒 D3) —
+   * the expansion's rule exactly (🔒 D4), for the same reason: the user selected the PAGE.
+   */
+  selection: TreeSelection
   /**
    * This folder has no `.yaseendocs/` (6C-, YAZ-849), so nothing was written into it and the
    * offer card is on the table. App establishes it once per vault (`useEnsureHome`) — it is a
@@ -354,7 +360,7 @@ export function topicRevealPlan(
   return { found, ancestors, uncategorized: found && !rendered }
 }
 
-export function TopicsTree({ root, expanded, onExpandedChange, revealRequest, source, activeFile, onOpenFile, onOpenFileBackground, unadopted, onCreateHome, onRowContextMenu, renaming, creating, onNotice }: TopicsTreeProps) {
+export function TopicsTree({ root, expanded, onExpandedChange, revealRequest, source, activeFile, onOpenFile, onOpenFileBackground, selection, unadopted, onCreateHome, onRowContextMenu, renaming, creating, onNotice }: TopicsTreeProps) {
   // Subscribe once, re-read the whole feed on each poke; an unchanged snapshot keeps the previous
   // object, so index churn that changed nothing here costs no render (BacklinksSection's idiom).
   const [feed, setFeed] = useState<Feed>(() => ({ records: source.records, resolve: source.resolve }))
@@ -479,6 +485,12 @@ export function TopicsTree({ root, expanded, onExpandedChange, revealRequest, so
   }
 
   const open = (path: string, e: React.MouseEvent): void => {
+    // Shift is the SELECTION gesture and nothing else (YAZ-1336, 🔒 D2) — it never opens and
+    // never previews, so it is asked before every open rule below.
+    if (e.shiftKey) {
+      selection.toggle(path)
+      return
+    }
     // First activation PREVIEWS, second COMMITS (YAZ-921): opening from the tree keeps focus on
     // the row — the walk stays armed, click or Enter alike — and activating the page you are
     // already reading is the deliberate "take me in": the caret jumps into the text.
@@ -486,6 +498,7 @@ export function TopicsTree({ root, expanded, onExpandedChange, revealRequest, so
       onOpenFileBackground(path)
       return
     }
+    selection.clear() // a plain activation starts over; ⌘ above deliberately does not
     if (path === activeFile) {
       focusOpenDocument() // the VISIBLE document (YAZ-961): a folder page's outline, not its hidden body
       return
@@ -621,11 +634,11 @@ export function TopicsTree({ root, expanded, onExpandedChange, revealRequest, so
     const inline = renameOn(record.path, record.basename, indent)
     const born = createUnder(record.path, indent)
     const row = (
-      <li key={record.path} role="treeitem" aria-selected={record.path === activeFile}>
+      <li key={record.path} role="treeitem" aria-selected={record.path === activeFile || selection.paths.has(record.path)}>
         {inline ?? (
           <button
             type="button"
-            className={`tree__row${record.path === activeFile ? ' tree__row--active' : ''}${dropPath === record.path ? ' tree__row--drop' : ''}`}
+            className={`tree__row${record.path === activeFile ? ' tree__row--active' : ''}${selection.paths.has(record.path) ? ' tree__row--selected' : ''}${dropPath === record.path ? ' tree__row--drop' : ''}`}
             style={{ paddingLeft: indent }}
             title={record.path}
             data-path={record.path}
@@ -688,15 +701,16 @@ export function TopicsTree({ root, expanded, onExpandedChange, revealRequest, so
       const kids = childrenFor(member, trail)
       const isOpen = kids.length > 0 && expanded.has(member.path)
       const active = member.path === activeFile
+      const picked = selection.paths.has(member.path)
       const indent = 8 + depth * 14
       const inlineRename = renameOn(member.path, member.basename, indent)
       const row = (
-        <li key={trail.join('>')} role="treeitem" aria-expanded={kids.length > 0 ? isOpen : undefined} aria-selected={active}>
+        <li key={trail.join('>')} role="treeitem" aria-expanded={kids.length > 0 ? isOpen : undefined} aria-selected={active || picked}>
           {/* Rename (YAZ-865) replaces the row exactly as it does in the file tree — never beside it. */}
           {inlineRename ?? (
             <button
               type="button"
-              className={`tree__row${isFolderPage ? ' tree__row--dir' : ''}${active ? ' tree__row--active' : ''}${dropPath === member.path ? ' tree__row--drop' : ''}`}
+              className={`tree__row${isFolderPage ? ' tree__row--dir' : ''}${active ? ' tree__row--active' : ''}${picked ? ' tree__row--selected' : ''}${dropPath === member.path ? ' tree__row--drop' : ''}`}
               style={{ paddingLeft: indent }}
               title={member.path}
               data-path={member.path}
@@ -711,6 +725,12 @@ export function TopicsTree({ root, expanded, onExpandedChange, revealRequest, so
                 // opens the page, ←/→ are the fold gestures, so previewing topics never
                 // rearranges the panel underfoot.
                 const keyboard = e.detail === 0
+                // Shift selects and does NOTHING else (YAZ-1336, 🔒 D2), the fold included: on a
+                // topic, selecting the page must not also rearrange the tree under the cursor.
+                if (e.shiftKey) {
+                  open(member.path, e)
+                  return
+                }
                 if (!keyboard && active && kids.length > 0 && !e.metaKey) {
                   toggle(member.path)
                   return
