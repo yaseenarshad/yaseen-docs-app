@@ -36,6 +36,12 @@ interface SidebarStubProps {
   unadopted: boolean
   onCreateHome: () => void
   viewOnlyLinks: ViewOnlyLinkSource
+  /**
+   * ⌘⇧C's read-only window into the sidebar's selection (YAZ-1338, 🔒 D4): App owns the
+   * listener (the sidebar unmounts on collapse), the Sidebar owns the state (🔒 D1) and
+   * writes it here; App only ever reads.
+   */
+  selectionRef: { current: ReadonlySet<string> }
 }
 
 const captured = vi.hoisted(() => ({
@@ -277,6 +283,51 @@ describe('App per-window sidebar visibility (YAZ-1280)', () => {
     document.body.dispatchEvent(afterUnmount)
     expect(afterUnmount.defaultPrevented).toBe(false)
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * ⌘⇧C copies paths (YAZ-1334 → YAZ-1338, 🔒 D4): the sidebar's multi-selection when one is
+ * standing, else the active file — so the chord works with the sidebar collapsed too. App owns
+ * the listener and reads the selection through the `selectionRef` window the (here mocked)
+ * Sidebar maintains; with no rows in the DOM the copy falls back to the set's own order.
+ */
+describe('App ⌘⇧C copy path (YAZ-1338)', () => {
+  function installClipboard() {
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    return writeText
+  }
+  const chord = () => new KeyboardEvent('keydown', { key: 'c', metaKey: true, shiftKey: true, bubbles: true, cancelable: true })
+
+  it('with no selection it copies the ACTIVE file’s path and consumes the key', async () => {
+    const writeText = installClipboard()
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
+    const event = chord()
+    act(() => void el.querySelector('.app')?.dispatchEvent(event))
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  it('with a selection standing it copies THOSE paths newline-joined, not the active file', async () => {
+    const writeText = installClipboard()
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
+    const ref = captured.sidebar?.selectionRef
+    expect(ref).toBeDefined()
+    act(() => {
+      if (ref) ref.current = new Set(['/v/notes/b.md', '/v/c.md'])
+    })
+    act(() => void el.querySelector('.app')?.dispatchEvent(chord()))
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/notes/b.md\n/v/c.md')
+  })
+
+  it('with nothing selected and nothing open it does nothing and leaves the key alone', async () => {
+    const writeText = installClipboard()
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    const event = chord()
+    act(() => void el.querySelector('.app')?.dispatchEvent(event))
+    expect(writeText).not.toHaveBeenCalled()
+    expect(event.defaultPrevented).toBe(false)
   })
 })
 

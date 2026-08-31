@@ -24,10 +24,13 @@ describe('HOTKEYS source of truth', () => {
     const keys = WINDOW_HOTKEYS.map((h) => h.keys)
     // ⌘⇧N / ⌘⇧O / ⌘W (Close Tab) / ⌘⇧W (Close Window) and the tab-switch pairs live in the
     // menu (menu.ts, GRO-2161/2232); ⌥-click Open Recent = open beside (GRO-2211).
-    for (const expected of ['⌘⇧N', '⌘⇧O', '⌘K', '⌘B', '⌘W', '⌘⇧W', '⌃Tab / ⌃⇧Tab', '⌘⇧] / ⌘⇧[', '⌥ Open Recent']) {
+    for (const expected of ['⌘⇧N', '⌘⇧O', '⌘K', '⌘B', '⌘⇧C', '⌘W', '⌘⇧W', '⌃Tab / ⌃⇧Tab', '⌘⇧] / ⌘⇧[', '⌥ Open Recent']) {
       expect(keys).toContain(expected)
     }
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘B')?.label).toMatch(/outside editing surfaces/i)
+    // ⌘⇧C (🔒 D4, YAZ-1338): the multi-selection FIRST, the open file as the fallback — the
+    // order matters, so the label has to name both and in that order.
+    expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘⇧C')?.label).toMatch(/selection.*else the open file/i)
     // The ⌘W ladder swap (GRO-2232, locked): ⌘W closes the TAB, ⌘⇧W the window — never the reverse.
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘W')?.label).toMatch(/close tab/i)
     expect(WINDOW_HOTKEYS.find((h) => h.keys === '⌘⇧W')?.label).toMatch(/close window/i)
@@ -41,6 +44,11 @@ describe('HOTKEYS source of truth', () => {
     // ONE shared ⌘-click convention: sidebar file rows (I3) AND editor wiki links (Links C).
     expect(byKeys('⌘-click file or link')?.label).toMatch(/background tab/i)
     expect(byKeys('Right-click file')?.label).toMatch(/new window/i)
+    // Multi-select (YAZ-1336 🔒 D2 → YAZ-1337): ⇧-click toggles rows, and the tip has to say what
+    // that is FOR — the two plural items a right-click then offers.
+    expect(byKeys('⇧-click file')?.label).toMatch(/multi-selection/i)
+    expect(byKeys('⇧-click file')?.label).toMatch(/Copy N paths/)
+    expect(byKeys('⇧-click file')?.label).toMatch(/Open N in new tabs/)
   })
 
   it('every entry is renderable (non-empty keys and label)', () => {

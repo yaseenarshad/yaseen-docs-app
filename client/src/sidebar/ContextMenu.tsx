@@ -8,9 +8,10 @@ interface ContextMenuProps {
   /** The right-clicked FILE row's own `[[wikilink]]`, ready to copy; null (folders, blank space) hides "Copy link" — neither is a note to name (E3 GRO-2173, YAZ-957). */
   copyLinkText: string | null
   /**
-   * "Copy N paths" — every SELECTED path in visible tree order (🔒 D5, YAZ-1337), newline-joined
-   * on click; null hides the item, which is every menu opened outside a 2+ selection. Its own
-   * target, never `copyPath` in a list: that one falls back to the vault root on blank space.
+   * "Copy N paths" — the whole selection in the panel's own order (🔒 D5, YAZ-1337; ⚡ YAZ-1338
+   * appends the paths whose rows are hidden), newline-joined on click; null hides the item, which
+   * is every menu opened outside a 2+ selection. Its own target, never `copyPath` in a list: that
+   * one falls back to the vault root on blank space.
    */
   copyPaths: string[] | null
   /** "Open N in new tabs" — the same selection, asked separately (🔒 D5); null hides the item. */

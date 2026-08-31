@@ -18,8 +18,10 @@ import { useWatch } from './hooks/useWatch'
 import { countLinkReferences, renameNotice, updateLinksAfterRename } from './links/renameLinks'
 import { buildViewOnlyCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { useExternalRenames } from './links/useExternalRenames'
+import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { basename } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
+import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
 import { ownsSidebarHotkey } from './lib/sidebarHotkey'
 import { attentionCopy, buildSetupPrompt } from './lib/syncAttention'
@@ -82,6 +84,12 @@ export function App() {
   // Sidebar is mounted `key={root}` and only while open; sidebar-local view state would reset on
   // every collapse/reopen and root switch. One `AppState.sidebarLens`; never a second flag.
   const [sidebarLens, setSidebarLens] = useState(storage.getSidebarLens)
+  // ⌘⇧C's read-only window onto the sidebar's multi-selection (🔒 D4, YAZ-1338). App owns the
+  // BOX and the chord; the Sidebar owns the selection (🔒 D1) and writes it in here, emptying it
+  // when it unmounts. A ref rather than state on purpose: App needs the answer only at the
+  // moment the key is pressed, and re-rendering this whole window on every shift+click would be
+  // a real cost for a fact nothing on screen up here shows.
+  const sidebarSelection = useRef<ReadonlySet<string>>(EMPTY_SELECTION)
   const sidebarRevealId = useRef(0)
   const [sidebarRevealRequest, setSidebarRevealRequest] = useState<SidebarRevealRequest | null>(null)
   const [resizing, setResizing] = useState(false)
@@ -310,6 +318,38 @@ export function App() {
     return () => clearTimeout(timer)
   }, [notice])
   useLinkEvents({ onOpenFile: openCurrent, onNotice: setNotice })
+
+  /**
+   * ⌘⇧C copies paths (🔒 D4, YAZ-1338) — the multi-selection when one is standing, else the file
+   * you are looking at, so the chord answers with the sidebar collapsed too. The listener is
+   * App's for the same reason ⌘B's is (YAZ-1280): the Sidebar unmounts while hidden, and a window
+   * shortcut cannot live in a panel that comes and goes. It reads the selection through
+   * `sidebarSelection`, the box the Sidebar keeps current and empties on its way out (🔒 D1: the
+   * state itself never leaves that component) — read here, never written.
+   *
+   * ORDER is the panel's, through the one `orderedSelection` the context menu's plural items use,
+   * so ⌘⇧C and "Copy N paths" can never spell one selection two ways. With the sidebar hidden
+   * there is no `.sidebar__body` to read an order from, and the set's own order is the answer.
+   *
+   * With nothing selected AND nothing open the chord is NOT ours: no preventDefault, so whatever
+   * else the platform does with it still happens.
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (!ownsCopyPathHotkey(event)) return
+      const selected = sidebarSelection.current
+      const text = selected.size > 0 ? orderedSelection(selected, document.querySelector('.sidebar__body')).join('\n') : file
+      if (text === null) return
+      event.preventDefault()
+      // A clipboard the OS refused is silent otherwise — the sidebar's own copy items report it
+      // the same way (YAZ-1337), through this window's one passive notice.
+      void navigator.clipboard.writeText(text).catch((error: unknown) => {
+        setNotice(`Can't copy path: ${error instanceof Error ? error.message : String(error)}`)
+      })
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [file])
 
   // HOME (6C-, YAZ-849): every ADOPTED vault gets one the first time its index lands — one
   // `Home.md` carrying `folder_page: true`, created automatically, never twice, never over
@@ -641,6 +681,8 @@ export function App() {
           onRenameFile={requestRename}
           onDeleteFile={deleteFile}
           onNotice={setNotice}
+          // ⌘⇧C's box (🔒 D4, YAZ-1338): the panel keeps it current, the chord above reads it.
+          selectionRef={sidebarSelection}
           // The folder-page toggle's flag state (YAZ-840) reads the SAME per-window index source
           // WikilinkIndexBridge already feeds below — read-only, and no second feed.
           indexSource={wikilinks}

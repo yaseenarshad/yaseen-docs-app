@@ -18,7 +18,7 @@ import { storage } from '../lib/storage'
 import { linkNames } from '../links/completion'
 import { FOLDER_PAGE_KEY, FOLDER_PAGES_KEY, folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { countLinkReferences } from '../links/renameLinks'
-import { EMPTY_SELECTION, selectionReducer } from '../lib/selection'
+import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../lib/selection'
 import { allDirs, ancestorDirs, treeHasFile, treeReducer } from '../lib/treeState'
 import { SearchResults } from '../search/SearchResults'
 import { useSearchResults } from '../search/useSearchResults'
@@ -114,6 +114,15 @@ interface SidebarProps {
   /** The offer card's button; App creates Home and opens it. */
   onCreateHome: () => void
   /**
+   * ⌘⇧C's read-only window onto the multi-selection (🔒 D4, YAZ-1338). The state stays HERE
+   * (🔒 D1) — it is per root and dies with the panel — but the CHORD is App's: this component is
+   * unmounted while the sidebar is collapsed, and a shortcut that stops existing when a panel is
+   * hidden is not a window shortcut. So the Sidebar writes its current selection into this box on
+   * every render and empties it on unmount, and App only ever reads it — a ref, not state,
+   * precisely so keeping App able to answer costs this tree no render at all.
+   */
+  selectionRef: { current: ReadonlySet<string> }
+  /**
    * GitHub sync (YAZ-1081 3B), straight through to the settings cog: App owns the ONE
    * `useGithubSync` this window has, because the chip in the editor reads the same one.
    * Absent → the cog renders without a GitHub Sync section.
@@ -142,10 +151,10 @@ interface MenuTargets {
   /** "Copy path" — the right-clicked row (file or folder), or the vault ROOT for blank space (GRO-2273). */
   copyPath: string | null
   /**
-   * "Copy N paths" — the MULTI-SELECT target (🔒 D5, YAZ-1337): every selected path in VISIBLE
-   * tree order, or null when there is no plural gesture to offer (a right-click outside the
-   * selection, on blank space, or on a selection of one — where the singular items already ARE
-   * this menu).
+   * "Copy N paths" — the MULTI-SELECT target (🔒 D5, YAZ-1337): the WHOLE selection, ordered by
+   * the panel (on-screen rows first, hidden ones after — `orderedSelection`, ⚡ YAZ-1338), or null
+   * when there is no plural gesture to offer (a right-click outside the selection, on blank
+   * space, or on a selection of one — where the singular items already ARE this menu).
    *
    * Its OWN field per this split's whole point, and emphatically NOT `copyPath` in a list: that
    * one falls back to the vault ROOT on blank space, which is precisely a target this item must
@@ -309,6 +318,7 @@ export function Sidebar({
   onSearchFocusHandled,
   unadopted,
   onCreateHome,
+  selectionRef,
   sync,
 }: SidebarProps) {
   const [tree, setTree] = useState<TreeResponse | null>(null)
@@ -459,6 +469,16 @@ export function Sidebar({
     dispatchSelection({ type: 'prune', exists: (path) => treeHasFile(tree.tree, path) })
   }, [tree])
 
+  // ⌘⇧C's window onto the selection (🔒 D4, YAZ-1338): App holds the box, this panel keeps it
+  // current — and EMPTIES it on the way out, so a collapsed or root-switched sidebar can never
+  // hand the chord a selection nobody can see. A ref, so this costs no render on either side.
+  useEffect(() => {
+    selectionRef.current = selectedPaths
+    return () => {
+      selectionRef.current = EMPTY_SELECTION
+    }
+  }, [selectionRef, selectedPaths])
+
   useEffect(() => {
     if (tree === null || pendingReveal?.lens !== 'files' || handledFilesRevealId.current === pendingReveal.id) return
     handledFilesRevealId.current = pendingReveal.id
@@ -533,21 +553,14 @@ export function Sidebar({
   // ---- New note / new folder page / new folder (GRO-2022, YAZ-841): right-click menu → inline name input ----
 
   /**
-   * The selection as the panel is SHOWING it (YAZ-1337): one pass over the live rows —
-   * `flashTreeRows`' idiom (revealRow.ts), the blessed way to ask this panel what is on screen —
-   * filtered to the selected paths and deduped, because the Topics lens stands one page under
-   * every parent that claims it (🔒 D3) and a path selected once belongs in the list once.
-   * Order is the tree's own, never click order: a copied list has to read like the panel.
+   * The whole selection as a list, ordered by the PANEL (YAZ-1337, as ⚡ YAZ-1338 rules it): the
+   * rows on screen first, in the order the eye reads them — never click order, which is not an
+   * order the user can see — and every still-selected path with no row appended after them, so
+   * collapsing a folder over a selected note hides the row and keeps the note. The one rule lives
+   * in `orderedSelection`, which ⌘⇧C reads too: the menu and the chord cannot spell one selection
+   * two ways.
    */
-  const visibleSelection = useCallback((): string[] => {
-    const paths: string[] = []
-    for (const row of bodyRef.current?.querySelectorAll<HTMLElement>('.tree__row[data-path]') ?? []) {
-      const path = row.dataset.path
-      if (path === undefined || !selectedPaths.has(path) || paths.includes(path)) continue
-      paths.push(path)
-    }
-    return paths
-  }, [selectedPaths])
+  const orderedSelectedPaths = useCallback((): string[] => orderedSelection(selectedPaths, bodyRef.current), [selectedPaths])
 
   const openMenu = useCallback(
     (node: MenuRow | null, e: React.MouseEvent, topicsAnchor: string | null = null) => {
@@ -569,7 +582,7 @@ export function Sidebar({
       // The plural gesture exists only when the right-clicked row is ITSELF in a selection of two
       // or more (🔒 D5): a selection of one already IS the singular menu, and a row outside the
       // selection just ended it above. Read once, here, like every other target this menu pins.
-      const plural = filePath !== null && selectedPaths.has(filePath) && selectedPaths.size >= 2 ? visibleSelection() : null
+      const plural = filePath !== null && selectedPaths.has(filePath) && selectedPaths.size >= 2 ? orderedSelectedPaths() : null
       setMenu({
         x: e.clientX,
         y: e.clientY,
@@ -603,7 +616,7 @@ export function Sidebar({
         topicsAnchor,
       })
     },
-    [root, indexSource, viewOnlyLinks, selectedPaths, visibleSelection],
+    [root, indexSource, viewOnlyLinks, selectedPaths, orderedSelectedPaths],
   )
 
   /**

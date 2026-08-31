@@ -11,6 +11,7 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_SETTINGS, type TreeNode, type WatchEvent } from '@shared/types'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
+import { EMPTY_SELECTION } from '../lib/selection'
 import { buildViewOnlyCatalog } from '../links/viewOnlyCatalog'
 import { createViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 
@@ -97,6 +98,9 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     // ordinary case — the offer card is TopicsTree.test's own subject.
     unadopted: false,
     onCreateHome: vi.fn(),
+    // ⌘⇧C's box (🔒 D4, YAZ-1338): App's in production, the harness's here — every mount gets a
+    // fresh one, and the "hands its selection up" case reads it back.
+    selectionRef: { current: EMPTY_SELECTION },
     ...over,
   }
   await act(async () => root?.render(<StrictMode><Sidebar {...props} /></StrictMode>))
@@ -2362,5 +2366,54 @@ describe('Sidebar multi-select context menu: Topics dedup and the copy failure (
     expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(0)
     expect(itemByLabel(el, 'Copy 2 paths')).toBeUndefined()
     expect(itemByLabel(el, 'New folder')).toBeDefined() // …and the dir's own ordinary menu stands
+  })
+})
+
+/**
+ * ⚡ Fable's ruling on YAZ-1338, at the panel: THE SELECTION IS THE TRUTH, THE DOM IS ONLY THE
+ * ORDER. Folding a folder over a selected note hides its ROW; the note stays picked, so N keeps
+ * counting it and the copy keeps carrying it — after the paths still on screen. The `selectionRef`
+ * window App reads for ⌘⇧C is the same fact, handed up.
+ */
+describe('Sidebar multi-select: folded rows and the ⌘⇧C window (YAZ-1338)', () => {
+  const NESTED: TreeNode[] = [
+    { type: 'dir', name: 'sub', path: '/v/sub', children: [{ type: 'file', name: 'b.md', path: '/v/sub/b.md', size: 1, mtime: 1, kind: 'markdown' }] },
+    { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
+  ]
+  const withNested = (bridge: ReturnType<typeof installBridge>) => bridge.tree.mockResolvedValue({ root: '/v', tree: NESTED, generatedAt: 1 })
+  const rowByPath = (el: HTMLElement, path: string) => el.querySelector<HTMLElement>(`.tree__row[data-path="${path}"]`)
+  const shiftClickRow = (row: HTMLElement | null) =>
+    act(() => void row?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
+  const toggleSub = (el: HTMLElement) => act(() => el.querySelector<HTMLButtonElement>('.tree__row--dir')?.click())
+  const rightClickRow = (row: HTMLElement | null) =>
+    act(() => void row?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+
+  it('a selected note inside a folder the user then FOLDS still counts, and copies after the visible ones', async () => {
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const { el } = await mount({}, withNested)
+    toggleSub(el) // open `sub` so its note has a row to pick
+    shiftClickRow(rowByPath(el, '/v/sub/b.md'))
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    toggleSub(el) // …and fold it again: the row goes, the pick does not
+    expect(rowByPath(el, '/v/sub/b.md')).toBeNull()
+    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(1)
+    rightClickRow(rowByPath(el, '/v/a.md'))
+    expect(itemByLabel(el, 'Copy 2 paths')).toBeDefined() // N is the SELECTION's size, not the DOM's
+    act(() => itemByLabel(el, 'Copy 2 paths')?.click())
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/a.md\n/v/sub/b.md')
+  })
+
+  it('hands its selection up through selectionRef and empties it on the way out (🔒 D4)', async () => {
+    const selectionRef = { current: EMPTY_SELECTION }
+    const { el } = await mount({ selectionRef }, withNested)
+    expect(selectionRef.current.size).toBe(0)
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    expect([...selectionRef.current]).toEqual(['/v/a.md'])
+    // The sidebar collapsing IS this component unmounting (App renders it conditionally), and a
+    // chord must never copy a selection nobody can see any more.
+    act(() => root?.unmount())
+    root = null
+    expect(selectionRef.current).toBe(EMPTY_SELECTION)
   })
 })
