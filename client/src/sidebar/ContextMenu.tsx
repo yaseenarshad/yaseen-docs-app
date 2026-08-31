@@ -107,9 +107,10 @@ export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInN
             onClick={() => {
               // The failure is REPORTED (`PageContextMenu`'s idiom): a clipboard the OS refused is
               // silent otherwise, and a copy that quietly did nothing is the worst kind of no-op.
-              void navigator.clipboard.writeText(copyPaths.join('\n')).catch((error: unknown) => {
-                onNotice?.(`Can't copy paths: ${error instanceof Error ? error.message : String(error)}`)
-              })
+              void navigator.clipboard.writeText(copyPaths.join('\n')).then(
+                () => onNotice?.(`Copied ${copyPaths.length} paths`),
+                (error: unknown) => onNotice?.(`Can't copy paths: ${error instanceof Error ? error.message : String(error)}`),
+              )
               onClose()
             }}
           >
@@ -180,7 +181,12 @@ export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInN
             className="ctx-menu__item"
             role="menuitem"
             onClick={() => {
-              void navigator.clipboard.writeText(copyPath)
+              // Every copy confirms through the one notice (YAZ-1341) — this item long predates
+              // it, so it also gains the failure report it never had.
+              void navigator.clipboard.writeText(copyPath).then(
+                () => onNotice?.('Copied path'),
+                (error: unknown) => onNotice?.(`Can't copy path: ${error instanceof Error ? error.message : String(error)}`),
+              )
               onClose()
             }}
           >
@@ -193,7 +199,10 @@ export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInN
             className="ctx-menu__item"
             role="menuitem"
             onClick={() => {
-              void navigator.clipboard.writeText(copyLinkText)
+              void navigator.clipboard.writeText(copyLinkText).then(
+                () => onNotice?.('Copied link'),
+                (error: unknown) => onNotice?.(`Can't copy link: ${error instanceof Error ? error.message : String(error)}`),
+              )
               onClose()
             }}
           >

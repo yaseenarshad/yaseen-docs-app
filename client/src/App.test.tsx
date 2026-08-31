@@ -300,13 +300,15 @@ describe('App ⌘⇧C copy path (YAZ-1338)', () => {
   }
   const chord = () => new KeyboardEvent('keydown', { key: 'c', metaKey: true, shiftKey: true, bubbles: true, cancelable: true })
 
-  it('with no selection it copies the ACTIVE file’s path and consumes the key', async () => {
+  it('with no selection it copies the ACTIVE file’s path, consumes the key, and SAYS SO (YAZ-1341)', async () => {
     const writeText = installClipboard()
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
     const event = chord()
     act(() => void el.querySelector('.app')?.dispatchEvent(event))
     expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/a.md')
     expect(event.defaultPrevented).toBe(true)
+    await act(async () => {})
+    expect(el.querySelector('.link-notice')?.textContent).toBe('Copied path')
   })
 
   it('with a selection standing it copies THOSE paths newline-joined, not the active file', async () => {
@@ -319,6 +321,8 @@ describe('App ⌘⇧C copy path (YAZ-1338)', () => {
     })
     act(() => void el.querySelector('.app')?.dispatchEvent(chord()))
     expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/notes/b.md\n/v/c.md')
+    await act(async () => {})
+    expect(el.querySelector('.link-notice')?.textContent).toBe('Copied 2 paths')
   })
 
   it('with nothing selected and nothing open it does nothing and leaves the key alone', async () => {

@@ -341,11 +341,13 @@ export function App() {
       const text = selected.size > 0 ? orderedSelection(selected, document.querySelector('.sidebar__body')).join('\n') : file
       if (text === null) return
       event.preventDefault()
-      // A clipboard the OS refused is silent otherwise — the sidebar's own copy items report it
-      // the same way (YAZ-1337), through this window's one passive notice.
-      void navigator.clipboard.writeText(text).catch((error: unknown) => {
-        setNotice(`Can't copy path: ${error instanceof Error ? error.message : String(error)}`)
-      })
+      // BOTH outcomes speak through the window's one passive notice (YAZ-1341): the user cannot
+      // see a clipboard land, so a copy needs its yes as much as its no.
+      const copied = text.split('\n').length
+      void navigator.clipboard.writeText(text).then(
+        () => setNotice(copied === 1 ? 'Copied path' : `Copied ${copied} paths`),
+        (error: unknown) => setNotice(`Can't copy path: ${error instanceof Error ? error.message : String(error)}`),
+      )
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)

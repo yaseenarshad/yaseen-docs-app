@@ -2202,7 +2202,7 @@ describe('Sidebar multi-select context menu (YAZ-1337)', () => {
 
   it('right-click inside a 2-selection offers the plural items above "Open in new window"; copy is VISIBLE order, selection survives', async () => {
     const writeText = installClipboard()
-    const { el } = await mount({}, withMultiTree)
+    const { el, props } = await mount({}, withMultiTree)
     shiftClickRow(rowByPath(el, '/v/c.md')) // click order c → a…
     shiftClickRow(rowByPath(el, '/v/a.md'))
     rightClick(rowByPath(el, '/v/a.md'))
@@ -2215,6 +2215,17 @@ describe('Sidebar multi-select context menu (YAZ-1337)', () => {
     expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/a.md\n/v/c.md') // …but tree order out
     expect(el.querySelector('.ctx-menu')).toBeNull()
     expect(selectedCount(el)).toBe(2)
+    await act(async () => {})
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Copied 2 paths') // YAZ-1341: a copy SAYS SO
+  })
+
+  it('the singular "Copy path" confirms too — every copy speaks with the one voice (YAZ-1341)', async () => {
+    installClipboard()
+    const { el, props } = await mount({}, withMultiTree)
+    rightClick(rowByPath(el, '/v/a.md'))
+    act(() => itemByLabel(el, 'Copy path')?.click())
+    await act(async () => {})
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Copied path')
   })
 
   it('"Open N in new tabs" background-opens every selected path and keeps the selection', async () => {

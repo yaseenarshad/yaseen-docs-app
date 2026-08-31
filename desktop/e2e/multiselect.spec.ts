@@ -58,6 +58,7 @@ test('shift+click selects, the menu copies and opens the selection, ⌘⇧C copi
   await win.locator('.tree__row--file', { hasText: 'Ideas' }).click({ button: 'right' })
   await shoot(win, 'yaz1334-2-plural-menu')
   await win.locator('.ctx-menu__item', { hasText: 'Copy 2 paths' }).click()
+  await expect(win.locator('.link-notice')).toHaveText('Copied 2 paths') // YAZ-1341: the copy says so
   await expect.poll(readClipboard).toContain('Ideas.md')
   expect((await readClipboard()).split('\n').sort()).toEqual(
     [path.join(vault, 'Ideas.md'), path.join(vault, 'Projects', 'Roadmap.md')].sort(),
