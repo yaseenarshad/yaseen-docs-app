@@ -2259,6 +2259,35 @@ describe('Sidebar multi-select context menu (YAZ-1337)', () => {
     expect(itemByLabel(el, 'New note')).toBeDefined()
     expect(selectedCount(el)).toBe(2)
   })
+
+  // ---- Polish pins (YAZ-1340): shift means selection EVERYWHERE, and one Escape does one thing ----
+
+  it('shift+click on a dir row does not fold it either — shift is never a fold gesture', async () => {
+    // Expansion PERSISTS per root across mounts in this file (storage-backed), so this test
+    // assumes nothing about the starting state and puts it back the way it found it.
+    const { el } = await mount({}, withMultiTree)
+    const dirRow = () => el.querySelector<HTMLButtonElement>('.tree__row--dir')
+    const expandedNow = () => dirRow()?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
+    const before = expandedNow()
+    shiftClickRow(dirRow())
+    expect(expandedNow()).toBe(before) // shift never folds…
+    expect(selectedCount(el)).toBe(0) // …and never selects a dir
+    act(() => dirRow()?.click())
+    expect(expandedNow()).not.toBe(before) // a plain click still does
+    act(() => dirRow()?.click())
+    expect(expandedNow()).toBe(before)
+  })
+
+  it('Escape with the context menu open closes the MENU and leaves the selection standing', async () => {
+    const { el } = await mount({}, withMultiTree)
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    shiftClickRow(rowByPath(el, '/v/b.md'))
+    rightClick(rowByPath(el, '/v/a.md'))
+    expect(itemByLabel(el, 'Copy 2 paths')).toBeDefined()
+    act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(selectedCount(el)).toBe(2)
+  })
 })
 
 /**
@@ -2392,7 +2421,9 @@ describe('Sidebar multi-select: folded rows and the ⌘⇧C window (YAZ-1338)', 
     const writeText = vi.fn(async () => undefined)
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     const { el } = await mount({}, withNested)
-    toggleSub(el) // open `sub` so its note has a row to pick
+    // Expansion persists per root across mounts in this file, so ENSURE the states rather than
+    // toggling blind — this test must not care what its neighbours left behind.
+    if (rowByPath(el, '/v/sub/b.md') === null) toggleSub(el) // open `sub` so its note has a row to pick
     shiftClickRow(rowByPath(el, '/v/sub/b.md'))
     shiftClickRow(rowByPath(el, '/v/a.md'))
     toggleSub(el) // …and fold it again: the row goes, the pick does not

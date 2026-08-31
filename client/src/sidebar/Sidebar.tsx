@@ -1021,9 +1021,11 @@ export function Sidebar({
         onContextMenu={(e) => (searching ? undefined : openMenu(null, e))}
         // Escape drops the multi-select (YAZ-1336) — and ONLY when there is one: with nothing
         // selected the key still belongs to everyone else listening for it, so this must neither
-        // swallow it nor stop it travelling.
+        // swallow it nor stop it travelling. An OPEN context menu owns the key outright
+        // (YAZ-1340): its window listener is closing it on this very press, and one Escape must
+        // not also throw the selection the menu was about to act on.
         onKeyDown={(e) => {
-          if (e.key !== 'Escape' || selectedPaths.size === 0) return
+          if (e.key !== 'Escape' || selectedPaths.size === 0 || menu !== null) return
           e.preventDefault()
           e.stopPropagation()
           dispatchSelection({ type: 'clear' })
