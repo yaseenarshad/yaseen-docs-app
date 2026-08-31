@@ -141,6 +141,26 @@ interface MenuTargets {
   rowKind: 'file' | 'dir' | null
   /** "Copy path" — the right-clicked row (file or folder), or the vault ROOT for blank space (GRO-2273). */
   copyPath: string | null
+  /**
+   * "Copy N paths" — the MULTI-SELECT target (🔒 D5, YAZ-1337): every selected path in VISIBLE
+   * tree order, or null when there is no plural gesture to offer (a right-click outside the
+   * selection, on blank space, or on a selection of one — where the singular items already ARE
+   * this menu).
+   *
+   * Its OWN field per this split's whole point, and emphatically NOT `copyPath` in a list: that
+   * one falls back to the vault ROOT on blank space, which is precisely a target this item must
+   * never have — "Copy 1 paths" over the root is an item that means nothing. The two are free to
+   * diverge again (a selection may one day hold folders, which the singular item already allows).
+   */
+  copyPaths: string[] | null
+  /**
+   * "Open N in new tabs" — the same multi-select target asked SEPARATELY (🔒 D5, YAZ-1337), and
+   * `newWindowPath`'s plural sibling in spirit only: that one opens ONE file in a whole new
+   * window (D2, GRO-2168), this one appends N background tabs to THIS window (I3's opener,
+   * GRO-2235). Equal today, independent by construction — the doctrine above is exactly about
+   * fields that happen to agree.
+   */
+  openTabPaths: string[] | null
   /** "Copy link" — the FILE row's own `[[wikilink]]`, resolved when the menu opens (E3 GRO-2173, YAZ-957). */
   copyLinkText: string | null
   /** "Open in new window" — FILE rows only (D2, GRO-2168). */
@@ -512,6 +532,23 @@ export function Sidebar({
 
   // ---- New note / new folder page / new folder (GRO-2022, YAZ-841): right-click menu → inline name input ----
 
+  /**
+   * The selection as the panel is SHOWING it (YAZ-1337): one pass over the live rows —
+   * `flashTreeRows`' idiom (revealRow.ts), the blessed way to ask this panel what is on screen —
+   * filtered to the selected paths and deduped, because the Topics lens stands one page under
+   * every parent that claims it (🔒 D3) and a path selected once belongs in the list once.
+   * Order is the tree's own, never click order: a copied list has to read like the panel.
+   */
+  const visibleSelection = useCallback((): string[] => {
+    const paths: string[] = []
+    for (const row of bodyRef.current?.querySelectorAll<HTMLElement>('.tree__row[data-path]') ?? []) {
+      const path = row.dataset.path
+      if (path === undefined || !selectedPaths.has(path) || paths.includes(path)) continue
+      paths.push(path)
+    }
+    return paths
+  }, [selectedPaths])
+
   const openMenu = useCallback(
     (node: MenuRow | null, e: React.MouseEvent, topicsAnchor: string | null = null) => {
       e.preventDefault()
@@ -523,6 +560,16 @@ export function Sidebar({
       // right-clicked, and pinning the boolean into the menu's state is what keeps it that way.
       const notePath = filePath !== null && fileKind(filePath) === 'markdown' ? filePath : null
       const viewOnlyLinkName = filePath === null || notePath !== null ? null : viewOnlyLinks.linkName(filePath)
+      // A right-click on a row the selection does NOT hold is a fresh target, so the selection it
+      // is not part of ends — the Explorer/Finder rule, and the only one that keeps the plural
+      // items honest: whatever they name is what the user can still see highlighted. BLANK SPACE
+      // is not a row and never clears (YAZ-1337): its menu is about the vault root, and a
+      // right-click into the empty space below the tree must not throw a selection away.
+      if (node !== null && !selectedPaths.has(node.path)) dispatchSelection({ type: 'clear' })
+      // The plural gesture exists only when the right-clicked row is ITSELF in a selection of two
+      // or more (🔒 D5): a selection of one already IS the singular menu, and a row outside the
+      // selection just ended it above. Read once, here, like every other target this menu pins.
+      const plural = filePath !== null && selectedPaths.has(filePath) && selectedPaths.size >= 2 ? visibleSelection() : null
       setMenu({
         x: e.clientX,
         y: e.clientY,
@@ -537,6 +584,10 @@ export function Sidebar({
         // empty-Explorer menu does the same. Trailing separators are stripped so the copied
         // bytes match the root the rest of the app uses.
         copyPath: node?.path ?? root.replace(/\/+$/, ''),
+        // Both plural fields resolve to the ONE list read above — and stay separate fields
+        // anyway, which is exactly what the doctrine asks of items that agree today.
+        copyPaths: plural,
+        openTabPaths: plural,
         // Markdown keeps its semantic index spelling. View-only files cross the explicit
         // catalog boundary instead; pre-catalog, missing, directories and unknown files hide it.
         copyLinkText: notePath !== null
@@ -552,7 +603,7 @@ export function Sidebar({
         topicsAnchor,
       })
     },
-    [root, indexSource, viewOnlyLinks],
+    [root, indexSource, viewOnlyLinks, selectedPaths, visibleSelection],
   )
 
   /**
@@ -561,6 +612,19 @@ export function Sidebar({
    * the anchor rides along so the create group knows where to draw its inline input.
    */
   const openTopicsMenu = useCallback((row: MenuRow, e: React.MouseEvent) => openMenu(row, e, row.path), [openMenu])
+
+  /**
+   * Context menu "Open N in new tabs" (🔒 D5, YAZ-1337): the SAME background opener ⌘-click
+   * already uses (I3, GRO-2235), once per selected path. The loop needs no guard of its own —
+   * the workspace ignores a path that is already open and appends without stealing activation
+   * (`open-background`, useWorkspace.ts) — so N tabs land in tree order and the caret stays put.
+   */
+  const openFilesInTabs = useCallback(
+    (paths: string[]) => {
+      for (const path of paths) onOpenFileBackground(path)
+    },
+    [onOpenFileBackground],
+  )
 
   /** Context menu "Open in new window" (D2, GRO-2168): a fresh window on {root, file}; this one untouched. (⌘-click opens a background tab instead since I3.) */
   const openFileNewWindow = useCallback(
@@ -1017,6 +1081,10 @@ export function Sidebar({
           x={menu.x}
           y={menu.y}
           copyPath={menu.copyPath}
+          copyPaths={menu.copyPaths}
+          openTabPaths={menu.openTabPaths}
+          onOpenInNewTabs={openFilesInTabs}
+          onNotice={onNotice}
           copyLinkText={menu.copyLinkText}
           newWindowPath={menu.newWindowPath}
           onOpenNewWindow={openFileNewWindow}

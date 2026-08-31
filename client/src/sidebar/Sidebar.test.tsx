@@ -2166,3 +2166,201 @@ describe('Sidebar multi-select: search, Escape-when-empty, and the prune', () =>
     expect(selectedRows(el).map((r) => r.dataset.path)).toEqual(['/v/a.md'])
   })
 })
+
+/**
+ * Multi-select context-menu actions (YAZ-1334 → YAZ-1337, 🔒 D5). Right-clicking a row that is
+ * INSIDE a 2+ selection adds "Copy N paths" / "Open N in new tabs" ABOVE the singular items —
+ * plural targets live in their OWN MenuTargets fields per the one-field-per-item doctrine.
+ * Right-clicking outside the selection clears it; blank space leaves it alone. Copied paths come
+ * out in VISIBLE tree order (not click order), newline-joined, deduped by construction.
+ */
+describe('Sidebar multi-select context menu (YAZ-1337)', () => {
+  const MULTI_TREE: TreeNode[] = [
+    { type: 'dir', name: 'sub', path: '/v/sub', children: [] },
+    { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
+    { type: 'file', name: 'b.md', path: '/v/b.md', size: 1, mtime: 1, kind: 'markdown' },
+    { type: 'file', name: 'c.md', path: '/v/c.md', size: 1, mtime: 1, kind: 'markdown' },
+  ]
+  const withMultiTree = (bridge: ReturnType<typeof installBridge>) =>
+    bridge.tree.mockResolvedValue({ root: '/v', tree: MULTI_TREE, generatedAt: 1 })
+  const rowByPath = (el: HTMLElement, path: string) =>
+    el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
+  const shiftClickRow = (row: HTMLElement | null) =>
+    act(() => void row?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
+  const rightClick = (target: Element | null) =>
+    act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+  const selectedCount = (el: HTMLElement) => el.querySelectorAll('.tree__row--selected').length
+  function installClipboard() {
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    return writeText
+  }
+
+  it('right-click inside a 2-selection offers the plural items above "Open in new window"; copy is VISIBLE order, selection survives', async () => {
+    const writeText = installClipboard()
+    const { el } = await mount({}, withMultiTree)
+    shiftClickRow(rowByPath(el, '/v/c.md')) // click order c → a…
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    rightClick(rowByPath(el, '/v/a.md'))
+    const labels = menuItems(el).map((b) => b.textContent)
+    expect(labels.indexOf('Copy 2 paths')).toBeGreaterThanOrEqual(0)
+    expect(labels.indexOf('Copy 2 paths')).toBeLessThan(labels.indexOf('Open in new window'))
+    expect(labels).toContain('Open 2 in new tabs')
+    expect(labels).toContain('Copy path') // singular items still target the clicked row
+    act(() => itemByLabel(el, 'Copy 2 paths')?.click())
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/a.md\n/v/c.md') // …but tree order out
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(selectedCount(el)).toBe(2)
+  })
+
+  it('"Open N in new tabs" background-opens every selected path and keeps the selection', async () => {
+    const { el, props } = await mount({}, withMultiTree)
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    shiftClickRow(rowByPath(el, '/v/b.md'))
+    shiftClickRow(rowByPath(el, '/v/c.md'))
+    rightClick(rowByPath(el, '/v/b.md'))
+    act(() => itemByLabel(el, 'Open 3 in new tabs')?.click())
+    expect(props.onOpenFileBackground).toHaveBeenCalledTimes(3)
+    expect((props.onOpenFileBackground as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual(['/v/a.md', '/v/b.md', '/v/c.md'])
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    expect(selectedCount(el)).toBe(3)
+  })
+
+  it('a 1-selection gets no plural items — the singular menu already is that menu', async () => {
+    const { el } = await mount({}, withMultiTree)
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    rightClick(rowByPath(el, '/v/a.md'))
+    expect(itemByLabel(el, 'Copy 1 paths')).toBeUndefined()
+    expect(itemByLabel(el, 'Copy 1 path')).toBeUndefined()
+    expect(itemByLabel(el, 'Copy path')).toBeDefined()
+  })
+
+  it('right-click on a row OUTSIDE the selection clears it and shows the ordinary menu', async () => {
+    const { el } = await mount({}, withMultiTree)
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    shiftClickRow(rowByPath(el, '/v/b.md'))
+    rightClick(rowByPath(el, '/v/c.md'))
+    expect(itemByLabel(el, 'Copy 2 paths')).toBeUndefined()
+    expect(itemByLabel(el, 'Copy path')).toBeDefined()
+    expect(selectedCount(el)).toBe(0)
+  })
+
+  it('right-click on blank space leaves the selection alone and stays plural-free', async () => {
+    const { el } = await mount({}, withMultiTree)
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    shiftClickRow(rowByPath(el, '/v/b.md'))
+    rightClick(el.querySelector('.sidebar__body'))
+    expect(itemByLabel(el, 'Copy 2 paths')).toBeUndefined()
+    expect(itemByLabel(el, 'New note')).toBeDefined()
+    expect(selectedCount(el)).toBe(2)
+  })
+})
+
+/**
+ * The plural items' harder halves (YAZ-1337): the TOPICS lens reaches them through the very same
+ * `openMenu` (`openTopicsMenu` only adds the anchor), where one page can stand under two parents —
+ * so the count and the copied text must say ONE path, not one per row (🔒 D3). And a clipboard the
+ * OS refuses has to be reported, not swallowed.
+ */
+describe('Sidebar multi-select context menu: Topics dedup and the copy failure (YAZ-1337)', () => {
+  const record = (path: string, properties: Record<string, unknown> = {}) => {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    const rel = path.slice('/v/'.length)
+    return {
+      path,
+      name,
+      basename: name.replace(/\.[^.]+$/, ''),
+      folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '',
+      ext: 'md', size: 1, ctime: 1, mtime: 1, properties, aliases: [], tags: [], links: [], embeds: [],
+    }
+  }
+  // Shared is claimed by BOTH topics, so the tree draws it twice (⚡ D6 of YAZ-814); Loose belongs
+  // nowhere and waits under Uncategorized, which puts it LAST in visible order.
+  const HOME = record('/v/Home.md', { folder_page: true })
+  const DOCS = record('/v/Docs.md', { folder_page: true, folder_pages: ['[[Home]]'] })
+  const NOTES = record('/v/Notes.md', { folder_page: true, folder_pages: ['[[Home]]'] })
+  const SHARED = record('/v/Shared.md', { folder_pages: ['[[Docs]]', '[[Notes]]'] })
+  const LOOSE = record('/v/Loose.md')
+  const feed = (...records: ReturnType<typeof record>[]): SidebarProps['indexSource'] =>
+    ({
+      resolve: (target: string) =>
+        ({ '[[home]]': HOME.path, '[[docs]]': DOCS.path, '[[notes]]': NOTES.path })[target.trim().toLowerCase()] ?? null,
+      records,
+      subscribe: () => () => undefined,
+    }) as SidebarProps['indexSource']
+  /** The same files on disk, so the tree-backed prune (YAZ-1336) has nothing to take away. */
+  const DISK: TreeNode[] = [HOME, DOCS, NOTES, SHARED, LOOSE].map((r) => ({ type: 'file', name: r.name, path: r.path, size: 1, mtime: 1, kind: 'markdown' }) as const)
+  const rowsByPath = (el: HTMLElement, path: string) => [...el.querySelectorAll<HTMLElement>(`.tree__row[data-path="${path}"]`)]
+  const shiftClickRow = (row: HTMLElement | undefined) =>
+    act(() => void row?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
+  const rightClick = (target: Element | null | undefined) =>
+    act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+  const expand = (el: HTMLElement, label: string) => act(() => el.querySelector<HTMLElement>(`[aria-label="Expand ${label}"]`)?.click())
+  /** Both topics open, plus Uncategorized (🔒 D7 starts closed) — so all four rows are on screen. */
+  const mountTopics = async () => {
+    const mounted = await mount({ lens: 'topics', indexSource: feed(HOME, DOCS, NOTES, SHARED, LOOSE) }, (b) =>
+      b.tree.mockResolvedValue({ root: '/v', tree: DISK, generatedAt: 1 }),
+    )
+    await expand(mounted.el, 'Docs')
+    await expand(mounted.el, 'Notes')
+    await act(async () => mounted.el.querySelector<HTMLElement>('.tree__row--muted')?.click())
+    return mounted
+  }
+
+  it('a page standing under TWO parents counts and copies ONCE (🔒 D3), still in visible order', async () => {
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const { el } = await mountTopics()
+    expect(rowsByPath(el, SHARED.path)).toHaveLength(2) // both occurrences are on screen…
+    shiftClickRow(rowsByPath(el, SHARED.path)[0])
+    shiftClickRow(rowsByPath(el, LOOSE.path)[0])
+    // …and BOTH light up off the ONE selected path, which is the whole reason the count can lie.
+    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(3)
+    rightClick(rowsByPath(el, SHARED.path)[1]) // the occurrence under Notes: either one is the page
+    expect(itemByLabel(el, 'Copy 2 paths')).toBeDefined()
+    expect(itemByLabel(el, 'Copy 3 paths')).toBeUndefined()
+    act(() => itemByLabel(el, 'Copy 2 paths')?.click())
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/Shared.md\n/v/Loose.md')
+  })
+
+  it('"Open 2 in new tabs" from a Topics row opens each page once, dedup included', async () => {
+    const { el, props } = await mountTopics()
+    shiftClickRow(rowsByPath(el, SHARED.path)[0])
+    shiftClickRow(rowsByPath(el, LOOSE.path)[0])
+    rightClick(rowsByPath(el, SHARED.path)[0])
+    act(() => itemByLabel(el, 'Open 2 in new tabs')?.click())
+    expect((props.onOpenFileBackground as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual(['/v/Shared.md', '/v/Loose.md'])
+  })
+
+  it('a clipboard the OS refuses is REPORTED through the panel notice, never swallowed', async () => {
+    const writeText = vi.fn(async () => {
+      throw new Error('DENIED')
+    })
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const MULTI: TreeNode[] = [
+      { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
+      { type: 'file', name: 'b.md', path: '/v/b.md', size: 1, mtime: 1, kind: 'markdown' },
+    ]
+    const { el, props } = await mount({}, (b) => b.tree.mockResolvedValue({ root: '/v', tree: MULTI, generatedAt: 1 }))
+    for (const row of el.querySelectorAll<HTMLElement>('.tree__row--file')) shiftClickRow(row)
+    rightClick(el.querySelector('.tree__row[data-path="/v/a.md"]'))
+    await act(async () => itemByLabel(el, 'Copy 2 paths')?.click())
+    expect(props.onNotice).toHaveBeenCalledWith("Can't copy paths: DENIED")
+  })
+
+  it('a right-click on a DIR row ends the selection too — it is a row, and not one of the selected', async () => {
+    const TREE_WITH_DIR: TreeNode[] = [
+      { type: 'dir', name: 'sub', path: '/v/sub', children: [] },
+      { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
+      { type: 'file', name: 'b.md', path: '/v/b.md', size: 1, mtime: 1, kind: 'markdown' },
+    ]
+    const { el } = await mount({}, (b) => b.tree.mockResolvedValue({ root: '/v', tree: TREE_WITH_DIR, generatedAt: 1 }))
+    for (const row of el.querySelectorAll<HTMLElement>('.tree__row--file')) shiftClickRow(row)
+    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(2)
+    rightClick(el.querySelector('.tree__row--dir'))
+    expect(el.querySelectorAll('.tree__row--selected')).toHaveLength(0)
+    expect(itemByLabel(el, 'Copy 2 paths')).toBeUndefined()
+    expect(itemByLabel(el, 'New folder')).toBeDefined() // …and the dir's own ordinary menu stands
+  })
+})

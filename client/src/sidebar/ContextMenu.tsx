@@ -7,6 +7,21 @@ interface ContextMenuProps {
   copyPath: string | null
   /** The right-clicked FILE row's own `[[wikilink]]`, ready to copy; null (folders, blank space) hides "Copy link" — neither is a note to name (E3 GRO-2173, YAZ-957). */
   copyLinkText: string | null
+  /**
+   * "Copy N paths" — every SELECTED path in visible tree order (🔒 D5, YAZ-1337), newline-joined
+   * on click; null hides the item, which is every menu opened outside a 2+ selection. Its own
+   * target, never `copyPath` in a list: that one falls back to the vault root on blank space.
+   */
+  copyPaths: string[] | null
+  /** "Open N in new tabs" — the same selection, asked separately (🔒 D5); null hides the item. */
+  openTabPaths: string[] | null
+  /** One background tab per path (I3's opener, GRO-2235) — the caller owns the loop's semantics. */
+  onOpenInNewTabs: (paths: string[]) => void
+  /**
+   * The panel's passive notice (YAZ-1337): a clipboard write that never lands says so, the way
+   * `PageContextMenu` reports it. Optional so a mount with no notice channel simply stays quiet.
+   */
+  onNotice?: (message: string) => void
   /** Absolute path of the right-clicked FILE row; null (folders, blank space) hides "Open in new window" (D2, GRO-2168). */
   newWindowPath: string | null
   onOpenNewWindow: (path: string) => void
@@ -48,7 +63,7 @@ interface ContextMenuProps {
 }
 
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, copyLinkText, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, openVsCodePath, onOpenVsCode, onNewNote, onNewFolderPage, onNewFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInNewTabs, onNotice, copyLinkText, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, openVsCodePath, onOpenVsCode, onNewNote, onNewFolderPage, onNewFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, onClose }: ContextMenuProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -79,6 +94,40 @@ export function ContextMenu({ x, y, copyPath, copyLinkText, newWindowPath, onOpe
       }}
     >
       <div ref={menuRef} className="ctx-menu" style={{ left: pos.left, top: pos.top }} onMouseDown={(e) => e.stopPropagation()} role="menu">
+        {/* The multi-select pair (🔒 D5, YAZ-1337) leads the menu: when a right-click lands inside
+            a selection, what the user is pointing at is the SELECTION — so its two actions come
+            before the singular items, which go on targeting the one row underneath. Both leave
+            the selection standing: acting on it is not the same as ending it. */}
+        {copyPaths !== null && (
+          <button
+            type="button"
+            className="ctx-menu__item"
+            role="menuitem"
+            onClick={() => {
+              // The failure is REPORTED (`PageContextMenu`'s idiom): a clipboard the OS refused is
+              // silent otherwise, and a copy that quietly did nothing is the worst kind of no-op.
+              void navigator.clipboard.writeText(copyPaths.join('\n')).catch((error: unknown) => {
+                onNotice?.(`Can't copy paths: ${error instanceof Error ? error.message : String(error)}`)
+              })
+              onClose()
+            }}
+          >
+            Copy {copyPaths.length} paths
+          </button>
+        )}
+        {openTabPaths !== null && (
+          <button
+            type="button"
+            className="ctx-menu__item"
+            role="menuitem"
+            onClick={() => {
+              onOpenInNewTabs(openTabPaths)
+              onClose()
+            }}
+          >
+            Open {openTabPaths.length} in new tabs
+          </button>
+        )}
         {newWindowPath !== null && (
           <button
             type="button"
