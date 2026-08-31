@@ -1546,6 +1546,24 @@ button {
   background: var(--accent-soft);
 }
 
+/* Multi-select (YAZ-1336, 🔒 D1): a PERSISTENT mark on every row of a selected path (🔒 D3), and
+   it has to stay tellable apart from `--active` right beside it — so where the open file fills
+   with the accent and takes its colour, a selected row keeps its own text and wears the accent
+   only on its leading edge, over the row wash. Both tokens swap with the theme, so this holds in
+   light and dark without a colour of its own. */
+.tree__row--selected,
+.tree__row--selected:hover {
+  background: var(--bg-hover-row);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* The keyboard walk crosses selected rows: focus keeps its ring, the selection keeps its edge. */
+.tree__row--selected:focus-visible {
+  box-shadow:
+    inset 2px 0 0 var(--accent),
+    inset 0 0 0 1px var(--accent);
+}
+
 .tree__row--revealed,
 .tree__row--revealed:hover,
 .tree__row--revealed:focus-visible {

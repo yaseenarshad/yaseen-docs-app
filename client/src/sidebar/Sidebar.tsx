@@ -18,6 +18,7 @@ import { storage } from '../lib/storage'
 import { linkNames } from '../links/completion'
 import { FOLDER_PAGE_KEY, FOLDER_PAGES_KEY, folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { countLinkReferences } from '../links/renameLinks'
+import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../lib/selection'
 import { allDirs, ancestorDirs, treeHasFile, treeReducer } from '../lib/treeState'
 import { SearchResults } from '../search/SearchResults'
 import { useSearchResults } from '../search/useSearchResults'
@@ -28,7 +29,7 @@ import { entryPath, renamedPath, targetDirFor, type EntryKind, type MenuRow } fr
 import { HotkeysButton } from './HotkeysPanel'
 import { SettingsCog } from './SettingsPanel'
 import { TopicsTree, allExpandableTopics, type PendingTopicCreate } from './TopicsTree'
-import { Tree, type PendingCreate, type PendingRename, type TreeFileMove } from './Tree'
+import { Tree, type PendingCreate, type PendingRename, type TreeFileMove, type TreeSelection } from './Tree'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
 
 interface SidebarProps {
@@ -113,6 +114,15 @@ interface SidebarProps {
   /** The offer card's button; App creates Home and opens it. */
   onCreateHome: () => void
   /**
+   * ⌘⇧C's read-only window onto the multi-selection (🔒 D4, YAZ-1338). The state stays HERE
+   * (🔒 D1) — it is per root and dies with the panel — but the CHORD is App's: this component is
+   * unmounted while the sidebar is collapsed, and a shortcut that stops existing when a panel is
+   * hidden is not a window shortcut. So the Sidebar writes its current selection into this box on
+   * every render and empties it on unmount, and App only ever reads it — a ref, not state,
+   * precisely so keeping App able to answer costs this tree no render at all.
+   */
+  selectionRef: { current: ReadonlySet<string> }
+  /**
    * GitHub sync (YAZ-1081 3B), straight through to the settings cog: App owns the ONE
    * `useGithubSync` this window has, because the chip in the editor reads the same one.
    * Absent → the cog renders without a GitHub Sync section.
@@ -140,6 +150,26 @@ interface MenuTargets {
   rowKind: 'file' | 'dir' | null
   /** "Copy path" — the right-clicked row (file or folder), or the vault ROOT for blank space (GRO-2273). */
   copyPath: string | null
+  /**
+   * "Copy N paths" — the MULTI-SELECT target (🔒 D5, YAZ-1337): the WHOLE selection, ordered by
+   * the panel (on-screen rows first, hidden ones after — `orderedSelection`, ⚡ YAZ-1338), or null
+   * when there is no plural gesture to offer (a right-click outside the selection, on blank
+   * space, or on a selection of one — where the singular items already ARE this menu).
+   *
+   * Its OWN field per this split's whole point, and emphatically NOT `copyPath` in a list: that
+   * one falls back to the vault ROOT on blank space, which is precisely a target this item must
+   * never have — "Copy 1 paths" over the root is an item that means nothing. The two are free to
+   * diverge again (a selection may one day hold folders, which the singular item already allows).
+   */
+  copyPaths: string[] | null
+  /**
+   * "Open N in new tabs" — the same multi-select target asked SEPARATELY (🔒 D5, YAZ-1337), and
+   * `newWindowPath`'s plural sibling in spirit only: that one opens ONE file in a whole new
+   * window (D2, GRO-2168), this one appends N background tabs to THIS window (I3's opener,
+   * GRO-2235). Equal today, independent by construction — the doctrine above is exactly about
+   * fields that happen to agree.
+   */
+  openTabPaths: string[] | null
   /** "Copy link" — the FILE row's own `[[wikilink]]`, resolved when the menu opens (E3 GRO-2173, YAZ-957). */
   copyLinkText: string | null
   /** "Open in new window" — FILE rows only (D2, GRO-2168). */
@@ -288,6 +318,7 @@ export function Sidebar({
   onSearchFocusHandled,
   unadopted,
   onCreateHome,
+  selectionRef,
   sync,
 }: SidebarProps) {
   const [tree, setTree] = useState<TreeResponse | null>(null)
@@ -298,6 +329,11 @@ export function Sidebar({
   // main-owned per-vault bucket, so it opens where it was left — across a lens switch, a window
   // and a restart alike. A lens switch never touches it: this state outlives the tree's mount.
   const [topicsExpanded, setTopicsExpanded] = useState<ReadonlySet<string>>(() => new Set(storage.getTopicsExpanded(root)))
+  // Multi-select (YAZ-1336, 🔒 D1): the selected file PATHS, shared by BOTH lenses — one entry per
+  // path however many rows draw it (🔒 D3). It lives HERE and nowhere else on purpose: this
+  // component is mounted `key={root}` and only while the sidebar is open, so a selection is
+  // honestly about rows currently on screen and cannot outlive them (a collapse ends it).
+  const [selectedPaths, dispatchSelection] = useReducer(selectionReducer, EMPTY_SELECTION)
   const [menu, setMenu] = useState<MenuTargets | null>(null)
   // `anchor` is the TOPICS page or disk-folder row the create was asked from; null on the file
   // tree, where the input nests inside `parentDir`'s own children instead. `intoFolderPage` is
@@ -417,6 +453,32 @@ export function Sidebar({
     if (activeFile !== null) dispatch({ type: 'expandTo', root, file: activeFile })
   }, [root, activeFile])
 
+  // A selection is about the rows on screen (YAZ-1336), so whatever REPLACES them ends it: the
+  // other lens is a different reading of the vault, and a typed query swaps the body for the flat
+  // list entirely (🔒 the flat-list ruling on YAZ-739). `clear` on an empty selection returns the
+  // same set, so the mount pass and every ordinary render below cost nothing.
+  useEffect(() => {
+    dispatchSelection({ type: 'clear' })
+  }, [lens, searching])
+
+  // The loaded tree is the canonical disk truth for BOTH lenses — Topics draws the same files —
+  // so a path it no longer has cannot stay selected. Reference-stable when nothing was dropped,
+  // which is every refresh that changed something else.
+  useEffect(() => {
+    if (tree === null) return
+    dispatchSelection({ type: 'prune', exists: (path) => treeHasFile(tree.tree, path) })
+  }, [tree])
+
+  // ⌘⇧C's window onto the selection (🔒 D4, YAZ-1338): App holds the box, this panel keeps it
+  // current — and EMPTIES it on the way out, so a collapsed or root-switched sidebar can never
+  // hand the chord a selection nobody can see. A ref, so this costs no render on either side.
+  useEffect(() => {
+    selectionRef.current = selectedPaths
+    return () => {
+      selectionRef.current = EMPTY_SELECTION
+    }
+  }, [selectionRef, selectedPaths])
+
   useEffect(() => {
     if (tree === null || pendingReveal?.lens !== 'files' || handledFilesRevealId.current === pendingReveal.id) return
     handledFilesRevealId.current = pendingReveal.id
@@ -490,6 +552,16 @@ export function Sidebar({
 
   // ---- New note / new folder page / new folder (GRO-2022, YAZ-841): right-click menu → inline name input ----
 
+  /**
+   * The whole selection as a list, ordered by the PANEL (YAZ-1337, as ⚡ YAZ-1338 rules it): the
+   * rows on screen first, in the order the eye reads them — never click order, which is not an
+   * order the user can see — and every still-selected path with no row appended after them, so
+   * collapsing a folder over a selected note hides the row and keeps the note. The one rule lives
+   * in `orderedSelection`, which ⌘⇧C reads too: the menu and the chord cannot spell one selection
+   * two ways.
+   */
+  const orderedSelectedPaths = useCallback((): string[] => orderedSelection(selectedPaths, bodyRef.current), [selectedPaths])
+
   const openMenu = useCallback(
     (node: MenuRow | null, e: React.MouseEvent, topicsAnchor: string | null = null) => {
       e.preventDefault()
@@ -501,6 +573,16 @@ export function Sidebar({
       // right-clicked, and pinning the boolean into the menu's state is what keeps it that way.
       const notePath = filePath !== null && fileKind(filePath) === 'markdown' ? filePath : null
       const viewOnlyLinkName = filePath === null || notePath !== null ? null : viewOnlyLinks.linkName(filePath)
+      // A right-click on a row the selection does NOT hold is a fresh target, so the selection it
+      // is not part of ends — the Explorer/Finder rule, and the only one that keeps the plural
+      // items honest: whatever they name is what the user can still see highlighted. BLANK SPACE
+      // is not a row and never clears (YAZ-1337): its menu is about the vault root, and a
+      // right-click into the empty space below the tree must not throw a selection away.
+      if (node !== null && !selectedPaths.has(node.path)) dispatchSelection({ type: 'clear' })
+      // The plural gesture exists only when the right-clicked row is ITSELF in a selection of two
+      // or more (🔒 D5): a selection of one already IS the singular menu, and a row outside the
+      // selection just ended it above. Read once, here, like every other target this menu pins.
+      const plural = filePath !== null && selectedPaths.has(filePath) && selectedPaths.size >= 2 ? orderedSelectedPaths() : null
       setMenu({
         x: e.clientX,
         y: e.clientY,
@@ -515,6 +597,10 @@ export function Sidebar({
         // empty-Explorer menu does the same. Trailing separators are stripped so the copied
         // bytes match the root the rest of the app uses.
         copyPath: node?.path ?? root.replace(/\/+$/, ''),
+        // Both plural fields resolve to the ONE list read above — and stay separate fields
+        // anyway, which is exactly what the doctrine asks of items that agree today.
+        copyPaths: plural,
+        openTabPaths: plural,
         // Markdown keeps its semantic index spelling. View-only files cross the explicit
         // catalog boundary instead; pre-catalog, missing, directories and unknown files hide it.
         copyLinkText: notePath !== null
@@ -530,7 +616,7 @@ export function Sidebar({
         topicsAnchor,
       })
     },
-    [root, indexSource, viewOnlyLinks],
+    [root, indexSource, viewOnlyLinks, selectedPaths, orderedSelectedPaths],
   )
 
   /**
@@ -539,6 +625,19 @@ export function Sidebar({
    * the anchor rides along so the create group knows where to draw its inline input.
    */
   const openTopicsMenu = useCallback((row: MenuRow, e: React.MouseEvent) => openMenu(row, e, row.path), [openMenu])
+
+  /**
+   * Context menu "Open N in new tabs" (🔒 D5, YAZ-1337): the SAME background opener ⌘-click
+   * already uses (I3, GRO-2235), once per selected path. The loop needs no guard of its own —
+   * the workspace ignores a path that is already open and appends without stealing activation
+   * (`open-background`, useWorkspace.ts) — so N tabs land in tree order and the caret stays put.
+   */
+  const openFilesInTabs = useCallback(
+    (paths: string[]) => {
+      for (const path of paths) onOpenFileBackground(path)
+    },
+    [onOpenFileBackground],
+  )
 
   /** Context menu "Open in new window" (D2, GRO-2168): a fresh window on {root, file}; this one untouched. (⌘-click opens a background tab instead since I3.) */
   const openFileNewWindow = useCallback(
@@ -767,6 +866,13 @@ export function Sidebar({
     drop: dropOnDir,
   }
 
+  /** The multi-select as both trees take it (YAZ-1336): the set, plus its two gestures. */
+  const selection: TreeSelection = {
+    paths: selectedPaths,
+    toggle: (path) => dispatchSelection({ type: 'toggle', path }),
+    clear: () => dispatchSelection({ type: 'clear' }),
+  }
+
   const pending: PendingCreate | null =
     creating === null
       ? null
@@ -909,7 +1015,22 @@ export function Sidebar({
           BOTH lenses offer it since YAZ-948 — 🔒 YAZ-847 withheld it from Topics only until
           that tree had a menu of its own to be consistent with, which YAZ-865 gave its rows.
           Blank space means the same thing in either lens: the vault ROOT. */}
-      <div ref={bodyRef} className="sidebar__body" onContextMenu={(e) => (searching ? undefined : openMenu(null, e))}>
+      <div
+        ref={bodyRef}
+        className="sidebar__body"
+        onContextMenu={(e) => (searching ? undefined : openMenu(null, e))}
+        // Escape drops the multi-select (YAZ-1336) — and ONLY when there is one: with nothing
+        // selected the key still belongs to everyone else listening for it, so this must neither
+        // swallow it nor stop it travelling. An OPEN context menu owns the key outright
+        // (YAZ-1340): its window listener is closing it on this very press, and one Escape must
+        // not also throw the selection the menu was about to act on.
+        onKeyDown={(e) => {
+          if (e.key !== 'Escape' || selectedPaths.size === 0 || menu !== null) return
+          e.preventDefault()
+          e.stopPropagation()
+          dispatchSelection({ type: 'clear' })
+        }}
+      >
         {searching ? (
           // A typed query replaces the ACTIVE TAB's body, whichever lens that is (🔒 D5).
           results.length > 0 ? (
@@ -932,6 +1053,7 @@ export function Sidebar({
             activeFile={activeFile}
             onOpenFile={onOpenFile}
             onOpenFileBackground={onOpenFileBackground}
+            selection={selection}
             unadopted={unadopted}
             onCreateHome={onCreateHome}
             onRowContextMenu={openTopicsMenu}
@@ -959,6 +1081,7 @@ export function Sidebar({
                 pending={pending}
                 renaming={renaming}
                 move={fileMove}
+                selection={selection}
               />
             )}
           </>
@@ -973,6 +1096,10 @@ export function Sidebar({
           x={menu.x}
           y={menu.y}
           copyPath={menu.copyPath}
+          copyPaths={menu.copyPaths}
+          openTabPaths={menu.openTabPaths}
+          onOpenInNewTabs={openFilesInTabs}
+          onNotice={onNotice}
           copyLinkText={menu.copyLinkText}
           newWindowPath={menu.newWindowPath}
           onOpenNewWindow={openFileNewWindow}

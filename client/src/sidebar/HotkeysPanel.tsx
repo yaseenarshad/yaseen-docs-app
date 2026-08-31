@@ -35,12 +35,13 @@ export const VIEW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: 'Esc', label: 'Cancel a card drag' },
 ]
 
-/** App/window shortcuts: menu-owned B3/Tabs/⌘K, renderer-owned ⌘B (YAZ-1280), plus Open Recent's open-beside gesture. */
+/** App/window shortcuts: menu-owned B3/Tabs/⌘K, renderer-owned ⌘B (YAZ-1280) and ⌘⇧C (YAZ-1338), plus Open Recent's open-beside gesture. */
 export const WINDOW_HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘⇧N', label: 'New window — same folder and tabs' },
   { keys: '⌘⇧O', label: 'Open folder…' },
   { keys: '⌘K', label: 'Search the vault' },
   { keys: '⌘B', label: 'Toggle sidebar outside editing surfaces' },
+  { keys: '⌘⇧C', label: 'Copy path — the sidebar selection when one is standing, else the open file' },
   { keys: '⌘W', label: 'Close tab — on the last tab it empties the window, then closes it' },
   { keys: '⌘⇧W', label: 'Close window' },
   { keys: '⌃Tab / ⌃⇧Tab', label: 'Next / previous tab' },
@@ -58,6 +59,9 @@ export const MOUSE_TIPS: readonly HotkeyEntry[] = [
   // with the sidebar's I3 gesture — one convention, one tip.
   { keys: 'Click link', label: 'Open that wiki link in the current tab — a missing note is created first' },
   { keys: '⌘-click file or link', label: 'Open it in a background tab' },
+  // The multi-select gesture (YAZ-1336 🔒 D2) and what it is FOR (YAZ-1337): the two plural menu
+  // items and ⌘⇧C above. Shift toggles one row at a time — it never opens anything.
+  { keys: '⇧-click file', label: 'Add or remove it from a multi-selection — right-click for Copy N paths / Open N in new tabs' },
   { keys: 'Right-click file', label: 'Open in new window, Copy path / link, New note…' },
 ]
 

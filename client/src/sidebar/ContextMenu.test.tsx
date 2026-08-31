@@ -48,6 +48,11 @@ function mount(x: number, y: number, over: Partial<MenuProps> = {}) {
     x,
     y,
     copyPath: null,
+    // The multi-select pair (🔒 D5, YAZ-1337): null is the ordinary menu — no selection to act
+    // on — which is what every clamping case below is about.
+    copyPaths: null,
+    openTabPaths: null,
+    onOpenInNewTabs: vi.fn(),
     copyLinkText: null,
     newWindowPath: null,
     onOpenNewWindow: vi.fn(),

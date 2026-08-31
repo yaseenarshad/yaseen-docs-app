@@ -39,6 +39,19 @@ export interface TreeFileMove {
   drop: (dir: string) => void
 }
 
+/**
+ * Sidebar multi-select (YAZ-1336, 🔒 D1) as both trees take it: the selected PATHS plus the two
+ * gestures that change them. The Sidebar owns the reducer behind it; keying by path is 🔒 D3, so
+ * a page standing under two parents in Topics shows selected on BOTH of its rows.
+ */
+export interface TreeSelection {
+  paths: ReadonlySet<string>
+  /** 🔒 D2: shift+click on a FILE row toggles it in or out — no range, and never an open. */
+  toggle: (path: string) => void
+  /** A plain click starts over before it opens; ⌘-click leaves the selection alone. */
+  clear: () => void
+}
+
 interface TreeProps {
   nodes: TreeNode[]
   /** Absolute path of the directory these nodes are children of (the root at depth 0). */
@@ -59,6 +72,8 @@ interface TreeProps {
   renaming: PendingRename | null
   /** File drag-to-move state + callbacks (E1b); owned by the Sidebar. */
   move: TreeFileMove
+  /** Multi-select state + gestures (YAZ-1336); owned by the Sidebar, shared with the Topics lens. */
+  selection: TreeSelection
   depth?: number
 }
 
@@ -74,9 +89,10 @@ export function Tree({
   pending,
   renaming,
   move,
+  selection,
   depth = 0,
 }: TreeProps) {
-  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onNodeContextMenu, pending, renaming, move }
+  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onNodeContextMenu, pending, renaming, move, selection }
   return (
     <ul className="tree" role={depth === 0 ? 'tree' : 'group'}>
       {pending !== null && pending.parentDir === dirPath && (
@@ -101,7 +117,13 @@ export function Tree({
                 type="button"
                 className={`tree__row tree__row--dir${move.dropDir === node.path ? ' tree__row--drop' : ''}`}
                 style={{ paddingLeft: 8 + depth * 14 }}
-                onClick={() => onToggle(node.path)}
+                // Shift is the SELECTION gesture everywhere (YAZ-1340): a dir row cannot join the
+                // selection, but shift+click must not fold it either — Topics' rows already hold
+                // this line, and the two trees must not disagree about what shift means.
+                onClick={(e) => {
+                  if (e.shiftKey) return
+                  onToggle(node.path)
+                }}
                 onContextMenu={(e) => onNodeContextMenu(node, e)}
                 onDragOver={(e) => {
                   if (move.dragging === null) return
@@ -130,17 +152,26 @@ export function Tree({
             <RenameInline initial={renameInputName(node.name)} indent={8 + depth * 14 + 14} onSubmit={renaming.onSubmit} onCancel={renaming.onCancel} />
           </li>
         ) : (
-          <li key={node.path} role="treeitem" aria-selected={node.path === activeFile}>
+          <li key={node.path} role="treeitem" aria-selected={node.path === activeFile || selection.paths.has(node.path)}>
             <button
               type="button"
-              className={`tree__row tree__row--file${node.path === activeFile ? ' tree__row--active' : ''}`}
+              className={`tree__row tree__row--file${node.path === activeFile ? ' tree__row--active' : ''}${selection.paths.has(node.path) ? ' tree__row--selected' : ''}`}
               style={{ paddingLeft: 8 + depth * 14 + 14 }}
               onClick={(e) => {
+                // Shift is the SELECTION gesture and nothing else (YAZ-1336, 🔒 D2): it never
+                // opens, never previews — so it is asked first, before any of the open rules.
+                if (e.shiftKey) {
+                  selection.toggle(node.path)
+                  return
+                }
                 // First activation previews, second commits — the Topics rows' rule (YAZ-921):
                 // opening keeps focus on the row, re-activating the open page enters its text.
                 if (e.metaKey) onOpenFileBackground(node.path)
-                else if (node.path === activeFile) focusOpenDocument() // YAZ-961: the VISIBLE one
-                else onOpenFile(node.path)
+                else {
+                  selection.clear() // a plain click starts over; ⌘ above deliberately does not
+                  if (node.path === activeFile) focusOpenDocument() // YAZ-961: the VISIBLE one
+                  else onOpenFile(node.path)
+                }
               }}
               onContextMenu={(e) => onNodeContextMenu(node, e)}
               title={node.path}
