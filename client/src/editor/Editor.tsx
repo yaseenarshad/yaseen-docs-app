@@ -213,14 +213,14 @@ function CrepeHost({
       defaultValue: body,
       onMarkdownUpdated: (md) => controller?.update(md),
       folding: {
-        initialCollapsedKeys: new Set(bulletFoldKeys),
+        seedCollapsedKeys: () => new Set(bulletFoldKeys),
         onCollapsedKeysChange: (keys) => {
           bulletFoldKeys = keys
           writeFolds()
         },
       },
       headingFolding: {
-        initialCollapsedKeys: new Set(headingFoldKeys),
+        seedCollapsedKeys: () => new Set(headingFoldKeys),
         onCollapsedKeysChange: (keys) => {
           headingFoldKeys = keys
           writeFolds()

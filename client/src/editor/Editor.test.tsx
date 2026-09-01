@@ -475,8 +475,8 @@ describe('CrepeHost fold persistence: bullets and headings share one bucket (YAZ
   it('seeds each plugin with its own kind of key', async () => {
     await mount(BODY)
     const opts = crepeOptions()
-    expect([...(opts.folding?.initialCollapsedKeys ?? [])]).toEqual(['abc:0'])
-    expect([...(opts.headingFolding?.initialCollapsedKeys ?? [])]).toEqual(['h:def:0'])
+    expect([...(opts.folding?.seedCollapsedKeys?.() ?? [])]).toEqual(['abc:0'])
+    expect([...(opts.headingFolding?.seedCollapsedKeys?.() ?? [])]).toEqual(['h:def:0'])
   })
 
   it('writes the union on every report, so neither plugin pruning its keys can drop the other kind', async () => {

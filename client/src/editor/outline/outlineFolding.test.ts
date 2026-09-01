@@ -133,7 +133,7 @@ describe('outline folding', () => {
     const onSecond = vi.fn<(keys: readonly string[]) => void>()
     const second = await mount({
       defaultValue: OUTLINE,
-      folding: { initialCollapsedKeys: new Set([key!, 'stale:9']), onCollapsedKeysChange: onSecond },
+      folding: { seedCollapsedKeys: () => new Set([key!, 'stale:9']), onCollapsedKeysChange: onSecond },
     })
     expect(toggleFor(second.root, 'Parent').getAttribute('aria-expanded')).toBe('false')
     expect(folded(second.root)).toHaveLength(1)
