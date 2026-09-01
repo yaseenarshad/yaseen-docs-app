@@ -129,14 +129,14 @@ describe('canDrop: the locked target rules (D4)', () => {
 })
 
 describe('performMove: one membership write, then closed-target reconciliation', () => {
-  const FROM = { path: '/vault/From.md', name: 'From' }
+  const FROM = folder('/vault/From.md')
   const TO = { path: '/vault/To.md', name: 'To', columns: { score: { kind: 'number' as const }, tags: { kind: 'list' as const } } }
-  const records = [folder(FROM.path), folder(TO.path)]
+  const records = [FROM, folder(TO.path)]
   const resolve = resolverOver(records)
 
   it('swaps the old parent for the new in a single folder_pages write', async () => {
     const page = rec('/vault/Page.md', belongs('[[From]]'))
-    await performMove(page, FROM.path, TO, resolve)
+    await performMove(page, FROM, TO, resolve)
     expect(write.mock.calls).toEqual([['/vault/Page.md', 'folder_pages', ['[[To]]']]])
     expect(backfill).toHaveBeenCalledExactlyOnceWith([page], TO.columns)
     expect(write.mock.invocationCallOrder[0]).toBeLessThan(backfill.mock.invocationCallOrder[0]!)
@@ -144,13 +144,13 @@ describe('performMove: one membership write, then closed-target reconciliation',
 
   it('other parents and non-counting prose survive verbatim, in place', async () => {
     const page = rec('/vault/Page.md', belongs('[[Other]]', 'see [[From]] daily', '[[From]]'))
-    await performMove(page, FROM.path, TO, resolve)
+    await performMove(page, FROM, TO, resolve)
     expect(write.mock.calls).toEqual([['/vault/Page.md', 'folder_pages', ['[[Other]]', 'see [[From]] daily', '[[To]]']]])
   })
 
   it('an entry spelling the old parent differently is still the old parent — resolver, not string compare', async () => {
     const page = rec('/vault/Page.md', belongs('  [[from]]  '))
-    await performMove(page, FROM.path, TO, resolve)
+    await performMove(page, FROM, TO, resolve)
     expect(write.mock.calls).toEqual([['/vault/Page.md', 'folder_pages', ['[[To]]']]])
   })
 
@@ -161,7 +161,7 @@ describe('performMove: one membership write, then closed-target reconciliation',
 
   it('a list already naming the target gains no duplicate', async () => {
     const page = rec('/vault/Page.md', belongs('[[From]]', '[[To]]'))
-    await performMove(page, FROM.path, TO, resolve)
+    await performMove(page, FROM, TO, resolve)
     expect(write.mock.calls).toEqual([['/vault/Page.md', 'folder_pages', ['[[To]]']]])
   })
 
@@ -172,11 +172,33 @@ describe('performMove: one membership write, then closed-target reconciliation',
     expect(backfill).toHaveBeenCalledExactlyOnceWith([page], TO.columns)
   })
 
+  it('the source outline loses the line that named the page — its own settings, one write after the card (YAZ-1364, 🔒 D4)', async () => {
+    const from = folder('/vault/From.md', {
+      folder_page_settings: { views: [{ type: 'outline', name: 'Outline', outline: '- [[Page]]\n    - kept child\n- [[Other]]' }, { type: 'table', name: 'Table' }] },
+    })
+    const page = rec('/vault/Page.md', belongs('[[From]]'))
+    await performMove(page, from, TO, resolverOver([from, page, rec(TO.path), rec('/vault/Other.md')]))
+    expect(write.mock.calls[0]).toEqual(['/vault/Page.md', 'folder_pages', ['[[To]]']])
+    expect(write.mock.calls[1]?.[0]).toBe('/vault/From.md')
+    expect(write.mock.calls[1]?.[1]).toBe('folder_page_settings')
+    expect((write.mock.calls[1]?.[2] as { views: { outline?: string }[] }).views[0].outline).toBe('    - kept child\n- [[Other]]')
+    expect(write.mock.calls).toHaveLength(2)
+  })
+
+  it('a source whose outline does not name the page — or has no outline — writes only the card', async () => {
+    const silent = folder('/vault/From.md', { folder_page_settings: { views: [{ type: 'outline', name: 'Outline', outline: '- see [[Page]] in prose' }] } })
+    await performMove(rec('/vault/Page.md', belongs('[[From]]')), silent, TO, resolverOver([silent, rec('/vault/Page.md'), rec(TO.path)]))
+    expect(write.mock.calls).toHaveLength(1)
+    write.mockClear()
+    await performMove(rec('/vault/Page.md', belongs('[[From]]')), FROM, TO, resolve)
+    expect(write.mock.calls).toHaveLength(1)
+  })
+
   it('keeps the successful membership write and rejects when closed-target reconciliation fails', async () => {
     const page = rec('/vault/Page.md', belongs('[[From]]'))
     backfill.mockRejectedValueOnce(new Error('Could not initialize 1 column value: Page.score'))
 
-    await expect(performMove(page, FROM.path, TO, resolve)).rejects.toThrow('Page.score')
+    await expect(performMove(page, FROM, TO, resolve)).rejects.toThrow('Page.score')
 
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Page.md', 'folder_pages', ['[[To]]'])
     expect(backfill).toHaveBeenCalledExactlyOnceWith([page], TO.columns)

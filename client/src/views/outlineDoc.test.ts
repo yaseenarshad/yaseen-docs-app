@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { stripBrackets } from './expr'
-import { escapeBlockStart, escapeOutlineMarkdown, fromOrder, lineTarget, mapOutlineLinks, parseOutline, serializeOutline } from './outlineDoc'
+import { dropOutlineLinks, escapeBlockStart, escapeOutlineMarkdown, fromOrder, lineTarget, mapOutlineLinks, parseOutline, serializeOutline } from './outlineDoc'
 
 /** Basename → path, keyed like `makeResolver`: `stripBrackets`, `#`/`|` tail dropped, trimmed, lowered. */
 const resolverOver = (basenames: string[]): ResolveLink => {
@@ -223,5 +223,20 @@ describe('escapeBlockStart: footnote definitions — the one GFM dropper the sca
     expect(escapeBlockStart('[^long-name]: see below')).toBe('\\[^long-name]: see below')
     // A plain link-reference-style line survives the editor as literal text already — untouched.
     expect(escapeBlockStart('[x]: /url')).toBe('[x]: /url')
+  })
+})
+
+describe('dropOutlineLinks: a member leaving from outside the editor (YAZ-1364, 🔒 D4)', () => {
+  const resolve = (target: string): string | null => {
+    const name = target.replace(/^\[\[|\]\]$/g, '').replace(/[#|].*$/, '').trim().toLowerCase()
+    return name === 'alex hormozi' ? '/vault/Alex Hormozi.md' : name === 'sam' ? '/vault/Sam.md' : null
+  }
+  it('drops every line resolving to the page, however spelled, and keeps every other byte', () => {
+    const outline = '- [[Sam]]\n- [[Alex Hormozi]]\n    - a child line stays\n- see [[Alex Hormozi]] in prose\n- [[alex hormozi|Alex]]\n'
+    expect(dropOutlineLinks(outline, '/vault/Alex Hormozi.md', resolve)).toBe('- [[Sam]]\n    - a child line stays\n- see [[Alex Hormozi]] in prose\n')
+  })
+  it('is undefined when no line names the page', () => {
+    expect(dropOutlineLinks('- [[Sam]]\n- prose about Alex', '/vault/Alex Hormozi.md', resolve)).toBeUndefined()
+    expect(dropOutlineLinks('', '/vault/Alex Hormozi.md', resolve)).toBeUndefined()
   })
 })

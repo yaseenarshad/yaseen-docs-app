@@ -139,3 +139,20 @@ export function mapOutlineLinks(outline: string, map: (link: string) => string |
   })
   return changed ? out.join('\n') : undefined
 }
+
+/**
+ * A member LEAVING from outside the editor — the Topics drag (YAZ-1364, 🔒 D4): every LINE that is
+ * exactly a wikilink resolving to `path` is dropped, the same set the × un-tag counts, and every
+ * other byte survives — prose that merely mentions the page, and the children lines beneath a
+ * dropped one, which keep their indent. Undefined when no line named it, so the caller writes
+ * nothing. Without this the reconcile pass (YAZ-1357) would read the stale line and tag the page
+ * straight back into the topic it was just dragged out of.
+ */
+export function dropOutlineLinks(outline: string, path: string, resolve: ResolveLink): string | undefined {
+  const lines = outline.split('\n')
+  const kept = lines.filter((raw) => {
+    const match = BULLET_LINE.exec(raw)
+    return match === null || lineTarget(match[3], resolve) !== path
+  })
+  return kept.length === lines.length ? undefined : kept.join('\n')
+}
