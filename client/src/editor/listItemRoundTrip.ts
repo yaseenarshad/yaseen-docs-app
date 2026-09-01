@@ -136,6 +136,8 @@ const BULLET_LINE = /^(\s*)([-*+])(?:\s|$)/
 /** `- - -` / `* * *` / `***`: a thematic break, which would otherwise pass as a bullet. */
 const THEMATIC_BREAK = /^\s*([-*_])(?:[ \t]*\1){2,}[ \t]*\r?$/
 const FENCE_LINE = /^\s*(```|~~~)/
+/** Tabs count as four spaces, the editor's own rule for depth. */
+const indentWidth = (indent: string): number => indent.replace(/\t/g, '    ').length
 
 /**
  * Mixed-marker siblings (GRO-2112): `-`, `*` and `+` are the same bullet. To CommonMark a marker
@@ -165,7 +167,7 @@ export const unifySiblingMarkers = (markdown: string): string => {
         if (line.trim() === '') markerAtIndent.clear()
         return line
       }
-      const indent = match[1].replace(/\t/g, '    ').length
+      const indent = indentWidth(match[1])
       for (const deeper of [...markerAtIndent.keys()]) if (deeper > indent) markerAtIndent.delete(deeper)
       const marker = markerAtIndent.get(indent) ?? match[2]
       markerAtIndent.set(indent, marker)
@@ -178,7 +180,6 @@ export const unifySiblingMarkers = (markdown: string): string => {
 const TEXT_ITEM = /^([ \t]*)(?:[-*+]|\d+[.)])[ \t]+\S/
 /** A bare marker: an empty item (what rule 1 writes). */
 const BARE_ITEM = /^([ \t]*)(?:[-*+]|\d+[.)])[ \t]*\r?$/
-const indentWidth = (indent: string): number => indent.replace(/\t/g, '    ').length
 
 /**
  * Before parsing (YAZ-1357, rule 7): a text item followed on the VERY NEXT line by a deeper bare
