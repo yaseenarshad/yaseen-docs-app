@@ -26,6 +26,9 @@
  *  6. load/save (YAZ-1329): `* 6) text` / `* 6. text` are bullet text, not an implicit ordered
  *     child. Load temporarily escapes that inner delimiter for CommonMark; save restores the
  *     visible source spelling. Real ordered lines (`6. text`) remain structural.
+ *  7. load (YAZ-1357): `separateEmptyNestedItems()` puts a blank line between a text item and a
+ *     deeper bare marker on the next line — an EMPTY item cannot interrupt a paragraph in
+ *     CommonMark, so without it rule 1's spelling reads back as text (or a setext heading).
  */
 import { paragraphSchema } from '@milkdown/kit/preset/commonmark'
 import type { Node as MdNode } from '@milkdown/kit/transformer'
@@ -118,10 +121,14 @@ export const escapeSameLineOrderedMarkers = (markdown: string): string =>
 export const restoreSameLineOrderedMarkers = (markdown: string): string =>
   mapOutsideFences(markdown, (line) => line.replace(ESCAPED_SAME_LINE_ORDERED_MARKER, '$1$2'))
 
-/** Before parsing: `* <br />` → bare marker; empty task `* [ ]` → `* [ ] <br />` (keeps the checkbox). */
+/** Before parsing: `* <br />` → bare marker; empty task `* [ ]` → `* [ ] <br />` (keeps the checkbox);
+ * then markers unified; then (LAST, since the blank line resets the marker memory) an empty bullet
+ * nested directly under text gets its blank line (rule 7). */
 export const normalizeEmptyItems = (markdown: string): string =>
-  unifySiblingMarkers(
-    escapeSameLineOrderedMarkers(markdown).replace(LEGACY_EMPTY_ITEM, '$1').replace(EMPTY_TASK_ITEM, '$1 <br />'),
+  separateEmptyNestedItems(
+    unifySiblingMarkers(
+      escapeSameLineOrderedMarkers(markdown).replace(LEGACY_EMPTY_ITEM, '$1').replace(EMPTY_TASK_ITEM, '$1 <br />'),
+    ),
   )
 
 /** A bullet line, including a bare empty marker (`*` / `-` alone, what rule 8 writes). */
@@ -165,6 +172,37 @@ export const unifySiblingMarkers = (markdown: string): string => {
       return marker === match[2] ? line : `${match[1]}${marker}${line.slice(match[1].length + 1)}`
     })
     .join('\n')
+}
+
+/** A bullet or ordered item WITH text. */
+const TEXT_ITEM = /^([ \t]*)(?:[-*+]|\d+[.)])[ \t]+\S/
+/** A bare marker: an empty item (what rule 1 writes). */
+const BARE_ITEM = /^([ \t]*)(?:[-*+]|\d+[.)])[ \t]*\r?$/
+const indentWidth = (indent: string): number => indent.replace(/\t/g, '    ').length
+
+/**
+ * Before parsing (YAZ-1357, rule 7): a text item followed on the VERY NEXT line by a deeper bare
+ * marker gets one blank line between them. CommonMark forbids an EMPTY list item from interrupting
+ * a paragraph, so `* a` + `  *` (Enter, Tab) read back as the text `a *` in the note editor and, in
+ * the outline editor's `-` spelling, as a setext heading that the bullets-only schema drops whole
+ * (the YAZ-974 guard then locked the view). The blank line is the one spelling every parser reads
+ * as a nested empty item — and the one Milkdown writes back, so the file converges on it. A no-op
+ * once the blank line exists; fenced code is left alone; a SIBLING bare marker is not nested.
+ */
+export const separateEmptyNestedItems = (markdown: string): string => {
+  const lines = markdown.split('\n')
+  const out: string[] = []
+  let inFence = false
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    out.push(line)
+    if (FENCE_LINE.test(line)) inFence = !inFence
+    if (inFence) continue
+    const text = TEXT_ITEM.exec(line)
+    const next = i + 1 < lines.length ? BARE_ITEM.exec(lines[i + 1]) : null
+    if (text !== null && next !== null && indentWidth(next[1]) > indentWidth(text[1])) out.push('')
+  }
+  return out.join('\n')
 }
 
 /** Before writing: `* [ ] <br />` (Milkdown's empty task) → `* [ ]`. */

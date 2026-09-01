@@ -103,6 +103,14 @@ describe('the seed guard (YAZ-974): healthy seeds are untouched', () => {
     expect(bullets(host)).toEqual(['above', '[^1]: note', 'below'])
   })
 
+  it('an empty bullet nested directly under a link line — the People.md shape (YAZ-1357) — renders both and stays editable', async () => {
+    const onSeedLoss = vi.fn()
+    const host = await mount('* [[Alex Hormozi]]\n  *', { onSeedLoss })
+    expect(bullets(host)).toEqual(['[[Alex Hormozi]]', ''])
+    expect(onSeedLoss).not.toHaveBeenCalled()
+    expect(host.querySelector('.ProseMirror')?.getAttribute('contenteditable')).toBe('true')
+  })
+
   it('a healthy seed stays editable and never reports loss', async () => {
     const onSeedLoss = vi.fn()
     const host = await mount(SEED, { onSeedLoss })

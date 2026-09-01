@@ -9,6 +9,7 @@ import {
   escapeSameLineOrderedMarkers,
   normalizeEmptyItems,
   restoreSameLineOrderedMarkers,
+  separateEmptyNestedItems,
   unifySiblingMarkers,
 } from './listItemRoundTrip'
 
@@ -93,5 +94,27 @@ describe('unifySiblingMarkers (GRO-2112)', () => {
     const once = unifySiblingMarkers('* a\n- b\n')
     expect(unifySiblingMarkers(once)).toBe(once)
     expect(normalizeEmptyItems('* a\n- b\n- [ ]\n')).toBe('* a\n* b\n* [ ] <br />\n')
+  })
+})
+
+describe('separateEmptyNestedItems (YAZ-1357)', () => {
+  it('is idempotent and leaves fenced code alone', () => {
+    const once = separateEmptyNestedItems('* a\n  *\n  * d\n')
+    expect(once).toBe('* a\n\n  *\n  * d\n')
+    expect(separateEmptyNestedItems(once)).toBe(once)
+    const fenced = '```\n* a\n  *\n```\n* b\n  *\n'
+    expect(separateEmptyNestedItems(fenced)).toBe('```\n* a\n  *\n```\n* b\n\n  *\n')
+  })
+  it('only fires for a DEEPER bare marker on the very next line', () => {
+    expect(separateEmptyNestedItems('* a\n*\n')).toBe('* a\n*\n')
+    expect(separateEmptyNestedItems('  * a\n*\n')).toBe('  * a\n*\n')
+    expect(separateEmptyNestedItems('* a\n  * b\n')).toBe('* a\n  * b\n')
+    expect(separateEmptyNestedItems('*\n  *\n')).toBe('*\n  *\n')
+  })
+})
+
+describe('normalizeEmptyItems runs the blank-line pass LAST (YAZ-1357)', () => {
+  it('mixed markers are unified before the blank line resets their memory', () => {
+    expect(normalizeEmptyItems('- a\n  *\n* b\n')).toBe('- a\n\n  *\n- b\n')
   })
 })

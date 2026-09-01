@@ -185,6 +185,22 @@ describe('locked editor rules (createCrepe)', () => {
     // empty paragraphs outside list items are unchanged
     expect(await roundTrip('x\n\n<br />\n\ny\n')).toBe('x\n\n<br />\n\ny\n')
   })
+  it('an empty bullet nested DIRECTLY under text loads as a nested item, spelled with a blank line (YAZ-1357)', async () => {
+    // CommonMark: an empty list item cannot interrupt a paragraph, so `* a` + `  *` used to read as
+    // the text `a *` (and the `-` spelling as a setext heading). The blank line is the one spelling
+    // every parser reads as a nested empty item, and the one Milkdown writes back — so it is stable.
+    expect(await roundTrip('* a\n  *\n')).toBe('* a\n\n  *\n')
+    expect(await roundTrip('- a\n    -\n')).toBe('* a\n\n  *\n')
+    expect(await roundTrip('* [[Alex Hormozi]]\n  *\n')).toBe('* [[Alex Hormozi]]\n\n  *\n')
+    expect(await roundTrip('* a\n  *\n  * d\n')).toBe('* a\n\n  *\n  * d\n')
+    expect(await roundTrip('* a\n  *\n    * e\n* f\n')).toBe('* a\n\n  *\n    * e\n* f\n')
+    expect(await roundTrip('1. a\n   1.\n')).toBe('1. a\n\n   1.\n')
+    expect(await roundTrip('* a\n\t*\n')).toBe('* a\n\n  *\n')
+    // already spelled with the blank line: byte-stable
+    expect(await roundTrip('* a\n\n  *\n')).toBe('* a\n\n  *\n')
+    // a SIBLING empty bullet is not nested and keeps GRO-2012's bare-marker spelling
+    expect(await roundTrip('* a\n*\n* b\n')).toBe('* a\n*\n* b\n')
+  })
   it('parses a reported same-line number as the parent bullet text, with one direct child list', async () => {
     const json = await documentJson('* 5) Competitor Ad Intelligence Engine\n  * Automation Tools\n')
     expect(json).toMatchObject({
