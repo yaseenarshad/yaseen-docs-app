@@ -20,7 +20,7 @@ import { type Command, type EditorState, Plugin, PluginKey, type Transaction } f
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { findNestedLists, innermostItemPos, itemLabelText, LIST_NODE_NAMES } from './listNodes'
-import { getOutlineFoldKey } from './outlineFoldKeys'
+import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 interface OutlineEntry {
@@ -47,8 +47,9 @@ interface OutlineFoldingState {
 
 export interface OutlineFoldingOptions {
   /**
-   * Read on EVERY state init — first mount and every full reload (an external/AI edit to the open
-   * file, YAZ-1342) — so the session's folds survive `setMarkdown`.
+   * Read on EVERY state init — first mount and the `setMarkdown` rebuild (YAZ-1342). Since
+   * YAZ-1347 a live external/AI edit is a diff TRANSACTION that never re-inits the state, so this
+   * seed is the cold-start and rebuild-fallback path only; live folds ride position mapping.
    */
   seedCollapsedKeys?: () => ReadonlySet<string>
   /** Called with the sorted live collapsed keys whenever the set changes (and once on mount). */
@@ -232,8 +233,9 @@ const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
     if (nestedLists.length === 0) return true
 
     const label = itemLabelText(node)
-    const occurrence = labelOccurrences.get(label) ?? 0
-    labelOccurrences.set(label, occurrence + 1)
+    const keyLabel = outlineFoldLabel(label)
+    const occurrence = labelOccurrences.get(keyLabel) ?? 0
+    labelOccurrences.set(keyLabel, occurrence + 1)
     entries.push({
       foldKey: getOutlineFoldKey(label, occurrence),
       itemPos,

@@ -36,7 +36,7 @@ import { type Command, type EditorState, Plugin, PluginKey, Selection } from '@m
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { ancestorItemPositions, innermostItemPos, isListItem, itemLabelText } from './listNodes'
-import { getOutlineFoldKey } from './outlineFoldKeys'
+import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
 
 export interface ZoomOptions {
@@ -95,8 +95,9 @@ const eachItemKey = (doc: ProseNode, visit: (pos: number, key: string) => boolea
     if (stop) return false
     if (!isListItem(node)) return true
     const label = itemLabelText(node)
-    const occurrence = occurrences.get(label) ?? 0
-    occurrences.set(label, occurrence + 1)
+    const keyLabel = outlineFoldLabel(label)
+    const occurrence = occurrences.get(keyLabel) ?? 0
+    occurrences.set(keyLabel, occurrence + 1)
     if (visit(pos, getOutlineFoldKey(label, occurrence))) stop = true
     return !stop
   })
