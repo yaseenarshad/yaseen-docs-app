@@ -8,13 +8,20 @@
  * that a CLOSED picker never swallows keys (the outliner keeps Enter in lists) while an OPEN
  * one wins the priority-100 Enter tie.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { IndexRecord } from '@shared/types'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
+import { api } from '../../api'
+
+vi.mock('../../api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../api')>()),
+  api: { createFile: vi.fn() },
+}))
+const createFile = vi.mocked(api.createFile)
 import { linkCandidates, nameCandidate } from '../../links/completion'
 import { WIKILINK_CLASS } from './wikilinkPlugin'
 import {
@@ -257,15 +264,17 @@ describe('wikilink picker: navigate / insert', () => {
 })
 
 describe('wikilink picker: create-new row', () => {
-  it('nothing matching offers one Create row that inserts the typed text as-is', async () => {
+  it('nothing matching offers one row that SAYS it links a new page — and Enter inserts the text, creating nothing (YAZ-1357)', async () => {
     const { crepe } = await mount('X\n', source('Alpha'))
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[New Page')
     const create = document.querySelector(`.${WIKILINK_PICKER_CREATE_CLASS}`)
-    expect(rows()).toEqual(['Create "New Page"'])
+    expect(rows()).toEqual(['New page "New Page" — click the link to create it'])
     expect(create?.getAttribute('aria-selected')).toBe('true')
     press(crepe, 'Enter')
     expect(getMarkdownForSave(crepe)).toBe('X[[New Page]]\n')
+    // The page is created on a CLICK of the rendered link (wikilinkClick.ts), never by this row.
+    expect(createFile).not.toHaveBeenCalled()
   })
 
   it('a whitespace-only fragment offers nothing', async () => {

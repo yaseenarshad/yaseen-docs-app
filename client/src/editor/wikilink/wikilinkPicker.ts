@@ -224,7 +224,8 @@ function buildPopup(view: EditorView): { element: HTMLElement; render: (session:
       item.setAttribute('role', 'option')
       item.className = row.create ? `${WIKILINK_PICKER_ITEM_CLASS} ${WIKILINK_PICKER_CREATE_CLASS}` : WIKILINK_PICKER_ITEM_CLASS
       item.setAttribute('aria-selected', String(i === session.selected))
-      item.textContent = row.create ? `Create "${row.label}"` : row.label
+      // Says what it does (YAZ-1357): Enter inserts the link; the page is born on a CLICK of it (wikilinkClick.ts).
+      item.textContent = row.create ? `New page "${row.label}" — click the link to create it` : row.label
       item.addEventListener('mousedown', (e) => e.preventDefault())
       item.addEventListener('click', () => {
         // Re-read the live session: the state may have moved between render and click.
