@@ -7,6 +7,7 @@ import { DrawingModal } from '../drawings/DrawingModal'
 import { createDrawingFeed } from '../drawings/drawingFeed'
 import { FolderPageContents } from '../views/FolderPageContents'
 import { createCrepe, focusEditor, getMarkdownForSave, setMarkdown } from './createCrepe'
+import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { FindBar } from './find/FindBar'
 import { createFindChannel } from './find/findChannel'
 import { FrontmatterPanel } from './FrontmatterPanel'
@@ -275,11 +276,15 @@ function CrepeHost({
       if (!(document.activeElement instanceof HTMLElement && document.activeElement.closest('.tree') !== null)) focusEditor(crepe)
     })
 
+    // An external/AI edit lands as a DIFF over the live state (YAZ-1347), so folds, caret and
+    // scroll ride ProseMirror's position mapping instead of being rebuilt from scratch. Only a
+    // whole-document rewrite falls back to `setMarkdown`, whose key-based reseed is the better
+    // answer once mapping has nothing left to map.
     const reload = async () => {
       const fresh = await api.readFile(file.path)
       if (cancelled) return
       const split = splitFrontmatter(fresh.content)
-      setMarkdown(crepe, split.body)
+      applyExternalMarkdown(crepe, split.body)
       markReloaded(() => getMarkdownForSave(crepe), fresh.mtime, split.frontmatter, split.body)
     }
     reloadRef.current = () => void reload()

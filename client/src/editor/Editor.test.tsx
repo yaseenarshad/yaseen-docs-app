@@ -46,6 +46,14 @@ vi.mock('./createCrepe', () => {
   }
 })
 
+// External edits apply as diffs (YAZ-1347): the fake lands the body the way the real apply would.
+vi.mock('./external/applyExternalMarkdown', () => ({
+  applyExternalMarkdown: vi.fn((crepe: { md: string }, md: string) => {
+    crepe.md = md
+    return 'applied'
+  }),
+}))
+
 /**
  * The folder page's outline editor (YAZ-903) is a SECOND Crepe instance, and the factory above is
  * faked here — so it is stubbed as the document it was seeded with. The real one is pinned in
@@ -58,6 +66,7 @@ vi.mock('../views/view/OutlineEditor', () => ({
 import { api } from '../api'
 import { storage } from '../lib/storage'
 import { createCrepe, setMarkdown, type CreateCrepeOptions } from './createCrepe'
+import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 
 interface FakeCrepe {
   md: string
@@ -71,6 +80,7 @@ const writeFile = vi.mocked(api.writeFile)
 const openLink = vi.mocked(api.openLink)
 const createCrepeMock = vi.mocked(createCrepe)
 const setMarkdownMock = vi.mocked(setMarkdown)
+const applyExternalMock = vi.mocked(applyExternalMarkdown)
 const openFile = vi.fn()
 
 // React's act() refuses to run outside a test renderer unless this flag is set.
@@ -296,8 +306,13 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
     diskHas(next, 2)
     diskHas(next, 2) // reload() re-reads
     await emit({ type: 'change', path: PATH, mtime: 2 })
-    expect(setMarkdownMock).toHaveBeenCalledWith(expect.anything(), '# Someone else\n')
+    // A reload is a DIFF apply, never a rebuild (YAZ-1347).
+    expect(applyExternalMock).toHaveBeenCalledWith(expect.anything(), '# Someone else\n')
+    expect(setMarkdownMock).not.toHaveBeenCalled()
     expect(el.querySelector('.conflict-bar')).toBeNull()
+    // The applied body IS the new baseline: no dirty state, no echo save back to disk (YAZ-1352).
+    await pastDebounce()
+    expect(writeFile).not.toHaveBeenCalled()
   })
 
   it('absorbs frontmatter added to a note that had none', async () => {

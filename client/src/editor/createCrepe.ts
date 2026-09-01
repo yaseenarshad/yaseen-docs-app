@@ -291,7 +291,9 @@ export function getMarkdownForSave(crepe: Crepe): string {
 }
 
 /**
- * Replace the whole document in an existing instance (e.g. external file change).
+ * Replace the whole document in an existing instance: the mount-time rename buffer, and
+ * `applyExternalMarkdown`'s fallback for a whole-document rewrite (YAZ-1347 — a live external
+ * edit applies as a diff transaction instead, so folds and caret survive by position mapping).
  * Uses `flush` (fresh EditorState, so no `markdownUpdated` fires and history is
  * reset) but keeps focus and the caret position so the user is not kicked out.
  */

@@ -15,4 +15,16 @@ const hashLabel = (label: string): string => {
   return (hash >>> 0).toString(36)
 }
 
-export const getOutlineFoldKey = (label: string, occurrence: number): string => `${hashLabel(label)}:${occurrence}`
+/**
+ * A leading `12) ` / `3. ` / `X) ` marker written into the TEXT of a bullet (YAZ-1329 keeps those
+ * literal, so they reach the label). It is ordering, not identity: renumbering a list while the
+ * app is closed must not open every fold on the next cold start (YAZ-1353). Live edits no longer
+ * depend on this at all — they map through positions (YAZ-1347) — so the one-time invalidation of
+ * previously saved keys for numbered lines is accepted rather than migrated.
+ */
+const ENUMERATION_PREFIX = /^\s*(?:\d+|[Xx])[.)]\s+/
+
+/** The label as the key sees it. Occurrence counting MUST use this too, or `1) foo` / `2) foo` siblings collide at occurrence 0. */
+export const outlineFoldLabel = (label: string): string => label.replace(ENUMERATION_PREFIX, '')
+
+export const getOutlineFoldKey = (label: string, occurrence: number): string => `${hashLabel(outlineFoldLabel(label))}:${occurrence}`
