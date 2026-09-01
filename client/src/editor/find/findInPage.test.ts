@@ -148,7 +148,7 @@ describe('fold reveal', () => {
 
   it('expands a collapsed fold that hides a match, silently (⌘Z stays free)', async () => {
     const { root, view, channel } = await mountFind(FOLDED_DOC, {
-      folding: { initialCollapsedKeys: new Set([getOutlineFoldKey('Parent', 0)]) },
+      folding: { seedCollapsedKeys: () => new Set([getOutlineFoldKey('Parent', 0)]) },
     })
     expect(foldedEls(root).length).toBeGreaterThan(0)
     channel.open()
@@ -160,7 +160,7 @@ describe('fold reveal', () => {
 
   it('re-collapses a revealed fold when the query stops matching inside it', async () => {
     const { root, channel } = await mountFind(FOLDED_DOC, {
-      folding: { initialCollapsedKeys: new Set([getOutlineFoldKey('Parent', 0)]) },
+      folding: { seedCollapsedKeys: () => new Set([getOutlineFoldKey('Parent', 0)]) },
     })
     channel.open()
     channel.setQuery('apple')
@@ -176,7 +176,7 @@ describe('fold reveal', () => {
   * apple two
 `
     const { root, view, channel } = await mountFind(doc, {
-      folding: { initialCollapsedKeys: new Set([getOutlineFoldKey('Parent', 0), getOutlineFoldKey('Fruit', 0)]) },
+      folding: { seedCollapsedKeys: () => new Set([getOutlineFoldKey('Parent', 0), getOutlineFoldKey('Fruit', 0)]) },
     })
     channel.open()
     channel.setQuery('apple')
@@ -208,7 +208,7 @@ visible banana
 
   it('expands a collapsed heading section that hides a match, silently (⌘Z stays free)', async () => {
     const { root, view, channel } = await mountFind(FOLDED_HEADINGS, {
-      headingFolding: { initialCollapsedKeys: new Set([getHeadingFoldKey('Alpha', 0)]) },
+      headingFolding: { seedCollapsedKeys: () => new Set([getHeadingFoldKey('Alpha', 0)]) },
     })
     expect(headingFoldedEls(root).length).toBeGreaterThan(0)
     channel.open()
@@ -220,7 +220,7 @@ visible banana
 
   it('re-collapses a revealed heading section when the query stops matching inside it', async () => {
     const { root, view, channel } = await mountFind(FOLDED_HEADINGS, {
-      headingFolding: { initialCollapsedKeys: new Set([getHeadingFoldKey('Alpha', 0)]) },
+      headingFolding: { seedCollapsedKeys: () => new Set([getHeadingFoldKey('Alpha', 0)]) },
     })
     channel.open()
     channel.setQuery('apple')
@@ -267,7 +267,7 @@ describe('escape and the save path', () => {
 `
     const { crepe, channel } = await mountFind(doc, {
       onMarkdownUpdated,
-      folding: { initialCollapsedKeys: new Set([getOutlineFoldKey('Parent', 0)]) },
+      folding: { seedCollapsedKeys: () => new Set([getOutlineFoldKey('Parent', 0)]) },
     })
     const before = getMarkdownForSave(crepe)
     channel.open()

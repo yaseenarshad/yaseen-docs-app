@@ -242,7 +242,7 @@ describe('heading folding: keys and persistence', () => {
     const onSecond = vi.fn<(keys: readonly string[]) => void>()
     const second = await mount({
       defaultValue: DOC,
-      headingFolding: { initialCollapsedKeys: new Set([key!, 'h:stale:9']), onCollapsedKeysChange: onSecond },
+      headingFolding: { seedCollapsedKeys: () => new Set([key!, 'h:stale:9']), onCollapsedKeysChange: onSecond },
     })
     expect(toggleFor(second.root, 'Section A').getAttribute('aria-expanded')).toBe('false')
     expect(foldedText(second.root)).toContain('Alpha body.')

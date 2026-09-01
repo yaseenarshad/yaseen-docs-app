@@ -46,7 +46,11 @@ interface OutlineFoldingState {
 }
 
 export interface OutlineFoldingOptions {
-  initialCollapsedKeys?: ReadonlySet<string>
+  /**
+   * Read on EVERY state init — first mount and every full reload (an external/AI edit to the open
+   * file, YAZ-1342) — so the session's folds survive `setMarkdown`.
+   */
+  seedCollapsedKeys?: () => ReadonlySet<string>
   /** Called with the sorted live collapsed keys whenever the set changes (and once on mount). */
   onCollapsedKeysChange?: (keys: readonly string[]) => void
 }
@@ -251,7 +255,7 @@ const getCollapsedKeys = ({ entries, collapsedItemPositions }: OutlineFoldingSta
     .map(({ foldKey }) => foldKey)
     .sort()
 
-export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onCollapsedKeysChange }: OutlineFoldingOptions = {}) =>
+export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCollapsedKeysChange }: OutlineFoldingOptions = {}) =>
   $prose(
     () =>
       new Plugin<OutlineFoldingState>({
@@ -259,10 +263,11 @@ export const createOutlineFolding = ({ initialCollapsedKeys = new Set(), onColla
         state: {
           init: (_config, state) => {
             const entries = getOutlineEntries(state.doc)
+            const seed = seedCollapsedKeys()
             return {
               entries,
               collapsedItemPositions: new Set(
-                entries.filter(({ foldKey }) => initialCollapsedKeys.has(foldKey)).map(({ itemPos }) => itemPos),
+                entries.filter(({ foldKey }) => seed.has(foldKey)).map(({ itemPos }) => itemPos),
               ),
               lastToggle: null,
             }
