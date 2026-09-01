@@ -334,6 +334,73 @@ describe('a link line that appears tags its page, at once', () => {
   })
 })
 
+// ---------- reconcile: a line that STARTS resolving (YAZ-1357) ----------
+
+const ALEX = '/vault/Alex Hormozi.md'
+/** The seed names every member and one page that does not exist yet — text, until it does. */
+const DANGLING = '- [[Lead Gen]]\n- [[Nurture]]\n- [[Sales]]\n- [[Alex Hormozi]]'
+const dangling = (extra: IndexRecord[] = []): IndexRecord[] => [
+  ...vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: DANGLING }, TABLE] }),
+  ...extra,
+]
+
+describe('a link line that STARTS resolving is reconciled — tag only (YAZ-1357)', () => {
+  it('a dangling line tags nobody; the page appearing on the next snapshot is tagged, without an edit', async () => {
+    mount(FUNNELS, dangling())
+    await flush()
+    expect(memberWrites()).toEqual([])
+    feed(dangling([rec(ALEX)]))
+    await flush()
+    expect(memberWrites()).toEqual([[ALEX, 'folder_pages', ['[[Funnel Stages]]']]])
+  })
+
+  it('a second snapshot before the index echoes the tag does not write twice; the echo ends the hold', async () => {
+    mount(FUNNELS, dangling())
+    feed(dangling([rec(ALEX)]))
+    await flush()
+    feed(dangling([rec(ALEX, { note: 'touched elsewhere' })]))
+    await flush()
+    expect(memberWrites()).toHaveLength(1)
+    feed(dangling([rec(ALEX, { folder_pages: ['[[Funnel Stages]]'] })]))
+    await flush()
+    expect(memberWrites()).toHaveLength(1)
+  })
+
+  it('a page that already belongs under another spelling is not written — idempotent through the resolver', async () => {
+    mount(FUNNELS, dangling([rec(ALEX, { folder_pages: ['[[funnel stages]]'] })]))
+    await flush()
+    expect(memberWrites()).toEqual([])
+  })
+
+  it('a lossy seed never writes', async () => {
+    mount(FUNNELS, dangling())
+    act(() => editor.props?.onSeedLoss?.())
+    feed(dangling([rec(ALEX)]))
+    await flush()
+    expect(memberWrites()).toEqual([])
+  })
+
+  it('a line that STOPS resolving is not un-tagged and opens no sheet', async () => {
+    mount()
+    feed(vault().filter((r) => r.path !== SALES))
+    await flush()
+    expect(memberWrites()).toEqual([])
+    expect(all(document.body, '.confirm__btn')).toEqual([])
+  })
+
+  it('a failed reconcile write is reported in place, and the page is offered again on the next snapshot', async () => {
+    write.mockRejectedValue(new Error('read-only vault'))
+    const el = mount(FUNNELS, dangling())
+    feed(dangling([rec(ALEX)]))
+    await flush()
+    expect(q(el, '[role="alert"]').textContent).toContain('read-only vault')
+    write.mockResolvedValue({ mtime: 2 })
+    feed(dangling([rec(ALEX, { note: 'again' })]))
+    await flush()
+    expect(memberWrites()).toHaveLength(2)
+  })
+})
+
 // ---------- un-tagging (🔒 sheet-gated, and cancel KEEPS) ----------
 
 describe('the confirm copy is a pure function', () => {

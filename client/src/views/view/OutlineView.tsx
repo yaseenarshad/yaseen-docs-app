@@ -58,6 +58,11 @@ import { SyncFromFolder } from './SyncFromFolder'
  * wrapper's `onBlur` wakes the held pass), and a LOSSY seed (YAZ-974 — read-only means read-only).
  * Inside the editor a folder-page link is a plain wikilink and nothing more (the locked scoping
  * decision): the glyph and the count are the Topics tree's, not this document's.
+ *
+ * RECONCILE (YAZ-1357) is the commit path's blind spot, closed: the diff is doc-vs-doc, so a line
+ * that starts RESOLVING with no edit (the page created by clicking that very link) never tagged.
+ * Every snapshot now re-asks the link rule against the current document and tags — only tags —
+ * what it names and the lookup does not; see the effect for its two idempotency holds.
  */
 export interface OutlineViewProps {
   /** The folder page whose contents these are: ViewsPane's `thisFile`. Every belonging write is about it. */
@@ -150,6 +155,8 @@ export function OutlineView({
   const docRef = useRef(doc)
   /** The pages whose un-tag is in flight: `records` still names them until the index echoes. */
   const untagging = useRef(new Set<string>())
+  /** The pages whose tag is in flight: `lookup` does not name them as members until the index echoes. */
+  const tagging = useRef(new Set<string>())
   /** The `.view-outline` wrapper, so the caret guard asks about THIS block's editor and no other. */
   const wrap = useRef<HTMLDivElement>(null)
   /** Bumped by what adoption cannot watch: the caret leaving the editor, an un-tag that failed. */
@@ -169,6 +176,20 @@ export function OutlineView({
       .map((path) => vaultRecords.find((r) => r.path === path))
       .filter((record): record is IndexRecord => record !== undefined)
 
+  /**
+   * THE one door for a tag, from an edit or from reconcile: the page is HELD in `tagging` until the
+   * index echoes its card (the reconcile effect drops the hold), so a snapshot arriving between
+   * the write and the echo never writes it twice. A failed write drops the hold at once.
+   */
+  const tag = (paths: readonly string[]): void => {
+    if (paths.length === 0) return
+    for (const path of paths) tagging.current.add(path)
+    applyBelonging(paths, belonging, 'tag').catch((err) => {
+      report(err)
+      for (const path of paths) tagging.current.delete(path)
+    })
+  }
+
   const commit = (markdown: string): void => {
     // The ref advances FIRST and synchronously: it is `prev` for this diff, it is what adoption
     // reads (a second effect run in the same commit must see the document this one just wrote),
@@ -178,8 +199,7 @@ export function OutlineView({
     onDocument(markdown)
     const diff = diffOutlineBelonging(prev, markdown, resolve)
     setDoc(markdown)
-    const tag = pagesNamed(diff.tag)
-    if (tag.length > 0) applyBelonging(tag.map((r) => r.path), belonging, 'tag').catch(report)
+    tag(pagesNamed(diff.tag).map((r) => r.path))
     const untag = pagesNamed(diff.untag)
     if (untag.length > 0) setPending((queue) => [...queue, ...untag])
   }
@@ -227,6 +247,23 @@ export function OutlineView({
     })
     if (todo.length > 0) append(todo)
   }, [appended, pending, lossy, wake])
+
+  /**
+   * RECONCILE (YAZ-1357): a link line that STARTS resolving without the document changing — the
+   * page was just created by a click on it, by AI, by Obsidian, by a rename — is a member the
+   * doc-vs-doc diff in `commit` can never see. So every snapshot re-asks the one rule against the
+   * CURRENT document: a line that is exactly a resolving wikilink names a member. Tag only — an
+   * un-tag stays behind the sheet — and idempotent twice over: `applyBelonging` skips a page whose
+   * card already resolves here, and `tag`'s hold skips one written but not yet echoed. The echo
+   * is what ends a hold, and this is where it is noticed. A lossy seed never writes.
+   */
+  useEffect(() => {
+    if (lossy) return
+    const member = (path: string): boolean => lookup.folderPagesOf(path).includes(folderPagePath)
+    for (const path of tagging.current) if (member(path)) tagging.current.delete(path)
+    const named = pagesNamed([...outlineLinkTargets(docRef.current, resolve)]).map((r) => r.path)
+    tag(named.filter((path) => !member(path) && !tagging.current.has(path)))
+  }, [resolve, lookup, lossy])
 
   const removing = pending.length > 0 ? pending[0] : null
 
