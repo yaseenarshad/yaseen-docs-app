@@ -36,8 +36,9 @@
  * GRO-2214) is offered twice — under its name (inserting `[[Name]]`) and under each alias,
  * which READS `CAC — Customer Acquisition Cost` and INSERTS the piped `[[Customer Acquisition
  * Cost|CAC]]`, so the link targets the note and displays the alias. When nothing matches a
- * non-empty fragment, a single "Create" row inserts `[[typed text]]` as-is — a link to a
- * not-yet-existing page; creation itself is Links C's unit. A `|` in the fragment is alias
+ * non-empty fragment, a single "Create" row inserts `[[typed text]]` as-is AND creates the page
+ * (YAZ-1357, 🔒 D3 revised — through Links C's own `createFromLink`, staying put; see
+ * `createPage`). A `|` in the fragment is alias
  * entry: the popup closes and typing continues as plain text. Code is excluded like the
  * decorations: no picker inside `code_block` or inline-`code` text.
  */
@@ -47,6 +48,9 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { SlashProvider } from '@milkdown/kit/plugin/slash'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { matchLinkCandidates, trailingLinkFragment, type LinkCandidate } from '../../links/completion'
+import { createFromLink } from './createFromLink'
+import type { WikilinkNav } from './wikilinkClick'
+import { linkPageName } from './wikilinkPlugin'
 import './wikilinkPicker.css'
 
 export const WIKILINK_PICKER_CLASS = 'wikilink-picker'
@@ -89,7 +93,7 @@ export function createWikilinkCandidateSource(): MutableWikilinkCandidateSource 
 /**
  * One popup row: shows `label`, inserts `[[insert]]` — the two differ for an alias row, which
  * reads `CAC — Customer Acquisition Cost` and inserts the piped `[[Customer Acquisition
- * Cost|CAC]]` (E2, GRO-2214). `create` rows show as Create "…" (nothing matched).
+ * Cost|CAC]]` (E2, GRO-2214). `create` rows show as Create "…" (nothing matched) and make the page.
  */
 interface PickerRow {
   label: string
@@ -161,23 +165,40 @@ function compute(state: EditorState, prev: PickerState | null, tr: Transaction |
   return { session: { ...ctx, rows, selected }, dismissed }
 }
 
-/** Replace the `[[fragment` with the full `[[insert]]` text and park the caret after it. */
-function insertRow(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, session: PickerSession, row: PickerRow): boolean {
+/**
+ * The Create row's other half (YAZ-1357, 🔒 D3 revised): the page is BORN here, not on a later
+ * click — Yasin's ruling, so a picked "Create" shows up in the sidebar at once. Same placement as
+ * create-on-click (`createFromLink` under `nav.createBase()`), no navigation (the caret keeps
+ * typing; the link turns from dim to resolved on the index echo, and in an outline the reconcile
+ * pass tags the member), one passive notice either way. Without a nav there is no vault to create
+ * in, so the row only inserts.
+ */
+function createPage(nav: WikilinkNav | undefined, name: string): void {
+  if (nav === undefined) return
+  void createFromLink(nav.root, name, nav.createBase()).then((result) => {
+    if (result.status === 'error') nav.onNotice(result.message)
+    else if (result.status === 'created') nav.onNotice(`Created "${linkPageName(name)}"`)
+  })
+}
+
+/** Replace the `[[fragment` with the full `[[insert]]` text, park the caret after it — and, for the Create row, make the page. */
+function insertRow(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, session: PickerSession, row: PickerRow, nav?: WikilinkNav): boolean {
   if (dispatch) {
     const text = `[[${row.insert}]]`
     const tr = state.tr.insertText(text, session.from, session.to)
     tr.setSelection(TextSelection.create(tr.doc, session.from + text.length))
     dispatch(tr.scrollIntoView())
+    if (row.create) createPage(nav, row.insert)
   }
   return true
 }
 
-const insertSelected: Command = (state, dispatch) => {
+const insertSelected = (nav?: WikilinkNav): Command => (state, dispatch) => {
   const session = pickerKey.getState(state)?.session ?? null
   if (session === null) return false
   const row = session.rows[session.selected]
   if (row === undefined) return false
-  return insertRow(state, dispatch, session, row)
+  return insertRow(state, dispatch, session, row, nav)
 }
 
 const move = (delta: 1 | -1): Command => (state, dispatch) => {
@@ -199,15 +220,16 @@ const PRIORITY = 100
  * ↑/↓/Enter/Esc while the picker is open; every command declines (false) when it is closed, so
  * the keys fall through — the outliner keeps Tab/Enter in lists, nothing is ever swallowed.
  */
-export const wikilinkPickerKeymap = $shortcut(() => ({
-  WikilinkPickerNext: { key: 'ArrowDown', priority: PRIORITY, onRun: () => move(1) },
-  WikilinkPickerPrev: { key: 'ArrowUp', priority: PRIORITY, onRun: () => move(-1) },
-  WikilinkPickerInsert: { key: 'Enter', priority: PRIORITY, onRun: () => insertSelected },
-  WikilinkPickerDismiss: { key: 'Escape', priority: PRIORITY, onRun: () => dismiss },
-}))
+export const createWikilinkPickerKeymap = (nav?: WikilinkNav) =>
+  $shortcut(() => ({
+    WikilinkPickerNext: { key: 'ArrowDown', priority: PRIORITY, onRun: () => move(1) },
+    WikilinkPickerPrev: { key: 'ArrowUp', priority: PRIORITY, onRun: () => move(-1) },
+    WikilinkPickerInsert: { key: 'Enter', priority: PRIORITY, onRun: () => insertSelected(nav) },
+    WikilinkPickerDismiss: { key: 'Escape', priority: PRIORITY, onRun: () => dismiss },
+  }))
 
 /** The popup element + its rows; mousedown-preventDefault so picking never blurs the editor. */
-function buildPopup(view: EditorView): { element: HTMLElement; render: (session: PickerSession | null) => void } {
+function buildPopup(view: EditorView, nav?: WikilinkNav): { element: HTMLElement; render: (session: PickerSession | null) => void } {
   const element = document.createElement('div')
   element.className = WIKILINK_PICKER_CLASS
   element.setAttribute('role', 'listbox')
@@ -224,8 +246,7 @@ function buildPopup(view: EditorView): { element: HTMLElement; render: (session:
       item.setAttribute('role', 'option')
       item.className = row.create ? `${WIKILINK_PICKER_ITEM_CLASS} ${WIKILINK_PICKER_CREATE_CLASS}` : WIKILINK_PICKER_ITEM_CLASS
       item.setAttribute('aria-selected', String(i === session.selected))
-      // Says what it does (YAZ-1357): Enter inserts the link; the page is born on a CLICK of it (wikilinkClick.ts).
-      item.textContent = row.create ? `New page "${row.label}" — click the link to create it` : row.label
+      item.textContent = row.create ? `Create "${row.label}"` : row.label
       item.addEventListener('mousedown', (e) => e.preventDefault())
       item.addEventListener('click', () => {
         // Re-read the live session: the state may have moved between render and click.
@@ -233,7 +254,7 @@ function buildPopup(view: EditorView): { element: HTMLElement; render: (session:
         if (current === null) return
         const liveRow = current.rows[i]
         if (liveRow === undefined) return
-        insertRow(view.state, (tr) => view.dispatch(tr), current, liveRow)
+        insertRow(view.state, (tr) => view.dispatch(tr), current, liveRow, nav)
         view.focus()
       })
       element.appendChild(item)
@@ -242,7 +263,7 @@ function buildPopup(view: EditorView): { element: HTMLElement; render: (session:
   return { element, render }
 }
 
-export function createWikilinkPicker(source: WikilinkCandidateSource) {
+export function createWikilinkPicker(source: WikilinkCandidateSource, nav?: WikilinkNav) {
   return $prose(
     () =>
       new Plugin<PickerState>({
@@ -253,7 +274,7 @@ export function createWikilinkPicker(source: WikilinkCandidateSource) {
             tr.docChanged || tr.selectionSet || tr.getMeta(pickerKey) !== undefined ? compute(state, value, tr, source) : value,
         },
         view: (editorView) => {
-          const popup = buildPopup(editorView)
+          const popup = buildPopup(editorView, nav)
           // Attached (hidden) from the start — the provider would only append it on its first
           // debounced pass; its later appendChild of the same node into the same parent is a no-op.
           popup.element.dataset.show = 'false'

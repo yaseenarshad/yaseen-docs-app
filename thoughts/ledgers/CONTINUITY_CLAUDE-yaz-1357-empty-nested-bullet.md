@@ -20,11 +20,16 @@
   - [x] YAZ-1360 reconcile + one shared `tag()` hold — ffe1b98
   - [x] YAZ-1361 picker label — bd268fa
   - [x] full suite 204 files / 3137 tests green; typecheck clean; branch pushed
-- Now: [→] YAZ-1362 verify — demo at ~/Desktop/yaz-1357-demo (vault/, vault-pristine/, profile/, README.md script); dev app launched with YASEEN_DOCS_USER_DATA_DIR=profile
-- Next: YAZ-1363 polish pass + evidence comment; open PR
+  - [x] PR #23 open; demo at ~/Desktop/yaz-1357-demo (vault/, vault-pristine/, profile/, README.md); dev app on YASEEN_DOCS_USER_DATA_DIR=profile
+  - [x] 🔒 D4 (Yasin): Topics drag drops the line from the source outline — YAZ-1364 (`dropOutlineLinks`, `performMove(child, from: IndexRecord|null, …)`)
+  - [x] 🔒 D3 REVISED (Yasin): the Create row really creates — `createPage` in wikilinkPicker.ts, `createWikilinkPicker(source, nav)`, `createWikilinkPickerKeymap(nav)`; label back to `Create "X"`; YAZ-1361 reopened
+- Now: [→] commit D4 + D3v2, full suite, Linear (1364, 1361 Done; 1363 evidence), push
 - Remaining:
-  - [ ] Yasin's stress-test sign-off on the demo
+  - [ ] Yasin's stress-test sign-off on the demo (README steps 1-9)
   - [ ] merge to main (only after sign-off)
+
+## Gotcha (tests)
+- A PERMANENT rejecting `createFile` mock (`mockRejectedValue` / `mockImplementation`) fails the picker test after teardown with the rejection as the test error; `mockRejectedValueOnce` + `vi.waitFor` (the click test's idiom) is clean. Probed for a second create call at teardown — see YAZ-1363 comment for the verdict.
 
 ## Learnings
 - `- a` + `    -` is a SETEXT HEADING to CommonMark (the outline seed's `-` respelling made the bug worse than the note editor's `\*`).

@@ -8,14 +8,14 @@
  * that a CLOSED picker never swallows keys (the outliner keeps Enter in lists) while an OPEN
  * one wins the priority-100 Enter tie.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { IndexRecord } from '@shared/types'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
-import { api } from '../../api'
+import { api, BridgeRequestError } from '../../api'
 
 vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
@@ -33,10 +33,13 @@ import {
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
-async function mount(markdown: string, candidates: MutableWikilinkCandidateSource) {
+/** The nav a real window hands the editor (Links C): the create row is its second user (YAZ-1357). */
+const nav = () => ({ root: '/vault', createBase: () => '', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() })
+
+async function mount(markdown: string, candidates: MutableWikilinkCandidateSource, wikilinkNav?: ReturnType<typeof nav>) {
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown, wikilinkCandidates: candidates })
+  const crepe = createCrepe({ root, defaultValue: markdown, wikilinkCandidates: candidates, wikilinkNav })
   await crepe.create()
   mounted.push({ crepe, root })
   return { crepe, root }
@@ -264,16 +267,58 @@ describe('wikilink picker: navigate / insert', () => {
 })
 
 describe('wikilink picker: create-new row', () => {
-  it('nothing matching offers one row that SAYS it links a new page — and Enter inserts the text, creating nothing (YAZ-1357)', async () => {
-    const { crepe } = await mount('X\n', source('Alpha'))
+  beforeEach(() => createFile.mockReset())
+
+  it('nothing matching offers one Create row: Enter inserts the link AND makes the page, staying put (YAZ-1357, 🔒 D3 revised)', async () => {
+    createFile.mockResolvedValue({ path: '/vault/New Page.md', mtime: 1, size: 0 })
+    const n = nav()
+    const { crepe } = await mount('X\n', source('Alpha'), n)
     caret(crepe, posOf(crepe, 'X', 1))
     type(crepe, '[[New Page')
     const create = document.querySelector(`.${WIKILINK_PICKER_CREATE_CLASS}`)
-    expect(rows()).toEqual(['New page "New Page" — click the link to create it'])
+    expect(rows()).toEqual(['Create "New Page"'])
     expect(create?.getAttribute('aria-selected')).toBe('true')
     press(crepe, 'Enter')
     expect(getMarkdownForSave(crepe)).toBe('X[[New Page]]\n')
-    // The page is created on a CLICK of the rendered link (wikilinkClick.ts), never by this row.
+    await new Promise((r) => setTimeout(r, 0))
+    expect(createFile).toHaveBeenCalledExactlyOnceWith('/vault/New Page.md')
+    expect(n.onNotice).toHaveBeenCalledExactlyOnceWith('Created "New Page"')
+    expect(n.openCurrent).not.toHaveBeenCalled()
+    expect(n.openBackground).not.toHaveBeenCalled()
+  })
+
+  it('a click on the Create row does the same', async () => {
+    createFile.mockResolvedValue({ path: '/vault/Clicked.md', mtime: 1, size: 0 })
+    const n = nav()
+    const { crepe } = await mount('X\n', source('Alpha'), n)
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, '[[Clicked')
+    document.querySelector<HTMLElement>(`.${WIKILINK_PICKER_CREATE_CLASS}`)?.click()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(getMarkdownForSave(crepe)).toBe('X[[Clicked]]\n')
+    expect(createFile).toHaveBeenCalledExactlyOnceWith('/vault/Clicked.md')
+  })
+
+  it('a create failure is SAID through the notice, and the link text stays', async () => {
+    createFile.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk full'))
+    const n = nav()
+    const { crepe } = await mount('X\n', source('Alpha'), n)
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, '[[Doomed')
+    press(crepe, 'Enter')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(getMarkdownForSave(crepe)).toBe('X[[Doomed]]\n')
+    await vi.waitFor(() => expect(n.onNotice).toHaveBeenCalledWith('Can\'t create "Doomed": disk full'))
+    expect(n.openCurrent).not.toHaveBeenCalled()
+  })
+
+  it('without a nav there is no vault to create in: the row only inserts', async () => {
+    const { crepe } = await mount('X\n', source('Alpha'))
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, '[[Nowhere')
+    press(crepe, 'Enter')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(getMarkdownForSave(crepe)).toBe('X[[Nowhere]]\n')
     expect(createFile).not.toHaveBeenCalled()
   })
 

@@ -40,7 +40,8 @@
  *    Registered only when `opts.wikilinkNav` provides the handlers.
  *  - Wikilink picker (GRO-2191, `wikilink/wikilinkPicker.ts`): typing `[[` opens the vault-wide
  *    suggestion popup (candidates via `opts.wikilinkCandidates`); Enter/click inserts plain
- *    `[[name]]` text. Its keymap MUST be `use`d before `outlinerKeymap`: both bind Enter at
+ *    `[[name]]` text — and the Create row also makes the page through `opts.wikilinkNav`
+ *    (YAZ-1357). Its keymap MUST be `use`d before `outlinerKeymap`: both bind Enter at
  *    priority 100 and equal priorities run in addition order — the picker wins while open and
  *    declines (falls through) while closed.
  *  - Standard Markdown links (YAZ-1309, `markdownLink.ts`): unmodified primary mousedown opens
@@ -113,7 +114,7 @@ import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outl
 import { createOutlineZoom, zoomKeymap, type ZoomOptions } from './outline/zoom'
 import { focusSidebar } from '../lib/focusHandoff'
 import { createWikilinkClick, type WikilinkNav } from './wikilink/wikilinkClick'
-import { createWikilinkPicker, createWikilinkCandidateSource, wikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
+import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { createWikilink, createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { createMarkdownLink, type MarkdownLinkNav } from './markdownLink'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
@@ -247,7 +248,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks))
   if (opts.wikilinkNav !== undefined) crepe.editor.use(createWikilinkClick(wikilinks, opts.wikilinkNav, viewOnlyLinks))
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav))
-  crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource()))
+  crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), opts.wikilinkNav))
   if (opts.drawingPreview !== undefined) crepe.editor.use(createDrawingPreview(opts.drawingPreview))
   crepe.editor.use(outlinePaste)
   crepe.editor.use(blockHandleGate)
@@ -258,7 +259,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(multiBlockDrag)
   // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs
   // equal priorities in addition order — an OPEN [[ picker takes Enter, closed falls through.
-  crepe.editor.use(wikilinkPickerKeymap)
+  crepe.editor.use(createWikilinkPickerKeymap(opts.wikilinkNav))
   crepe.editor.use(outlinerKeymap)
   // The document-wide coordinator runs first: it owns Mod-Shift-U/I and consumes Mod-z only when
   // BOTH fold plugins are pending from that one atomic gesture. Individual heading/bullet folds
