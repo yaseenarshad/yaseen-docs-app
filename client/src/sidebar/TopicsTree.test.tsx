@@ -1172,7 +1172,7 @@ describe('the drag (YAZ-991): a row onto a folder-page row, and nothing written 
     expect(move).toHaveBeenCalledTimes(1)
     const [child, from, to, resolve] = move.mock.calls[0]!
     expect(child).toBe(records.find((r) => r.path === REVENUE))
-    expect(from).toBe(METRICS)
+    expect(from).toBe(records.find((r) => r.path === METRICS)) // the RECORD: its outline drops the line (YAZ-1364)
     // `path` is what a surviving entry must RESOLVE to; `name` is what a new entry is written as.
     expect(to).toEqual({ path: PROJECTS, name: 'Projects', columns })
     // The window's own resolver, not the null stand-in: alias-aware and case-insensitive, every
@@ -1200,7 +1200,7 @@ describe('the drag (YAZ-991): a row onto a folder-page row, and nothing written 
       "Move 'Shared' from 'Projects' into 'Archive'? The file stays put — only its folder pages change. It also stays in: Metrics.",
     )
     await click(sheetBtn(el, 'Move') as Element)
-    expect(move.mock.calls[0]?.[1]).toBe(PROJECTS)
+    expect(move.mock.calls[0]?.[1]).toMatchObject({ path: PROJECTS })
   })
 
   it('a row in Uncategorized has no parent to leave: it confirms with a NULL source', async () => {

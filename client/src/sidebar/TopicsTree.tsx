@@ -562,13 +562,14 @@ export function TopicsTree({ root, expanded, onExpandedChange, revealRequest, so
     }
   }
 
-  /** The confirmed move: the engine's ONE write, then the sheet goes. Nothing re-renders here —
+  /** The confirmed move: the engine's card write (+ the source outline's), then the sheet goes. Nothing re-renders here —
       the index echo carries the new belonging, exactly as it carries every other change. */
   const runMove = async (move: PendingMove): Promise<void> => {
     try {
       await performMove(
         move.child,
-        move.fromPath,
+        // The source RECORD: its outline drops the moved line (YAZ-1364, 🔒 D4). Null = Uncategorized.
+        feed.records.find((record) => record.path === move.fromPath) ?? null,
         { path: move.target.path, name: move.target.basename, columns: folderPageSettings(move.target).columns },
         resolve ?? NEVER,
       )

@@ -17,21 +17,29 @@
  * away) ends the descent quietly instead of hanging the drag, while a page reachable down two
  * branches is still found down either.
  *
- * THE MEMBERSHIP MOVE IS ONE WRITE (locked): a single `folder_pages` write on the MEMBER's own
- * frontmatter — belonging stays child-declared (YAZ-825), so nothing is written to either folder
- * page. The old parent is filtered out through THE CLICK RULE (`entryTarget`, the very filter the
- * × has used since YAZ-820) and the new one appended, in one list. Deliberately NOT tag-then-untag
- * via two `applyBelonging` calls: both would compute from the SAME stale record snapshot and the
- * second write would clobber the first. Entries that count for nobody — prose, non-strings,
- * dangling links, the row's OTHER parents — survive verbatim and in place, and a list that already
- * reads correctly is not written at all. YAZ-999 then reconciles the closed target's declarations
- * through conditional missing-key writes; those never alter the membership list or existing values.
+ * THE MEMBERSHIP MOVE IS ONE WRITE ON THE MEMBER (locked): a single `folder_pages` write on the
+ * MEMBER's own frontmatter — belonging stays child-declared (YAZ-825). The old parent is filtered
+ * out through THE CLICK RULE (`entryTarget`, the very filter the × has used since YAZ-820) and the
+ * new one appended, in one list. Deliberately NOT tag-then-untag via two `applyBelonging` calls:
+ * both would compute from the SAME stale record snapshot and the second write would clobber the
+ * first. Entries that count for nobody — prose, non-strings, dangling links, the row's OTHER
+ * parents — survive verbatim and in place, and a list that already reads correctly is not written
+ * at all. YAZ-999 then reconciles the closed target's declarations through conditional missing-key
+ * writes; those never alter the membership list or existing values.
+ *
+ * PLUS THE SOURCE OUTLINE, when it names the member (YAZ-1364, 🔒 D4): the outline is the truth
+ * about belonging — a line that is exactly a resolving wikilink IS a member, and since YAZ-1357 the
+ * outline view re-asks that rule on every snapshot. A stale line would tag the page straight back,
+ * so the source topic drops it (`dropOutlineLinks`) in ONE `folder_page_settings` write on its own
+ * card, only when an outline actually changed. The destination is still never written: adoption
+ * appends the new member there when it next opens.
  */
 import type { IndexRecord } from '@shared/types'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { FOLDER_PAGES_KEY, entryTarget, folderPagesList, guardedChildren, type FolderPagesLookup } from '../links/folderPages'
 import { backfillFolderPageColumns } from '../views/folderPageColumns'
-import type { ColumnDecl } from '../views/folderPageSettings'
+import { folderPageSettings, writeFolderPageSettings, type ColumnDecl } from '../views/folderPageSettings'
+import { dropOutlineLinks } from '../views/outlineDoc'
 import { writeProperty } from '../views/writeProperty'
 
 /** Whether this drop may happen, and — when it may not — which locked rule refused it. */
@@ -64,23 +72,31 @@ function unchanged(next: readonly unknown[], before: readonly unknown[]): boolea
 }
 
 /**
- * Move `child` out of `fromPath` and into `to`, in ONE `folder_pages` write — or in no write at
- * all when the list already reads that way. `fromPath` is NULL for a row dragged out of
- * Uncategorized: nothing is filtered, one entry is gained. `to.path` is what a surviving entry
+ * Move `child` out of `from` and into `to`: ONE `folder_pages` write on the child — or none when
+ * the list already reads that way — then the source outline's line, if it had one (see above).
+ * `from` is NULL for a row dragged out of Uncategorized: nothing is filtered, one entry is gained. `to.path` is what a surviving entry
  * must RESOLVE to to count as the new parent (alias, case, `#heading` — every spelling a click
  * would follow); `to.name` is the text a NEW entry is written as, `[[<name>]]`, exactly as the
  * outline's tag and the add row write it.
  */
 export async function performMove(
   child: IndexRecord,
-  fromPath: string | null,
+  from: IndexRecord | null,
   to: { path: string; name: string; columns: Readonly<Record<string, ColumnDecl>> },
   resolve: ResolveLink,
 ): Promise<void> {
   const entries = folderPagesList(child)
-  const kept = fromPath === null ? entries : entries.filter((entry) => entryTarget(entry, resolve) !== fromPath)
+  const kept = from === null ? entries : entries.filter((entry) => entryTarget(entry, resolve) !== from.path)
   const next = kept.some((entry) => entryTarget(entry, resolve) === to.path) ? kept : [...kept, `[[${to.name}]]`]
   if (!unchanged(next, entries)) await writeProperty(child.path, FOLDER_PAGES_KEY, next)
+  if (from !== null) {
+    const settings = folderPageSettings(from)
+    const views = settings.views.map((view) => {
+      const outline = view.outline === undefined ? undefined : dropOutlineLinks(view.outline, child.path, resolve)
+      return outline === undefined ? view : { ...view, outline }
+    })
+    if (views.some((view, i) => view !== settings.views[i])) await writeFolderPageSettings(from.path, { ...settings, views })
+  }
   // YAZ-999's CLOSED-target half: the destination page may not be mounted, so its open-folder
   // invariant cannot answer this gesture. Membership stays the source-of-truth write and lands
   // first; then the shared missing-only operation fills the target's declarations.
