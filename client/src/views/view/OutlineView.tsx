@@ -128,9 +128,9 @@ export function OutlineView({
   const lookup = useMemo(() => folderPagesLookup(vaultRecords, resolve), [vaultRecords, resolve])
 
   /**
-   * The document, seeded ONCE and advanced by every commit — both what the editor was mounted
-   * with and `prev` for the next diff. Later `outline` props are deliberately not read back in:
-   * the editor owns the caret, and this is the string it was handed.
+   * The document: seeded from the card, advanced by every commit, and — since YAZ-1356 — by the
+   * disk moving under the open page (below). It is `prev` for the next diff and the string the
+   * editor is handed; the editor takes a later one as a diff over its live state, never a re-seed.
    */
   const [doc, setDoc] = useState(() => {
     if (outline !== undefined) return outline
@@ -140,19 +140,19 @@ export function OutlineView({
   })
 
   /**
-   * Bumped ONLY by a write this component makes on the user's behalf (YAZ-954): the editor is
-   * seeded from `doc` at mount and never re-reads it — that is what keeps typing from being
-   * clobbered — so an appended line would sit on disk unseen until the page was reopened.
-   * Remounting IS reopening, and nothing the user typed is in flight when they approve a sheet.
-   */
-  const [seed, setSeed] = useState(0)
-
-  /**
    * The document as of the LAST commit, readable SYNCHRONOUSLY — `doc` is the render's string and
    * lags a commit by a render. Adoption recomputes its todo against this, which is what makes a
    * double-invoked effect (StrictMode) find nothing left to do on its second run.
    */
   const docRef = useRef(doc)
+  // The disk moved under us (YAZ-1356): a prop that is not the last document THIS component wrote
+  // is external. Adopt it as `prev` so the next commit's belonging diff and RECONCILE read what is
+  // really on disk; the editor receives it as a diff. Render-phase, the panel's own idiom: an
+  // effect would re-run under StrictMode with the prop one render stale and undo an own commit.
+  if (outline !== undefined && outline !== docRef.current) {
+    docRef.current = outline
+    setDoc(outline)
+  }
   /** The pages whose un-tag is in flight: `records` still names them until the index echoes. */
   const untagging = useRef(new Set<string>())
   /** The pages whose tag is in flight: `lookup` does not name them as members until the index echoes. */
@@ -209,12 +209,11 @@ export function OutlineView({
    * outline's ONE door — so the belonging pass already there tags every newly-linked note, and
    * nothing is written twice. Only the NEW lines go through `serializeOutline`: the document above
    * is kept byte-for-byte, a parse → serialise of the whole thing would re-spell markers the user
-   * typed and drop the prose and blank lines it does not carry. The editor RE-SEEDS (YAZ-954): it
-   * reads `doc` at mount only, so an appended line would otherwise sit on disk unseen.
+   * typed and drop the prose and blank lines it does not carry. The editor shows the appended
+   * lines as a diff over its live state (YAZ-1356 retired YAZ-954's re-seed remount).
    */
   const append = (names: readonly string[]): void => {
     const lines = serializeOutline(names.map((name) => ({ depth: 0, text: `[[${name}]]` })))
-    setSeed((n) => n + 1)
     commit(docRef.current === '' ? lines : `${docRef.current}\n${lines}`)
   }
 
@@ -255,7 +254,10 @@ export function OutlineView({
    * CURRENT document: a line that is exactly a resolving wikilink names a member. Tag only — an
    * un-tag stays behind the sheet — and idempotent twice over: `applyBelonging` skips a page whose
    * card already resolves here, and `tag`'s hold skips one written but not yet echoed. The echo
-   * is what ends a hold, and this is where it is noticed. A lossy seed never writes.
+   * is what ends a hold, and this is where it is noticed. A lossy seed never writes. `doc` is a
+   * dependency too (YAZ-1356): a snapshot lands as TWO renders — the records first, the parsed
+   * card a beat later — so a link line the disk added is only in the document on the second, when
+   * `resolve` has already moved. Re-asking on an own commit is free: the diff's tag is on hold.
    */
   useEffect(() => {
     if (lossy) return
@@ -263,7 +265,7 @@ export function OutlineView({
     for (const path of tagging.current) if (member(path)) tagging.current.delete(path)
     const named = pagesNamed([...outlineLinkTargets(docRef.current, resolve)]).map((r) => r.path)
     tag(named.filter((path) => !member(path) && !tagging.current.has(path)))
-  }, [resolve, lookup, lossy])
+  }, [resolve, lookup, lossy, doc])
 
   const removing = pending.length > 0 ? pending[0] : null
 
@@ -275,9 +277,8 @@ export function OutlineView({
           {error}
         </p>
       )}
-      {/* `markdown` is read at MOUNT only (YAZ-901): every later edit comes back OUT through onChange. */}
+      {/* `markdown` is LIVE (YAZ-1356): a document the editor did not type lands as a diff; its own edits come OUT through onChange. */}
       <OutlineEditor
-        key={seed}
         markdown={doc}
         // The USER's own edit clears the last failure; the commits made on their behalf (sync,
         // adoption) leave the banner standing — a restored line is the failure, not its cure.

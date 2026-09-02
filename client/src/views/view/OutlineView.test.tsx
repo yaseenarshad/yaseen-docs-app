@@ -244,7 +244,7 @@ describe('the outline is the folder page’s skin — and only ever hers', () =>
 
 // ---------- the seed (🔒 D2 + the lazy migration) ----------
 
-describe('the document is seeded once, from the card', () => {
+describe('the document comes from the card', () => {
   it('a stored `outline` naming every member is the document, verbatim — adoption has nothing to add', () => {
     const stored = '- [[Sales]]\n    - a note about it\n- [[Lead Gen]]\n- [[Nurture]]\n- free text'
     expect(doc(mount(FUNNELS, vault({ ...SETTINGS, views: [{ ...OUTLINE, outline: stored }, TABLE] })))).toBe(stored)
@@ -265,6 +265,47 @@ describe('the document is seeded once, from the card', () => {
     expect(doc(el)).toBe('- [[Gone]]\n- [[Nurture]]\n- [[Lead Gen]]\n- [[Sales]]')
   })
 
+})
+
+// ---------- the disk moving under the open page (YAZ-1356) ----------
+
+describe('a document changed OUTSIDE the app reaches the editor', () => {
+  const stored = '- [[Sales]]\n- [[Lead Gen]]\n- [[Nurture]]'
+  const card = (outline: string) => vault({ ...SETTINGS, views: [{ ...OUTLINE, outline }, TABLE] })
+
+  it('a new `outline` on the card that is not the last committed document is handed to the editor', () => {
+    const el = mount(FUNNELS, card(stored))
+    feed(card(`${stored}\n- typed by an AI`))
+    expect(doc(el)).toBe(`${stored}\n- typed by an AI`)
+    expect(write).not.toHaveBeenCalled() // looking at the disk writes nothing
+  })
+
+  it('the card echoing the document this component just committed changes nothing', async () => {
+    const el = mount(FUNNELS, card(stored))
+    edit(`${stored}\n- mine`)
+    await flush()
+    expect(settingsWrites()).toHaveLength(1)
+    feed(card(`${stored}\n- mine`))
+    expect(doc(el)).toBe(`${stored}\n- mine`)
+    expect(settingsWrites()).toHaveLength(1)
+  })
+
+  it('an external link line that resolves tags its page — reconcile reads the document that is really on disk', async () => {
+    mount(FUNNELS, card(stored))
+    feed(card(`${stored}\n- [[Other]]`))
+    await flush()
+    expect(memberWrites()).toEqual([[OTHER, 'folder_pages', ['[[Funnel Stages]]']]])
+  })
+
+  it('the next commit diffs against the external document, not the stale one', async () => {
+    mount(FUNNELS, card(stored))
+    feed(card(`${stored}\n- [[Other]]`))
+    await flush()
+    write.mockClear()
+    edit(`${stored}\n- [[Other]]\n- [[KPIs]]`) // the user adds one more line on top of the AI's
+    await flush()
+    expect(memberWrites()).toEqual([[KPIS, 'folder_pages', ['[[Funnel Stages]]']]]) // Other is not tagged twice
+  })
 })
 
 // ---------- the commit (ONE settings write, and `order` retires) ----------
