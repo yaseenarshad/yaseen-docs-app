@@ -19,7 +19,7 @@ External (AI) edits to a folder page's `folder_page_settings.views[i].outline` a
   - [x] 2- YAZ-1366 Build: 2A YAZ-1369 `fce461f` + `7f1e0b7` · 2B YAZ-1370 `855f2c0`
   - [x] 3- YAZ-1367 Prove it: 3A 6/6 over CDP (dev build AND packaged 0.9.3) · 3B 205 files / 3173 tests
   - [x] 4- YAZ-1368 Polish: 4A `b4dae15` · 4B release — PR #25 merged `0434906`, bump `d85ee2b`, tag `v0.9.3`, DMG `desktop/dist-app/Yaseen Docs-0.9.3-arm64.dmg`
-- Pending for Yasin only: quit the running 0.9.2, install the 0.9.3 DMG to /Applications (left uninstalled on purpose — the app was running).
+- 0.9.3 installed to /Applications on 2026-09-01. Nothing pending.
 
 ## Open Questions
 - None.
