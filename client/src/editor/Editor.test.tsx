@@ -357,6 +357,85 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
   })
 })
 
+/**
+ * The other half of the decision table above (YAZ-1356): absorbing a frontmatter-only write keeps
+ * the EDITOR still, but the properties panel must still SHOW the new keys. `useFile` never
+ * refetches and a fresh `file` would remount Crepe, so the host keeps its own disk bytes and hands
+ * the panel those. The raw fallback is read here because it shows those bytes literally.
+ */
+describe('the frontmatter panel follows the disk (YAZ-1356)', () => {
+  const FM3 = '---\nstatus: shipped\n---\n'
+
+  /** Opens the panel's raw fallback: its textarea IS the panel's belief about what is on disk. */
+  function openRawPanel(el: HTMLElement): void {
+    act(() => el.querySelector<HTMLButtonElement>('.frontmatter-panel__header')?.click())
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.frontmatter-panel__btn')].find((b) => b.textContent === 'Edit as YAML')?.click())
+  }
+
+  function panelYaml(el: HTMLElement): string {
+    const area = el.querySelector<HTMLTextAreaElement>('.frontmatter-panel__text')
+    if (area === null) throw new Error('the properties textarea is not open')
+    return area.value
+  }
+
+  it('an absorbed property write reaches the panel without disturbing the editor', async () => {
+    const el = await mount(FM + BODY)
+    openRawPanel(el)
+    const instance = el.querySelector('.editor-instance')
+    diskHas(FM2 + BODY, 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(panelYaml(el)).toBe('status: done')
+    // Still absorbed, not reloaded: the same one Crepe instance, on the same DOM node.
+    expect(createCrepeMock).toHaveBeenCalledTimes(1)
+    expect(el.querySelector('.editor-instance')).toBe(instance)
+    expect(applyExternalMock).not.toHaveBeenCalled()
+    expect(setMarkdownMock).not.toHaveBeenCalled()
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+  })
+
+  it('a body change while clean reloads the document AND moves the panel to the new bytes', async () => {
+    const el = await mount(FM + BODY)
+    openRawPanel(el)
+    const next = FM2 + '# Someone else\n'
+    diskHas(next, 2)
+    diskHas(next, 2) // reload() re-reads
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(applyExternalMock).toHaveBeenCalledWith(expect.anything(), '# Someone else\n')
+    expect(panelYaml(el)).toBe('status: done')
+  })
+
+  it("the panel's own write echoing back through the watcher does not bounce it to the old value", async () => {
+    const el = await mount(FM + BODY)
+    openRawPanel(el)
+    const area = el.querySelector<HTMLTextAreaElement>('.frontmatter-panel__text')
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+    act(() => {
+      setter?.call(area, 'status: done')
+      area?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    diskHas(FM + BODY, 1) // the panel's save reads fresh, then writes (mock mtime 99)
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.frontmatter-panel__btn')].find((b) => b.textContent === 'Save')?.click())
+    await settle()
+    await settle()
+    expect(writeFile).toHaveBeenCalledWith({ path: PATH, content: FM2 + BODY, expectedMtime: 1 })
+    // Its own bytes come back round the watcher: the panel's `content` already ran ahead of `seen`,
+    // so following the disk here must be a no-op rather than a revert.
+    diskHas(FM2 + BODY, 99)
+    await emit({ type: 'change', path: PATH, mtime: 99 })
+    expect(panelYaml(el)).toBe('status: done')
+  })
+
+  it('two successive property writes both land: the second is not swallowed', async () => {
+    const el = await mount(FM + BODY)
+    openRawPanel(el)
+    diskHas(FM2 + BODY, 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    diskHas(FM3 + BODY, 3)
+    await emit({ type: 'change', path: PATH, mtime: 3 })
+    expect(panelYaml(el)).toBe('status: shipped')
+  })
+})
+
 describe('CrepeHost empty frontmatter block (GRO-2216)', () => {
   const EMPTY_FM = '---\n---\n'
 
