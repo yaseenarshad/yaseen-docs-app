@@ -23,10 +23,10 @@
   - [x] PR #23 open; demo at ~/Desktop/yaz-1357-demo (vault/, vault-pristine/, profile/, README.md); dev app on YASEEN_DOCS_USER_DATA_DIR=profile
   - [x] 🔒 D4 (Yasin): Topics drag drops the line from the source outline — YAZ-1364 (`dropOutlineLinks`, `performMove(child, from: IndexRecord|null, …)`)
   - [x] 🔒 D3 REVISED (Yasin): the Create row really creates — `createPage` in wikilinkPicker.ts, `createWikilinkPicker(source, nav)`, `createWikilinkPickerKeymap(nav)`; label back to `Create "X"`; YAZ-1361 reopened
-- Now: [→] commit D4 + D3v2, full suite, Linear (1364, 1361 Done; 1363 evidence), push
-- Remaining:
-  - [ ] Yasin's stress-test sign-off on the demo (README steps 1-9)
-  - [ ] merge to main (only after sign-off)
+  - [x] D4 + D3v2 committed (58f58f9, 68951dc); suite 3144 green; Linear 1358-1364 Done
+  - [x] Yasin stress-tested the demo (2026-09-01): "it worked"; D3 sub-choice locked: hand-typed `]]` stays dim until clicked (option 1)
+- Now: [→] CLOSED — PR #23 merged to main; worktree removed; handoff comments on YAZ-1357 and every subissue
+- Remaining: none. Reopen only via a new issue.
 
 ## Gotcha (tests)
 - A PERMANENT rejecting `createFile` mock (`mockRejectedValue` / `mockImplementation`) fails the picker test after teardown with the rejection as the test error; `mockRejectedValueOnce` + `vi.waitFor` (the click test's idiom) is clean. Probed for a second create call at teardown — see YAZ-1363 comment for the verdict.
