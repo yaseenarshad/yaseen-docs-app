@@ -180,6 +180,21 @@ describe('a later `markdown` lands as a diff over the live editor (YAZ-1356)', (
     expect(bullets(host)).toEqual(['alpha', '1. Title', '# not a heading'])
   })
 
+  it('a snapshot that arrives AFTER an edit was reported still lands — one serialisation for edit, echo and apply', async () => {
+    // A wikilink line: raw `getMarkdown()` escapes it (`\\[\\[`), the reported save-space string does
+    // not. Comparing across the two called every document "typing in flight" after the first edit.
+    const onChange = vi.fn()
+    const host = await mount('- [[alpha]]\n', onChange)
+    press(host, 'Enter')
+    await waitFor(() => onChange.mock.calls.length > 0)
+    const emitted = onChange.mock.calls[0][0] as string // '*\n* [[alpha]]\n'
+    await rerender(`${emitted}* beta\n`)
+    await waitFor(() => bullets(host).length === 3)
+    expect(bullets(host)).toEqual(['', '[[alpha]]', 'beta'])
+    await tick(900)
+    expect(onChange).toHaveBeenCalledTimes(1) // the apply is not an edit
+  })
+
   it('a `markdown` equal to what the editor last emitted is a no-op — the caller’s own echo', async () => {
     const onChange = vi.fn()
     const host = await mount('- alpha\n', onChange)

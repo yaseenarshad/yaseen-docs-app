@@ -34,7 +34,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import type { Crepe } from '@milkdown/crepe'
 import { applyExternalMarkdown } from '../../editor/external/applyExternalMarkdown'
 import { lockToBullets, outlineFeatures } from '../../editor/outline/bulletsOnly'
-import { createCrepe } from '../../editor/createCrepe'
+import { createCrepe, getMarkdownForSave } from '../../editor/createCrepe'
 import { FindBar } from '../../editor/find/FindBar'
 import { createFindChannel } from '../../editor/find/findChannel'
 import type { WikilinkNav } from '../../editor/wikilink/wikilinkClick'
@@ -85,6 +85,9 @@ export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikil
    * The last markdown the editor and its caller AGREED on — the seed as Milkdown holds it, the
    * last reported edit, the last applied snapshot. A live document that differs from it is typing
    * in flight (a disk snapshot waits); a listener emission equal to it is an apply's echo (no edit).
+   * ONE serialisation throughout, `getMarkdownForSave` — the very string the listener reports —
+   * because raw `getMarkdown()` differs from it (`\[\[` escapes, the trailing paragraph) and a
+   * comparison across the two called every document "typing in flight" after the first edit.
    */
   const knownRef = useRef<string | null>(null)
   // Read at emit time so a re-rendered parent's fresh callback lands without remounting the editor.
@@ -144,7 +147,7 @@ export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikil
 
     const ready = crepe.create().then(() => {
       crepeRef.current = crepe
-      knownRef.current = crepe.getMarkdown()
+      knownRef.current = getMarkdownForSave(crepe)
       guard(crepe, seeded.length)
     })
 
@@ -164,10 +167,10 @@ export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikil
   // editor does before its own reload — so the 200ms listener window cannot hide a keystroke.
   useEffect(() => {
     const crepe = crepeRef.current
-    if (crepe === null || crepe.getMarkdown() !== knownRef.current) return
+    if (crepe === null || getMarkdownForSave(crepe) !== knownRef.current) return
     const lines = outlineDoc(markdown)
     applyExternalMarkdown(crepe, serializeOutline(lines))
-    knownRef.current = crepe.getMarkdown()
+    knownRef.current = getMarkdownForSave(crepe)
     guard(crepe, lines.length)
   }, [markdown])
 
