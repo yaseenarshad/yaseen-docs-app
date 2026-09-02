@@ -14,12 +14,12 @@ External (AI) edits to a folder page's `folder_page_settings.views[i].outline` a
 - Not touched: watcher, index, `useFile` (a new `file` remounts Crepe — `Editor.tsx:320`), the frontmatter-only absorb, membership/adoption rules.
 
 ## State
-- Done:
-  - [x] 1- YAZ-1365 Scope (findings = 🔍 comment on YAZ-1356)
-  - [x] 2- YAZ-1366 Build: 2A YAZ-1369 `fce461f` + fix `7f1e0b7` (save-space serialisation) · 2B YAZ-1370 `855f2c0`
-  - [x] 3- YAZ-1367 Prove it: 3A YAZ-1371 6/6 real-app scenarios over CDP (driver: scratchpad `verify/run.mjs`, demo vault `~/Desktop/YAZ-1356-demo`) · 3B YAZ-1372 205 files / 3173 tests, typecheck ×3
-- Now: [→] 4A YAZ-1373 polish (CONTRACTS.md amended, YAZ-954 superseded, remnants grep clean) → merge to main
-- Next: 4B YAZ-1374 release 0.9.3 (bump on main → desktop:build → install → real-vault smoke → tag)
+- **WAVE COMPLETE (2026-09-01).** YAZ-1356 Done; closing evidence comment posted.
+  - [x] 1- YAZ-1365 Scope
+  - [x] 2- YAZ-1366 Build: 2A YAZ-1369 `fce461f` + `7f1e0b7` · 2B YAZ-1370 `855f2c0`
+  - [x] 3- YAZ-1367 Prove it: 3A 6/6 over CDP (dev build AND packaged 0.9.3) · 3B 205 files / 3173 tests
+  - [x] 4- YAZ-1368 Polish: 4A `b4dae15` · 4B release — PR #25 merged `0434906`, bump `d85ee2b`, tag `v0.9.3`, DMG `desktop/dist-app/Yaseen Docs-0.9.3-arm64.dmg`
+- Pending for Yasin only: quit the running 0.9.2, install the 0.9.3 DMG to /Applications (left uninstalled on purpose — the app was running).
 
 ## Open Questions
 - None.
