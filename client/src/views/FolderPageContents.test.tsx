@@ -309,6 +309,23 @@ describe('declared-column reconciliation (YAZ-999)', () => {
 
 // ---------- the chrome (🔒 rule 4 + Q3) ----------
 
+describe('an outline edited outside the app reaches the rendered document (YAZ-1356)', () => {
+  const card = (outline: string) => ({ ...SETTINGS, views: [{ type: 'outline', name: 'Outline', outline }, TABLE] })
+
+  it('the next snapshot carries the new document to the editor', () => {
+    const el = mount(FUNNELS, vault(card('- [[Sales]]\n- [[Lead Gen]]')))
+    feed(vault(card('- [[Sales]]\n- [[Lead Gen]]\n- typed by an AI')))
+    expect(doc(el)).toBe('- [[Sales]]\n- [[Lead Gen]]\n- typed by an AI')
+  })
+
+  it('so does a file-seeded mount once the index has caught up to the seed (the YAZ-919 gate)', () => {
+    const seed = `---\nfolder_page: true\nfolder_page_settings:\n  views:\n    - type: outline\n      name: Outline\n      outline: |\n        - [[Sales]]\n        - [[Lead Gen]]\n    - type: table\n      name: Table\n      order: [file.name, note.order, note.related]\n---\n`
+    const el = mount(FUNNELS, vault(card('- [[Sales]]\n- [[Lead Gen]]\n')), seed)
+    feed(vault(card('- [[Sales]]\n- [[Lead Gen]]\n- typed by an AI\n')))
+    expect(doc(el)).toBe('- [[Sales]]\n- [[Lead Gen]]\n- typed by an AI\n')
+  })
+})
+
 describe('the chrome is the views chrome, minus what a folder page cannot have', () => {
   it('both skins render and the tabs switch between them (🔒 Q7: outline first)', () => {
     const el = mount(FUNNELS)

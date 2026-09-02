@@ -64,4 +64,25 @@ describe('the seed guard: a lossy load can never write (YAZ-974)', () => {
     expect(container?.querySelector('.ProseMirror')?.getAttribute('contenteditable')).toBe('false')
     expect(onChange).not.toHaveBeenCalled()
   })
+
+  it('guards the apply door too: a snapshot the parse cannot hold goes read-only and is never written (YAZ-1356)', async () => {
+    const onChange = vi.fn()
+    const onSeedLoss = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<OutlineEditor markdown={'- above\n- below'} onChange={onChange} onSeedLoss={onSeedLoss} />)
+    })
+    await waitFor(() => container?.querySelector('.ProseMirror') !== null)
+    await tick(300)
+    expect(onSeedLoss).not.toHaveBeenCalled()
+    await act(async () => {
+      root?.render(<OutlineEditor markdown={'- above\n- # doomed\n- below'} onChange={onChange} onSeedLoss={onSeedLoss} />)
+    })
+    await tick(900)
+    expect(onSeedLoss).toHaveBeenCalledTimes(1)
+    expect(container?.querySelector('.ProseMirror')?.getAttribute('contenteditable')).toBe('false')
+    expect(onChange).not.toHaveBeenCalled()
+  })
 })

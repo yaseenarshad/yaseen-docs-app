@@ -181,6 +181,12 @@ function CrepeHost({
   const { attach, markReloaded, reportConflict, absorbFrontmatterOnly } = autosave
   const reloadRef = useRef<() => void>(() => {})
   /**
+   * The whole-file bytes last seen on disk (YAZ-1356). `file.content` is frozen at mount — a fresh
+   * `file` would remount Crepe — so the watcher path keeps THIS current and the frontmatter panel
+   * follows it, exactly the "reloaded under us" case its snapshot was built for.
+   */
+  const [disk, setDisk] = useState(file.content)
+  /**
    * The drawing wiring (YAZ-879), ONE per host: the preview plugin subscribes to this feed and the
    * modal's save pokes it, so a scene written back re-renders every preview of it in this editor
    * without a remount. Stable identity — a new feed would silently orphan the subscription.
@@ -286,6 +292,7 @@ function CrepeHost({
       const split = splitFrontmatter(fresh.content)
       applyExternalMarkdown(crepe, split.body)
       markReloaded(() => getMarkdownForSave(crepe), fresh.mtime, split.frontmatter, split.body)
+      setDisk(fresh.content)
     }
     reloadRef.current = () => void reload()
 
@@ -302,7 +309,10 @@ function CrepeHost({
         // silently so unsaved body edits and the caret survive (GRO-2186).
         const fresh = await api.readFile(file.path)
         if (cancelled) return
-        if (absorbFrontmatterOnly(fresh.content, fresh.mtime)) return
+        if (absorbFrontmatterOnly(fresh.content, fresh.mtime)) {
+          setDisk(fresh.content) // the body is untouched; the panel still has to see the new properties
+          return
+        }
         // The listener plugin debounces markdownUpdated by 200ms, so pull the live content
         // before deciding whether in-progress typing would be lost by a silent reload.
         c.update(getMarkdownForSave(crepe))
@@ -373,7 +383,7 @@ function CrepeHost({
           {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App already threads here for
               the contents block below — ONE registry, so a type declared in a row types the same
               column in every folder page's views. */}
-          <FrontmatterPanel file={file} root={root} properties={properties} wikilinks={wikilinks} />
+          <FrontmatterPanel file={{ ...file, content: disk }} root={root} properties={properties} wikilinks={wikilinks} />
         </div>
         <div className="editor-mount" ref={hostRef} />
         {wikilinks !== undefined && (
