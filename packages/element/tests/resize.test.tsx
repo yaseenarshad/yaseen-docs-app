@@ -2244,6 +2244,44 @@ describe("getSizeRelativeResizeUpdates", () => {
       ).toEqual({ strokeWidth: 4 });
     });
 
+    it.each([
+      [0.3, 1, 0.3],
+      [0.3, 0.5, 0.2],
+      [0.3, 0.1, 0.1],
+      [0.3, 2, 0.6],
+      [2, 0.1, 0.2],
+      [2, 100, 100],
+    ])(
+      "preserves fine ink when group scaling width %s by %s to %s",
+      (width, groupScale, expectedWidth) => {
+        const ink = createLinearLike("freedraw", width);
+        const updates = getSizeRelativeResizeUpdates(
+          ink,
+          ink.width * groupScale,
+          ink.height * groupScale,
+          { mode: "group", groupScale },
+        );
+
+        expect(updates.strokeWidth ?? ink.strokeWidth).toBe(expectedWidth);
+        if (groupScale === 1) {
+          expect(updates).toEqual({});
+        }
+      },
+    );
+
+    it.each(["line", "arrow"] as const)(
+      "keeps the normal width floor for group-shrunk %s elements",
+      (type) => {
+        const element = createLinearLike(type, 2);
+        expect(
+          getSizeRelativeResizeUpdates(element, 10, 5, {
+            mode: "group",
+            groupScale: 0.1,
+          }),
+        ).toEqual({ strokeWidth: 0.5 });
+      },
+    );
+
     it("group mode with groupScale undefined / 1 / non-finite / <= 0 returns {}", () => {
       const arrow = createLinearLike("arrow", 2);
       expect(

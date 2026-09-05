@@ -30,6 +30,7 @@ import {
   isTransparent,
   getStrokeWidthByKey,
   VECTOR_STROKE_WIDTH,
+  WRITING_STROKE_WIDTH,
   normalizeVectorStrokeWidth,
   getRelativeImageBorderWidth,
   reduceToCommonValue,
@@ -868,12 +869,31 @@ export const actionChangeStrokeWidth = register<StrokeWidthKey>({
   ),
 });
 
+const getStrokeWidthProfile = (
+  selectedElements: readonly ExcalidrawElement[],
+  appState: Pick<AppState, "writingMode" | "activeTool">,
+) => {
+  const writing =
+    appState.writingMode &&
+    (selectedElements.length > 0
+      ? selectedElements.every((element) => element.type === "freedraw")
+      : appState.activeTool.type === "freedraw");
+  return {
+    settings: writing ? WRITING_STROKE_WIDTH : VECTOR_STROKE_WIDTH,
+    preference: writing
+      ? ("currentItemWritingStrokeWidth" as const)
+      : ("currentItemVectorStrokeWidth" as const),
+  };
+};
+
 const LinearStrokeWidthInput = ({
   value,
   onChange,
+  settings,
 }: {
   value: number | null;
   onChange: (value: number) => void;
+  settings: typeof VECTOR_STROKE_WIDTH | typeof WRITING_STROKE_WIDTH;
 }) => {
   const [inputValue, setInputValue] = useState(value?.toString() ?? "");
   const cancelledRef = useRef(false);
@@ -899,7 +919,7 @@ const LinearStrokeWidthInput = ({
       return;
     }
 
-    const nextValue = normalizeVectorStrokeWidth(parsed);
+    const nextValue = normalizeVectorStrokeWidth(parsed, settings);
     setInputValue(nextValue.toString());
     if (nextValue !== value) {
       onChange(nextValue);
@@ -918,9 +938,9 @@ const LinearStrokeWidthInput = ({
           data-testid="linear-stroke-width-input"
           type="number"
           inputMode="decimal"
-          min={VECTOR_STROKE_WIDTH.min}
-          max={VECTOR_STROKE_WIDTH.max}
-          step={VECTOR_STROKE_WIDTH.step}
+          min={settings.min}
+          max={settings.max}
+          step={settings.step}
           value={inputValue}
           placeholder="Mixed"
           onChange={(event) => setInputValue(event.target.value)}
@@ -966,7 +986,11 @@ export const actionChangeVectorStrokeWidth = register<number>({
       return false;
     }
 
-    const strokeWidth = normalizeVectorStrokeWidth(value);
+    const { settings, preference } = getStrokeWidthProfile(
+      selectedElements,
+      appState,
+    );
+    const strokeWidth = normalizeVectorStrokeWidth(value, settings);
     const shouldActivateImageBorder = selectedElements.some(
       (element) =>
         isImageElement(element) && isTransparent(element.strokeColor),
@@ -991,7 +1015,7 @@ export const actionChangeVectorStrokeWidth = register<number>({
       }),
       appState: {
         ...appState,
-        currentItemVectorStrokeWidth: strokeWidth,
+        [preference]: strokeWidth,
         ...(shouldActivateImageBorder
           ? { currentItemStrokeColor: visibleImageStrokeColor }
           : null),
@@ -1000,13 +1024,16 @@ export const actionChangeVectorStrokeWidth = register<number>({
     };
   },
   PanelComponent: ({ elements, appState, updateData, app, data }) => {
+    const { settings, preference } = getStrokeWidthProfile(
+      getSelectedElements(elements, appState),
+      appState,
+    );
     const value = getFormValue(
       elements,
       app,
       (element) => element.strokeWidth,
       (element) => hasVectorStrokeWidth(element.type),
-      (hasSelection) =>
-        hasSelection ? null : appState.currentItemVectorStrokeWidth,
+      (hasSelection) => (hasSelection ? null : appState[preference]),
     );
 
     return (
@@ -1023,7 +1050,7 @@ export const actionChangeVectorStrokeWidth = register<number>({
           role="group"
           aria-label="Stroke width presets"
         >
-          {VECTOR_STROKE_WIDTH.presets.map((preset, index) => (
+          {settings.presets.map((preset, index) => (
             <IconButton
               key={preset}
               type="toggle"
@@ -1048,12 +1075,12 @@ export const actionChangeVectorStrokeWidth = register<number>({
             "linear-stroke-width-range--contextual": data?.contextToolbar,
           })}
           label={null}
-          value={value ?? appState.currentItemVectorStrokeWidth}
+          value={value ?? appState[preference]}
           hasCommonValue={value !== null}
           onChange={(nextValue) => updateData(nextValue)}
-          min={VECTOR_STROKE_WIDTH.min}
-          max={VECTOR_STROKE_WIDTH.max}
-          step={VECTOR_STROKE_WIDTH.step}
+          min={settings.min}
+          max={settings.max}
+          step={settings.step}
           minLabel={null}
           maxLabel={null}
           preventCanvasInteraction
@@ -1064,12 +1091,14 @@ export const actionChangeVectorStrokeWidth = register<number>({
           <div className="linear-stroke-width-contextual-meta">
             <LinearStrokeWidthInput
               value={value}
+              settings={settings}
               onChange={(nextValue) => updateData(nextValue)}
             />
           </div>
         ) : (
           <LinearStrokeWidthInput
             value={value}
+            settings={settings}
             onChange={(nextValue) => updateData(nextValue)}
           />
         )}

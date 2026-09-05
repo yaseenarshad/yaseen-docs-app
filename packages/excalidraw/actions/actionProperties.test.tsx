@@ -35,6 +35,164 @@ describe("element locking", () => {
   });
 
   describe("properties when tool selected", () => {
+    it("keeps fine Writing presets, exact input, slider, and drawn ink in agreement", () => {
+      API.setAppState({ writingMode: true, currentItemVectorStrokeWidth: 7.5 });
+      UI.clickTool("freedraw");
+      const input = queryByTestId(
+        document.body,
+        "linear-stroke-width-input",
+      ) as HTMLInputElement;
+      const slider = queryByTestId(
+        document.body,
+        "linear-stroke-width-slider",
+      ) as HTMLInputElement;
+
+      expect(input).toHaveValue(0.5);
+      for (const control of [input, slider]) {
+        expect(control).toHaveAttribute("min", "0.1");
+        expect(control).toHaveAttribute("step", "0.1");
+        expect(control).toHaveAttribute("max", "100");
+      }
+      for (const width of [0.3, 0.5, 1]) {
+        const preset = queryByTestId(
+          document.body,
+          `vector-stroke-width-preset-${width}`,
+        )!;
+        fireEvent.click(preset);
+        expect(preset).toHaveAttribute("aria-pressed", "true");
+        expect(input).toHaveValue(width);
+        expect(slider).toHaveValue(String(width));
+        expect(window.h.state.currentItemWritingStrokeWidth).toBe(width);
+      }
+
+      fireEvent.change(input, { target: { value: "0.2" } });
+      fireEvent.blur(input);
+      expect(slider).toHaveValue("0.2");
+      expect(UI.createElement("freedraw").strokeWidth).toBe(0.2);
+
+      fireEvent.change(
+        queryByTestId(document.body, "linear-stroke-width-slider")!,
+        { target: { value: "0.4" } },
+      );
+      expect(
+        queryByTestId(document.body, "linear-stroke-width-input"),
+      ).toHaveValue(0.4);
+      expect(UI.createElement("freedraw", { x: 200, y: 200 }).strokeWidth).toBe(
+        0.4,
+      );
+      expect(window.h.state.currentItemVectorStrokeWidth).toBe(7.5);
+    });
+
+    it("keeps Writing pen width separate across tools and mode changes", () => {
+      API.setAppState({
+        writingMode: true,
+        currentItemWritingStrokeWidth: 0.7,
+        currentItemVectorStrokeWidth: 7.5,
+      });
+      UI.clickTool("freedraw");
+      const input = () =>
+        queryByTestId(
+          document.body,
+          "linear-stroke-width-input",
+        ) as HTMLInputElement;
+
+      expect(input()).toHaveValue(0.7);
+      fireEvent.change(input(), { target: { value: "1.3" } });
+      fireEvent.blur(input());
+      expect(window.h.state.currentItemWritingStrokeWidth).toBe(1.3);
+      expect(window.h.state.currentItemVectorStrokeWidth).toBe(7.5);
+      expect(
+        queryByTestId(document.body, "linear-stroke-width-slider"),
+      ).toHaveValue("1.3");
+
+      const ink = UI.createElement("freedraw");
+      expect(ink.strokeWidth).toBe(1.3);
+      const rectangle = UI.createElement("rectangle", { x: 200, y: 200 });
+      expect(rectangle.strokeWidth).toBe(7.5);
+      UI.clickTool("freedraw");
+      expect(input()).toHaveValue(1.3);
+
+      API.setAppState({ writingMode: false });
+      expect(window.h.state.activeTool.type).toBe("freedraw");
+      expect(input()).toHaveValue(7.5);
+      const normalInk = UI.createElement("freedraw", { x: 400, y: 400 });
+      expect(normalInk.strokeWidth).toBe(7.5);
+
+      API.setAppState({ writingMode: true });
+      expect(input()).toHaveValue(1.3);
+      expect(ink.get().strokeWidth).toBe(1.3);
+      expect(rectangle.get().strokeWidth).toBe(7.5);
+      expect(normalInk.get().strokeWidth).toBe(7.5);
+    });
+
+    it("uses Writing controls for pen-only selections and normal controls for mixed selections", () => {
+      API.setAppState({
+        writingMode: true,
+        currentItemWritingStrokeWidth: 0.7,
+        currentItemVectorStrokeWidth: 7.5,
+      });
+      const ink = UI.createElement("freedraw");
+      const rectangle = UI.createElement("rectangle", { x: 200, y: 200 });
+      const input = () =>
+        queryByTestId(
+          document.body,
+          "linear-stroke-width-input",
+        ) as HTMLInputElement;
+
+      API.setSelectedElements(
+        window.h.app.scene
+          .getNonDeletedElements()
+          .filter((element) => element.id === ink.id),
+      );
+      expect(input()).toHaveValue(0.7);
+      fireEvent.change(input(), { target: { value: "1.3" } });
+      fireEvent.blur(input());
+      expect(ink.get().strokeWidth).toBe(1.3);
+      expect(window.h.state.currentItemWritingStrokeWidth).toBe(1.3);
+      expect(window.h.state.currentItemVectorStrokeWidth).toBe(7.5);
+
+      API.setSelectedElements([...window.h.app.scene.getNonDeletedElements()]);
+      expect(input().value).toBe("");
+      expect(input()).toHaveAttribute(
+        "min",
+        VECTOR_STROKE_WIDTH.min.toString(),
+      );
+      fireEvent.change(input(), { target: { value: "8" } });
+      fireEvent.blur(input());
+      expect(ink.get().strokeWidth).toBe(8);
+      expect(rectangle.get().strokeWidth).toBe(8);
+      expect(window.h.state.currentItemVectorStrokeWidth).toBe(8);
+      expect(window.h.state.currentItemWritingStrokeWidth).toBe(1.3);
+    });
+
+    it("changes selected Writing ink width in one undoable edit", () => {
+      API.setAppState({
+        writingMode: true,
+        currentItemWritingStrokeWidth: 0.7,
+        currentItemVectorStrokeWidth: 7.5,
+      });
+      const ink = UI.createElement("freedraw");
+      API.setSelectedElements(
+        window.h.app.scene
+          .getNonDeletedElements()
+          .filter((element) => element.id === ink.id),
+      );
+      const undoEntriesBefore = API.getUndoStack().length;
+
+      fireEvent.change(
+        queryByTestId(document.body, "linear-stroke-width-slider")!,
+        { target: { value: "1.3" } },
+      );
+
+      expect(ink.get().strokeWidth).toBe(1.3);
+      expect(API.getUndoStack()).toHaveLength(undoEntriesBefore + 1);
+      Keyboard.undo();
+      expect(ink.get().strokeWidth).toBe(0.7);
+      Keyboard.redo();
+      expect(ink.get().strokeWidth).toBe(1.3);
+      expect(window.h.state.currentItemVectorStrokeWidth).toBe(7.5);
+    });
+
     it("should show active background top picks", () => {
       UI.clickTool("rectangle");
 

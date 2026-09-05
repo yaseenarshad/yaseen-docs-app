@@ -11,7 +11,7 @@ import { KEYS } from "@excalidraw/common";
 import { Excalidraw } from "@excalidraw/excalidraw";
 import { UIAppStateContext } from "@excalidraw/excalidraw/context/ui-appState";
 import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
-import { newFrameElement } from "@excalidraw/element";
+import { CaptureUpdateAction, newFrameElement } from "@excalidraw/element";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
@@ -544,6 +544,43 @@ describe("AppSidebarLaunchers", () => {
       name: false,
     });
   });
+
+  it("toggles Writing beside Frames without changing the active tool or scene", () => {
+    const updateScene = vi.fn();
+    const api = { ...launcherApi(), updateScene };
+    const state = getDefaultAppState();
+    const { rerender } = render(
+      <UIAppStateContext.Provider value={state as never}>
+        <AppSidebarLaunchers excalidrawAPI={api} />
+      </UIAppStateContext.Provider>,
+    );
+    const writing = screen.getByRole("button", { name: "Writing mode" });
+    const frames = screen.getByRole("button", { name: "Show frames" });
+    expect(writing.nextElementSibling).toBe(frames);
+    expect(writing).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(writing);
+    expect(updateScene).toHaveBeenLastCalledWith({
+      appState: { writingMode: true },
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+    rerender(
+      <UIAppStateContext.Provider
+        value={{ ...state, writingMode: true } as never}
+      >
+        <AppSidebarLaunchers excalidrawAPI={api} />
+      </UIAppStateContext.Provider>,
+    );
+    expect(writing).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(frames);
+    expect(writing).toHaveAttribute("aria-pressed", "true");
+    expect(updateScene).toHaveBeenCalledTimes(1);
+    fireEvent.click(writing);
+    expect(updateScene).toHaveBeenLastCalledWith({
+      appState: { writingMode: false },
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+  });
 });
 
 describe("AppSidebar", () => {
@@ -711,7 +748,7 @@ describe("AppSidebar", () => {
     );
 
     expect(
-      screen.getByRole("button", { name: "Close workspace panel" }),
+      await screen.findByRole("button", { name: "Close workspace panel" }),
     ).toBeVisible();
     expect(screen.getAllByText("Boards").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Components").length).toBeGreaterThan(0);

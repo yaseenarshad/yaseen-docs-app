@@ -10989,6 +10989,9 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   private getCurrentItemStrokeWidth(elementType: ExcalidrawElement["type"]) {
+    if (this.state.writingMode && elementType === "freedraw") {
+      return this.state.currentItemWritingStrokeWidth;
+    }
     if (hasVectorStrokeWidth(elementType)) {
       return this.state.currentItemVectorStrokeWidth;
     }

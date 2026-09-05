@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { KEYS, isWritableElement } from "@excalidraw/common";
 import { DefaultSidebar, Sidebar } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction } from "@excalidraw/element";
 import {
   file,
   frameToolIcon,
+  FreedrawIcon,
   HamburgerMenuIcon,
   ImageIcon,
   LibraryIcon,
@@ -951,7 +953,7 @@ export const AppSidebarLaunchers = ({
   canManageDocs?: boolean;
   onRequestImageStudioSearch?: () => void;
 }) => {
-  const { openSidebar } = useUIAppState();
+  const { openSidebar, writingMode } = useUIAppState();
   const activeTab =
     openSidebar?.name === "default" ? openSidebar.tab ?? "boards" : null;
   const [framesVisible, setFramesVisible] = useState(
@@ -1123,6 +1125,25 @@ export const AppSidebarLaunchers = ({
             </span>
           </button>
         ))}
+      </div>
+      <div className="app-sidebar-launchers__modes">
+        <button
+          type="button"
+          className="app-sidebar-launcher app-sidebar-launcher--quiet"
+          aria-label="Writing mode"
+          aria-pressed={!!writingMode}
+          title={writingMode ? "Turn off Writing mode" : "Turn on Writing mode"}
+          disabled={!excalidrawAPI}
+          onClick={() => {
+            excalidrawAPI?.updateScene({
+              appState: { writingMode: !writingMode },
+              captureUpdate: CaptureUpdateAction.NEVER,
+            });
+          }}
+        >
+          {FreedrawIcon}
+          <span className="app-sidebar-launcher__label">Writing</span>
+        </button>
         <button
           type="button"
           className="app-sidebar-launcher app-sidebar-launcher--quiet app-sidebar-launcher--toggle"

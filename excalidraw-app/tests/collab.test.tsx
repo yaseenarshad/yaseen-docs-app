@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { CaptureUpdateAction, newElementWith } from "@excalidraw/excalidraw";
 import {
   createRedoAction,
@@ -18,6 +20,7 @@ const { h } = window;
 
 Object.defineProperty(window, "crypto", {
   value: {
+    randomUUID,
     getRandomValues: (arr: number[]) =>
       arr.forEach((v, i) => (arr[i] = Math.floor(Math.random() * 256))),
     subtle: {
@@ -60,6 +63,17 @@ vi.mock("socket.io-client", () => {
         emit: () => {},
       };
     },
+  };
+});
+
+// These scene-sync tests do not connect to the document backend.
+vi.mock("convex/react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("convex/react")>();
+  const mutation = vi.fn();
+  return {
+    ...actual,
+    useMutation: () => mutation,
+    useQuery: () => undefined,
   };
 });
 

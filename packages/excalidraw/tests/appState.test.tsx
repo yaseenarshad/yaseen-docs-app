@@ -4,7 +4,12 @@ import { EXPORT_DATA_TYPES, MIME_TYPES } from "@excalidraw/common";
 
 import type { ExcalidrawTextElement } from "@excalidraw/element/types";
 
-import { getDefaultAppState } from "../appState";
+import {
+  clearAppStateForDatabase,
+  clearAppStateForLocalStorage,
+  cleanAppStateForExport,
+  getDefaultAppState,
+} from "../appState";
 import { Excalidraw } from "../index";
 import { getResponsiveTextFontSize } from "../textCreation";
 
@@ -15,6 +20,71 @@ import { fireEvent, render, waitFor } from "./test-utils";
 const { h } = window;
 
 describe("appState", () => {
+  it("persists Writing preferences only in browser storage", () => {
+    const appState = {
+      ...getDefaultAppState(),
+      writingMode: true,
+      currentItemWritingStrokeWidth: 0.7,
+    };
+
+    expect(clearAppStateForLocalStorage(appState)).toMatchObject({
+      writingMode: true,
+      currentItemWritingStrokeWidth: 0.7,
+    });
+    for (const filtered of [
+      cleanAppStateForExport(appState),
+      clearAppStateForDatabase(appState),
+    ]) {
+      expect(filtered).not.toHaveProperty("writingMode");
+      expect(filtered).not.toHaveProperty("currentItemWritingStrokeWidth");
+    }
+  });
+
+  it("keeps local Writing preferences when importing fractional ink", async () => {
+    await render(
+      <Excalidraw
+        initialData={{
+          appState: {
+            writingMode: true,
+            currentItemWritingStrokeWidth: 0.7,
+            currentItemVectorStrokeWidth: 7.5,
+          },
+        }}
+      />,
+    );
+
+    await API.drop([
+      {
+        kind: "file",
+        file: new Blob(
+          [
+            JSON.stringify({
+              type: EXPORT_DATA_TYPES.excalidraw,
+              appState: { viewBackgroundColor: "#fff" },
+              elements: [
+                API.createElement({
+                  id: "imported-ink",
+                  type: "freedraw",
+                  strokeWidth: 0.3,
+                }),
+              ],
+            }),
+          ],
+          { type: MIME_TYPES.json },
+        ),
+      },
+    ]);
+
+    await waitFor(() => {
+      expect(h.elements).toEqual([
+        expect.objectContaining({ id: "imported-ink", strokeWidth: 0.3 }),
+      ]);
+      expect(h.state.writingMode).toBe(true);
+      expect(h.state.currentItemWritingStrokeWidth).toBe(0.7);
+      expect(h.state.currentItemVectorStrokeWidth).toBe(7.5);
+    });
+  });
+
   it("drag&drop file doesn't reset non-persisted appState", async () => {
     const defaultAppState = getDefaultAppState();
     const exportBackground = !defaultAppState.exportBackground;

@@ -238,6 +238,18 @@ const settleUntil = async (isSettled: () => boolean, attempts = 50) => {
   }
 };
 
+// Wait for async work without advancing future debounce or handoff timers.
+const waitForCloudState = (assertion: () => void) =>
+  vi.waitFor(
+    async () => {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      assertion();
+    },
+    { interval: 0 },
+  );
+
 // A save that has left the debounce is still an unbounded number of hops from
 // settling: the object-storage pipeline compresses, hashes, uploads and
 // verifies. Waiting on the status is what makes that deterministic.
@@ -245,7 +257,9 @@ const flushQueuedSave = async (result: { current: { saveStatus: string } }) => {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
   });
-  await settleUntil(() => result.current.saveStatus !== "saving");
+  await waitForCloudState(() => {
+    expect(["loading", "saving"]).not.toContain(result.current.saveStatus);
+  });
 };
 
 const renderCloudBoard = async () => {
@@ -1228,7 +1242,12 @@ describe("useCloudBoard preview scheduling", () => {
     };
     const compressed = await publishSceneObject(sceneJson, version);
     const rendered = await renderCloudBoard();
-    await settleUntil(() => rendered.result.current.openedBoard !== undefined);
+    await waitForCloudState(() => {
+      expect(rendered.result.current.openedBoard).toMatchObject({
+        sceneJson,
+        version,
+      });
+    });
     return { ...rendered, compressed };
   };
 
@@ -1628,20 +1647,6 @@ describe("useCloudBoard preview scheduling", () => {
     };
   };
 
-  /** The App applies an opened scene, then hands the journal its chance. */
-  const openAndAcceptScene = async (
-    board: Awaited<ReturnType<typeof openMigratedBoard>>,
-    sceneJson: string,
-  ) => {
-    await act(async () => {
-      board.result.current.acceptSceneWithoutSave(sceneJson);
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    // A claim crosses the exclusive section, IndexedDB, and — when it restores
-    // — a whole object-storage save, so the queue is drained unconditionally.
-    await settleUntil(() => false, 60);
-  };
-
   it("replays the journal a migrated Board's tab died holding", async () => {
     const journal = createPersistentJournalStorage();
     mocks.createJournal.mockImplementation(() =>
@@ -1687,13 +1692,19 @@ describe("useCloudBoard preview scheduling", () => {
       cleanupToken: null,
     });
     const revived = await openMigratedBoard("r2 scene", 341);
-    await openAndAcceptScene(revived, "r2 scene");
+    // The App applies the opened scene, then hands the journal its chance.
+    await act(async () => {
+      revived.result.current.acceptSceneWithoutSave("r2 scene");
+      await vi.advanceTimersByTimeAsync(0);
+    });
 
-    expect(revived.result.current.openedBoard?.sceneJson).toBe(
-      "duplicated elements",
-    );
-    expect(revived.result.current.openedBoard?.version).toBe(342);
-    expect(journal.entries.has("board-id")).toBe(false);
+    await waitForCloudState(() => {
+      expect(revived.result.current.openedBoard?.sceneJson).toBe(
+        "duplicated elements",
+      );
+      expect(revived.result.current.openedBoard?.version).toBe(342);
+      expect(journal.entries.has("board-id")).toBe(false);
+    });
     revived.unmount();
   });
 
@@ -1729,12 +1740,12 @@ describe("useCloudBoard preview scheduling", () => {
       rendered.result.current.queueSave("r2 scene");
       await vi.advanceTimersByTimeAsync(0);
     });
-    await settleUntil(() => false, 60);
-
-    expect(rendered.result.current.openedBoard?.sceneJson).toBe(
-      "duplicated elements",
-    );
-    expect(rendered.result.current.openedBoard?.version).toBe(342);
+    await waitForCloudState(() => {
+      expect(rendered.result.current.openedBoard?.sceneJson).toBe(
+        "duplicated elements",
+      );
+      expect(rendered.result.current.openedBoard?.version).toBe(342);
+    });
     rendered.unmount();
   });
 
@@ -1783,12 +1794,12 @@ describe("useCloudBoard preview scheduling", () => {
       releaseDyingPage();
       await vi.advanceTimersByTimeAsync(0);
     });
-    await settleUntil(() => false, 60);
-
-    expect(rendered.result.current.openedBoard?.sceneJson).toBe(
-      "duplicated elements",
-    );
-    expect(rendered.result.current.openedBoard?.version).toBe(342);
+    await waitForCloudState(() => {
+      expect(rendered.result.current.openedBoard?.sceneJson).toBe(
+        "duplicated elements",
+      );
+      expect(rendered.result.current.openedBoard?.version).toBe(342);
+    });
     rendered.unmount();
   });
 

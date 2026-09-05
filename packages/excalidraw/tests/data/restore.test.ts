@@ -302,6 +302,31 @@ describe("restoreElements", () => {
     });
   });
 
+  it("round-trips fractional ink without exporting Writing preferences", () => {
+    const ink = API.createElement({
+      type: "freedraw",
+      strokeWidth: 0.3,
+      points: [pointFrom(0, 0), pointFrom(10, 10)],
+    });
+    const serialized = serializeAsJSON(
+      [ink],
+      {
+        ...getDefaultAppState(),
+        writingMode: true,
+        currentItemWritingStrokeWidth: 0.7,
+        currentItemVectorStrokeWidth: 7.5,
+      },
+      {},
+      "local",
+    );
+    const parsed = JSON.parse(serialized);
+    const [restoredInk] = restore.restoreElements(parsed.elements, null);
+
+    expect(restoredInk.strokeWidth).toBe(0.3);
+    expect(parsed.appState).not.toHaveProperty("writingMode");
+    expect(parsed.appState).not.toHaveProperty("currentItemWritingStrokeWidth");
+  });
+
   it("should restore only valid freedraw points and keep pressures aligned", () => {
     const freedrawElement = API.createElement({
       type: "freedraw",
@@ -1242,6 +1267,38 @@ describe("restoreAppState", () => {
     expect(restoredAppState.currentItemVectorStrokeWidth).toBe(7.5);
     expect(restoredAppState).not.toHaveProperty("currentItemLinearStrokeWidth");
   });
+
+  it("restores browser Writing preferences independently of normal width", () => {
+    const restored = restore.restoreAppState(null, {
+      ...getDefaultAppState(),
+      writingMode: true,
+      currentItemWritingStrokeWidth: 0.7,
+      currentItemVectorStrokeWidth: 7.5,
+    });
+
+    expect(restored.writingMode).toBe(true);
+    expect(restored.currentItemWritingStrokeWidth).toBe(0.7);
+    expect(restored.currentItemVectorStrokeWidth).toBe(7.5);
+  });
+
+  it.each([undefined, Number.NaN, Number.POSITIVE_INFINITY])(
+    "defaults invalid Writing width %s without changing normal width",
+    (width) => {
+      const restored = restore.restoreAppState(
+        {
+          currentItemWritingStrokeWidth: width,
+          currentItemVectorStrokeWidth: 7.5,
+        },
+        null,
+      );
+
+      expect(restored.writingMode).toBe(false);
+      expect(restored.currentItemWritingStrokeWidth).toBe(
+        getDefaultAppState().currentItemWritingStrokeWidth,
+      );
+      expect(restored.currentItemVectorStrokeWidth).toBe(7.5);
+    },
+  );
 
   it("should restore with current app state when imported data state is undefined", () => {
     const stubImportedAppState = {

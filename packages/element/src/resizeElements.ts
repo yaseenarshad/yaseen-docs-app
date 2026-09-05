@@ -13,6 +13,7 @@ import {
   rescalePoints,
   getFontString,
   normalizeVectorStrokeWidth,
+  WRITING_STROKE_WIDTH,
 } from "@excalidraw/common";
 
 import type { GlobalPoint } from "@excalidraw/math";
@@ -420,6 +421,7 @@ export const getSizeRelativeResizeUpdates = (
   if (strokeRatio !== null) {
     const strokeWidth = normalizeVectorStrokeWidth(
       origElement.strokeWidth * strokeRatio,
+      isFreeDrawElement(origElement) ? WRITING_STROKE_WIDTH : undefined,
     );
     if (strokeWidth !== origElement.strokeWidth) {
       updates.strokeWidth = strokeWidth;

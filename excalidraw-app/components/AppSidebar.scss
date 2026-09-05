@@ -14,7 +14,8 @@
     order: 2;
   }
 
-  .app-sidebar-launchers__direct {
+  .app-sidebar-launchers__direct,
+  .app-sidebar-launchers__modes {
     display: flex;
     gap: 0.25rem;
   }

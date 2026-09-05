@@ -4,7 +4,11 @@ import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
 
 import { STORAGE_KEYS } from "../app_constants";
 
-import { importFromLocalStorage } from "./localStorage";
+import { LocalData } from "./LocalData";
+import {
+  importFromLocalStorage,
+  saveWritingPreferencesToLocalStorage,
+} from "./localStorage";
 
 describe("Assistant default font migration", () => {
   beforeEach(() => {
@@ -214,5 +218,81 @@ describe("Vector stroke width migration", () => {
     expect(
       importFromLocalStorage().appState?.currentItemVectorStrokeWidth,
     ).toBe(3.5);
+  });
+});
+
+describe("Writing preferences on cloud boards", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    LocalData.pauseSave("cloud");
+  });
+
+  afterEach(() => {
+    LocalData.cancelSave();
+    LocalData.resumeSave("cloud");
+  });
+
+  it("persists Writing changes while scene saving is paused and preserves the local board", () => {
+    const elements = JSON.stringify([{ id: "local-ink", type: "freedraw" }]);
+    const localState = { scrollX: 123, currentItemVectorStrokeWidth: 8 };
+    localStorage.setItem(STORAGE_KEYS.LOCAL_STORAGE_ELEMENTS, elements);
+    localStorage.setItem(
+      STORAGE_KEYS.LOCAL_STORAGE_APP_STATE,
+      JSON.stringify(localState),
+    );
+    const cloudState = {
+      ...getDefaultAppState(),
+      width: 1000,
+      height: 800,
+      offsetTop: 0,
+      offsetLeft: 0,
+      writingMode: true,
+      currentItemWritingStrokeWidth: 0.3,
+      scrollX: 999,
+      currentItemVectorStrokeWidth: 2,
+    };
+
+    LocalData.save([], cloudState, {}, () => {});
+    saveWritingPreferencesToLocalStorage(cloudState);
+    LocalData.flushSave();
+
+    expect(localStorage.getItem(STORAGE_KEYS.LOCAL_STORAGE_ELEMENTS)).toBe(
+      elements,
+    );
+    expect(
+      JSON.parse(localStorage.getItem(STORAGE_KEYS.LOCAL_STORAGE_APP_STATE)!),
+    ).toEqual({
+      ...localState,
+      writingMode: true,
+      currentItemWritingStrokeWidth: 0.3,
+    });
+    expect(importFromLocalStorage().appState).toMatchObject({
+      writingMode: true,
+      currentItemWritingStrokeWidth: 0.3,
+      currentItemVectorStrokeWidth: 8,
+    });
+
+    saveWritingPreferencesToLocalStorage({ ...cloudState, writingMode: false });
+    expect(importFromLocalStorage().appState).toMatchObject({
+      writingMode: false,
+      currentItemWritingStrokeWidth: 0.3,
+    });
+  });
+
+  it("creates only the Writing preferences when no local board is saved", () => {
+    saveWritingPreferencesToLocalStorage({
+      ...getDefaultAppState(),
+      writingMode: true,
+      currentItemWritingStrokeWidth: 0.7,
+    });
+    expect(
+      JSON.parse(localStorage.getItem(STORAGE_KEYS.LOCAL_STORAGE_APP_STATE)!),
+    ).toEqual({
+      writingMode: true,
+      currentItemWritingStrokeWidth: 0.7,
+    });
+    expect(
+      localStorage.getItem(STORAGE_KEYS.LOCAL_STORAGE_ELEMENTS),
+    ).toBeNull();
   });
 });

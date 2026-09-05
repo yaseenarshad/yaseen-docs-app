@@ -134,6 +134,7 @@ import { FileStatusStore } from "./data/fileStatusStore";
 import {
   importFromLocalStorage,
   importUsernameFromLocalStorage,
+  saveWritingPreferencesToLocalStorage,
 } from "./data/localStorage";
 
 import { loadFilesFromFirebase } from "./data/firebase";
@@ -868,6 +869,7 @@ const ExcalidrawWrapper = () => {
       );
     }
   }, [cloud.boardDocManifest, docContentStore]);
+  const lastWritingPreferencesRef = useRef<AppState | null>(null);
   const loadedCloudSceneRef = useRef<{
     routeKey: string;
     version: number;
@@ -1443,6 +1445,17 @@ const ExcalidrawWrapper = () => {
     appState: AppState,
     files: BinaryFiles,
   ) => {
+    // onChange runs only after the editor has restored its initial state.
+    const previous = lastWritingPreferencesRef.current;
+    if (
+      previous?.writingMode !== appState.writingMode ||
+      previous?.currentItemWritingStrokeWidth !==
+        appState.currentItemWritingStrokeWidth
+    ) {
+      saveWritingPreferencesToLocalStorage(appState);
+      lastWritingPreferencesRef.current = appState;
+    }
+
     if (collabAPI?.isCollaborating()) {
       collabAPI.syncElements(elements);
     }

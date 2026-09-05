@@ -18,6 +18,30 @@ const ASSISTANT_DEFAULT_FONT_MIGRATION_KEY =
 const ARCHITECT_DEFAULT_ROUGHNESS_MIGRATION_KEY =
   "yaseen-whiteboard-architect-default-roughness-v1";
 
+// Cloud and collaboration routes pause scene saves, but these preferences still
+// belong to this browser. Merge only them so the local board stays untouched.
+export const saveWritingPreferencesToLocalStorage = ({
+  writingMode,
+  currentItemWritingStrokeWidth,
+}: Pick<AppState, "writingMode" | "currentItemWritingStrokeWidth">) => {
+  try {
+    const savedState = localStorage.getItem(
+      STORAGE_KEYS.LOCAL_STORAGE_APP_STATE,
+    );
+    const appState = savedState ? JSON.parse(savedState) : {};
+    localStorage.setItem(
+      STORAGE_KEYS.LOCAL_STORAGE_APP_STATE,
+      JSON.stringify({
+        ...appState,
+        writingMode,
+        currentItemWritingStrokeWidth,
+      }),
+    );
+  } catch (error) {
+    console.error(error);
+  }
+};
+
 export const saveUsernameToLocalStorage = (username: string) => {
   try {
     localStorage.setItem(

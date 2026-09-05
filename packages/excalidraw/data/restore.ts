@@ -22,6 +22,7 @@ import {
   STROKE_WIDTH,
   STROKE_WIDTH_KEYS,
   normalizeVectorStrokeWidth,
+  WRITING_STROKE_WIDTH,
   type StrokeWidthKey,
 } from "@excalidraw/common";
 import {
@@ -1174,6 +1175,11 @@ export const restoreAppState = (
       (appState as any).currentItemLinearStrokeWidth ??
       (localAppState as any)?.currentItemLinearStrokeWidth ??
       nextAppState.currentItemVectorStrokeWidth,
+  );
+  nextAppState.writingMode = nextAppState.writingMode === true;
+  nextAppState.currentItemWritingStrokeWidth = normalizeVectorStrokeWidth(
+    nextAppState.currentItemWritingStrokeWidth,
+    WRITING_STROKE_WIDTH,
   );
 
   const currentItemCornerRadius =

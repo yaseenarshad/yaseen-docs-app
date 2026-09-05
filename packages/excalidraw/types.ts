@@ -429,6 +429,8 @@ export interface AppState {
   // Pen handling
   penMode: boolean;
   penDetected: boolean;
+  writingMode: boolean;
+  currentItemWritingStrokeWidth: number;
 
   exportBackground: boolean;
   exportEmbedScene: boolean;

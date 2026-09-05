@@ -1,8 +1,6 @@
 import clsx from "clsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { PointerEvent as ReactPointerEvent } from "react";
-
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
@@ -21,6 +19,8 @@ import {
 } from "./slides";
 
 import "./PresentationSidebar.scss";
+
+import type { PointerEvent as ReactPointerEvent } from "react";
 
 /** How close to a list edge a drag has to get before the list scrolls itself. */
 const AUTO_SCROLL_MARGIN = 24;

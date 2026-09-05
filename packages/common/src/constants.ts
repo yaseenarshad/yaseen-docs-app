@@ -479,16 +479,25 @@ export const VECTOR_STROKE_WIDTH = {
 
 export const normalizeVectorStrokeWidth = (
   value: unknown,
+  settings: { min: number; max: number; default: number } = VECTOR_STROKE_WIDTH,
 ): ExcalidrawElement["strokeWidth"] => {
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    return VECTOR_STROKE_WIDTH.default;
+    return settings.default;
   }
 
   return Math.min(
-    VECTOR_STROKE_WIDTH.max,
-    Math.max(VECTOR_STROKE_WIDTH.min, Math.round(value * 10) / 10),
+    settings.max,
+    Math.max(settings.min, Math.round(value * 10) / 10),
   );
 };
+
+export const WRITING_STROKE_WIDTH = {
+  min: 0.1,
+  max: 100,
+  step: 0.1,
+  default: 0.5,
+  presets: [0.3, 0.5, 1],
+} as const;
 
 /** Image border first-activation width: 1% of the image's shortest side (GRO-1545). */
 export const IMAGE_BORDER_WIDTH_RATIO = 0.01;
