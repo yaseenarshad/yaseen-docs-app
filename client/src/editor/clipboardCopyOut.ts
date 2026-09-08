@@ -3,6 +3,7 @@ import { DOMSerializer } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { Node } from '@milkdown/kit/transformer'
 import { $prose } from '@milkdown/kit/utils'
+import { APP_CLIPBOARD } from './clipboardNumbers'
 
 export const CLIPBOARD_EMPTY_PARAGRAPH = 'data-mdapp-empty-paragraph'
 
@@ -32,23 +33,30 @@ export const clipboardCopyOut = $prose((ctx) => {
     const serialize = prev.clipboardTextSerializer ?? stock?.props.clipboardTextSerializer?.bind(stock)
     if (!serialize) return prev
     const html = prev.clipboardSerializer ?? DOMSerializer.fromSchema(ctx.get(schemaCtx))
+    const clipboardSerializer = new DOMSerializer({
+      ...html.nodes,
+      paragraph: (node) => {
+        const paragraph = html.serializeNode(node) as HTMLElement
+        paragraph.style.marginTop = '0'
+        paragraph.style.marginBottom = '0'
+        if (node.content.size === 0) {
+          const separator = document.createElement('br')
+          for (const { name, value } of paragraph.attributes) separator.setAttribute(name, value)
+          separator.setAttribute(CLIPBOARD_EMPTY_PARAGRAPH, 'true')
+          return separator
+        }
+        return paragraph
+      },
+    }, html.marks)
+    const serializeFragment = clipboardSerializer.serializeFragment.bind(clipboardSerializer)
+    clipboardSerializer.serializeFragment = (fragment, options, target) => {
+      const dom = serializeFragment(fragment, options, target)
+      dom.firstElementChild?.setAttribute(APP_CLIPBOARD, 'true')
+      return dom
+    }
     return {
       ...prev,
-      clipboardSerializer: new DOMSerializer({
-        ...html.nodes,
-        paragraph: (node) => {
-          const paragraph = html.serializeNode(node) as HTMLElement
-          paragraph.style.marginTop = '0'
-          paragraph.style.marginBottom = '0'
-          if (node.content.size === 0) {
-            const separator = document.createElement('br')
-            for (const { name, value } of paragraph.attributes) separator.setAttribute(name, value)
-            separator.setAttribute(CLIPBOARD_EMPTY_PARAGRAPH, 'true')
-            return separator
-          }
-          return paragraph
-        },
-      }, html.marks),
+      clipboardSerializer,
       clipboardTextSerializer: (slice, view) => {
         const text = serialize(slice, view)
         if (!text.includes('<br />')) return text

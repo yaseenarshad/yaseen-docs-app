@@ -4,6 +4,7 @@ import { Fragment, Slice, type Node as ProseNode } from '@milkdown/kit/prose/mod
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { CLIPBOARD_EMPTY_PARAGRAPH } from './clipboardCopyOut'
+import { externalNumberedHTML, literalNumberedHTML, parseLiteralNumberedPaste } from './clipboardNumbers'
 
 /** A root-level BR between paragraphs is one blank paragraph, not a paragraph with two visual lines. */
 function normalizeParagraphSeparators(html: string): string {
@@ -38,7 +39,7 @@ function normalizeParagraphSeparators(html: string): string {
 export const clipboardPaste = $prose((ctx) => {
   ctx.update(editorViewOptionsCtx, prev => ({
     ...prev,
-    transformPastedHTML: (html, view) => normalizeParagraphSeparators(prev.transformPastedHTML?.(html, view) ?? html),
+    transformPastedHTML: (html, view) => literalNumberedHTML(normalizeParagraphSeparators(prev.transformPastedHTML?.(html, view) ?? html)),
     handlePaste: (view, event, slice) => {
       if (!view.editable) return true
       // Guard before the fake-outline handler: code must never become a list.
@@ -47,7 +48,25 @@ export const clipboardPaste = $prose((ctx) => {
         if (text) view.dispatch(closeHistory(view.state.tr).insertText(text.replace(/\r\n?/g, '\n')).setMeta('paste', true).setMeta('uiEvent', 'paste'))
         return true
       }
-      return prev.handlePaste?.(view, event, slice) ?? false
+      if (prev.handlePaste?.(view, event, slice)) return true
+      const data = event.clipboardData
+      if (data?.getData('vscode-editor-data')) return false
+      const html = data?.getData('text/html') ?? ''
+      if (externalNumberedHTML(html)) {
+        // ProseMirror already parsed the normalized HTML and applied transformPasted.
+        view.dispatch(closeHistory(view.state.tr).replaceSelection(slice).setMeta('paste', true).setMeta('uiEvent', 'paste').scrollIntoView())
+        return true
+      }
+      if (!html) {
+        const doc = parseLiteralNumberedPaste(ctx, data?.getData('text/plain') ?? '')
+        if (doc) {
+          let literal = Slice.maxOpen(doc.content)
+          view.someProp('transformPasted', transform => { literal = transform(literal, view, false) })
+          view.dispatch(closeHistory(view.state.tr).replaceSelection(literal).setMeta('paste', true).setMeta('uiEvent', 'paste').scrollIntoView())
+          return true
+        }
+      }
+      return false
     },
   }))
   return new Plugin({

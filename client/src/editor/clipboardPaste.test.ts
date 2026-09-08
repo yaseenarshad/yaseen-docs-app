@@ -41,8 +41,163 @@ function pasteAs(mode: ClipboardPasteRequest['mode'], text: string) {
 function pasteHtml(view: EditorView, html: string, text = 'First.\n\nSecond.') {
   return view.pasteHTML(html, { clipboardData: { getData: (t: string) => t === 'text/html' ? html : t === 'text/plain' ? text : '' }, preventDefault() {} } as unknown as ClipboardEvent)
 }
+function pasteText(view: EditorView, text: string) {
+  return view.pasteText(text, { clipboardData: { getData: (type: string) => type === 'text/plain' ? text : '' }, preventDefault() {} } as unknown as ClipboardEvent)
+}
 const all = (view: EditorView) => view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)))
 const textOf = (view: EditorView) => view.state.doc.textBetween(0, view.state.doc.content.size, '\n', '\n')
+
+describe('external pasted numbers are literal text (YAZ-1429)', () => {
+  function expectNoNumberedLists(view: EditorView) {
+    view.state.doc.descendants(node => { expect(node.type.name).not.toBe('ordered_list') })
+  }
+  const text = 'so there are\n\n1. solo guys\n2. guys who have an agency but its just them\n3. guys who run their own agencies and have a team\n4. and guys who work at agencies'
+  it('preserves external rich list numbers as literal text', async () => {
+    const { view, crepe } = await mount()
+    pasteHtml(view, '<p>so there are</p><ol><li>solo guys</li><li>guys who have an agency but its just them</li><li>guys who run their own agencies and have a team</li><li>and guys who work at agencies</li></ol>', text)
+    expectNoNumberedLists(view)
+    expect(textOf(view)).toBe(text.replace('\n\n', '\n'))
+    expect(getMarkdownForSave(crepe)).toContain('1\\. solo guys')
+  })
+  it('preserves plain-text-only numbers without Markdown list creation', async () => {
+    const { view, crepe } = await mount()
+    pasteText(view, text)
+    expectNoNumberedLists(view)
+    expect(textOf(view)).toBe(text.replace('\n\n', '\n'))
+    expect(getMarkdownForSave(crepe)).toContain('1\\. solo guys')
+  })
+  it('retains original plain-text labels, punctuation and inline formatting instead of renumbering', async () => {
+    const { view, crepe } = await mount()
+    pasteText(view, '3) **first**\n9) [second](https://example.com)\n9) third')
+    expectNoNumberedLists(view)
+    expect(textOf(view)).toBe('3) first\n9) second\n9) third')
+    expect(getMarkdownForSave(crepe)).toContain('**first**')
+    expect(getMarkdownForSave(crepe)).toContain('[second](https://example.com)')
+  })
+  it('retains rich list starts, explicit item values, reverse order and marks', async () => {
+    const { view, crepe } = await mount()
+    pasteHtml(view, '<ol start="5" reversed><li><p><strong>first</strong></p></li><li value="9"><a href="https://example.com">second</a></li><li>third</li></ol>')
+    expectNoNumberedLists(view)
+    expect(textOf(view)).toBe('5. first\n9. second\n8. third')
+    expect(getMarkdownForSave(crepe)).toContain('**first**')
+    expect(getMarkdownForSave(crepe)).toContain('[second](https://example.com)')
+  })
+  it.each([['A', 27, 'AA. first\nAB. second'], ['a', 2, 'b. first\nc. second'], ['I', 4, 'IV. first\nV. second'], ['i', 9, 'ix. first\nx. second']])(
+    'preserves native HTML %s marker labels as text', async (type, start, expected) => {
+      const { view } = await mount()
+      pasteHtml(view, `<ol type="${type}" start="${start}"><li>first</li><li>second</li></ol>`)
+      expectNoNumberedLists(view)
+      expect(textOf(view)).toBe(expected)
+    },
+  )
+  it('preserves nested bullets, paragraphs and code around external numbered items', async () => {
+    const { view } = await mount()
+    pasteHtml(view, '<ul><li><p>parent</p><ol><li><p>child</p><ul><li>bullet</li></ul><p>continuation</p></li><li>next</li></ol></li></ul><pre><code>1. literal\n2. code</code></pre>')
+    expectNoNumberedLists(view)
+    expect(view.state.doc.firstChild?.type.name).toBe('bullet_list')
+    // Crepe retains its normal trailing paragraph after a code block.
+    expect(textOf(view)).toBe('parent\n1. child\nbullet\ncontinuation\n2. next\n1. literal\n2. code\n')
+  })
+  it('only changes parsed Markdown lists, preserving fenced and indented code', async () => {
+    const { view } = await mount('', false, true)
+    pasteText(view, '1. first\n2. second\n\n```text\n1. fenced\n2. code\n```\n\n    1. indented\n    2. code')
+    expectNoNumberedLists(view)
+    const code: string[] = []
+    view.state.doc.descendants(node => { if (node.type.name === 'code_block') code.push(node.textContent) })
+    expect(code).toEqual(['1. fenced\n2. code', '1. indented\n2. code'])
+  })
+  it('keeps numbering literal in normal fake-bullet outline paste too', async () => {
+    const { view } = await mount()
+    pasteText(view, '• parent\n• sibling\n\n1. first\n2. second')
+    expectNoNumberedLists(view)
+    expect(view.state.doc.firstChild?.type.name).toBe('bullet_list')
+    expect(textOf(view)).toContain('1. first\n2. second')
+  })
+  it('keeps checked and unchecked Markdown task markers as literal text', async () => {
+    const { view } = await mount()
+    pasteText(view, '1. [x] done\n2. [ ] pending')
+    expectNoNumberedLists(view)
+    expect(textOf(view)).toBe('1. [x] done\n2. [ ] pending')
+  })
+  it.each([
+    ['<ol><li><!-- comment --><p>first</p></li></ol>', '1. first'],
+    ['<ol><li><div><p>first</p><p>second</p></div></li></ol>', '1. first\nsecond'],
+    ['<ol><li><ol><li>child</li></ol></li></ol>', '1.\n1. child'],
+    ['<ol><li>item</li>unusual source content</ol>', '1. item\nunusual source content'],
+  ])('keeps labels with their intended rich-text block: %s', async (html, expected) => {
+    const { view } = await mount()
+    pasteHtml(view, html)
+    expectNoNumberedLists(view)
+    expect(textOf(view)).toBe(expected)
+  })
+  it('runs outline paste constraints for mixed fake bullets and numbered text', async () => {
+    const { view } = await mount('* existing', true)
+    all(view)
+    const before = view.state.doc.toJSON()
+    pasteText(view, '• parent\n• sibling\n\n1. first\n2. second')
+    expect(isBulletsOnly(view.state.doc)).toBe(true)
+    expect(textOf(view)).toBe('parent\nsibling\n1. first\n2. second')
+    expect(undo(view.state, view.dispatch)).toBe(true)
+    expect(view.state.doc.toJSON()).toEqual(before)
+  })
+  it('does not automatically continue numbering on Enter', async () => {
+    const { view } = await mount()
+    pasteText(view, '1. first\n2. second')
+    view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)))
+    view.someProp('handleKeyDown', handler => handler(view, new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13 })))
+    expectNoNumberedLists(view)
+    expect(textOf(view)).toBe('1. first\n2. second\n')
+  })
+  it('does not reconstruct foreign numbering from ProseMirror clipboard context', async () => {
+    const { view } = await mount()
+    pasteHtml(view, '<div data-pm-slice=\'1 1 ["ordered_list",{"order":5},"list_item",{}]\'><p>Selected text</p><ol><li>child</li></ol></div>')
+    expectNoNumberedLists(view)
+    expect(textOf(view)).toBe('Selected text\n1. child')
+  })
+  it('preserves internal ordered lists but not ordered HTML from another ProseMirror editor', async () => {
+    const { view } = await mount('* Parent\n  1. First\n  2. Second')
+    const before = view.state.doc.toJSON()
+    all(view)
+    const { dom, text } = view.serializeForClipboard(view.state.selection.content())
+    pasteHtml(view, dom.innerHTML, text)
+    expect(view.state.doc.toJSON()).toEqual(before)
+    all(view)
+    pasteHtml(view, '<ol data-pm-slice="0 0 []"><li><p>External</p></li></ol>')
+    expectNoNumberedLists(view)
+    expect(textOf(view)).toBe('1. External')
+  })
+  it('retains explicit Markdown numbering and literal plain paste', async () => {
+    const { view } = await mount()
+    pasteAs('markdown', '1. first\n2. second')
+    expect(view.state.doc.firstChild?.type.name).toBe('ordered_list')
+    all(view)
+    pasteAs('plain', '1. first\n2. second')
+    expectNoNumberedLists(view)
+    expect(textOf(view)).toBe('1. first\n2. second')
+  })
+  it('pastes into the current selection as one undo step and reloads as literal text', async () => {
+    const { view, crepe } = await mount('Before middle after')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 8, 14)))
+    const before = view.state.doc.toJSON()
+    pasteText(view, '1. first\n2. second')
+    expectNoNumberedLists(view)
+    expect(textOf(view)).toBe('Before 1. first\n2. second after')
+    const reloaded = await mount(getMarkdownForSave(crepe))
+    expectNoNumberedLists(reloaded.view)
+    expect(textOf(reloaded.view)).toBe(textOf(view))
+    expect(undo(view.state, view.dispatch)).toBe(true)
+    expect(view.state.doc.toJSON()).toEqual(before)
+  })
+  it.each(['<ol><li>first</li></ol>', '<ol><li>first</li><li>second</li></ol>'])('undoes rich numbered paste without undoing preceding typing: %s', async html => {
+    const { view } = await mount('Before')
+    view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)).insertText(' typed '))
+    const before = view.state.doc.toJSON()
+    pasteHtml(view, html)
+    expectNoNumberedLists(view)
+    expect(undo(view.state, view.dispatch)).toBe(true)
+    expect(view.state.doc.toJSON()).toEqual(before)
+  })
+})
 
 describe('explicit paste modes through the native menu subscription', () => {
   it('inserts plain text literally, preserving spaces, CRLF and blank lines without Markdown interpretation', async () => {

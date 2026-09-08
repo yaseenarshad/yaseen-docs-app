@@ -20,9 +20,11 @@
  * ProseMirror has already parsed it into the slice by the time this handler declines.
  */
 import { editorViewOptionsCtx, parserCtx } from '@milkdown/kit/core'
+import { closeHistory } from '@milkdown/kit/prose/history'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { escapeOutlineMarkdown } from '../views/outlineDoc'
+import { parseLiteralNumberedPaste } from './clipboardNumbers'
 
 /** Glyph → nesting rank; leading indentation adds to it (2 spaces or 1 tab = 1 level). */
 const RANK: Record<string, number> = { '•': 0, '◦': 1, '■': 2, '▪': 2 }
@@ -78,7 +80,11 @@ export const outlinePaste = $prose((ctx) => {
       if (markdown === null || hasListMarkup(data?.getData('text/html') ?? '')) {
         return prev.handlePaste?.(view, event, slice) ?? false
       }
-      view.dispatch(view.state.tr.replaceSelection(ctx.get(parserCtx)(escapeItemMarkers(markdown)).slice(0)))
+      const escaped = escapeItemMarkers(markdown)
+      const doc = parseLiteralNumberedPaste(ctx, escaped) ?? ctx.get(parserCtx)(escaped)
+      let pasted = doc.slice(0)
+      view.someProp('transformPasted', transform => { pasted = transform(pasted, view, false) })
+      view.dispatch(closeHistory(view.state.tr).replaceSelection(pasted).setMeta('paste', true).setMeta('uiEvent', 'paste').scrollIntoView())
       return true
     },
   }))
