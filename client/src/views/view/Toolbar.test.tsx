@@ -118,6 +118,15 @@ function press(el: Element, key: string): void {
   draw()
 }
 
+/** Choose a column through the real searchable picker, so tests exercise its save boundary. */
+function chooseColumn(pop: ParentNode, label: string, value: string): void {
+  const trigger = byLabel<HTMLButtonElement>(pop, label)
+  if (trigger.getAttribute('aria-expanded') !== 'true') click(trigger)
+  const option = [...pop.querySelectorAll<HTMLElement>('[role="option"]')].find((item) => item.dataset.value === value)
+  if (!option) throw new Error(`missing ${label} option ${value}`)
+  click(option)
+}
+
 /** Type into a TextField and commit with Enter (one onChange). */
 function type(el: HTMLInputElement, text: string): void {
   setValue(el, text)
@@ -192,15 +201,15 @@ describe('filter menu (YAZ-1227-1229)', () => {
         - note.priority > 1
 `
 
-  it('the button leads the actions row, and an unfiltered view opens empty and unbadged', () => {
+  it('the approved actions sequence keeps related controls together and creation beside search', () => {
     const { el, onChange } = mount()
     const actions = q(el, '.view-toolbar__actions')
     expect([...actions.querySelectorAll('.view-toolbar__btn')].map((b) => b.getAttribute('aria-label'))).toEqual([
-      'New note',
-      'Filter',
       'Sort',
-      'Preview on hover',
       'Properties',
+      'Filter',
+      'Preview on hover',
+      'New note',
       'Search',
     ])
     const pop = openMenu(el, 'Filter')
@@ -447,7 +456,7 @@ describe('sort menu', () => {
     expect(yaml()).not.toContain('sort:')
     click(byText(pop, 'button', 'Add sort'))
     expect(def().views[0].sort).toEqual([{ property: 'file.name', direction: 'ASC' }])
-    setValue(byLabel(pop, 'Sort property'), 'note.priority')
+    chooseColumn(pop, 'Sort property', 'note.priority')
     click(byLabel(pop, 'Direction'))
     expect(onChange).toHaveBeenCalledTimes(4)
     expect(def().views[0].sort).toEqual([{ property: 'note.priority', direction: 'DESC' }])
@@ -459,7 +468,7 @@ describe('sort menu', () => {
     const pop = openMenu(el, 'Sort')
     click(byText(pop, 'button', 'Add sort'))
     expect(def().views[0].sort?.map((s) => s.property)).toEqual(['formula.Untitled', 'file.name'])
-    click([...pop.querySelectorAll('[aria-label="Move up"]')][1])
+    press(byLabel(pop, 'Reorder sort 2: file.name'), 'ArrowUp')
     expect(def().views[0].sort?.map((s) => s.property)).toEqual(['file.name', 'formula.Untitled'])
   })
 
@@ -467,25 +476,25 @@ describe('sort menu', () => {
     const { el, onChange, def, yaml } = mount()
     expect(byText(el, '.view-toolbar__badge', '1')).toBeDefined() // the existing sort
     const pop = openMenu(el, 'Sort')
-    setValue(byLabel(pop, 'Group by'), 'note.status')
+    chooseColumn(pop, 'Group by', 'note.status')
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().views[0].groupBy).toEqual({ property: 'note.status', direction: 'ASC' })
     expect(yaml()).toContain('groupBy:')
     expect(byText(el, '.view-toolbar__badge', '2')).toBeDefined()
     click(byLabel(pop, 'Group direction'))
     expect(def().views[0].groupBy).toEqual({ property: 'note.status', direction: 'DESC' })
-    setValue(byLabel(pop, 'Group by'), '')
+    chooseColumn(pop, 'Group by', '')
     expect(def().views[0].groupBy).toBeUndefined()
   })
 
   it('a Then-by level writes the LIST form, omits the outer property, and clears back to the object form (YAZ-745)', () => {
     const { el, def, yaml } = mount()
     const pop = openMenu(el, 'Sort')
-    setValue(byLabel(pop, 'Group by'), 'note.status')
+    chooseColumn(pop, 'Group by', 'note.status')
     expect(def().views[0].groupBy).toEqual({ property: 'note.status', direction: 'ASC' })
-    const then = byLabel<HTMLSelectElement>(pop, 'Then group by')
-    expect([...then.options].map((o) => o.value)).not.toContain('note.status')
-    setValue(then, 'note.priority')
+    click(byLabel(pop, 'Then group by'))
+    expect([...pop.querySelectorAll<HTMLElement>('[role="option"]')].map((option) => option.dataset.value)).not.toContain('note.status')
+    chooseColumn(pop, 'Then group by', 'note.priority')
     expect(def().views[0].groupBy).toEqual([
       { property: 'note.status', direction: 'ASC' },
       { property: 'note.priority', direction: 'ASC' },
@@ -502,7 +511,7 @@ describe('sort menu', () => {
       { property: 'note.status', direction: 'DESC' },
       { property: 'note.priority', direction: 'DESC' },
     ])
-    setValue(byLabel(pop, 'Then group by'), '')
+    chooseColumn(pop, 'Then group by', '')
     expect(def().views[0].groupBy).toEqual({ property: 'note.status', direction: 'DESC' })
   })
 
@@ -510,12 +519,12 @@ describe('sort menu', () => {
     const { el, def } = mount()
     const pop = openMenu(el, 'Sort')
     expect(pop.querySelector('[aria-label="Then group by"]')).toBeNull()
-    setValue(byLabel(pop, 'Group by'), 'note.status')
-    setValue(byLabel(pop, 'Then group by'), 'note.priority')
-    setValue(byLabel(pop, 'Group by'), 'note.priority')
+    chooseColumn(pop, 'Group by', 'note.status')
+    chooseColumn(pop, 'Then group by', 'note.priority')
+    chooseColumn(pop, 'Group by', 'note.priority')
     expect(def().views[0].groupBy).toEqual({ property: 'note.priority', direction: 'ASC' })
-    setValue(byLabel(pop, 'Then group by'), 'note.status')
-    setValue(byLabel(pop, 'Group by'), '')
+    chooseColumn(pop, 'Then group by', 'note.status')
+    chooseColumn(pop, 'Group by', '')
     expect(def().views[0].groupBy).toBeUndefined()
   })
 })
@@ -1249,5 +1258,258 @@ describe('preview mode toggle (YAZ-1244)', () => {
     const off = byLabel(el2, EYE)
     expect(off.getAttribute('aria-pressed')).toBe('false')
     expect(off.className).not.toContain('view-toolbar__btn--on')
+  })
+})
+
+describe('searchable column controls (YAZ-1395–1397)', () => {
+  const SEARCHABLE = `properties:
+  status: { displayName: Stage }
+views:
+  - type: table
+    name: Table
+    order: [status, file.name, note.priority]
+    frozenColumns: 3
+    sort: [{ property: status, direction: DESC }]
+  - type: board
+    name: Board
+    order: [file.name]
+    groupBy: { property: note.status }
+`
+  const shownLabels = (pop: ParentNode) => [...pop.querySelectorAll<HTMLInputElement>('input[aria-label^="Show "]')].map((input) => input.getAttribute('aria-label'))
+
+  it('matches display labels and raw canonical keys without saving search or changing row search', () => {
+    const { el, onChange, yaml } = mount(SEARCHABLE)
+    const before = yaml()
+    const pop = openMenu(el, 'Properties')
+    const search = byLabel<HTMLInputElement>(pop, 'Search columns')
+    setValue(search, '  sTaGe  ')
+    expect(shownLabels(pop)).toEqual(['Show Stage'])
+    setValue(search, 'note.status')
+    expect(shownLabels(pop)).toEqual(['Show Stage'])
+    expect(count(el)).toBe('8 items')
+    expect(yaml()).toBe(before)
+    expect(onChange).not.toHaveBeenCalled()
+    click(byLabel(el, 'Properties'))
+    const reopened = openMenu(el, 'Properties')
+    expect(byLabel<HTMLInputElement>(reopened, 'Search columns').value).toBe('')
+    expect(shownLabels(reopened).length).toBeGreaterThan(1)
+  })
+
+  it.each(['Table', 'Board'])('filtered bulk operations affect only matches in %s and preserve canonical identity', (tab) => {
+    const { el, def, onChange, yaml } = mount(SEARCHABLE)
+    if (tab === 'Board') click(byText(el, '[role="tab"]', tab))
+    const index = tab === 'Table' ? 0 : 1
+    const other = structuredClone(def().views[1 - index])
+    const pop = openMenu(el, 'Properties')
+    const search = byLabel<HTMLInputElement>(pop, 'Search columns')
+    setValue(search, 'status')
+    const before = def().views[index].order!
+    click(byText(pop, 'button', 'Unselect results'))
+    const expected = before.filter((key) => key !== 'status' && key !== 'note.status')
+    expect(def().views[index].order).toEqual(expected)
+    expect(def().views[1 - index]).toEqual(other)
+    click(byText(pop, 'button', 'Select results'))
+    const after = def().views[index].order!
+    expect(after.slice(0, -1)).toEqual(expected)
+    expect(after.filter((key) => key === 'status' || key === 'note.status')).toHaveLength(1)
+    expect(byText<HTMLButtonElement>(pop, 'button', 'Select results').disabled).toBe(true)
+    click(byText(pop, 'button', 'Select results'))
+    expect(onChange).toHaveBeenCalledTimes(tab === 'Table' ? 2 : 1)
+    expect(parseViews(yaml()).def).toEqual(def())
+  })
+
+  it('filtered removal clamps the frozen prefix, and clearing the last match removes it', () => {
+    const { el, def, onChange } = mount(SEARCHABLE)
+    const pop = openMenu(el, 'Properties')
+    setValue(byLabel(pop, 'Search columns'), 'status')
+    click(byText(pop, 'button', 'Unselect results'))
+    expect(def().views[0].order).toEqual(['file.name', 'note.priority'])
+    expect(def().views[0].frozenColumns).toBe(2)
+    setValue(byLabel(pop, 'Search columns'), 'priority')
+    click(byText(pop, 'button', 'Unselect results'))
+    setValue(byLabel(pop, 'Search columns'), 'file.name')
+    click(byText(pop, 'button', 'Unselect results'))
+    expect(def().views[0].order).toEqual([])
+    expect(def().views[0].frozenColumns).toBeUndefined()
+    expect(onChange).toHaveBeenCalledTimes(3)
+  })
+
+  it('empty results disable bulk operations, and clearing search restores original grips and order', () => {
+    const { el, def, onChange } = mount(SEARCHABLE)
+    const pop = openMenu(el, 'Properties')
+    const original = [...pop.querySelectorAll('[aria-label^="Reorder "]')].map((grip) => grip.getAttribute('aria-label'))
+    setValue(byLabel(pop, 'Search columns'), 'status')
+    expect(pop.querySelector('[aria-label^="Reorder "]')).toBeNull()
+    setValue(byLabel(pop, 'Search columns'), 'no-such-column')
+    expect(shownLabels(pop)).toEqual([])
+    for (const label of ['Select results', 'Unselect results']) {
+      const button = byText<HTMLButtonElement>(pop, 'button', label)
+      expect(button.disabled).toBe(true)
+      click(button)
+    }
+    setValue(byLabel(pop, 'Search columns'), '')
+    expect([...pop.querySelectorAll('[aria-label^="Reorder "]')].map((grip) => grip.getAttribute('aria-label'))).toEqual(original)
+    expect(def().views[0].order).toEqual(['status', 'file.name', 'note.priority'])
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('a single chooser searches labels and keys, then commits exactly once without losing direction', () => {
+    const { el, def, onChange } = mount(SEARCHABLE)
+    const pop = openMenu(el, 'Sort')
+    chooseColumn(pop, 'Sort property', 'note.status')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(def().views[0].sort?.[0].property).toBe('status')
+    click(byLabel(pop, 'Sort property'))
+    const search = byLabel<HTMLInputElement>(pop, 'Search sort property columns')
+    setValue(search, 'stage')
+    expect([...pop.querySelectorAll<HTMLElement>('[role="option"]')].map((option) => option.dataset.value)).toEqual(['note.status'])
+    setValue(search, 'note.priority')
+    expect(onChange).not.toHaveBeenCalled()
+    chooseColumn(pop, 'Sort property', 'note.priority')
+    expect(def().views[0].sort).toEqual([{ property: 'note.priority', direction: 'DESC' }])
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(pop.querySelector('[role="listbox"]')).toBeNull()
+    expect(document.activeElement).toBe(byLabel(pop, 'Sort property'))
+  })
+
+  it('picker Escape closes only the chooser without saving; keyboard selection commits once', () => {
+    const { el, onChange, def } = mount(SEARCHABLE)
+    const pop = openMenu(el, 'Sort')
+    click(byLabel(pop, 'Group by'))
+    let search = byLabel<HTMLInputElement>(pop, 'Search group by columns')
+    setValue(search, 'no-such-column')
+    press(search, 'Enter')
+    expect(onChange).not.toHaveBeenCalled()
+    press(search, 'Escape')
+    expect(el.querySelector('.view-popover')).toBe(pop)
+    expect(pop.querySelector('[role="listbox"]')).toBeNull()
+    expect(document.activeElement).toBe(byLabel(pop, 'Group by'))
+    click(byLabel(pop, 'Group by'))
+    search = byLabel<HTMLInputElement>(pop, 'Search group by columns')
+    expect(search.value).toBe('')
+    setValue(search, 'note.priority')
+    press(search, 'ArrowDown')
+    press(search, 'Enter')
+    expect(def().views[0].groupBy).toEqual({ property: 'note.priority', direction: 'ASC' })
+    expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('declared-only columns remain available in Properties while Sort keeps its existing candidates', () => {
+    const { el, onChange } = mount(SEARCHABLE, {
+      folderPage: testFolderPage({ settings: { columns: { owner: { kind: 'text' } }, views: [], problems: [] } }),
+    })
+    const properties = openMenu(el, 'Properties')
+    setValue(byLabel(properties, 'Search columns'), 'owner')
+    expect(byLabel(properties, 'Show owner')).toBeDefined()
+    const pop = openMenu(el, 'Sort')
+    click(byLabel(pop, 'Sort property'))
+    setValue(byLabel(pop, 'Search sort property columns'), 'owner')
+    expect(pop.querySelector('[role="option"][data-value="note.owner"]')).toBeNull()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('grouped board keeps collapse beside preview and creation immediately before search', () => {
+    const { el, onChange } = mount(SEARCHABLE)
+    click(byText(el, '[role="tab"]', 'Board'))
+    const actions = q(el, '.view-toolbar__actions')
+    expect([...actions.querySelectorAll('.view-toolbar__btn')].map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Sort', 'Properties', 'Filter', 'Collapse all groups', 'Preview on hover', 'New note', 'Search',
+    ])
+    expect(actions.lastElementChild?.className).toBe('view-toolbar__count')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('sort rule drag and keyboard reordering (YAZ-1396)', () => {
+  const SORTS = `views:
+  - type: table
+    name: Table
+    sort:
+      - { property: note.status, direction: DESC }
+      - { property: file.name, direction: ASC }
+      - { property: note.priority, direction: DESC }
+`
+  const fire = (target: Element, type: string, clientY = 0) => {
+    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY })))
+    draw()
+  }
+  const grip = (pop: ParentNode, index: number, label: string) => byLabel<HTMLButtonElement>(pop, `Reorder sort ${index}: ${label}`)
+  const row = (pop: ParentNode, index: number, label: string) => grip(pop, index, label).closest<HTMLElement>('.view-rule')!
+
+  it('drag moves a whole rule to the insertion slot in one saved write', () => {
+    const { el, def, onChange, yaml } = mount(SORTS)
+    const original = structuredClone(def().views[0].sort!)
+    const pop = openMenu(el, 'Sort')
+    expect(pop.querySelector('[aria-label="Move up"], [aria-label="Move down"]')).toBeNull()
+    fire(grip(pop, 1, 'status'), 'dragstart')
+    fire(row(pop, 3, 'priority'), 'dragover', 5)
+    expect(onChange).not.toHaveBeenCalled()
+    fire(row(pop, 3, 'priority'), 'drop', 5)
+    expect(def().views[0].sort).toEqual([original[1], original[2], original[0]])
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(parseViews(yaml()).def).toEqual(def())
+    fire(grip(pop, 3, 'status'), 'dragstart')
+    fire(row(pop, 1, 'file.name'), 'dragover', -5)
+    fire(row(pop, 1, 'file.name'), 'drop', -5)
+    expect(def().views[0].sort).toEqual(original)
+    expect(onChange).toHaveBeenCalledTimes(2)
+  })
+
+  it('keyboard moves retain focus on the moved rule, and boundaries do not save', () => {
+    const { el, def, onChange } = mount(SORTS)
+    const pop = openMenu(el, 'Sort')
+    const original = structuredClone(def().views[0].sort!)
+    const first = grip(pop, 1, 'status')
+    first.focus()
+    press(first, 'ArrowUp')
+    expect(onChange).not.toHaveBeenCalled()
+    press(first, 'ArrowDown')
+    expect(def().views[0].sort).toEqual([original[1], original[0], original[2]])
+    expect(document.activeElement).toBe(grip(pop, 2, 'status'))
+    press(grip(pop, 2, 'status'), 'ArrowUp')
+    press(grip(pop, 3, 'priority'), 'ArrowDown')
+    expect(def().views[0].sort).toEqual(original)
+    expect(onChange).toHaveBeenCalledTimes(2)
+  })
+
+  it('same-slot drops and abandoned drags do not save or leak into later drags', () => {
+    const { el, def, onChange } = mount(SORTS)
+    const before = structuredClone(def())
+    const pop = openMenu(el, 'Sort')
+    fire(grip(pop, 2, 'file.name'), 'dragstart')
+    fire(row(pop, 2, 'file.name'), 'drop', -5)
+    fire(grip(pop, 1, 'status'), 'dragstart')
+    fire(row(pop, 3, 'priority'), 'dragover', 5)
+    fire(grip(pop, 1, 'status'), 'dragend')
+    fire(row(pop, 3, 'priority'), 'drop', 5)
+    expect(def()).toEqual(before)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('duplicate properties remain independent through reorder, removal, and adding a new rule', () => {
+    const { el, def, onChange } = mount(`views:
+  - type: table
+    name: Table
+    sort:
+      - { property: file.name, direction: ASC }
+      - { property: file.name, direction: DESC }
+`)
+    const pop = openMenu(el, 'Sort')
+    const second = grip(pop, 2, 'file.name')
+    second.focus()
+    press(second, 'ArrowUp')
+    expect(def().views[0].sort).toEqual([
+      { property: 'file.name', direction: 'DESC' },
+      { property: 'file.name', direction: 'ASC' },
+    ])
+    expect(document.activeElement).toBe(grip(pop, 1, 'file.name'))
+    click(byLabel(pop, 'Remove sort'))
+    click(byText(pop, 'button', 'Add sort'))
+    click([...pop.querySelectorAll<HTMLElement>('[aria-label="Direction"]')][1])
+    expect(def().views[0].sort).toEqual([
+      { property: 'file.name', direction: 'ASC' },
+      { property: 'file.name', direction: 'DESC' },
+    ])
+    expect(onChange).toHaveBeenCalledTimes(4)
   })
 })
