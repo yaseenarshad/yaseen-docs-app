@@ -11,6 +11,7 @@ import { HELP_URL, buildContextMenuTemplate, buildMenuTemplate, createMenuHandle
 // ---------- buildMenuTemplate (pure) ----------
 
 const noopHandlers = (): MenuHandlers => ({
+  pasteAs: vi.fn(),
   newWindow: vi.fn(),
   openFolder: vi.fn(),
   openRecent: vi.fn(),
@@ -116,9 +117,15 @@ describe('buildMenuTemplate', () => {
     expect(recent).toEqual([{ label: 'No Recent Folders', enabled: false }])
   })
 
-  it('Edit menu is exactly the Electron roles', () => {
-    const roles = menuOf(build(), 'Edit').map((i) => i.role ?? i.type)
-    expect(roles).toEqual(['undo', 'redo', 'separator', 'cut', 'copy', 'paste', 'selectAll'])
+  it('Edit keeps native roles and adds explicit paste modes with one plain-text shortcut', () => {
+    const handlers = noopHandlers()
+    const items = menuOf(build(RECENTS, false, handlers), 'Edit')
+    expect(items.map((i) => i.role ?? i.type ?? i.label)).toEqual(['undo', 'redo', 'separator', 'cut', 'copy', 'paste', 'Paste as', 'selectAll'])
+    const modes = items.find((i) => i.label === 'Paste as')?.submenu as MenuItemConstructorOptions[]
+    expect(modes.map((i) => [i.label, i.accelerator])).toEqual([['Plain text', 'CmdOrCtrl+Shift+V'], ['Markdown', undefined]])
+    click(modes[0])
+    click(modes[1])
+    expect(vi.mocked(handlers.pasteAs).mock.calls).toEqual([['plain'], ['markdown']])
   })
 
   it('View menu: Toggle Sidebar, Reload, zoom roles; Toggle DevTools only in dev', () => {
@@ -214,7 +221,7 @@ type ContextParams = Parameters<typeof buildContextMenuTemplate>[0]
 
 const EDIT_FLAGS: ContextParams['editFlags'] = { canUndo: true, canRedo: true, canCut: true, canCopy: true, canPaste: true, canDelete: true, canSelectAll: true, canEditRichly: true }
 
-const noopActions = (): ContextMenuActions => ({ replace: vi.fn(), addToDictionary: vi.fn() })
+const noopActions = (): ContextMenuActions => ({ pasteAs: vi.fn(), replace: vi.fn(), addToDictionary: vi.fn() })
 
 /** What Electron hands `context-menu`, defaulting to a clean right-click in an editable body. */
 function context(params: Partial<ContextParams> = {}): ContextParams {
@@ -226,18 +233,28 @@ const shapeOf = (items: MenuItemConstructorOptions[]) => items.map((i) => i.labe
 describe('buildContextMenuTemplate', () => {
   it('a misspelling with suggestions: the suggestions, Add to Dictionary, then cut/copy/paste', () => {
     const items = buildContextMenuTemplate(context({ misspelledWord: 'teh', dictionarySuggestions: ['the', 'ten', 'tea'] }), noopActions())
-    expect(shapeOf(items)).toEqual(['the', 'ten', 'tea', 'separator', 'Add to Dictionary', 'separator', 'cut', 'copy', 'paste'])
+    expect(shapeOf(items)).toEqual(['the', 'ten', 'tea', 'separator', 'Add to Dictionary', 'separator', 'cut', 'copy', 'paste', 'Paste as'])
   })
 
   it('a misspelling Electron has no suggestions for leads with Add to Dictionary — no dangling separator', () => {
     const items = buildContextMenuTemplate(context({ misspelledWord: 'Yaseen' }), noopActions())
-    expect(shapeOf(items)).toEqual(['Add to Dictionary', 'separator', 'cut', 'copy', 'paste'])
+    expect(shapeOf(items)).toEqual(['Add to Dictionary', 'separator', 'cut', 'copy', 'paste', 'Paste as'])
   })
 
   it('nothing misspelled: still never empty — cut/copy/paste mirroring editFlags', () => {
     const items = buildContextMenuTemplate(context({ editFlags: { ...EDIT_FLAGS, canCut: false, canPaste: false } }), noopActions())
-    expect(shapeOf(items)).toEqual(['cut', 'copy', 'paste'])
-    expect(items.map((i) => i.enabled)).toEqual([false, true, false])
+    expect(shapeOf(items)).toEqual(['cut', 'copy', 'paste', 'Paste as'])
+    expect(items.map((i) => i.enabled)).toEqual([false, true, false, false])
+  })
+
+  it('context paste modes call the supplied target and do not register duplicate accelerators', () => {
+    const actions = noopActions()
+    const items = buildContextMenuTemplate(context(), actions)
+    const modes = items.find((i) => i.label === 'Paste as')?.submenu as MenuItemConstructorOptions[]
+    expect(modes.every((i) => i.accelerator === undefined)).toBe(true)
+    click(modes[0])
+    click(modes[1])
+    expect(vi.mocked(actions.pasteAs).mock.calls).toEqual([['plain'], ['markdown']])
   })
 
   it('clicking a suggestion replaces the word; Add to Dictionary teaches the misspelled one', () => {
@@ -305,6 +322,7 @@ function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, 
   const windows = { idFor: vi.fn(), openWindow: vi.fn(), duplicateWindow: vi.fn() }
   const host: MenuHost = {
     focusedWebContents: () => focused,
+    readClipboardText: vi.fn(() => '# Clipboard\n\nText'),
     openExternal: vi.fn(),
     dirExists,
   }
@@ -313,6 +331,21 @@ function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, 
 }
 
 describe('createMenuHandlers', () => {
+  it('paste modes capture plain text only when there is a target and send the mode to that window', () => {
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers, host } = makeHandlers(wc)
+    handlers.pasteAs('plain')
+    handlers.pasteAs('markdown')
+    expect(wc.send.mock.calls).toEqual([
+      [CH.menuPasteAs, { mode: 'plain', text: '# Clipboard\n\nText' }],
+      [CH.menuPasteAs, { mode: 'markdown', text: '# Clipboard\n\nText' }],
+    ])
+    expect(host.readClipboardText).toHaveBeenCalledTimes(2)
+    const absent = makeHandlers(undefined)
+    absent.handlers.pasteAs('plain')
+    expect(absent.host.readClipboardText).not.toHaveBeenCalled()
+  })
+
   it('newWindow duplicates the focused window entry', () => {
     store.upsertWindow(ENTRY)
     const wc = { id: 7, send: vi.fn() }

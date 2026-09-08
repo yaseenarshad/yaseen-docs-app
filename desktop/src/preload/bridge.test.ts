@@ -16,7 +16,7 @@ vi.mock('electron', () => ({
 const TOP = ['tree', 'readFile', 'readPdf', 'readImage', 'writeFile', 'createDir', 'createFile', 'index', 'coldDiff', 'readAsset', 'writeAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'file', 'shell', 'vaultConfig', 'properties', 'github'] as const satisfies readonly (keyof YaseenDocsApi)[]
 const STATE = ['get', 'setSettings', 'setSidebarWidth', 'setSidebarLens', 'pushRecent', 'removeRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange'] as const satisfies readonly (keyof StateApi)[]
 const WINDOW = ['identity', 'setIdentity', 'open', 'duplicate', 'closeSelf', 'onFlush'] as const satisfies readonly (keyof WindowApi)[]
-const MENU = ['onOpenFolder', 'onOpenRoot', 'onSearch', 'onToggleSidebar', 'onCloseTab', 'onNextTab', 'onPrevTab'] as const satisfies readonly (keyof MenuApi)[]
+const MENU = ['onPasteAs', 'onOpenFolder', 'onOpenRoot', 'onSearch', 'onToggleSidebar', 'onCloseTab', 'onNextTab', 'onPrevTab'] as const satisfies readonly (keyof MenuApi)[]
 const LINK = ['onOpenFile', 'onNotice'] as const satisfies readonly (keyof LinkApi)[]
 const FILE = ['rename', 'repairRename', 'onRenamed', 'delete', 'onDeleted'] as const satisfies readonly (keyof FileApi)[]
 const SHELL = ['reveal', 'openVsCode', 'openLink'] as const satisfies readonly (keyof ShellApi)[]
@@ -51,6 +51,34 @@ describe('preload bridge', () => {
     for (const k of VAULT_CONFIG) expect(typeof api.vaultConfig[k], `vaultConfig.${k}`).toBe('function')
     for (const k of PROPERTIES) expect(typeof api.properties[k], `properties.${k}`).toBe('function')
     for (const k of GITHUB) expect(typeof api.github[k], `github.${k}`).toBe('function')
+  })
+
+  it('paste is claimed by the focused subscriber; removed or unhandled listeners use one native fallback', async () => {
+    const { ipcRenderer } = await import('electron')
+    const { bridge } = await import('./index')
+    const emit = vi.mocked(ipcRenderer.on).mock.calls.find(([channel]) => channel === CH.menuPasteAs)?.[1] as unknown as (event: unknown, request: { mode: 'plain' | 'markdown'; text: string }) => void
+    const request = { mode: 'plain' as const, text: '# exact\n\ntext' }
+    const unfocused = vi.fn(() => false)
+    const focused = vi.fn(() => true)
+    const later = vi.fn(() => true)
+    const offA = bridge.menu.onPasteAs(unfocused)
+    const offB = bridge.menu.onPasteAs(focused)
+    const offC = bridge.menu.onPasteAs(later)
+    vi.mocked(ipcRenderer.invoke).mockClear()
+    emit(undefined, request)
+    expect(unfocused).toHaveBeenCalledWith(request)
+    expect(focused).toHaveBeenCalledWith(request)
+    expect(later).not.toHaveBeenCalled()
+    expect(ipcRenderer.invoke).not.toHaveBeenCalled()
+    offB()
+    offC()
+    vi.mocked(ipcRenderer.invoke).mockResolvedValue({ ok: true, value: undefined })
+    emit(undefined, request)
+    expect(ipcRenderer.invoke).toHaveBeenCalledExactlyOnceWith(CH.menuPasteTextFallback, request.text)
+    offA()
+    vi.mocked(ipcRenderer.invoke).mockClear()
+    emit(undefined, { mode: 'markdown', text: 'ordinary input' })
+    expect(ipcRenderer.invoke).toHaveBeenCalledExactlyOnceWith(CH.menuPasteTextFallback, 'ordinary input')
   })
 
   it('github.setEnabled invokes github:set-enabled with the root and the flag (YAZ-1081)', async () => {

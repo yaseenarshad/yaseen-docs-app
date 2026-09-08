@@ -73,6 +73,8 @@
  *    is translated to real markdown before it lands, so it arrives as a nested list instead of a
  *    column of paragraphs. Registered as a DIRECT `handlePaste` prop — direct props run before
  *    the clipboard plugin's — and it declines whenever the HTML payload has real list markup.
+ *  - Paste modes (YAZ-1394, `clipboardPaste.ts`): native Plain text/Markdown requests target the
+ *    focused editor; external standalone paragraph separators keep one blank paragraph each.
  *  - Copy-out (YAZ-1389, `clipboardCopyOut.ts`): generated empty-paragraph markers become blank
  *    space in clipboard Markdown only; literal code, rich HTML, and saved Markdown stay intact.
  */
@@ -106,6 +108,7 @@ import { underline } from './marks/underline'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
 import { clipboardCopyOut } from './clipboardCopyOut'
+import { clipboardPaste } from './clipboardPaste'
 import { guideLines } from './outline/guideLines'
 import { numberChildrenRow } from './outline/numberChildrenRow'
 import { createHeadingFolding, type HeadingFoldingOptions } from './outline/headingFolding'
@@ -254,6 +257,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), opts.wikilinkNav))
   if (opts.drawingPreview !== undefined) crepe.editor.use(createDrawingPreview(opts.drawingPreview))
   crepe.editor.use(outlinePaste)
+  crepe.editor.use(clipboardPaste)
   crepe.editor.use(clipboardCopyOut)
   crepe.editor.use(blockHandleGate)
   // Numbers are manual-only (YAZ-793/YAZ-1329): only the explicit block-handle command creates

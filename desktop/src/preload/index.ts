@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppState, FileDeletedEvent, FileRenamedEvent, GithubSyncStatus, PropertiesResponse, VaultConfigChange, WatchEvent, YaseenDocsApi } from '@shared/types'
+import type { AppState, ClipboardPasteRequest, FileDeletedEvent, FileRenamedEvent, GithubSyncStatus, PropertiesResponse, VaultConfigChange, WatchEvent, YaseenDocsApi } from '@shared/types'
 import { CH, type Envelope } from '../channels'
 
 /** invoke + unwrap: resolves the value or rejects with the plain `BridgeError` object. */
@@ -26,6 +26,13 @@ function on<T>(channel: string): (listener: (payload: T) => void) => () => void 
 const flushListeners = new Set<() => Promise<void> | void>()
 ipcRenderer.on(CH.appFlush, () => {
   void Promise.allSettled([...flushListeners].map(async (listener) => listener())).then(() => ipcRenderer.send(CH.appFlushed))
+})
+
+// Each editor claims only its own focused surface. Ordinary inputs retain native insertion.
+const pasteListeners = new Set<(request: ClipboardPasteRequest) => boolean>()
+ipcRenderer.on(CH.menuPasteAs, (_event, request: ClipboardPasteRequest) => {
+  for (const listener of pasteListeners) if (listener(request)) return
+  void call<void>(CH.menuPasteTextFallback, request.text).catch((error: unknown) => console.error('Paste failed', error))
 })
 
 const api: YaseenDocsApi = {
@@ -81,6 +88,10 @@ const api: YaseenDocsApi = {
   },
   // Menu gestures (GRO-2161; tabs GRO-2232): main sends these to the focused window only.
   menu: {
+    onPasteAs: (listener) => {
+      pasteListeners.add(listener)
+      return () => { pasteListeners.delete(listener) }
+    },
     onOpenFolder: on<void>(CH.menuOpenFolder),
     onOpenRoot: on<string>(CH.menuOpenRoot),
     onSearch: on<void>(CH.menuSearch),

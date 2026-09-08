@@ -107,6 +107,12 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     windows.duplicateWindow(entryFor(e))
   })
 
+  // Explicit paste outside a Crepe editor uses Chromium insertion for native selection/undo.
+  handleWithEvent(CH.menuPasteTextFallback, async (e, text: unknown) => {
+    if (windows.idFor(e.sender) === undefined || typeof text !== 'string') throw new BridgeFailure('BAD_REQUEST', 'invalid paste target or text')
+    if (text !== '') await e.sender.insertText(text)
+  })
+
   // The renderer's ack in the flush handshake (fire-and-forget send, so no envelope).
   ipcMain.on(CH.appFlushed, (e) => windows.handleFlushed(e.sender))
 }

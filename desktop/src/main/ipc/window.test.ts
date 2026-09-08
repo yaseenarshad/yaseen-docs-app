@@ -68,7 +68,18 @@ describe('window lookup', () => {
 describe('registerWindowIpc', () => {
   it('registers every window channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CH.windowIdentity, CH.windowSetIdentity, CH.windowOpen, CH.windowDuplicate, CH.windowCloseSelf].sort())
+    expect(channels).toEqual([CH.windowIdentity, CH.windowSetIdentity, CH.windowOpen, CH.windowDuplicate, CH.windowCloseSelf, CH.menuPasteTextFallback].sort())
+  })
+
+  it('native paste fallback inserts the captured text into only the registered sender', async () => {
+    const target = { ...sender, insertText: vi.fn(async () => undefined) }
+    expect(await registered(CH.menuPasteTextFallback)({ sender: target }, '# literal\nline')).toEqual(ok(undefined))
+    expect(target.insertText).toHaveBeenCalledExactlyOnceWith('# literal\nline')
+    expect(await registered(CH.menuPasteTextFallback)({ sender: target }, '')).toEqual(ok(undefined))
+    expect(target.insertText).toHaveBeenCalledTimes(1)
+    expect(await registered(CH.menuPasteTextFallback)({ sender: stranger }, 'text')).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.menuPasteTextFallback)({ sender: target }, { text: 'bad' })).toEqual(bad('BAD_REQUEST'))
+    expect(target.insertText).toHaveBeenCalledTimes(1)
   })
 
   it('window:identity answers the complete per-window identity for a registered sender', async () => {
