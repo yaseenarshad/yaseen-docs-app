@@ -1,3 +1,4 @@
+import { ColumnSearch, matchesColumn } from './ColumnSearch'
 import { useState, type DragEvent } from 'react'
 import { PROPERTY_KINDS, PROPERTY_NAME, type IndexRecord, type PropertiesResponse, type PropertyDecl, type PropertyKind } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
@@ -62,12 +63,16 @@ function entryKey(def: ViewSet, key: string): string {
  * Each `note.*` row carries that declaration's kind (YAZ-897) — `auto` when undeclared.
  */
 export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root = null, properties = null, folderPage }: PropertiesMenuProps) {
+  const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
   const [relationFor, setRelationFor] = useState<string | null>(null)
   /** The drag in flight (YAZ-1207): `from` is an index in `shown`, `to` the insertion slot it would land in. */
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null)
   const shown = propertyKeys(def, view, records)
   const keys = allPropertyKeys(def, view, records, folderPage.settings.columns)
+  const filtering = query.trim() !== ''
+  const matches = keys.filter(key => matchesColumn(query, propertyLabel(def, key), key))
+  const matchingKeys = new Set(matches.map(canonicalKey))
   const isShown = (key: string) => shown.some((k) => canonicalKey(k) === canonicalKey(key))
 
   const writeOrder = (order: string[]) =>
@@ -150,18 +155,24 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
 
   return (
     <div className="view-menu">
-      {(view.type === 'table' || view.type === 'board') && (
-        <div className="view-menu__actions">
-          <button type="button" className="view-menu__action" disabled={keys.every(isShown)} onClick={() => writeOrder(keys)}>
-            Select all
-          </button>
-          <button type="button" className="view-menu__action" disabled={shown.length === 0} onClick={() => writeOrder([])}>
-            Unselect all
-          </button>
+      <div className="column-menu-head">
+        <ColumnSearch value={query} onChange={setQuery} label="Search columns" />
+        <div className="column-menu-summary">
+          <span aria-live="polite">{filtering ? `${matches.length} of ${keys.length}` : keys.length} columns</span>
+          {(view.type === 'table' || view.type === 'board') && <div className="view-menu__actions">
+            <button type="button" className="view-menu__action" disabled={matches.every(isShown)} onClick={() => writeOrder(filtering ? [...shown, ...matches.filter(key => !isShown(key))] : keys)}>
+              {filtering ? 'Select results' : 'Select all'}
+            </button>
+            <button type="button" className="view-menu__action" disabled={!matches.some(isShown)} onClick={() => writeOrder(filtering ? shown.filter(key => !matchingKeys.has(canonicalKey(key))) : [])}>
+              {filtering ? 'Unselect results' : 'Unselect all'}
+            </button>
+          </div>}
         </div>
-      )}
+        {filtering && matches.length > 0 && <p className="column-reorder-hint">Clear search to reorder columns.</p>}
+      </div>
+      {matches.length === 0 && <p className="column-search__empty">No columns found. Try another name.</p>}
       <ul className="view-menu__list">
-        {keys.map((key) => {
+        {matches.map((key) => {
           const on = isShown(key)
           const i = shown.indexOf(key)
           const label = propertyLabel(def, key)
@@ -196,7 +207,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
               }}
             >
               <div className="view-prop__identity">
-                {on && (
+                {on && !filtering && (
                   <button
                     type="button"
                     className="view-rule__nav view-prop__handle"
