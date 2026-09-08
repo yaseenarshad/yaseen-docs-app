@@ -75,6 +75,8 @@
  *    the clipboard plugin's — and it declines whenever the HTML payload has real list markup.
  *  - Paste modes (YAZ-1394, `clipboardPaste.ts`): native Plain text/Markdown requests target the
  *    focused editor; external standalone paragraph separators keep one blank paragraph each.
+ *    Normal external paste keeps number labels literal (YAZ-1429); explicit Markdown and
+ *    app-identified rich clipboard slices retain intentional ordered lists.
  *  - Copy-out (`clipboardCopyOut.ts`): generated spacer tags become blank clipboard text; HTML
  *    paragraphs have zero margins and explicit empty-line breaks. Saved Markdown stays intact.
  */
