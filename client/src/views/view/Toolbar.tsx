@@ -53,13 +53,7 @@ export interface ToolbarProps {
 export const countLabel = (shown: number, total: number): string =>
   shown === total ? `${total} item${total === 1 ? '' : 's'}` : `${shown} / ${total} items`
 
-/**
- * View chrome (GRO-2135): tabs on the left; Filter / Sort / Properties / Search buttons and the
- * count on the right. The **Filter** button RETURNED in YAZ-1226-1229 (YAZ-1218), first among the
- * right-side actions, opening `view/FilterMenu.tsx`. It edits THIS view's `filters` and no other
- * (D1): the surface that mounts these views is a folder page's contents block, whose set IS the
- * lookup (🔒 Q3) — so there is no set-level filter for it to offer.
- */
+/** Shared view actions: Sort, Properties, Filter, group collapse, Preview, New, Search, count. */
 export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, total, search, onSearch, onUpdate, onNew, allGroupKeys, collapsed, onSetAllGroups, tabs, root = null, properties = null, documentView = false, onSync, folderPage }: ToolbarProps) {
   const [open, setOpen] = useState<Menu | null>(null)
   const close = useCallback(() => setOpen(null), [])
@@ -83,7 +77,7 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
         {badge > 0 && <span className="view-toolbar__badge">{badge}</span>}
       </button>
       {open === menu && (
-        <Popover label={label} onClose={close}>
+        <Popover constrainToViewport label={label} onClose={close} className={menu === 'sort' ? 'view-popover--sort' : menu === 'properties' ? 'view-popover--properties' : undefined}>
           {body}
         </Popover>
       )}
@@ -94,16 +88,21 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
     <div className="view-toolbar">
       <ViewTabs {...tabs} />
       <div className="view-toolbar__actions">
-        <button type="button" className="view-toolbar__btn view-toolbar__new" aria-label="New note" title="New note" onClick={onNew}>
-          <PlusIcon />
-          New
-        </button>
         {/* The folder's notes are appended to the DOCUMENT (YAZ-953): no other skin has anywhere to put them. */}
         {documentView && (
           <button type="button" className="view-toolbar__btn" aria-label="Sync from folder" title="Sync from folder" onClick={onSync}>
             <SyncIcon />
           </button>
         )}
+        {button('sort', 'Sort', <SortIcon />, sorts, <SortMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} />)}
+        {!documentView &&
+          button(
+            'properties',
+            'Properties',
+            <PropertiesIcon />,
+            0,
+            <PropertiesMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} root={root} properties={properties} folderPage={folderPage} />,
+          )}
         {/* An outline is a DOCUMENT, not rows (YAZ-903): there is nothing there to filter. */}
         {!documentView &&
           button(
@@ -114,7 +113,6 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
             <FilterMenu def={def} view={view} viewIndex={viewIndex} records={records} errors={filterErrors} properties={properties} folderPage={folderPage} onUpdate={onUpdate} />,
             filterErrors.length > 0 ? 'view-toolbar__btn--error' : undefined,
           )}
-        {button('sort', 'Sort', <SortIcon />, sorts, <SortMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} />)}
         {allGroupKeys.length > 0 && (
           <button
             type="button"
@@ -139,14 +137,10 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
             <EyeIcon />
           </button>
         )}
-        {!documentView &&
-          button(
-            'properties',
-            'Properties',
-            <PropertiesIcon />,
-            0,
-            <PropertiesMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} root={root} properties={properties} folderPage={folderPage} />,
-          )}
+        <button type="button" className="view-toolbar__btn view-toolbar__new" aria-label="New note" title="New note" onClick={onNew}>
+          <PlusIcon />
+          New
+        </button>
         {/* An outline is a DOCUMENT, not rows (YAZ-903): search has nothing to filter there. */}
         {!documentView && (
         <div className="view-toolbar__search">

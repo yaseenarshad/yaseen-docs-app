@@ -24,14 +24,14 @@ function anchorAt(r: Partial<DOMRect>): HTMLElement {
   return el
 }
 
-function mount(anchor?: HTMLElement) {
+function mount(anchor?: HTMLElement, constrainToViewport = false) {
   const onClose = vi.fn()
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
   act(() =>
     root?.render(
-      <Popover label="View menu" anchor={anchor} onClose={onClose}>
+      <Popover label="View menu" constrainToViewport={constrainToViewport} anchor={anchor} onClose={onClose}>
         <div role="menu" />
       </Popover>,
     ),
@@ -98,5 +98,45 @@ describe('anchored popover', () => {
       window.dispatchEvent(new Event('scroll'))
     })
     expect(plain.onClose).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('toolbar menu placement', () => {
+  it('keeps a left-overflowing menu inside the viewport without closing on option scroll', () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(rect({ left: -80, right: 260, top: 50, bottom: 200, width: 340, height: 150 }))
+    const { pop, onClose } = mount(undefined, true)
+    expect(pop.style.translate).toBe('92px 0px')
+    act(() => pop.firstElementChild?.dispatchEvent(new Event('scroll')))
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('preserves the existing menu width cap on a wide viewport', () => {
+    const style = document.createElement('style')
+    style.textContent = '.view-popover { max-width: 420px; }'
+    document.head.appendChild(style)
+    try {
+      const { pop } = mount(undefined, true)
+      expect(pop.style.maxWidth).toBe('420px')
+    } finally {
+      style.remove()
+    }
+  })
+
+  it('fits a resized menu within its editor scroller as well as the viewport', () => {
+    let measure = rect({ left: 180, right: 520, top: 300, bottom: 600, width: 340, height: 300 })
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('view-popover') ? measure : rect({ left: 220, right: 600, top: 40, bottom: 480, width: 380, height: 440 })
+    })
+    const { pop, onClose } = mount(undefined, true)
+    container!.style.overflowX = 'auto'
+    container!.style.overflowY = 'auto'
+    act(() => window.dispatchEvent(new Event('resize')))
+    expect(pop.style.translate).toBe('52px -132px')
+    expect(pop.style.maxWidth).toBe('356px')
+    measure = rect({ left: 300, right: 640, top: 100, bottom: 300, width: 340, height: 200 })
+    act(() => window.dispatchEvent(new Event('resize')))
+    expect(pop.style.translate).toBe('-52px 0px')
+    expect(onClose).not.toHaveBeenCalled()
   })
 })

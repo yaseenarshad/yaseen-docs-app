@@ -4,6 +4,8 @@ interface PopoverProps {
   label: string
   onClose: () => void
   className?: string
+  /** Keep toolbar menus on screen as their searchable content changes size. */
+  constrainToViewport?: boolean
   /** Trigger to hang off with `position: fixed` (YAZ-743), for triggers inside a scrolling ancestor. */
   anchor?: HTMLElement | null
   children: ReactNode
@@ -17,7 +19,7 @@ interface PopoverProps {
  * to the viewport like `ContextMenu`, so a clipping ancestor cannot cut it off — and
  * a scroll or resize closes it, since the fixed placement is measured once.
  */
-export function Popover({ label, onClose, className, anchor, children }: PopoverProps) {
+export function Popover({ label, onClose, className, anchor, children, constrainToViewport = false }: PopoverProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<CSSProperties>()
 
@@ -38,6 +40,50 @@ export function Popover({ label, onClose, className, anchor, children }: Popover
       left: Math.max(0, Math.min(a.left, window.innerWidth - r.width)),
     })
   }, [anchor])
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!constrainToViewport || anchor || !el) return
+    const fit = () => {
+      el.style.translate = ''
+      el.style.maxWidth = ''
+      const cssMaxWidth = parseFloat(getComputedStyle(el).maxWidth) || Infinity
+      let left = 0, top = 0, right = window.innerWidth, bottom = window.innerHeight
+      for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+        const style = getComputedStyle(parent)
+        const bounds = parent.getBoundingClientRect()
+        if (/(auto|scroll|hidden|clip)/.test(style.overflowX || style.overflow)) {
+          left = Math.max(left, bounds.left)
+          right = Math.min(right, bounds.right)
+        }
+        if (/(auto|scroll|hidden|clip)/.test(style.overflowY || style.overflow)) {
+          top = Math.max(top, bounds.top)
+          bottom = Math.min(bottom, bounds.bottom)
+        }
+      }
+      el.style.maxWidth = `${Math.min(cssMaxWidth, Math.max(0, right - left - 24))}px`
+      el.style.minWidth = `${Math.min(260, Math.max(0, right - left - 24))}px`
+      el.style.maxHeight = `${Math.max(0, Math.min(window.innerHeight * .6, bottom - top - 24))}px`
+      const rect = el.getBoundingClientRect()
+      const x = Math.max(left + 12 - rect.left, Math.min(0, right - 12 - rect.right))
+      const y = Math.max(top + 12 - rect.top, Math.min(0, bottom - 12 - rect.bottom))
+      el.style.translate = `${x}px ${y}px`
+    }
+    fit()
+    const observer = new ResizeObserver(fit)
+    observer.observe(el)
+    for (let parent = el.parentElement; parent; parent = parent.parentElement) observer.observe(parent)
+    const onScroll = (event: Event) => {
+      if (!(event.target instanceof Node) || !el.contains(event.target)) fit()
+    }
+    window.addEventListener('resize', fit)
+    window.addEventListener('scroll', onScroll, true)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', fit)
+      window.removeEventListener('scroll', onScroll, true)
+    }
+  }, [anchor, constrainToViewport])
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {

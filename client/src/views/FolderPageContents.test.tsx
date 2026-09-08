@@ -521,7 +521,7 @@ describe('config edits are ONE settings write on the folder page', () => {
     click(byLabel(el, 'Sort'))
     click([...el.querySelectorAll<HTMLElement>('.view-menu__action')].find((b) => b.textContent === 'Add sort')!)
     await flush()
-    expect(byLabel<HTMLSelectElement>(el, 'Sort property').value).toBe('file.name')
+    expect(byLabel<HTMLButtonElement>(el, 'Sort property').textContent).toContain('file.name')
   })
 
   it('a failed write says so and never takes the block down', async () => {
