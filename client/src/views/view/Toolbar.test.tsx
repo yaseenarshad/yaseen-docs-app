@@ -541,6 +541,100 @@ describe('collapse all groups', () => {
 })
 
 describe('properties menu', () => {
+  it.each(['table', 'board'])('selects every offered property once in %s, preserving aliases, order, and other settings', (type) => {
+    const records = [{ ...TEST_RECORDS[0], properties: { status: 'idea', priority: 2 } }]
+    const settings = { columns: { status: { kind: 'text' as const }, owner: { kind: 'text' as const } }, views: [], problems: [] }
+    const { el, onChange, def, yaml } = mount(`formulas:
+  Score: '1'
+views:
+  - type: ${type}
+    name: Active
+    order: [status, file.name]
+    frozenColumns: 1
+    columnSize: { status: 210 }
+    cardStyle: { note.status: { bold: true } }
+    groupBy: { property: note.status }
+    sort: [{ property: file.name, direction: ASC }]
+  - type: table
+    name: Other
+    order: [file.name]
+`, { records, folderPage: testFolderPage({ settings, vaultRecords: records }) })
+    const before = structuredClone(def())
+    const pop = openMenu(el, 'Properties')
+    const select = byText<HTMLButtonElement>(pop, 'button', 'Select all')
+    expect(select.disabled).toBe(false)
+    click(select)
+
+    const order = ['status', 'file.name', 'note.priority', 'note.owner', 'formula.Score']
+    expect(def()).toEqual({ ...before, views: [{ ...before.views[0], order }, before.views[1]] })
+    expect(parseViews(yaml()).def).toEqual(def())
+    expect([...pop.querySelectorAll<HTMLInputElement>('input[aria-label^="Show "]')].every((input) => input.checked)).toBe(true)
+    expect(select.disabled).toBe(true)
+    click(select)
+    expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['table', 'board'])('clears and restores %s properties through saved empty orders without restoring frozen columns', (type) => {
+    const records = [{ ...TEST_RECORDS[0], properties: { status: 'idea', priority: 2 } }]
+    const { el, onChange, def, yaml } = mount(`views:
+  - type: ${type}
+    name: Active
+    order: [note.status, file.name, note.priority]
+    frozenColumns: 2
+    groupBy: { property: note.status }
+  - type: table
+    name: Other
+    order: [file.name]
+`, { records })
+    const before = structuredClone(def())
+    const pop = openMenu(el, 'Properties')
+    const clear = byText<HTMLButtonElement>(pop, 'button', 'Unselect all')
+    click(clear)
+
+    const { frozenColumns: _frozen, ...active } = before.views[0]
+    expect(def()).toEqual({ ...before, views: [{ ...active, order: [] }, before.views[1]] })
+    expect(parseViews(yaml()).def.views[0].order).toEqual([])
+    expect(yaml()).toContain('order: []')
+    expect(yaml()).not.toContain('frozenColumns')
+    expect([...pop.querySelectorAll<HTMLInputElement>('input[aria-label^="Show "]')].every((input) => !input.checked)).toBe(true)
+    expect(el.querySelector('.view-table thead th, .view-board__title, .view-board__prop')).toBeNull()
+    if (type === 'board') expect(el.querySelectorAll('.view-board__card')).toHaveLength(1)
+    expect(clear.disabled).toBe(true)
+    click(clear)
+    expect(onChange).toHaveBeenCalledTimes(1)
+
+    click(byLabel(el, 'Properties'))
+    const reopened = openMenu(el, 'Properties')
+    click(byText(reopened, 'button', 'Select all'))
+    expect(def().views[0].order).toEqual(['file.name', 'note.priority', 'note.status'])
+    expect(def().views[0].frozenColumns).toBeUndefined()
+    expect(parseViews(yaml()).def).toEqual(def())
+    expect(el.querySelector(type === 'table' ? '.view-table__link' : '.view-board__title')).not.toBeNull()
+    expect(onChange).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['table', 'board'])('handles implicit defaults and no records in %s without redundant writes', (type) => {
+    const { el, onChange, def } = mount(`views:\n  - type: ${type}\n    name: Empty\n`, { records: [] })
+    const pop = openMenu(el, 'Properties')
+    const select = byText<HTMLButtonElement>(pop, 'button', 'Select all')
+    expect(select.disabled).toBe(true)
+    click(select)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(def().views[0].order).toBeUndefined()
+    click(byText(pop, 'button', 'Unselect all'))
+    expect(def().views[0].order).toEqual([])
+    expect(select.disabled).toBe(false)
+    click(select)
+    expect(def().views[0].order).toEqual(['file.name'])
+    expect(onChange).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['cards', 'list'])('does not offer bulk visibility in %s', (type) => {
+    const { el } = mount(`views:\n  - type: ${type}\n    name: Other\n`)
+    const pop = openMenu(el, 'Properties')
+    expect([...pop.querySelectorAll('button')].some((button) => ['Select all', 'Unselect all'].includes(button.textContent ?? ''))).toBe(false)
+  })
+
   it('offers a Table-only Frozen columns select over the visible positional prefix', () => {
     const { el } = mount('views:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - note.status\n      - note.priority\n  - type: cards\n    name: Cards\n')
     const table = openMenu(el, 'Properties')

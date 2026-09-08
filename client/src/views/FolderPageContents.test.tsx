@@ -395,6 +395,30 @@ describe('the default view: a saved START, while which view is ACTIVE stays sess
 // ---------- the adapter (🔒 D3) ----------
 
 describe('config edits are ONE settings write on the folder page', () => {
+  it.each(['Table', 'Board'])('bulk clearing %s writes only its order and frozen-column cleanup in one settings write', async (name) => {
+    const views = [{ ...TABLE, frozenColumns: 2 }, { ...BOARD, order: ['file.name', 'note.order'], frozenColumns: 1 }]
+    const settings = { ...SETTINGS, views }
+    const el = mount(FUNNELS, vault(settings))
+    selectView(el, name)
+    click(byLabel(el, 'Properties'))
+    const clear = [...el.querySelectorAll<HTMLButtonElement>('.view-menu__action')].find((button) => button.textContent === 'Unselect all')!
+    click(clear)
+    await flush()
+
+    expect(write).toHaveBeenCalledExactlyOnceWith(FUNNELS, 'folder_page_settings', {
+      ...settings,
+      views: views.map((view) => {
+        if (view.name !== name) return view
+        const { frozenColumns: _frozen, ...rest } = view
+        return { ...rest, order: [] }
+      }),
+    })
+    expect(clear.disabled).toBe(true)
+    click(clear)
+    await flush()
+    expect(write).toHaveBeenCalledTimes(1)
+  })
+
   it('a Board column-width edit is one whole-key folder_page_settings write', async () => {
     const el = mount(FUNNELS)
     selectView(el, 'Board')

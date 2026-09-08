@@ -150,6 +150,16 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
 
   return (
     <div className="view-menu">
+      {(view.type === 'table' || view.type === 'board') && (
+        <div className="view-menu__actions">
+          <button type="button" className="view-menu__action" disabled={keys.every(isShown)} onClick={() => writeOrder(keys)}>
+            Select all
+          </button>
+          <button type="button" className="view-menu__action" disabled={shown.length === 0} onClick={() => writeOrder([])}>
+            Unselect all
+          </button>
+        </div>
+      )}
       <ul className="view-menu__list">
         {keys.map((key) => {
           const on = isShown(key)

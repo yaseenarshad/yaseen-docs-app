@@ -361,8 +361,13 @@
   border-radius: 5px;
 }
 
-.view-menu__action:hover {
+.view-menu__action:hover:not(:disabled) {
   background: var(--accent-soft);
+}
+
+.view-menu__action:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .view-menu__toggle {
