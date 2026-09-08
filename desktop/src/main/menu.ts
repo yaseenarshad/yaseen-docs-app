@@ -6,7 +6,7 @@
  * lives in `main/index.ts`.
  */
 import type { MenuItemConstructorOptions } from 'electron'
-import type { RecentRoots } from '@shared/types'
+import type { ClipboardPasteRequest, RecentRoots } from '@shared/types'
 import { CH } from '../channels'
 import type { Store } from './store'
 import type { WindowManager } from './windows'
@@ -15,6 +15,7 @@ import type { WindowManager } from './windows'
 export const HELP_URL = 'https://github.com/yaseenarshad/yaseen-milkdown#readme'
 
 export interface MenuHandlers {
+  pasteAs(mode: ClipboardPasteRequest['mode']): void
   /** File › New Window (⌘⇧N, D6): duplicate the focused window — same folder, same file. */
   newWindow(): void
   /** File › Open Folder… (⌘⇧O): the focused window's renderer runs its pick-folder flow. */
@@ -91,7 +92,7 @@ export function buildMenuTemplate({ recents, isDev }: MenuInputs, handlers: Menu
     },
     {
       label: 'Edit',
-      submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }],
+      submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, pasteAsMenu(handlers.pasteAs, true), { role: 'selectAll' }],
     },
     {
       label: 'View',
@@ -128,7 +129,18 @@ export function buildMenuTemplate({ recents, isDev }: MenuInputs, handlers: Menu
   ]
 }
 
+function pasteAsMenu(pasteAs: MenuHandlers['pasteAs'], accelerator = false): MenuItemConstructorOptions {
+  return {
+    label: 'Paste as',
+    submenu: [
+      { id: 'menu.edit.paste-plain', label: 'Plain text', ...(accelerator ? { accelerator: 'CmdOrCtrl+Shift+V' } : {}), click: () => pasteAs('plain') },
+      { id: 'menu.edit.paste-markdown', label: 'Markdown', click: () => pasteAs('markdown') },
+    ],
+  }
+}
+
 export interface ContextMenuActions {
+  pasteAs(mode: ClipboardPasteRequest['mode']): void
   /** Swap the misspelled word under the cursor for the suggestion the user picked. */
   replace(word: string): void
   /** Teach the spellchecker a word it flagged, for good. */
@@ -159,6 +171,7 @@ export function buildContextMenuTemplate(
     { role: 'cut', enabled: params.editFlags.canCut },
     { role: 'copy', enabled: params.editFlags.canCopy },
     { role: 'paste', enabled: params.editFlags.canPaste },
+    { ...pasteAsMenu(actions.pasteAs), enabled: params.editFlags.canPaste },
   ]
 }
 
@@ -191,6 +204,7 @@ export interface MenuHost {
    * this through `pickMenuTargetWindow` (see its comment for why macOS forces the fallback).
    */
   focusedWebContents(): { id: number; send(channel: string, ...args: unknown[]): void } | undefined
+  readClipboardText(): string
   openExternal(url: string): void
   /** Whether `path` exists as a directory — open-beside probes before touching the MRU (GRO-2211). */
   dirExists(path: string): boolean
@@ -206,6 +220,10 @@ export function createMenuHandlers(store: Store, windows: MenuWindows, host: Men
     return id === undefined ? undefined : store.get().windows.find((w) => w.id === id)
   }
   return {
+    pasteAs(mode) {
+      const target = host.focusedWebContents()
+      if (target !== undefined) target.send(CH.menuPasteAs, { mode, text: host.readClipboardText() } satisfies ClipboardPasteRequest)
+    },
     newWindow() {
       const entry = focusedEntry()
       if (entry !== undefined) windows.duplicateWindow(entry)

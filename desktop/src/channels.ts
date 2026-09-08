@@ -40,6 +40,8 @@ export const CH = {
   windowOpen: 'window:open',
   windowDuplicate: 'window:duplicate',
   windowCloseSelf: 'window:close-self',
+  menuPasteAs: 'menu:paste-as',
+  menuPasteTextFallback: 'menu:paste-text-fallback',
   menuOpenFolder: 'menu:open-folder',
   menuOpenRoot: 'menu:open-root',
   menuSearch: 'menu:search',

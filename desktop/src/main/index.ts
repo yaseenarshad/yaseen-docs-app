@@ -1,9 +1,10 @@
-import { app, BrowserWindow, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell } from 'electron'
+import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell } from 'electron'
 import { statSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fileLink, parseFileLink } from '@shared/links'
-import type { WindowEntry } from '@shared/types'
+import type { ClipboardPasteRequest, WindowEntry } from '@shared/types'
+import { CH } from '../channels'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
 import { createLinkQueue } from './linkQueue'
@@ -91,6 +92,7 @@ const manager = createWindowManager(store, {
     // otherwise be unactionable; the template itself is pure and lives in menu.ts.
     win.webContents.on('context-menu', (_event, params) =>
       Menu.buildFromTemplate(buildContextMenuTemplate(params, {
+        pasteAs: (mode) => win.webContents.send(CH.menuPasteAs, { mode, text: clipboard.readText() } satisfies ClipboardPasteRequest),
         replace: (s) => win.webContents.replaceMisspelling(s),
         addToDictionary: (w) => win.webContents.session.addWordToSpellCheckerDictionary(w),
       })).popup({ window: win }))
@@ -151,6 +153,7 @@ app.whenReady().then(() => {
   // — so the last-focused live window (tracked below) is the documented fallback target.
   const handlers = createMenuHandlers(store, manager, {
     focusedWebContents: () => pickMenuTargetWindow(BrowserWindow.getFocusedWindow(), BrowserWindow.getAllWindows(), lastFocusedWcId)?.webContents,
+    readClipboardText: () => clipboard.readText(),
     openExternal: (url) => void shell.openExternal(url),
     dirExists: (path) => {
       try {

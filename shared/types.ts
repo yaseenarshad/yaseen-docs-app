@@ -888,11 +888,19 @@ export interface WindowApi {
   onFlush(listener: () => Promise<void> | void): () => void
 }
 
+/** Clipboard text captured when the user chooses an explicit paste mode. */
+export interface ClipboardPasteRequest {
+  mode: 'plain' | 'markdown'
+  text: string
+}
+
 /**
  * Menu gestures from the main process (B3, GRO-2161): the renderer owns root switching at
  * runtime, so File › Open Folder… / Open Recent land on the focused window's renderer.
  */
 export interface MenuApi {
+  /** Explicit paste targets the focused editor; return true when handled. Returns an unsubscribe. */
+  onPasteAs(listener: (request: ClipboardPasteRequest) => boolean): () => void
   /** File › Open Folder… (⌘⇧O) targeted this window: run the pick-folder flow. Returns an unsubscribe. */
   onOpenFolder(listener: () => void): () => void
   /** File › Open Recent chose `path` for this window: switch the root in place. Returns an unsubscribe. */
