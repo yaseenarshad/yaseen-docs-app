@@ -107,6 +107,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
     else if (property === 'file.folder') for (const r of records) add(r.folder)
     else if (property === 'file.links') for (const r of records) for (const link of r.links) add(link)
     else if (!property.startsWith('file.') && !property.startsWith('formula.')) {
+      for (const option of typingOf(property)?.options ?? []) add(option)
       const bare = property.startsWith('note.') ? property.slice(5) : property
       for (const r of records) {
         const raw = r.properties[bare]

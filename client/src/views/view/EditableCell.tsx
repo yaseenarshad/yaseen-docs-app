@@ -5,6 +5,9 @@ import { type Value, fromYaml } from '../expr'
 import { writeProperty } from '../writeProperty'
 import { cellContent } from './GroupHeader'
 import { TextField } from './TextField'
+import { createPortal } from 'react-dom'
+import { Popover } from './Popover'
+import { SelectValueEditor } from './SelectValueEditor'
 
 export interface EditableCellProps {
   /** Absolute path of the note this cell belongs to. */
@@ -16,6 +19,7 @@ export interface EditableCellProps {
   /** The engine value, displayed while not editing. */
   value: Value
   /** The inferred editor (`cellEditor`); null renders the plain read-only content. */
+  options?: readonly string[]
   editor: EditorKind | null
   /** Index basenames for the link editor's `[[…]]` completion. */
   basenames: readonly string[]
@@ -38,17 +42,30 @@ export interface EditableCellProps {
  * until the index refetch delivers it (`raw` changes); a failed write reverts the cell and
  * shows an inline error. Checkboxes are live and commit on every toggle, no edit mode.
  */
-export function EditableCell({ path, propKey, raw, value, editor, basenames, onCommit }: EditableCellProps) {
+export function EditableCell({ path, propKey, raw, value, editor, basenames, onCommit, options = [] }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   /** Committed-but-not-yet-indexed value; cleared when `raw` catches up (or the write fails). */
   const [pending, setPending] = useState<{ v: unknown } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const wrapRef = useRef<HTMLSpanElement>(null)
   const closedRef = useRef(false)
+  const writes = useRef<Promise<void> | null>(null)
+  const revision = useRef(0)
+  const echoes = useRef<{ revision: number; value: string }[]>([])
 
-  // The index refetch after our write delivers the new value; drop the optimistic copy then.
+  // The index can echo an intermediate save after the final write has already resolved.
+  // Keep the latest optimistic choice until its echo arrives; unrelated later edits still win.
   const rawKey = JSON.stringify(raw ?? null)
-  useEffect(() => setPending(null), [rawKey])
+  useEffect(() => {
+    const acknowledged = echoes.current.map(echo => echo.value).lastIndexOf(rawKey)
+    if (acknowledged >= 0) {
+      echoes.current.splice(0, acknowledged + 1)
+      if (echoes.current.length === 0) setPending(null)
+    } else if (writes.current === null) {
+      echoes.current = []
+      setPending(null)
+    }
+  }, [rawKey])
 
   // Closing hands focus back to the table cell (4B nav) or the display button elsewhere.
   useEffect(() => {
@@ -63,13 +80,22 @@ export function EditableCell({ path, propKey, raw, value, editor, basenames, onC
   const current = pending !== null ? pending.v : raw
 
   const commit = (next: unknown) => {
-    if (JSON.stringify(next) === JSON.stringify(raw ?? null)) return
+    if (JSON.stringify(next) === JSON.stringify(current ?? null)) return
     setError(null)
     setPending({ v: next })
-    ;(onCommit === undefined ? writeProperty(path, propKey, next) : onCommit(next)).catch((err: unknown) => {
+    const turn = ++revision.current
+    echoes.current.push({ revision: turn, value: JSON.stringify(next ?? null) })
+    const write = () => onCommit === undefined ? writeProperty(path, propKey, next) : onCommit(next)
+    // Immediate feedback, ordered disk writes: a slow earlier choice cannot win last.
+    const request = writes.current === null ? write() : writes.current.then(write)
+    const settled = request.then(() => {}, (err: unknown) => {
+      echoes.current = echoes.current.filter(echo => echo.revision !== turn)
+      if (turn !== revision.current) return
       setPending(null)
       setError(err instanceof Error ? err.message : String(err))
     })
+    writes.current = settled
+    void settled.then(() => { if (writes.current === settled) writes.current = null })
   }
 
   const close = () => {
@@ -99,12 +125,15 @@ export function EditableCell({ path, propKey, raw, value, editor, basenames, onC
     )
   }
 
+  const isChoice = editor === 'select' || editor === 'multi-select'
+  const choices = Array.isArray(current) ? current.map(String) : current == null || current === '' ? [] : [String(current)]
+  const isEmpty = current == null || current === '' || (Array.isArray(current) && current.length === 0)
   const label = `Edit ${propKey}`
   const text = current === undefined || current === null ? '' : typeof current === 'string' ? current : String(current)
 
   return (
     <span ref={wrapRef} className="view-cell-edit" data-editing={editing ? '' : undefined}>
-      {!editing ? (
+      {!editing || isChoice ? (
         <>
           <button
             type="button"
@@ -115,7 +144,7 @@ export function EditableCell({ path, propKey, raw, value, editor, basenames, onC
               setEditing(true)
             }}
           >
-            {pending !== null ? cellContent(fromYaml(pending.v)) : cellContent(value)}
+            {isEmpty ? <span className="property-empty">Empty</span> : isChoice ? <span className="property-choice-chips">{choices.map((choice, i) => <span className="property-choice-chip" key={`${choice}:${i}`}>{choice}</span>)}</span> : pending !== null ? cellContent(fromYaml(pending.v)) : cellContent(value)}
           </button>
           {failure}
         </>
@@ -150,6 +179,9 @@ export function EditableCell({ path, propKey, raw, value, editor, basenames, onC
           onDone={close}
         />
       )}
+      {editing && isChoice && createPortal(<Popover label={label} anchor={wrapRef.current} onClose={close} className="property-value-popover">
+        <SelectValueEditor raw={current} options={options} multiple={editor === 'multi-select'} label={label} onCommit={commit} onDone={close} />
+      </Popover>, document.body)}
     </span>
   )
 }

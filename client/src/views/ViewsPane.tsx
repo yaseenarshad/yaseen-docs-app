@@ -1,3 +1,5 @@
+import { boardOptionGroups } from './boardOptionGroups'
+import { columnTyping } from './editorType'
 import { useEffect, useMemo, useState } from 'react'
 import { MAX_COLLAPSED_GROUP_KEYS, type IndexRecord, type PropertiesResponse } from '@shared/types'
 import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
@@ -41,6 +43,8 @@ export interface FolderPageMode {
    * (🔒 D3), failures in the host's own banner. `views` rides along so a caller can move the
    * columns AND `view.order` in that same single write.
    */
+  /** Save one definition against the captured base; reject concurrent changes to that property. */
+  setColumn: (key: string, next: ColumnDecl, base: ColumnDecl | undefined) => Promise<unknown>
   setColumns: (columns: Record<string, ColumnDecl>, views?: ViewDef[]) => void
   /**
    * The saved START (YAZ-1104), through its OWN door — ONE `folder_page_settings` write on the
@@ -102,7 +106,7 @@ export interface ViewsPaneProps {
  */
 function seedGroupValue(properties: Record<string, unknown>, group: Group, key: string | null): void {
   if (key === null || group.key === null) return
-  const raw = group.fannedOut ? [render(group.key)] : group.rows[0]?.record.properties[key]
+  const raw = group.fannedOut ? [render(group.key)] : group.rows[0]?.record.properties[key] ?? group.optionValue
   if (raw !== undefined) properties[key] = raw
 }
 
@@ -190,6 +194,8 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
     [def, view, shown, thisFile, resolve, isOutline],
   )
 
+  const configuredGroups = boardOptionGroups(result.groups, view, key => columnTyping(key, shown, properties, folderPage.settings))
+  const keepEmpty = view.type === 'board' && view.showEmptyColumns === true
   const needle = (search ?? '').trim().toLowerCase()
   const matches = (r: Row) => Object.values(r.values).some((v) => render(v).toLowerCase().includes(needle))
   const rows = needle ? result.rows.filter(matches) : result.rows
@@ -198,11 +204,11 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
   // stays the union of what is left beneath, so an outer whose whole branch missed drops too.
   const narrow = (g: Group): Group => {
     if (g.children === undefined) return { ...g, rows: g.rows.filter(matches) }
-    const children = g.children.map((c) => ({ ...c, rows: c.rows.filter(matches) })).filter((c) => c.rows.length > 0)
+    const children = g.children.map((c) => ({ ...c, rows: c.rows.filter(matches) })).filter((c) => keepEmpty || c.rows.length > 0)
     const direct = (g.direct ?? []).filter(matches)
     return { ...g, rows: [...direct, ...children.flatMap((c) => c.rows)], children, direct }
   }
-  const groups = result.groups === null ? null : needle ? result.groups.map(narrow).filter((g) => g.rows.length > 0) : result.groups
+  const groups = configuredGroups === null ? null : needle ? configuredGroups.map(narrow).filter((g) => keepEmpty || g.rows.length > 0) : configuredGroups
 
   // Collapse state lives per `<pagePath>::<viewName>` in the main-owned store — NEVER in the
   // page's own card, so toggling can not touch autosave. Session-only (keyed by view index)
@@ -222,7 +228,7 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
   // document order, each outer before its children, and it is the KEY count that meets the store's
   // cap: above it the toggle hides rather than writing a list `setViewGroups` would truncate.
   const groupKeys =
-    result.groups === null ? [] : result.groups.flatMap((g) => [groupKeyOf(g.key), ...(g.children ?? []).map((c) => nestedGroupKeyOf(g.key, c.key))])
+    configuredGroups === null ? [] : configuredGroups.flatMap((g) => [groupKeyOf(g.key), ...(g.children ?? []).map((c) => nestedGroupKeyOf(g.key, c.key))])
   const allGroupKeys = groupKeys.length > MAX_COLLAPSED_GROUP_KEYS ? [] : groupKeys
 
   // A drop on a board column / table section (5C, GRO-2143): optimistic move now, then 5B writes

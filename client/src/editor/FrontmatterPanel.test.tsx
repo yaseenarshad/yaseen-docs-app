@@ -9,8 +9,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { PROPERTY_NAME, type PropertiesResponse } from '@shared/types'
+import { PROPERTY_NAME, type IndexRecord, type PropertyDecl, type PropertiesResponse } from '@shared/types'
 import { FrontmatterPanel, type FrontmatterPanelProps } from './FrontmatterPanel'
+import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
+import { TEST_RECORDS } from '../views/testRecords'
+import { createWikilinkResolveSource } from './wikilink/wikilinkPlugin'
 
 vi.mock('../api', async (importOriginal) => {
   const { propertiesStub } = await import('../views/propertiesStub')
@@ -118,7 +121,7 @@ const btn = (el: HTMLElement, label: string) =>
 const rows = (el: HTMLElement) => [...el.querySelectorAll<HTMLLIElement>('.frontmatter-panel__row')]
 const keysOf = (el: HTMLElement) => rows(el).map((r) => r.querySelector('.frontmatter-panel__key')?.textContent)
 const chipIn = (el: ParentNode) => el.querySelector('.frontmatter-panel__chip')?.textContent ?? null
-const byLabel = <T extends HTMLElement>(el: ParentNode, label: string): T | null => el.querySelector<T>(`[aria-label="${label}"]`)
+const byLabel = <T extends HTMLElement>(el: ParentNode, label: string): T | null => (el === container ? document.body : el).querySelector<T>(`[aria-label="${label}"]`)
 
 function rowOf(el: HTMLElement, key: string): HTMLLIElement {
   const r = el.querySelector<HTMLLIElement>(`.frontmatter-panel__row[data-key="${key}"]`)
@@ -135,6 +138,25 @@ const expandRaw = (el: HTMLElement) => {
 }
 
 const click = (el: Element | null) => act(() => (el as HTMLElement | null)?.click())
+const buttonNamed = (el: ParentNode, text: string): HTMLButtonElement | null => [...(el === container ? document.body : el).querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.trim() === text) ?? null
+const removeProperty = (el: HTMLElement, key: string) => {
+  click(byLabel(el, `Configure ${key}`))
+  click(buttonNamed(el, 'Remove from this note'))
+}
+
+const FOLDER = '/vault/Roadmap.md'
+const LOCAL_NOTE = '---\nStatus: Ready\nfolder_pages:\n  - "[[Roadmap]]"\n---\nOriginal note body\n'
+const folderRecord = (name: string, declaration: PropertyDecl): IndexRecord => ({
+  ...TEST_RECORDS[0], path: `/vault/${name}.md`, name: `${name}.md`, basename: name,
+  properties: { folder_page: true, folder_page_settings: { columns: { Status: declaration }, views: [{ type: 'board', name: 'Board' }] } },
+})
+const folderFeed = (...parents: IndexRecord[]) => {
+  const source = createWikilinkResolveSource()
+  const note: IndexRecord = { ...TEST_RECORDS[0], path: PATH, basename: 'Deep Work', properties: { Status: 'Ready', folder_pages: parents.map(parent => `[[${parent.basename}]]`) } }
+  source.update(link => parents.find(parent => link === `[[${parent.basename}]]`)?.path ?? null, [note, ...parents])
+  return source
+}
+
 
 /** Native prototype setter + bubbling event, so React's value tracker sees the change. */
 function setValue(el: HTMLInputElement | HTMLSelectElement | null, value: string): void {
@@ -464,7 +486,7 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     readFile.mockResolvedValue(fileOf(TYPED))
     const el = mount(TYPED)
     expand(el)
-    click(byLabel(rowOf(el, 'pages'), 'Delete pages'))
+    removeProperty(el, 'pages')
     await flush()
 
     expect(writeFile).toHaveBeenCalledTimes(1)
@@ -479,7 +501,7 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     readFile.mockResolvedValue(fileOf(TYPED))
     const el = mount(TYPED)
     expand(el)
-    click(byLabel(rowOf(el, 'status'), 'Delete status'))
+    removeProperty(el, 'status')
     await flush()
 
     expect(writeFile).toHaveBeenCalledWith({
@@ -494,7 +516,7 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     writeFile.mockRejectedValue(new BridgeRequestError('IO_ERROR', 'disk on fire'))
     const el = mount(TYPED)
     expand(el)
-    click(byLabel(rowOf(el, 'status'), 'Delete status'))
+    removeProperty(el, 'status')
     await flush()
 
     expect(errorLine(el)?.textContent).toBe('Could not delete "status": disk on fire')
@@ -515,40 +537,111 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
       expect(chipIn(r)).toBe(chip)
       // 🔒 A row with no editor offers nothing but its chip.
       expect(r.querySelector('[data-edit]')).toBeNull()
-      expect(byLabel(r, `Delete ${key}`)).toBeNull()
-      expect(byLabel(r, `Type of ${key}`)).toBeNull()
+      expect(byLabel(r, `Configure ${key}`)).toBeNull()
     }
 
     // The representable neighbour is untouched by any of that.
     const tags = rowOf(el, 'tags')
     expect(chipIn(tags)).toBeNull()
-    expect(byLabel(tags, 'Delete tags')).not.toBeNull()
+    expect(byLabel(tags, 'Configure tags')).not.toBeNull()
+    expect(byLabel(tags, 'Delete tags')).toBeNull()
   })
 
-  it('declares a type VAULT-WIDE from a row — the note itself is never written', async () => {
-    const el = mount(TYPED, { root: ROOT, properties: declaring({}) })
+  it('uses the sole folder page definition for uppercase Status and writes only the selected note value', async () => {
+    const wikilinks = folderFeed(folderRecord('Roadmap', { kind: 'select', options: ['Ready', 'Later'] }))
+    readFile.mockResolvedValue(fileOf(LOCAL_NOTE))
+    const el = mount(LOCAL_NOTE, { root: ROOT, wikilinks })
     expand(el)
-    const select = byLabel<HTMLSelectElement>(rowOf(el, 'status'), 'Type of status')
-    expect(select?.value).toBe('')
-
-    setValue(select, 'list')
+    expect(byLabel<HTMLSelectElement>(el, 'Property context')?.value).toBe(FOLDER)
+    expect(rowOf(el, 'Status').querySelector('.property-choice-chip')?.textContent).toBe('Ready')
+    expect(byLabel(el, 'Type of Status')).toBeNull()
+    expect(byLabel(el, 'Delete Status')).toBeNull()
+    click(rowOf(el, 'Status').querySelector('[data-edit]'))
+    expect([...document.querySelectorAll('[role="option"] .property-choice-chip')].map(option => option.textContent)).toEqual(['Ready', 'Later'])
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(option => option.textContent?.startsWith('Later'))!
+    click(option)
     await flush()
-
-    expect(await propertiesStub.get(ROOT)).toEqual({ root: ROOT, version: 1, properties: { status: { kind: 'list' } } })
-    expect(writeFile).not.toHaveBeenCalled()
-
-    // The declaration reaches every surface through App's `useProperties` broadcast; here it is
-    // the same prop the folder page's contents block reads, and the row retypes with it.
-    rerender(TYPED, { root: ROOT, properties: declaring({ status: { kind: 'list' } }) })
-    expect(byLabel<HTMLSelectElement>(rowOf(el, 'status'), 'Type of status')?.value).toBe('list')
-    expect(editorOf(el, 'status')).toBe('chips')
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: LOCAL_NOTE.replace('Status: Ready', 'Status: Later'), expectedMtime: 100 })
   })
 
-  it('with no vault root there is no type affordance at all', () => {
+  it('requires an explicit context for multiple folder memberships and keeps their options separate', () => {
+    const wikilinks = folderFeed(
+      folderRecord('Roadmap', { kind: 'select', options: ['Ready', 'Later'] }),
+      folderRecord('Personal', { kind: 'select', options: ['Ready', 'Someday'] }),
+    )
+    const el = mount(LOCAL_NOTE, { root: ROOT, wikilinks })
+    expand(el)
+    const context = byLabel<HTMLSelectElement>(el, 'Property context')
+    expect(context?.value).toBe('')
+    click(byLabel(el, 'Configure Status'))
+    expect(document.querySelector('.frontmatter-property-menu')?.textContent).toContain('Choose a folder page')
+    expect(buttonNamed(el, 'Edit property ›')).toBeNull()
+    setValue(context, FOLDER)
+    click(rowOf(el, 'Status').querySelector('[data-edit]'))
+    expect([...document.querySelectorAll('[role="option"] .property-choice-chip')].map(option => option.textContent)).toEqual(['Ready', 'Later'])
+    press(document.querySelector('[role="combobox"]'), 'Escape')
+    setValue(context, '/vault/Personal.md')
+    click(rowOf(el, 'Status').querySelector('[data-edit]'))
+    expect([...document.querySelectorAll('[role="option"] .property-choice-chip')].map(option => option.textContent)).toEqual(['Ready', 'Someday'])
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('saves a local definition against fresh folder bytes, preserving other settings and the note value', async () => {
+    const wikilinks = folderFeed(folderRecord('Roadmap', { kind: 'select', options: ['Ready', 'Later'] }))
+    const freshFolder = `---
+folder_page: true
+owner: untouched
+folder_page_settings:
+  columns:
+    Status:
+      kind: select
+      options: [Ready, Later]
+    effort:
+      kind: number
+  folder: New location
+  defaultView: Table
+  future_setting: keep me
+  views:
+    - type: table
+      name: Table
+---
+Fresh folder body
+`
+    readFile.mockResolvedValue({ path: FOLDER, content: freshFolder, mtime: 444, size: freshFolder.length })
+    const el = mount(LOCAL_NOTE, { root: ROOT, wikilinks })
+    expand(el)
+    click(byLabel(el, 'Configure Status'))
+    click(buttonNamed(el, 'Edit property ›'))
+    click(byLabel(el, 'Property type: Select'))
+    click(buttonNamed(el, 'Multi-select'))
+    expect(writeFile).not.toHaveBeenCalled()
+    const actions = document.querySelector('.frontmatter-property-menu__actions')!
+    click(buttonNamed(actions, 'Save'))
+    await flush()
+    expect(readFile).toHaveBeenCalledExactlyOnceWith(FOLDER)
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    const write = writeFile.mock.calls[0][0]
+    expect(write.path).toBe(FOLDER)
+    expect(write.expectedMtime).toBe(444)
+    const saved = parseFrontmatter(splitFrontmatter(write.content).frontmatter).properties
+    expect(saved).toEqual({ folder_page: true, owner: 'untouched', folder_page_settings: {
+      columns: { Status: { kind: 'multi-select', options: ['Ready', 'Later'] }, effort: { kind: 'number' } },
+      folder: 'New location', defaultView: 'Table', future_setting: 'keep me', views: [{ type: 'table', name: 'Table' }],
+    } })
+    expect(splitFrontmatter(write.content).body).toBe('Fresh folder body\n')
+    expect((await propertiesStub.get(ROOT)).properties).toEqual({})
+    toRaw(el)
+    expect(area(el)?.value).toContain('Status: Ready')
+  })
+
+  it('allows removal without a folder context but offers no global type dropdown', () => {
     const el = mount(TYPED)
     expand(el)
     expect(byLabel(rowOf(el, 'status'), 'Type of status')).toBeNull()
-    expect(byLabel(rowOf(el, 'status'), 'Delete status')).not.toBeNull()
+    expect(byLabel(rowOf(el, 'status'), 'Delete status')).toBeNull()
+    click(byLabel(el, 'Configure status'))
+    expect(buttonNamed(el, 'Remove from this note')).not.toBeNull()
+    expect(buttonNamed(el, 'Edit property ›')).toBeNull()
   })
 
   it('the raw fallback is one click away and back — but a DIRTY draft holds the door shut', () => {

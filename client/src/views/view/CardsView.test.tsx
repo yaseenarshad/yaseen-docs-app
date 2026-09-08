@@ -186,7 +186,7 @@ describe('grid', () => {
     expect([...card.querySelectorAll('.view-table__chip')].map((c) => c.textContent)).toEqual(['agentic', 'pillar'])
     // a missing property keeps the label with an empty value
     const bare = cardOf(el, 'Attribution.md')
-    expect([...bare.querySelectorAll('.view-card__prop-value')][0].textContent).toBe('')
+    expect([...bare.querySelectorAll('.view-card__prop-value')][0].textContent).toBe('Empty')
     click(q(card, '.view-card__title'))
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
   })

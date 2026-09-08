@@ -50,6 +50,14 @@ const CASES: { type: PropertyType; property: string; op: OperatorId; value: stri
   { type: 'file', property: 'file.tags', op: 'hasTag', value: 'pillar', expr: 'file.hasTag("pillar")' },
   { type: 'file', property: 'file.folder', op: 'inFolder', value: 'Content Pillars', expr: 'file.inFolder("Content Pillars")' },
   { type: 'file', property: 'file.links', op: 'hasLink', value: 'Agentic Agency', expr: 'file.hasLink("Agentic Agency")' },
+  { type: 'select', property: 'note.status', op: 'is', value: 'Ready', expr: 'note.status == "Ready"' },
+  { type: 'select', property: 'note.status', op: 'isNot', value: 'Ready', expr: 'note.status != "Ready"' },
+  { type: 'select', property: 'note.status', op: 'isEmpty', value: '', expr: 'note.status.isEmpty()' },
+  { type: 'select', property: 'note.status', op: 'isNotEmpty', value: '', expr: '!note.status.isEmpty()' },
+  { type: 'multi-select', property: 'note.labels', op: 'contains', value: 'Ready', expr: 'note.labels.contains("Ready")' },
+  { type: 'multi-select', property: 'note.labels', op: 'notContains', value: 'Ready', expr: '!note.labels.contains("Ready")' },
+  { type: 'multi-select', property: 'note.labels', op: 'isEmpty', value: '', expr: 'note.labels.isEmpty()' },
+  { type: 'multi-select', property: 'note.labels', op: 'isNotEmpty', value: '', expr: '!note.labels.isEmpty()' },
 ]
 
 describe('ruleToExpr / exprToRule round trip (GRO-2135)', () => {

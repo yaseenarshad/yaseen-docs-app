@@ -17,7 +17,7 @@ interface PopoverProps {
  * (the trigger itself then toggles normally); Esc closes; focus moves in on open.
  * With `anchor` it is placed fixed under that element instead, measured and clamped
  * to the viewport like `ContextMenu`, so a clipping ancestor cannot cut it off — and
- * a scroll or resize closes it, since the fixed placement is measured once.
+ * outside scrolling or window resizing closes it. Content resizing refits it in place.
  */
 export function Popover({ label, onClose, className, anchor, children, constrainToViewport = false }: PopoverProps) {
   const ref = useRef<HTMLDivElement>(null)
@@ -32,13 +32,17 @@ export function Popover({ label, onClose, className, anchor, children, constrain
   useLayoutEffect(() => {
     const el = ref.current
     if (!anchor || el === null) return
-    const a = anchor.getBoundingClientRect()
-    const r = el.getBoundingClientRect()
-    setPos({
-      position: 'fixed',
-      top: Math.max(0, Math.min(a.bottom + 6, window.innerHeight - r.height)),
-      left: Math.max(0, Math.min(a.left, window.innerWidth - r.width)),
-    })
+    const fit = () => {
+      const a = anchor.getBoundingClientRect()
+      const r = el.getBoundingClientRect()
+      const top = Math.max(0, Math.min(a.bottom + 6, window.innerHeight - r.height))
+      const left = Math.max(0, Math.min(a.left, window.innerWidth - r.width))
+      setPos(previous => previous?.top === top && previous.left === left ? previous : { position: 'fixed', top, left })
+    }
+    fit()
+    const observer = new ResizeObserver(fit)
+    observer.observe(el)
+    return () => observer.disconnect()
   }, [anchor])
 
   useLayoutEffect(() => {
@@ -94,7 +98,8 @@ export function Popover({ label, onClose, className, anchor, children, constrain
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
-    const onReflow = () => {
+    const onReflow = (event: Event) => {
+      if (event.target instanceof Node && ref.current?.contains(event.target)) return
       onClose()
     }
     window.addEventListener('mousedown', onDown)

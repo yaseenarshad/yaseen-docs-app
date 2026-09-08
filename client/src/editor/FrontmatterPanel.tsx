@@ -1,60 +1,24 @@
-/**
- * THE PROPERTIES PANEL (⚡ YAZ-883, typed rows ⚡ YAZ-884) — block ONE of the note's own scroller,
- * between the page title (⚡ YAZ-888) and `.editor-mount`.
- *
- * TWO MODES, one surface. TYPED ROWS are the DEFAULT expanded view: one row per top-level
- * frontmatter key with the SAME seven editors the views use (`EditableCell`, 5B) — the panel
- * invents no editor of its own. RAW YAML (⚡ YAZ-883) is the fallback UNDERNEATH them, one
- * "Edit as YAML" click away, and stays honest by staying literal.
- *
- * 🔒 TYPES ARE THE VAULT'S, not the panel's: the ladder here is the vault-wide registry
- * (`.yaseendocs/properties.json`, YAZ-835) → the note's own YAML value → text, read through the
- * ONE `columnTyping`/`cellEditor` ladder with no records and no view. One key is one type
- * everywhere, so a type DECLARED from a row types the same column in every folder page's views.
- * A key the registry's own grammar rejects (`PROPERTY_NAME`) can carry no declaration, so it is a
- * plain text row — an accepted edge, never a workaround UI.
- *
- * 🔒 A ROW WITH NO EDITOR OFFERS NOTHING BUT ITS CHIP: the app's RESERVED keys (`folder_page`,
- * `folder_page_settings` — they have their own doors) and values no editor can hold without lying
- * (nested maps, multi-line scalars) render read-only, pointing at raw mode. Never a lossy editor.
- *
- * 🔒 VERBATIM, both ways. A raw save writes the user's own bytes through `replaceFrontmatter` —
- * never a parse→reformat — so comments, key order and quoting styles survive; what it DOES
- * enforce is that the block still parses (`parseFrontmatter`, an `error` BLOCKS the write,
- * because a broken block corrupts every index that reads it). A typed row's write is SURGICAL:
- * `writeProperty` rewrites that one key and the rest of the block stays byte-identical, comments
- * included. Both dances read the file FRESH, write with `expectedMtime`, and retry ONCE on
- * CONFLICT. The page's own open editor absorbs the frontmatter-only `change` silently
- * (GRO-2186), so nothing here talks to the editor at all.
- *
- * 🔒 THE DIRTY DRAFT NEVER LOSES: switching modes asks nothing, because the toggle BACK to typed
- * rows is disabled while an unsaved raw draft stands (the tooltip says why). Simplest honest rule
- * — no dialog, no silent discard. Typed writes are immediate, so typed → raw is always free.
- *
- * The panel owns its ERROR SURFACE: bad YAML, a failed key write, a failed declaration and a
- * failed bridge call all land on one inline line. App's passive notice is for gestures that have
- * no place of their own to speak; this one has one.
- *
- * Open state and mode are session-only component state (BacklinksSection's rule): neither is part
- * of a note's identity and neither reaches disk.
+/** Note property rows share the view editors and the selected folder page's definitions.
+ * Value writes remain surgical and conflict-checked; raw YAML retains its own dirty draft.
+ * A note with multiple folder memberships requires an explicit definition context.
  */
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useSyncExternalStore } from 'react'
+import { createPortal } from 'react-dom'
 import { frontmatterInterior, parseFrontmatter, replaceFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import {
-  PROPERTY_KINDS,
   PROPERTY_NAME,
   type FileResponse,
   type IndexRecord,
   type PropertiesResponse,
   type PropertyDecl,
-  type PropertyKind,
 } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
-import { FOLDER_PAGE_KEY } from '../links/folderPages'
+import { FOLDER_PAGE_KEY, folderPagesLookup } from '../links/folderPages'
 import { cellEditor, columnTyping, type EditorKind } from '../views/editorType'
 import { fromYaml } from '../views/expr'
-import { SETTINGS_KEY } from '../views/folderPageSettings'
-import { properties as propertiesApi } from '../views/useProperties'
+import { SETTINGS_KEY, folderPageSettings, writeFolderColumn, type FolderPageSettings } from '../views/folderPageSettings'
+import { PropertyDefinitionEditor, PropertyTypeIcon } from '../views/view/PropertyDefinitionEditor'
+import { Popover } from '../views/view/Popover'
 import { EditableCell } from '../views/view/EditableCell'
 import { cellContent } from '../views/view/GroupHeader'
 import { writeProperty } from '../views/writeProperty'
@@ -66,9 +30,9 @@ export interface FrontmatterPanelProps {
   file: Pick<FileResponse, 'path' | 'content' | 'mtime'>
   /** The vault root: the scope of `.yaseendocs/properties.json`. Absent → rows carry no type affordance. */
   root?: string | null
-  /** The vault-wide declarations (YAZ-835) — rung ONE of this surface's ladder, and the very same ones that type folder-page view columns. */
+  /** Legacy vault declarations are a fallback beneath the selected folder page's definition. */
   properties?: PropertiesResponse | null
-  /** The window's link feed: basenames for the link editors' `[[…]]` completion. READ, never subscribed — a suggestion list one poke behind is harmless here, unlike backlinks. */
+  /** Live link feed resolves folder membership and provides link suggestions. */
   wikilinks?: WikilinkResolveSource
 }
 
@@ -105,18 +69,17 @@ interface Row {
 
 /**
  * The editor for a key on THIS surface. `columnTyping` is the ONE ladder (`views/editorType.ts`):
- * handed no records and no folder page, its upper and lower rungs fall away and what is left is
- * exactly ours — declared kind → the note's own value → text.
+ * folder declaration → legacy declaration → the note's own value → text.
  */
-const editorFor = (key: string, raw: unknown, decls: PropertiesResponse | null): EditorKind | null =>
-  cellEditor(raw, columnTyping(key, NO_RECORDS, decls, null))
+const editorFor = (key: string, raw: unknown, decls: PropertiesResponse | null, folder: FolderPageSettings | null = null): EditorKind | null =>
+  cellEditor(raw, columnTyping(key, NO_RECORDS, decls, folder))
 
-function rowsOf(properties: Record<string, unknown>, decls: PropertiesResponse | null): Row[] {
+function rowsOf(properties: Record<string, unknown>, decls: PropertiesResponse | null, folder: FolderPageSettings | null = null): Row[] {
   return Object.entries(properties).map(([key, raw]) => {
     if (RESERVED.has(key)) return { key, raw, editor: null, chip: 'reserved' }
     if (isOpaque(raw)) return { key, raw, editor: null, chip: 'yaml' }
-    // A name the registry's grammar rejects can hold no declaration: plain text, no workaround.
-    return { key, raw, editor: PROPERTY_NAME.test(key) ? editorFor(key, raw, decls) : 'text', chip: null }
+    // Existing human-readable keys can have a folder-local declaration.
+    return { key, raw, editor: folder?.columns[key] || PROPERTY_NAME.test(key) ? editorFor(key, raw, decls, folder) : 'text', chip: null }
   })
 }
 
@@ -128,16 +91,8 @@ function seedValue(text: string, editor: EditorKind | null): unknown {
     return t !== '' && Number.isFinite(n) ? n : text
   }
   if (editor === 'checkbox') return t.toLowerCase() === 'true'
-  if (editor === 'list' || editor === 'multi-link') return t === '' ? [] : [t]
+  if (editor === 'list' || editor === 'multi-link' || editor === 'multi-select') return t === '' ? [] : [t]
   return text
-}
-
-/** A kind change keeps what the declaration already said around it — the shape `RelationEditor` writes (5E). */
-function declOf(kind: PropertyKind, was: PropertyDecl | undefined): PropertyDecl {
-  const def: PropertyDecl = { kind }
-  if (was?.target !== undefined && (kind === 'link' || kind === 'multi-link')) def.target = was.target
-  if (was?.required !== undefined) def.required = was.required
-  return def
 }
 
 /** `setFrontmatterProperty` over the panel's OWN copy, never throwing: the disk write already succeeded. */
@@ -158,7 +113,17 @@ interface Snapshot {
   draft: string | null
 }
 
-export function FrontmatterPanel({ file, root = null, properties: decls = null, wikilinks }: FrontmatterPanelProps) {
+export function FrontmatterPanel({ file, properties: decls = null, wikilinks }: FrontmatterPanelProps) {
+  const [propertyMenu, setPropertyMenu] = useState<{ key: string; anchor: HTMLElement; definition: PropertyDecl; base: PropertyDecl | undefined; folderPath: string | null; folderName: string; editing: boolean } | null>(null)
+  const [contextPath, setContextPath] = useState<string | null>(null)
+  const index = useSyncExternalStore(listener => wikilinks?.subscribe(listener) ?? (() => {}), () => wikilinks?.records ?? NO_RECORDS)
+  const contexts = useMemo(() => {
+    if (!wikilinks?.resolve) return []
+    const parents = folderPagesLookup(index, wikilinks.resolve).folderPagesOf(file.path)
+    return index.filter(r => parents.includes(r.path))
+  }, [index, wikilinks, file.path])
+  const context = contexts.find(r => r.path === contextPath) ?? (contextPath === null && contexts.length === 1 ? contexts[0] : null)
+  const folderDefinition = context ? folderPageSettings(context) : null
   const [expanded, setExpanded] = useState(false)
   // 🔒 Typed rows are the default; raw is the fallback under them.
   const [yamlMode, setYamlMode] = useState(false)
@@ -222,7 +187,7 @@ export function FrontmatterPanel({ file, root = null, properties: decls = null, 
   const empty = disk === '' && snap.draft === null
   // A block that will not parse has no rows to show: the raw fallback IS the surface then.
   const rawMode = yamlMode || parseError !== undefined
-  const rows = rawMode ? [] : rowsOf(parsed, decls)
+  const rows = rawMode ? [] : rowsOf(parsed, decls, folderDefinition)
 
   const remove = (key: string): void => {
     void commit(key, undefined).catch((err: unknown) => setError(`Could not delete "${key}": ${messageOf(err)}`))
@@ -241,19 +206,22 @@ export function FrontmatterPanel({ file, root = null, properties: decls = null, 
       return
     }
     setSaving(true)
-    void commit(name, seedValue(adding.value, editorFor(name, undefined, decls)))
+    void commit(name, seedValue(adding.value, editorFor(name, undefined, decls, folderDefinition)))
       .then(() => setAdding(null))
       .catch((err: unknown) => setError(`Could not add "${name}": ${messageOf(err)}`))
       .finally(() => setSaving(false))
   }
 
-  /** Declare (or undeclare) a key VAULT-WIDE, through the same door `RelationEditor` uses (5E). */
-  const setKind = (key: string, kind: string): void => {
-    if (root === null) return
-    setError(null)
-    const done =
-      kind === '' ? propertiesApi.removeProperty(root, key) : propertiesApi.setProperty(root, key, declOf(kind as PropertyKind, decls?.properties[key]))
-    done.catch((err: unknown) => setError(`Could not set the type of "${key}": ${messageOf(err)}`))
+  const saveDefinition = async (): Promise<void> => {
+    if (!propertyMenu?.folderPath) return
+    setSaving(true)
+    try {
+      const { key, definition, base, folderPath } = propertyMenu
+      await writeFolderColumn(folderPath, key, definition, base)
+      setPropertyMenu(null)
+      setError(null)
+    } catch (err) { setError(`Could not save the property: ${messageOf(err)}`) }
+    finally { setSaving(false) }
   }
 
   return (
@@ -268,8 +236,29 @@ export function FrontmatterPanel({ file, root = null, properties: decls = null, 
           {count > 0 && <span className="frontmatter-panel__count"> ({count})</span>}
         </span>
       </button>
+      {propertyMenu && createPortal(<Popover label={`Property ${propertyMenu.key}`} anchor={propertyMenu.anchor} onClose={() => { if (!saving) setPropertyMenu(null) }} className="frontmatter-property-menu">
+        <div className="frontmatter-property-menu__heading"><PropertyTypeIcon kind={propertyMenu.definition.kind} /><strong>{propertyMenu.key}</strong></div>
+        {propertyMenu.editing ? <>
+          <p className="frontmatter-property-menu__scope">In {propertyMenu.folderName}</p>
+          <fieldset disabled={saving} className="property-settings-fields">
+          <PropertyDefinitionEditor value={propertyMenu.definition} onChange={definition => setPropertyMenu({ ...propertyMenu, definition })} observed={Array.isArray(parsed[propertyMenu.key]) ? (parsed[propertyMenu.key] as unknown[]).map(String) : parsed[propertyMenu.key] == null ? [] : [String(parsed[propertyMenu.key])]} />
+          {error && <p role="alert" className="frontmatter-panel__error">{error}</p>}
+          <div className="frontmatter-property-menu__actions"><button type="button" disabled={saving} onClick={() => setPropertyMenu(null)}>Cancel</button><button type="button" disabled={saving} onClick={() => void saveDefinition()}>{saving ? 'Saving…' : 'Save'}</button></div>
+          </fieldset>
+        </> : <>
+          {context ? <button className="view-popover__item" type="button" onClick={() => setPropertyMenu({ ...propertyMenu, editing: true })}>Edit property <span>›</span></button> : <p className="frontmatter-property-menu__scope">Choose a folder page to configure this property.</p>}
+          <button className="view-popover__item" type="button" onClick={() => { remove(propertyMenu.key); setPropertyMenu(null) }}>Remove from this note</button>
+        </>}
+      </Popover>, document.body)}
       {expanded && (
         <div className="frontmatter-panel__body">
+          {contexts.length > 0 && !rawMode && <div className="frontmatter-property-context">
+            <label>Properties from <select aria-label="Property context" value={context?.path ?? ''} onChange={e => { setContextPath(e.target.value); setPropertyMenu(null) }}>
+              {contexts.length > 1 && <option value="">Choose a folder page…</option>}
+              {contexts.map(r => <option key={r.path} value={r.path}>{r.basename}</option>)}
+            </select></label>
+
+          </div>}
           {rawMode ? (
             <textarea
               className="frontmatter-panel__text"
@@ -296,7 +285,9 @@ export function FrontmatterPanel({ file, root = null, properties: decls = null, 
                 <ul className="frontmatter-panel__rows">
                   {rows.map((row) => (
                     <li key={row.key} className="frontmatter-panel__row" data-key={row.key}>
-                      <span className="frontmatter-panel__key">{row.key}</span>
+                      {row.editor === null ? <span className="frontmatter-panel__key">{row.key}</span> : <button type="button" className="frontmatter-panel__key frontmatter-property-name" aria-label={`Configure ${row.key}`} onClick={event => setPropertyMenu({ key: row.key, anchor: event.currentTarget, base: folderDefinition?.columns[row.key], folderPath: context?.path ?? null, folderName: context?.basename ?? '', definition: folderDefinition?.columns[row.key] ?? decls?.properties[row.key] ?? { kind: row.editor ?? 'text' }, editing: false })}>
+                        <PropertyTypeIcon kind={row.editor} /><span>{row.key}</span>
+                      </button>}
                       <span className="frontmatter-panel__value">
                         {row.editor === null ? (
                           <>
@@ -319,34 +310,13 @@ export function FrontmatterPanel({ file, root = null, properties: decls = null, 
                             raw={row.raw}
                             value={fromYaml(row.raw)}
                             editor={row.editor}
+                            options={columnTyping(row.key, NO_RECORDS, decls, folderDefinition)?.options}
                             basenames={basenames}
                             onCommit={(next) => commit(row.key, next)}
                           />
                         )}
                       </span>
-                      {/* 🔒 A row with no editor offers nothing but its chip. */}
-                      {row.editor !== null && (
-                        <>
-                          {root !== null && (
-                            <select
-                              className="frontmatter-panel__type"
-                              aria-label={`Type of ${row.key}`}
-                              value={decls?.properties[row.key]?.kind ?? ''}
-                              onChange={(e) => setKind(row.key, e.target.value)}
-                            >
-                              <option value="">Not declared</option>
-                              {PROPERTY_KINDS.map((kind) => (
-                                <option key={kind} value={kind}>
-                                  {kind}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                          <button type="button" className="frontmatter-panel__del" aria-label={`Delete ${row.key}`} title="Delete" onClick={() => remove(row.key)}>
-                            ×
-                          </button>
-                        </>
-                      )}
+
                     </li>
                   ))}
                 </ul>
@@ -389,7 +359,7 @@ export function FrontmatterPanel({ file, root = null, properties: decls = null, 
               )}
             </>
           )}
-          {error !== null && (
+          {error !== null && !propertyMenu?.editing && (
             <p className="frontmatter-panel__error" role="alert">
               {error}
             </p>

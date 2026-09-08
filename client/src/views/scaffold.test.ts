@@ -146,3 +146,9 @@ describe('ensureFolder', () => {
     await expect(ensureFolder('/v', 'kpis')).rejects.toThrow('permission denied')
   })
 })
+
+
+it('initializes select as empty scalar and multi-select as an empty list, not the first option', () => {
+  expect(emptyColumnValue({ kind: 'select', options: ['First'] })).toBeNull()
+  expect(emptyColumnValue({ kind: 'multi-select', options: ['First'] })).toEqual([])
+})

@@ -20,6 +20,8 @@ export interface Row {
 }
 
 export interface Group {
+  /** A declared Select option supplies the destination even when this group has no rows. */
+  optionValue?: string
   /** null for the trailing "No value" group. */
   key: Value | null
   label: string

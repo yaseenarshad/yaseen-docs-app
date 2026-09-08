@@ -127,6 +127,17 @@ function chooseColumn(pop: ParentNode, label: string, value: string): void {
   click(option)
 }
 
+/** Use the definition panel's type picker rather than the retired inline select. */
+function choosePropertyType(pop: ParentNode, label: string): void {
+  click(q(pop, '[aria-label^="Property type:"]'))
+  click(byText(pop, '[data-type-option]', label))
+}
+
+async function savePropertyDefinition(pop: ParentNode): Promise<void> {
+  await act(async () => byText<HTMLButtonElement>(pop, '.frontmatter-property-menu__actions button', 'Save').click())
+  draw()
+}
+
 /** Type into a TextField and commit with Enter (one onChange). */
 function type(el: HTMLInputElement, text: string): void {
   setValue(el, text)
@@ -777,7 +788,7 @@ views:
     expect(row).not.toBeNull()
     expect(q(row!, '.view-prop__identity .view-prop__name').firstChild?.textContent).toBe(name)
     expect(byLabel(q(row!, '.view-prop__identity'), `Rename ${name}`)).toBeDefined()
-    expect(byLabel(q(row!, '.view-prop__controls'), `Type of ${name}`)).toBeDefined()
+    expect(byLabel(q(row!, '.view-prop__controls'), `Edit property ${name}`)).toBeDefined()
   })
 
   it('+ Add column declares it and shows it, in ONE write (YAZ-896)', () => {
@@ -787,7 +798,7 @@ views:
     const pop = openMenu(el, 'Properties')
     click(byText(pop, 'button', '+ Add column'))
     setValue(byLabel(pop, 'Column name'), 'budget')
-    setValue(byLabel(pop, 'Column kind'), 'number')
+    choosePropertyType(pop, 'Number')
     click(byLabel(pop, 'Save column'))
     expect(setColumns).toHaveBeenCalledTimes(1)
     const [columns, views] = setColumns.mock.calls[0] as [Record<string, unknown>, ViewDef[]]
@@ -819,25 +830,28 @@ views:
     const { el } = mount(undefined, { folderPage: testFolderPage({ setColumns }) })
     const pop = openMenu(el, 'Properties')
     click(byText(pop, 'button', '+ Add column'))
-    expect(pop.querySelector('[aria-label="Column target"]')).toBeNull()
-    setValue(byLabel(pop, 'Column kind'), 'multi-link')
+    expect(pop.querySelector('[aria-label="Link target"]')).toBeNull()
+    choosePropertyType(pop, 'Multi-link')
     setValue(byLabel(pop, 'Column name'), 'owner')
-    setValue(byLabel(pop, 'Column target'), '  People  ')
+    type(byLabel(pop, 'Link target'), '  People  ')
     click(byLabel(pop, 'Save column'))
     expect(setColumns.mock.calls[0][0]).toEqual({ owner: { kind: 'multi-link', target: 'People' } })
   })
 
-  it("a declared link column's per-page target is editable in place; empty deletes it (YAZ-897)", () => {
-    const setColumns = vi.fn()
+  it("a declared link column's target stays in a draft until Save; empty removes it", async () => {
+    const setColumn = vi.fn().mockResolvedValue(undefined)
     const columns = { owner: { kind: 'link' as const, target: 'People' }, tag: { kind: 'text' as const } }
-    const { el } = mount(undefined, { folderPage: testFolderPage({ settings: { columns, views: [], problems: [] }, setColumns }) })
+    const { el } = mount(undefined, { folderPage: testFolderPage({ settings: { columns, views: [], problems: [] }, setColumn }) })
     const pop = openMenu(el, 'Properties')
-    expect(pop.querySelector('[aria-label="Target of tag"]')).toBeNull()
-    type(byLabel(pop, 'Target of owner'), '  Teams  ')
-    expect(setColumns).toHaveBeenCalledTimes(1)
-    expect(setColumns.mock.calls[0][0]).toEqual({ owner: { kind: 'link', target: 'Teams' }, tag: { kind: 'text' } })
-    type(byLabel(pop, 'Target of owner'), '')
-    expect(setColumns.mock.calls[1][0]).toEqual({ owner: { kind: 'link' }, tag: { kind: 'text' } })
+    click(byLabel(pop, 'Edit property owner'))
+    type(byLabel(pop, 'Link target'), '  Teams  ')
+    expect(setColumn).not.toHaveBeenCalled()
+    await savePropertyDefinition(pop)
+    expect(setColumn).toHaveBeenNthCalledWith(1, 'owner', { kind: 'link', target: 'Teams' }, columns.owner)
+    click(byLabel(pop, 'Edit property owner'))
+    type(byLabel(pop, 'Link target'), '')
+    await savePropertyDefinition(pop)
+    expect(setColumn).toHaveBeenNthCalledWith(2, 'owner', { kind: 'link' }, columns.owner)
   })
 
   it('a target typed under a link kind does not ride into a non-link declaration', () => {
@@ -845,46 +859,80 @@ views:
     const { el } = mount(undefined, { folderPage: testFolderPage({ setColumns }) })
     const pop = openMenu(el, 'Properties')
     click(byText(pop, 'button', '+ Add column'))
-    setValue(byLabel(pop, 'Column kind'), 'link')
-    setValue(byLabel(pop, 'Column target'), 'People')
-    setValue(byLabel(pop, 'Column kind'), 'text')
+    choosePropertyType(pop, 'Link')
+    type(byLabel(pop, 'Link target'), 'People')
+    choosePropertyType(pop, 'Text')
     setValue(byLabel(pop, 'Column name'), 'notes')
     click(byLabel(pop, 'Save column'))
     expect(setColumns.mock.calls[0][0]).toEqual({ notes: { kind: 'text' } })
   })
 
-  it('a declared column shows its kind; changing it rewrites that declaration only (YAZ-897)', () => {
-    const setColumns = vi.fn()
+  it('a declared column shows its kind; Save changes that definition only', async () => {
+    const setColumn = vi.fn().mockResolvedValue(undefined)
     const settings = { columns: { owner: { kind: 'link' as const, target: 'People' }, tag: { kind: 'text' as const } }, views: [], problems: [] }
-    const { el, onChange } = mount(undefined, { folderPage: testFolderPage({ settings, setColumns }) })
+    const { el, onChange } = mount(undefined, { folderPage: testFolderPage({ settings, setColumn }) })
     const pop = openMenu(el, 'Properties')
-    const kind = byLabel<HTMLSelectElement>(pop, 'Type of owner')
-    expect(kind.value).toBe('link')
-    setValue(kind, 'multi-link')
-    expect(setColumns).toHaveBeenCalledTimes(1)
-    // C1 (locked): the DECLARATION alone moves — the target rides along, the other column is untouched.
-    expect(setColumns.mock.calls[0][0]).toEqual({ owner: { kind: 'multi-link', target: 'People' }, tag: { kind: 'text' } })
-    expect(setColumns.mock.calls[0][1]).toBeUndefined() // no `views` — the order is not this gesture's
+    expect(byLabel(pop, 'Edit property owner').textContent).toContain('Link')
+    click(byLabel(pop, 'Edit property owner'))
+    choosePropertyType(pop, 'Multi-link')
+    expect(setColumn).not.toHaveBeenCalled()
+    await savePropertyDefinition(pop)
+    expect(setColumn).toHaveBeenCalledExactlyOnceWith('owner', { kind: 'multi-link', target: 'People' }, settings.columns.owner)
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('an undeclared note key reads `auto`, and picking a kind declares it (YAZ-897)', () => {
-    const setColumns = vi.fn()
-    const { el, onChange } = mount(undefined, { folderPage: testFolderPage({ setColumns }) })
+  it('an undeclared note key reads Auto, and Save declares its chosen kind', async () => {
+    const setColumn = vi.fn().mockResolvedValue(undefined)
+    const { el, onChange } = mount(undefined, { folderPage: testFolderPage({ setColumn }) })
     const pop = openMenu(el, 'Properties')
-    const kind = byLabel<HTMLSelectElement>(pop, 'Type of status')
-    expect(kind.value).toBe('') // the ladder's lower rungs decide
-    expect(kind.selectedOptions[0].textContent).toBe('auto')
-    expect(kind.selectedOptions[0].disabled).toBe(true)
-    setValue(kind, 'date')
-    expect(setColumns).toHaveBeenCalledExactlyOnceWith({ status: { kind: 'date' } })
+    expect(byLabel(pop, 'Edit property status').textContent).toContain('Auto')
+    click(byLabel(pop, 'Edit property status'))
+    choosePropertyType(pop, 'Date')
+    expect(setColumn).not.toHaveBeenCalled()
+    await savePropertyDefinition(pop)
+    expect(setColumn).toHaveBeenCalledExactlyOnceWith('status', { kind: 'date' }, undefined)
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('file.* rows get no Type select — they are not note properties (YAZ-897)', () => {
+  it('file.* rows get no property editor — they are not note properties', () => {
     const pop = openMenu(mount().el, 'Properties')
-    expect(pop.querySelector('[aria-label="Type of file.name"]')).toBeNull()
-    expect(byLabel(pop, 'Type of status')).toBeDefined()
+    expect(pop.querySelector('[aria-label="Edit property file.name"]')).toBeNull()
+    expect(byLabel(pop, 'Edit property status')).toBeDefined()
+  })
+
+  it.each(['table', 'board'])('%s definition edits remain drafts; Cancel discards them and Save preserves option order', async viewType => {
+    const setColumn = vi.fn().mockResolvedValue(undefined)
+    const base = { kind: 'select' as const, options: ['Later', 'Ready'], optionSort: 'manual' as const }
+    const settings = { columns: { status: base }, views: [], problems: [] }
+    const { el, onChange } = mount(`views:\n  - type: ${viewType}\n    name: Review\n    order: [file.name, note.status]\n    groupBy: { property: note.status }\n`, { folderPage: testFolderPage({ settings, setColumn }) })
+    const pop = openMenu(el, 'Properties')
+    click(byLabel(pop, 'Edit property status'))
+    choosePropertyType(pop, 'Multi-select')
+    setValue(byLabel(pop, 'Option order'), 'ascending')
+    expect(setColumn).not.toHaveBeenCalled()
+    click(byText(pop, '.frontmatter-property-menu__actions button', 'Cancel'))
+    expect(byLabel(pop, 'Edit property status').textContent).toContain('Select')
+    click(byLabel(pop, 'Edit property status'))
+    expect(byLabel<HTMLSelectElement>(pop, 'Option order').value).toBe('manual')
+    expect(byLabel(pop, 'Property type: Select')).toBeDefined()
+    setValue(byLabel(pop, 'Option order'), 'descending')
+    await savePropertyDefinition(pop)
+    expect(setColumn).toHaveBeenCalledExactlyOnceWith('status', { ...base, optionSort: 'descending' }, base)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(settings.columns.status).toEqual(base)
+  })
+
+  it('new Select columns retain their option sort mode and start with blank options', () => {
+    const setColumns = vi.fn()
+    const { el } = mount(undefined, { folderPage: testFolderPage({ setColumns }) })
+    const pop = openMenu(el, 'Properties')
+    click(byText(pop, 'button', '+ Add column'))
+    setValue(byLabel(pop, 'Column name'), 'stage')
+    choosePropertyType(pop, 'Select')
+    expect(pop.querySelector('.property-def__chip')).toBeNull()
+    setValue(byLabel(pop, 'Option order'), 'ascending')
+    click(byLabel(pop, 'Save column'))
+    expect(setColumns.mock.calls[0][0]).toEqual({ stage: { kind: 'select', options: [], optionSort: 'ascending' } })
   })
 
   it('the pencil sets def.properties[key].displayName; clearing it deletes the entry', () => {
@@ -1394,7 +1442,7 @@ views:
     expect(onChange).toHaveBeenCalledTimes(1)
   })
 
-  it('declared-only columns remain available in Properties while Sort keeps its existing candidates', () => {
+  it('declared-only columns remain available in Properties and Sort', () => {
     const { el, onChange } = mount(SEARCHABLE, {
       folderPage: testFolderPage({ settings: { columns: { owner: { kind: 'text' } }, views: [], problems: [] } }),
     })
@@ -1404,7 +1452,7 @@ views:
     const pop = openMenu(el, 'Sort')
     click(byLabel(pop, 'Sort property'))
     setValue(byLabel(pop, 'Search sort property columns'), 'owner')
-    expect(pop.querySelector('[role="option"][data-value="note.owner"]')).toBeNull()
+    expect(pop.querySelector('[role="option"][data-value="note.owner"]')).not.toBeNull()
     expect(onChange).not.toHaveBeenCalled()
   })
 
@@ -1511,5 +1559,40 @@ describe('sort rule drag and keyboard reordering (YAZ-1396)', () => {
       { property: 'file.name', direction: 'DESC' },
     ])
     expect(onChange).toHaveBeenCalledTimes(4)
+  })
+})
+
+
+describe('folder-local relation shortcut', () => {
+  it('uses the local declaration over a legacy vault default and saves only through setColumn', async () => {
+    const setColumn = vi.fn().mockResolvedValue(undefined)
+    const base = { kind: 'link' as const, target: '[[Local People]]' }
+    const properties = { root: '/vault', version: 1, properties: { owner: { kind: 'multi-link' as const, target: '[[Global People]]' } } }
+    const { el, onChange } = mount(undefined, { root: '/vault', properties, folderPage: testFolderPage({ settings: { columns: { owner: base }, views: [], problems: [] }, setColumn }) })
+    const pop = openMenu(el, 'Properties')
+    click(byLabel(pop, 'Relation for owner'))
+    expect(byLabel(pop, 'Property type: Link')).toBeDefined()
+    expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe('[[Local People]]')
+    type(byLabel(pop, 'Link target'), '[[Teams]]')
+    expect(setColumn).not.toHaveBeenCalled()
+    await savePropertyDefinition(pop)
+    expect(setColumn).toHaveBeenCalledExactlyOnceWith('owner', { kind: 'link', target: '[[Teams]]' }, base)
+    expect(properties.properties.owner).toEqual({ kind: 'multi-link', target: '[[Global People]]' })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('seeds a relation from legacy metadata while keeping a missing local base and Cancel write-free', async () => {
+    const setColumn = vi.fn().mockResolvedValue(undefined)
+    const legacy = { kind: 'multi-link' as const, target: '[[Global People]]' }
+    const { el } = mount(undefined, { root: '/vault', properties: { root: '/vault', version: 1, properties: { status: legacy } }, folderPage: testFolderPage({ setColumn }) })
+    const pop = openMenu(el, 'Properties')
+    click(byLabel(pop, 'Relation for status'))
+    expect(byLabel(pop, 'Property type: Multi-link')).toBeDefined()
+    expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe(legacy.target)
+    click(byText(pop, '.frontmatter-property-menu__actions button', 'Cancel'))
+    expect(setColumn).not.toHaveBeenCalled()
+    click(byLabel(pop, 'Relation for status'))
+    await savePropertyDefinition(pop)
+    expect(setColumn).toHaveBeenCalledExactlyOnceWith('status', legacy, undefined)
   })
 })

@@ -34,7 +34,7 @@ import { folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { type ViewDef, type ParsedViews, parseViews } from './viewSchema'
 import { ViewsPane, type FolderPageMode } from './ViewsPane'
 import { splitFrontmatter, parseFrontmatter } from '@shared/frontmatter'
-import { DEFAULT_VIEWS, folderPageSettings, folderPageSettingsOf, writeFolderPageSettings, type FolderPageSettings } from './folderPageSettings'
+import { DEFAULT_VIEWS, folderPageSettings, folderPageSettingsOf, writeFolderPageSettings, writeFolderColumn, type FolderPageSettings } from './folderPageSettings'
 import { backfillFolderPageColumns } from './folderPageColumns'
 import { createNewNote, freeName, type NewNoteSeed } from './newNote'
 import { memberFolder, newPageFromFolderPage } from './scaffold'
@@ -270,6 +270,7 @@ export function FolderPageContents({
     vaultRecords: feed.records,
     create: (seed, name) => createMember(root, record.basename, path, settings, feed.records, seed, name),
     // Columns (and, when the caller moves both, `views`) through the SAME one door — still ONE write.
+    setColumn: (key, next, base) => writeFolderColumn(path, key, next, base),
     setColumns: (columns, views) => {
       setSettingsError(null)
       writeFolderPageSettings(path, { ...settings, columns, views: views ?? settings.views }).catch((err: unknown) =>

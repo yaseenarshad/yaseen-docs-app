@@ -11,7 +11,7 @@ import { canonicalKey } from './keys'
  * in the grammar below (else null → raw row).
  */
 
-export type PropertyType = 'text' | 'number' | 'date' | 'checkbox' | 'list' | 'tags' | 'file' | 'link' | 'multi-link'
+export type PropertyType = 'text' | 'number' | 'date' | 'checkbox' | 'list' | 'tags' | 'file' | 'link' | 'multi-link' | 'select' | 'multi-select'
 
 export type OperatorId =
   | 'is' | 'isNot' | 'contains' | 'notContains' | 'startsWith' | 'endsWith' | 'isEmpty' | 'isNotEmpty'
@@ -72,6 +72,8 @@ export const OPERATORS_BY_TYPE: Record<PropertyType, OperatorId[]> = {
   file: ['hasTag', 'inFolder', 'hasLink'],
   link: ['is', 'isNot', 'isEmpty', 'isNotEmpty'],
   'multi-link': ['contains', 'notContains', 'isEmpty', 'isNotEmpty'],
+  select: ['is', 'isNot', 'isEmpty', 'isNotEmpty'],
+  'multi-select': ['contains', 'notContains', 'isEmpty', 'isNotEmpty'],
 }
 
 /** The three file-method rules live on pseudo-properties so they fit the property · operator · value row. */

@@ -1,4 +1,5 @@
 import type { IndexRecord, PropertiesResponse, PropertyKind } from '@shared/types'
+import { orderedPropertyOptions } from '@shared/propertyOptions'
 import { columnKindIn, type FolderPageSettings } from './folderPageSettings'
 import { canonicalKey } from './view/keys'
 
@@ -19,10 +20,10 @@ import { canonicalKey } from './view/keys'
  * `.obsidian/types.json` chain came out with it: a foreign app's file is not our schema.
  */
 
-export type EditorKind = 'text' | 'number' | 'checkbox' | 'date' | 'list' | 'link' | 'multi-link'
+export type EditorKind = 'text' | 'number' | 'checkbox' | 'date' | 'list' | 'link' | 'multi-link' | 'select' | 'multi-select'
 
 /** Per-column typing facts; null = the column is read-only (`file.*` / `formula.*`). `target` rides along from a declared link/multi-link property to constrain the picker. */
-export type ColumnTyping = { assigned: EditorKind | null; dominant: EditorKind | null; target?: string } | null
+export type ColumnTyping = { assigned: EditorKind | null; dominant: EditorKind | null; target?: string; options?: readonly string[] } | null
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}([T ].*)?$/
 const WIKILINK = /^\[\[[^[\]]+\]\]$/
@@ -64,6 +65,8 @@ const DECLARED_KIND: Record<PropertyKind, EditorKind> = {
   list: 'list',
   link: 'link',
   'multi-link': 'multi-link',
+  select: 'select',
+  'multi-select': 'multi-select',
 }
 
 /**
@@ -84,9 +87,9 @@ export function columnTyping(
   // reader. VIEW-SCOPED by construction — two folder pages may type the same key differently and
   // neither wins globally, so there is no conflict to resolve here and none may be built.
   const own = folderPage == null ? null : columnKindIn(folderPage, bare)
-  if (own !== null) return { assigned: DECLARED_KIND[own.kind], dominant, target: own.target }
+  if (own !== null) return { assigned: DECLARED_KIND[own.kind], dominant, target: own.target, options: orderedPropertyOptions(own) }
   const declared = properties?.properties[bare]
-  if (declared !== undefined) return { assigned: DECLARED_KIND[declared.kind], dominant, target: declared.target }
+  if (declared !== undefined) return { assigned: DECLARED_KIND[declared.kind], dominant, target: declared.target, options: orderedPropertyOptions(declared) }
   return { assigned: null, dominant }
 }
 

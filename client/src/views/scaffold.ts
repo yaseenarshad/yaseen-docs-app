@@ -30,7 +30,7 @@ const belongsTo = (folderPageName: string): Record<string, unknown> => ({
 
 /** The ONE empty-value rule for both newborn and existing members (🔒 Q5; YAZ-999). */
 export function emptyColumnValue(column: ColumnDecl): unknown {
-  return column.kind === 'list' || column.kind === 'multi-link' ? [] : null
+  return column.kind === 'list' || column.kind === 'multi-link' || column.kind === 'multi-select' ? [] : null
 }
 
 /** Every declared column, empty (scalar kinds → null, list/multi-link → []), + `folder_pages` LAST (🔒 Q5). */

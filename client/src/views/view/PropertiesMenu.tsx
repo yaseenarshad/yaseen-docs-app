@@ -1,11 +1,11 @@
+import { PropertyDefinitionEditor, PROPERTY_LABELS } from './PropertyDefinitionEditor'
 import { ColumnSearch, matchesColumn } from './ColumnSearch'
 import { useState, type DragEvent } from 'react'
-import { PROPERTY_KINDS, PROPERTY_NAME, type IndexRecord, type PropertiesResponse, type PropertyDecl, type PropertyKind } from '@shared/types'
+import { PROPERTY_NAME, type IndexRecord, type PropertiesResponse } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import type { ColumnDecl } from '../folderPageSettings'
 import type { FolderPageMode } from '../ViewsPane'
 import { propertyKeys, propertyLabel } from '../engine'
-import { properties as propertiesApi } from '../useProperties'
 import { canonicalKey } from './keys'
 import { DragHandleIcon, PencilIcon, RelationIcon } from './icons'
 import { markerStyleOf } from './ListView'
@@ -20,7 +20,7 @@ export interface PropertiesMenuProps {
   viewIndex: number
   records: readonly IndexRecord[]
   onUpdate: Mutate
-  /** Relation columns (5E, GRO-2217): the vault root (null = unknown, no relation editor) and the vault-wide declarations. */
+  /** Existing relation shortcut visibility and legacy declarations used only as read fallbacks. */
   root?: string | null
   properties?: PropertiesResponse | null
   /** The folder page's own declarations (the ladder's TOP rung) and `setColumns`, the door they go back through (YAZ-895). */
@@ -56,16 +56,17 @@ function entryKey(def: ViewSet, key: string): string {
  * List views (4F, GRO-2140) get a trailing "List" section for how those properties display —
  * `markerStyle` / `indentProperties` / `propertySeparator`, one write per change, the default
  * value DELETES the key (like SortMenu clearing `sort` / `groupBy`).
- * Note properties additionally offer the relation editor (5E, GRO-2217): single/multi toggle +
- * target, saved through `properties.setProperty` to the vault-wide declarations — the per-type
- * scope died with the type system (YAZ-836).
- * A trailing "+ Add column" (YAZ-896) declares a column on the FOLDER PAGE instead, and shows it.
+ * Note properties and the relation shortcut share a folder-local definition editor with Save/
+ * Cancel. Legacy vault declarations can seed the relation draft; writes always belong to this
+ * folder page. A trailing "+ Add column" also declares a local column and shows it.
  * Each `note.*` row carries that declaration's kind (YAZ-897) — `auto` when undeclared.
  */
 export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root = null, properties = null, folderPage }: PropertiesMenuProps) {
+  const [configuring, setConfiguring] = useState<{ key: string; base: ColumnDecl | undefined; draft: ColumnDecl } | null>(null)
+  const [definitionError, setDefinitionError] = useState<string | null>(null)
+  const [savingDefinition, setSavingDefinition] = useState(false)
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
-  const [relationFor, setRelationFor] = useState<string | null>(null)
   /** The drag in flight (YAZ-1207): `from` is an index in `shown`, `to` the insertion slot it would land in. */
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null)
   const shown = propertyKeys(def, view, records)
@@ -74,6 +75,15 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
   const matches = keys.filter(key => matchesColumn(query, propertyLabel(def, key), key))
   const matchingKeys = new Set(matches.map(canonicalKey))
   const isShown = (key: string) => shown.some((k) => canonicalKey(k) === canonicalKey(key))
+
+  const editDefinition = (key: string, relation = false) => {
+    const name = bare(key)
+    const base = folderPage.settings.columns[name]
+    const legacy = properties?.properties[name]
+    const fallback: ColumnDecl = relation && (legacy?.kind === 'link' || legacy?.kind === 'multi-link') ? legacy : { kind: relation ? 'link' : 'text' }
+    setDefinitionError(null)
+    setConfiguring({ key: name, base, draft: base ?? fallback })
+  }
 
   const writeOrder = (order: string[]) =>
     onUpdate((d) => {
@@ -110,16 +120,6 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
    * rewritten; the declaration alone moves, and its `target` / `required` ride along on the spread
    * (so a link ⇄ multi-link switch keeps the target it was given at add-time, YAZ-896).
    */
-  const setKind = (name: string, kind: PropertyKind) => {
-    const columns = folderPage.settings.columns
-    folderPage.setColumns({ ...columns, [name]: { ...columns[name], kind } })
-  }
-  /** A declared link column's per-page target (YAZ-897) — same one-write door; empty DELETES the key. */
-  const setTarget = (name: string, target: string) => {
-    const columns = folderPage.settings.columns
-    const { target: _prev, ...rest } = columns[name]
-    folderPage.setColumns({ ...columns, [name]: target.trim() === '' ? rest : { ...rest, target: target.trim() } })
-  }
   const setDisplayName = (key: string, name: string) =>
     onUpdate((d) => {
       const k = entryKey(d, key)
@@ -152,6 +152,33 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
       if (style[flag] === true) delete style[flag]
       else style[flag] = true
     })
+
+  if (configuring !== null) {
+    const observed = [...new Set(records.flatMap(r => {
+      const value = r.properties[configuring.key]
+      return (Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === 'string' && v.trim() !== '')
+    }))]
+    const cancelDefinition = () => { setConfiguring(null); setDefinitionError(null) }
+    const saveDefinition = async () => {
+      setSavingDefinition(true)
+      try {
+        await folderPage.setColumn(configuring.key, configuring.draft, configuring.base)
+        cancelDefinition()
+      } catch (error) { setDefinitionError(error instanceof Error ? error.message : String(error)) }
+      finally { setSavingDefinition(false) }
+    }
+    return <div className="view-menu property-settings-menu">
+      <h3>{configuring.key}</h3><p className="property-definition__help">Property settings · This folder page</p>
+      <fieldset disabled={savingDefinition} className="property-settings-fields">
+        <PropertyDefinitionEditor value={configuring.draft} observed={observed} onChange={draft => setConfiguring({ ...configuring, draft })} />
+        {definitionError && <p role="alert" className="view-relation__error">{definitionError}</p>}
+        <div className="frontmatter-property-menu__actions">
+          <button type="button" onClick={cancelDefinition}>Cancel</button>
+          <button type="button" onClick={() => void saveDefinition()}>{savingDefinition ? 'Saving…' : 'Save'}</button>
+        </div>
+      </fieldset>
+    </div>
+  }
 
   return (
     <div className="view-menu">
@@ -264,31 +291,9 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
                 <div className="view-prop__controls">
                   {isNote && (
                     <>
-                      <select
-                        className="view-select"
-                        aria-label={`Type of ${label}`}
-                        value={decl?.kind ?? ''}
-                        onChange={(e) => setKind(bare(key), e.target.value as PropertyKind)}
-                      >
-                        {/* Undeclared: the ladder's LOWER rungs decide — a placeholder, never a choice. */}
-                        <option value="" disabled>
-                          auto
-                        </option>
-                        {PROPERTY_KINDS.map((k) => (
-                          <option key={k} value={k}>
-                            {k}
-                          </option>
-                        ))}
-                      </select>
-                      {(decl?.kind === 'link' || decl?.kind === 'multi-link') && (
-                        <TextField
-                          className="view-input view-relation__target"
-                          aria-label={`Target of ${label}`}
-                          placeholder="Any page"
-                          value={decl.target ?? ''}
-                          onCommit={(target) => setTarget(bare(key), target)}
-                        />
-                      )}
+                      <button type="button" className="property-type-button" aria-label={`Edit property ${label}`} onClick={() => editDefinition(key)}>
+                        {decl ? PROPERTY_LABELS[decl.kind] : 'Auto'} <span aria-hidden>⌄</span>
+                      </button>
                     </>
                   )}
                   {/* Card styling (YAZ-1206) belongs to the property, so it rides this line — shown board rows only; the title gets ⤴ alone, since it takes part in the LAYOUT and never in text styling (YAZ-1217). */}
@@ -346,16 +351,12 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
                       className="view-rule__nav"
                       aria-label={`Relation for ${label}`}
                       title="Relation"
-                      aria-expanded={relationFor === key}
-                      onClick={() => setRelationFor(relationFor === key ? null : key)}
+                      onClick={() => editDefinition(key, true)}
                     >
                       <RelationIcon />
                     </button>
                   )}
                 </div>
-              )}
-              {relationFor === key && root !== null && (
-                <RelationEditor root={root} propKey={bare(key)} properties={properties} onDone={() => setRelationFor(null)} />
               )}
             </li>
           )
@@ -399,6 +400,10 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
           </label>
         </>
       )}
+      {view.type === 'board' && <div className="property-board-setting">
+        <label><span>Show empty columns</span><input type="checkbox" role="switch" checked={view.showEmptyColumns === true} onChange={e => onUpdate(d => { if (e.target.checked) d.views[viewIndex].showEmptyColumns = true; else delete d.views[viewIndex].showEmptyColumns })} /></label>
+        <small>Include unused options from the grouping property.</small>
+      </div>}
       {view.type === 'board' && (
         <>
           <p className="view-menu__label">Board</p>
@@ -511,8 +516,7 @@ interface AddColumnProps {
 function AddColumn({ taken, onSave }: AddColumnProps) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
-  const [kind, setKind] = useState<PropertyKind>('text')
-  const [target, setTarget] = useState('')
+  const [definition, setDefinition] = useState<ColumnDecl>({ kind: 'text' })
   const [error, setError] = useState<string | null>(null)
 
   if (!open)
@@ -532,97 +536,24 @@ function AddColumn({ taken, onSave }: AddColumnProps) {
       setError(`${key} is already a column`)
       return
     }
-    const column: ColumnDecl = { kind }
+    const { kind, target, options, optionSort } = definition
+    const column: ColumnDecl = { kind, ...((kind === 'select' || kind === 'multi-select') ? { options: options ?? [], ...(optionSort ? { optionSort } : {}) } : {}) }
     // A target typed under a link kind must not ride into a non-link declaration after a kind switch.
-    if ((kind === 'link' || kind === 'multi-link') && target.trim() !== '') column.target = target.trim()
+    if ((kind === 'link' || kind === 'multi-link') && target?.trim()) column.target = target.trim()
     onSave(key, column)
     setOpen(false)
     setName('')
-    setKind('text')
-    setTarget('')
+    setDefinition({ kind: 'text' })
     setError(null)
   }
 
   return (
     <div className="view-relation">
       <input className="view-input" aria-label="Column name" placeholder="Name" autoFocus value={name} onChange={(e) => setName(e.target.value)} />
-      <select className="view-select" aria-label="Column kind" value={kind} onChange={(e) => setKind(e.target.value as PropertyKind)}>
-        {PROPERTY_KINDS.map((k) => (
-          <option key={k} value={k}>
-            {k}
-          </option>
-        ))}
-      </select>
-      {(kind === 'link' || kind === 'multi-link') && (
-        <input
-          className="view-input view-relation__target"
-          aria-label="Column target"
-          placeholder="Any page"
-          value={target}
-          onChange={(e) => setTarget(e.target.value)}
-        />
-      )}
+      <PropertyDefinitionEditor value={definition} onChange={setDefinition} />
       <button type="button" className="view-menu__action" aria-label="Save column" onClick={save}>
         Save
       </button>
-      {error !== null && (
-        <span className="view-relation__error" role="alert">
-          {error}
-        </span>
-      )}
-    </div>
-  )
-}
-
-interface RelationEditorProps {
-  root: string
-  /** Bare frontmatter key — vault-wide declarations are keyed bare, never canonicalised. */
-  propKey: string
-  properties: PropertiesResponse | null
-  onDone: () => void
-}
-
-/**
- * The relation editor for one column (5E, GRO-2217; contract GRO-2120 §4): single-vs-multiple
- * toggle (link vs multi-link) and a target — free text, since a target naming nothing just
- * widens the picker (§3). Saving calls `properties.setProperty(root, key, { kind, target })`:
- * the per-type scope (and the type-name suggestions that went with it) died with the type system
- * (YAZ-836) — 5.1 re-points the target at folder pages. Values are untouched: cells keep
- * committing wiki-link strings/lists through `writeProperty`.
- */
-function RelationEditor({ root, propKey, properties, onDone }: RelationEditorProps) {
-  const declared = properties?.properties[propKey]
-  const relation = declared?.kind === 'link' || declared?.kind === 'multi-link' ? declared : undefined
-  const [multiple, setMultiple] = useState(relation?.kind === 'multi-link')
-  const [target, setTarget] = useState(relation?.target ?? '')
-  const [error, setError] = useState<string | null>(null)
-
-  const save = () => {
-    const def: PropertyDecl = { kind: multiple ? 'multi-link' : 'link' }
-    if (target.trim() !== '') def.target = target.trim()
-    setError(null)
-    propertiesApi.setProperty(root, propKey, def).then(onDone, (err: unknown) => {
-      setError(err instanceof Error ? err.message : String(err))
-    })
-  }
-
-  return (
-    <div className="view-relation">
-      <label className="view-menu__toggle">
-        <input type="checkbox" aria-label="Multiple" checked={multiple} onChange={(e) => setMultiple(e.target.checked)} />
-        Multiple
-      </label>
-      <input
-        className="view-input view-relation__target"
-        aria-label="Target folder page"
-        placeholder="Any page"
-        value={target}
-        onChange={(e) => setTarget(e.target.value)}
-      />
-      <button type="button" className="view-menu__action" aria-label="Save relation" onClick={save}>
-        Save
-      </button>
-      <small className="view-relation__dest">Saved to vault properties</small>
       {error !== null && (
         <span className="view-relation__error" role="alert">
           {error}

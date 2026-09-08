@@ -30,6 +30,7 @@ export interface ViewDef {
   sort?: SortSpec[]
   /** Ordered levels, outer first; only the first two are honoured in v1 (YAZ-745). The single-object form stays valid. */
   groupBy?: GroupBySpec | GroupBySpec[]
+  showEmptyColumns?: boolean
   limit?: number
   summaries?: Record<string, string>
   columnSize?: Record<string, number>

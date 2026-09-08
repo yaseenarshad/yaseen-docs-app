@@ -260,7 +260,7 @@ describe('cells by type', () => {
     expect(err.title).toBe('unknown formula nope')
 
     // missing value renders empty (related is unset on the first note)
-    expect(cells(agentic)[4].textContent).toBe('')
+    expect(cells(agentic)[4].textContent).toBe('Empty')
   })
 })
 
@@ -273,7 +273,7 @@ describe('editable cell activation', () => {
       folderPage,
     })
     const emptyCell = q<HTMLElement>(el, '[data-cell="0:1"]')
-    expect(emptyCell.textContent).toBe('')
+    expect(emptyCell.textContent).toBe('Empty')
 
     click(emptyCell)
     expect(document.activeElement).toBe(emptyCell)
