@@ -592,12 +592,22 @@ Files: `client/src/views/folderPageSettings.ts`, `client/src/views/folderPageSet
 
 ## Document magnification (YAZ-1410)
 
-Each Markdown `CrepeHost` owns a temporary percentage, default **100%**. The editable control
-immediately left of Sync accepts whole numbers **50–200**, with an optional `%` suffix, and
-presets **50, 75, 90, 100, 125, 150, 200**. Enter or leaving the control applies a valid draft;
-Escape cancels it. Invalid input preserves the applied value and shows a short range message.
+Each Markdown `CrepeHost` owns a temporary percentage, default **100%**. The entire percentage
+and arrow button immediately left of Sync opens the dropdown (YAZ-1430). A labeled Custom
+input above the presets accepts whole numbers **50–200**, with an optional `%` suffix, and
+presets remain **50, 75, 90, 100, 125, 150, 200**. Enter or leaving the control applies a valid draft;
+Escape cancels it. Invalid input preserves the applied value and keeps the panel open with a
+short range message, including after an outside dismissal attempt; focus is not pulled back.
 Choosing a preset replaces the draft and closes the list. Typing a partial number never resizes
-the document.
+the document. Explicit completion or Escape returns focus to the trigger; outside dismissal
+does not steal focus from the destination.
+
+Note and outline editors use the native text caret through Crepe's `Cursor.virtual: false`
+setting. The virtual overlay and its caret-hiding class are absent: its viewport measurements
+would scale twice inside CSS zoom. Click/selection coordinates are not remapped. The Cursor
+feature stays enabled for gap/drop support. The virtual directional affinity tail and its
+extra formatting-boundary arrow step are intentionally removed; native/editor mark behavior
+applies. Tests cover the shared factory, preserved selection/typing/undo and boundary keys.
 
 CSS `zoom` applies to `.editor-host`: title, properties, body, folder contents and backlinks.
 The control/status row, tabs, sidebar and dialogs outside the scroller keep their usual size.
