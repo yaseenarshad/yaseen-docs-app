@@ -171,6 +171,32 @@ describe('automatic rich paste spacing', () => {
     expect(textOf(view)).toContain('Item\ncontinuation')
     expect(textOf(view)).toContain('one\n\ntwo')
   })
+  it('restores marked leading and trailing empty paragraphs with internal slice metadata', async () => {
+    const { view } = await mount()
+    const { schema } = view.state
+    view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, [
+      schema.nodes.paragraph.create(),
+      schema.nodes.paragraph.create(null, schema.text('Middle')),
+      schema.nodes.paragraph.create(),
+    ]))
+    const expected = view.state.doc.toJSON()
+    all(view)
+    const { dom, text } = view.serializeForClipboard(view.state.selection.content())
+    expect(dom.firstElementChild?.tagName).toBe('BR')
+    expect(dom.firstElementChild?.hasAttribute('data-pm-slice')).toBe(true)
+    expect(dom.querySelectorAll('br[data-mdapp-empty-paragraph]')).toHaveLength(2)
+    pasteHtml(view, dom.innerHTML, text)
+    expect(view.state.doc.toJSON()).toEqual(expected)
+  })
+  it('restores empty paragraphs inside nested lists without turning them into inline breaks', async () => {
+    const { view } = await mount('- parent\n  - \n  - child\n')
+    const expected = view.state.doc.toJSON()
+    all(view)
+    const { dom, text } = view.serializeForClipboard(view.state.selection.content())
+    expect(dom.querySelector('li br[data-mdapp-empty-paragraph]')).not.toBeNull()
+    pasteHtml(view, dom.innerHTML, text)
+    expect(view.state.doc.toJSON()).toEqual(expected)
+  })
   it('does not multiply blank paragraphs across repeated rich copy/paste round trips', async () => {
     const { view } = await mount()
     pasteHtml(view, '<p>First.</p><br><p>Second.</p>')

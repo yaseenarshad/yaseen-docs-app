@@ -3,14 +3,25 @@ import { closeHistory } from '@milkdown/kit/prose/history'
 import { Fragment, Slice, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
+import { CLIPBOARD_EMPTY_PARAGRAPH } from './clipboardCopyOut'
 
 /** A root-level BR between paragraphs is one blank paragraph, not a paragraph with two visual lines. */
 function normalizeParagraphSeparators(html: string): string {
-  if (!/<br\b/i.test(html) || /data-pm-slice\s*=/i.test(html)) return html
+  if (!/<br\b/i.test(html)) return html
   const template = document.createElement('template')
   template.innerHTML = html
-  const nodes = [...template.content.childNodes].filter(node => node.nodeType !== 8 && !(node.nodeType === 3 && !node.textContent?.trim()))
   let changed = false
+  // Our standalone copy-out separators must recover block identity, including inside a PM slice.
+  for (const separator of template.content.querySelectorAll(`br[${CLIPBOARD_EMPTY_PARAGRAPH}]`)) {
+    const paragraph = document.createElement('p')
+    for (const { name, value } of separator.attributes) {
+      if (name !== CLIPBOARD_EMPTY_PARAGRAPH) paragraph.setAttribute(name, value)
+    }
+    separator.replaceWith(paragraph)
+    changed = true
+  }
+  if (/data-pm-slice\s*=/i.test(html)) return changed ? template.innerHTML : html
+  const nodes = [...template.content.childNodes].filter(node => node.nodeType !== 8 && !(node.nodeType === 3 && !node.textContent?.trim()))
   for (let i = 1; i < nodes.length - 1; i++) {
     if (nodes[i - 1].nodeName !== 'P' || nodes[i].nodeName !== 'BR') continue
     let end = i

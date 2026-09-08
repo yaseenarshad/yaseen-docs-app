@@ -4,6 +4,8 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { Node } from '@milkdown/kit/transformer'
 import { $prose } from '@milkdown/kit/utils'
 
+export const CLIPBOARD_EMPTY_PARAGRAPH = 'data-mdapp-empty-paragraph'
+
 type ClipboardNode = Node & { value?: unknown; children?: ClipboardNode[] }
 
 /** Remove only parsed HTML spacers; source offsets preserve every other byte, including code. */
@@ -38,7 +40,12 @@ export const clipboardCopyOut = $prose((ctx) => {
           const paragraph = html.serializeNode(node) as HTMLElement
           paragraph.style.marginTop = '0'
           paragraph.style.marginBottom = '0'
-          if (node.content.size === 0) paragraph.appendChild(document.createElement('br'))
+          if (node.content.size === 0) {
+            const separator = document.createElement('br')
+            for (const { name, value } of paragraph.attributes) separator.setAttribute(name, value)
+            separator.setAttribute(CLIPBOARD_EMPTY_PARAGRAPH, 'true')
+            return separator
+          }
           return paragraph
         },
       }, html.marks),
