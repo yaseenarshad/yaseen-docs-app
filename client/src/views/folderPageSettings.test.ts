@@ -409,3 +409,26 @@ describe('columnKindIn (YAZ-831): typing is VIEW-SCOPED — no global winner', (
     expect(columnKindIn(team, 'owner')).toEqual({ kind: 'link' })
   })
 })
+
+
+it('reads ordered select options tolerantly without changing raw config', () => {
+  const raw = { columns: { status: { kind: 'select', options: ['Done', 'Ready', '', 'Done', 7] }, tags: { kind: 'multi-select', options: ['A', 'B'] } } }
+  const before = structuredClone(raw)
+  const settings = settingsOf(raw)
+  expect(settings.columns.status).toEqual({ kind: 'select', options: ['Done', 'Ready'] })
+  expect(settings.columns.tags).toEqual({ kind: 'multi-select', options: ['A', 'B'] })
+  expect(settings.problems).toHaveLength(1)
+  expect(raw).toEqual(before)
+})
+
+it('reads option order tolerantly and reports malformed order without changing the manual array', () => {
+  const raw = { columns: {
+    Status: { kind: 'select', options: ['Z', 'A'], optionSort: 'ascending' },
+    Labels: { kind: 'multi-select', options: ['B', 'A'], optionSort: 'sideways' },
+  } }
+  const settings = settingsOf(raw)
+  expect(settings.columns.Status).toEqual({ kind: 'select', options: ['Z', 'A'], optionSort: 'ascending' })
+  expect(settings.columns.Labels).toEqual({ kind: 'multi-select', options: ['B', 'A'] })
+  expect(settings.problems).toEqual(['folder_page_settings.columns.Labels.optionSort must be manual, ascending, or descending — using manual order'])
+  expect(raw.columns.Labels.optionSort).toBe('sideways')
+})

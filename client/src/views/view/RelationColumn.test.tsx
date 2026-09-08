@@ -1,12 +1,7 @@
 /**
- * Relation columns end to end (5E, GRO-2217; contract GRO-2120 comment 73479ea3 §4–§5), after
- * YAZ-836 deleted the type system: the Properties menu's relation editor saves `{kind, target}`
- * through `properties.setProperty` to the VAULT-WIDE declarations — always, whatever the view filters on,
- * and with no type-name suggestions behind the target field; the cell's link picker narrows to
- * the pages of the FOLDER PAGE the target names (`belongsToBasenames`, successor to the deleted
- * type-keyed helper), falling back to all pages when it names none; multi-link is the chips
- * editor with the same constrained suggestions committing a list of `[[…]]` strings — values
- * keep going through `writeProperty`, one direction only.
+ * Relation definitions now save to the current folder page with the shared Save/Cancel editor.
+ * Legacy vault declarations remain read fallbacks. Link values still write through the normal
+ * cell editors; their pickers constrain suggestions to the declared target folder page.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -78,7 +73,7 @@ const UNFILTERED_BASE = `views:\n  - type: table\n    name: T\n${ORDER}`
 
 const EMPTY_DECLS: PropertiesResponse = { root: '/vault', version: 0, properties: {} }
 
-/** Both relations declared VAULT-WIDE — the only scope there is — targeting folder pages. */
+/** Legacy vault declarations remain readable until a folder overrides them. */
 const DECLS: PropertiesResponse = {
   root: '/vault',
   version: 1,
@@ -177,8 +172,9 @@ function press(el: Element, key: string): void {
   draw()
 }
 
-async function flush(): Promise<void> {
-  await act(async () => {})
+async function saveDefinition(el: ParentNode): Promise<void> {
+  const save = [...el.querySelectorAll<HTMLButtonElement>('.frontmatter-property-menu__actions button')].find(button => button.textContent === 'Save')!
+  await act(async () => save.click())
   draw()
 }
 
@@ -196,41 +192,46 @@ function openRelation(el: ParentNode, key: string) {
 // ---------- tests ----------
 
 describe('column menu relation flow', () => {
-  it('a filtered view saves to the VAULT properties — the per-type scope is gone (YAZ-836)', async () => {
-    const { el } = mount(KPI_BASE)
+  it('a filtered view saves a local relation definition without changing the vault registry', async () => {
+    const setColumn = vi.fn().mockResolvedValue(undefined)
+    const { el } = mount(KPI_BASE, { folderPage: testFolderPage({ vaultRecords: RECORDS, setColumn }) })
     openRelation(el, 'owner')
-    expect(el.textContent).toContain('Saved to vault properties')
-    setValue(byLabel<HTMLInputElement>(el, 'Target folder page'), 'People')
-    click(byLabel(el, 'Save relation'))
-    await flush()
-    const res = await propertiesStub.get('/vault')
-    expect(res.properties.owner).toEqual({ kind: 'link', target: 'People' })
+    expect(el.textContent).toContain('This folder page')
+    setValue(byLabel<HTMLInputElement>(el, 'Link target'), 'People')
+    press(byLabel(el, 'Link target'), 'Enter')
+    expect(setColumn).not.toHaveBeenCalled()
+    await saveDefinition(el)
+    expect(setColumn).toHaveBeenCalledExactlyOnceWith('owner', { kind: 'link', target: 'People' }, undefined)
+    expect((await propertiesStub.get('/vault')).properties).toEqual({})
   })
 
-  it('Multiple → multi-link, saved to vault properties and labelled so', async () => {
-    const { el } = mount(UNFILTERED_BASE)
+  it('Multi-link uses the shared type picker and folder-local Save', async () => {
+    const setColumn = vi.fn().mockResolvedValue(undefined)
+    const { el } = mount(UNFILTERED_BASE, { folderPage: testFolderPage({ vaultRecords: RECORDS, setColumn }) })
     openRelation(el, 'funnels')
-    expect(el.textContent).toContain('Saved to vault properties')
-    click(byLabel(el, 'Multiple'))
-    setValue(byLabel<HTMLInputElement>(el, 'Target folder page'), 'Funnels')
-    click(byLabel(el, 'Save relation'))
-    await flush()
-    const res = await propertiesStub.get('/vault')
-    expect(res.properties.funnels).toEqual({ kind: 'multi-link', target: 'Funnels' })
+    click(byLabel(el, 'Property type: Link'))
+    click([...el.querySelectorAll<HTMLElement>('[data-type-option]')].find(option => option.textContent === 'Multi-link')!)
+    setValue(byLabel<HTMLInputElement>(el, 'Link target'), 'Funnels')
+    press(byLabel(el, 'Link target'), 'Enter')
+    await saveDefinition(el)
+    expect(setColumn).toHaveBeenCalledExactlyOnceWith('funnels', { kind: 'multi-link', target: 'Funnels' }, undefined)
+    expect((await propertiesStub.get('/vault')).properties).toEqual({})
   })
 
-  it('the target is free text with no suggestion list — the type-name datalist died with the types', () => {
+  it('the target is free text with no obsolete type-name suggestion list', () => {
     const { el } = mount(KPI_BASE, { properties: DECLS })
     openRelation(el, 'owner')
     expect(el.querySelector('datalist')).toBeNull()
-    expect(byLabel<HTMLInputElement>(el, 'Target folder page').getAttribute('list')).toBeNull()
+    expect(byLabel<HTMLInputElement>(el, 'Link target').getAttribute('list')).toBeNull()
   })
 
-  it('an existing declaration pre-fills the toggle and target', () => {
-    const { el } = mount(KPI_BASE, { properties: DECLS })
-    openRelation(el, 'funnels') // vault-wide multi-link → the Funnels folder page
-    expect(byLabel<HTMLInputElement>(el, 'Multiple').checked).toBe(true)
-    expect(byLabel<HTMLInputElement>(el, 'Target folder page').value).toBe('Funnels')
+  it('an existing legacy declaration pre-fills the type and target without writing', () => {
+    const setColumn = vi.fn()
+    const { el } = mount(KPI_BASE, { properties: DECLS, folderPage: testFolderPage({ vaultRecords: RECORDS, setColumn }) })
+    openRelation(el, 'funnels')
+    expect(byLabel(el, 'Property type: Multi-link')).toBeDefined()
+    expect(byLabel<HTMLInputElement>(el, 'Link target').value).toBe('Funnels')
+    expect(setColumn).not.toHaveBeenCalled()
   })
 
   it('without a known root there is no relation editor to offer', () => {

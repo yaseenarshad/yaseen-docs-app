@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { SortMenu } from './SortMenu'
-import type { Mutate, SortSpec, ViewSet } from '../viewSchema'
+import type { Mutate, SortSpec, ViewSet, ViewDef } from '../viewSchema'
+import type { FolderPageSettings } from '../folderPageSettings'
 import { TEST_RECORDS } from '../testRecords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -15,8 +16,8 @@ const INITIAL: SortSpec[] = [
   { property: 'note.priority', direction: 'DESC' },
 ]
 
-function mount() {
-  let def: ViewSet = { views: [{ name: 'Table', type: 'table', sort: structuredClone(INITIAL) }] }
+function mount(view: ViewDef = { name: 'Table', type: 'table', sort: structuredClone(INITIAL) }, folderPage?: FolderPageSettings, records = TEST_RECORDS) {
+  let def: ViewSet = { views: [view] }
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -25,7 +26,7 @@ function mount() {
     mutate(def)
     render()
   })
-  const render = () => root!.render(<SortMenu def={def} view={def.views[0]} viewIndex={0} records={TEST_RECORDS} onUpdate={onUpdate} />)
+  const render = () => root!.render(<SortMenu def={def} view={def.views[0]} viewIndex={0} records={records} onUpdate={onUpdate} folderPage={folderPage} />)
   act(render)
   const el = container
   const grip = (index: number, label: string) => el.querySelector<HTMLButtonElement>(`[aria-label="Reorder sort ${index}: ${label}"]`)!
@@ -33,7 +34,7 @@ function mount() {
     def = { ...def, views: [{ ...def.views[0], sort: structuredClone(sort) }] }
     render()
   })
-  return { el, grip, replace, onUpdate, sort: () => def.views[0].sort! }
+  return { el, grip, replace, onUpdate, sort: () => def.views[0].sort!, view: () => def.views[0] }
 }
 
 function drag(target: HTMLElement, type: string, clientY = 0) {
@@ -89,4 +90,37 @@ describe('SortMenu external settings refresh', () => {
     expect(document.activeElement).toBe(focused)
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
+})
+
+
+describe('Board option group direction', () => {
+  const folder: FolderPageSettings = { columns: { status: { kind: 'select', options: ['Z', 'A'], optionSort: 'ascending' }, tags: { kind: 'multi-select', options: ['B', 'A'] } }, views: [], problems: [] }
+  it('labels select grouping as option order and its reversal without changing stored direction semantics', () => {
+    const { el, onUpdate } = mount({ name: 'Board', type: 'board', groupBy: [{ property: 'note.status' }, { property: 'note.tags', direction: 'DESC' }] }, folder)
+    const outer = el.querySelector<HTMLButtonElement>('[aria-label="Group direction"]')!
+    const inner = el.querySelector<HTMLButtonElement>('[aria-label="Then group direction"]')!
+    expect(outer.textContent).toBe('Option order')
+    expect(inner.textContent).toBe('Reversed option order')
+    act(() => outer.click())
+    expect(outer.textContent).toBe('Reversed option order')
+    act(() => inner.click())
+    expect(inner.textContent).toBe('Option order')
+    expect(onUpdate).toHaveBeenCalledTimes(2)
+  })
+  it('keeps ASC/DESC labels for ordinary text groups and non-Board views', () => {
+    const { el } = mount({ name: 'Board', type: 'board', groupBy: { property: 'note.other', direction: 'DESC' } }, folder)
+    expect(el.querySelector('[aria-label="Group direction"]')?.textContent).toBe('DESC')
+  })
+})
+
+
+it('offers a declared-only property for Board grouping with zero records', () => {
+  const folder: FolderPageSettings = { columns: { Stage: { kind: 'select', options: ['Inbox', 'Ready'] } }, views: [{ type: 'table', name: 'Table', order: ['note.Stage'] }], problems: [] }
+  const { el, view } = mount({ type: 'board', name: 'Board' }, folder, [])
+  act(() => el.querySelector<HTMLButtonElement>('[aria-label="Group by"]')!.click())
+  const choice = el.querySelector<HTMLButtonElement>('[role="option"][data-value="note.Stage"]')
+  expect(choice).not.toBeNull()
+  act(() => choice!.click())
+  expect(view().groupBy).toEqual({ property: 'note.Stage', direction: 'ASC' })
+  expect(el.querySelector('[aria-label="Group direction"]')?.textContent).toBe('Option order')
 })

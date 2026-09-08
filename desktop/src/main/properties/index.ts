@@ -1,5 +1,6 @@
 import type { PropertiesResponse, PropertyDecl, PropertyKind } from '@shared/types'
 import { PROPERTY_KINDS, PROPERTY_NAME } from '@shared/types'
+import { readPropertyOptions, validPropertyOptions, validPropertyOptionSort } from '@shared/propertyOptions'
 import { BridgeFailure, requireAbsPath, requireDir } from '../fs/fsUtils'
 import { readConfigDetailed, subscribeConfig, writeConfig } from '../vaultConfig'
 
@@ -50,6 +51,14 @@ function requirePropertyDecl(raw: unknown): PropertyDecl {
     if (typeof raw.required !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'required' must be a boolean")
     decl.required = raw.required
   }
+  if (raw.options !== undefined) {
+    if (!validPropertyOptions(raw.options)) throw new BridgeFailure('BAD_REQUEST', "'options' must be a list of unique non-empty labels")
+    decl.options = [...raw.options]
+  }
+  if (raw.optionSort !== undefined) {
+    if (!validPropertyOptionSort(raw.optionSort)) throw new BridgeFailure('BAD_REQUEST', "'optionSort' must be manual, ascending, or descending")
+    decl.optionSort = raw.optionSort
+  }
   return decl
 }
 
@@ -65,6 +74,9 @@ function parseDecls(raw: unknown): Record<string, PropertyDecl> {
     const clean: PropertyDecl = { kind }
     if (typeof decl.target === 'string') clean.target = decl.target
     if (typeof decl.required === 'boolean') clean.required = decl.required
+    const options = readPropertyOptions(decl.options)
+    if (options !== undefined) clean.options = options
+    if (validPropertyOptionSort(decl.optionSort)) clean.optionSort = decl.optionSort
     out[name] = clean
   }
   return out

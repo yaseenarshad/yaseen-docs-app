@@ -53,6 +53,7 @@ afterEach(() => {
   container?.remove()
   container = null
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   document.querySelectorAll('button').forEach((b) => b.remove())
 })
 
@@ -98,6 +99,33 @@ describe('anchored popover', () => {
       window.dispatchEvent(new Event('scroll'))
     })
     expect(plain.onClose).not.toHaveBeenCalled()
+  })
+
+  it('refits when anchored content grows and shrinks without closing', () => {
+    let resized: ResizeObserverCallback = () => {}
+    const observe = vi.fn()
+    const disconnect = vi.fn()
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) { resized = callback }
+      observe = observe
+      disconnect = disconnect
+    })
+    const { pop, onClose } = mount(anchorAt({ top: 620, bottom: 650, left: 900, right: 950 }))
+    expect(pop.style.top).toBe('656px')
+    expect(observe).toHaveBeenCalledWith(pop)
+    pop.getBoundingClientRect = () => rect({ width: 300, height: 350 })
+    act(() => resized([], {} as ResizeObserver))
+    expect(pop.style.top).toBe('418px')
+    expect(pop.style.left).toBe('724px')
+    pop.getBoundingClientRect = () => rect({ width: 200, height: 100 })
+    act(() => resized([], {} as ResizeObserver))
+    expect(pop.style.top).toBe('656px')
+    expect(pop.style.left).toBe('824px')
+    act(() => pop.firstElementChild?.dispatchEvent(new Event('scroll')))
+    expect(onClose).not.toHaveBeenCalled()
+    act(() => root?.unmount())
+    root = null
+    expect(disconnect).toHaveBeenCalledTimes(1)
   })
 })
 

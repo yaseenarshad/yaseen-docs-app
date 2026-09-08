@@ -17,8 +17,8 @@ import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderPage } from '../testFolderPage'
 import { TEST_RECORDS } from '../testRecords'
 
-vi.mock('../writeProperty', () => ({ writeProperty: vi.fn() }))
-import { writeProperty } from '../writeProperty'
+vi.mock('../writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.fn() }))
+import { writeProperty, writeProperties } from '../writeProperty'
 
 const write = vi.mocked(writeProperty)
 
@@ -105,6 +105,7 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
 }
 
 beforeEach(() => {
+  vi.mocked(writeProperties).mockReset().mockResolvedValue({ mtime: 1 })
   write.mockReset()
   write.mockResolvedValue({ mtime: 1 })
 })
@@ -388,4 +389,49 @@ describe('drag between fanned-out groups (YAZ-671 D3)', () => {
     fire(colOf(el, 'a'), 'drop')
     expect(write).not.toHaveBeenCalled()
   })
+})
+
+
+it('drops onto an unused Select option by writing its exact declared label', async () => {
+  const { el } = mount(STATUS_BOARD.replace('    name: B', '    name: B\n    showEmptyColumns: true'), {
+    folderPage: testFolderPage({ settings: { columns: { status: { kind: 'select', options: ['idea', 'Waiting: review'] } }, views: [], problems: [] } }),
+  })
+  expect(titlesIn(colOf(el, 'Waiting: review'))).toEqual([])
+  fire(cardOf(colOf(el, 'idea'), 'Agentic Agency.md'), 'dragstart')
+  fire(colOf(el, 'Waiting: review'), 'drop')
+  expect(write).toHaveBeenCalledExactlyOnceWith(AGENTIC, 'status', 'Waiting: review')
+  await flush()
+  expect(titlesIn(colOf(el, 'Waiting: review'))).toContain('Agentic Agency.md')
+})
+
+
+it('drops into an empty nested group with an array value for its unused Multi-select outer option', async () => {
+  const board = `views:
+  - type: board
+    name: Nested
+    showEmptyColumns: true
+    order: [file.name]
+    groupBy:
+      - property: note.status
+      - property: note.phase
+`
+  const { el } = mount(board, {
+    records: [{ ...TEST_RECORDS[0], properties: { status: ['Doing'], phase: 'Draft' } }],
+    folderPage: testFolderPage({ settings: {
+      columns: { status: { kind: 'multi-select', options: ['Doing', 'Later'] }, phase: { kind: 'select', options: ['Draft', 'Review'] } },
+      views: [], problems: [],
+    } }),
+  })
+  const later = colOf(el, 'Later')
+  const target = [...later.querySelectorAll<HTMLElement>('.view-board__subgroup')].find(group => q(group, '.view-group__value').textContent === 'Review')!
+  expect(target).toBeDefined()
+  fire(cardOf(colOf(el, 'Doing'), 'Agentic Agency.md'), 'dragstart')
+  fire(target, 'drop')
+  expect(write).not.toHaveBeenCalled()
+  expect(writeProperties).toHaveBeenCalledExactlyOnceWith(AGENTIC, [
+    { key: 'phase', value: 'Review', prevRaw: 'Draft' },
+    { key: 'status', value: ['Later'], prevRaw: ['Doing'] },
+  ])
+  await flush()
+  expect(titlesIn(colOf(el, 'Later'))).toContain('Agentic Agency.md')
 })

@@ -387,6 +387,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                             raw={line.row.record.properties[bares[c]]}
                             value={v}
                             editor={cellEditor(line.row.record.properties[bares[c]], typings[c])}
+                            options={typings[c]?.options}
                             basenames={linkNames[c] ?? basenames}
                           />
                         ) : (

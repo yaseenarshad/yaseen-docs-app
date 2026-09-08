@@ -99,6 +99,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
         raw={row.record.properties[bare]}
         value={row.values[key]}
         editor={cellEditor(row.record.properties[bare], typings.get(key) ?? null)}
+                        options={typings.get(key)?.options}
         basenames={linkNames.get(key) ?? basenames}
       />
     )

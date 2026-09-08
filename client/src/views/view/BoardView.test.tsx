@@ -820,6 +820,22 @@ describe('inline new card row (YAZ-943): the Notion add, at the bottom of every 
     expect(again.value).toBe('') // cleared, still open, ready for the next card
   })
 
+  it.each(['select', 'multi-select'] as const)('creates a card in an unused %s option with the correct YAML seed', async (kind) => {
+    const create = vi.fn(() => Promise.resolve('/vault/First card.md'))
+    const { el, onOpenFile } = mount(BOARD_BASE.replace('    name: B', '    name: B\n    showEmptyColumns: true'), {
+      records: [],
+      folderPage: testFolderPage({ create, settings: { columns: { status: { kind, options: ['Waiting: review'] } }, views: [], problems: [] } }),
+    })
+    const empty = colOf(el, 'Waiting: review')
+    click(byLabel(empty, 'New card'))
+    const input = byLabel<HTMLInputElement>(empty, 'New card name')
+    setValue(input, 'First card')
+    press(input, 'Enter')
+    await flush()
+    expect(create).toHaveBeenCalledExactlyOnceWith({ properties: { status: kind === 'select' ? 'Waiting: review' : ['Waiting: review'] }, folder: null }, 'First card')
+    expect(onOpenFile).not.toHaveBeenCalled()
+  })
+
   it('a nested Board puts named inline add inside child sections and seeds both group levels', async () => {
     const create = vi.fn(() => Promise.resolve('/vault/Ship it.md'))
     const { el, onOpenFile } = mount(NESTED_BOARD, { records: NESTED_RECORDS, folderPage: testFolderPage({ create }) })

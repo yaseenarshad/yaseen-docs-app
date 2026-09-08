@@ -1,9 +1,11 @@
 import { useRef, useState, type DragEvent } from 'react'
 import { DragHandleIcon } from './icons'
 import { ColumnPicker } from './ColumnPicker'
-import type { IndexRecord } from '@shared/types'
+import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import { type ViewSet, type ViewDef, type Mutate, type SortSpec, type GroupBySpec, groupByLevels } from '../viewSchema'
 import { propertyLabel } from '../engine'
+import { columnTyping } from '../editorType'
+import type { FolderPageSettings } from '../folderPageSettings'
 import { canonicalKey } from './keys'
 import { allPropertyKeys, withKey } from './properties'
 
@@ -13,6 +15,8 @@ export interface SortMenuProps {
   viewIndex: number
   records: readonly IndexRecord[]
   onUpdate: Mutate
+  folderPage?: FolderPageSettings | null
+  properties?: PropertiesResponse | null
 }
 
 const EMPTY_SORT: SortSpec[] = []
@@ -20,8 +24,8 @@ const EMPTY_SORT: SortSpec[] = []
 const flip = (d: string | undefined): 'ASC' | 'DESC' => (d === 'DESC' ? 'ASC' : 'DESC')
 
 /** Sort menu (GRO-2135): `view.sort` rows (property, direction, order, remove) and `view.groupBy` beneath. */
-export function SortMenu({ def, view, viewIndex, records, onUpdate }: SortMenuProps) {
-  const keys = allPropertyKeys(def, view, records)
+export function SortMenu({ def, view, viewIndex, records, onUpdate, folderPage, properties }: SortMenuProps) {
+  const keys = allPropertyKeys(def, view, records, folderPage?.columns)
   const sort = view.sort ?? EMPTY_SORT
   const [groupBy, thenBy] = groupByLevels(view)
   const nextId = useRef(sort.length)
@@ -72,6 +76,12 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate }: SortMenuPr
       if (outer === null) delete d.views[viewIndex].groupBy
       else d.views[viewIndex].groupBy = second === null ? outer : [outer, second]
     })
+
+  const groupDirectionLabel = (group: GroupBySpec) => {
+    const typing = columnTyping(group.property, records, properties, folderPage)
+    const declaredOptions = view.type === 'board' && (typing?.assigned === 'select' || typing?.assigned === 'multi-select')
+    return declaredOptions ? (group.direction === 'DESC' ? 'Reversed option order' : 'Option order') : (group.direction === 'DESC' ? 'DESC' : 'ASC')
+  }
 
   const options = (current: string | undefined, without?: string) =>
     (current ? withKey(keys, current) : keys)
@@ -151,7 +161,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate }: SortMenuPr
          options={[{value: '', label: 'None'}, ...options(groupBy?.property)]} />
         {groupBy && (
           <button type="button" className="view-chip" aria-label="Group direction" title="Toggle direction" onClick={() => writeGroup({ property: canonicalKey(groupBy.property), direction: flip(groupBy.direction) }, thenBy ?? null)}>
-            {groupBy.direction === 'DESC' ? 'DESC' : 'ASC'}
+            {groupDirectionLabel(groupBy)}
           </button>
         )}
       </div>
@@ -164,7 +174,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate }: SortMenuPr
            options={[{value: '', label: 'None'}, ...options(thenBy?.property, canonicalKey(groupBy.property))]} />
           {thenBy && (
             <button type="button" className="view-chip" aria-label="Then group direction" title="Toggle direction" onClick={() => writeGroup(groupBy, { property: canonicalKey(thenBy.property), direction: flip(thenBy.direction) })}>
-              {thenBy.direction === 'DESC' ? 'DESC' : 'ASC'}
+              {groupDirectionLabel(thenBy)}
             </button>
           )}
         </div>

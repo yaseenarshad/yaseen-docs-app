@@ -175,13 +175,14 @@ export function useGroupDrag(
           // off that outer's first row, like the level's own value — so the row LANDS where it was
           // dropped. Same-outer inner drops and outer drops write their own level alone.
           const outerKey = at.level > 0 && d.outer !== groupKeyOf(at.outer.key) ? keys[0] ?? null : null
-          const outerRaw = outerKey === null ? undefined : at.outer.rows[0]?.record.properties[outerKey]
+          const outerRaw = outerKey === null ? undefined : at.outer.rows[0]?.record.properties[outerKey] ?? (at.outer.optionValue === undefined ? undefined : at.outer.fannedOut ? [at.outer.optionValue] : at.outer.optionValue)
           const drop: GroupDrop = { level: at.level }
           if (outerKey !== null && outerRaw !== undefined) drop.outer = { key: outerKey, value: outerRaw }
           // Fanned out (D3): the row is in several groups, so swap the element it left for the
           // one it entered rather than overwriting the whole value with a neighbour's list.
           if (group.fannedOut) return onMove(d.path, undefined, { remove: d.key, add: group.key }, drop)
           if (group.key === null) onMove(d.path, undefined, undefined, drop)
+          else if (group.optionValue !== undefined) onMove(d.path, group.optionValue, undefined, drop)
           else if (group.rows.length > 0) onMove(d.path, group.rows[0].record.properties[key], undefined, drop)
         },
       }

@@ -94,7 +94,7 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
             <SyncIcon />
           </button>
         )}
-        {button('sort', 'Sort', <SortIcon />, sorts, <SortMenu def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} />)}
+        {button('sort', 'Sort', <SortIcon />, sorts, <SortMenu folderPage={folderPage.settings} properties={properties} def={def} view={view} viewIndex={viewIndex} records={records} onUpdate={onUpdate} />)}
         {!documentView &&
           button(
             'properties',

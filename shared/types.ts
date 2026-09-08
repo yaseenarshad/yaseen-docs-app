@@ -723,7 +723,7 @@ export interface GithubApi {
  * The editor set that exists (5B's `EditorKind`) plus the link/multi-link split. An unknown
  * `kind` string on disk is preserved there and read back as `text` (forward compat).
  */
-export const PROPERTY_KINDS = ['text', 'number', 'date', 'checkbox', 'list', 'link', 'multi-link'] as const
+export const PROPERTY_KINDS = ['text', 'number', 'date', 'checkbox', 'list', 'link', 'multi-link', 'select', 'multi-select'] as const
 export type PropertyKind = (typeof PROPERTY_KINDS)[number]
 
 /**
@@ -744,6 +744,10 @@ export const FOLDER_NAME = /^(?![A-Za-z]:)[^\\\0/.][^\\\0/]*(?:\/[^\\\0/.][^\\\0
 /** One declared property: what kind of editor it gets, and what a link points at. */
 export interface PropertyDecl {
   kind: PropertyKind
+  /** Ordered exact labels for Select and Multi-select; note values remain ordinary YAML strings/lists. */
+  options?: string[]
+  /** Display order; omitted means manual. The options array retains its manual order. */
+  optionSort?: 'manual' | 'ascending' | 'descending'
   /** link/multi-link only: the picker constraint — a wikilink to a folder page ("pages that belong to [[X]]", resolved by belongsToBasenames; YAZ-831). */
   target?: string
   /** Metadata for the future validation report (report-never-block: gates nothing in v1). */

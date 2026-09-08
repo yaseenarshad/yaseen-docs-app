@@ -159,13 +159,13 @@ button {
   flex: 1 1 100%;
 }
 
-/* The chip is the chevron and the count alone — "Properties" says nothing the rows don't. */
+/* Keep the property count labeled so the control is discoverable. */
 .page-header .frontmatter-panel__title {
-  font-size: 0;
+  font-size: 12px;
 }
 
 .page-header .frontmatter-panel__count {
-  font-size: 14px;
+  font-size: 12px;
 }
 
 /* Folder pages (YAZ-919): the outline IS the document — the body editor above it
@@ -283,15 +283,17 @@ button {
 
 .frontmatter-panel__row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
-  min-height: 24px;
+  min-height: 34px;
   font-size: 13px;
 }
 
 .frontmatter-panel__key {
   flex: none;
-  width: 150px;
+  width: min(180px, 38%);
+  padding: 6px 5px;
+  box-sizing: border-box;
   overflow: hidden;
   color: var(--fg-muted);
   text-overflow: ellipsis;
@@ -299,6 +301,8 @@ button {
 }
 
 .frontmatter-panel__value {
+  min-height: 32px;
+  padding: 2px 0;
   display: flex;
   flex: 1;
   align-items: center;
@@ -316,44 +320,6 @@ button {
   text-transform: uppercase;
   border: 1px solid var(--border);
   border-radius: 3px;
-}
-
-/* Per-row affordances are QUIET: a row is its name and its value until you reach for it. Faded
-   rather than removed, so they keep their place in the tab order and the layout never jumps. */
-.frontmatter-panel__type,
-.frontmatter-panel__del {
-  flex: none;
-  font-size: 11px;
-  color: var(--fg-muted);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 3px;
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-
-.frontmatter-panel__row:hover .frontmatter-panel__type,
-.frontmatter-panel__row:hover .frontmatter-panel__del,
-.frontmatter-panel__type:focus,
-.frontmatter-panel__del:focus {
-  opacity: 1;
-}
-
-.frontmatter-panel__row:hover .frontmatter-panel__type,
-.frontmatter-panel__type:focus {
-  border-color: var(--border);
-}
-
-.frontmatter-panel__del {
-  width: 20px;
-  height: 20px;
-  font-size: 14px;
-  line-height: 1;
-}
-
-.frontmatter-panel__del:hover {
-  color: var(--danger);
-  background: var(--bg-hover);
 }
 
 .frontmatter-panel__new,

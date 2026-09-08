@@ -256,3 +256,46 @@ describe('subscribeProperties', () => {
     expect(seen[seen.length - 1]?.properties).toEqual({})
   })
 })
+
+
+it('round-trips ordered select declarations and rejects invalid options without touching config', async () => {
+  const root = await makeRoot()
+  await setProperty(root, 'status', { kind: 'select', options: ['Later', 'Ready'] })
+  await setProperty(root, 'labels', { kind: 'multi-select', options: ['Blue', 'Green'] })
+  expect((await getProperties(root)).properties.status).toEqual({ kind: 'select', options: ['Later', 'Ready'] })
+  expect((await getProperties(root)).properties.labels).toEqual({ kind: 'multi-select', options: ['Blue', 'Green'] })
+  const before = await readFile(file(root), 'utf8')
+  for (const options of [['Ready', 'Ready'], [''], ['   ']]) {
+    await expect(setProperty(root, 'status', { kind: 'select', options })).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    expect(await readFile(file(root), 'utf8')).toBe(before)
+  }
+})
+
+it('reads malformed options tolerantly without rewriting stored declarations', async () => {
+  const root = await makeRoot()
+  await seed(root, { version: 1, properties: { status: { kind: 'select', options: ['B', null, 'A', 'B', ''] } } })
+  const before = await readFile(file(root), 'utf8')
+  expect((await getProperties(root)).properties.status.options).toEqual(['B', 'A'])
+  expect(await readFile(file(root), 'utf8')).toBe(before)
+})
+
+it('round-trips all option sort modes without sorting stored options; rejects invalid modes atomically', async () => {
+  const root = await makeRoot()
+  for (const optionSort of ['ascending', 'descending', 'manual'] as const) {
+    await setProperty(root, 'status', { kind: 'select', options: ['Z', 'A'], optionSort })
+    expect((await getProperties(root)).properties.status).toEqual({ kind: 'select', options: ['Z', 'A'], optionSort })
+  }
+  const before = await readFile(file(root), 'utf8')
+  for (const optionSort of ['ASC', '', null, 1]) {
+    await expect(setProperty(root, 'status', { kind: 'select', optionSort } as never)).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    expect(await readFile(file(root), 'utf8')).toBe(before)
+  }
+})
+
+it('ignores an unknown stored option sort mode without rewriting config', async () => {
+  const root = await makeRoot()
+  await seed(root, { version: 1, properties: { status: { kind: 'select', options: ['Z', 'A'], optionSort: 'future-mode' } } })
+  const before = await readFile(file(root), 'utf8')
+  expect((await getProperties(root)).properties.status).toEqual({ kind: 'select', options: ['Z', 'A'] })
+  expect(await readFile(file(root), 'utf8')).toBe(before)
+})

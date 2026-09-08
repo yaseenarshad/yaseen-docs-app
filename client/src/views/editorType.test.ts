@@ -158,3 +158,34 @@ describe('folder-page columns are the top rung (🔒 Q8, YAZ-815)', () => {
     expect(columnTyping('owner', recs, DECLS, settings({}))?.assigned).toBe('text')
   })
 })
+
+
+it('uses the whole folder declaration ahead of the vault declaration, including ordered options', () => {
+  const properties: PropertiesResponse = { root: '/vault', version: 1, properties: { status: { kind: 'select', options: ['Vault'] } } }
+  const folderPage: FolderPageSettings = { columns: { status: { kind: 'multi-select', options: ['Ready', 'Later'] } }, views: [], problems: [] }
+  const typing = columnTyping('note.status', [record({ status: 'Legacy' })], properties, folderPage)
+  expect(typing).toMatchObject({ assigned: 'multi-select', options: ['Ready', 'Later'] })
+  expect(cellEditor('Legacy', typing)).toBe('multi-select')
+  expect(columnTyping('note.status', [], properties)?.options).toEqual(['Vault'])
+  expect(valueKind(['Ready'])).toBe('list')
+})
+
+describe('option display ordering', () => {
+  const manual = ['Stage 10', 'alpha', 'Stage 2', 'ALPHA']
+  const folder = (optionSort?: 'manual' | 'ascending' | 'descending'): FolderPageSettings => ({
+    columns: { Status: { kind: 'select', options: manual, optionSort } }, views: [...DEFAULT_VIEWS], problems: [],
+  })
+  it('keeps the manual arrangement by default and sorts naturally without mutating it', () => {
+    expect(columnTyping('Status', [], null, folder())?.options).toEqual(manual)
+    expect(columnTyping('Status', [], null, folder('ascending'))?.options).toEqual(['alpha', 'ALPHA', 'Stage 2', 'Stage 10'])
+    expect(columnTyping('Status', [], null, folder('descending'))?.options).toEqual(['Stage 10', 'Stage 2', 'alpha', 'ALPHA'])
+    expect(columnTyping('Status', [], null, folder('manual'))?.options).toEqual(['Stage 10', 'alpha', 'Stage 2', 'ALPHA'])
+    expect(manual).toEqual(['Stage 10', 'alpha', 'Stage 2', 'ALPHA'])
+  })
+  it('uses the folder order over a vault default, with no shared vocabulary', () => {
+    const properties: PropertiesResponse = { root: '/vault', version: 1, properties: { Status: { kind: 'multi-select', options: ['Z', 'A'], optionSort: 'ascending' } } }
+    expect(columnTyping('Status', [], properties)?.options).toEqual(['A', 'Z'])
+    expect(columnTyping('Status', [], properties, folder())?.options).toEqual(manual)
+    expect(columnTyping('Status', [], properties, { ...folder(), columns: { Status: { kind: 'select', options: [], optionSort: 'descending' } } })?.options).toEqual([])
+  })
+})
