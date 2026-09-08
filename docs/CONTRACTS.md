@@ -582,3 +582,31 @@ Presence is tested by the exact YAML key only—no aliases, IDs or kind comparis
 **The write path** (Q1): `writeFolderPageSettings(path, next)` writes the whole block back as the ONE key through the shared one-key writer (`writeProperty`, see "Cell editing" — its read → rewrite → `expectedMtime` → retry-once dance is REUSED, never duplicated), so a settings edit preserves every other key on the page, and the note's own open editor absorbs the resulting frontmatter-only `change` silently (GRO-2186, the autosave note under "Bridge API"). EXACTLY what the caller passes is written: an all-default value is still a value, and `undefined` DELETES the key — always the caller's explicit choice, never this module's inference. `columns` is omitted while empty and `folder` while absent; `problems` never reaches disk. The UI reaches this writer through exactly two doors, both on the contents block's host: `onChange` (every `Mutate`-driven views edit) and `FolderPageMode.setColumns(columns, views?)` (YAZ-895 — the declarations, with `views` riding along when one gesture moves both), each ONE write, failures in the same banner.
 
 Files: `client/src/views/folderPageSettings.ts`, `client/src/views/folderPageSettings.test.ts`, and `client/src/views/scaffold.ts` — `scaffoldFromFolderPage` / `folderPageTemplatePath` / `newPageFromFolderPage` / `EntityParts` / `memberFolder` / `ensureFolder`, which is the WHOLE file since YAZ-836 took the type half — with `client/src/views/scaffold.test.ts`.
+
+
+## Document magnification (YAZ-1410)
+
+Each Markdown `CrepeHost` owns a temporary percentage, default **100%**. The editable control
+immediately left of Sync accepts whole numbers **50–200**, with an optional `%` suffix, and
+presets **50, 75, 90, 100, 125, 150, 200**. Enter or leaving the control applies a valid draft;
+Escape cancels it. Invalid input preserves the applied value and shows a short range message.
+Choosing a preset replaces the draft and closes the list. Typing a partial number never resizes
+the document.
+
+CSS `zoom` applies to `.editor-host`: title, properties, body, folder contents and backlinks.
+The control/status row, tabs, sidebar and dialogs outside the scroller keep their usual size.
+Retained editor mounts preserve zoom across tab switches; closing/reopening or another remount
+(including path changes) resets it. Separate mounted editors, including right panes, are
+independent. Zoom does not change Markdown, autosave, IPC, settings, or persisted app state.
+Non-Markdown viewers, Electron's existing application zoom and outline bullet-focus zoom keep
+their separate behavior. No Fit mode, added zoom shortcuts or persistent preference.
+
+DOM geometry used for pointer hit areas, drag distances and pinned folder-table headers must
+convert viewport measurements to local layout units when inside this scaled scroller.
+
+Milkdown table drag previews and insertion indicators use the version-pinned
+`@milkdown/components@7.22.1` archive in `client/vendor`, enforced for all transitive consumers
+by the root npm override. The narrow patch converts viewport sizes/offsets to local CSS pixels;
+it preserves row/column drop targeting and the existing 100% behavior. Rebuild/provenance
+instructions live in `client/vendor/milkdown-components-7.22.1-yaz1410.md`. The shipped runtime
+has geometry regression coverage at 50%, 100%, 125% and 200%; upgrades must preserve those tests.

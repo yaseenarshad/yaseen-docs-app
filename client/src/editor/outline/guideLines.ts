@@ -18,6 +18,7 @@
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { cssZoom } from '../../lib/cssZoom'
 import { isListItem, LIST_NODE_NAMES } from './listNodes'
 import { toggleOutlineFoldChildren } from './outlineFolding'
 
@@ -32,6 +33,18 @@ export const FALLBACK_FONT_PX = 16
 
 const pluginKey = new PluginKey('mdapp-outline-guide-lines')
 
+/** True when viewport `x` is over the CSS strip rendered beside `list`. */
+export function inStripBand(x: number, ulLeft: number, fontPx: number, zoom = 1): boolean {
+  const centre = ulLeft - ((LIST_INDENT_EM * fontPx) / 2 + STRIP_CENTRE_GAP) * zoom
+  return Math.abs(x - centre) <= STRIP_HALF_WIDTH * zoom
+}
+
+/** Shared by the guide action and the block-handle gate so both hit the same rendered strip. */
+export function isGuideStripHit(x: number, list: Element): boolean {
+  const fontPx = Number.parseFloat(getComputedStyle(list).fontSize) || FALLBACK_FONT_PX
+  return inStripBand(x, list.getBoundingClientRect().left, fontPx, cssZoom(list))
+}
+
 /** The nested list element whose guide-line strip is under (`clientX`, target), or null. */
 const stripHit = (view: EditorView, event: MouseEvent): HTMLElement | null => {
   const target = event.target
@@ -39,9 +52,7 @@ const stripHit = (view: EditorView, event: MouseEvent): HTMLElement | null => {
   // target at a clientX left of the box can only mean the strip was hit.
   if (!(target instanceof HTMLElement) || (target.tagName !== 'UL' && target.tagName !== 'OL')) return null
   if (!view.dom.contains(target) || !target.parentElement?.classList.contains('content-dom')) return null
-  const fontPx = Number.parseFloat(getComputedStyle(target).fontSize) || FALLBACK_FONT_PX
-  const centre = target.getBoundingClientRect().left - ((LIST_INDENT_EM * fontPx) / 2 + STRIP_CENTRE_GAP)
-  return Math.abs(event.clientX - centre) <= STRIP_HALF_WIDTH ? target : null
+  return isGuideStripHit(event.clientX, target) ? target : null
 }
 
 /** Document position of the nested list rendered as `list` (its owner must be a list_item), or null. */

@@ -20,6 +20,16 @@ describe('inStripBand', () => {
     // The 16px-font centre is 12.9px away from the 28px-font centre — outside the 5px half-width.
     expect(inStripBand(left - (2.15 * 16) / 2 - 5, left, 28)).toBe(false)
   })
+
+  it.each([0.5, 1, 1.25, 2])('scales the strip geometry at %× document zoom', (zoom) => {
+    const left = 342
+    const centre = left - ((2.15 * 16) / 2 + 5) * zoom
+    expect(inStripBand(centre, left, 16, zoom)).toBe(true)
+    expect(inStripBand(centre - 5 * zoom, left, 16, zoom)).toBe(true)
+    expect(inStripBand(centre + 5 * zoom, left, 16, zoom)).toBe(true)
+    expect(inStripBand(centre - 6 * zoom, left, 16, zoom)).toBe(false)
+    expect(inStripBand(centre + 6 * zoom, left, 16, zoom)).toBe(false)
+  })
 })
 
 describe('own-editor scoping (YAZ-747)', () => {

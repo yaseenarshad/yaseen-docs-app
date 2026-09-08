@@ -134,7 +134,7 @@ button {
   width: 100%;
   max-width: var(--content-max-width);
   margin: 0 auto;
-  padding: 32px 48px 0;
+  padding: 8px 48px 0;
 }
 
 /* The title item (⚡ YAZ-888, at the editor's own h1 scale — GRO-2009): GROWS to fill the row
@@ -650,12 +650,13 @@ button {
 
 /* ---------- status chips: sync (YAZ-1081 D5) then save, top-right of the editor ---------- */
 
-/* The ROW owns the placement — each chip only styles itself, so adding one never re-lays out
-   the other. Sync sits left of Saved: vault-wide fact first, per-tab fact next to the note. */
+/* Reserve a fixed-size row so document magnification cannot overlap its controls. */
 .status-chips {
-  position: absolute;
-  top: 10px;
-  right: 16px;
+  position: relative;
+  min-height: 34px;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  padding: 5px 16px;
   z-index: 2;
   display: flex;
   align-items: center;
@@ -1693,4 +1694,112 @@ button {
 .btn--primary:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* ---------- document magnification (YAZ-1410) ---------- */
+
+.document-zoom {
+  position: relative;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.document-zoom__field {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: var(--bg);
+}
+
+.document-zoom__field:hover {
+  border-color: var(--border);
+  color: var(--fg);
+}
+
+.document-zoom__field:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.document-zoom__field input {
+  width: 45px;
+  padding: 2px 0 2px 5px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: right;
+}
+
+.document-zoom__field button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.document-zoom__field button:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.document-zoom__presets {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 10;
+  width: 100px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px #0002;
+}
+
+.document-zoom__presets button {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.document-zoom__presets button:hover,
+.document-zoom__presets button:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+
+.document-zoom__presets button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.document-zoom__error {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 220px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--danger);
+  padding: 8px;
+  border-radius: 5px;
+  box-shadow: 0 4px 14px #0002;
+  z-index: 11;
 }
