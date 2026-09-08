@@ -85,8 +85,7 @@ describe('clipboard payload of a numbered child list', () => {
     const to = textStart(view, 'VS Code') + 'VS Code'.length
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)))
     const { text, html } = payload(view)
-    expect(text).toContain('1. Setup')
-    expect(text).toContain('2. VS Code')
+    expect(text).toBe('1. Setup\n2. VS Code')
     expect(html).toContain('<ol')
   })
 
@@ -94,7 +93,7 @@ describe('clipboard payload of a numbered child list', () => {
     const { view } = await mountNumbered()
     view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, nodePos(view, 'ordered_list'))))
     const { text, html } = payload(view)
-    expect(text).toBe('1. Setup\n2. VS Code\n')
+    expect(text).toBe('1. Setup\n2. VS Code')
     expect(html).toContain('<ol')
   })
 

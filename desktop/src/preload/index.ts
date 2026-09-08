@@ -35,6 +35,37 @@ ipcRenderer.on(CH.menuPasteAs, (_event, request: ClipboardPasteRequest) => {
   void call<void>(CH.menuPasteTextFallback, request.text).catch((error: unknown) => console.error('Paste failed', error))
 })
 
+/** DOM-only fallback for ordinary controls; editor subscribers own ProseMirror and CodeMirror selections. */
+function selectedNativeText(): string {
+  const active = document.activeElement
+  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+    if (active instanceof HTMLInputElement && active.type === 'password') return ''
+    const { selectionStart: start, selectionEnd: end } = active
+    return start === null || end === null || start === end ? '' : active.value.slice(start, end)
+  }
+  const selection = document.getSelection()
+  if (!selection || selection.isCollapsed || !selection.anchorNode || !selection.focusNode) return ''
+  // A focused button or other surface must not copy a stale selection left in another editor.
+  if (active && (!active.contains(selection.anchorNode) || !active.contains(selection.focusNode))) return ''
+  return selection.toString()
+}
+
+// No clipboard API crosses contextBridge: only a main-process menu gesture can initiate this path.
+const copyListeners = new Set<(mode: 'plain' | 'markdown') => string | undefined>()
+ipcRenderer.on(CH.menuCopyAs, (_event, mode: unknown) => {
+  if (mode !== 'plain' && mode !== 'markdown') return
+  let text: string | undefined
+  for (const listener of copyListeners) {
+    const selected = listener(mode)
+    if (typeof selected === 'string') {
+      text = selected
+      break
+    }
+  }
+  text ??= selectedNativeText()
+  if (text !== '') void call<void>(CH.menuCopyText, text).catch((error: unknown) => console.error('Copy failed', error))
+})
+
 const api: YaseenDocsApi = {
   tree: (root) => call(CH.fsTree, root),
   readFile: (path) => call(CH.fsRead, path),
@@ -88,6 +119,10 @@ const api: YaseenDocsApi = {
   },
   // Menu gestures (GRO-2161; tabs GRO-2232): main sends these to the focused window only.
   menu: {
+    onCopyAs: (listener) => {
+      copyListeners.add(listener)
+      return () => { copyListeners.delete(listener) }
+    },
     onPasteAs: (listener) => {
       pasteListeners.add(listener)
       return () => { pasteListeners.delete(listener) }

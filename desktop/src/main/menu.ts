@@ -15,6 +15,7 @@ import type { WindowManager } from './windows'
 export const HELP_URL = 'https://github.com/yaseenarshad/yaseen-milkdown#readme'
 
 export interface MenuHandlers {
+  copyAs(mode: 'plain' | 'markdown'): void
   pasteAs(mode: ClipboardPasteRequest['mode']): void
   /** File › New Window (⌘⇧N, D6): duplicate the focused window — same folder, same file. */
   newWindow(): void
@@ -92,7 +93,7 @@ export function buildMenuTemplate({ recents, isDev }: MenuInputs, handlers: Menu
     },
     {
       label: 'Edit',
-      submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, pasteAsMenu(handlers.pasteAs, true), { role: 'selectAll' }],
+      submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, copyAsMenu(handlers.copyAs), { role: 'paste' }, pasteAsMenu(handlers.pasteAs, true), { role: 'selectAll' }],
     },
     {
       label: 'View',
@@ -129,6 +130,16 @@ export function buildMenuTemplate({ recents, isDev }: MenuInputs, handlers: Menu
   ]
 }
 
+function copyAsMenu(copyAs: MenuHandlers['copyAs']): MenuItemConstructorOptions {
+  return {
+    label: 'Copy as',
+    submenu: [
+      { id: 'menu.edit.copy-plain', label: 'Plain text', click: () => copyAs('plain') },
+      { id: 'menu.edit.copy-markdown', label: 'Markdown', click: () => copyAs('markdown') },
+    ],
+  }
+}
+
 function pasteAsMenu(pasteAs: MenuHandlers['pasteAs'], accelerator = false): MenuItemConstructorOptions {
   return {
     label: 'Paste as',
@@ -140,6 +151,7 @@ function pasteAsMenu(pasteAs: MenuHandlers['pasteAs'], accelerator = false): Men
 }
 
 export interface ContextMenuActions {
+  copyAs(mode: 'plain' | 'markdown'): void
   pasteAs(mode: ClipboardPasteRequest['mode']): void
   /** Swap the misspelled word under the cursor for the suggestion the user picked. */
   replace(word: string): void
@@ -170,6 +182,7 @@ export function buildContextMenuTemplate(
     ...dictionary,
     { role: 'cut', enabled: params.editFlags.canCut },
     { role: 'copy', enabled: params.editFlags.canCopy },
+    { ...copyAsMenu(actions.copyAs), enabled: params.editFlags.canCopy },
     { role: 'paste', enabled: params.editFlags.canPaste },
     { ...pasteAsMenu(actions.pasteAs), enabled: params.editFlags.canPaste },
   ]
@@ -220,6 +233,9 @@ export function createMenuHandlers(store: Store, windows: MenuWindows, host: Men
     return id === undefined ? undefined : store.get().windows.find((w) => w.id === id)
   }
   return {
+    copyAs(mode) {
+      host.focusedWebContents()?.send(CH.menuCopyAs, mode)
+    },
     pasteAs(mode) {
       const target = host.focusedWebContents()
       if (target !== undefined) target.send(CH.menuPasteAs, { mode, text: host.readClipboardText() } satisfies ClipboardPasteRequest)

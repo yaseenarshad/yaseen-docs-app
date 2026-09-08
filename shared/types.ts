@@ -903,6 +903,8 @@ export interface ClipboardPasteRequest {
  * runtime, so File › Open Folder… / Open Recent land on the focused window's renderer.
  */
 export interface MenuApi {
+  /** First focused editor returning a string claims copy; empty means no selection. Returns an unsubscribe. */
+  onCopyAs(listener: (mode: 'plain' | 'markdown') => string | undefined): () => void
   /** Explicit paste targets the focused editor; return true when handled. Returns an unsubscribe. */
   onPasteAs(listener: (request: ClipboardPasteRequest) => boolean): () => void
   /** File › Open Folder… (⌘⇧O) targeted this window: run the pick-folder flow. Returns an unsubscribe. */

@@ -7,6 +7,7 @@ import type { ClipboardPasteRequest, WindowEntry } from '@shared/types'
 import { CH } from '../channels'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
+import { registerClipboardIpc } from './ipc/clipboard'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
 import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, pickMenuTargetWindow, subscribeMenuRebuild } from './menu'
@@ -92,6 +93,7 @@ const manager = createWindowManager(store, {
     // otherwise be unactionable; the template itself is pure and lives in menu.ts.
     win.webContents.on('context-menu', (_event, params) =>
       Menu.buildFromTemplate(buildContextMenuTemplate(params, {
+        copyAs: (mode) => win.webContents.send(CH.menuCopyAs, mode),
         pasteAs: (mode) => win.webContents.send(CH.menuPasteAs, { mode, text: clipboard.readText() } satisfies ClipboardPasteRequest),
         replace: (s) => win.webContents.replaceMisspelling(s),
         addToDictionary: (w) => win.webContents.session.addWordToSpellCheckerDictionary(w),
@@ -151,8 +153,14 @@ app.whenReady().then(() => {
   // `focusedWebContents` resolves through pickMenuTargetWindow (GRO-2197): macOS reports no
   // focused window while the app is not frontmost, and a menu action must never silently no-op
   // — so the last-focused live window (tracked below) is the documented fallback target.
+  const menuTarget = () => pickMenuTargetWindow(BrowserWindow.getFocusedWindow(), BrowserWindow.getAllWindows(), lastFocusedWcId)?.webContents
+  registerClipboardIpc(manager, {
+    target: menuTarget,
+    writeText: (text) => clipboard.writeText(text),
+    rendererUrl: process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html',
+  })
   const handlers = createMenuHandlers(store, manager, {
-    focusedWebContents: () => pickMenuTargetWindow(BrowserWindow.getFocusedWindow(), BrowserWindow.getAllWindows(), lastFocusedWcId)?.webContents,
+    focusedWebContents: menuTarget,
     readClipboardText: () => clipboard.readText(),
     openExternal: (url) => void shell.openExternal(url),
     dirExists: (path) => {

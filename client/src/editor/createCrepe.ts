@@ -77,8 +77,8 @@
  *    focused editor; external standalone paragraph separators keep one blank paragraph each.
  *    Normal external paste keeps number labels literal (YAZ-1429); explicit Markdown and
  *    app-identified rich clipboard slices retain intentional ordered lists.
- *  - Copy-out (`clipboardCopyOut.ts`): generated spacer tags become blank clipboard text; HTML
- *    paragraphs have zero margins and explicit empty-line breaks. Saved Markdown stays intact.
+ *  - Copy-out (`clipboardCopyOut.ts`): normal Copy provides readable text and rich HTML with
+ *    explicit empty lines. Copy as chooses plain text or Markdown; saves stay intact (YAZ-1443).
  */
 import { Crepe, CrepeFeature } from '@milkdown/crepe'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
