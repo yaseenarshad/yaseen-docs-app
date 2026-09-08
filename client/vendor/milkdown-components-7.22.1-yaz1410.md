@@ -6,6 +6,11 @@ boundary indicator geometry when the editor is inside a CSS `zoom` context.
 The package name and version remain unchanged so every Milkdown package uses
 the same 7.22.1 dependency graph.
 
+When updating an existing checkout, use `npm ci` to install the locked archive.
+Because the package version is unchanged, `npm install` can retain an already
+installed upstream copy. `client/src/editor/tableZoom.test.ts` checks the actual
+installed runtime and catches that stale installation.
+
 The upstream package is MIT licensed and includes its original `LICENSE` file.
 Source: <https://registry.npmjs.org/@milkdown/components/-/components-7.22.1.tgz>
 Upstream npm integrity:
