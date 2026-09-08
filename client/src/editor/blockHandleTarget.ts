@@ -3,6 +3,7 @@
  * the block it belongs to is found by probing just right of the handle at the pointer's y.
  */
 import type { EditorView } from '@milkdown/kit/prose/view'
+import { cssZoom } from '../lib/cssZoom'
 
 /** How far right of the handle to probe for the block it points at (the gutter is ~24px). */
 export const PROBE_OFFSET_PX = 24
@@ -26,7 +27,8 @@ export interface HandleTarget {
  * enclosing node (e.g. a list_item) must use `inside`.
  */
 export function handleTargetPos(view: EditorView, e: MouseEvent): HandleTarget | null {
-  const rect = (e.target as Element).closest('.milkdown-block-handle')!.getBoundingClientRect()
-  const probe = view.posAtCoords({ left: rect.right + PROBE_OFFSET_PX, top: e.clientY })
+  const handle = (e.target as Element).closest('.milkdown-block-handle')!
+  const rect = handle.getBoundingClientRect()
+  const probe = view.posAtCoords({ left: rect.right + PROBE_OFFSET_PX * cssZoom(handle), top: e.clientY })
   return probe === null ? null : { pos: probe.pos, inside: probe.inside }
 }

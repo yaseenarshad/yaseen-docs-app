@@ -88,6 +88,18 @@ const foldItemOf = (crepe: Crepe, root: HTMLElement, label: string) =>
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 describe('guide lines: click → fold', () => {
+  it.each([0.5, 1, 1.25, 2])('hits the rendered strip at %× document zoom', async (zoom) => {
+    const { root } = await mount()
+    const list = nestedListOf(root, 'Parent')
+    const left = 100
+    list.getBoundingClientRect = () => ({ left }) as DOMRect
+    Object.defineProperty(list, 'currentCSSZoom', { value: zoom, configurable: true })
+
+    mouse(list, 'mousedown', left + STRIP_X * zoom)
+
+    expect(foldedLabels(root)).toEqual(['Child A', 'Child B'])
+  })
+
   it('unfolds every descendant parent when all direct parents are collapsed', async () => {
     const { crepe, root } = await mount({ defaultValue: DEEP_OUTLINE })
     foldItemOf(crepe, root, 'Grandchild A')

@@ -13,6 +13,7 @@ import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf, summaryKindOf }
 import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, useGroupDrag } from './groupDrag'
 import { Popover } from './Popover'
 import { usePreview } from './PreviewCard'
+import { cssZoom } from '../../lib/cssZoom'
 import { frozenColumnCount } from './frozenColumns'
 import { PageContextMenu } from './PageContextMenu'
 
@@ -130,9 +131,10 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     let frame = 0
     const sync = () => {
       frame = 0
+      const zoom = cssZoom(wrap)
       const tableRect = table.getBoundingClientRect()
-      const scrollerTop = scroller.getBoundingClientRect().top + scroller.clientTop
-      const offset = pinnedHeaderOffset(scrollerTop, tableRect.top, tableRect.height, header.getBoundingClientRect().height)
+      const scrollerTop = scroller.getBoundingClientRect().top + scroller.clientTop * zoom
+      const offset = pinnedHeaderOffset(scrollerTop, tableRect.top, tableRect.height, header.getBoundingClientRect().height) / zoom
       wrap.style.setProperty('--view-table-header-y', `${offset}px`)
     }
     const schedule = () => {
@@ -229,9 +231,10 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     e.preventDefault()
     const start = widthOf(key)
     const x0 = e.clientX
+    const zoom = cssZoom(e.currentTarget)
     let width = start
     const move = (ev: MouseEvent) => {
-      width = Math.max(MIN_WIDTH, start + ev.clientX - x0)
+      width = Math.max(MIN_WIDTH, start + (ev.clientX - x0) / zoom)
       setDrag({ key, width })
     }
     const up = () => {

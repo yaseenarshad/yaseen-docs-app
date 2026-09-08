@@ -596,3 +596,49 @@ describe('CrepeHost standard Markdown link routing (YAZ-1309)', () => {
     expect(openLink).toHaveBeenCalledWith({ href: '../assets/report.pdf', sourcePath: PATH })
   })
 })
+
+function enterZoom(host: ParentNode, text: string): void {
+  const input = host.querySelector<HTMLInputElement>('[aria-label="Document zoom"]')!
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, text)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  act(() => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+}
+
+describe('document magnification (YAZ-1410)', () => {
+  it('scales only the document without recreating Crepe, changing Markdown or saving', async () => {
+    const el = await mount(BODY)
+    const count = createCrepeMock.mock.calls.length
+    enterZoom(el, '115%')
+    expect(el.querySelector<HTMLElement>('.editor-host')!.style.zoom).toBe('1.15')
+    expect(el.querySelector('.editor-host')!.contains(el.querySelector('.document-zoom'))).toBe(false)
+    expect(createCrepeMock).toHaveBeenCalledTimes(count)
+    expect(crepe().md).toBe(BODY)
+    await pastDebounce()
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('keeps retained editors independent and resets a closed/reopened instance', async () => {
+    await mount(BODY)
+    readFile.mockImplementation(async (path) => ({ path, content: BODY, mtime: 1, size: BODY.length }))
+    const other = '/vault/other.md'
+    const render = (active: string, firstOpen = true) => {
+      act(() => root!.render(<>
+        {firstOpen && <div key={PATH} data-pane="first" hidden={active !== PATH}><Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} /></div>}
+        <div key={other} data-pane="second" hidden={active !== other}><Editor root="/vault" path={other} watch={watch} onOpenFile={openFile} /></div>
+      </>))
+    }
+    render(PATH); await settle(); await settle()
+    enterZoom(container!.querySelector('[data-pane="first"]')!, '125')
+    render(other)
+    expect(container!.querySelector<HTMLInputElement>('[data-pane="second"] input')!.value).toBe('100%')
+    enterZoom(container!.querySelector('[data-pane="second"]')!, '75')
+    render(PATH)
+    expect(container!.querySelector<HTMLInputElement>('[data-pane="first"] input')!.value).toBe('125%')
+    render(other, false)
+    render(PATH); await settle(); await settle()
+    expect(container!.querySelector<HTMLInputElement>('[data-pane="first"] input')!.value).toBe('100%')
+    expect(container!.querySelector<HTMLInputElement>('[data-pane="second"] input')!.value).toBe('75%')
+  })
+})

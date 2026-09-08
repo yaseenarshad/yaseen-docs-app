@@ -24,6 +24,7 @@ import './outline/bulletThreading.css'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { SaveIndicator } from './SaveIndicator'
 import { SyncIndicator } from './SyncIndicator'
+import { DocumentZoom } from './DocumentZoom'
 import { useAutosave } from '../hooks/useAutosave'
 import { useFile } from '../hooks/useFile'
 import type { WatchSource } from '../hooks/useWatch'
@@ -172,6 +173,7 @@ function CrepeHost({
   sync?: GithubSyncStatus | null
   onSyncNow?: () => void
 }) {
+  const [documentZoom, setDocumentZoom] = useState(100)
   const hostRef = useRef<HTMLDivElement>(null)
   // The live Crepe instance, for ArrowDown out of the title (⚡ YAZ-888) — the same
   // `focusEditor` the mount runs when the sidebar walk is not standing in the tree (YAZ-921),
@@ -342,10 +344,9 @@ function CrepeHost({
 
   return (
     <>
-      {/* Two chips, one row (YAZ-1081 🔒 D5): the vault-wide sync chip sits immediately LEFT of
-          the per-tab save state. The row owns the top-right placement; each chip only styles
-          itself. The tab bar is not touched. */}
+      {/* Document zoom stays local to this mounted editor; sync remains vault-wide. */}
       <div className="status-chips">
+        <DocumentZoom value={documentZoom} onChange={setDocumentZoom} />
         {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
         <SaveIndicator status={autosave.status} />
       </div>
@@ -366,7 +367,7 @@ function CrepeHost({
           mount; then two blocks of the note's own: the folder page's contents when this page
           carries the flag (YAZ-819, 🔒 D1 — nothing at all when it does not), then "Linked
           mentions" (Links D, GRO-2193). All of it scrolls WITH the note, never in a panel. */}
-      <div className="editor-host">
+      <div className="editor-host" style={{ zoom: documentZoom / 100 }}>
         {/* Title and properties share ONE header row (YAZ-918): the panel sits to
             the title's right and wraps under it when the title runs long. */}
         <div className="page-header">

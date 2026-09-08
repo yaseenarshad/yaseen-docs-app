@@ -12,17 +12,13 @@
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { FALLBACK_FONT_PX, LIST_INDENT_EM, STRIP_CENTRE_GAP, STRIP_HALF_WIDTH } from './outline/guideLines'
+import { inStripBand, isGuideStripHit } from './outline/guideLines'
 import { HEADING_TOGGLE_CLASS } from './outline/headingFolding'
 import { OUTLINE_TOGGLE_CLASS } from './outline/outlineFolding'
 
 export const HANDLE_MUTED_CLASS = 'mdapp-handle-muted'
 
-/** Pure: is `x` inside the guide-line strip band of a list whose border-box left edge is `ulLeft`? */
-export function inStripBand(x: number, ulLeft: number, fontPx: number): boolean {
-  const centre = ulLeft - ((LIST_INDENT_EM * fontPx) / 2 + STRIP_CENTRE_GAP)
-  return Math.abs(x - centre) <= STRIP_HALF_WIDTH
-}
+export { inStripBand }
 
 /** Whether the point sits on a chevron or a strip band, given the element stack under it. */
 function overAffordance(view: EditorView, x: number, stack: readonly Element[]): boolean {
@@ -34,8 +30,7 @@ function overAffordance(view: EditorView, x: number, stack: readonly Element[]):
       view.dom.contains(el) &&
       el.parentElement?.classList.contains('content-dom')
     ) {
-      const fontPx = Number.parseFloat(getComputedStyle(el).fontSize) || FALLBACK_FONT_PX
-      if (inStripBand(x, el.getBoundingClientRect().left, fontPx)) return true
+      if (isGuideStripHit(x, el)) return true
     }
   }
   return false

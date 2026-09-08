@@ -44,6 +44,19 @@ describe('handleTargetPos', () => {
     handle.remove()
   })
 
+  it.each([0.5, 1, 1.25, 2])('keeps its logical probe offset at %× document zoom', (zoom) => {
+    const { handle, item } = makeHandle()
+    handle.getBoundingClientRect = () => ({ right: 100 }) as DOMRect
+    Object.defineProperty(handle, 'currentCSSZoom', { value: zoom, configurable: true })
+    const posAtCoords = vi.fn(() => ({ pos: 7, inside: 3 }))
+    const view = { posAtCoords } as unknown as EditorView
+
+    handleTargetPos(view, { target: item, clientY: 42 } as unknown as MouseEvent)
+
+    expect(posAtCoords).toHaveBeenCalledWith({ left: 100 + PROBE_OFFSET_PX * zoom, top: 42 })
+    handle.remove()
+  })
+
   it('returns null when the probe misses', () => {
     const { handle, item } = makeHandle()
     const view = { posAtCoords: () => null } as unknown as EditorView

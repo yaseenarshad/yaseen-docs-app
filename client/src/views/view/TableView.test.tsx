@@ -159,7 +159,7 @@ const cells = (row: HTMLTableRowElement): HTMLTableCellElement[] => [...row.quer
 
 const box = (top: number, height: number, width = 600): DOMRect => new DOMRect(0, top, width, height)
 
-function pinningHarness({ tableTop = -80, tableHeight = 600, frameId = 1 } = {}) {
+function pinningHarness({ tableTop = -80, tableHeight = 600, frameId = 1, zoom = 1 } = {}) {
   const frames: FrameRequestCallback[] = []
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
     frames.push(callback)
@@ -170,9 +170,10 @@ function pinningHarness({ tableTop = -80, tableHeight = 600, frameId = 1 } = {})
   const table = q<HTMLElement>(el, '.view-table')
   const header = q<HTMLElement>(table, 'thead')
   const wrap = q<HTMLElement>(el, '.view-table-wrap')
+  Object.defineProperty(wrap, 'currentCSSZoom', { value: zoom, configurable: true })
   vi.spyOn(el, 'getBoundingClientRect').mockReturnValue(box(0, 400))
-  vi.spyOn(table, 'getBoundingClientRect').mockImplementation(() => box(top, tableHeight))
-  vi.spyOn(header, 'getBoundingClientRect').mockImplementation(() => box(top, 28))
+  vi.spyOn(table, 'getBoundingClientRect').mockImplementation(() => box(top * zoom, tableHeight * zoom))
+  vi.spyOn(header, 'getBoundingClientRect').mockImplementation(() => box(top * zoom, 28 * zoom))
 
   return {
     el,
@@ -496,6 +497,16 @@ describe('column resize', () => {
     expect(def().views[0].columnSize).toEqual({ 'note.priority': 60 })
   })
 
+  it.each([0.5, 1, 1.25, 2])('turns a pointer drag into the same logical width at %× document zoom', (zoom) => {
+    const { el, def } = mount(TYPED_BASE)
+    const handle = el.querySelectorAll('.view-table__resize')[1]
+    Object.defineProperty(handle, 'currentCSSZoom', { value: zoom, configurable: true })
+    mouse(handle, 'mousedown', 100)
+    mouse(window, 'mousemove', 100 + 40 * zoom)
+    mouse(window, 'mouseup', 100 + 40 * zoom)
+    expect(def().views[0].columnSize).toEqual({ 'note.priority': 190 })
+  })
+
   it('only the dragged handle carries the active class, and none do once the drag ends', () => {
     const { el } = mount(TYPED_BASE)
     const active = () => [...el.querySelectorAll('.view-table__resize')].map((h) => h.className.includes('view-table__resize--active'))
@@ -515,6 +526,15 @@ describe('vertical header pinning', () => {
     pinning.scroll()
     expect(pinning.frames).toHaveLength(1)
     pinning.flush()
+    expect(pinning.wrap.style.getPropertyValue('--view-table-header-y')).toBe('80px')
+  })
+
+  it.each([0.5, 1, 1.25, 2])('counter-scrolls by the same logical offset at %× document zoom', (zoom) => {
+    const pinning = pinningHarness({ zoom })
+
+    pinning.scroll()
+    pinning.flush()
+
     expect(pinning.wrap.style.getPropertyValue('--view-table-header-y')).toBe('80px')
   })
 
