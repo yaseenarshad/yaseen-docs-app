@@ -598,7 +598,8 @@ describe('CrepeHost standard Markdown link routing (YAZ-1309)', () => {
 })
 
 function enterZoom(host: ParentNode, text: string): void {
-  const input = host.querySelector<HTMLInputElement>('[aria-label="Document zoom"]')!
+  act(() => host.querySelector<HTMLButtonElement>('.document-zoom__trigger')!.click())
+  const input = host.querySelector<HTMLInputElement>('.document-zoom__custom input')!
   act(() => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, text)
     input.dispatchEvent(new Event('input', { bubbles: true }))
@@ -632,13 +633,13 @@ describe('document magnification (YAZ-1410)', () => {
     render(PATH); await settle(); await settle()
     enterZoom(container!.querySelector('[data-pane="first"]')!, '125')
     render(other)
-    expect(container!.querySelector<HTMLInputElement>('[data-pane="second"] input')!.value).toBe('100%')
+    expect(container!.querySelector('[data-pane="second"] .document-zoom__value')!.textContent).toBe('100%')
     enterZoom(container!.querySelector('[data-pane="second"]')!, '75')
     render(PATH)
-    expect(container!.querySelector<HTMLInputElement>('[data-pane="first"] input')!.value).toBe('125%')
+    expect(container!.querySelector('[data-pane="first"] .document-zoom__value')!.textContent).toBe('125%')
     render(other, false)
     render(PATH); await settle(); await settle()
-    expect(container!.querySelector<HTMLInputElement>('[data-pane="first"] input')!.value).toBe('100%')
-    expect(container!.querySelector<HTMLInputElement>('[data-pane="second"] input')!.value).toBe('75%')
+    expect(container!.querySelector('[data-pane="first"] .document-zoom__value')!.textContent).toBe('100%')
+    expect(container!.querySelector('[data-pane="second"] .document-zoom__value')!.textContent).toBe('75%')
   })
 })

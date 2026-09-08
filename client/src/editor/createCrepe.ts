@@ -232,6 +232,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       // active button is the answer to "what is this?", and whose click is the switch. The
       // markdown stays the source of truth; these call the same commands typing `##` does.
       [CrepeFeature.Toolbar]: { buildToolbar: buildHeadingToolbar },
+      // Native text carets track document zoom without a second painted overlay.
+      [CrepeFeature.Cursor]: { virtual: false },
     },
   })
   crepe.editor.use(
