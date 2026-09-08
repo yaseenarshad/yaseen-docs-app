@@ -75,8 +75,8 @@
  *    the clipboard plugin's — and it declines whenever the HTML payload has real list markup.
  *  - Paste modes (YAZ-1394, `clipboardPaste.ts`): native Plain text/Markdown requests target the
  *    focused editor; external standalone paragraph separators keep one blank paragraph each.
- *  - Copy-out (YAZ-1389, `clipboardCopyOut.ts`): generated empty-paragraph markers become blank
- *    space in clipboard Markdown only; literal code, rich HTML, and saved Markdown stay intact.
+ *  - Copy-out (`clipboardCopyOut.ts`): generated spacer tags become blank clipboard text; HTML
+ *    paragraphs have zero margins and explicit empty-line breaks. Saved Markdown stays intact.
  */
 import { Crepe, CrepeFeature } from '@milkdown/crepe'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'

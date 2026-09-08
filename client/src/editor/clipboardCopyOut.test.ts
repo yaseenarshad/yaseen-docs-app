@@ -53,11 +53,53 @@ describe('copy-out carries markdown text/plain AND rich text/html (YAZ-938)', ()
     const saved = getMarkdownForSave(crepe)
     const { text, html } = payload(view)
     expect(text).toBe('Hi FIRST\\_NAME,\n\n\n\nHello **friend**.\n')
-    expect(html).toBe('<p data-pm-slice="0 0 []">Hi FIRST_NAME,</p><p></p><p>Hello <strong>friend</strong>.</p>')
+    const copied = document.createElement('div')
+    copied.innerHTML = html
+    const paragraphs = [...copied.querySelectorAll('p')]
+    expect(paragraphs).toHaveLength(3)
+    for (const paragraph of paragraphs) {
+      expect(paragraph.style.marginTop).toBe('0px')
+      expect(paragraph.style.marginBottom).toBe('0px')
+    }
+    expect(paragraphs[0].getAttribute('data-pm-slice')).toBe('0 0 []')
+    expect(paragraphs[1].innerHTML).toBe('<br>')
+    expect(paragraphs[2].innerHTML).toBe('Hello <strong>friend</strong>.')
     expect(view.state.doc).toBe(doc)
     expect(view.state.selection).toBe(selection)
     expect(getMarkdownForSave(crepe)).toBe(saved)
     expect(saved).toContain('<br />')
+  })
+
+  it('keeps each blank paragraph explicit without adding breaks to ordinary or inline-break paragraphs', async () => {
+    const { view, crepe } = await mount('First.\n\n<br />\n\n<br />\n\nSecond.\\\nInline.\n')
+    selectAll(view)
+    const saved = getMarkdownForSave(crepe)
+    const editorHtml = view.dom.innerHTML
+    const copied = document.createElement('div')
+    copied.innerHTML = payload(view).html
+    const paragraphs = [...copied.querySelectorAll('p')]
+    expect(paragraphs).toHaveLength(4)
+    expect(paragraphs.map(p => p.querySelectorAll('br').length)).toEqual([0, 1, 1, 1])
+    expect(paragraphs[1].innerHTML).toBe('<br>')
+    expect(paragraphs[2].innerHTML).toBe('<br>')
+    expect(paragraphs[3].textContent).toBe('Second.Inline.')
+    expect(getMarkdownForSave(crepe)).toBe(saved)
+    expect(view.dom.innerHTML).toBe(editorHtml)
+  })
+
+  it('retains links and code inside zero-margin clipboard paragraphs', async () => {
+    const { view } = await mount('[Link](https://example.com) and `literal <br />`\n\n* **List item**\n')
+    selectAll(view)
+    const copied = document.createElement('div')
+    copied.innerHTML = payload(view).html
+    expect(copied.querySelector('a')?.getAttribute('href')).toBe('https://example.com')
+    expect(copied.querySelector('code')?.textContent).toBe('literal <br />')
+    expect(copied.querySelector('li strong')?.textContent).toBe('List item')
+    for (const paragraph of copied.querySelectorAll('p')) {
+      if (paragraph.textContent) expect(paragraph.querySelector('br')).toBeNull()
+      expect(paragraph.style.marginTop).toBe('0px')
+      expect(paragraph.style.marginBottom).toBe('0px')
+    }
   })
 
   it('removes repeated spacing tags without changing literal inline/fenced code or underline markup', async () => {

@@ -1,4 +1,5 @@
-import { editorViewOptionsCtx, prosePluginsCtx, remarkCtx } from '@milkdown/kit/core'
+import { editorViewOptionsCtx, prosePluginsCtx, remarkCtx, schemaCtx } from '@milkdown/kit/core'
+import { DOMSerializer } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { Node } from '@milkdown/kit/transformer'
 import { $prose } from '@milkdown/kit/utils'
@@ -22,14 +23,25 @@ function withoutSpacers(text: string, tree: ClipboardNode): string {
   return result + text.slice(cursor)
 }
 
-/** YAZ-1389: keep empty-paragraph save markers out of copy/cut text, without changing HTML or saves. */
+/** Copy-only formatting: clean text spacers and explicit HTML paragraph spacing; saves stay unchanged. */
 export const clipboardCopyOut = $prose((ctx) => {
   ctx.update(editorViewOptionsCtx, (prev) => {
     const stock = ctx.get(prosePluginsCtx).find((plugin) => plugin.props.clipboardTextSerializer)
     const serialize = prev.clipboardTextSerializer ?? stock?.props.clipboardTextSerializer?.bind(stock)
     if (!serialize) return prev
+    const html = prev.clipboardSerializer ?? DOMSerializer.fromSchema(ctx.get(schemaCtx))
     return {
       ...prev,
+      clipboardSerializer: new DOMSerializer({
+        ...html.nodes,
+        paragraph: (node) => {
+          const paragraph = html.serializeNode(node) as HTMLElement
+          paragraph.style.marginTop = '0'
+          paragraph.style.marginBottom = '0'
+          if (node.content.size === 0) paragraph.appendChild(document.createElement('br'))
+          return paragraph
+        },
+      }, html.marks),
       clipboardTextSerializer: (slice, view) => {
         const text = serialize(slice, view)
         if (!text.includes('<br />')) return text
