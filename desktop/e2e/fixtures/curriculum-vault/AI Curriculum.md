@@ -2,7 +2,7 @@
 folder_page: true
 folder_pages:
   - "[[Courses]]"
-  - "[[AI Curriculum Page]]"
+  - "[[Garden Club Page]]"
 folder_page_settings:
   views:
     - type: outline
@@ -10,127 +10,127 @@ folder_page_settings:
       outline: |-
         - My Courses
         - <br />
-        - **<u>Solving Business Problems with AI</u>**
-            - Full Stack Entreprenuer (Promotion / Ops / Product) OR (marketing/sales/product
-            - Funnel (Francisco's example) -- EXPLAINING THE PIPLINE AS A FUNNEL
-                - Top of funnel
-                - and then sales calls
-                - and then conversion rates
-        - **<u>2) AI Agents</u>**
-            - My teaching outline
+        - **<u>Harvest map</u>**
+            - Crop hose sunflower weed tomato
+            - Row patrol trellis raised barrel
+                - Mulch bed
+                - Soil rota
+                - Swap frost
+        - **<u>Bean reel</u>**
+            - Spacing compost
                 - 1. Title > Promise > Intro > Temp Check
-                    - Promise: show visual // we're going to talk about the 4 Levels of using AI Agents, why most people are not even use 10% of AI - we're going to go through real life practical business examples and by the end of today's session (depending on how much we get through)
-                    - the business examples we're going to through are...
-                        - Kassie = Business Owner of Kassie Corp.
-                        - hires Trevor = employee to get the work done
-                        - Trevor needs to do this work for Kassie Corp.
-                        - (obviously put yourself in these shoes)
+                    - Ph tool swap frost crop hose sunflower weed
+                    - Plot date bean reel
+                        - Pole wheelbarrow spacing
+                        - Weed tomato seedling rain
+                        - Raised barrel ph tool
+                        - Watering shed plot
                 - 2. Gauge the Audience - Questions
                     - 1\) have a subscription?
-                        - which one? Claude // OpenAI // Grok?
-                        - what tiers? 20 // 100 // 200
-                    - 2\) what surface do you use it the most?
-                        - browser? desktop app? terminal? other?
-                        - note: not including phone because no work is getting done on the phone.
-                    - 3\) what method do you use it the most?
-                        - Claude: chat? cowork? code?
-                        - OpenAI: chat? work? Codex?
-                    - 4\) what % of your AI usage do you use voice vs typing on the COMPUTER?
-                        - comment 100% vs 0% //
-                - 3. Read through the 4 Levels
+                        - Patrol trellis raised?
+                        - Bed pollinator watering?
+                    - 2\) Rota harvest map cover?
+                        - Frost crop?
+                        - Reel row patrol trellis raised barrel
+                    - 3\) Compost mulch bed pollinator?
+                        - Rain soil?
+                        - Tool swap?
+                    - 4\) Date bean reel row patrol trellis raised?
+                        - Wheelbarrow spacing
+                - 3. Tomato seedling
         - 4. Level 1) Human (Good old Meat Machines)
-            - What are the things Trevor needs to do in order to get this task done?
-            - Before 2025 (less than 18 months ago) this was primarily
-        - 5. Level 2) Copilot Mode
-            - What is Copilot Mode? You work with AI to get the task done.
-            - So let's start to use AI - we're going to go ahead and open up the Claude Desktop App (lesson #1)
-            - Most people think of AI as just 1 thing, so they'll go to Claude and and they'll use chat, but you'll notice there are a few different settings here: Chat, Cowork & Code - and which one you pick will make all the difference on the output you get.
-            - Chat vs Cowork vs Code
-            - Steps:
-        - \*
-            - Note: you click the buttons to start the work. Is it still better than Human mode? 100%.
-            - Running Examples:
-                - Teach using examples
-                    - Note: maybe I should be teaching this as EXAMPLES (so embed the conceptual concepts into a practical business thing that you'd be doing... and then its a side bar to explain the topic - kinda like being on a journey and then we stop to explain the thing and then go from there)
-                - Customer Service Problem
-                    - someone emails you and says they want a refund
-                    - what do you need?
-                        - 1. Access to the email account (where the ticket/email was received)
-                        - 2\) CRM - who's the customer, history, who was the sales person who sold them?
-                        - 3. Payment Processor - the payment amount
-                        - 4\) SOP / Rules of how to handle something like this?
-                        - 5\) Brand Tone // Template
-                - Sales Prep
-                    - You (or your sales rep) have an appointment with a lead (potential customer) what do you need to prepare ahead of time?
-                    - What do you need:
-                        - 1\) Who is the lead // any info they have filled out (CRM)
-                        - 2. When is their appointment (calendar)
-                        - 3\) Any research about them from online?
-                        - 4\) How do you want that output structured?
-                        - 5\) where to send it to you (or sales rep)
-                - Lead follow up
-                    - a new lead comes in, they need someone to text / call
+            - Shed plot date bean reel row patrol?
+            - Cover pole wheelbarrow spacing compost
+        - 5. Sunflower weed
+            - Trellis raised barrel ph tool swap?
+            - Pollinator watering shed plot date bean reel row
+            - Harvest map cover pole wheelbarrow spacing compost mulch
+            - Crop hose
+            - Row patrol
+        - \*Mulch bed
+            - Soil rota harvest map cover pole wheelbarrow spacing?
+            - Swap frost
+                - Bean reel
+                    - Spacing compost mulch bed pollinator watering shed plot
+                - Seedling rain
+                    - Ph tool swap frost
+                    - Plot date?
+                        - 1. Pole wheelbarrow spacing compost mulch
+                        - 2\) Weed tomato seedling rain soil rota harvest?
+                        - 3. Raised barrel ph
+                        - 4\) Watering shed plot date bean?
+                        - 5\) Map cover
+                - Hose sunflower
+                    - Patrol trellis raised barrel ph tool swap frost?
+                    - Bed pollinator
+                        - 1\) Rota harvest map cover pole wheelbarrow
+                        - 2. Frost crop
+                        - 3\) Reel row patrol?
+                        - 4\) Compost mulch bed?
+                        - 5\) Rain soil rota harvest
+                - Tool swap
+                    - Date bean reel row patrol trellis
                 -
-            - Curriculum DUMP
-        - 1. Setup [[T2-The-Setup]]
-            - 1\) Claude Subscription
-            - 2\) Claude Desktop App
-            - 3\) VS Code
-        - 2. VS Code [[T3-VS-Code]]
-            - \= File Manager & Document Viewer software
-        - 3. [[AI vs Agent: The Two Ways to Use AI]]
-        - 4. 4 ways to use Claude Code (the harness) [[T12-Agent-Platform-Landscape]]
-            - 1\) Desktop App
-            - 2\) Terminal
-            - 3\) Extensions
-        - 5. Other Harnesses [[T12-Agent-Platform-Landscape]]
-            - Design
-        - 6. Many ways to skin the cat [[T11-Agent-Platforms-vs-Consumer-Apps-Advanced]]
-        - 7. Using Voice to Speak to AI [[T4-WisprFlow]]
-        - 8. Agents File Access [[T6-File-System-Access]]
-        - 9. How AI Works [[T7-How-AI-Works]]
-        - 10. Tokens - Explained [[T8-AI-Tokens-Explained]]
-        - 11. Token Management [[T9-AI-Tokens-Management]]
-        - 12. Sub Agents [[T10-Sub-Agents]]
-        - 13. Github [[T13-Understanding-GitHub]]
-        - 14. Skills [[T14-Skills]]
-        - 15. MCPs & APIs [[T15-MCPs-APIs]]
-        - 16. Local vs Cloud [[T12-Agent-Platform-Landscape]]
-            - The 4 Levels of Using Agents to do Work
-                - Level 1) Human
-                    - Before 2025 (less than 18 months ago) this was primarily
-                - Level 2) Copilot Mode
-                    - What is Copilot Mode? You have to still click the buttons to start the work. Is it still better than Human mode? 100%.
-                    - The Steps:
-                        - 1\) Prompting
-                            - What is prompting? Just clear communication. You're speaking to someone who has NO context.
-                            - Send a message.
-                        - 2\) Skills
-                        - 3\) External Local Files
-                        - 4\) External Connections (MCPs vs APIs) [[T15-MCPs-APIs]]
-                        - 5\) External Cloud Files
-                            - What is the tradeoff bw local vs cloud files? For LLMs why do we prefer local?
-                - Level 3) Automations
-                    - What are automations?
-                        - based on a trigger or an event
-                    - Deterministic vs Agentic Automations
-                        - n8n is a clear example... deterministic... rules you write and determine ahead of time
-                    - The Steps:
-                        - 1\) Local Automations
-                        - 2\) Cloud Automations
-                        - 3\) n8n
-                - Level 4) Full Autonomous
-                    - This is where you now need to learn about Github and Software Engineering // unlimited flexibility and customization.
-            - Software Engineering Fundamentals
-                - SDLC
-                    - 1\) Development
-                    - 2\) Integration
-                    - 3\) Deployment
-                - Github Advanced
-                - Agentic Software is built on top of Traditional Software - it's the same discipline with some additional topics on top.
-        - ![[Drawing 2026-08-26 11.39.53.excalidraw]]
-        - [[AI vs Agent: The Two Ways to Use AI]]
-        - [[All the Ways to use Agents]]
+            - Tomato seedling
+        - 1. Barrel ph [[G74-Note]]
+            - 1\) Shed plot
+            - 2\) Cover pole
+            - 3\) Sunflower weed
+        - 2. Trellis raised [[G78-Note]]
+            - \= Pollinator watering shed
+        - 3. Harvest map cover pole [[G80-Note]]
+        - 4. Crop hose sunflower weed [[G81-Note]]
+            - 1\) Row patrol
+            - 2\) Mulch bed
+            - 3\) Soil rota
+        - 5. Swap frost [[G85-Note]]
+            - Bean reel
+        - 6. Spacing compost mulch [[G87-Note]]
+        - 7. Seedling rain soil [[G88-Note]]
+        - 8. Ph tool [[G89-Note]]
+        - 9. Plot date [[G90-Note]]
+        - 10. Pole wheelbarrow [[G91-Note]]
+        - 11. Weed tomato [[G92-Note]]
+        - 12. Raised barrel [[G93-Note]]
+        - 13. Watering shed [[G94-Note]]
+        - 14. Map cover [[G95-Note]]
+        - 15. Hose sunflower [[G96-Note]]
+        - 16. Patrol trellis [[G97-Note]]
+            - Bed pollinator watering shed
+                - Level 1) Rota harvest
+                    - Frost crop hose sunflower weed
+                - Level 2) Reel row
+                    - Compost mulch bed pollinator watering shed plot date?
+                    - Rain soil
+                        - 1\) Tool swap
+                            - Date bean reel row patrol trellis raised?
+                            - Wheelbarrow spacing
+                        - 2\) Tomato seedling
+                        - 3\) Barrel ph
+                        - 4\) Shed plot date [[G109-Note]]
+                        - 5\) Cover pole
+                            - Sunflower weed tomato seedling rain soil rota harvest?
+                - Level 3) Trellis raised
+                    - Pollinator watering?
+                        - Harvest map cover
+                    - Crop hose
+                        - Row patrol trellis raised barrel ph tool
+                    - Mulch bed
+                        - 1\) Soil rota
+                        - 2\) Swap frost
+                        - 3\) Bean reel
+                - Level 4) Spacing compost
+                    - Seedling rain soil rota harvest map cover pole
+            - Ph tool
+                - Plot date
+                    - 1\) Pole wheelbarrow
+                    - 2\) Weed tomato
+                    - 3\) Raised barrel
+                - Watering shed
+                - Map cover pole wheelbarrow spacing compost mulch bed
+        - ![[Plot sketch 130.excalidraw]]
+        - [[Garden Topic 131]]
+        - [[Garden Topic 132]]
     - type: table
       name: Table
 ---

@@ -1,8 +1,9 @@
 /**
- * THE REAL FILE, end to end (YAZ-975 — the proof YAZ-964 demanded): `AI Curriculum.md`, copied
- * VERBATIM from the vault that hit the bug (fixtures/curriculum-vault), not a sanitized
- * approximation — 123 outline lines including the 24 `1.`-spelled ones the seed used to drop, the
- * escaped `1\)` / `\*` / `\=` survivors, inline `<u>` HTML and one `<br />` spacer. YAZ-1329
+ * THE REAL SHAPE, end to end (YAZ-975 — the proof YAZ-964 demanded): `AI Curriculum.md` is a
+ * line-for-line stand-in for the vault file that hit the bug (fixtures/curriculum-vault) — the
+ * words are placeholders, the structure is verbatim: 123 outline lines including the 24
+ * `1.`-spelled ones the seed used to drop, the escaped `1\)` / `\*` / `\=` survivors, inline
+ * `<u>` HTML and one `<br />` spacer. YAZ-1329
  * canonicalizes the numeric same-line escape away on the first real save; the other escapes stay.
  *
  * WHAT IS PROVEN, in order (serial — each step continues the last):
