@@ -19,17 +19,18 @@ export type OperatorId =
   | 'dateIs' | 'dateBefore' | 'dateAfter'
   | 'checked' | 'unchecked'
   | 'hasTag' | 'inFolder' | 'hasLink'
+  | 'isAnyOf' | 'isNoneOf' | 'hasAnyOf' | 'hasNoneOf' | 'hasAllOf'
 
 export interface Rule {
   /** Canonical key: `note.x`, `file.x` or `formula.x` (see `canonicalKey`). */
   property: string
   op: OperatorId
-  /** Raw input text; '' for operators without a value. */
-  value: string
+  /** Raw input text; '' for operators without a value; the ticked values for an `options` one. */
+  value: string | string[]
 }
 
-/** What the value input holds; `none` hides it. */
-export type ValueKind = 'text' | 'number' | 'date' | 'none'
+/** What the value input holds; `none` hides it, `options` is the value checklist (YAZ-1467). */
+export type ValueKind = 'text' | 'number' | 'date' | 'none' | 'options'
 
 export interface OperatorDef {
   id: OperatorId
@@ -60,34 +61,40 @@ const OPS: Record<OperatorId, OperatorDef> = {
   hasTag: { id: 'hasTag', label: 'has tag', value: 'text' },
   inFolder: { id: 'inFolder', label: 'in folder', value: 'text' },
   hasLink: { id: 'hasLink', label: 'has link', value: 'text' },
+  isAnyOf: { id: 'isAnyOf', label: 'is any of', value: 'options' },
+  isNoneOf: { id: 'isNoneOf', label: 'is none of', value: 'options' },
+  hasAnyOf: { id: 'hasAnyOf', label: 'has any of', value: 'options' },
+  hasNoneOf: { id: 'hasNoneOf', label: 'has none of', value: 'options' },
+  hasAllOf: { id: 'hasAllOf', label: 'has all of', value: 'options' },
 }
 
 export const OPERATORS_BY_TYPE: Record<PropertyType, OperatorId[]> = {
-  text: ['is', 'isNot', 'contains', 'notContains', 'startsWith', 'endsWith', 'isEmpty', 'isNotEmpty'],
+  text: ['is', 'isNot', 'isAnyOf', 'isNoneOf', 'contains', 'notContains', 'startsWith', 'endsWith', 'isEmpty', 'isNotEmpty'],
   number: ['eq', 'ne', 'lt', 'gt', 'le', 'ge', 'isEmpty', 'isNotEmpty'],
   date: ['dateIs', 'dateBefore', 'dateAfter', 'isEmpty', 'isNotEmpty'],
   checkbox: ['checked', 'unchecked'],
-  list: ['contains', 'notContains', 'isEmpty', 'isNotEmpty'],
-  tags: ['contains', 'notContains', 'isEmpty', 'isNotEmpty'],
+  list: ['contains', 'notContains', 'hasAnyOf', 'hasNoneOf', 'hasAllOf', 'isEmpty', 'isNotEmpty'],
+  tags: ['contains', 'notContains', 'hasAnyOf', 'hasNoneOf', 'hasAllOf', 'isEmpty', 'isNotEmpty'],
   file: ['hasTag', 'inFolder', 'hasLink'],
-  link: ['is', 'isNot', 'isEmpty', 'isNotEmpty'],
-  'multi-link': ['contains', 'notContains', 'isEmpty', 'isNotEmpty'],
-  select: ['is', 'isNot', 'isEmpty', 'isNotEmpty'],
-  'multi-select': ['contains', 'notContains', 'isEmpty', 'isNotEmpty'],
+  link: ['is', 'isNot', 'isAnyOf', 'isNoneOf', 'isEmpty', 'isNotEmpty'],
+  'multi-link': ['contains', 'notContains', 'hasAnyOf', 'hasNoneOf', 'hasAllOf', 'isEmpty', 'isNotEmpty'],
+  select: ['is', 'isNot', 'isAnyOf', 'isNoneOf', 'isEmpty', 'isNotEmpty'],
+  'multi-select': ['contains', 'notContains', 'hasAnyOf', 'hasNoneOf', 'hasAllOf', 'isEmpty', 'isNotEmpty'],
 }
 
 /** The three file-method rules live on pseudo-properties so they fit the property · operator · value row. */
-const FILE_OP: Record<string, OperatorId> = { 'file.tags': 'hasTag', 'file.folder': 'inFolder', 'file.links': 'hasLink' }
+const FILE_OPS: Record<string, OperatorId[]> = {
+  'file.tags': ['hasTag', 'hasAnyOf', 'hasNoneOf', 'hasAllOf'],
+  'file.folder': ['inFolder', 'isAnyOf', 'isNoneOf'],
+  'file.links': ['hasLink'],
+}
 const FILE_PROPERTY: Partial<Record<OperatorId, string>> = { hasTag: 'file.tags', inFolder: 'file.folder', hasLink: 'file.links' }
 
 export const operator = (id: OperatorId): OperatorDef => OPS[id]
 
-/** Operators the builder offers for one property of one type (a file pseudo-property has exactly one). */
+/** Operators the builder offers for one property of one type (a file pseudo-property has its own list). */
 export function operatorsFor(property: string, type: PropertyType): OperatorDef[] {
-  if (type === 'file') {
-    const id = FILE_OP[property]
-    return id ? [OPS[id]] : []
-  }
+  if (type === 'file') return (FILE_OPS[property] ?? []).map(id => OPS[id])
   return OPERATORS_BY_TYPE[type].map(id => OPS[id])
 }
 
@@ -98,7 +105,7 @@ export function operatorsFor(property: string, type: PropertyType): OperatorDef[
  * `file.*` and `formula.*` are by name and ignore typing entirely.
  */
 export function inferType(property: string, records: readonly IndexRecord[], typing?: ColumnTyping): PropertyType {
-  if (property in FILE_OP) return 'file'
+  if (property in FILE_OPS) return 'file'
   if (property.startsWith('file.')) {
     const field = property.slice(5)
     return field === 'size' ? 'number' : field === 'ctime' || field === 'mtime' ? 'date' : 'text'
@@ -145,8 +152,13 @@ function accessor(property: string): string {
   return IDENT.test(name) ? `${object}.${name}` : `${object}[${quote(name)}]`
 }
 
+/** The ticked values of an `options` operator, each quoted and comma-separated (YAZ-1467). */
+const list = (value: Rule['value']): string => (Array.isArray(value) ? value : []).map(quote).join(', ')
+
 export function ruleToExpr(rule: Rule): string {
-  const { op, value } = rule
+  const { op } = rule
+  /** The string half of the value; an operator's kind decides which half it fills. */
+  const value = typeof rule.value === 'string' ? rule.value : ''
   if (op === 'hasTag' || op === 'inFolder' || op === 'hasLink') return `file.${op}(${quote(value)})`
   const a = accessor(rule.property)
   switch (op) {
@@ -171,6 +183,12 @@ export function ruleToExpr(rule: Rule): string {
     case 'dateAfter': return `!${a}.isEmpty() && ${a} > date(${quote(value)})`
     case 'checked': return `${a} == true`
     case 'unchecked': return `${a} == false`
+    // Deep equality, unlike the substring `containsAny` a string would take (🔒 D5, YAZ-1467).
+    case 'isAnyOf': return `[${list(rule.value)}].contains(${a})`
+    case 'isNoneOf': return `![${list(rule.value)}].contains(${a})`
+    case 'hasAnyOf': return `${a}.containsAny(${list(rule.value)})`
+    case 'hasNoneOf': return `!${a}.containsAny(${list(rule.value)})`
+    case 'hasAllOf': return `${a}.containsAll(${list(rule.value)})`
   }
 }
 
@@ -192,11 +210,30 @@ function propertyOf(e: Expr): string | null {
 
 const strArg = (args: Expr[]): string | null => (args.length === 1 && args[0].type === 'str' ? args[0].value : null)
 
+/** Every item as a string, or null the moment one is not — a hand-written `[1, "a"]` is no row. */
+function strList(items: readonly Expr[]): string[] | null {
+  const out: string[] = []
+  for (const item of items) {
+    if (item.type !== 'str') return null
+    out.push(item.value)
+  }
+  return out
+}
+
 function methodRule(e: Expr): Rule | null {
   if (e.type !== 'method') return null
+  if (e.name === 'contains' && e.object.type === 'list') {
+    const value = strList(e.object.items)
+    const property = e.args.length === 1 ? propertyOf(e.args[0]) : null
+    return value === null || property === null ? null : { property, op: 'isAnyOf', value }
+  }
   const property = propertyOf(e.object)
   if (property === null) return null
   if (e.name === 'isEmpty') return e.args.length === 0 ? { property, op: 'isEmpty', value: '' } : null
+  if (e.name === 'containsAny' || e.name === 'containsAll') {
+    const value = strList(e.args)
+    return value === null ? null : { property, op: e.name === 'containsAny' ? 'hasAnyOf' : 'hasAllOf', value }
+  }
   if (e.name === 'contains' || e.name === 'startsWith' || e.name === 'endsWith') {
     const value = strArg(e.args)
     return value === null ? null : { property, op: e.name, value }
@@ -247,6 +284,8 @@ export function exprToRule(src: string): Rule | null {
     const inner = methodRule(e.operand)
     if (inner?.op === 'contains') return { ...inner, op: 'notContains' }
     if (inner?.op === 'isEmpty') return { ...inner, op: 'isNotEmpty' }
+    if (inner?.op === 'isAnyOf') return { ...inner, op: 'isNoneOf' }
+    if (inner?.op === 'hasAnyOf') return { ...inner, op: 'hasNoneOf' }
     return null
   }
   if (e.type === 'method') return methodRule(e)

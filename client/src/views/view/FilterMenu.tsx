@@ -3,14 +3,15 @@ import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import type { ViewSet, ViewDef, FilterNode, Mutate } from '../viewSchema'
 import { type ColumnTyping, columnTyping } from '../editorType'
 import type { FolderPageMode } from '../ViewsPane'
-import { type EngineError, propertyLabel } from '../engine'
+import type { EngineError } from '../engine'
 import { stripBrackets } from '../expr'
 import {
   type Conjunction, type FilterGroup, type OperatorId, type Rule, exprToRule, fromGroup, inferType, operator,
   operatorsFor, ruleToExpr, toGroup,
 } from './filterRows'
+import { ColumnPicker } from './ColumnPicker'
 import { canonicalKey } from './keys'
-import { allPropertyKeys, withKey } from './properties'
+import { allPropertyKeys, propertyOptions } from './properties'
 import { TextField } from './TextField'
 
 export interface FilterMenuProps {
@@ -39,7 +40,7 @@ const FILE_EXTRAS = ['file.tags', 'file.folder', 'file.links']
 /** A fresh rule matches every row, so adding one never blanks the view before it is filled in. */
 const NEW_RULE: Rule = { property: 'file.name', op: 'contains', value: '' }
 
-/** A long list defeats its own purpose, and the vault is the only source of these (YAZ-1232). */
+/** A long DATALIST defeats its own purpose (YAZ-1232); the searchable checklist takes every value (YAZ-1469). */
 const SUGGESTION_LIMIT = 50
 
 /**
@@ -90,16 +91,16 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
     const next = { ...rule, ...patch }
     const ops = operatorsFor(next.property, inferType(next.property, records, typingOf(next.property)))
     if (patch.property !== undefined && !ops.some((o) => o.id === next.op)) next.op = ops[0]?.id ?? next.op
-    if (operator(next.op).value !== operator(rule.op).value) next.value = ''
+    if (operator(next.op).value !== operator(rule.op).value) next.value = operator(next.op).value === 'options' ? [] : ''
     setAt(i, ruleToExpr(next))
   }
 
   /** The values `records` already hold for one property, distinct and in first-seen order (YAZ-1232). */
-  const suggestionsFor = (property: string): string[] => {
+  const suggestionsFor = (property: string, limit = SUGGESTION_LIMIT): string[] => {
     const out: string[] = []
     const seen = new Set<string>()
     const add = (s: string) => {
-      if (s === '' || seen.has(s) || out.length >= SUGGESTION_LIMIT) return
+      if (s === '' || seen.has(s) || out.length >= limit) return
       seen.add(s)
       out.push(s)
     }
@@ -118,27 +119,28 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
     return out
   }
 
+  /** The property's known values, plus any tick it lacks so a hand-edited one still shows (YAZ-1467). */
+  const valueOptions = (property: string, picks: readonly string[]) => {
+    const known = suggestionsFor(property, Infinity)
+    return [...picks.filter((v) => !known.includes(v)), ...known].map((value) => ({ value, label: value }))
+  }
+
   const ruleRow = (rule: Rule, i: number, setAt: (i: number, item: FilterNode) => void, path: string) => {
     const type = inferType(rule.property, records, typingOf(rule.property))
     const ops = operatorsFor(rule.property, type)
     const opList = ops.some((o) => o.id === rule.op) ? ops : [...ops, operator(rule.op)]
     const kind = operator(rule.op).value
+    const picks = Array.isArray(rule.value) ? rule.value : []
     const suggestions = kind === 'text' ? suggestionsFor(rule.property) : []
     const listId = `filter-sugg-${viewIndex}-${path}`
     return (
       <>
-        <select
-          className="view-select"
-          aria-label="Property"
+        <ColumnPicker
+          label="Property"
           value={canonicalKey(rule.property)}
-          onChange={(e) => setRule(i, rule, { property: e.target.value }, setAt)}
-        >
-          {withKey(keys, rule.property).map((k) => (
-            <option key={canonicalKey(k)} value={canonicalKey(k)}>
-              {propertyLabel(def, k)}
-            </option>
-          ))}
-        </select>
+          options={propertyOptions(def, keys, rule.property)}
+          onChange={(value) => setRule(i, rule, { property: value }, setAt)}
+        />
         <select
           className="view-select"
           aria-label="Operator"
@@ -151,14 +153,23 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
             </option>
           ))}
         </select>
-        {kind !== 'none' && (
+        {kind === 'options' ? (
+          <ColumnPicker
+            multiple
+            noun="options"
+            label="Value"
+            value={picks}
+            options={valueOptions(rule.property, picks)}
+            onChange={(value) => setRule(i, rule, { value }, setAt)}
+          />
+        ) : kind !== 'none' && (
           <TextField
             className="view-input"
             aria-label="Value"
             type={kind === 'date' ? 'date' : kind === 'number' ? 'number' : 'text'}
             inputMode={kind === 'number' ? 'decimal' : undefined}
             list={suggestions.length > 0 ? listId : undefined}
-            value={rule.value}
+            value={typeof rule.value === 'string' ? rule.value : ''}
             onCommit={(value) => setRule(i, rule, { value }, setAt)}
           />
         )}
@@ -238,7 +249,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
   }
 
   return (
-    <div className="view-menu">
+    <div className="view-menu filter-menu">
       {errors.length > 0 && (
         <ul className="view-menu__errors" role="alert">
           {errors.map((e, i) => (

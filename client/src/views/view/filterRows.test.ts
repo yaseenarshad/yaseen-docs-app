@@ -7,9 +7,11 @@ import {
 import { canonicalKey } from './keys'
 
 /** Every operator of every type, with a representative value, and the expression it must write (GRO-2135). */
-const CASES: { type: PropertyType; property: string; op: OperatorId; value: string; expr: string }[] = [
+const CASES: { type: PropertyType; property: string; op: OperatorId; value: string | string[]; expr: string }[] = [
   { type: 'text', property: 'note.status', op: 'is', value: 'idea', expr: 'note.status == "idea"' },
   { type: 'text', property: 'note.status', op: 'isNot', value: 'idea', expr: 'note.status != "idea"' },
+  { type: 'text', property: 'note.status', op: 'isAnyOf', value: ['idea', 'drafting'], expr: '["idea", "drafting"].contains(note.status)' },
+  { type: 'text', property: 'note.status', op: 'isNoneOf', value: ['idea', 'drafting'], expr: '!["idea", "drafting"].contains(note.status)' },
   { type: 'text', property: 'note.status', op: 'contains', value: 'id', expr: 'note.status.contains("id")' },
   { type: 'text', property: 'note.status', op: 'notContains', value: 'id', expr: '!note.status.contains("id")' },
   { type: 'text', property: 'note.status', op: 'startsWith', value: 'i', expr: 'note.status.startsWith("i")' },
@@ -33,29 +35,50 @@ const CASES: { type: PropertyType; property: string; op: OperatorId; value: stri
   { type: 'checkbox', property: 'note.published', op: 'unchecked', value: '', expr: 'note.published == false' },
   { type: 'list', property: 'note.related', op: 'contains', value: 'x', expr: 'note.related.contains("x")' },
   { type: 'list', property: 'note.related', op: 'notContains', value: 'x', expr: '!note.related.contains("x")' },
+  { type: 'list', property: 'note.related', op: 'hasAnyOf', value: ['x', 'y'], expr: 'note.related.containsAny("x", "y")' },
+  { type: 'list', property: 'note.related', op: 'hasNoneOf', value: ['x', 'y'], expr: '!note.related.containsAny("x", "y")' },
+  { type: 'list', property: 'note.related', op: 'hasAllOf', value: ['x', 'y'], expr: 'note.related.containsAll("x", "y")' },
   { type: 'list', property: 'note.related', op: 'isEmpty', value: '', expr: 'note.related.isEmpty()' },
   { type: 'list', property: 'note.related', op: 'isNotEmpty', value: '', expr: '!note.related.isEmpty()' },
   { type: 'tags', property: 'note.tags', op: 'contains', value: 'agentic', expr: 'note.tags.contains("agentic")' },
   { type: 'tags', property: 'note.tags', op: 'notContains', value: 'agentic', expr: '!note.tags.contains("agentic")' },
+  { type: 'tags', property: 'note.tags', op: 'hasAnyOf', value: ['agentic', 'paper'], expr: 'note.tags.containsAny("agentic", "paper")' },
+  { type: 'tags', property: 'note.tags', op: 'hasNoneOf', value: ['agentic', 'paper'], expr: '!note.tags.containsAny("agentic", "paper")' },
+  { type: 'tags', property: 'note.tags', op: 'hasAllOf', value: ['agentic', 'paper'], expr: 'note.tags.containsAll("agentic", "paper")' },
   { type: 'tags', property: 'note.tags', op: 'isEmpty', value: '', expr: 'note.tags.isEmpty()' },
   { type: 'tags', property: 'note.tags', op: 'isNotEmpty', value: '', expr: '!note.tags.isEmpty()' },
   { type: 'link', property: 'note.owner', op: 'is', value: 'Agentic Agency', expr: 'note.owner == "Agentic Agency"' },
   { type: 'link', property: 'note.owner', op: 'isNot', value: 'Agentic Agency', expr: 'note.owner != "Agentic Agency"' },
+  { type: 'link', property: 'note.owner', op: 'isAnyOf', value: ['Agentic Agency', 'VSL'], expr: '["Agentic Agency", "VSL"].contains(note.owner)' },
+  { type: 'link', property: 'note.owner', op: 'isNoneOf', value: ['Agentic Agency', 'VSL'], expr: '!["Agentic Agency", "VSL"].contains(note.owner)' },
   { type: 'link', property: 'note.owner', op: 'isEmpty', value: '', expr: 'note.owner.isEmpty()' },
   { type: 'link', property: 'note.owner', op: 'isNotEmpty', value: '', expr: '!note.owner.isEmpty()' },
   { type: 'multi-link', property: 'note.people', op: 'contains', value: 'Yasin', expr: 'note.people.contains("Yasin")' },
   { type: 'multi-link', property: 'note.people', op: 'notContains', value: 'Yasin', expr: '!note.people.contains("Yasin")' },
+  { type: 'multi-link', property: 'note.people', op: 'hasAnyOf', value: ['Yasin', 'Ada'], expr: 'note.people.containsAny("Yasin", "Ada")' },
+  { type: 'multi-link', property: 'note.people', op: 'hasNoneOf', value: ['Yasin', 'Ada'], expr: '!note.people.containsAny("Yasin", "Ada")' },
+  { type: 'multi-link', property: 'note.people', op: 'hasAllOf', value: ['Yasin', 'Ada'], expr: 'note.people.containsAll("Yasin", "Ada")' },
   { type: 'multi-link', property: 'note.people', op: 'isEmpty', value: '', expr: 'note.people.isEmpty()' },
   { type: 'multi-link', property: 'note.people', op: 'isNotEmpty', value: '', expr: '!note.people.isEmpty()' },
   { type: 'file', property: 'file.tags', op: 'hasTag', value: 'pillar', expr: 'file.hasTag("pillar")' },
   { type: 'file', property: 'file.folder', op: 'inFolder', value: 'Content Pillars', expr: 'file.inFolder("Content Pillars")' },
   { type: 'file', property: 'file.links', op: 'hasLink', value: 'Agentic Agency', expr: 'file.hasLink("Agentic Agency")' },
+  { type: 'file', property: 'file.tags', op: 'hasAnyOf', value: ['pillar', 'vsl'], expr: 'file.tags.containsAny("pillar", "vsl")' },
+  { type: 'file', property: 'file.tags', op: 'hasNoneOf', value: ['pillar', 'vsl'], expr: '!file.tags.containsAny("pillar", "vsl")' },
+  { type: 'file', property: 'file.tags', op: 'hasAllOf', value: ['pillar', 'vsl'], expr: 'file.tags.containsAll("pillar", "vsl")' },
+  { type: 'file', property: 'file.folder', op: 'isAnyOf', value: ['Content Pillars', 'VSL'], expr: '["Content Pillars", "VSL"].contains(file.folder)' },
+  { type: 'file', property: 'file.folder', op: 'isNoneOf', value: ['Content Pillars', 'VSL'], expr: '!["Content Pillars", "VSL"].contains(file.folder)' },
   { type: 'select', property: 'note.status', op: 'is', value: 'Ready', expr: 'note.status == "Ready"' },
   { type: 'select', property: 'note.status', op: 'isNot', value: 'Ready', expr: 'note.status != "Ready"' },
+  { type: 'select', property: 'note.status', op: 'isAnyOf', value: ['Ready', 'Done'], expr: '["Ready", "Done"].contains(note.status)' },
+  { type: 'select', property: 'note.status', op: 'isNoneOf', value: ['Ready', 'Done'], expr: '!["Ready", "Done"].contains(note.status)' },
   { type: 'select', property: 'note.status', op: 'isEmpty', value: '', expr: 'note.status.isEmpty()' },
   { type: 'select', property: 'note.status', op: 'isNotEmpty', value: '', expr: '!note.status.isEmpty()' },
   { type: 'multi-select', property: 'note.labels', op: 'contains', value: 'Ready', expr: 'note.labels.contains("Ready")' },
   { type: 'multi-select', property: 'note.labels', op: 'notContains', value: 'Ready', expr: '!note.labels.contains("Ready")' },
+  { type: 'multi-select', property: 'note.labels', op: 'hasAnyOf', value: ['Ready', 'Done'], expr: 'note.labels.containsAny("Ready", "Done")' },
+  { type: 'multi-select', property: 'note.labels', op: 'hasNoneOf', value: ['Ready', 'Done'], expr: '!note.labels.containsAny("Ready", "Done")' },
+  { type: 'multi-select', property: 'note.labels', op: 'hasAllOf', value: ['Ready', 'Done'], expr: 'note.labels.containsAll("Ready", "Done")' },
   { type: 'multi-select', property: 'note.labels', op: 'isEmpty', value: '', expr: 'note.labels.isEmpty()' },
   { type: 'multi-select', property: 'note.labels', op: 'isNotEmpty', value: '', expr: '!note.labels.isEmpty()' },
 ]
@@ -117,7 +140,29 @@ describe('ruleToExpr / exprToRule round trip (GRO-2135)', () => {
       '!note.a.isEmpty() && note.b < 3',
       '!note.a.isEmpty() && note.a == "x"',
       'note.a.isEmpty() && note.a < 3',
+      // Value-list forms outside the D5 grammar (YAZ-1467).
+      '[1, "a"].contains(note.status)',
+      '["a"].contains("b")',
+      '["a"].contains(note.a, note.b)',
+      'note.a.containsAny("x", 3)',
+      'note.a.containsAll(note.b)',
     ]) expect(exprToRule(src), src).toBeNull()
+  })
+
+  it('no picks yet is still a row, not a raw expression (YAZ-1467)', () => {
+    const rule: Rule = { property: 'note.status', op: 'isAnyOf', value: [] }
+    expect(ruleToExpr(rule)).toBe('[].contains(note.status)')
+    expect(exprToRule('[].contains(note.status)')).toEqual(rule)
+  })
+
+  it('the value-list operators are offered per type, and never for number / date / checkbox (YAZ-1467)', () => {
+    const optionOps: OperatorId[] = ['isAnyOf', 'isNoneOf', 'hasAnyOf', 'hasNoneOf', 'hasAllOf']
+    const offered = (type: PropertyType) => OPERATORS_BY_TYPE[type].filter(id => optionOps.includes(id))
+    for (const type of ['text', 'link', 'select'] as const) expect(offered(type), type).toEqual(['isAnyOf', 'isNoneOf'])
+    for (const type of ['list', 'tags', 'multi-link', 'multi-select'] as const) {
+      expect(offered(type), type).toEqual(['hasAnyOf', 'hasNoneOf', 'hasAllOf'])
+    }
+    for (const type of ['number', 'date', 'checkbox'] as const) expect(offered(type), type).toEqual([])
   })
 })
 
@@ -134,13 +179,13 @@ describe('inferType', () => {
     expect(inferType('formula.x', TEST_RECORDS)).toBe('text')
   })
 
-  it('file fields by name; file.tags / file.folder / file.links are the file type with one operator each', () => {
+  it('file fields by name; file.tags / file.folder / file.links are the file type with their own operator list', () => {
     expect(inferType('file.name', TEST_RECORDS)).toBe('text')
     expect(inferType('file.size', TEST_RECORDS)).toBe('number')
     expect(inferType('file.mtime', TEST_RECORDS)).toBe('date')
     expect(inferType('file.tags', TEST_RECORDS)).toBe('file')
-    expect(operatorsFor('file.tags', 'file').map(o => o.id)).toEqual(['hasTag'])
-    expect(operatorsFor('file.folder', 'file').map(o => o.id)).toEqual(['inFolder'])
+    expect(operatorsFor('file.tags', 'file').map(o => o.id)).toEqual(['hasTag', 'hasAnyOf', 'hasNoneOf', 'hasAllOf'])
+    expect(operatorsFor('file.folder', 'file').map(o => o.id)).toEqual(['inFolder', 'isAnyOf', 'isNoneOf'])
     expect(operatorsFor('file.links', 'file').map(o => o.id)).toEqual(['hasLink'])
   })
 

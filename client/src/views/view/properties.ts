@@ -1,7 +1,7 @@
 import type { IndexRecord } from '@shared/types'
 import type { ViewSet, ViewDef } from '../viewSchema'
 import type { ColumnDecl } from '../folderPageSettings'
-import { propertyKeys } from '../engine'
+import { propertyKeys, propertyLabel } from '../engine'
 import { canonicalKey } from './keys'
 
 /**
@@ -32,6 +32,11 @@ export function allPropertyKeys(
 }
 
 /** `keys` plus `extra` (first) when missing, so a select always lists its current value. */
-export function withKey(keys: readonly string[], extra: string): string[] {
+function withKey(keys: readonly string[], extra: string): string[] {
   return keys.some(k => canonicalKey(k) === canonicalKey(extra)) ? [...keys] : [extra, ...keys]
+}
+
+/** Picker options for `keys` (+ `current` first when missing): canonical value, display label (YAZ-1466). */
+export function propertyOptions(def: ViewSet, keys: readonly string[], current?: string): { value: string; label: string }[] {
+  return (current ? withKey(keys, current) : keys).map((k) => ({ value: canonicalKey(k), label: propertyLabel(def, k) }))
 }

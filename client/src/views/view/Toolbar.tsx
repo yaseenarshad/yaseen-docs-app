@@ -77,7 +77,7 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
         {badge > 0 && <span className="view-toolbar__badge">{badge}</span>}
       </button>
       {open === menu && (
-        <Popover constrainToViewport label={label} onClose={close} className={menu === 'sort' ? 'view-popover--sort' : menu === 'properties' ? 'view-popover--properties' : undefined}>
+        <Popover constrainToViewport label={label} onClose={close} className={`view-popover--${menu}`}>
           {body}
         </Popover>
       )}
