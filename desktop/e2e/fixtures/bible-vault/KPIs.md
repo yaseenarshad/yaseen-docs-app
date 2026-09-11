@@ -22,6 +22,8 @@ folder_page_settings:
         - note.kpi_category
         - note.unit
         - note.funnel_stages
+    - type: board
+      name: Board
 ---
 
 # KPIs

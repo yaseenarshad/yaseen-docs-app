@@ -15,8 +15,8 @@ interface ConfirmDeleteViewProps {
 
 /**
  * In-app confirm sheet for a view tab's Delete (YAZ-1471), MIRRORING `ConfirmRemoveMember`: our
- * own sheet and never a native dialog, initial focus on CANCEL so a stray Enter changes nothing,
- * Esc cancels, Enter confirms, click-away cancels, `role="dialog"` + `aria-modal` labelled by its
+ * own sheet and never a native dialog, initial focus on CANCEL (a stray Space changes nothing —
+ * Enter is the sheet's own confirm), Esc cancels, click-away cancels, `role="dialog"` + `aria-modal` labelled by its
  * own text. Unlike the remove sheet the confirm IS `--danger`: a view's configuration — and an
  * outline's document — has no way back.
  */

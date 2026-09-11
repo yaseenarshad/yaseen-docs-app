@@ -261,6 +261,152 @@ describe('view tabs — drag to reorder (YAZ-1471)', () => {
 })
 
 /**
+ * Right-click a tab (YAZ-1471, D2): ONE `ContextMenuSurface` at the cursor offering
+ * Rename · Duplicate · Delete, and each one is a single `update` through the door sort and columns
+ * already use. Rename is the inline `TextField`, so its `normalize` is the whole rule — an empty
+ * name, or one another view already answers to, is REFUSED and the field snaps back with nothing
+ * written. Duplicate is a `structuredClone` (the copy carries the original's order, sort and
+ * everything else) named by `freeName` and activated; a page has ONE outline document, so an
+ * outline view can not be duplicated. Delete asks first, through `ConfirmDeleteView` — and is not
+ * offered at all when there is one view left, because `views` can never be empty.
+ */
+describe('view tabs — right-click menu (YAZ-1471)', () => {
+  const ONE_VIEW = 'views:\n  - type: table\n    name: Only\n'
+  const WITH_OUTLINE = 'views:\n  - type: outline\n    name: Outline\n  - type: table\n    name: Table\n'
+  /** The `.view-tab` WRAPPER carries the handler, not the `[role="tab"]` button inside it. */
+  const wrap = (el: ParentNode, name: string): HTMLElement => {
+    const w = byText<HTMLElement>(el, '[role="tab"]', name).closest<HTMLElement>('.view-tab')
+    if (w === null) throw new Error(`no tab wrapper for ${name}`)
+    return w
+  }
+  const openOn = (el: ParentNode, name: string): HTMLElement => {
+    act(() => void wrap(el, name).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    draw()
+    return q<HTMLElement>(el, '.ctx-menu[role="menu"]')
+  }
+  const item = (el: ParentNode, text: string): HTMLButtonElement => byText<HTMLButtonElement>(el, '[role="menuitem"]', text)
+  /** Open the menu on `name`, pick Rename, and hand back the field it swapped the tab for. */
+  const renameField = (el: ParentNode, name: string): HTMLInputElement => {
+    click(item(openOn(el, name), 'Rename'))
+    return byLabel<HTMLInputElement>(el, 'View name')
+  }
+  const names = (el: ParentNode, defOf: () => ViewSet): string[] => {
+    expect(tabs(el)).toEqual(defOf().views.map((v) => v.name)) // the strip IS the def, always
+    return tabs(el)
+  }
+
+  it('right-clicking a tab opens Rename · Duplicate · Delete, and opening writes nothing', () => {
+    const { el, onChange } = mount()
+    const menu = openOn(el, 'Table')
+    expect([...menu.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent)).toEqual(['Rename', 'Duplicate', 'Delete'])
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('Rename refuses a name another view already answers to — the field snaps back, nothing written', () => {
+    const { el, onChange } = mount()
+    const field = renameField(el, 'Table')
+    expect(field.value).toBe('Table')
+    type(field, 'View') // the second tab's name
+    expect(onChange).not.toHaveBeenCalled()
+    expect(tabs(el)).toEqual(['Table', 'View', 'View 2'])
+  })
+
+  it('Rename refuses an empty name the same way', () => {
+    const { el, onChange } = mount()
+    type(renameField(el, 'Table'), '')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(tabs(el)).toEqual(['Table', 'View', 'View 2'])
+  })
+
+  it('a free name commits in ONE update, and the YAML carries it', () => {
+    const { el, onChange, yaml } = mount()
+    type(renameField(el, 'Table'), 'Grid')
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(yaml()).toContain('name: Grid')
+    expect(tabs(el)).toEqual(['Grid', 'View', 'View 2'])
+  })
+
+  it('a BLUR commits that same edit — once, never twice', () => {
+    const { el, onChange, yaml } = mount()
+    const field = renameField(el, 'Table')
+    setValue(field, 'Grid')
+    act(() => void field.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))) // React maps onBlur onto focusout
+    draw()
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(yaml()).toContain('name: Grid')
+    expect(tabs(el)).toEqual(['Grid', 'View', 'View 2'])
+  })
+
+  it('Duplicate clones the view right after it, names it "… copy", and opens it', () => {
+    const { el, onChange, def } = mount()
+    click(item(openOn(el, 'Table'), 'Duplicate'))
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(names(el, def)).toEqual(['Table', 'Table copy', 'View', 'View 2'])
+    expect(def().views[1]).toEqual({ ...def().views[0], name: 'Table copy' })
+    expect(def().views[1].order).toEqual(['file.name']) // the clone is the WHOLE view, not a husk
+    expect(def().views[1].sort).toEqual([{ property: 'formula.Untitled', direction: 'ASC' }])
+    expect(selected(el)).toBe('Table copy')
+
+    click(item(openOn(el, 'Table'), 'Duplicate')) // `freeName` numbers the next one
+    expect(names(el, def)).toEqual(['Table', 'Table copy 2', 'Table copy', 'View', 'View 2'])
+  })
+
+  it('Duplicate is disabled for an outline view — a page has ONE document', () => {
+    const { el } = mount(WITH_OUTLINE)
+    expect(item(openOn(el, 'Outline'), 'Duplicate').disabled).toBe(true)
+    expect(item(openOn(el, 'Table'), 'Duplicate').disabled).toBe(false)
+  })
+
+  it('Delete is disabled on the last view — `views` can never be empty', () => {
+    const { el } = mount(ONE_VIEW)
+    expect(item(openOn(el, 'Only'), 'Delete').disabled).toBe(true)
+  })
+
+  it('Delete asks first: Escape and a click-away both cancel, and write nothing', () => {
+    const { el, onChange } = mount()
+    click(item(openOn(el, 'View'), 'Delete'))
+    expect(q(el, '[role="dialog"]').getAttribute('aria-modal')).toBe('true')
+    expect(q(el, '.confirm__text').textContent).toBe(
+      "Delete the view 'View'? Its columns, sort, filters and grouping go with it — the pages themselves stay put.",
+    )
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    draw()
+    expect(el.querySelector('[role="dialog"]')).toBeNull()
+    expect(onChange).not.toHaveBeenCalled()
+
+    click(item(openOn(el, 'View'), 'Delete'))
+    act(() => void q(el, '.confirm-overlay').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    draw()
+    expect(el.querySelector('[role="dialog"]')).toBeNull()
+    expect(onChange).not.toHaveBeenCalled()
+    expect(tabs(el)).toEqual(['Table', 'View', 'View 2'])
+  })
+
+  it('confirming Delete is ONE update — and the view you are ON stays selected', () => {
+    const { el, onChange, yaml, def } = mount() // active: Table
+    click(item(openOn(el, 'View'), 'Delete'))
+    click(q(el, '.confirm__btn--danger'))
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(names(el, def)).toEqual(['Table', 'View 2'])
+    expect(yaml()).not.toContain('name: View\n')
+    expect(selected(el)).toBe('Table')
+  })
+
+  it('deleting the ACTIVE view hands over to its right neighbour — or the left one for the last tab', () => {
+    const { el, def } = mount()
+    click(byText(el, '[role="tab"]', 'View'))
+    click(item(openOn(el, 'View'), 'Delete'))
+    click(q(el, '.confirm__btn--danger'))
+    expect(names(el, def)).toEqual(['Table', 'View 2'])
+    expect(selected(el)).toBe('View 2')
+    click(item(openOn(el, 'View 2'), 'Delete')) // now the LAST tab
+    click(q(el, '.confirm__btn--danger'))
+    expect(names(el, def)).toEqual(['Table'])
+    expect(selected(el)).toBe('Table')
+  })
+})
+
+/**
  * The Filter menu, back from the YAZ-846 amputation (YAZ-1227 / YAZ-1228 / YAZ-1229). Every write
  * lands on `views[i].filters` and nowhere else (D1), and the engine's own compile errors are read
  * where they are edited as well as on the muted footnote.
@@ -1200,21 +1346,21 @@ describe('sync from folder', () => {
 })
 
 /**
- * The saved starting view (YAZ-1104). The START may persist as `folder_page_settings.defaultView`;
- * which view is ACTIVE stays session state (🔒 rule 4) — the dropdown goes through its own door
- * (`setDefaultView`, ONE settings write on the host) and never touches the views YAML.
+ * The saved starting view (YAZ-1104), RE-HOMED by YAZ-1471: `defaultView` rides in the DEF next to
+ * `views:` (D4), so the dropdown travels the very door sort and columns travel — ONE `update`, one
+ * settings write on the host — instead of a second `setDefaultView` door of its own. Which view is
+ * ACTIVE still stays session state: the def's name only decides where an open STARTS.
  */
 describe('the default view', () => {
-  const settingsWith = (defaultView?: string) => ({ columns: {}, views: [], problems: [], defaultView })
+  /** Yasin's base with the saved START written into the def itself, at the root next to `views:`. */
+  const started = (name: string) => `${YASIN_BASE}defaultView: ${name}\n`
 
-  it('seeds the starting tab from folderPage.settings.defaultView', () => {
-    const { el } = mount(YASIN_BASE, { folderPage: testFolderPage({ settings: settingsWith('View 2') }) })
-    expect(selected(el)).toBe('View 2')
+  it('seeds the starting tab from the def’s own defaultView', () => {
+    expect(selected(mount(started('View 2')).el)).toBe('View 2')
   })
 
   it('a stale saved name starts on the first view', () => {
-    const { el } = mount(YASIN_BASE, { folderPage: testFolderPage({ settings: settingsWith('Ghost') }) })
-    expect(selected(el)).toBe('Table')
+    expect(selected(mount(started('Ghost')).el)).toBe('Table')
   })
 
   it('the properties menu ends with Page → Default view, listing First view then every view', () => {
@@ -1225,22 +1371,22 @@ describe('the default view', () => {
     expect(select.value).toBe('')
   })
 
-  it('picking a view goes through the setDefaultView door — never a views write', () => {
-    const setDefaultView = vi.fn()
-    const { el, onChange } = mount(YASIN_BASE, { folderPage: testFolderPage({ setDefaultView }) })
+  it('picking a view writes the def’s defaultView — ONE update, never a second door', () => {
+    const { el, onChange, yaml } = mount()
     setValue(byLabel<HTMLSelectElement>(openMenu(el, 'Properties'), 'Default view'), 'View')
-    expect(setDefaultView).toHaveBeenCalledExactlyOnceWith('View')
-    expect(onChange).not.toHaveBeenCalled()
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange.mock.calls[0][0].def.defaultView).toBe('View')
+    expect(yaml()).toContain('defaultView: View')
   })
 
-  it('the dropdown reflects the saved value, and First view clears it', () => {
-    const setDefaultView = vi.fn()
-    const { el } = mount(YASIN_BASE, { folderPage: testFolderPage({ settings: settingsWith('View'), setDefaultView }) })
-    const menu = openMenu(el, 'Properties')
-    const select = byLabel<HTMLSelectElement>(menu, 'Default view')
+  it('the dropdown reflects the def’s value, and First view DELETES the key', () => {
+    const { el, onChange, yaml } = mount(started('View'))
+    const select = byLabel<HTMLSelectElement>(openMenu(el, 'Properties'), 'Default view')
     expect(select.value).toBe('View')
     setValue(select, '')
-    expect(setDefaultView).toHaveBeenCalledExactlyOnceWith(undefined)
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange.mock.calls[0][0].def).not.toHaveProperty('defaultView')
+    expect(yaml()).not.toContain('defaultView')
   })
 })
 

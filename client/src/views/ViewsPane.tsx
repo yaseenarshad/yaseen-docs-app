@@ -351,7 +351,9 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
         const [gone] = d.views.splice(i, 1)
         if (d.defaultView === gone.name) delete d.defaultView // a deleted START clears itself (D4)
       })
-      setActive(Math.min(i, views.length - 2))
+      // The active view stays put unless it WAS the deleted one — then its right neighbour takes over
+      // (the left one when it was the last tab); a view before it in the list shifts one index down.
+      setActive(index === i ? Math.min(i, views.length - 2) : index > i ? index - 1 : index)
     },
   }
 

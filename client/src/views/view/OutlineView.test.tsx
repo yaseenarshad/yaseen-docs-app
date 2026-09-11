@@ -195,7 +195,7 @@ describe('the outline is the folder page’s skin — and only ever hers', () =>
     expect(el.querySelector('.view-outline')).not.toBeNull()
     expect(el.querySelector('.outline-doc')).not.toBeNull()
     expect(el.querySelector('.view-row__link')).toBeNull() // the old unknown-view placeholder
-    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table', 'Board'])
+    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table']) // the card's own views, verbatim
   })
 
   it('a null `thisFile` keeps the placeholder rows — there is no folder page to be an outline of', () => {
@@ -210,7 +210,7 @@ describe('the outline is the folder page’s skin — and only ever hers', () =>
           root="/vault"
           thisFile={null}
           records={[rec(LEAD)]}
-          folderPage={{ settings: folderPageSettings(rec(FUNNELS, { folder_page: true })), vaultRecords: vault(), create: () => Promise.reject(new Error('no')), setColumn: async () => {}, setColumns: () => {}, setDefaultView: () => {} }}
+          folderPage={{ settings: folderPageSettings(rec(FUNNELS, { folder_page: true })), vaultRecords: vault(), create: () => Promise.reject(new Error('no')), setColumn: async () => {}, setColumns: () => {} }}
           onOpenFile={onOpenFile}
         />,
       ),
@@ -321,8 +321,7 @@ describe('an edit stores the document and retires the order', () => {
     expect(path).toBe(FUNNELS) // the FOLDER PAGE's card
     expect(value).toEqual({
       folder: 'stages',
-      // The injected Board (YAZ-935) rides along in the write, harmlessly.
-      views: [{ type: 'outline', name: 'Outline', outline: '- [[Sales]]\n- [[Lead Gen]]' }, TABLE, { type: 'board', name: 'Board' }],
+      views: [{ type: 'outline', name: 'Outline', outline: '- [[Sales]]\n- [[Lead Gen]]' }, TABLE],
     })
     expect(el.querySelector('.view-view__error')).toBeNull()
   })

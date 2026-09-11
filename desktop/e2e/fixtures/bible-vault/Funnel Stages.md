@@ -17,6 +17,8 @@ folder_page_settings:
         - file.name
         - note.order
         - note.related_stages
+    - type: board
+      name: Board
 folder_pages:
   - "[[Home]]"
 ---
