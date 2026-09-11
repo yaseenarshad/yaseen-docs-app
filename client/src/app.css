@@ -16,6 +16,11 @@
   --fg-dir: #444444;
   --reveal-bg: #ffe36e;
   --reveal-fg: #2d2500;
+  /* `==highlight==` wash (YAZ-1480): translucent, so text colour and selection show through in both themes. */
+  --mark-bg: rgba(255, 213, 0, 0.4);
+  --mark-bg-green: rgba(80, 200, 120, 0.35);
+  --mark-bg-blue: rgba(80, 160, 255, 0.35);
+  --mark-bg-pink: rgba(255, 120, 180, 0.35);
   /* Amber notice family: conflict bar + link-notice toast. */
   --notice-fg: #6b4e00;
   --notice-bg: #fff7df;
@@ -428,6 +433,21 @@ button {
   --crepe-font-title: var(--crepe-font-default);
   --crepe-font-code: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   line-height: var(--edit-line-height, 1.5);
+}
+
+/* Highlight mark (YAZ-1480): `==text==` → <mark>. Every Crepe surface (editor, hover preview, outline), not just the main editor. */
+.milkdown .ProseMirror mark {
+  background: var(--mark-bg);
+  color: inherit;
+}
+.milkdown .ProseMirror mark.highlight-green { background: var(--mark-bg-green); }
+.milkdown .ProseMirror mark.highlight-blue { background: var(--mark-bg-blue); }
+.milkdown .ProseMirror mark.highlight-pink { background: var(--mark-bg-pink); }
+
+/* A lit swatch (🔒 D5) reads as a pressed button, one step darker than hover — the dot's fill IS its colour,
+   so Crepe's "active = primary-coloured icon" cue only reached the 0.35-opacity outline and was too easy to miss. */
+.milkdown .milkdown-toolbar .toolbar-item.active[data-toolbar-item^='highlight'] {
+  background: var(--crepe-color-selected);
 }
 
 /* Crepe's reset gives paragraphs line-height 1.5 and 4px vertical padding; the padding is
