@@ -72,10 +72,11 @@ function caretAfter(view: EditorView, text: string): void {
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)))
 }
 
-/** A real Shift-Enter keydown through ProseMirror's keymap plugins (jsdom needs keyCode too). */
-const shiftEnter = (view: EditorView): void => {
-  view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, shiftKey: true, bubbles: true, cancelable: true }))
+/** A real Enter keydown through ProseMirror's keymap plugins (jsdom needs keyCode too). */
+const pressEnter = (view: EditorView, mods: { shiftKey?: boolean; metaKey?: boolean } = {}): void => {
+  view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, ...mods, bubbles: true, cancelable: true }))
 }
+const shiftEnter = (view: EditorView): void => pressEnter(view, { shiftKey: true })
 
 describe('inline <br> inside table cells', () => {
   it('1. loads as a hardbreak and saves as <br>', async () => {
@@ -151,6 +152,38 @@ describe('inline <br> inside table cells', () => {
     expect(savedCell(await roundTrip(table('')))).toBe('')
     expect(await inlineTypes(table('<br />'), 'table_cell')).toEqual(['hardbreak'])
     expect(savedCell(await roundTrip(table('<br />')))).toBe('<br>')
+  })
+
+  it('17. Enter inside a cell is a new line in the cell (🔒 YAZ-1462), saved as <br>', async () => {
+    const { crepe, close } = await open(table('xy'))
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    caretAfter(view, 'xy')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.selection.from - 1)))
+    pressEnter(view)
+    const out = getMarkdownForSave(crepe)
+    expect(savedCell(out)).toBe('x<br>y')
+    expect(out.split('\n').filter((l) => l.startsWith('|'))).toHaveLength(3)
+    await close()
+  })
+
+  it('18. Mod-Enter inside a cell still exits the table', async () => {
+    const { crepe, close } = await open(table('x'))
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    caretAfter(view, 'x')
+    pressEnter(view, { metaKey: true })
+    expect(view.state.selection.$from.node(1).type.name).toBe('paragraph')
+    expect(savedCell(getMarkdownForSave(crepe))).toBe('x')
+    await close()
+  })
+
+  it('19. Enter outside a table is untouched (splits the paragraph)', async () => {
+    const { crepe, close } = await open('ab')
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    caretAfter(view, 'ab')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.selection.from - 1)))
+    pressEnter(view)
+    expect(getMarkdownForSave(crepe)).toBe('a\n\nb\n')
+    await close()
   })
 
   it('13. Shift-Enter outside a table is untouched (Milkdown hardbreak, backslash on save)', async () => {

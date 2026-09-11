@@ -15,9 +15,10 @@
  *     directly. Milkdown's paragraph runner always drops a paragraph's LAST hardbreak (right for
  *     prose, wrong in a cell — a trailing `<br>` would decay one per save), and wrote `<br />` for
  *     an empty cell. Several paragraphs in one cell are joined by a break.
- *  3. `cellBreakKeymap` ($shortcut): Shift-Enter inside a table cell always inserts a hardbreak.
- *     Milkdown's own Shift-Enter refuses to run inside tables, and its "second Shift-Enter after a
- *     break makes a new paragraph" rule would split the table.
+ *  3. `cellBreakKeymap` ($shortcut): Enter and Shift-Enter inside a table cell always insert a
+ *     hardbreak — a new line in the cell, as in Google Docs (🔒 YAZ-1462); Mod-Enter still exits
+ *     the table. Milkdown's own Shift-Enter refuses to run inside tables, and its "second
+ *     Shift-Enter after a break makes a new paragraph" rule would split the table.
  */
 import type { Ctx } from '@milkdown/kit/ctx'
 import { hardbreakSchema } from '@milkdown/kit/preset/commonmark'
@@ -89,11 +90,15 @@ export const insertCellBreak = (ctx: Ctx): Command => (state, dispatch) => {
   return true
 }
 
-/** Priority above Crepe's keymaps (default 50), like the outliner keymaps. */
-const PRIORITY = 100
+/**
+ * Above Milkdown's keymaps (50), BELOW the wikilink picker and outliner keymaps (100): an open
+ * `[[` picker must take Enter before a cell does.
+ */
+const PRIORITY = 90
 
 export const cellBreakKeymap = $shortcut((ctx: Ctx) => ({
-  InsertCellBreak: { key: 'Shift-Enter', priority: PRIORITY, onRun: () => insertCellBreak(ctx) },
+  InsertCellBreak: { key: 'Enter', priority: PRIORITY, onRun: () => insertCellBreak(ctx) },
+  InsertCellBreakShift: { key: 'Shift-Enter', priority: PRIORITY, onRun: () => insertCellBreak(ctx) },
 }))
 
 /** Register with `editor.use(inlineBreaks)` — BEFORE Milkdown's `remarkPreserveEmptyLinePlugin`. */
