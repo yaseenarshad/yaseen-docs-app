@@ -444,6 +444,12 @@ button {
 .milkdown .ProseMirror mark.highlight-blue { background: var(--mark-bg-blue); }
 .milkdown .ProseMirror mark.highlight-pink { background: var(--mark-bg-pink); }
 
+/* A lit swatch (🔒 D5) reads as a pressed button, one step darker than hover — the dot's fill IS its colour,
+   so Crepe's "active = primary-coloured icon" cue has nothing to recolour and was too easy to miss. */
+.milkdown .milkdown-toolbar .toolbar-item.active[data-toolbar-item^='highlight'] {
+  background: var(--crepe-color-selected);
+}
+
 /* Crepe's reset gives paragraphs line-height 1.5 and 4px vertical padding; the padding is
    what reads as "space between blocks" (lists included — each bullet's text is a paragraph). */
 .editor-instance .milkdown .ProseMirror p {
