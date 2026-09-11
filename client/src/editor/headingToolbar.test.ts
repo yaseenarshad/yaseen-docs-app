@@ -1,5 +1,6 @@
 /**
- * The selection toolbar's Heading group (YAZ-923, `createCrepe.ts` `buildHeadingToolbar`).
+ * The selection toolbar (`createCrepe.ts` `buildToolbar`): the Heading group (YAZ-923) and the
+ * Highlight button that joins Crepe's own Formatting group (YAZ-1480).
  *
  * Tested through a REAL Crepe (the `wikilinkPicker.test.ts` mount idiom), not a stub builder:
  * the group is wired via `featureConfigs[CrepeFeature.Toolbar].buildToolbar`, so mounting is the
@@ -18,7 +19,7 @@ import { createCrepe, getMarkdownForSave } from './createCrepe'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
-/** The Heading group's items, in the order `buildHeadingToolbar` adds them. */
+/** The Heading group's items, in the order `buildToolbar` adds them. */
 const HEADING_ITEMS = ['h1', 'h2', 'h3', 'text'] as const
 type HeadingItem = (typeof HEADING_ITEMS)[number]
 
@@ -73,10 +74,18 @@ function actives(): HeadingItem[] {
   return HEADING_ITEMS.filter((key) => must(key).classList.contains('active'))
 }
 
+/** The highlight swatches, in the order `buildToolbar` adds them. */
+const SWATCHES = ['highlight', 'highlight-green', 'highlight-blue', 'highlight-pink'] as const
+
 /** Crepe's toolbar buttons act on pointerdown — a plain `.click()` is a no-op here. */
-async function press(key: HeadingItem): Promise<void> {
+async function press(key: HeadingItem | (typeof SWATCHES)[number]): Promise<void> {
   must(key).dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
   await settle()
+}
+
+/** Every item key in the strip, left to right. */
+function order(): Array<string | undefined> {
+  return [...document.querySelectorAll<HTMLElement>('.milkdown-toolbar [data-toolbar-item]')].map((b) => b.dataset.toolbarItem)
 }
 
 describe('Heading toolbar group (YAZ-923)', () => {
@@ -171,5 +180,58 @@ describe('Heading toolbar group (YAZ-923)', () => {
     expect(getMarkdownForSave(crepe)).toBe('## Two\n')
     await select(view, 'Two')
     expect(actives()).toEqual(['h2'])
+  })
+})
+
+/**
+ * The Highlight swatches (YAZ-1480): unlike the Heading group they do NOT get a group of their
+ * own — they are added into Crepe's OWN Formatting group, so they land beside
+ * Bold/Italic/Strikethrough instead of at the far end of the strip. One click is one step, and
+ * the lit dot is the selection's own colour.
+ */
+describe('highlight swatches (YAZ-1480)', () => {
+  it('four dots join Crepe\'s Formatting group, in order, after Strikethrough and before Inline code', async () => {
+    const { view } = await mount('hello world\n')
+    await select(view, 'world')
+
+    const keys = order()
+    const at = keys.indexOf('strikethrough')
+    expect(keys.slice(at + 1, at + 5)).toEqual([...SWATCHES])
+    expect(keys.indexOf('highlight-pink')).toBeLessThan(keys.indexOf('code'))
+  })
+
+  it('yellow carries the shortcut in its title; the colours are labelled by name', async () => {
+    const { view } = await mount('hello world\n')
+    await select(view, 'world')
+
+    expect(must('highlight').getAttribute('aria-label')).toBe('Highlight')
+    expect(must('highlight').title).toBe('Highlight (⌘⇧H)')
+    expect(must('highlight-green').getAttribute('aria-label')).toBe('Highlight green')
+    expect(must('highlight-green').title).toBe('Highlight green')
+  })
+
+  it('pressing green wraps the selection in `<mark class="highlight-green">`, pressing it again removes it', async () => {
+    const { crepe, view } = await mount('hello world\n')
+
+    await select(view, 'world')
+    await press('highlight-green')
+    expect(getMarkdownForSave(crepe)).toBe('hello <mark class="highlight-green">world</mark>\n')
+
+    await select(view, 'world')
+    await press('highlight-green')
+    expect(getMarkdownForSave(crepe)).toBe('hello world\n')
+  })
+
+  it('exactly one dot lights: the colour of the run the selection is in', async () => {
+    const { view } = await mount('==yellow== and <mark class="highlight-green">green</mark> and plain\n')
+
+    await select(view, 'green')
+    expect(SWATCHES.filter((key) => must(key).classList.contains('active'))).toEqual(['highlight-green'])
+
+    await select(view, 'yellow')
+    expect(SWATCHES.filter((key) => must(key).classList.contains('active'))).toEqual(['highlight'])
+
+    await select(view, 'plain')
+    expect(SWATCHES.filter((key) => must(key).classList.contains('active'))).toEqual([])
   })
 })

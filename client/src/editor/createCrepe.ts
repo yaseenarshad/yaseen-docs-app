@@ -117,7 +117,7 @@ import {
   stripEmptyTaskBreaks,
 } from './listItemRoundTrip'
 import { underline } from './marks/underline'
-import { highlight } from './marks/highlight'
+import { highlight, highlightSchema, selectionHighlightColor, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
 import { inlineBreaks } from './inlineBreaks'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
@@ -179,19 +179,44 @@ const headingIcon = (label: string): string =>
   `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><text x="12" y="16.5" text-anchor="middle" font-size="12" font-weight="700" font-family="inherit" fill="currentColor">${label}</text></svg>`
 
 /** The slice of Crepe's GroupBuilder `buildToolbar` hands over — structural, since Crepe does not export the class from its root. */
-interface HeadingToolbarBuilder {
-  addGroup: (key: string, label: string) => {
-    addItem: (key: string, item: { icon: string; label: string; active: (ctx: Ctx) => boolean; onRun: (ctx: Ctx) => void }) => unknown
-  }
+interface ToolbarGroup {
+  addItem: (key: string, item: { icon: string; label: string; shortcut?: string; active: (ctx: Ctx) => boolean; onRun: (ctx: Ctx) => void }) => unknown
+}
+interface ToolbarBuilder {
+  addGroup: (key: string, label: string) => ToolbarGroup
+  getGroup: (key: string) => ToolbarGroup
 }
 
+/** A colour dot for the toolbar; the fill IS the wash token, so the button previews the real colour. */
+const swatchIcon = (color: HighlightColor): string =>
+  `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="7" fill="var(${color ? `--mark-bg-${color}` : '--mark-bg'})" stroke="currentColor" stroke-opacity="0.35" stroke-width="1"/></svg>`
+
 /**
- * The toolbar's Heading group (YAZ-923): H1/H2/H3/T buttons whose ACTIVE state answers "what
+ * The selection toolbar (YAZ-923 + YAZ-1480).
+ *
+ * The four highlight swatches (YAZ-1480 — yellow, green, blue, pink) join Crepe's OWN Formatting
+ * group right after Strikethrough: `getGroup('formatting')` reaches it because `buildToolbar`
+ * runs AFTER Crepe has added that group. One click is always one step — the lit dot removes the
+ * highlight, another dot switches its colour — through the mark's single command, which
+ * `Mod-Shift-h` (yellow) and the `==x==` typing rule share. Yellow is the Markdown `==…==` on
+ * disk; a colour is `<mark class="highlight-<name>">`.
+ *
+ * Then the Heading group (YAZ-923): H1/H2/H3/T buttons whose ACTIVE state answers "what
  * block is this?" — the invisible `##` made visible — and whose click switches it, through the
  * same commands the typed markdown runs. `T` is the way back to plain text without backspacing
  * hashes you cannot see.
  */
-function buildHeadingToolbar(builder: HeadingToolbarBuilder): void {
+function buildToolbar(builder: ToolbarBuilder): void {
+  const formatting = builder.getGroup('formatting')
+  for (const color of [null, ...HIGHLIGHT_COLORS] as HighlightColor[]) {
+    formatting.addItem(color === null ? 'highlight' : `highlight-${color}`, {
+      icon: swatchIcon(color),
+      label: color === null ? 'Highlight' : `Highlight ${color}`,
+      ...(color === null ? { shortcut: '⌘⇧H' } : {}),
+      active: (ctx) => selectionHighlightColor(ctx.get(editorViewCtx).state, highlightSchema.type(ctx)) === color,
+      onRun: (ctx) => ctx.get(commandsCtx).call(setHighlightCommand.key, color),
+    })
+  }
   const blockAt = (ctx: Ctx) => ctx.get(editorViewCtx).state.selection.$from.parent
   const group = builder.addGroup('heading', 'Heading')
   for (const level of [1, 2, 3] as const) {
@@ -243,7 +268,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       // #2 (YAZ-923): the selection toolbar SAYS the block's level — a Heading group whose
       // active button is the answer to "what is this?", and whose click is the switch. The
       // markdown stays the source of truth; these call the same commands typing `##` does.
-      [CrepeFeature.Toolbar]: { buildToolbar: buildHeadingToolbar },
+      // YAZ-1480 adds Highlight into Crepe's own Formatting group from the same builder.
+      [CrepeFeature.Toolbar]: { buildToolbar },
       // Native text carets track document zoom without a second painted overlay.
       [CrepeFeature.Cursor]: { virtual: false },
     },

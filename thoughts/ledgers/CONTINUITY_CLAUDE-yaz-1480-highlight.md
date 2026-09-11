@@ -18,10 +18,10 @@ Ship YAZ-1480 to main: `==text==` highlight (Obsidian syntax, vendored micromark
 ## State
 - Done:
   - [x] 1- Scope (YAZ-1504) — findings + 🔒 + agreements on YAZ-1480; prototype green (3533) and approved on the live demo
-- Now: [→] 2A- The mark and its colours (YAZ-1506) — quality review of the prototype, two "smaller" tweaks, commit
-- Next: 2B- Swatches and the wash (YAZ-1507) — commit
+  - [x] 2A- The mark and its colours (YAZ-1506) — commit b74d4f5; coordinator review + two "smaller" tweaks (classList one-liner, no double cast); 72 focused tests green
+- Now: [→] 2B- Swatches and the wash (YAZ-1507) — commit after the full-suite gate
+- Next: 3- Prove it (YAZ-1508) — relaunch the demo app, Yasin runs the 19-item list
 - Remaining:
-  - [ ] 3- Prove it (YAZ-1508) — relaunch the demo app, Yasin runs the 19-item list
   - [ ] 4- Polish and anti-slop (YAZ-1509) — reviewer agent, triage, smaller-candidates, docs, build
   - [ ] 4A- Release (YAZ-1510) — push, PR, Yasin's verdict, merge, closeout, cleanup
 
