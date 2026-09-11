@@ -70,67 +70,67 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
   return (
     <>
       <div className="view-tabs-wrap">
-      <div
-        className="view-tabs"
-        role="tablist"
-        onDragOver={(e) => {
-          if (drag === null || e.target !== e.currentTarget) return // the strip's empty tail = the end slot
-          e.preventDefault()
-          if (drag.over !== views.length) setDrag({ ...drag, over: views.length })
-        }}
-        onDrop={(e) => {
-          if (drag === null || e.target !== e.currentTarget) return
-          e.preventDefault()
-          drop(views.length)
-        }}
-      >
-        {views.map((v, i) => {
-          const cls = ['view-tab']
-          if (i === active) cls.push('view-tab--active')
-          if (drag?.from === i) cls.push('view-tab--dragging')
-          if (drag?.over === i) cls.push('view-tab--insert-before')
-          if (drag?.over === views.length && i === views.length - 1) cls.push('view-tab--insert-after')
-          return (
-            <div
-              key={i}
-              ref={i === active ? activeRef : undefined}
-              className={cls.join(' ')}
-              draggable={renaming !== i}
-              onDragStart={(e) => {
-                e.dataTransfer?.setData('text/plain', v.name)
-                if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-                setDrag({ from: i, over: null })
-              }}
-              onDragEnd={() => setDrag(null)}
-              onDragOver={(e) => {
-                if (drag === null) return
-                e.preventDefault()
-                if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-                const over = insertionAt(e, i)
-                if (drag.over !== over) setDrag({ ...drag, over })
-              }}
-              onDrop={(e) => {
-                if (drag === null) return
-                e.preventDefault()
-                drop(insertionAt(e, i))
-              }}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                setMenu({ x: e.clientX, y: e.clientY, i })
-              }}
-            >
-              {renaming === i ? (
-                <TextField className="view-tab__rename" aria-label="View name" autoFocus value={v.name} normalize={uniqueName(i)} onCommit={(name) => onRename(i, name)} onDone={() => setRenaming(null)} />
-              ) : (
-                <button type="button" role="tab" className="view-tab__btn" aria-selected={i === active} onClick={() => onSelect(i)}>
-                  <ViewTypeIcon type={v.type} />
-                  <span>{v.name}</span>
-                </button>
-              )}
-            </div>
-          )
-        })}
-      </div>
+        <div
+          className="view-tabs"
+          role="tablist"
+          onDragOver={(e) => {
+            if (drag === null || e.target !== e.currentTarget) return // the strip's empty tail = the end slot
+            e.preventDefault()
+            if (drag.over !== views.length) setDrag({ ...drag, over: views.length })
+          }}
+          onDrop={(e) => {
+            if (drag === null || e.target !== e.currentTarget) return
+            e.preventDefault()
+            drop(views.length)
+          }}
+        >
+          {views.map((v, i) => {
+            const cls = ['view-tab']
+            if (i === active) cls.push('view-tab--active')
+            if (drag?.from === i) cls.push('view-tab--dragging')
+            if (drag?.over === i) cls.push('view-tab--insert-before')
+            if (drag?.over === views.length && i === views.length - 1) cls.push('view-tab--insert-after')
+            return (
+              <div
+                key={i}
+                ref={i === active ? activeRef : undefined}
+                className={cls.join(' ')}
+                draggable={renaming !== i}
+                onDragStart={(e) => {
+                  e.dataTransfer?.setData('text/plain', v.name)
+                  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+                  setDrag({ from: i, over: null })
+                }}
+                onDragEnd={() => setDrag(null)}
+                onDragOver={(e) => {
+                  if (drag === null) return
+                  e.preventDefault()
+                  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+                  const over = insertionAt(e, i)
+                  if (drag.over !== over) setDrag({ ...drag, over })
+                }}
+                onDrop={(e) => {
+                  if (drag === null) return
+                  e.preventDefault()
+                  drop(insertionAt(e, i))
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setMenu({ x: e.clientX, y: e.clientY, i })
+                }}
+              >
+                {renaming === i ? (
+                  <TextField className="view-tab__rename" aria-label="View name" autoFocus value={v.name} normalize={uniqueName(i)} onCommit={(name) => onRename(i, name)} onDone={() => setRenaming(null)} />
+                ) : (
+                  <button type="button" role="tab" className="view-tab__btn" aria-selected={i === active} onClick={() => onSelect(i)}>
+                    <ViewTypeIcon type={v.type} />
+                    <span>{v.name}</span>
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
         <button type="button" className="view-tab__add" aria-label="Add view" title="Add view" aria-haspopup="menu" aria-expanded={adding !== null} onClick={(e) => setAdding(adding === null ? e.currentTarget : null)}>
           +
         </button>

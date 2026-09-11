@@ -21,10 +21,10 @@ Ship YAZ-1471 "Views changes" to main: view tabs are editable again (drag to reo
   - [x] 2- Step 0: prototype committed (a938651)
   - [x] 2A- Drag (YAZ-1483) — 5 tests, comments, no code change
   - [x] 2B- Menu / defaultView / backfill (YAZ-1484) — 20 re-pins, 15 new, onDelete selection bug fixed
-- Now: [→] 2C- "+" picker (YAZ-1485)
-- Next: 2D- No-scrollbar strips (YAZ-1486)
+  - [x] 2C- "+" picker (YAZ-1485) — 10 tests, mutation-checked
+- Now: [→] 2D- No-scrollbar strips (YAZ-1486)
+- Next: 3- Prove it (YAZ-1487)
 - Remaining:
-  - [ ] 3- Prove it (YAZ-1487)
   - [ ] 4- Polish (YAZ-1488) → 4A Contracts (YAZ-1489) → 4B Release (YAZ-1490)
 
 ## Open Questions

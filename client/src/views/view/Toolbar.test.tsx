@@ -9,7 +9,7 @@
  * EDITABLE again since YAZ-1471 re-ruled 🔒 rule 4 (YAZ-819): the drag-to-reorder half is
  * pinned below, and every gesture there is ONE `update` — the same door as sort and columns.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { type ViewSet, type ViewDef, type ParsedViews, parseViews, serializeViews } from '../viewSchema'
@@ -517,6 +517,51 @@ describe('view tabs — "+" adds a view (YAZ-1471)', () => {
     press(renameField(el), 'Escape')
     expect(selected(el)).toBe(kind)
     expect(el.querySelector(root)).not.toBeNull()
+  })
+})
+
+/**
+ * Overflow (YAZ-1471, 🔒 D6): the strip scrolls with NO scrollbar, and the fade at whichever edge
+ * still hides tabs is pure CSS (the shared `strip-fade` on `animation-timeline: scroll(self
+ * inline)`, app.css) — so the ONLY behaviour in JS is TabBar's: keep the ACTIVE tab in view on
+ * every activation, and keep the "+" out of the scroller so it can never scroll away. jsdom has
+ * no `scrollIntoView` (hence the effect's `?.()` in every other test here); stub it to read it.
+ */
+describe('view tabs — overflow (YAZ-1471)', () => {
+  /** What scrolls is the WRAPPER, not the `[role="tab"]` button it holds. */
+  const wrap = (el: ParentNode, i: number): HTMLElement => [...el.querySelectorAll<HTMLElement>('.view-tab')][i]
+
+  let scrollIntoView: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    scrollIntoView = vi.fn()
+    ;(Element.prototype as unknown as Record<string, unknown>).scrollIntoView = scrollIntoView
+  })
+
+  afterEach(() => {
+    delete (Element.prototype as unknown as Record<string, unknown>).scrollIntoView
+  })
+
+  it('scrolls the ACTIVE tab into view on mount, and again on every activation', () => {
+    const { el } = mount()
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' })
+    expect(scrollIntoView.mock.contexts[0]).toBe(wrap(el, 0)) // the seeded view's tab
+
+    click(byText(el, '[role="tab"]', 'View 2'))
+    expect(scrollIntoView).toHaveBeenCalledTimes(2)
+    const scrolled = scrollIntoView.mock.contexts[1] as HTMLElement
+    expect(scrolled).toBe(wrap(el, 2)) // THAT tab, not the one it came from
+    expect(scrolled.classList.contains('view-tab--active')).toBe(true)
+    expect(scrolled.querySelector('[role="tab"]')?.textContent).toBe('View 2')
+  })
+
+  it('the tablist IS the scroller, and the "+" sits outside it', () => {
+    const { el } = mount()
+    expect(q(el, '.view-tabs-wrap > .view-tabs[role="tablist"]')).toBe(q(el, '[role="tablist"]'))
+    expect(el.querySelectorAll('.view-tabs[role="tablist"] > .view-tab')).toHaveLength(3) // every tab scrolls
+    expect(el.querySelector('[role="tablist"] [aria-label="Add view"]')).toBeNull()
+    expect(el.querySelector('.view-tabs-wrap > .view-tab__add')).not.toBeNull() // the "+" is the wrap's OWN child
   })
 })
 
