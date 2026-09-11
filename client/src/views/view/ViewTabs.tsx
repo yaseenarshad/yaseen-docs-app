@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
+import { dropIndex, insertionSlot } from '../../lib/dragSlot'
 import type { ViewDef } from '../viewSchema'
 import { ConfirmDeleteView } from './ConfirmDeleteView'
 import { ViewTypeIcon } from './icons'
@@ -7,7 +8,9 @@ import { Popover } from './Popover'
 import { TextField } from './TextField'
 
 /** The kinds "+" offers, in menu order; a kind's label is its type, capitalised. */
-export const VIEW_TYPES = ['table', 'board', 'cards', 'list', 'outline'] as const
+const VIEW_TYPES = ['table', 'board', 'cards', 'list', 'outline'] as const
+/** This strip's own drag payload (TabBar's `WORKSPACE_PAGE_MIME` idiom); never `text/plain`. */
+const VIEW_TAB_MIME = 'application/x-yaseen-view-tab'
 export const viewTypeLabel = (type: string): string => type.charAt(0).toUpperCase() + type.slice(1)
 
 export interface ViewTabsProps {
@@ -43,6 +46,11 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
   const [adding, setAdding] = useState<HTMLElement | null>(null)
   const [confirm, setConfirm] = useState<number | null>(null)
   const hasOutline = views.some((v) => v.type === 'outline')
+  // `menu`, `confirm` and `renaming` are INDICES: another window (or a hand edit) can drop views
+  // out from under an open one, so derive the view in render — a stale index then renders nothing
+  // instead of throwing through a block with no error boundary above it (YAZ-1488).
+  const menuView = menu === null ? null : (views[menu.i] ?? null)
+  const confirmView = confirm === null ? null : (views[confirm] ?? null)
   // Overflow (TabBar's idiom): the strip scrolls with no scrollbar, so keep the ACTIVE tab in
   // view on every activation. jsdom has no scrollIntoView — hence the `?.()`.
   const activeRef = useRef<HTMLDivElement | null>(null)
@@ -50,15 +58,10 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
     activeRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
   }, [active])
 
-  /** The slot a pointer at `clientX` over tab `i` means: before (i) or after (i+1) it. */
-  const insertionAt = (e: DragEvent, i: number): number => {
-    const r = e.currentTarget.getBoundingClientRect()
-    return e.clientX < r.left + r.width / 2 ? i : i + 1
-  }
   const drop = (insertion: number): void => {
     if (drag === null) return
     setDrag(null)
-    const to = insertion > drag.from ? insertion - 1 : insertion // past the grab point the slot shifts one left
+    const to = dropIndex(drag.from, insertion)
     if (to !== drag.from) onMove(drag.from, to)
   }
   /** Names key `defaultView` and the collapse store: a rename commits only a non-empty name no OTHER view has. */
@@ -71,7 +74,7 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
     <>
       <div className="view-tabs-wrap">
         <div
-          className="view-tabs"
+          className="view-tabs scroll-strip"
           role="tablist"
           onDragOver={(e) => {
             if (drag === null || e.target !== e.currentTarget) return // the strip's empty tail = the end slot
@@ -97,7 +100,9 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
                 className={cls.join(' ')}
                 draggable={renaming !== i}
                 onDragStart={(e) => {
-                  e.dataTransfer?.setData('text/plain', v.name)
+                  // A PRIVATE mime, like `TabBar`'s workspace one: `text/plain` would let a tab
+                  // mis-dropped on the note body above insert its name into the markdown.
+                  e.dataTransfer?.setData(VIEW_TAB_MIME, v.name)
                   if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
                   setDrag({ from: i, over: null })
                 }}
@@ -106,13 +111,13 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
                   if (drag === null) return
                   e.preventDefault()
                   if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-                  const over = insertionAt(e, i)
+                  const over = insertionSlot(e, i)
                   if (drag.over !== over) setDrag({ ...drag, over })
                 }}
                 onDrop={(e) => {
                   if (drag === null) return
                   e.preventDefault()
-                  drop(insertionAt(e, i))
+                  drop(insertionSlot(e, i))
                 }}
                 onContextMenu={(e) => {
                   e.preventDefault()
@@ -122,7 +127,7 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
                 {renaming === i ? (
                   <TextField className="view-tab__rename" aria-label="View name" autoFocus value={v.name} normalize={uniqueName(i)} onCommit={(name) => onRename(i, name)} onDone={() => setRenaming(null)} />
                 ) : (
-                  <button type="button" role="tab" className="view-tab__btn" aria-selected={i === active} onClick={() => onSelect(i)}>
+                  <button type="button" role="tab" className="view-tab__btn" title={v.name} aria-selected={i === active} onClick={() => onSelect(i)}>
                     <ViewTypeIcon type={v.type} />
                     <span>{v.name}</span>
                   </button>
@@ -131,7 +136,7 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
             )
           })}
         </div>
-        <button type="button" className="view-tab__add" aria-label="Add view" title="Add view" aria-haspopup="menu" aria-expanded={adding !== null} onClick={(e) => setAdding(adding === null ? e.currentTarget : null)}>
+        <button type="button" className="view-tab__add" aria-label="Add view" title="Add view" aria-haspopup="dialog" aria-expanded={adding !== null} onClick={(e) => setAdding(adding === null ? e.currentTarget : null)}>
           +
         </button>
         {adding !== null && (
@@ -158,7 +163,7 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
           </Popover>
         )}
       </div>
-      {menu !== null && (
+      {menu !== null && menuView !== null && (
         <ContextMenuSurface x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
           <button
             type="button"
@@ -175,7 +180,7 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
             type="button"
             role="menuitem"
             className="ctx-menu__item"
-            disabled={views[menu.i].type === 'outline'}
+            disabled={menuView.type === 'outline'}
             onClick={() => {
               onDuplicate(menu.i)
               setMenu(null)
@@ -197,9 +202,9 @@ export function ViewTabs({ views, active, onSelect, onMove, onAdd, onRename, onD
           </button>
         </ContextMenuSurface>
       )}
-      {confirm !== null && (
+      {confirm !== null && confirmView !== null && (
         <ConfirmDeleteView
-          view={views[confirm]}
+          view={confirmView}
           onConfirm={() => {
             onDelete(confirm)
             setConfirm(null)

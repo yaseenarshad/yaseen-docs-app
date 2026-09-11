@@ -29,22 +29,14 @@
   min-width: 0;
 }
 
-/* Overflow (YAZ-1471): the strip scrolls with NO scrollbar — trackpad/wheel, plus the active tab
-   scrolled into view — and the shared `strip-fade` at whichever edge still hides tabs (app.css).
-   The "+" lives OUTSIDE the strip: always visible, never masked. */
+/* Overflow (YAZ-1471): the scrolling and its edge fade are `.scroll-strip` (app.css), worn by the
+   tablist itself — trackpad/wheel, plus the active tab scrolled into view. The "+" lives OUTSIDE
+   the strip: always visible, never masked. */
 .view-tabs {
   display: flex;
   align-items: center;
   gap: 2px;
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-  animation: strip-fade linear both; /* app.css: shared with the window's tab strip */
-  animation-timeline: scroll(self inline);
-}
-
-.view-tabs::-webkit-scrollbar {
-  display: none;
 }
 
 .view-tab {
@@ -237,6 +229,14 @@
   color: var(--fg-muted);
   cursor: default;
   opacity: 0.6;
+}
+
+/* The "+" type picker's items carry a glyph (YAZ-1488); the base class stays text-only for
+   TableView's summary menu and EditableCell's option lists. */
+.view-popover--menu .view-popover__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* ---------- menu internals ---------- */

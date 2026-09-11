@@ -200,12 +200,6 @@ function chooseProperty(el: ParentNode, value: string): void {
 const propertyShown = (el: ParentNode): string => byLabel<HTMLElement>(el, 'Property').textContent ?? ''
 
 const openTable = (el: ParentNode): void => click(q(el, '.view-tab__btn:nth-of-type(1)'))
-/** Switch to the view named `name` (tabs are switch-only here). */
-function selectView(el: ParentNode, name: string): void {
-  const tab = [...el.querySelectorAll<HTMLElement>('.view-tab__btn')].find((b) => b.textContent === name)
-  if (tab === undefined) throw new Error(`no view tab ${name}`)
-  click(tab)
-}
 
 const openCell = (el: ParentNode, r: number, c: number): void => click(q(q<HTMLElement>(el, `[data-cell="${r}:${c}"]`), '[data-edit]'))
 
@@ -222,6 +216,8 @@ const tab = (el: ParentNode, name: string): HTMLElement => {
   if (t === undefined) throw new Error(`no view tab ${name}`)
   return t
 }
+/** Activate the view named `name`. Switching is session state — it writes nothing of its own. */
+const selectView = (el: ParentNode, name: string): void => click(tab(el, name))
 const rightClick = (el: Element): void => act(() => void el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
 const menuItem = (el: ParentNode, text: string): HTMLElement => {
   const b = [...el.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((x) => x.textContent === text)
@@ -410,6 +406,35 @@ describe('the chrome is the views chrome, minus what a folder page cannot have',
       ],
     })
     expect(byLabel<HTMLInputElement>(el, 'View name').value).toBe('Cards') // the appended tab mounts in rename
+  })
+})
+
+/**
+ * Open UI vs an EXTERNAL shrink (YAZ-1488): `menu`, `confirm` and `renaming` are INDICES into
+ * `views`, and another window (or a hand edit) can drop views out from under an open one. The
+ * strip derives the view in render, so a stale index renders NOTHING — this block has no error
+ * boundary above it, and a throw here is a blank window.
+ */
+describe('an open menu or sheet survives the views list shrinking under it (YAZ-1488)', () => {
+  const THREE = { ...SETTINGS, views: [...SETTINGS.views, BOARD] }
+
+  it('the right-click menu on the LAST tab goes away with the view it named', () => {
+    const el = mount(FUNNELS, vault(THREE))
+    rightClick(tab(el, 'Board'))
+    expect(el.querySelector('[role="menu"]')).not.toBeNull()
+    feed(vault(SETTINGS))
+    expect(el.querySelector('[role="menu"]')).toBeNull()
+    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table'])
+  })
+
+  it('so does the delete sheet it opened', () => {
+    const el = mount(FUNNELS, vault(THREE))
+    rightClick(tab(el, 'Board'))
+    click(menuItem(el, 'Delete'))
+    expect(el.querySelector('[role="dialog"]')).not.toBeNull()
+    feed(vault(SETTINGS))
+    expect(el.querySelector('[role="dialog"]')).toBeNull()
+    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table'])
   })
 })
 
@@ -663,6 +688,27 @@ describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
     act(() => captured.folderPage!.setColumns(COLUMNS, views))
     await flush()
     expect(write).toHaveBeenCalledExactlyOnceWith(FUNNELS, 'folder_page_settings', { ...SETTINGS, columns: COLUMNS, views })
+  })
+
+  /**
+   * The LIVE def, never the index snapshot (YAZ-1471 D4): `settings` is the last snapshot the
+   * index handed over, so a default-view choice (or a sort/filter edit, when the caller passes no
+   * `views`) whose echo is still in flight would be clobbered by the next column write — YAZ-1234's
+   * two-gestures-in-a-second data loss, through the other door.
+   */
+  it('carries an in-flight defaultView choice the index has not echoed back yet', async () => {
+    const el = mount(FUNNELS)
+    click(tab(el, 'Table')) // the outline offers no Properties menu
+    click(byLabel(el, 'Properties'))
+    setSelect(byLabel<HTMLSelectElement>(el, 'Default view'), 'Table')
+    await flush()
+    expect(write).toHaveBeenCalledTimes(1)
+
+    const columns = { ...COLUMNS, extra: { kind: 'text' as const } }
+    act(() => captured.folderPage!.setColumns(columns))
+    await flush()
+    expect(write).toHaveBeenCalledTimes(2)
+    expect(write.mock.calls[1][2]).toEqual({ ...SETTINGS, columns, defaultView: 'Table' })
   })
 
   it('a failed write lands in the banner every other config edit uses', async () => {

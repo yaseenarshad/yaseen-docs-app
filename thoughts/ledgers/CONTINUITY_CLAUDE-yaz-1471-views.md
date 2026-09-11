@@ -22,13 +22,17 @@ Ship YAZ-1471 "Views changes" to main: view tabs are editable again (drag to reo
   - [x] 2A- Drag (YAZ-1483) — 5 tests, comments, no code change
   - [x] 2B- Menu / defaultView / backfill (YAZ-1484) — 20 re-pins, 15 new, onDelete selection bug fixed
   - [x] 2C- "+" picker (YAZ-1485) — 10 tests, mutation-checked
-- Now: [→] 2D- No-scrollbar strips (YAZ-1486)
-- Next: 3- Prove it (YAZ-1487)
+  - [x] 2D- No-scrollbar strips (YAZ-1486) — 2 tests, whitespace re-indent
+  - [x] 2- Build (YAZ-1482) complete: 3530 tests green
+  - [x] 3- Prove it (YAZ-1487): 3530 green, typecheck ×3 exit 0, board.spec step 1 passed (steps 2-4 = pre-existing drift → 3A YAZ-1492), demo app up for Yasin
+- Now: [→] 4- Polish (YAZ-1488): reviewer running → accept/decline → fix → 4A contracts → 4B release
+- Next: 4A- Contracts (YAZ-1489)
 - Remaining:
   - [ ] 4- Polish (YAZ-1488) → 4A Contracts (YAZ-1489) → 4B Release (YAZ-1490)
 
 ## Open Questions
-- UNCONFIRMED: 09 broken entries dropped on first write — Yasin to confirm in 3-.
+- UNCONFIRMED: 09 broken entries dropped on first write — offered to Yasin in the 3- comment.
+- UNCONFIRMED: ten e2e specs use selectOption on ColumnPicker controls (3A) — separate pass.
 
 ## Working Set
 - Files: `client/src/views/view/ViewTabs.tsx`, `ConfirmDeleteView.tsx`, `ViewsPane.tsx`, `FolderPageContents.tsx`, `view/PropertiesMenu.tsx`, `folderPageSettings.ts`, `viewSchema.ts`, `views.css`, `tabs/tabs.css`, `app.css`, tests: `view/Toolbar.test.tsx`, `FolderPageContents.test.tsx`, `folderPageSettings.test.ts`, `testFolderPage.ts`, fixtures `desktop/e2e/fixtures/bible-vault/{KPIs,Home}.md`.

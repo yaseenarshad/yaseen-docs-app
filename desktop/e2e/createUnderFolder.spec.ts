@@ -201,8 +201,9 @@ test('step 3 — the board column’s inline add: the tree updates while the use
   await expect(topicLabels(win)).toHaveText(['Home', ...TOPICS.slice(0, 3), ...KPIS, ...TOPICS.slice(3), 'Uncategorized'])
   await settledFolderPage(vault, 'KPIs.md', KPIS)
 
-  // board.spec.ts's own arrangement: the YAZ-942 injected tab, turned into columns through the Sort
-  // menu. `leading` holds one card, so the add below is visibly the second.
+  // board.spec.ts's own arrangement: the Board view the card DECLARES (the YAZ-935 read-time
+  // injection was retired by YAZ-1471 D3), turned into columns through the Sort menu. `leading`
+  // holds one card, so the add below is visibly the second.
   await viewTab(win, 'Board').click()
   await contents(win).locator('[aria-label="Sort"]').click()
   await contents(win).locator('[aria-label="Group by"]').selectOption({ label: 'kpi_category' })

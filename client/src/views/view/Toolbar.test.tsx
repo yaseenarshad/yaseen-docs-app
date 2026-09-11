@@ -153,6 +153,10 @@ function type(el: HTMLInputElement, text: string): void {
   press(el, 'Enter')
 }
 
+/** The draggable/scrolling tab is the WRAPPER, not the `[role="tab"]` button it holds. */
+const wrap = (el: ParentNode, i: number): HTMLElement => [...el.querySelectorAll<HTMLElement>('.view-tab')][i]
+/** A def whose first view is the page's ONE outline document. */
+const WITH_OUTLINE = 'views:\n  - type: outline\n    name: Outline\n  - type: table\n    name: Table\n'
 const tabs = (el: ParentNode): string[] => [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent ?? '')
 const selected = (el: ParentNode): string | undefined => [...el.querySelectorAll('[role="tab"]')].find((t) => t.getAttribute('aria-selected') === 'true')?.textContent ?? undefined
 /** Note links in the body: the table's name cells (4B) or the placeholder list of other view types. */
@@ -193,8 +197,6 @@ describe('view switcher', () => {
  * simply follows its tab.
  */
 describe('view tabs — drag to reorder (YAZ-1471)', () => {
-  /** The draggable is the WRAPPER, not the `[role="tab"]` button it holds. */
-  const wrap = (el: ParentNode, i: number): HTMLElement => [...el.querySelectorAll<HTMLElement>('.view-tab')][i]
   const strip = (el: ParentNode): HTMLElement => q<HTMLElement>(el, '[role="tablist"]')
   /** The serialized view ORDER, read off the YAML the file would get. */
   const names = (text: string): string[] => [...text.matchAll(/^\s*name: (.+)$/gm)].map((m) => m[1])
@@ -232,7 +234,6 @@ describe('view tabs — drag to reorder (YAZ-1471)', () => {
     fire(wrap(el, 1), 'dragstart')
     fire(wrap(el, 1), 'drop', -5) // before itself = the slot it came from
     expect(onChange).not.toHaveBeenCalled()
-    expect(onChange).not.toHaveBeenCalled()
     expect(tabs(el)).toEqual(['Table', 'View', 'View 2'])
   })
 
@@ -258,6 +259,18 @@ describe('view tabs — drag to reorder (YAZ-1471)', () => {
     expect(wrap(el, 0).getAttribute('draggable')).toBe('false')
     expect(wrap(el, 1).getAttribute('draggable')).toBe('true')
   })
+
+  /** TabBar.test's own payload assertion on this strip: a private MIME, never `text/plain`. */
+  it('writes a PRIVATE view-tab payload — a text/plain name would paste into the note body', () => {
+    const { el } = mount()
+    const data = { setData: vi.fn(), effectAllowed: '' } as unknown as DataTransfer
+    const event = new MouseEvent('dragstart', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'dataTransfer', { value: data })
+    act(() => void wrap(el, 1).dispatchEvent(event))
+    expect(data.setData).toHaveBeenCalledExactlyOnceWith('application/x-yaseen-view-tab', 'View')
+    expect(data.setData).not.toHaveBeenCalledWith('text/plain', expect.anything())
+    expect(data.effectAllowed).toBe('move')
+  })
 })
 
 /**
@@ -272,7 +285,6 @@ describe('view tabs — drag to reorder (YAZ-1471)', () => {
  */
 describe('view tabs — right-click menu (YAZ-1471)', () => {
   const ONE_VIEW = 'views:\n  - type: table\n    name: Only\n'
-  const WITH_OUTLINE = 'views:\n  - type: outline\n    name: Outline\n  - type: table\n    name: Table\n'
   /** The `.view-tab` WRAPPER carries the handler, not the `[role="tab"]` button inside it. */
   const wrap = (el: ParentNode, name: string): HTMLElement => {
     const w = byText<HTMLElement>(el, '[role="tab"]', name).closest<HTMLElement>('.view-tab')
@@ -417,7 +429,6 @@ describe('view tabs — right-click menu (YAZ-1471)', () => {
  * and writes the FIRST outline view's document and a second would shadow it.
  */
 describe('view tabs — "+" adds a view (YAZ-1471)', () => {
-  const WITH_OUTLINE = 'views:\n  - type: outline\n    name: Outline\n  - type: table\n    name: Table\n'
   const plus = (el: ParentNode): HTMLButtonElement => byLabel<HTMLButtonElement>(el, 'Add view')
   const expanded = (el: ParentNode): string | null => plus(el).getAttribute('aria-expanded')
   /** Open the picker off "+" and hand back its anchored popover. */
@@ -436,7 +447,7 @@ describe('view tabs — "+" adds a view (YAZ-1471)', () => {
 
   it('"+" opens a picker of every type, in menu order, and opening writes nothing', () => {
     const { el, onChange } = mount()
-    expect(plus(el).getAttribute('aria-haspopup')).toBe('menu')
+    expect(plus(el).getAttribute('aria-haspopup')).toBe('dialog') // `Popover` renders role=dialog
     expect(expanded(el)).toBe('false')
     expect(plus(el).closest('[role="tablist"]')).toBeNull() // the strip scrolls; "+" does not go with it
     const pop = openPicker(el)
@@ -528,9 +539,6 @@ describe('view tabs — "+" adds a view (YAZ-1471)', () => {
  * no `scrollIntoView` (hence the effect's `?.()` in every other test here); stub it to read it.
  */
 describe('view tabs — overflow (YAZ-1471)', () => {
-  /** What scrolls is the WRAPPER, not the `[role="tab"]` button it holds. */
-  const wrap = (el: ParentNode, i: number): HTMLElement => [...el.querySelectorAll<HTMLElement>('.view-tab')][i]
-
   let scrollIntoView: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
@@ -1511,7 +1519,7 @@ describe('sync from folder', () => {
  * ACTIVE still stays session state: the def's name only decides where an open STARTS.
  */
 describe('the default view', () => {
-  /** Yasin's base with the saved START written into the def itself, at the root next to `views:`. */
+  /** The test def with the saved START written into it, at the root next to `views:`. */
   const started = (name: string) => `${YASIN_BASE}defaultView: ${name}\n`
 
   it('seeds the starting tab from the def’s own defaultView', () => {

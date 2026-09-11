@@ -218,6 +218,26 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
     setCollapsedByKey((m) => ({ ...m, [collapseKey]: [...next] }))
     if (root !== null && groupsKey !== null) storage.setViewGroups(root, groupsKey, next)
   }
+  /**
+   * The store is keyed by view NAME, and since YAZ-1471 a name changes in one gesture: a rename
+   * carries the entry to the new key and a delete drops it — else the renamed view springs open,
+   * the old key leaks, and a later view given the same name inherits a stranger's groups (YAZ-1493).
+   */
+  const moveCollapsed = (from: string, to: string | null) => {
+    if (thisFile === null) return // session-only keys go by INDEX and need no carrying
+    const fromKey = `${thisFile}::${from}`
+    const kept = collapsedByKey[fromKey] ?? (root !== null ? storage.getViewGroups(root, fromKey) : [])
+    const toKey = to === null || kept.length === 0 ? null : `${thisFile}::${to}`
+    setCollapsedByKey((m) => {
+      const next = { ...m }
+      delete next[fromKey]
+      if (toKey !== null) next[toKey] = kept
+      return next
+    })
+    if (root === null) return
+    storage.setViewGroups(root, fromKey, [])
+    if (toKey !== null) storage.setViewGroups(root, toKey, kept)
+  }
   const onToggleGroup = (key: string) => {
     writeCollapsed(collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key])
   }
@@ -336,17 +356,20 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
       update((d) => d.views.push({ type, name: freeName(viewTypeLabel(type), taken()) }))
       setActive(views.length)
     },
-    onRename: (i, name) =>
+    onRename: (i, name) => {
+      moveCollapsed(views[i].name, name)
       update((d) => {
         if (d.defaultView === d.views[i].name) d.defaultView = name // the saved START follows (D4)
         d.views[i].name = name
-      }),
+      })
+    },
     onDuplicate: (i) => {
       update((d) => d.views.splice(i + 1, 0, { ...structuredClone(d.views[i]), name: freeName(`${d.views[i].name} copy`, taken()) }))
       setActive(i + 1)
     },
     onDelete: (i) => {
       if (views.length <= 1) return
+      moveCollapsed(views[i].name, null)
       update((d) => {
         const [gone] = d.views.splice(i, 1)
         if (d.defaultView === gone.name) delete d.defaultView // a deleted START clears itself (D4)

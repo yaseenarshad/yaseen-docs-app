@@ -77,8 +77,8 @@ test('the saved START: picked in the Properties menu, kept on the card, honoured
   win = await appWindow(app, 'w1')
 
   await expect(contents(win)).toBeVisible()
-  // Q7's first skin is where every open starts until the card says otherwise (Board is injected
-  // at read, YAZ-935 — so the fixture's outline-first pair is three tabs by the time it renders).
+  // Q7's first skin is where every open starts until the card says otherwise (the fixture's card
+  // DECLARES the Board itself — the YAZ-935 read-time injection was retired by YAZ-1471 D3).
   await expect(viewTabs(contents(win))).toHaveText(['Outline', 'Table', 'Board'])
   await expect(activeViewTab(contents(win))).toHaveText('Outline')
 

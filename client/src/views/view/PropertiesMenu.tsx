@@ -488,7 +488,12 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
           className="view-select"
           aria-label="Default view"
           value={def.defaultView ?? ''}
-          onChange={(e) => onUpdate((d) => (e.target.value === '' ? delete d.defaultView : (d.defaultView = e.target.value)))}
+          onChange={(e) =>
+            onUpdate((d) => {
+              if (e.target.value === '') delete d.defaultView
+              else d.defaultView = e.target.value
+            })
+          }
         >
           <option value="">First view</option>
           {def.views.map((v) => (

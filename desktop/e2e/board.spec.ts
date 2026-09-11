@@ -1,12 +1,12 @@
 /**
  * THE BOARD, END TO END (YAZ-935/YAZ-945): the kanban proven against the REAL app over the
- * committed encyclopedia. `KPIs.md` ships a PERSISTED views list with no board — so the tab this
- * spec clicks is the YAZ-942 read-time injection itself. The arc: the third tab is just there →
- * the group-by set through the Sort menu turns the hint into columns → dragging a card across
- * columns rewrites the MEMBER's own file on disk → the YAZ-943 inline add births a NAMED page
- * into the column it was typed in, without leaving the board. Same harness as its siblings
- * (temp `--user-data-dir`, COPY of the fixture, `board-` step screenshots); serial by design —
- * each step continues the previous state.
+ * committed encyclopedia. The Board view is DECLARED on the card (`KPIs.md`; the YAZ-935 read-time
+ * injection was retired by YAZ-1471 D3), so the tab this spec clicks is one the file itself lists.
+ * The arc: the third tab is just there → the group-by set through the Sort menu turns the hint
+ * into columns → dragging a card across columns rewrites the MEMBER's own file on disk → the
+ * YAZ-943 inline add births a NAMED page into the column it was typed in, without leaving the
+ * board. Same harness as its siblings (temp `--user-data-dir`, COPY of the fixture, `board-` step
+ * screenshots); serial by design — each step continues the previous state.
  */
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, readFile } from 'node:fs/promises'
@@ -38,7 +38,7 @@ test.afterAll(async () => {
   await quitApp(app)
 })
 
-test('step 1 — the Board tab is just THERE, injected into a views list persisted before it existed', async () => {
+test('step 1 — the Board tab is just THERE, declared on the card alongside the outline and the table', async () => {
   await expect(contents().locator('.view-tab__btn')).toHaveText(['Outline', 'Table', 'Board'])
   await shoot(win, 'board-01-injected-tab')
 })
