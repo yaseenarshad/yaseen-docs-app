@@ -291,6 +291,35 @@ describe('filter menu (YAZ-1227-1229)', () => {
     expect(yaml()).toBe(before)
   })
 
+  it('"is any of" swaps the typed value for a checklist, one write per tick (YAZ-1467)', () => {
+    const { el, onChange, def, yaml } = mount(RULE)
+    const pop = openMenu(el, 'Filter')
+    setValue(byLabel<HTMLSelectElement>(pop, 'Operator'), 'isAnyOf')
+    expect(def().views[0].filters).toEqual({ and: ['[].contains(note.status)'] })
+    expect(pop.querySelector('[aria-label="Value"]')).toBeNull()
+    chooseColumn(pop, 'Values', 'idea')
+    chooseColumn(pop, 'Values', 'drafting')
+    expect(onChange).toHaveBeenCalledTimes(3)
+    expect(def().views[0].filters).toEqual({ and: ['["idea", "drafting"].contains(note.status)'] })
+    // A leading `[` is a flow sequence, so the serializer quotes the whole expression.
+    expect(yaml()).toContain('- "[\\"idea\\", \\"drafting\\"].contains(note.status)"')
+  })
+
+  it('a stored value list reopens ticked, and going back to "is" clears it (YAZ-1467)', () => {
+    // A flow sequence is the one expression the YAML must quote to stay a string.
+    const { el, def } = mount('views:\n  - type: table\n    name: T\n    filters:\n      and:\n        - \'["idea", "zzz"].contains(note.status)\'\n')
+    const pop = openMenu(el, 'Filter')
+    expect(byLabel<HTMLSelectElement>(pop, 'Operator').value).toBe('isAnyOf')
+    const values = byLabel<HTMLButtonElement>(pop, 'Values')
+    expect(values.textContent).toContain('idea, zzz')
+    click(values)
+    // `zzz` is in no record, so only the stored rule puts it on the list — and it is still ticked.
+    expect([...pop.querySelectorAll('[role="option"][aria-selected="true"]')].map((o) => (o as HTMLElement).dataset.value)).toEqual(['zzz', 'idea'])
+    setValue(byLabel<HTMLSelectElement>(pop, 'Operator'), 'is')
+    expect(def().views[0].filters).toEqual({ and: ['note.status == ""'] })
+    expect(byLabel<HTMLInputElement>(pop, 'Value').value).toBe('')
+  })
+
   it('Any rewrites the conjunction over the same items', () => {
     const { el, onChange, def, yaml } = mount(TWO)
     click(byText(openMenu(el, 'Filter'), 'button', 'Any'))

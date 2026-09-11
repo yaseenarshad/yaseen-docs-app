@@ -1,15 +1,22 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { ColumnSearch, matchesColumn } from './ColumnSearch'
 
-interface ColumnPickerProps {
+interface PickerBase {
   label: string
-  value: string
   options: readonly { value: string; label: string }[]
-  onChange: (value: string) => void
+  /** Wording for the search box and the no-match line: 'columns' (default) or 'values' (YAZ-1467). */
+  noun?: string
 }
 
+/** One choice, or — with `multiple` — a checklist of ticked ones (🔒 D6, YAZ-1467). */
+type ColumnPickerProps = PickerBase & (
+  | { multiple?: false; value: string; onChange: (value: string) => void }
+  | { multiple: true; value: readonly string[]; onChange: (value: string[]) => void }
+)
+
 /** Search stays local; only choosing an option changes the view. The list expands inside its menu. */
-export function ColumnPicker({ label, value, options, onChange }: ColumnPickerProps) {
+export function ColumnPicker(props: ColumnPickerProps) {
+  const { label, options, noun = 'columns' } = props
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
@@ -19,15 +26,21 @@ export function ColumnPicker({ label, value, options, onChange }: ColumnPickerPr
   const list = useRef<HTMLDivElement>(null)
   const id = useId()
   const matches = options.filter((option) => matchesColumn(query, option.label, option.value))
-  const selected = options.find((option) => option.value === value)
+  const picked = (option: string): boolean => (props.multiple ? props.value.includes(option) : option === props.value)
+  const text = props.multiple
+    ? props.value.map((v) => options.find((option) => option.value === v)?.label ?? v).join(', ') || 'Choose…'
+    : options.find((option) => option.value === props.value)?.label ?? props.value
   const index = Math.max(0, Math.min(active, matches.length - 1))
   const close = () => { setOpen(false); trigger.current?.focus() }
   const show = () => {
     setQuery('')
-    setActive(Math.max(0, options.findIndex((option) => option.value === value)))
+    setActive(Math.max(0, options.findIndex((option) => picked(option.value))))
     setOpen(true)
   }
-  const choose = (next: string) => { close(); if (next !== value) onChange(next) }
+  const choose = (next: string) => {
+    if (!props.multiple) { close(); if (next !== props.value) props.onChange(next); return }
+    props.onChange(props.value.includes(next) ? props.value.filter((v) => v !== next) : [...props.value, next])
+  }
 
   useEffect(() => {
     if (!open) return
@@ -57,13 +70,13 @@ export function ColumnPicker({ label, value, options, onChange }: ColumnPickerPr
         onKeyDown={(event) => {
           if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); show() }
         }}>
-        <span id={`${id}-value`}>{selected?.label ?? value}</span><span aria-hidden="true">⌄</span>
+        <span id={`${id}-value`}>{text}</span><span aria-hidden="true">⌄</span>
       </button>
       {open && (
         <div className="column-picker__panel" onKeyDown={(event) => {
           if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() }
         }}>
-          <ColumnSearch inputRef={input} value={query} onChange={(next) => { setQuery(next); setActive(0) }} label={`Search ${label.toLowerCase()} columns`}
+          <ColumnSearch inputRef={input} value={query} onChange={(next) => { setQuery(next); setActive(0) }} label={`Search ${label.toLowerCase()} ${noun}`} placeholder={`Search ${noun}…`}
             role="combobox" aria-expanded="true" aria-controls={id} aria-autocomplete="list" aria-activedescendant={matches[index] ? `${id}-${index}` : undefined}
             onKeyDown={(event) => {
               if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -71,17 +84,17 @@ export function ColumnPicker({ label, value, options, onChange }: ColumnPickerPr
                 setActive(Math.max(0, Math.min(matches.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1))))
               } else if (event.key === 'Enter' && matches[index]) { event.preventDefault(); choose(matches[index].value) }
             }} />
-          <div ref={list} className="column-picker__options" id={id} role="listbox" aria-label={`${label} columns`}>
+          <div ref={list} className="column-picker__options" id={id} role="listbox" aria-label={`${label} ${noun}`} aria-multiselectable={props.multiple || undefined}>
             {matches.map((option, i) => (
-              <div key={option.value} id={`${id}-${i}`} role="option" data-value={option.value} aria-selected={option.value === value}
+              <div key={option.value} id={`${id}-${i}`} role="option" data-value={option.value} aria-selected={picked(option.value)}
                 className={`column-picker__option${i === index ? ' column-picker__option--active' : ''}`}
                 onMouseEnter={() => setActive(i)} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option.value)}>
                 <span>{option.label}{option.value && option.label !== option.value && <small>{option.value}</small>}</span>
-                <span className="column-picker__check" aria-hidden="true">{option.value === value ? '✓' : ''}</span>
+                <span className="column-picker__check" aria-hidden="true">{picked(option.value) ? '✓' : ''}</span>
               </div>
             ))}
           </div>
-          {matches.length === 0 && <p className="column-search__empty" role="status">No columns found.</p>}
+          {matches.length === 0 && <p className="column-search__empty" role="status">No {noun} found.</p>}
         </div>
       )}
     </div>

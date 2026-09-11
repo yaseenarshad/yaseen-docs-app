@@ -17,8 +17,9 @@ Ship YAZ-1463 to main as release 0.9.10: Filter menu Property is the searchable 
 ## State
 - Done:
   - [x] 1- Scope (YAZ-1464) — tree created, D1–D6 locked
-- Now: [→] 2A- Property picker + Filter layout (YAZ-1466)
-- Next: 2B- any-of / none-of operators + checklist (YAZ-1467)
+  - [x] 2A- Property picker + Filter layout (YAZ-1466) — commit 9502535, 3462 tests green
+- Now: [→] 2B- any-of / none-of operators + checklist (YAZ-1467) — agent building
+- Next: 3- Prove it (demo already at ~/Desktop/yaz-1463-search-filters-demo)
 - Remaining:
   - [ ] 3- Prove it: demo vault on Desktop, isolated profile, "go do this" script (YAZ-1468)
   - [ ] 4- Polish and anti-slop, evidence comment (YAZ-1469)

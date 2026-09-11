@@ -91,7 +91,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
     const next = { ...rule, ...patch }
     const ops = operatorsFor(next.property, inferType(next.property, records, typingOf(next.property)))
     if (patch.property !== undefined && !ops.some((o) => o.id === next.op)) next.op = ops[0]?.id ?? next.op
-    if (operator(next.op).value !== operator(rule.op).value) next.value = ''
+    if (operator(next.op).value !== operator(rule.op).value) next.value = operator(next.op).value === 'options' ? [] : ''
     setAt(i, ruleToExpr(next))
   }
 
@@ -119,11 +119,18 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
     return out
   }
 
+  /** The property's known values, plus any tick it lacks so a hand-edited one still shows (YAZ-1467). */
+  const valueOptions = (property: string, picks: readonly string[]) => {
+    const known = suggestionsFor(property)
+    return [...picks.filter((v) => !known.includes(v)), ...known].map((value) => ({ value, label: value }))
+  }
+
   const ruleRow = (rule: Rule, i: number, setAt: (i: number, item: FilterNode) => void, path: string) => {
     const type = inferType(rule.property, records, typingOf(rule.property))
     const ops = operatorsFor(rule.property, type)
     const opList = ops.some((o) => o.id === rule.op) ? ops : [...ops, operator(rule.op)]
     const kind = operator(rule.op).value
+    const picks = Array.isArray(rule.value) ? rule.value : []
     const suggestions = kind === 'text' ? suggestionsFor(rule.property) : []
     const listId = `filter-sugg-${viewIndex}-${path}`
     return (
@@ -146,14 +153,23 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
             </option>
           ))}
         </select>
-        {kind !== 'none' && (
+        {kind === 'options' ? (
+          <ColumnPicker
+            multiple
+            noun="values"
+            label="Values"
+            value={picks}
+            options={valueOptions(rule.property, picks)}
+            onChange={(value) => setRule(i, rule, { value }, setAt)}
+          />
+        ) : kind !== 'none' && (
           <TextField
             className="view-input"
             aria-label="Value"
             type={kind === 'date' ? 'date' : kind === 'number' ? 'number' : 'text'}
             inputMode={kind === 'number' ? 'decimal' : undefined}
             list={suggestions.length > 0 ? listId : undefined}
-            value={rule.value}
+            value={typeof rule.value === 'string' ? rule.value : ''}
             onCommit={(value) => setRule(i, rule, { value }, setAt)}
           />
         )}
