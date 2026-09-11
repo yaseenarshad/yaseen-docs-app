@@ -28,7 +28,7 @@
 - Synthetic mouse clicks on a Crepe table cell can hit the row/column handle and select the whole cell; the 3A script places the caret via the DOM selection instead.
 
 ## Open Questions
-- Yasin asked whether Enter in a cell should insert a line (Google Docs) instead of Milkdown's exitTable. Decision pending — NOT in this PR.
+- (resolved) Enter in a cell = new line, 🔒 YAZ-1462 option 1; shipped in PR #36. Merge waits for Yasin's demo pass.
 
 ## Working Set
 - Worktree: `.claude/worktrees/yaz-1452-table-br`, branch `worktree-yaz-1452-table-br`
