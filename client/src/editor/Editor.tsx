@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FileResponse, GithubSyncStatus, PropertiesResponse } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import { api } from '../api'
+import { CommentsSection } from '../comments/CommentsSection'
 import { createDrawing } from '../drawings/createDrawing'
 import { DrawingModal } from '../drawings/DrawingModal'
 import { createDrawingFeed } from '../drawings/drawingFeed'
@@ -361,12 +362,14 @@ function CrepeHost({
           </button>
         </div>
       )}
-      {/* The scroller holds FIVE stacked blocks, in this order. Block ZERO is the page title
+      {/* The scroller holds SIX stacked blocks, in this order. Block ZERO is the page title
           (⚡ YAZ-888) — the file's own name, React-side and never a ProseMirror node; block ONE is
           the properties panel (⚡ YAZ-883), the note's frontmatter as raw YAML; then the Crepe
-          mount; then two blocks of the note's own: the folder page's contents when this page
-          carries the flag (YAZ-819, 🔒 D1 — nothing at all when it does not), then "Linked
-          mentions" (Links D, GRO-2193). All of it scrolls WITH the note, never in a panel. */}
+          mount; then three blocks of the note's own: the folder page's contents when this page
+          carries the flag (YAZ-819, 🔒 D1 — nothing at all when it does not), then the comment
+          stream (YAZ-1472, 🔒 D4 — always there, the composer being the door to the first
+          comment), then "Linked mentions" (Links D, GRO-2193), which stays last. All of it
+          scrolls WITH the note, never in a panel. */}
       <div className="editor-host" style={{ zoom: documentZoom / 100 }}>
         {/* Title and properties share ONE header row (YAZ-918): the panel sits to
             the title's right and wraps under it when the title runs long. */}
@@ -390,6 +393,9 @@ function CrepeHost({
         {wikilinks !== undefined && (
           <FolderPageContents path={file.path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} wikilinkCandidates={wikilinkCandidates} createBase={createBase} onNotice={onNotice} fileContent={file.content} />
         )}
+        {/* Reads the same disk truth the properties panel does (🔒 D4): its own frontmatter-only
+            writes come back through the watcher as `absorbFrontmatterOnly` → `setDisk`. */}
+        <CommentsSection file={{ ...file, content: disk }} />
         {wikilinks !== undefined && (
           <BacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
         )}

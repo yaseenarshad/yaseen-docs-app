@@ -11,16 +11,18 @@ export interface PropertyWrite {
 /**
  * Apply one pure whole-file transformation with the shared no-op and optimistic-concurrency
  * contract: write against the bytes just read, then re-read and recompute once on conflict.
+ * Resolves with the bytes that are on disk afterwards — the transformed content, or the fresh
+ * read when the transform was a no-op — so a caller can adopt exactly what landed (YAZ-1472).
  */
-export async function transformFile(path: string, transform: ContentTransform): Promise<{ mtime: number }> {
+export async function transformFile(path: string, transform: ContentTransform): Promise<{ mtime: number; content: string }> {
   let file = await api.readFile(path)
   let retried = false
 
   for (;;) {
     const content = transform(file.content)
-    if (content === file.content) return { mtime: file.mtime }
+    if (content === file.content) return { mtime: file.mtime, content }
     try {
-      return { mtime: (await api.writeFile({ path, content, expectedMtime: file.mtime })).mtime }
+      return { mtime: (await api.writeFile({ path, content, expectedMtime: file.mtime })).mtime, content }
     } catch (err) {
       if (!(err instanceof BridgeRequestError) || err.code !== 'CONFLICT' || retried) throw err
       retried = true

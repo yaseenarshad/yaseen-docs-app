@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { MAX_RECENT_ROOTS, type RecentRoots } from '@shared/types'
 import { basename } from './lib/paths'
+import { relativeTime } from './lib/relativeTime'
 
 /**
  * The Welcome screen (C2, GRO-2164): shown only when this window has no folder (D3) — the app
@@ -9,24 +10,8 @@ import { basename } from './lib/paths'
  * visible with its "Folder not found" note after App drops the MRU entry.
  */
 
-const RTF = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
-const UNITS: ReadonlyArray<[Intl.RelativeTimeFormatUnit, number]> = [
-  ['year', 365 * 86_400_000],
-  ['month', 30 * 86_400_000],
-  ['week', 7 * 86_400_000],
-  ['day', 86_400_000],
-  ['hour', 3_600_000],
-  ['minute', 60_000],
-]
-
-/** "just now" under a minute, then the largest whole unit ("2 hours ago", "yesterday", "last week"). */
-export function relativeLastOpened(lastOpened: number, now: number): string {
-  const diff = now - lastOpened
-  for (const [unit, ms] of UNITS) {
-    if (diff >= ms) return RTF.format(-Math.floor(diff / ms), unit)
-  }
-  return 'just now'
-}
+/** The row's "2 hours ago" is `lib/relativeTime` (shared with the comment stream since YAZ-1472); the old name stays for its test. */
+export { relativeTime as relativeLastOpened }
 
 interface WelcomeProps {
   /** MRU order, straight from `AppState.recents`. */
@@ -60,7 +45,7 @@ export function Welcome({ recents, onOpenRecent, onPickFolder, picking }: Welcom
               <button type="button" className="welcome__recent" disabled={missing.has(r.path)} onClick={() => open(r.path)}>
                 <span className="welcome__recent-name">{basename(r.path)}</span>
                 <span className={`welcome__recent-when${missing.has(r.path) ? ' welcome__recent-when--missing' : ''}`}>
-                  {missing.has(r.path) ? 'Folder not found' : relativeLastOpened(r.lastOpened, now)}
+                  {missing.has(r.path) ? 'Folder not found' : relativeTime(r.lastOpened, now)}
                 </span>
                 <span className="welcome__recent-path">{r.path}</span>
               </button>

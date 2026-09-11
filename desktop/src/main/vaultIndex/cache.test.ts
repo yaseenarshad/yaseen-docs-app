@@ -242,7 +242,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
     'Bump CACHE_VERSION in vaultIndex/cache.ts and re-pin FINGERPRINT in this test — ' +
     'discard IS the migration (a version mismatch costs one full rescan, never a converter).'
 
-  /** Exercises every extraction rule the cache would freeze: frontmatter parsing, tag/link/embed extraction, code stripping, URL skipping. */
+  /** Exercises every extraction rule the cache would freeze: frontmatter parsing, the `comments` drop, tag/link/embed extraction, code stripping, URL skipping. */
   const CANONICAL_NOTE = [
     '---',
     'title: Canonical',
@@ -251,6 +251,10 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
     "tags: [alpha, '#beta']",
     'link: "[[Ref|shown]]"',
     "aliases: [Canon, ' Spaced Alias ', '[[Not A Link]]']",
+    'comments:',
+    '  - id: c0ffee00',
+    '    at: 2026-09-11T18:22:31Z',
+    '    body: "[[Not A Link Either]] — a comment is the note, not a property"',
     '---',
     '',
     'Inline #gamma and #tag/nested here, plus https://example.test/#not-a-tag',
@@ -263,7 +267,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
   ].join('\n')
 
   const FINGERPRINT = {
-    cacheVersion: 2,
+    cacheVersion: 3,
     maxFileBytes: 10 * 1024 * 1024,
     /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
     recordKeys: ['aliases', 'basename', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'links', 'mtime', 'name', 'path', 'properties', 'size', 'tags'],
@@ -275,6 +279,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
         tags: ['alpha', '#beta'],
         link: '[[Ref|shown]]',
         aliases: ['Canon', ' Spaced Alias ', '[[Not A Link]]'],
+        // No `comments`: the note's own comment stream is dropped at scan time (YAZ-1472, 🔒 D5).
       },
       aliases: ['Canon', 'Spaced Alias', '[[Not A Link]]'],
       tags: ['alpha', 'beta', 'gamma', 'tag/nested'],

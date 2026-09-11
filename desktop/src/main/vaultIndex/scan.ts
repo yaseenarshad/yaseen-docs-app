@@ -1,5 +1,6 @@
 import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
+import { COMMENTS_KEY } from '@shared/comments'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { MAX_FILE_BYTES, type IndexRecord } from '@shared/types'
 import { fsCall } from '../fs/fsUtils'
@@ -148,6 +149,7 @@ export async function scanFile(root: string, absPath: string): Promise<IndexReco
   const content = await fsCall(absPath, () => readFile(absPath, 'utf8'))
   const { frontmatter, body } = splitFrontmatter(content)
   const { properties, error } = parseFrontmatter(frontmatter)
+  delete properties[COMMENTS_KEY] // the note's own comment stream (YAZ-1472), never a property
   record.properties = properties
   if (error !== undefined) record.frontmatterError = error
   return { ...record, ...extractBody(properties, body) }

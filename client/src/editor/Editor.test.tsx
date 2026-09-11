@@ -467,6 +467,8 @@ describe('CrepeHost empty frontmatter block (GRO-2216)', () => {
  * properties panel now share ONE `.page-header` row, so the host's children read
  * `page-header, editor-mount, …` where they used to read `page-title, frontmatter-panel, …`.
  * The header's two halves are pinned inside it, so nothing the old order said is given up.
+ * YAZ-1472 slid the comment stream in before the backlinks (🔒 D4): always present, since its
+ * composer is the door to the first comment, and "Linked mentions" stays the LAST block.
  */
 describe('Editor backlinks section (Links D, GRO-2193)', () => {
   const record = (path: string, links: string[] = [], properties: Record<string, unknown> = {}): IndexRecord => {
@@ -500,7 +502,7 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     expect(el.querySelector('.backlinks')).toBeNull() // no snapshot yet → nothing at all
     feed(source, [record('/vault/other.md', ['note']), record(PATH)])
     const host = el.querySelector('.editor-host')
-    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'backlinks'])
+    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'comments', 'backlinks'])
     // …and block zero is ONE row of two (YAZ-918): the title with the properties panel beside it.
     expect([...(host?.querySelector('.page-header')?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'frontmatter-panel'])
     expect(host?.querySelector('.editor-mount .editor-instance')).not.toBeNull()
@@ -509,10 +511,10 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
 
   /**
    * The folder page's contents block (YAZ-819, 🔒 D1) sits between the Crepe mount and the
-   * backlinks (only when the open record carries the flag) — the third of the scroller's four
-   * blocks since the title and the properties panel became ONE `.page-header` row (YAZ-918,
-   * which amends ⚡ YAZ-883's "the panel is block one"). Order is the placement rule, so it is
-   * pinned as an order.
+   * comment stream (only when the open record carries the flag) — the third of the scroller's
+   * five blocks since the title and the properties panel became ONE `.page-header` row (YAZ-918,
+   * which amends ⚡ YAZ-883's "the panel is block one") and the comments joined (YAZ-1472).
+   * Order is the placement rule, so it is pinned as an order.
    */
   it('a FOLDER PAGE renders its contents between the mount and the backlinks', async () => {
     const source = createWikilinkResolveSource()
@@ -522,7 +524,7 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
       record(PATH, [], { folder_page: true }),
     ])
     const host = el.querySelector('.editor-host')
-    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'folder-page-contents', 'backlinks'])
+    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'folder-page-contents', 'comments', 'backlinks'])
     expect([...(host?.querySelector('.page-header')?.children ?? [])].map((c) => c.className)).toEqual(['page-title', 'frontmatter-panel'])
     // fed the pages that belong to it, and no title row of its own — the header row already
     // names the page (⚡ YAZ-888, unchanged by the wrapping).
@@ -535,7 +537,7 @@ describe('Editor backlinks section (Links D, GRO-2193)', () => {
     const el = await mount(BODY, 1, { wikilinks: source })
     feed(source, [record('/vault/member.md', ['note'], { folder_pages: ['[[note]]'] }), record(PATH)])
     const host = el.querySelector('.editor-host')
-    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'backlinks'])
+    expect([...(host?.children ?? [])].map((c) => c.className)).toEqual(['page-header', 'editor-mount', 'comments', 'backlinks'])
   })
 
 })

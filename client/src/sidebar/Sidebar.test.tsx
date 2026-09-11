@@ -1529,7 +1529,7 @@ describe('folder-page toggle (YAZ-840)', () => {
 
   beforeEach(() => {
     transform.mockReset()
-    transform.mockResolvedValue({ mtime: 2 })
+    transform.mockResolvedValue({ mtime: 2, content: '' })
     write.mockReset()
     write.mockResolvedValue({ mtime: 2 })
   })

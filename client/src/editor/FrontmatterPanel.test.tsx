@@ -547,6 +547,17 @@ describe('FrontmatterPanel — typed rows (⚡ YAZ-884)', () => {
     expect(byLabel(tags, 'Delete tags')).toBeNull()
   })
 
+  it('`comments` is RESERVED too (YAZ-1472): chipped, read-only — its door is the Comments block', () => {
+    const el = mount('---\ncomments:\n  - id: 3f9a1c2e\n    at: 2026-09-11T18:22:31Z\n    body: Hi\nstatus: draft\n---\nBody\n', { root: ROOT })
+    expand(el)
+    expect(keysOf(el)).toEqual(['comments', 'status'])
+    const r = rowOf(el, 'comments')
+    expect(chipIn(r)).toBe('Reserved')
+    expect(r.querySelector('[data-edit]')).toBeNull()
+    expect(byLabel(r, 'Configure comments')).toBeNull()
+    expect(chipIn(rowOf(el, 'status'))).toBeNull()
+  })
+
   it('uses the sole folder page definition for uppercase Status and writes only the selected note value', async () => {
     const wikilinks = folderFeed(folderRecord('Roadmap', { kind: 'select', options: ['Ready', 'Later'] }))
     readFile.mockResolvedValue(fileOf(LOCAL_NOTE))

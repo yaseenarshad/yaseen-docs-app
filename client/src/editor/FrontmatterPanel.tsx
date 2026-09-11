@@ -4,6 +4,7 @@
  */
 import { useMemo, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
+import { COMMENTS_KEY } from '@shared/comments'
 import { frontmatterInterior, parseFrontmatter, replaceFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import {
   PROPERTY_NAME,
@@ -37,8 +38,8 @@ export interface FrontmatterPanelProps {
   wikilinks?: WikilinkResolveSource
 }
 
-/** The app's own keys: shown, never edited here — each has its own door (the sidebar's toggle, the folder page's settings). */
-const RESERVED = new Set<string>([FOLDER_PAGE_KEY, SETTINGS_KEY])
+/** The app's own keys: shown, never edited here — each has its own door (the sidebar's toggle, the folder page's settings, the Comments block below the note — YAZ-1472). */
+const RESERVED = new Set<string>([FOLDER_PAGE_KEY, SETTINGS_KEY, COMMENTS_KEY])
 
 /** No view is rendering here, so the ladder's record-derived rungs have nothing to read. */
 const NO_RECORDS: readonly IndexRecord[] = []

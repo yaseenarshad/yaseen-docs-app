@@ -6,6 +6,9 @@
   --border: #e4e4e7;
   --accent: #5b6cff;
   --accent-soft: #eef0ff;
+  /* A voice that is not yours (a comment carrying `by`, YAZ-1472): violet, so it never reads as the accent. */
+  --agent: #7c3aed;
+  --agent-soft: #f1eaff;
   --danger: #d64545;
   --warn: #c98a1a;
   --ok: #3a9d5d;
@@ -43,6 +46,8 @@
   --border: #3a3a3a;
   --accent: #7c8aff;
   --accent-soft: #2c3050;
+  --agent: #a78bfa;
+  --agent-soft: #2e2547;
   --danger: #e06c6c;
   --warn: #d9a13c;
   --ok: #4fb573;
