@@ -11,6 +11,8 @@
     "@excalidraw/math": "file:vendor/yaseendraw-math-0.18.0-9e63bdf2.tgz",
     "@milkdown/crepe": "^7.22.1",
     "@milkdown/kit": "^7.22.1",
+    "dompurify": "^3.4.14",
+    "marked": "^16.4.2",
     "mdast-util-to-markdown": "^2.1.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
