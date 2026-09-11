@@ -22,7 +22,7 @@
  *  - Underline mark (GRO-2028, `marks/underline.ts`): Mod-u ↔ `<u>text</u>` inline HTML.
  *  - Inline breaks (YAZ-1452, `inlineBreaks.ts`): inline `<br>` ↔ hardbreak, registered BEFORE
  *    Milkdown's `remarkPreserveEmptyLinePlugin` (which otherwise deletes it); table cells save
- *    a hardbreak back as `<br>`.
+ *    a hardbreak back as `<br>`, and Shift-Enter inside a cell always inserts one.
  *  - Zoom into a bullet (GRO-2029, `outline/zoom.ts`): view-state-only decorations + breadcrumbs;
  *    glyph click / Mod-. / Mod-Shift-. ; never a document change.
  *  - List guide lines (GRO-2030, `outline/guideLines.ts` + `.css`): CSS vertical lines on nested
@@ -87,7 +87,6 @@ import { Crepe, CrepeFeature } from '@milkdown/crepe'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import {
-  hardbreakFilterNodes,
   orderedListKeymap,
   remarkPreserveEmptyLinePlugin,
   turnIntoTextCommand,
@@ -255,9 +254,6 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // serialise as `<br />`.
   void crepe.editor.remove(remarkPreserveEmptyLinePlugin)
   crepe.editor.use(inlineBreaks).use(remarkPreserveEmptyLinePlugin)
-  // Milkdown refuses Shift-Enter inside a table only because remark would save that break as a
-  // space; inlineBreaks saves it as `<br>`, so the table filter is lifted (code_block stays).
-  crepe.editor.config((ctx) => ctx.update(hardbreakFilterNodes.key, (names) => names.filter((n) => n !== 'table')))
   crepe.editor.use(createOutlineFolding(opts.folding))
   crepe.editor.use(createHeadingFolding(opts.headingFolding))
   if (opts.find !== undefined) crepe.editor.use(createFindInPage(opts.find))
