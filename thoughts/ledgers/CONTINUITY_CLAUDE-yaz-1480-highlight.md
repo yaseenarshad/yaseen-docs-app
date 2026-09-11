@@ -17,18 +17,19 @@ Ship YAZ-1480 to main: `==text==` highlight (Obsidian syntax, vendored micromark
 
 ## State
 - Done:
-  - [x] 1- Scope (YAZ-1504) — findings + 🔒 + agreements on YAZ-1480; prototype green (3533) and approved on the live demo
-  - [x] 2A- The mark and its colours (YAZ-1506) — commit b74d4f5; coordinator review + two "smaller" tweaks (classList one-liner, no double cast); 72 focused tests green
-  - [x] 2B- Swatches and the wash (YAZ-1507) — commit 4015682; full suite 3533 green; build green; branch pushed
-  - [x] 3- Prove it (YAZ-1508) — Yasin's pass: D5 (28c6c30) + lit swatch as pressed button (01d5786), "that's better, keep going"
-- Now: [→] 4- Polish (YAZ-1509) — reviewer's 42 findings triaged; accepted fixes committed (caret via stored marks, markApplies guard, edge-whitespace trim, wikilink `\=` un-escape, keymapRef labels, regex from HIGHLIGHT_COLORS, dead lookahead, phantom import, header trim, CONSTRUCTS_WITHOUT_HIGHLIGHT; tests: markTestKit, dedup, 8 new cases); final gates then triage comment
-- Next: 4A- PR, Yasin's go (+ bump question), merge, closeout, cleanup
-- Remaining:
-  - [ ] 4A- Release (YAZ-1510) — push, PR, Yasin's verdict, merge, closeout, cleanup
+  - [x] 1- Scope (YAZ-1504) — findings + 🔒 + agreements on YAZ-1480; prototype green and approved on the live demo
+  - [x] 2A- The mark and its colours (YAZ-1506) — b74d4f5
+  - [x] 2B- Swatches and the wash (YAZ-1507) — 4015682
+  - [x] 3- Prove it (YAZ-1508) — Yasin's pass: D5 (28c6c30) + lit swatch (01d5786)
+  - [x] 4- Polish and anti-slop (YAZ-1509) — reviewer's 42 findings triaged, fixes in 48dde53; gates 3536 green
+  - [x] 4A- Release (YAZ-1510) — PR #39 merged as 8530c74, NO version bump (Yasin batches releases); branch + worktree + demo vault removed
+- Now: COMPLETE — all of YAZ-1480 Done in Linear; handoff posted on the parent and every child
+- Next: nothing (deferred items live in the 4- follow-ups comment and the handoff)
+- Remaining: none
 
 ## Open Questions
-- UNCONFIRMED: Yasin's on-screen reactions to dots-vs-marker and the four shades (collected in 3-). DECIDED D5: lit = any of the selection carries the colour.
-- UNCONFIRMED: bump `npm version` in this run or batch (ask at 4A).
+- DECIDED: dots stay dots, shades as shipped (Yasin's demo pass). DECIDED D5 + addendum (lit = any of the selection; lit swatch = pressed square).
+- DECIDED: no bump — "1, merge to main no bump"; the next `npm version patch` carries it.
 
 ## Working Set
 - Files: client/src/editor/marks/{highlight,htmlPairs,underline}.ts, client/src/editor/createCrepe.ts, client/src/app.css, client/src/sidebar/HotkeysPanel.tsx, docs/CONTRACTS.md (rule 31), client/package.json
