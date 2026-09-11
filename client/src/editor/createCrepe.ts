@@ -20,6 +20,9 @@
  *  - Obsidian hotkeys (GRO-2027, `outline/hotkeys.ts` + `outline/foldAllHotkeys.ts`): Mod-Enter
  *    task cycle, Mod-Shift-u/i fold/unfold all bullets + headings, Mod-Shift-x strikethrough.
  *  - Underline mark (GRO-2028, `marks/underline.ts`): Mod-u ↔ `<u>text</u>` inline HTML.
+ *  - Inline breaks (YAZ-1452, `inlineBreaks.ts`): inline `<br>` ↔ hardbreak, registered BEFORE
+ *    Milkdown's `remarkPreserveEmptyLinePlugin` (which otherwise deletes it); table cells save
+ *    a hardbreak back as `<br>`.
  *  - Zoom into a bullet (GRO-2029, `outline/zoom.ts`): view-state-only decorations + breadcrumbs;
  *    glyph click / Mod-. / Mod-Shift-. ; never a document change.
  *  - List guide lines (GRO-2030, `outline/guideLines.ts` + `.css`): CSS vertical lines on nested
@@ -84,7 +87,9 @@ import { Crepe, CrepeFeature } from '@milkdown/crepe'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import {
+  hardbreakFilterNodes,
   orderedListKeymap,
+  remarkPreserveEmptyLinePlugin,
   turnIntoTextCommand,
   wrapInHeadingCommand,
   wrapInOrderedListInputRule,
@@ -107,6 +112,7 @@ import {
   stripEmptyTaskBreaks,
 } from './listItemRoundTrip'
 import { underline } from './marks/underline'
+import { inlineBreaks } from './inlineBreaks'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
 import { clipboardCopyOut } from './clipboardCopyOut'
@@ -244,6 +250,14 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   )
   crepe.editor.use(listItemRoundTrip)
   crepe.editor.use(underline)
+  // Milkdown's empty-line plugin deletes every inline <br> on parse (YAZ-1452). Ours must run
+  // first; re-registering Milkdown's AFTER keeps its id resolvable so empty paragraphs still
+  // serialise as `<br />`.
+  void crepe.editor.remove(remarkPreserveEmptyLinePlugin)
+  crepe.editor.use(inlineBreaks).use(remarkPreserveEmptyLinePlugin)
+  // Milkdown refuses Shift-Enter inside a table only because remark would save that break as a
+  // space; inlineBreaks saves it as `<br>`, so the table filter is lifted (code_block stays).
+  crepe.editor.config((ctx) => ctx.update(hardbreakFilterNodes.key, (names) => names.filter((n) => n !== 'table')))
   crepe.editor.use(createOutlineFolding(opts.folding))
   crepe.editor.use(createHeadingFolding(opts.headingFolding))
   if (opts.find !== undefined) crepe.editor.use(createFindInPage(opts.find))
