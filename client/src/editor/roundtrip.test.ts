@@ -29,7 +29,7 @@ tags: [a, b]
 Setext heading
 ==============
 
-Some *emphasis*, __strong__, \`code\`, a [link](https://x.y/z "t"), and a [[Wiki Link]] plus ![[embed.png]] and #tag.
+Some *emphasis*, __strong__, ==highlight==, \`code\`, a [link](https://x.y/z "t"), and a [[Wiki Link]] plus ![[embed.png]] and #tag.
 A hard break follows (two spaces)  
 next line. Backslash break\\
 next line. Escapes: 1\\. not a list, \\_under\\_, \\[bracket\\], a_b_c, 2 * 3 * 4.

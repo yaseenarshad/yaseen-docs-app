@@ -45,6 +45,12 @@ const GROUP_BASE = `views:
     summaries:
       note.priority: Sum
 `
+/** The same grouped view plus a plain second one, so a Delete on the first is not refused as the last view. */
+const TWO_VIEWS = GROUP_BASE + `  - type: table
+    name: U
+    order:
+      - file.name
+`
 
 let root: Root | null = null
 let container: HTMLElement | null = null
@@ -273,6 +279,43 @@ describe('collapse', () => {
     click(toggleOf(el, 'No value'))
     expect(links(el)).not.toContain('Attribution.md')
     expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::T', [groupKeyOf(null)])
+  })
+
+  it('a rename carries the collapsed groups to the new name and a delete drops them (YAZ-1493)', async () => {
+    const { storage } = await import('../../lib/storage')
+    const { el } = mount(TWO_VIEWS)
+    click(toggleOf(el, 'idea'))
+    expect(groupStore.get('/vault|/vault/pillars.md::T')).toEqual(['v:idea'])
+    const tabOf = (name: string): HTMLElement => {
+      const t = [...el.querySelectorAll<HTMLElement>('[role="tab"]')].find((x) => x.textContent === name)
+      if (t === undefined) throw new Error(`no tab ${name}`)
+      return t
+    }
+    const menuItem = (text: string): HTMLElement => {
+      const b = [...el.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((x) => x.textContent === text)
+      if (b === undefined) throw new Error(`no menu item ${text}`)
+      return b
+    }
+    const rightClick = (target: Element): void => {
+      act(() => void target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+      draw()
+    }
+    // Rename T → Grid: the entry moves with the name, and the section stays collapsed on screen.
+    rightClick(tabOf('T'))
+    click(menuItem('Rename'))
+    const field = byLabel<HTMLInputElement>(el, 'View name')
+    setValue(field, 'Grid')
+    act(() => void field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    draw()
+    expect(groupStore.has('/vault|/vault/pillars.md::T')).toBe(false)
+    expect(groupStore.get('/vault|/vault/pillars.md::Grid')).toEqual(['v:idea'])
+    expect(toggleOf(el, 'idea').getAttribute('aria-expanded')).toBe('false')
+    // Delete Grid: nothing is left behind for a future view of the same name to inherit.
+    rightClick(tabOf('Grid'))
+    click(menuItem('Delete'))
+    click(el.querySelector('.confirm__btn--danger') as HTMLElement)
+    expect(groupStore.has('/vault|/vault/pillars.md::Grid')).toBe(false)
+    expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::Grid', [])
   })
 })
 

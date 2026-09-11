@@ -48,6 +48,9 @@
   cursor: default;
 }
 
+/* Overflow (I3): tabs shrink to their floor first, then the strip scrolls (Obsidian-like);
+   TabBar scrolls the ACTIVE tab into view on activation. The scrolling itself — no scrollbar, an
+   edge fade — is `.scroll-strip` (app.css), worn beside this class. */
 .tabbar {
   display: flex;
   align-items: center;
@@ -55,9 +58,6 @@
   flex: 1;
   min-width: 0;
   padding: 4px 8px 0;
-  /* Overflow (I3): tabs shrink to their floor first, then the strip scrolls (Obsidian-like);
-     TabBar scrolls the ACTIVE tab into view on activation. */
-  overflow-x: auto;
 }
 
 .tabbar__tab {

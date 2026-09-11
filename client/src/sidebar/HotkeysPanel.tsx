@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 /**
  * Hotkey reference (GRO-2067 Q4): keyboard-icon button beside the settings cog; the popover
  * lists every binding from this single source-of-truth list. When a keymap changes anywhere
- * (hotkeys.ts, foldAllHotkeys.ts, headingHotkeys.ts, zoom.ts, marks/underline.ts, listCommands.ts, views/view/*, the application
+ * (hotkeys.ts, foldAllHotkeys.ts, headingHotkeys.ts, zoom.ts, marks/underline.ts, marks/highlight.ts, listCommands.ts, views/view/*, the application
  * menu in desktop/src/main/menu.ts), update HOTKEYS (or VIEW_HOTKEYS / WINDOW_HOTKEYS) with it —
  * `VIEW_HOTKEYS` is the folder-page view surface's own set (table / cards / outline bindings); it
  * was `BASES_HOTKEYS` under the heading "Bases" until YAZ-861 renamed both to what they describe.
@@ -25,6 +25,7 @@ export const HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘⇧.', label: 'Zoom out one level' },
   { keys: '⌘⏎', label: 'Cycle bullet → task → done' },
   { keys: '⌘U', label: 'Underline' },
+  { keys: '⌘⇧H', label: 'Highlight' },
   { keys: '⌘⇧X', label: 'Strikethrough' },
   { keys: 'Tab / ⇧Tab', label: 'Indent / outdent bullet' },
 ]

@@ -480,15 +480,20 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
           </div>
         </>
       )}
-      {/* The folder-page-level setting (YAZ-1104) — the saved START, through its own door; never a views write. */}
+      {/* The folder-page-level setting (YAZ-1104) — the saved START, in the def since YAZ-1471: ONE door. */}
       <p className="view-menu__label">Page</p>
       <label className="view-settings-row">
         <span>Default view</span>
         <select
           className="view-select"
           aria-label="Default view"
-          value={folderPage.settings.defaultView ?? ''}
-          onChange={(e) => folderPage.setDefaultView(e.target.value === '' ? undefined : e.target.value)}
+          value={def.defaultView ?? ''}
+          onChange={(e) =>
+            onUpdate((d) => {
+              if (e.target.value === '') delete d.defaultView
+              else d.defaultView = e.target.value
+            })
+          }
         >
           <option value="">First view</option>
           {def.views.map((v) => (

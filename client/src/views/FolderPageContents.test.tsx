@@ -87,7 +87,7 @@ const KPIS = '/vault/KPIs.md'
 const OUTSIDER = '/vault/Sub/Outsider.md'
 
 const TABLE = { type: 'table', name: 'Table', order: ['file.name', 'note.order', 'note.related'] }
-/** Injected at read (YAZ-935) — every parsed views list without a board gains this LAST. */
+/** A board view, spelled out: since YAZ-1471 retired the YAZ-935 backfill a card only has one if it SAYS so. */
 const BOARD = { type: 'board', name: 'Board' }
 const SETTINGS = {
   columns: { order: { kind: 'number' }, related: { kind: 'multi-link', target: '[[KPIs]]' } },
@@ -200,14 +200,31 @@ function chooseProperty(el: ParentNode, value: string): void {
 const propertyShown = (el: ParentNode): string => byLabel<HTMLElement>(el, 'Property').textContent ?? ''
 
 const openTable = (el: ParentNode): void => click(q(el, '.view-tab__btn:nth-of-type(1)'))
-/** Switch to the view named `name` (tabs are switch-only here). */
-function selectView(el: ParentNode, name: string): void {
-  const tab = [...el.querySelectorAll<HTMLElement>('.view-tab__btn')].find((b) => b.textContent === name)
-  if (tab === undefined) throw new Error(`no view tab ${name}`)
-  click(tab)
-}
 
 const openCell = (el: ParentNode, r: number, c: number): void => click(q(q<HTMLElement>(el, `[data-cell="${r}:${c}"]`), '[data-edit]'))
+
+/** Toolbar.test's select setter: native prototype setter + bubbling change, so React's tracker sees it. */
+function setSelect(el: HTMLSelectElement, value: string): void {
+  const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+  act(() => {
+    set?.call(el, value)
+    el.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+const tab = (el: ParentNode, name: string): HTMLElement => {
+  const t = [...el.querySelectorAll<HTMLElement>('[role="tab"]')].find((x) => x.textContent === name)
+  if (t === undefined) throw new Error(`no view tab ${name}`)
+  return t
+}
+/** Activate the view named `name`. Switching is session state — it writes nothing of its own. */
+const selectView = (el: ParentNode, name: string): void => click(tab(el, name))
+const rightClick = (el: Element): void => act(() => void el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+const menuItem = (el: ParentNode, text: string): HTMLElement => {
+  const b = [...el.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((x) => x.textContent === text)
+  if (b === undefined) throw new Error(`no menu item ${text}`)
+  return b
+}
+const written = (): Record<string, unknown> => write.mock.calls[0][2] as Record<string, unknown>
 
 // ---------- the block itself (🔒 D1) ----------
 
@@ -340,7 +357,7 @@ describe('an outline edited outside the app reaches the rendered document (YAZ-1
 describe('the chrome is the views chrome, minus what a folder page cannot have', () => {
   it('both skins render and the tabs switch between them (🔒 Q7: outline first)', () => {
     const el = mount(FUNNELS)
-    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table', 'Board'])
+    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table']) // what the card lists is what you get (D3)
     expect(el.querySelector('.view-outline')).not.toBeNull() // YAZ-820's renderer
     expect(el.querySelector('.view-table')).toBeNull()
     selectView(el, 'Table')
@@ -355,13 +372,69 @@ describe('the chrome is the views chrome, minus what a folder page cannot have',
     expect(write).not.toHaveBeenCalled()
   })
 
-  it('the tabs are switch-only (no add, no view menu); the outline, a document, offers no Filter (YAZ-1218)', () => {
+  it('the tabs EDIT (YAZ-1471): "+" adds, a right-click opens the menu; the outline, a document, still offers no Filter (YAZ-1218)', () => {
     const el = mount(FUNNELS)
-    expect(el.querySelector('[aria-label="Add view"]')).toBeNull()
-    expect(el.querySelector('[aria-label="View menu"]')).toBeNull()
+    expect(el.querySelector('[aria-label="Add view"]')).not.toBeNull()
+    rightClick(tab(el, 'Outline'))
+    expect(texts(el, '.ctx-menu[role="menu"] [role="menuitem"]')).toEqual(['Rename', 'Duplicate', 'Delete'])
     expect(el.querySelector('[aria-label="Filter"]')).toBeNull() // documentView — rows-bearing views offer it
     expect(el.querySelector('[aria-label="Sort"]')).not.toBeNull() // the rest of the toolbar is untouched
     expect(el.querySelector('[aria-label="New note"]')).not.toBeNull()
+  })
+
+  /**
+   * "+" through the REAL host (YAZ-1471, 🔒 D5): a page whose card never mentioned
+   * `folder_page_settings` still opens on 🔒 Q7's three skins, and adding a fourth is ONE
+   * whole-key settings write — `plain()` omits the empty `columns`, so the key that lands is the
+   * views list and nothing else.
+   */
+  it('"+" on a page with no settings key writes the three defaults plus the new view, once', async () => {
+    const el = mount(FUNNELS, vault().map((r) => (r.path === FUNNELS ? rec(FUNNELS, { folder_page: true }) : r)))
+    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table', 'Board'])
+    click(byLabel(el, 'Add view'))
+    expect(texts(el, '.view-popover--menu [role="menuitem"]')).toEqual(['Table', 'Board', 'Cards', 'List']) // Outline already there
+    click(menuItem(el, 'Cards'))
+    await flush()
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(write.mock.calls[0][1]).toBe('folder_page_settings')
+    expect(written()).toEqual({
+      views: [
+        { type: 'outline', name: 'Outline' },
+        { type: 'table', name: 'Table' },
+        { type: 'board', name: 'Board' },
+        { type: 'cards', name: 'Cards' },
+      ],
+    })
+    expect(byLabel<HTMLInputElement>(el, 'View name').value).toBe('Cards') // the appended tab mounts in rename
+  })
+})
+
+/**
+ * Open UI vs an EXTERNAL shrink (YAZ-1488): `menu`, `confirm` and `renaming` are INDICES into
+ * `views`, and another window (or a hand edit) can drop views out from under an open one. The
+ * strip derives the view in render, so a stale index renders NOTHING — this block has no error
+ * boundary above it, and a throw here is a blank window.
+ */
+describe('an open menu or sheet survives the views list shrinking under it (YAZ-1488)', () => {
+  const THREE = { ...SETTINGS, views: [...SETTINGS.views, BOARD] }
+
+  it('the right-click menu on the LAST tab goes away with the view it named', () => {
+    const el = mount(FUNNELS, vault(THREE))
+    rightClick(tab(el, 'Board'))
+    expect(el.querySelector('[role="menu"]')).not.toBeNull()
+    feed(vault(SETTINGS))
+    expect(el.querySelector('[role="menu"]')).toBeNull()
+    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table'])
+  })
+
+  it('so does the delete sheet it opened', () => {
+    const el = mount(FUNNELS, vault(THREE))
+    rightClick(tab(el, 'Board'))
+    click(menuItem(el, 'Delete'))
+    expect(el.querySelector('[role="dialog"]')).not.toBeNull()
+    feed(vault(SETTINGS))
+    expect(el.querySelector('[role="dialog"]')).toBeNull()
+    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table'])
   })
 })
 
@@ -381,25 +454,55 @@ describe('the default view: a saved START, while which view is ACTIVE stays sess
     expect(write).not.toHaveBeenCalled()
   })
 
-  it('setDefaultView is ONE whole-key write carrying the name', async () => {
-    mount(FUNNELS)
-    act(() => captured.folderPage!.setDefaultView('Table'))
+  it('Page → Default view is ONE whole-key settings write carrying the name', async () => {
+    const el = mount(FUNNELS)
+    click(tab(el, 'Table')) // the outline offers no Properties menu; switching writes nothing
+    click(byLabel(el, 'Properties'))
+    setSelect(byLabel<HTMLSelectElement>(el, 'Default view'), 'Table')
     await flush()
-    expect(write).toHaveBeenCalledExactlyOnceWith(FUNNELS, 'folder_page_settings', {
-      ...SETTINGS,
-      views: [...SETTINGS.views, BOARD],
-      defaultView: 'Table',
-    })
+    expect(write).toHaveBeenCalledExactlyOnceWith(FUNNELS, 'folder_page_settings', { ...SETTINGS, defaultView: 'Table' })
   })
 
-  it('setDefaultView(undefined) clears the key from the card', async () => {
-    mount(FUNNELS, vault({ ...SETTINGS, defaultView: 'Table' }))
-    act(() => captured.folderPage!.setDefaultView(undefined))
+  it('the dropdown shows the saved value, and First view clears the key', async () => {
+    const el = mount(FUNNELS, vault({ ...SETTINGS, defaultView: 'Table' }))
+    click(byLabel(el, 'Properties'))
+    const select = byLabel<HTMLSelectElement>(el, 'Default view')
+    expect(select.value).toBe('Table')
+    setSelect(select, '')
     await flush()
     expect(write).toHaveBeenCalledTimes(1)
-    const value = write.mock.calls[0][2] as Record<string, unknown>
-    expect(value).not.toHaveProperty('defaultView')
-    expect(value).toEqual({ ...SETTINGS, views: [...SETTINGS.views, BOARD] })
+    expect(written()).toEqual(SETTINGS)
+  })
+
+  it('renaming the default view carries the saved START along, in the SAME write', async () => {
+    const el = mount(FUNNELS, vault({ ...SETTINGS, defaultView: 'Table' }))
+    rightClick(tab(el, 'Table'))
+    click(menuItem(el, 'Rename'))
+    const input = byLabel<HTMLInputElement>(el, 'View name')
+    setValue(input, 'Grid')
+    press(input, 'Enter')
+    await flush()
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(written()).toEqual({ ...SETTINGS, views: [SETTINGS.views[0], { ...TABLE, name: 'Grid' }], defaultView: 'Grid' })
+  })
+
+  it('deleting the default view clears the START in the same write', async () => {
+    const el = mount(FUNNELS, vault({ ...SETTINGS, defaultView: 'Table' }))
+    rightClick(tab(el, 'Table'))
+    click(menuItem(el, 'Delete'))
+    click(q(el, '.confirm__btn--danger'))
+    await flush()
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(written()).toEqual({ ...SETTINGS, views: [SETTINGS.views[0]] })
+  })
+
+  it('an EXTERNAL edit that changes ONLY defaultView rebuilds the def (D4: it rides in the stamp)', () => {
+    const el = mount(FUNNELS)
+    feed(vault({ ...SETTINGS, defaultView: 'Table' }))
+    click(tab(el, 'Table')) // the outline has no Properties button of its own
+    click(byLabel(el, 'Properties'))
+    expect(byLabel<HTMLSelectElement>(el, 'Default view').value).toBe('Table')
+    expect(write).not.toHaveBeenCalled()
   })
 })
 
@@ -431,7 +534,8 @@ describe('config edits are ONE settings write on the folder page', () => {
   })
 
   it('a Board column-width edit is one whole-key folder_page_settings write', async () => {
-    const el = mount(FUNNELS)
+    const withBoard = { ...SETTINGS, views: [...SETTINGS.views, BOARD] } // the card SAYS board now (D3)
+    const el = mount(FUNNELS, vault(withBoard))
     selectView(el, 'Board')
     click(byLabel(el, 'Properties'))
     const width = byLabel<HTMLInputElement>(el, 'Column width in pixels')
@@ -440,7 +544,7 @@ describe('config edits are ONE settings write on the folder page', () => {
     await flush()
 
     expect(write).toHaveBeenCalledExactlyOnceWith(FUNNELS, 'folder_page_settings', {
-      ...SETTINGS,
+      ...withBoard,
       views: [...SETTINGS.views, { ...BOARD, cardSize: 400 }],
     })
   })
@@ -458,7 +562,7 @@ describe('config edits are ONE settings write on the folder page', () => {
     expect(key).toBe('folder_page_settings')
     expect(value).toEqual({
       ...SETTINGS,
-      views: [SETTINGS.views[0], { ...TABLE, sort: [{ property: 'file.name', direction: 'ASC' }] }, BOARD],
+      views: [SETTINGS.views[0], { ...TABLE, sort: [{ property: 'file.name', direction: 'ASC' }] }],
     })
   })
 
@@ -475,7 +579,7 @@ describe('config edits are ONE settings write on the folder page', () => {
     expect(key).toBe('folder_page_settings')
     expect(value).toEqual({
       ...SETTINGS,
-      views: [SETTINGS.views[0], { ...TABLE, filters: { and: ['file.name.contains("")'] } }, BOARD],
+      views: [SETTINGS.views[0], { ...TABLE, filters: { and: ['file.name.contains("")'] } }],
     })
 
     click(byLabel(el, 'Remove rule'))
@@ -484,17 +588,10 @@ describe('config edits are ONE settings write on the folder page', () => {
     expect(write).toHaveBeenCalledTimes(2)
     const emptied = write.mock.calls[1][2] as { views: Record<string, unknown>[] }
     expect(emptied.views[1]).not.toHaveProperty('filters') // empty deletes the key, never `filters: {}`
-    expect(emptied).toEqual({ ...SETTINGS, views: [...SETTINGS.views, BOARD] })
+    expect(emptied).toEqual(SETTINGS)
   })
 
   it('a write echo arriving after a newer optimistic edit does not take it back (YAZ-1241)', async () => {
-    const setSelect = (el: HTMLSelectElement, value: string): void => {
-      const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
-      act(() => {
-        set?.call(el, value)
-        el.dispatchEvent(new Event('change', { bubbles: true }))
-      })
-    }
     const settingsOf = (call: number): unknown => write.mock.calls[call][2]
 
     const el = mount(FUNNELS)
@@ -522,7 +619,7 @@ describe('config edits are ONE settings write on the folder page', () => {
     feed(vault(settingsOf(1)))
     feed(vault(settingsOf(2)))
     expect(propertyShown(el)).toContain('order')
-    feed(vault({ ...SETTINGS, views: [SETTINGS.views[0], { ...TABLE, filters: { and: ['note.order == 9'] } }, BOARD] }))
+    feed(vault({ ...SETTINGS, views: [SETTINGS.views[0], { ...TABLE, filters: { and: ['note.order == 9'] } }] }))
     expect(q<HTMLInputElement>(el, '[aria-label="Value"]').value).toBe('9')
   })
 
@@ -533,6 +630,34 @@ describe('config edits are ONE settings write on the folder page', () => {
     click([...el.querySelectorAll<HTMLElement>('.view-menu__action')].find((b) => b.textContent === 'Add sort')!)
     await flush()
     expect(byLabel<HTMLButtonElement>(el, 'Sort property').textContent).toContain('file.name')
+  })
+
+  it('a drag past the first tab writes the new order and the active view follows; switching alone writes nothing', async () => {
+    const el = mount(FUNNELS)
+    click(tab(el, 'Table'))
+    expect(write).not.toHaveBeenCalled()
+    const fire = (target: Element, type: string, clientX = 0) => act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX })))
+    const wrap = (name: string): Element => tab(el, name).closest('.view-tab') as Element
+    fire(wrap('Table'), 'dragstart')
+    fire(wrap('Outline'), 'dragover', -5)
+    fire(wrap('Outline'), 'drop', -5)
+    await flush()
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(written()).toEqual({ ...SETTINGS, views: [TABLE, SETTINGS.views[0]] })
+    expect(tab(el, 'Table').getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('a Board deleted through the menu STAYS deleted — nothing puts it back on the next read (D3)', async () => {
+    const el = mount(FUNNELS, vault({ ...SETTINGS, views: [...SETTINGS.views, BOARD] }))
+    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table', 'Board'])
+    rightClick(tab(el, 'Board'))
+    click(menuItem(el, 'Delete'))
+    click(q(el, '.confirm__btn--danger'))
+    await flush()
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(written()).toEqual(SETTINGS)
+    feed(vault(written())) // the index echoes our own write back
+    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table'])
   })
 
   it('a failed write says so and never takes the block down', async () => {
@@ -554,7 +679,7 @@ describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
     mount(FUNNELS)
     act(() => captured.folderPage!.setColumns(COLUMNS))
     await flush()
-    expect(write).toHaveBeenCalledExactlyOnceWith(FUNNELS, 'folder_page_settings', { ...SETTINGS, views: [...SETTINGS.views, BOARD], columns: COLUMNS })
+    expect(write).toHaveBeenCalledExactlyOnceWith(FUNNELS, 'folder_page_settings', { ...SETTINGS, columns: COLUMNS })
   })
 
   it('columns AND views ride in that SAME single write when views are passed', async () => {
@@ -563,6 +688,27 @@ describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
     act(() => captured.folderPage!.setColumns(COLUMNS, views))
     await flush()
     expect(write).toHaveBeenCalledExactlyOnceWith(FUNNELS, 'folder_page_settings', { ...SETTINGS, columns: COLUMNS, views })
+  })
+
+  /**
+   * The LIVE def, never the index snapshot (YAZ-1471 D4): `settings` is the last snapshot the
+   * index handed over, so a default-view choice (or a sort/filter edit, when the caller passes no
+   * `views`) whose echo is still in flight would be clobbered by the next column write — YAZ-1234's
+   * two-gestures-in-a-second data loss, through the other door.
+   */
+  it('carries an in-flight defaultView choice the index has not echoed back yet', async () => {
+    const el = mount(FUNNELS)
+    click(tab(el, 'Table')) // the outline offers no Properties menu
+    click(byLabel(el, 'Properties'))
+    setSelect(byLabel<HTMLSelectElement>(el, 'Default view'), 'Table')
+    await flush()
+    expect(write).toHaveBeenCalledTimes(1)
+
+    const columns = { ...COLUMNS, extra: { kind: 'text' as const } }
+    act(() => captured.folderPage!.setColumns(columns))
+    await flush()
+    expect(write).toHaveBeenCalledTimes(2)
+    expect(write.mock.calls[1][2]).toEqual({ ...SETTINGS, columns, defaultView: 'Table' })
   })
 
   it('a failed write lands in the banner every other config edit uses', async () => {

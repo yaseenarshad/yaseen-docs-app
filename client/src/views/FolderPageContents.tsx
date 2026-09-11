@@ -19,10 +19,11 @@
  *    edits are untouched: `EditableCell` writes the MEMBER's own card, as it always has.
  *
  * Which view is active is SESSION state (ViewsPane's own `active`), never written to the card —
- * and view CRUD is not this block's gesture, so the tabs are switch-only. Feed: the window's ONE
- * `WikilinkResolveSource` (App-owned, fed by `WikilinkIndexBridge`) — the same snapshot
- * backlinks read, so this block can never disagree with the links above it, and it costs no
- * fetch, no watcher and no IPC of its own.
+ * but the tabs themselves are EDITABLE since YAZ-1471 re-ruled 🔒 rule 4: reorder, rename,
+ * duplicate, delete and "+" each land as ONE `folder_page_settings` write through D3's one door.
+ * Feed: the window's ONE `WikilinkResolveSource` (App-owned, fed by `WikilinkIndexBridge`) — the
+ * same snapshot backlinks read, so this block can never disagree with the links above it, and it
+ * costs no fetch, no watcher and no IPC of its own.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { stringify } from 'yaml'
@@ -31,7 +32,7 @@ import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { folderPagesLookup, isFolderPage } from '../links/folderPages'
-import { type ViewDef, type ParsedViews, parseViews } from './viewSchema'
+import { type ParsedViews, parseViews } from './viewSchema'
 import { ViewsPane, type FolderPageMode } from './ViewsPane'
 import { splitFrontmatter, parseFrontmatter } from '@shared/frontmatter'
 import { DEFAULT_VIEWS, folderPageSettings, folderPageSettingsOf, writeFolderPageSettings, writeFolderColumn, type FolderPageSettings } from './folderPageSettings'
@@ -99,9 +100,9 @@ interface Feed {
  * a GROUPING LEVEL, all read off `def.formulas` — so a folder page whose formulas stopped at the
  * settings could declare a level the engine could only answer `unknown formula` to.
  */
-function folderPageViewSet(views: readonly ViewDef[], formulas: Record<string, string> | undefined): ParsedViews {
+function folderPageViewSet({ views, formulas, defaultView }: FolderPageSettings): ParsedViews {
   try {
-    return parseViews(stringify(formulas === undefined ? { views } : { formulas, views }))
+    return parseViews(stringify({ formulas, views, defaultView })) // `stringify` skips undefined keys
   } catch {
     // Report-don't-block: a hand-edited view YAML cannot take the note's editor down with it —
     // the page still renders, on the defaults it would have had with no settings at all.
@@ -171,7 +172,7 @@ export function FolderPageContents({
   }, [fileContent])
   const [parsed, setParsed] = useState<ParsedViews | null>(() => {
     const seed = fileSettings ?? settings
-    return seed === null ? null : folderPageViewSet(seed.views, seed.formulas)
+    return seed === null ? null : folderPageViewSet(seed)
   })
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [columnError, setColumnError] = useState<string | null>(null)
@@ -198,6 +199,9 @@ export function FolderPageContents({
     }
   }, [members, settings])
 
+  /** The comparable tuple every stamp below is spelled as — the two halves `folderPageViewSet` builds, plus the saved START. */
+  const stampOf = (s: Pick<FolderPageSettings, 'views' | 'formulas' | 'defaultView'>): string =>
+    JSON.stringify([s.views, s.formulas ?? null, s.defaultView ?? null])
   // Rebuilt when the CARD's own views move — an external edit, or our own write coming back
   // through the index (identical then, since `onChange` already applied it). JSON identity is the
   // honest comparison: every read hands back a fresh copy of the views.
@@ -210,8 +214,8 @@ export function FolderPageContents({
   // ends the past and is itself adopted.
   // Both halves of what `folderPageViewSet` builds, so an edited FORMULA rebuilds the def exactly
   // as an edited view does — and the two stamps stay comparable, which the catch-up below needs.
-  const stamp = settings === null ? '' : JSON.stringify([settings.views, settings.formulas ?? null])
-  const fileStamp = fileSettings === null ? null : JSON.stringify([fileSettings.views, fileSettings.formulas ?? null])
+  const stamp = settings === null ? '' : stampOf(settings)
+  const fileStamp = fileSettings === null ? null : stampOf(fileSettings)
   const caughtUp = useRef(fileStamp === null) // no file seed → the index led from the start
   /** The one stale snapshot this mount opened over — recorded on first sight, never trusted. */
   const pastStamp = useRef<string | null>(null)
@@ -249,7 +253,7 @@ export function FolderPageContents({
     }
     pending.current = [] // a real external edit outranks every unechoed local write: disk wins
     seen.current = stamp
-    setParsed(settings === null ? null : folderPageViewSet(settings.views, settings.formulas))
+    setParsed(settings === null ? null : folderPageViewSet(settings))
   }, [stamp, settings, fileStamp])
 
   if (record === null || settings === null || parsed === null) return null
@@ -259,8 +263,8 @@ export function FolderPageContents({
     setParsed(next)
     setSettingsError(null)
     // What this write will stamp as when the index returns it (YAZ-1241) — formulas ride unchanged.
-    pending.current.push(JSON.stringify([next.def.views, settings.formulas ?? null]))
-    writeFolderPageSettings(path, { ...settings, views: next.def.views }).catch((err: unknown) =>
+    pending.current.push(stampOf({ views: next.def.views, formulas: settings.formulas, defaultView: next.def.defaultView }))
+    writeFolderPageSettings(path, { ...settings, views: next.def.views, defaultView: next.def.defaultView }).catch((err: unknown) =>
       setSettingsError(err instanceof Error ? err.message : String(err)),
     )
   }
@@ -271,16 +275,15 @@ export function FolderPageContents({
     create: (seed, name) => createMember(root, record.basename, path, settings, feed.records, seed, name),
     // Columns (and, when the caller moves both, `views`) through the SAME one door — still ONE write.
     setColumn: (key, next, base) => writeFolderColumn(path, key, next, base),
+    // `settings` is the index SNAPSHOT, so it can be behind: `parsed` is rebuilt from it and is
+    // otherwise ahead by unechoed local writes. Reading the def instead keeps an in-flight
+    // default-view choice — or sort/filter edit, when the caller moves no `views` — from being
+    // clobbered by the next column write (YAZ-1471 D4; YAZ-1234's two-gestures data loss). No
+    // `pending` stamp: this echo must still read as "disk wins" and refresh `parsed` with the
+    // `views` the caller moved.
     setColumns: (columns, views) => {
       setSettingsError(null)
-      writeFolderPageSettings(path, { ...settings, columns, views: views ?? settings.views }).catch((err: unknown) =>
-        setSettingsError(err instanceof Error ? err.message : String(err)),
-      )
-    },
-    // The saved START (YAZ-1104) through its own door — still ONE write, same banner.
-    setDefaultView: (name) => {
-      setSettingsError(null)
-      writeFolderPageSettings(path, { ...settings, defaultView: name }).catch((err: unknown) =>
+      writeFolderPageSettings(path, { ...settings, columns, views: views ?? parsed.def.views, defaultView: parsed.def.defaultView }).catch((err: unknown) =>
         setSettingsError(err instanceof Error ? err.message : String(err)),
       )
     },
