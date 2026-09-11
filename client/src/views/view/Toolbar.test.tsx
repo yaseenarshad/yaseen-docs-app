@@ -407,6 +407,120 @@ describe('view tabs — right-click menu (YAZ-1471)', () => {
 })
 
 /**
+ * "+" adds a view (YAZ-1471, 🔒 D5): a type picker at the END of the strip — outside the
+ * `role="tablist"` scroller, so overflow never swallows it — offering one `role="menuitem"` per
+ * `VIEW_TYPES`, labelled by the capitalised type. Picking one is ONE `update` (the same door as
+ * sort, columns and the rest of the tab CRUD): the view is appended under the first FREE name off
+ * its label ("Table", then "Table 2"), lands ACTIVE, and mounts straight into rename so the name
+ * can be typed over without a second gesture — Escape there leaves the given name standing and
+ * writes nothing more. Outline is offered only while the page has none, because ViewsPane reads
+ * and writes the FIRST outline view's document and a second would shadow it.
+ */
+describe('view tabs — "+" adds a view (YAZ-1471)', () => {
+  const WITH_OUTLINE = 'views:\n  - type: outline\n    name: Outline\n  - type: table\n    name: Table\n'
+  const plus = (el: ParentNode): HTMLButtonElement => byLabel<HTMLButtonElement>(el, 'Add view')
+  const expanded = (el: ParentNode): string | null => plus(el).getAttribute('aria-expanded')
+  /** Open the picker off "+" and hand back its anchored popover. */
+  const openPicker = (el: ParentNode): HTMLElement => {
+    click(plus(el))
+    return q<HTMLElement>(el, '.view-popover--menu')
+  }
+  const kinds = (pop: ParentNode): string[] => [...pop.querySelectorAll('[role="menu"] [role="menuitem"]')].map((b) => b.textContent ?? '')
+  /** Open the picker and pick `kind`; the appended tab comes back mounted in rename. */
+  const add = (el: ParentNode, kind: string): void => click(byText(openPicker(el), '[role="menuitem"]', kind))
+  const renameField = (el: ParentNode): HTMLInputElement => byLabel<HTMLInputElement>(el, 'View name')
+  const mouseDownOutside = (): void => {
+    act(() => void document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true })))
+    draw()
+  }
+
+  it('"+" opens a picker of every type, in menu order, and opening writes nothing', () => {
+    const { el, onChange } = mount()
+    expect(plus(el).getAttribute('aria-haspopup')).toBe('menu')
+    expect(expanded(el)).toBe('false')
+    expect(plus(el).closest('[role="tablist"]')).toBeNull() // the strip scrolls; "+" does not go with it
+    const pop = openPicker(el)
+    expect(expanded(el)).toBe('true')
+    expect(kinds(pop)).toEqual(['Table', 'Board', 'Cards', 'List', 'Outline'])
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('Outline is offered only while the page has none — a page owns ONE document', () => {
+    const { el } = mount(WITH_OUTLINE)
+    expect(kinds(openPicker(el))).toEqual(['Table', 'Board', 'Cards', 'List'])
+  })
+
+  it('picking a type appends it in ONE update and mounts it in rename; Escape keeps the given name', () => {
+    const { el, onChange, yaml, def } = mount()
+    add(el, 'Board')
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(def().views.at(-1)).toEqual({ type: 'board', name: 'Board' }) // appended LAST
+    expect(yaml()).toContain('  - type: board\n    name: Board\n')
+    expect(el.querySelector('.view-popover--menu')).toBeNull() // picking closes the picker
+    expect(expanded(el)).toBe('false')
+    const field = renameField(el)
+    expect(field.value).toBe('Board')
+    // While the field owns the tab there is no `[role="tab"]` for it to be selected ON — the strip
+    // reads back as a tab, selected, the moment rename lets go.
+    press(field, 'Escape')
+    expect(el.querySelector('[aria-label="View name"]')).toBeNull()
+    expect(tabs(el)).toEqual(['Table', 'View', 'View 2', 'Board'])
+    expect(selected(el)).toBe('Board')
+    expect(onChange).toHaveBeenCalledTimes(1) // Escape commits nothing of its own
+  })
+
+  it('the name is the first FREE one off the type label — "Table 2", then "Table 3"', () => {
+    const { el, onChange, def } = mount()
+    add(el, 'Table')
+    press(renameField(el), 'Escape')
+    expect(def().views.at(-1)).toEqual({ type: 'table', name: 'Table 2' })
+    add(el, 'Table')
+    press(renameField(el), 'Escape')
+    expect(def().views.at(-1)).toEqual({ type: 'table', name: 'Table 3' })
+    expect(tabs(el)).toEqual(['Table', 'View', 'View 2', 'Table 2', 'Table 3'])
+    expect(onChange).toHaveBeenCalledTimes(2)
+  })
+
+  it('Escape and a click-away both close the picker, and write nothing', () => {
+    const { el, onChange } = mount()
+    press(openPicker(el), 'Escape')
+    expect(el.querySelector('.view-popover--menu')).toBeNull()
+    expect(expanded(el)).toBe('false')
+
+    openPicker(el)
+    mouseDownOutside()
+    expect(el.querySelector('.view-popover--menu')).toBeNull()
+    expect(expanded(el)).toBe('false')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(tabs(el)).toEqual(['Table', 'View', 'View 2'])
+  })
+
+  it('typing over the mounted rename is the SECOND update, and the YAML carries the typed name', () => {
+    const { el, onChange, yaml, def } = mount()
+    add(el, 'Cards')
+    type(renameField(el), 'Grid')
+    expect(onChange).toHaveBeenCalledTimes(2)
+    expect(def().views.at(-1)).toEqual({ type: 'cards', name: 'Grid' })
+    expect(yaml()).toContain('name: Grid')
+    expect(tabs(el)).toEqual(['Table', 'View', 'View 2', 'Grid'])
+    expect(selected(el)).toBe('Grid')
+  })
+
+  /** A fresh board has no `groupBy` yet, so BoardView's root is its "pick a property" hint. */
+  it.each([
+    ['Board', '.view-board__hint'],
+    ['List', '.view-list'],
+    ['Cards', '.view-cards'],
+  ])('the appended %s view renders its OWN body', (kind, root) => {
+    const { el } = mount()
+    add(el, kind)
+    press(renameField(el), 'Escape')
+    expect(selected(el)).toBe(kind)
+    expect(el.querySelector(root)).not.toBeNull()
+  })
+})
+
+/**
  * The Filter menu, back from the YAZ-846 amputation (YAZ-1227 / YAZ-1228 / YAZ-1229). Every write
  * lands on `views[i].filters` and nowhere else (D1), and the engine's own compile errors are read
  * where they are edited as well as on the muted footnote.

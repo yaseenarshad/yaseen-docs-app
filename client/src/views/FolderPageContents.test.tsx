@@ -385,6 +385,32 @@ describe('the chrome is the views chrome, minus what a folder page cannot have',
     expect(el.querySelector('[aria-label="Sort"]')).not.toBeNull() // the rest of the toolbar is untouched
     expect(el.querySelector('[aria-label="New note"]')).not.toBeNull()
   })
+
+  /**
+   * "+" through the REAL host (YAZ-1471, 🔒 D5): a page whose card never mentioned
+   * `folder_page_settings` still opens on 🔒 Q7's three skins, and adding a fourth is ONE
+   * whole-key settings write — `plain()` omits the empty `columns`, so the key that lands is the
+   * views list and nothing else.
+   */
+  it('"+" on a page with no settings key writes the three defaults plus the new view, once', async () => {
+    const el = mount(FUNNELS, vault().map((r) => (r.path === FUNNELS ? rec(FUNNELS, { folder_page: true }) : r)))
+    expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table', 'Board'])
+    click(byLabel(el, 'Add view'))
+    expect(texts(el, '.view-popover--menu [role="menuitem"]')).toEqual(['Table', 'Board', 'Cards', 'List']) // Outline already there
+    click(menuItem(el, 'Cards'))
+    await flush()
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(write.mock.calls[0][1]).toBe('folder_page_settings')
+    expect(written()).toEqual({
+      views: [
+        { type: 'outline', name: 'Outline' },
+        { type: 'table', name: 'Table' },
+        { type: 'board', name: 'Board' },
+        { type: 'cards', name: 'Cards' },
+      ],
+    })
+    expect(byLabel<HTMLInputElement>(el, 'View name').value).toBe('Cards') // the appended tab mounts in rename
+  })
 })
 
 // ---------- the default view (YAZ-1104) ----------
