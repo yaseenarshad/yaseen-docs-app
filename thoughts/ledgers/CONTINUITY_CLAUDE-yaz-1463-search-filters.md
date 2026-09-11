@@ -20,8 +20,9 @@ Ship YAZ-1463 to main as release 0.9.10: Filter menu Property is the searchable 
   - [x] 2A- Property picker + Filter layout (YAZ-1466) — commit 9502535, 3462 tests green
   - [x] 2B- any-of / none-of operators + checklist (YAZ-1467) — commit 4484ede, 3491 tests green
   - [x] 4- Polish (YAZ-1469) — cap decision, 🔒 audit, reviewer triage, D7 engine resolve fix, copy Value/options, widths final at 420px
-- Now: [→] 4A- Release 0.9.10, PR, merge, closeout (YAZ-1470)
-- Next: memory notes, done
+  - [x] 4A- Release 0.9.10 (YAZ-1470) — PR #37 merged as e7bf1df, tag v0.9.10
+- Now: COMPLETE — all of YAZ-1463 Done in Linear; worktree removed
+- Next: nothing
 - Remaining:
   - [ ] 3- Prove it: demo vault on Desktop, isolated profile, "go do this" script (YAZ-1468)
   - [ ] 4A- Release 0.9.10, PR, merge, closeout comment (YAZ-1470)
