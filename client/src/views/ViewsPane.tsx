@@ -88,8 +88,9 @@ export interface ViewsPaneProps {
   onOpenFile: (path: string) => void
   /**
    * The FOLDER PAGE's contents (🔒 D3, YAZ-819) — REQUIRED since YAZ-846: its rows are the
-   * members, its def is in memory, its views are switch-only (no view CRUD) and it offers no
-   * Filter menu, a folder page's set being the lookup itself (🔒 Q3, YAZ-815).
+   * members, its def is in memory, and its views are EDITABLE since YAZ-1471 re-ruled 🔒 rule 4
+   * — reorder / rename / duplicate / delete / "+", every gesture ONE `update` through this
+   * adapter's one door. A folder page's set IS the lookup itself (🔒 Q3, YAZ-815).
    */
   folderPage: FolderPageMode
 }
@@ -123,8 +124,9 @@ function seedGroupValue(properties: Record<string, unknown>, group: Group, key: 
  * and it births through the declaration.
  */
 export function ViewsPane({ parsed, onChange, root, thisFile, records, properties = null, onOpenFile, folderPage }: ViewsPaneProps) {
-  // The START may persist (YAZ-1104); which view is ACTIVE stays session state — 🔒 rule 4 holds,
-  // switching still writes nothing. A stale (or absent) saved name is -1 here, so it clamps to the first.
+  // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
+  // writes nothing, and YAZ-1471 re-ruling 🔒 rule 4 (the tabs edit again) did not move that line:
+  // only the def is written. A stale (or absent) saved name is -1 here, so it clamps to the first.
   const [active, setActive] = useState(() =>
     Math.max(0, parsed.def.views.findIndex((v) => v.name === parsed.def.defaultView)),
   )

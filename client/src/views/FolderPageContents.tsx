@@ -19,8 +19,9 @@
  *    edits are untouched: `EditableCell` writes the MEMBER's own card, as it always has.
  *
  * Which view is active is SESSION state (ViewsPane's own `active`), never written to the card —
- * and view CRUD is not this block's gesture, so the tabs are switch-only. Feed: the window's ONE
- * `WikilinkResolveSource` (App-owned, fed by `WikilinkIndexBridge`) — the same snapshot
+ * but the tabs themselves are EDITABLE since YAZ-1471 re-ruled 🔒 rule 4: reorder, rename,
+ * duplicate, delete and "+" each land as ONE `folder_page_settings` write through D3's one door.
+ * Feed: the window's ONE `WikilinkResolveSource` (App-owned, fed by `WikilinkIndexBridge`) — the same snapshot
  * backlinks read, so this block can never disagree with the links above it, and it costs no
  * fetch, no watcher and no IPC of its own.
  */

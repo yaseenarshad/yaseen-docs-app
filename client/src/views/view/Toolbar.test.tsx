@@ -6,8 +6,8 @@
  * YAZ-846: the mount is a FOLDER PAGE's contents block, because that is the only mount there is.
  * Two consequences run through this file — the **Filter** menu edits THIS view's `filters` and
  * nothing else (D1, YAZ-1227: a folder page's set IS the lookup, 🔒 Q3), and the tabs are
- * SWITCH-ONLY — the editable tab half was deleted with its last reachable surface (view
- * management is parked on YAZ-824).
+ * EDITABLE again since YAZ-1471 re-ruled 🔒 rule 4 (YAZ-819): the drag-to-reorder half is
+ * pinned below, and every gesture there is ONE `update` — the same door as sort and columns.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -182,18 +182,81 @@ describe('view switcher', () => {
     expect(selected(el)).toBe('View 2')
     expect(onChange).not.toHaveBeenCalled()
   })
+})
 
-  // 🔒 rule 4 (YAZ-819), unconditional since YAZ-846: view CRUD is not this block's gesture. The
-  // four write-throughs that used to be proved here — "+", rename, duplicate, delete, move —
-  // moved down to `ViewTabs`' own mount, which is the only place its editable half is reachable.
-  it('the tabs are SWITCH-ONLY: no "+", no "…" menu, no right-click menu', () => {
-    const { el, onChange } = mount()
-    expect(el.querySelector('[aria-label="Add view"]')).toBeNull()
-    expect(el.querySelector('[aria-label="View menu"]')).toBeNull()
-    act(() => byText(el, '[role="tab"]', 'Table').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+/**
+ * Drag to reorder (YAZ-1471, re-ruling 🔒 rule 4): TabBar's insertion-slot idiom, so these are
+ * TabBar.test's assertions on this strip — jsdom rects are all-zero, which reduces the
+ * before/after midpoint test to the SIGN of `clientX` (negative = before the tab, else after),
+ * and the handlers guard `dataTransfer` because jsdom has no `DragEvent`. A reorder is ONE
+ * `update` (the same door as sort and columns); which view is ACTIVE stays session state and
+ * simply follows its tab.
+ */
+describe('view tabs — drag to reorder (YAZ-1471)', () => {
+  /** The draggable is the WRAPPER, not the `[role="tab"]` button it holds. */
+  const wrap = (el: ParentNode, i: number): HTMLElement => [...el.querySelectorAll<HTMLElement>('.view-tab')][i]
+  const strip = (el: ParentNode): HTMLElement => q<HTMLElement>(el, '[role="tablist"]')
+  /** The serialized view ORDER, read off the YAML the file would get. */
+  const names = (text: string): string[] => [...text.matchAll(/^\s*name: (.+)$/gm)].map((m) => m[1])
+  const fire = (target: Element, type: string, clientX = 0): void => {
+    act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX })))
     draw()
-    expect(el.querySelector('[role="menu"]')).toBeNull()
+  }
+
+  it('dropping on a tab\'s LEFT half inserts before it, in ONE write', () => {
+    const { el, onChange, yaml } = mount()
+    fire(wrap(el, 1), 'dragstart') // grab "View"
+    expect(wrap(el, 1).classList.contains('view-tab--dragging')).toBe(true)
+    fire(wrap(el, 0), 'dragover', -5) // left half of "Table"
+    expect(wrap(el, 0).classList.contains('view-tab--insert-before')).toBe(true)
+    fire(wrap(el, 0), 'drop', -5)
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(names(yaml())).toEqual(['View', 'Table', 'View 2'])
+    expect(tabs(el)).toEqual(['View', 'Table', 'View 2'])
+    expect(el.querySelector('.view-tab--dragging')).toBeNull() // drag state cleared
+  })
+
+  it('dropping on the strip\'s empty tail lands the tab LAST (the last tab marks --insert-after)', () => {
+    const { el, onChange, yaml } = mount()
+    fire(wrap(el, 0), 'dragstart') // grab "Table"
+    fire(strip(el), 'dragover') // the tail is a direct hit on the strip = the end slot
+    expect(wrap(el, 2).classList.contains('view-tab--insert-after')).toBe(true)
+    fire(strip(el), 'drop')
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(names(yaml())).toEqual(['View', 'View 2', 'Table'])
+    expect(tabs(el)).toEqual(['View', 'View 2', 'Table'])
+  })
+
+  it('dropping back on its own slot writes nothing', () => {
+    const { el, onChange } = mount()
+    fire(wrap(el, 1), 'dragstart')
+    fire(wrap(el, 1), 'drop', -5) // before itself = the slot it came from
     expect(onChange).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+    expect(tabs(el)).toEqual(['Table', 'View', 'View 2'])
+  })
+
+  it('the ACTIVE view follows its tab — past by another, and dragged itself', () => {
+    const { el } = mount()
+    click(byText(el, '[role="tab"]', 'View 2'))
+    expect(selected(el)).toBe('View 2')
+    fire(wrap(el, 0), 'dragstart') // "Table" past the active tab, onto the end slot
+    fire(strip(el), 'drop')
+    expect(tabs(el)).toEqual(['View', 'View 2', 'Table'])
+    expect(selected(el)).toBe('View 2')
+    fire(wrap(el, 1), 'dragstart') // now the ACTIVE tab itself, to the front
+    fire(wrap(el, 0), 'drop', -5)
+    expect(tabs(el)).toEqual(['View 2', 'View', 'Table'])
+    expect(selected(el)).toBe('View 2')
+  })
+
+  it('a tab in RENAME is not draggable — the field owns the pointer', () => {
+    const { el } = mount()
+    act(() => wrap(el, 0).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    draw()
+    click(byText(el, '[role="menuitem"]', 'Rename'))
+    expect(wrap(el, 0).getAttribute('draggable')).toBe('false')
+    expect(wrap(el, 1).getAttribute('draggable')).toBe('true')
   })
 })
 
