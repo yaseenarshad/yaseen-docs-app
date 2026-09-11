@@ -674,3 +674,68 @@ Fresh folder body
     expect(btn(el, 'Edit as YAML')).not.toBeNull()
   })
 })
+
+describe('FrontmatterPanel — the property search (YAZ-1473)', () => {
+  const search = (el: HTMLElement) => byLabel<HTMLInputElement>(el, 'Search properties')
+  const status = (el: HTMLElement) => el.querySelector('[role="status"]')?.textContent ?? null
+
+  it('sits above the rows once expanded — never collapsed, in raw mode, or on an empty page', () => {
+    const el = mount(TYPED)
+    expect(search(el)).toBeNull()
+    expand(el)
+    const box = search(el)
+    expect(box?.placeholder).toBe('Search properties…')
+    // Above the first row, not beside or below the list.
+    expect(box!.compareDocumentPosition(rows(el)[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    toRaw(el)
+    expect(search(el)).toBeNull()
+
+    const bare = mount('Just a body\n')
+    expand(bare)
+    expect(search(bare)).toBeNull()
+  })
+
+  it('filters by KEY — trimmed, case-insensitive, block order kept, chipped rows included — and writes nothing', () => {
+    const el = mount(OPAQUE)
+    expand(el)
+    expect(keysOf(el)).toEqual(['folder_page', 'folder_page_settings', 'note', 'tags'])
+    setValue(search(el), '  FOLDER ')
+    expect(keysOf(el)).toEqual(['folder_page', 'folder_page_settings'])
+    expect(header(el)?.textContent).toContain('(4)') // the count is the block's, not the match's
+    setValue(search(el), 'ta')
+    expect(keysOf(el)).toEqual(['tags'])
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('no match says so and keeps the footer; × clears and refocuses the box', () => {
+    const el = mount(TYPED)
+    expand(el)
+    setValue(search(el), 'zzz')
+    expect(rows(el)).toHaveLength(0)
+    expect(status(el)).toBe('No properties found.')
+    expect(btn(el, 'Add property')).not.toBeNull()
+    expect(btn(el, 'Edit as YAML')).not.toBeNull()
+    click(byLabel(el, 'Clear search properties'))
+    expect(rows(el)).toHaveLength(6)
+    expect(status(el)).toBeNull()
+    expect(document.activeElement).toBe(search(el))
+  })
+
+  it('collapsing and Add property both reset the query, so a row is never born hidden', () => {
+    const el = mount(TYPED)
+    expand(el)
+    setValue(search(el), 'sta')
+    expect(keysOf(el)).toEqual(['status'])
+    expand(el) // collapse
+    expand(el)
+    expect(search(el)?.value).toBe('')
+    expect(rows(el)).toHaveLength(6)
+
+    setValue(search(el), 'sta')
+    click(btn(el, 'Add property'))
+    expect(search(el)?.value).toBe('')
+    expect(rows(el)).toHaveLength(6)
+    expect(byLabel(el, 'New property name')).not.toBeNull()
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+})

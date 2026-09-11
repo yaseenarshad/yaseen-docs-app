@@ -20,6 +20,7 @@ import { SETTINGS_KEY, folderPageSettings, writeFolderColumn, type FolderPageSet
 import { PropertyDefinitionEditor, PropertyTypeIcon } from '../views/view/PropertyDefinitionEditor'
 import { Popover } from '../views/view/Popover'
 import { EditableCell } from '../views/view/EditableCell'
+import { ColumnSearch } from '../views/view/ColumnSearch'
 import { cellContent } from '../views/view/GroupHeader'
 import { writeProperty } from '../views/writeProperty'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
@@ -130,6 +131,7 @@ export function FrontmatterPanel({ file, properties: decls = null, wikilinks }: 
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [adding, setAdding] = useState<{ name: string; value: string } | null>(null)
+  const [query, setQuery] = useState('')
   const [snap, setSnap] = useState<Snapshot>(() => ({ seen: file.content, content: file.content, draft: null }))
 
   // The file was (re)loaded under us: follow the new bytes, keeping a dirty draft — text the user
@@ -188,6 +190,8 @@ export function FrontmatterPanel({ file, properties: decls = null, wikilinks }: 
   // A block that will not parse has no rows to show: the raw fallback IS the surface then.
   const rawMode = yamlMode || parseError !== undefined
   const rows = rawMode ? [] : rowsOf(parsed, decls, folderDefinition)
+  const needle = query.trim().toLocaleLowerCase()
+  const shown = rows.filter((row) => row.key.toLocaleLowerCase().includes(needle))
 
   const remove = (key: string): void => {
     void commit(key, undefined).catch((err: unknown) => setError(`Could not delete "${key}": ${messageOf(err)}`))
@@ -226,7 +230,7 @@ export function FrontmatterPanel({ file, properties: decls = null, wikilinks }: 
 
   return (
     <section className="frontmatter-panel">
-      <button type="button" className="frontmatter-panel__header" aria-expanded={expanded} onClick={() => setExpanded((open) => !open)}>
+      <button type="button" className="frontmatter-panel__header" aria-expanded={expanded} onClick={() => { setExpanded((open) => !open); setQuery('') }}>
         <svg className="frontmatter-panel__chevron" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="m4 6 4 4 4-4" />
         </svg>
@@ -281,9 +285,11 @@ export function FrontmatterPanel({ file, properties: decls = null, wikilinks }: 
             />
           ) : (
             <>
-              {rows.length > 0 && (
+              {rows.length > 0 && <ColumnSearch value={query} onChange={setQuery} label="Search properties" placeholder="Search properties…" />}
+              {rows.length > 0 && shown.length === 0 && <p className="column-search__empty" role="status">No properties found.</p>}
+              {shown.length > 0 && (
                 <ul className="frontmatter-panel__rows">
-                  {rows.map((row) => (
+                  {shown.map((row) => (
                     <li key={row.key} className="frontmatter-panel__row" data-key={row.key}>
                       {row.editor === null ? <span className="frontmatter-panel__key">{row.key}</span> : <button type="button" className="frontmatter-panel__key frontmatter-property-name" aria-label={`Configure ${row.key}`} onClick={event => setPropertyMenu({ key: row.key, anchor: event.currentTarget, base: folderDefinition?.columns[row.key], folderPath: context?.path ?? null, folderName: context?.basename ?? '', definition: folderDefinition?.columns[row.key] ?? decls?.properties[row.key] ?? { kind: row.editor ?? 'text' }, editing: false })}>
                         <PropertyTypeIcon kind={row.editor} /><span>{row.key}</span>
@@ -382,6 +388,7 @@ export function FrontmatterPanel({ file, properties: decls = null, wikilinks }: 
                 className="frontmatter-panel__btn"
                 onClick={() => {
                   setAdding({ name: '', value: '' })
+                  setQuery('')
                   setError(null)
                 }}
               >
