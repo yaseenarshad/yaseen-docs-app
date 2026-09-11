@@ -2,80 +2,14 @@
  * Underline mark (GRO-2028): real editor (`createCrepe`), `<u>…</u>` inline HTML ↔ `underline`
  * mark, byte-identical round trip, `Mod-u` through ProseMirror's `handleKeyDown`, and a
  * regression guard that other inline HTML keeps passing through untouched.
+ *
+ * The mount / posOf / selectText / marksOn / md / key-press helpers live in `markTestKit.ts`,
+ * shared with `highlight.test.ts`.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import type { Crepe } from '@milkdown/crepe'
-import { editorViewCtx } from '@milkdown/kit/core'
-import { TextSelection } from '@milkdown/kit/prose/state'
-import { createCrepe, getMarkdownForSave } from '../createCrepe'
+import { marksOn, md, mount, pressKey, selectText, unmountAll } from './markTestKit'
 
-const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
-
-async function mount(markdown: string) {
-  const root = document.createElement('div')
-  document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown })
-  await crepe.create()
-  mounted.push({ crepe, root })
-  return { crepe, root }
-}
-
-afterEach(async () => {
-  for (const m of mounted.splice(0)) {
-    await m.crepe.destroy()
-    m.root.remove()
-  }
-})
-
-const IS_MAC = /Mac/.test(navigator.platform)
-
-function pressModU(crepe: Crepe): boolean {
-  return crepe.editor.action((ctx) => {
-    const view = ctx.get(editorViewCtx)
-    const event = new KeyboardEvent('keydown', {
-      key: 'u',
-      code: 'KeyU',
-      ...(IS_MAC ? { metaKey: true } : { ctrlKey: true }),
-      bubbles: true,
-      cancelable: true,
-    })
-    return view.someProp('handleKeyDown', (handler) => handler(view, event)) ?? false
-  })
-}
-
-function posOf(crepe: Crepe, text: string): number {
-  return crepe.editor.action((ctx) => {
-    const doc = ctx.get(editorViewCtx).state.doc
-    let pos = -1
-    doc.descendants((node, nodePos) => {
-      if (pos >= 0) return false
-      const index = node.isText ? (node.text ?? '').indexOf(text) : -1
-      if (index >= 0) pos = nodePos + index
-      return pos < 0
-    })
-    if (pos < 0) throw new Error(`text not found: ${text}`)
-    return pos
-  })
-}
-
-function selectText(crepe: Crepe, text: string): void {
-  crepe.editor.action((ctx) => {
-    const view = ctx.get(editorViewCtx)
-    const from = posOf(crepe, text)
-    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, from + text.length)))
-  })
-}
-
-/** Mark names on the text node containing `text`. */
-function marksOn(crepe: Crepe, text: string): string[] {
-  return crepe.editor.action((ctx) => {
-    const doc = ctx.get(editorViewCtx).state.doc
-    const $pos = doc.resolve(posOf(crepe, text) + 1)
-    return $pos.marks().map((m) => m.type.name).sort()
-  })
-}
-
-const md = (crepe: Crepe) => getMarkdownForSave(crepe)
+afterEach(unmountAll)
 
 describe('underline mark', () => {
   it('loads `<u>b</u>` as an underline mark, renders <u>, and saves identical bytes', async () => {
@@ -112,10 +46,10 @@ describe('underline mark', () => {
   it('Mod-u adds the mark on a selection and removes it again', async () => {
     const { crepe } = await mount('hello world\n')
     selectText(crepe, 'world')
-    expect(pressModU(crepe)).toBe(true)
+    expect(pressKey(crepe, 'u')).toBe(true)
     expect(md(crepe)).toBe('hello <u>world</u>\n')
     expect(marksOn(crepe, 'world')).toEqual(['underline'])
-    expect(pressModU(crepe)).toBe(true)
+    expect(pressKey(crepe, 'u')).toBe(true)
     expect(md(crepe)).toBe('hello world\n')
   })
 })

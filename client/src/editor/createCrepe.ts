@@ -9,7 +9,8 @@
  *    Logseq/Obsidian-style outlines (`* # Heading` / `* - nested`) do not get
  *    an empty `<br />` paragraph injected on round-trip.
  *  - Markdown out goes through `postProcessMarkdown()` which un-escapes
- *    `\[\[wikilink]]` / `!\[\[embed]]` that remark-stringify escapes.
+ *    `\[\[wikilink]]` / `!\[\[embed]]` that remark-stringify escapes, and the `\=` the
+ *    highlight mark's escape rule (rule 31) would put inside a `[[target]]`.
  *  - Outline folding plugin (GRO-2011) registered via `$prose`; fold toggles are
  *    metadata-only transactions and never reach `markdownUpdated` / autosave.
  *  - Outliner keymap (GRO-2012, `outline/listCommands.ts`) patches the gaps in Crepe's
@@ -90,6 +91,7 @@
  *    explicit empty lines. Copy as chooses plain text or Markdown; saves stay intact (YAZ-1443).
  */
 import { Crepe, CrepeFeature } from '@milkdown/crepe'
+import { keymapRef, type ToolbarItem } from '@milkdown/crepe/feature/toolbar'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import {
@@ -117,7 +119,7 @@ import {
   stripEmptyTaskBreaks,
 } from './listItemRoundTrip'
 import { underline } from './marks/underline'
-import { highlight, highlightSchema, rangeHasHighlight, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
+import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
 import { inlineBreaks } from './inlineBreaks'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
@@ -178,9 +180,9 @@ export interface CreateCrepeOptions {
 const headingIcon = (label: string): string =>
   `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><text x="12" y="16.5" text-anchor="middle" font-size="12" font-weight="700" font-family="inherit" fill="currentColor">${label}</text></svg>`
 
-/** The slice of Crepe's GroupBuilder `buildToolbar` hands over — structural, since Crepe does not export the class from its root. */
+/** The slice of Crepe's GroupBuilder `buildToolbar` hands over — structural, since Crepe exports the item type but not the builder class. */
 interface ToolbarGroup {
-  addItem: (key: string, item: { icon: string; label: string; shortcut?: string; active: (ctx: Ctx) => boolean; onRun: (ctx: Ctx) => void }) => unknown
+  addItem: (key: string, item: ToolbarItem & { onRun: (ctx: Ctx) => void }) => unknown
 }
 interface ToolbarBuilder {
   addGroup: (key: string, label: string) => ToolbarGroup
@@ -213,7 +215,7 @@ function buildToolbar(builder: ToolbarBuilder): void {
     formatting.addItem(color === null ? 'highlight' : `highlight-${color}`, {
       icon: swatchIcon(color),
       label: color === null ? 'Highlight' : `Highlight ${color}`,
-      ...(color === null ? { shortcut: '⌘⇧H' } : {}),
+      ...(color === null ? { keymap: keymapRef(highlightKeymap.key, 'ToggleHighlight') } : {}),
       active: (ctx) => rangeHasHighlight(ctx.get(editorViewCtx).state, highlightSchema.type(ctx), color),
       onRun: (ctx) => ctx.get(commandsCtx).call(setHighlightCommand.key, color),
     })
@@ -378,6 +380,9 @@ export function postProcessMarkdown(md: string): string {
     stripEmptyTaskBreaks(
       md
         .replace(/(!?)\\\[\\\[/g, '$1[[')
+        // A wikilink target is plain text to remark, so rule 31's escape would turn
+        // `[[A == B]]` into `[[A \=\= B]]` and break the link; the target keeps its bytes.
+        .replace(/\[\[[^\]]*\]\]/g, (link) => link.replace(/\\=/g, '='))
         // Crepe's trailing plugin keeps an empty paragraph after a final heading/list/code
         // block; remark would serialise it as an extra blank line. Contract: single final \n.
         .replace(/\n{2,}$/, '\n'),

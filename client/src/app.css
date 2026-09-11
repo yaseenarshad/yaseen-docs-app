@@ -445,7 +445,7 @@ button {
 .milkdown .ProseMirror mark.highlight-pink { background: var(--mark-bg-pink); }
 
 /* A lit swatch (🔒 D5) reads as a pressed button, one step darker than hover — the dot's fill IS its colour,
-   so Crepe's "active = primary-coloured icon" cue has nothing to recolour and was too easy to miss. */
+   so Crepe's "active = primary-coloured icon" cue only reached the 0.35-opacity outline and was too easy to miss. */
 .milkdown .milkdown-toolbar .toolbar-item.active[data-toolbar-item^='highlight'] {
   background: var(--crepe-color-selected);
 }

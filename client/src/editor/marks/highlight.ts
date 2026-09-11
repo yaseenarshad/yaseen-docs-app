@@ -1,46 +1,27 @@
 /**
- * Highlight mark (YAZ-1480): one mark, one optional `color` attribute, two forms on disk.
+ * Highlight mark (YAZ-1480): one mark, one optional `color`, two forms on disk. The contract is
+ * CONTRACTS rule 31; this header is the mechanism.
  *
- *  - `color: null` is the default yellow and is REAL Markdown: Obsidian's `==text==`.
- *  - `color: 'green' | 'blue' | 'pink'` has no Markdown syntax, so — exactly like underline's
- *    `<u>` — the vault stores inline HTML: `<mark class="highlight-green">text</mark>`. The file
- *    holds a NAME; app.css owns the actual colour per theme.
- *
- * Four pieces, underline.ts's shape plus a tokenizer for the Markdown half:
- *
- *  1. `highlightRemark` ($remark): a micromark syntax extension — the attention tokenizer of
- *     micromark-extension-gfm-strikethrough with `~` → `=` and the run fixed at exactly two —
- *     plus the mdast from/to-markdown handlers for a `highlight` node and the `unsafe` rules:
- *     any `=` touching another `=` is written `\=` (so `a == b` saves as `a \=\= b` and reads
- *     back as the same text); a lone `=` is never escaped, URLs never. Its transformer then runs
- *     the shared `htmlPairs.ts` walk for the coloured `<mark class=…>` pairs; a bare `<mark>` is
- *     read as yellow (and saved back as `==…==`), and any other `<mark …>` is left untouched as
- *     inline HTML.
- *  2. `highlightSchema` ($markSchema): `<mark>` / `<mark class="highlight-<name>">` in the DOM,
- *     `highlight` mdast node carrying `color`.
- *  3. `setHighlightCommand` ($command, payload = the colour) shared by the toolbar's four
- *     swatches (createCrepe.ts) and the `Mod-Shift-h` shortcut. Bold's toggle semantics (🔒 D5):
- *     a dot is lit when ANY of the selection carries its colour, a lit colour is removed from the
- *     selection, an unlit one applied (replacing any other colour).
- *  4. `highlightInputRule` (typing `==x==` converts like `**x**`) — yellow only; colours are
- *     click-only.
+ *  - `color: null` (yellow) is real Markdown, Obsidian's `==text==`: a vendored micromark
+ *    tokenizer (gfm-strikethrough's attention run with `=` and exactly two), the mdast handlers,
+ *    and stringify `unsafe` rules that write `\=` for any `=` touching another `=`.
+ *  - A named colour has no Markdown syntax, so — like underline's `<u>` — it is inline HTML
+ *    `<mark class="highlight-<name>">`, read back through the shared `htmlPairs.ts` walk.
+ *  - `setHighlightCommand(color)` is the one command behind the four toolbar swatches,
+ *    `Mod-Shift-h` (yellow) and the `==x==` typing rule (yellow) — Bold's toggle rule (🔒 D5).
  */
 import { commandsCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { markRule } from '@milkdown/kit/prose'
-import { toggleMark } from '@milkdown/kit/prose/commands'
 import type { MarkType } from '@milkdown/kit/prose/model'
 import type { Command, EditorState } from '@milkdown/kit/prose/state'
-import { $command, $inputRule, $markSchema, $remark, $shortcut } from '@milkdown/kit/utils'
+import { $command, $inputRule, $markSchema, $remark, $useKeymap } from '@milkdown/kit/utils'
 import type { Parent, PhrasingContent } from 'mdast'
 import type { Extension as FromMarkdownExtension } from 'mdast-util-from-markdown'
-import type { Handle, Options as ToMarkdownOptions } from 'mdast-util-to-markdown'
+import type { ConstructName, Handle, Options as ToMarkdownOptions } from 'mdast-util-to-markdown'
 import { splice } from 'micromark-util-chunked'
 import { classifyCharacter } from 'micromark-util-classify-character'
 import { resolveAll } from 'micromark-util-resolve-all'
 import type { Event, Extension, Resolver, State, Token, TokenizeContext, Tokenizer } from 'micromark-util-types'
-// Side-effect only: registers `micromarkExtensions` / `fromMarkdownExtensions` on unified's `Data`.
-import type {} from 'remark-parse'
 import { wrapHtmlPairs, type HtmlPairSpec } from './htmlPairs'
 
 /** The named colours; yellow is `null` (the default, and the only one with Markdown syntax). */
@@ -165,10 +146,11 @@ const highlightHandle: Handle & { peek?: Handle } = (node: Highlight, _parent, s
 highlightHandle.peek = (node: Highlight) => (node.color ? '<' : '=')
 
 /** The coloured half: inline HTML, read through the same walk underline uses. */
+const MARK_OPEN = new RegExp(`^<mark class="highlight-(${HIGHLIGHT_COLORS.join('|')})">$`)
 const HIGHLIGHT_PAIRS: HtmlPairSpec<{ color: HighlightColor }> = {
   open: (value) => {
     if (value === '<mark>') return { color: null }
-    const match = /^<mark class="highlight-(green|blue|pink)">$/.exec(value)
+    const match = MARK_OPEN.exec(value)
     return match === null ? null : { color: match[1] as HighlightColor }
   },
   close: '</mark>',
@@ -176,7 +158,7 @@ const HIGHLIGHT_PAIRS: HtmlPairSpec<{ color: HighlightColor }> = {
 }
 
 /** Phrasing constructs that can never contain a highlight (mirrors mdast-util-gfm-strikethrough). */
-const NOT_IN_CONSTRUCT = ['autolink', 'destinationLiteral', 'destinationRaw', 'reference', 'titleQuote', 'titleApostrophe'] as const
+const CONSTRUCTS_WITHOUT_HIGHLIGHT: ConstructName[] = ['autolink', 'destinationLiteral', 'destinationRaw', 'reference', 'titleQuote', 'titleApostrophe']
 
 /**
  * Any `=` touching another `=` is written `\=`: a run of two could open or close a highlight on
@@ -185,8 +167,8 @@ const NOT_IN_CONSTRUCT = ['autolink', 'destinationLiteral', 'destinationRaw', 'r
  */
 const toMarkdown: ToMarkdownOptions = {
   unsafe: [
-    { character: '=', after: '=', inConstruct: 'phrasing', notInConstruct: [...NOT_IN_CONSTRUCT] },
-    { character: '=', before: '=', inConstruct: 'phrasing', notInConstruct: [...NOT_IN_CONSTRUCT] },
+    { character: '=', after: '=', inConstruct: 'phrasing', notInConstruct: CONSTRUCTS_WITHOUT_HIGHLIGHT },
+    { character: '=', before: '=', inConstruct: 'phrasing', notInConstruct: CONSTRUCTS_WITHOUT_HIGHLIGHT },
   ],
   handlers: { highlight: highlightHandle },
 }
@@ -234,12 +216,39 @@ export const rangeHasHighlight = (state: EditorState, type: MarkType, color: Hig
   return empty ? mark.isInSet(state.storedMarks ?? $from.marks()) : state.doc.rangeHasMark(from, to, mark)
 }
 
-/** One click, one step: a lit colour is removed from the selection, an unlit one applied (addMark replaces any other colour). */
+/** ProseMirror's own guard: a command that cannot apply anywhere declines, so it never eats the key. */
+const markApplies = (state: EditorState, type: MarkType): boolean => {
+  const { $from, from, to, empty } = state.selection
+  if (empty) return $from.parent.type.allowsMarkType(type)
+  let can = false
+  state.doc.nodesBetween(from, to, (node) => {
+    if (!can) can = node.inlineContent && node.type.allowsMarkType(type)
+    return !can
+  })
+  return can
+}
+
+/**
+ * One click, one step (🔒 D5): a lit colour is removed from the selection, an unlit one applied
+ * (addMark replaces any other colour). At a caret the same flip goes to the stored marks. Edge
+ * whitespace stays outside the mark, as Bold does — `==word ==` would not read back as a mark.
+ */
 const setHighlight = (type: MarkType, color: HighlightColor): Command => (state, dispatch) => {
-  const { from, to, empty } = state.selection
-  if (empty) return toggleMark(type, { color })(state, dispatch)
+  if (!markApplies(state, type)) return false
   const mark = type.create({ color })
-  const tr = rangeHasHighlight(state, type, color) ? state.tr.removeMark(from, to, mark) : state.tr.addMark(from, to, mark)
+  const lit = rangeHasHighlight(state, type, color)
+  const { $from, $to, empty } = state.selection
+  const tr = state.tr
+  if (empty) lit ? tr.removeStoredMark(mark) : tr.addStoredMark(mark)
+  else if (lit) tr.removeMark($from.pos, $to.pos, mark)
+  else {
+    let { pos: from } = $from
+    let { pos: to } = $to
+    const lead = $from.nodeAfter?.text?.match(/^\s*/)?.[0].length ?? 0
+    const trail = $to.nodeBefore?.text?.match(/\s*$/)?.[0].length ?? 0
+    if (from + lead < to) (from += lead), (to -= trail)
+    tr.addMark(from, to, mark)
+  }
   dispatch?.(tr.scrollIntoView())
   return true
 }
@@ -249,19 +258,17 @@ export const setHighlightCommand = $command('SetHighlight', (ctx) => (color: Hig
   setHighlight(highlightSchema.type(ctx), color),
 )
 
-/** Priority above Crepe's keymaps (default 50), like underline.ts. */
-const PRIORITY = 100
-
-export const highlightKeymap = $shortcut((ctx: Ctx) => ({
+/** A `$useKeymap` (not `$shortcut`) so Crepe's `keymapRef` can label the yellow swatch from it. Priority above Crepe's 50, like underline.ts. */
+export const highlightKeymap = $useKeymap('highlightKeymap', {
   ToggleHighlight: {
-    key: 'Mod-Shift-h',
-    priority: PRIORITY,
-    onRun: () => () => ctx.get(commandsCtx).call(setHighlightCommand.key, null),
+    shortcuts: 'Mod-Shift-h',
+    priority: 100,
+    command: (ctx) => () => ctx.get(commandsCtx).call(setHighlightCommand.key, null),
   },
-}))
+})
 
 /** Typing `==text==` converts as the second `==` lands — the `**bold**` typing experience. */
-export const highlightInputRule = $inputRule((ctx) => markRule(/(?<![\w=])==(\S(?:[^=]*\S)?)==(?![\w=])$/, highlightSchema.type(ctx)))
+export const highlightInputRule = $inputRule((ctx) => markRule(/(?<![\w=])==(\S(?:[^=]*\S)?)==$/, highlightSchema.type(ctx)))
 
 /** Register with `editor.use(highlight)`. */
 export const highlight = [highlightRemark, highlightSchema, setHighlightCommand, highlightKeymap, highlightInputRule].flat()

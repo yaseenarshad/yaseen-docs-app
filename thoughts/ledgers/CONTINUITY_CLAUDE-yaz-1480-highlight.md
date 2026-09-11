@@ -20,8 +20,9 @@ Ship YAZ-1480 to main: `==text==` highlight (Obsidian syntax, vendored micromark
   - [x] 1- Scope (YAZ-1504) — findings + 🔒 + agreements on YAZ-1480; prototype green (3533) and approved on the live demo
   - [x] 2A- The mark and its colours (YAZ-1506) — commit b74d4f5; coordinator review + two "smaller" tweaks (classList one-liner, no double cast); 72 focused tests green
   - [x] 2B- Swatches and the wash (YAZ-1507) — commit 4015682; full suite 3533 green; build green; branch pushed
-- Now: [→] 3- Prove it (YAZ-1508) + 4- Polish (YAZ-1509) in parallel — D5 (any-of-selection lit/remove) landed from Yasin's first demo verdict; reviewer agent running on the diff
-- Next: triage the reviewer's findings, fold Yasin's remaining verdicts, docs, done-done gates
+  - [x] 3- Prove it (YAZ-1508) — Yasin's pass: D5 (28c6c30) + lit swatch as pressed button (01d5786), "that's better, keep going"
+- Now: [→] 4- Polish (YAZ-1509) — reviewer's 42 findings triaged; accepted fixes committed (caret via stored marks, markApplies guard, edge-whitespace trim, wikilink `\=` un-escape, keymapRef labels, regex from HIGHLIGHT_COLORS, dead lookahead, phantom import, header trim, CONSTRUCTS_WITHOUT_HIGHLIGHT; tests: markTestKit, dedup, 8 new cases); final gates then triage comment
+- Next: 4A- PR, Yasin's go (+ bump question), merge, closeout, cleanup
 - Remaining:
   - [ ] 4A- Release (YAZ-1510) — push, PR, Yasin's verdict, merge, closeout, cleanup
 

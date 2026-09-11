@@ -95,6 +95,9 @@ function order(): Array<string | undefined> {
   return [...document.querySelectorAll<HTMLElement>('.milkdown-toolbar [data-toolbar-item]')].map((b) => b.dataset.toolbarItem)
 }
 
+/** Which swatches the toolbar is lighting up right now. */
+const litDots = (): Array<(typeof SWATCHES)[number]> => SWATCHES.filter((key) => must(key).classList.contains('active'))
+
 describe('Heading toolbar group (YAZ-923)', () => {
   it('appends H1/H2/H3/T to the selection toolbar — labelled, glyph-iconed, stock items untouched', async () => {
     const { view } = await mount('# One\n\nplain\n')
@@ -208,14 +211,21 @@ describe('highlight swatches (YAZ-1480)', () => {
     expect(keys.indexOf('highlight-pink')).toBeLessThan(keys.indexOf('code'))
   })
 
-  it('yellow carries the shortcut in its title; the colours are labelled by name', async () => {
+  it('yellow carries the shortcut in its title AND in aria-keyshortcuts; the colours are labelled by name', async () => {
     const { view } = await mount('hello world\n')
     await select(view, 'world')
 
-    expect(must('highlight').getAttribute('aria-label')).toBe('Highlight')
-    expect(must('highlight').title).toBe('Highlight (⌘⇧H)')
-    expect(must('highlight-green').getAttribute('aria-label')).toBe('Highlight green')
-    expect(must('highlight-green').title).toBe('Highlight green')
+    // Gathered into one object so a single wrong attribute does not hide the other two.
+    // The title is for eyes; `aria-keyshortcuts` is for screen readers, and it is spelled the way
+    // the ARIA spec demands (`Meta+Shift+H`), not with the ⌘ glyph. Both come from the keymap.
+    const attrs = (key: string) => ({
+      label: must(key).getAttribute('aria-label'),
+      title: must(key).title,
+      keys: must(key).getAttribute('aria-keyshortcuts'),
+    })
+    expect(attrs('highlight')).toEqual({ label: 'Highlight', title: 'Highlight (⇧⌘H)', keys: 'Meta+Shift+H' })
+    // A colour has no shortcut at all — no empty attribute left behind.
+    expect(attrs('highlight-green')).toEqual({ label: 'Highlight green', title: 'Highlight green', keys: null })
   })
 
   it('pressing green wraps the selection in `<mark class="highlight-green">`, pressing it again removes it', async () => {
@@ -232,7 +242,6 @@ describe('highlight swatches (YAZ-1480)', () => {
 
   it('every colour present in the selection lights its dot — a partly highlighted line included — and the press removes it', async () => {
     const { crepe, view } = await mount('==yellow== and <mark class="highlight-green">green</mark> and plain\n')
-    const litDots = () => SWATCHES.filter((key) => must(key).classList.contains('active'))
 
     await select(view, 'green')
     expect(litDots()).toEqual(['highlight-green'])
@@ -247,5 +256,25 @@ describe('highlight swatches (YAZ-1480)', () => {
     expect(litDots()).toEqual(['highlight', 'highlight-green'])
     await press('highlight')
     expect(getMarkdownForSave(crepe)).toBe('yellow and <mark class="highlight-green">green</mark> and plain\n')
+  })
+
+  /**
+   * The strip re-reads itself after its own press: the selection survives the command, so the dot
+   * you just pressed answers the NEW state — lit becomes unlit, and unlit becomes lit — without
+   * the user having to re-select to see it.
+   */
+  it('a press re-lights the strip it pressed: green off leaves nothing lit, yellow on plain lights yellow', async () => {
+    const { crepe, view } = await mount('<mark class="highlight-green">green</mark> and plain\n')
+
+    await select(view, 'green')
+    expect(litDots()).toEqual(['highlight-green'])
+    await press('highlight-green')
+    expect(litDots()).toEqual([])
+
+    await select(view, 'plain')
+    expect(litDots()).toEqual([])
+    await press('highlight')
+    expect(litDots()).toEqual(['highlight'])
+    expect(getMarkdownForSave(crepe)).toBe('green and ==plain==\n')
   })
 })

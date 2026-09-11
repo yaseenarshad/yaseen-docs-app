@@ -5,84 +5,36 @@
  * `Mod-Shift-h` through ProseMirror's `handleKeyDown`, the `==x==` typing rule, and pasted
  * `<mark>` HTML.
  *
- * Modelled on `underline.test.ts` (same mount / posOf / selectText / marksOn / md helpers).
+ * The mount / posOf / selectText / selectAcross / caretIn / marksOn / md / key-press helpers are
+ * shared with `underline.test.ts` and live in `markTestKit.ts`. Everything below is
+ * highlight-specific: the colour probes, the lit-dot probes, and literal text insertion.
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { createCrepe, getMarkdownForSave } from '../createCrepe'
-import { highlightSchema, rangeHasHighlight, setHighlightCommand, type HighlightColor } from './highlight'
+import {
+  caretIn,
+  marksOn,
+  md,
+  mount,
+  posOf,
+  pressKey,
+  selectAcross,
+  selectText,
+  unmountAll,
+} from './markTestKit'
+import {
+  HIGHLIGHT_COLORS,
+  highlightSchema,
+  rangeHasHighlight,
+  setHighlightCommand,
+  type HighlightColor,
+} from './highlight'
 
-const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
+afterEach(unmountAll)
 
-async function mount(markdown: string) {
-  const root = document.createElement('div')
-  document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown })
-  await crepe.create()
-  mounted.push({ crepe, root })
-  return { crepe, root, view: crepe.editor.ctx.get(editorViewCtx) }
-}
-
-afterEach(async () => {
-  for (const m of mounted.splice(0)) {
-    await m.crepe.destroy()
-    m.root.remove()
-  }
-})
-
-const IS_MAC = /Mac/.test(navigator.platform)
-
-function pressModShiftH(crepe: Crepe): boolean {
-  return crepe.editor.action((ctx) => {
-    const view = ctx.get(editorViewCtx)
-    const event = new KeyboardEvent('keydown', {
-      key: 'h',
-      code: 'KeyH',
-      shiftKey: true,
-      ...(IS_MAC ? { metaKey: true } : { ctrlKey: true }),
-      bubbles: true,
-      cancelable: true,
-    })
-    return view.someProp('handleKeyDown', (handler) => handler(view, event)) ?? false
-  })
-}
-
-function posOf(crepe: Crepe, text: string): number {
-  return crepe.editor.action((ctx) => {
-    const doc = ctx.get(editorViewCtx).state.doc
-    let pos = -1
-    doc.descendants((node, nodePos) => {
-      if (pos >= 0) return false
-      const index = node.isText ? (node.text ?? '').indexOf(text) : -1
-      if (index >= 0) pos = nodePos + index
-      return pos < 0
-    })
-    if (pos < 0) throw new Error(`text not found: ${text}`)
-    return pos
-  })
-}
-
-function selectText(crepe: Crepe, text: string): void {
-  crepe.editor.action((ctx) => {
-    const view = ctx.get(editorViewCtx)
-    const from = posOf(crepe, text)
-    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, from + text.length)))
-  })
-}
-
-/** Mark names on the text node containing `text`. */
-function marksOn(crepe: Crepe, text: string): string[] {
-  return crepe.editor.action((ctx) => {
-    const doc = ctx.get(editorViewCtx).state.doc
-    const $pos = doc.resolve(posOf(crepe, text) + 1)
-    return $pos.marks().map((m) => m.type.name).sort()
-  })
-}
-
-const md = (crepe: Crepe) => getMarkdownForSave(crepe)
 const textOf = (view: EditorView) => view.state.doc.textContent
 const markEls = (root: HTMLElement) => [...root.querySelectorAll('.milkdown mark')].map((el) => el.textContent)
 
@@ -93,12 +45,10 @@ async function insertLiteral(text: string) {
   return { crepe, root, view }
 }
 
-/** Select from the start of `start` to the end of `end` — a range that can span text nodes. */
-function selectAcross(crepe: Crepe, start: string, end: string): void {
+/** Select an exact position range — for spans whose own edges are whitespace. */
+function selectRange(crepe: Crepe, from: number, to: number): void {
   crepe.editor.action((ctx) => {
     const view = ctx.get(editorViewCtx)
-    const from = posOf(crepe, start)
-    const to = posOf(crepe, end) + end.length
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)))
   })
 }
@@ -122,8 +72,9 @@ function lit(crepe: Crepe, color: HighlightColor): boolean {
   return crepe.editor.action((ctx) => rangeHasHighlight(ctx.get(editorViewCtx).state, highlightSchema.type(ctx), color))
 }
 
-/** Which of the four dots are lit, in swatch order. */
-const litDots = (crepe: Crepe): HighlightColor[] => ([null, 'green', 'blue', 'pink'] as HighlightColor[]).filter((c) => lit(crepe, c))
+/** Which of the four dots are lit, in swatch order — the toolbar's own `[null, ...HIGHLIGHT_COLORS]`. */
+const litDots = (crepe: Crepe): HighlightColor[] =>
+  ([null, ...HIGHLIGHT_COLORS] as HighlightColor[]).filter((c) => lit(crepe, c))
 
 /** How many `highlight` marks the document carries in total (one per distinct run). */
 function highlightRuns(crepe: Crepe): number {
@@ -137,15 +88,6 @@ function highlightRuns(crepe: Crepe): number {
   })
 }
 
-/** Put the caret (empty selection) just inside the text node containing `text`. */
-function caretIn(crepe: Crepe, text: string): void {
-  crepe.editor.action((ctx) => {
-    const view = ctx.get(editorViewCtx)
-    const at = posOf(crepe, text) + 1
-    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at)))
-  })
-}
-
 /** Type `text` one character at a time at the end of the document, the way the browser does. */
 function typeAtEnd(view: EditorView, text: string): void {
   let pos = view.state.doc.content.size - 1
@@ -155,6 +97,9 @@ function typeAtEnd(view: EditorView, text: string): void {
     pos++
   }
 }
+
+/** `Mod-Shift-h` — the yellow shortcut. */
+const pressModShiftH = (crepe: Crepe) => pressKey(crepe, 'h', { shift: true })
 
 describe('highlight mark', () => {
   it('loads `==b==` as a highlight mark, renders <mark>, and saves identical bytes', async () => {
@@ -216,15 +161,6 @@ describe('highlight mark', () => {
     expect(md(crepe)).toBe('x==5 and y==6\n')
   })
 
-  it('escapes a spaced pair written as plain text too', async () => {
-    const { crepe, root } = await insertLiteral('total == 5 and count == 6')
-    expect(markEls(root)).toEqual([])
-    expect(md(crepe)).toBe('total \\=\\= 5 and count \\=\\= 6\n')
-    const again = await mount(md(crepe))
-    expect(markEls(again.root)).toEqual([])
-    expect(textOf(again.view)).toBe('total == 5 and count == 6')
-  })
-
   it('reads a backslash-escaped `\\==` as literal text, and writes it back per character', async () => {
     const { crepe, root, view } = await mount('literal \\==not a mark\\== here\n')
     expect(markEls(root)).toEqual([])
@@ -235,27 +171,27 @@ describe('highlight mark', () => {
     expect(md(again.crepe)).toBe(md(crepe))
   })
 
-  it('left adjacency, letter before: text ending in `=` right before a highlight', async () => {
-    const { crepe, view } = await mount('ab\n')
-    selectText(crepe, 'b')
-    expect(pressModShiftH(crepe)).toBe(true)
-    expect(md(crepe)).toBe('a==b==\n')
-    view.dispatch(view.state.tr.insertText('=', posOf(crepe, 'b')))
-    expect(md(crepe)).toBe('a\\===b==\n')
-    const again = await mount(md(crepe))
-    expect(marksOn(again.crepe, 'b')).toEqual(['highlight'])
-    expect(textOf(again.view)).toBe('a=b')
-  })
+  it('left adjacency: text ending in `=` right before a highlight, with a letter or a space before it', async () => {
+    // A letter before the `=`.
+    const letter = await mount('ab\n')
+    selectText(letter.crepe, 'b')
+    expect(pressModShiftH(letter.crepe)).toBe(true)
+    expect(md(letter.crepe)).toBe('a==b==\n')
+    letter.view.dispatch(letter.view.state.tr.insertText('=', posOf(letter.crepe, 'b')))
+    expect(md(letter.crepe)).toBe('a\\===b==\n')
+    const letterAgain = await mount(md(letter.crepe))
+    expect(marksOn(letterAgain.crepe, 'b')).toEqual(['highlight'])
+    expect(textOf(letterAgain.view)).toBe('a=b')
 
-  it('left adjacency, SPACE before: the `=` still escapes, so the mark survives the reload', async () => {
-    const { crepe, view } = await mount('hello world\n')
-    selectText(crepe, 'world')
-    expect(pressModShiftH(crepe)).toBe(true)
-    view.dispatch(view.state.tr.insertText('=', posOf(crepe, 'world')))
-    expect(md(crepe)).toBe('hello \\===world==\n')
-    const again = await mount(md(crepe))
-    expect(marksOn(again.crepe, 'world')).toEqual(['highlight'])
-    expect(textOf(again.view)).toBe('hello =world')
+    // A SPACE before it: the `=` still escapes, so the mark survives the reload.
+    const space = await mount('hello world\n')
+    selectText(space.crepe, 'world')
+    expect(pressModShiftH(space.crepe)).toBe(true)
+    space.view.dispatch(space.view.state.tr.insertText('=', posOf(space.crepe, 'world')))
+    expect(md(space.crepe)).toBe('hello \\===world==\n')
+    const spaceAgain = await mount(md(space.crepe))
+    expect(marksOn(spaceAgain.crepe, 'world')).toEqual(['highlight'])
+    expect(textOf(spaceAgain.view)).toBe('hello =world')
   })
 
   it('right adjacency: text starting with `=` right after a highlight', async () => {
@@ -346,18 +282,80 @@ describe('highlight mark', () => {
     expect(markEls(root)).toEqual([])
     expect(md(crepe)).toBe('see <https://x.y/?a==b> now\n')
   })
+
+  /**
+   * The four places `==` is NOT prose: an inline code span, a fenced block, a wikilink target and
+   * a tag. None of them may grow a mark, and the first three must come back BYTE-identical — a
+   * `[[Plan \=\= Draft]]` on disk is a broken link, not an escaped one.
+   */
+  it('leaves `==` alone inside inline code, a fence, a wikilink target and a tag', async () => {
+    const src = [
+      '`a == b` and `==code==`',
+      '',
+      '```js',
+      'if (a == b) return',
+      '```',
+      '',
+      'see [[Plan == Draft]] and #v==2',
+      '',
+    ].join('\n')
+    const { crepe, root } = await mount(src)
+    expect(markEls(root)).toEqual([])
+    expect(highlightRuns(crepe)).toBe(0)
+
+    // Byte-identical everywhere `==` is not prose — the code span, the fence, and the wikilink
+    // target, which is a literal FILENAME (🔒 a `[[Plan \=\= Draft]]` on disk is a broken link,
+    // not an escaped one, so the save path undoes that escape). The one place the vault does get
+    // an escape is the `#tag`: a tag is not a construct of its own, just phrasing, so its `==`
+    // escapes like any other text `==` — and reads back as the same characters.
+    const saved = md(crepe)
+    expect(saved).toBe(
+      [
+        '`a == b` and `==code==`',
+        '',
+        '```js',
+        'if (a == b) return',
+        '```',
+        '',
+        'see [[Plan == Draft]] and #v\\=\\=2',
+        '',
+      ].join('\n'),
+    )
+    expect(saved).not.toContain('[[Plan \\=\\= Draft]]')
+
+    const again = await mount(saved)
+    expect(markEls(again.root)).toEqual([])
+    expect(textOf(again.view)).toContain('#v==2')
+    expect(md(again.crepe)).toBe(saved)
+  })
+
+  it('cannot apply where marks are not allowed: inside a fenced code block the command is a no-op', async () => {
+    const src = '```\nx == y\n```\n'
+    const { crepe } = await mount(src)
+    caretIn(crepe, 'x == y')
+    // Pin that the caret really is in the fence — otherwise `false` would prove nothing.
+    expect(crepe.editor.action((ctx) => ctx.get(editorViewCtx).state.selection.$from.parent.type.name)).toBe('code_block')
+    expect(setHighlight(crepe, null)).toBe(false)
+    expect(setHighlight(crepe, 'green')).toBe(false)
+    expect(md(crepe)).toBe(src)
+    expect(highlightRuns(crepe)).toBe(0)
+  })
 })
 
 describe('coloured highlights (YAZ-1480)', () => {
-  it.each([
-    ['green'],
-    ['blue'],
-    ['pink'],
-  ])('loads `<mark class="highlight-%s">` as that colour and saves identical bytes', async (color) => {
-    const src = `a <mark class="highlight-${color}">g</mark> b\n`
+  it('loads every `<mark class="highlight-…">` as its colour and saves identical bytes', async () => {
+    const letterFor: Record<Exclude<HighlightColor, null>, string> = { green: 'g', blue: 'b', pink: 'p' }
+    const src = `${HIGHLIGHT_COLORS.map((c) => `<mark class="highlight-${c}">${letterFor[c]}</mark>`).join(' ')}\n`
+    expect(src).toBe(
+      '<mark class="highlight-green">g</mark> <mark class="highlight-blue">b</mark> <mark class="highlight-pink">p</mark>\n',
+    )
     const { crepe, root } = await mount(src)
-    expect(colorOn(crepe, 'g')).toBe(color)
-    expect(root.querySelector(`.milkdown mark.highlight-${color}`)?.textContent).toBe('g')
+    for (const color of HIGHLIGHT_COLORS) {
+      const letter = letterFor[color]
+      expect(root.querySelector(`.milkdown mark.highlight-${color}`)?.textContent).toBe(letter)
+      expect(colorOn(crepe, letter)).toBe(color)
+    }
+    expect(markEls(root)).toEqual(['g', 'b', 'p'])
     expect(md(crepe)).toBe(src)
   })
 
@@ -386,7 +384,8 @@ describe('coloured highlights (YAZ-1480)', () => {
     const { crepe, root } = await mount(src)
     expect(colorOn(crepe, 'x')).toBe('none')
     expect(colorOn(crepe, 'y')).toBe('none')
-    expect(root.querySelectorAll('.milkdown [data-type="html"]').length).toBeGreaterThan(0)
+    // Two openers and two closers, each an inline-HTML atom — nothing was swallowed into a mark.
+    expect(root.querySelectorAll('.milkdown [data-type="html"]').length).toBe(4)
     expect(md(crepe)).toBe(src)
   })
 
@@ -407,12 +406,21 @@ describe('coloured highlights (YAZ-1480)', () => {
     expect(md(again.crepe)).toBe(saved)
   })
 
-  it('a highlight inside a DIFFERENT mark round-trips untouched', async () => {
-    const src = '<u>a <mark class="highlight-green">b</mark> c</u>\n'
-    const { crepe } = await mount(src)
+  it('a highlight inside a DIFFERENT mark round-trips untouched — and the other way round', async () => {
+    const outer = '<u>a <mark class="highlight-green">b</mark> c</u>\n'
+    const { crepe } = await mount(outer)
     expect(marksOn(crepe, 'b')).toEqual(['highlight', 'underline'])
     expect(colorOn(crepe, 'b')).toBe('green')
-    expect(md(crepe)).toBe(src)
+    expect(md(crepe)).toBe(outer)
+
+    // The reverse nesting: `<u>` inside the colour. Two different mark types, so neither closes
+    // the other — both land on `b` and the bytes are unchanged.
+    const inner = '<mark class="highlight-green">a <u>b</u> c</mark>\n'
+    const nested = await mount(inner)
+    expect(marksOn(nested.crepe, 'b')).toEqual(['highlight', 'underline'])
+    expect(colorOn(nested.crepe, 'b')).toBe('green')
+    expect(colorOn(nested.crepe, 'a ')).toBe('green')
+    expect(md(nested.crepe)).toBe(inner)
   })
 
   it('one command, one click: apply, remove, switch, and back to yellow', async () => {
@@ -440,7 +448,7 @@ describe('coloured highlights (YAZ-1480)', () => {
   })
 
   it('a dot is lit when ANY of the selection carries its colour (🔒 D5) — at a caret, the colour it would type with', async () => {
-    const { crepe } = await mount('==yellow== and <mark class="highlight-green">green</mark> and plain\n')
+    const { crepe, view } = await mount('==yellow== and <mark class="highlight-green">green</mark> and plain\n')
 
     selectText(crepe, 'yellow')
     expect(litDots(crepe)).toEqual([null])
@@ -459,6 +467,64 @@ describe('coloured highlights (YAZ-1480)', () => {
 
     caretIn(crepe, 'green')
     expect(litDots(crepe)).toEqual(['green'])
+
+    // At a caret the dot answers "what would I type with?" — so the command SETS a stored mark
+    // and the very next character carries it.
+    caretIn(crepe, 'plain')
+    expect(setHighlight(crepe, null)).toBe(true)
+    expect(litDots(crepe)).toEqual([null])
+    view.dispatch(view.state.tr.insertText('x'))
+    expect(colorOn(crepe, 'x')).toBe(null)
+
+    // And a lit colour at a caret turns the stored mark OFF again: nothing lit, plain text typed.
+    caretIn(crepe, 'green')
+    expect(setHighlight(crepe, 'green')).toBe(true)
+    expect(litDots(crepe)).toEqual([])
+    view.dispatch(view.state.tr.insertText('z'))
+    expect(colorOn(crepe, 'z')).toBe('none')
+  })
+
+  it('at a caret inside a colour, yellow SWITCHES rather than clears: the typed character is `==…==` (🔒 D5)', async () => {
+    for (const run of ['command', 'shortcut'] as const) {
+      const { crepe, view } = await mount('a <mark class="highlight-green">bc</mark> d\n')
+      caretIn(crepe, 'bc')
+      expect(lit(crepe, null)).toBe(false)
+      expect(lit(crepe, 'green')).toBe(true)
+
+      if (run === 'command') expect(setHighlight(crepe, null)).toBe(true)
+      else expect(pressModShiftH(crepe)).toBe(true)
+
+      view.dispatch(view.state.tr.insertText('X'))
+      expect(colorOn(crepe, 'X')).toBe(null)
+      expect(colorOn(crepe, 'b')).toBe('green')
+      expect(md(crepe)).toMatch(
+        /<mark class="highlight-green">b<\/mark>==X==<mark class="highlight-green">c<\/mark>/,
+      )
+      await unmountAll()
+    }
+  })
+
+  it('never highlights the whitespace at the edge of a selection — the Bold rule', async () => {
+    // Trailing space, yellow.
+    const trailing = await mount('hello world again\n')
+    const at = posOf(trailing.crepe, 'world')
+    selectRange(trailing.crepe, at, at + 'world '.length)
+    expect(setHighlight(trailing.crepe, null)).toBe(true)
+    expect(md(trailing.crepe)).toBe('hello ==world== again\n')
+
+    // Trailing space, a colour.
+    const colored = await mount('hello world again\n')
+    const atColored = posOf(colored.crepe, 'world')
+    selectRange(colored.crepe, atColored, atColored + 'world '.length)
+    expect(setHighlight(colored.crepe, 'green')).toBe(true)
+    expect(md(colored.crepe)).toBe('hello <mark class="highlight-green">world</mark> again\n')
+
+    // Leading space.
+    const leading = await mount('hello world again\n')
+    const atLeading = posOf(leading.crepe, 'world')
+    selectRange(leading.crepe, atLeading - 1, atLeading + 'world'.length)
+    expect(setHighlight(leading.crepe, null)).toBe(true)
+    expect(md(leading.crepe)).toBe('hello ==world== again\n')
   })
 
   it('a lit colour is REMOVED from a partly highlighted selection, never extended; an unlit one replaces every colour (🔒 D5)', async () => {
@@ -488,6 +554,18 @@ describe('coloured highlights (YAZ-1480)', () => {
     expect(colorOn(crepe, 'y')).toBe('blue')
     expect(root.querySelector('.milkdown mark.highlight-blue')?.textContent).toBe('y')
     expect(md(crepe)).toBe('x <mark class="highlight-blue">y</mark> z\n')
+  })
+
+  it('copy-out carries the mark as <mark> HTML, colour and all', async () => {
+    const { crepe, view } = await mount('==yellow== and <mark class="highlight-green">green</mark>\n')
+
+    selectText(crepe, 'yellow')
+    const yellow = view.serializeForClipboard(view.state.selection.content()).dom.innerHTML
+    expect(yellow).toContain('<mark>yellow</mark>')
+
+    selectText(crepe, 'green')
+    const green = view.serializeForClipboard(view.state.selection.content()).dom.innerHTML
+    expect(green).toContain('<mark class="highlight-green">green</mark>')
   })
 
   it('the HTML form needs no `=` escape: text ending in `=` right before a colour', async () => {
