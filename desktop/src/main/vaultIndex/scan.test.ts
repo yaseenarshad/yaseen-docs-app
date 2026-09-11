@@ -190,6 +190,18 @@ describe('scanFile', () => {
     expect(r.links).toEqual(['Attribution', 'Ideas'])
   })
 
+  it('frontmatter `comments` are the note\'s own, never a property; the other keys stay (YAZ-1472)', async () => {
+    const commented = path.join(root, 'commented.md')
+    await writeFile(
+      commented,
+      '---\nstatus: draft\ncomments:\n  - id: 3f9a1c2e\n    at: 2026-09-11T18:22:31Z\n    body: "[[Not A Link]] in a comment"\ntags: [x]\n---\nBody.\n',
+    )
+    const r = await scanFile(root, commented)
+    expect(r.properties).toEqual({ status: 'draft', tags: ['x'] })
+    expect(r.frontmatterError).toBeUndefined()
+    expect(r.links).toEqual([])
+  })
+
   it('files over MAX_FILE_BYTES → metadata only', async () => {
     const big = path.join(root, 'big.md')
     await writeFile(big, '---\na: 1\n---\n#tag [[x]]\n' + 'x'.repeat(MAX_FILE_BYTES))
