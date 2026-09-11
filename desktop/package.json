@@ -29,7 +29,18 @@
         { "target": "dir", "arch": ["arm64"] }
       ],
       "identity": null,
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns"
+    },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-${version}-win-x64-setup.${ext}"
     },
     "dmg": { "artifactName": "${productName}-${version}-arm64.dmg" },
     "protocols": [{ "name": "Yaseen Docs", "schemes": ["yaseendocs"] }],
