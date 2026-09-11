@@ -1,4 +1,4 @@
-# CONTINUITY — yaz-1471-views
+# CONTINUITY — yaz-1471-views (COMPLETE 2026-09-11)
 
 ## Goal
 Ship YAZ-1471 "Views changes" to main: view tabs are editable again (drag to reorder, right-click Rename · Duplicate · Delete with a confirm sheet, "+" with a type picker), `defaultView` rides in the in-memory def (one door), the YAZ-935 Board backfill is retired, and both tab strips scroll without a scrollbar. Done = every 🔒 D0–D6 pinned by a test that would fail without it, `npm test` + `npm run typecheck` green, contracts true, polish pass closed with evidence, released as a patch version and merged.
@@ -27,10 +27,11 @@ Ship YAZ-1471 "Views changes" to main: view tabs are editable again (drag to reo
   - [x] 3- Prove it (YAZ-1487): 3530 green, typecheck ×3 exit 0, board.spec step 1 passed (steps 2-4 = pre-existing drift → 3A YAZ-1492), demo app up for Yasin
   - [x] 4- Polish (YAZ-1488): 20 findings triaged, 12 + 4C applied (3166075), 3535 tests
   - [x] 4C- Collapse store follows rename/delete (YAZ-1493)
-- Now: [→] 4A- Contracts (YAZ-1489)
-- Next: 4B- Release (YAZ-1490)
-- Remaining:
-  - [ ] 4B- Release (YAZ-1490)
+  - [x] 4A- Contracts (YAZ-1489)
+  - [x] 4B- Merge to main (YAZ-1490) — no version bump (Yasin releases via GitHub later)
+- Now: COMPLETE — merged to main; worktree left in place for Yasin to remove
+- Next: nothing
+- Remaining: none
 
 ## Open Questions
 - UNCONFIRMED: 09 broken entries dropped on first write — offered to Yasin in the 3- comment.
