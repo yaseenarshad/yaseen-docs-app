@@ -18,8 +18,23 @@ export function commentHtml(body: string): string {
   return DOMPurify.sanitize(html, PURIFY)
 }
 
-/** The folded row's stand-in for the body: the first line that says anything, minus its Markdown marker. */
-export function commentSummary(body: string): string {
-  const line = body.split('\n').find((l) => l.trim() !== '') ?? ''
-  return line.replace(/^\s*(#{1,6}\s+|[-*+]\s+(\[[ xX]\]\s+)?|\d+[.)]\s+|>\s+)/, '').trim()
+/** One line of a body as inline HTML (bold, code, a link) — the header row's seat when a comment has no title. */
+export function commentInlineHtml(line: string): string {
+  return DOMPurify.sanitize(marked.parseInline(line, { async: false }), PURIFY)
 }
+
+/**
+ * A title-less comment's first line is its subject and the rest is its body: `summary` is the
+ * first line that says anything, minus its Markdown marker; `rest` is everything after that line.
+ * A one-liner has an empty `rest` — it IS its header row, with nothing to fold.
+ */
+export function commentSplit(body: string): { summary: string; rest: string } {
+  const lines = body.split('\n')
+  const i = lines.findIndex((l) => l.trim() !== '')
+  if (i === -1) return { summary: '', rest: '' }
+  const summary = lines[i].replace(/^\s*(#{1,6}\s+|[-*+]\s+(\[[ xX]\]\s+)?|\d+[.)]\s+|>\s+)/, '').trim()
+  return { summary, rest: lines.slice(i + 1).join('\n').replace(/^\n+/, '') }
+}
+
+/** The first line alone — the folded row's stand-in when a comment has no title. */
+export const commentSummary = (body: string): string => commentSplit(body).summary

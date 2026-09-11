@@ -22,8 +22,10 @@ Ship Linear-style comments on every Markdown note: stored under one reserved fro
   - [x] 2E- Contracts and README (YAZ-1500): commit 79b6d9c.
   - [x] 2D- Markdown bodies (YAZ-1499): commit 5503d15, 23 tests; task-list checkbox kept (disabled, inert).
   - [x] 2C- The Comments block (YAZ-1498): commit d948056, 21 tests. 2- Build Done.
-- Now: [→] 4- Polish and anti-slop (YAZ-1502): reviewer found 2 musts (body links navigated the app window; live form controls after the checkbox change) + 5 shoulds + nits — 18 fixed, 4 declined with reasons (disposition comment on YAZ-1502), 4B (YAZ-1511, will-navigate guard) parked in Backlog. Gate + build running; then the polish commit + evidence comment.
-- Next: 3- Prove it (YAZ-1501): Desktop demo generated at `~/Desktop/yaz-1472-comments-demo`; launch on its profile, scenario list to Yasin, merge only after his pass.
+  - [x] 4- Polish (YAZ-1502): review disposition + evidence posted, commit 3dcc20f, branch pushed; 4B (YAZ-1511) parked.
+  - [x] 3- Prove it (YAZ-1501): Yasin's pass on the Desktop demo → three new rulings, no defects. D15 numbers (`#3`/`#3.1`, gaps), D16 header text never moves (one-liners), D17 delete confirm — locked 2026-09-11.
+- Now: [→] 2F (YAZ-1512): code is in the worktree uncommitted; a test agent updates pins + adds the D15–D17 tests; docs (CONTRACTS D1-D17, README) and the demo generator done. Then full gate → commit → push → 4A.
+- Next: 4A- Release (YAZ-1503): merge to main (no version bump unless Yasin says; his precedent is to batch), close the tree, delete `~/Desktop/yaz-1472-comments-demo` and the worktree.
 - Remaining:
   - [ ] 3- Prove it (YAZ-1501): `~/Desktop/yaz-1472-comments-demo` via scratchpad `make-demo-desktop.mjs`, dev app on the isolated profile, scenario list to Yasin.
   - [ ] 4A- Release (YAZ-1503): ask about the version bump, push, merge after his pass, clean up.

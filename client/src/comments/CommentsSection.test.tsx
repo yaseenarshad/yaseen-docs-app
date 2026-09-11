@@ -95,6 +95,48 @@ const AGENT = note(`  - id: aaaaaaaa
     body: Written by nobody in particular
 `)
 
+/** Multi-line bodies and one title, so every comment but the one-liner has something to fold. */
+const FOLDABLE = note(`  - id: aaaaaaaa
+    at: 2026-09-11T20:00:00Z
+    body: |-
+      Parent comment
+      with more below
+  - id: bbbbbbbb
+    at: 2026-09-12T20:00:00Z
+    reply_to: aaaaaaaa
+    body: |-
+      First reply
+      and its detail
+  - id: cccccccc
+    at: 2026-09-10T20:00:00Z
+    body: A one-liner
+  - id: eeeeeeee
+    at: 2026-09-13T08:00:00Z
+    reply_to: aaaaaaaa
+    title: Second
+    body: Second reply
+`)
+
+/** Numbered the way `addComment` numbers, plus a hand-written comment without one and an orphan reply that has one. */
+const NUMBERED = note(`  - id: aaaaaaaa
+    n: 1
+    at: 2026-09-11T20:00:00Z
+    body: Parent comment
+  - id: bbbbbbbb
+    n: 1
+    at: 2026-09-12T20:00:00Z
+    reply_to: aaaaaaaa
+    body: First reply
+  - id: cccccccc
+    at: 2026-09-10T20:00:00Z
+    body: Hand-written, no number
+  - id: dddddddd
+    n: 4
+    at: 2026-09-12T21:00:00Z
+    reply_to: zzzzzzzz
+    body: Orphan reply
+`)
+
 const EMPTY = '---\ntitle: Funnel\n---\nBody\n'
 const FOREIGN = '---\ntitle: Funnel\ncomments: text\n---\nBody\n'
 const INVALID = '---\ntags: [a, b\nstatus: : :\n---\nBody\n'
@@ -149,7 +191,14 @@ const tool = (el: ParentNode) => q<HTMLButtonElement>(el, 'button.comments__tool
 const threads = (el: ParentNode) => all(el, '.comments__thread')
 const articles = (scope: ParentNode) => all(scope, 'article.comments__item')
 const bodyText = (article: ParentNode) => q(article, '.comments__body')?.textContent?.trim() ?? null
-const repliesOf = (thread: ParentNode) => all(thread, '.comments__replies > article.comments__item').map(bodyText)
+const headOf = (article: ParentNode) => q(article, '.comments__summary')?.textContent?.trim() ?? null
+/** What a comment says on screen: its body when one is rendered, else its header line — a one-liner IS its header (🔒 D16). */
+const textOf = (article: ParentNode) => bodyText(article) ?? headOf(article)
+const markOf = (article: ParentNode) => q(article, '.comments__mark')
+const repliesOf = (thread: ParentNode) => all(thread, '.comments__replies > article.comments__item').map(textOf)
+const sheet = (el: ParentNode) => q(el, '.confirm[role="dialog"]')
+/** The sheet's own buttons — never a row action. */
+const sheetButton = (el: ParentNode, text: string) => all<HTMLButtonElement>(el, '.confirm__btn').find((b) => b.textContent?.trim() === text) ?? null
 const bottomComposer = (el: ParentNode) => must(q<HTMLElement>(el, '.comments > .comments__composer'), 'bottom composer')
 const textareaOf = (composer: ParentNode) => q<HTMLTextAreaElement>(composer, 'textarea.comments__textarea')
 const titleInputOf = (composer: ParentNode) => q<HTMLInputElement>(composer, 'input.comments__title-input')
@@ -196,7 +245,7 @@ const written = (): string => must(writeFile.mock.calls.at(-1), 'a write')[0].co
 describe('CommentsSection — render', () => {
   it('threads render oldest-first by `at`, replies under their top-level parent, an orphan reply at top level', () => {
     const el = mount(THREADED)
-    expect(threads(el).map((t) => bodyText(articles(t)[0]))).toEqual(['Earliest, filed last', 'Parent comment', 'Orphan reply'])
+    expect(threads(el).map((t) => textOf(articles(t)[0]))).toEqual(['Earliest, filed last', 'Parent comment', 'Orphan reply'])
     expect(threads(el).map(repliesOf)).toEqual([[], ['First reply', 'Second reply'], []])
     // The orphan is its own root: no replies row, no reply group.
     expect(q(threads(el)[2], '.comments__replies-toggle')).toBeNull()
@@ -239,51 +288,72 @@ describe('CommentsSection — render', () => {
 // ---------- fold ----------
 
 describe('CommentsSection — fold', () => {
-  it('one fold-all control: Collapse all while anything is open, Expand all once every comment AND every reply group is folded', () => {
-    const el = mount(THREADED)
+  it('one fold-all control: Collapse all while anything foldable is open, Expand all once every foldable comment AND every reply group is folded — a one-liner never counts', () => {
+    const el = mount(FOLDABLE)
     expect(all(el, 'button.comments__tool')).toHaveLength(1)
     expect(tool(el)?.textContent).toBe('Collapse all')
+    // Three can fold (the parent, both replies); the one-liner has no fold button and no body.
+    expect(all(el, 'button.comments__fold')).toHaveLength(3)
+    expect(all(el, '.comments__body')).toHaveLength(3)
 
     click(tool(el))
     expect(tool(el)?.textContent).toBe('Expand all')
     expect(q(el, '.comments__body')).toBeNull()
     expect(q(el, '.comments__replies')).toBeNull()
     expect(q(el, '.comments__replies-toggle')?.getAttribute('aria-expanded')).toBe('false')
-    expect(all(el, 'button.comments__fold').map((b) => b.getAttribute('aria-expanded'))).toEqual(['false', 'false', 'false'])
+    // With the reply group hidden only the parent's fold button is on screen — folded.
+    expect(all(el, 'button.comments__fold').map((b) => b.getAttribute('aria-expanded'))).toEqual(['false'])
+    // The one-liner still stands as its own header, untouched by the fold.
+    expect(textOf(articles(el)[0])).toBe('A one-liner')
 
     click(tool(el))
     expect(tool(el)?.textContent).toBe('Collapse all')
-    expect(all(el, '.comments__body')).toHaveLength(5)
+    expect(all(el, '.comments__body')).toHaveLength(3)
     expect(all(el, 'button.comments__fold').every((b) => b.getAttribute('aria-expanded') === 'true')).toBe(true)
 
-    // Every comment folded by hand is not "all folded" while the reply group is still open.
+    // Every foldable comment folded by hand is not "all folded" while the reply group is still open.
     all(el, 'button.comments__fold').forEach((b) => click(b))
     expect(q(el, '.comments__body')).toBeNull()
     expect(tool(el)?.textContent).toBe('Collapse all')
     click(q(el, '.comments__replies-toggle'))
+    // …and once it is, the open one-liner does not hold "Expand all" back: it has nothing to fold.
     expect(tool(el)?.textContent).toBe('Expand all')
   })
 
-  it('a comment folds to one line: the body goes, a title keeps its seat, a title-less comment shows its first line (marker stripped) only while folded', () => {
+  it('the header text never moves: a titled comment folds its body under the title; a title-less multi-line comment keeps its first line (marker stripped) in the header and folds only the rest', () => {
     const el = mount(TITLED)
     const [plain, titled] = articles(el)
-    expect(q(plain, '.comments__summary')).toBeNull()
-    expect(q(plain, '.comments__body h1')?.textContent).toBe('Heading line')
+    // Title-less: the first line is the header from the start; only what follows is the body.
+    expect(headOf(plain)).toBe('Heading line')
+    expect(q(plain, '.comments__summary--title')).toBeNull()
+    expect(bodyText(plain)).toBe('More text')
+    expect(q(plain, '.comments__body h1')).toBeNull()
+    // Titled: the title is the header; the whole body sits below.
     expect(q(titled, '.comments__summary--title')?.textContent).toBe('Churn')
     expect(bodyText(titled)).toBe('Parent comment')
 
     click(q(plain, 'button.comments__fold'))
     expect(q(plain, 'button.comments__fold')?.getAttribute('aria-expanded')).toBe('false')
     expect(q(plain, '.comments__body')).toBeNull()
-    expect(q(plain, '.comments__summary')?.textContent).toBe('Heading line')
+    expect(headOf(plain)).toBe('Heading line')
 
     click(q(titled, 'button.comments__fold'))
     expect(q(titled, '.comments__body')).toBeNull()
     expect(all(titled, '.comments__summary').map((s) => s.textContent)).toEqual(['Churn'])
 
     click(q(plain, 'button.comments__fold'))
-    expect(q(plain, '.comments__summary')).toBeNull()
-    expect(q(plain, '.comments__body h1')?.textContent).toBe('Heading line')
+    expect(headOf(plain)).toBe('Heading line')
+    expect(bodyText(plain)).toBe('More text')
+  })
+
+  it('a one-liner is its own header: no fold button (the seat is kept), its text in the header, no body', () => {
+    const el = mount(LONE)
+    const [one] = articles(el)
+    expect(q(one, 'button.comments__fold')).toBeNull()
+    expect(q(one, '.comments__fold--none')).not.toBeNull()
+    expect(q(one, '.comments__summary--whole')?.textContent).toBe('Parent comment')
+    expect(q(one, '.comments__summary--title')).toBeNull()
+    expect(q(one, '.comments__body')).toBeNull()
   })
 
   it('the "N replies" row folds the replies and the in-card reply composer together', () => {
@@ -357,11 +427,12 @@ describe('CommentsSection — composer', () => {
     expect(request).toMatchObject({ path: PATH, expectedMtime: 150 })
     // The entry the disk did not have when the prop was taken is still there: fresh bytes, not the prop.
     expect(request.content).toContain('    body: Landed meanwhile\n')
-    expect(request.content).toMatch(/ {2}- id: "?[0-9a-f]{8}"?\n {4}at: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\n {4}title: Hello\n {4}body: New comment\n---\n/)
-    expect(readComments(request.content).at(-1)).toMatchObject({ id: expect.stringMatching(ID), at: expect.stringMatching(ISO), title: 'Hello', body: 'New comment' })
+    // Key order on disk: id, n, at, title, body — and the number is the first of the page's run.
+    expect(request.content).toMatch(/ {2}- id: "?[0-9a-f]{8}"?\n {4}n: 1\n {4}at: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\n {4}title: Hello\n {4}body: New comment\n---\n/)
+    expect(readComments(request.content).at(-1)).toMatchObject({ id: expect.stringMatching(ID), n: 1, at: expect.stringMatching(ISO), title: 'Hello', body: 'New comment' })
 
     // On screen from the returned content alone — no rerender, no watcher event.
-    expect(articles(el).map(bodyText)).toEqual(['Parent comment', 'Landed meanwhile', 'New comment'])
+    expect(articles(el).map(textOf)).toEqual(['Parent comment', 'Landed meanwhile', 'New comment'])
     expect(header(el)?.textContent).toBe('Comments (3)')
     expect(textareaOf(bottomComposer(el))?.value).toBe('')
   })
@@ -369,7 +440,7 @@ describe('CommentsSection — composer', () => {
   it('a blank title writes no title key', async () => {
     const el = mount(LONE)
     await submitVia(bottomComposer(el), 'Untitled', '   ')
-    expect(written()).toMatch(/ {2}- id: "?[0-9a-f]{8}"?\n {4}at: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\n {4}body: Untitled\n---\n/)
+    expect(written()).toMatch(/ {2}- id: "?[0-9a-f]{8}"?\n {4}n: 1\n {4}at: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\n {4}body: Untitled\n---\n/)
     expect(readComments(written()).at(-1)).not.toHaveProperty('title')
   })
 })
@@ -387,8 +458,9 @@ describe('CommentsSection — reply', () => {
     expect(document.activeElement).toBe(textareaOf(composer))
 
     await submitVia(composer, 'A reply')
-    expect(written()).toContain('    reply_to: aaaaaaaa\n')
-    expect(readComments(written()).at(-1)).toMatchObject({ reply_to: 'aaaaaaaa', body: 'A reply' })
+    // The first reply under this parent: n: 1 in its own run, right after id.
+    expect(written()).toMatch(/ {2}- id: "?[0-9a-f]{8}"?\n {4}n: 1\n {4}at: [^\n]+\n {4}reply_to: aaaaaaaa\n {4}body: A reply\n/)
+    expect(readComments(written()).at(-1)).toMatchObject({ n: 1, reply_to: 'aaaaaaaa', body: 'A reply' })
 
     // Now a thread: the seat closed, the card carries its own reply row and no Reply action.
     expect(repliesOf(threads(el)[0])).toEqual(['A reply'])
@@ -473,14 +545,82 @@ describe('CommentsSection — edit and delete', () => {
     expect(writeFile).not.toHaveBeenCalled()
   })
 
-  it('Delete on a parent removes its replies from the written bytes', async () => {
+  it('Delete asks first (🔒 D17): the sheet opens with no write; Confirm writes the delete, a parent taking its replies with it', async () => {
     const el = mount(THREADED)
     click(action(articles(threads(el)[1])[0], 'Delete'))
     await flush()
 
+    // The sheet, and nothing on disk touched — not even read.
+    const dialog = must(sheet(el), 'the confirm sheet')
+    expect(q(dialog, '.confirm__text')?.textContent).toBe('Delete this comment and its 2 replies? This cannot be undone.')
+    expect(readFile).not.toHaveBeenCalled()
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(articles(el)).toHaveLength(5)
+
+    click(sheetButton(dialog, 'Delete'))
+    await flush()
+    expect(sheet(el)).toBeNull()
+    expect(writeFile).toHaveBeenCalledTimes(1)
     expect(readComments(written()).map((c) => c.id)).toEqual(['cccccccc', 'dddddddd'])
-    expect(threads(el).map((t) => bodyText(articles(t)[0]))).toEqual(['Earliest, filed last', 'Orphan reply'])
+    expect(threads(el).map((t) => textOf(articles(t)[0]))).toEqual(['Earliest, filed last', 'Orphan reply'])
     expect(header(el)?.textContent).toBe('Comments (2)')
+  })
+
+  it('Cancel on the sheet writes nothing and leaves the comment where it was', async () => {
+    const el = mount(LONE)
+    click(action(articles(el)[0], 'Delete'))
+    const dialog = must(sheet(el), 'the confirm sheet')
+
+    click(sheetButton(dialog, 'Cancel'))
+    await flush()
+    expect(sheet(el)).toBeNull()
+    expect(readFile).not.toHaveBeenCalled()
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(articles(el).map(textOf)).toEqual(['Parent comment'])
+  })
+
+  it('the sheet names the number the row wears and, for a parent, its replies', () => {
+    const el = mount(NUMBERED)
+    const [unnumbered, parent, reply] = articles(el)
+
+    click(action(parent, 'Delete'))
+    expect(q(must(sheet(el), 'sheet'), '.confirm__text')?.textContent).toBe('Delete comment #1 and its reply? This cannot be undone.')
+    click(sheetButton(el, 'Cancel'))
+
+    click(action(reply, 'Delete'))
+    expect(q(must(sheet(el), 'sheet'), '.confirm__text')?.textContent).toBe('Delete comment #1.1? This cannot be undone.')
+    click(sheetButton(el, 'Cancel'))
+
+    click(action(unnumbered, 'Delete'))
+    expect(q(must(sheet(el), 'sheet'), '.confirm__text')?.textContent).toBe('Delete this comment? This cannot be undone.')
+    click(sheetButton(el, 'Cancel'))
+    expect(sheet(el)).toBeNull()
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+})
+
+// ---------- numbers ----------
+
+describe('CommentsSection — numbers (🔒 D15)', () => {
+  it('the mark wears `#1` for a top-level comment, `#1.1` for its reply, a dot for a comment without `n` and for an orphan reply', () => {
+    const el = mount(NUMBERED)
+    // Document order: the unnumbered hand-written one (earliest), the parent, its reply, the orphan.
+    expect(articles(el).map(textOf)).toEqual(['Hand-written, no number', 'Parent comment', 'First reply', 'Orphan reply'])
+    expect(articles(el).map((a) => markOf(a)?.textContent)).toEqual(['·', '#1', '#1.1', '·'])
+    expect(articles(el).map((a) => markOf(a)?.title)).toEqual(['No number on this comment', 'Comment #1', 'Comment #1.1', 'No number on this comment'])
+  })
+
+  it('a reply under a parent that has no number is a dot too — there is no run to belong to', () => {
+    const el = mount(note(`  - id: aaaaaaaa\n    at: 2026-09-11T20:00:00Z\n    body: Parent comment\n  - id: bbbbbbbb\n    n: 1\n    at: 2026-09-12T20:00:00Z\n    reply_to: aaaaaaaa\n    body: First reply\n`))
+    expect(articles(el).map((a) => markOf(a)?.textContent)).toEqual(['·', '·'])
+  })
+
+  it('a comment written from the block wears its number at once — one past the highest on the page', async () => {
+    const el = mount(NUMBERED)
+    await submitVia(bottomComposer(el), 'Fresh')
+    // The orphan's n: 4 is a reply's number and never bumps the top-level run: the new comment is #2.
+    expect(readComments(written()).at(-1)).toMatchObject({ n: 2, body: 'Fresh' })
+    expect(markOf(must(articles(el).at(-1), 'the new comment'))?.textContent).toBe('#2')
   })
 })
 
@@ -550,14 +690,15 @@ describe('CommentsSection — errors', () => {
     click(submitOf(composer))
     await flush()
     expect(q(el, '.comments__error')).toBeNull()
-    expect(articles(el).map(bodyText)).toEqual(['Parent comment', 'Keep me'])
+    expect(articles(el).map(textOf)).toEqual(['Parent comment', 'Keep me'])
     expect(textareaOf(composer)?.value).toBe('')
   })
 })
 
 describe('CommentsSection — links and stale edits', () => {
   it('a link in a body opens through the shell; the click never navigates the app window', () => {
-    const el = mount(note(`  - id: aaaaaaaa\n    at: 2026-09-11T18:22:31Z\n    body: "See [the site](https://example.com) now."\n`))
+    // Below the header line: the first line is the header, rendered as text, so a link lives in the rest.
+    const el = mount(note(`  - id: aaaaaaaa\n    at: 2026-09-11T18:22:31Z\n    body: "Read this\\nSee [the site](https://example.com) now."\n`))
     const a = must(q<HTMLAnchorElement>(el, '.comments__body a'), 'the link')
     const ev = new MouseEvent('click', { bubbles: true, cancelable: true })
     act(() => void a.dispatchEvent(ev))
@@ -577,5 +718,21 @@ describe('CommentsSection — links and stale edits', () => {
     expect(q(el, '[role="alert"].comments__error')?.textContent).toContain('changed on disk')
     expect(q(article, '.comments__composer')).not.toBeNull()
     expect(textareaOf(composer)?.value).toBe('My version')
+  })
+})
+
+describe('CommentsSection — one-liners keep their Markdown; nothing to fold, no fold-all', () => {
+  it('a title-less one-liner renders its inline Markdown in the header row', () => {
+    const el = mount(note(`  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    body: "See **this** and [site](https://example.com)"\n`))
+    const head = must(q(el, '.comments__summary'), 'the header seat')
+    expect(head.querySelector('strong')?.textContent).toBe('this')
+    expect(head.querySelector('a')?.getAttribute('href')).toBe('https://example.com')
+    expect(q(el, '.comments__body')).toBeNull()
+  })
+
+  it('a page of only one-liners has nothing to fold, so there is no fold-all button', () => {
+    const el = mount(note(`  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    body: One.\n  - id: bbbbbbbb\n    n: 2\n    at: 2026-09-11T19:22:31Z\n    body: Two.\n`))
+    expect(articles(el)).toHaveLength(2)
+    expect(tool(el)).toBeNull()
   })
 })

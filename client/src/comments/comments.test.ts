@@ -102,7 +102,7 @@ describe('commentsShape', () => {
 describe('addComment', () => {
   it('grows a note with no frontmatter into the schema, body untouched', () => {
     const out = addComment('# Funnel\n\nText.\n', 'First!  \n\n', { id: '3f9a1c2e', at: '2026-09-11T18:22:31Z' })
-    expect(out).toBe('---\ncomments:\n  - id: 3f9a1c2e\n    at: 2026-09-11T18:22:31Z\n    body: First!\n---\n# Funnel\n\nText.\n')
+    expect(out).toBe('---\ncomments:\n  - id: 3f9a1c2e\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    body: First!\n---\n# Funnel\n\nText.\n')
   })
 
   it('appends; a multi-line body serialises as a block scalar; other keys and the body are byte-identical', () => {
@@ -110,7 +110,7 @@ describe('addComment', () => {
     expect(out).toBe(
       NOTE.replace(
         '      Fixed in the table.\n---\n',
-        '      Fixed in the table.\n  - id: c0ffee00\n    at: 2026-09-11T20:00:00Z\n    body: |-\n      Line one\n      Line two\n---\n',
+        '      Fixed in the table.\n  - id: c0ffee00\n    n: 1\n    at: 2026-09-11T20:00:00Z\n    body: |-\n      Line one\n      Line two\n---\n',
       ),
     )
     expect(out.endsWith(BODY)).toBe(true)
@@ -119,17 +119,17 @@ describe('addComment', () => {
 
   it('a reply carries `reply_to`; a reply to a REPLY is filed under the top-level parent', () => {
     const direct = addComment(NOTE, 'Direct', { id: 'd1', at: at(1), replyTo: '3f9a1c2e' })
-    expect(readComments(direct).at(-1)).toEqual({ id: 'd1', at: at(1), reply_to: '3f9a1c2e', body: 'Direct' })
+    expect(readComments(direct).at(-1)).toEqual({ id: 'd1', n: 1, at: at(1), reply_to: '3f9a1c2e', body: 'Direct' })
     const nested = addComment(NOTE, 'Nested', { id: 'n1', at: at(1), replyTo: '8b02d7e4' })
-    expect(readComments(nested).at(-1)).toEqual({ id: 'n1', at: at(1), reply_to: '3f9a1c2e', body: 'Nested' })
-    // The key order on disk is the schema's: id, at, reply_to, body.
-    expect(nested).toContain('  - id: n1\n    at: 2026-09-11T21:00:00Z\n    reply_to: 3f9a1c2e\n    body: Nested\n')
+    expect(readComments(nested).at(-1)).toEqual({ id: 'n1', n: 1, at: at(1), reply_to: '3f9a1c2e', body: 'Nested' })
+    // The key order on disk is the schema's: id, n, at, reply_to, body.
+    expect(nested).toContain('  - id: n1\n    n: 1\n    at: 2026-09-11T21:00:00Z\n    reply_to: 3f9a1c2e\n    body: Nested\n')
   })
 
   it('keeps unknown entries and unknown keys', () => {
     const content = `---\ncomments:\n  - just a string\n  - id: a\n    at: ${at(1)}\n    body: A\n    mood: happy\n    pinned: true\n---\n`
     const out = addComment(content, 'B', { id: 'b', at: at(2) })
-    expect(out).toBe(`---\ncomments:\n  - just a string\n  - id: a\n    at: ${at(1)}\n    body: A\n    mood: happy\n    pinned: true\n  - id: b\n    at: ${at(2)}\n    body: B\n---\n`)
+    expect(out).toBe(`---\ncomments:\n  - just a string\n  - id: a\n    at: ${at(1)}\n    body: A\n    mood: happy\n    pinned: true\n  - id: b\n    n: 1\n    at: ${at(2)}\n    body: B\n---\n`)
   })
 
   it('refuses to touch a foreign value or a block that does not parse', () => {
@@ -167,7 +167,7 @@ describe('deleteComment', () => {
     const withReply = addComment(NOTE, 'Third', { id: 't3', at: at(1) })
     const out = deleteComment(withReply, '3f9a1c2e')
     expect(readComments(out).map((c) => c.id)).toEqual(['t3'])
-    expect(out).toBe(`---\ntitle: Funnel\ncomments:\n  - id: t3\n    at: ${at(1)}\n    body: Third\n---\n${BODY}`)
+    expect(out).toBe(`---\ntitle: Funnel\ncomments:\n  - id: t3\n    n: 1\n    at: ${at(1)}\n    body: Third\n---\n${BODY}`)
   })
 
   it('deleting the last comment deletes the KEY, never leaving `comments: []`', () => {
@@ -231,15 +231,15 @@ describe('ids and stamps', () => {
 describe('title and by (🔒 D3, D7, D11)', () => {
   it('a title lands between `at` and `body`; blank means no key at all', () => {
     const titled = addComment(NOTE, 'Body', { id: 't1', at: at(1), title: '  Funnel  ' })
-    expect(titled).toContain(`  - id: t1\n    at: ${at(1)}\n    title: Funnel\n    body: Body\n---\n`)
-    expect(readComments(titled).at(-1)).toEqual({ id: 't1', at: at(1), title: 'Funnel', body: 'Body' })
+    expect(titled).toContain(`  - id: t1\n    n: 1\n    at: ${at(1)}\n    title: Funnel\n    body: Body\n---\n`)
+    expect(readComments(titled).at(-1)).toEqual({ id: 't1', n: 1, at: at(1), title: 'Funnel', body: 'Body' })
     const blank = addComment(NOTE, 'Body', { id: 't2', at: at(1), title: '   ' })
-    expect(blank).toContain(`  - id: t2\n    at: ${at(1)}\n    body: Body\n---\n`)
+    expect(blank).toContain(`  - id: t2\n    n: 1\n    at: ${at(1)}\n    body: Body\n---\n`)
   })
 
-  it('a titled reply keeps the order id, at, reply_to, title, body', () => {
+  it('a titled reply keeps the order id, n, at, reply_to, title, body', () => {
     const out = addComment(NOTE, 'R', { id: 'r1', at: at(1), replyTo: '3f9a1c2e', title: 'Re' })
-    expect(out).toContain(`  - id: r1\n    at: ${at(1)}\n    reply_to: 3f9a1c2e\n    title: Re\n    body: R\n---\n`)
+    expect(out).toContain(`  - id: r1\n    n: 1\n    at: ${at(1)}\n    reply_to: 3f9a1c2e\n    title: Re\n    body: R\n---\n`)
   })
 
   it('edit sets, replaces or (blank) removes the title, always ahead of `edited` and `body`', () => {
@@ -275,5 +275,86 @@ describe('bare optionals (a hand-written `title:` or `reply_to:` with nothing af
     expect(threadsOf(readComments(content)).map((t) => t.comment.id)).toEqual(['a', 'b'])
     // The write path still carries the bare keys: they are the user's bytes.
     expect(deleteComment(content, 'b')).toContain('    title:')
+  })
+})
+
+describe('numbers (🔒 D15): `n` is one past the highest in its run, never reassigned', () => {
+  /** Stamps for a sequence longer than `at` can count: hour `i` on the 12th. */
+  const stamp = (i: number): string => `2026-09-12T${String(i).padStart(2, '0')}:00:00Z`
+  const numbered = (content: string): [string, number | undefined, string | null][] => readComments(content).map((c) => [c.id, c.n, c.reply_to ?? null])
+
+  it('a top-level run counts 1, 2, 3; a delete leaves its gap and the next is one past the HIGHEST, not the count', () => {
+    let c = addComment('# Note\n', 'A', { id: 'a', at: stamp(1) })
+    c = addComment(c, 'B', { id: 'b', at: stamp(2) })
+    c = addComment(c, 'C', { id: 'c', at: stamp(3) })
+    expect(numbered(c)).toEqual([
+      ['a', 1, null],
+      ['b', 2, null],
+      ['c', 3, null],
+    ])
+    c = deleteComment(c, 'b')
+    expect(numbered(c)).toEqual([
+      ['a', 1, null],
+      ['c', 3, null],
+    ])
+    // Two comments remain, so "the count plus one" would hand out 3 again; the run says 4.
+    c = addComment(c, 'D', { id: 'd', at: stamp(4) })
+    expect(numbered(c)).toEqual([
+      ['a', 1, null],
+      ['c', 3, null],
+      ['d', 4, null],
+    ])
+  })
+
+  it('a reply run is per parent (`#3.1`, `#3.2` as n: 1, n: 2 with reply_to), independent of the top-level run and of other parents', () => {
+    let c = addComment('# Note\n', 'P', { id: 'p', at: stamp(1) })
+    c = addComment(c, 'Q', { id: 'q', at: stamp(2) })
+    c = addComment(c, 'R1', { id: 'r1', at: stamp(3), replyTo: 'p' })
+    // A reply to a reply files under the parent AND numbers in the parent's run.
+    c = addComment(c, 'R2', { id: 'r2', at: stamp(4), replyTo: 'r1' })
+    c = addComment(c, 'S1', { id: 's1', at: stamp(5), replyTo: 'q' })
+    // The replies' numbers never bump the top-level run: T is 3, not 6.
+    c = addComment(c, 'T', { id: 't', at: stamp(6) })
+    expect(numbered(c)).toEqual([
+      ['p', 1, null],
+      ['q', 2, null],
+      ['r1', 1, 'p'],
+      ['r2', 2, 'p'],
+      ['s1', 1, 'q'],
+      ['t', 3, null],
+    ])
+    expect(c).toContain(`  - id: r2\n    n: 2\n    at: ${stamp(4)}\n    reply_to: p\n    body: R2\n`)
+  })
+
+  it('nextNumber ignores unnumbered comments and unknown entries: the run is the highest number anyone declared', () => {
+    const content = `---\ncomments:\n  - just a string\n  - id: a\n    at: ${at(0)}\n    body: A\n  - id: b\n    n: 5\n    at: ${at(1)}\n    body: B\n  - id: r\n    n: 9\n    at: ${at(2)}\n    reply_to: b\n    body: R\n---\n`
+    expect(readComments(addComment(content, 'C', { id: 'c', at: at(3) })).at(-1)).toMatchObject({ id: 'c', n: 6 })
+    // An unnumbered parent still has a reply run of its own, from 1; a numbered one continues its run.
+    expect(readComments(addComment(content, 'R', { id: 'ra', at: at(3), replyTo: 'a' })).at(-1)).toMatchObject({ id: 'ra', n: 1, reply_to: 'a' })
+    expect(readComments(addComment(content, 'R', { id: 'rb', at: at(3), replyTo: 'b' })).at(-1)).toMatchObject({ id: 'rb', n: 10, reply_to: 'b' })
+    // Nothing numbered at all → 1.
+    const bare = `---\ncomments:\n  - id: a\n    at: ${at(1)}\n    body: A\n---\n`
+    expect(readComments(addComment(bare, 'B', { id: 'b', at: at(2) })).at(-1)).toMatchObject({ id: 'b', n: 1 })
+  })
+
+  it('`n` rides through edit and delete untouched, in its place right after `id`', () => {
+    const content = `---\ncomments:\n  - id: a\n    n: 1\n    at: ${at(1)}\n    body: A\n  - id: b\n    n: 2\n    at: ${at(2)}\n    body: B\n---\n`
+    expect(editComment(content, 'a', 'A2', at(3), 'T')).toContain(`  - id: a\n    n: 1\n    at: ${at(1)}\n    title: T\n    edited: ${at(3)}\n    body: A2\n`)
+    expect(deleteComment(content, 'a')).toBe(`---\ncomments:\n  - id: b\n    n: 2\n    at: ${at(2)}\n    body: B\n---\n`)
+    expect(readComments(content).map((c) => c.n)).toEqual([1, 2])
+  })
+
+  it('a bare `n:` reads as absent and counts for nothing in the run; the bytes still ride along; a non-number `n` is not a comment', () => {
+    const content = `---\ncomments:\n  - id: a\n    n:\n    at: ${at(1)}\n    body: A\n  - id: b\n    n: "3"\n    at: ${at(2)}\n    body: B\n---\n`
+    expect(readComments(content)).toEqual([{ id: 'a', at: at(1), body: 'A' }])
+    const out = addComment(content, 'C', { id: 'c', at: at(3) })
+    expect(readComments(out).at(-1)).toMatchObject({ id: 'c', n: 1 })
+    expect(out).toMatch(/^ {4}n:( null)?$/m)
+    expect(out).toMatch(/^ {4}n: ["']3["']$/m)
+  })
+
+  it('a bare `reply_to:` reads as top level (the bare-optionals rule), so its number is in the top-level run', () => {
+    const content = `---\ncomments:\n  - id: a\n    n: 3\n    at: ${at(1)}\n    reply_to:\n    body: A\n---\n`
+    expect(readComments(addComment(content, 'B', { id: 'b', at: at(2) })).at(-1)).toMatchObject({ id: 'b', n: 4 })
   })
 })

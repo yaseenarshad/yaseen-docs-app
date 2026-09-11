@@ -5,7 +5,7 @@
  * what the folded row's one-line summary strips.
  */
 import { describe, expect, it } from 'vitest'
-import { commentHtml, commentSummary } from './markdown'
+import { commentHtml, commentInlineHtml, commentSplit, commentSummary } from './markdown'
 
 describe('commentHtml — GitHub-flavoured Markdown', () => {
   it('headings', () => {
@@ -85,6 +85,34 @@ describe('commentHtml — sanitised', () => {
   })
 })
 
+describe('commentSplit — the header line and what sits below it (🔒 D16)', () => {
+  it('a one-liner is all header: an empty rest, with or without a trailing newline', () => {
+    expect(commentSplit('plain text')).toEqual({ summary: 'plain text', rest: '' })
+    expect(commentSplit('plain text\n')).toEqual({ summary: 'plain text', rest: '' })
+  })
+
+  it('multi-line: the first line minus its marker is the summary, the rest follows verbatim', () => {
+    expect(commentSplit('- first\nsecond\nthird')).toEqual({ summary: 'first', rest: 'second\nthird' })
+  })
+
+  it('leading blank lines are skipped ahead of the summary and dropped from the rest', () => {
+    expect(commentSplit('\n\n  \nfirst\n\n\nsecond')).toEqual({ summary: 'first', rest: 'second' })
+  })
+
+  it('a heading first line: the heading text is the summary, the body sits below it', () => {
+    expect(commentSplit('# Heading\nBody')).toEqual({ summary: 'Heading', rest: 'Body' })
+  })
+
+  it('nothing but blanks → empty on both sides', () => {
+    expect(commentSplit('')).toEqual({ summary: '', rest: '' })
+    expect(commentSplit(' \n ')).toEqual({ summary: '', rest: '' })
+  })
+
+  it('commentSummary is the split’s summary', () => {
+    expect(commentSummary('# Heading\nBody')).toBe(commentSplit('# Heading\nBody').summary)
+  })
+})
+
 describe('commentSummary — the folded row', () => {
   it.each([
     ['# Heading', 'Heading'],
@@ -95,5 +123,12 @@ describe('commentSummary — the folded row', () => {
     ['plain text', 'plain text'],
   ])('%j → %j', (body, summary) => {
     expect(commentSummary(body)).toBe(summary)
+  })
+})
+
+describe('commentInlineHtml — the header row of a title-less comment', () => {
+  it('renders inline Markdown without a paragraph around it, sanitised the same way', () => {
+    expect(commentInlineHtml('**bold** and `code` and [site](https://example.com)')).toBe('<strong>bold</strong> and <code>code</code> and <a href="https://example.com">site</a>')
+    expect(commentInlineHtml('plain <script>alert(1)</script> text')).toBe('plain  text')
   })
 })

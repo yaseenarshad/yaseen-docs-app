@@ -20,6 +20,14 @@ export const COMMENTS_KEY = 'comments'
 export interface PageComment {
   /** `crypto.randomUUID().slice(0, 8)` — enough for one note. */
   id: string
+  /**
+   * The comment's number, quotable and never reassigned: a top-level comment is one past the
+   * highest top-level number on the page (shown `#3`); a reply is one past the highest among its
+   * parent's replies (shown `#3.1`). A delete leaves a gap, the way an issue tracker does, so
+   * every reference ever written keeps pointing at the same comment. Absent on a hand-written
+   * entry that did not set one.
+   */
+  n?: number
   /** ISO UTC at seconds precision (`2026-09-11T18:22:31Z`), so it sorts as a string. */
   at: string
   /** Optional one-line heading; the row's summary when folded. Absent when empty. */
@@ -85,13 +93,14 @@ const OPTIONAL = ['reply_to', 'by', 'title', 'edited'] as const
 function isComment(entry: unknown): entry is PageComment {
   if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return false
   const e = entry as Record<string, unknown>
-  return isString(e.id) && isString(e.at) && isString(e.body) && OPTIONAL.every((k) => optionalString(e[k]))
+  return isString(e.id) && isString(e.at) && isString(e.body) && OPTIONAL.every((k) => optionalString(e[k])) && (e.n == null || typeof e.n === 'number')
 }
 
 /** The typed view drops a bare optional (`title:` with nothing) so readers see it as absent; the raw list keeps it for the write. */
 function withoutEmptyOptionals(c: PageComment): PageComment {
   const copy: PageComment = { ...c }
   for (const k of OPTIONAL) if (copy[k] === null) delete copy[k]
+  if (copy.n === null) delete copy.n
   return copy
 }
 
@@ -183,13 +192,21 @@ export function addComment(content: string, body: string, entry: { id: string; a
   const list = writable(content)
   const text = body.trimEnd()
   const title = titleKey(entry.title)
-  if (entry.replyTo === undefined) return write(content, [...list, { id: entry.id, at: entry.at, ...title, body: text }])
+  if (entry.replyTo === undefined) return write(content, [...list, { id: entry.id, n: nextNumber(list, undefined), at: entry.at, ...title, body: text }])
   const index = threading(typed(list))
   const target = index.byId.get(entry.replyTo)
   const reply_to = target === undefined ? entry.replyTo : rootOf(index, target)
-  // Key order on disk is the schema's: id, at, reply_to, title, body.
-  return write(content, [...list, { id: entry.id, at: entry.at, reply_to, ...title, body: text }])
+  // Key order on disk is the schema's: id, n, at, reply_to, title, body.
+  return write(content, [...list, { id: entry.id, n: nextNumber(list, reply_to), at: entry.at, reply_to, ...title, body: text }])
 }
+
+/**
+ * One past the highest number in the run: the page's top-level comments, or one parent's replies.
+ * Counted over the typed view the reader uses, so a bare `reply_to:` (YAML null) sits in the
+ * top-level run exactly as it renders there — never outside every run.
+ */
+const nextNumber = (list: readonly unknown[], replyTo: string | undefined): number =>
+  1 + Math.max(0, ...typed(list).filter((c) => c.reply_to === replyTo).map((c) => c.n ?? 0))
 
 
 /**

@@ -149,21 +149,26 @@
   background: var(--bg-hover);
 }
 
-/* Linear's avatar seat, without an author: one accent dot so a comment reads as a voice, not a paragraph. */
+/* The comment's number, worn like an id in the avatar's seat: `#3`, quotable, never reassigned. */
 .comments__mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 20px;
+  min-width: 20px;
   height: 20px;
-  border-radius: 50%;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
   color: var(--accent);
   background: var(--accent-soft);
+  border-radius: 10px;
 }
 
 
-/* A declared writer is not the person at the keyboard: the dot takes the agent colour. */
+/* A declared writer is not the person at the keyboard: the number takes the agent colour. */
 .comments__item--agent .comments__mark {
   color: var(--agent);
   background: var(--agent-soft);
@@ -183,6 +188,17 @@
 .comments__summary--title {
   font-size: 15px;
   font-weight: 600;
+}
+
+/* A one-liner IS its header row: it wraps like a body, since there is nothing below to hold the rest. */
+.comments__summary--whole {
+  white-space: normal;
+  line-height: 1.55;
+}
+
+/* A one-liner keeps the fold's seat so every number lines up, but has nothing to fold. */
+.comments__fold--none {
+  visibility: hidden;
 }
 
 /* The stamp, "(edited)" and the writer never wrap; the summary is what gives. */

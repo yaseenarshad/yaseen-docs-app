@@ -56,13 +56,14 @@ Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Edit
 
 ### Comments
 
-Every note carries a Linear-style comment stream under its body — after a folder page's contents, before "Linked mentions". It lives in the note's own frontmatter, under one `comments` key, so it travels with the file (sync, rename, Obsidian); no sidecar, nothing else is written. Threads are one level deep (a reply names its top-level parent in `reply_to`; a reply to a reply is filed under the root), a comment can carry an optional one-line title, every comment folds to one line like a bullet (its title, else its first line — Expand all / Collapse all on the header), and bodies are GitHub-flavoured Markdown, rendered read-only and sanitised. The Properties panel shows the key as Reserved, and it never enters the index or a view column. `⌘Enter` posts; there is no confirm on delete.
+Every note carries a Linear-style comment stream under its body — after a folder page's contents, before "Linked mentions". It lives in the note's own frontmatter, under one `comments` key, so it travels with the file (sync, rename, Obsidian); no sidecar, nothing else is written. Threads are one level deep (a reply names its top-level parent in `reply_to`; a reply to a reply is filed under the root), a comment can carry an optional one-line title, every comment wears a stable number (`#3`, a reply `#3.1`) that never changes, even after a delete, and folds like a bullet without its header text ever moving (Expand all / Collapse all on the header), and bodies are GitHub-flavoured Markdown, rendered read-only and sanitised. The Properties panel shows the key as Reserved, and it never enters the index or a view column. `⌘Enter` posts; Delete asks first.
 
-For agents: when you leave a comment on a page, append to `comments:` in its frontmatter with `by: agent` (the app writes no `by` for the person at the keyboard; quote the `id` if it happens to be all digits):
+For agents: when you leave a comment on a page, append to `comments:` in its frontmatter with `by: agent` (the app writes no `by` for the person at the keyboard); set `n` to one past the highest in its run — the page's top-level comments, or that parent's replies — and quote the `id` if it happens to be all digits:
 
 ```yaml
 comments:
   - id: 3f9a1c2e
+    n: 1
     at: 2026-09-11T18:22:31Z
     by: agent
     title: Numbers check

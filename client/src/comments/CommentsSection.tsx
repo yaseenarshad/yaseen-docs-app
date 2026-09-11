@@ -36,7 +36,8 @@ import type { FileResponse } from '@shared/types'
 import { api } from '../api'
 import { relativeTime } from '../lib/relativeTime'
 import { transformFile } from '../views/writeProperty'
-import { commentHtml, commentSummary } from './markdown'
+import { ConfirmDeleteComment } from './ConfirmDeleteComment'
+import { commentHtml, commentInlineHtml, commentSplit } from './markdown'
 import './comments.css'
 
 export interface CommentsSectionProps {
@@ -54,6 +55,13 @@ interface Snapshot {
 /** The one inline composer open besides the bottom one: a reply under a thread, or an edit in place of a body. */
 type Inline = { kind: 'reply'; to: string } | { kind: 'edit'; id: string } | null
 
+/** A delete waiting on the sheet: which comment, the number it wears, how many replies go with it. */
+interface PendingDelete {
+  id: string
+  label: string | null
+  replies: number
+}
+
 /** What a composer hands back: the text, and the optional one-line title. */
 interface Draft {
   body: string
@@ -69,6 +77,25 @@ const NOTICE = {
 
 /** A declared `by` or `title` counts only when it says something. */
 const nonBlank = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null)
+
+/**
+ * What a comment shows in its header row and what sits below it. A title is the header and the
+ * whole body is below. Without one, the body's first line is the header — permanently, so a fold
+ * never moves text — and only the REST is below; a one-liner has nothing below and nothing to fold.
+ */
+/** `#3` for a top-level comment, `#3.1` for a reply under it; null (a dot) when either number is missing or the parent is gone. */
+function labelOf(comment: PageComment, parent?: PageComment): string | null {
+  if (comment.n === undefined) return null
+  if (parent === undefined) return comment.reply_to === undefined ? `#${comment.n}` : null
+  return parent.n === undefined ? null : `#${parent.n}.${comment.n}`
+}
+
+function shapeOf(comment: PageComment): { title: string | null; head: string; below: string; foldable: boolean } {
+  const title = nonBlank(comment.title)
+  if (title !== null) return { title, head: title, below: comment.body, foldable: true }
+  const { summary, rest } = commentSplit(comment.body)
+  return { title: null, head: summary, below: rest, foldable: rest.trim() !== '' }
+}
 
 const Chevron = () => (
   <svg className="comments__chevron" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -93,6 +120,7 @@ export function CommentsSection({ file }: CommentsSectionProps) {
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set())
   const [repliesFolded, setRepliesFolded] = useState<ReadonlySet<string>>(() => new Set())
   const [inline, setInline] = useState<Inline>(null)
+  const [confirming, setConfirming] = useState<PendingDelete | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const now = useClock()
@@ -103,7 +131,8 @@ export function CommentsSection({ file }: CommentsSectionProps) {
 
   // One fold-all control, the outliner's pair in one seat: while anything is open it collapses
   // everything (comments and reply groups); once everything is folded it expands everything.
-  const everyId = threads.flatMap((t) => [t.comment.id, ...t.replies.map((r) => r.id)])
+  // Only what can fold counts toward "everything folded": a one-liner has nothing to fold.
+  const everyId = threads.flatMap((t) => [t.comment, ...t.replies]).filter((c) => shapeOf(c).foldable).map((c) => c.id)
   const everyThreaded = threads.filter((t) => t.replies.length > 0).map((t) => t.comment.id)
   const allFolded = everyId.every((id) => folded.has(id)) && everyThreaded.every((id) => repliesFolded.has(id))
   const foldAll = (): void => {
@@ -135,10 +164,11 @@ export function CommentsSection({ file }: CommentsSectionProps) {
     setError(null)
   }
 
-  const item = (comment: PageComment, onReply?: () => void) => (
+  const item = (comment: PageComment, parent?: PageComment, onReply?: () => void, replies = 0) => (
     <CommentItem
       key={comment.id}
       comment={comment}
+      label={labelOf(comment, parent)}
       now={now}
       saving={saving}
       folded={folded.has(comment.id)}
@@ -149,7 +179,7 @@ export function CommentsSection({ file }: CommentsSectionProps) {
         setFolded((s) => (s.has(comment.id) ? toggled(s, comment.id) : s))
         setInline({ kind: 'edit', id: comment.id })
       }}
-      onDelete={() => void write((fresh) => deleteComment(fresh, comment.id))}
+      onDelete={() => setConfirming({ id: comment.id, label: labelOf(comment, parent), replies })}
       onSave={async (draft) => {
         // Save is against the comment as it was opened: gone or changed underneath → refuse, never clobber.
         const ok = await write((fresh) => {
@@ -186,7 +216,7 @@ export function CommentsSection({ file }: CommentsSectionProps) {
             {count > 0 && <span className="comments__count"> ({count})</span>}
           </span>
         </button>
-        {expanded && count > 0 && (
+        {expanded && (everyId.length > 0 || everyThreaded.length > 0) && (
           <button type="button" className="comments__tool" onClick={foldAll}>
             <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               {allFolded ? <path d="m5 5.5 3-3 3 3M5 10.5l3 3 3-3" /> : <path d="m5 3 3 3 3-3M5 13l3-3 3 3" />}
@@ -210,7 +240,7 @@ export function CommentsSection({ file }: CommentsSectionProps) {
                     return (
                       <div key={comment.id} className="comments__thread">
                         {/* A thread already has its reply field; a lone comment offers Reply on hover. */}
-                        {item(comment, threaded ? undefined : () => setInline({ kind: 'reply', to: comment.id }))}
+                        {item(comment, undefined, threaded ? undefined : () => setInline({ kind: 'reply', to: comment.id }), replies.length)}
                         {threaded && (
                           <button type="button" className="comments__replies-toggle" aria-expanded={!hidden} onClick={() => setRepliesFolded((s) => toggled(s, comment.id))}>
                             <Chevron />
@@ -219,7 +249,7 @@ export function CommentsSection({ file }: CommentsSectionProps) {
                         )}
                         {threaded && !hidden && (
                           <div className="comments__replies">
-                            {replies.map((reply) => item(reply))}
+                            {replies.map((reply) => item(reply, comment))}
                             <Composer placeholder="Reply…" submitLabel="Reply" saving={saving} collapsible onSubmit={(draft) => add(draft, comment.id)} />
                           </div>
                         )}
@@ -253,6 +283,18 @@ export function CommentsSection({ file }: CommentsSectionProps) {
           )}
         </>
       )}
+      {confirming !== null && (
+        <ConfirmDeleteComment
+          label={confirming.label}
+          replies={confirming.replies}
+          onConfirm={() => {
+            const { id } = confirming
+            setConfirming(null)
+            void write((fresh) => deleteComment(fresh, id))
+          }}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
     </section>
   )
 }
@@ -275,6 +317,7 @@ const parsed = (iso: string): number | null => {
 
 function CommentItem({
   comment,
+  label,
   now,
   saving,
   folded,
@@ -287,6 +330,8 @@ function CommentItem({
   onCancel,
 }: {
   comment: PageComment
+  /** `#3` / `#3.1`, or null for a dot. */
+  label: string | null
   now: number
   saving: boolean
   folded: boolean
@@ -302,30 +347,28 @@ function CommentItem({
   const at = parsed(comment.at)
   const edited = comment.edited === undefined ? null : parsed(comment.edited)
   const by = nonBlank(comment.by)
-  const title = nonBlank(comment.title)
-  const closed = folded && !editing
+  const { title, head, below, foldable } = shapeOf(comment)
+  const closed = foldable && folded && !editing
   return (
     <article className={`comments__item${by === null ? '' : ' comments__item--agent'}`}>
       <div className="comments__meta">
-        <button type="button" className="comments__fold" aria-expanded={!closed} aria-label={closed ? 'Expand comment' : 'Collapse comment'} onClick={onToggleFold}>
-          <Chevron />
-        </button>
-        <span className="comments__mark" aria-hidden>
-          {by === null ? (
-            <svg width={12} height={12} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 3.5h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7.5L4.5 14v-2.5H3a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" />
-            </svg>
-          ) : (
-            <svg width={12} height={12} viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 1.5l1.7 4.8L14.5 8l-4.8 1.7L8 14.5 6.3 9.7 1.5 8l4.8-1.7z" />
-            </svg>
-          )}
-        </span>
-        {/* The title keeps its seat whether folded or not; a title-less comment shows its first line only while folded. */}
-        {title !== null ? (
-          <span className="comments__summary comments__summary--title">{title}</span>
+        {foldable ? (
+          <button type="button" className="comments__fold" aria-expanded={!closed} aria-label={closed ? 'Expand comment' : 'Collapse comment'} onClick={onToggleFold}>
+            <Chevron />
+          </button>
         ) : (
-          closed && <span className="comments__summary">{commentSummary(comment.body)}</span>
+          <span className="comments__fold comments__fold--none" aria-hidden />
+        )}
+        {/* The comment's number, worn like an id (`#3`, a reply `#3.1`); a hand-written one without a number gets a dot. */}
+        <span className="comments__mark" title={label === null ? 'No number on this comment' : `Comment ${label}`}>
+          {label ?? '·'}
+        </span>
+        {/* The header text never moves: a title, or the body's first line — the whole comment when that is all there is. */}
+        {title !== null ? (
+          <span className="comments__summary comments__summary--title">{head}</span>
+        ) : (
+          // A body's first line keeps its inline Markdown (sanitised, the same renderer as the body).
+          <span className={`comments__summary${foldable ? '' : ' comments__summary--whole'}`} dangerouslySetInnerHTML={{ __html: commentInlineHtml(head) }} />
         )}
         <time className="comments__when" dateTime={comment.at} title={at === null ? comment.at : new Date(at).toLocaleString()}>
           {at === null ? comment.at : relativeTime(at, now)}
@@ -355,7 +398,7 @@ function CommentItem({
         <Composer initial={{ body: comment.body, title: title ?? '' }} placeholder="Edit…" submitLabel="Save" saving={saving} onSubmit={onSave} onCancel={onCancel} />
       ) : (
         // Sanitised HTML from `commentHtml`: Markdown in, document markup out, nothing that can run.
-        !closed && <div className="comments__body" dangerouslySetInnerHTML={{ __html: commentHtml(comment.body) }} />
+        !closed && foldable && <div className="comments__body" dangerouslySetInnerHTML={{ __html: commentHtml(below) }} />
       )}
     </article>
   )
