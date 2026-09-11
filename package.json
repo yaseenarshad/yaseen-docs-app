@@ -10,8 +10,8 @@
   "scripts": {
     "dev": "npm run dev -w desktop",
     "build": "npm run build -w desktop",
-    "desktop:build": "npm run build -w desktop && npm exec -w desktop -- electron-builder --mac -c.extraMetadata.version=$npm_package_version",
-    "desktop:build:win": "npm run build -w desktop && npm exec -w desktop -- electron-builder --win -c.extraMetadata.version=$npm_package_version",
+    "desktop:build": "npm run build -w desktop && node tools/packDesktop.mjs --mac",
+    "desktop:build:win": "npm run build -w desktop && node tools/packDesktop.mjs --win",
     "typecheck": "tsc -p client/tsconfig.json --noEmit && tsc -p shared/tsconfig.json --noEmit && tsc -p desktop/tsconfig.json --noEmit",
     "test": "vitest run",
     "e2e": "npm run build -w desktop && playwright test --config desktop/e2e/playwright.config.ts",
