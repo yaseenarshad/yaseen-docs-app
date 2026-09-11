@@ -24,6 +24,7 @@ import { hardbreakSchema } from '@milkdown/kit/preset/commonmark'
 import { tableCellSchema, tableHeaderSchema } from '@milkdown/kit/preset/gfm'
 import type { Node as PMNode, ResolvedPos } from '@milkdown/kit/prose/model'
 import type { Command } from '@milkdown/kit/prose/state'
+import type { SerializerState } from '@milkdown/kit/transformer'
 import { $remark, $shortcut } from '@milkdown/kit/utils'
 import type { RootContent } from 'mdast'
 import { defaultHandlers } from 'mdast-util-to-markdown'
@@ -59,7 +60,7 @@ export const inlineBreaksRemark = $remark('mdapp-inline-breaks', () => function 
 
 const cellToMarkdown = (typeName: string) => ({
   match: (node: PMNode) => node.type.name === typeName,
-  runner: (state: { openNode: (t: string) => unknown; addNode: (t: string) => unknown; next: (f: PMNode['content']) => unknown; closeNode: () => unknown }, node: PMNode) => {
+  runner: (state: SerializerState, node: PMNode) => {
     state.openNode('tableCell')
     node.forEach((paragraph, _, i) => {
       if (i > 0) state.addNode('break')
