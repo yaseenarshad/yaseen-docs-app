@@ -28,7 +28,8 @@ open "desktop/dist-app/Yaseen Docs-0.3.0-arm64.dmg"
 ```
 
 - On another Mac the first open is blocked by Gatekeeper (the app is not notarized): System Settings › Privacy & Security › **Open Anyway**, once. See `README.md` "Sharing it".
-- No toolchain on the target machine? Download the `.dmg` from the repo's [Releases page](https://github.com/yaseenarshad/yaseen-milkdown/releases) instead of building (releases are tagged at the exact verified build commit; repo access required while private).
+- Windows: `npm run desktop:build:win` packages an unsigned x64 NSIS installer, `desktop/dist-app/Yaseen Docs-<version>-win-x64-setup.exe` (electron-builder can produce it from a Mac too). First open shows SmartScreen — **More info › Run anyway**, once. Both scripts stamp the root `package.json` version through `tools/packDesktop.mjs`.
+- No toolchain on the target machine? Download the `.dmg` (Mac, Apple Silicon) or the `-win-x64-setup.exe` (Windows) from the repo's [Releases page](https://github.com/yaseenarshad/yaseen-docs/releases). Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds both on GitHub runners and attaches them to that tag's release.
 
 ## App state — where it lives, how to reset it
 
