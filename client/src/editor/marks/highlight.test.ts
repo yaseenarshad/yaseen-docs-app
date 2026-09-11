@@ -13,7 +13,7 @@ import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
-import { highlightSchema, selectionHighlightColor, setHighlightCommand, type HighlightColor } from './highlight'
+import { highlightSchema, rangeHasHighlight, setHighlightCommand, type HighlightColor } from './highlight'
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
@@ -117,10 +117,13 @@ function colorOn(crepe: Crepe, text: string): HighlightColor | 'none' {
   })
 }
 
-/** What `selectionHighlightColor` answers for the CURRENT selection. */
-function currentColor(crepe: Crepe): HighlightColor | undefined {
-  return crepe.editor.action((ctx) => selectionHighlightColor(ctx.get(editorViewCtx).state, highlightSchema.type(ctx)))
+/** Whether the dot for `color` would be lit for the CURRENT selection (`rangeHasHighlight`). */
+function lit(crepe: Crepe, color: HighlightColor): boolean {
+  return crepe.editor.action((ctx) => rangeHasHighlight(ctx.get(editorViewCtx).state, highlightSchema.type(ctx), color))
 }
+
+/** Which of the four dots are lit, in swatch order. */
+const litDots = (crepe: Crepe): HighlightColor[] => ([null, 'green', 'blue', 'pink'] as HighlightColor[]).filter((c) => lit(crepe, c))
 
 /** How many `highlight` marks the document carries in total (one per distinct run). */
 function highlightRuns(crepe: Crepe): number {
@@ -436,23 +439,43 @@ describe('coloured highlights (YAZ-1480)', () => {
     expect(md(crepe)).toBe('hello ==world==\n')
   })
 
-  it('selectionHighlightColor answers the one colour, or undefined for mixed / none', async () => {
+  it('a dot is lit when ANY of the selection carries its colour (🔒 D5) — at a caret, the colour it would type with', async () => {
     const { crepe } = await mount('==yellow== and <mark class="highlight-green">green</mark> and plain\n')
 
     selectText(crepe, 'yellow')
-    expect(currentColor(crepe)).toBe(null)
+    expect(litDots(crepe)).toEqual([null])
 
     selectText(crepe, 'green')
-    expect(currentColor(crepe)).toBe('green')
+    expect(litDots(crepe)).toEqual(['green'])
 
+    // A partly highlighted span still lights — the Bold rule — and a mixed one lights every colour present.
     selectAcross(crepe, 'green', 'plain')
-    expect(currentColor(crepe)).toBeUndefined()
+    expect(litDots(crepe)).toEqual(['green'])
+    selectAcross(crepe, 'yellow', 'plain')
+    expect(litDots(crepe)).toEqual([null, 'green'])
 
     selectText(crepe, 'plain')
-    expect(currentColor(crepe)).toBeUndefined()
+    expect(litDots(crepe)).toEqual([])
 
     caretIn(crepe, 'green')
-    expect(currentColor(crepe)).toBe('green')
+    expect(litDots(crepe)).toEqual(['green'])
+  })
+
+  it('a lit colour is REMOVED from a partly highlighted selection, never extended; an unlit one replaces every colour (🔒 D5)', async () => {
+    const { crepe } = await mount('==yellow== and <mark class="highlight-green">green</mark> and plain\n')
+
+    selectAcross(crepe, 'yellow', 'plain')
+    setHighlight(crepe, null)
+    expect(md(crepe)).toBe('yellow and <mark class="highlight-green">green</mark> and plain\n')
+
+    selectAcross(crepe, 'yellow', 'plain')
+    setHighlight(crepe, 'green')
+    expect(md(crepe)).toBe('yellow and green and plain\n')
+
+    selectAcross(crepe, 'yellow', 'plain')
+    setHighlight(crepe, 'blue')
+    expect(md(crepe)).toBe('<mark class="highlight-blue">yellow and green and plain</mark>\n')
+    expect(highlightRuns(crepe)).toBe(1)
   })
 
   it('pasted coloured <mark> HTML keeps its colour', async () => {

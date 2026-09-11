@@ -117,7 +117,7 @@ import {
   stripEmptyTaskBreaks,
 } from './listItemRoundTrip'
 import { underline } from './marks/underline'
-import { highlight, highlightSchema, selectionHighlightColor, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
+import { highlight, highlightSchema, rangeHasHighlight, setHighlightCommand, HIGHLIGHT_COLORS, type HighlightColor } from './marks/highlight'
 import { inlineBreaks } from './inlineBreaks'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
@@ -196,8 +196,9 @@ const swatchIcon = (color: HighlightColor): string =>
  *
  * The four highlight swatches (YAZ-1480 — yellow, green, blue, pink) join Crepe's OWN Formatting
  * group right after Strikethrough: `getGroup('formatting')` reaches it because `buildToolbar`
- * runs AFTER Crepe has added that group. One click is always one step — the lit dot removes the
- * highlight, another dot switches its colour — through the mark's single command, which
+ * runs AFTER Crepe has added that group. Bold's toggle semantics (🔒 D5): a dot is lit when ANY of
+ * the selection carries its colour, so a partly highlighted line still shows it; clicking a lit dot
+ * removes that colour, an unlit one applies it — through the mark's single command, which
  * `Mod-Shift-h` (yellow) and the `==x==` typing rule share. Yellow is the Markdown `==…==` on
  * disk; a colour is `<mark class="highlight-<name>">`.
  *
@@ -213,7 +214,7 @@ function buildToolbar(builder: ToolbarBuilder): void {
       icon: swatchIcon(color),
       label: color === null ? 'Highlight' : `Highlight ${color}`,
       ...(color === null ? { shortcut: '⌘⇧H' } : {}),
-      active: (ctx) => selectionHighlightColor(ctx.get(editorViewCtx).state, highlightSchema.type(ctx)) === color,
+      active: (ctx) => rangeHasHighlight(ctx.get(editorViewCtx).state, highlightSchema.type(ctx), color),
       onRun: (ctx) => ctx.get(commandsCtx).call(setHighlightCommand.key, color),
     })
   }

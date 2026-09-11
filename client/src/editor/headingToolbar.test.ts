@@ -45,8 +45,8 @@ afterEach(async () => {
 /** Let the toolbar's own update tick land (it renders off the view update, not synchronously). */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 60))
 
-/** Select a run of text by its content — the toolbar only shows for a non-empty selection. */
-async function select(view: EditorView, text: string): Promise<void> {
+/** Start of `text` inside a single text node. */
+function find(view: EditorView, text: string): number {
   let from = -1
   view.state.doc.descendants((node, pos) => {
     if (from >= 0) return false
@@ -55,9 +55,16 @@ async function select(view: EditorView, text: string): Promise<void> {
     return from < 0
   })
   if (from < 0) throw new Error(`text not found: ${text}`)
-  view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, from + text.length)))
+  return from
+}
+
+/** Select from the start of `start` to the end of `end` — the toolbar only shows for a non-empty selection. */
+async function selectSpan(view: EditorView, start: string, end: string): Promise<void> {
+  view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, find(view, start), find(view, end) + end.length)))
   await settle()
 }
+
+const select = (view: EditorView, text: string) => selectSpan(view, text, text)
 
 function item(key: string): HTMLElement | null {
   return document.querySelector<HTMLElement>(`.milkdown-toolbar [data-toolbar-item="${key}"]`)
@@ -186,8 +193,9 @@ describe('Heading toolbar group (YAZ-923)', () => {
 /**
  * The Highlight swatches (YAZ-1480): unlike the Heading group they do NOT get a group of their
  * own — they are added into Crepe's OWN Formatting group, so they land beside
- * Bold/Italic/Strikethrough instead of at the far end of the strip. One click is one step, and
- * the lit dot is the selection's own colour.
+ * Bold/Italic/Strikethrough instead of at the far end of the strip. A dot lights when ANY of the
+ * selection carries its colour (🔒 D5, Bold's rule), so a partly highlighted line still shows it
+ * and the press then removes.
  */
 describe('highlight swatches (YAZ-1480)', () => {
   it('four dots join Crepe\'s Formatting group, in order, after Strikethrough and before Inline code', async () => {
@@ -222,16 +230,22 @@ describe('highlight swatches (YAZ-1480)', () => {
     expect(getMarkdownForSave(crepe)).toBe('hello world\n')
   })
 
-  it('exactly one dot lights: the colour of the run the selection is in', async () => {
-    const { view } = await mount('==yellow== and <mark class="highlight-green">green</mark> and plain\n')
+  it('every colour present in the selection lights its dot — a partly highlighted line included — and the press removes it', async () => {
+    const { crepe, view } = await mount('==yellow== and <mark class="highlight-green">green</mark> and plain\n')
+    const litDots = () => SWATCHES.filter((key) => must(key).classList.contains('active'))
 
     await select(view, 'green')
-    expect(SWATCHES.filter((key) => must(key).classList.contains('active'))).toEqual(['highlight-green'])
+    expect(litDots()).toEqual(['highlight-green'])
 
     await select(view, 'yellow')
-    expect(SWATCHES.filter((key) => must(key).classList.contains('active'))).toEqual(['highlight'])
+    expect(litDots()).toEqual(['highlight'])
 
     await select(view, 'plain')
-    expect(SWATCHES.filter((key) => must(key).classList.contains('active'))).toEqual([])
+    expect(litDots()).toEqual([])
+
+    await selectSpan(view, 'yellow', 'plain')
+    expect(litDots()).toEqual(['highlight', 'highlight-green'])
+    await press('highlight')
+    expect(getMarkdownForSave(crepe)).toBe('yellow and <mark class="highlight-green">green</mark> and plain\n')
   })
 })

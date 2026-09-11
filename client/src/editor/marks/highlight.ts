@@ -19,8 +19,9 @@
  *  2. `highlightSchema` ($markSchema): `<mark>` / `<mark class="highlight-<name>">` in the DOM,
  *     `highlight` mdast node carrying `color`.
  *  3. `setHighlightCommand` ($command, payload = the colour) shared by the toolbar's four
- *     swatches (createCrepe.ts) and the `Mod-Shift-h` shortcut. One click is always one step:
- *     the lit colour removes, another colour switches.
+ *     swatches (createCrepe.ts) and the `Mod-Shift-h` shortcut. Bold's toggle semantics (🔒 D5):
+ *     a dot is lit when ANY of the selection carries its colour, a lit colour is removed from the
+ *     selection, an unlit one applied (replacing any other colour).
  *  4. `highlightInputRule` (typing `==x==` converts like `**x**`) — yellow only; colours are
  *     click-only.
  */
@@ -223,40 +224,22 @@ export const highlightSchema = $markSchema('highlight', () => ({
 }))
 
 /**
- * The colour every selected character carries (one highlight, one colour), `undefined` when mixed
- * or none. Caret: stored marks, else the marks at the caret.
+ * Whether ANY of the selection carries a highlight of exactly this colour — Bold's toggle
+ * semantics (🔒 D5): a partly highlighted line still lights the dot, and the click then removes.
+ * At a caret: the marks it would type with.
  */
-export const selectionHighlightColor = (state: EditorState, type: MarkType): HighlightColor | undefined => {
+export const rangeHasHighlight = (state: EditorState, type: MarkType, color: HighlightColor): boolean => {
   const { empty, $from, from, to } = state.selection
-  if (empty) {
-    const mark = type.isInSet(state.storedMarks ?? $from.marks())
-    return mark === undefined ? undefined : ((mark.attrs.color ?? null) as HighlightColor)
-  }
-  let color: HighlightColor | undefined
-  let seen = false
-  let mixed = false
-  state.doc.nodesBetween(from, to, (node) => {
-    if (mixed) return false
-    if (!node.isText) return true
-    const mark = type.isInSet(node.marks)
-    const next = mark === undefined ? undefined : ((mark.attrs.color ?? null) as HighlightColor)
-    if (!seen) {
-      color = next
-      seen = true
-    } else if (next !== color) mixed = true
-    return !mixed
-  })
-  return mixed || !seen ? undefined : color
+  const mark = type.create({ color })
+  return empty ? mark.isInSet(state.storedMarks ?? $from.marks()) : state.doc.rangeHasMark(from, to, mark)
 }
 
-/** One click, one step: the lit colour removes the mark, another colour switches it. */
+/** One click, one step: a lit colour is removed from the selection, an unlit one applied (addMark replaces any other colour). */
 const setHighlight = (type: MarkType, color: HighlightColor): Command => (state, dispatch) => {
   const { from, to, empty } = state.selection
   if (empty) return toggleMark(type, { color })(state, dispatch)
-  const tr = state.tr
-  // addMark replaces a same-type mark, so switching colour is a single step.
-  if (selectionHighlightColor(state, type) === color) tr.removeMark(from, to, type)
-  else tr.addMark(from, to, type.create({ color }))
+  const mark = type.create({ color })
+  const tr = rangeHasHighlight(state, type, color) ? state.tr.removeMark(from, to, mark) : state.tr.addMark(from, to, mark)
   dispatch?.(tr.scrollIntoView())
   return true
 }
