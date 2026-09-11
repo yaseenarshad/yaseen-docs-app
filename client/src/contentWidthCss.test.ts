@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import appCss from './app.css?inline'
+import commentsCss from './comments/comments.css?inline'
 import backlinksCss from './links/backlinks.css?inline'
 import folderPageCss from './views/folderPageContents.css?inline'
 
@@ -19,6 +20,7 @@ describe('content-width CSS contract (YAZ-1176)', () => {
     expect(maxWidthFor(appCss, '.page-header')).toBe('var(--content-max-width)')
     expect(maxWidthFor(appCss, '.editor-instance')).toBe('var(--content-max-width)')
     expect(maxWidthFor(folderPageCss, '.folder-page-contents')).toBe('var(--content-max-width)')
+    expect(maxWidthFor(commentsCss, '.comments')).toBe('var(--content-max-width)')
     expect(maxWidthFor(backlinksCss, '.backlinks')).toBe('var(--content-max-width)')
   })
 })

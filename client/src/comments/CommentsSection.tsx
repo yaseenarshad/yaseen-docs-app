@@ -1,0 +1,477 @@
+/**
+ * The comment stream (YAZ-1472) — a Linear-style block of the note's own, INSIDE the editor's
+ * scroller after the folder page's contents and before "Linked mentions" (🔒 D4). Always
+ * rendered, unlike the backlinks: the composer is the door to the first comment. Storage is the
+ * note's frontmatter (`shared/comments.ts`, 🔒 D1), so this block is a VIEW over the same disk
+ * truth the properties panel reads — `file.content` is CrepeHost's `disk` — with no watcher of
+ * its own.
+ *
+ * Writes (🔒 D8): every mutation is one `transformFile(path, fresh => …)` — the change applies to
+ * the FRESH bytes, lands with `expectedMtime`, retries once on conflict — and the block adopts
+ * exactly the bytes that landed. The watcher then echoes the write back through the Editor's
+ * `absorbFrontmatterOnly` → `setDisk`, which the snapshot below recognises as the same content.
+ *
+ * Shapes (`commentsShape`): a note whose `comments` is a value of the user's own, or whose block
+ * does not parse, gets the header and one line saying why — no composer, nothing overwritten.
+ * Threads are one level deep; an orphaned reply shows at top level (`threadsOf`).
+ *
+ * Linear's thread, the outliner's folding: one card per thread — the parent, an "N replies" fold,
+ * the replies one level in, and a "Reply…" row at the bottom that opens on focus. Every comment
+ * folds to one line like a bullet (its title, else its first line); Expand all / Collapse all sit
+ * on the header. A comment with no replies yet offers Reply on hover instead. Who wrote a comment
+ * is whatever the writer declared in `by` (the app declares nothing for you); a declared writer
+ * takes the agent colour.
+ *
+ * Fold state and the header's collapse are session chrome, never persisted — an open comment
+ * stream is not part of a note's identity (the backlinks' rule).
+ */
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  addComment,
+  commentsShape,
+  deleteComment,
+  editComment,
+  newCommentId,
+  nowIso,
+  readComments,
+  threadsOf,
+  type PageComment,
+} from '@shared/comments'
+import type { FileResponse } from '@shared/types'
+import { relativeTime } from '../lib/relativeTime'
+import { transformFile } from '../views/writeProperty'
+import { commentHtml, commentSummary } from './markdown'
+import './comments.css'
+
+export interface CommentsSectionProps {
+  /** The open note as the Editor last saw it on disk — the block's truth until its own write moves it. */
+  file: Pick<FileResponse, 'path' | 'content' | 'mtime'>
+}
+
+interface Snapshot {
+  /** The `file.content` PROP this was last derived from — the re-derive trigger, and nothing else. */
+  seen: string
+  /** Whole-file bytes the block believes are on disk; its own writes move this AHEAD of `seen`. */
+  content: string
+}
+
+/** The one inline composer open besides the bottom one: a reply under a thread, or an edit in place of a body. */
+type Inline = { kind: 'reply'; to: string } | { kind: 'edit'; id: string } | null
+
+/** What a composer hands back: the text, and the optional one-line title. */
+interface Draft {
+  body: string
+  title: string
+}
+
+const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
+
+const NOTICE = {
+  foreign: "This note's comments property isn't a comment list, so nothing can be added here.",
+  invalid: "The properties block doesn't parse. Fix it in Properties to comment here.",
+} as const
+
+const declaredBy = (comment: PageComment): string | null =>
+  typeof comment.by === 'string' && comment.by.trim() !== '' ? comment.by.trim() : null
+
+const titleOf = (comment: PageComment): string | null =>
+  typeof comment.title === 'string' && comment.title.trim() !== '' ? comment.title.trim() : null
+
+const Chevron = () => (
+  <svg className="comments__chevron" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="m4 6 4 4 4-4" />
+  </svg>
+)
+
+const toggled = (set: ReadonlySet<string>, id: string): Set<string> => {
+  const next = new Set(set)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  return next
+}
+
+export function CommentsSection({ file }: CommentsSectionProps) {
+  const [snap, setSnap] = useState<Snapshot>(() => ({ seen: file.content, content: file.content }))
+  // The file moved under us (a reload, a property write, our own write echoed back): follow it.
+  if (snap.seen !== file.content) setSnap({ seen: file.content, content: file.content })
+
+  const [expanded, setExpanded] = useState(true)
+  /** Comment ids folded to one line, and parent ids whose replies are hidden — the bullet's fold, twice. */
+  const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set())
+  const [repliesFolded, setRepliesFolded] = useState<ReadonlySet<string>>(() => new Set())
+  const [inline, setInline] = useState<Inline>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const now = useClock()
+
+  const shape = commentsShape(snap.content)
+  const threads = threadsOf(readComments(snap.content))
+  const count = threads.reduce((n, t) => n + 1 + t.replies.length, 0)
+
+  // One fold-all control, the outliner's pair in one seat: while anything is open it collapses
+  // everything (comments and reply groups); once everything is folded it expands everything.
+  const everyId = threads.flatMap((t) => [t.comment.id, ...t.replies.map((r) => r.id)])
+  const everyThreaded = threads.filter((t) => t.replies.length > 0).map((t) => t.comment.id)
+  const allFolded = everyId.every((id) => folded.has(id)) && everyThreaded.every((id) => repliesFolded.has(id))
+  const foldAll = (): void => {
+    setFolded(allFolded ? new Set() : new Set(everyId))
+    setRepliesFolded(allFolded ? new Set() : new Set(everyThreaded))
+  }
+
+  /** ONE write, whole: fresh bytes in, landed bytes adopted. Never throws to React — the line under the composer says. */
+  const write = async (transform: (fresh: string) => string): Promise<boolean> => {
+    setSaving(true)
+    try {
+      const { content } = await transformFile(file.path, transform)
+      setSnap((s) => ({ seen: s.seen, content }))
+      setError(null)
+      return true
+    } catch (err) {
+      setError(`Could not save the comment: ${messageOf(err)}`)
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const add = (draft: Draft, replyTo?: string): Promise<boolean> =>
+    write((fresh) => addComment(fresh, draft.body, { id: newCommentId(), at: nowIso(), replyTo, title: draft.title }))
+
+  const closeInline = (): void => {
+    setInline(null)
+    setError(null)
+  }
+
+  const item = (comment: PageComment, onReply?: () => void) => (
+    <CommentItem
+      key={comment.id}
+      comment={comment}
+      now={now}
+      saving={saving}
+      folded={folded.has(comment.id)}
+      editing={inline?.kind === 'edit' && inline.id === comment.id}
+      onToggleFold={() => setFolded((s) => toggled(s, comment.id))}
+      onReply={onReply}
+      onEdit={() => {
+        setFolded((s) => (s.has(comment.id) ? toggled(s, comment.id) : s))
+        setInline({ kind: 'edit', id: comment.id })
+      }}
+      onDelete={() => void write((fresh) => deleteComment(fresh, comment.id))}
+      onSave={async (draft) => {
+        const ok = await write((fresh) => editComment(fresh, comment.id, draft.body, nowIso(), draft.title))
+        if (ok) closeInline()
+        return ok
+      }}
+      onCancel={closeInline}
+    />
+  )
+
+  return (
+    <section className="comments">
+      <div className="comments__bar">
+        <button type="button" className="comments__header" aria-expanded={expanded} onClick={() => setExpanded((open) => !open)}>
+          <Chevron />
+          <span className="comments__title">
+            Comments
+            {count > 0 && <span className="comments__count"> ({count})</span>}
+          </span>
+        </button>
+        {expanded && count > 0 && (
+          <div className="comments__tools">
+            <button type="button" className="comments__tool" onClick={foldAll}>
+              <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                {allFolded ? <path d="m5 5.5 3-3 3 3M5 10.5l3 3 3-3" /> : <path d="m5 3 3 3 3-3M5 13l3-3 3 3" />}
+              </svg>
+              {allFolded ? 'Expand all' : 'Collapse all'}
+            </button>
+          </div>
+        )}
+      </div>
+      {expanded && (
+        <>
+          {shape === 'foreign' || shape === 'invalid' ? (
+            <p className="comments__notice">{NOTICE[shape]}</p>
+          ) : (
+            <>
+              {threads.length > 0 && (
+                <div className="comments__list">
+                  {threads.map(({ comment, replies }) => {
+                    const opened = inline?.kind === 'reply' && inline.to === comment.id
+                    const threaded = replies.length > 0
+                    const hidden = repliesFolded.has(comment.id)
+                    return (
+                      <div key={comment.id} className="comments__thread">
+                        {/* A thread already has its reply field; a lone comment offers Reply on hover. */}
+                        {item(comment, threaded ? undefined : () => setInline({ kind: 'reply', to: comment.id }))}
+                        {threaded && (
+                          <button type="button" className="comments__replies-toggle" aria-expanded={!hidden} onClick={() => setRepliesFolded((s) => toggled(s, comment.id))}>
+                            <Chevron />
+                            {replies.length} {replies.length === 1 ? 'reply' : 'replies'}
+                          </button>
+                        )}
+                        {threaded && !hidden && (
+                          <div className="comments__replies">
+                            {replies.map((reply) => item(reply))}
+                            <Composer placeholder="Reply…" submitLabel="Reply" saving={saving} collapsible onSubmit={(draft) => add(draft, comment.id)} />
+                          </div>
+                        )}
+                        {!threaded && opened && (
+                          <div className="comments__replies">
+                            <Composer
+                              placeholder="Reply…"
+                              submitLabel="Reply"
+                              saving={saving}
+                              autoFocus
+                              onSubmit={async (draft) => {
+                                const ok = await add(draft, comment.id)
+                                if (ok) closeInline()
+                                return ok
+                              }}
+                              onCancel={closeInline}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              <Composer placeholder="Leave a comment…" submitLabel="Comment" saving={saving} onSubmit={(draft) => add(draft)} />
+            </>
+          )}
+          {error !== null && (
+            <p className="comments__error" role="alert">
+              {error}
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+/** Wall-clock for the relative stamps: a minute's resolution is all "just now" → "1 minute ago" needs. */
+function useClock(): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
+  return now
+}
+
+/** A stamp that will not parse is shown as written rather than as "just now". */
+const parsed = (iso: string): number | null => {
+  const t = Date.parse(iso)
+  return Number.isNaN(t) ? null : t
+}
+
+function CommentItem({
+  comment,
+  now,
+  saving,
+  folded,
+  editing,
+  onToggleFold,
+  onReply,
+  onEdit,
+  onDelete,
+  onSave,
+  onCancel,
+}: {
+  comment: PageComment
+  now: number
+  saving: boolean
+  folded: boolean
+  editing: boolean
+  onToggleFold: () => void
+  /** Only on a top-level comment with no replies yet: a thread carries its own reply field. */
+  onReply?: () => void
+  onEdit: () => void
+  onDelete: () => void
+  onSave: (draft: Draft) => Promise<boolean>
+  onCancel: () => void
+}) {
+  const at = parsed(comment.at)
+  const edited = comment.edited === undefined ? null : parsed(comment.edited)
+  const by = declaredBy(comment)
+  const title = titleOf(comment)
+  const closed = folded && !editing
+  return (
+    <article className={`comments__item${by === null ? '' : ' comments__item--agent'}`}>
+      <div className="comments__meta">
+        <button type="button" className="comments__fold" aria-expanded={!closed} aria-label={closed ? 'Expand comment' : 'Collapse comment'} onClick={onToggleFold}>
+          <Chevron />
+        </button>
+        <span className="comments__mark" aria-hidden>
+          {by === null ? (
+            <svg width={12} height={12} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 3.5h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7.5L4.5 14v-2.5H3a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" />
+            </svg>
+          ) : (
+            <svg width={12} height={12} viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 1.5l1.7 4.8L14.5 8l-4.8 1.7L8 14.5 6.3 9.7 1.5 8l4.8-1.7z" />
+            </svg>
+          )}
+        </span>
+        {/* The title keeps its seat whether folded or not; a title-less comment shows its first line only while folded. */}
+        {title !== null ? (
+          <span className="comments__summary comments__summary--title">{title}</span>
+        ) : (
+          closed && <span className="comments__summary">{commentSummary(comment.body)}</span>
+        )}
+        <time className="comments__when" dateTime={comment.at} title={at === null ? comment.at : new Date(at).toLocaleString()}>
+          {at === null ? comment.at : relativeTime(at, now)}
+        </time>
+        {comment.edited !== undefined && (
+          <span className="comments__edited" title={edited === null ? comment.edited : `Edited ${new Date(edited).toLocaleString()}`}>
+            (edited)
+          </span>
+        )}
+        {/* The writer, as declared in `by`, in the same quiet voice as "(edited)" — the dot's colour already says it. */}
+        {by !== null && <span className="comments__by">({by})</span>}
+        <div className="comments__actions">
+          {onReply !== undefined && (
+            <button type="button" className="comments__action" onClick={onReply}>
+              Reply
+            </button>
+          )}
+          <button type="button" className="comments__action" onClick={onEdit}>
+            Edit
+          </button>
+          <button type="button" className="comments__action comments__action--danger" disabled={saving} onClick={onDelete}>
+            Delete
+          </button>
+        </div>
+      </div>
+      {editing ? (
+        <Composer initial={{ body: comment.body, title: title ?? '' }} placeholder="Edit…" submitLabel="Save" saving={saving} autoFocus onSubmit={onSave} onCancel={onCancel} />
+      ) : (
+        // Sanitised HTML from `commentHtml`: Markdown in, document markup out, nothing that can run.
+        !closed && <div className="comments__body" dangerouslySetInnerHTML={{ __html: commentHtml(comment.body) }} />
+      )}
+    </article>
+  )
+}
+
+/**
+ * The one composer, three seats: the bottom of the block, the bottom of a thread card (Reply),
+ * in place of a body (Edit). ⌘Enter submits, Esc cancels — or clears the draft when there is
+ * nothing to cancel. The textarea grows with its text and keeps focus across a submit. The
+ * optional title line appears once the composer is in use (focused, or holding text). A
+ * `collapsible` seat shows one placeholder line until then — Linear's "Reply…" row — and folds
+ * back when it is empty and loses focus.
+ */
+function Composer({
+  placeholder,
+  submitLabel,
+  initial = { body: '', title: '' },
+  saving,
+  autoFocus = false,
+  collapsible = false,
+  onSubmit,
+  onCancel,
+}: {
+  placeholder: string
+  submitLabel: string
+  initial?: Draft
+  saving: boolean
+  autoFocus?: boolean
+  collapsible?: boolean
+  /** Resolves true when the text landed; the composer then clears (a seat that closes unmounts it anyway). */
+  onSubmit: (draft: Draft) => Promise<boolean>
+  /** Esc and the Cancel button; absent → Esc clears the draft and there is no Cancel. */
+  onCancel?: () => void
+}) {
+  const [text, setText] = useState(initial.body)
+  const [title, setTitle] = useState(initial.title)
+  const [focused, setFocused] = useState(autoFocus)
+  const ref = useRef<HTMLTextAreaElement>(null)
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (el === null) return
+    el.style.height = 'auto'
+    // `scrollHeight` is content + padding; the app's border-box sizing needs the border added back.
+    el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`
+  }, [text])
+
+  const holding = text.trim() !== '' || title.trim() !== ''
+  const ready = text.trim() !== '' && !saving
+  // In use: focused anywhere inside, or holding text — a collapsible seat is one line otherwise.
+  const active = focused || holding
+  const open = !collapsible || active
+
+  const submit = async (): Promise<void> => {
+    if (!ready) return
+    if (await onSubmit({ body: text, title })) {
+      setText('')
+      setTitle('')
+      ref.current?.focus()
+    }
+  }
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLElement>): void => {
+    if (e.key === 'Enter' && e.metaKey) {
+      e.preventDefault()
+      void submit()
+    } else if (e.key === 'Escape') {
+      // The textarea owns Esc while focused, the properties panel's way: nothing else in the window hears it.
+      e.preventDefault()
+      e.stopPropagation()
+      if (onCancel !== undefined) onCancel()
+      else {
+        setText('')
+        setTitle('')
+        if (collapsible) (e.currentTarget as HTMLElement).blur()
+      }
+    }
+  }
+
+  return (
+    <div
+      className={`comments__composer${open ? '' : ' comments__composer--collapsed'}`}
+      onFocus={() => setFocused(true)}
+      onBlur={(e) => {
+        // Focus moving to a button inside is still "in use": the click must land before anything folds.
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false)
+      }}
+    >
+      {active && (
+        <input
+          type="text"
+          className="comments__title-input"
+          placeholder="Title (optional)"
+          aria-label="Title (optional)"
+          value={title}
+          onChange={(e) => setTitle(e.currentTarget.value)}
+          onKeyDown={onKeyDown}
+        />
+      )}
+      <textarea
+        ref={ref}
+        className="comments__textarea"
+        rows={1}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        value={text}
+        autoFocus={autoFocus}
+        onChange={(e) => setText(e.currentTarget.value)}
+        onKeyDown={onKeyDown}
+      />
+      {open && (
+        <div className="comments__footer">
+          <span className="comments__hint">⌘ Enter</span>
+          {onCancel !== undefined && (
+            <button type="button" className="btn comments__btn" disabled={saving} onClick={onCancel}>
+              Cancel
+            </button>
+          )}
+          <button type="button" className="btn btn--primary comments__btn" disabled={!ready} onClick={() => void submit()}>
+            {submitLabel}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
