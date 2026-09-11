@@ -50,9 +50,24 @@ Lists behave like an outliner (Obsidian / Logseq), see `docs/CONTRACTS.md` "Edit
 - **Bullet markers**: `-`, `*` and `+` are the same bullet — bullets at the same indent are siblings whatever marker each uses (unified on load; saved as `*` like before).
 - **Guide lines**: nested lists draw a vertical line under their parent's glyph; clicking a line collapses the parent bullets directly alongside it or fully expands every parent below them, never the line's owner (caret stays put).
 - **Drag**: the 6-dot handle moves a block; with several blocks highlighted, grabbing a handle inside the highlight moves them all together (drop position controls nesting depth). Over a guide line or a fold chevron the handle yields, so those clicks always land.
-- **Look**: ● ○ ■ bullet glyphs by depth and Obsidian's default typography (system font, 16px, Obsidian heading scale). Content width is Narrow (1040px), Medium (1440px), or Full (fluid); the page header, editor, folder-page contents, and backlinks stay aligned to that one global setting. Width, line spacing, and the gap between blocks are adjustable from the settings cog (bottom-left); stored in the app state file (every window follows a change live), never in the files. The keyboard button next to the cog lists every hotkey.
+- **Look**: ● ○ ■ bullet glyphs by depth and Obsidian's default typography (system font, 16px, Obsidian heading scale). Content width is Narrow (1040px), Medium (1440px), or Full (fluid); the page header, editor, folder-page contents, comments, and backlinks stay aligned to that one global setting. Width, line spacing, and the gap between blocks are adjustable from the settings cog (bottom-left); stored in the app state file (every window follows a change live), never in the files. The keyboard button next to the cog lists every hotkey.
 - **Spelling**: misspellings get the OS squiggle; right-click for suggestions, "Add to Dictionary", and cut/copy/paste.
 - **Round-trip**: the first real edit rewrites the file in remark's normalised form (bullet markers, 2-space indent, …); empty items are written as a bare `*` / `* [ ]`. Typing without changes never writes.
+
+### Comments
+
+Every note carries a Linear-style comment stream under its body — after a folder page's contents, before "Linked mentions". It lives in the note's own frontmatter, under one `comments` key, so it travels with the file (sync, rename, Obsidian); no sidecar, nothing else is written. Threads are one level deep (a reply names its top-level parent in `reply_to`; a reply to a reply is filed under the root), a comment can carry an optional one-line title, every comment folds to one line like a bullet (its title, else its first line — Expand all / Collapse all on the header), and bodies are GitHub-flavoured Markdown, rendered read-only and sanitised. The Properties panel shows the key as Reserved, and it never enters the index or a view column. `⌘Enter` posts; there is no confirm on delete.
+
+For agents: when you leave a comment on a page, append to `comments:` in its frontmatter with `by: agent` (the app writes no `by` for the person at the keyboard):
+
+```yaml
+comments:
+  - id: 3f9a1c2e
+    at: 2026-09-11T18:22:31Z
+    by: agent
+    title: Numbers check
+    body: The Q3 figure in the second table is off by one row.
+```
 
 ## Sidebar and windows
 
