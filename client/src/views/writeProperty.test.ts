@@ -31,7 +31,7 @@ describe('writeProperty', () => {
     readFile.mockResolvedValue(file('---\nstatus: draft\n---\nBody\n', 100))
     writeFile.mockResolvedValue({ path: PATH, mtime: 200, size: 26 })
 
-    await expect(writeProperty(PATH, 'status', 'done')).resolves.toEqual({ mtime: 200 })
+    await expect(writeProperty(PATH, 'status', 'done')).resolves.toMatchObject({ mtime: 200 })
 
     expect(writeFile).toHaveBeenCalledTimes(1)
     expect(writeFile).toHaveBeenCalledWith({
@@ -44,7 +44,7 @@ describe('writeProperty', () => {
   it('skips the write when the value is already what is on disk', async () => {
     readFile.mockResolvedValue(file('---\nstatus: draft\n---\nBody\n', 100))
 
-    await expect(writeProperty(PATH, 'status', 'draft')).resolves.toEqual({ mtime: 100 })
+    await expect(writeProperty(PATH, 'status', 'draft')).resolves.toMatchObject({ mtime: 100 })
 
     expect(writeFile).not.toHaveBeenCalled()
   })
@@ -55,7 +55,7 @@ describe('writeProperty', () => {
       .mockResolvedValueOnce(file('---\nstatus: draft\ntags: [new]\n---\nBody\n', 150))
     writeFile.mockRejectedValueOnce(conflict(150)).mockResolvedValueOnce({ path: PATH, mtime: 300, size: 40 })
 
-    await expect(writeProperty(PATH, 'status', 'done')).resolves.toEqual({ mtime: 300 })
+    await expect(writeProperty(PATH, 'status', 'done')).resolves.toMatchObject({ mtime: 300 })
 
     expect(readFile).toHaveBeenCalledTimes(2)
     expect(writeFile).toHaveBeenCalledTimes(2)
@@ -104,7 +104,7 @@ describe('writeProperties', () => {
         { key: 'proc', value: 'Review' },
         { key: 'dept', value: 'Ops' },
       ]),
-    ).resolves.toEqual({ mtime: 200 })
+    ).resolves.toMatchObject({ mtime: 200 })
 
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({
       path: PATH,
@@ -119,7 +119,7 @@ describe('writePropertyIfMissing (YAZ-999)', () => {
     readFile.mockResolvedValue(file('---\nstatus: draft\n---\nBody\n', 100))
     writeFile.mockResolvedValue({ path: PATH, mtime: 200, size: 38 })
 
-    await expect(writePropertyIfMissing(PATH, 'score', null)).resolves.toEqual({ mtime: 200 })
+    await expect(writePropertyIfMissing(PATH, 'score', null)).resolves.toMatchObject({ mtime: 200 })
 
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({
       path: PATH,
@@ -138,7 +138,7 @@ describe('writePropertyIfMissing (YAZ-999)', () => {
   ])('preserves a present %s value instead of replacing it', async (_label, yaml) => {
     readFile.mockResolvedValue(file(`---\n${yaml}\n---\nBody\n`, 100))
 
-    await expect(writePropertyIfMissing(PATH, 'score', 42)).resolves.toEqual({ mtime: 100 })
+    await expect(writePropertyIfMissing(PATH, 'score', 42)).resolves.toMatchObject({ mtime: 100 })
 
     expect(writeFile).not.toHaveBeenCalled()
   })
@@ -149,7 +149,7 @@ describe('writePropertyIfMissing (YAZ-999)', () => {
       .mockResolvedValueOnce(file('---\nstatus: draft\nscore: 9\n---\nBody\n', 150))
     writeFile.mockRejectedValueOnce(conflict(150))
 
-    await expect(writePropertyIfMissing(PATH, 'score', null)).resolves.toEqual({ mtime: 150 })
+    await expect(writePropertyIfMissing(PATH, 'score', null)).resolves.toMatchObject({ mtime: 150 })
 
     expect(readFile).toHaveBeenCalledTimes(2)
     expect(writeFile).toHaveBeenCalledTimes(1)
@@ -171,7 +171,7 @@ describe('transformFile', () => {
       .mockResolvedValueOnce(file('concurrent', 150))
     writeFile.mockRejectedValueOnce(conflict(150)).mockResolvedValueOnce({ path: PATH, mtime: 300, size: 22 })
 
-    await expect(transformFile(PATH, (content) => `${content}-transformed`)).resolves.toEqual({ mtime: 300 })
+    await expect(transformFile(PATH, (content) => `${content}-transformed`)).resolves.toEqual({ mtime: 300, content: 'concurrent-transformed' })
 
     expect(writeFile).toHaveBeenCalledTimes(2)
     expect(writeFile).toHaveBeenLastCalledWith({
@@ -187,7 +187,7 @@ describe('transformFile', () => {
       .mockResolvedValueOnce(file('after', 150))
     writeFile.mockRejectedValueOnce(conflict(150))
 
-    await expect(transformFile(PATH, (content) => (content === 'before' ? 'after' : content))).resolves.toEqual({ mtime: 150 })
+    await expect(transformFile(PATH, (content) => (content === 'before' ? 'after' : content))).resolves.toEqual({ mtime: 150, content: 'after' })
 
     expect(writeFile).toHaveBeenCalledTimes(1)
   })

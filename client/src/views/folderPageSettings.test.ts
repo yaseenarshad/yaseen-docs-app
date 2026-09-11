@@ -371,7 +371,7 @@ describe('writeFolderPageSettings: ONE key, through the shared writer', () => {
     }
     const settings = folderPageSettings(rec(METRICS, { folder_page: true, folder_page_settings: raw }))
 
-    await expect(writeFolderPageSettings(METRICS, settings)).resolves.toEqual({ mtime: 200 })
+    await expect(writeFolderPageSettings(METRICS, settings)).resolves.toMatchObject({ mtime: 200 })
 
     expect(write).toHaveBeenCalledTimes(1)
     // The injected Board persists on the first write — the accepted YAZ-935 side-effect.

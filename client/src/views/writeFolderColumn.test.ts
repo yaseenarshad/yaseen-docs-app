@@ -25,7 +25,7 @@ beforeEach(() => {
 describe('writeFolderColumn', () => {
   it.each([undefined, null])('creates a definition when settings are %s without injecting view defaults', async settings => {
     read.mockResolvedValue(file(content(settings)))
-    await expect(writeFolderColumn(path, 'Status', base, undefined)).resolves.toEqual({ mtime: 200 })
+    await expect(writeFolderColumn(path, 'Status', base, undefined)).resolves.toMatchObject({ mtime: 200 })
     expect(settingsWritten()).toEqual({ columns: { Status: base } })
     expect(write.mock.lastCall![0].expectedMtime).toBe(100)
     expect(write.mock.lastCall![0].content).toContain('Body stays.\n')
@@ -84,7 +84,7 @@ describe('writeFolderColumn', () => {
     read.mockResolvedValueOnce(file('---\nbad: [\n---\nBody'))
     await expect(writeFolderColumn(path, 'Status', next, undefined)).rejects.toThrow()
     read.mockResolvedValueOnce(file(content({ columns: { Status: base } })))
-    await expect(writeFolderColumn(path, 'Status', base, base)).resolves.toEqual({ mtime: 100 })
+    await expect(writeFolderColumn(path, 'Status', base, base)).resolves.toMatchObject({ mtime: 100 })
     expect(write).not.toHaveBeenCalled()
   })
 
