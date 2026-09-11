@@ -20,6 +20,12 @@
  *  - Obsidian hotkeys (GRO-2027, `outline/hotkeys.ts` + `outline/foldAllHotkeys.ts`): Mod-Enter
  *    task cycle, Mod-Shift-u/i fold/unfold all bullets + headings, Mod-Shift-x strikethrough.
  *  - Underline mark (GRO-2028, `marks/underline.ts`): Mod-u ↔ `<u>text</u>` inline HTML.
+ *  - Highlight mark (YAZ-1480, `marks/highlight.ts`): ONE mark with an optional `color`. Yellow
+ *    (Mod-Shift-h / typing `==x==` / the first toolbar swatch) is Obsidian's `==text==` on disk —
+ *    a vendored micromark tokenizer (gfm-strikethrough's attention run, `=` and exactly two) plus
+ *    its stringify escape. Green/blue/pink are click-only and store inline HTML
+ *    `<mark class="highlight-<name>">`, read back through the shared `marks/htmlPairs.ts` walk.
+ *    Four toolbar swatches after Strikethrough; one click applies, re-clicking the lit one removes.
  *  - Inline breaks (YAZ-1452, `inlineBreaks.ts`): inline `<br>` ↔ hardbreak, registered BEFORE
  *    Milkdown's `remarkPreserveEmptyLinePlugin` (which otherwise deletes it); table cells save
  *    a hardbreak back as `<br>`, and Shift-Enter inside a cell always inserts one.
@@ -111,6 +117,7 @@ import {
   stripEmptyTaskBreaks,
 } from './listItemRoundTrip'
 import { underline } from './marks/underline'
+import { highlight } from './marks/highlight'
 import { inlineBreaks } from './inlineBreaks'
 import { multiBlockDrag } from './multiBlockDrag'
 import { outlinePaste } from './outlinePaste'
@@ -249,6 +256,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   )
   crepe.editor.use(listItemRoundTrip)
   crepe.editor.use(underline)
+  crepe.editor.use(highlight)
   // Milkdown's empty-line plugin deletes every inline <br> on parse (YAZ-1452). Ours must run
   // first; re-registering Milkdown's AFTER keeps its id resolvable so empty paragraphs still
   // serialise as `<br />`.

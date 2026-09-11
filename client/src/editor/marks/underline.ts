@@ -8,9 +8,10 @@
  *
  *  1. `underlineRemark` ($remark): after parsing, every `html("<u>")` … `html("</u>")` pair
  *     (nearest matching, any nesting depth) is wrapped into an mdast `underline` node with the
- *     in-between siblings as its children. Unmatched tags and all other inline HTML
- *     (`<span>`, `<br>`, …) are left alone and keep going through the `html` node. The same
- *     plugin registers the remark-stringify handler that writes `underline` back as
+ *     in-between siblings as its children — the shared `htmlPairs.ts` walk, which the coloured
+ *     half of `marks/highlight.ts` uses for `<mark class=…>` too. Unmatched tags and all other
+ *     inline HTML (`<span>`, `<br>`, …) are left alone and keep going through the `html` node.
+ *     The same plugin registers the remark-stringify handler that writes `underline` back as
  *     `<u>` + children + `</u>`.
  *  2. `underlineSchema` ($markSchema): `parseDOM` u / `text-decoration: underline`, `toDOM` u,
  *     `parseMarkdown` from / `toMarkdown` to the `underline` mdast node.
@@ -21,8 +22,9 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import { toggleMark } from '@milkdown/kit/prose/commands'
 import type { Command } from '@milkdown/kit/prose/state'
 import { $markSchema, $remark, $shortcut } from '@milkdown/kit/utils'
-import type { Parent, PhrasingContent, RootContent } from 'mdast'
+import type { Parent, PhrasingContent } from 'mdast'
 import type { Handle, Options as ToMarkdownOptions } from 'mdast-util-to-markdown'
+import { wrapHtmlPairs, type HtmlPairSpec } from './htmlPairs'
 
 /** mdast node for `<u>…</u>`; registered with mdast so remark-stringify's `Handlers` knows the type. */
 export interface Underline extends Parent {
@@ -42,38 +44,27 @@ declare module 'mdast' {
 const OPEN = '<u>'
 const CLOSE = '</u>'
 
-const isHtml = (node: RootContent, value: string): boolean => node.type === 'html' && node.value === value
-
-/** Index of the `</u>` matching the `<u>` at `open` (depth-aware), or -1. */
-const findClose = (children: RootContent[], open: number): number => {
-  let depth = 0
-  for (let i = open + 1; i < children.length; i++) {
-    if (isHtml(children[i], OPEN)) depth++
-    else if (isHtml(children[i], CLOSE)) {
-      if (depth === 0) return i
-      depth--
-    }
-  }
-  return -1
+const UNDERLINE_PAIRS: HtmlPairSpec<Record<string, never>> = {
+  open: (value) => (value === OPEN ? {} : null),
+  close: CLOSE,
+  make: (_attrs, children) => ({ type: 'underline', children }),
 }
 
 /**
- * Recursively wrap `<u>` … `</u>` html pairs into `underline` nodes. A directly nested pair
- * (`<u>a <u>b</u> c</u>`) is merged into its parent: one mark, since ProseMirror marks of the same
- * type do not nest and the inner close would otherwise end the outer mark early.
+ * A directly nested pair (`<u>a <u>b</u> c</u>`) is merged into its parent: one mark, since
+ * ProseMirror marks of the same type do not nest and the inner close would otherwise end the
+ * outer mark early. Runs inside-out, after `wrapHtmlPairs` has built the nodes.
  */
+const mergeNestedUnderlines = (node: Parent): void => {
+  for (const child of node.children) if ('children' in child) mergeNestedUnderlines(child)
+  if (node.type !== 'underline') return
+  const underline = node as Underline
+  underline.children = underline.children.flatMap((child) => (child.type === 'underline' ? child.children : [child]))
+}
+
 const wrapUnderlines = (node: Parent): void => {
-  for (const child of node.children) if ('children' in child) wrapUnderlines(child)
-  const children = node.children
-  for (let i = 0; i < children.length; i++) {
-    if (!isHtml(children[i], OPEN)) continue
-    const close = findClose(children, i)
-    if (close < 0) continue
-    const underline: Underline = { type: 'underline', children: children.slice(i + 1, close) as PhrasingContent[] }
-    wrapUnderlines(underline)
-    underline.children = underline.children.flatMap((child) => (child.type === 'underline' ? child.children : [child]))
-    children.splice(i, close - i + 1, underline)
-  }
+  wrapHtmlPairs(node, UNDERLINE_PAIRS)
+  mergeNestedUnderlines(node)
 }
 
 const underlineHandle: Handle = (node: Underline, _parent, state, info) =>
