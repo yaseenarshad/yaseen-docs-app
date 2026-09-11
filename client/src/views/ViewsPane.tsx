@@ -39,13 +39,16 @@ export interface FolderPageMode {
    * the card is called, and that typed name rides the optional argument.
    */
   create: (seed: NewNoteSeed, name?: string) => Promise<string>
+  /** Save one definition against the captured base; reject concurrent changes to that property. */
+  setColumn: (key: string, next: ColumnDecl, base: ColumnDecl | undefined) => Promise<unknown>
   /**
    * The declarations, back through the one door (YAZ-895) — ONE `folder_page_settings` write
    * (🔒 D3), failures in the host's own banner. `views` rides along so a caller can move the
-   * columns AND `view.order` in that same single write.
+   * columns AND `view.order` in that same single write. Passing none does NOT mean "leave the
+   * views alone": the host writes the LIVE def's `views` and `defaultView` either way, never the
+   * index snapshot it also holds, so a column write cannot clobber an edit the index has not
+   * echoed back yet (YAZ-1471 D4; YAZ-1234's two-gestures data loss).
    */
-  /** Save one definition against the captured base; reject concurrent changes to that property. */
-  setColumn: (key: string, next: ColumnDecl, base: ColumnDecl | undefined) => Promise<unknown>
   setColumns: (columns: Record<string, ColumnDecl>, views?: ViewDef[]) => void
   /** ⌘-click on a table row opens the page in a BACKGROUND tab (YAZ-820); absent → opens in place. */
   openBackground?: (path: string) => void
@@ -121,7 +124,9 @@ function seedGroupValue(properties: Record<string, unknown>, group: Group, key: 
  * whole `.obsidian/types.json` chain ⚡ YAZ-815 then deleted), `indexStatus` / `indexError` and the plain 5D
  * `createFromSeed` path all died here. Every one of them lost its production caller when YAZ-844
  * retired `.base`: the contents block is the ONLY mount, it hands over a snapshot already in hand
- * and it births through the declaration.
+ * and it births through the declaration. `readOnly` outlived itself by one wave as a HARDCODED
+ * `true` on `ViewTabs` — the editable half kept whole but unreachable — until 🔒 D0 (YAZ-1471)
+ * re-ruled 🔒 rule 4 and deleted the prop instead: the tab gestures below are live.
  */
 export function ViewsPane({ parsed, onChange, root, thisFile, records, properties = null, onOpenFile, folderPage }: ViewsPaneProps) {
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still

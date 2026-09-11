@@ -25,10 +25,12 @@ Ship YAZ-1471 "Views changes" to main: view tabs are editable again (drag to reo
   - [x] 2D- No-scrollbar strips (YAZ-1486) — 2 tests, whitespace re-indent
   - [x] 2- Build (YAZ-1482) complete: 3530 tests green
   - [x] 3- Prove it (YAZ-1487): 3530 green, typecheck ×3 exit 0, board.spec step 1 passed (steps 2-4 = pre-existing drift → 3A YAZ-1492), demo app up for Yasin
-- Now: [→] 4- Polish (YAZ-1488): reviewer running → accept/decline → fix → 4A contracts → 4B release
-- Next: 4A- Contracts (YAZ-1489)
+  - [x] 4- Polish (YAZ-1488): 20 findings triaged, 12 + 4C applied (3166075), 3535 tests
+  - [x] 4C- Collapse store follows rename/delete (YAZ-1493)
+- Now: [→] 4A- Contracts (YAZ-1489)
+- Next: 4B- Release (YAZ-1490)
 - Remaining:
-  - [ ] 4- Polish (YAZ-1488) → 4A Contracts (YAZ-1489) → 4B Release (YAZ-1490)
+  - [ ] 4B- Release (YAZ-1490)
 
 ## Open Questions
 - UNCONFIRMED: 09 broken entries dropped on first write — offered to Yasin in the 3- comment.

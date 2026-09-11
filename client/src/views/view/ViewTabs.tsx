@@ -35,7 +35,8 @@ interface DragState {
 
 /**
  * View switcher (GRO-2135), editable again since YAZ-1471 re-ruled 🔒 rule 4 (YAZ-819): tabs
- * reorder by HTML5 drag (TabBar's insertion-slot idiom, `dataTransfer` guarded for jsdom),
+ * reorder by HTML5 drag — the insertion-slot arithmetic is TabBar's, now SHARED with it as
+ * `lib/dragSlot` so the two strips cannot drift apart, with `dataTransfer` guarded for jsdom —
  * right-click opens Rename / Duplicate / Delete, "+" picks a type. Every change is ONE
  * `update` in ViewsPane; which view is active stays session state.
  */

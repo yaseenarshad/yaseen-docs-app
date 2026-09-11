@@ -193,7 +193,7 @@ describe('views: parseViews\'s own assertion, mirrored', () => {
     expect(settings.problems).toHaveLength(1)
   })
 
-  it('an empty list yields DEFAULT_VIEWS quietly — a folder page always has its two skins', () => {
+  it('an empty list yields DEFAULT_VIEWS quietly — a folder page always has its three skins', () => {
     const settings = settingsOf({ views: [] })
     expect(settings.views).toEqual(OUTLINE_TABLE_BOARD)
     expect(settings.problems).toEqual([])
