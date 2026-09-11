@@ -8,7 +8,7 @@ Ship YAZ-1473 to main as release 0.9.11: the note's Properties panel gets a `Col
 - No write path touched; typing never writes. No change to `ColumnSearch` or the views Properties menu.
 - Verification = unit tests + typecheck + build + Yasin's "go do this" pass. NO Playwright.
 - Worktree `/Users/yasin/.claude/worktrees/yaseen-milkdown/yaz-1473-properties-search`, branch `yaz-1473-properties-search`, base main `ff1d1e8`. Pin `cd $W &&` in every command; suites from the worktree ROOT.
-- Commits via /commit skill; merge via PR. Yasin tests the demo before push/merge this time.
+- Commits via /commit skill. Yasin (2026-09-11): no version bump, no PR — fast-forward merge to main, he rolls it into a bigger release later.
 
 ## Key Decisions
 - D1 reuse `ColumnSearch` · D2 shown whenever typed rows exist · D3 key-only `includes`, rows filter only, reset on collapse + Add, "No properties found."
@@ -16,12 +16,12 @@ Ship YAZ-1473 to main as release 0.9.11: the note's Properties panel gets a `Col
 ## State
 - Done:
   - [x] 1- Scope (YAZ-1474) — tree created, D1–D3 locked, live mockup approved
-- Now: [→] 2- Build (YAZ-1475) — diff applied (uncommitted), tests to write with stash-fail-pop evidence, CONTRACTS sentence
-- Next: 4- Polish (YAZ-1477): reviewer, gates, audit → 3- demo with edge cases for Yasin → 4A release/PR/merge
-- Remaining:
-  - [ ] 3- Prove it (YAZ-1476)
-  - [ ] 4- Polish and anti-slop (YAZ-1477)
-  - [ ] 4A- Release 0.9.11 (YAZ-1478)
+  - [x] 2- Build (YAZ-1475) — dab6b8f; 4 tests failed on main's source, 31/31 with the diff
+  - [x] 3- Prove it (YAZ-1476) — edge-case demo at ~/Desktop/yaz-1473-properties-search-demo, Yasin approved 2026-09-11
+  - [x] 4- Polish (YAZ-1477) — 🔒 audit, reviewer: +1 test pinning key-only matching, query resets on mode toggle too; padding kept as approved on screen
+  - [x] 4A- (YAZ-1478) — NO version bump per Yasin; merged straight to main, rolled into a later release
+- Now: COMPLETE — merged to main; worktree removed
+- Next: nothing
 
 ## Open Questions
 - none

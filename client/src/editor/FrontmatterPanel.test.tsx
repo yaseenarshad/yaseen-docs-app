@@ -704,6 +704,9 @@ describe('FrontmatterPanel — the property search (YAZ-1473)', () => {
     expect(header(el)?.textContent).toContain('(4)') // the count is the block's, not the match's
     setValue(search(el), 'ta')
     expect(keysOf(el)).toEqual(['tags'])
+    // Key only — `matchesColumn` would also match the canonical `note.` prefix and light up every row.
+    setValue(search(el), 'note')
+    expect(keysOf(el)).toEqual(['note'])
     expect(writeFile).not.toHaveBeenCalled()
   })
 
@@ -721,7 +724,7 @@ describe('FrontmatterPanel — the property search (YAZ-1473)', () => {
     expect(document.activeElement).toBe(search(el))
   })
 
-  it('collapsing and Add property both reset the query, so a row is never born hidden', () => {
+  it('collapsing, Add property and the mode toggle all reset the query, so a row is never born hidden', () => {
     const el = mount(TYPED)
     expand(el)
     setValue(search(el), 'sta')
@@ -736,6 +739,13 @@ describe('FrontmatterPanel — the property search (YAZ-1473)', () => {
     expect(search(el)?.value).toBe('')
     expect(rows(el)).toHaveLength(6)
     expect(byLabel(el, 'New property name')).not.toBeNull()
+
+    click(btn(el, 'Cancel'))
+    setValue(search(el), 'sta')
+    toRaw(el)
+    click(btn(el, 'Edit as rows'))
+    expect(search(el)?.value).toBe('')
+    expect(rows(el)).toHaveLength(6)
     expect(writeFile).not.toHaveBeenCalled()
   })
 })

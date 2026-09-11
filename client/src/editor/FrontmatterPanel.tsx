@@ -402,7 +402,7 @@ export function FrontmatterPanel({ file, properties: decls = null, wikilinks }: 
                 className="frontmatter-panel__btn frontmatter-panel__mode"
                 disabled={rawMode && dirty}
                 title={rawMode && dirty ? 'Save or cancel your YAML edits first' : undefined}
-                onClick={() => setYamlMode(!rawMode)}
+                onClick={() => { setYamlMode(!rawMode); setQuery('') }}
               >
                 {rawMode ? 'Edit as rows' : 'Edit as YAML'}
               </button>
