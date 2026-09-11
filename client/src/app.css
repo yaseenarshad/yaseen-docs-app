@@ -1293,6 +1293,34 @@ button {
   border-color: var(--danger);
 }
 
+/* ---------- scrolling strips (YAZ-1471) ---------- */
+
+/*
+ * A horizontal strip that scrolls with NO scrollbar — the window's tab strip and a folder page's
+ * view tabs, one utility between them: a scroll-driven fade marks whichever edge still hides
+ * items. The keyframes run on the strip's OWN inline scroll position, so a strip that does not
+ * overflow has no timeline and no mask applies. `scrollbar-width: none` is the whole hiding rule
+ * on Chromium >= 121, so there is no `::-webkit-scrollbar` here.
+ */
+@keyframes strip-fade {
+  0% {
+    mask-image: linear-gradient(to right, transparent 0, #000 0, #000 calc(100% - 28px), transparent 100%);
+  }
+  50% {
+    mask-image: linear-gradient(to right, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+  }
+  100% {
+    mask-image: linear-gradient(to right, transparent 0, #000 28px, #000 100%, transparent 100%);
+  }
+}
+
+.scroll-strip {
+  overflow-x: auto;
+  scrollbar-width: none;
+  animation: strip-fade linear both;
+  animation-timeline: scroll(self inline);
+}
+
 /* ---------- context menu + inline create (GRO-2022) ---------- */
 
 .ctx-overlay {

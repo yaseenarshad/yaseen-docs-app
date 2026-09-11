@@ -19,4 +19,6 @@ folder_page_settings:
       groupBy:
         - property: formula.function_top
         - property: note.function
+    - type: board
+      name: Board
 ---

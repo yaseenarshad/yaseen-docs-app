@@ -10,7 +10,7 @@ import { type ViewSet, type ViewDef, type ParsedViews, parseViews, serializeView
 import { type Group, type Row, propertyKeys, resolverFor, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
 import type { ColumnDecl, FolderPageSettings } from './folderPageSettings'
-import { type NewNoteSeed, deriveSeed } from './newNote'
+import { type NewNoteSeed, deriveSeed, freeName } from './newNote'
 import { writeProperties, writeProperty } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
@@ -21,6 +21,7 @@ import { ListView } from './view/ListView'
 import { OutlineView } from './view/OutlineView'
 import { TableView } from './view/TableView'
 import { Toolbar } from './view/Toolbar'
+import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 
 /**
  * Folder-page contents mode (🔒 D3, YAZ-819). ViewsPane stays ONE component: the folder-page host
@@ -38,19 +39,17 @@ export interface FolderPageMode {
    * the card is called, and that typed name rides the optional argument.
    */
   create: (seed: NewNoteSeed, name?: string) => Promise<string>
+  /** Save one definition against the captured base; reject concurrent changes to that property. */
+  setColumn: (key: string, next: ColumnDecl, base: ColumnDecl | undefined) => Promise<unknown>
   /**
    * The declarations, back through the one door (YAZ-895) — ONE `folder_page_settings` write
    * (🔒 D3), failures in the host's own banner. `views` rides along so a caller can move the
-   * columns AND `view.order` in that same single write.
+   * columns AND `view.order` in that same single write. Passing none does NOT mean "leave the
+   * views alone": the host writes the LIVE def's `views` and `defaultView` either way, never the
+   * index snapshot it also holds, so a column write cannot clobber an edit the index has not
+   * echoed back yet (YAZ-1471 D4; YAZ-1234's two-gestures data loss).
    */
-  /** Save one definition against the captured base; reject concurrent changes to that property. */
-  setColumn: (key: string, next: ColumnDecl, base: ColumnDecl | undefined) => Promise<unknown>
   setColumns: (columns: Record<string, ColumnDecl>, views?: ViewDef[]) => void
-  /**
-   * The saved START (YAZ-1104), through its OWN door — ONE `folder_page_settings` write on the
-   * host (🔒 D3), never a views write. `undefined` clears the key: back to the first view.
-   */
-  setDefaultView: (name: string | undefined) => void
   /** ⌘-click on a table row opens the page in a BACKGROUND tab (YAZ-820); absent → opens in place. */
   openBackground?: (path: string) => void
   /** Shared Table/Board action that opens the exact page in the window's right panel. */
@@ -92,8 +91,9 @@ export interface ViewsPaneProps {
   onOpenFile: (path: string) => void
   /**
    * The FOLDER PAGE's contents (🔒 D3, YAZ-819) — REQUIRED since YAZ-846: its rows are the
-   * members, its def is in memory, its views are switch-only (no view CRUD) and it offers no
-   * Filter menu, a folder page's set being the lookup itself (🔒 Q3, YAZ-815).
+   * members, its def is in memory, and its views are EDITABLE since YAZ-1471 re-ruled 🔒 rule 4
+   * — reorder / rename / duplicate / delete / "+", every gesture ONE `update` through this
+   * adapter's one door. A folder page's set IS the lookup itself (🔒 Q3, YAZ-815).
    */
   folderPage: FolderPageMode
 }
@@ -124,13 +124,16 @@ function seedGroupValue(properties: Record<string, unknown>, group: Group, key: 
  * whole `.obsidian/types.json` chain ⚡ YAZ-815 then deleted), `indexStatus` / `indexError` and the plain 5D
  * `createFromSeed` path all died here. Every one of them lost its production caller when YAZ-844
  * retired `.base`: the contents block is the ONLY mount, it hands over a snapshot already in hand
- * and it births through the declaration.
+ * and it births through the declaration. `readOnly` outlived itself by one wave as a HARDCODED
+ * `true` on `ViewTabs` — the editable half kept whole but unreachable — until 🔒 D0 (YAZ-1471)
+ * re-ruled 🔒 rule 4 and deleted the prop instead: the tab gestures below are live.
  */
 export function ViewsPane({ parsed, onChange, root, thisFile, records, properties = null, onOpenFile, folderPage }: ViewsPaneProps) {
-  // The START may persist (YAZ-1104); which view is ACTIVE stays session state — 🔒 rule 4 holds,
-  // switching still writes nothing. A stale (or absent) saved name is -1 here, so it clamps to the first.
+  // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
+  // writes nothing, and YAZ-1471 re-ruling 🔒 rule 4 (the tabs edit again) did not move that line:
+  // only the def is written. A stale (or absent) saved name is -1 here, so it clamps to the first.
   const [active, setActive] = useState(() =>
-    Math.max(0, parsed.def.views.findIndex((v) => v.name === folderPage.settings.defaultView)),
+    Math.max(0, parsed.def.views.findIndex((v) => v.name === parsed.def.defaultView)),
   )
   const [search, setSearch] = useState<string | null>(null)
   /** Collapsed group keys per view, seeded from the store; a toggle replaces the entry here AND writes through storage. */
@@ -219,6 +222,26 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
   const writeCollapsed = (next: readonly string[]) => {
     setCollapsedByKey((m) => ({ ...m, [collapseKey]: [...next] }))
     if (root !== null && groupsKey !== null) storage.setViewGroups(root, groupsKey, next)
+  }
+  /**
+   * The store is keyed by view NAME, and since YAZ-1471 a name changes in one gesture: a rename
+   * carries the entry to the new key and a delete drops it — else the renamed view springs open,
+   * the old key leaks, and a later view given the same name inherits a stranger's groups (YAZ-1493).
+   */
+  const moveCollapsed = (from: string, to: string | null) => {
+    if (thisFile === null) return // session-only keys go by INDEX and need no carrying
+    const fromKey = `${thisFile}::${from}`
+    const kept = collapsedByKey[fromKey] ?? (root !== null ? storage.getViewGroups(root, fromKey) : [])
+    const toKey = to === null || kept.length === 0 ? null : `${thisFile}::${to}`
+    setCollapsedByKey((m) => {
+      const next = { ...m }
+      delete next[fromKey]
+      if (toKey !== null) next[toKey] = kept
+      return next
+    })
+    if (root === null) return
+    storage.setViewGroups(root, fromKey, [])
+    if (toKey !== null) storage.setViewGroups(root, toKey, kept)
   }
   const onToggleGroup = (key: string) => {
     writeCollapsed(collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key])
@@ -320,10 +343,47 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
       the one flag between them lives here. Never persisted — the folder is asked every time (🔒 3). */
   const [syncing, setSyncing] = useState(false)
 
-  // A folder page's views are switch-only (🔒 rule 4, YAZ-819): which view is active is session
-  // state that never reaches the card, and view CRUD is not this block's gesture. The editable
-  // tab half was deleted with its last reachable surface (YAZ-846; parked on YAZ-824).
-  const tabs = { views, active: index, onSelect: setActive }
+  // View CRUD lives here since YAZ-1471 (re-ruling 🔒 rule 4, YAZ-819): every gesture is ONE
+  // `update` — the same door as sort and columns — and which view is ACTIVE stays session state.
+  const taken = () => new Set(views.map((v) => v.name))
+  const tabs: ViewTabsProps = {
+    views,
+    active: index,
+    onSelect: setActive,
+    onMove: (from, to) => {
+      update((d) => d.views.splice(to, 0, ...d.views.splice(from, 1)))
+      // The active view FOLLOWS its tab: replay the same move over the indices.
+      const order = views.map((_, i) => i)
+      order.splice(to, 0, ...order.splice(from, 1))
+      setActive(order.indexOf(index))
+    },
+    onAdd: (type) => {
+      update((d) => d.views.push({ type, name: freeName(viewTypeLabel(type), taken()) }))
+      setActive(views.length)
+    },
+    onRename: (i, name) => {
+      moveCollapsed(views[i].name, name)
+      update((d) => {
+        if (d.defaultView === d.views[i].name) d.defaultView = name // the saved START follows (D4)
+        d.views[i].name = name
+      })
+    },
+    onDuplicate: (i) => {
+      update((d) => d.views.splice(i + 1, 0, { ...structuredClone(d.views[i]), name: freeName(`${d.views[i].name} copy`, taken()) }))
+      setActive(i + 1)
+    },
+    onDelete: (i) => {
+      if (views.length <= 1) return
+      moveCollapsed(views[i].name, null)
+      update((d) => {
+        const [gone] = d.views.splice(i, 1)
+        if (d.defaultView === gone.name) delete d.defaultView // a deleted START clears itself (D4)
+      })
+      // The active view stays put unless it WAS the deleted one — then its right neighbour takes over
+      // (the left one when it was the last tab); a view before it in the list shifts one index down.
+      setActive(index === i ? Math.min(i, views.length - 2) : index > i ? index - 1 : index)
+    },
+  }
 
   return (
     <div className="views-pane">

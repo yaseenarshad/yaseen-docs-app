@@ -12,6 +12,8 @@ folder_page_settings:
         - "[[Roles]]"
     - type: table
       name: Table
+    - type: board
+      name: Board
 ---
 
 # Home

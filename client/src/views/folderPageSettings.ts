@@ -43,13 +43,22 @@ export interface FolderPageSettings {
    * the expression itself is never parsed here (a bad one is the engine's own reported cell error).
    */
   formulas?: Record<string, string>
-  /** Never empty: `DEFAULT_VIEWS` when the key declares none usable. `ViewDef` verbatim. */
+  /**
+   * Never empty: `DEFAULT_VIEWS` when the key declares none usable — but otherwise EXACTLY what
+   * the card lists, nothing added (🔒 D3, YAZ-1471). `ViewDef` verbatim.
+   */
   views: ViewDef[]
   /** Human one-liners a surface can show. Never thrown, never written back. */
   problems: string[]
 }
 
-/** 🔒 Q7 (YAZ-815, amended YAZ-935): a folder page always has its three skins, OUTLINE FIRST. */
+/**
+ * 🔒 Q7 (YAZ-815, amended YAZ-935): the three skins a card that lists NO usable views falls back
+ * to, OUTLINE FIRST. That is the whole reach of the rule — it never describes a card that lists
+ * some. YAZ-935's other half, the read-time injection that spliced a Board into any list missing
+ * one, is RETIRED (🔒 D3, YAZ-1471): with the tabs editable, a read that adds a view back is a
+ * Delete the user cannot make stick.
+ */
 export const DEFAULT_VIEWS: readonly ViewDef[] = [
   { type: 'outline', name: 'Outline' },
   { type: 'table', name: 'Table' },
@@ -100,7 +109,12 @@ function readColumns(raw: unknown, problems: string[]): Record<string, ColumnDec
   return columns
 }
 
-/** parseViews's view assertion (`views/viewSchema.ts`), mirrored — but a bad entry is dropped, never thrown. */
+/**
+ * parseViews's view assertion (`views/viewSchema.ts`), mirrored — but a bad entry is dropped,
+ * never thrown. It only ever drops: a usable list comes back as the card wrote it, in its order,
+ * with nothing spliced in. YAZ-935's Board injection lived HERE and was retired by 🔒 D3
+ * (YAZ-1471) — the card's `views` list is the truth now that a tab can delete one.
+ */
 function readViews(raw: unknown, problems: string[]): ViewDef[] {
   if (raw === undefined) return defaultViews()
   if (!Array.isArray(raw)) {
@@ -123,9 +137,6 @@ function readViews(raw: unknown, problems: string[]): ViewDef[] {
     views.push(view as ViewDef)
   })
   if (views.length === 0) return defaultViews()
-  // 🔒 YAZ-935: every folder page has a Board skin. Lists persisted before Board existed gain one
-  // at READ time — never a file backfill; a later config write may persist it, harmlessly.
-  if (!views.some((v) => v.type === 'board')) views.push({ type: 'board', name: 'Board' })
   return views
 }
 

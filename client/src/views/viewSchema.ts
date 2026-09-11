@@ -60,6 +60,8 @@ export interface ViewSet {
   properties?: Record<string, { displayName?: string; [extra: string]: unknown }>
   summaries?: Record<string, string>
   views: ViewDef[]
+  /** The saved START (YAZ-1104), a view NAME — in the def since YAZ-1471 so rename/delete keep it honest in the same write. */
+  defaultView?: string
   [extra: string]: unknown
 }
 

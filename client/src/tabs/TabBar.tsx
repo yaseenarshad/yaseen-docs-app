@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { api, BridgeRequestError } from '../api'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
+import { dropIndex, insertionSlot } from '../lib/dragSlot'
 import { basename, stripExt } from '../lib/paths'
 import { readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import './tabs.css'
@@ -84,17 +85,10 @@ export function TabBar({ tabs, active, onActivate, onClose, onMove, onDropPage, 
     }
   }, [externalOver])
 
-  /** The insertion slot a pointer at `clientX` over tab `i` means: before (i) or after (i+1) it. */
-  const insertionAt = (e: DragEvent, i: number): number => {
-    const r = e.currentTarget.getBoundingClientRect()
-    return e.clientX < r.left + r.width / 2 ? i : i + 1
-  }
-
   const drop = (insertion: number): void => {
     if (drag === null) return
     setDrag(null)
-    // The slot is an index in the WITH-dragged-tab list; past the grab point it shifts one left.
-    const to = insertion > drag.from ? insertion - 1 : insertion
+    const to = dropIndex(drag.from, insertion)
     if (to !== drag.from) onMove(drag.from, to)
   }
 
@@ -137,7 +131,7 @@ export function TabBar({ tabs, active, onActivate, onClose, onMove, onDropPage, 
         </button>
       </div>
       <div
-        className={`tabbar${externalOver === 0 && tabs.length === 0 ? ' tabbar--drop-empty' : ''}`}
+        className={`tabbar scroll-strip${externalOver === 0 && tabs.length === 0 ? ' tabbar--drop-empty' : ''}`}
         role="tablist"
         aria-label="Open files"
         onDragOver={(e) => {
@@ -191,7 +185,7 @@ export function TabBar({ tabs, active, onActivate, onClose, onMove, onDropPage, 
                 setExternalOver(null)
               }}
               onDragOver={(e) => {
-                const over = insertionAt(e, i)
+                const over = insertionSlot(e, i)
                 if (drag !== null) {
                   e.preventDefault()
                   if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
@@ -204,7 +198,7 @@ export function TabBar({ tabs, active, onActivate, onClose, onMove, onDropPage, 
                 if (externalOver !== over) setExternalOver(over)
               }}
               onDrop={(e) => {
-                const at = insertionAt(e, i)
+                const at = insertionSlot(e, i)
                 if (drag !== null) {
                   e.preventDefault()
                   drop(at)
