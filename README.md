@@ -32,9 +32,11 @@ produces `desktop/dist-app/mac-arm64/Yaseen Docs.app` and `desktop/dist-app/Yase
 
 ## Sharing it
 
-Every packaged version's `.dmg` is downloadable from the repo's [Releases page](https://github.com/yaseenarshad/yaseen-milkdown/releases) — no build toolchain needed on the installing machine (repo access required while the repo is private; otherwise send the dmg directly).
+Every packaged version is downloadable from the repo's [Releases page](https://github.com/yaseenarshad/yaseen-docs/releases) — the `.dmg` for a Mac (Apple Silicon), the `-win-x64-setup.exe` for Windows — no build toolchain needed on the installing machine.
 
-The app is ad-hoc signed, not notarized, so on someone else's Mac (macOS 15) the first open is blocked with "Apple could not verify…". Once: open **System Settings › Privacy & Security**, scroll to the blocked-app notice, click **Open Anyway**, and confirm. After that it opens normally.
+The Mac app is ad-hoc signed, not notarized, so on someone else's Mac (macOS 15) the first open is blocked with "Apple could not verify…". Once: open **System Settings › Privacy & Security**, scroll to the blocked-app notice, click **Open Anyway**, and confirm. After that it opens normally. The Windows installer is unsigned, so SmartScreen shows "Windows protected your PC" the first time: click **More info › Run anyway**, once.
+
+GitHub sync uses the computer's own git, found at a fixed set of locations rather than on `PATH` (`desktop/src/main/git/exec.ts`): on a Mac the Command Line Tools or Homebrew git, on Windows [Git for Windows](https://git-scm.com/download/win) (its installer bundles the Git Credential Manager, so a one-time GitHub sign-in sticks). Without one, the sync banner says so and offers a setup prompt to paste into an LLM.
 
 ## Editing
 

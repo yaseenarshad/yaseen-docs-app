@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { stat } from 'node:fs/promises'
+import path from 'node:path'
 
 /**
  * Git runner (YAZ-1081, 2A) — the one place this app starts a child process, and the documented
@@ -19,12 +20,47 @@ import { stat } from 'node:fs/promises'
  */
 
 /**
- * Where a Mac keeps git, in the order we prefer it: Apple's Command Line Tools shim, then
- * Homebrew (Apple Silicon prefix). Presence is not proof it WORKS — on a Mac without CLT
- * installed, `/usr/bin/git` still exists as a shim that pops the installer dialog and exits
- * non-zero. Callers that need certainty run `git --version` and treat a non-zero exit as "no git".
+ * Where each OS keeps git, in the order we prefer it. Still a fixed list of absolute paths per
+ * platform — never a `PATH` lookup — so the ruling above holds on Windows exactly as on a Mac.
+ *
+ *   - darwin: Apple's Command Line Tools shim, then Homebrew (Apple Silicon prefix). Presence is
+ *     not proof it WORKS — on a Mac without CLT installed, `/usr/bin/git` still exists as a shim
+ *     that pops the installer dialog and exits non-zero. Callers that need certainty run
+ *     `git --version` and treat a non-zero exit as "no git".
+ *   - win32: Git for Windows (git-scm.com), whose installer ships the Git Credential Manager, so a
+ *     GitHub sign-in survives the way the macOS keychain does. `cmd\git.exe` is the launcher
+ *     meant for callers outside its own shell; `bin\git.exe` is the fallback. Machine-wide
+ *     installs land under `%ProgramFiles%` (the 32-bit prefix is the legacy install location),
+ *     per-user installs under `%LOCALAPPDATA%\Programs`. The env vars are read at call time so
+ *     a test can pin them; a missing var simply contributes nothing.
+ *   - anything else (Linux): the distro package and the source-install prefix.
  */
-export const GIT_CANDIDATES = ['/usr/bin/git', '/opt/homebrew/bin/git'] as const
+export function gitCandidates(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env): readonly string[] {
+  if (platform === 'darwin') return ['/usr/bin/git', '/opt/homebrew/bin/git']
+  if (platform === 'win32') {
+    const out: string[] = []
+    const prefixes = [env.ProgramFiles, env['ProgramFiles(x86)'], env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Programs')]
+    for (const prefix of prefixes) {
+      if (prefix === undefined || prefix === '') continue
+      out.push(path.join(prefix, 'Git', 'cmd', 'git.exe'), path.join(prefix, 'Git', 'bin', 'git.exe'))
+    }
+    return out
+  }
+  return ['/usr/bin/git', '/usr/local/bin/git']
+}
+
+/** This machine's candidate list — the default for `resolveGit` and what the git tests require. */
+export const GIT_CANDIDATES: readonly string[] = gitCandidates()
+
+/**
+ * The one-line "how to get git" for the `no-git` attention message, per OS. The banner copy in
+ * the renderer stays platform-neutral; this is the concrete instruction it carries.
+ */
+export function installGitHint(platform: NodeJS.Platform = process.platform): string {
+  if (platform === 'darwin') return 'git is not installed — open Terminal and run `xcode-select --install`'
+  if (platform === 'win32') return 'git is not installed — install Git for Windows from https://git-scm.com/download/win, then reopen the app'
+  return 'git is not installed — install it with your package manager (e.g. `sudo apt install git`)'
+}
 
 export interface GitResult {
   code: number

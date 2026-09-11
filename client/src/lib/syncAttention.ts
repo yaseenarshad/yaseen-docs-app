@@ -8,7 +8,7 @@ import type { GithubSyncAttention, GithubSyncStatus } from '@shared/types'
  * testing: two of these five reasons are things the app cannot fix from inside itself (git
  * missing, credentials rejected), so the honest affordance is a prompt the user pastes into an
  * LLM that CAN drive their terminal — not a dead end, and not a wizard we would have to keep
- * correct against every future macOS/git/GitHub change.
+ * correct against every future macOS/Windows/git/GitHub change.
  */
 
 export interface AttentionCopy {
@@ -21,7 +21,7 @@ export interface AttentionCopy {
 /** Fixed copy per reason; `error` alone is dynamic, carrying the engine's own message. */
 const COPY: Record<GithubSyncAttention, Omit<AttentionCopy, 'body'> & { body: string | null }> = {
   'no-git': {
-    title: "Git isn't installed on this Mac.",
+    title: "Git isn't installed on this computer.",
     body: 'Copy the setup prompt into any LLM and it will walk you through installing it.',
     showSetupPrompt: true,
   },
@@ -31,7 +31,7 @@ const COPY: Record<GithubSyncAttention, Omit<AttentionCopy, 'body'> & { body: st
     showSetupPrompt: true,
   },
   auth: {
-    title: "GitHub didn't accept this Mac's credentials.",
+    title: "GitHub didn't accept this computer's credentials.",
     body: 'Copy the setup prompt into any LLM and it will walk you through signing in.',
     showSetupPrompt: true,
   },
@@ -63,18 +63,32 @@ export function attentionCopy(status: GithubSyncStatus): AttentionCopy | null {
 
 /** One short clause naming what went wrong, for the prompt's "It reported:" slot. */
 const REASON: Record<GithubSyncAttention, string> = {
-  'no-git': 'git is not installed on this Mac',
+  'no-git': 'git is not installed on this computer',
   'no-identity': 'git has no user.name or user.email configured',
-  auth: "GitHub did not accept this Mac's credentials",
+  auth: "GitHub did not accept this computer's credentials",
   conflict: 'both machines changed the same lines and the merge conflicted',
   error: 'git reported an error',
 }
 
 /**
+ * Where the main process looks for git (`desktop/src/main/git/exec.ts` `gitCandidates`), in words
+ * the assistant on the other end can act on. Keyed by the same OS the renderer already reads for
+ * keymaps (`navigator.platform`): a Windows platform string starts with `Win`, a Mac's with
+ * `Mac`; anything else is treated as Linux.
+ */
+function gitLocation(platform: string): { os: string; where: string } {
+  if (/^Win/i.test(platform)) return { os: 'Windows', where: 'Git for Windows installed (C:\\Program Files\\Git\\cmd\\git.exe, or the per-user install under %LOCALAPPDATA%\\Programs\\Git) — from https://git-scm.com/download/win' }
+  if (/^Mac/i.test(platform)) return { os: 'Mac', where: 'git installed at /usr/bin/git or /opt/homebrew/bin/git' }
+  return { os: 'Linux', where: 'git installed at /usr/bin/git or /usr/local/bin/git' }
+}
+
+/**
  * The paste-into-an-LLM setup prompt. It states the situation, names the reason, and lists the
  * four things to CHECK in order — so the assistant on the other end diagnoses rather than
- * guessing, and the user gets a verified fix instead of a plausible one.
+ * guessing, and the user gets a verified fix instead of a plausible one. The OS and git's
+ * location are named for THIS machine, so the assistant does not have to guess which one it is.
  */
-export function buildSetupPrompt(root: string, attention: GithubSyncAttention): string {
-  return `I'm using a Mac app that syncs a folder of markdown notes to GitHub using my computer's own git. It reported: ${REASON[attention]}. Please walk me through fixing this step by step, checking as we go: (1) git installed at /usr/bin/git or /opt/homebrew/bin/git, (2) \`git config --global user.name\` and \`user.email\` set, (3) GitHub authentication working for HTTPS (credential helper, e.g. via GitHub Desktop sign-in) or SSH — whichever my repo's remote uses, (4) a test \`git push\` from my notes folder succeeds. My notes folder is: ${root}.`
+export function buildSetupPrompt(root: string, attention: GithubSyncAttention, platform: string = navigator.platform): string {
+  const { os, where } = gitLocation(platform)
+  return `I'm using a ${os} desktop app that syncs a folder of markdown notes to GitHub using my computer's own git. It reported: ${REASON[attention]}. Please walk me through fixing this step by step, checking as we go: (1) ${where}, (2) \`git config --global user.name\` and \`user.email\` set, (3) GitHub authentication working for HTTPS (credential helper, e.g. via GitHub Desktop sign-in) or SSH — whichever my repo's remote uses, (4) a test \`git push\` from my notes folder succeeds. My notes folder is: ${root}.`
 }

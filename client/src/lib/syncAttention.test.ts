@@ -17,7 +17,7 @@ describe('attentionCopy', () => {
 
   it('no-git names the missing tool and offers the prompt', () => {
     expect(attentionCopy(status({ attention: 'no-git' }))).toEqual({
-      title: "Git isn't installed on this Mac.",
+      title: "Git isn't installed on this computer.",
       body: 'Copy the setup prompt into any LLM and it will walk you through installing it.',
       showSetupPrompt: true,
     })
@@ -33,7 +33,7 @@ describe('attentionCopy', () => {
 
   it('auth blames the credentials, not the user, and offers the prompt', () => {
     expect(attentionCopy(status({ attention: 'auth' }))).toEqual({
-      title: "GitHub didn't accept this Mac's credentials.",
+      title: "GitHub didn't accept this computer's credentials.",
       body: 'Copy the setup prompt into any LLM and it will walk you through signing in.',
       showSetupPrompt: true,
     })
@@ -81,9 +81,9 @@ describe('buildSetupPrompt', () => {
   })
 
   it.each([
-    ['no-git', 'git is not installed on this Mac'],
+    ['no-git', 'git is not installed on this computer'],
     ['no-identity', 'git has no user.name or user.email configured'],
-    ['auth', "GitHub did not accept this Mac's credentials"],
+    ['auth', "GitHub did not accept this computer's credentials"],
     ['conflict', 'both machines changed the same lines and the merge conflicted'],
     ['error', 'git reported an error'],
   ] as Array<[GithubSyncAttention, string]>)('%s reports its own reason line', (reason, line) => {
@@ -91,6 +91,19 @@ describe('buildSetupPrompt', () => {
   })
 
   it('opens by explaining the situation, so the prompt stands alone in a fresh chat', () => {
-    expect(buildSetupPrompt('/vault', 'auth')).toMatch(/^I'm using a Mac app that syncs a folder of markdown notes to GitHub using my computer's own git\./)
+    expect(buildSetupPrompt('/vault', 'auth')).toMatch(/^I'm using a Mac desktop app that syncs a folder of markdown notes to GitHub using my computer's own git\./)
+  })
+
+  it('names Windows and Git for Windows on a Windows platform, so the assistant never sends a PC to Homebrew', () => {
+    const prompt = buildSetupPrompt('C:\\Users\\me\\Notes', 'no-git', 'Win32')
+    expect(prompt).toMatch(/^I'm using a Windows desktop app/)
+    expect(prompt).toContain('(1) Git for Windows installed (C:\\Program Files\\Git\\cmd\\git.exe')
+    expect(prompt).toContain('https://git-scm.com/download/win')
+    expect(prompt).not.toContain('/opt/homebrew')
+    expect(prompt).toContain('My notes folder is: C:\\Users\\me\\Notes.')
+  })
+
+  it('treats anything that is neither Mac nor Windows as Linux', () => {
+    expect(buildSetupPrompt('/vault', 'no-git', 'Linux x86_64')).toContain('(1) git installed at /usr/bin/git or /usr/local/bin/git')
   })
 })

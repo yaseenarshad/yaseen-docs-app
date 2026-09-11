@@ -659,7 +659,7 @@ export interface GithubSyncConfig {
 
 /**
  * Why a root is stuck, when it is. Each value is a DIFFERENT thing to say to the user, which is
- * the whole reason the set is closed: `no-git` wants "install the Command Line Tools",
+ * the whole reason the set is closed: `no-git` wants "install git" (the Command Line Tools on a Mac, Git for Windows on a PC),
  * `no-identity` wants "set a name and email", `auth` wants "sign in again", `conflict` wants
  * "two machines edited the same lines" (the lossless rule: the working tree was put back exactly
  * as it was — see `git/sync.ts`), and `error` is the honest catch-all that carries a message.

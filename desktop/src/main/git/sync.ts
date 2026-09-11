@@ -1,7 +1,7 @@
 import path from 'node:path'
 import type { GithubSyncStatus } from '@shared/types'
 import { detectRepo } from './detect'
-import { git, GIT_TIMEOUT_CODE, resolveGit, type GitResult } from './exec'
+import { git, GIT_TIMEOUT_CODE, installGitHint, resolveGit, type GitResult } from './exec'
 
 /**
  * One sync pass (YAZ-1081, 2B): everything "make this vault and its GitHub remote agree" means,
@@ -115,11 +115,12 @@ function fromFailure(root: string, repo: RepoRef, res: GitResult): GithubSyncSta
  * the commit is safe locally and the next open rebases and pushes it.
  */
 export async function syncPass(root: string, opts?: { candidates?: readonly string[]; flush?: boolean }): Promise<GithubSyncStatus> {
-  // No git binary is a CLASSIFICATION, never an exception: a Mac without the Command Line Tools is
-  // an ordinary machine, and the app must be able to say "install them" rather than crash a pass.
+  // No git binary is a CLASSIFICATION, never an exception: a Mac without the Command Line Tools
+  // or a PC without Git for Windows is an ordinary machine, and the app must be able to say
+  // "install it" (`installGitHint`, per OS) rather than crash a pass.
   const bin = await resolveGit(opts?.candidates)
   if (bin === null) {
-    return { root, state: 'attention', attention: 'no-git', message: 'git is not installed — open Terminal and run `xcode-select --install`' }
+    return { root, state: 'attention', attention: 'no-git', message: installGitHint() }
   }
 
   const facts = await detectRepo(bin, root)
