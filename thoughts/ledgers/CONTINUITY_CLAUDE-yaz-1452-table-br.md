@@ -15,16 +15,20 @@
 ## State
 - Done:
   - [x] 1- Scope (YAZ-1453)
-- Now: [→] 2A- failing tests (YAZ-1455)
-- Next: 2B- implement (YAZ-1456)
+  - [x] 2A- failing tests (YAZ-1455) · 2B- implement (YAZ-1456) — two commits on the branch
+  - [x] 3A- real doc proof (YAZ-1458): 180 `<br>` before/after a real edit + autosave
+- Now: [→] 4- Polish + CONTRACTS rule 30 (YAZ-1460)
+- Next: 3B- demo vault is on the Desktop; launch the isolated app for Yasin, then 4A- release 0.9.9 + PR (YAZ-1461). Merge waits for Yasin's stress test.
 - Remaining:
-  - [ ] 3A- real doc proof (YAZ-1458)
-  - [ ] 3B- Desktop demo vault + isolated dev app (YAZ-1459)
-  - [ ] 4- Polish + CONTRACTS rule (YAZ-1460)
-  - [ ] 4A- Release 0.9.9 + merge (YAZ-1461)
+  - [ ] 3B- launch + "go do this" script (YAZ-1459)
+  - [ ] 4A- Release 0.9.9 + PR + merge (YAZ-1461)
+
+## Learnings
+- Milkdown's Shift-Enter turns a second press after a break into a paragraph (splits a table); its paragraph serializer drops the last hardbreak (trailing cell `<br>` decayed per save). Both owned in `inlineBreaks.ts` (decision 2 comment on YAZ-1456).
+- Synthetic mouse clicks on a Crepe table cell can hit the row/column handle and select the whole cell; the 3A script places the caret via the DOM selection instead.
 
 ## Open Questions
-- UNCONFIRMED: no desktop computer-use tool in this session — real-app screenshot may need one short Playwright-Electron script (announced first), not a suite.
+- Yasin asked whether Enter in a cell should insert a line (Google Docs) instead of Milkdown's exitTable. Decision pending — NOT in this PR.
 
 ## Working Set
 - Worktree: `.claude/worktrees/yaz-1452-table-br`, branch `worktree-yaz-1452-table-br`
