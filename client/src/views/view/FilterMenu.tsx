@@ -3,14 +3,15 @@ import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import type { ViewSet, ViewDef, FilterNode, Mutate } from '../viewSchema'
 import { type ColumnTyping, columnTyping } from '../editorType'
 import type { FolderPageMode } from '../ViewsPane'
-import { type EngineError, propertyLabel } from '../engine'
+import type { EngineError } from '../engine'
 import { stripBrackets } from '../expr'
 import {
   type Conjunction, type FilterGroup, type OperatorId, type Rule, exprToRule, fromGroup, inferType, operator,
   operatorsFor, ruleToExpr, toGroup,
 } from './filterRows'
+import { ColumnPicker } from './ColumnPicker'
 import { canonicalKey } from './keys'
-import { allPropertyKeys, withKey } from './properties'
+import { allPropertyKeys, propertyOptions } from './properties'
 import { TextField } from './TextField'
 
 export interface FilterMenuProps {
@@ -127,18 +128,12 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
     const listId = `filter-sugg-${viewIndex}-${path}`
     return (
       <>
-        <select
-          className="view-select"
-          aria-label="Property"
+        <ColumnPicker
+          label="Property"
           value={canonicalKey(rule.property)}
-          onChange={(e) => setRule(i, rule, { property: e.target.value }, setAt)}
-        >
-          {withKey(keys, rule.property).map((k) => (
-            <option key={canonicalKey(k)} value={canonicalKey(k)}>
-              {propertyLabel(def, k)}
-            </option>
-          ))}
-        </select>
+          options={propertyOptions(def, keys, rule.property)}
+          onChange={(value) => setRule(i, rule, { property: value }, setAt)}
+        />
         <select
           className="view-select"
           aria-label="Operator"
@@ -238,7 +233,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
   }
 
   return (
-    <div className="view-menu">
+    <div className="view-menu filter-menu">
       {errors.length > 0 && (
         <ul className="view-menu__errors" role="alert">
           {errors.map((e, i) => (

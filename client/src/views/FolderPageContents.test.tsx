@@ -188,6 +188,17 @@ async function flush(): Promise<void> {
   await act(async () => {})
 }
 
+/** The filter row's Property is the searchable picker (YAZ-1466): open it, click the option. */
+function chooseProperty(el: ParentNode, value: string): void {
+  click(byLabel(el, 'Property'))
+  const option = [...el.querySelectorAll<HTMLElement>('[role="option"]')].find((o) => o.dataset.value === value)
+  if (option === undefined) throw new Error(`no Property option ${value}`)
+  click(option)
+}
+
+/** What that picker's trigger currently shows — its property's display label. */
+const propertyShown = (el: ParentNode): string => byLabel<HTMLElement>(el, 'Property').textContent ?? ''
+
 const openTable = (el: ParentNode): void => click(q(el, '.view-tab__btn:nth-of-type(1)'))
 /** Switch to the view named `name` (tabs are switch-only here). */
 function selectView(el: ParentNode, name: string): void {
@@ -491,15 +502,15 @@ describe('config edits are ONE settings write on the folder page', () => {
     click(byLabel(el, 'Filter'))
     click([...el.querySelectorAll<HTMLElement>('.view-menu__action')].find((b) => b.textContent === 'Add rule')!)
     await flush() // write 1: the default `file.name contains ""` rule
-    setSelect(byLabel<HTMLSelectElement>(el, 'Property'), 'note.order')
+    chooseProperty(el, 'note.order')
     await flush() // write 2: the rule re-targeted
     expect(write).toHaveBeenCalledTimes(2)
-    expect(byLabel<HTMLSelectElement>(el, 'Property').value).toBe('note.order')
+    expect(propertyShown(el)).toContain('order')
 
     // Write 1's echo lands AFTER write 2's optimistic state — the race YAZ-1234 caught in the
     // DOM. It is OUR OWN stale write, not an external edit: it must not rebuild anything.
     feed(vault(settingsOf(0)))
-    expect(byLabel<HTMLSelectElement>(el, 'Property').value).toBe('note.order')
+    expect(propertyShown(el)).toContain('order')
 
     // The next gesture edits what the menu renders — the property edit must survive it.
     setSelect(byLabel<HTMLSelectElement>(el, 'Operator'), 'isEmpty')
@@ -510,7 +521,7 @@ describe('config edits are ONE settings write on the folder page', () => {
     // The remaining echoes drain in order; an external edit afterwards still adopts as always.
     feed(vault(settingsOf(1)))
     feed(vault(settingsOf(2)))
-    expect(byLabel<HTMLSelectElement>(el, 'Property').value).toBe('note.order')
+    expect(propertyShown(el)).toContain('order')
     feed(vault({ ...SETTINGS, views: [SETTINGS.views[0], { ...TABLE, filters: { and: ['note.order == 9'] } }, BOARD] }))
     expect(q<HTMLInputElement>(el, '[aria-label="Value"]').value).toBe('9')
   })
@@ -711,6 +722,6 @@ describe('the write-echo guard vs rapid gestures (YAZ-1241)', () => {
     // An outside editor rewrites the card before our echo arrives: disk truth outranks the
     // unechoed local write (the guard's `pending` queue clears, the external state adopts).
     feed(vault({ ...SETTINGS, views: [SETTINGS.views[0], { ...TABLE, filters: { and: ['note.order == 1'] } }] }))
-    expect(byLabel<HTMLSelectElement>(el, 'Property').value).toBe('note.order')
+    expect(propertyShown(el)).toContain('order')
   })
 })

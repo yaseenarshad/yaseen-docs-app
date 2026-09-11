@@ -127,6 +127,15 @@ function chooseColumn(pop: ParentNode, label: string, value: string): void {
   click(option)
 }
 
+/** Choose a column by typing in the picker's search and committing the top match (YAZ-1466). */
+function searchColumn(scope: ParentNode, label: string, query: string): void {
+  const trigger = byLabel<HTMLButtonElement>(scope, label)
+  if (trigger.getAttribute('aria-expanded') !== 'true') click(trigger)
+  const input = q<HTMLInputElement>(scope, '[role="combobox"]')
+  setValue(input, query)
+  press(input, 'Enter')
+}
+
 /** Use the definition panel's type picker rather than the retired inline select. */
 function choosePropertyType(pop: ParentNode, label: string): void {
   click(q(pop, '[aria-label^="Property type:"]'))
@@ -229,6 +238,13 @@ describe('filter menu (YAZ-1227-1229)', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
+  it('the Filter popover carries its own width class, and Sort keeps hers (YAZ-1466)', () => {
+    const { el } = mount()
+    expect(openMenu(el, 'Filter').classList.contains('view-popover--filter')).toBe(true)
+    click(byLabel(el, 'Filter'))
+    expect(openMenu(el, 'Sort').classList.contains('view-popover--sort')).toBe(true)
+  })
+
   it('an outline is a DOCUMENT, not rows: no button at all', () => {
     const { el } = mount('views:\n  - type: outline\n    name: Outline\n', { thisFile: '/vault/Topic.md' })
     expect(el.querySelector('[aria-label="Filter"]')).toBeNull()
@@ -247,7 +263,8 @@ describe('filter menu (YAZ-1227-1229)', () => {
   it('a stored expression round-trips into its builder row and counts in the badge', () => {
     const { el } = mount(RULE)
     const pop = openMenu(el, 'Filter')
-    expect(byLabel<HTMLSelectElement>(pop, 'Property').value).toBe('note.status')
+    click(byLabel(pop, 'Property'))
+    expect(q(pop, '[role="option"][aria-selected="true"]').getAttribute('data-value')).toBe('note.status')
     expect(byLabel<HTMLSelectElement>(pop, 'Operator').value).toBe('is')
     expect(byLabel<HTMLInputElement>(pop, 'Value').value).toBe('idea')
     expect(byText(el, '.view-toolbar__badge', '1')).toBeDefined()
@@ -257,13 +274,21 @@ describe('filter menu (YAZ-1227-1229)', () => {
   it('a new property re-validates the operator and drops a value of another kind', () => {
     const { el, onChange, def } = mount(RULE)
     const pop = openMenu(el, 'Filter')
-    setValue(byLabel(pop, 'Property'), 'note.priority') // TEST_RECORDS types it number
+    searchColumn(pop, 'Property', 'priority') // TEST_RECORDS types it number
     expect(onChange).toHaveBeenCalledTimes(1)
     // `is` is not legal on a number, so the first legal one takes over; the text value is cleared,
     // and an empty number renders as the `0` `ruleToExpr` writes for one.
     expect(def().views[0].filters).toEqual({ and: ['note.priority == 0'] })
     expect(byLabel<HTMLSelectElement>(pop, 'Operator').value).toBe('eq')
     expect(byLabel<HTMLInputElement>(pop, 'Value').value).toBe('0')
+  })
+
+  it('choosing the property the row already has writes nothing (YAZ-1466)', () => {
+    const { el, onChange, yaml } = mount(RULE)
+    const before = yaml()
+    searchColumn(openMenu(el, 'Filter'), 'Property', 'status')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(yaml()).toBe(before)
   })
 
   it('Any rewrites the conjunction over the same items', () => {
@@ -356,6 +381,17 @@ describe('filter menu (YAZ-1227-1229)', () => {
       // the badge counts LEAVES, so the group's two rules are two of the three
       expect(byText(el, '.view-toolbar__badge', '3')).toBeDefined()
       expect(onChange).not.toHaveBeenCalled()
+    })
+
+    it('a row inside a group gets the same searchable Property picker (YAZ-1466)', () => {
+      const { el, onChange, def } = mount(NESTED)
+      const group = groupOf(openMenu(el, 'Filter'))
+      expect(group.querySelectorAll('.column-picker')).toHaveLength(2)
+      searchColumn(group, 'Property', 'file.name')
+      expect(onChange).toHaveBeenCalledTimes(1)
+      expect(def().views[0].filters).toEqual({
+        and: ['note.status == "idea"', { or: ['file.name == ""', 'note.published == true'] }],
+      })
     })
 
     it('Add group appends an `or` holding the match-everything default, in ONE write', () => {

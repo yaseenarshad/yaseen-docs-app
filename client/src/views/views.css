@@ -1399,6 +1399,12 @@
   width: 340px;
   max-width: calc(100vw - 24px);
 }
+.view-popover--filter {
+  width: 420px; /* placeholder — locked on screen in 3- */
+  max-width: calc(100vw - 24px);
+}
+.filter-menu .view-rule__main { align-items: start; }
+.filter-menu .view-rule__main > .column-picker { flex: 1 1 140px; }
 .column-menu-head {
   position: sticky;
   top: 0;

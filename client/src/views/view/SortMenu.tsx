@@ -7,7 +7,7 @@ import { propertyLabel } from '../engine'
 import { columnTyping } from '../editorType'
 import type { FolderPageSettings } from '../folderPageSettings'
 import { canonicalKey } from './keys'
-import { allPropertyKeys, withKey } from './properties'
+import { allPropertyKeys, propertyOptions } from './properties'
 
 export interface SortMenuProps {
   def: ViewSet
@@ -84,9 +84,7 @@ export function SortMenu({ def, view, viewIndex, records, onUpdate, folderPage, 
   }
 
   const options = (current: string | undefined, without?: string) =>
-    (current ? withKey(keys, current) : keys)
-      .filter((k) => without === undefined || canonicalKey(k) !== without)
-      .map((k) => ({ value: canonicalKey(k), label: propertyLabel(def, k) }))
+    propertyOptions(def, keys, current).filter((o) => o.value !== without)
 
   return (
     <div className="view-menu sort-menu">
