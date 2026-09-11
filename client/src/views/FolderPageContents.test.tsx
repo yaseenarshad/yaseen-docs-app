@@ -725,3 +725,85 @@ describe('the write-echo guard vs rapid gestures (YAZ-1241)', () => {
     expect(propertyShown(el)).toContain('order')
   })
 })
+
+// ---------- YAZ-1471 prototype check (re-homed by the build's 2B child) ----------
+
+/** Toolbar.test's select setter: native prototype setter + bubbling change, so React's tracker sees it. */
+function setSelect(el: HTMLSelectElement, value: string): void {
+  const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+  act(() => {
+    set?.call(el, value)
+    el.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+const tab = (el: ParentNode, name: string): HTMLElement => {
+  const t = [...el.querySelectorAll<HTMLElement>('[role="tab"]')].find((x) => x.textContent === name)
+  if (t === undefined) throw new Error(`no view tab ${name}`)
+  return t
+}
+const rightClick = (el: Element): void => act(() => void el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+const menuItem = (el: ParentNode, text: string): HTMLElement => {
+  const b = [...el.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((x) => x.textContent === text)
+  if (b === undefined) throw new Error(`no menu item ${text}`)
+  return b
+}
+const written = (): Record<string, unknown> => write.mock.calls[0][2] as Record<string, unknown>
+
+describe('YAZ-1471 prototype: view CRUD and the default view share ONE door', () => {
+  it('Page → Default view is ONE whole-key settings write carrying the name', async () => {
+    const el = mount(FUNNELS)
+    click(tab(el, 'Table')) // the outline offers no Properties menu; switching writes nothing
+    click(byLabel(el, 'Properties'))
+    setSelect(byLabel<HTMLSelectElement>(el, 'Default view'), 'Table')
+    await flush()
+    expect(write).toHaveBeenCalledExactlyOnceWith(FUNNELS, 'folder_page_settings', { ...SETTINGS, defaultView: 'Table' })
+  })
+
+  it('the dropdown shows the saved value, and First view clears the key', async () => {
+    const el = mount(FUNNELS, vault({ ...SETTINGS, defaultView: 'Table' }))
+    click(byLabel(el, 'Properties'))
+    const select = byLabel<HTMLSelectElement>(el, 'Default view')
+    expect(select.value).toBe('Table')
+    setSelect(select, '')
+    await flush()
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(written()).toEqual(SETTINGS)
+  })
+
+  it('renaming the default view carries the saved START along, in the SAME write', async () => {
+    const el = mount(FUNNELS, vault({ ...SETTINGS, defaultView: 'Table' }))
+    rightClick(tab(el, 'Table'))
+    click(menuItem(el, 'Rename'))
+    const input = byLabel<HTMLInputElement>(el, 'View name')
+    setValue(input, 'Grid')
+    press(input, 'Enter')
+    await flush()
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(written()).toEqual({ ...SETTINGS, views: [SETTINGS.views[0], { ...TABLE, name: 'Grid' }], defaultView: 'Grid' })
+  })
+
+  it('deleting the default view clears the START in the same write', async () => {
+    const el = mount(FUNNELS, vault({ ...SETTINGS, defaultView: 'Table' }))
+    rightClick(tab(el, 'Table'))
+    click(menuItem(el, 'Delete'))
+    click(q(el, '.confirm__btn--danger'))
+    await flush()
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(written()).toEqual({ ...SETTINGS, views: [SETTINGS.views[0]] })
+  })
+
+  it('a drag past the first tab writes the new order and the active view follows; switching alone writes nothing', async () => {
+    const el = mount(FUNNELS)
+    click(tab(el, 'Table'))
+    expect(write).not.toHaveBeenCalled()
+    const fire = (target: Element, type: string, clientX = 0) => act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX })))
+    const wrap = (name: string): Element => tab(el, name).closest('.view-tab') as Element
+    fire(wrap('Table'), 'dragstart')
+    fire(wrap('Outline'), 'dragover', -5)
+    fire(wrap('Outline'), 'drop', -5)
+    await flush()
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(written()).toEqual({ ...SETTINGS, views: [TABLE, SETTINGS.views[0]] })
+    expect(tab(el, 'Table').getAttribute('aria-selected')).toBe('true')
+  })
+})

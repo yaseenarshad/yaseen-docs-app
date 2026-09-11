@@ -56,8 +56,16 @@
   min-width: 0;
   padding: 4px 8px 0;
   /* Overflow (I3): tabs shrink to their floor first, then the strip scrolls (Obsidian-like);
-     TabBar scrolls the ACTIVE tab into view on activation. */
+     TabBar scrolls the ACTIVE tab into view on activation. No scrollbar (YAZ-1471): the shared
+     `strip-fade` (app.css) marks whichever edge still hides tabs instead. */
   overflow-x: auto;
+  scrollbar-width: none;
+  animation: strip-fade linear both;
+  animation-timeline: scroll(self inline);
+}
+
+.tabbar::-webkit-scrollbar {
+  display: none;
 }
 
 .tabbar__tab {

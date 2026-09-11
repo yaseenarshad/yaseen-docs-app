@@ -10,7 +10,7 @@ import { type ViewSet, type ViewDef, type ParsedViews, parseViews, serializeView
 import { type Group, type Row, propertyKeys, resolverFor, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
 import type { ColumnDecl, FolderPageSettings } from './folderPageSettings'
-import { type NewNoteSeed, deriveSeed } from './newNote'
+import { type NewNoteSeed, deriveSeed, freeName } from './newNote'
 import { writeProperties, writeProperty } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CardsView } from './view/CardsView'
@@ -21,6 +21,7 @@ import { ListView } from './view/ListView'
 import { OutlineView } from './view/OutlineView'
 import { TableView } from './view/TableView'
 import { Toolbar } from './view/Toolbar'
+import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 
 /**
  * Folder-page contents mode (🔒 D3, YAZ-819). ViewsPane stays ONE component: the folder-page host
@@ -46,11 +47,6 @@ export interface FolderPageMode {
   /** Save one definition against the captured base; reject concurrent changes to that property. */
   setColumn: (key: string, next: ColumnDecl, base: ColumnDecl | undefined) => Promise<unknown>
   setColumns: (columns: Record<string, ColumnDecl>, views?: ViewDef[]) => void
-  /**
-   * The saved START (YAZ-1104), through its OWN door — ONE `folder_page_settings` write on the
-   * host (🔒 D3), never a views write. `undefined` clears the key: back to the first view.
-   */
-  setDefaultView: (name: string | undefined) => void
   /** ⌘-click on a table row opens the page in a BACKGROUND tab (YAZ-820); absent → opens in place. */
   openBackground?: (path: string) => void
   /** Shared Table/Board action that opens the exact page in the window's right panel. */
@@ -130,7 +126,7 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — 🔒 rule 4 holds,
   // switching still writes nothing. A stale (or absent) saved name is -1 here, so it clamps to the first.
   const [active, setActive] = useState(() =>
-    Math.max(0, parsed.def.views.findIndex((v) => v.name === folderPage.settings.defaultView)),
+    Math.max(0, parsed.def.views.findIndex((v) => v.name === parsed.def.defaultView)),
   )
   const [search, setSearch] = useState<string | null>(null)
   /** Collapsed group keys per view, seeded from the store; a toggle replaces the entry here AND writes through storage. */
@@ -320,10 +316,42 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
       the one flag between them lives here. Never persisted — the folder is asked every time (🔒 3). */
   const [syncing, setSyncing] = useState(false)
 
-  // A folder page's views are switch-only (🔒 rule 4, YAZ-819): which view is active is session
-  // state that never reaches the card, and view CRUD is not this block's gesture. The editable
-  // tab half was deleted with its last reachable surface (YAZ-846; parked on YAZ-824).
-  const tabs = { views, active: index, onSelect: setActive }
+  // View CRUD lives here since YAZ-1471 (re-ruling 🔒 rule 4, YAZ-819): every gesture is ONE
+  // `update` — the same door as sort and columns — and which view is ACTIVE stays session state.
+  const taken = () => new Set(views.map((v) => v.name))
+  const tabs: ViewTabsProps = {
+    views,
+    active: index,
+    onSelect: setActive,
+    onMove: (from, to) => {
+      update((d) => d.views.splice(to, 0, ...d.views.splice(from, 1)))
+      // The active view FOLLOWS its tab: replay the same move over the indices.
+      const order = views.map((_, i) => i)
+      order.splice(to, 0, ...order.splice(from, 1))
+      setActive(order.indexOf(index))
+    },
+    onAdd: (type) => {
+      update((d) => d.views.push({ type, name: freeName(viewTypeLabel(type), taken()) }))
+      setActive(views.length)
+    },
+    onRename: (i, name) =>
+      update((d) => {
+        if (d.defaultView === d.views[i].name) d.defaultView = name // the saved START follows (D4)
+        d.views[i].name = name
+      }),
+    onDuplicate: (i) => {
+      update((d) => d.views.splice(i + 1, 0, { ...structuredClone(d.views[i]), name: freeName(`${d.views[i].name} copy`, taken()) }))
+      setActive(i + 1)
+    },
+    onDelete: (i) => {
+      if (views.length <= 1) return
+      update((d) => {
+        const [gone] = d.views.splice(i, 1)
+        if (d.defaultView === gone.name) delete d.defaultView // a deleted START clears itself (D4)
+      })
+      setActive(Math.min(i, views.length - 2))
+    },
+  }
 
   return (
     <div className="views-pane">

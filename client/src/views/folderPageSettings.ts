@@ -123,9 +123,6 @@ function readViews(raw: unknown, problems: string[]): ViewDef[] {
     views.push(view as ViewDef)
   })
   if (views.length === 0) return defaultViews()
-  // 🔒 YAZ-935: every folder page has a Board skin. Lists persisted before Board existed gain one
-  // at READ time — never a file backfill; a later config write may persist it, harmlessly.
-  if (!views.some((v) => v.type === 'board')) views.push({ type: 'board', name: 'Board' })
   return views
 }
 

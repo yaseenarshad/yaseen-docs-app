@@ -22,12 +22,29 @@
   font-size: 13px;
 }
 
+.view-tabs-wrap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* Overflow (YAZ-1471): the strip scrolls with NO scrollbar — trackpad/wheel, plus the active tab
+   scrolled into view — and the shared `strip-fade` at whichever edge still hides tabs (app.css).
+   The "+" lives OUTSIDE the strip: always visible, never masked. */
 .view-tabs {
   display: flex;
   align-items: center;
   gap: 2px;
   min-width: 0;
   overflow-x: auto;
+  scrollbar-width: none;
+  animation: strip-fade linear both; /* app.css: shared with the window's tab strip */
+  animation-timeline: scroll(self inline);
+}
+
+.view-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .view-tab {
@@ -53,6 +70,12 @@
   white-space: nowrap;
 }
 
+.view-tab__btn > span {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .view-tab__btn:hover {
   background: var(--bg-side);
 }
@@ -61,13 +84,43 @@
   color: var(--fg);
 }
 
-/*
- * TOMBSTONE (YAZ-861): `.view-tab__more`, `.view-tab__add` and `.view-tab__rename` were the skins
- * of the editable tab strip — the per-tab "…" menu, the "+" and the rename input — amputated with
- * `ViewTabs`' editable half in 5.5 (YAZ-846), a folder page's views being switch-only. Nothing has
- * rendered them since; `.view-popover--menu`, the popover variant that dropped the "…" menu under
- * its tab, went with them.
- */
+/* Drag-to-reorder (YAZ-1471), TabBar's indicator: an accent edge marks where the drop lands. */
+.view-tab--dragging {
+  opacity: 0.5;
+}
+
+.view-tab--insert-before {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.view-tab--insert-after {
+  box-shadow: inset -2px 0 0 var(--accent);
+}
+
+.view-tab__add {
+  flex: none;
+  padding: 2px 8px 4px;
+  font-size: 15px;
+  color: var(--fg-muted);
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.view-tab__add:hover,
+.view-tab__add[aria-expanded='true'] {
+  color: var(--fg);
+  background: var(--bg-side);
+}
+
+.view-tab__rename {
+  width: 110px;
+  margin: 0 2px 2px;
+}
+
+.view-popover--menu {
+  min-width: 140px;
+  padding: 4px;
+}
 
 .view-toolbar__actions {
   display: flex;

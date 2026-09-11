@@ -1302,6 +1302,24 @@ button {
 }
 
 /* Shared layer for overlay-backed and standalone context menus. */
+/*
+ * A horizontal strip that scrolls with NO scrollbar (YAZ-1471: the window's tab strip and a
+ * folder page's view tabs): a scroll-driven fade at whichever edge still hides items. The
+ * keyframes run on the strip's OWN inline scroll position (`animation-timeline: scroll(self
+ * inline)` on the strip) — a strip that does not overflow has no timeline, so no mask applies.
+ */
+@keyframes strip-fade {
+  0% {
+    mask-image: linear-gradient(to right, transparent 0, #000 0, #000 calc(100% - 28px), transparent 100%);
+  }
+  50% {
+    mask-image: linear-gradient(to right, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+  }
+  100% {
+    mask-image: linear-gradient(to right, transparent 0, #000 28px, #000 100%, transparent 100%);
+  }
+}
+
 .ctx-menu {
   position: fixed;
   z-index: 40;
