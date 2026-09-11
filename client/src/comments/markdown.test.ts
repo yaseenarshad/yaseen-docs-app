@@ -1,8 +1,8 @@
 /**
  * `comments/markdown.ts` (YAZ-1472): a comment body is GitHub-flavoured Markdown rendered
- * read-only — `marked` with `breaks` on, then DOMPurify's html profile with style / form / button
- * forbidden on top (a task list's disabled checkbox is the one form control kept). These pin what
- * the pair ACTUALLY emits and what the folded row's one-line summary strips.
+ * read-only — `marked` with `breaks` on, then DOMPurify's html profile with every form control
+ * forbidden on top (a task box is drawn as a glyph). These pin what the pair ACTUALLY emits and
+ * what the folded row's one-line summary strips.
  */
 import { describe, expect, it } from 'vitest'
 import { commentHtml, commentSummary } from './markdown'
@@ -20,9 +20,21 @@ describe('commentHtml — GitHub-flavoured Markdown', () => {
     expect(commentHtml('- a\n- b')).toBe('<ul>\n<li>a</li>\n<li>b</li>\n</ul>\n')
   })
 
-  it('a task list keeps its checkbox, DISABLED: `- [x]` reads as done, `- [ ]` as not', () => {
-    const html = commentHtml('- [x] done\n- [ ] todo')
-    expect(html).toBe('<ul>\n<li><input checked="" disabled="" type="checkbox"> done</li>\n<li><input disabled="" type="checkbox"> todo</li>\n</ul>\n')
+  it('a task list draws its boxes as glyphs — no <input> ever reaches the page', () => {
+    expect(commentHtml('- [x] done\n- [ ] todo')).toBe('<ul>\n<li>☑ done</li>\n<li>☐ todo</li>\n</ul>\n')
+  })
+
+  it('no form control survives: input, select, textarea and button are all stripped, their text kept', () => {
+    for (const [body, tag] of [
+      ['<input type="text" value="x">text', '<input'],
+      ['<select><option>a</option></select>text', '<select'],
+      ['<textarea>t</textarea>text', '<textarea'],
+      ['<button>b</button>text', '<button'],
+    ]) {
+      const html = commentHtml(body)
+      expect(html).not.toContain(tag)
+      expect(html).toContain('text')
+    }
   })
 
   it('a GFM table', () => {

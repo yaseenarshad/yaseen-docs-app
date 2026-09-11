@@ -19,8 +19,11 @@ Ship Linear-style comments on every Markdown note: stored under one reserved fro
   - [x] 1- Scope (YAZ-1494): findings, decisions, live-loop log posted; tree created 2026-09-11.
   - [x] 2A- Comment model (YAZ-1496): commit 1f10808, 29 model tests.
   - [x] 2B- Index/views/panel (YAZ-1497): commit 43f0089.
-- Now: [→] 2C + 2D (YAZ-1498, YAZ-1499): test contract by an agent (CommentsSection.test.tsx, markdown.test.ts); 2E (YAZ-1500) docs by a second agent in parallel. I review both diffs, run the full gate, one commit each.
-- Next: 4- Polish and anti-slop (YAZ-1502): independent reviewer, simplify, naming, verify D1–D14, evidence comment — BEFORE the demo so Yasin tests polished code.
+  - [x] 2E- Contracts and README (YAZ-1500): commit 79b6d9c.
+  - [x] 2D- Markdown bodies (YAZ-1499): commit 5503d15, 23 tests; task-list checkbox kept (disabled, inert).
+  - [x] 2C- The Comments block (YAZ-1498): commit d948056, 21 tests. 2- Build Done.
+- Now: [→] 4- Polish and anti-slop (YAZ-1502): reviewer found 2 musts (body links navigated the app window; live form controls after the checkbox change) + 5 shoulds + nits — 18 fixed, 4 declined with reasons (disposition comment on YAZ-1502), 4B (YAZ-1511, will-navigate guard) parked in Backlog. Gate + build running; then the polish commit + evidence comment.
+- Next: 3- Prove it (YAZ-1501): Desktop demo generated at `~/Desktop/yaz-1472-comments-demo`; launch on its profile, scenario list to Yasin, merge only after his pass.
 - Remaining:
   - [ ] 3- Prove it (YAZ-1501): `~/Desktop/yaz-1472-comments-demo` via scratchpad `make-demo-desktop.mjs`, dev app on the isolated profile, scenario list to Yasin.
   - [ ] 4A- Release (YAZ-1503): ask about the version bump, push, merge after his pass, clean up.

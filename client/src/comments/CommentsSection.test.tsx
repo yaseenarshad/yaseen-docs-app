@@ -17,13 +17,14 @@ import { CommentsSection } from './CommentsSection'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { readFile: vi.fn(), writeFile: vi.fn() },
+  api: { readFile: vi.fn(), writeFile: vi.fn(), openLink: vi.fn() },
 }))
 
 import { BridgeRequestError, api } from '../api'
 
 const readFile = vi.mocked(api.readFile)
 const writeFile = vi.mocked(api.writeFile)
+const openLink = vi.mocked(api.openLink)
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -107,6 +108,8 @@ beforeEach(() => {
   readFile.mockReset()
   writeFile.mockReset()
   writeFile.mockResolvedValue({ path: PATH, mtime: 200, size: 10 })
+  openLink.mockReset()
+  openLink.mockResolvedValue(undefined)
 })
 
 afterEach(() => {
@@ -128,7 +131,7 @@ function mount(content: string, mtime = 100): HTMLElement {
   document.body.appendChild(container)
   root = createRoot(container)
   readFile.mockResolvedValue(fileOf(content, mtime))
-  act(() => root?.render(<CommentsSection file={{ path: PATH, content, mtime }} />))
+  act(() => root?.render(<CommentsSection file={{ path: PATH, content }} />))
   return container
 }
 
@@ -549,5 +552,30 @@ describe('CommentsSection — errors', () => {
     expect(q(el, '.comments__error')).toBeNull()
     expect(articles(el).map(bodyText)).toEqual(['Parent comment', 'Keep me'])
     expect(textareaOf(composer)?.value).toBe('')
+  })
+})
+
+describe('CommentsSection — links and stale edits', () => {
+  it('a link in a body opens through the shell; the click never navigates the app window', () => {
+    const el = mount(note(`  - id: aaaaaaaa\n    at: 2026-09-11T18:22:31Z\n    body: "See [the site](https://example.com) now."\n`))
+    const a = must(q<HTMLAnchorElement>(el, '.comments__body a'), 'the link')
+    const ev = new MouseEvent('click', { bubbles: true, cancelable: true })
+    act(() => void a.dispatchEvent(ev))
+    expect(ev.defaultPrevented).toBe(true)
+    expect(openLink).toHaveBeenCalledWith({ href: 'https://example.com', sourcePath: PATH })
+  })
+
+  it('Save refuses when the comment changed on disk underneath: one alert line, no write, the edit seat stays open', async () => {
+    const el = mount(LONE)
+    const article = articles(el)[0]
+    click(action(article, 'Edit'))
+    // Meanwhile another window edited the same comment.
+    readFile.mockResolvedValue(fileOf(LONE.replace('Parent comment', 'Parent comment, changed elsewhere'), 150))
+    const composer = must(q<HTMLElement>(article, '.comments__composer'), 'the edit seat')
+    await submitVia(composer, 'My version')
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(q(el, '[role="alert"].comments__error')?.textContent).toContain('changed on disk')
+    expect(q(article, '.comments__composer')).not.toBeNull()
+    expect(textareaOf(composer)?.value).toBe('My version')
   })
 })

@@ -15,15 +15,10 @@
  * does not parse, gets the header and one line saying why — no composer, nothing overwritten.
  * Threads are one level deep; an orphaned reply shows at top level (`threadsOf`).
  *
- * Linear's thread, the outliner's folding: one card per thread — the parent, an "N replies" fold,
- * the replies one level in, and a "Reply…" row at the bottom that opens on focus. Every comment
- * folds to one line like a bullet (its title, else its first line); Expand all / Collapse all sit
- * on the header. A comment with no replies yet offers Reply on hover instead. Who wrote a comment
- * is whatever the writer declared in `by` (the app declares nothing for you); a declared writer
- * takes the agent colour.
- *
- * Fold state and the header's collapse are session chrome, never persisted — an open comment
- * stream is not part of a note's identity (the backlinks' rule).
+ * The shape on screen — one card per thread, the outliner's folds, the title fixed in the header
+ * row, "(agent)" after the time — is CONTRACTS "Comments" 🔒 D12. Fold state and the header's
+ * collapse are session chrome, never persisted (the backlinks' rule). A link inside a body opens
+ * through the shell like the editor's own, never by navigating the app window.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
@@ -38,6 +33,7 @@ import {
   type PageComment,
 } from '@shared/comments'
 import type { FileResponse } from '@shared/types'
+import { api } from '../api'
 import { relativeTime } from '../lib/relativeTime'
 import { transformFile } from '../views/writeProperty'
 import { commentHtml, commentSummary } from './markdown'
@@ -45,7 +41,7 @@ import './comments.css'
 
 export interface CommentsSectionProps {
   /** The open note as the Editor last saw it on disk — the block's truth until its own write moves it. */
-  file: Pick<FileResponse, 'path' | 'content' | 'mtime'>
+  file: Pick<FileResponse, 'path' | 'content'>
 }
 
 interface Snapshot {
@@ -71,11 +67,8 @@ const NOTICE = {
   invalid: "The properties block doesn't parse. Fix it in Properties to comment here.",
 } as const
 
-const declaredBy = (comment: PageComment): string | null =>
-  typeof comment.by === 'string' && comment.by.trim() !== '' ? comment.by.trim() : null
-
-const titleOf = (comment: PageComment): string | null =>
-  typeof comment.title === 'string' && comment.title.trim() !== '' ? comment.title.trim() : null
+/** A declared `by` or `title` counts only when it says something. */
+const nonBlank = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null)
 
 const Chevron = () => (
   <svg className="comments__chevron" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -118,7 +111,7 @@ export function CommentsSection({ file }: CommentsSectionProps) {
     setRepliesFolded(allFolded ? new Set() : new Set(everyThreaded))
   }
 
-  /** ONE write, whole: fresh bytes in, landed bytes adopted. Never throws to React — the line under the composer says. */
+  /** ONE write, whole: fresh bytes in, landed bytes adopted. Never throws to React — the line at the foot of the block says. */
   const write = async (transform: (fresh: string) => string): Promise<boolean> => {
     setSaving(true)
     try {
@@ -158,7 +151,14 @@ export function CommentsSection({ file }: CommentsSectionProps) {
       }}
       onDelete={() => void write((fresh) => deleteComment(fresh, comment.id))}
       onSave={async (draft) => {
-        const ok = await write((fresh) => editComment(fresh, comment.id, draft.body, nowIso(), draft.title))
+        // Save is against the comment as it was opened: gone or changed underneath → refuse, never clobber.
+        const ok = await write((fresh) => {
+          const current = readComments(fresh).find((c) => c.id === comment.id)
+          if (current === undefined || current.body !== comment.body || current.edited !== comment.edited) {
+            throw new Error('this comment changed on disk — cancel and reopen Edit')
+          }
+          return editComment(fresh, comment.id, draft.body, nowIso(), draft.title)
+        })
         if (ok) closeInline()
         return ok
       }}
@@ -166,8 +166,18 @@ export function CommentsSection({ file }: CommentsSectionProps) {
     />
   )
 
+  /** A link in a rendered body: through the shell, the editor's way — a click must never navigate the app window. */
+  const onClick = (e: React.MouseEvent<HTMLElement>): void => {
+    const a = (e.target as Element).closest('.comments__body a[href]')
+    if (a === null) return
+    e.preventDefault()
+    const href = a.getAttribute('href') ?? ''
+    if (href === '' || href.startsWith('#')) return
+    void api.openLink({ href, sourcePath: file.path }).catch((err: unknown) => setError(`Could not open the link: ${messageOf(err)}`))
+  }
+
   return (
-    <section className="comments">
+    <section className="comments" onClick={onClick}>
       <div className="comments__bar">
         <button type="button" className="comments__header" aria-expanded={expanded} onClick={() => setExpanded((open) => !open)}>
           <Chevron />
@@ -177,14 +187,12 @@ export function CommentsSection({ file }: CommentsSectionProps) {
           </span>
         </button>
         {expanded && count > 0 && (
-          <div className="comments__tools">
-            <button type="button" className="comments__tool" onClick={foldAll}>
-              <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                {allFolded ? <path d="m5 5.5 3-3 3 3M5 10.5l3 3 3-3" /> : <path d="m5 3 3 3 3-3M5 13l3-3 3 3" />}
-              </svg>
-              {allFolded ? 'Expand all' : 'Collapse all'}
-            </button>
-          </div>
+          <button type="button" className="comments__tool" onClick={foldAll}>
+            <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              {allFolded ? <path d="m5 5.5 3-3 3 3M5 10.5l3 3 3-3" /> : <path d="m5 3 3 3 3-3M5 13l3-3 3 3" />}
+            </svg>
+            {allFolded ? 'Expand all' : 'Collapse all'}
+          </button>
         )}
       </div>
       {expanded && (
@@ -221,7 +229,6 @@ export function CommentsSection({ file }: CommentsSectionProps) {
                               placeholder="Reply…"
                               submitLabel="Reply"
                               saving={saving}
-                              autoFocus
                               onSubmit={async (draft) => {
                                 const ok = await add(draft, comment.id)
                                 if (ok) closeInline()
@@ -294,8 +301,8 @@ function CommentItem({
 }) {
   const at = parsed(comment.at)
   const edited = comment.edited === undefined ? null : parsed(comment.edited)
-  const by = declaredBy(comment)
-  const title = titleOf(comment)
+  const by = nonBlank(comment.by)
+  const title = nonBlank(comment.title)
   const closed = folded && !editing
   return (
     <article className={`comments__item${by === null ? '' : ' comments__item--agent'}`}>
@@ -345,7 +352,7 @@ function CommentItem({
         </div>
       </div>
       {editing ? (
-        <Composer initial={{ body: comment.body, title: title ?? '' }} placeholder="Edit…" submitLabel="Save" saving={saving} autoFocus onSubmit={onSave} onCancel={onCancel} />
+        <Composer initial={{ body: comment.body, title: title ?? '' }} placeholder="Edit…" submitLabel="Save" saving={saving} onSubmit={onSave} onCancel={onCancel} />
       ) : (
         // Sanitised HTML from `commentHtml`: Markdown in, document markup out, nothing that can run.
         !closed && <div className="comments__body" dangerouslySetInnerHTML={{ __html: commentHtml(comment.body) }} />
@@ -355,36 +362,37 @@ function CommentItem({
 }
 
 /**
- * The one composer, three seats: the bottom of the block, the bottom of a thread card (Reply),
+ * The one composer, three seats: the bottom of the block, the bottom of a card with replies (Reply),
  * in place of a body (Edit). ⌘Enter submits, Esc cancels — or clears the draft when there is
  * nothing to cancel. The textarea grows with its text and keeps focus across a submit. The
- * optional title line appears once the composer is in use (focused, or holding text). A
+ * optional title line appears once the composer is in use (focused, holding text, or editing). A
  * `collapsible` seat shows one placeholder line until then — Linear's "Reply…" row — and folds
- * back when it is empty and loses focus.
+ * back when it is empty and loses focus. A seat that can be cancelled was opened by a click, so
+ * it takes focus.
  */
 function Composer({
   placeholder,
   submitLabel,
-  initial = { body: '', title: '' },
+  initial,
   saving,
-  autoFocus = false,
   collapsible = false,
   onSubmit,
   onCancel,
 }: {
   placeholder: string
   submitLabel: string
+  /** The edit seat's starting text; absent everywhere else. */
   initial?: Draft
   saving: boolean
-  autoFocus?: boolean
   collapsible?: boolean
   /** Resolves true when the text landed; the composer then clears (a seat that closes unmounts it anyway). */
   onSubmit: (draft: Draft) => Promise<boolean>
   /** Esc and the Cancel button; absent → Esc clears the draft and there is no Cancel. */
   onCancel?: () => void
 }) {
-  const [text, setText] = useState(initial.body)
-  const [title, setTitle] = useState(initial.title)
+  const autoFocus = onCancel !== undefined
+  const [text, setText] = useState(initial?.body ?? '')
+  const [title, setTitle] = useState(initial?.title ?? '')
   const [focused, setFocused] = useState(autoFocus)
   const ref = useRef<HTMLTextAreaElement>(null)
 
@@ -392,14 +400,13 @@ function Composer({
     const el = ref.current
     if (el === null) return
     el.style.height = 'auto'
-    // `scrollHeight` is content + padding; the app's border-box sizing needs the border added back.
-    el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`
+    el.style.height = `${el.scrollHeight}px`
   }, [text])
 
   const holding = text.trim() !== '' || title.trim() !== ''
   const ready = text.trim() !== '' && !saving
-  // In use: focused anywhere inside, or holding text — a collapsible seat is one line otherwise.
-  const active = focused || holding
+  // In use: focused anywhere inside, holding text, or an edit — a collapsible seat is one line otherwise.
+  const active = focused || holding || initial !== undefined
   const open = !collapsible || active
 
   const submit = async (): Promise<void> => {
@@ -445,7 +452,13 @@ function Composer({
           aria-label="Title (optional)"
           value={title}
           onChange={(e) => setTitle(e.currentTarget.value)}
-          onKeyDown={onKeyDown}
+          onKeyDown={(e) => {
+            // Enter on the title line moves to the text, the way a subject line does.
+            if (e.key === 'Enter' && !e.metaKey) {
+              e.preventDefault()
+              ref.current?.focus()
+            } else onKeyDown(e)
+          }}
         />
       )}
       <textarea

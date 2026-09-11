@@ -142,23 +142,23 @@ describe('addComment', () => {
 describe('editComment', () => {
   it('replaces the body and stamps `edited` BEFORE the body; unknown keys stay', () => {
     const content = `---\ncomments:\n  - id: a\n    at: ${at(1)}\n    body: A\n    mood: happy\n---\n`
-    expect(editComment(content, 'a', 'A2\n', at(2))).toBe(
+    expect(editComment(content, 'a', 'A2\n', at(2), '')).toBe(
       `---\ncomments:\n  - id: a\n    at: ${at(1)}\n    mood: happy\n    edited: ${at(2)}\n    body: A2\n---\n`,
     )
   })
 
   it('re-stamps an existing `edited` in place', () => {
-    const out = editComment(NOTE, '8b02d7e4', 'Again', at(3))
+    const out = editComment(NOTE, '8b02d7e4', 'Again', at(3), '')
     expect(out).toContain(`    reply_to: 3f9a1c2e\n    edited: ${at(3)}\n    body: Again\n---\n`)
   })
 
   it('an unknown id leaves the content unchanged', () => {
-    expect(editComment(NOTE, 'nope', 'X', at(1))).toBe(NOTE)
+    expect(editComment(NOTE, 'nope', 'X', at(1), '')).toBe(NOTE)
   })
 
   it('refuses foreign and invalid shapes', () => {
-    expect(() => editComment('---\ncomments: 1\n---\n', 'a', 'X', at(1))).toThrow(CommentsShapeError)
-    expect(() => editComment('---\ncomments: [unclosed\n---\n', 'a', 'X', at(1))).toThrow(CommentsShapeError)
+    expect(() => editComment('---\ncomments: 1\n---\n', 'a', 'X', at(1), '')).toThrow(CommentsShapeError)
+    expect(() => editComment('---\ncomments: [unclosed\n---\n', 'a', 'X', at(1), '')).toThrow(CommentsShapeError)
   })
 })
 
@@ -248,8 +248,7 @@ describe('title and by (🔒 D3, D7, D11)', () => {
     const titled = `---\ncomments:\n  - id: a\n    at: ${at(1)}\n    title: Old\n    body: A\n---\n`
     expect(editComment(titled, 'a', 'A', at(2), 'New')).toContain(`    title: New\n    edited: ${at(2)}\n    body: A\n`)
     expect(editComment(titled, 'a', 'A', at(2), '')).toBe(`---\ncomments:\n  - id: a\n    at: ${at(1)}\n    edited: ${at(2)}\n    body: A\n---\n`)
-    expect(editComment(titled, 'a', 'A', at(2))).not.toContain('title:')
-  })
+      })
 
   it('`by` is the writer\'s own key: it rides through edit and delete untouched, in its place', () => {
     const content = `---\ncomments:\n  - id: a\n    at: ${at(1)}\n    by: agent\n    body: A\n  - id: b\n    at: ${at(2)}\n    body: B\n---\n`
@@ -263,5 +262,18 @@ describe('title and by (🔒 D3, D7, D11)', () => {
     expect(editComment(full, 'r', 'R2', at(4), 'T2')).toContain(
       `  - id: r\n    at: ${at(2)}\n    reply_to: p\n    by: agent\n    title: T2\n    edited: ${at(4)}\n    body: R2\n---\n`,
     )
+  })
+})
+
+describe('bare optionals (a hand-written `title:` or `reply_to:` with nothing after it)', () => {
+  it('a YAML null on an optional key reads as absent; the comment still counts and threads normally', () => {
+    const content = `---\ncomments:\n  - id: a\n    at: ${at(1)}\n    title:\n    by:\n    body: A\n  - id: b\n    at: ${at(2)}\n    reply_to:\n    body: B\n---\n`
+    expect(readComments(content)).toEqual([
+      { id: 'a', at: at(1), body: 'A' },
+      { id: 'b', at: at(2), body: 'B' },
+    ])
+    expect(threadsOf(readComments(content)).map((t) => t.comment.id)).toEqual(['a', 'b'])
+    // The write path still carries the bare keys: they are the user's bytes.
+    expect(deleteComment(content, 'b')).toContain('    title:')
   })
 })

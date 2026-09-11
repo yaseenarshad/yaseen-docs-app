@@ -3,8 +3,8 @@
  * block sits INSIDE the editor's scroller, after the folder page's contents and BEFORE "Linked
  * mentions", and repeats `.editor-instance`'s content column (backlinks.css's rule, byte for byte)
  * so it lines up with the note's text and scrolls with it. The header is the properties panel's
- * (chevron, muted label, plain count, collapses the rest) with Expand all / Collapse all at its
- * right. Below it, Linear's shape with the outliner's folding: every thread is ONE white card —
+ * control (chevron, muted label, plain count, collapses the rest) at the backlinks' size, with one
+ * fold-all button at its right. Below it, Linear's shape with the outliner's folding: every thread is ONE white card —
  * the parent on top, an "N replies" fold, the replies one level in behind a guide line, and a
  * "Reply…" row at the bottom that opens when focused. Every comment folds to one line the way a
  * bullet does: its title, or its first line. Colours are app theme tokens only, so dark mode
@@ -19,7 +19,7 @@
   border-top: 1px solid var(--border);
 }
 
-/* ---- header row: the properties panel's control at the left, the fold-all pair at the right ---- */
+/* ---- header row: the properties panel's control at the left, the fold-all button at the right ---- */
 
 .comments__bar {
   display: flex;
@@ -59,17 +59,12 @@
   font-weight: 400;
 }
 
-.comments__tools {
-  display: flex;
-  gap: 6px;
-  margin-left: auto;
-}
-
-/* Fold-all, twice: icon and word, a real button so it is easy to hit and tell apart. */
+/* Fold-all: icon and word, a real button so it is easy to hit; the label says which way it goes. */
 .comments__tool {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  margin-left: auto;
   padding: 3px 8px;
   font-size: 12px;
   color: var(--fg-muted);
@@ -167,11 +162,6 @@
   background: var(--accent-soft);
 }
 
-/* The writer's own label (`by`), after the time in the meta voice: the app never writes one for you; an agent writes `by: agent`. */
-.comments__by,
-.comments__edited {
-  flex: none;
-}
 
 /* A declared writer is not the person at the keyboard: the dot takes the agent colour. */
 .comments__item--agent .comments__mark {
@@ -195,7 +185,10 @@
   font-weight: 600;
 }
 
-.comments__when {
+/* The stamp, "(edited)" and the writer never wrap; the summary is what gives. */
+.comments__when,
+.comments__edited,
+.comments__by {
   flex: none;
 }
 
@@ -234,10 +227,10 @@
   cursor: default;
 }
 
-/* The content column starts past the fold and the dot. */
+/* The content column starts where the meta row's text does: past the fold, the dot and their gaps. */
 .comments__body,
 .comments__item > .comments__composer {
-  margin-left: 40px;
+  margin-left: 48px;
 }
 
 /* The body is rendered Markdown (D9 as amended): the note's own typography, one size down, boxed. */
@@ -349,17 +342,6 @@
   max-width: 100%;
 }
 
-/* A task list's checkbox is a marker, not a control: inert, and it replaces the bullet (GitHub's rendering). */
-.comments__body li:has(> input[type='checkbox']) {
-  margin-left: -18px;
-  list-style: none;
-}
-
-.comments__body input[type='checkbox'] {
-  margin: 0 6px 0 0;
-  vertical-align: middle;
-  pointer-events: none;
-}
 
 .comments__body hr {
   margin: 8px 0;
@@ -421,7 +403,7 @@
   margin-top: 16px;
 }
 
-/* The reply field at the bottom of a thread card: a row of the card, not a box of its own. */
+/* The reply field at the bottom of a card with replies: a row of the card, not a box of its own. */
 .comments__replies > .comments__composer {
   border-radius: 0;
   border-right: none;

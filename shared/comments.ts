@@ -77,19 +77,28 @@ export function commentsShape(content: string): CommentsShape {
 }
 
 const isString = (v: unknown): v is string => typeof v === 'string'
-const optionalString = (v: unknown): v is string | undefined => v === undefined || typeof v === 'string'
+/** An optional key may be absent, a string, or a bare `title:` (YAML null) — never another shape. */
+const optionalString = (v: unknown): boolean => v == null || typeof v === 'string'
+const OPTIONAL = ['reply_to', 'by', 'title', 'edited'] as const
 
-/** A list entry the block understands: a map with string `id`, `at` and `body` (an EMPTY body included), and string `reply_to` / `by` / `title` / `edited` when present. */
+/** A list entry the block understands: a map with string `id`, `at` and `body` (an EMPTY body included), and string-or-empty `reply_to` / `by` / `title` / `edited`. */
 function isComment(entry: unknown): entry is PageComment {
   if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return false
   const e = entry as Record<string, unknown>
-  return isString(e.id) && isString(e.at) && isString(e.body) && [e.reply_to, e.by, e.title, e.edited].every(optionalString)
+  return isString(e.id) && isString(e.at) && isString(e.body) && OPTIONAL.every((k) => optionalString(e[k]))
+}
+
+/** The typed view drops a bare optional (`title:` with nothing) so readers see it as absent; the raw list keeps it for the write. */
+function withoutEmptyOptionals(c: PageComment): PageComment {
+  const copy: PageComment = { ...c }
+  for (const k of OPTIONAL) if (copy[k] === null) delete copy[k]
+  return copy
 }
 
 const byTime = (a: PageComment, b: PageComment): number => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)
 
 /** The recognised entries, `at` ascending (stable). Anything else in the list is skipped here and carried on write. */
-const typed = (list: readonly unknown[]): PageComment[] => list.filter(isComment).sort(byTime)
+const typed = (list: readonly unknown[]): PageComment[] => list.filter(isComment).map(withoutEmptyOptionals).sort(byTime)
 
 /** The comments the block shows. A non-list value or a broken block reads as none — `commentsShape` says which. */
 export function readComments(content: string): PageComment[] {
@@ -160,6 +169,12 @@ function write(content: string, list: readonly unknown[]): string {
   return setFrontmatterProperty(content, COMMENTS_KEY, list.length === 0 ? undefined : list)
 }
 
+/** A title is a key only when it says something: blank means none, and none is written as nothing. */
+const titleKey = (title: string | undefined): { title?: string } => {
+  const t = title?.trim() ?? ''
+  return t === '' ? {} : { title: t }
+}
+
 /**
  * Append one comment. `replyTo` is filed under ITS top-level parent when it names a reply, so a
  * thread stays one level deep; an id that names nothing is kept as given (the UI never passes one).
@@ -167,7 +182,7 @@ function write(content: string, list: readonly unknown[]): string {
 export function addComment(content: string, body: string, entry: { id: string; at: string; replyTo?: string; title?: string }): string {
   const list = writable(content)
   const text = body.trimEnd()
-  const title = titleOf(entry.title)
+  const title = titleKey(entry.title)
   if (entry.replyTo === undefined) return write(content, [...list, { id: entry.id, at: entry.at, ...title, body: text }])
   const index = threading(typed(list))
   const target = index.byId.get(entry.replyTo)
@@ -176,17 +191,12 @@ export function addComment(content: string, body: string, entry: { id: string; a
   return write(content, [...list, { id: entry.id, at: entry.at, reply_to, ...title, body: text }])
 }
 
-/** A title is a key only when it says something: blank means none, and none is written as nothing. */
-const titleOf = (title: string | undefined): { title?: string } => {
-  const t = title?.trim() ?? ''
-  return t === '' ? {} : { title: t }
-}
 
 /**
  * Replace the body (and the title: blank removes it) and stamp `edited`; unknown keys ride along.
  * An unknown id changes nothing.
  */
-export function editComment(content: string, id: string, body: string, at: string, title?: string): string {
+export function editComment(content: string, id: string, body: string, at: string, title: string): string {
   const list = writable(content)
   const i = list.findIndex((e) => isComment(e) && e.id === id)
   if (i === -1) return content
@@ -194,7 +204,7 @@ export function editComment(content: string, id: string, body: string, at: strin
   const { body: _body, edited: _edited, title: _title, ...rest } = list[i] as PageComment
   return write(
     content,
-    list.map((e, j) => (j === i ? { ...rest, ...titleOf(title), edited: at, body: body.trimEnd() } : e)),
+    list.map((e, j) => (j === i ? { ...rest, ...titleKey(title), edited: at, body: body.trimEnd() } : e)),
   )
 }
 
