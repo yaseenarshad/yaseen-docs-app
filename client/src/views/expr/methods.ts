@@ -132,9 +132,10 @@ const median = (ns: number[]): number => {
 }
 
 const LIST: Table<Value[]> = {
-  contains: (l, [x]) => l.some(v => equals(v, x ?? null)),
-  containsAll: (l, xs) => xs.every(x => l.some(v => equals(v, x))),
-  containsAny: (l, xs) => xs.some(x => l.some(v => equals(v, x))),
+  // Resolved like `==` (YAZ-1469): a link in the list matches a link to the same note, not merely the same text.
+  contains: (l, [x], { resolve }) => l.some(v => equals(v, x ?? null, resolve)),
+  containsAll: (l, xs, { resolve }) => xs.every(x => l.some(v => equals(v, x, resolve))),
+  containsAny: (l, xs, { resolve }) => xs.some(x => l.some(v => equals(v, x, resolve))),
   flat: l => flatten(l),
   join: (l, [sep]) => l.map(render).join(sep == null ? ', ' : render(sep)),
   reverse: l => [...l].reverse(),

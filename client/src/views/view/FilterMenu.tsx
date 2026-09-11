@@ -40,7 +40,7 @@ const FILE_EXTRAS = ['file.tags', 'file.folder', 'file.links']
 /** A fresh rule matches every row, so adding one never blanks the view before it is filled in. */
 const NEW_RULE: Rule = { property: 'file.name', op: 'contains', value: '' }
 
-/** A long list defeats its own purpose, and the vault is the only source of these (YAZ-1232). */
+/** A long DATALIST defeats its own purpose (YAZ-1232); the searchable checklist takes every value (YAZ-1469). */
 const SUGGESTION_LIMIT = 50
 
 /**
@@ -96,11 +96,11 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
   }
 
   /** The values `records` already hold for one property, distinct and in first-seen order (YAZ-1232). */
-  const suggestionsFor = (property: string): string[] => {
+  const suggestionsFor = (property: string, limit = SUGGESTION_LIMIT): string[] => {
     const out: string[] = []
     const seen = new Set<string>()
     const add = (s: string) => {
-      if (s === '' || seen.has(s) || out.length >= SUGGESTION_LIMIT) return
+      if (s === '' || seen.has(s) || out.length >= limit) return
       seen.add(s)
       out.push(s)
     }
@@ -121,7 +121,7 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
 
   /** The property's known values, plus any tick it lacks so a hand-edited one still shows (YAZ-1467). */
   const valueOptions = (property: string, picks: readonly string[]) => {
-    const known = suggestionsFor(property)
+    const known = suggestionsFor(property, Infinity)
     return [...picks.filter((v) => !known.includes(v)), ...known].map((value) => ({ value, label: value }))
   }
 
@@ -156,8 +156,8 @@ export function FilterMenu({ def, view, viewIndex, records, errors, properties, 
         {kind === 'options' ? (
           <ColumnPicker
             multiple
-            noun="values"
-            label="Values"
+            noun="options"
+            label="Value"
             value={picks}
             options={valueOptions(rule.property, picks)}
             onChange={(value) => setRule(i, rule, { value }, setAt)}

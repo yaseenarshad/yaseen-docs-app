@@ -120,7 +120,7 @@ function mountMultiple(initial: string[] = []) {
   const onChange = vi.fn()
   function Harness() {
     const [value, setValue] = useState(initial)
-    return <ColumnPicker multiple noun="values" label="Values" value={value} options={[
+    return <ColumnPicker multiple noun="options" label="Value" value={value} options={[
       { value: 'Done', label: 'Done' },
       { value: 'Doing', label: 'Doing' },
       { value: 'Idea', label: 'Idea' },
@@ -131,7 +131,7 @@ function mountMultiple(initial: string[] = []) {
   root = createRoot(container)
   act(() => root!.render(<Harness />))
   const el = container
-  const trigger = el.querySelector<HTMLButtonElement>('[aria-label="Values"]')!
+  const trigger = el.querySelector<HTMLButtonElement>('[aria-label="Value"]')!
   const option = (value: string) => el.querySelector<HTMLElement>(`[role="option"][data-value="${value}"]`)!
   return { el, trigger, option, input: () => el.querySelector<HTMLInputElement>('[role="combobox"]')!, onChange }
 }
@@ -157,15 +157,15 @@ describe('ColumnPicker as a value checklist (YAZ-1467)', () => {
     expect(trigger.textContent).toContain('Idea')
   })
 
-  it('says values where the single picker says columns, and opens on the first tick', () => {
+  it('says options where the single picker says columns, and opens on the first tick', () => {
     const { el, trigger, input, onChange } = mountMultiple(['Doing'])
     expect(trigger.textContent).toContain('Doing')
     click(trigger)
-    expect(input().placeholder).toBe('Search values…')
-    expect(el.querySelector('[role="listbox"]')?.getAttribute('aria-label')).toBe('Values values')
+    expect(input().placeholder).toBe('Search options…')
+    expect(el.querySelector('[role="listbox"]')?.getAttribute('aria-label')).toBe('Value options')
     expect(input().getAttribute('aria-activedescendant')).toBe(el.querySelector('[role="option"][data-value="Doing"]')!.id)
     search(input(), 'not-a-value')
-    expect(el.querySelector('[role="status"]')?.textContent).toBe('No values found.')
+    expect(el.querySelector('[role="status"]')?.textContent).toBe('No options found.')
     act(() => { document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })) })
     expect(el.querySelector('[role="listbox"]')).toBeNull()
     expect(onChange).not.toHaveBeenCalled()

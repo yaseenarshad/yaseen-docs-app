@@ -296,13 +296,23 @@ describe('filter menu (YAZ-1227-1229)', () => {
     const pop = openMenu(el, 'Filter')
     setValue(byLabel<HTMLSelectElement>(pop, 'Operator'), 'isAnyOf')
     expect(def().views[0].filters).toEqual({ and: ['[].contains(note.status)'] })
-    expect(pop.querySelector('[aria-label="Value"]')).toBeNull()
-    chooseColumn(pop, 'Values', 'idea')
-    chooseColumn(pop, 'Values', 'drafting')
+    expect(pop.querySelector('input[aria-label="Value"]')).toBeNull()
+    chooseColumn(pop, 'Value', 'idea')
+    chooseColumn(pop, 'Value', 'drafting')
     expect(onChange).toHaveBeenCalledTimes(3)
     expect(def().views[0].filters).toEqual({ and: ['["idea", "drafting"].contains(note.status)'] })
     // A leading `[` is a flow sequence, so the serializer quotes the whole expression.
     expect(yaml()).toContain('- "[\\"idea\\", \\"drafting\\"].contains(note.status)"')
+  })
+
+  it('the datalist stops at 50 suggestions, the checklist lists every value (YAZ-1469)', () => {
+    const records = Array.from({ length: 60 }, (_, i) => ({ ...TEST_RECORDS[0], path: `/vault/n${i}.md`, properties: { status: `s${String(i).padStart(2, '0')}` } }))
+    const { el } = mount(RULE, { records })
+    const pop = openMenu(el, 'Filter')
+    expect(pop.querySelectorAll('datalist option')).toHaveLength(50)
+    setValue(byLabel<HTMLSelectElement>(pop, 'Operator'), 'isAnyOf')
+    click(byLabel(pop, 'Value'))
+    expect(pop.querySelectorAll('[role="option"]')).toHaveLength(60)
   })
 
   it('a stored value list reopens ticked, and going back to "is" clears it (YAZ-1467)', () => {
@@ -310,7 +320,7 @@ describe('filter menu (YAZ-1227-1229)', () => {
     const { el, def } = mount('views:\n  - type: table\n    name: T\n    filters:\n      and:\n        - \'["idea", "zzz"].contains(note.status)\'\n')
     const pop = openMenu(el, 'Filter')
     expect(byLabel<HTMLSelectElement>(pop, 'Operator').value).toBe('isAnyOf')
-    const values = byLabel<HTMLButtonElement>(pop, 'Values')
+    const values = byLabel<HTMLButtonElement>(pop, 'Value')
     expect(values.textContent).toContain('idea, zzz')
     click(values)
     // `zzz` is in no record, so only the stored rule puts it on the list — and it is still ticked.

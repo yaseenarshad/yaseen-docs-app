@@ -32,7 +32,7 @@ export function allPropertyKeys(
 }
 
 /** `keys` plus `extra` (first) when missing, so a select always lists its current value. */
-export function withKey(keys: readonly string[], extra: string): string[] {
+function withKey(keys: readonly string[], extra: string): string[] {
   return keys.some(k => canonicalKey(k) === canonicalKey(extra)) ? [...keys] : [extra, ...keys]
 }
 

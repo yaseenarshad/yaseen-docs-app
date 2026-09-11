@@ -625,6 +625,11 @@ describe('file resolution (GRO-2132)', () => {
     expect(ev('link("Foo") == link("A/Foo")', rs(notes[2]))).toBe(true)
     expect(ev('link("Foo") == link("B/Foo")', rs(notes[2]))).toBe(false)
     expect(ev('link("Foo") != link("B/Foo")', rs(notes[2]))).toBe(true)
+    // The list methods compare the same way `==` does (YAZ-1469): resolved paths first, text only as fallback.
+    expect(ev('[link("A/Foo")].contains(link("Foo"))', rs(notes[2]))).toBe(true)
+    expect(ev('[link("B/Foo")].contains(link("Foo"))', rs(notes[2]))).toBe(false)
+    expect(ev('[link("Foo")].containsAny(link("B/Foo"))', rs(notes[2]))).toBe(false)
+    expect(ev('[link("Foo")].containsAll(link("A/Foo"))', rs(notes[2]))).toBe(true)
     expect(ev('link("B/Foo") == "B/Foo.md"', rs(notes[2]))).toBe(true)
     expect(ev('link("Foo") == file', rs(notes[0]))).toBe(true)
     expect(ev('link("Foo") == file', rs(notes[1]))).toBe(false)

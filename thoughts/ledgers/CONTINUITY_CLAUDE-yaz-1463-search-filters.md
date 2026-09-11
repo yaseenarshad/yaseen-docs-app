@@ -18,16 +18,18 @@ Ship YAZ-1463 to main as release 0.9.10: Filter menu Property is the searchable 
 - Done:
   - [x] 1- Scope (YAZ-1464) — tree created, D1–D6 locked
   - [x] 2A- Property picker + Filter layout (YAZ-1466) — commit 9502535, 3462 tests green
-- Now: [→] 2B- any-of / none-of operators + checklist (YAZ-1467) — agent building
-- Next: 3- Prove it (demo already at ~/Desktop/yaz-1463-search-filters-demo)
+  - [x] 2B- any-of / none-of operators + checklist (YAZ-1467) — commit 4484ede, 3491 tests green
+  - [x] 4- Polish (YAZ-1469) — cap decision, 🔒 audit, reviewer triage, D7 engine resolve fix, copy Value/options, widths final at 420px
+- Now: [→] 4A- Release 0.9.10, PR, merge, closeout (YAZ-1470)
+- Next: memory notes, done
 - Remaining:
   - [ ] 3- Prove it: demo vault on Desktop, isolated profile, "go do this" script (YAZ-1468)
-  - [ ] 4- Polish and anti-slop, evidence comment (YAZ-1469)
   - [ ] 4A- Release 0.9.10, PR, merge, closeout comment (YAZ-1470)
 
 ## Open Questions
-- UNCONFIRMED: final D3 widths (420px / flex 140px) — Yasin confirms on screen in 3-.
-- UNCONFIRMED: keep `SUGGESTION_LIMIT = 50` with a searchable list — decide in 4-.
+- DECIDED: D3 widths final at 420px / flex 140px (Yasin: no further demo needed, 2026-09-11).
+- DECIDED (4-): datalist keeps 50, checklist unlimited via `suggestionsFor(property, Infinity)`.
+- DECIDED: copy is label `Value` + noun `options` (D6 amended); D7 list methods take `resolve` (engine, 3 lines + test).
 
 ## Working Set
 - Files: client/src/views/view/{FilterMenu,filterRows,ColumnPicker,ColumnSearch,SortMenu,properties,Toolbar}.tsx|ts, client/src/views/views.css, docs/CONTRACTS.md
