@@ -6,9 +6,11 @@ import { useCallback, useLayoutEffect, useRef } from 'react'
  * (Last), then hand it back the difference as an inverted `translate` with transitions off
  * (Invert) so it paints exactly where the eye last saw it — and clear that transform one forced
  * reflow later so the CSS `transition: transform` slides it home (Play). No animation library, no
- * rAF loop: the browser's own compositor does the tweening. `flipPlan` is the measured half, kept
- * pure and pinned by tests; the DOM choreography around it is deliberately thin. One `useFlip`
- * covers the WHOLE board, so a card dragged between columns is a move, not a death and a birth.
+ * rAF loop: the browser's own compositor does the tweening. `flipPlan` and `flipRect` are the
+ * measured half, kept pure and pinned by tests; the DOM choreography around them is deliberately
+ * thin. One `useFlip` covers the WHOLE board, so a card dragged between columns is a move, not a
+ * death and a birth. Cards are measured in the root's CONTENT space, never the viewport's, so a
+ * scroll — the board sideways, the note vertically — is not motion (YAZ-1555).
  */
 
 export interface FlipRect {
@@ -41,6 +43,11 @@ export function flipPlan(prev: Map<string, FlipRect>, next: Map<string, FlipRect
   return { moves, entered }
 }
 
+/** A card's viewport rect re-based on the FLIP root's content: minus the root's rect, plus its scroll. */
+export function flipRect(node: FlipRect, origin: FlipRect, scrollLeft: number, scrollTop: number): FlipRect {
+  return { x: node.x - origin.x + scrollLeft, y: node.y - origin.y + scrollTop }
+}
+
 const ENTER = 'view-flip-enter'
 
 /** Ref callback for the animated container; its `[data-flip-key]` descendants are what move. */
@@ -53,9 +60,9 @@ export function useFlip(): (el: HTMLElement | null) => void {
     if (el === null) return
     const nodes = Array.from(el.querySelectorAll<HTMLElement>('[data-flip-key]'))
     const next = new Map<string, FlipRect>()
+    const origin = el.getBoundingClientRect()
     for (const node of nodes) {
-      const { x, y } = node.getBoundingClientRect()
-      next.set(node.dataset.flipKey ?? '', { x, y })
+      next.set(node.dataset.flipKey ?? '', flipRect(node.getBoundingClientRect(), origin, el.scrollLeft, el.scrollTop))
     }
     const first = prev.current
     prev.current = next
