@@ -23,10 +23,10 @@
   - [x] 4- Polish (YAZ-1571) — if/else, dedent, JSDoc; 3845 tests green, typecheck clean
   - [x] 5- docs: HotkeysPanel + test, CONTRACTS (3 spots), README bullet
   - [x] 5- demo vault `~/Desktop/open-gestures-demo/` (vault "Board & Table Open Gestures YAZ-1557", 23 pages, 8 views, 20 scenarios)
-- Now: [→] commit, push, PR; launch demo; Yasin's hand pass (YAZ-1572)
-- Next: merge to main after the hand pass (no release); remove worktree + branch + demo
-- Remaining:
-  - [ ] fix anything the hand pass finds as 5A/5B… sub-issues
+  - [x] 5- hand pass: all 20 scenarios passed (Yasin) · PR #49 merged to main `9afadb0`, NO version bump (batched); worktree, branch (local+remote), demo folder removed
+  - [x] Handoff posted on YAZ-1557 + YAZ-1556 and on every child (YAZ-1568…1572); all Done
+- Now: COMPLETE — nothing pending
+- Next: none (follow-ups deliberately not done are listed in the YAZ-1557 handoff: ⌥ on sidebar rows/links, skip collapsed columns, Home/End, multi-select)
 
 ## Open Questions
 - none
