@@ -25,13 +25,14 @@
   - [x] 3- Column management 3A-3E (YAZ-1543..1548) — `d7cf39c`
   - [x] 4- Polish and anti-slop (YAZ-1549) — `d787fd1`
   - [x] 5- Verify + CONTRACTS (YAZ-1550) — docs + spec in `f533d2b`; `columns.spec.ts` 7/7 green; the 11 folder-page specs updated for the new UI, all green
-- Now: [→] merge PR #44 → main, close YAZ-1513, delete the scratch demo vault + profile, remove the worktree
+  - [x] Merged as PR #44 → main `e2ac21e`; YAZ-1513 Done; demo vault, profile and worktree removed
+- Now: complete — nothing in flight
 - Left open: YAZ-1552 (5A) — 7 Playwright specs that already fail on main `0a98a66` (Group-by picker, window lookup, clipboard, theme), unrelated to this feature.
 
 ## Open Questions
 - (none) — the header-drag e2e step passed as written.
 
 ## Working Set
-- Branch `yaz-1513-demo` (worktree `.claude/worktrees/yaz-1513-demo`), base main `0a98a66`.
+- Was branch `yaz-1513-demo` (merged, worktree removed).
 - Tests: `npm run typecheck && npm test` (231 files / 3826); `npm run e2e` for the spec; `npm run build`.
-- Demo: scratch vault `…/scratchpad/YAZ-1513 Name Status Number Columns` + profile, launched with `YASEEN_DOCS_USER_DATA_DIR=<profile> npm run dev` (throwaway).
+- Demo vault pattern (throwaway, deleted): generate under a scratch dir, seed `<profile>/yaseendocs.json` with a `windows[]` entry, launch `YASEEN_DOCS_USER_DATA_DIR=<profile> npm run dev`.
