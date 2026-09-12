@@ -48,8 +48,8 @@ import { SyncFromFolder } from './SyncFromFolder'
  * ADOPTION (YAZ-1152) is the "tagged elsewhere still shows" rule, kept by the DOCUMENT: a member
  * whose page it does not NAME is still a member (its own card says so), so its `[[link]]` is
  * appended — depth-0 lines at the END, alphabetical by basename, spelled by `linkNames` (the
- * shortest spelling that resolves BACK to the member, the one "Copy link" and sync-from-folder
- * write), through `commit`, the one door, in ONE settings write. It is IDEMPOTENT because the todo
+ * shortest spelling that resolves BACK to the member, the one sync-from-folder writes),
+ * through `commit`, the one door, in ONE settings write. It is IDEMPOTENT because the todo
  * is recomputed inside the effect against `docRef.current` — never a render's stale `doc` — which
  * is what makes StrictMode's double-invoked effects adopt exactly once. FOUR GUARDS hold it back:
  * a remove sheet still standing, an un-tag still IN FLIGHT (`untagging`: the index has not echoed
@@ -228,7 +228,7 @@ export function OutlineView({
     () => records.filter((r) => !linked.has(r.path)).sort((a, b) => collator.compare(a.basename, b.basename)),
     [records, linked],
   )
-  /** One note, one spelling (`linkNames`, shared with "Copy link"): the text that links BACK to it. */
+  /** One note, one spelling (`linkNames`, shared with sync-from-folder): the text that links BACK to it. */
   const spellings = useMemo(() => linkNames(vaultRecords), [vaultRecords])
 
   /** ADOPTION (YAZ-1152): the four guards, then the todo against the CURRENT document. */

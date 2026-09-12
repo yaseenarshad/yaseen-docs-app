@@ -12,7 +12,6 @@ export interface ViewOnlyCatalog {
   readonly entries: readonly ViewOnlyEntry[]
   readonly candidates: readonly LinkCandidate[]
   resolve(target: string): string | null
-  linkName(path: string): string | null
 }
 
 const pathOrder = (a: ViewOnlyEntry, b: ViewOnlyEntry): number => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
@@ -49,7 +48,6 @@ export function buildViewOnlyCatalogFromEntries(root: string, source: readonly V
     const clean = target.trim()
     return clean.includes('/') ? exact.get(clean) ?? null : winner.get(clean.toLowerCase())?.path ?? null
   }
-  const linkName = (path: string): string | null => names.get(path) ?? null
   const candidates = entries.map((entry) => ({ ...nameCandidate(names.get(entry.path) as string), path: entry.path }))
-  return { root, entries, candidates, resolve, linkName }
+  return { root, entries, candidates, resolve }
 }

@@ -22,7 +22,6 @@ export interface ViewOnlyLinkSource {
   readonly catalog: ViewOnlyCatalog | null
   readonly targets: readonly ViewOnlyEntry[]
   readonly resolve: ((target: string) => string | null) | null
-  linkName(path: string): string | null
   subscribe(listener: () => void): () => void
 }
 
@@ -39,7 +38,6 @@ export function createViewOnlyLinkSource(): MutableViewOnlyLinkSource {
     get catalog() { return current },
     get targets() { return current?.entries ?? [] },
     get resolve() { return current?.resolve ?? null },
-    linkName(path) { return current?.linkName(path) ?? null },
     subscribe(listener) {
       listeners.add(listener)
       return () => { listeners.delete(listener) }

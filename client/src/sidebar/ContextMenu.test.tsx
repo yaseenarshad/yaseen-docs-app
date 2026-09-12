@@ -53,7 +53,6 @@ function mount(x: number, y: number, over: Partial<MenuProps> = {}) {
     copyPaths: null,
     openTabPaths: null,
     onOpenInNewTabs: vi.fn(),
-    copyLinkText: null,
     newWindowPath: null,
     onOpenNewWindow: vi.fn(),
     renamePath: null,

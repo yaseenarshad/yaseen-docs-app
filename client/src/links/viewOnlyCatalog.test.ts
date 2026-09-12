@@ -50,11 +50,6 @@ describe('view-only catalog (YAZ-1310)', () => {
   it('gives a duplicate basename to the shallowest deterministic winner and spells every target unambiguously', () => {
     const catalog = buildViewOnlyCatalog('/vault', tree)
     expect(catalog.resolve('DATA.JSON')).toBe('/vault/data.json')
-    expect(catalog.linkName('/vault/data.json')).toBe('data.json')
-    expect(catalog.linkName('/vault/deep/data.JSON')).toBe('deep/data.JSON')
-    expect(catalog.linkName('/vault/z/data.json')).toBe('z/data.json')
-    expect(catalog.linkName('/vault/deep/nested/Outbound Lead Qualifier.json')).toBe('Outbound Lead Qualifier.json')
-    expect(catalog.linkName('/vault/missing.json')).toBeNull()
     expect(catalog.candidates.map(({ insert, path }) => [insert, path])).toEqual([
       ['data.json', '/vault/data.json'],
       ['deep/data.JSON', '/vault/deep/data.JSON'],
@@ -72,8 +67,10 @@ describe('view-only catalog (YAZ-1310)', () => {
       { type: 'dir', name: 'a', path: '/vault/a', children: [file('/vault/a/SAME.JSON', 'text')] },
     ])
     expect(catalog.resolve('same.json')).toBe('/vault/a/SAME.JSON')
-    expect(catalog.linkName('/vault/a/SAME.JSON')).toBe('SAME.JSON')
-    expect(catalog.linkName('/vault/z/same.json')).toBe('z/same.json')
+    expect(catalog.candidates.map(({ insert, path }) => [insert, path])).toEqual([
+      ['SAME.JSON', '/vault/a/SAME.JSON'],
+      ['z/same.json', '/vault/z/same.json'],
+    ])
   })
 
   it('rebuilds the same deterministic lookup from an already-flattened rename snapshot', () => {
@@ -82,7 +79,6 @@ describe('view-only catalog (YAZ-1310)', () => {
       entry.path === '/vault/data.json' ? { ...entry, path: '/vault/moved/data.json' } : entry,
     ))
     expect(rebuilt.resolve('data.json')).toBe('/vault/deep/data.JSON')
-    expect(rebuilt.linkName('/vault/moved/data.json')).toBe('moved/data.json')
-    expect(rebuilt.candidates.map((candidate) => candidate.path)).toContain('/vault/moved/data.json')
+    expect(rebuilt.candidates.map(({ insert, path }) => [insert, path])).toContainEqual(['moved/data.json', '/vault/moved/data.json'])
   })
 })

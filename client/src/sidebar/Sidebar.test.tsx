@@ -13,8 +13,6 @@ import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_SETTINGS, type TreeNode, type WatchEvent } from '@shared/types'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { EMPTY_SELECTION } from '../lib/selection'
-import { buildViewOnlyCatalog } from '../links/viewOnlyCatalog'
-import { createViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 
 // Forward uses the one-key writer; reverse uses its shared whole-file transform because the
 // migrated outline and flag must change atomically (YAZ-1022).
@@ -95,7 +93,6 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     // The window's already-on index feed (WikilinkIndexBridge's source): empty unless a test
     // hands over a snapshot, which is exactly the pre-first-index state.
     indexSource: { resolve: null, records: [], subscribe: () => () => undefined },
-    viewOnlyLinks: createViewOnlyLinkSource(),
     pendingSearchFocus: false,
     onSearchFocusHandled: vi.fn(),
     // 6C (YAZ-849): App's per-vault verdict, threaded to the Topics lens. False = adopted, the
@@ -219,7 +216,6 @@ describe('Sidebar view-only file routing (YAZ-1301)', () => {
       'Rename',
       'Delete',
     ]))
-    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
     expect(itemByLabel(el, 'Turn into folder page')).toBeUndefined()
     expect(itemByLabel(el, 'Turn back into normal page')).toBeUndefined()
 
@@ -237,140 +233,19 @@ describe('Sidebar view-only file routing (YAZ-1301)', () => {
 })
 
 /**
- * "Copy link" copies the note's `[[wikilink]]` (YAZ-957) — the text that pastes into another
- * note and resolves back to the row that was right-clicked. It REPLACED the `yaseendocs://`
- * deep link this item used to copy (E3, GRO-2173): main's protocol handler and its parser are
- * untouched, but a wikilink is the link this vault's own notes are written in. The name is the
- * SHORTEST unambiguous one — the same rule the `[[` picker completes over
- * (`links/completion.ts`), read off the index snapshot when the menu opens.
+ * "Copy link" is GONE (YAZ-1554): it sat directly under "Copy path" and the two were easy to
+ * confuse, and the `[[` picker already links from inside a note. One tombstone test, so the
+ * item cannot creep back on any row kind.
  */
-describe('Sidebar copy link (E3 GRO-2173, YAZ-957)', () => {
-  /** jsdom has no navigator.clipboard; the menu items call writeText, so stub just that. */
-  function installClipboard() {
-    const writeText = vi.fn(async () => undefined)
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-    return writeText
-  }
-
-  /** One index record for `path`, its folder derived from it — the snapshot the name is read off. */
-  const record = (path: string) => {
-    const name = path.slice(path.lastIndexOf('/') + 1)
-    const rel = path.slice('/v/'.length)
-    return {
-      path,
-      name,
-      basename: name.replace(/\.[^.]+$/, ''),
-      folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '',
-      ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [],
-    }
-  }
-  const feed = (...records: ReturnType<typeof record>[]): SidebarProps['indexSource'] =>
-    ({ resolve: null, records, subscribe: () => () => undefined }) as SidebarProps['indexSource']
-
-  const VIEW_LINK_TREE: TreeNode[] = [
-    { type: 'file', name: 'data.json', path: '/v/data.json', size: 1, mtime: 1, kind: 'text' },
-    { type: 'file', name: 'photo.PNG', path: '/v/photo.PNG', size: 1, mtime: 1, kind: 'image' },
-    { type: 'dir', name: 'deep', path: '/v/deep', children: [
-      { type: 'file', name: 'data.JSON', path: '/v/deep/data.JSON', size: 1, mtime: 1, kind: 'text' },
-      { type: 'file', name: 'Outbound Lead Qualifier.json', path: '/v/deep/Outbound Lead Qualifier.json', size: 1, mtime: 1, kind: 'text' },
-    ] },
-  ]
-
-  it('copies catalog-owned explicit-extension spellings for view-only rows, including duplicates and spaces', async () => {
-    const writeText = installClipboard()
-    const viewOnlyLinks = createViewOnlyLinkSource()
-    viewOnlyLinks.update(buildViewOnlyCatalog('/v', VIEW_LINK_TREE))
-    const { el } = await mount({ viewOnlyLinks }, (bridge) => {
-      bridge.tree.mockResolvedValue({ root: '/v', tree: VIEW_LINK_TREE, generatedAt: 1 })
-    })
-
-    act(() => void el.querySelector('[title="/v/data.json"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    act(() => itemByLabel(el, 'Copy link')?.click())
-    expect(writeText).toHaveBeenLastCalledWith('[[data.json]]')
-
-    act(() => void el.querySelector('[title="/v/photo.PNG"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    act(() => itemByLabel(el, 'Copy link')?.click())
-    expect(writeText).toHaveBeenLastCalledWith('[[photo.PNG]]')
-
-    act(() => el.querySelector<HTMLButtonElement>('.tree__row--dir')?.click())
-    act(() => void el.querySelector('[title="/v/deep/data.JSON"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    act(() => itemByLabel(el, 'Copy link')?.click())
-    expect(writeText).toHaveBeenLastCalledWith('[[deep/data.JSON]]')
-
-    act(() => void el.querySelector('[title="/v/deep/Outbound Lead Qualifier.json"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    act(() => itemByLabel(el, 'Copy link')?.click())
-    expect(writeText).toHaveBeenLastCalledWith('[[Outbound Lead Qualifier.json]]')
-  })
-
-  it('hides view-only Copy link before the catalog is ready and after the target is removed', async () => {
-    installClipboard()
-    const viewOnlyLinks = createViewOnlyLinkSource()
-    const { el } = await mount({ viewOnlyLinks }, (bridge) => {
-      bridge.tree.mockResolvedValue({ root: '/v', tree: VIEW_LINK_TREE, generatedAt: 1 })
-    })
-    const row = () => el.querySelector('[title="/v/data.json"]')
-    act(() => void row()?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
-    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
-
-    viewOnlyLinks.update(buildViewOnlyCatalog('/v', VIEW_LINK_TREE))
-    act(() => void row()?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    expect(itemByLabel(el, 'Copy link')).toBeDefined()
-    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
-
-    viewOnlyLinks.update(buildViewOnlyCatalog('/v', []))
-    act(() => void row()?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
-  })
-
-  it('the file row context menu offers "Copy link" next to "Copy path"; it puts the note\'s [[wikilink]] on the clipboard and closes', async () => {
-    const writeText = installClipboard()
-    const { el } = await mount({ indexSource: feed(record('/v/a.md')) })
-    act(() => void fileRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    const labels = menuItems(el).map((b) => b.textContent)
-    expect(labels.indexOf('Copy link')).toBe(labels.indexOf('Copy path') + 1)
-    act(() => itemByLabel(el, 'Copy link')?.click())
-    expect(writeText).toHaveBeenCalledExactlyOnceWith('[[a]]')
-    expect(el.querySelector('.ctx-menu')).toBeNull()
-  })
-
-  it('a DUPLICATE basename copies the DISAMBIGUATED name, so the paste resolves back to the row that was right-clicked', async () => {
-    const writeText = installClipboard()
-    const DUPES: TreeNode[] = [
-      { type: 'dir', name: 'sub', path: '/v/sub', children: [{ type: 'file', name: 'a.md', path: '/v/sub/a.md', size: 1, mtime: 1, kind: 'markdown' }] },
-      { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
-    ]
-    const { el } = await mount({ indexSource: feed(record('/v/a.md'), record('/v/sub/a.md')) }, (b) =>
-      b.tree.mockImplementation(async (r: string) => ({ root: r, tree: DUPES, generatedAt: 1 })),
-    )
-    act(() => el.querySelector<HTMLButtonElement>('.tree__row--dir')?.click()) // expand `sub`
-    act(() => void el.querySelector('[title="/v/sub/a.md"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    act(() => itemByLabel(el, 'Copy link')?.click())
-    expect(writeText).toHaveBeenLastCalledWith('[[sub/a]]')
-    // …while the shallowest of the two keeps the bare name — the one the resolver gives it.
-    act(() => void el.querySelector('[title="/v/a.md"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    act(() => itemByLabel(el, 'Copy link')?.click())
-    expect(writeText).toHaveBeenLastCalledWith('[[a]]')
-  })
-
-  it('a row the index has not caught up with yet copies its bare name — a note seconds old still links', async () => {
-    const writeText = installClipboard()
-    const { el } = await mount() // the pre-first-index feed: no records at all
-    act(() => void fileRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    act(() => itemByLabel(el, 'Copy link')?.click())
-    expect(writeText).toHaveBeenCalledExactlyOnceWith('[[a]]')
-  })
-
-  it('folder rows and blank space get no "Copy link" — neither is a note to name', async () => {
-    installClipboard()
+describe('Sidebar copy link (retired, YAZ-1554)', () => {
+  it('no row kind offers "Copy link" — file, folder or blank space — while "Copy path" stays', async () => {
     const { el } = await mount()
-    act(() => void el.querySelector('.tree__row--dir')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
-    expect(itemByLabel(el, 'Copy path')).toBeDefined()
-    act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
-    act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
-    expect(itemByLabel(el, 'New note')).toBeDefined()
+    for (const selector of ['.tree__row--file', '.tree__row--dir', '.sidebar__body']) {
+      act(() => void el.querySelector(selector)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+      expect(itemByLabel(el, 'Copy link')).toBeUndefined()
+      expect(itemByLabel(el, 'Copy path')).toBeDefined()
+      act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    }
   })
 })
 
@@ -572,11 +447,10 @@ describe('context menu target matrix (GRO-2296)', () => {
     return el
   }
 
-  it('a FILE row targets every item: rename, copy path, copy link, open in new window', async () => {
+  it('a FILE row targets every item: rename, copy path, open in new window', async () => {
     const el = await open('.tree__row--file')
     expect(itemByLabel(el, 'Rename')).toBeDefined()
     expect(itemByLabel(el, 'Copy path')).toBeDefined()
-    expect(itemByLabel(el, 'Copy link')).toBeDefined()
     expect(itemByLabel(el, 'Open in new window')).toBeDefined()
   })
 
@@ -584,14 +458,12 @@ describe('context menu target matrix (GRO-2296)', () => {
     const el = await open('.tree__row--dir')
     expect(itemByLabel(el, 'Rename')).toBeDefined()
     expect(itemByLabel(el, 'Copy path')).toBeDefined()
-    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
     expect(itemByLabel(el, 'Open in new window')).toBeUndefined()
   })
 
   it('BLANK SPACE shows no Rename — the vault root is never renameable (the GRO-2297 guard rail)', async () => {
     const el = await open('.sidebar__body')
     expect(itemByLabel(el, 'Rename')).toBeUndefined()
-    expect(itemByLabel(el, 'Copy link')).toBeUndefined()
     expect(itemByLabel(el, 'Open in new window')).toBeUndefined()
     // The create actions are always available on blank space (they target the root) — and the
     // FILES lens keeps "New folder", which only the Topics lens drops (YAZ-948).
@@ -1493,7 +1365,6 @@ describe('context menu order (GRO-2272 C1a)', () => {
       'Reveal in Finder',
       'Open in VS Code',
       'Copy path',
-      'Copy link',
       'New note',
       // "New folder page" (🔒 D4, YAZ-817): second in the create group, directly after the
       // note it is a kind of — it CREATES beside the right-clicked row, so it stays in the
@@ -1824,7 +1695,6 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
       'Reveal in Finder',
       'Open in VS Code',
       'Copy path',
-      'Copy link',
       'New note',
       'New folder page',
       // …and NOT 'New folder' (YAZ-948, ruled by Yasin): this lens browses by MEANING, so a disk
@@ -1855,17 +1725,6 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     act(() => itemByLabel(el, 'Copy path')?.click())
     // The PAGE's path, never the vault root's — the blank-space fallback stays where it belongs.
     expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/Docs/Guide.md')
-  })
-
-  it('Copy link copies the PAGE\'s own [[wikilink]] — one item, one name, whichever lens opened it (YAZ-957)', async () => {
-    const writeText = installClipboard()
-    const { el } = await topics()
-    await expandDocs(el)
-    await rightClick(rowFor(el, 'Guide'))
-    act(() => itemByLabel(el, 'Copy link')?.click())
-    // Guide lives in a SUBFOLDER and still copies the BARE name: the shortest unambiguous one,
-    // never the path this lens exists to hide.
-    expect(writeText).toHaveBeenCalledExactlyOnceWith('[[Guide]]')
   })
 
   it('Delete flows through the EXISTING pipeline: the same sheet, then onDeleteFile with the page\'s path', async () => {

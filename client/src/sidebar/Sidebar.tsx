@@ -10,12 +10,10 @@ import { memberFolder, newPageFromFolderPage } from '../views/scaffold'
 import { ChevronsIcon, SearchIcon } from '../views/view/icons'
 import { transformFile } from '../views/writeProperty'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
-import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
-import { basename, stripExt } from '../lib/paths'
+import { basename } from '../lib/paths'
 import { storage } from '../lib/storage'
-import { linkNames } from '../links/completion'
 import { FOLDER_PAGE_KEY, FOLDER_PAGES_KEY, folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { countLinkReferences } from '../links/renameLinks'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../lib/selection'
@@ -101,8 +99,6 @@ interface SidebarProps {
    * bytes would not change. Report-don't-block: nothing is lost, and the next right-click is right.
    */
   indexSource: WikilinkResolveSource
-  /** App's separate catalog-backed source for navigation-only text/PDF link spellings. */
-  viewOnlyLinks: ViewOnlyLinkSource
   /**
    * ⌘K asked for the search bar (YAZ-801): the bar focuses its input. True at MOUNT is the
    * ⌘K-while-collapsed path (App un-collapses, so the sidebar mounts with it already set), not an
@@ -177,8 +173,6 @@ interface MenuTargets {
    * fields that happen to agree.
    */
   openTabPaths: string[] | null
-  /** "Copy link" — the FILE row's own `[[wikilink]]`, resolved when the menu opens (E3 GRO-2173, YAZ-957). */
-  copyLinkText: string | null
   /** "Open in new window" — FILE rows only (D2, GRO-2168). */
   newWindowPath: string | null
   /** "Rename" — a concrete row only, NEVER blank space: the vault root is not renameable (E1b, GRO-2241). */
@@ -205,16 +199,6 @@ interface MenuTargets {
    */
   topicsAnchor: string | null
 }
-
-/**
- * The name "Copy link" wraps in `[[…]]` (YAZ-957): this note's SHORTEST unambiguous link name,
- * through `linkNames` — the ONE lookup sync-from-folder reads too, so the menu and the sync can
- * never spell one note two ways. A note the snapshot has not indexed yet (created seconds ago,
- * between the tree refresh and the index refetch) keeps its bare basename: the name that same
- * rule gives an uncontested note, and the one it will have once the index catches up.
- */
-const linkNameFor = (records: readonly IndexRecord[], path: string): string =>
-  linkNames(records).get(path) ?? stripExt(basename(path))
 
 /**
  * Notes and subfolders inside `dir`, counted RECURSIVELY from the already-loaded tree
@@ -321,7 +305,6 @@ export function Sidebar({
   onDeleteFile,
   onNotice,
   indexSource,
-  viewOnlyLinks,
   pendingSearchFocus,
   onSearchFocusHandled,
   unadopted,
@@ -594,7 +577,6 @@ export function Sidebar({
       // HERE, once, off the window's snapshot: the menu that opens is about the row that was
       // right-clicked, and pinning the boolean into the menu's state is what keeps it that way.
       const notePath = filePath !== null && fileKind(filePath) === 'markdown' ? filePath : null
-      const viewOnlyLinkName = filePath === null || notePath !== null ? null : viewOnlyLinks.linkName(filePath)
       // A right-click on a row the selection does NOT hold is a fresh target, so the selection it
       // is not part of ends — the Explorer/Finder rule, and the only one that keeps the plural
       // items honest: whatever they name is what the user can still see highlighted. BLANK SPACE
@@ -623,11 +605,6 @@ export function Sidebar({
         // anyway, which is exactly what the doctrine asks of items that agree today.
         copyPaths: plural,
         openTabPaths: plural,
-        // Markdown keeps its semantic index spelling. View-only files cross the explicit
-        // catalog boundary instead; pre-catalog, missing, directories and unknown files hide it.
-        copyLinkText: notePath !== null
-          ? `[[${linkNameFor(indexSource.records, notePath)}]]`
-          : viewOnlyLinkName === null ? null : `[[${viewOnlyLinkName}]]`,
         newWindowPath: filePath,
         renamePath: node?.path ?? null,
         deletePath: node?.path ?? null,
@@ -638,7 +615,7 @@ export function Sidebar({
         topicsAnchor,
       })
     },
-    [root, indexSource, viewOnlyLinks, selectedPaths, orderedSelectedPaths],
+    [root, indexSource, selectedPaths, orderedSelectedPaths],
   )
 
   /**
@@ -1117,7 +1094,6 @@ export function Sidebar({
           openTabPaths={menu.openTabPaths}
           onOpenInNewTabs={openFilesInTabs}
           onNotice={onNotice}
-          copyLinkText={menu.copyLinkText}
           newWindowPath={menu.newWindowPath}
           onOpenNewWindow={openFileNewWindow}
           renamePath={menu.renamePath}
