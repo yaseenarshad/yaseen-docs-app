@@ -11,16 +11,15 @@ Ship, on main, a persisted **Oldest first / Newest first** order for the comment
 - Elegance ruling: simpler, combined, minimal — never at the expense of what is right.
 
 ## Key Decisions
-- A `commentsOrder` in `SettingsState` (default `oldest`), props App → block, cog row · B threads by ROOT `at` reversed, replies always oldest-first, composer ALWAYS at the bottom (Yasin reversed the composer-to-top prototype) · C one state-driven toggle left of fold-all, hidden below 2 threads, label = current order · D header wraps, every seat on the first 20px line (amends D16).
+- A `commentsOrder` in `SettingsState` (default `oldest`), props App → block, cog row · B threads by ROOT `at` reversed, replies always oldest-first, composer ALWAYS at the bottom (Yasin reversed the composer-to-top prototype) · C one state-driven toggle left of fold-all, hidden below 2 threads, label = current order · D header wraps, every seat on the first 20px line (amends D16) · E block open at mount only when the page has comments (added mid-run).
 
 ## State
 - Done:
   - [x] 1- Scope (YAZ-1529): findings + A–D + live loop posted; prototype on the worktree; demo vault `~/Desktop/yaz-1515-demo/Comments Order`
-- Now: [→] 2A- Add the commentsOrder setting (YAZ-1531)
-- Next: 2B- Order the stream and add the header toggle (YAZ-1532)
+  - [x] 2A- (YAZ-1531) `01ff296` · 2B- (YAZ-1532) `cc75740` · 2C- (YAZ-1516) `fdb0b1b` — each green alone; HEAD 3702/3702, build ✓
+- Now: [→] 4- Polish and anti-slop (YAZ-1534): reviewer → simplify → naming → verify A–D → gate → evidence
+- Next: 2D- Collapse the block by default when a page has no comments (YAZ-1536, 🔒 E) — after the review disposition
 - Remaining:
-  - [ ] 2C- Let a long comment header wrap (YAZ-1516)
-  - [ ] 4- Polish and anti-slop (YAZ-1534): reviewer → simplify → naming → verify A–D → gate → evidence
   - [ ] 3- Prove it (YAZ-1533): final "go do this" round with Yasin on the polished branch
   - [ ] 4A- Release (YAZ-1535): push, PR, merge; NO bump; clean up demo + worktree
 

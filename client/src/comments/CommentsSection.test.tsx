@@ -280,6 +280,7 @@ describe('CommentsSection — render', () => {
     const el = mount(EMPTY)
     expect(header(el)?.textContent).toBe('Comments')
     expect(q(el, '.comments__count')).toBeNull()
+    click(header(el)) // an empty page starts collapsed (🔒 E); the header is the door
     expect(tool(el)).toBeNull()
     expect(bottomComposer(el)).not.toBeNull()
   })
@@ -657,6 +658,7 @@ describe('CommentsSection — by', () => {
 describe('CommentsSection — shapes', () => {
   it('a foreign `comments` value: the notice, no composer, no write on any interaction', () => {
     const el = mount(FOREIGN)
+    click(header(el)) // nothing to read → starts collapsed (🔒 E)
     expect(q(el, '.comments__notice')?.textContent).toContain("isn't a comment list")
     expect(q(el, '.comments__composer')).toBeNull()
     expect(q(el, '.comments__list')).toBeNull()
@@ -671,6 +673,7 @@ describe('CommentsSection — shapes', () => {
 
   it('a properties block that does not parse: the "doesn\'t parse" notice, no composer, no write', () => {
     const el = mount(INVALID)
+    click(header(el)) // nothing to read → starts collapsed (🔒 E)
     expect(q(el, '.comments__notice')?.textContent).toContain("doesn't parse")
     expect(q(el, '.comments__composer')).toBeNull()
 
@@ -850,5 +853,44 @@ describe('header wrap (YAZ-1516)', () => {
     // The one-liner's class is a hook only now: no rule of its own.
     expect(commentsCss).not.toMatch(/\.comments__summary--whole\s*\{/)
     expect(commentsCss).toMatch(/\.comments__meta\s*\{[^}]*align-items:\s*flex-start;/s)
+  })
+})
+
+// ---------- default open state (🔒 E, YAZ-1515) ----------
+
+describe('default open state (YAZ-1515 🔒 E)', () => {
+  it('a page with comments opens expanded; a page with none opens collapsed, header only', () => {
+    expect(header(mount(LONE))?.getAttribute('aria-expanded')).toBe('true')
+    expect(q(mount(LONE), '.comments__composer')).not.toBeNull()
+
+    const empty = mount(EMPTY)
+    expect(header(empty)?.getAttribute('aria-expanded')).toBe('false')
+    expect(q(empty, '.comments__composer')).toBeNull()
+    expect(tools(empty)).toEqual([])
+  })
+
+  it('a foreign or invalid block has nothing to read, so it starts collapsed too', () => {
+    expect(header(mount(FOREIGN))?.getAttribute('aria-expanded')).toBe('false')
+    expect(header(mount(INVALID))?.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('the default is decided once at mount: opening an empty page and adding the first comment leaves it open', async () => {
+    const el = mount(EMPTY)
+    click(header(el))
+    expect(header(el)?.getAttribute('aria-expanded')).toBe('true')
+    await submitVia(bottomComposer(el), 'First')
+    expect(header(el)?.textContent).toBe('Comments (1)')
+    expect(header(el)?.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('deleting the last comment does not close the block', async () => {
+    const el = mount(LONE)
+    click(action(articles(el)[0], 'Delete'))
+    await flush()
+    click(sheetButton(must(sheet(el), 'the sheet'), 'Delete'))
+    await flush()
+    expect(header(el)?.textContent).toBe('Comments')
+    expect(header(el)?.getAttribute('aria-expanded')).toBe('true')
+    expect(bottomComposer(el)).not.toBeNull()
   })
 })

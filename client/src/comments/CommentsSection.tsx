@@ -119,7 +119,8 @@ export function CommentsSection({ file, order, onChangeOrder }: CommentsSectionP
   // The file moved under us (a reload, a property write, our own write echoed back): follow it.
   if (snap.seen !== file.content) setSnap({ seen: file.content, content: file.content })
 
-  const [expanded, setExpanded] = useState(true)
+  // Open by default only when there is something to read (🔒 E): an empty stream starts folded and the header is the door. Decided once, at mount.
+  const [expanded, setExpanded] = useState(() => readComments(file.content).length > 0)
   /** Comment ids folded to one line, and parent ids whose replies are hidden — the bullet's fold, twice. */
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set())
   const [repliesFolded, setRepliesFolded] = useState<ReadonlySet<string>>(() => new Set())
