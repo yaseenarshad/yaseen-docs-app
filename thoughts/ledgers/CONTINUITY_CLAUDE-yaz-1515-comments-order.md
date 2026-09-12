@@ -19,13 +19,13 @@ Ship, on main, a persisted **Oldest first / Newest first** order for the comment
   - [x] 2A- (YAZ-1531) `01ff296` · 2B- (YAZ-1532) `cc75740` · 2C- (YAZ-1516) `fdb0b1b` — each green alone; HEAD 3702/3702, build ✓
   - [x] 2D- (YAZ-1536) `601f97f` — 🔒 E, one line, tests first
   - [x] 4- Polish (YAZ-1534): reviewer 1 must / 8 should / 5 nit → 13 accepted, 1 declined; fixes committed; gate 3709/3709, build ✓; evidence posted
-- Now: [→] 3- Prove it (YAZ-1533): final "go do this" round with Yasin on the polished branch (app relaunched on the isolated profile)
-- Next: 4A- Release (YAZ-1535) on Yasin's go
-- Remaining:
-  - [ ] 4A- Release (YAZ-1535): push, PR, merge; NO bump; clean up demo + worktree
+  - [x] 3- Prove it (YAZ-1533): final round passed ("it reads good … its fine"); ties and 20px line accepted
+  - [x] 4A- Release (YAZ-1535): PR #43 merged to main `eb0d716`, no bump; demo folder, worktree, remote branch removed
+- Now: nothing. Ledger complete. Handoff posted on YAZ-1515 and every child.
+- Next: a release when Yasin calls it.
 
 ## Open Questions
-- UNCONFIRMED: cog row under "Files & Links" is fine (flagged, unanswered → stands).
+- RESOLVED: cog row moved ABOVE Files & Links in the polish pass (reviewer + Yasin's demo pass, no objection).
 - UNCONFIRMED: `overflow-wrap: anywhere` on titles with long URLs (flagged, unanswered → stands).
 
 ## Working Set
