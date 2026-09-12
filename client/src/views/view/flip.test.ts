@@ -58,7 +58,7 @@ describe('flipRect', () => {
   })
 
   it('the note scrolling vertically moves nothing — the root itself moved with the card', () => {
-    const before = flipRect(at(100, 50), at(0, 0), 0, 0)
+    const before = flipRect(at(100, 50), origin, 0, 0)
     const after = flipRect(at(100, -350), at(0, -400), 0, 0)
     expect(flipPlan(rects({ a: before }), rects({ a: after })).moves.size).toBe(0)
   })
