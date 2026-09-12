@@ -17,12 +17,13 @@
   - [x] Scope comment + 4 subissues created (2026-09-12)
   - [x] YAZ-1573 1- red tests (3) in flip.test.ts; findings comment
   - [x] YAZ-1574 2- `flipRect` + content-space measurement in useFlip; 3834 tests + typecheck green
-- Now: [→] YAZ-1575 3- demo at ~/Desktop/board-card-jump-demo (vault "Board Card Jump YAZ-1555", vault-pristine, profile, launch.sh, reset.sh, README); dev app for Yasin
-- Remaining:
-  - [ ] YAZ-1576 4- polish, PR, merge
+  - [x] YAZ-1575 3- demo at ~/Desktop/board-card-jump-demo (vault "Board Card Jump YAZ-1555", vault-pristine, profile, launch.sh, reset.sh, README); Yasin (2026-09-12): "it worked, all scenarios pass"
+  - [x] YAZ-1576 4- polish audit (b30f807); PR #48 merged to main
+- Now: [→] CLOSED — worktree removed; handoff comments on YAZ-1555 and every subissue
+- Remaining: none. Reopen only via a new issue.
 
 ## Open Questions
-- UNCONFIRMED: reduced-motion check (needs a running app; do it on the demo app in 3-).
+- none. Reduced-motion scenario (README #8) passed in Yasin's demo run.
 
 ## Working Set
 - Worktree: .claude/worktrees/yaz-1555-board-card-jump, branch yaz-1555-board-card-jump
