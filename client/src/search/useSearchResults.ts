@@ -50,7 +50,9 @@ export function useSearchResults(root: string, watch: WatchSource, query: string
     }
   }, [root, watch, activated])
 
-  const candidates = useMemo(() => [...folderCandidates(root, dirs), ...searchCandidates(records)], [root, dirs, records])
+  const folderRows = useMemo(() => folderCandidates(root, dirs), [root, dirs])
+  const noteRows = useMemo(() => searchCandidates(records), [records])
+  const candidates = useMemo(() => [...folderRows, ...noteRows], [folderRows, noteRows])
   // An empty query matches EVERYTHING through the shared matcher (`indexOf('')` is 0), so the
   // no-query case is answered here rather than by the ranker.
   return useMemo(() => (query.trim() === '' ? [] : searchTitles(candidates, query)), [candidates, query])

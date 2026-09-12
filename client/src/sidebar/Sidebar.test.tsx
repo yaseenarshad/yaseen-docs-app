@@ -1160,13 +1160,13 @@ describe('folder rows in search (YAZ-1491)', () => {
   })
 
   it('a Files reveal request for a DIR opens its ancestors AND itself and flashes its row — no "no longer there"', async () => {
-    const DIR = '/v/target/deep'
-    // `elsewhere`, not the YAZ-1063 fixture's `other`: expansion persists per root, and an earlier
-    // test in this file clicked `/v/other` open — an untouched sibling must be one nobody touched.
+    // Its own root: expansion persists PER ROOT across the tests in this file, so a sibling under
+    // `/v` could already be open from an earlier click. Nothing has ever touched `/w`.
+    const DIR = '/w/target/deep'
     const DEEP_TREE: TreeNode[] = [
-      { type: 'dir', name: 'elsewhere', path: '/v/elsewhere', children: [] },
+      { type: 'dir', name: 'other', path: '/w/other', children: [] },
       {
-        type: 'dir', name: 'target', path: '/v/target',
+        type: 'dir', name: 'target', path: '/w/target',
         children: [{
           type: 'dir', name: 'deep', path: DIR,
           children: [{ type: 'file', name: 'Note.md', path: `${DIR}/Note.md`, size: 1, mtime: 1, kind: 'markdown' }],
@@ -1174,13 +1174,13 @@ describe('folder rows in search (YAZ-1491)', () => {
       },
     ]
     const { el, props } = await mount(
-      { revealRequest: { id: 1, path: DIR, lens: 'files' } },
-      (b) => b.tree.mockResolvedValue({ root: '/v', tree: DEEP_TREE, generatedAt: 1 }),
+      { root: '/w', revealRequest: { id: 1, path: DIR, lens: 'files' } },
+      (b) => b.tree.mockResolvedValue({ root: '/w', tree: DEEP_TREE, generatedAt: 1 }),
     )
     expect(props.onRevealConsumed).toHaveBeenCalledExactlyOnceWith(1)
     expect(expandedState(el, 'target')).toBe('true')
     expect(expandedState(el, 'deep')).toBe('true') // the folder opens ITSELF too
-    expect(expandedState(el, 'elsewhere')).toBe('false')
+    expect(expandedState(el, 'other')).toBe('false')
     expect(el.querySelector(`.tree__row--dir[data-path="${DIR}"]`)?.classList.contains('tree__row--revealed')).toBe(true)
     expect(props.onNotice).not.toHaveBeenCalled()
   })

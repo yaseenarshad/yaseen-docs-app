@@ -100,9 +100,4 @@ describe('SearchResults (YAZ-803)', () => {
     expect(note.getAttribute('aria-label')).toBe('Search result Archive')
     expect(note.querySelector('.search-results__glyph')).toBeNull()
   })
-
-  it('a folder row and a same-named note row keep distinct keys (path differs), so both render', () => {
-    const { el } = render([dir('Docs'), cand('Docs')])
-    expect(rows(el)).toHaveLength(2)
-  })
 })

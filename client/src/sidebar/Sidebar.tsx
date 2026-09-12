@@ -371,8 +371,7 @@ export function Sidebar({
 
   // Every directory of the CURRENT tree, outer before inner (`allDirs`): the expand-all set
   // (⚡ YAZ-862) and, since YAZ-1491, the search list's folder rows (🔒 D1) — one memo, no second
-  // feed. Measured against the tree rather than the raw persisted expansion list, which can still
-  // name paths an external change took away.
+  // feed.
   const dirs = useMemo(() => (tree === null ? [] : allDirs(tree.tree)), [tree])
   const results = useSearchResults(root, watch, query, dirs)
   // 🔒 flat-list ruling on YAZ-739: while a query is typed the body shows a FLAT ranked list
@@ -500,24 +499,23 @@ export function Sidebar({
     }
   }, [selectionRef, selectedPaths])
 
+  // A Files reveal targets a file — or, since a folder search row (🔒 D3, YAZ-1491), a DIR of the
+  // tree. Both questions are asked once here and read by the two steps below.
+  const revealIsDir = pendingReveal?.lens === 'files' && dirs.includes(pendingReveal.path)
+  const revealTargetPresent = tree !== null && pendingReveal?.lens === 'files' && (revealIsDir || treeHasFile(tree.tree, pendingReveal.path))
+
   useEffect(() => {
     if (tree === null || pendingReveal?.lens !== 'files' || handledFilesRevealId.current === pendingReveal.id) return
     handledFilesRevealId.current = pendingReveal.id
-    // A folder search row lands here too (🔒 D3, YAZ-1491): the target may be a DIR of the tree.
-    const isDir = dirs.includes(pendingReveal.path)
-    if (!isDir && !treeHasFile(tree.tree, pendingReveal.path)) {
+    if (!revealTargetPresent) {
       onNotice(revealMissingMessage(pendingReveal.path, 'files'))
       return
     }
     // A folder opens ITSELF too — the synthetic-child idiom the create menu already uses.
-    dispatch({ type: 'expandTo', root, file: isDir ? `${pendingReveal.path}/x` : pendingReveal.path })
-  }, [dirs, onNotice, pendingReveal, root, tree])
+    dispatch({ type: 'expandTo', root, file: revealIsDir ? `${pendingReveal.path}/x` : pendingReveal.path })
+  }, [onNotice, pendingReveal, revealIsDir, revealTargetPresent, root, tree])
 
-  const filesRevealReady =
-    pendingReveal?.lens === 'files' &&
-    tree !== null &&
-    (dirs.includes(pendingReveal.path) || treeHasFile(tree.tree, pendingReveal.path)) &&
-    ancestorDirs(root, pendingReveal.path).every((dir) => expanded.includes(dir))
+  const filesRevealReady = revealTargetPresent && ancestorDirs(root, pendingReveal.path).every((dir) => expanded.includes(dir))
 
   useEffect(() => {
     if (!filesRevealReady || pendingReveal === null || bodyRef.current === null) return

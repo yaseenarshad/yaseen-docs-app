@@ -13,7 +13,6 @@
  * gets a row under its own basename, and duplicates are told apart by the folder label.
  */
 import type { IndexRecord } from '@shared/types'
-import { basename } from '../lib/paths'
 import { matchLinkCandidates } from '../links/completion'
 
 /** One search row: what the query matches, what it reads as, what activating it targets. */
@@ -59,9 +58,10 @@ export function searchCandidates(records: readonly IndexRecord[]): SearchCandida
 export function folderCandidates(root: string, dirs: readonly string[]): SearchCandidate[] {
   const prefix = `${root.replace(/\/+$/, '')}/`
   return dirs.map((dir) => {
-    const name = basename(dir)
-    const relParent = dir.startsWith(prefix) ? dir.slice(prefix.length, dir.length - name.length) : ''
-    return { kind: 'dir', name, lower: name.toLowerCase(), label: name, path: dir, folder: relParent.replace(/\/+$/, '') }
+    const rel = dir.startsWith(prefix) ? dir.slice(prefix.length) : dir
+    const cut = rel.lastIndexOf('/')
+    const name = rel.slice(cut + 1)
+    return { kind: 'dir', name, lower: name.toLowerCase(), label: name, path: dir, folder: cut === -1 ? '' : rel.slice(0, cut) }
   })
 }
 
