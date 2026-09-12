@@ -1234,6 +1234,12 @@
     box-shadow 0.15s ease;
 }
 
+/* The selected card (YAZ-1557 D2) wears the table cell's own ring — one "this is the cell" look. */
+.view-board__card:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
 .view-board__title {
   display: block;
   max-width: 100%;

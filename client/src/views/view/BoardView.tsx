@@ -1,5 +1,6 @@
-import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
+import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
+import { type Modifiers, openByGesture, openTarget } from '../../lib/openGesture'
 import type { FolderPageSettings } from '../folderPageSettings'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
@@ -25,6 +26,8 @@ export interface BoardViewProps {
   collapsed: readonly string[]
   onToggleGroup: (key: string) => void
   onUpdate: Mutate
+  /** Open a card page in the current tab — the title click or Enter, the table's name-link rule (YAZ-1557). */
+  onOpenFile?: (path: string) => void
   /** Open a card page in the window's right panel. */
   onOpenFileRight?: (path: string) => void
   /** Open a card's page without replacing the current folder page. */
@@ -47,7 +50,9 @@ export interface BoardViewProps {
  * one column: merge-rule `direct` cards come first, then compact inner sections stack vertically.
  * Every level uses the shared `GroupHeader` (chevron, typed value, count, per-section summaries)
  * over its cards: `file.name`, when present in `order`, as the title button → `onOpenFile`, then
- * the view's other `order` properties as small label/value rows typed like table cells. Column
+ * the view's other `order` properties as small label/value rows typed like table cells. A card is
+ * a focusable cell (YAZ-1557 D2): a plain click selects it, arrows walk the cards, and the title,
+ * Enter, or a modifier opens through `lib/openGesture.ts` — the table's exact rule. Column
  * width follows `cardSize` (shared `cardWidth`: a number = px, legacy small/medium/large values
  * remain readable as 220/280/340, and absent or invalid values default to 280). Collapsing a
  * column hides its cards and
@@ -80,6 +85,7 @@ export function BoardView({
   collapsed,
   onToggleGroup,
   onUpdate,
+  onOpenFile,
   onOpenFileRight,
   onOpenFileBackground,
   onNotice,
@@ -105,9 +111,30 @@ export function BoardView({
       suppressClick.current = false
     })
   }
-  const openCard = (row: Row): void => {
+  /** The one open rule (YAZ-1557), shared with the table: ⌘ → background tab, ⌥ → right panel, plain → current tab, ⇧ → nothing. */
+  const openHandlers = { onOpenFile, onOpenFileRight, onOpenFileBackground }
+  const openCard = (row: Row, e: Modifiers): void => {
     if (suppressClick.current) return
-    onOpenFileRight?.(row.record.path)
+    openByGesture(e, row.record.path, openHandlers)
+  }
+  /**
+   * Arrow keys walk cards like table cells (YAZ-1557 D2): ↑↓ through the column's cards in DOM
+   * order — nested sections included, so a two-level column reads top to bottom — and ←→ to the
+   * same row of the neighbour column, clamped at every edge. An empty or collapsed neighbour has
+   * no card at any row, so focus simply stays.
+   */
+  const onCardKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
+    const card = e.target as HTMLElement
+    if (!card.classList.contains('view-board__card')) return
+    const move = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key]
+    if (move === undefined) return
+    e.preventDefault()
+    const columns = [...e.currentTarget.querySelectorAll<HTMLElement>(':scope > .view-board__col')]
+    const cardsOf = (column: HTMLElement) => [...column.querySelectorAll<HTMLElement>('.view-board__card')]
+    const c = columns.findIndex((column) => column.contains(card))
+    const r = cardsOf(columns[c]).indexOf(card)
+    const next = cardsOf(columns[Math.max(0, Math.min(columns.length - 1, c + move[1]))])
+    next[Math.max(0, Math.min(next.length - 1, r + move[0]))]?.focus()
   }
   /** ViewsPane reuses this component between Board tabs; no action may retain the previous Board's record. */
   useEffect(() => setMenu(null), [viewIndex])
@@ -155,7 +182,7 @@ export function BoardView({
           className="view-board__title"
           onClick={(event) => {
             event.stopPropagation()
-            openCard(row)
+            openCard(row, event)
           }}
         >
           {pageTitle(row)}
@@ -196,51 +223,52 @@ export function BoardView({
   }
   const cardList = (rows: readonly Row[], group: Group, at: GroupSpot, isOver = false) => (
     <ul className="view-board__cards">
-      {rows.map((row) => {
-        const fallbackOpenSurface = nameKey === undefined
-        return (
-          <li
-            key={row.record.path}
-            data-flip-key={row.record.path}
-            className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}`}
-            {...dragSource(row, group, at)}
-            {...rowProps(row.record)}
-            role={fallbackOpenSurface ? 'button' : undefined}
-            tabIndex={fallbackOpenSurface ? 0 : undefined}
-            aria-label={fallbackOpenSurface ? `Open ${row.record.name} in right panel` : undefined}
-            onClick={() => openCard(row)}
-            onKeyDown={(event) => {
-              if (!fallbackOpenSurface || event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
-              event.preventDefault()
-              openCard(row)
-            }}
-            // Capture phase so the preview closes ALONGSIDE the drag wiring's own onDragStart rather
-            // than replacing it (YAZ-1244): a card must never hang over a drag.
-            onDragStartCapture={close}
-            onContextMenu={(event) => openCardMenu(event, row)}
-          >
-            {lines.map((line, i) => (
-              <Fragment key={line[0]}>
-                <div className="view-board__line">
-                  {line.map((key, item) => (
-                    <Fragment key={key}>
-                      {item > 0 && (
-                        <span className="view-board__dash" aria-hidden>
-                          &ndash;
-                        </span>
-                      )}
-                      {cardItem(key, row)}
-                    </Fragment>
-                  ))}
-                </div>
-                {i === 0 && moveChip(row)}
-              </Fragment>
-            ))}
-            {/* An empty `order` leaves a blank card shell with no line to hang the chip under — it still drags, so it still reports. */}
-            {lines.length === 0 && moveChip(row)}
-          </li>
-        )
-      })}
+      {rows.map((row) => (
+        <li
+          key={row.record.path}
+          data-flip-key={row.record.path}
+          className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}`}
+          {...dragSource(row, group, at)}
+          {...rowProps(row.record)}
+          // Every card is a focusable "cell" (YAZ-1557 D2): a plain click SELECTS it, and only the
+          // title, Enter, or a modifier opens — so a card without a title still has a name to read.
+          tabIndex={0}
+          aria-label={nameKey === undefined ? row.record.name : undefined}
+          onClick={(event) => {
+            if (openTarget(event) === 'current') event.currentTarget.focus()
+            else openCard(row, event)
+          }}
+          onKeyDown={(event) => {
+            if (event.target !== event.currentTarget || event.key !== 'Enter') return
+            event.preventDefault()
+            openCard(row, event)
+          }}
+          // Capture phase so the preview closes ALONGSIDE the drag wiring's own onDragStart rather
+          // than replacing it (YAZ-1244): a card must never hang over a drag.
+          onDragStartCapture={close}
+          onContextMenu={(event) => openCardMenu(event, row)}
+        >
+          {lines.map((line, i) => (
+            <Fragment key={line[0]}>
+              <div className="view-board__line">
+                {line.map((key, item) => (
+                  <Fragment key={key}>
+                    {item > 0 && (
+                      <span className="view-board__dash" aria-hidden>
+                        &ndash;
+                      </span>
+                    )}
+                    {cardItem(key, row)}
+                  </Fragment>
+                ))}
+              </div>
+              {i === 0 && moveChip(row)}
+            </Fragment>
+          ))}
+          {/* An empty `order` leaves a blank card shell with no line to hang the chip under — it still drags, so it still reports. */}
+          {lines.length === 0 && moveChip(row)}
+        </li>
+      ))}
       {isOver && <li className="view-board__placeholder" aria-hidden />}
     </ul>
   )
@@ -274,7 +302,7 @@ export function BoardView({
 
   return (
     <>
-      <div className="view-board" ref={flipRoot} style={{ '--view-board-col-w': `${width}px` } as CSSProperties}>
+      <div className="view-board" ref={flipRoot} onKeyDown={onCardKeyDown} style={{ '--view-board-col-w': `${width}px` } as CSSProperties}>
         {groups.map((g) => {
           const gk = groupKeyOf(g.key)
           const isCollapsed = collapsed.includes(gk)

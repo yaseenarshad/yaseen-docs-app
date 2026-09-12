@@ -26,13 +26,14 @@ it('exports reusable page actions through PageContextMenu', () => {
     )
   })
 
+  // The right panel is the odd one out, so it goes LAST (YAZ-1556).
   expect([...host.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)).toEqual([
-    'Open in right panel',
     'Open in new tab',
     'Copy path',
     'Reveal in Finder',
+    'Open in right panel',
   ])
-  act(() => (host.querySelector('[role="menuitem"]') as HTMLButtonElement).click())
+  act(() => [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === 'Open in right panel')?.click())
   expect(onOpenRight).toHaveBeenCalledExactlyOnceWith('/vault/note.md')
   expect(onOpenBackground).not.toHaveBeenCalled()
   expect(onClose).toHaveBeenCalledOnce()

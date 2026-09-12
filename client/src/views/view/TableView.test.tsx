@@ -134,8 +134,14 @@ function doubleClick(el: Element): void {
   draw()
 }
 
-function press(el: Element, key: string): void {
-  act(() => el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })))
+function press(el: Element, key: string, init: KeyboardEventInit = {}): void {
+  act(() => el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...init })))
+  draw()
+}
+
+/** A primary click carrying modifier keys — `el.click()` cannot hold ⌘ or ⌥. */
+function modClick(el: Element, init: MouseEventInit): void {
+  act(() => void el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ...init })))
   draw()
 }
 
@@ -304,6 +310,21 @@ describe('file.name link', () => {
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
     expect(onChange).not.toHaveBeenCalled()
   })
+
+  it('⌘-click opens a background tab, ⌥-click the right panel, ⇧-click nothing (YAZ-1557)', () => {
+    const openRight = vi.fn()
+    const openBackground = vi.fn()
+    const { el, onOpenFile } = mount(TYPED_BASE, { folderPage: testFolderPage({ openRight, openBackground }) })
+    const agentic = '/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md'
+    modClick(q(el, '.view-table__link'), { metaKey: true })
+    expect(openBackground).toHaveBeenCalledExactlyOnceWith(agentic)
+    modClick(q(el, '.view-table__link'), { altKey: true })
+    expect(openRight).toHaveBeenCalledExactlyOnceWith(agentic)
+    modClick(q(el, '.view-table__link'), { shiftKey: true })
+    expect(onOpenFile).not.toHaveBeenCalled()
+    expect(openBackground).toHaveBeenCalledOnce()
+    expect(openRight).toHaveBeenCalledOnce()
+  })
 })
 
 describe('table-row context menu (YAZ-1053)', () => {
@@ -335,7 +356,7 @@ describe('table-row context menu (YAZ-1053)', () => {
     expect(document.activeElement).toBe(cell)
     expect(q<HTMLElement>(el, '.ctx-menu').style.left).toBe('120px')
     expect(q<HTMLElement>(el, '.ctx-menu').style.top).toBe('42px')
-    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open in right panel', 'Open in new tab', 'Copy path', 'Reveal in Finder'])
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open in new tab', 'Copy path', 'Reveal in Finder', 'Open in right panel'])
     expect(onOpenFile).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
   })
@@ -703,6 +724,20 @@ describe('keyboard navigation', () => {
     press(cell(0, 0), 'ArrowDown')
     press(cell(1, 0), 'Enter')
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/The Levels of an Agency.md')
+  })
+
+  it('⌘⏎ and ⌥⏎ on a file.name cell follow the click rule: background tab, right panel (YAZ-1557)', () => {
+    const openRight = vi.fn()
+    const openBackground = vi.fn()
+    const { el, onOpenFile } = mount(TYPED_BASE, { folderPage: testFolderPage({ openRight, openBackground }) })
+    const cell = q<HTMLElement>(el, '[data-cell="0:0"]')
+    act(() => cell.focus())
+    press(cell, 'Enter', { metaKey: true })
+    expect(openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
+    press(cell, 'Enter', { altKey: true })
+    expect(openRight).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
+    press(cell, 'Enter', { shiftKey: true })
+    expect(onOpenFile).not.toHaveBeenCalled()
   })
 
   it('Enter on a non-name cell starts editing instead of opening (5B, GRO-2142)', () => {
