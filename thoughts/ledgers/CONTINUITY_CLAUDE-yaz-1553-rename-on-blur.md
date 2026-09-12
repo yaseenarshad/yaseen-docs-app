@@ -24,9 +24,10 @@ Both rename fields (page title `PageTitle.tsx`, sidebar `RenameInline.tsx`) comm
   - [x] 1B- Make both rename fields commit on leave (YAZ-1564) — TDD red 10 → green 22; typecheck clean; client suite 3073 green
   - [x] 1C- Prove it end-to-end (YAZ-1565) — title steps 2-4 + rename step 3b; 13/13 green in Electron
   - [x] 1D- Polish and anti-slop (YAZ-1566) — open/leave/discard on both files, test helper dedup, CONTRACTS sentence
-- Now: [→] 1E- Demo vault + isolated profile + Yasin's test → merge (YAZ-1567)
-- Next: after Yasin's OK — /commit, push, PR, merge; parent Done; NO release
-- Remaining: none after 1E
+  - [x] 1E- Demo vault (15 notes, 12 scenarios) + isolated profile + dev app — Yasin: "all 12 work, go ahead and push and merge"
+- Now: COMPLETE — merged to main, NO release bump (batched into the next one); demo vault, profile and worktree removed; handoff comments on YAZ-1553 and 1A–1E
+- Next: nothing
+- Remaining: none
 
 ## Open Questions
 - none
