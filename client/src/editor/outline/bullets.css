@@ -121,8 +121,11 @@
 }
 
 /* A done task reads as done (YAZ-1514, Obsidian's default look): the item's OWN first line is
-   struck and muted; nested children keep their own state. Visual only — the file stays `* [x] …`,
-   so a task checked in Obsidian, by the ☑ click, or by `Mod-Enter` all look the same. */
+   struck and muted; nested children keep their own state. The fold chevron widget can sit before
+   that line, so the first block is not always `:first-child`; only textblocks are struck because
+   `line-through` inherits and a first-child code block or table could never cancel it. Visual
+   only — the file stays `* [x] …`, so a task checked in Obsidian, by the ☑ click, or by
+   `Mod-Enter` all look the same. */
 .editor-instance .milkdown .milkdown-list-item-block > li.list-item:has(> .label-wrapper > .label.checked) > .children > .content-dom > :is(p, h1, h2, h3, h4, h5, h6):is(:first-child, .outline-toggle + *) {
   text-decoration: line-through;
   color: var(--list-done-color);
