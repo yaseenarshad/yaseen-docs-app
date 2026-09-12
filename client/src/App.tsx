@@ -300,6 +300,13 @@ export function App() {
     setSidebarRevealRequest({ id: ++sidebarRevealId.current, path, lens: sidebarLens })
   }, [sidebarCollapsed, sidebarLens, toggleSidebar])
 
+  // A folder search row (🔒 D3, YAZ-1491): always the FILES lens, whichever tab was showing. The
+  // sidebar is necessarily open (the row was clicked in it), so no un-collapse step here.
+  const revealInFiles = useCallback((path: string) => {
+    changeLens('files')
+    setSidebarRevealRequest({ id: ++sidebarRevealId.current, path, lens: 'files' })
+  }, [changeLens])
+
   const consumeSidebarReveal = useCallback((id: number) => {
     setSidebarRevealRequest((request) => request?.id === id ? null : request)
   }, [])
@@ -668,6 +675,7 @@ export function App() {
           watch={watch}
           onOpenFile={openCurrent}
           onOpenFileBackground={openBackground}
+          onRevealInFiles={revealInFiles}
           onPickFolder={pick}
           pickDisabled={picking}
           onCollapse={toggleSidebar}

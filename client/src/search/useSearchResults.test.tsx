@@ -43,12 +43,15 @@ let container: HTMLElement | null = null
 /** The rendered rows' labels — the hook's whole output, flattened for assertions. */
 const labels = () => (container?.textContent === '' ? [] : (container?.textContent ?? '').split('|').filter((s) => s !== ''))
 
-function Harness({ watch, query }: { watch: WatchSource; query: string }) {
-  const results = useSearchResults('/v', watch, query)
-  return <>{results.map((r) => `${r.label}|`)}</>
+/** The Sidebar's own `dirs` (🔒 D1, YAZ-1491): folder rows need no index read at all. */
+const NO_DIRS: readonly string[] = []
+
+function Harness({ watch, query, dirs = NO_DIRS }: { watch: WatchSource; query: string; dirs?: readonly string[] }) {
+  const results = useSearchResults('/v', watch, query, dirs)
+  return <>{results.map((r) => `${r.kind === 'dir' ? '📁' : ''}${r.label}|`)}</>
 }
 
-async function mount(records: IndexRecord[], query: string, tweak?: (bridge: ReturnType<typeof installBridge>) => void) {
+async function mount(records: IndexRecord[], query: string, tweak?: (bridge: ReturnType<typeof installBridge>) => void, dirs: readonly string[] = NO_DIRS) {
   const bridge = installBridge(records)
   tweak?.(bridge) // before the first render: the mount read is the one that can fail
   // A real fan-out watch (useWatch's shape), so "did search subscribe at all?" is answerable.
@@ -61,8 +64,8 @@ async function mount(records: IndexRecord[], query: string, tweak?: (bridge: Ret
   container = document.createElement('div')
   document.body.appendChild(container)
   reactRoot = createRoot(container)
-  await act(async () => reactRoot?.render(<StrictMode><Harness watch={watch} query={query} /></StrictMode>))
-  const rerender = async (q: string) => act(async () => reactRoot?.render(<StrictMode><Harness watch={watch} query={q} /></StrictMode>))
+  await act(async () => reactRoot?.render(<StrictMode><Harness watch={watch} query={query} dirs={dirs} /></StrictMode>))
+  const rerender = async (q: string) => act(async () => reactRoot?.render(<StrictMode><Harness watch={watch} query={q} dirs={dirs} /></StrictMode>))
   const fire = async (ev: WatchEvent) => act(async () => [...listeners].forEach((l) => l(ev)))
   return { bridge, rerender, fire, subscribe }
 }
@@ -129,6 +132,17 @@ describe('useSearchResults (YAZ-803)', () => {
     expect(labels()).toEqual([])
     await rerender('a')
     expect(labels()).toEqual(['Alpha', 'Beta'])
+  })
+
+  it('the tree\'s folders are rows too, ahead of a same-rank note (🔒 D1, YAZ-1491)', async () => {
+    await mount([rec('Archive'), rec('Archived plan')], 'archive', undefined, ['/v/Archive', '/v/Archive/Old'])
+    // Exact bucket: the folder sits above the note; prefix bucket: the note; `Old` never matches.
+    expect(labels()).toEqual(['📁Archive', 'Archive', 'Archived plan'])
+  })
+
+  it('folder rows survive an unreadable index — they come from the tree, not the feed', async () => {
+    await mount([rec('Alpha')], 'arch', (b) => b.index.mockRejectedValue(new Error('no index')), ['/v/Archive'])
+    expect(labels()).toEqual(['📁Archive'])
   })
 
   it('an unreadable index leaves search empty rather than throwing or surfacing anything', async () => {

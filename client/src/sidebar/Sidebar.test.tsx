@@ -71,6 +71,8 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     watch: { subscribe: () => () => undefined },
     onOpenFile: vi.fn(),
     onOpenFileBackground: vi.fn(),
+    // A folder search row (🔒 D3, YAZ-1491): App flips to Files and issues the reveal request.
+    onRevealInFiles: vi.fn(),
     onPickFolder: vi.fn(),
     pickDisabled: false,
     onCollapse: vi.fn(),
@@ -1069,6 +1071,123 @@ describe('search results (YAZ-803)', () => {
     const { el } = await search('a')
     act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(el.querySelector('.ctx-menu')).toBeNull()
+  })
+})
+
+/**
+ * Folders in the search list (YAZ-1491). 🔒 D1: the rows come from the tree the Sidebar already
+ * holds (`dirs`), not from the index feed. 🔒 D2: one flat list, the same matcher — a folder is
+ * one row, a note still never matches on its folder. 🔒 D3: choosing a folder row REVEALS it in
+ * Files — `onRevealInFiles`, never `onOpenFile` — from EITHER lens and by keyboard OR click, and
+ * the Files reveal path accepts a DIR: ancestors AND the dir itself open, the dir row flashes.
+ * 🔒 D4: the row looks like a folder.
+ */
+describe('folder rows in search (YAZ-1491)', () => {
+  const rowLabels = (el: HTMLElement) => [...el.querySelectorAll('.search-results__row .search-results__label')].map((n) => n.textContent)
+  const dirResult = (el: HTMLElement) => el.querySelector<HTMLLIElement>('.search-results__row--dir')
+  const press = (input: HTMLInputElement, key: string, metaKey = false) =>
+    act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key, metaKey, bubbles: true })))
+  const dirRow = (el: HTMLElement, label: string) =>
+    [...el.querySelectorAll<HTMLButtonElement>('.tree__row--dir')].find((row) => row.querySelector('.tree__label')?.textContent === label)
+  const expandedState = (el: HTMLElement, label: string) => dirRow(el, label)?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
+
+  /** A folder AND a note both called `sub`, so the tie-break is observable. */
+  const SUB_NOTE = { path: '/v/sub.md', name: 'sub.md', basename: 'sub', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] }
+  const search = async (query: string, over: Partial<SidebarProps> = {}) => {
+    const m = await mount(over, (b) => b.index.mockResolvedValue({ root: '/v', records: [SUB_NOTE], generatedAt: 1 } as never))
+    const input = searchInput(m.el)!
+    await type(input, query)
+    return { ...m, input }
+  }
+
+  it('a folder of the loaded tree is a row — above the same-named note — marked as a folder (🔒 D1/D2/D4)', async () => {
+    const { el } = await search('sub')
+    expect(rowLabels(el)).toEqual(['sub', 'sub'])
+    const [folder, note] = [...el.querySelectorAll('.search-results__row')]
+    expect(folder.classList.contains('search-results__row--dir')).toBe(true)
+    expect(folder.getAttribute('aria-label')).toBe('Search result sub, folder')
+    expect(folder.querySelector('.search-results__glyph')).not.toBeNull()
+    expect(note.classList.contains('search-results__row--dir')).toBe(false)
+  })
+
+  it('Enter on a folder row asks App to reveal it in Files and opens nothing (🔒 D3)', async () => {
+    const { el, input, props } = await search('sub')
+    expect(dirResult(el)?.classList.contains('search-results__row--active')).toBe(true)
+    await press(input, 'Enter')
+    expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+  })
+
+  it('⌘-Enter on a folder row reveals too — there is no background tab for a folder', async () => {
+    const { input, props } = await search('sub')
+    await press(input, 'Enter', true)
+    expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+  })
+
+  it('a click on a folder row goes through the SAME rule as Enter', async () => {
+    const { el, props } = await search('sub')
+    act(() => dirResult(el)?.click())
+    expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+  })
+
+  it('the note row beneath still OPENS — the rule is per row, not per list', async () => {
+    const { input, props } = await search('sub')
+    await press(input, 'ArrowDown')
+    await press(input, 'Enter')
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub.md')
+    expect(props.onRevealInFiles).not.toHaveBeenCalled()
+  })
+
+  it('from the TOPICS lens a folder row still reveals in Files (🔒 D3: whichever tab was showing)', async () => {
+    const { el, input, props } = await search('sub', { lens: 'topics' })
+    expect(dirResult(el)).not.toBeNull()
+    await press(input, 'Enter')
+    expect(props.onRevealInFiles).toHaveBeenCalledExactlyOnceWith('/v/sub')
+  })
+
+  it('App\'s reply — the Files reveal request — clears the query and flashes the folder row', async () => {
+    const { el, input, props, rerender } = await search('sub')
+    await press(input, 'Enter')
+    // What `revealInFiles` in App does next: the lens is already Files here, so only the request lands.
+    await rerender({ revealRequest: { id: 1, path: '/v/sub', lens: 'files' } })
+    expect(input.value).toBe('')
+    expect(el.querySelector('.search-results')).toBeNull()
+    expect(dirRow(el, 'sub')?.classList.contains('tree__row--revealed')).toBe(true)
+    expect(props.onNotice).not.toHaveBeenCalled()
+  })
+
+  it('a Files reveal request for a DIR opens its ancestors AND itself and flashes its row — no "no longer there"', async () => {
+    // Its own root: expansion persists PER ROOT across the tests in this file, so a sibling under
+    // `/v` could already be open from an earlier click. Nothing has ever touched `/w`.
+    const DIR = '/w/target/deep'
+    const DEEP_TREE: TreeNode[] = [
+      { type: 'dir', name: 'other', path: '/w/other', children: [] },
+      {
+        type: 'dir', name: 'target', path: '/w/target',
+        children: [{
+          type: 'dir', name: 'deep', path: DIR,
+          children: [{ type: 'file', name: 'Note.md', path: `${DIR}/Note.md`, size: 1, mtime: 1, kind: 'markdown' }],
+        }],
+      },
+    ]
+    const { el, props } = await mount(
+      { root: '/w', revealRequest: { id: 1, path: DIR, lens: 'files' } },
+      (b) => b.tree.mockResolvedValue({ root: '/w', tree: DEEP_TREE, generatedAt: 1 }),
+    )
+    expect(props.onRevealConsumed).toHaveBeenCalledExactlyOnceWith(1)
+    expect(expandedState(el, 'target')).toBe('true')
+    expect(expandedState(el, 'deep')).toBe('true') // the folder opens ITSELF too
+    expect(expandedState(el, 'other')).toBe('false')
+    expect(el.querySelector(`.tree__row--dir[data-path="${DIR}"]`)?.classList.contains('tree__row--revealed')).toBe(true)
+    expect(props.onNotice).not.toHaveBeenCalled()
+  })
+
+  it('a reveal for a folder the tree no longer has still reports the passive notice', async () => {
+    const { props } = await mount({ revealRequest: { id: 1, path: '/v/gone', lens: 'files' } })
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t show "gone" in Files — it is no longer there')
   })
 })
 
@@ -2094,8 +2213,8 @@ describe('Sidebar multi-select via shift+click (YAZ-1336)', () => {
   })
 
   it('shift+click on a dir row selects nothing — only file rows are selectable', async () => {
-    // Dir rows carry no data-path, so target the row by its class — not rowByPath, which would
-    // find nothing and pass vacuously.
+    // Target the row by its class rather than rowByPath: dir rows carry a data-path since
+    // YAZ-1491 (the reveal flash needs it), but the class is what says "a folder, not a file".
     const { el } = await mount({}, withMultiTree)
     shiftClick(el.querySelector<HTMLElement>('.tree__row--dir'))
     expect(el.querySelectorAll('.tree__row--selected').length).toBe(0)

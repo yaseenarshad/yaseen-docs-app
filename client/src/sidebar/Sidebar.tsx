@@ -21,6 +21,7 @@ import { countLinkReferences } from '../links/renameLinks'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../lib/selection'
 import { allDirs, ancestorDirs, treeHasFile, treeReducer } from '../lib/treeState'
 import { SearchResults } from '../search/SearchResults'
+import type { SearchCandidate } from '../search/searchCandidates'
 import { useSearchResults } from '../search/useSearchResults'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmTurnBack } from './ConfirmTurnBack'
@@ -39,6 +40,12 @@ interface SidebarProps {
   onOpenFile: (path: string) => void
   /** ⌘-click on a file row (I3 LOCKED ruling, GRO-2235): open in a background tab; App passes the workspace's openBackground. */
   onOpenFileBackground: (path: string) => void
+  /**
+   * A FOLDER search row was chosen (🔒 D3, YAZ-1491): App flips the lens to Files and issues the
+   * same reveal request the tab menu uses, so the folder opens and flashes below — whichever lens
+   * was showing, by Enter or by click alike. Never a tab: a folder has nothing to open.
+   */
+  onRevealInFiles: (path: string) => void
   onPickFolder: () => void
   /** True while the native folder dialog is open; the "change" button is disabled meanwhile. */
   pickDisabled: boolean
@@ -298,6 +305,7 @@ export function Sidebar({
   watch,
   onOpenFile,
   onOpenFileBackground,
+  onRevealInFiles,
   onPickFolder,
   pickDisabled,
   onCollapse,
@@ -361,7 +369,11 @@ export function Sidebar({
   // The highlighted result row (YAZ-803); the keyboard owns it, so it lives with the query.
   const [selected, setSelected] = useState(0)
 
-  const results = useSearchResults(root, watch, query)
+  // Every directory of the CURRENT tree, outer before inner (`allDirs`): the expand-all set
+  // (⚡ YAZ-862) and, since YAZ-1491, the search list's folder rows (🔒 D1) — one memo, no second
+  // feed.
+  const dirs = useMemo(() => (tree === null ? [] : allDirs(tree.tree)), [tree])
+  const results = useSearchResults(root, watch, query, dirs)
   // 🔒 flat-list ruling on YAZ-739: while a query is typed the body shows a FLAT ranked list
   // instead of the tree. A conditional render, not a teardown — every bit of tree state (data,
   // expansion, pending create/rename, drag) lives here and is waiting untouched when it clears.
@@ -369,6 +381,16 @@ export function Sidebar({
   // An index refresh can shrink the list under the keyboard's index (F1 finding 2, YAZ-808), so
   // every reader of the selection clamps: the highlight lands on the last row, not on nowhere.
   const sel = Math.min(selected, results.length - 1)
+
+  // One activation rule for keyboard AND click (🔒 D3, YAZ-1491): a folder reveals, a note opens.
+  // The tree rows' rule on the note half (YAZ-961): the first Enter PREVIEWS — focus stays in the
+  // bar, so ↑/↓ carry on — and a second on the page already open is the deliberate "take me in".
+  const activate = (hit: SearchCandidate, background: boolean) => {
+    if (hit.kind === 'dir') onRevealInFiles(hit.path)
+    else if (background) onOpenFileBackground(hit.path)
+    else if (hit.path === activeFile) focusOpenDocument()
+    else onOpenFile(hit.path)
+  }
 
   useEffect(() => {
     if (revealRequest === null || seenRevealId.current === revealRequest.id) return
@@ -387,10 +409,8 @@ export function Sidebar({
   }, [lens, pendingReveal])
 
   // Expand / collapse the whole tree (⚡ YAZ-862, BOTH lenses since ⚡ YAZ-873). "Any open" is
-  // measured against what the CURRENT tree can actually unfold, never the raw persisted list:
-  // that one can still name paths an external change took away, which would leave the button
-  // offering to collapse nothing.
-  const dirs = useMemo(() => (tree === null ? [] : allDirs(tree.tree)), [tree])
+  // measured against what the CURRENT tree can actually unfold (`dirs`, above), never the raw
+  // persisted list, which would leave the button offering to collapse nothing.
   // Topics' half of the same question, over the window's ONE index feed — the very source the
   // tree reads, so the two can never disagree; `folderPagesLookup` is memoized per records
   // identity, so this shares the tree's lookup rather than building a second one. Before the
@@ -479,21 +499,23 @@ export function Sidebar({
     }
   }, [selectionRef, selectedPaths])
 
+  // A Files reveal targets a file — or, since a folder search row (🔒 D3, YAZ-1491), a DIR of the
+  // tree. Both questions are asked once here and read by the two steps below.
+  const revealIsDir = pendingReveal?.lens === 'files' && dirs.includes(pendingReveal.path)
+  const revealTargetPresent = tree !== null && pendingReveal?.lens === 'files' && (revealIsDir || treeHasFile(tree.tree, pendingReveal.path))
+
   useEffect(() => {
     if (tree === null || pendingReveal?.lens !== 'files' || handledFilesRevealId.current === pendingReveal.id) return
     handledFilesRevealId.current = pendingReveal.id
-    if (!treeHasFile(tree.tree, pendingReveal.path)) {
+    if (!revealTargetPresent) {
       onNotice(revealMissingMessage(pendingReveal.path, 'files'))
       return
     }
-    dispatch({ type: 'expandTo', root, file: pendingReveal.path })
-  }, [onNotice, pendingReveal, root, tree])
+    // A folder opens ITSELF too — the synthetic-child idiom the create menu already uses.
+    dispatch({ type: 'expandTo', root, file: revealIsDir ? `${pendingReveal.path}/x` : pendingReveal.path })
+  }, [onNotice, pendingReveal, revealIsDir, revealTargetPresent, root, tree])
 
-  const filesRevealReady =
-    pendingReveal?.lens === 'files' &&
-    tree !== null &&
-    treeHasFile(tree.tree, pendingReveal.path) &&
-    ancestorDirs(root, pendingReveal.path).every((dir) => expanded.includes(dir))
+  const filesRevealReady = revealTargetPresent && ancestorDirs(root, pendingReveal.path).every((dir) => expanded.includes(dir))
 
   useEffect(() => {
     if (!filesRevealReady || pendingReveal === null || bodyRef.current === null) return
@@ -1000,12 +1022,7 @@ export function Sidebar({
               e.preventDefault()
               const hit = results[sel]
               if (hit === undefined) return
-              // The tree rows' rule on the list (YAZ-961): the first Enter PREVIEWS — focus stays
-              // in the bar, so ↑/↓ carry on — and a second Enter on the page already open is the
-              // deliberate "take me in", handing the caret to the document (Esc brings it back).
-              if (e.metaKey) onOpenFileBackground(hit.path)
-              else if (hit.path === activeFile) focusOpenDocument()
-              else onOpenFile(hit.path)
+              activate(hit, e.metaKey)
             }
           }}
         />
@@ -1034,7 +1051,7 @@ export function Sidebar({
         {searching ? (
           // A typed query replaces the ACTIVE TAB's body, whichever lens that is (🔒 D5).
           results.length > 0 ? (
-            <SearchResults results={results} selected={sel} onSelect={setSelected} onOpen={onOpenFile} onOpenBackground={onOpenFileBackground} />
+            <SearchResults results={results} selected={sel} onSelect={setSelected} onActivate={activate} />
           ) : (
             <p className="sidebar__msg">No matches</p>
           )

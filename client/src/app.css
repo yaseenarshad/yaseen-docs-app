@@ -1143,6 +1143,16 @@ button {
   color: var(--fg-muted);
 }
 
+/* A folder row (🔒 D4, YAZ-1491): a small folder glyph before the label. Inline, so the label
+   stays the block that owns the overflow and a long folder name still ellipsizes like a note's. */
+.search-results__glyph {
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  opacity: 0.7;
+}
+
 /* ---------- settings (GRO-2024) ---------- */
 
 .sidebar__footer {
