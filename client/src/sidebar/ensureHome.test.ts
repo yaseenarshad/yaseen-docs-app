@@ -93,8 +93,9 @@ describe('an ADOPTED vault with no Home creates one, exactly once', () => {
     await expect(ensureHome(ROOT, noHome)).resolves.toBe('created')
     expect(tree).toHaveBeenCalledWith(DOTFOLDER)
     expect(createFile).toHaveBeenCalledTimes(1)
-    expect(createFile).toHaveBeenCalledWith({ path: HOME, content: '---\nfolder_page: true\n---\n' })
-    expect(HOME_CONTENT).toBe('---\nfolder_page: true\n---\n')
+    // Born through the ONE builder (YAZ-1549): the flag AND the default `status` column, like every folder page.
+    expect(createFile).toHaveBeenCalledWith({ path: HOME, content: HOME_CONTENT })
+    expect(HOME_CONTENT).toBe('---\nfolder_page: true\nfolder_page_settings:\n  columns:\n    status:\n      kind: select\n      options:\n        - 1-Backlog\n        - 2-Todo\n        - 3-In-Progress\n        - 4-Done\n---\n')
     expect(homePath(ROOT)).toBe(HOME)
   })
 

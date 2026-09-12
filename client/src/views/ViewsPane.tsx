@@ -49,15 +49,20 @@ export interface FolderPageMode {
    * index snapshot it also holds, so a column write cannot clobber an edit the index has not
    * echoed back yet (YAZ-1471 D4; YAZ-1234's two-gestures data loss). `labels`, when given, is
    * the caller's word on the column labels (`properties`) — `undefined` inside it means NONE —
-   * and when absent the live def's labels ride along (YAZ-1513).
+   * and when absent the live def's labels ride along (YAZ-1513). Fire-and-forget: the host's banner
+   * is the report, and its ahead copy is reverted on a refusal. (A caller that must know whether
+   * the write landed — a column delete — is the host's own, and awaits the door directly.)
+   *
+   * `settings.columns` is the host's AHEAD copy (YAZ-1549): every declaration write shows here
+   * before the index echoes it, and this is the ONE map a caller spreads or hands back as `base`.
    */
   setColumns: (columns: Record<string, ColumnDecl>, views?: ViewDef[], labels?: { properties: ViewSet['properties'] }) => void
   /**
    * "Delete column…" (YAZ-1513): the declaration, every view reference, the label AND the key on
    * every direct member — `views/deleteColumn.ts`, ONE function behind both menus. Never rejects:
-   * the host reports failures in its own banner. Absent → the menus do not offer it.
+   * the host reports failures in its own banner.
    */
-  deleteColumn?: (key: string) => Promise<void>
+  deleteColumn: (key: string) => Promise<void>
   /** ⌘-click on a table row opens the page in a BACKGROUND tab (YAZ-820); absent → opens in place. */
   openBackground?: (path: string) => void
   /** Shared Table/Board action that opens the exact page in the window's right panel. */
@@ -201,7 +206,7 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
    */
   const isOutline = view.type === 'outline'
   const result = useMemo(
-    () => runView(def, isOutline && view.order !== undefined ? { ...view, order: undefined } : view, shown, { thisFile, resolve }),
+    () => runView(def, isOutline && view.order !== undefined ? { ...view, order: undefined } : view, shown, { thisFile, resolve, declared: Object.keys(folderPage.settings.columns) }),
     [def, view, shown, thisFile, resolve, isOutline],
   )
 
@@ -315,7 +320,7 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
       .catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
   }
 
-  const keys = propertyKeys(def, view, records)
+  const keys = propertyKeys(def, view, records, Object.keys(folderPage.settings.columns))
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const rest = keys.filter((k) => k !== nameKey)
 
@@ -479,6 +484,7 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
         />
       ) : view.type === 'board' ? (
         <BoardView
+          folderPage={folderPage.settings}
           def={def}
           view={view}
           viewIndex={index}

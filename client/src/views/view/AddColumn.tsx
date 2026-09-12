@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { PROPERTY_NAME } from '@shared/types'
 import type { ColumnDecl } from '../folderPageSettings'
 import { PropertyDefinitionEditor } from './PropertyDefinitionEditor'
+import { declarationForKind } from './declarationForKind'
 import { canonicalKey } from './keys'
 
 export interface AddColumnProps {
@@ -43,10 +44,9 @@ export function AddColumn({ taken, onSave, autoOpen = false, onCancel }: AddColu
       setError(`${key} is already a column`)
       return
     }
-    const { kind, target, options, optionSort } = definition
-    const column: ColumnDecl = { kind, ...((kind === 'select' || kind === 'multi-select') ? { options: options ?? [], ...(optionSort ? { optionSort } : {}) } : {}) }
-    // A target typed under a link kind must not ride into a non-link declaration after a kind switch.
-    if ((kind === 'link' || kind === 'multi-link') && target?.trim()) column.target = target.trim()
+    // The one kind rule (YAZ-1549): a target typed under a link kind never rides into a non-link
+    // declaration after a kind switch, and a choice kind is born with its option list.
+    const column = declarationForKind({ ...definition, target: definition.target?.trim() }, definition.kind)
     onSave(key, column)
     setOpen(false)
     setName('')

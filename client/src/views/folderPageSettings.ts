@@ -12,6 +12,7 @@
  */
 import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { FOLDER_NAME, PROPERTY_KINDS, type IndexRecord, type PropertyDecl, type PropertyKind } from '@shared/types'
+import { DEFAULT_COLUMNS } from '@shared/folderPageDefaults'
 import { readPropertyOptions, validPropertyOptions, validPropertyOptionSort } from '@shared/propertyOptions'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { FOLDER_PAGE_KEY, isExactWikilink } from '../links/folderPages'
@@ -67,28 +68,40 @@ export const DEFAULT_VIEWS: readonly ViewDef[] = [
   { type: 'board', name: 'Board' },
 ]
 
-/** The column every folder page is BORN with (YAZ-1513): a Select whose options are in the order the board shows them. */
-export const DEFAULT_COLUMNS: Readonly<Record<string, ColumnDecl>> = {
-  status: { kind: 'select', options: ['1-Backlog', '2-Todo', '3-In-Progress', '4-Done'] },
-}
-
-/** The frontmatter a NEW folder page is created with — the flag plus the default declaration — built HERE so the settings key string stays module-private (🔒 Q1). */
-export function newFolderPageProperties(): Record<string, unknown> {
-  return { [FOLDER_PAGE_KEY]: true, [SETTINGS_KEY]: { columns: structuredClone(DEFAULT_COLUMNS) } }
-}
+/** The column every folder page is BORN with (YAZ-1513) — `shared/folderPageDefaults.ts`, re-exported for the renderer. */
+export { DEFAULT_COLUMNS }
 
 /**
- * "Turn into folder page" over one file's content (YAZ-1513): sets the flag, and seeds the default
- * declaration ONLY when the page has no settings key yet — a page turned back keeps its settings
- * (turning back deletes only the flag and the active outline), so turning it into a folder page
- * again must not overwrite them. Pure like `restoreFolderBody`, its reverse; the caller owns the
- * write. Broken frontmatter throws from the one-key writer, exactly as the plain flag write did.
+ * "Born with", spelled ONCE (YAZ-1513/1549): the properties a page carries as a folder page — the
+ * flag, and the default declaration ONLY when the page has no settings key yet. A page turned back
+ * keeps its settings (turning back deletes only the flag and the active outline), so turning it
+ * into a folder page again must not overwrite them. Built HERE so the settings key string stays
+ * module-private (🔒 Q1). Pure: `properties` is never mutated.
+ */
+export function bornFolderPage(properties: Record<string, unknown>): Record<string, unknown> {
+  const born: Record<string, unknown> = { ...properties, [FOLDER_PAGE_KEY]: true }
+  if (!Object.prototype.hasOwnProperty.call(properties, SETTINGS_KEY)) born[SETTINGS_KEY] = { columns: structuredClone(DEFAULT_COLUMNS) }
+  return born
+}
+
+/** The frontmatter a NEW folder page (Home included) is created with: `bornFolderPage` over nothing. */
+export const newFolderPageProperties = (): Record<string, unknown> => bornFolderPage({})
+
+/**
+ * "Turn into folder page" over one file's content: ONE parse, then only the keys `bornFolderPage`
+ * changed go back through the one-key writer (which preserves every other byte). Pure like
+ * `restoreFolderBody`, its reverse; the caller owns the write. Broken frontmatter throws from the
+ * writer, exactly as the plain flag write did.
  */
 export function turnIntoFolderPage(content: string): string {
   const { properties } = parseFrontmatter(splitFrontmatter(content).frontmatter)
-  const next = setFrontmatterProperty(content, FOLDER_PAGE_KEY, true)
-  if (Object.prototype.hasOwnProperty.call(properties, SETTINGS_KEY)) return next
-  return setFrontmatterProperty(next, SETTINGS_KEY, { columns: structuredClone(DEFAULT_COLUMNS) })
+  const born = bornFolderPage(properties)
+  let next = content
+  for (const key of Object.keys(born)) {
+    if (properties[key] === born[key]) continue
+    next = setFrontmatterProperty(next, key, born[key])
+  }
+  return next
 }
 
 const KINDS = new Set<string>(PROPERTY_KINDS)
@@ -206,7 +219,8 @@ function readProperties(raw: unknown, problems: string[]): Record<string, { disp
       problems.push(`${SETTINGS_KEY}.properties.${key}.displayName must be text — ignoring that label`)
       continue
     }
-    properties[key] = { displayName: entry.displayName }
+    // A blank label is no label (YAZ-1549): the header never goes empty, it wears the default.
+    properties[key] = entry.displayName.trim() === '' ? {} : { displayName: entry.displayName }
   }
   return properties
 }
@@ -440,37 +454,5 @@ export function writeFolderColumn(path: string, key: string, next: PropertyDecl,
     for (const field of ['kind', 'target', 'required', 'options', 'optionSort']) delete declaration[field]
     Object.assign(declaration, replacement)
     return setFrontmatterProperty(content, SETTINGS_KEY, { ...raw, columns: { ...columns, [key]: declaration } })
-  })
-}
-
-/**
- * ONE column's label (YAZ-1513), through the one settings door against fresh file bytes: sets
- * `properties.<key>.displayName`, or — for `null` / blank — removes it. The entry is looked up the
- * way the engine reads it (as written, bare, `note.`-prefixed) so a rename never forks a second
- * entry for the same column; an emptied entry, then an emptied `properties` map, delete themselves.
- * The KEY never changes: this is what the header SAYS, not what the card stores.
- */
-export function writeColumnLabel(path: string, key: string, displayName: string | null): Promise<{ mtime: number }> {
-  return transformFile(path, (content) => {
-    const parsed = parseFrontmatter(splitFrontmatter(content).frontmatter)
-    if (parsed.error) throw new FrontmatterWriteError(parsed.error)
-    const settings = parsed.properties[SETTINGS_KEY]
-    if (settings != null && !isRecord(settings)) throw new Error('Folder page settings must be a map before renaming a column.')
-    const raw = settings ?? {}
-    if (raw.properties != null && !isRecord(raw.properties)) throw new Error('Folder page column labels must be a map before renaming a column.')
-    const properties: Record<string, unknown> = { ...(isRecord(raw.properties) ? raw.properties : {}) }
-    const bare = key.startsWith('note.') ? key.slice(5) : key
-    const entryKey = [key, bare, `note.${bare}`].find((k) => properties[k] !== undefined) ?? bare
-    const current = properties[entryKey]
-    const entry: Record<string, unknown> = { ...(isRecord(current) ? current : {}) }
-    const name = displayName?.trim() ?? ''
-    if (name === '') delete entry.displayName
-    else entry.displayName = name
-    if (Object.keys(entry).length > 0) properties[entryKey] = entry
-    else delete properties[entryKey]
-    const next: Record<string, unknown> = { ...raw }
-    if (Object.keys(properties).length > 0) next.properties = properties
-    else delete next.properties
-    return setFrontmatterProperty(content, SETTINGS_KEY, next)
   })
 }

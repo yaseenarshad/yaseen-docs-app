@@ -10,7 +10,7 @@ import type { ViewSet } from '../viewSchema'
 const bare = (key: string): string => (key.startsWith('note.') ? key.slice(5) : key)
 
 /** The `def.properties` entry a key's display name lives in: as written, bare, or `note.`-prefixed; else the bare form. */
-export function labelEntryKey(def: ViewSet, key: string): string {
+function labelEntryKey(def: ViewSet, key: string): string {
   const b = bare(key)
   for (const k of [key, b, `note.${b}`]) if (def.properties?.[k] !== undefined) return k
   return b

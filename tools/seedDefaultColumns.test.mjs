@@ -11,7 +11,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { parseArgs, planSettings } from './seedDefaultColumns.mjs'
+import { DEFAULT_STATUS, parseArgs, planSettings } from './seedDefaultColumns.mjs'
+import { shared } from './lib/vault.mjs'
 
 const SCRIPT = fileURLToPath(new URL('./seedDefaultColumns.mjs', import.meta.url))
 const vaults = []
@@ -193,16 +194,25 @@ describe('the transform', () => {
     expect(gitStatus(root)).toBe('')
   })
 
-  it('never writes to broken frontmatter or a non-map settings key — it reports the skip and exits 0', () => {
+  it('never writes to broken frontmatter or a non-map settings key: the unparsable file is listed on its own and never counted as a folder page (YAZ-1549); the bad settings are a skip; exit 0', () => {
     const root = makeVault({
       'Broken.md': '---\nfolder_page: true\nkey: [unclosed\n---\n',
       'Scalar.md': '---\nfolder_page: true\nfolder_page_settings: nope\n---\n',
     })
     const result = run(root, '--apply')
     expect(result.status).toBe(0)
-    expect(result.stdout).toContain('- Broken.md: SKIPPED — frontmatter does not parse')
+    expect(result.stdout).toContain('Folder pages found: 1')
+    expect(result.stdout).toContain('Could not parse 1 file(s) — not counted as folder pages, never written:')
+    expect(result.stdout).toContain('- Broken.md: ')
+    expect(result.stdout).not.toContain('- Broken.md: SKIPPED')
     expect(result.stdout).toContain('- Scalar.md: SKIPPED — folder_page_settings is not a map')
     expect(gitStatus(root)).toBe('')
+  })
+
+  it('parity (YAZ-1549): the seed writes the SAME declaration the app births — shared/folderPageDefaults.ts is the one spelling', async () => {
+    const { DEFAULT_COLUMNS } = await shared('folderPageDefaults.ts')
+    expect(DEFAULT_STATUS).toBe(DEFAULT_COLUMNS.status) // the very object, not a copy
+    expect(DEFAULT_STATUS).toEqual({ kind: 'select', options: ['1-Backlog', '2-Todo', '3-In-Progress', '4-Done'] })
   })
 })
 

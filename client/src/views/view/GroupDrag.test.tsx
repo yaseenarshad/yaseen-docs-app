@@ -198,26 +198,26 @@ function headerOf(el: ParentNode, label: string): HTMLElement {
 describe('board drag between columns', () => {
   it('drop on another column writes the groupBy property and moves the card optimistically without flashing back', async () => {
     const { el, setRecords } = mount(STATUS_BOARD)
-    fire(cardOf(el, 'Agentic Agency.md'), 'dragstart')
+    fire(cardOf(el, 'Agentic Agency'), 'dragstart')
     fire(colOf(el, 'drafting'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith(AGENTIC, 'status', 'drafting')
     // optimistic: the card is already in the target column
-    expect(titlesIn(colOf(el, 'drafting'))).toContain('Agentic Agency.md')
-    expect(titlesIn(colOf(el, 'idea'))).not.toContain('Agentic Agency.md')
+    expect(titlesIn(colOf(el, 'drafting'))).toContain('Agentic Agency')
+    expect(titlesIn(colOf(el, 'idea'))).not.toContain('Agentic Agency')
     // the write resolving does NOT clear the optimistic value — only the fresh index does
     await flush()
-    expect(titlesIn(colOf(el, 'drafting'))).toContain('Agentic Agency.md')
+    expect(titlesIn(colOf(el, 'drafting'))).toContain('Agentic Agency')
     // the watcher-driven refetch delivers the new value; the card stays put
     setRecords(
       TEST_RECORDS.map((r) => (r.path === AGENTIC ? { ...r, properties: { ...r.properties, status: 'drafting' } } : r)),
     )
-    expect(titlesIn(colOf(el, 'drafting'))).toContain('Agentic Agency.md')
+    expect(titlesIn(colOf(el, 'drafting'))).toContain('Agentic Agency')
     expect(write).toHaveBeenCalledTimes(1)
   })
 
   it('the hovered column shows the drop affordance and placeholder; the own column never does', () => {
     const { el } = mount(STATUS_BOARD)
-    fire(cardOf(el, 'Agentic Agency.md'), 'dragstart')
+    fire(cardOf(el, 'Agentic Agency'), 'dragstart')
     fire(colOf(el, 'drafting'), 'dragover')
     expect(colOf(el, 'drafting').className).toContain('view-board__col--drop')
     expect(colOf(el, 'drafting').querySelector('.view-board__placeholder')).not.toBeNull()
@@ -232,7 +232,7 @@ describe('board drag between columns', () => {
 
   it('preserves the YAML type of the target group value: numbers stay numbers, booleans booleans', () => {
     const { el } = mount(PRIORITY_BOARD)
-    fire(cardOf(el, 'The Gold In Your Archive.md'), 'dragstart')
+    fire(cardOf(el, 'The Gold In Your Archive'), 'dragstart')
     fire(colOf(el, '3'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith(GOLD, 'priority', 3)
 
@@ -240,55 +240,55 @@ describe('board drag between columns', () => {
     container?.remove()
     write.mockClear()
     const published = mount(PUBLISHED_BOARD)
-    fire(cardOf(published.el, 'Agentic Agency.md'), 'dragstart')
+    fire(cardOf(published.el, 'Agentic Agency'), 'dragstart')
     fire(colOf(published.el, 'true'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith(AGENTIC, 'published', true)
   })
 
   it('drop on the No value column deletes the key', () => {
     const { el } = mount(STATUS_BOARD)
-    fire(cardOf(el, 'Agentic Agency.md'), 'dragstart')
+    fire(cardOf(el, 'Agentic Agency'), 'dragstart')
     fire(colOf(el, 'No value'), 'drop')
     expect(write).toHaveBeenCalledTimes(1)
     expect(write.mock.calls[0]).toEqual([AGENTIC, 'status', undefined])
-    expect(titlesIn(colOf(el, 'No value'))).toContain('Agentic Agency.md')
+    expect(titlesIn(colOf(el, 'No value'))).toContain('Agentic Agency')
   })
 
   it('Esc cancels an in-flight drag: no write, no affordance', () => {
     const { el } = mount(STATUS_BOARD)
-    fire(cardOf(el, 'Agentic Agency.md'), 'dragstart')
+    fire(cardOf(el, 'Agentic Agency'), 'dragstart')
     pressEscape()
     fire(colOf(el, 'drafting'), 'dragover')
     expect(el.querySelector('.view-board__placeholder')).toBeNull()
     fire(colOf(el, 'drafting'), 'drop')
     expect(write).not.toHaveBeenCalled()
-    expect(titlesIn(colOf(el, 'idea'))).toContain('Agentic Agency.md')
+    expect(titlesIn(colOf(el, 'idea'))).toContain('Agentic Agency')
   })
 
   it('dropping on the own column is a no-op', () => {
     const { el } = mount(STATUS_BOARD)
-    fire(cardOf(el, 'Agentic Agency.md'), 'dragstart')
+    fire(cardOf(el, 'Agentic Agency'), 'dragstart')
     fire(colOf(el, 'idea'), 'drop')
     expect(write).not.toHaveBeenCalled()
-    expect(titlesIn(colOf(el, 'idea'))).toContain('Agentic Agency.md')
+    expect(titlesIn(colOf(el, 'idea'))).toContain('Agentic Agency')
   })
 
   it('a failed write reverts the optimistic move and shows the inline error on the card', async () => {
     write.mockRejectedValueOnce(new Error('disk on fire'))
     const { el } = mount(STATUS_BOARD)
-    fire(cardOf(el, 'Agentic Agency.md'), 'dragstart')
+    fire(cardOf(el, 'Agentic Agency'), 'dragstart')
     fire(colOf(el, 'drafting'), 'drop')
-    expect(titlesIn(colOf(el, 'drafting'))).toContain('Agentic Agency.md') // optimistic
+    expect(titlesIn(colOf(el, 'drafting'))).toContain('Agentic Agency') // optimistic
     await flush()
-    expect(titlesIn(colOf(el, 'idea'))).toContain('Agentic Agency.md') // reverted
-    const err = q<HTMLElement>(cardOf(el, 'Agentic Agency.md'), '[role="alert"]')
+    expect(titlesIn(colOf(el, 'idea'))).toContain('Agentic Agency') // reverted
+    const err = q<HTMLElement>(cardOf(el, 'Agentic Agency'), '[role="alert"]')
     expect(err.title).toBe('disk on fire')
   })
 
   it('cards are not draggable when the grouping is not a note property', () => {
     const { el } = mount(FOLDER_BOARD)
-    expect(cardOf(el, 'VSL-v1.md').getAttribute('draggable')).not.toBe('true')
-    fire(cardOf(el, 'VSL-v1.md'), 'dragstart')
+    expect(cardOf(el, 'VSL-v1').getAttribute('draggable')).not.toBe('true')
+    fire(cardOf(el, 'VSL-v1'), 'dragstart')
     fire(colOf(el, 'Content Pillars'), 'drop')
     expect(write).not.toHaveBeenCalled()
   })
@@ -340,11 +340,11 @@ describe('drag between fanned-out groups (YAZ-671 D3)', () => {
     const records = [listRec('both', ['a', 'b']), listRec('onlyC', ['c'])]
     const { el } = mount(STATUS_BOARD, { records })
     // 'both' is in column a AND column b — that is the fan-out working
-    expect(titlesIn(colOf(el, 'a'))).toEqual(['both.md'])
-    expect(titlesIn(colOf(el, 'b'))).toEqual(['both.md'])
+    expect(titlesIn(colOf(el, 'a'))).toEqual(['both'])
+    expect(titlesIn(colOf(el, 'b'))).toEqual(['both'])
 
     // drag the card OUT OF column a INTO column c
-    fire(cardOf(colOf(el, 'a'), 'both.md'), 'dragstart')
+    fire(cardOf(colOf(el, 'a'), 'both'), 'dragstart')
     fire(colOf(el, 'c'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/both.md', 'status', ['b', 'c'])
   })
@@ -352,7 +352,7 @@ describe('drag between fanned-out groups (YAZ-671 D3)', () => {
   it('dragging the SAME card out of its other group removes that element instead', () => {
     const records = [listRec('both', ['a', 'b']), listRec('onlyC', ['c'])]
     const { el } = mount(STATUS_BOARD, { records })
-    fire(cardOf(colOf(el, 'b'), 'both.md'), 'dragstart')
+    fire(cardOf(colOf(el, 'b'), 'both'), 'dragstart')
     fire(colOf(el, 'c'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/both.md', 'status', ['a', 'c'])
   })
@@ -360,7 +360,7 @@ describe('drag between fanned-out groups (YAZ-671 D3)', () => {
   it('a drop on "No value" removes only the dragged-from element, never the whole key', () => {
     const records = [listRec('both', ['a', 'b']), listRec('none', [])]
     const { el } = mount(STATUS_BOARD, { records })
-    fire(cardOf(colOf(el, 'a'), 'both.md'), 'dragstart')
+    fire(cardOf(colOf(el, 'a'), 'both'), 'dragstart')
     fire(colOf(el, 'No value'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/both.md', 'status', ['b'])
   })
@@ -368,7 +368,7 @@ describe('drag between fanned-out groups (YAZ-671 D3)', () => {
   it('a card dragged OUT of "No value" gains the target element', () => {
     const records = [listRec('empty', []), listRec('onlyA', ['a'])]
     const { el } = mount(STATUS_BOARD, { records })
-    fire(cardOf(colOf(el, 'No value'), 'empty.md'), 'dragstart')
+    fire(cardOf(colOf(el, 'No value'), 'empty'), 'dragstart')
     fire(colOf(el, 'a'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/empty.md', 'status', ['a'])
   })
@@ -377,7 +377,7 @@ describe('drag between fanned-out groups (YAZ-671 D3)', () => {
     const records = [listRec('spans', ['[[Lead Gen]]', '[[Sales]]']), listRec('other', ['[[Nurture]]'])]
     const { el } = mount(STATUS_BOARD, { records })
     // a link group header renders the bare target as a chip, not the `[[…]]` source
-    fire(cardOf(colOf(el, 'Lead Gen'), 'spans.md'), 'dragstart')
+    fire(cardOf(colOf(el, 'Lead Gen'), 'spans'), 'dragstart')
     fire(colOf(el, 'Nurture'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/spans.md', 'status', ['[[Sales]]', '[[Nurture]]'])
   })
@@ -385,7 +385,7 @@ describe('drag between fanned-out groups (YAZ-671 D3)', () => {
   it('dropping on the card\'s own group stays a no-op', () => {
     const records = [listRec('both', ['a', 'b'])]
     const { el } = mount(STATUS_BOARD, { records })
-    fire(cardOf(colOf(el, 'a'), 'both.md'), 'dragstart')
+    fire(cardOf(colOf(el, 'a'), 'both'), 'dragstart')
     fire(colOf(el, 'a'), 'drop')
     expect(write).not.toHaveBeenCalled()
   })
@@ -397,11 +397,11 @@ it('drops onto an unused Select option by writing its exact declared label', asy
     folderPage: testFolderPage({ settings: { columns: { status: { kind: 'select', options: ['idea', 'Waiting: review'] } }, views: [], problems: [] } }),
   })
   expect(titlesIn(colOf(el, 'Waiting: review'))).toEqual([])
-  fire(cardOf(colOf(el, 'idea'), 'Agentic Agency.md'), 'dragstart')
+  fire(cardOf(colOf(el, 'idea'), 'Agentic Agency'), 'dragstart')
   fire(colOf(el, 'Waiting: review'), 'drop')
   expect(write).toHaveBeenCalledExactlyOnceWith(AGENTIC, 'status', 'Waiting: review')
   await flush()
-  expect(titlesIn(colOf(el, 'Waiting: review'))).toContain('Agentic Agency.md')
+  expect(titlesIn(colOf(el, 'Waiting: review'))).toContain('Agentic Agency')
 })
 
 
@@ -425,7 +425,7 @@ it('drops into an empty nested group with an array value for its unused Multi-se
   const later = colOf(el, 'Later')
   const target = [...later.querySelectorAll<HTMLElement>('.view-board__subgroup')].find(group => q(group, '.view-group__value').textContent === 'Review')!
   expect(target).toBeDefined()
-  fire(cardOf(colOf(el, 'Doing'), 'Agentic Agency.md'), 'dragstart')
+  fire(cardOf(colOf(el, 'Doing'), 'Agentic Agency'), 'dragstart')
   fire(target, 'drop')
   expect(write).not.toHaveBeenCalled()
   expect(writeProperties).toHaveBeenCalledExactlyOnceWith(AGENTIC, [
@@ -433,5 +433,5 @@ it('drops into an empty nested group with an array value for its unused Multi-se
     { key: 'status', value: ['Later'], prevRaw: ['Doing'] },
   ])
   await flush()
-  expect(titlesIn(colOf(el, 'Later'))).toContain('Agentic Agency.md')
+  expect(titlesIn(colOf(el, 'Later'))).toContain('Agentic Agency')
 })

@@ -119,7 +119,8 @@ describe('the header menu (YAZ-1513)', () => {
     rightClick(th(el, 1))
     click(item(el, 'Rename column…'))
     const field = q<HTMLInputElement>(el, '.ctx-menu input[aria-label="Rename Status"]')
-    expect(field.value).toBe('Status')
+    expect(field.value).toBe('') // no stored name yet: the default label is the placeholder (YAZ-1549)
+    expect(field.placeholder).toBe('Status')
 
     setValue(field, 'Stage')
     press(field, 'Enter')
@@ -138,6 +139,8 @@ describe('the header menu (YAZ-1513)', () => {
     rightClick(th(el, 1))
     click(item(el, 'Rename column…'))
     const field = q<HTMLInputElement>(el, '.ctx-menu input[aria-label="Rename Stage"]')
+    expect(field.value).toBe('Stage') // the stored name, editable as-is
+    expect(field.placeholder).toBe('Status')
     setValue(field, 'Nope')
     press(field, 'Escape')
     expect(onChange).not.toHaveBeenCalled()
@@ -234,19 +237,15 @@ describe('the header menu (YAZ-1513)', () => {
     expect(el.querySelector('.confirm')).toBeNull()
   })
 
-  it('Delete column… is disabled with the tooltip on file.name — hide it instead — and absent entirely without a deleteColumn door', () => {
+  it('Delete column… is disabled with the tooltip on file.name — hide it instead', () => {
     const { el } = mount()
     rightClick(th(el, 0))
     const del = item(el, 'Delete column…') as HTMLButtonElement
     expect(del.disabled).toBe(true)
     expect(del.title).toBe('Built-in column — hide it instead')
     press(window.document.body, 'Escape')
-
-    act(() => root?.unmount())
-    container?.remove()
-    const bare = mount(BASE, { folderPage: testFolderPage({ settings: { columns: {}, views: [], problems: [] }, setColumns: vi.fn() }) })
-    rightClick(th(bare.el, 1))
-    expect(menuItems(bare.el)).toEqual(['Rename column…', 'Hide column', 'Add column to the right…'])
+    rightClick(th(el, 1))
+    expect((item(el, 'Delete column…') as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('insertAfter lands the key right after its anchor, or last when the anchor is not shown', () => {

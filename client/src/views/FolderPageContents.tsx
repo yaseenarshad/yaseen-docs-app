@@ -26,13 +26,14 @@
  * costs no fetch, no watcher and no IPC of its own.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ColumnDecl } from './folderPageSettings'
 import { stringify } from 'yaml'
 import type { IndexRecord, PropertiesResponse } from '@shared/types'
 import type { WikilinkNav } from '../editor/wikilink/wikilinkClick'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { folderPagesLookup, isFolderPage } from '../links/folderPages'
-import { type ParsedViews, parseViews } from './viewSchema'
+import { type ParsedViews, type ViewDef, type ViewSet, parseViews } from './viewSchema'
 import { ViewsPane, type FolderPageMode } from './ViewsPane'
 import { splitFrontmatter, parseFrontmatter } from '@shared/frontmatter'
 import { DEFAULT_VIEWS, folderPageSettings, folderPageSettingsOf, writeFolderPageSettings, writeFolderColumn, type FolderPageSettings } from './folderPageSettings'
@@ -113,6 +114,10 @@ function folderPageViewSet({ views, formulas, properties, defaultView }: FolderP
   }
 }
 
+/** Order-insensitive identity for a columns map: the index re-reads what we wrote, key order and all, but never trust that. */
+const columnsStamp = (columns: Readonly<Record<string, ColumnDecl>>): string =>
+  JSON.stringify(Object.keys(columns).sort().map((key) => [key, Object.entries(columns[key]).sort(([a], [b]) => (a < b ? -1 : 1))]))
+
 export function FolderPageContents({
   path,
   root,
@@ -181,15 +186,39 @@ export function FolderPageContents({
   const [columnError, setColumnError] = useState<string | null>(null)
 
   /**
+   * The declarations AHEAD of the index (YAZ-1549) — `parsed`'s discipline for `views`, applied to
+   * `columns`: every `setColumn` / `setColumns` write lands here first, a rejection puts back what
+   * stood before it (and the banner says why), and the index echo that carries the same columns
+   * clears it. Null = the index leads. `liveSettings` below is what every consumer reads — the menus'
+   * spreads, the `base` a declaration write is checked against, the presence invariant's walk — so a
+   * column added a moment ago can neither be dropped by the next write nor re-added by a member echo
+   * that arrives before the folder page's own.
+   */
+  const [ahead, setAheadState] = useState<Record<string, ColumnDecl> | null>(null)
+  const aheadRef = useRef<Record<string, ColumnDecl> | null>(null)
+  const setAhead = (next: Record<string, ColumnDecl> | null): void => {
+    aheadRef.current = next
+    setAheadState(next)
+  }
+  const indexColumns = settings === null ? '' : columnsStamp(settings.columns)
+  useEffect(() => {
+    if (aheadRef.current !== null && indexColumns === columnsStamp(aheadRef.current)) setAhead(null)
+  }, [indexColumns])
+  const liveSettings = useMemo(
+    () => (settings === null ? null : ahead === null ? settings : { ...settings, columns: ahead }),
+    [settings, ahead],
+  )
+
+  /**
    * The open-folder half of YAZ-999's hybrid invariant. Settings/membership stay the source of
    * truth; once either snapshot moves, reconcile its current DIRECT members. The service rechecks
    * latest file bytes, so a stale index can only cost a no-op read — never an overwrite.
    */
   useEffect(() => {
-    if (settings === null) return
+    if (liveSettings === null) return
     let current = true
     const clearOnSuccess = columnError !== null
-    backfillFolderPageColumns(members, settings.columns).then(
+    backfillFolderPageColumns(members, liveSettings.columns).then(
       () => {
         if (current && clearOnSuccess) setColumnError(null)
       },
@@ -200,7 +229,7 @@ export function FolderPageContents({
     return () => {
       current = false
     }
-  }, [members, settings])
+  }, [members, liveSettings])
 
   /** The comparable tuple every stamp below is spelled as — everything `folderPageViewSet` builds: views, formulas, labels (YAZ-1513) and the saved START. */
   const stampOf = (s: Pick<FolderPageSettings, 'views' | 'formulas' | 'properties' | 'defaultView'>): string =>
@@ -259,7 +288,26 @@ export function FolderPageContents({
     setParsed(settings === null ? null : folderPageViewSet(settings))
   }, [stamp, settings, fileStamp])
 
-  if (record === null || settings === null || parsed === null) return null
+  if (record === null || settings === null || liveSettings === null || parsed === null) return null
+
+  /**
+   * The declarations' ONE write (YAZ-895/1549): ahead first, then disk; a refusal puts the ahead copy
+   * back, shows the banner and REJECTS — so a caller that must not go on (a column delete's member
+   * strips) does not.
+   */
+  const commitSettings = (columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']): Promise<void> => {
+    setSettingsError(null)
+    const before = aheadRef.current
+    setAhead(columns)
+    return writeFolderPageSettings(path, { ...settings, columns, views, properties, defaultView: parsed.def.defaultView }).then(
+      () => undefined,
+      (err: unknown) => {
+        setAhead(before)
+        setSettingsError(err instanceof Error ? err.message : String(err))
+        throw err
+      },
+    )
+  }
 
   /** Every config change (sort, columns, widths, summaries…) is ONE settings write (🔒 D3). */
   const onChange = (next: ParsedViews): void => {
@@ -274,37 +322,40 @@ export function FolderPageContents({
   }
 
   const mode: FolderPageMode = {
-    settings,
+    settings: liveSettings,
     vaultRecords: feed.records,
     create: (seed, name) => createMember(root, record.basename, path, settings, feed.records, seed, name),
-    // Columns (and, when the caller moves both, `views`) through the SAME one door — still ONE write.
-    setColumn: (key, next, base) => writeFolderColumn(path, key, next, base),
+    // ONE declaration, ahead first (YAZ-1549): the panel sees it at once; a refusal puts back what
+    // stood before and rejects to the caller, whose inline text is the report.
+    setColumn: (key, next, base) => {
+      const before = aheadRef.current
+      setAhead({ ...liveSettings.columns, [key]: next })
+      return writeFolderColumn(path, key, next, base).catch((err: unknown) => {
+        setAhead(before)
+        throw err
+      })
+    },
     // `settings` is the index SNAPSHOT, so it can be behind: `parsed` is rebuilt from it and is
     // otherwise ahead by unechoed local writes. Reading the def instead keeps an in-flight
     // default-view choice — or sort/filter edit, when the caller moves no `views` — from being
     // clobbered by the next column write (YAZ-1471 D4; YAZ-1234's two-gestures data loss). No
     // `pending` stamp: this echo must still read as "disk wins" and refresh `parsed` with the
     // `views` the caller moved.
+    // The labels follow the same rule as the views: the caller's when it speaks, else the LIVE def's
+    // (YAZ-1513). Fire-and-forget — the banner is the report; the delete below awaits the door itself.
     setColumns: (columns, views, labels) => {
-      setSettingsError(null)
-      writeFolderPageSettings(path, {
-        ...settings,
-        columns,
-        views: views ?? parsed.def.views,
-        // The labels follow the same rule as the views: the caller's when it speaks, else the LIVE def's (YAZ-1513).
-        properties: labels === undefined ? parsed.def.properties : labels.properties,
-        defaultView: parsed.def.defaultView,
-      }).catch((err: unknown) => setSettingsError(err instanceof Error ? err.message : String(err)))
+      void commitSettings(columns, views ?? parsed.def.views, labels === undefined ? parsed.def.properties : labels.properties).catch(() => undefined)
     },
-    // Delete column (YAZ-1513): the settings half goes through `setColumns` above — the same one
-    // door, the same echo behaviour — and the member strips report into the column banner, no
-    // rollback, exactly as the presence invariant's own failures do.
+    // Delete column (YAZ-1513): the settings half is `commitSettings` — the same one door, the same
+    // echo behaviour — AWAITED, so a refused write aborts before any member is touched; the member
+    // strips report into the column banner, no rollback, exactly as the presence invariant's own
+    // failures do.
     deleteColumn: (key) =>
       deleteColumnEverywhere(key, {
-        columns: settings.columns,
+        columns: liveSettings.columns,
         def: parsed.def,
         members,
-        writeSettings: (columns, views, properties) => mode.setColumns(columns, views, { properties }),
+        writeSettings: commitSettings,
       }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
     openRight: onOpenFileRight,
     openBackground: onOpenFileBackground,

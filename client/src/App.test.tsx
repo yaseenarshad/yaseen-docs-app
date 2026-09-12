@@ -4,6 +4,7 @@
  * observable stubs; the bridge is the jsdom stub pattern (storage.test.ts), so the real
  * storage / api / hook modules run against it.
  */
+import { HOME_CONTENT } from './sidebar/ensureHome'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -1454,7 +1455,7 @@ describe('Home is born on vault open (6C-, YAZ-849)', () => {
     const b = await mount(defaultAppState(), identity())
     expect(b.bridge.tree).toHaveBeenCalledWith(DOTFOLDER)
     // Exactly 4B's birth: `folder_page: true` and nothing else — no settings block, no body.
-    expect(b.bridge.createFile).toHaveBeenCalledWith({ path: HOME, content: '---\nfolder_page: true\n---\n' })
+    expect(b.bridge.createFile).toHaveBeenCalledWith({ path: HOME, content: HOME_CONTENT }) // born through the ONE builder (YAZ-1549)
     // ONCE, though StrictMode mounts the effect twice and every index poke re-enters the
     // subscriber: the per-root ref is what makes it once per vault, not once per snapshot.
     expect(b.bridge.createFile).toHaveBeenCalledTimes(1)
@@ -1472,7 +1473,7 @@ describe('Home is born on vault open (6C-, YAZ-849)', () => {
   it("the offer's button runs the SAME create and opens the page it made", async () => {
     const b = await mount(defaultAppState(), identity(), {}, unadopt)
     await act(async () => captured.sidebar?.onCreateHome())
-    expect(b.bridge.createFile).toHaveBeenCalledWith({ path: HOME, content: '---\nfolder_page: true\n---\n' })
+    expect(b.bridge.createFile).toHaveBeenCalledWith({ path: HOME, content: HOME_CONTENT }) // born through the ONE builder (YAZ-1549)
     expect(document.querySelector('[data-editor]')?.getAttribute('data-path')).toBe(HOME)
     // Still un-adopted — making a Home does not adopt the folder. The CARD retires because
     // `[[Home]]` resolves now, which is the Topics tree's own live half of the condition.

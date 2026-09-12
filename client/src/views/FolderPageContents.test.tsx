@@ -18,7 +18,7 @@ import { resolverFor } from './engine'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { FolderPageContents } from './FolderPageContents'
 
-vi.mock('./writeProperty', () => ({ writeProperty: vi.fn() }))
+vi.mock('./writeProperty', () => ({ writeProperty: vi.fn(), transformFile: vi.fn() }))
 vi.mock('./folderPageColumns', () => ({ backfillFolderPageColumns: vi.fn() }))
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -45,9 +45,11 @@ vi.mock('./view/OutlineEditor', () => ({
 import { api, BridgeRequestError } from '../api'
 import type { FolderPageMode, ViewsPaneProps } from './ViewsPane'
 import { backfillFolderPageColumns } from './folderPageColumns'
-import { writeProperty } from './writeProperty'
+import { transformFile, writeProperty } from './writeProperty'
 
 const write = vi.mocked(writeProperty)
+/** The one-file transform behind a declaration write (`writeFolderColumn`) and a column delete's member strips. */
+const transform = vi.mocked(transformFile)
 const backfill = vi.mocked(backfillFolderPageColumns)
 const readFile = vi.mocked(api.readFile)
 const createDir = vi.mocked(api.createDir)
@@ -134,6 +136,7 @@ function mount(path: string, records: IndexRecord[] | null = vault(), fileConten
 beforeEach(() => {
   source = createWikilinkResolveSource()
   write.mockResolvedValue({ mtime: 2 })
+  transform.mockResolvedValue({ mtime: 2, content: '' })
   backfill.mockResolvedValue()
   readFile.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'path does not exist')) // no template
   createDir.mockResolvedValue({ path: '/vault/stages' })
@@ -702,6 +705,85 @@ describe('config edits are ONE settings write on the folder page', () => {
     await flush()
     expect(q(el, '[role="alert"]').textContent).toContain('disk full')
     expect(el.querySelector('.view-table')).not.toBeNull()
+  })
+})
+
+/**
+ * The host owns the declarations AHEAD of the index (YAZ-1549): `settings.columns` on the mode is
+ * what every menu spreads and hands back as `base`, and what the presence invariant walks — so a
+ * column added a moment ago is neither dropped by the next write nor re-added by a member echo.
+ */
+describe('the declarations ride AHEAD of the index (YAZ-1549)', () => {
+  const columnsOf = () => captured.folderPage!.settings.columns
+  const setColumn = async (key: string, next: { kind: 'link' | 'text' }) => {
+    let failure: unknown = null
+    await act(async () => {
+      await captured.folderPage!.setColumn(key, next, undefined).catch((err: unknown) => {
+        failure = err
+      })
+    })
+    return failure
+  }
+
+  it('a setColumn write shows in settings.columns at once — before any echo — and is ONE file transform', async () => {
+    mount(FUNNELS)
+    expect(columnsOf()).toEqual(SETTINGS.columns)
+    expect(await setColumn('owner', { kind: 'link' })).toBeNull()
+    expect(columnsOf()).toEqual({ ...SETTINGS.columns, owner: { kind: 'link' } })
+    expect(transform).toHaveBeenCalledExactlyOnceWith(FUNNELS, expect.any(Function))
+    expect(write).not.toHaveBeenCalled() // the declaration write is `writeFolderColumn`'s, not the whole-key door
+  })
+
+  it('the echo carrying the same columns clears the ahead copy: the index leads again, and a later different echo shows through', async () => {
+    mount(FUNNELS)
+    await setColumn('owner', { kind: 'link' })
+    const echoed = { ...SETTINGS, columns: { ...SETTINGS.columns, owner: { kind: 'link' } } }
+    feed(vault(echoed))
+    await flush()
+    expect(columnsOf()).toEqual(echoed.columns)
+    // ahead is null now: an EXTERNAL change to that column is what the mode shows
+    feed(vault({ ...SETTINGS, columns: { ...SETTINGS.columns, owner: { kind: 'text' } } }))
+    await flush()
+    expect(columnsOf().owner).toEqual({ kind: 'text' })
+  })
+
+  it('a refused declaration write puts the ahead copy back and rejects to the caller — the panel shows the text, the host shows what stands', async () => {
+    transform.mockRejectedValueOnce(new Error('Property “owner” changed since these settings were opened. Reopen the property and try again.'))
+    mount(FUNNELS)
+    const failure = await setColumn('owner', { kind: 'link' })
+    expect(String(failure)).toContain('changed since these settings were opened')
+    expect(columnsOf()).toEqual(SETTINGS.columns)
+  })
+
+  it('two rapid writes COMPOSE: a column added, then another deleted before either echoes — the first declaration survives (the YAZ-1549 finding)', async () => {
+    mount(FUNNELS)
+    await setColumn('owner', { kind: 'link' })
+    await act(async () => captured.folderPage!.deleteColumn('order'))
+    expect(write).toHaveBeenCalledTimes(1)
+    expect((write.mock.calls[0][2] as { columns: unknown }).columns).toEqual({ related: SETTINGS.columns.related, owner: { kind: 'link' } })
+    expect(columnsOf()).toEqual({ related: SETTINGS.columns.related, owner: { kind: 'link' } })
+  })
+
+  it('a refused settings write ABORTS a delete: the banner says why, the ahead copy is put back, and not one member is touched', async () => {
+    write.mockRejectedValueOnce(new Error('disk full'))
+    const el = mount(FUNNELS)
+    await act(async () => captured.folderPage!.deleteColumn('order'))
+    expect(transform).not.toHaveBeenCalled() // LEAD and SALES carry `order`; neither was stripped
+    expect(q(el, '[role="alert"]').textContent).toContain('disk full')
+    expect(columnsOf()).toEqual(SETTINGS.columns)
+  })
+
+  it("after a delete the presence invariant walks the AHEAD columns: a member echo arriving before the page's own cannot re-add the key", async () => {
+    mount(FUNNELS)
+    await act(async () => captured.folderPage!.deleteColumn('order'))
+    expect(transform).toHaveBeenCalledTimes(2) // Lead Gen and Sales lose `order`
+    backfill.mockClear()
+    // a MEMBER moves while the folder page's own echo (settings without `order`) is still in flight
+    feed([...vault(), rec('/vault/stages/Expansion.md', { folder_pages: ['[[Funnel Stages]]'] })])
+    await flush()
+    expect(backfill).toHaveBeenCalled()
+    const [, columns] = backfill.mock.calls.at(-1)!
+    expect(columns).toEqual({ related: SETTINGS.columns.related })
   })
 })
 

@@ -158,7 +158,7 @@ describe('primary line', () => {
   it('file.name first in order renders a link that opens the note; the rest sits inline after it', () => {
     const { el, onOpenFile } = mount(LIST_BASE)
     expect(items(el)).toHaveLength(8)
-    expect(titles(el)[0]).toBe('Agentic Agency.md')
+    expect(titles(el)[0]).toBe('Agentic Agency')
     expect(inlineOf(items(el)[0])).toBe('idea, 2')
     click(q(el, '.view-list__title'))
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
@@ -167,7 +167,7 @@ describe('primary line', () => {
   it('no order at all defaults the primary line to the file.name link', () => {
     const { el, onOpenFile } = mount('views:\n  - type: list\n    name: L\n')
     expect(titles(el)).toHaveLength(8)
-    expect(titles(el)[0]).toBe('Agentic Agency.md')
+    expect(titles(el)[0]).toBe('Agentic Agency')
     click(q(el, '.view-list__title'))
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
   })
@@ -178,12 +178,12 @@ describe('primary line', () => {
     const primaries = [...el.querySelectorAll('.view-list__primary')].map((s) => s.textContent)
     expect(primaries[0]).toBe('idea')
     // file.name is second in order, so it renders as a plain inline value, not the primary link
-    expect(inlineOf(items(el)[0])).toBe('Agentic Agency.md')
+    expect(inlineOf(items(el)[0])).toBe('Agentic Agency.md') // the VALUE keeps its extension; only a TITLE is the basename (YAZ-1549)
   })
 
   it('empty values are skipped in the inline run — a bare note renders no inline span', () => {
     const { el } = mount(LIST_BASE)
-    const attribution = items(el).find((i) => i.querySelector('.view-list__title')?.textContent === 'Attribution.md')
+    const attribution = items(el).find((i) => i.querySelector('.view-list__title')?.textContent === 'Attribution')
     expect(attribution).toBeDefined()
     expect(inlineOf(attribution!)).toBeNull()
   })
@@ -244,7 +244,7 @@ describe('grouped sections', () => {
     const { storage } = await import('../../lib/storage')
     const { el, onChange } = mount(GROUPED_BASE)
     click(toggleOf(el, 'idea'))
-    expect(titles(el)).not.toContain('Agentic Agency.md')
+    expect(titles(el)).not.toContain('Agentic Agency')
     expect(headerTexts(el)).toEqual(['drafting', 'idea', 'published', 'No value']) // header stays
     expect(toggleOf(el, 'idea').getAttribute('aria-expanded')).toBe('false')
     expect(onChange).not.toHaveBeenCalled() // NOT in the page's own card, no autosave
@@ -254,11 +254,11 @@ describe('grouped sections', () => {
     unmount()
     const again = mount(GROUPED_BASE)
     expect(toggleOf(again.el, 'idea').getAttribute('aria-expanded')).toBe('false')
-    expect(titles(again.el)).not.toContain('Agentic Agency.md')
+    expect(titles(again.el)).not.toContain('Agentic Agency')
 
     // expanding removes the entry
     click(toggleOf(again.el, 'idea'))
-    expect(titles(again.el)).toContain('Agentic Agency.md')
+    expect(titles(again.el)).toContain('Agentic Agency')
     expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::L', [])
   })
 
@@ -267,7 +267,7 @@ describe('grouped sections', () => {
     click(byLabel(el, 'Search'))
     setValue(byLabel(el, 'Search rows'), 'agency')
     expect(headerTexts(el)).toEqual(['drafting', 'idea'])
-    expect(titles(el)).toEqual(['The Levels of an Agency.md', 'Agentic Agency.md'])
+    expect(titles(el)).toEqual(['The Levels of an Agency', 'Agentic Agency'])
     expect(sections(el).map((s) => q(s, '.view-group__count').textContent)).toEqual(['1', '1'])
     expect(sections(el)[1].querySelector('.view-group__summary')?.textContent).toBe('Sum2')
     expect(q(el, '.view-toolbar__count').textContent).toBe('2 / 8 items')

@@ -28,8 +28,8 @@ import {
   newFolderPageProperties,
   orderedMembers,
   outlineOrderOf,
+  bornFolderPage,
   turnIntoFolderPage,
-  writeColumnLabel,
   writeFolderPageSettings,
 } from './folderPageSettings'
 
@@ -462,6 +462,16 @@ describe('the default status column (YAZ-1513): every folder page is born with i
     expect(folderPageSettings(rec('/vault/New.md', newFolderPageProperties())).columns).toEqual({ status: STATUS })
   })
 
+  it('bornFolderPage is the ONE spelling (YAZ-1549): the flag, and the default settings only when the key is absent; the input is never mutated', () => {
+    const plain = { title: 'Ops' }
+    expect(bornFolderPage(plain)).toEqual({ title: 'Ops', folder_page: true, folder_page_settings: { columns: { status: STATUS } } })
+    expect(plain).toEqual({ title: 'Ops' })
+    const kept = { folder_page_settings: { columns: { owner: { kind: 'link' } } } }
+    expect(bornFolderPage(kept)).toEqual({ folder_page_settings: { columns: { owner: { kind: 'link' } } }, folder_page: true })
+    expect(bornFolderPage({ folder_page_settings: null })).toEqual({ folder_page_settings: null, folder_page: true })
+    expect(newFolderPageProperties()).toEqual(bornFolderPage({}))
+  })
+
   it('turnIntoFolderPage adds the flag AND the default settings to a page with no settings key', () => {
     const next = turnIntoFolderPage('---\ntitle: Ops\n---\n\n# Ops\n')
     expect(next).toBe(
@@ -515,6 +525,12 @@ describe('properties: column labels (YAZ-1513) — `ViewSet.properties` verbatim
     expect(vi.mocked(writeProperty)).toHaveBeenLastCalledWith('/vault/F.md', 'folder_page_settings', { views: [{ type: 'table', name: 'T' }] })
   })
 
+  it('a blank displayName reads as absent — the header never goes empty (YAZ-1549)', () => {
+    const settings = settingsOf({ properties: { status: { displayName: '   ' }, owner: { displayName: '' } } })
+    expect(settings.properties).toEqual({ status: {}, owner: {} })
+    expect(settings.problems).toEqual([])
+  })
+
   it("reads tolerantly: a non-map is ignored with a problem; a non-map entry or a non-string displayName drops that entry", () => {
     expect(settingsOf({ properties: 'nope' }).properties).toBeUndefined()
     expect(settingsOf({ properties: 'nope' }).problems).toEqual(['folder_page_settings.properties must be a map of column labels — ignoring it'])
@@ -526,36 +542,4 @@ describe('properties: column labels (YAZ-1513) — `ViewSet.properties` verbatim
     ])
   })
 
-  describe('writeColumnLabel: ONE label through the one door, against fresh file bytes', () => {
-    beforeEach(() => {
-      disk.content = ''
-    })
-
-    it('adds properties.<key>.displayName, creating the settings and properties maps as needed', async () => {
-      disk.content = '---\nfolder_page: true\n---\nbody\n'
-      await writeColumnLabel('/vault/F.md', 'note.status', 'Stage')
-      expect(disk.content).toBe('---\nfolder_page: true\nfolder_page_settings:\n  properties:\n    status:\n      displayName: Stage\n---\nbody\n')
-    })
-
-    it('finds the existing entry under any spelling (as written, bare, note.-prefixed) rather than forking a second one', async () => {
-      disk.content = '---\nfolder_page_settings:\n  properties:\n    note.status:\n      displayName: Old\n  views:\n    - type: table\n      name: T\n---\n'
-      await writeColumnLabel('/vault/F.md', 'status', 'New')
-      expect(disk.content).toBe('---\nfolder_page_settings:\n  properties:\n    note.status:\n      displayName: New\n  views:\n    - type: table\n      name: T\n---\n')
-    })
-
-    it('null (or blank) removes the label; an emptied entry and then an emptied properties map delete themselves, siblings untouched', async () => {
-      disk.content = '---\nfolder_page_settings:\n  columns:\n    status:\n      kind: text\n  properties:\n    status:\n      displayName: Stage\n    owner:\n      displayName: Who\n---\n'
-      await writeColumnLabel('/vault/F.md', 'note.status', null)
-      expect(disk.content).toBe('---\nfolder_page_settings:\n  columns:\n    status:\n      kind: text\n  properties:\n    owner:\n      displayName: Who\n---\n')
-      await writeColumnLabel('/vault/F.md', 'owner', '   ')
-      expect(disk.content).toBe('---\nfolder_page_settings:\n  columns:\n    status:\n      kind: text\n---\n')
-    })
-
-    it('refuses to write over settings or properties that are not maps', async () => {
-      disk.content = '---\nfolder_page_settings: nope\n---\n'
-      await expect(writeColumnLabel('/vault/F.md', 'status', 'X')).rejects.toThrow('must be a map')
-      disk.content = '---\nfolder_page_settings:\n  properties: nope\n---\n'
-      await expect(writeColumnLabel('/vault/F.md', 'status', 'X')).rejects.toThrow('must be a map')
-    })
-  })
 })

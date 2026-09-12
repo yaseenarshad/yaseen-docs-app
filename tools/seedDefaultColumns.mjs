@@ -26,36 +26,15 @@
  * left exactly as it is. Member notes are NOT written to: the app's presence-invariant
  * reconciliation (YAZ-999) stamps `status:` onto them when the folder page is next opened.
  */
-import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { pathToFileURL } from 'node:url'
+// The vault plumbing every tools/ script shares (YAZ-1549): the `shared/` TS loader, the git
+// preflight and the file walk.
+import { gitDirtReason, markdownFiles, posix, shared } from './lib/vault.mjs'
 
-// `shared/` is TypeScript, and Node 22.18+ strips the types on import with no flag and no build
-// step — so this script uses the app's OWN frontmatter mechanics rather than a second copy of
-// them. The one cost is a `MODULE_TYPELESS_PACKAGE_JSON` warning on stderr (the root package.json
-// has no `"type"`), which is noise in a CLI's output and is muted here alone.
-const emitWarning = process.emitWarning
-process.emitWarning = (warning, ...rest) => {
-  const opts = rest[0]
-  const code = typeof opts === 'object' && opts !== null ? opts.code : rest[1]
-  if (code === 'MODULE_TYPELESS_PACKAGE_JSON') return
-  emitWarning.call(process, warning, ...rest)
-}
-
-const HERE = path.dirname(fileURLToPath(import.meta.url))
-const shared = async (file) => {
-  try {
-    return await import(pathToFileURL(path.join(HERE, '../shared/', file)).href)
-  } catch (err) {
-    console.error(
-      `Could not load shared/${file} (node ${process.version}). This script reads the app's own` +
-        ` TypeScript modules directly and needs Node 22.6 or newer.\n${err.message}`,
-    )
-    process.exit(1)
-  }
-}
 const { setFrontmatterProperty, splitFrontmatter, parseFrontmatter, FrontmatterWriteError } = await shared('frontmatter.ts')
+const { DEFAULT_COLUMNS } = await shared('folderPageDefaults.ts')
 
 // ---------------------------------------------------------------------------
 // Vocabulary (the ONE spelling of every key this script touches)
@@ -64,8 +43,8 @@ const { setFrontmatterProperty, splitFrontmatter, parseFrontmatter, FrontmatterW
 const FOLDER_PAGE_KEY = 'folder_page'
 const SETTINGS_KEY = 'folder_page_settings'
 const COLUMN = 'status'
-/** `DEFAULT_COLUMNS.status` in `client/src/views/folderPageSettings.ts`, spelled the same. */
-const DEFAULT_STATUS = { kind: 'select', options: ['1-Backlog', '2-Todo', '3-In-Progress', '4-Done'] }
+/** THE default declaration — `shared/folderPageDefaults.ts`, the same object the app births a folder page with; never a second spelling. */
+export const DEFAULT_STATUS = DEFAULT_COLUMNS[COLUMN]
 /** The column key as a view's `order` names it, and the bare spelling that also counts as present. */
 const ORDER_KEY = `note.${COLUMN}`
 const OUTLINE_TYPE = 'outline'
@@ -75,57 +54,11 @@ const OUTLINE_TYPE = 'outline'
 // ---------------------------------------------------------------------------
 
 const isRecord = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
-const posix = (p) => p.split(path.sep).join('/')
-const isSkipped = (name) => name.startsWith('.') || name === 'node_modules'
-const isMarkdown = (name) => /\.(md|markdown)$/i.test(name)
 const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k)
-
-// ---------------------------------------------------------------------------
-// Git preflight
-// ---------------------------------------------------------------------------
-
-function git(root, args) {
-  return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-}
-
-/** `null` when the vault is a git repo whose tree is clean, else the sentence explaining why not. */
-export function gitDirtReason(root) {
-  try {
-    if (git(root, ['rev-parse', '--is-inside-work-tree']).trim() !== 'true') {
-      return `${root} is not inside a git working tree`
-    }
-  } catch {
-    return `${root} is not a git repository (or git is unavailable) — this script needs one to undo into`
-  }
-  let status
-  try {
-    status = git(root, ['status', '--porcelain', '--', '.'])
-  } catch (err) {
-    return `could not read git status: ${err.message}`
-  }
-  const dirty = status.split('\n').filter((line) => line.trim() !== '')
-  if (dirty.length === 0) return null
-  return `the working tree is not clean:\n${dirty.map((line) => `  ${line}`).join('\n')}`
-}
 
 // ---------------------------------------------------------------------------
 // Scan + plan
 // ---------------------------------------------------------------------------
-
-/** Every markdown file under the root, dotfolders and node_modules skipped, sorted for a stable report. */
-function markdownFiles(root) {
-  const out = []
-  const walk = (dir) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
-      if (isSkipped(entry.name)) continue
-      const abs = path.join(dir, entry.name)
-      if (entry.isDirectory()) walk(abs)
-      else if (entry.isFile() && isMarkdown(entry.name)) out.push(abs)
-    }
-  }
-  walk(root)
-  return out
-}
 
 /**
  * ONE folder page's plan: `{ changes: string[], value }` where `value` is the settings map to
@@ -167,21 +100,23 @@ export function planSettings(properties) {
 function scan(root) {
   const files = markdownFiles(root)
   const pages = []
+  const unparsable = []
   for (const abs of files) {
     const content = fs.readFileSync(abs, 'utf8')
     const { frontmatter } = splitFrontmatter(content)
     const { properties, error } = parseFrontmatter(frontmatter)
     const rel = posix(path.relative(root, abs))
-    // The flag rule (`links/folderPages.ts`): the boolean `true` and nothing else.
-    if (error === undefined && properties[FOLDER_PAGE_KEY] !== true) continue
     if (error !== undefined) {
-      // Unparsable frontmatter can not say whether it is a folder page; report it, never write it.
-      pages.push({ abs, rel, content, skip: `frontmatter does not parse: ${error}` })
+      // Unparsable frontmatter cannot say whether it is a folder page (YAZ-1549): it is listed on
+      // its own, never counted as one, never written to.
+      unparsable.push({ rel, error })
       continue
     }
+    // The flag rule (`links/folderPages.ts`): the boolean `true` and nothing else.
+    if (properties[FOLDER_PAGE_KEY] !== true) continue
     pages.push({ abs, rel, content, ...planSettings(properties) })
   }
-  return { scanned: files.length, pages }
+  return { scanned: files.length, pages, unparsable }
 }
 
 // ---------------------------------------------------------------------------
@@ -204,7 +139,7 @@ function apply(pages) {
   return failures
 }
 
-function renderReport(root, { scanned, pages }, { applied, failures }) {
+function renderReport(root, { scanned, pages, unparsable }, { applied, failures }) {
   const lines = []
   lines.push(`# Default status column — ${applied ? 'APPLIED' : 'DRY RUN'}`)
   lines.push('')
@@ -224,6 +159,10 @@ function renderReport(root, { scanned, pages }, { applied, failures }) {
     }
   }
   if (skipped.length > 0) lines.push('', `${skipped.length} folder page(s) skipped — repair by hand and rerun.`)
+  if (unparsable.length > 0) {
+    lines.push('', `Could not parse ${unparsable.length} file(s) — not counted as folder pages, never written:`)
+    for (const { rel, error } of unparsable) lines.push(`- ${rel}: ${error}`)
+  }
   if (failures.length > 0) {
     lines.push('', `${failures.length} write(s) FAILED:`)
     for (const f of failures) lines.push(`- ${f.rel}: ${f.why}`)

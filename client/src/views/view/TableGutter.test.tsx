@@ -216,3 +216,23 @@ describe('the # gutter (YAZ-1513)', () => {
     expect(dataRows(el)[0].querySelectorAll('[data-cell]')).toHaveLength(2)
   })
 })
+
+describe('declared columns show by default (YAZ-1549)', () => {
+  const NO_ORDER = `views:
+  - type: table
+    name: T
+`
+  it('a newborn page with no members and no order already carries its declared Status header', () => {
+    const folderPage = testFolderPage({ settings: { columns: { status: { kind: 'select', options: ['1-Backlog'] } }, views: [], problems: [] } })
+    const { el } = mount(NO_ORDER, { records: [], folderPage })
+    const headers = [...el.querySelectorAll('thead th:not(.view-table__gutter)')].map((th) => th.textContent?.trim())
+    expect(headers).toEqual(['Name', 'Status'])
+  })
+
+  it('a declared key a member also carries is one column, not two', () => {
+    const folderPage = testFolderPage({ settings: { columns: { status: { kind: 'text' } }, views: [], problems: [] } })
+    const { el } = mount(NO_ORDER, { folderPage })
+    const headers = [...el.querySelectorAll('thead th:not(.view-table__gutter)')].map((th) => th.textContent?.trim())
+    expect(headers.filter((h) => h === 'Status')).toHaveLength(1)
+  })
+})

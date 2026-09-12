@@ -9,7 +9,7 @@ import { BUILTIN_SUMMARIES, summarize } from '../summaries'
 import { cellEditor, columnTyping } from '../editorType'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf, summaryKindOf } from './GroupHeader'
+import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf, pageTitle, summaryKindOf } from './GroupHeader'
 import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, useGroupDrag } from './groupDrag'
 import { Popover } from './Popover'
 import { usePreview } from './PreviewCard'
@@ -18,7 +18,7 @@ import { frozenColumnCount } from './frozenColumns'
 import { PageContextMenu } from './PageContextMenu'
 import { TableHeaderMenu } from './TableHeaderMenu'
 import { ConfirmDeleteColumn } from './ConfirmDeleteColumn'
-import { membersCarrying } from '../deleteColumn'
+import { dropIndex, insertionSlot } from '../../lib/dragSlot'
 import { allPropertyKeys } from './properties'
 import { setViewOrder } from './columnOrder'
 
@@ -58,10 +58,10 @@ export interface TableViewProps {
   vaultRecords: readonly IndexRecord[]
   /** Preview mode (`view.preview`, YAZ-1244): resting on a data row pops its page read-only. */
   preview?: boolean
-  /** `FolderPageMode.setColumns` (YAZ-1513): the header menu's "Add column to the right…" declares through it; absent → the item is not offered. */
-  declareColumn?: (columns: Record<string, ColumnDecl>, views: ViewDef[]) => void
-  /** `FolderPageMode.deleteColumn` (YAZ-1513): the header menu's "Delete column…", confirm-first; absent → not offered. */
-  deleteColumn?: (key: string) => Promise<void>
+  /** `FolderPageMode.setColumns` (YAZ-1513): the header menu's "Add column to the right…" declares through it. */
+  declareColumn: (columns: Record<string, ColumnDecl>, views: ViewDef[]) => void
+  /** `FolderPageMode.deleteColumn` (YAZ-1513): the header menu's "Delete column…", confirm-first. */
+  deleteColumn: (key: string) => Promise<void>
 }
 
 const DEFAULT_WIDTH = 150
@@ -139,15 +139,17 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
    * would land in (0..keys.length). The Properties list's own reorder model, on the table itself.
    */
   const [colDrag, setColDrag] = useState<{ from: number; to: number } | null>(null)
-  // Esc cancels: real drags fire `dragend`; jsdom (and any missed dragend) goes through this fallback — `useGroupDrag`'s idiom.
+  // Esc cancels: real drags fire `dragend`; jsdom (and any missed dragend) goes through this fallback —
+  // `useGroupDrag`'s idiom. Subscribed once per DRAG, not once per slot the pointer crosses.
+  const dragging = colDrag !== null
   useEffect(() => {
-    if (colDrag === null) return
+    if (!dragging) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setColDrag(null)
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [colDrag])
+  }, [dragging])
   const wrapRef = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
@@ -186,7 +188,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     }
   }, [])
 
-  const keys = useMemo(() => propertyKeys(def, view, records), [def, view, records])
+  const keys = useMemo(() => propertyKeys(def, view, records, Object.keys(folderPage?.columns ?? {})), [def, view, records, folderPage])
   const nameCol = keys.findIndex((k) => canonicalKey(k) === 'file.name')
   // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows;
   // memoised so scroll/drag re-renders skip the per-column row walk (7B, GRO-2148)
@@ -213,10 +215,11 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const frozen = frozenColumnCount(view.frozenColumns, keys.length)
   /** The `#` gutter is shown unless the view says `rowNumbers: false` (YAZ-1513). */
   const numbered = view.rowNumbers !== false
-  /** Cells a full-width row spans: the keys, plus the gutter when shown. */
+  /** The gutter's bookkeeping, spelled once (YAZ-1549): its width, and the cells a full-width row spans. */
+  const gutterWidth = numbered ? GUTTER_WIDTH : 0
   const span = keys.length + (numbered ? 1 : 0)
   // Frozen offsets start AFTER the `#` gutter, which is itself always sticky at left 0 (YAZ-1513).
-  let left = numbered ? GUTTER_WIDTH : 0
+  let left = gutterWidth
   const frozenLeft = keys.map((key, index) => {
     const offset = index < frozen ? left : undefined
     left += widthOf(key)
@@ -312,20 +315,15 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     setRowMenu({ x: event.clientX, y: event.clientY, path })
   }
 
-  /** The slot a pointer at `clientX` over header `i` means: before (i) or after (i+1) it — the Properties list's rule, turned sideways. */
-  const columnSlotAt = (e: ReactDragEvent<HTMLElement>, i: number): number => {
-    const r = e.currentTarget.getBoundingClientRect()
-    return e.clientX < r.left + r.width / 2 ? i : i + 1
-  }
   /**
-   * Header reorder (YAZ-1548), the Properties list's `move` rule (TabBar's, GRO-2235): the slot is
+   * Header reorder (YAZ-1548), the tab strips' own slot arithmetic (`lib/dragSlot.ts`): the slot is
    * an index in the WITH-dragged-column list, so past the grab point it shifts one left. ONE write
    * through the SHARED `setViewOrder` — the Properties checklist's and "Hide column"'s writer — so
    * `frozenColumns` follows positionally here exactly as it does there. A view with no explicit
    * `order` writes the full current keys list in the new order, as the list does on its first drag.
    */
-  const moveColumn = (from: number, insertion: number): void => {
-    const to = insertion > from ? insertion - 1 : insertion
+  const moveColumn = (from: number, slot: number): void => {
+    const to = dropIndex(from, slot)
     if (to === from) return
     const next = [...keys]
     const [key] = next.splice(from, 1)
@@ -352,14 +350,14 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       if (colDrag === null) return
       e.preventDefault()
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-      const to = columnSlotAt(e, index)
+      const to = insertionSlot(e, index)
       if (colDrag.to !== to) setColDrag({ ...colDrag, to })
     },
     onDrop: (e: ReactDragEvent<HTMLTableCellElement>) => {
       if (colDrag === null) return
       e.preventDefault()
       setColDrag(null)
-      moveColumn(colDrag.from, columnSlotAt(e, index))
+      moveColumn(colDrag.from, insertionSlot(e, index))
     },
     onDragEnd: () => setColDrag(null),
   })
@@ -414,7 +412,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       <div ref={wrapRef} className="view-table-wrap" onScroll={windowed ? (e) => setScrollTop(e.currentTarget.scrollTop) : undefined}>
         <table
           className="view-table"
-          style={{ width: (numbered ? GUTTER_WIDTH : 0) + keys.reduce((w, k) => w + widthOf(k), 0), '--view-table-row-h': `${rowH}px` } as CSSProperties}
+          style={{ width: gutterWidth + keys.reduce((w, k) => w + widthOf(k), 0), '--view-table-row-h': `${rowH}px` } as CSSProperties}
           onKeyDown={onKeyDown}
         >
           <thead>
@@ -495,8 +493,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                         {c === nameCol ? (
                           <>
                             <button type="button" className="view-table__link" onClick={() => onOpenFile(line.row.record.path)}>
-                              {/* The page NAME, not the file name (YAZ-1513): `file.name`'s VALUE still carries the extension for sort/filter. */}
-                              {line.row.record.basename}
+                              {pageTitle(line.row)}
                             </button>
                             {moveError?.path === line.row.record.path && (
                               <span className="view-table__chip view-table__chip--error view-drag__error" role="alert" title={moveError.message}>
@@ -592,22 +589,21 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             y={headerMenu.y}
             columnKey={headerMenu.key}
             def={def}
-            view={view}
             viewIndex={viewIndex}
             keys={keys}
-            taken={allPropertyKeys(def, view, records, folderPage?.columns)}
+            takenKeys={() => allPropertyKeys(def, view, records, folderPage?.columns)}
             columns={folderPage?.columns ?? {}}
             onUpdate={onUpdate}
             declareColumn={declareColumn}
-            onDeleteColumn={deleteColumn === undefined ? undefined : setConfirmDelete}
+            onDeleteColumn={setConfirmDelete}
             onClose={() => setHeaderMenu(null)}
           />
         )}
-        {confirmDelete !== null && deleteColumn !== undefined && (
+        {confirmDelete !== null && (
           <ConfirmDeleteColumn
-            label={propertyLabel(def, confirmDelete)}
-            propKey={canonicalKey(confirmDelete).slice('note.'.length)}
-            count={membersCarrying(records, confirmDelete).length}
+            columnKey={confirmDelete}
+            def={def}
+            records={records}
             onCancel={() => setConfirmDelete(null)}
             onConfirm={() => {
               const gone = confirmDelete

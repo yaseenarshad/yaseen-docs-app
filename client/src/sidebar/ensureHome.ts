@@ -41,7 +41,7 @@ import { VAULT_CONFIG_DIR } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { createNewNote, seedContent } from '../views/newNote'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
-import { FOLDER_PAGE_KEY } from '../links/folderPages'
+import { newFolderPageProperties } from '../views/folderPageSettings'
 
 /**
  * THE Home link (🔒 D1). A wikilink, not a bare name, because it goes through the very resolver a
@@ -53,10 +53,11 @@ export const HOME_LINK = '[[Home]]'
 export const HOME_BASENAME = 'Home.md'
 
 /**
- * The bytes a newborn Home carries: exactly `folder_page: true`, no settings block, no body —
- * 4B's birth, spelled by 4B's own builder rather than a literal, so the two can never drift.
+ * The bytes a newborn Home carries: 4B's birth — the flag and the default `status` column (YAZ-1513)
+ * — spelled by the ONE builder every folder page is born through, so Home and "New folder page"
+ * cannot drift. No body.
  */
-export const HOME_CONTENT = seedContent({ [FOLDER_PAGE_KEY]: true })
+export const HOME_CONTENT = seedContent(newFolderPageProperties())
 
 export type EnsureHomeOutcome = 'created' | 'exists' | 'unadopted'
 
@@ -83,7 +84,7 @@ export async function isAdopted(root: string): Promise<boolean> {
  */
 export async function createHome(root: string): Promise<'created' | 'exists'> {
   try {
-    await createNewNote(homePath(root), { [FOLDER_PAGE_KEY]: true })
+    await createNewNote(homePath(root), newFolderPageProperties())
     return 'created'
   } catch (err) {
     if (codeOf(err) === 'ALREADY_EXISTS') return 'exists'

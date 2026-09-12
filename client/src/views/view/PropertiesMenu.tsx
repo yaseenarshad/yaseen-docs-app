@@ -1,17 +1,18 @@
 import { PROPERTY_LABELS, PropertyOptionsEditor, PropertyTypeIcon } from './PropertyDefinitionEditor'
 import { ColumnSearch, matchesColumn } from './ColumnSearch'
-import { useEffect, useState, type DragEvent, type ReactNode } from 'react'
+import { useMemo, useState, type DragEvent, type ReactNode } from 'react'
 import { PROPERTY_KINDS, type IndexRecord, type PropertiesResponse, type PropertyKind } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import type { ColumnDecl } from '../folderPageSettings'
 import type { FolderPageMode } from '../ViewsPane'
 import { defaultLabel, propertyKeys, propertyLabel } from '../engine'
 import { columnTyping } from '../editorType'
-import { membersCarrying, undeletableReason } from '../deleteColumn'
+import { undeletableReason } from '../deleteColumn'
 import { canonicalKey } from './keys'
 import { AddColumn } from './AddColumn'
 import { displayNameOf, setDisplayName } from './columnLabel'
-import { setViewOrder } from './columnOrder'
+import { setViewOrder, withOrder } from './columnOrder'
+import { declarationForKind } from './declarationForKind'
 import { ConfirmDeleteColumn } from './ConfirmDeleteColumn'
 import { DragHandleIcon, FileFieldIcon, FormulaIcon } from './icons'
 import { markerStyleOf } from './ListView'
@@ -65,24 +66,24 @@ type CardStyle = NonNullable<ViewDef['cardStyle']>[string]
  *  column… (`views/deleteColumn.ts`, confirm-first; built-in keys disabled with a tooltip).
  *
  *  Every declaration edit WRITES IMMEDIATELY through `folderPage.setColumn` — the exact write the
- *  old editor's Save made, with the same optimistic-concurrency `base`: the declaration is captured
- *  when the panel opens, moves forward with each write that lands, and a "changed since opened"
- *  rejection shows its text inline and refreshes both from the live settings. There is no third
- *  level and no Save/Cancel; Esc or `‹` returns to the list.
+ *  old editor's Save made, with the same optimistic-concurrency `base`: the host's AHEAD declaration
+ *  (YAZ-1549), which the panel renders and hands straight back, so a second edit is checked against
+ *  what just landed and a "changed since opened" rejection shows its text inline while the host
+ *  reverts. There is no third level and no Save/Cancel; Esc or `‹` returns to the list.
  */
 export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root = null, properties = null, folderPage }: PropertiesMenuProps) {
   const [query, setQuery] = useState('')
   /**
-   * The DETAIL level (YAZ-1513), or null for the list. `decl` is the declaration as this panel last
-   * saw it — the live settings, moved forward optimistically by each write that lands — and `base`
-   * is what the next write is checked against (`writeFolderColumn`'s conflict boundary).
+   * The DETAIL level (YAZ-1513), or null for the list. The declaration itself is NOT held here: the
+   * host's `settings.columns` is its ahead copy (YAZ-1549), so the panel renders that and hands the
+   * very same object back as `base` — `writeFolderColumn`'s conflict boundary.
    */
-  const [detail, setDetail] = useState<{ key: string; decl: ColumnDecl | undefined; base: ColumnDecl | undefined; error: string | null; saving: boolean } | null>(null)
+  const [detail, setDetail] = useState<{ key: string; error: string | null; saving: boolean } | null>(null)
   /** "Delete column…" awaiting its confirm (YAZ-1513). */
   const [deleting, setDeleting] = useState<string | null>(null)
   /** The drag in flight (YAZ-1207): `from` is an index in `shown`, `to` the insertion slot it would land in. */
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null)
-  const shown = propertyKeys(def, view, records)
+  const shown = propertyKeys(def, view, records, Object.keys(folderPage.settings.columns))
   const keys = allPropertyKeys(def, view, records, folderPage.settings.columns)
   const filtering = query.trim() !== ''
   const matches = keys.filter(key => matchesColumn(query, propertyLabel(def, key), key))
@@ -90,35 +91,23 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
   const isShown = (key: string) => shown.some((k) => canonicalKey(k) === canonicalKey(key))
   const canToggle = (key: string) => !(canonicalKey(key) === 'file.name' && view.type !== 'table' && view.type !== 'board')
 
-  const openDetail = (key: string) => {
-    const live = folderPage.settings.columns[bare(key)]
-    setDetail({ key, decl: live, base: live, error: null, saving: false })
-  }
-  // The live declaration outranks the panel's copy: an echo of our own write is identical, an
-  // external edit (or a refused write's refresh) replaces it — and clears a stale conflict text.
-  const liveDecl = detail === null ? undefined : folderPage.settings.columns[bare(detail.key)]
-  const liveStamp = JSON.stringify(liveDecl ?? null)
-  useEffect(() => {
-    setDetail((d) => (d === null || JSON.stringify(d.decl ?? null) === liveStamp ? d : { ...d, decl: liveDecl, base: liveDecl, error: null }))
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `liveStamp` stands for `liveDecl`
-  }, [liveStamp])
+  const openDetail = (key: string) => setDetail({ key, error: null, saving: false })
   /**
    * ONE declaration write (YAZ-897), immediately — the write the old editor's Save made, against
-   * the captured `base` (C1, locked: member VALUES are never migrated; the declaration alone moves).
-   * Success carries `base` forward so the next edit in this same panel is checked against what
-   * just landed; a rejection shows its text and refreshes from the live settings.
+   * the host's ahead declaration as `base` (C1, locked: member VALUES are never migrated; the
+   * declaration alone moves). The host shows the next edit what just landed; a rejection only shows
+   * its text here — the host has already reverted its copy.
    */
   const writeDeclaration = async (next: ColumnDecl) => {
     const d = detail
     if (d === null) return
     const name = bare(d.key)
-    setDetail({ ...d, decl: next, saving: true, error: null })
+    setDetail({ ...d, saving: true, error: null })
     try {
-      await folderPage.setColumn(name, next, d.base)
-      setDetail((cur) => (cur === null || cur.key !== d.key ? cur : { ...cur, decl: next, base: next, saving: false }))
+      await folderPage.setColumn(name, next, folderPage.settings.columns[name])
+      setDetail((cur) => (cur === null || cur.key !== d.key ? cur : { ...cur, saving: false }))
     } catch (error) {
-      const live = folderPage.settings.columns[name]
-      setDetail((cur) => (cur === null || cur.key !== d.key ? cur : { ...cur, decl: live, base: live, saving: false, error: error instanceof Error ? error.message : String(error) }))
+      setDetail((cur) => (cur === null || cur.key !== d.key ? cur : { ...cur, saving: false, error: error instanceof Error ? error.message : String(error) }))
     }
   }
 
@@ -166,12 +155,24 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
       else style[flag] = true
     })
 
+  /** The kinds the list glyphs show, remembered per canonical key for as long as their inputs stand (YAZ-1549) — no row rescan per render. */
+  const kinds = useMemo(() => new Map<string, PropertyKind>(), [records, properties, folderPage.settings])
   /** The kind a list row's glyph shows: the declaration, else the inferred editor kind, else text. */
   const kindOf = (key: string): PropertyKind => {
+    const c = canonicalKey(key)
+    const known = kinds.get(c)
+    if (known !== undefined) return known
     const decl = folderPage.settings.columns[bare(key)]
-    if (decl !== undefined) return decl.kind
-    const typing = columnTyping(key, records, properties, folderPage.settings)
-    return typing?.assigned ?? typing?.dominant ?? 'text'
+    const typing = decl === undefined ? columnTyping(key, records, properties, folderPage.settings) : null
+    const kind = decl?.kind ?? typing?.assigned ?? typing?.dominant ?? 'text'
+    kinds.set(c, kind)
+    return kind
+  }
+  /** Labels shared by two rows (`file.name` and a `name` property both read "Name"): those rows also show their key (YAZ-1549). */
+  const labelCounts = new Map<string, number>()
+  for (const key of keys) {
+    const label = propertyLabel(def, key)
+    labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1)
   }
   const glyphOf = (key: string): ReactNode => {
     const c = canonicalKey(key)
@@ -182,8 +183,9 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
 
   // ---------- DETAIL level (YAZ-1513) ----------
   if (detail !== null) {
-    const { key, decl, error, saving } = detail
+    const { key, error, saving } = detail
     const name = bare(key)
+    const decl = folderPage.settings.columns[name]
     const label = propertyLabel(def, key)
     const c = canonicalKey(key)
     const isNote = c.startsWith('note.')
@@ -192,7 +194,6 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
     const choice = kind === 'select' || kind === 'multi-select'
     const linkKind = kind === 'link' || kind === 'multi-link'
     const reason = undeletableReason(key)
-    const canDelete = reason === null && folderPage.deleteColumn !== undefined
     const style = cardStyleOf(key)
     const observed = [...new Set(records.flatMap((r) => {
       const value = r.properties[name]
@@ -241,13 +242,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
                 className="view-select"
                 aria-label={`Edit property ${label}`}
                 value={kind ?? ''}
-                onChange={(e) => {
-                  const nextKind = e.target.value as PropertyKind
-                  const next: ColumnDecl = { ...decl, kind: nextKind }
-                  // A choice kind is born with its (empty) option list, as "+ Add column" births one.
-                  if ((nextKind === 'select' || nextKind === 'multi-select') && next.options === undefined) next.options = []
-                  void writeDeclaration(next)
-                }}
+                onChange={(e) => void writeDeclaration(declarationForKind(decl, e.target.value as PropertyKind))}
               >
                 {kind === undefined && (
                   <option value="" disabled>
@@ -287,7 +282,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
                   }}
                 />
               ) : (
-                <button type="button" className="property-type-button" aria-label={`Relation for ${label}`} title="Relation" onClick={() => void writeDeclaration({ ...decl, ...relationSeed })}>
+                <button type="button" className="property-type-button" aria-label={`Relation for ${label}`} title="Relation" onClick={() => void writeDeclaration(declarationForKind({ ...decl, ...relationSeed }, relationSeed.kind))}>
                   Make relation
                 </button>
               )}
@@ -328,7 +323,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
             type="button"
             className="column-detail__action column-detail__action--danger"
             aria-label={`Delete column ${label}`}
-            disabled={!canDelete}
+            disabled={reason !== null}
             title={reason ?? undefined}
             onClick={() => setDeleting(key)}
           >
@@ -337,15 +332,15 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
         </div>
         {deleting !== null && (
           <ConfirmDeleteColumn
-            label={label}
-            propKey={bare(deleting)}
-            count={membersCarrying(records, deleting).length}
+            columnKey={deleting}
+            def={def}
+            records={records}
             onCancel={() => setDeleting(null)}
             onConfirm={() => {
               const gone = deleting
               setDeleting(null)
               setDetail(null)
-              void folderPage.deleteColumn?.(gone)
+              void folderPage.deleteColumn(gone)
             }}
           />
         )}
@@ -432,7 +427,10 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
                 <input type="checkbox" aria-label={`Show ${label}`} checked={on} disabled={!canToggle(key)} onChange={() => toggle(key)} />
                 <button type="button" className="view-prop__open" aria-label={`Open ${label}`} onClick={() => openDetail(key)}>
                   <span className="view-prop__kind">{glyphOf(key)}</span>
-                  <span className="view-prop__name">{label}</span>
+                  <span className="view-prop__name">
+                    {label}
+                    {(labelCounts.get(label) ?? 0) > 1 && <small>{canonicalKey(key)}</small>}
+                  </span>
                   <span className="view-prop__chevron" aria-hidden="true">›</span>
                 </button>
               </div>
@@ -447,7 +445,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
             { ...folderPage.settings.columns, [name]: column },
             // The new column shown TOO, in that same one write (🔒 D3): `shown` is what `writeOrder`
             // writes — the view's own `order`, or the derived keys when it has none.
-            def.views.map((v, i) => (i === viewIndex ? { ...v, order: [...shown, `note.${name}`] } : v)),
+            def.views.map((v, i) => (i === viewIndex ? withOrder(v, [...shown, `note.${name}`]) : v)),
           )
         }
       />

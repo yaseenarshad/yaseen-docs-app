@@ -8,7 +8,7 @@ import { cellEditor, columnTyping } from '../editorType'
 import type { FolderPageSettings } from '../folderPageSettings'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, groupKeyOf } from './GroupHeader'
+import { GroupHeader, cellContent, groupKeyOf, pageTitle } from './GroupHeader'
 
 export interface ListViewProps {
   def: ViewSet
@@ -60,7 +60,7 @@ const separatorOf = (view: ViewDef): string => (typeof view.propertySeparator ==
  * (5B, GRO-2142); the joined inline string stays read-only.
  */
 export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, root, properties = null, folderPage = null, vaultRecords }: ListViewProps) {
-  const keys = useMemo(() => propertyKeys(def, view, records), [def, view, records])
+  const keys = useMemo(() => propertyKeys(def, view, records, Object.keys(folderPage?.columns ?? {})), [def, view, records, folderPage])
   const primary: string | undefined = keys[0]
   const rest = keys.slice(1)
   const nameIsPrimary = primary === undefined || canonicalKey(primary) === 'file.name'
@@ -120,7 +120,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
               <div className="view-list__line">
                 {nameIsPrimary ? (
                   <button type="button" className="view-list__title" onClick={() => onOpenFile(row.record.path)}>
-                    {primary === undefined ? row.record.name : render(row.values[primary])}
+                    {pageTitle(row)}
                   </button>
                 ) : (
                   <span className="view-list__primary">{editable(row, primary)}</span>

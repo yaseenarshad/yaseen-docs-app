@@ -8,7 +8,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IndexRecord } from '@shared/types'
-import type { ViewDef, ViewSet } from './viewSchema'
+import type { FilterNode, ViewDef, ViewSet } from './viewSchema'
 
 /** The in-memory vault the strips rewrite: path → content. */
 const { disk } = vi.hoisted(() => ({ disk: new Map<string, string>() }))
@@ -22,7 +22,7 @@ vi.mock('./writeProperty', () => ({
   }),
 }))
 import { transformFile } from './writeProperty'
-import { deleteColumn, membersCarrying, pruneColumnFromViews, pruneColumnLabel, undeletableReason, type DeleteColumnHost } from './deleteColumn'
+import { deleteColumn, filterMentions, membersCarrying, pruneColumnFromViews, pruneColumnLabel, pruneFilter, undeletableReason, type DeleteColumnHost } from './deleteColumn'
 
 const rec = (path: string, properties: Record<string, unknown>): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -60,13 +60,13 @@ const host = (over: Partial<DeleteColumnHost> = {}): DeleteColumnHost => ({
   columns: { status: { kind: 'select', options: ['1-Backlog', '2-Todo'] }, owner: { kind: 'link' } },
   def: { views: [TABLE, BOARD, OUTLINE], properties: { status: { displayName: 'Stage' }, 'note.owner': { displayName: 'Who' } } } as ViewSet,
   members: [rec(A, { title: 'A', status: '2-Todo', owner: '[[Sam]]' }), rec(B, { title: 'B', owner: '[[Kim]]' }), rec(C, { status: '1-Backlog' })],
-  writeSettings: vi.fn(),
+  writeSettings: vi.fn(async () => {}),
   ...over,
 })
 
 describe('undeletableReason: built-in keys are hidden, never deleted', () => {
   it('refuses file.*, formula.* and the reserved keys with the one tooltip; a plain note key may go', () => {
-    for (const key of ['file.name', 'file.mtime', 'formula.score', 'note.folder_page', 'folder_pages', 'note.folder_page_settings', 'comments']) {
+    for (const key of ['file.name', 'file.mtime', 'formula.score', 'note.folder_page', 'folder_pages', 'note.folder_pages', 'note.folder_page_settings', 'comments']) {
       expect(undeletableReason(key)).toBe('Built-in column — hide it instead')
     }
     expect(undeletableReason('note.status')).toBeNull()
@@ -94,6 +94,36 @@ describe('the pure pruners', () => {
   it('a single-object groupBy on the key deletes the key; an array groupBy keeps its array form', () => {
     expect(pruneColumnFromViews([{ type: 'table', name: 'T', groupBy: { property: 'note.x' } }], 'x')[0].groupBy).toBeUndefined()
     expect(pruneColumnFromViews([{ type: 'table', name: 'T', groupBy: [{ property: 'note.x' }, { property: 'note.y' }] }], 'x')[0].groupBy).toEqual([{ property: 'note.y' }])
+  })
+
+  it('prunes a cards `image` that names the key, and leaves one that names another', () => {
+    expect(pruneColumnFromViews([{ type: 'cards', name: 'C', image: 'note.status' }], 'status')[0]).toEqual({ type: 'cards', name: 'C' })
+    const other: ViewDef = { type: 'cards', name: 'C', image: 'note.cover' }
+    expect(pruneColumnFromViews([other], 'status')[0]).toBe(other)
+  })
+
+  it('filterMentions: the identifier `note.<key>` or the bare key as a whole token, outside string literals', () => {
+    expect(filterMentions('note.status == "idea"', 'status')).toBe(true)
+    expect(filterMentions('status == "idea"', 'note.status')).toBe(true)
+    expect(filterMentions('note.status_2 == 1', 'status')).toBe(false) // a longer identifier
+    expect(filterMentions('note.substatus == 1', 'status')).toBe(false)
+    expect(filterMentions('file.status == 1', 'status')).toBe(false) // another namespace
+    expect(filterMentions('note.title == "status"', 'status')).toBe(false) // inside a string literal
+    expect(filterMentions("note.title == 'note.status'", 'status')).toBe(false)
+    expect(filterMentions('note.title == "a \\" status" && note.status', 'status')).toBe(true) // an escaped quote does not end the literal
+  })
+
+  it('pruneFilter: a leaf goes, a nested node loses only that leaf, an emptied node goes with it, other keys stay, the same node returns when untouched', () => {
+    expect(pruneFilter('note.status == "x"', 'status')).toBeUndefined()
+    const nested: FilterNode = { and: ['note.owner == "[[Sam]]"', { or: ['note.status == "a"', 'note.status == "b"'] }, { not: ['note.status == "c"'] }] }
+    expect(pruneFilter(nested, 'status')).toEqual({ and: ['note.owner == "[[Sam]]"'] })
+    const untouched: FilterNode = { and: ['note.owner == "[[Sam]]"', 'note.title == "status"'] }
+    expect(pruneFilter(untouched, 'status')).toBe(untouched)
+    // through the views: a fully pruned filter loses the key
+    const [pruned] = pruneColumnFromViews([{ type: 'table', name: 'T', filters: { or: ['status == 1', 'note.status == 2'] } }], 'status')
+    expect(pruned).toEqual({ type: 'table', name: 'T' })
+    const [kept] = pruneColumnFromViews([{ type: 'table', name: 'T', filters: nested }], 'status')
+    expect(kept.filters).toEqual({ and: ['note.owner == "[[Sam]]"'] })
   })
 
   it('pruneColumnLabel drops the entry under any spelling and deletes an emptied map', () => {
@@ -126,7 +156,7 @@ describe('deleteColumn', () => {
 
   it('settings land BEFORE the first strip — the source of truth first, so the presence invariant cannot re-add the key meanwhile', async () => {
     const order: string[] = []
-    const h = host({ writeSettings: vi.fn(() => order.push('settings')) })
+    const h = host({ writeSettings: vi.fn(async () => void order.push('settings')) })
     vi.mocked(transformFile).mockImplementationOnce(async (path, transform) => {
       order.push('strip')
       disk.set(path, transform(disk.get(path)!))
@@ -159,6 +189,13 @@ describe('deleteColumn', () => {
     await expect(deleteColumn('folder_pages', h)).rejects.toThrow(/built-in column/)
     expect(h.writeSettings).not.toHaveBeenCalled()
     expect(transformFile).not.toHaveBeenCalled()
+  })
+
+  it('a REFUSED settings write aborts: the error surfaces and not one member is touched (YAZ-1549)', async () => {
+    const h = host({ writeSettings: vi.fn(async () => { throw new Error('disk full') }) })
+    await expect(deleteColumn('status', h)).rejects.toThrow('disk full')
+    expect(transformFile).not.toHaveBeenCalled()
+    expect(disk.get(A)).toContain('status: 2-Todo')
   })
 
   it('a key with no declaration and no references still strips the members and writes the settings unchanged in shape', async () => {

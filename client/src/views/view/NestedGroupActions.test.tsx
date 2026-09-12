@@ -181,15 +181,15 @@ function nestedSections(el: ParentNode): Record<string, string[]> {
 describe('drag at each level (YAZ-1101)', () => {
   it('a Board drop between inner groups under the same outer writes the inner property only', () => {
     const { el } = mount(NESTED_BOARD)
-    fire(cardOf(el, 'alpha1.md'), 'dragstart')
-    fire(cardOf(el, 'alpha2.md'), 'drop')
+    fire(cardOf(el, 'alpha1'), 'dragstart')
+    fire(cardOf(el, 'alpha2'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/alpha1.md', 'proc', 'p2')
   })
 
   it('a Board cross-outer inner drop writes each property once without bubbling into the outer target', () => {
     const { el } = mount(NESTED_BOARD)
-    fire(cardOf(el, 'alpha2.md'), 'dragstart')
-    fire(cardOf(el, 'beta1.md'), 'drop')
+    fire(cardOf(el, 'alpha2'), 'dragstart')
+    fire(cardOf(el, 'beta1'), 'drop')
     expect(writeMany).toHaveBeenCalledExactlyOnceWith('/vault/alpha2.md', [
       { key: 'proc', value: 'p1', prevRaw: 'p2' },
       { key: 'dept', value: 'B', prevRaw: 'A' },
@@ -285,8 +285,8 @@ describe('a formula level disables its own actions only (YAZ-1101)', () => {
     expect(outerA.querySelector('[aria-label^="New note"]')).toBeNull()
     expect(el.querySelector('.view-board__subgroup [aria-label="New note in group p1"]')).not.toBeNull()
 
-    fire(cardOf(el, 'alpha2.md'), 'dragstart')
-    fire(cardOf(el, 'beta1.md'), 'drop')
+    fire(cardOf(el, 'alpha2'), 'dragstart')
+    fire(cardOf(el, 'beta1'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/alpha2.md', 'proc', 'p1')
   })
 

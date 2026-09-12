@@ -179,13 +179,13 @@ describe('grid', () => {
     expect(el.querySelector('.view-cards__grid')).not.toBeNull()
     expect(el.querySelector('.view-cards__group')).toBeNull()
     expect(cards(el)).toHaveLength(8)
-    const card = cardOf(el, 'Agentic Agency.md')
+    const card = cardOf(el, 'Agentic Agency')
     expect([...card.querySelectorAll('.view-card__prop-name')].map((n) => n.textContent)).toEqual(['Priority', 'Tags'])
     expect([...card.querySelectorAll('.view-card__prop-value')][0].textContent).toBe('2')
     // list values render as chips, like table cells and board cards
     expect([...card.querySelectorAll('.view-table__chip')].map((c) => c.textContent)).toEqual(['agentic', 'pillar'])
     // a missing property keeps the label with an empty value
-    const bare = cardOf(el, 'Attribution.md')
+    const bare = cardOf(el, 'Attribution')
     expect([...bare.querySelectorAll('.view-card__prop-value')][0].textContent).toBe('Empty')
     click(q(card, '.view-card__title'))
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
@@ -222,10 +222,10 @@ describe('covers', () => {
   it('a #rrggbb value renders a colour block, an http(s) URL goes straight into src', async () => {
     const { el } = mount(WITH_IMAGE, { records: COVER_RECORDS })
     await settle()
-    const colour = q<HTMLElement>(cardOf(el, 'colour.md'), '.view-card__cover')
+    const colour = q<HTMLElement>(cardOf(el, 'colour'), '.view-card__cover')
     expect(colour.tagName).toBe('DIV')
     expect(colour.style.background).toMatch(/#ff0000|rgb\(255,\s*0,\s*0\)/i)
-    const remote = q<HTMLImageElement>(cardOf(el, 'remote.md'), 'img.view-card__cover')
+    const remote = q<HTMLImageElement>(cardOf(el, 'remote'), 'img.view-card__cover')
     expect(remote.src).toBe('https://pics.test/cover.png')
   })
 
@@ -233,10 +233,10 @@ describe('covers', () => {
     const { api } = await import('../../api')
     const { el } = mount(WITH_IMAGE, { records: COVER_RECORDS })
     // synchronous first paint: the asset is still loading → placeholder, never a broken img
-    expect(cardOf(el, 'local.md').querySelector('img')).toBeNull()
-    expect(cardOf(el, 'local.md').querySelector('.view-card__cover--empty')).not.toBeNull()
+    expect(cardOf(el, 'local').querySelector('img')).toBeNull()
+    expect(cardOf(el, 'local').querySelector('.view-card__cover--empty')).not.toBeNull()
     await settle()
-    const img = q<HTMLImageElement>(cardOf(el, 'local.md'), 'img.view-card__cover')
+    const img = q<HTMLImageElement>(cardOf(el, 'local'), 'img.view-card__cover')
     expect(img.src).toBe('data:image/png;base64,UE5H')
     expect(api.readAsset).toHaveBeenCalledWith('/vault', 'levels.png')
   })
@@ -244,9 +244,9 @@ describe('covers', () => {
   it('no value and a failed resolution both render the neutral placeholder', async () => {
     const { el } = mount(WITH_IMAGE, { records: COVER_RECORDS })
     await settle()
-    expect(cardOf(el, 'bare.md').querySelector('.view-card__cover--empty')).not.toBeNull()
-    expect(cardOf(el, 'broken.md').querySelector('.view-card__cover--empty')).not.toBeNull()
-    expect(cardOf(el, 'broken.md').querySelector('img')).toBeNull()
+    expect(cardOf(el, 'bare').querySelector('.view-card__cover--empty')).not.toBeNull()
+    expect(cardOf(el, 'broken').querySelector('.view-card__cover--empty')).not.toBeNull()
+    expect(cardOf(el, 'broken').querySelector('img')).toBeNull()
   })
 
   it('one bridge call per unique ref: a grid of repeated covers is served from the cache', async () => {
@@ -284,7 +284,7 @@ describe('grouped sections', () => {
     const { storage } = await import('../../lib/storage')
     const { el, onChange } = mount(GROUPED_BASE)
     click(toggleOf(el, 'idea'))
-    expect(titles(el)).not.toContain('Agentic Agency.md')
+    expect(titles(el)).not.toContain('Agentic Agency')
     expect(headerTexts(el)).toEqual(['drafting', 'idea', 'published', 'No value']) // header stays
     expect(toggleOf(el, 'idea').getAttribute('aria-expanded')).toBe('false')
     expect(onChange).not.toHaveBeenCalled() // NOT in the page's own card, no autosave
@@ -294,11 +294,11 @@ describe('grouped sections', () => {
     unmount()
     const again = mount(GROUPED_BASE)
     expect(toggleOf(again.el, 'idea').getAttribute('aria-expanded')).toBe('false')
-    expect(titles(again.el)).not.toContain('Agentic Agency.md')
+    expect(titles(again.el)).not.toContain('Agentic Agency')
 
     // expanding removes the entry
     click(toggleOf(again.el, 'idea'))
-    expect(titles(again.el)).toContain('Agentic Agency.md')
+    expect(titles(again.el)).toContain('Agentic Agency')
     expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::C', [])
   })
 
@@ -307,7 +307,7 @@ describe('grouped sections', () => {
     click(byLabel(el, 'Search'))
     setValue(byLabel(el, 'Search rows'), 'agency')
     expect(headerTexts(el)).toEqual(['drafting', 'idea'])
-    expect(titles(el)).toEqual(['The Levels of an Agency.md', 'Agentic Agency.md'])
+    expect(titles(el)).toEqual(['The Levels of an Agency', 'Agentic Agency'])
     expect(sections(el).map((s) => q(s, '.view-group__count').textContent)).toEqual(['1', '1'])
     expect(sections(el)[1].querySelector('.view-group__summary')?.textContent).toBe('Sum2')
     expect(q(el, '.view-toolbar__count').textContent).toBe('2 / 8 items')

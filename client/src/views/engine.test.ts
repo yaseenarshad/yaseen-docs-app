@@ -466,6 +466,15 @@ describe('propertyKeys / propertyLabel (GRO-2133)', () => {
     expect(propertyKeys(yasin, yasin.views[1], [])).toEqual(['file.name'])
   })
 
+  it('propertyKeys: a DECLARED column is a column before any member carries it (YAZ-1549)', () => {
+    expect(propertyKeys(yasin, yasin.views[1], [], ['status', 'owner'])).toEqual(['file.name', 'note.owner', 'note.status'])
+    // seen and declared merge, once each
+    expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS, ['status', 'owner'])).toContain('note.owner')
+    expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS, ['status']).filter((k) => k === 'note.status')).toHaveLength(1)
+    // an explicit order still wins
+    expect(propertyKeys(yasin, { ...yasin.views[1], order: ['file.name'] }, TEST_RECORDS, ['status'])).toEqual(['file.name'])
+  })
+
   it('propertyLabel: displayName (bare or note.-prefixed key) else the default label (YAZ-1513)', () => {
     const def: ViewSet = { properties: { status: { displayName: 'STATUS' }, 'note.views': { displayName: 'Views' }, 'file.name': { displayName: 'Title' } }, views: [] }
     expect(propertyLabel(def, 'status')).toBe('STATUS')
@@ -481,9 +490,13 @@ describe('propertyKeys / propertyLabel (GRO-2133)', () => {
     expect(propertyLabel({ views: [] }, 'file.name')).toBe('Name')
   })
 
-  it('defaultLabel (YAZ-1513): Name for file.name, else the last dotted segment in sentence case with _ as spaces', () => {
+  it('defaultLabel (YAZ-1513/1549): the file-field table, else the last dotted segment in sentence case with _ as spaces', () => {
     expect(defaultLabel('file.name')).toBe('Name')
-    expect(defaultLabel('file.mtime')).toBe('Mtime')
+    // the file fields have their own table (YAZ-1549)
+    expect(['file.basename', 'file.path', 'file.folder', 'file.ext', 'file.size', 'file.ctime', 'file.mtime', 'file.tags', 'file.links', 'file.embeds'].map(defaultLabel)).toEqual([
+      'Base name', 'Path', 'Folder', 'Extension', 'Size', 'Created', 'Modified', 'Tags', 'Links', 'Embeds',
+    ])
+    expect(defaultLabel('file.unknown')).toBe('Unknown')
     expect(defaultLabel('note.kpi_category')).toBe('Kpi category')
     expect(defaultLabel('kpi_category')).toBe('Kpi category')
     expect(defaultLabel('note.status')).toBe('Status')

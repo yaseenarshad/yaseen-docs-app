@@ -1,4 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
+import type { IndexRecord } from '@shared/types'
+import { membersCarrying } from '../deleteColumn'
+import { propertyLabel } from '../engine'
+import type { ViewSet } from '../viewSchema'
+import { canonicalKey } from './keys'
 
 /** The sheet's copy (YAZ-1513) — pure and separately tested, like `deleteConfirmMessage` next door. */
 export function deleteColumnMessage(label: string, key: string, count: number): string {
@@ -6,12 +11,11 @@ export function deleteColumnMessage(label: string, key: string, count: number): 
 }
 
 interface ConfirmDeleteColumnProps {
-  /** What the header says. */
-  label: string
-  /** The bare frontmatter key the members lose. */
-  propKey: string
-  /** Direct members currently carrying the key. */
-  count: number
+  /** The column, any spelling — the sheet derives its label, bare key and count itself (YAZ-1549). */
+  columnKey: string
+  def: ViewSet
+  /** The direct members: the count is taken ONCE, when the sheet opens. */
+  records: readonly IndexRecord[]
   onConfirm: () => void
   onCancel: () => void
 }
@@ -23,9 +27,13 @@ interface ConfirmDeleteColumnProps {
  * on the dialog itself (it holds focus) rather than on `window`, so a Popover hosting this sheet
  * does not see the same Escape and close underneath it.
  */
-export function ConfirmDeleteColumn({ label, propKey, count, onConfirm, onCancel }: ConfirmDeleteColumnProps) {
+export function ConfirmDeleteColumn({ columnKey, def, records, onConfirm, onCancel }: ConfirmDeleteColumnProps) {
   const cancelRef = useRef<HTMLButtonElement>(null)
   useEffect(() => cancelRef.current?.focus(), [])
+  const label = propertyLabel(def, columnKey)
+  const propKey = canonicalKey(columnKey).slice('note.'.length)
+  // Taken once at open: the number the user reads is the number the confirm meant.
+  const count = useMemo(() => membersCarrying(records, columnKey).length, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div

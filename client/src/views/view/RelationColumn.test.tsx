@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { IndexRecord, PropertiesResponse } from '@shared/types'
+import type { IndexRecord, PropertiesResponse, PropertyDecl } from '@shared/types'
 import { defaultLabel } from '../engine'
 import { parseViews, type ParsedViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
@@ -173,6 +173,15 @@ function press(el: Element, key: string): void {
   draw()
 }
 
+/** A host that keeps its declarations AHEAD (YAZ-1549), like `FolderPageContents`: each write lands in `settings.columns` at once. */
+function aheadHost() {
+  const settings = { columns: {} as Record<string, PropertyDecl>, views: [], problems: [] }
+  const setColumn = vi.fn(async (key: string, next: PropertyDecl) => {
+    settings.columns[key] = next
+  })
+  return { setColumn, folderPage: testFolderPage({ vaultRecords: RECORDS, settings, setColumn }) }
+}
+
 /** Pick a `<select>` value the way a user does: the native setter, then a bubbling change event React sees. */
 function selectValue(el: HTMLSelectElement, value: string): void {
   const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
@@ -203,8 +212,8 @@ function openRelation(el: ParentNode, key: string) {
 
 describe('column menu relation flow', () => {
   it('a filtered view saves a local relation definition without changing the vault registry', async () => {
-    const setColumn = vi.fn().mockResolvedValue(undefined)
-    const { el } = mount(KPI_BASE, { folderPage: testFolderPage({ vaultRecords: RECORDS, setColumn }) })
+    const { setColumn, folderPage } = aheadHost()
+    const { el } = mount(KPI_BASE, { folderPage })
     openRelation(el, 'owner') // "Make relation": the declaration is born as a link, immediately
     expect(setColumn).toHaveBeenNthCalledWith(1, 'owner', { kind: 'link' }, undefined)
     await settle()
@@ -215,8 +224,8 @@ describe('column menu relation flow', () => {
   })
 
   it('Multi-link: the Type select, then the target — each an immediate folder-local write against what just landed', async () => {
-    const setColumn = vi.fn().mockResolvedValue(undefined)
-    const { el } = mount(UNFILTERED_BASE, { folderPage: testFolderPage({ vaultRecords: RECORDS, setColumn }) })
+    const { setColumn, folderPage } = aheadHost()
+    const { el } = mount(UNFILTERED_BASE, { folderPage })
     openRelation(el, 'funnels')
     expect(setColumn).toHaveBeenNthCalledWith(1, 'funnels', { kind: 'link' }, undefined)
     await settle()
@@ -230,7 +239,7 @@ describe('column menu relation flow', () => {
   })
 
   it('the target is free text with no obsolete type-name suggestion list', async () => {
-    const { el } = mount(KPI_BASE, { properties: DECLS, folderPage: testFolderPage({ vaultRecords: RECORDS, setColumn: vi.fn().mockResolvedValue(undefined) }) })
+    const { el } = mount(KPI_BASE, { properties: DECLS, folderPage: aheadHost().folderPage })
     openRelation(el, 'owner')
     await settle()
     expect(el.querySelector('datalist')).toBeNull()
@@ -238,8 +247,8 @@ describe('column menu relation flow', () => {
   })
 
   it('an existing legacy declaration is the seed: nothing is written before the click, and Make relation writes exactly it', async () => {
-    const setColumn = vi.fn().mockResolvedValue(undefined)
-    const { el } = mount(KPI_BASE, { properties: DECLS, folderPage: testFolderPage({ vaultRecords: RECORDS, setColumn }) })
+    const { setColumn, folderPage } = aheadHost()
+    const { el } = mount(KPI_BASE, { properties: DECLS, folderPage })
     click(byLabel(el, 'Properties'))
     click(byLabel(el, 'Open Funnels'))
     expect(setColumn).not.toHaveBeenCalled()

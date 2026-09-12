@@ -15,6 +15,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { type ViewSet, type ViewDef, type ParsedViews, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderPage } from '../testFolderPage'
+import type { ColumnDecl } from '../folderPageSettings'
 import { TEST_RECORDS } from '../testRecords'
 
 /** The document skin's editor is a real Crepe instance; the toolbar's own chrome is what is under test. */
@@ -142,10 +143,22 @@ function choosePropertyType(pop: ParentNode, label: string): void {
   click(byText(pop, '[data-type-option]', label))
 }
 
-/** Let an immediate declaration write resolve, so the panel's `base` moves forward (3D). */
+/** Let an immediate declaration write resolve (3D). */
 async function settle(): Promise<void> {
   await act(async () => {})
   draw()
+}
+
+/**
+ * A host that keeps its declarations AHEAD (YAZ-1549), as `FolderPageContents` does: each
+ * `setColumn` lands in `settings.columns` at once, so the panel's next `base` is what just landed.
+ */
+function aheadHost(columns: Record<string, ColumnDecl>) {
+  const settings = { columns, views: [], problems: [] }
+  const setColumn = vi.fn(async (key: string, next: ColumnDecl) => {
+    settings.columns[key] = next
+  })
+  return { settings, setColumn, folderPage: testFolderPage({ settings, setColumn }) }
 }
 
 /** Type into a TextField and commit with Enter (one onChange). */
@@ -1037,7 +1050,7 @@ views:
     expect(select.disabled).toBe(false)
     click(select)
 
-    const order = ['status', 'file.name', 'note.priority', 'note.owner', 'formula.Score']
+    const order = ['status', 'file.name', 'note.owner', 'note.priority', 'formula.Score']
     expect(def()).toEqual({ ...before, views: [{ ...before.views[0], order }, before.views[1]] })
     expect(parseViews(yaml()).def).toEqual(def())
     expect([...pop.querySelectorAll<HTMLInputElement>('input[aria-label^="Show "]')].every((input) => input.checked)).toBe(true)
@@ -1318,14 +1331,14 @@ views:
   })
 
   it("a declared link column's target writes on commit — trimmed, against the captured base — and an emptied field removes it against what just landed (3D)", async () => {
-    const setColumn = vi.fn().mockResolvedValue(undefined)
-    const columns = { owner: { kind: 'link' as const, target: 'People' }, tag: { kind: 'text' as const } }
-    const { el } = mount(undefined, { root: '/vault', folderPage: testFolderPage({ settings: { columns, views: [], problems: [] }, setColumn }) })
+    const base = { kind: 'link' as const, target: 'People' }
+    const { setColumn, folderPage } = aheadHost({ owner: base, tag: { kind: 'text' } })
+    const { el } = mount(undefined, { root: '/vault', folderPage })
     const pop = openMenu(el, 'Properties')
     click(byLabel(pop, 'Open Owner'))
     expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe('People')
     type(byLabel(pop, 'Link target'), '  Teams  ')
-    expect(setColumn).toHaveBeenNthCalledWith(1, 'owner', { kind: 'link', target: 'Teams' }, columns.owner)
+    expect(setColumn).toHaveBeenNthCalledWith(1, 'owner', { kind: 'link', target: 'Teams' }, base)
     await settle()
     type(byLabel(pop, 'Link target'), '')
     expect(setColumn).toHaveBeenNthCalledWith(2, 'owner', { kind: 'link' }, { kind: 'link', target: 'Teams' })
@@ -1384,10 +1397,9 @@ views:
   })
 
   it.each(['table', 'board'])('%s definition edits write immediately (3D): a type change, then an option-order change, each ONE setColumn against the previous', async viewType => {
-    const setColumn = vi.fn().mockResolvedValue(undefined)
     const base = { kind: 'select' as const, options: ['Later', 'Ready'], optionSort: 'manual' as const }
-    const settings = { columns: { status: base }, views: [], problems: [] }
-    const { el, onChange } = mount(`views:\n  - type: ${viewType}\n    name: Review\n    order: [file.name, note.status]\n    groupBy: { property: note.status }\n`, { folderPage: testFolderPage({ settings, setColumn }) })
+    const { setColumn, folderPage } = aheadHost({ status: base })
+    const { el, onChange } = mount(`views:\n  - type: ${viewType}\n    name: Review\n    order: [file.name, note.status]\n    groupBy: { property: note.status }\n`, { folderPage })
     const pop = openMenu(el, 'Properties')
     click(byLabel(pop, 'Open Status'))
     expect(byLabel<HTMLSelectElement>(pop, 'Edit property Status').value).toBe('select')
@@ -1399,7 +1411,7 @@ views:
     expect(setColumn).toHaveBeenNthCalledWith(2, 'status', { ...base, kind: 'multi-select', optionSort: 'descending' }, { ...base, kind: 'multi-select' })
     expect(setColumn).toHaveBeenCalledTimes(2)
     expect(onChange).not.toHaveBeenCalled()
-    expect(settings.columns.status).toEqual(base) // the fixture is never mutated
+    expect(base).toEqual({ kind: 'select', options: ['Later', 'Ready'], optionSort: 'manual' }) // the panel never mutates a declaration in place
     expect(pop.querySelector('.frontmatter-property-menu__actions, .property-def__type-row')).toBeNull() // no Save / Cancel, no third level
   })
 
@@ -1412,14 +1424,14 @@ views:
     setValue(byLabel(pop, 'Edit property Status'), 'date')
     await settle()
     expect(q(pop, '[role="alert"]').textContent).toContain('changed since these settings were opened')
-    expect(byLabel<HTMLSelectElement>(pop, 'Edit property Status').value).toBe('text') // refreshed, not left on the refused draft
+    expect(byLabel<HTMLSelectElement>(pop, 'Edit property Status').value).toBe('text') // the host's copy (reverted there) is what the panel shows
     expect(pop.querySelector('.column-detail')).not.toBeNull() // still in the panel
   })
 
   it('options (3D): add, reorder and remove each write the declaration immediately, against what just landed', async () => {
-    const setColumn = vi.fn().mockResolvedValue(undefined)
     const base = { kind: 'select' as const, options: ['A', 'B'] }
-    const { el, onChange } = mount(undefined, { folderPage: testFolderPage({ settings: { columns: { status: base }, views: [], problems: [] }, setColumn }) })
+    const { setColumn, folderPage } = aheadHost({ status: base })
+    const { el, onChange } = mount(undefined, { folderPage })
     const pop = openMenu(el, 'Properties')
     click(byLabel(pop, 'Open Status'))
     expect([...pop.querySelectorAll('.property-def__chip')].map((c) => c.textContent)).toEqual(['A', 'B'])
@@ -1552,7 +1564,7 @@ views:
     expect(byLabel(pop, 'Show Status')).toBeDefined() // back on the list
   })
 
-  it('the actions row (YAZ-1513): Delete column… is disabled with the tooltip for file.*, formula.* and reserved keys, and absent without a deleteColumn door', () => {
+  it('the actions row (YAZ-1513): Delete column… is disabled with the tooltip for file.*, formula.* and app-owned keys, enabled for a plain note key', () => {
     const deleteColumn = vi.fn(async () => {})
     const records = [{ ...TEST_RECORDS[0], properties: { status: 'idea', folder_pages: ['[[Home]]'] } }]
     const { el } = mount(`formulas:\n  score: '1'\nviews:\n  - type: table\n    name: T\n    order: [file.name, note.status, note.folder_pages, formula.score]\n`, { records, folderPage: testFolderPage({ deleteColumn, vaultRecords: records }) })
@@ -1564,15 +1576,15 @@ views:
       expect(del.title).toBe(disabled ? 'Built-in column — hide it instead' : '')
       click(byLabel(pop, 'Back to columns'))
     }
-    click(byLabel(pop, 'Open Status'))
-    expect(byLabel<HTMLButtonElement>(pop, 'Delete column Status').disabled).toBe(false)
+  })
 
-    act(() => root?.unmount())
-    container?.remove()
-    const bare = mount()
-    const again = openMenu(bare.el, 'Properties')
-    click(byLabel(again, 'Open Status'))
-    expect(byLabel<HTMLButtonElement>(again, 'Delete column Status').disabled).toBe(true) // no door: nothing to call
+  it('a label shared by two rows — file.name and a `name` property both read "Name" — shows the key beside BOTH, and nowhere else (YAZ-1549)', () => {
+    const records = [{ ...TEST_RECORDS[0], properties: { name: 'alias', status: 'idea' } }]
+    const { el } = mount('views:\n  - type: table\n    name: T\n    order: [file.name, note.name, note.status]\n', { records, folderPage: testFolderPage({ vaultRecords: records }) })
+    const pop = openMenu(el, 'Properties')
+    const rows = [...pop.querySelectorAll<HTMLElement>('.view-prop')]
+    const keyed = rows.map((row) => row.querySelector('.view-prop__name small')?.textContent ?? null)
+    expect(keyed).toEqual(['file.name', 'note.name', null])
   })
 })
 
@@ -2215,9 +2227,9 @@ describe('folder-local relation shortcut', () => {
   })
 
   it('Make relation seeds from legacy metadata against a missing local base, in ONE immediate write; nothing is written before the click', async () => {
-    const setColumn = vi.fn().mockResolvedValue(undefined)
     const legacy = { kind: 'multi-link' as const, target: '[[Global People]]' }
-    const { el } = mount(undefined, { root: '/vault', properties: { root: '/vault', version: 1, properties: { status: legacy } }, folderPage: testFolderPage({ setColumn }) })
+    const { setColumn, folderPage } = aheadHost({})
+    const { el } = mount(undefined, { root: '/vault', properties: { root: '/vault', version: 1, properties: { status: legacy } }, folderPage })
     const pop = openMenu(el, 'Properties')
     click(byLabel(pop, 'Open Status'))
     expect(setColumn).not.toHaveBeenCalled()

@@ -4,13 +4,12 @@ import { api } from '../../api'
 import type { ViewSet, ViewDef } from '../viewSchema'
 import { belongsToBasenames } from '../../links/folderPages'
 import { type Group, type Row, propertyKeys, propertyLabel, resolverFor } from '../engine'
-import { render } from '../expr'
 import { cellEditor, columnTyping } from '../editorType'
 import type { FolderPageSettings } from '../folderPageSettings'
 import { cardWidth } from './cardWidth'
 import { EditableCell } from './EditableCell'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, groupKeyOf } from './GroupHeader'
+import { GroupHeader, cellContent, groupKeyOf, pageTitle } from './GroupHeader'
 
 export interface CardsViewProps {
   def: ViewSet
@@ -120,7 +119,7 @@ function CardCover({ root, cover }: { root: string | null; cover: Cover }) {
  * through `EditableCell` (5B, GRO-2142); a lightbox stays out of scope.
  */
 export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onNewInGroup, properties = null, folderPage = null, vaultRecords }: CardsViewProps) {
-  const keys = useMemo(() => propertyKeys(def, view, records), [def, view, records])
+  const keys = useMemo(() => propertyKeys(def, view, records, Object.keys(folderPage?.columns ?? {})), [def, view, records, folderPage])
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const rest = useMemo(() => keys.filter((k) => k !== nameKey), [keys, nameKey])
   // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows;
@@ -164,7 +163,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
           {imageKey !== null && <CardCover root={root} cover={coverOf(row.record, imageKey)} />}
           <div className="view-card__body">
             <button type="button" className="view-card__title" onClick={() => onOpenFile(row.record.path)}>
-              {nameKey === undefined ? row.record.name : render(row.values[nameKey])}
+              {pageTitle(row)}
             </button>
             {rest.map((key) => {
               const bare = bares.get(key) ?? null
