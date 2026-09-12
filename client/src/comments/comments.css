@@ -59,12 +59,18 @@
   font-weight: 400;
 }
 
-/* Fold-all: icon and word, a real button so it is easy to hit; the label says which way it goes. */
+/* The header's tools, right-aligned as one group: the order toggle (YAZ-1515), then fold-all. */
+.comments__tools {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* Fold-all (and the order toggle): icon and word, a real button so it is easy to hit; the label says which way it goes. */
 .comments__tool {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  margin-left: auto;
   padding: 3px 8px;
   font-size: 12px;
   color: var(--fg-muted);
@@ -415,8 +421,11 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.comments__list + .comments__composer {
-  margin-top: 16px;
+/* The list and the bottom composer, one column (YAZ-1515). The composer stays at the BOTTOM under both orders. */
+.comments__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 /* The reply field at the bottom of a card with replies: a row of the card, not a box of its own. */

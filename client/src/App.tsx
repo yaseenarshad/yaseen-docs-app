@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isViewOnly } from '@shared/fileKind'
-import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
+import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type CommentsOrder, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -206,6 +206,15 @@ export function App() {
     storage.setSettings(next)
     setSettings(next)
   }, [])
+
+  /**
+   * The comment stream's order toggle (YAZ-1515) writes the setting through ONE stable door, the
+   * way `createBase` reads it: `RetainedEditor` is `memo(Editor)`, so a fresh arrow per render
+   * would re-render every retained editor tree on any App state change.
+   */
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
+  const changeCommentsOrder = useCallback((order: CommentsOrder) => changeSettings({ ...settingsRef.current, commentsOrder: order }), [changeSettings])
 
   /** A lens tab click (YAZ-847): write through to the global state, then mirror it locally. */
   const changeLens = useCallback((next: SidebarLens) => {
@@ -604,6 +613,9 @@ export function App() {
     onRenameFile: requestEditorRename,
     sync: githubSync.status,
     onSyncNow: githubSync.syncNow,
+    // YAZ-1515: the comment stream's order is a SETTING, threaded down like every other one.
+    commentsOrder: settings.commentsOrder,
+    onChangeCommentsOrder: changeCommentsOrder,
   }
 
   const dropOnMain = (page: PageDrag, at: number): void => {

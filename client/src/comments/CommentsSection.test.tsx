@@ -13,7 +13,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { readComments } from '@shared/comments'
+import type { CommentsOrder } from '@shared/types'
 import { CommentsSection } from './CommentsSection'
+import commentsCss from './comments.css?inline'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -143,6 +145,8 @@ const INVALID = '---\ntags: [a, b\nstatus: : :\n---\nBody\n'
 
 let root: Root | null = null
 let container: HTMLElement | null = null
+/** The order toggle's door (YAZ-1515): the block writes the SETTING through it and holds no order of its own. */
+const onChangeOrder = vi.fn<(order: CommentsOrder) => void>()
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
@@ -152,6 +156,7 @@ beforeEach(() => {
   writeFile.mockResolvedValue({ path: PATH, mtime: 200, size: 10 })
   openLink.mockReset()
   openLink.mockResolvedValue(undefined)
+  onChangeOrder.mockReset()
 })
 
 afterEach(() => {
@@ -166,14 +171,14 @@ function unmount(): void {
   container = null
 }
 
-/** Mount over `content`; the disk agrees with the prop unless a test says otherwise via `readFile`. */
-function mount(content: string, mtime = 100): HTMLElement {
+/** Mount over `content`; the disk agrees with the prop unless a test says otherwise via `readFile`. Oldest-first unless a test says otherwise. */
+function mount(content: string, mtime = 100, order: CommentsOrder = 'oldest'): HTMLElement {
   unmount()
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
   readFile.mockResolvedValue(fileOf(content, mtime))
-  act(() => root?.render(<CommentsSection file={{ path: PATH, content }} />))
+  act(() => root?.render(<CommentsSection file={{ path: PATH, content }} order={order} onChangeOrder={onChangeOrder} />))
   return container
 }
 
@@ -187,7 +192,11 @@ const q = <T extends Element = HTMLElement>(scope: ParentNode, selector: string)
 const all = <T extends Element = HTMLElement>(scope: ParentNode, selector: string): T[] => [...scope.querySelectorAll<T>(selector)]
 
 const header = (el: ParentNode) => q<HTMLButtonElement>(el, 'button.comments__header')
-const tool = (el: ParentNode) => q<HTMLButtonElement>(el, 'button.comments__tool')
+const tools = (el: ParentNode) => all<HTMLButtonElement>(el, 'button.comments__tool')
+/** The fold-all button, by its label — the order toggle (YAZ-1515) shares its class and seat. */
+const tool = (el: ParentNode) => tools(el).find((b) => /^(Collapse|Expand) all$/.test(b.textContent ?? '')) ?? null
+/** The order toggle (YAZ-1515), by its label. */
+const orderTool = (el: ParentNode) => tools(el).find((b) => /^(Oldest|Newest) first$/.test(b.textContent ?? '')) ?? null
 const threads = (el: ParentNode) => all(el, '.comments__thread')
 const articles = (scope: ParentNode) => all(scope, 'article.comments__item')
 const bodyText = (article: ParentNode) => q(article, '.comments__body')?.textContent?.trim() ?? null
@@ -199,7 +208,7 @@ const repliesOf = (thread: ParentNode) => all(thread, '.comments__replies > arti
 const sheet = (el: ParentNode) => q(el, '.confirm[role="dialog"]')
 /** The sheet's own buttons — never a row action. */
 const sheetButton = (el: ParentNode, text: string) => all<HTMLButtonElement>(el, '.confirm__btn').find((b) => b.textContent?.trim() === text) ?? null
-const bottomComposer = (el: ParentNode) => must(q<HTMLElement>(el, '.comments > .comments__composer'), 'bottom composer')
+const bottomComposer = (el: ParentNode) => must(q<HTMLElement>(el, '.comments > .comments__stack > .comments__composer'), 'bottom composer')
 const textareaOf = (composer: ParentNode) => q<HTMLTextAreaElement>(composer, 'textarea.comments__textarea')
 const titleInputOf = (composer: ParentNode) => q<HTMLInputElement>(composer, 'input.comments__title-input')
 const submitOf = (composer: ParentNode) => q<HTMLButtonElement>(composer, 'button.btn--primary')
@@ -264,7 +273,7 @@ describe('CommentsSection — render', () => {
 
     click(header(el))
     expect(q(el, '.comments__list')).not.toBeNull()
-    expect(q(el, '.comments > .comments__composer')).not.toBeNull()
+    expect(q(el, '.comments > .comments__stack > .comments__composer')).not.toBeNull()
   })
 
   it('no count and no fold-all when there is nothing to count', () => {
@@ -290,7 +299,8 @@ describe('CommentsSection — render', () => {
 describe('CommentsSection — fold', () => {
   it('one fold-all control: Collapse all while anything foldable is open, Expand all once every foldable comment AND every reply group is folded — a one-liner never counts', () => {
     const el = mount(FOLDABLE)
-    expect(all(el, 'button.comments__tool')).toHaveLength(1)
+    // ONE fold-all, at the right of the tools; the order toggle (YAZ-1515) sits to its left.
+    expect(tools(el).map((b) => b.textContent)).toEqual(['Oldest first', 'Collapse all'])
     expect(tool(el)?.textContent).toBe('Collapse all')
     // Three can fold (the parent, both replies); the one-liner has no fold button and no body.
     expect(all(el, 'button.comments__fold')).toHaveLength(3)
@@ -736,3 +746,86 @@ describe('CommentsSection — one-liners keep their Markdown; nothing to fold, n
     expect(tool(el)).toBeNull()
   })
 })
+
+// ---------- order (YAZ-1515) ----------
+
+/** Three top-level comments, numbered, filed in `at` order. */
+const THREE = note(`  - id: aaaaaaaa
+    n: 1
+    at: 2026-09-10T20:00:00Z
+    body: First
+  - id: bbbbbbbb
+    n: 2
+    at: 2026-09-11T20:00:00Z
+    body: Second
+  - id: cccccccc
+    n: 3
+    at: 2026-09-12T20:00:00Z
+    body: Third
+`)
+
+const marks = (el: ParentNode) => threads(el).map((t) => markOf(articles(t)[0])?.textContent)
+
+describe('order (YAZ-1515)', () => {
+  it('oldest-first reads #1 #2 #3 top-down; newest-first reads #3 #2 #1', () => {
+    expect(marks(mount(THREE, 100, 'oldest'))).toEqual(['#1', '#2', '#3'])
+    expect(marks(mount(THREE, 100, 'newest'))).toEqual(['#3', '#2', '#1'])
+  })
+
+  it('replies inside a thread stay oldest-first under both orders: a conversation reads down', () => {
+    const oldest = mount(THREADED, 100, 'oldest')
+    expect(threads(oldest).map((t) => textOf(articles(t)[0]))).toEqual(['Earliest, filed last', 'Parent comment', 'Orphan reply'])
+    expect(repliesOf(threads(oldest)[1])).toEqual(['First reply', 'Second reply'])
+
+    const newest = mount(THREADED, 100, 'newest')
+    expect(threads(newest).map((t) => textOf(articles(t)[0]))).toEqual(['Orphan reply', 'Parent comment', 'Earliest, filed last'])
+    expect(repliesOf(threads(newest)[1])).toEqual(['First reply', 'Second reply'])
+  })
+
+  it('the toggle names the CURRENT order and asks for the other one; it never flips itself', () => {
+    const el = mount(THREE, 100, 'oldest')
+    expect(orderTool(el)?.textContent).toBe('Oldest first')
+    expect(orderTool(el)?.title).toBe('Show newest first')
+    click(orderTool(el))
+    expect(onChangeOrder).toHaveBeenCalledTimes(1)
+    expect(onChangeOrder).toHaveBeenCalledWith('newest')
+    // State-driven: the label follows the PROP, not the click.
+    expect(orderTool(el)?.textContent).toBe('Oldest first')
+
+    const flipped = mount(THREE, 100, 'newest')
+    expect(orderTool(flipped)?.textContent).toBe('Newest first')
+    expect(orderTool(flipped)?.title).toBe('Show oldest first')
+    click(orderTool(flipped))
+    expect(onChangeOrder).toHaveBeenLastCalledWith('oldest')
+  })
+
+  it('the toggle sits LEFT of fold-all, and is absent below two threads and while the header is collapsed', () => {
+    expect(orderTool(mount(EMPTY))).toBeNull()
+    expect(orderTool(mount(LONE))).toBeNull()
+    // Two threads — one with replies — is enough: the roots are what reorder.
+    expect(orderTool(mount(THREADED))).not.toBeNull()
+    expect(tools(mount(FOLDABLE)).map((b) => b.textContent)).toEqual(['Oldest first', 'Collapse all'])
+
+    const el = mount(THREE)
+    expect(orderTool(el)).not.toBeNull()
+    click(header(el))
+    expect(orderTool(el)).toBeNull()
+    click(header(el))
+    expect(orderTool(el)).not.toBeNull()
+  })
+
+  it('the composer stays the LAST child of the stack under BOTH orders (it never moves to the top)', () => {
+    for (const order of ['oldest', 'newest'] as const) {
+      const stack = must(q(mount(THREE, 100, order), '.comments__stack'), 'the stack')
+      expect(stack.className).toBe('comments__stack')
+      expect(stack.firstElementChild?.classList.contains('comments__list')).toBe(true)
+      expect(stack.lastElementChild?.classList.contains('comments__composer')).toBe(true)
+    }
+  })
+
+  it('CSS: the stack is one column and nothing reorders the composer', () => {
+    expect(commentsCss).toMatch(/\.comments__stack\s*\{[^}]*flex-direction:\s*column;/s)
+    expect(commentsCss).not.toMatch(/order:\s*-1/)
+  })
+})
+
