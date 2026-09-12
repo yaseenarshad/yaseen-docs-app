@@ -19,7 +19,7 @@ See `LAUNCH.md` for the full launch recipe (state file, packaged-app install, ag
 npm test         # unit tests (vitest, four projects: client jsdom, desktop node, tools node, perf jsdom)
 npm run typecheck
 npm run build    # electron-vite build into desktop/out
-npm run e2e      # 17 Playwright-Electron specs driving the real app
+npm run e2e      # 44 Playwright-Electron specs driving the real app
 ```
 
 ## Build the app
@@ -95,6 +95,9 @@ The views live INSIDE the note, under whatever you have written there — never 
 - **Edit in place**: note properties edit right in table cells and card/list rows — text, numbers, checkboxes, dates, lists and `[[links]]` with completion; an edit rewrites just that one frontmatter key on the member's own note.
 - **Board drag**: drag a card to another column to change its group property; the "No value" column removes it.
 - **New**: the toolbar's New button (or a group header's "+") creates a member from the folder page's own declaration, parked in the folder the settings name.
+- **Built-in columns**: a Table shows the page's title under **Name** (no `.md`) and a `#` that counts from 1 inside every group (Properties → Table → Row numbers, or right-click the `#` header, to hide it). Every folder page is born with one `status` Select — Backlog / Todo / In progress / Done — whether it comes from "New folder page", "Turn into folder page" or the automatic Home; turning a page into a folder page never overwrites settings it already has.
+- **Columns**: right-click a Table header to rename it, hide it, add a column to its right or delete it; drag a header to reorder. A rename changes only what the header says — the frontmatter key stays. The Properties panel is two-level: the list shows, hides and reorders; open a row to edit its title, key, type, options, relation and (on a Board) card styling. Delete asks first, then removes the column from this page and the value from every member note.
+- **Existing vaults**: `node tools/seedDefaultColumns.mjs --vault <path>` gives folder pages created before the `status` column the same start. It is a dry run by default, `--apply` writes, it refuses a vault that is not a clean git repo, and running it twice changes nothing.
 - **Property declarations** (optional): a vault-wide `properties.json` decides which editor a column gets. It is written INTO the vault, at `<vault>/.yaseendocs/properties.json` — the `.obsidian/`-style dotfolder that travels with your notes, so the declarations move with the vault rather than living in app state. Nothing else is ever written into your vault.
 
 Coming from the old `page_type` scheme? `node tools/migrateFolderPages.mjs --vault <path>` converts a vault to this model. It is a dry run by default, refuses to touch anything that is not a clean git repo, is safe to run twice, and writes a full report.

@@ -4,7 +4,6 @@
  */
 import { useMemo, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
-import { COMMENTS_KEY } from '@shared/comments'
 import { frontmatterInterior, parseFrontmatter, replaceFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import {
   PROPERTY_NAME,
@@ -15,9 +14,10 @@ import {
 } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
 import { FOLDER_PAGE_KEY, folderPagesLookup } from '../links/folderPages'
+import { RESERVED_KEYS } from '../links/reservedKeys'
 import { cellEditor, columnTyping, type EditorKind } from '../views/editorType'
 import { fromYaml } from '../views/expr'
-import { SETTINGS_KEY, folderPageSettings, writeFolderColumn, type FolderPageSettings } from '../views/folderPageSettings'
+import { folderPageSettings, writeFolderColumn, type FolderPageSettings } from '../views/folderPageSettings'
 import { PropertyDefinitionEditor, PropertyTypeIcon } from '../views/view/PropertyDefinitionEditor'
 import { Popover } from '../views/view/Popover'
 import { EditableCell } from '../views/view/EditableCell'
@@ -39,7 +39,8 @@ export interface FrontmatterPanelProps {
 }
 
 /** The app's own keys: shown, never edited here — each has its own door (the sidebar's toggle, the folder page's settings, the Comments block below the note — YAZ-1472). */
-const RESERVED = new Set<string>([FOLDER_PAGE_KEY, SETTINGS_KEY, COMMENTS_KEY])
+/** The one list (YAZ-1513): `links/reservedKeys.ts` spells it from the real constants. */
+const RESERVED = RESERVED_KEYS
 
 /** No view is rendering here, so the ladder's record-derived rungs have nothing to read. */
 const NO_RECORDS: readonly IndexRecord[] = []

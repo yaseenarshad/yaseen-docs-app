@@ -6,6 +6,10 @@
  * This is deliberately separate from folderPageColumns.spec.ts (YAZ-999 owns that shared column
  * propagation arc). It runs on a copy of the committed bible vault and a narrow app window so the
  * four-column KPI table genuinely overflows horizontally.
+ *
+ * Since YAZ-1513 the Table leads with a `#` gutter — a 44px cell that is always the first `th`/`td`
+ * and always sticky at `left: 0` — so the frozen prefix counts DATA columns and their sticky
+ * offsets start at 44px, and every `nth` below skips that one cell. Headers wear LABELS, not keys.
  */
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -18,6 +22,9 @@ test.describe.configure({ mode: 'serial' })
 
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
 const FOLDER_PAGE = 'KPIs.md'
+/** The `#` gutter's fixed width (TableView's `GUTTER_WIDTH`): frozen offsets start after it. */
+const GUTTER = 44
+const NAME_WIDTH = 150
 
 let userData: string
 let vault: string
@@ -66,15 +73,19 @@ async function openProperties(): Promise<Locator> {
   return propsMenu()
 }
 
+/** The x of the first four header cells: the `#` gutter, the two frozen columns, and the first scrolling one. */
 async function xPositions(cells: Locator): Promise<number[]> {
   return Promise.all(
-    [0, 1, 2].map(async (index) => {
+    [0, 1, 2, 3].map(async (index) => {
       const box = await cells.nth(index).boundingBox()
       if (box === null) throw new Error(`column ${index} has no bounding box`)
       return box.x
     }),
   )
 }
+
+/** The Properties list row for a column, found by its grip's label (`propertiesReorder.spec.ts`'s idiom). */
+const propRow = (menu: Locator, label: string): Locator => menu.locator('.view-prop').filter({ has: win.locator(`[aria-label="Reorder ${label}"]`) })
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'freeze-columns-userdata-'))
@@ -104,7 +115,7 @@ test('step 1 — the header and selected prefix hold while the two scroll axes m
 
   await expect(contents(win)).toBeVisible()
   await contents(win).locator('.view-tab__btn[role="tab"]', { hasText: 'Table' }).click()
-  await expect(headers()).toHaveText(['file.name', 'kpi_category', 'unit', 'funnel_stages'])
+  await expect(headers()).toHaveText(['#', 'Name', 'Kpi category', 'Unit', 'Funnel stages'])
 
   // The vertical freeze is unconditional — before and after any column choice.
   expect(await headers().first().evaluate((cell) => ({ position: getComputedStyle(cell).position, top: getComputedStyle(cell).top }))).toEqual({ position: 'sticky', top: '0px' })
@@ -114,16 +125,18 @@ test('step 1 — the header and selected prefix hold while the two scroll axes m
   await expect.poll(async () => (await tableSettings()).frozenColumns, { timeout: 10_000 }).toBe(2)
   await win.keyboard.press('Escape')
 
+  // Two DATA columns frozen; the `#` gutter is its own always-sticky cell and wears no frozen class.
   await expect(table().locator('thead th.view-table__frozen')).toHaveCount(2)
   await expect(table().locator('tbody tr:not(.view-table__group):not(.view-table__spacer)').first().locator('td.view-table__frozen')).toHaveCount(2)
   await expect(table().locator('tfoot td.view-table__frozen')).toHaveCount(2)
-  expect(await Promise.all([headers(), firstBodyRow(), footer()].map((cells) => cells.nth(1).evaluate((cell) => ({ position: getComputedStyle(cell).position, left: getComputedStyle(cell).left }))))).toEqual([
-    { position: 'sticky', left: '150px' },
-    { position: 'sticky', left: '150px' },
-    { position: 'sticky', left: '150px' },
+  // The second frozen column's offset is the gutter plus the name column — in header, body and footer.
+  expect(await Promise.all([headers(), firstBodyRow(), footer()].map((cells) => cells.nth(2).evaluate((cell) => ({ position: getComputedStyle(cell).position, left: getComputedStyle(cell).left }))))).toEqual([
+    { position: 'sticky', left: `${GUTTER + NAME_WIDTH}px` },
+    { position: 'sticky', left: `${GUTTER + NAME_WIDTH}px` },
+    { position: 'sticky', left: `${GUTTER + NAME_WIDTH}px` },
   ])
 
-  const editingCell = firstBodyRow().nth(1)
+  const editingCell = firstBodyRow().nth(2)
   await editingCell.dblclick()
   await expect(editingCell.locator('[data-editing]')).toHaveCount(1)
   await editorHost().evaluate((node) => {
@@ -135,7 +148,7 @@ test('step 1 — the header and selected prefix hold while the two scroll axes m
   await expect
     .poll(() =>
       headers()
-        .nth(1)
+        .nth(2)
         .evaluate((cell) => {
           const box = cell.getBoundingClientRect()
           const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
@@ -166,6 +179,7 @@ test('step 1 — the header and selected prefix hold while the two scroll axes m
       }),
   ).toBe(true)
 
+  // The gutter and the two frozen columns hold; the first unfrozen column scrolls away.
   const before = await xPositions(headers())
   await wrap().evaluate((node) => {
     node.scrollLeft = 120
@@ -173,7 +187,8 @@ test('step 1 — the header and selected prefix hold while the two scroll axes m
   const after = await xPositions(headers())
   expect(Math.abs(after[0] - before[0])).toBeLessThan(1)
   expect(Math.abs(after[1] - before[1])).toBeLessThan(1)
-  expect(after[2]).toBeLessThan(before[2] - 100)
+  expect(Math.abs(after[2] - before[2])).toBeLessThan(1)
+  expect(after[3]).toBeLessThan(before[3] - 100)
 })
 
 test('step 2 — resize, reorder and hide update the positional prefix without another model', async () => {
@@ -189,33 +204,32 @@ test('step 2 — resize, reorder and hide update the positional prefix without a
   await win.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2)
   await win.mouse.up()
 
+  // The resize is keyed by the column's KEY; the second frozen offset follows the new width behind the gutter.
   await expect.poll(async () => (await tableSettings()).columnSize?.['file.name'], { timeout: 10_000 }).toBe(190)
-  await expect(headers().nth(1)).toHaveCSS('left', '190px')
-  await expect(firstBodyRow().nth(1)).toHaveCSS('left', '190px')
-  await expect(footer().nth(1)).toHaveCSS('left', '190px')
+  await expect(headers().nth(2)).toHaveCSS('left', `${GUTTER + 190}px`)
+  await expect(firstBodyRow().nth(2)).toHaveCSS('left', `${GUTTER + 190}px`)
+  await expect(footer().nth(2)).toHaveCSS('left', `${GUTTER + 190}px`)
 
   const menu = await openProperties()
-  // `has:` is queried STARTING FROM the outer match, so the inner locator has to be a bare one —
-  // a chain rooted at `menu` would be re-rooted at the row and match nothing inside it.
-  const unit = menu.locator('.view-prop').filter({ has: win.locator('[aria-label="Show unit"]') })
-  await unit.locator('[aria-label="Move up"]').click()
+  // The list's rows read LABELS (YAZ-1513), and reorder by the 6-dot grip (YAZ-1207): dropping
+  // `Unit`'s grip on the TOP half of `Kpi category`'s row is the slot before it.
+  await menu.locator('[aria-label="Reorder Unit"]').dragTo(propRow(menu, 'Kpi category'), { targetPosition: { x: 10, y: 2 } })
   // GATED ON DISK between menu actions (the outline spec's own no-sleep rule): each of these is a
   // debounced settings write, and the next action must not race it — a write serialized from a
   // stale snapshot resurrects the change before it (YAZ-1166, observed under full-suite load).
   await expect.poll(async () => (await tableSettings()).order, { timeout: 10_000 }).toEqual(['file.name', 'note.unit', 'note.kpi_category', 'note.funnel_stages'])
-  await expect(headers()).toHaveText(['file.name', 'unit', 'kpi_category', 'funnel_stages'])
-  await expect(headers().nth(1)).toHaveClass(/view-table__frozen/)
+  await expect(headers()).toHaveText(['#', 'Name', 'Unit', 'Kpi category', 'Funnel stages'])
+  await expect(headers().nth(2)).toHaveClass(/view-table__frozen/)
 
-  await unit.locator('[aria-label="Show unit"]').uncheck()
+  await menu.locator('[aria-label="Show Unit"]').uncheck()
   await expect.poll(async () => (await tableSettings()).order, { timeout: 10_000 }).toEqual(['file.name', 'note.kpi_category', 'note.funnel_stages'])
-  await expect(headers()).toHaveText(['file.name', 'kpi_category', 'funnel_stages'])
-  await expect(headers().nth(1)).toHaveClass(/view-table__frozen/)
+  await expect(headers()).toHaveText(['#', 'Name', 'Kpi category', 'Funnel stages'])
+  await expect(headers().nth(2)).toHaveClass(/view-table__frozen/)
 
   await menu.locator('[aria-label="Frozen columns"]').selectOption('3')
   await expect.poll(async () => (await tableSettings()).frozenColumns, { timeout: 10_000 }).toBe(3)
-  const funnel = menu.locator('.view-prop').filter({ has: win.locator('[aria-label="Show funnel_stages"]') })
-  await funnel.locator('[aria-label="Show funnel_stages"]').uncheck()
-  await expect(headers()).toHaveText(['file.name', 'kpi_category'])
+  await menu.locator('[aria-label="Show Funnel stages"]').uncheck()
+  await expect(headers()).toHaveText(['#', 'Name', 'Kpi category'])
   await expect.poll(async () => (await tableSettings()).frozenColumns, { timeout: 10_000 }).toBe(2)
   expect((await tableSettings()).order).toEqual(['file.name', 'note.kpi_category'])
 })
@@ -227,7 +241,7 @@ test('step 3 — the frozen prefix survives the real quit and relaunch path', as
   await expect(contents(win)).toBeVisible()
   await contents(win).locator('.view-tab__btn[role="tab"]', { hasText: 'Table' }).click()
 
-  await expect(headers()).toHaveText(['file.name', 'kpi_category'])
+  await expect(headers()).toHaveText(['#', 'Name', 'Kpi category'])
   await expect(table().locator('thead th.view-table__frozen')).toHaveCount(2)
   const menu = await openProperties()
   await expect(menu.locator('[aria-label="Frozen columns"]')).toHaveValue('2')

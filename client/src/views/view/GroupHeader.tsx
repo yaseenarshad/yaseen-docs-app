@@ -44,6 +44,14 @@ export function chip(v: Value, key?: number) {
   )
 }
 
+/**
+ * The page's TITLE wherever a skin shows its `file.name` column (YAZ-1513/1549): the basename, never
+ * the file name — one spelling for the table's name cell, the board's card title, the card's title
+ * and the list's primary. `file.name`'s VALUE keeps its extension for sort and filter; only what
+ * the eye reads is the name.
+ */
+export const pageTitle = (row: Row): string => row.record.basename
+
 /** Typed cell body (shared by table cells and board cards): error chip, read-only checkbox (editing is 5B), chips for lists/links, `render()` for the rest. */
 export function cellContent(v: Value) {
   if (v instanceof ErrorValue)

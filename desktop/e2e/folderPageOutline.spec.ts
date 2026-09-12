@@ -136,6 +136,7 @@ let win: Page
 const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
 const contents = (w: Page) => layer(w).locator('.folder-page-contents')
 const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
+/** The name cell shows the page TITLE — the basename, never `.md` (YAZ-1513). */
 const rowNames = (scope: Locator) => scope.locator('.view-table__link')
 /** TOMBSTONE (YAZ-1152): every selector the appended section wore. It is gone, so these match nothing. */
 const appendedRows = (w: Page) =>
@@ -143,8 +144,6 @@ const appendedRows = (w: Page) =>
 const sheet = (w: Page) => w.locator('[role="dialog"]')
 const sheetBtn = (w: Page, label: string) => sheet(w).locator('.confirm__btn', { hasText: label })
 const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
-/** `file.name` is Obsidian's TFile name — extension included. */
-const named = (...names: string[]) => names.map((n) => `${n}.md`)
 
 const read = (rel: string) => readFile(path.join(vault, rel), 'utf8')
 
@@ -219,7 +218,7 @@ test('step 1 — first open: the migrated body IS the document, adoption writes 
 
   // TEXT MEANS NOTHING: the membership set is exactly what it was, so the Table has not moved.
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
-  await expect(rowNames(contents(win))).toHaveText(named(...TOPICS))
+  await expect(rowNames(contents(win))).toHaveText(TOPICS)
   await viewTabs(contents(win)).filter({ hasText: 'Outline' }).click()
   await expect(sheet(win)).toHaveCount(0)
   await shoot(win, 'outline-02-text-line')
@@ -247,7 +246,7 @@ test('step 2 — `[[` picks a page, and the LINK LINE tags it on that page’s o
 
   // The membership set moved, so THIS time the Table did too.
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
-  await expect(rowNames(contents(win))).toHaveText(named(...TOPICS, SUBJECT))
+  await expect(rowNames(contents(win))).toHaveText([...TOPICS, SUBJECT])
   await viewTabs(contents(win)).filter({ hasText: 'Outline' }).click()
   await shoot(win, 'outline-04-tagged')
 })
@@ -285,7 +284,7 @@ test('step 4 — deleting the link line ASKS, and CONFIRM un-tags on disk and le
   // `records` still names CAC — so an un-tag IN FLIGHT is held back, and by the time the echo
   // arrives the page is not a member at all. The Table dropping the row IS that echo…
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
-  await expect(rowNames(contents(win))).toHaveText(named(...TOPICS))
+  await expect(rowNames(contents(win))).toHaveText(TOPICS)
   // …and coming back re-MOUNTS the outline, which re-asks adoption's question from scratch against
   // the snapshot that just arrived. Neither the document on disk nor the one on screen names CAC.
   await viewTabs(contents(win)).filter({ hasText: 'Outline' }).click()
@@ -363,7 +362,7 @@ test('step 7 — the document lives on the page, not in the session: it survives
   // in the Table, which is the surface that answers "who belongs here" independently of the text.
   expect(await read(SUBJECT_FILE)).toContain('[[Home]]')
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
-  await expect(rowNames(contents(win))).toHaveText(named(...TOPICS, SUBJECT))
+  await expect(rowNames(contents(win))).toHaveText([...TOPICS, SUBJECT])
   await shoot(win, 'outline-10-survives-relaunch')
 
   await quitApp(app)

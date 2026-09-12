@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, parseViews } from './viewSchema'
-import { type ViewResult, makeResolver, propertyKeys, propertyLabel, resolverFor, runView } from './engine'
+import { type ViewResult, defaultLabel, makeResolver, propertyKeys, propertyLabel, resolverFor, runView } from './engine'
 import { type Rule, fromGroup, ruleToExpr } from './view/filterRows'
 import { DateValue, ErrorValue, FileValue } from './expr'
 import { TEST_RECORDS } from './testRecords'
@@ -466,17 +466,44 @@ describe('propertyKeys / propertyLabel (GRO-2133)', () => {
     expect(propertyKeys(yasin, yasin.views[1], [])).toEqual(['file.name'])
   })
 
-  it('propertyLabel: displayName (bare or note.-prefixed key) else the key without note.', () => {
-    const def: ViewSet = { properties: { status: { displayName: 'Status' }, 'note.views': { displayName: 'Views' }, 'file.name': { displayName: 'Name' } }, views: [] }
-    expect(propertyLabel(def, 'status')).toBe('Status')
-    expect(propertyLabel(def, 'note.status')).toBe('Status')
+  it('propertyKeys: a DECLARED column is a column before any member carries it (YAZ-1549)', () => {
+    expect(propertyKeys(yasin, yasin.views[1], [], ['status', 'owner'])).toEqual(['file.name', 'note.owner', 'note.status'])
+    // seen and declared merge, once each
+    expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS, ['status', 'owner'])).toContain('note.owner')
+    expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS, ['status']).filter((k) => k === 'note.status')).toHaveLength(1)
+    // an explicit order still wins
+    expect(propertyKeys(yasin, { ...yasin.views[1], order: ['file.name'] }, TEST_RECORDS, ['status'])).toEqual(['file.name'])
+  })
+
+  it('propertyLabel: displayName (bare or note.-prefixed key) else the default label (YAZ-1513)', () => {
+    const def: ViewSet = { properties: { status: { displayName: 'STATUS' }, 'note.views': { displayName: 'Views' }, 'file.name': { displayName: 'Title' } }, views: [] }
+    expect(propertyLabel(def, 'status')).toBe('STATUS')
+    expect(propertyLabel(def, 'note.status')).toBe('STATUS')
     expect(propertyLabel(def, 'views')).toBe('Views')
     expect(propertyLabel(def, 'note.views')).toBe('Views')
-    expect(propertyLabel(def, 'file.name')).toBe('Name')
-    expect(propertyLabel(def, 'note.priority')).toBe('priority')
-    expect(propertyLabel(def, 'priority')).toBe('priority')
-    expect(propertyLabel(def, 'formula.x')).toBe('formula.x')
-    expect(propertyLabel({ views: [] }, 'note.status')).toBe('status')
+    expect(propertyLabel(def, 'file.name')).toBe('Title')
+    // no displayName: the default label, never the raw key
+    expect(propertyLabel(def, 'note.priority')).toBe('Priority')
+    expect(propertyLabel(def, 'priority')).toBe('Priority')
+    expect(propertyLabel(def, 'formula.x')).toBe('X')
+    expect(propertyLabel({ views: [] }, 'note.status')).toBe('Status')
+    expect(propertyLabel({ views: [] }, 'file.name')).toBe('Name')
+  })
+
+  it('defaultLabel (YAZ-1513/1549): the file-field table, else the last dotted segment in sentence case with _ as spaces', () => {
+    expect(defaultLabel('file.name')).toBe('Name')
+    // the file fields have their own table (YAZ-1549)
+    expect(['file.basename', 'file.path', 'file.folder', 'file.ext', 'file.size', 'file.ctime', 'file.mtime', 'file.tags', 'file.links', 'file.embeds'].map(defaultLabel)).toEqual([
+      'Base name', 'Path', 'Folder', 'Extension', 'Size', 'Created', 'Modified', 'Tags', 'Links', 'Embeds',
+    ])
+    expect(defaultLabel('file.unknown')).toBe('Unknown')
+    expect(defaultLabel('note.kpi_category')).toBe('Kpi category')
+    expect(defaultLabel('kpi_category')).toBe('Kpi category')
+    expect(defaultLabel('note.status')).toBe('Status')
+    expect(defaultLabel('formula.score_total')).toBe('Score total')
+    // an already-capitalised or non-letter start is left alone
+    expect(defaultLabel('note.KPIs')).toBe('KPIs')
+    expect(defaultLabel('note.2024_goals')).toBe('2024 goals')
   })
 })
 

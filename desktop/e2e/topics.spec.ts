@@ -48,6 +48,8 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { DEFAULT_COLUMNS } from '../../shared/folderPageDefaults'
+import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
 import { appWindow, copyVault, launchApp, quitApp, readState, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -74,9 +76,16 @@ const NEW_KPI = 'Growth Rate'
 const WITH_NEW_KPI = ['CAC', 'Gross Margin', NEW_KPI, 'MQL Volume', 'Sales Cycle Time', 'Win Rate']
 /** The only two pages in the migrated fixture that belong nowhere: `inbox/`, deliberately unfiled. */
 const ORPHANS = ['Pipeline Review Notes', 'Positioning Draft']
-/** 6C (YAZ-849): the dotfolder whose existence IS adoption, and the exact bytes a newborn Home carries. */
+/** 6C (YAZ-849): the dotfolder whose existence IS adoption. */
 const VAULT_CONFIG_DIR = '.yaseendocs'
-const HOME_BYTES = '---\nfolder_page: true\n---\n'
+/**
+ * 4B's birth, as a newborn Home carries it: the flag AND — since YAZ-1513 — the default `status`
+ * Select every folder page is born with, spelled from the app's ONE `DEFAULT_COLUMNS`; no body.
+ * Read back PARSED (`bornHome`), so the claim is the shape the one builder writes, not its YAML.
+ */
+const HOME_BIRTH = { folder_page: true, folder_page_settings: { columns: DEFAULT_COLUMNS } }
+const bornHome = (text: string | null): { properties: Record<string, unknown>; body: string } | null =>
+  text === null ? null : { properties: parseFrontmatter(splitFrontmatter(text).frontmatter).properties, body: splitFrontmatter(text).body }
 
 let userData: string
 let vault: string
@@ -110,6 +119,7 @@ const viewTabs = (w: Page) => contents(w).locator('.view-tab__btn[role="tab"]')
 const outlineLines = (w: Page) => contents(w).locator('.view-outline .editor-instance .content-dom > p')
 /** Every name as a LINK LINE — how a membership reads inside the document (⚡ YAZ-1152). */
 const asLinks = (...names: string[]) => names.map((n) => `[[${n}]]`)
+/** The name cells — the page TITLE, never `.md` (YAZ-1513). */
 const tableNames = (w: Page) => contents(w).locator('.view-row__link, .view-table__link')
 /**
  * `KPIs.md`'s own body, migrated into its outline document the first time the page is opened
@@ -443,7 +453,7 @@ test('step 5c — “New note” on a FOLDER-PAGE row births a MEMBER of it, tre
   await expect.poll(() => outlineLines(win).allTextContents()).toEqual([...KPIS_BODY, ...asLinks(...WITH_NEW_KPI)])
   await viewTabs(win).filter({ hasText: 'Table' }).click()
   await expect(tableNames(win)).toHaveCount(WITH_NEW_KPI.length)
-  await expect(tableNames(win).filter({ hasText: `${NEW_KPI}.md` })).toHaveCount(1)
+  await expect(tableNames(win).filter({ hasText: new RegExp(`^${NEW_KPI}$`) })).toHaveCount(1)
   await shoot(win, 'topics-05c-member-everywhere')
   await quitApp(app)
 })
@@ -466,8 +476,8 @@ test('step 6 — an UN-ADOPTED folder is OFFERED a Home, never given one; one cl
   await shoot(win, 'topics-06-offer')
 
   await offerButton(win).click()
-  // Exactly 4B's birth bytes at the vault root — no settings block, no body.
-  await expect.poll(() => onDisk(homeless, HOME)).toBe(HOME_BYTES)
+  // Exactly 4B's birth at the vault root — the flag and the default column declaration, no body.
+  await expect.poll(async () => bornHome(await onDisk(homeless, HOME))).toEqual({ properties: HOME_BIRTH, body: '' })
   // Created AND opened, in the current tab.
   await expect(activeTab(win)).toHaveText('Home')
   // The card retires the moment `[[Home]]` resolves. What YAZ-920 changes is what happens to the
@@ -497,9 +507,10 @@ test('step 7 — an ADOPTED vault grows its own Home on open: once, unasked, nev
 
   app = await launchApp({ userData, seedState: topicsState(adopted, null) })
   win = await appWindow(app, 'w1')
-  // Nobody clicked anything: Home is simply there, carrying exactly the flag, leading the five
+  // Nobody clicked anything: Home is simply there, carrying exactly 4B's birth, leading the five
   // topics it is the (only) declared parent of — which YAZ-920 keeps standing beside it.
-  await expect.poll(() => onDisk(adopted, HOME)).toBe(HOME_BYTES)
+  await expect.poll(async () => bornHome(await onDisk(adopted, HOME))).toEqual({ properties: HOME_BIRTH, body: '' })
+  const born = await onDisk(adopted, HOME)
   await expect(topicLabels(win)).toHaveText(['Home', ...TOPICS, 'Uncategorized'])
   await expect(offerCard(win)).toHaveCount(0) // an adopted vault is never offered
   await shoot(win, 'topics-07-auto-created')
@@ -507,7 +518,7 @@ test('step 7 — an ADOPTED vault grows its own Home on open: once, unasked, nev
 
   // IDEMPOTENT: the user makes it their own, and reopening the vault never recreates or
   // overwrites it — the resolver finds a Home, so nothing is written.
-  const mine = `${HOME_BYTES}\n# My map\n\nmy own words\n`
+  const mine = `${born}\n# My map\n\nmy own words\n`
   await writeFile(path.join(adopted, HOME), mine)
   app = await launchApp({ userData })
   win = await appWindow(app, 'w1')

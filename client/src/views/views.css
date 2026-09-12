@@ -530,6 +530,185 @@
 }
 
 /* Card-style toggles (YAZ-1206): pressed = accent chip, like an active filter. */
+/* The two-level Properties menu (YAZ-1513): a LIST row is grip · checkbox · kind glyph · label · ›,
+   and the DETAIL panel behind it holds everything the row used to carry at once. */
+.view-prop__open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: 5px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.view-prop__open:hover {
+  background: var(--accent-soft);
+}
+
+.view-prop__kind {
+  display: inline-flex;
+  flex: none;
+  color: var(--fg-muted);
+}
+
+.view-prop__kind svg {
+  width: 14px;
+  height: 14px;
+}
+
+.view-prop__open .view-prop__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-prop__chevron {
+  flex: none;
+  color: var(--fg-muted);
+}
+
+.column-detail__head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 4px 10px;
+}
+
+.column-detail__back {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--fg);
+}
+
+.column-detail__back:hover {
+  background: var(--accent-soft);
+}
+
+/* The label IS the heading (3D): a field that reads as a title until it is touched. */
+.column-detail__name {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+  background: transparent;
+}
+
+.column-detail__name:hover {
+  border-color: var(--border);
+}
+
+.column-detail__name:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.column-detail__name::placeholder {
+  color: var(--fg);
+  opacity: 0.85;
+}
+
+.column-detail__rows {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.column-detail__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  padding: 0 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.column-detail__row > span:first-child {
+  flex: none;
+  color: var(--fg-muted);
+}
+
+.column-detail__row .view-input,
+.column-detail__row .view-select {
+  width: 58%;
+  min-width: 0;
+}
+
+.column-detail__key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.column-detail__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.column-detail__group {
+  padding: 0 8px;
+  margin-bottom: 8px;
+}
+
+.column-detail__group > .view-menu__label {
+  padding: 0 0 4px;
+}
+
+.column-detail__toggles {
+  display: flex;
+  gap: 4px;
+}
+
+.column-detail__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 4px 0;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.column-detail__action {
+  padding: 6px 8px;
+  border-radius: 5px;
+  font-size: 13px;
+  text-align: left;
+}
+
+.column-detail__action:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.column-detail__action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.column-detail__action--danger {
+  color: var(--danger);
+}
+
 .view-card-toggle[aria-pressed='true'] {
   color: var(--accent);
   background: var(--accent-soft);
@@ -646,6 +825,36 @@
   z-index: 4;
 }
 
+/* The `#` gutter (YAZ-1513): the always-first, always-sticky column, pinned like a frozen cell at
+   left 0 — display position only, so it is muted, right-aligned and never selectable. */
+.view-table .view-table__gutter {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  font-size: 11px;
+  color: var(--fg-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  background: var(--bg);
+  user-select: none;
+}
+
+.view-table thead th.view-table__gutter,
+.view-table tfoot td.view-table__gutter {
+  z-index: 4;
+}
+
+/* The header's own context menu (YAZ-1513): room for the inline rename and the add-column form. */
+.view-header-menu {
+  min-width: 200px;
+}
+
+.view-header-menu .view-header-menu__rename,
+.view-header-menu .view-relation .view-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .view-table tbody td {
   height: var(--view-table-row-h, 28px);
 }
@@ -733,7 +942,9 @@
 .view-table__link {
   max-width: 100%;
   overflow: hidden;
-  color: var(--accent);
+  /* Plain text, not link-blue (YAZ-1513): the hover underline still says "this opens". */
+  color: inherit;
+  cursor: pointer;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -741,6 +952,24 @@
 
 .view-table__link:hover {
   text-decoration: underline;
+}
+
+/* Header drag-to-reorder (YAZ-1548): the grabbed header dims, an accent edge marks the slot the
+   drop would land in — before the hovered header, or after the LAST one for the end slot. */
+.view-table thead th[draggable='true'] {
+  cursor: grab;
+}
+
+.view-table thead th.view-table__th--drag-source {
+  opacity: 0.45;
+}
+
+.view-table thead th.view-table__th--insert-before {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.view-table thead th.view-table__th--insert-after {
+  box-shadow: inset -2px 0 0 var(--accent);
 }
 
 .view-table__resize {
@@ -954,7 +1183,7 @@
 }
 
 .view-board__col .view-group {
-  padding: 2px 4px 6px;
+  padding: 10px 4px 10px;
 }
 
 .view-board__subgroups {

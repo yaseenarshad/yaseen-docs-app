@@ -36,38 +36,13 @@
  * folder page whose name already answers in the vault is ADOPTED (flag + Home entry added) rather
  * than replaced; Home is never created while anything already answers `[[Home]]`.
  */
-import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { pathToFileURL } from 'node:url'
+// The vault plumbing every tools/ script shares (YAZ-1549): the `shared/` TS loader, the git
+// preflight and the file walk — so this migration and the seed cannot drift in either.
+import { gitDirtReason as vaultDirtReason, isMarkdown, isSkipped, posix, shared, walkVault } from './lib/vault.mjs'
 
-// `shared/` is TypeScript, and Node 22.18+ strips the types on import with no flag and no build
-// step — so the migration uses the app's OWN frontmatter mechanics and property vocabulary rather
-// than a second copy of them. The one cost is a `MODULE_TYPELESS_PACKAGE_JSON` warning on stderr
-// (the root package.json has no `"type"`), which is noise in a CLI's output and is muted here
-// alone; every other warning still goes through.
-const emitWarning = process.emitWarning
-process.emitWarning = (warning, ...rest) => {
-  const opts = rest[0]
-  const code = typeof opts === 'object' && opts !== null ? opts.code : rest[1]
-  if (code === 'MODULE_TYPELESS_PACKAGE_JSON') return
-  emitWarning.call(process, warning, ...rest)
-}
-
-const HERE = path.dirname(fileURLToPath(import.meta.url))
-const shared = async (file) => {
-  try {
-    return await import(pathToFileURL(path.join(HERE, '../shared/', file)).href)
-  } catch (err) {
-    // The one environment requirement worth naming out loud: TypeScript on `import` is Node
-    // 22.6+ (and on by default from 22.18), and without it `shared/` cannot be reused at all.
-    console.error(
-      `Could not load shared/${file} (node ${process.version}). This script reads the app's own` +
-        ` TypeScript modules directly and needs Node 22.6 or newer.\n${err.message}`,
-    )
-    process.exit(1)
-  }
-}
 const { buildFrontmatter, setFrontmatterProperty, splitFrontmatter, parseFrontmatter, FrontmatterWriteError } =
   await shared('frontmatter.ts')
 const { PROPERTY_KINDS, PROPERTY_NAME, FOLDER_NAME } = await shared('types.ts')
@@ -122,9 +97,6 @@ const KINDS = new Set(PROPERTY_KINDS)
 // ---------------------------------------------------------------------------
 
 const isRecord = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
-const posix = (p) => p.split(path.sep).join('/')
-const isSkipped = (name) => name.startsWith('.') || name === 'node_modules'
-const isMarkdown = (name) => /\.(md|markdown)$/i.test(name)
 
 /** `[[x]]` → `x`, otherwise unchanged — `views/expr/values.ts`'s rule. */
 const WIKI_LINK = /^\[\[([^\]|]+)(?:\|([^\]]*))?\]\]$/
@@ -325,19 +297,12 @@ function scanVault(root) {
   const pages = []
   const baseFiles = []
   const scripts = []
-  const walk = (dir) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
-      if (isSkipped(entry.name)) continue
-      const abs = path.join(dir, entry.name)
-      if (entry.isDirectory()) walk(abs)
-      else if (!entry.isFile()) continue
-      else if (isMarkdown(entry.name)) {
-        if (path.relative(root, abs) === REPORT_FILE) continue
-        pages.push(readPage(abs, root))
-      } else if (entry.name.toLowerCase().endsWith('.base')) baseFiles.push(abs)
-    }
-  }
-  walk(root)
+  walkVault(root, (abs, name) => {
+    if (isMarkdown(name)) {
+      if (path.relative(root, abs) === REPORT_FILE) return
+      pages.push(readPage(abs, root))
+    } else if (name.toLowerCase().endsWith('.base')) baseFiles.push(abs)
+  })
   pages.sort((a, b) => (a.abs < b.abs ? -1 : 1))
 
   const scriptsRoot = path.join(root, SCRIPTS_DIR)
@@ -390,40 +355,14 @@ function readRegistry(root) {
 // Git preflight (🔒 D1)
 // ---------------------------------------------------------------------------
 
-function git(root, args) {
-  return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-}
-
 /**
  * `null` when the vault is a git repo whose tree is clean, else the sentence explaining why not.
  * Our own `migration-report.md` never counts as dirt (🔒 D6 has the dry run write it, and the
- * `--apply` that follows must not then be refused because of it).
+ * `--apply` that follows must not then be refused because of it) — forgiven by its final path
+ * segment, since the vault may be a subdirectory of the repo (the e2e fixture is).
  */
 export function gitDirtReason(root) {
-  try {
-    if (git(root, ['rev-parse', '--is-inside-work-tree']).trim() !== 'true') {
-      return `${root} is not inside a git working tree`
-    }
-  } catch {
-    return `${root} is not a git repository (or git is unavailable) — the migration needs one to undo into`
-  }
-  let status
-  try {
-    status = git(root, ['status', '--porcelain', '--', '.'])
-  } catch (err) {
-    return `could not read git status: ${err.message}`
-  }
-  const dirty = status
-    .split('\n')
-    .filter((line) => line.trim() !== '')
-    // Porcelain paths are REPO-root-relative, and the vault may be a subdirectory of the repo
-    // (the e2e fixture is) — so forgive the report by its final path segment, not by equality.
-    .filter((line) => {
-      const p = line.slice(3).replace(/^"|"$/g, '')
-      return p !== REPORT_FILE && !p.endsWith(`/${REPORT_FILE}`)
-    })
-  if (dirty.length === 0) return null
-  return `the working tree has uncommitted changes:\n${dirty.map((l) => `    ${l}`).join('\n')}`
+  return vaultDirtReason(root, { forgive: (p) => p === REPORT_FILE || p.endsWith(`/${REPORT_FILE}`) })
 }
 
 // ---------------------------------------------------------------------------

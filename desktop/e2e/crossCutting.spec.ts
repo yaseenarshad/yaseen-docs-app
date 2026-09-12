@@ -125,13 +125,12 @@ const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="tr
 const contents = (w: Page) => layer(w).locator('.folder-page-contents')
 const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
+/** The name cell shows the page TITLE — the basename, never `.md` (YAZ-1513). */
 const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__link')
 /** Every name as a LINK LINE, which is how a membership is spelled inside the document. */
 const asLinks = (...names: string[]) => names.map((n) => `[[${n}]]`)
 const sheet = (w: Page) => w.locator('[role="dialog"]')
 const sheetBtn = (w: Page, label: string) => sheet(w).locator('.confirm__btn', { hasText: label })
-/** `file.name` is Obsidian's TFile name — extension included. */
-const named = (...names: string[]) => names.map((n) => `${n}.md`)
 /** The blocks inside the open note's scroller, in order — 🔒 D1's placement, read straight off the DOM. */
 const scrollerBlocks = (w: Page) =>
   layer(w)
@@ -269,7 +268,7 @@ test('step 1 — one gesture, four surfaces: a link line writes the member’s c
   //     order: two skins of one set, ordered by two different rules, and neither is wrong.
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(dataRows(contents(win))).toHaveCount(4)
-  await expect(rowNames(contents(win))).toHaveText(named('Lead Gen', 'Lead Nurture', 'Sales-Conversion', 'Pipeline Review Notes'))
+  await expect(rowNames(contents(win))).toHaveText(['Lead Gen', 'Lead Nurture', 'Sales-Conversion', 'Pipeline Review Notes'])
   await shoot(win, 'cross-03-table-agrees')
 })
 
@@ -305,7 +304,7 @@ test('step 2 — dropping a page’s ONLY parent: the sheet promises Uncategoriz
     .toEqual([...BODY, '[[Pipeline Review Notes]]', '[[Lead Gen]]', '[[Sales-Conversion]]'])
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(dataRows(contents(win))).toHaveCount(3)
-  await expect(rowNames(contents(win))).toHaveText(named('Lead Gen', 'Sales-Conversion', 'Pipeline Review Notes'))
+  await expect(rowNames(contents(win))).toHaveText(['Lead Gen', 'Sales-Conversion', 'Pipeline Review Notes'])
   await viewTabs(contents(win)).filter({ hasText: 'Outline' }).click()
 
   // THE SIDEBAR: the sheet said Uncategorized, and this is Uncategorized — two orphans again, this
@@ -525,11 +524,12 @@ test('step 5 — turn a plain note into a folder page, feed it, and turn it back
   await win.locator('.ctx-menu [role="menuitem"]', { hasText: 'Turn into folder page' }).click()
 
   // ONE frontmatter key, and the block appears BELOW the note's own body — 🔒 D1's slot, between
-  // the Crepe mount and "Linked mentions", with no reload and no reopen.
+  // the Crepe mount and the Comments block (YAZ-1472) that stands above "Linked mentions", with
+  // no reload and no reopen.
   await expect.poll(() => read(CAC), { timeout: 10_000 }).toContain('folder_page: true')
   expect(await read(CAC)).toContain('[[KPIs]]') // it still belongs where it belonged
   await expect(contents(win)).toBeVisible()
-  expect(await scrollerBlocks(win)).toEqual(['page-header', 'editor-mount', 'folder-page-contents', 'backlinks'])
+  expect(await scrollerBlocks(win)).toEqual(['page-header', 'editor-mount', 'folder-page-contents', 'comments', 'backlinks'])
   await shoot(win, 'cross-10-turned-into')
 
   // THE SIDEBAR: a folder page NESTED under the topic it belongs to — glyph, count, no chevron
@@ -678,7 +678,7 @@ test('step 6 — a page_type vault, migrated by the real script, OPENS as a fold
   // them. This page names every member it has, so adoption has nothing to add and writes nothing.
   await expect(outlineLines(contents(win))).toHaveText(asLinks('Newsletter', 'Website'))
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
-  await expect(rowNames(contents(win))).toHaveText(named('Newsletter', 'Website'))
+  await expect(rowNames(contents(win))).toHaveText(['Newsletter', 'Website'])
   await shoot(win, 'cross-16-migrated-folder-page')
 
   await quitApp(app)

@@ -21,6 +21,7 @@ export function testFolderPage(over: Partial<FolderPageMode> = {}): FolderPageMo
     setColumns: () => {
       throw new Error('this test did not expect a column write')
     },
+    deleteColumn: () => Promise.reject(new Error('this test did not expect a column delete')),
     ...over,
   }
 }

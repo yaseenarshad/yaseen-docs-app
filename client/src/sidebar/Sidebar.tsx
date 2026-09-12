@@ -3,12 +3,12 @@ import { fileKind } from '@shared/fileKind'
 import { SIDEBAR_LENSES, type GithubSyncStatus, type SettingsState, type SidebarLens, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import type { IndexRecord } from '@shared/types'
-import { folderPageSettings } from '../views/folderPageSettings'
+import { folderPageSettings, newFolderPageProperties, turnIntoFolderPage } from '../views/folderPageSettings'
 import { restoreFolderBody } from '../views/migrateFolderBody'
 import { createNewNote } from '../views/newNote'
 import { memberFolder, newPageFromFolderPage } from '../views/scaffold'
 import { ChevronsIcon, SearchIcon } from '../views/view/icons'
-import { transformFile, writeProperty } from '../views/writeProperty'
+import { transformFile } from '../views/writeProperty'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import type { WatchSource } from '../hooks/useWatch'
@@ -274,7 +274,7 @@ async function createInTopic(root: string, folderPage: IndexRecord, kind: 'file'
   // The belonging is spelled the way the click rule reads it back — exactly a wikilink on the
   // basename — and both keys go through the ONE source of truth, never a local literal.
   if (kind === 'folderPage') {
-    await createNewNote(target, { [FOLDER_PAGE_KEY]: true, [FOLDER_PAGES_KEY]: [`[[${folderPage.basename}]]`] })
+    await createNewNote(target, { ...newFolderPageProperties(), [FOLDER_PAGES_KEY]: [`[[${folderPage.basename}]]`] })
     return target
   }
   const parts = await newPageFromFolderPage(root, folderPage.basename, settings)
@@ -707,10 +707,10 @@ export function Sidebar({
       const p = entryPath(creating.parentDir, name, creating.kind)
       if (creating.kind === 'dir') await api.createDir(p)
       // Born a folder page (🔒 D4 + D1, YAZ-841): the SAME atomic content-at-create call the 5D
-      // seed uses, carrying exactly `folder_page: true` and nothing else — no settings block
-      // (4C's panel writes those when the user picks some), no body, no `folder_pages`. The key
-      // is `FOLDER_PAGE_KEY`, the one `isFolderPage` reads back, never a local literal.
-      else if (creating.kind === 'folderPage') await createNewNote(p, { [FOLDER_PAGE_KEY]: true })
+      // seed uses. Since YAZ-1513 the birth carries the flag AND the default `status` column
+      // declaration — spelled by `newFolderPageProperties`, so the settings key stays the settings
+      // module's own — with no body and no `folder_pages`.
+      else if (creating.kind === 'folderPage') await createNewNote(p, newFolderPageProperties())
       else await api.createFile(p)
       setCreating(null)
       refresh()
@@ -799,11 +799,13 @@ export function Sidebar({
   // ---- Turn into / turn back (YAZ-840 / YAZ-1022): one conflict-safe file operation ----
 
   /**
-   * Forward writes exactly `folder_page: true` and NOTHING else. Reverse must also restore the
-   * Markdown body that YAZ-919 moved into the first outline, so `restoreFolderBody` removes that
-   * active outline value and the flag together while preserving every other setting and every
-   * member's own `folder_pages` entry. `transformFile` gives both changes one write and one
-   * retry-from-fresh-bytes boundary.
+   * Forward writes `folder_page: true` and — only when the page has no settings key yet — the
+   * default `status` declaration (YAZ-1513, `turnIntoFolderPage`); a page turned back keeps its
+   * settings, so turning it again seeds nothing. Reverse must also restore the Markdown body that
+   * YAZ-919 moved into the first outline, so `restoreFolderBody` removes that active outline value
+   * and the flag together while preserving every other setting and every member's own
+   * `folder_pages` entry. Both directions are ONE content transform: `transformFile` gives each
+   * one write and one retry-from-fresh-bytes boundary.
    *
    * An editor open on this file absorbs the write silently — the existing GRO-2186 behaviour,
    * nothing extra here. Failures take the sidebar's standing route for file-op failures: the
@@ -811,9 +813,7 @@ export function Sidebar({
    */
   const setFolderPageFlag = useCallback(
     (path: string, on: boolean) => {
-      const write = on
-        ? writeProperty(path, FOLDER_PAGE_KEY, true)
-        : transformFile(path, (content) => restoreFolderBody(content).content)
+      const write = transformFile(path, on ? turnIntoFolderPage : (content) => restoreFolderBody(content).content)
       write.catch((err: unknown) => {
         const what = on ? `turn "${basename(path)}" into a folder page` : `turn "${basename(path)}" back into a normal page`
         onNotice(`Can't ${what}: ${err instanceof Error ? err.message : String(err)}`)

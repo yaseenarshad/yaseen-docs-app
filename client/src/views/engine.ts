@@ -60,6 +60,8 @@ export interface ViewResult {
 }
 
 export interface RunOptions {
+  /** The folder page's declared column names — shown by default before any member carries them (YAZ-1549). */
+  declared?: readonly string[]
   /** Absolute path of the note embedding the base; `this` in expressions. */
   thisFile?: string | null
   /** Vault root; lets link targets written as `<root>/…` resolve. */
@@ -295,19 +297,51 @@ const isNoValue = (v: Value): boolean => v === null || v === '' || v instanceof 
 
 // ---------- public API ----------
 
-/** `view.order` if set, else `file.name` plus every note property key seen, sorted, as `note.<key>`. */
-export function propertyKeys(_def: ViewSet, view: ViewDef, records: readonly IndexRecord[]): string[] {
+/**
+ * `view.order` if set, else `file.name` plus every note property key seen OR declared, sorted, as
+ * `note.<key>`. `declared` is the folder page's own column names (YAZ-1549): a declared column is
+ * a column before any member carries it, so a newborn page shows its `status` at once.
+ */
+export function propertyKeys(_def: ViewSet, view: ViewDef, records: readonly IndexRecord[], declared: readonly string[] = []): string[] {
   if (view.order) return [...view.order]
-  const keys = new Set<string>()
+  const keys = new Set<string>(declared.map((k) => `note.${k}`))
   for (const r of records) for (const k of Object.keys(r.properties)) keys.add(`note.${k}`)
   return ['file.name', ...[...keys].sort()]
 }
 
-/** `def.properties[key].displayName` (looked up as written, bare and `note.`-prefixed), else the key without `note.`. */
+/**
+ * The label a key wears with no `displayName` (YAZ-1513): the `file.*` fields have their own
+ * table (`file.mtime` → "Modified"); every other key is its last dotted segment in sentence case,
+ * underscores read as spaces — `note.kpi_category` → "Kpi category", `formula.score` → "Score".
+ * The KEY is never touched.
+ */
+export function defaultLabel(key: string): string {
+  const file = FILE_FIELD_LABELS[key]
+  if (file !== undefined) return file
+  const last = key.slice(key.lastIndexOf('.') + 1).replaceAll('_', ' ')
+  return last.charAt(0).toUpperCase() + last.slice(1)
+}
+
+/** The `file.*` fields' labels (YAZ-1549) — the ones sentence case would get wrong or leave terse. */
+const FILE_FIELD_LABELS: Readonly<Record<string, string>> = {
+  'file.name': 'Name',
+  'file.basename': 'Base name',
+  'file.path': 'Path',
+  'file.folder': 'Folder',
+  'file.ext': 'Extension',
+  'file.size': 'Size',
+  'file.ctime': 'Created',
+  'file.mtime': 'Modified',
+  'file.tags': 'Tags',
+  'file.links': 'Links',
+  'file.embeds': 'Embeds',
+}
+
+/** `def.properties[key].displayName` (looked up as written, bare and `note.`-prefixed), else `defaultLabel(key)`. */
 export function propertyLabel(def: ViewSet, key: string): string {
   const bare = key.startsWith('note.') ? key.slice(5) : key
   const props = def.properties
-  return props?.[key]?.displayName ?? props?.[bare]?.displayName ?? props?.[`note.${bare}`]?.displayName ?? bare
+  return props?.[key]?.displayName ?? props?.[bare]?.displayName ?? props?.[`note.${bare}`]?.displayName ?? defaultLabel(key)
 }
 
 export function runView(def: ViewSet, view: ViewDef, records: readonly IndexRecord[], opts: RunOptions = {}): ViewResult {
@@ -344,7 +378,7 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
   }
 
   // values
-  const keys = propertyKeys(def, view, records)
+  const keys = propertyKeys(def, view, records, opts.declared)
   const columnGetters = keys.map(k => [k, getter(k)] as const)
   for (const entry of entries) for (const [k, g] of columnGetters) entry.row.values[k] = g(entry.scope)
 

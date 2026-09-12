@@ -18,7 +18,7 @@ import { resolverFor } from './engine'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { FolderPageContents } from './FolderPageContents'
 
-vi.mock('./writeProperty', () => ({ writeProperty: vi.fn() }))
+vi.mock('./writeProperty', () => ({ writeProperty: vi.fn(), transformFile: vi.fn() }))
 vi.mock('./folderPageColumns', () => ({ backfillFolderPageColumns: vi.fn() }))
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -45,9 +45,11 @@ vi.mock('./view/OutlineEditor', () => ({
 import { api, BridgeRequestError } from '../api'
 import type { FolderPageMode, ViewsPaneProps } from './ViewsPane'
 import { backfillFolderPageColumns } from './folderPageColumns'
-import { writeProperty } from './writeProperty'
+import { transformFile, writeProperty } from './writeProperty'
 
 const write = vi.mocked(writeProperty)
+/** The one-file transform behind a declaration write (`writeFolderColumn`) and a column delete's member strips. */
+const transform = vi.mocked(transformFile)
 const backfill = vi.mocked(backfillFolderPageColumns)
 const readFile = vi.mocked(api.readFile)
 const createDir = vi.mocked(api.createDir)
@@ -134,6 +136,7 @@ function mount(path: string, records: IndexRecord[] | null = vault(), fileConten
 beforeEach(() => {
   source = createWikilinkResolveSource()
   write.mockResolvedValue({ mtime: 2 })
+  transform.mockResolvedValue({ mtime: 2, content: '' })
   backfill.mockResolvedValue()
   readFile.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'path does not exist')) // no template
   createDir.mockResolvedValue({ path: '/vault/stages' })
@@ -257,7 +260,7 @@ describe('rows are the members, and only the members', () => {
     const el = mount(FUNNELS)
     expect(doc(el)).toBe('- [[Lead Gen]]\n- [[Sales]]') // the outline, alphabetical (the [D5] seed)
     selectView(el, 'Table')
-    expect(rowNames(el)).toEqual(['Lead Gen.md', 'Sales.md']) // path order, as `pagesIn` gives them
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales']) // path order, as `pagesIn` gives them
     expect(el.textContent).not.toContain('Other')
     expect(el.textContent).not.toContain('CAC')
   })
@@ -275,7 +278,7 @@ describe('rows are the members, and only the members', () => {
     // The trap: with only the members behind it, `link("Outsider")` names nothing and the
     // spellings never meet. The row shows because the resolver came from the whole snapshot.
     const el = mount(FUNNELS, vault({ views: [{ type: 'table', name: 'T', order: ['file.name'], filters: 'owner == link("Outsider")' }] }))
-    expect(rowNames(el)).toEqual(['Lead Gen.md'])
+    expect(rowNames(el)).toEqual(['Lead Gen'])
   })
 })
 
@@ -362,7 +365,7 @@ describe('the chrome is the views chrome, minus what a folder page cannot have',
     expect(el.querySelector('.view-table')).toBeNull()
     selectView(el, 'Table')
     expect(el.querySelector('.view-table')).not.toBeNull()
-    expect(rowNames(el)).toEqual(['Lead Gen.md', 'Sales.md'])
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales'])
   })
 
   it('switching view writes NOTHING — which view is active is session state, never the card', () => {
@@ -602,12 +605,12 @@ describe('config edits are ONE settings write on the folder page', () => {
     chooseProperty(el, 'note.order')
     await flush() // write 2: the rule re-targeted
     expect(write).toHaveBeenCalledTimes(2)
-    expect(propertyShown(el)).toContain('order')
+    expect(propertyShown(el)).toContain('Order')
 
     // Write 1's echo lands AFTER write 2's optimistic state — the race YAZ-1234 caught in the
     // DOM. It is OUR OWN stale write, not an external edit: it must not rebuild anything.
     feed(vault(settingsOf(0)))
-    expect(propertyShown(el)).toContain('order')
+    expect(propertyShown(el)).toContain('Order')
 
     // The next gesture edits what the menu renders — the property edit must survive it.
     setSelect(byLabel<HTMLSelectElement>(el, 'Operator'), 'isEmpty')
@@ -618,7 +621,7 @@ describe('config edits are ONE settings write on the folder page', () => {
     // The remaining echoes drain in order; an external edit afterwards still adopts as always.
     feed(vault(settingsOf(1)))
     feed(vault(settingsOf(2)))
-    expect(propertyShown(el)).toContain('order')
+    expect(propertyShown(el)).toContain('Order')
     feed(vault({ ...SETTINGS, views: [SETTINGS.views[0], { ...TABLE, filters: { and: ['note.order == 9'] } }] }))
     expect(q<HTMLInputElement>(el, '[aria-label="Value"]').value).toBe('9')
   })
@@ -629,7 +632,40 @@ describe('config edits are ONE settings write on the folder page', () => {
     click(byLabel(el, 'Sort'))
     click([...el.querySelectorAll<HTMLElement>('.view-menu__action')].find((b) => b.textContent === 'Add sort')!)
     await flush()
-    expect(byLabel<HTMLButtonElement>(el, 'Sort property').textContent).toContain('file.name')
+    expect(byLabel<HTMLButtonElement>(el, 'Sort property').textContent).toContain('Name')
+  })
+
+  it('a column rename lands in folder_page_settings.properties — ONE write, the label persisted, its echo not fought (YAZ-1513)', async () => {
+    // Before YAZ-1513 the def's `properties` was never persisted: the pencil's rename showed until
+    // the next echo and then silently vanished. Now the header menu and the pencil share one writer.
+    const el = mount(FUNNELS)
+    selectView(el, 'Table')
+    rightClick(q(el, '.view-table thead th:not(.view-table__gutter):nth-of-type(3)')) // note.order → "Order"
+    click(menuItem(el, 'Rename column…'))
+    const field = byLabel<HTMLInputElement>(el, 'Rename Order')
+    setValue(field, 'Rank')
+    press(field, 'Enter')
+    await flush()
+
+    expect(write).toHaveBeenCalledExactlyOnceWith(FUNNELS, 'folder_page_settings', { ...SETTINGS, properties: { order: { displayName: 'Rank' } } })
+    const headers = () => [...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')].map((th) => th.textContent)
+    expect(headers()).toEqual(['Name', 'Rank', 'Related'])
+    // the index echoes our own write back: the label stays, nothing is rebuilt from an older def
+    feed(vault({ ...SETTINGS, properties: { order: { displayName: 'Rank' } } }))
+    await flush()
+    expect(headers()).toEqual(['Name', 'Rank', 'Related'])
+    expect(write).toHaveBeenCalledTimes(1)
+  })
+
+  it('a stored column label renders on mount, and an external change to it rebuilds the def (YAZ-1513)', async () => {
+    const el = mount(FUNNELS, vault({ ...SETTINGS, properties: { order: { displayName: 'Rank' } } }))
+    selectView(el, 'Table')
+    const headers = () => [...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')].map((th) => th.textContent)
+    expect(headers()).toEqual(['Name', 'Rank', 'Related'])
+    feed(vault({ ...SETTINGS, properties: { order: { displayName: 'Position' } } }))
+    await flush()
+    expect(headers()).toEqual(['Name', 'Position', 'Related'])
+    expect(write).not.toHaveBeenCalled()
   })
 
   it('a drag past the first tab writes the new order and the active view follows; switching alone writes nothing', async () => {
@@ -669,6 +705,85 @@ describe('config edits are ONE settings write on the folder page', () => {
     await flush()
     expect(q(el, '[role="alert"]').textContent).toContain('disk full')
     expect(el.querySelector('.view-table')).not.toBeNull()
+  })
+})
+
+/**
+ * The host owns the declarations AHEAD of the index (YAZ-1549): `settings.columns` on the mode is
+ * what every menu spreads and hands back as `base`, and what the presence invariant walks — so a
+ * column added a moment ago is neither dropped by the next write nor re-added by a member echo.
+ */
+describe('the declarations ride AHEAD of the index (YAZ-1549)', () => {
+  const columnsOf = () => captured.folderPage!.settings.columns
+  const setColumn = async (key: string, next: { kind: 'link' | 'text' }) => {
+    let failure: unknown = null
+    await act(async () => {
+      await captured.folderPage!.setColumn(key, next, undefined).catch((err: unknown) => {
+        failure = err
+      })
+    })
+    return failure
+  }
+
+  it('a setColumn write shows in settings.columns at once — before any echo — and is ONE file transform', async () => {
+    mount(FUNNELS)
+    expect(columnsOf()).toEqual(SETTINGS.columns)
+    expect(await setColumn('owner', { kind: 'link' })).toBeNull()
+    expect(columnsOf()).toEqual({ ...SETTINGS.columns, owner: { kind: 'link' } })
+    expect(transform).toHaveBeenCalledExactlyOnceWith(FUNNELS, expect.any(Function))
+    expect(write).not.toHaveBeenCalled() // the declaration write is `writeFolderColumn`'s, not the whole-key door
+  })
+
+  it('the echo carrying the same columns clears the ahead copy: the index leads again, and a later different echo shows through', async () => {
+    mount(FUNNELS)
+    await setColumn('owner', { kind: 'link' })
+    const echoed = { ...SETTINGS, columns: { ...SETTINGS.columns, owner: { kind: 'link' } } }
+    feed(vault(echoed))
+    await flush()
+    expect(columnsOf()).toEqual(echoed.columns)
+    // ahead is null now: an EXTERNAL change to that column is what the mode shows
+    feed(vault({ ...SETTINGS, columns: { ...SETTINGS.columns, owner: { kind: 'text' } } }))
+    await flush()
+    expect(columnsOf().owner).toEqual({ kind: 'text' })
+  })
+
+  it('a refused declaration write puts the ahead copy back and rejects to the caller — the panel shows the text, the host shows what stands', async () => {
+    transform.mockRejectedValueOnce(new Error('Property “owner” changed since these settings were opened. Reopen the property and try again.'))
+    mount(FUNNELS)
+    const failure = await setColumn('owner', { kind: 'link' })
+    expect(String(failure)).toContain('changed since these settings were opened')
+    expect(columnsOf()).toEqual(SETTINGS.columns)
+  })
+
+  it('two rapid writes COMPOSE: a column added, then another deleted before either echoes — the first declaration survives (the YAZ-1549 finding)', async () => {
+    mount(FUNNELS)
+    await setColumn('owner', { kind: 'link' })
+    await act(async () => captured.folderPage!.deleteColumn('order'))
+    expect(write).toHaveBeenCalledTimes(1)
+    expect((write.mock.calls[0][2] as { columns: unknown }).columns).toEqual({ related: SETTINGS.columns.related, owner: { kind: 'link' } })
+    expect(columnsOf()).toEqual({ related: SETTINGS.columns.related, owner: { kind: 'link' } })
+  })
+
+  it('a refused settings write ABORTS a delete: the banner says why, the ahead copy is put back, and not one member is touched', async () => {
+    write.mockRejectedValueOnce(new Error('disk full'))
+    const el = mount(FUNNELS)
+    await act(async () => captured.folderPage!.deleteColumn('order'))
+    expect(transform).not.toHaveBeenCalled() // LEAD and SALES carry `order`; neither was stripped
+    expect(q(el, '[role="alert"]').textContent).toContain('disk full')
+    expect(columnsOf()).toEqual(SETTINGS.columns)
+  })
+
+  it("after a delete the presence invariant walks the AHEAD columns: a member echo arriving before the page's own cannot re-add the key", async () => {
+    mount(FUNNELS)
+    await act(async () => captured.folderPage!.deleteColumn('order'))
+    expect(transform).toHaveBeenCalledTimes(2) // Lead Gen and Sales lose `order`
+    backfill.mockClear()
+    // a MEMBER moves while the folder page's own echo (settings without `order`) is still in flight
+    feed([...vault(), rec('/vault/stages/Expansion.md', { folder_pages: ['[[Funnel Stages]]'] })])
+    await flush()
+    expect(backfill).toHaveBeenCalled()
+    const [, columns] = backfill.mock.calls.at(-1)!
+    expect(columns).toEqual({ related: SETTINGS.columns.related })
   })
 })
 
@@ -843,7 +958,7 @@ describe('the seed reads the OPEN file, not the snapshot (YAZ-919)', () => {
     ].join('\n')
     const el = mount(FUNNELS, vault({ ...SETTINGS, views: seedViews }), migrated)
     selectView(el, 'Table')
-    expect(texts(el, '.view-table thead th')).toEqual(['file.name', 'order'])
+    expect(texts(el, '.view-table thead th:not(.view-table__gutter)')).toEqual(['Name', 'Order'])
 
     // The user adds a column: our own write, echoing back through the index ahead of the seed.
     const added = {
@@ -851,7 +966,7 @@ describe('the seed reads the OPEN file, not the snapshot (YAZ-919)', () => {
       views: [{ type: 'outline', name: 'Outline' }, { type: 'table', name: 'Table', order: ['file.name', 'note.order', 'note.unit'] }],
     }
     act(() => feed(vault(added)))
-    expect(texts(el, '.view-table thead th')).toEqual(['file.name', 'order', 'unit'])
+    expect(texts(el, '.view-table thead th:not(.view-table__gutter)')).toEqual(['Name', 'Order', 'Unit'])
   })
 })
 
@@ -868,6 +983,6 @@ describe('the write-echo guard vs rapid gestures (YAZ-1241)', () => {
     // An outside editor rewrites the card before our echo arrives: disk truth outranks the
     // unechoed local write (the guard's `pending` queue clears, the external state adopts).
     feed(vault({ ...SETTINGS, views: [SETTINGS.views[0], { ...TABLE, filters: { and: ['note.order == 1'] } }] }))
-    expect(propertyShown(el)).toContain('order')
+    expect(propertyShown(el)).toContain('Order')
   })
 })

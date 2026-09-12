@@ -210,7 +210,7 @@ describe('the outline is the folder page’s skin — and only ever hers', () =>
           root="/vault"
           thisFile={null}
           records={[rec(LEAD)]}
-          folderPage={{ settings: folderPageSettings(rec(FUNNELS, { folder_page: true })), vaultRecords: vault(), create: () => Promise.reject(new Error('no')), setColumn: async () => {}, setColumns: () => {} }}
+          folderPage={{ settings: folderPageSettings(rec(FUNNELS, { folder_page: true })), vaultRecords: vault(), create: () => Promise.reject(new Error('no')), setColumn: async () => {}, setColumns: () => {}, deleteColumn: async () => {} }}
           onOpenFile={onOpenFile}
         />,
       ),

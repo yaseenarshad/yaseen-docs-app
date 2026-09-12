@@ -181,15 +181,15 @@ function nestedSections(el: ParentNode): Record<string, string[]> {
 describe('drag at each level (YAZ-1101)', () => {
   it('a Board drop between inner groups under the same outer writes the inner property only', () => {
     const { el } = mount(NESTED_BOARD)
-    fire(cardOf(el, 'alpha1.md'), 'dragstart')
-    fire(cardOf(el, 'alpha2.md'), 'drop')
+    fire(cardOf(el, 'alpha1'), 'dragstart')
+    fire(cardOf(el, 'alpha2'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/alpha1.md', 'proc', 'p2')
   })
 
   it('a Board cross-outer inner drop writes each property once without bubbling into the outer target', () => {
     const { el } = mount(NESTED_BOARD)
-    fire(cardOf(el, 'alpha2.md'), 'dragstart')
-    fire(cardOf(el, 'beta1.md'), 'drop')
+    fire(cardOf(el, 'alpha2'), 'dragstart')
+    fire(cardOf(el, 'beta1'), 'drop')
     expect(writeMany).toHaveBeenCalledExactlyOnceWith('/vault/alpha2.md', [
       { key: 'proc', value: 'p1', prevRaw: 'p2' },
       { key: 'dept', value: 'B', prevRaw: 'A' },
@@ -199,42 +199,42 @@ describe('drag at each level (YAZ-1101)', () => {
 
   it('a drop between inner groups under the same outer writes the inner property only', () => {
     const { el } = mount(NESTED_TABLE)
-    fire(rowOf(el, 'alpha1.md'), 'dragstart')
-    fire(rowOf(el, 'alpha2.md'), 'drop')
+    fire(rowOf(el, 'alpha1'), 'dragstart')
+    fire(rowOf(el, 'alpha2'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/alpha1.md', 'proc', 'p2')
-    expect(nestedSections(el)['A/p2']).toContain('alpha1.md')
+    expect(nestedSections(el)['A/p2']).toContain('alpha1')
   })
 
   it('🔒 a drop into an inner group under a DIFFERENT outer writes BOTH properties and lands there', async () => {
     const { el, setRecords } = mount(NESTED_TABLE)
-    fire(rowOf(el, 'alpha2.md'), 'dragstart')
-    fire(rowOf(el, 'beta1.md'), 'drop')
+    fire(rowOf(el, 'alpha2'), 'dragstart')
+    fire(rowOf(el, 'beta1'), 'drop')
     expect(writeMany).toHaveBeenCalledExactlyOnceWith('/vault/alpha2.md', [
       { key: 'proc', value: 'p1', prevRaw: 'p2' },
       { key: 'dept', value: 'B', prevRaw: 'A' },
     ])
     expect(write).not.toHaveBeenCalled()
     // optimistic: already under B/p1, and it stays put through resolve + refetch
-    expect(nestedSections(el)['B/p1']).toContain('alpha2.md')
+    expect(nestedSections(el)['B/p1']).toContain('alpha2')
     await flush()
-    expect(nestedSections(el)['B/p1']).toContain('alpha2.md')
+    expect(nestedSections(el)['B/p1']).toContain('alpha2')
     setRecords(NESTED_RECORDS.map((r) => (r.basename === 'alpha2' ? { ...r, properties: { dept: 'B', proc: 'p1' } } : r)))
-    expect(nestedSections(el)['B/p1']).toContain('alpha2.md')
+    expect(nestedSections(el)['B/p1']).toContain('alpha2')
     expect(writeMany).toHaveBeenCalledTimes(1)
   })
 
   it('a drop on an outer header writes the outer property only; the inner value rides along', () => {
     const { el } = mount(NESTED_TABLE)
-    fire(rowOf(el, 'beta1.md'), 'dragstart')
+    fire(rowOf(el, 'beta1'), 'dragstart')
     fire(headersOf(el, 'A')[0], 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/beta1.md', 'dept', 'A')
-    expect(nestedSections(el)['A/p1']).toContain('beta1.md')
+    expect(nestedSections(el)['A/p1']).toContain('beta1')
   })
 
   it('inner fan-out keeps D3: a drop swaps the element it left for the one it entered', () => {
     const records = [rec('both', { dept: 'A', proc: ['p1', 'p2'] }), rec('one', { dept: 'A', proc: ['p1'] })]
     const { el } = mount(NESTED_TABLE, { records })
-    fire(rowOf(el, 'one.md'), 'dragstart')
+    fire(rowOf(el, 'one'), 'dragstart')
     fire(headersOf(el, 'p2')[0], 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/one.md', 'proc', ['p2'])
   })
@@ -285,8 +285,8 @@ describe('a formula level disables its own actions only (YAZ-1101)', () => {
     expect(outerA.querySelector('[aria-label^="New note"]')).toBeNull()
     expect(el.querySelector('.view-board__subgroup [aria-label="New note in group p1"]')).not.toBeNull()
 
-    fire(cardOf(el, 'alpha2.md'), 'dragstart')
-    fire(cardOf(el, 'beta1.md'), 'drop')
+    fire(cardOf(el, 'alpha2'), 'dragstart')
+    fire(cardOf(el, 'beta1'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/alpha2.md', 'proc', 'p1')
   })
 
@@ -296,13 +296,13 @@ describe('a formula level disables its own actions only (YAZ-1101)', () => {
     expect(headersOf(el, 'A')[0].querySelector('[aria-label^="New note"]')).toBeNull()
     expect(headersOf(el, 'p1')[0].querySelector('[aria-label^="New note"]')).not.toBeNull()
 
-    fire(rowOf(el, 'beta1.md'), 'dragstart')
+    fire(rowOf(el, 'beta1'), 'dragstart')
     fire(headersOf(el, 'A')[0], 'drop')
     expect(write).not.toHaveBeenCalled()
 
     // cross-outer inner drop: only the writable (inner) property is written
-    fire(rowOf(el, 'alpha2.md'), 'dragstart')
-    fire(rowOf(el, 'beta1.md'), 'drop')
+    fire(rowOf(el, 'alpha2'), 'dragstart')
+    fire(rowOf(el, 'beta1'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/alpha2.md', 'proc', 'p1')
   })
 

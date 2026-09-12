@@ -1,13 +1,20 @@
-import { PropertyDefinitionEditor, PROPERTY_LABELS } from './PropertyDefinitionEditor'
+import { PROPERTY_LABELS, PropertyOptionsEditor, PropertyTypeIcon } from './PropertyDefinitionEditor'
 import { ColumnSearch, matchesColumn } from './ColumnSearch'
-import { useState, type DragEvent } from 'react'
-import { PROPERTY_NAME, type IndexRecord, type PropertiesResponse } from '@shared/types'
+import { useMemo, useState, type DragEvent, type ReactNode } from 'react'
+import { PROPERTY_KINDS, type IndexRecord, type PropertiesResponse, type PropertyKind } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import type { ColumnDecl } from '../folderPageSettings'
 import type { FolderPageMode } from '../ViewsPane'
-import { propertyKeys, propertyLabel } from '../engine'
+import { defaultLabel, propertyKeys, propertyLabel } from '../engine'
+import { columnTyping } from '../editorType'
+import { undeletableReason } from '../deleteColumn'
 import { canonicalKey } from './keys'
-import { DragHandleIcon, PencilIcon, RelationIcon } from './icons'
+import { AddColumn } from './AddColumn'
+import { displayNameOf, setDisplayName } from './columnLabel'
+import { setViewOrder, withOrder } from './columnOrder'
+import { declarationForKind } from './declarationForKind'
+import { ConfirmDeleteColumn } from './ConfirmDeleteColumn'
+import { DragHandleIcon, FileFieldIcon, FormulaIcon } from './icons'
 import { markerStyleOf } from './ListView'
 import { allPropertyKeys } from './properties'
 import { TextField } from './TextField'
@@ -39,62 +46,73 @@ export const normalizeBoardWidth = (draft: string): string | null => {
 /** One property's card styling (YAZ-1206), keyed by canonical key under `view.cardStyle`. */
 type CardStyle = NonNullable<ViewDef['cardStyle']>[string]
 
-/** The `def.properties` entry a key's display name lives in: as written, bare, or `note.`-prefixed; else the bare form. */
-function entryKey(def: ViewSet, key: string): string {
-  const b = bare(key)
-  for (const k of [key, b, `note.${b}`]) if (def.properties?.[k] !== undefined) return k
-  return b
-}
-
 /**
- * Properties menu (GRO-2135): shown ⇄ hidden checklist (writes `view.order`; Table and Board views
- * may hide `file.name`, while Cards and List keep their existing behavior), a 6-dot grip to
- * reorder (YAZ-1207: the ↑↓ arrows are gone), pencil to set `def.properties[key].displayName`.
- * Board views add four per-row card-style toggles (YAZ-1206/YAZ-1217) writing `view.cardStyle` —
- * bold, underline, hide label, and ⤴ join onto the row above; the shown `file.name` row carries
- * ONLY ⤴, since the title takes part in the card's layout and never in its text styling.
- * List views (4F, GRO-2140) get a trailing "List" section for how those properties display —
- * `markerStyle` / `indentProperties` / `propertySeparator`, one write per change, the default
- * value DELETES the key (like SortMenu clearing `sort` / `groupBy`).
- * Note properties and the relation shortcut share a folder-local definition editor with Save/
- * Cancel. Legacy vault declarations can seed the relation draft; writes always belong to this
- * folder page. A trailing "+ Add column" also declares a local column and shows it.
- * Each `note.*` row carries that declaration's kind (YAZ-897) — `auto` when undeclared.
+ * Properties menu (GRO-2135), TWO levels inside the one popover since YAZ-1513 (Notion's shape):
+ *
+ *  LIST — one clean line per column: grip (YAZ-1207, shown rows only) · shown checkbox (writes
+ *  `view.order`; Table and Board may hide `file.name`, Cards and List keep it) · the column's KIND
+ *  glyph · its label · a `›` — the whole label area opens the column. Nothing else rides the row.
+ *  "Select all / Unselect all", the count, "+ Add column" and the per-view sections below
+ *  (Table: frozen columns, row numbers; Board; List) are as they were.
+ *
+ *  DETAIL — ONE panel, ONE exit (3D, Yasin's ruling): `‹` back beside the label itself as an
+ *  inline heading-sized field (`setDisplayName` via `onUpdate` on Enter/blur, blank = the default
+ *  label, Esc reverts the field and stays), then rows at the list's size: the read-only key; Type
+ *  as an inline select (`note.*` only — `file.*` / `formula.*` read as text); Options for Select
+ *  kinds (the SAME `PropertyOptionsEditor` the definition editor holds); Relation (a declared link
+ *  kind's target inline, else "Make relation" seeding a link kind from a legacy vault
+ *  declaration, YAZ-895); Card styling (the four `cardStyle` toggles — BOARD views only, the one
+ *  skin that reads `cardStyle`); and the actions: Hide in this view (= unchecking) and Delete
+ *  column… (`views/deleteColumn.ts`, confirm-first; built-in keys disabled with a tooltip).
+ *
+ *  Every declaration edit WRITES IMMEDIATELY through `folderPage.setColumn` — the exact write the
+ *  old editor's Save made, with the same optimistic-concurrency `base`: the host's AHEAD declaration
+ *  (YAZ-1549), which the panel renders and hands straight back, so a second edit is checked against
+ *  what just landed and a "changed since opened" rejection shows its text inline while the host
+ *  reverts. There is no third level and no Save/Cancel; Esc or `‹` returns to the list.
  */
 export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root = null, properties = null, folderPage }: PropertiesMenuProps) {
-  const [configuring, setConfiguring] = useState<{ key: string; base: ColumnDecl | undefined; draft: ColumnDecl } | null>(null)
-  const [definitionError, setDefinitionError] = useState<string | null>(null)
-  const [savingDefinition, setSavingDefinition] = useState(false)
   const [query, setQuery] = useState('')
-  const [editing, setEditing] = useState<string | null>(null)
+  /**
+   * The DETAIL level (YAZ-1513), or null for the list. The declaration itself is NOT held here: the
+   * host's `settings.columns` is its ahead copy (YAZ-1549), so the panel renders that and hands the
+   * very same object back as `base` — `writeFolderColumn`'s conflict boundary.
+   */
+  const [detail, setDetail] = useState<{ key: string; error: string | null; saving: boolean } | null>(null)
+  /** "Delete column…" awaiting its confirm (YAZ-1513). */
+  const [deleting, setDeleting] = useState<string | null>(null)
   /** The drag in flight (YAZ-1207): `from` is an index in `shown`, `to` the insertion slot it would land in. */
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null)
-  const shown = propertyKeys(def, view, records)
+  const shown = propertyKeys(def, view, records, Object.keys(folderPage.settings.columns))
   const keys = allPropertyKeys(def, view, records, folderPage.settings.columns)
   const filtering = query.trim() !== ''
   const matches = keys.filter(key => matchesColumn(query, propertyLabel(def, key), key))
   const matchingKeys = new Set(matches.map(canonicalKey))
   const isShown = (key: string) => shown.some((k) => canonicalKey(k) === canonicalKey(key))
+  const canToggle = (key: string) => !(canonicalKey(key) === 'file.name' && view.type !== 'table' && view.type !== 'board')
 
-  const editDefinition = (key: string, relation = false) => {
-    const name = bare(key)
-    const base = folderPage.settings.columns[name]
-    const legacy = properties?.properties[name]
-    const fallback: ColumnDecl = relation && (legacy?.kind === 'link' || legacy?.kind === 'multi-link') ? legacy : { kind: relation ? 'link' : 'text' }
-    setDefinitionError(null)
-    setConfiguring({ key: name, base, draft: base ?? fallback })
+  const openDetail = (key: string) => setDetail({ key, error: null, saving: false })
+  /**
+   * ONE declaration write (YAZ-897), immediately — the write the old editor's Save made, against
+   * the host's ahead declaration as `base` (C1, locked: member VALUES are never migrated; the
+   * declaration alone moves). The host shows the next edit what just landed; a rejection only shows
+   * its text here — the host has already reverted its copy.
+   */
+  const writeDeclaration = async (next: ColumnDecl) => {
+    const d = detail
+    if (d === null) return
+    const name = bare(d.key)
+    setDetail({ ...d, saving: true, error: null })
+    try {
+      await folderPage.setColumn(name, next, folderPage.settings.columns[name])
+      setDetail((cur) => (cur === null || cur.key !== d.key ? cur : { ...cur, saving: false }))
+    } catch (error) {
+      setDetail((cur) => (cur === null || cur.key !== d.key ? cur : { ...cur, saving: false, error: error instanceof Error ? error.message : String(error) }))
+    }
   }
 
-  const writeOrder = (order: string[]) =>
-    onUpdate((d) => {
-      const next = d.views[viewIndex]
-      next.order = order
-      if (next.frozenColumns !== undefined) {
-        const count = frozenColumnCount(next.frozenColumns, order.length)
-        if (count === 0) delete next.frozenColumns
-        else next.frozenColumns = count
-      }
-    })
+  /** ONE order write, `frozenColumns` following positionally — the shared rule (`columnOrder.ts`). */
+  const writeOrder = (order: string[]) => onUpdate((d) => setViewOrder(d, viewIndex, order))
   const toggle = (key: string) => writeOrder(isShown(key) ? shown.filter((k) => canonicalKey(k) !== canonicalKey(key)) : [...shown, key])
   /** The slot a pointer at `clientY` over shown row `i` means: before (i) or after (i+1) it. */
   const insertionAt = (e: DragEvent<HTMLElement>, i: number): number => {
@@ -114,24 +132,8 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
     next.splice(to, 0, key)
     writeOrder(next)
   }
-  /**
-   * A column's declared kind (YAZ-897), in ONE `folder_page_settings` write (🔒 D3) — `views` is
-   * NOT passed, so the order is untouched. C1 (locked): member VALUES are never migrated or
-   * rewritten; the declaration alone moves, and its `target` / `required` ride along on the spread
-   * (so a link ⇄ multi-link switch keeps the target it was given at add-time, YAZ-896).
-   */
-  const setDisplayName = (key: string, name: string) =>
-    onUpdate((d) => {
-      const k = entryKey(d, key)
-      const props = d.properties ?? {}
-      const entry = { ...props[k] }
-      if (name.trim()) entry.displayName = name.trim()
-      else delete entry.displayName
-      if (Object.keys(entry).length) props[k] = entry
-      else delete props[k]
-      if (Object.keys(props).length) d.properties = props
-      else delete d.properties
-    })
+  /** The label, through the shared rule (`columnLabel.ts`) the table header's rename uses too (YAZ-1513). */
+  const renameColumn = (key: string, name: string) => onUpdate((d) => setDisplayName(d, key, name))
 
   const cardStyleOf = (key: string): CardStyle => view.cardStyle?.[canonicalKey(key)] ?? {}
   /** One cardStyle write (YAZ-1206): flags that fall back to absent delete themselves; an empty entry, then an empty map, deletes too — the YAML default-deletes rule. */
@@ -153,33 +155,200 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
       else style[flag] = true
     })
 
-  if (configuring !== null) {
-    const observed = [...new Set(records.flatMap(r => {
-      const value = r.properties[configuring.key]
-      return (Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === 'string' && v.trim() !== '')
-    }))]
-    const cancelDefinition = () => { setConfiguring(null); setDefinitionError(null) }
-    const saveDefinition = async () => {
-      setSavingDefinition(true)
-      try {
-        await folderPage.setColumn(configuring.key, configuring.draft, configuring.base)
-        cancelDefinition()
-      } catch (error) { setDefinitionError(error instanceof Error ? error.message : String(error)) }
-      finally { setSavingDefinition(false) }
-    }
-    return <div className="view-menu property-settings-menu">
-      <h3>{configuring.key}</h3><p className="property-definition__help">Property settings · This folder page</p>
-      <fieldset disabled={savingDefinition} className="property-settings-fields">
-        <PropertyDefinitionEditor value={configuring.draft} observed={observed} onChange={draft => setConfiguring({ ...configuring, draft })} />
-        {definitionError && <p role="alert" className="view-relation__error">{definitionError}</p>}
-        <div className="frontmatter-property-menu__actions">
-          <button type="button" onClick={cancelDefinition}>Cancel</button>
-          <button type="button" onClick={() => void saveDefinition()}>{savingDefinition ? 'Saving…' : 'Save'}</button>
-        </div>
-      </fieldset>
-    </div>
+  /** The kinds the list glyphs show, remembered per canonical key for as long as their inputs stand (YAZ-1549) — no row rescan per render. */
+  const kinds = useMemo(() => new Map<string, PropertyKind>(), [records, properties, folderPage.settings])
+  /** The kind a list row's glyph shows: the declaration, else the inferred editor kind, else text. */
+  const kindOf = (key: string): PropertyKind => {
+    const c = canonicalKey(key)
+    const known = kinds.get(c)
+    if (known !== undefined) return known
+    const decl = folderPage.settings.columns[bare(key)]
+    const typing = decl === undefined ? columnTyping(key, records, properties, folderPage.settings) : null
+    const kind = decl?.kind ?? typing?.assigned ?? typing?.dominant ?? 'text'
+    kinds.set(c, kind)
+    return kind
+  }
+  /** Labels shared by two rows (`file.name` and a `name` property both read "Name"): those rows also show their key (YAZ-1549). */
+  const labelCounts = new Map<string, number>()
+  for (const key of keys) {
+    const label = propertyLabel(def, key)
+    labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1)
+  }
+  const glyphOf = (key: string): ReactNode => {
+    const c = canonicalKey(key)
+    if (c.startsWith('file.')) return <FileFieldIcon />
+    if (c.startsWith('formula.')) return <FormulaIcon />
+    return <PropertyTypeIcon kind={kindOf(key)} />
   }
 
+  // ---------- DETAIL level (YAZ-1513) ----------
+  if (detail !== null) {
+    const { key, error, saving } = detail
+    const name = bare(key)
+    const decl = folderPage.settings.columns[name]
+    const label = propertyLabel(def, key)
+    const c = canonicalKey(key)
+    const isNote = c.startsWith('note.')
+    const on = isShown(key)
+    const kind = decl?.kind
+    const choice = kind === 'select' || kind === 'multi-select'
+    const linkKind = kind === 'link' || kind === 'multi-link'
+    const reason = undeletableReason(key)
+    const style = cardStyleOf(key)
+    const observed = [...new Set(records.flatMap((r) => {
+      const value = r.properties[name]
+      return (Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === 'string' && v.trim() !== '')
+    }))]
+    /** The relation seed (YAZ-895): a legacy vault link declaration when there is one, else a plain link. */
+    const legacy = properties?.properties[name]
+    const relationSeed: ColumnDecl = legacy?.kind === 'link' || legacy?.kind === 'multi-link' ? legacy : { kind: 'link' }
+    const toggleButton = (flag: 'bold' | 'underline' | 'hideLabel' | 'join', aria: string, content: ReactNode) => (
+      <button type="button" className="view-rule__nav view-card-toggle" aria-label={aria} title={aria} aria-pressed={style[flag] === true} onClick={() => toggleCardFlag(key, flag)}>
+        {content}
+      </button>
+    )
+    return (
+      <div
+        className="view-menu column-detail"
+        onKeyDown={(e) => {
+          // Esc steps back to the list; the popover's own window listener never sees it. (Inside the
+          // name field, TextField takes Esc first and only reverts the draft.)
+          if (e.key !== 'Escape' || deleting !== null) return
+          e.stopPropagation()
+          setDetail(null)
+        }}
+      >
+        <div className="column-detail__head">
+          <button type="button" className="column-detail__back" aria-label="Back to columns" onClick={() => setDetail(null)}>
+            <span aria-hidden="true">‹</span>
+          </button>
+          <TextField
+            className="column-detail__name"
+            aria-label="Display name"
+            placeholder={defaultLabel(key)}
+            value={displayNameOf(def, key)}
+            onCommit={(next) => renameColumn(key, next)}
+          />
+        </div>
+        <fieldset className="column-detail__rows" disabled={saving}>
+          <div className="column-detail__row">
+            <span>Key</span>
+            <code className="column-detail__key">{c}</code>
+          </div>
+          <div className="column-detail__row">
+            <span>Type</span>
+            {isNote ? (
+              <select
+                className="view-select"
+                aria-label={`Edit property ${label}`}
+                value={kind ?? ''}
+                onChange={(e) => void writeDeclaration(declarationForKind(decl, e.target.value as PropertyKind))}
+              >
+                {kind === undefined && (
+                  <option value="" disabled>
+                    Auto
+                  </option>
+                )}
+                {PROPERTY_KINDS.map((k) => (
+                  <option key={k} value={k}>
+                    {PROPERTY_LABELS[k]}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="column-detail__value">{c.startsWith('file.') ? 'File field' : 'Formula'}</span>
+            )}
+          </div>
+          {choice && decl !== undefined && (
+            <div className="column-detail__group">
+              <PropertyOptionsEditor value={decl} observed={observed} onChange={(next) => void writeDeclaration(next)} />
+            </div>
+          )}
+          {/* The relation (YAZ-895): a declared link kind's target inline; any other note key can BECOME one from the legacy seed. */}
+          {root !== null && isNote && (
+            <div className="column-detail__row">
+              <span>Relation</span>
+              {linkKind && decl !== undefined ? (
+                <TextField
+                  className="view-input"
+                  aria-label="Link target"
+                  placeholder="Any page, or [[Folder page]]"
+                  value={decl.target ?? ''}
+                  onCommit={(target) => {
+                    const next: ColumnDecl = { ...decl }
+                    if (target.trim()) next.target = target.trim()
+                    else delete next.target
+                    void writeDeclaration(next)
+                  }}
+                />
+              ) : (
+                <button type="button" className="property-type-button" aria-label={`Relation for ${label}`} title="Relation" onClick={() => void writeDeclaration(declarationForKind({ ...decl, ...relationSeed }, relationSeed.kind))}>
+                  Make relation
+                </button>
+              )}
+            </div>
+          )}
+          {error !== null && (
+            <p role="alert" className="view-relation__error">
+              {error}
+            </p>
+          )}
+          {/* Card styling (YAZ-1206/YAZ-1217): BOARD views only — the one skin that reads `cardStyle` — and only a shown column; the title gets ⤴ alone. */}
+          {view.type === 'board' && on && (
+            <div className="column-detail__group">
+              <p className="view-menu__label">Card styling</p>
+              <div className="column-detail__toggles">
+                {isNote && toggleButton('bold', `Bold ${label} on cards`, <b>B</b>)}
+                {isNote && toggleButton('underline', `Underline ${label} on cards`, <u>U</u>)}
+                {isNote && toggleButton('hideLabel', `Hide ${label} label on cards`, '–L')}
+                {toggleButton('join', `Join ${label} to the row above`, '⤴')}
+              </div>
+            </div>
+          )}
+        </fieldset>
+        <div className="column-detail__actions">
+          <button
+            type="button"
+            className="column-detail__action"
+            aria-label={`Hide ${label} in this view`}
+            disabled={!on || !canToggle(key)}
+            onClick={() => {
+              toggle(key)
+              setDetail(null)
+            }}
+          >
+            Hide in this view
+          </button>
+          <button
+            type="button"
+            className="column-detail__action column-detail__action--danger"
+            aria-label={`Delete column ${label}`}
+            disabled={reason !== null}
+            title={reason ?? undefined}
+            onClick={() => setDeleting(key)}
+          >
+            Delete column…
+          </button>
+        </div>
+        {deleting !== null && (
+          <ConfirmDeleteColumn
+            columnKey={deleting}
+            def={def}
+            records={records}
+            onCancel={() => setDeleting(null)}
+            onConfirm={() => {
+              const gone = deleting
+              setDeleting(null)
+              setDetail(null)
+              void folderPage.deleteColumn(gone)
+            }}
+          />
+        )}
+      </div>
+    )
+  }
+
+  // ---------- LIST level ----------
   return (
     <div className="view-menu">
       <div className="column-menu-head">
@@ -203,10 +372,6 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
           const on = isShown(key)
           const i = shown.indexOf(key)
           const label = propertyLabel(def, key)
-          const decl = folderPage.settings.columns[bare(key)]
-          const isNote = canonicalKey(key).startsWith('note.')
-          /** The title's row: no declaration, no relation, no text styling — only the join toggle, and only on a board (YAZ-1217). */
-          const isName = canonicalKey(key) === 'file.name'
           const cls = ['view-prop']
           if (drag !== null && i >= 0) {
             if (drag.from === i) cls.push('view-prop--dragging')
@@ -259,105 +424,16 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
                     <DragHandleIcon />
                   </button>
                 )}
-                <input
-                  type="checkbox"
-                  aria-label={`Show ${label}`}
-                  checked={on}
-                  disabled={canonicalKey(key) === 'file.name' && view.type !== 'table' && view.type !== 'board'}
-                  onChange={() => toggle(key)}
-                />
-                {editing === key ? (
-                  <TextField
-                    className="view-input view-prop__rename"
-                    aria-label="Display name"
-                    placeholder={bare(key)}
-                    autoFocus
-                    value={def.properties?.[entryKey(def, key)]?.displayName ?? ''}
-                    onCommit={(name) => setDisplayName(key, name)}
-                    onDone={() => setEditing(null)}
-                  />
-                ) : (
+                <input type="checkbox" aria-label={`Show ${label}`} checked={on} disabled={!canToggle(key)} onChange={() => toggle(key)} />
+                <button type="button" className="view-prop__open" aria-label={`Open ${label}`} onClick={() => openDetail(key)}>
+                  <span className="view-prop__kind">{glyphOf(key)}</span>
                   <span className="view-prop__name">
                     {label}
-                    {label !== key && <small>{key}</small>}
+                    {(labelCounts.get(label) ?? 0) > 1 && <small>{canonicalKey(key)}</small>}
                   </span>
-                )}
-                <button type="button" className="view-rule__nav" aria-label={`Rename ${label}`} title="Display name" onClick={() => setEditing(key)}>
-                  <PencilIcon />
+                  <span className="view-prop__chevron" aria-hidden="true">›</span>
                 </button>
               </div>
-              {/* Note rows since YAZ-1207 (the ↑↓ arrows were the shown row's other reason to have this line), plus the shown board title for its join toggle alone. */}
-              {(isNote || (isName && view.type === 'board' && on)) && (
-                <div className="view-prop__controls">
-                  {isNote && (
-                    <>
-                      <button type="button" className="property-type-button" aria-label={`Edit property ${label}`} onClick={() => editDefinition(key)}>
-                        {decl ? PROPERTY_LABELS[decl.kind] : 'Auto'} <span aria-hidden>⌄</span>
-                      </button>
-                    </>
-                  )}
-                  {/* Card styling (YAZ-1206) belongs to the property, so it rides this line — shown board rows only; the title gets ⤴ alone, since it takes part in the LAYOUT and never in text styling (YAZ-1217). */}
-                  {view.type === 'board' && on && (
-                    <>
-                      {isNote && (
-                        <>
-                          <button
-                            type="button"
-                            className="view-rule__nav view-card-toggle"
-                            aria-label={`Bold ${label} on cards`}
-                            title={`Bold ${label} on cards`}
-                            aria-pressed={cardStyleOf(key).bold === true}
-                            onClick={() => toggleCardFlag(key, 'bold')}
-                          >
-                            <b>B</b>
-                          </button>
-                          <button
-                            type="button"
-                            className="view-rule__nav view-card-toggle"
-                            aria-label={`Underline ${label} on cards`}
-                            title={`Underline ${label} on cards`}
-                            aria-pressed={cardStyleOf(key).underline === true}
-                            onClick={() => toggleCardFlag(key, 'underline')}
-                          >
-                            <u>U</u>
-                          </button>
-                          <button
-                            type="button"
-                            className="view-rule__nav view-card-toggle"
-                            aria-label={`Hide ${label} label on cards`}
-                            title={`Hide ${label} label on cards`}
-                            aria-pressed={cardStyleOf(key).hideLabel === true}
-                            onClick={() => toggleCardFlag(key, 'hideLabel')}
-                          >
-                            –L
-                          </button>
-                        </>
-                      )}
-                      <button
-                        type="button"
-                        className="view-rule__nav view-card-toggle"
-                        aria-label={`Join ${label} to the row above`}
-                        title={`Join ${label} to the row above`}
-                        aria-pressed={cardStyleOf(key).join === true}
-                        onClick={() => toggleCardFlag(key, 'join')}
-                      >
-                        ⤴
-                      </button>
-                    </>
-                  )}
-                  {root !== null && isNote && (
-                    <button
-                      type="button"
-                      className="view-rule__nav"
-                      aria-label={`Relation for ${label}`}
-                      title="Relation"
-                      onClick={() => editDefinition(key, true)}
-                    >
-                      <RelationIcon />
-                    </button>
-                  )}
-                </div>
-              )}
             </li>
           )
         })}
@@ -369,7 +445,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
             { ...folderPage.settings.columns, [name]: column },
             // The new column shown TOO, in that same one write (🔒 D3): `shown` is what `writeOrder`
             // writes — the view's own `order`, or the derived keys when it has none.
-            def.views.map((v, i) => (i === viewIndex ? { ...v, order: [...shown, `note.${name}`] } : v)),
+            def.views.map((v, i) => (i === viewIndex ? withOrder(v, [...shown, `note.${name}`]) : v)),
           )
         }
       />
@@ -397,6 +473,21 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
                 </option>
               ))}
             </select>
+          </label>
+          <label className="view-menu__toggle">
+            <input
+              type="checkbox"
+              aria-label="Row numbers"
+              checked={view.rowNumbers !== false}
+              onChange={(e) =>
+                onUpdate((d) => {
+                  // Shown is the default (YAZ-1513): a shown gutter leaves no key behind.
+                  if (e.target.checked) delete d.views[viewIndex].rowNumbers
+                  else d.views[viewIndex].rowNumbers = false
+                })
+              }
+            />
+            Row numbers
           </label>
         </>
       )}
@@ -503,67 +594,6 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, root =
           ))}
         </select>
       </label>
-    </div>
-  )
-}
-
-interface AddColumnProps {
-  /** Every key the menu already offers — the folder page's DECLARED columns among them (YAZ-895). */
-  taken: readonly string[]
-  onSave: (name: string, column: ColumnDecl) => void
-}
-
-/**
- * "+ Add column" (YAZ-896): declare a column on the FOLDER PAGE — the typing ladder's top rung
- * (🔒 Q8) — and show it, in one `folder_page_settings` write (🔒 D3). A name that is not a
- * property name, or one the menu already offers, is refused inline and nothing is written.
- */
-function AddColumn({ taken, onSave }: AddColumnProps) {
-  const [open, setOpen] = useState(false)
-  const [name, setName] = useState('')
-  const [definition, setDefinition] = useState<ColumnDecl>({ kind: 'text' })
-  const [error, setError] = useState<string | null>(null)
-
-  if (!open)
-    return (
-      <button type="button" className="view-menu__action" onClick={() => setOpen(true)}>
-        + Add column
-      </button>
-    )
-
-  const save = () => {
-    const key = name.trim()
-    if (!PROPERTY_NAME.test(key)) {
-      setError('Use lower case letters, digits and _, starting with a letter')
-      return
-    }
-    if (taken.some((k) => canonicalKey(k) === canonicalKey(key))) {
-      setError(`${key} is already a column`)
-      return
-    }
-    const { kind, target, options, optionSort } = definition
-    const column: ColumnDecl = { kind, ...((kind === 'select' || kind === 'multi-select') ? { options: options ?? [], ...(optionSort ? { optionSort } : {}) } : {}) }
-    // A target typed under a link kind must not ride into a non-link declaration after a kind switch.
-    if ((kind === 'link' || kind === 'multi-link') && target?.trim()) column.target = target.trim()
-    onSave(key, column)
-    setOpen(false)
-    setName('')
-    setDefinition({ kind: 'text' })
-    setError(null)
-  }
-
-  return (
-    <div className="view-relation">
-      <input className="view-input" aria-label="Column name" placeholder="Name" autoFocus value={name} onChange={(e) => setName(e.target.value)} />
-      <PropertyDefinitionEditor value={definition} onChange={setDefinition} />
-      <button type="button" className="view-menu__action" aria-label="Save column" onClick={save}>
-        Save
-      </button>
-      {error !== null && (
-        <span className="view-relation__error" role="alert">
-          {error}
-        </span>
-      )}
     </div>
   )
 }

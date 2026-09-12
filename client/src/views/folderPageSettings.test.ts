@@ -10,14 +10,26 @@ import type { IndexRecord } from '@shared/types'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
 import { stripBrackets } from './expr'
 
-vi.mock('./writeProperty', () => ({ writeProperty: vi.fn() }))
+/** `transformFile`'s stand-in: the file the ONE label write reads and rewrites (YAZ-1513). */
+const { disk } = vi.hoisted(() => ({ disk: { content: '' } }))
+vi.mock('./writeProperty', () => ({
+  writeProperty: vi.fn(),
+  transformFile: vi.fn(async (_path: string, transform: (content: string) => string) => {
+    disk.content = transform(disk.content)
+    return { mtime: 1, content: disk.content }
+  }),
+}))
 import { writeProperty } from './writeProperty'
 import {
   columnKindIn,
+  DEFAULT_COLUMNS,
   DEFAULT_VIEWS,
   folderPageSettings,
+  newFolderPageProperties,
   orderedMembers,
   outlineOrderOf,
+  bornFolderPage,
+  turnIntoFolderPage,
   writeFolderPageSettings,
 } from './folderPageSettings'
 
@@ -429,4 +441,105 @@ it('reads option order tolerantly and reports malformed order without changing t
   expect(settings.columns.Labels).toEqual({ kind: 'multi-select', options: ['B', 'A'] })
   expect(settings.problems).toEqual(['folder_page_settings.columns.Labels.optionSort must be manual, ascending, or descending — using manual order'])
   expect(raw.columns.Labels.optionSort).toBe('sideways')
+})
+
+describe('the default status column (YAZ-1513): every folder page is born with it', () => {
+  const STATUS = { kind: 'select', options: ['1-Backlog', '2-Todo', '3-In-Progress', '4-Done'] }
+
+  it('DEFAULT_COLUMNS is one Select, its options in board order', () => {
+    expect(DEFAULT_COLUMNS).toEqual({ status: STATUS })
+  })
+
+  it('newFolderPageProperties: the flag first, then the settings holding ONLY the default declaration — a fresh copy each call', () => {
+    const props = newFolderPageProperties()
+    expect(Object.keys(props)).toEqual(['folder_page', 'folder_page_settings'])
+    expect(props).toEqual({ folder_page: true, folder_page_settings: { columns: { status: STATUS } } })
+    // handed out to be edited: mutating one birth never leaks into the next, nor into the constant
+    ;((props.folder_page_settings as { columns: Record<string, { options: string[] }> }).columns.status.options).push('5-Archived')
+    expect(newFolderPageProperties()).toEqual({ folder_page: true, folder_page_settings: { columns: { status: STATUS } } })
+    expect(DEFAULT_COLUMNS.status.options).toEqual(STATUS.options)
+    // and the read side agrees with what was written
+    expect(folderPageSettings(rec('/vault/New.md', newFolderPageProperties())).columns).toEqual({ status: STATUS })
+  })
+
+  it('bornFolderPage is the ONE spelling (YAZ-1549): the flag, and the default settings only when the key is absent; the input is never mutated', () => {
+    const plain = { title: 'Ops' }
+    expect(bornFolderPage(plain)).toEqual({ title: 'Ops', folder_page: true, folder_page_settings: { columns: { status: STATUS } } })
+    expect(plain).toEqual({ title: 'Ops' })
+    const kept = { folder_page_settings: { columns: { owner: { kind: 'link' } } } }
+    expect(bornFolderPage(kept)).toEqual({ folder_page_settings: { columns: { owner: { kind: 'link' } } }, folder_page: true })
+    expect(bornFolderPage({ folder_page_settings: null })).toEqual({ folder_page_settings: null, folder_page: true })
+    expect(newFolderPageProperties()).toEqual(bornFolderPage({}))
+  })
+
+  it('turnIntoFolderPage adds the flag AND the default settings to a page with no settings key', () => {
+    const next = turnIntoFolderPage('---\ntitle: Ops\n---\n\n# Ops\n')
+    expect(next).toBe(
+      '---\ntitle: Ops\nfolder_page: true\nfolder_page_settings:\n  columns:\n    status:\n      kind: select\n      options:\n        - 1-Backlog\n        - 2-Todo\n        - 3-In-Progress\n        - 4-Done\n---\n\n# Ops\n',
+    )
+    // no frontmatter at all grows a block, body untouched
+    expect(turnIntoFolderPage('# Ops\n')).toBe(
+      '---\nfolder_page: true\nfolder_page_settings:\n  columns:\n    status:\n      kind: select\n      options:\n        - 1-Backlog\n        - 2-Todo\n        - 3-In-Progress\n        - 4-Done\n---\n# Ops\n',
+    )
+  })
+
+  it('turnIntoFolderPage adds ONLY the flag when settings already exist — a page turned back keeps its settings', () => {
+    const kept = '---\ntitle: Ops\nfolder_page_settings:\n  columns:\n    owner:\n      kind: link\n  views:\n    - type: table\n      name: T\n---\nbody\n'
+    // the one-key writer APPENDS a new key — every existing key keeps its place
+    expect(turnIntoFolderPage(kept)).toBe(kept.replace('      name: T\n---', '      name: T\nfolder_page: true\n---'))
+    // a bare `folder_page_settings:` is still a present key — nothing is seeded over it
+    const bare = '---\nfolder_page_settings:\n---\n'
+    expect(turnIntoFolderPage(bare)).toBe('---\nfolder_page_settings:\nfolder_page: true\n---\n')
+  })
+
+  it('turnIntoFolderPage byte-preserves every other key, comment and the body; an already-flagged page changes only what is missing', () => {
+    const page = '---\n# the owner\nowner: "[[Sam]]"\ntags: [a, b]\nfolder_page: true\n---\n\nprose\n'
+    const next = turnIntoFolderPage(page)
+    expect(next.startsWith('---\n# the owner\nowner: "[[Sam]]"\ntags: [a, b]\nfolder_page: true\nfolder_page_settings:\n')).toBe(true)
+    expect(next.endsWith('---\n\nprose\n')).toBe(true)
+    // idempotent: a second pass is the identity
+    expect(turnIntoFolderPage(next)).toBe(next)
+  })
+
+  it('turnIntoFolderPage throws on unparsable frontmatter rather than writing over it', () => {
+    expect(() => turnIntoFolderPage('---\nkey: [unclosed\n---\n')).toThrow()
+  })
+})
+
+describe('properties: column labels (YAZ-1513) — `ViewSet.properties` verbatim, the key never changes', () => {
+  it('reads key → { displayName } and hands it back to the writer untouched', () => {
+    const settings = settingsOf({ properties: { status: { displayName: 'Stage' }, 'note.owner': { displayName: 'Who' } }, views: [{ type: 'table', name: 'T' }] })
+    expect(settings.properties).toEqual({ status: { displayName: 'Stage' }, 'note.owner': { displayName: 'Who' } })
+    expect(settings.problems).toEqual([])
+    writeFolderPageSettings('/vault/F.md', settings)
+    expect(vi.mocked(writeProperty)).toHaveBeenLastCalledWith('/vault/F.md', 'folder_page_settings', {
+      properties: { status: { displayName: 'Stage' }, 'note.owner': { displayName: 'Who' } },
+      views: [{ type: 'table', name: 'T' }],
+    })
+  })
+
+  it('is absent when the card has none, and absent from the write too', () => {
+    const settings = settingsOf({ views: [{ type: 'table', name: 'T' }] })
+    expect(settings.properties).toBeUndefined()
+    writeFolderPageSettings('/vault/F.md', settings)
+    expect(vi.mocked(writeProperty)).toHaveBeenLastCalledWith('/vault/F.md', 'folder_page_settings', { views: [{ type: 'table', name: 'T' }] })
+  })
+
+  it('a blank displayName reads as absent — the header never goes empty (YAZ-1549)', () => {
+    const settings = settingsOf({ properties: { status: { displayName: '   ' }, owner: { displayName: '' } } })
+    expect(settings.properties).toEqual({ status: {}, owner: {} })
+    expect(settings.problems).toEqual([])
+  })
+
+  it("reads tolerantly: a non-map is ignored with a problem; a non-map entry or a non-string displayName drops that entry", () => {
+    expect(settingsOf({ properties: 'nope' }).properties).toBeUndefined()
+    expect(settingsOf({ properties: 'nope' }).problems).toEqual(['folder_page_settings.properties must be a map of column labels — ignoring it'])
+    const mixed = settingsOf({ properties: { a: { displayName: 'A' }, b: 'text', c: { displayName: 7 }, d: {} } })
+    expect(mixed.properties).toEqual({ a: { displayName: 'A' }, d: {} })
+    expect(mixed.problems).toEqual([
+      'folder_page_settings.properties.b must be a map with a displayName — ignoring that label',
+      'folder_page_settings.properties.c.displayName must be text — ignoring that label',
+    ])
+  })
+
 })

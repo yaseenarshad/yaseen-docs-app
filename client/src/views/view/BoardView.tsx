@@ -1,11 +1,11 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
+import type { FolderPageSettings } from '../folderPageSettings'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
 import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
-import { render } from '../expr'
 import { cardWidth } from './cardWidth'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf } from './GroupHeader'
+import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf, pageTitle } from './GroupHeader'
 import { useFlip } from './flip'
 import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, useGroupDrag } from './groupDrag'
 import { usePreview } from './PreviewCard'
@@ -17,6 +17,8 @@ export interface BoardViewProps {
   view: ViewDef
   viewIndex: number
   records: readonly IndexRecord[]
+  /** The folder page's settings — its declared columns show by default (YAZ-1549). */
+  folderPage?: FolderPageSettings | null
   /** Post-search groups from ViewsPane (empty groups dropped); null when the view has no `groupBy`. */
   groups: readonly Group[] | null
   /** Collapsed group keys (`groupKeyOf`) for this page + view; owned by ViewsPane, persisted via storage. */
@@ -71,6 +73,7 @@ const styleClasses = (style: NonNullable<ViewDef['cardStyle']>[string]) =>
 export function BoardView({
   def,
   view,
+  folderPage = null,
   viewIndex,
   records,
   groups,
@@ -128,7 +131,7 @@ export function BoardView({
     )
   }
 
-  const keys = propertyKeys(def, view, records)
+  const keys = propertyKeys(def, view, records, Object.keys(folderPage?.columns ?? {}))
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
   const styleOf = (key: string) => view.cardStyle?.[canonicalKey(key)] ?? {}
   /** The card's ROWS (YAZ-1217): each ordered key starts a line, `join` appends it to the one being built — so a join with no line yet is a harmless no-op. */
@@ -155,7 +158,7 @@ export function BoardView({
             openCard(row)
           }}
         >
-          {render(row.values[key])}
+          {pageTitle(row)}
         </button>
       )
     const style = styleOf(key)

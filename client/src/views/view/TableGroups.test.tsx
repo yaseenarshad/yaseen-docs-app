@@ -166,14 +166,14 @@ describe('grouped sections', () => {
     expect(headers(el).map((h) => q(h, '.view-group__count').textContent)).toEqual(['1', '2', '2', '3'])
     // rows render inside their sections, in group order
     expect(links(el)).toEqual([
-      'The Levels of an Agency.md',
-      'Agentic Agency.md',
-      'The Gold In Your Archive.md',
-      'Creator Economy.md',
-      'VSL-v1.md',
-      'Attribution.md',
-      'Tech & Silicon Valley.md',
-      'List of Topics.md',
+      'The Levels of an Agency',
+      'Agentic Agency',
+      'The Gold In Your Archive',
+      'Creator Economy',
+      'VSL-v1',
+      'Attribution',
+      'Tech & Silicon Valley',
+      'List of Topics',
     ])
     // per-group Sum of note.priority: 1 / 2 / 3 / none
     expect(headers(el).map((h) => h.querySelector('.view-group__summary')?.textContent)).toEqual(['Sum1', 'Sum2', 'Sum3', 'Sum'])
@@ -181,7 +181,7 @@ describe('grouped sections', () => {
     expect(el.querySelector('.view-table tfoot')).toBeNull()
     // a header row spans the whole table and owns no data cells
     const groupCell = q<HTMLTableCellElement>(headers(el)[0], 'td')
-    expect(groupCell.colSpan).toBe(2)
+    expect(groupCell.colSpan).toBe(3)
     expect(groupCell.classList.contains('view-table__group-cell')).toBe(true)
     expect(headers(el)[0].querySelector('[data-cell]')).toBeNull()
     expect(headers(el)[0].querySelector('.view-table__frozen')).toBeNull()
@@ -228,8 +228,8 @@ describe('collapse', () => {
     const { storage } = await import('../../lib/storage')
     const { el, onChange } = mount(GROUP_BASE)
     click(toggleOf(el, 'idea'))
-    expect(links(el)).not.toContain('Agentic Agency.md')
-    expect(links(el)).not.toContain('The Gold In Your Archive.md')
+    expect(links(el)).not.toContain('Agentic Agency')
+    expect(links(el)).not.toContain('The Gold In Your Archive')
     expect(headerTexts(el)).toEqual(['drafting', 'idea', 'published', 'No value']) // header stays
     expect(toggleOf(el, 'idea').getAttribute('aria-expanded')).toBe('false')
     expect(onChange).not.toHaveBeenCalled() // NOT in the page's own card, no autosave
@@ -239,11 +239,11 @@ describe('collapse', () => {
     unmount()
     const again = mount(GROUP_BASE)
     expect(toggleOf(again.el, 'idea').getAttribute('aria-expanded')).toBe('false')
-    expect(links(again.el)).not.toContain('Agentic Agency.md')
+    expect(links(again.el)).not.toContain('Agentic Agency')
 
     // expanding removes the entry
     click(toggleOf(again.el, 'idea'))
-    expect(links(again.el)).toContain('Agentic Agency.md')
+    expect(links(again.el)).toContain('Agentic Agency')
     expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::T', [])
   })
 
@@ -277,7 +277,7 @@ describe('collapse', () => {
     const { storage } = await import('../../lib/storage')
     const { el } = mount(GROUP_BASE)
     click(toggleOf(el, 'No value'))
-    expect(links(el)).not.toContain('Attribution.md')
+    expect(links(el)).not.toContain('Attribution')
     expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::T', [groupKeyOf(null)])
   })
 
@@ -326,7 +326,7 @@ describe('search interplay', () => {
     setValue(byLabel(el, 'Search rows'), 'agency')
     // 'agency' hits one row in drafting (The Levels of an Agency) and one in idea (Agentic Agency)
     expect(headerTexts(el)).toEqual(['drafting', 'idea'])
-    expect(links(el)).toEqual(['The Levels of an Agency.md', 'Agentic Agency.md'])
+    expect(links(el)).toEqual(['The Levels of an Agency', 'Agentic Agency'])
     expect(headers(el).map((h) => q(h, '.view-group__count').textContent)).toEqual(['1', '1'])
     // idea's Sum recomputes over its shown row only (Agentic Agency, priority 2)
     expect(headers(el)[1].querySelector('.view-group__summary')?.textContent).toBe('Sum2')
@@ -355,8 +355,8 @@ describe('windowing with headers', () => {
     expect(el.querySelectorAll('.view-table tbody tr:not(.view-table__spacer)').length).toBeLessThan(100)
     expect(el.querySelector('.view-table__spacer')).not.toBeNull()
     expect(headerTexts(el)[0]).toBe('even') // the first line is the first group's header
-    expect(links(el)[0]).toBe('n000.md')
-    expect(links(el)).not.toContain('n599.md')
+    expect(links(el)[0]).toBe('n000')
+    expect(links(el)).not.toContain('n599')
   })
 
   it('scrolling moves the slice; collapsing a group shrinks the line count below the window threshold', () => {
@@ -367,7 +367,7 @@ describe('windowing with headers', () => {
       wrap.dispatchEvent(new Event('scroll', { bubbles: true }))
     })
     draw()
-    expect(links(el)).not.toContain('n000.md')
+    expect(links(el)).not.toContain('n000')
     act(() => {
       Object.defineProperty(wrap, 'scrollTop', { value: 0, configurable: true })
       wrap.dispatchEvent(new Event('scroll', { bubbles: true }))
@@ -377,7 +377,7 @@ describe('windowing with headers', () => {
     click(toggleOf(el, 'even'))
     expect(el.querySelector('.view-table__spacer')).toBeNull()
     expect(links(el)).toHaveLength(300)
-    expect(links(el)[0]).toBe('n001.md')
-    expect(links(el)).toContain('n599.md')
+    expect(links(el)[0]).toBe('n001')
+    expect(links(el)).toContain('n599')
   })
 })

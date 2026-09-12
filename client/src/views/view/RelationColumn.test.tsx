@@ -6,7 +6,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { IndexRecord, PropertiesResponse } from '@shared/types'
+import type { IndexRecord, PropertiesResponse, PropertyDecl } from '@shared/types'
+import { defaultLabel } from '../engine'
 import { parseViews, type ParsedViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { propertiesStub, resetPropertiesStub } from '../propertiesStub'
@@ -172,10 +173,27 @@ function press(el: Element, key: string): void {
   draw()
 }
 
-async function saveDefinition(el: ParentNode): Promise<void> {
-  const save = [...el.querySelectorAll<HTMLButtonElement>('.frontmatter-property-menu__actions button')].find(button => button.textContent === 'Save')!
-  await act(async () => save.click())
-  draw()
+/** A host that keeps its declarations AHEAD (YAZ-1549), like `FolderPageContents`: each write lands in `settings.columns` at once. */
+function aheadHost() {
+  const settings = { columns: {} as Record<string, PropertyDecl>, views: [], problems: [] }
+  const setColumn = vi.fn(async (key: string, next: PropertyDecl) => {
+    settings.columns[key] = next
+  })
+  return { setColumn, folderPage: testFolderPage({ vaultRecords: RECORDS, settings, setColumn }) }
+}
+
+/** Pick a `<select>` value the way a user does: the native setter, then a bubbling change event React sees. */
+function selectValue(el: HTMLSelectElement, value: string): void {
+  const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+  act(() => {
+    set?.call(el, value)
+    el.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+
+/** Let an immediate declaration write resolve, so the panel's `base` moves forward (3D). */
+async function settle(): Promise<void> {
+  await act(async () => {})
 }
 
 const cell = (el: ParentNode, r: number, c: number) => q<HTMLElement>(el, `[data-cell="${r}:${c}"]`)
@@ -183,68 +201,79 @@ const cell = (el: ParentNode, r: number, c: number) => q<HTMLElement>(el, `[data
 const open = (el: ParentNode, r: number, c: number) => doubleClick(cell(el, r, c))
 const options = (el: ParentNode) => [...el.querySelectorAll('[role="option"]')].map((o) => o.textContent)
 
-/** Open the Properties popover and the relation editor for `key`. */
+/** Open the Properties popover and the relation editor for `key` — the button wears the column's LABEL (YAZ-1513). */
 function openRelation(el: ParentNode, key: string) {
   click(byLabel(el, 'Properties'))
-  click(byLabel(el, `Relation for ${key}`))
+  click(byLabel(el, `Open ${defaultLabel(key)}`)) // the column's detail (YAZ-1513)
+  click(byLabel(el, `Relation for ${defaultLabel(key)}`))
 }
 
 // ---------- tests ----------
 
 describe('column menu relation flow', () => {
   it('a filtered view saves a local relation definition without changing the vault registry', async () => {
-    const setColumn = vi.fn().mockResolvedValue(undefined)
-    const { el } = mount(KPI_BASE, { folderPage: testFolderPage({ vaultRecords: RECORDS, setColumn }) })
-    openRelation(el, 'owner')
-    expect(el.textContent).toContain('This folder page')
+    const { setColumn, folderPage } = aheadHost()
+    const { el } = mount(KPI_BASE, { folderPage })
+    openRelation(el, 'owner') // "Make relation": the declaration is born as a link, immediately
+    expect(setColumn).toHaveBeenNthCalledWith(1, 'owner', { kind: 'link' }, undefined)
+    await settle()
     setValue(byLabel<HTMLInputElement>(el, 'Link target'), 'People')
     press(byLabel(el, 'Link target'), 'Enter')
-    expect(setColumn).not.toHaveBeenCalled()
-    await saveDefinition(el)
-    expect(setColumn).toHaveBeenCalledExactlyOnceWith('owner', { kind: 'link', target: 'People' }, undefined)
+    expect(setColumn).toHaveBeenNthCalledWith(2, 'owner', { kind: 'link', target: 'People' }, { kind: 'link' })
     expect((await propertiesStub.get('/vault')).properties).toEqual({})
   })
 
-  it('Multi-link uses the shared type picker and folder-local Save', async () => {
-    const setColumn = vi.fn().mockResolvedValue(undefined)
-    const { el } = mount(UNFILTERED_BASE, { folderPage: testFolderPage({ vaultRecords: RECORDS, setColumn }) })
+  it('Multi-link: the Type select, then the target — each an immediate folder-local write against what just landed', async () => {
+    const { setColumn, folderPage } = aheadHost()
+    const { el } = mount(UNFILTERED_BASE, { folderPage })
     openRelation(el, 'funnels')
-    click(byLabel(el, 'Property type: Link'))
-    click([...el.querySelectorAll<HTMLElement>('[data-type-option]')].find(option => option.textContent === 'Multi-link')!)
+    expect(setColumn).toHaveBeenNthCalledWith(1, 'funnels', { kind: 'link' }, undefined)
+    await settle()
+    selectValue(byLabel<HTMLSelectElement>(el, 'Edit property Funnels'), 'multi-link')
+    expect(setColumn).toHaveBeenNthCalledWith(2, 'funnels', { kind: 'multi-link' }, { kind: 'link' })
+    await settle()
     setValue(byLabel<HTMLInputElement>(el, 'Link target'), 'Funnels')
     press(byLabel(el, 'Link target'), 'Enter')
-    await saveDefinition(el)
-    expect(setColumn).toHaveBeenCalledExactlyOnceWith('funnels', { kind: 'multi-link', target: 'Funnels' }, undefined)
+    expect(setColumn).toHaveBeenNthCalledWith(3, 'funnels', { kind: 'multi-link', target: 'Funnels' }, { kind: 'multi-link' })
     expect((await propertiesStub.get('/vault')).properties).toEqual({})
   })
 
-  it('the target is free text with no obsolete type-name suggestion list', () => {
-    const { el } = mount(KPI_BASE, { properties: DECLS })
+  it('the target is free text with no obsolete type-name suggestion list', async () => {
+    const { el } = mount(KPI_BASE, { properties: DECLS, folderPage: aheadHost().folderPage })
     openRelation(el, 'owner')
+    await settle()
     expect(el.querySelector('datalist')).toBeNull()
     expect(byLabel<HTMLInputElement>(el, 'Link target').getAttribute('list')).toBeNull()
   })
 
-  it('an existing legacy declaration pre-fills the type and target without writing', () => {
-    const setColumn = vi.fn()
-    const { el } = mount(KPI_BASE, { properties: DECLS, folderPage: testFolderPage({ vaultRecords: RECORDS, setColumn }) })
-    openRelation(el, 'funnels')
-    expect(byLabel(el, 'Property type: Multi-link')).toBeDefined()
-    expect(byLabel<HTMLInputElement>(el, 'Link target').value).toBe('Funnels')
+  it('an existing legacy declaration is the seed: nothing is written before the click, and Make relation writes exactly it', async () => {
+    const { setColumn, folderPage } = aheadHost()
+    const { el } = mount(KPI_BASE, { properties: DECLS, folderPage })
+    click(byLabel(el, 'Properties'))
+    click(byLabel(el, 'Open Funnels'))
     expect(setColumn).not.toHaveBeenCalled()
+    click(byLabel(el, 'Relation for Funnels'))
+    expect(setColumn).toHaveBeenCalledExactlyOnceWith('funnels', { kind: 'multi-link', target: 'Funnels' }, undefined)
+    await settle()
+    expect(byLabel<HTMLSelectElement>(el, 'Edit property Funnels').value).toBe('multi-link')
+    expect(byLabel<HTMLInputElement>(el, 'Link target').value).toBe('Funnels')
   })
 
   it('without a known root there is no relation editor to offer', () => {
     const { el } = mount(KPI_BASE, { root: null })
     click(byLabel(el, 'Properties'))
-    expect(el.querySelector('[aria-label="Relation for owner"]')).toBeNull()
+    click(byLabel(el, 'Open Owner'))
+    expect(el.querySelector('[aria-label="Relation for Owner"]')).toBeNull()
   })
 
   it('file.* rows never offer a relation; note.* rows do', () => {
     const { el } = mount(KPI_BASE)
     click(byLabel(el, 'Properties'))
-    expect(el.querySelector('[aria-label^="Relation for file."]')).toBeNull()
-    expect(el.querySelector('[aria-label="Relation for owner"]')).not.toBeNull()
+    click(byLabel(el, 'Open Name'))
+    expect(el.querySelector('[aria-label="Relation for Name"]')).toBeNull() // file.name's detail
+    click(byLabel(el, 'Back to columns'))
+    click(byLabel(el, 'Open Owner'))
+    expect(el.querySelector('[aria-label="Relation for Owner"]')).not.toBeNull()
   })
 })
 

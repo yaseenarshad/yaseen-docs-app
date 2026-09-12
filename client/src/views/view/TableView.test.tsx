@@ -151,11 +151,11 @@ function rightClick(el: EventTarget, clientX = 0, clientY = 0): MouseEvent {
   return event
 }
 
-const headers = (el: ParentNode): string[] => [...el.querySelectorAll('.view-table th')].map((t) => t.textContent ?? '')
+const headers = (el: ParentNode): string[] => [...el.querySelectorAll('.view-table th:not(.view-table__gutter)')].map((t) => t.textContent ?? '')
 const links = (el: ParentNode): string[] => [...el.querySelectorAll('.view-table__link')].map((b) => b.textContent ?? '')
 /** Data rows only (spacers excluded). */
 const bodyRows = (el: ParentNode): HTMLTableRowElement[] => [...el.querySelectorAll<HTMLTableRowElement>('.view-table tbody tr:not(.view-table__spacer)')]
-const cells = (row: HTMLTableRowElement): HTMLTableCellElement[] => [...row.querySelectorAll('td')]
+const cells = (row: HTMLTableRowElement): HTMLTableCellElement[] => [...row.querySelectorAll<HTMLTableCellElement>('td:not(.view-table__gutter)')]
 
 const box = (top: number, height: number, width = 600): DOMRect => new DOMRect(0, top, width, height)
 
@@ -214,9 +214,9 @@ function manyRecords(n = 600): IndexRecord[] {
 describe('table structure', () => {
   it('a table view renders columns from order; unknown view types keep the placeholder list', () => {
     const { el } = mount(`${TYPED_BASE}  - type: bogus\n    name: L\n`)
-    expect(headers(el)).toEqual(['file.name', 'priority', 'published', 'tags', 'related', 'formula.nope'])
+    expect(headers(el)).toEqual(['Name', 'Priority', 'Published', 'Tags', 'Related', 'Nope'])
     expect(bodyRows(el)).toHaveLength(8)
-    expect(links(el)[0]).toBe('Agentic Agency.md')
+    expect(links(el)[0]).toBe('Agentic Agency')
     expect(el.querySelector('.view-rows')).toBeNull()
 
     click(byText(el, '[role="tab"]', 'L'))
@@ -454,7 +454,7 @@ describe('table-row context menu (YAZ-1053)', () => {
   it('keeps the exact record target when one page is fanned out into repeated grouped rows', () => {
     const openRight = vi.fn()
     const { el } = mount('views:\n  - type: table\n    name: T\n    groupBy:\n      property: note.tags\n', { folderPage: testFolderPage({ openRight }) })
-    const repeated = [...el.querySelectorAll<HTMLButtonElement>('.view-table__link')].filter((link) => link.textContent === 'Agentic Agency.md')
+    const repeated = [...el.querySelectorAll<HTMLButtonElement>('.view-table__link')].filter((link) => link.textContent === 'Agentic Agency')
     expect(repeated).toHaveLength(2)
 
     rightClick(repeated[1])
@@ -464,11 +464,15 @@ describe('table-row context menu (YAZ-1053)', () => {
 
   it('does not attach the row menu to headers, summaries, or spacer rows', () => {
     const { el } = mount('views:\n  - type: table\n    name: T\n    summaries:\n      note.priority: Sum\n', { records: manyRecords(), folderPage: testFolderPage({ vaultRecords: manyRecords(), openBackground: vi.fn() }) })
-    for (const target of [q(el, 'thead th'), q(el, 'tfoot td'), q(el, '.view-table__spacer td')]) {
+    for (const target of [q(el, 'tfoot td'), q(el, '.view-table__spacer td')]) {
       const event = rightClick(target)
       expect(event.defaultPrevented).toBe(false)
       expect(el.querySelector('.ctx-menu')).toBeNull()
     }
+    // A header opens its OWN menu (YAZ-1513, TableHeaderMenu.test.tsx) — never the row's page actions.
+    rightClick(q(el, 'thead th'))
+    expect(el.querySelector('.ctx-menu')).not.toBeNull()
+    expect([...el.querySelectorAll('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)).not.toContain('Open in right panel')
   })
 })
 
@@ -479,7 +483,7 @@ describe('column resize', () => {
     mouse(handle, 'mousedown', 100)
     mouse(window, 'mousemove', 130)
     expect(onChange).not.toHaveBeenCalled()
-    expect(q<HTMLElement>(el, '.view-table th:nth-child(2)').style.width).toBe('180px') // 150 default + 30
+    expect(q<HTMLElement>(el, '.view-table th:nth-child(3)').style.width).toBe('180px') // 150 default + 30
     mouse(window, 'mouseup', 130)
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().views[0].columnSize).toEqual({ 'note.priority': 180 })
@@ -489,7 +493,7 @@ describe('column resize', () => {
 
   it('a drag starts from the stored width and clamps at the minimum', () => {
     const { el, def } = mount(`${TYPED_BASE.replace('name: T\n', 'name: T\n    columnSize:\n      note.priority: 90\n')}`)
-    expect(q<HTMLElement>(el, '.view-table th:nth-child(2)').style.width).toBe('90px')
+    expect(q<HTMLElement>(el, '.view-table th:nth-child(3)').style.width).toBe('90px')
     const handle = el.querySelectorAll('.view-table__resize')[1]
     mouse(handle, 'mousedown', 200)
     mouse(window, 'mousemove', 0)
@@ -605,32 +609,32 @@ describe('frozen columns', () => {
 
   it('sticks the first N real header, body and footer cells at cumulative live widths', () => {
     const { el } = mount(FROZEN_BASE)
-    const header = [...el.querySelectorAll<HTMLElement>('.view-table thead th')]
+    const header = [...el.querySelectorAll<HTMLElement>('.view-table thead th:not(.view-table__gutter)')]
     const body = cells(bodyRows(el)[0])
-    const footer = [...el.querySelectorAll<HTMLElement>('.view-table tfoot td')]
+    const footer = [...el.querySelectorAll<HTMLElement>('.view-table tfoot td:not(.view-table__gutter)')]
 
     for (const row of [header, body, footer]) {
       expect(row.map((cell) => cell.classList.contains('view-table__frozen'))).toEqual([true, true, false])
-      expect(row.map((cell) => cell.style.left)).toEqual(['0px', '120px', ''])
+      expect(row.map((cell) => cell.style.left)).toEqual(['44px', '164px', ''])
     }
   })
 
   it('moves later frozen columns during a resize preview and keeps the offset after the write', () => {
     const { el, def } = mount(FROZEN_BASE)
     const second = () => [
-      q<HTMLElement>(el, '.view-table thead th:nth-child(2)'),
-      q<HTMLElement>(el, '.view-table tbody tr:not(.view-table__spacer) td:nth-child(2)'),
-      q<HTMLElement>(el, '.view-table tfoot td:nth-child(2)'),
+      q<HTMLElement>(el, '.view-table thead th:nth-child(3)'),
+      q<HTMLElement>(el, '.view-table tbody tr:not(.view-table__spacer) td:nth-child(3)'),
+      q<HTMLElement>(el, '.view-table tfoot td:nth-child(3)'),
     ]
-    expect(second().map((cell) => cell.style.left)).toEqual(['120px', '120px', '120px'])
+    expect(second().map((cell) => cell.style.left)).toEqual(['164px', '164px', '164px'])
 
     mouse(el.querySelectorAll('.view-table__resize')[0], 'mousedown', 100)
     mouse(window, 'mousemove', 160)
-    expect(second().map((cell) => cell.style.left)).toEqual(['180px', '180px', '180px'])
+    expect(second().map((cell) => cell.style.left)).toEqual(['224px', '224px', '224px'])
     mouse(window, 'mouseup', 160)
 
     expect(def().views[0].columnSize?.['file.name']).toBe(180)
-    expect(second().map((cell) => cell.style.left)).toEqual(['180px', '180px', '180px'])
+    expect(second().map((cell) => cell.style.left)).toEqual(['224px', '224px', '224px'])
   })
 
   it('renders malformed counts safely as zero and clamps oversized counts to every visible column', () => {
@@ -640,7 +644,7 @@ describe('frozen columns', () => {
     act(() => root?.unmount())
     container?.remove()
     const all = mount(FROZEN_BASE.replace('frozenColumns: 2', 'frozenColumns: 99'))
-    expect([...all.el.querySelectorAll('.view-table thead th')].every((cell) => cell.classList.contains('view-table__frozen'))).toBe(true)
+    expect([...all.el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')].every((cell) => cell.classList.contains('view-table__frozen'))).toBe(true)
   })
 })
 
@@ -657,7 +661,7 @@ views:
 
   it('the chooser lists built-ins plus custom names, writes view.summaries and shows the value', () => {
     const { el, onChange, def, yaml } = mount(SUM_BASE)
-    click(byLabel(el, 'Summarize priority'))
+    click(byLabel(el, 'Summarize Priority'))
     const pop = q(el, '.view-popover')
     const items = [...pop.querySelectorAll('.view-popover__item')].map((b) => b.textContent)
     expect(items[0]).toBe('None')
@@ -668,13 +672,13 @@ views:
     expect(def().views[0].summaries).toEqual({ 'note.priority': 'Sum' })
     expect(yaml()).toContain('note.priority: Sum')
     expect(el.querySelector('.view-popover')).toBeNull()
-    expect(byLabel(el, 'Summarize priority').textContent).toBe('Sum6') // priorities 2 + 1 + 3
+    expect(byLabel(el, 'Summarize Priority').textContent).toBe('Sum6') // priorities 2 + 1 + 3
   })
 
   it('a custom summary evaluates with values bound to the column; None deletes the key', () => {
     const { el, def, yaml } = mount(SUM_BASE.replace('name: T\n', 'name: T\n    summaries:\n      note.priority: Total\n'))
-    expect(byLabel(el, 'Summarize priority').textContent).toBe('Totaln=8')
-    click(byLabel(el, 'Summarize priority'))
+    expect(byLabel(el, 'Summarize Priority').textContent).toBe('Totaln=8')
+    click(byLabel(el, 'Summarize Priority'))
     click(byText(el, '.view-popover__item', 'None'))
     expect(def().views[0].summaries).toBeUndefined()
     expect(yaml()).not.toContain('note.priority: Total')
@@ -727,11 +731,11 @@ describe('windowing', () => {
     const { el } = mount('views:\n  - type: table\n    name: T\n    frozenColumns: 1\n', { records: manyRecords() })
     expect(q(el, '.view-toolbar__count').textContent).toBe('600 items')
     expect(bodyRows(el).length).toBeLessThan(100)
-    expect(links(el)[0]).toBe('n000.md')
-    expect(links(el)).not.toContain('n599.md')
+    expect(links(el)[0]).toBe('n000')
+    expect(links(el)).not.toContain('n599')
     const spacer = q<HTMLTableRowElement>(el, '.view-table__spacer')
     expect(spacer).not.toBeNull()
-    expect(q<HTMLTableCellElement>(spacer, 'td').colSpan).toBe(1)
+    expect(q<HTMLTableCellElement>(spacer, 'td').colSpan).toBe(2)
     expect(spacer.querySelector('.view-table__frozen')).toBeNull()
   })
 
@@ -743,7 +747,7 @@ describe('windowing', () => {
       wrap.dispatchEvent(new Event('scroll', { bubbles: true }))
     })
     draw()
-    expect(links(el)).not.toContain('n000.md')
+    expect(links(el)).not.toContain('n000')
     expect(bodyRows(el).length).toBeLessThan(100)
     expect(links(el).length).toBeGreaterThan(0)
   })

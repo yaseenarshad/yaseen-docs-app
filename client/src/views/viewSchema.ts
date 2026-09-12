@@ -35,6 +35,8 @@ export interface ViewDef {
   summaries?: Record<string, string>
   columnSize?: Record<string, number>
   frozenColumns?: number
+  /** The `#` gutter (YAZ-1513). Absent = shown. */
+  rowNumbers?: boolean
   rowHeight?: string
   image?: string
   cardSize?: string | number

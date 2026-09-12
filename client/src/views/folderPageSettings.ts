@@ -12,9 +12,10 @@
  */
 import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { FOLDER_NAME, PROPERTY_KINDS, type IndexRecord, type PropertyDecl, type PropertyKind } from '@shared/types'
+import { DEFAULT_COLUMNS } from '@shared/folderPageDefaults'
 import { readPropertyOptions, validPropertyOptions, validPropertyOptionSort } from '@shared/propertyOptions'
 import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
-import { isExactWikilink } from '../links/folderPages'
+import { FOLDER_PAGE_KEY, isExactWikilink } from '../links/folderPages'
 import { mapOutlineLinks, parseOutline } from './outlineDoc'
 import type { ViewDef } from './viewSchema'
 import { transformFile, writeProperty } from './writeProperty'
@@ -43,6 +44,8 @@ export interface FolderPageSettings {
    * the expression itself is never parsed here (a bad one is the engine's own reported cell error).
    */
   formulas?: Record<string, string>
+  /** Column labels (YAZ-1513): `ViewSet.properties` verbatim — key → { displayName }. The KEY never changes; only what the header says. */
+  properties?: Record<string, { displayName?: string }>
   /**
    * Never empty: `DEFAULT_VIEWS` when the key declares none usable — but otherwise EXACTLY what
    * the card lists, nothing added (🔒 D3, YAZ-1471). `ViewDef` verbatim.
@@ -64,6 +67,42 @@ export const DEFAULT_VIEWS: readonly ViewDef[] = [
   { type: 'table', name: 'Table' },
   { type: 'board', name: 'Board' },
 ]
+
+/** The column every folder page is BORN with (YAZ-1513) — `shared/folderPageDefaults.ts`, re-exported for the renderer. */
+export { DEFAULT_COLUMNS }
+
+/**
+ * "Born with", spelled ONCE (YAZ-1513/1549): the properties a page carries as a folder page — the
+ * flag, and the default declaration ONLY when the page has no settings key yet. A page turned back
+ * keeps its settings (turning back deletes only the flag and the active outline), so turning it
+ * into a folder page again must not overwrite them. Built HERE so the settings key string stays
+ * module-private (🔒 Q1). Pure: `properties` is never mutated.
+ */
+export function bornFolderPage(properties: Record<string, unknown>): Record<string, unknown> {
+  const born: Record<string, unknown> = { ...properties, [FOLDER_PAGE_KEY]: true }
+  if (!Object.prototype.hasOwnProperty.call(properties, SETTINGS_KEY)) born[SETTINGS_KEY] = { columns: structuredClone(DEFAULT_COLUMNS) }
+  return born
+}
+
+/** The frontmatter a NEW folder page (Home included) is created with: `bornFolderPage` over nothing. */
+export const newFolderPageProperties = (): Record<string, unknown> => bornFolderPage({})
+
+/**
+ * "Turn into folder page" over one file's content: ONE parse, then only the keys `bornFolderPage`
+ * changed go back through the one-key writer (which preserves every other byte). Pure like
+ * `restoreFolderBody`, its reverse; the caller owns the write. Broken frontmatter throws from the
+ * writer, exactly as the plain flag write did.
+ */
+export function turnIntoFolderPage(content: string): string {
+  const { properties } = parseFrontmatter(splitFrontmatter(content).frontmatter)
+  const born = bornFolderPage(properties)
+  let next = content
+  for (const key of Object.keys(born)) {
+    if (properties[key] === born[key]) continue
+    next = setFrontmatterProperty(next, key, born[key])
+  }
+  return next
+}
 
 const KINDS = new Set<string>(PROPERTY_KINDS)
 
@@ -155,6 +194,37 @@ function readFormulas(raw: unknown, problems: string[]): Record<string, string> 
   return formulas
 }
 
+/**
+ * `key → { displayName }`, tolerant like `readFormulas`: a non-map is ignored with a problem, a
+ * non-map entry or a non-string `displayName` drops just that entry. Only `displayName` is read —
+ * the settings module's vocabulary for a label is exactly that one word.
+ */
+function readProperties(raw: unknown, problems: string[]): Record<string, { displayName?: string }> | undefined {
+  if (raw === undefined) return undefined
+  if (!isRecord(raw)) {
+    problems.push(`${SETTINGS_KEY}.properties must be a map of column labels — ignoring it`)
+    return undefined
+  }
+  const properties: Record<string, { displayName?: string }> = {}
+  for (const [key, entry] of Object.entries(raw)) {
+    if (!isRecord(entry)) {
+      problems.push(`${SETTINGS_KEY}.properties.${key} must be a map with a displayName — ignoring that label`)
+      continue
+    }
+    if (entry.displayName === undefined) {
+      properties[key] = {}
+      continue
+    }
+    if (typeof entry.displayName !== 'string') {
+      problems.push(`${SETTINGS_KEY}.properties.${key}.displayName must be text — ignoring that label`)
+      continue
+    }
+    // A blank label is no label (YAZ-1549): the header never goes empty, it wears the default.
+    properties[key] = entry.displayName.trim() === '' ? {} : { displayName: entry.displayName }
+  }
+  return properties
+}
+
 /** The shared folder grammar, and its rule: unusable at rest reads as absent. */
 function readFolder(raw: unknown, problems: string[]): string | undefined {
   if (raw === undefined) return undefined
@@ -192,6 +262,7 @@ export function folderPageSettingsOf(properties: Record<string, unknown>): Folde
     folder: readFolder(raw.folder, problems),
     defaultView: readDefaultView(raw.defaultView, problems),
     formulas: readFormulas(raw.formulas, problems),
+    properties: readProperties(raw.properties, problems),
     views: readViews(raw.views, problems),
     problems,
   }
@@ -331,6 +402,7 @@ function plain(settings: FolderPageSettings): Record<string, unknown> {
   if (settings.folder !== undefined) out.folder = settings.folder
   if (settings.defaultView !== undefined) out.defaultView = settings.defaultView
   if (settings.formulas !== undefined) out.formulas = settings.formulas
+  if (settings.properties !== undefined) out.properties = settings.properties
   out.views = settings.views
   return out
 }

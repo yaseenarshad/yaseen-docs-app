@@ -143,7 +143,7 @@ describe('nested sections (YAZ-745)', () => {
   it('renders outer headers, direct rows first, then indented inner sections; summaries per level; no total row', () => {
     const { el } = mount(NESTED_BASE)
     expect(headerTexts(el)).toEqual(['A', 'p1', 'p2', 'B', 'p1', 'C'])
-    expect(links(el)).toEqual(['alphaDirect.md', 'alpha1.md', 'alpha2.md', 'beta1.md', 'loner.md'])
+    expect(links(el)).toEqual(['alphaDirect', 'alpha1', 'alpha2', 'beta1', 'loner'])
     // depth: outer header cells carry only the base class, inner cells add the nested modifier
     const cells = headers(el).map((h) => q<HTMLTableCellElement>(h, 'td.view-table__group-cell'))
     expect(cells.map((c) => c.classList.contains('view-table__group-cell--nested'))).toEqual([false, true, true, false, true, false])
@@ -161,7 +161,7 @@ describe('nested sections (YAZ-745)', () => {
     const { storage } = await import('../../lib/storage')
     const { el, onChange } = mount(NESTED_BASE)
     click(toggles(el, 'p1')[0]) // the p1 under A
-    expect(links(el)).toEqual(['alphaDirect.md', 'alpha2.md', 'beta1.md', 'loner.md'])
+    expect(links(el)).toEqual(['alphaDirect', 'alpha2', 'beta1', 'loner'])
     expect(headerTexts(el)).toEqual(['A', 'p1', 'p2', 'B', 'p1', 'C']) // headers all stay
     expect(toggles(el, 'p1')[0].getAttribute('aria-expanded')).toBe('false')
     expect(toggles(el, 'p1')[1].getAttribute('aria-expanded')).toBe('true') // B's p1 untouched
@@ -174,7 +174,7 @@ describe('nested sections (YAZ-745)', () => {
     const { el } = mount(NESTED_BASE)
     click(toggles(el, 'A')[0])
     expect(headerTexts(el)).toEqual(['A', 'B', 'p1', 'C'])
-    expect(links(el)).toEqual(['beta1.md', 'loner.md'])
+    expect(links(el)).toEqual(['beta1', 'loner'])
     expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::T', ['v:A'])
   })
 
@@ -185,9 +185,9 @@ describe('nested sections (YAZ-745)', () => {
     unmount()
     const again = mount(NESTED_BASE)
     expect(toggles(again.el, 'A')[0].getAttribute('aria-expanded')).toBe('false')
-    expect(links(again.el)).toEqual(['beta1.md', 'loner.md'])
+    expect(links(again.el)).toEqual(['beta1', 'loner'])
     click(toggles(again.el, 'A')[0]) // expand the outer again: the inner p1 is still collapsed
-    expect(links(again.el)).toEqual(['alphaDirect.md', 'alpha2.md', 'beta1.md', 'loner.md'])
+    expect(links(again.el)).toEqual(['alphaDirect', 'alpha2', 'beta1', 'loner'])
   })
 
   it('collapse-all covers both levels; expand-all clears', async () => {
@@ -207,7 +207,7 @@ describe('nested sections (YAZ-745)', () => {
     click(byLabel(el, 'Search'))
     setValue(byLabel(el, 'Search rows'), 'alpha1')
     expect(headerTexts(el)).toEqual(['A', 'p1'])
-    expect(links(el)).toEqual(['alpha1.md'])
+    expect(links(el)).toEqual(['alpha1'])
   })
 
   it('a single-level base renders no nested markup', () => {

@@ -154,13 +154,14 @@ const topicRow = (w: Page, label: string) =>
   w.locator('.sidebar__body .tree__row').filter({ has: w.locator('.tree__label', { hasText: new RegExp(`^${label}$`) }) })
 
 const read = (rel: string) => readFile(path.join(vault, rel), 'utf8')
-const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__link')
-const cell = (scope: Locator, r: number, c: number) => scope.locator(`[data-cell="${r}:${c}"]`)
 /**
  * What the name column shows. The clickable title cell is keyed to `file.name` (TableView's
- * `nameCol`), and `file.name` is Obsidian's TFile name — extension included.
+ * `nameCol`), and since YAZ-1513 it reads the page TITLE — the basename, never `Funnel Stages.md`
+ * (`file.name`'s VALUE keeps the extension for sort and filter; the eye never sees it).
  */
-const named = (...names: string[]) => names.map((n) => `${n}.md`)
+const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__link')
+/** `data-cell="row:col"` indexes DATA columns only — the `#` gutter (YAZ-1513) carries none. */
+const cell = (scope: Locator, r: number, c: number) => scope.locator(`[data-cell="${r}:${c}"]`)
 
 const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
 
@@ -297,7 +298,7 @@ test('step 1 — the migrated encyclopedia opens on Home, holding exactly its to
 
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(dataRows(contents(win))).toHaveCount(TOPICS.length)
-  await expect(rowNames(contents(win))).toHaveText(named(...TOPICS))
+  await expect(rowNames(contents(win))).toHaveText(TOPICS)
   await shoot(win, 'bible-01-home-topics')
 })
 

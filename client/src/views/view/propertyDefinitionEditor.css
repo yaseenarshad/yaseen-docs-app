@@ -328,3 +328,23 @@
   background: var(--bg);
   color: var(--fg);
 }
+
+/* Per-option remove (YAZ-1513): shown on hover, beside the ••• rename affordance. */
+.property-def__remove {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--fg-muted);
+  opacity: 0;
+}
+.property-def__option:hover .property-def__remove,
+.property-def__remove:focus-visible {
+  opacity: 1;
+}
+.property-def__remove:hover {
+  color: var(--danger);
+  background: var(--accent-soft);
+}
