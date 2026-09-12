@@ -9,7 +9,7 @@
  * counts as listing it. The text to append is the completion picker's own name row
  * (`links/completion.ts` `linkNames`) — the SHORTEST UNAMBIGUOUS name, so a duplicate basename
  * appends `folder/Name` and the appended link lands on the note it names. That lookup is shared
- * with the sidebar's "Copy link" (YAZ-957): one note, one spelling, wherever it is written.
+ * with adoption (YAZ-1152): one note, one spelling, wherever it is written.
  *
  * THE ANSWER STOPS AT THE FOLDER'S OWN NOTES: `folder` is the root-relative folder of a record
  * ('' at the vault root, which is a folder like any other), matched exactly — a note in

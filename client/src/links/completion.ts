@@ -160,8 +160,8 @@ export function linkCandidates(records: readonly IndexRecord[]): LinkCandidate[]
 }
 
 /**
- * Every indexed note's own link NAME, keyed by path — the ONE lookup behind both "Copy link"
- * (YAZ-957) and sync-from-folder (YAZ-951), so the two can never spell one note two ways. The
+ * Every indexed note's own link NAME, keyed by path — the ONE lookup behind both sync-from-folder
+ * (YAZ-951) and adoption (YAZ-1152), so the two can never spell one note two ways. The
  * name is the shortest unambiguous one `linkCandidates` offers, which is exactly the text that
  * links BACK to that record. Alias rows are skipped: they insert the piped `Note|Alias` form.
  */
