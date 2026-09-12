@@ -15,9 +15,12 @@ describe('HOTKEYS source of truth', () => {
   it('covers the folder-page view bindings', () => {
     const keys = VIEW_HOTKEYS.map((h) => h.keys)
     // Table cell navigation (4B), cell editors (5B), board drag cancel (5C) — 7B, GRO-2148.
-    for (const expected of ['↑ ↓ ← →', '⏎ / Esc', 'Esc']) {
+    for (const expected of ['↑ ↓ ← →', '⌘⏎ / ⌥⏎', '⏎ / Esc', 'Esc']) {
       expect(keys).toContain(expected)
     }
+    // YAZ-1557: arrows walk board cards too, and the modifier-Enter pair names both targets in order.
+    expect(VIEW_HOTKEYS.find((h) => h.keys === '↑ ↓ ← →')?.label).toMatch(/board cards/i)
+    expect(VIEW_HOTKEYS.find((h) => h.keys === '⌘⏎ / ⌥⏎')?.label).toMatch(/background tab.*right panel/i)
   })
 
   it('covers the window & tab shortcuts from the application menu (B3 + Tabs) plus the open-beside tip', () => {
@@ -49,6 +52,9 @@ describe('HOTKEYS source of truth', () => {
     expect(byKeys('⇧-click file')?.label).toMatch(/multi-selection/i)
     expect(byKeys('⇧-click file')?.label).toMatch(/Copy N paths/)
     expect(byKeys('⇧-click file')?.label).toMatch(/Open N in new tabs/)
+    // YAZ-1557 (D1/D2): click = select on a board card, ⌥ = the right panel on both folder-page views.
+    expect(byKeys('Click card')?.label).toMatch(/select/i)
+    expect(byKeys('⌥-click name or card')?.label).toMatch(/right panel/i)
   })
 
   it('every entry is renderable (non-empty keys and label)', () => {

@@ -14,6 +14,7 @@ import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, useGroupDra
 import { Popover } from './Popover'
 import { usePreview } from './PreviewCard'
 import { cssZoom } from '../../lib/cssZoom'
+import { openByGesture } from '../../lib/openGesture'
 import { frozenColumnCount } from './frozenColumns'
 import { PageContextMenu } from './PageContextMenu'
 import { TableHeaderMenu } from './TableHeaderMenu'
@@ -123,6 +124,8 @@ function pinnedHeaderOffset(scrollerTop: number, tableTop: number, tableHeight: 
 export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, onMoveToGroup, moveError, onNewInGroup, root, properties = null, folderPage = null, vaultRecords, preview = false, declareColumn, deleteColumn }: TableViewProps) {
   const [drag, setDrag] = useState<{ key: string; width: number } | null>(null)
   const { rowProps, card, close } = usePreview(preview)
+  /** The name link and Enter on its cell share the one open rule (YAZ-1557): ⌘ background, ⌥ right, plain current. */
+  const openHandlers = { onOpenFile, onOpenFileRight, onOpenFileBackground }
   // Row drag between sections (5C, GRO-2143); disabled without groups. One write key PER level
   // (YAZ-1101): a level that is not a note property takes no drops and shows no "+".
   const levelKeys = [groupByKey(view), groupByKey(view, 1)]
@@ -386,7 +389,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const [r, c] = at.split(':').map(Number)
     if (e.key === 'Enter') {
       if (c === nameCol) {
-        if (flat[r]) onOpenFile(flat[r].record.path)
+        if (flat[r]) openByGesture(e, flat[r].record.path, openHandlers)
       } else {
         // Start editing (or toggle the checkbox) through the same delegated control (5B, GRO-2142).
         ;(e.target as HTMLElement).querySelector<HTMLElement>('[data-edit]')?.click()
@@ -492,7 +495,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                       >
                         {c === nameCol ? (
                           <>
-                            <button type="button" className="view-table__link" onClick={() => onOpenFile(line.row.record.path)}>
+                            <button type="button" className="view-table__link" onClick={(e) => openByGesture(e, line.row.record.path, openHandlers)}>
                               {pageTitle(line.row)}
                             </button>
                             {moveError?.path === line.row.record.path && (

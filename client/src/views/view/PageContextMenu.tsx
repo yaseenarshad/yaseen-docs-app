@@ -27,19 +27,6 @@ export function PageContextMenu({ x, y, path, onOpenRight, onOpenBackground, onN
 
   return (
     <ContextMenuSurface x={x} y={y} onClose={onClose}>
-      {onOpenRight !== undefined && (
-        <button
-          type="button"
-          className="ctx-menu__item"
-          role="menuitem"
-          onClick={() => {
-            onOpenRight(path)
-            onClose()
-          }}
-        >
-          Open in right panel
-        </button>
-      )}
       {onOpenBackground !== undefined && (
         <button
           type="button"
@@ -69,6 +56,20 @@ export function PageContextMenu({ x, y, path, onOpenRight, onOpenBackground, onN
       <button type="button" className="ctx-menu__item" role="menuitem" onClick={reveal}>
         Reveal in Finder
       </button>
+      {/* Last on purpose (YAZ-1556): the pane-specific open sits below the three page actions every surface shares. */}
+      {onOpenRight !== undefined && (
+        <button
+          type="button"
+          className="ctx-menu__item"
+          role="menuitem"
+          onClick={() => {
+            onOpenRight(path)
+            onClose()
+          }}
+        >
+          Open in right panel
+        </button>
+      )}
     </ContextMenuSurface>
   )
 }

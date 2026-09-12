@@ -493,6 +493,7 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
           collapsed={collapsed}
           onToggleGroup={onToggleGroup}
           onUpdate={update}
+          onOpenFile={onOpenFile}
           onOpenFileRight={folderPage.openRight}
           onOpenFileBackground={folderPage.openBackground}
           onNotice={folderPage.onNotice}

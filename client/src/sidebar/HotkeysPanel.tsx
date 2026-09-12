@@ -31,7 +31,9 @@ export const HOTKEYS: readonly HotkeyEntry[] = [
 ]
 
 export const VIEW_HOTKEYS: readonly HotkeyEntry[] = [
-  { keys: '↑ ↓ ← →', label: 'Move between table cells — Enter opens the note or edits the cell' },
+  { keys: '↑ ↓ ← →', label: 'Move between table cells or board cards — Enter opens the note or edits the cell' },
+  // One open rule for Table and Board (YAZ-1557): ⌘ = background tab (I3), ⌥ = right panel.
+  { keys: '⌘⏎ / ⌥⏎', label: 'Open the selected note in a background tab / the right panel' },
   { keys: '⏎ / Esc', label: 'Commit / cancel a cell edit' },
   { keys: 'Esc', label: 'Cancel a card drag' },
 ]
@@ -59,7 +61,10 @@ export const MOUSE_TIPS: readonly HotkeyEntry[] = [
   // Links C (GRO-2192): the editor's [[wiki link]] click model; the ⌘-click line is SHARED
   // with the sidebar's I3 gesture — one convention, one tip.
   { keys: 'Click link', label: 'Open that wiki link in the current tab — a missing note is created first' },
-  { keys: '⌘-click file or link', label: 'Open it in a background tab' },
+  { keys: '⌘-click file or link', label: 'Open it in a background tab — a table name or board card too' },
+  // YAZ-1557: a board card is a cell — click selects, the title opens — and ⌥ is the right-panel key on both views.
+  { keys: 'Click card', label: 'Select it — the title opens the note in the current tab' },
+  { keys: '⌥-click name or card', label: 'Open it in the right panel' },
   // The multi-select gesture (YAZ-1336 🔒 D2) and what it is FOR (YAZ-1337): the two plural menu
   // items and ⌘⇧C above. Shift toggles one row at a time — it never opens anything.
   { keys: '⇧-click file', label: 'Add or remove it from a multi-selection — right-click for Copy N paths / Open N in new tabs' },

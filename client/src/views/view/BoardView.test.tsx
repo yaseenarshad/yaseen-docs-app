@@ -193,8 +193,14 @@ function setValue(el: HTMLInputElement, value: string): void {
   draw()
 }
 
-function press(el: Element, key: string): void {
-  act(() => el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })))
+function press(el: Element, key: string, init: KeyboardEventInit = {}): void {
+  act(() => el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })))
+  draw()
+}
+
+/** A primary click carrying modifier keys — `el.click()` cannot hold ⌘ or ⌥. */
+function modClick(el: Element, init: MouseEventInit): void {
+  act(() => void el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ...init })))
   draw()
 }
 
@@ -283,7 +289,7 @@ describe('nested Board styling contract', () => {
 })
 
 describe('cards', () => {
-  it('a card is the file name title over label/value rows rendered by type; the title opens the page on the right', () => {
+  it('a card is the file name title over label/value rows rendered by type; the title opens the page in the current tab', () => {
     const openRight = vi.fn()
     const { el, onOpenFile } = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight }) })
     const card = q<HTMLElement>(cols(el)[1], '.view-board__card') // idea → Agentic Agency
@@ -297,19 +303,41 @@ describe('cards', () => {
     const gold = [...cols(el)[1].querySelectorAll<HTMLElement>('.view-board__card')][1]
     expect([...gold.querySelectorAll('.view-board__prop-value')][0].textContent).toBe('')
     click(q(card, '.view-board__title'))
-    expect(openRight).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
-    expect(onOpenFile).not.toHaveBeenCalled()
+    expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
+    expect(openRight).not.toHaveBeenCalled()
   })
 
-  it('primary-click opens direct, nested, repeated, and empty-shell cards on the right by exact record path', () => {
+  it('a plain click on the card body SELECTS the card — focus, nothing opens (YAZ-1557 D2)', () => {
     const openRight = vi.fn()
-    const direct = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight }) })
-    click(q(cardNamed(direct.el, 'Agentic Agency'), '.view-board__prop-value'))
-    expect(openRight).toHaveBeenLastCalledWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
+    const openBackground = vi.fn()
+    const { el, onOpenFile } = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight, openBackground }) })
+    const card = cardNamed(el, 'Agentic Agency')
+    expect(card.tabIndex).toBe(0)
+    click(q(card, '.view-board__prop-value'))
+    expect(document.activeElement).toBe(card)
+    expect(onOpenFile).not.toHaveBeenCalled()
+    expect(openRight).not.toHaveBeenCalled()
+    expect(openBackground).not.toHaveBeenCalled()
+  })
+
+  it('⌘ opens a background tab and ⌥ the right panel — title or body, direct, nested, repeated and title-less cards, by exact record path; ⇧ does nothing', () => {
+    const agentic = '/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md'
+    const openRight = vi.fn()
+    const openBackground = vi.fn()
+    const direct = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight, openBackground }) })
+    modClick(q(cardNamed(direct.el, 'Agentic Agency'), '.view-board__title'), { metaKey: true })
+    expect(openBackground).toHaveBeenLastCalledWith(agentic)
+    modClick(q(cardNamed(direct.el, 'Agentic Agency'), '.view-board__prop-value'), { altKey: true })
+    expect(openRight).toHaveBeenLastCalledWith(agentic)
+    modClick(q(cardNamed(direct.el, 'Agentic Agency'), '.view-board__title'), { shiftKey: true })
+    modClick(cardNamed(direct.el, 'Agentic Agency'), { shiftKey: true })
+    expect(direct.onOpenFile).not.toHaveBeenCalled()
+    expect(openBackground).toHaveBeenCalledOnce()
+    expect(openRight).toHaveBeenCalledOnce()
 
     unmount()
     const nested = mount(NESTED_BOARD, { records: NESTED_RECORDS, folderPage: testFolderPage({ openRight }) })
-    click(cardNamed(nested.el, 'alpha1'))
+    modClick(cardNamed(nested.el, 'alpha1'), { altKey: true })
     expect(openRight).toHaveBeenLastCalledWith('/vault/alpha1.md')
 
     unmount()
@@ -319,20 +347,68 @@ describe('cards', () => {
     const repeated = [...fanned.el.querySelectorAll<HTMLElement>('.view-board__title')].filter(
       (title) => title.textContent === 'Agentic Agency',
     )
-    click(repeated[1].closest<HTMLElement>('.view-board__card')!)
-    expect(openRight).toHaveBeenLastCalledWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
+    modClick(repeated[1].closest<HTMLElement>('.view-board__card')!, { altKey: true })
+    expect(openRight).toHaveBeenLastCalledWith(agentic)
 
     unmount()
     const empty = mount('views:\n  - type: board\n    name: B\n    order: []\n    groupBy:\n      property: note.status\n', {
       folderPage: testFolderPage({ openRight }),
     })
     const emptyCard = q<HTMLElement>(empty.el, '.view-board__card')
-    expect(emptyCard.getAttribute('role')).toBe('button')
-    expect(emptyCard.getAttribute('aria-label')).toBe('Open The Levels of an Agency.md in right panel')
-    click(emptyCard)
+    expect(emptyCard.getAttribute('role')).toBeNull()
+    expect(emptyCard.getAttribute('aria-label')).toBe('The Levels of an Agency.md')
+    modClick(emptyCard, { altKey: true })
     expect(openRight).toHaveBeenLastCalledWith('/vault/Content Pillars/1. Agentic Agency/The Levels of an Agency.md')
-    act(() => void emptyCard.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
-    expect(openRight).toHaveBeenCalledTimes(5)
+    expect(openRight).toHaveBeenCalledTimes(4)
+  })
+
+  it('Enter on a selected card opens it in the current tab; ⌘⏎ a background tab, ⌥⏎ the right panel, ⇧⏎ nothing', () => {
+    const levels = '/vault/Content Pillars/1. Agentic Agency/The Levels of an Agency.md'
+    const openRight = vi.fn()
+    const openBackground = vi.fn()
+    const { el, onOpenFile } = mount(BOARD_BASE, { folderPage: testFolderPage({ openRight, openBackground }) })
+    const card = cardNamed(el, 'The Levels of an Agency')
+    act(() => card.focus())
+    press(card, 'Enter')
+    expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(levels)
+    press(card, 'Enter', { metaKey: true })
+    expect(openBackground).toHaveBeenCalledExactlyOnceWith(levels)
+    press(card, 'Enter', { altKey: true })
+    expect(openRight).toHaveBeenCalledExactlyOnceWith(levels)
+    press(card, 'Enter', { shiftKey: true })
+    press(card, ' ')
+    expect(onOpenFile).toHaveBeenCalledOnce()
+    // a key pressed INSIDE the card (its title button) is that control's own, never the card's open
+    press(q(card, '.view-board__title'), 'Enter')
+    expect(onOpenFile).toHaveBeenCalledOnce()
+  })
+
+  it('arrow keys walk cards like table cells: ↑↓ inside a column in DOM order (nested sections included), ←→ to the same row of the neighbour column, clamped at every edge', () => {
+    const { el } = mount(NESTED_BOARD, { records: NESTED_RECORDS })
+    const focused = (): string | null | undefined => document.activeElement?.closest('.view-board__card')?.querySelector('.view-board__title')?.textContent
+    const cur = (): HTMLElement => document.activeElement as HTMLElement
+    // column A in DOM order: alphaDirect (direct), alpha1 (p1), alpha2 (p2); B: beta1; C: loner
+    act(() => cardNamed(el, 'alphaDirect').focus())
+    press(cur(), 'ArrowDown')
+    expect(focused()).toBe('alpha1')
+    press(cur(), 'ArrowDown')
+    expect(focused()).toBe('alpha2')
+    press(cur(), 'ArrowDown') // clamped at the column's end
+    expect(focused()).toBe('alpha2')
+    press(cur(), 'ArrowRight') // row 2 clamps to the neighbour's only card
+    expect(focused()).toBe('beta1')
+    press(cur(), 'ArrowRight')
+    expect(focused()).toBe('loner')
+    press(cur(), 'ArrowRight') // clamped at the last column
+    expect(focused()).toBe('loner')
+    press(cur(), 'ArrowLeft')
+    expect(focused()).toBe('beta1')
+    press(cur(), 'ArrowLeft')
+    expect(focused()).toBe('alphaDirect')
+    press(cur(), 'ArrowUp') // clamped at the column's start
+    expect(focused()).toBe('alphaDirect')
+    press(cur(), 'ArrowLeft') // clamped at the first column
+    expect(focused()).toBe('alphaDirect')
   })
 
   it('suppresses the synthetic primary click after a secondary click or completed group drag', () => {
@@ -341,13 +417,13 @@ describe('cards', () => {
     const card = cardNamed(el, 'Agentic Agency')
 
     rightClick(card, 120, 42)
-    click(card)
+    modClick(card, { altKey: true })
     expect(openRight).not.toHaveBeenCalled()
 
     act(() => void document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
     drag(card, 'dragstart')
     drag(card, 'dragend')
-    click(card)
+    modClick(card, { altKey: true })
     expect(openRight).not.toHaveBeenCalled()
   })
 })
@@ -379,7 +455,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(event.defaultPrevented).toBe(true)
     expect(q<HTMLElement>(el, '.ctx-menu').style.left).toBe('120px')
     expect(q<HTMLElement>(el, '.ctx-menu').style.top).toBe('42px')
-    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open in right panel', 'Open in new tab', 'Copy path', 'Reveal in Finder'])
+    expect(menuItems(el).map((item) => item.textContent)).toEqual(['Open in new tab', 'Copy path', 'Reveal in Finder', 'Open in right panel'])
     expect(onOpenFile).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
     expect(el.querySelector('.view-cell-edit__input, .view-table__selected')).toBeNull()
@@ -939,9 +1015,9 @@ ${cardStyle}
     expect(kids[0].classList.contains('view-board__prop')).toBe(true)
     expect(kids[1].classList.contains('view-board__dash')).toBe(true)
     expect(kids[2].classList.contains('view-board__title')).toBe(true)
-    click(kids[2])
-    expect(openRight).toHaveBeenCalledTimes(1)
-    expect(onOpenFile).not.toHaveBeenCalled()
+    click(kids[2]) // still the name link wherever it sits: plain click → current tab (YAZ-1557)
+    expect(onOpenFile).toHaveBeenCalledTimes(1)
+    expect(openRight).not.toHaveBeenCalled()
   })
 
   it('join works the same with file.name hidden, and on the FIRST property it is a no-op', () => {
