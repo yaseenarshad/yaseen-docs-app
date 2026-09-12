@@ -693,7 +693,6 @@ describe('App tabs (I2, GRO-2234)', () => {
     expect(new Set(sources).size).toBe(1)
     expect(sources[0]?.ready).toBe(true)
     expect('records' in sources[0]!).toBe(false)
-    expect(captured.sidebar?.viewOnlyLinks).toBe(sources[0])
   })
 
   it.each([

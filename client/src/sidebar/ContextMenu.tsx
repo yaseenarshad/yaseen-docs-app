@@ -5,8 +5,6 @@ interface ContextMenuProps {
   y: number
   /** Absolute path of the right-clicked row (file or folder); null for blank space (GRO-2069). */
   copyPath: string | null
-  /** The right-clicked FILE row's own `[[wikilink]]`, ready to copy; null (folders, blank space) hides "Copy link" — neither is a note to name (E3 GRO-2173, YAZ-957). */
-  copyLinkText: string | null
   /**
    * "Copy N paths" — the whole selection in the panel's own order (🔒 D5, YAZ-1337; ⚡ YAZ-1338
    * appends the paths whose rows are hidden), newline-joined on click; null hides the item, which
@@ -64,7 +62,7 @@ interface ContextMenuProps {
 }
 
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInNewTabs, onNotice, copyLinkText, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, openVsCodePath, onOpenVsCode, onNewNote, onNewFolderPage, onNewFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInNewTabs, onNotice, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, openVsCodePath, onOpenVsCode, onNewNote, onNewFolderPage, onNewFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, onClose }: ContextMenuProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -191,22 +189,6 @@ export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInN
             }}
           >
             Copy path
-          </button>
-        )}
-        {copyLinkText !== null && (
-          <button
-            type="button"
-            className="ctx-menu__item"
-            role="menuitem"
-            onClick={() => {
-              void navigator.clipboard.writeText(copyLinkText).then(
-                () => onNotice?.('Copied link'),
-                (error: unknown) => onNotice?.(`Can't copy link: ${error instanceof Error ? error.message : String(error)}`),
-              )
-              onClose()
-            }}
-          >
-            Copy link
           </button>
         )}
         <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewNote}>
