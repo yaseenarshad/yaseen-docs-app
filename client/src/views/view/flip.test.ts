@@ -6,7 +6,7 @@
  * what can quietly go wrong, so the math is what is pinned.
  */
 import { describe, expect, it } from 'vitest'
-import { flipPlan, type FlipRect } from './flip'
+import { flipPlan, flipRect, type FlipRect } from './flip'
 
 const at = (x: number, y: number): FlipRect => ({ x, y })
 const rects = (entries: Record<string, FlipRect>): Map<string, FlipRect> => new Map(Object.entries(entries))
@@ -39,5 +39,33 @@ describe('flipPlan', () => {
     const plan = flipPlan(rects({ a: at(10, 20) }), rects({ a: at(10, 20) }))
     expect(plan.moves.size).toBe(0)
     expect(plan.entered).toEqual([])
+  })
+})
+
+/**
+ * YAZ-1555: a scrolled board is NOT a moved board. Cards are measured in the FLIP root's content
+ * space — the viewport rect minus the root's rect, plus the root's own scroll — so a scroll on the
+ * root (sideways) or on an ancestor (the note, vertically) leaves every card's measurement
+ * unchanged, and only a real reflow plans a move.
+ */
+describe('flipRect', () => {
+  const origin = at(0, 0)
+
+  it('the board scrolling sideways moves nothing — the root scroll cancels the viewport shift', () => {
+    const before = flipRect(at(100, 50), origin, 0, 0)
+    const after = flipRect(at(-200, 50), origin, 300, 0)
+    expect(flipPlan(rects({ a: before }), rects({ a: after })).moves.size).toBe(0)
+  })
+
+  it('the note scrolling vertically moves nothing — the root itself moved with the card', () => {
+    const before = flipRect(at(100, 50), at(0, 0), 0, 0)
+    const after = flipRect(at(100, -350), at(0, -400), 0, 0)
+    expect(flipPlan(rects({ a: before }), rects({ a: after })).moves.size).toBe(0)
+  })
+
+  it('a real cross-column move after a scroll still plans exactly that move', () => {
+    const before = flipRect(at(100, 50), origin, 0, 0)
+    const after = flipRect(at(100 - 300 + 260, 50 + 40), origin, 300, 0)
+    expect(flipPlan(rects({ a: before }), rects({ a: after })).moves.get('a')).toEqual({ dx: -260, dy: -40 })
   })
 })
