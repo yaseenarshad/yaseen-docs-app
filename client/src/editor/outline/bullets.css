@@ -17,6 +17,7 @@
      pixels, so this renders as 1px at DPR 1 and 1.5px on retina — same as the snippet's `1.5px`. */
   --list-ring-border: max(1px, 0.094em);
   --list-marker-color: color-mix(in srgb, currentColor 78%, transparent);
+  --list-done-color: color-mix(in srgb, currentColor 55%, transparent);
 }
 
 /* Label row geometry, Roam-uniform (GRO-2024/GRO-2071): every row — plain or heading-first
@@ -117,4 +118,12 @@
   border: 0;
   border-radius: 50%;
   background: var(--list-marker-color);
+}
+
+/* A done task reads as done (YAZ-1514, Obsidian's default look): the item's OWN first line is
+   struck and muted; nested children keep their own state. Visual only — the file stays `* [x] …`,
+   so a task checked in Obsidian, by the ☑ click, or by `Mod-Enter` all look the same. */
+.editor-instance .milkdown .milkdown-list-item-block > li.list-item:has(> .label-wrapper > .label.checked) > .children > .content-dom > :is(p, h1, h2, h3, h4, h5, h6):is(:first-child, .outline-toggle + *) {
+  text-decoration: line-through;
+  color: var(--list-done-color);
 }
