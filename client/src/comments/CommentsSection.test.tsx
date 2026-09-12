@@ -829,3 +829,26 @@ describe('order (YAZ-1515)', () => {
   })
 })
 
+// ---------- header wrap (⚡ YAZ-1516) ----------
+
+describe('header wrap (YAZ-1516)', () => {
+  const TITLE = 'Why the enterprise onboarding funnel leaks at Q3'
+
+  it('a 48-char title is rendered WHOLE in the header row', () => {
+    expect(TITLE).toHaveLength(48)
+    const el = mount(note(`  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    title: ${TITLE}\n    body: |-\n      Line one\n      Line two\n`))
+    const head = must(q(el, '.comments__summary'), 'the header seat')
+    expect(head.textContent).toBe(TITLE)
+    expect(head.classList.contains('comments__summary--title')).toBe(true)
+  })
+
+  it('CSS: the summary wraps — no nowrap, no ellipsis — and every seat beside it sits on the 20px first line', () => {
+    const summary = must(commentsCss.match(/\.comments__summary\s*\{([^}]*)\}/s)?.[1], 'the .comments__summary rule')
+    expect(summary).not.toMatch(/nowrap|text-overflow|overflow:\s*hidden/)
+    expect(summary).toMatch(/line-height:\s*20px;/)
+    expect(summary).toMatch(/overflow-wrap:\s*anywhere;/)
+    // The one-liner's class is a hook only now: no rule of its own.
+    expect(commentsCss).not.toMatch(/\.comments__summary--whole\s*\{/)
+    expect(commentsCss).toMatch(/\.comments__meta\s*\{[^}]*align-items:\s*flex-start;/s)
+  })
+})

@@ -122,7 +122,8 @@
 /* One line: the fold, the marker, who (when declared), the summary when folded, when, edited, actions. */
 .comments__meta {
   display: flex;
-  align-items: center;
+  /* A wrapped header aligns everything to its FIRST line: every seat is 20px tall. */
+  align-items: flex-start;
   gap: 8px;
   min-height: 20px;
   font-size: 12px;
@@ -137,6 +138,7 @@
   flex: none;
   width: 16px;
   height: 16px;
+  margin-top: 2px; /* a 16px box centred on the 20px first line (YAZ-1516) */
   margin-left: -4px;
   color: var(--fg-muted);
   border-radius: 4px;
@@ -180,14 +182,13 @@
   background: var(--agent-soft);
 }
 
-/* Folded: the title (or the first line) stands in for the body, on one line, in the body's colour. */
+/* Folded: the title (or the first line) stands in for the body, in the body's colour. It WRAPS (⚡ YAZ-1516): a long title is never clipped; the seats beside it stay on its first line. */
 .comments__summary {
   min-width: 0;
-  overflow: hidden;
   font-size: 14px;
+  line-height: 20px;
   color: var(--fg);
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 /* A real title keeps its weight when folded, so the row still reads as a title. */
@@ -196,22 +197,19 @@
   font-weight: 600;
 }
 
-/* A one-liner IS its header row: it wraps like a body, since there is nothing below to hold the rest. */
-.comments__summary--whole {
-  white-space: normal;
-  line-height: 1.55;
-}
+/* A one-liner IS its header row; it wraps like every other header now (YAZ-1516), so the class is a hook only. */
 
 /* A one-liner keeps the fold's seat so every number lines up, but has nothing to fold. */
 .comments__fold--none {
   visibility: hidden;
 }
 
-/* The stamp, "(edited)" and the writer never wrap; the summary is what gives. */
+/* The stamp, "(edited)" and the writer never wrap; the summary is what gives. Each sits on the 20px first line. */
 .comments__when,
 .comments__edited,
 .comments__by {
   flex: none;
+  line-height: 20px;
 }
 
 .comments__actions {
@@ -231,6 +229,7 @@
 .comments__action {
   padding: 1px 6px;
   font-size: 12px;
+  line-height: 18px; /* 1px padding each side + 18 = the 20px first line */
   color: var(--fg-muted);
   border-radius: 4px;
 }
