@@ -491,6 +491,8 @@ export interface SettingsState {
    * cog — a one-way switch would leave hand-editing `yaseendocs.json` as the only way back.
    */
   confirmDelete: boolean
+  /** Comment stream order (YAZ-1515): how you READ, global, never part of a note. */
+  commentsOrder: CommentsOrder
 }
 
 export const THREAD_WIDTHS: readonly number[] = [1, 2, 3]
@@ -505,6 +507,10 @@ export const THEMES: readonly Theme[] = ['system', 'light', 'dark']
  */
 export type NewNoteLocation = 'root' | 'current' | 'folder'
 export const NEW_NOTE_LOCATIONS: readonly NewNoteLocation[] = ['root', 'current', 'folder']
+
+/** Comment stream order (YAZ-1515): oldest-first (the model's order) or newest-first by the ROOT's `at`. */
+export type CommentsOrder = 'oldest' | 'newest'
+export const COMMENTS_ORDERS: readonly CommentsOrder[] = ['oldest', 'newest']
 
 /**
  * Valid `newNoteFolder`: '' (the vault root) or root-relative — no leading/trailing `/`, no
@@ -530,6 +536,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   newNoteLocation: 'root',
   newNoteFolder: '',
   confirmDelete: true,
+  commentsOrder: 'oldest',
 }
 
 export interface WindowBounds {

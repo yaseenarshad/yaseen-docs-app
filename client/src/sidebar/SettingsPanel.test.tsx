@@ -85,6 +85,34 @@ describe('SettingsCog Content width row (YAZ-1176)', () => {
   })
 })
 
+/** The Comments row's two options, found by its label so the row's position is not what the test pins. */
+const commentsOrderButtons = (el: HTMLElement) => {
+  const label = [...el.querySelectorAll('.settings__label')].find((p) => p.textContent === 'Comments')
+  return [...(label?.nextElementSibling?.querySelectorAll('button') ?? [])]
+}
+
+describe('SettingsCog Comments row (YAZ-1515)', () => {
+  it('offers Oldest first · Newest first in that order, above Files & Links, with Oldest first active by default', () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS })
+    const labels = [...el.querySelectorAll('.settings__label, .settings__section')].map((p) => p.textContent)
+    expect(labels.indexOf('Comments')).toBeLessThan(labels.indexOf('Files & Links'))
+    const buttons = commentsOrderButtons(el)
+    expect(buttons.map((b) => b.textContent)).toEqual(['Oldest first', 'Newest first'])
+    expect(buttons.map((b) => b.classList.contains('settings__option--active'))).toEqual([true, false])
+  })
+
+  it('clicking Newest first writes the whole settings object with only commentsOrder changed', () => {
+    const { onChange, el } = mount({ ...DEFAULT_SETTINGS })
+    commentsOrderButtons(el)[1].click()
+    expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, commentsOrder: 'newest' })
+  })
+
+  it('marks Newest first active when the stored order is newest', () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS, commentsOrder: 'newest' })
+    expect(commentsOrderButtons(el).map((b) => b.classList.contains('settings__option--active'))).toEqual([false, true])
+  })
+})
+
 /** The Files & Links location options (stacked — the long Obsidian labels get a column, not a row). */
 const locationButtons = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.settings__stack button')]
 const folderInput = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.settings__input')

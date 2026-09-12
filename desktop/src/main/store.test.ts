@@ -110,6 +110,22 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings).toMatchObject({ contentWidth: 'narrow' })
   })
 
+  it('commentsOrder: a pre-1515 file without the key sanitizes to oldest; both orders survive; junk falls back (YAZ-1515)', async () => {
+    const { commentsOrder: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toMatchObject({ commentsOrder: 'oldest' })
+
+    for (const commentsOrder of ['oldest', 'newest']) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, commentsOrder } }))
+      expect(createStore(file).get().settings).toMatchObject({ commentsOrder })
+    }
+
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, commentsOrder: 'latest' } }))
+    expect(createStore(file).get().settings).toMatchObject({ commentsOrder: 'oldest' })
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, commentsOrder: 1 } }))
+    expect(createStore(file).get().settings).toMatchObject({ commentsOrder: 'oldest' })
+  })
+
   it('newNoteLocation/newNoteFolder: a pre-C2 file without the keys sanitizes to root + ""; junk falls back (GRO-2240)', async () => {
     // A pre-C2 yaseendocs.json: every field but the Files & Links pair — missing fields just gain their defaults.
     const { newNoteLocation: _loc, newNoteFolder: _folder, ...preC2Settings } = DEFAULT_SETTINGS

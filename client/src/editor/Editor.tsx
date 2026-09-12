@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { FileResponse, GithubSyncStatus, PropertiesResponse } from '@shared/types'
+import type { CommentsOrder, FileResponse, GithubSyncStatus, PropertiesResponse } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import { api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
@@ -83,9 +83,13 @@ interface EditorProps {
   sync?: GithubSyncStatus | null
   /** The chip's click (it IS the sync button); App passes `useGithubSync`'s `syncNow`. */
   onSyncNow?: () => void
+  /** The comment stream's order (YAZ-1515): a setting threaded down like every other — the block never reads `storage` itself. */
+  commentsOrder: CommentsOrder
+  /** The block's own Oldest/Newest toggle writes the SETTING through this. */
+  onChangeCommentsOrder: (order: CommentsOrder) => void
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, createBase, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, createBase, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow, commentsOrder, onChangeCommentsOrder }: EditorProps) {
   if (path === null) {
     return (
       <section className="editor">
@@ -122,11 +126,11 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
       </section>
     )
   }
-  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} />
+  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} />
 }
 
 /** Markdown-only owner: loading, Crepe, migration, autosave, frontmatter, folder pages, and backlinks. */
-function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, createBase, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow }: EditorProps & { path: string }) {
+function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, createBase, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow, commentsOrder, onChangeCommentsOrder }: EditorProps & { path: string }) {
   const state = useFile(path)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   return (
@@ -134,7 +138,7 @@ function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpen
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} />
+        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} />
       )}
     </section>
   )
@@ -157,6 +161,8 @@ function CrepeHost({
   onRenameFile,
   sync,
   onSyncNow,
+  commentsOrder,
+  onChangeCommentsOrder,
 }: {
   root: string
   file: FileResponse
@@ -173,6 +179,8 @@ function CrepeHost({
   onRenameFile?: (oldPath: string, newPath: string) => void
   sync?: GithubSyncStatus | null
   onSyncNow?: () => void
+  commentsOrder: CommentsOrder
+  onChangeCommentsOrder: (order: CommentsOrder) => void
 }) {
   const [documentZoom, setDocumentZoom] = useState(100)
   const hostRef = useRef<HTMLDivElement>(null)
@@ -395,7 +403,7 @@ function CrepeHost({
         )}
         {/* Reads the same disk truth the properties panel does (🔒 D4): its own frontmatter-only
             writes come back through the watcher as `absorbFrontmatterOnly` → `setDisk`. */}
-        <CommentsSection file={{ ...file, content: disk }} />
+        <CommentsSection file={{ ...file, content: disk }} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} />
         {wikilinks !== undefined && (
           <BacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
         )}

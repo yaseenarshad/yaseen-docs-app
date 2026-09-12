@@ -32,7 +32,7 @@ import {
   threadsOf,
   type PageComment,
 } from '@shared/comments'
-import type { FileResponse } from '@shared/types'
+import type { CommentsOrder, FileResponse } from '@shared/types'
 import { api } from '../api'
 import { relativeTime } from '../lib/relativeTime'
 import { transformFile } from '../views/writeProperty'
@@ -43,6 +43,10 @@ import './comments.css'
 export interface CommentsSectionProps {
   /** The open note as the Editor last saw it on disk — the block's truth until its own write moves it. */
   file: Pick<FileResponse, 'path' | 'content'>
+  /** How the stream READS (YAZ-1515): a global setting handed down as a prop, never read from storage here. */
+  order: CommentsOrder
+  /** The header's Oldest/Newest toggle writes the setting through this; the block holds no order of its own. */
+  onChangeOrder: (order: CommentsOrder) => void
 }
 
 interface Snapshot {
@@ -110,12 +114,13 @@ const toggled = (set: ReadonlySet<string>, id: string): Set<string> => {
   return next
 }
 
-export function CommentsSection({ file }: CommentsSectionProps) {
+export function CommentsSection({ file, order, onChangeOrder }: CommentsSectionProps) {
   const [snap, setSnap] = useState<Snapshot>(() => ({ seen: file.content, content: file.content }))
   // The file moved under us (a reload, a property write, our own write echoed back): follow it.
   if (snap.seen !== file.content) setSnap({ seen: file.content, content: file.content })
 
-  const [expanded, setExpanded] = useState(true)
+  // Open by default only when there is something to read (🔒 E): an empty stream starts folded and the header is the door. Decided once, at mount.
+  const [expanded, setExpanded] = useState(() => readComments(file.content).length > 0)
   /** Comment ids folded to one line, and parent ids whose replies are hidden — the bullet's fold, twice. */
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set())
   const [repliesFolded, setRepliesFolded] = useState<ReadonlySet<string>>(() => new Set())
@@ -126,7 +131,10 @@ export function CommentsSection({ file }: CommentsSectionProps) {
   const now = useClock()
 
   const shape = commentsShape(snap.content)
-  const threads = threadsOf(readComments(snap.content))
+  // The model's order is by the ROOT's `at`; newest-first is that list read backwards. Replies stay oldest-first: a conversation reads down.
+  const newest = order === 'newest'
+  const chronological = threadsOf(readComments(snap.content))
+  const threads = newest ? [...chronological].reverse() : chronological
   const count = threads.reduce((n, t) => n + 1 + t.replies.length, 0)
 
   // One fold-all control, the outliner's pair in one seat: while anything is open it collapses
@@ -216,13 +224,26 @@ export function CommentsSection({ file }: CommentsSectionProps) {
             {count > 0 && <span className="comments__count"> ({count})</span>}
           </span>
         </button>
-        {expanded && (everyId.length > 0 || everyThreaded.length > 0) && (
-          <button type="button" className="comments__tool" onClick={foldAll}>
-            <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              {allFolded ? <path d="m5 5.5 3-3 3 3M5 10.5l3 3 3-3" /> : <path d="m5 3 3 3 3-3M5 13l3-3 3 3" />}
-            </svg>
-            {allFolded ? 'Expand all' : 'Collapse all'}
-          </button>
+        {expanded && (
+          <div className="comments__tools">
+            {/* The order toggle (YAZ-1515): state-driven like fold-all — the label names the CURRENT order; below two threads there is nothing to reorder. */}
+            {threads.length > 1 && (
+              <button type="button" className="comments__tool" title={newest ? 'Show oldest first' : 'Show newest first'} onClick={() => onChangeOrder(newest ? 'oldest' : 'newest')}>
+                <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  {newest ? <path d="M8 3v10M4 9l4 4 4-4" /> : <path d="M8 13V3M4 7l4-4 4 4" />}
+                </svg>
+                {newest ? 'Newest first' : 'Oldest first'}
+              </button>
+            )}
+            {(everyId.length > 0 || everyThreaded.length > 0) && (
+              <button type="button" className="comments__tool" onClick={foldAll}>
+                <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  {allFolded ? <path d="m5 5.5 3-3 3 3M5 10.5l3 3 3-3" /> : <path d="m5 3 3 3 3-3M5 13l3-3 3 3" />}
+                </svg>
+                {allFolded ? 'Expand all' : 'Collapse all'}
+              </button>
+            )}
+          </div>
         )}
       </div>
       {expanded && (
@@ -273,6 +294,7 @@ export function CommentsSection({ file }: CommentsSectionProps) {
                   })}
                 </div>
               )}
+              {/* The composer stays at the BOTTOM whichever way the list reads (YAZ-1515: Yasin's call on the demo). */}
               <Composer placeholder="Leave a comment…" submitLabel="Comment" saving={saving} onSubmit={(draft) => add(draft)} />
             </>
           )}
