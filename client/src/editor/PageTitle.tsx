@@ -43,21 +43,24 @@ interface PageTitleProps {
 export function PageTitle({ path, isHome, onRename, onNotice, onArrowDown }: PageTitleProps) {
   const name = pageName(path)
   const [editing, setEditing] = useState(false)
-  // ONE door (YAZ-1553): leaving the field is the commit, so `onBlur` is the only caller of
-  // `close` with a name. `settled` flips the moment the edit is over — Chromium fires one last
-  // blur when a focused field is removed (1A confirmed it), and that blur must do nothing.
+  // ONE door (YAZ-1553): leaving the field is the commit, so `onBlur` is `leave`'s only caller.
+  // `settled` flips the moment the edit is over — Chromium fires one last blur when a focused
+  // field is removed, and that blur must do nothing. Same three verbs as `RenameInline`.
   const settled = useRef(false)
   const open = (): void => {
     settled.current = false
     setEditing(true)
   }
+  const discard = (): void => {
+    settled.current = true
+    setEditing(false)
+  }
 
-  /** Close the field. `null` discards (Escape); a string is the name the user left behind. */
-  const close = (value: string | null): void => {
+  /** The one door: the name the user left behind, whichever way they left. */
+  const leave = (value: string): void => {
     if (settled.current) return
     settled.current = true
     setEditing(false)
-    if (value === null) return
     const next = value.trim()
     // An empty/whitespace name never commits, and the same name is not a rename at all.
     if (next === '' || next === name) return
@@ -91,14 +94,14 @@ export function PageTitle({ path, isHome, onRename, onNotice, onArrowDown }: Pag
               e.currentTarget.blur()
             } else if (e.key === 'Escape') {
               e.preventDefault()
-              close(null)
+              discard()
             } else if (e.key === 'ArrowDown') {
               e.preventDefault()
               e.currentTarget.blur()
               onArrowDown?.()
             }
           }}
-          onBlur={(e) => close(e.currentTarget.value)}
+          onBlur={(e) => leave(e.currentTarget.value)}
         />
       </div>
     )

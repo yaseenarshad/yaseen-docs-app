@@ -20,8 +20,9 @@ interface RenameInlineProps {
  */
 export function RenameInline({ initial, indent, onSubmit, onCancel }: RenameInlineProps) {
   const [error, setError] = useState<string | null>(null)
-  // Set once the edit is over — submitted or discarded. Chromium fires one last blur when the
-  // focused field is removed (1A confirmed it), and that blur must do nothing.
+  // ONE door (YAZ-1553): leaving the field is the commit, so `onBlur` is `leave`'s only caller.
+  // `settled` flips the moment the edit is over — Chromium fires one last blur when a focused
+  // field is removed, and that blur must do nothing. Same verbs as `PageTitle`.
   const settled = useRef(false)
 
   const discard = () => {
@@ -29,7 +30,7 @@ export function RenameInline({ initial, indent, onSubmit, onCancel }: RenameInli
     onCancel()
   }
 
-  /** The one door: `onBlur` calls it, and Enter reaches it by giving up focus. */
+  /** The one door: the name the user left behind, whichever way they left. */
   const leave = async (value: string) => {
     if (settled.current) return
     const name = value.trim()
