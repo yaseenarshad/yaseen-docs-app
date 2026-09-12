@@ -12,28 +12,40 @@ interface RenameInlineProps {
 }
 
 /**
- * Inline rename input replacing a file row's label (Links E1, GRO-2194) — the CreateInline
- * idiom: Enter commits, Esc/blur cancels, `validateEntryName` errors keep the input open.
- * Bridge failures never land here: the submit handler routes them to the passive notice.
+ * Inline rename input replacing a file row's label (Links E1, GRO-2194). ONE door (YAZ-1553):
+ * LEAVING the field commits — click-away, Enter, Cmd-Tab all reach `onBlur` — and Escape is the
+ * only discard. An empty name cancels (nothing to commit); a `validateEntryName` error keeps the
+ * input open so the typing is not lost. Bridge failures never land here: the submit handler
+ * routes them to the passive notice.
  */
 export function RenameInline({ initial, indent, onSubmit, onCancel }: RenameInlineProps) {
   const [error, setError] = useState<string | null>(null)
-  const submitting = useRef(false)
+  // ONE door (YAZ-1553): leaving the field is the commit, so `onBlur` is `leave`'s only caller.
+  // `settled` flips the moment the edit is over — Chromium fires one last blur when a focused
+  // field is removed, and that blur must do nothing. Same verbs as `PageTitle`.
+  const settled = useRef(false)
 
-  const submit = async (value: string) => {
+  const discard = () => {
+    settled.current = true
+    onCancel()
+  }
+
+  /** The one door: the name the user left behind, whichever way they left. */
+  const leave = async (value: string) => {
+    if (settled.current) return
     const name = value.trim()
-    if (name === '' || submitting.current) return
+    if (name === '') return discard()
     const invalid = validateEntryName(name)
     if (invalid !== null) {
       setError(invalid)
       return
     }
-    submitting.current = true
+    settled.current = true
     try {
       await onSubmit(name)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not rename')
-      submitting.current = false
+      settled.current = false
     }
   }
 
@@ -51,13 +63,11 @@ export function RenameInline({ initial, indent, onSubmit, onCancel }: RenameInli
           // land on that freshly focused button and cancel the rename the keystroke just asked for.
           if (e.key === 'Enter') {
             e.preventDefault()
-            void submit(e.currentTarget.value)
-          } else if (e.key === 'Escape') onCancel()
+            e.currentTarget.blur()
+          } else if (e.key === 'Escape') discard()
           else setError(null)
         }}
-        onBlur={() => {
-          if (!submitting.current) onCancel()
-        }}
+        onBlur={(e) => void leave(e.currentTarget.value)}
       />
       {error !== null && <p className="create-inline__error">{error}</p>}
     </div>

@@ -583,7 +583,7 @@ export function TopicsTree({ root, expanded, onExpandedChange, revealRequest, so
 
   // A page stands under EVERY parent that claims it (⚡ D6), so one path can own several rows —
   // but an inline input is ONE input: two autofocused ones would fight, the second's mount
-  // blurring (and so cancelling) the first. Both land on the FIRST occurrence in document order,
+  // blurring (and so COMMITTING, since YAZ-1553) the first. Both land on the FIRST occurrence in document order,
   // which the top-down traversal below makes deterministic. Reset every render, never state.
   let renameRendered = false
   let createRendered = false

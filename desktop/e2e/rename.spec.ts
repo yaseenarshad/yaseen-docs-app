@@ -7,6 +7,11 @@
  * shows, and clicking the rewritten link navigates to the renamed file. A rename onto an
  * existing name is DECLINED with a passive notice — never-overwrite, never a dialog.
  *
+ * YAZ-1553 (step 3b): LEAVING the inline box commits — click another row with a changed name
+ * and the sheet asks and SURVIVES that click (the row's mousedown landed before the sheet
+ * existed, and its click lands on the body, so the row does not open); Escape is the only
+ * discard; the unchanged name leaves silently.
+ *
  * Links E1b (GRO-2241, steps 5+): folder rename via the folder row's context menu — the
  * PATHED link in a referencing note rewrites on disk while the bare link stays
  * BYTE-IDENTICAL (the LOCKED rule), and the open tab under the folder follows by prefix;
@@ -35,6 +40,8 @@ test.describe.configure({ mode: 'serial' })
 /** Seeded on top of the fixture vault: A references B three ways; C blocks a rename onto it. */
 const A_BODY = 'a-hub-body'
 const B_BODY = 'b-note-body'
+/** YAZ-1553 seed: D is linked by nobody, so its click-away rename asks with the "no other notes" count. */
+const D_BODY = 'd-note-body'
 /** E1b seeds: Docs/N is referenced by R (pathed + bare); Target/M by S (pathed + bare). */
 const N_BODY = 'n-note-body'
 const M_BODY = 'm-note-body'
@@ -90,6 +97,7 @@ test.beforeAll(async () => {
     writeFile(path.join(vault, 'A.md'), `# A\n\n${A_BODY}\n\nSee [[B]] and [[B|Bee]] here.\n\n![[B]]\n`),
     writeFile(path.join(vault, 'B.md'), `# B\n\n${B_BODY}\n`),
     writeFile(path.join(vault, 'C.md'), '# C\n\nc-note-body\n'),
+    writeFile(path.join(vault, 'D.md'), `# D\n\n${D_BODY}\n`),
     writeFile(path.join(vault, 'Docs', 'N.md'), `# N\n\n${N_BODY}\n`),
     writeFile(path.join(vault, 'R.md'), '# R\n\nSee [[Docs/N]] and [[N]] here.\n'),
     writeFile(path.join(vault, 'Target', 'M.md'), `# M\n\n${M_BODY}\n`),
@@ -156,6 +164,37 @@ test('step 3 — clicking the rewritten link in A navigates to the renamed B2', 
   await expect(activeTab(win)).toHaveText('B2')
   await expect(editorOf(win)).toContainText(B_BODY)
   await shoot(win, 'rename-03-link-navigates')
+})
+
+test('step 3b — leaving the inline box commits (YAZ-1553): click another row and the sheet asks and survives; Escape discards; unchanged is silent', async () => {
+  await startRename(win, 'D')
+  await win.locator('.create-inline__input').fill('D2')
+  // No Enter: clicking row A is the leave. Its mousedown lands BEFORE the sheet exists, so the
+  // sheet's own click-away-cancels does not fire — and A's click lands on the body, not the row.
+  await fileRow(win, 'A').click()
+  await expect(sheet(win)).toBeVisible()
+  await shoot(win, 'rename-03b-clickaway-sheet')
+  await expect(activeTab(win)).toHaveText('B2')
+  await confirmRename(win, "Rename 'D' to 'D2'? No other notes link to it.")
+  await expect.poll(() => readWhenReady(path.join(vault, 'D2.md'))).toContain(D_BODY)
+  await expect(readFile(path.join(vault, 'D.md'), 'utf8')).rejects.toThrow()
+  await expect(fileRow(win, 'D2')).toBeVisible()
+
+  // Escape is the only discard: the box closes, no sheet, nothing moves.
+  await startRename(win, 'D2')
+  await win.locator('.create-inline__input').fill('Discarded')
+  await win.keyboard.press('Escape')
+  await expect(win.locator('.create-inline__input')).toHaveCount(0)
+  await expect(sheet(win)).toHaveCount(0)
+  await expect(fileRow(win, 'D2')).toBeVisible()
+  expect(await readFile(path.join(vault, 'D2.md'), 'utf8')).toContain(D_BODY)
+
+  // Leaving with the unchanged name is silent: the parent's same-name no-op, no sheet.
+  await startRename(win, 'D2')
+  await fileRow(win, 'A').click()
+  await expect(win.locator('.create-inline__input')).toHaveCount(0)
+  await expect(sheet(win)).toHaveCount(0)
+  await expect(fileRow(win, 'D2')).toBeVisible()
 })
 
 test('step 4 — renaming onto an existing name is DECLINED with a passive notice; nothing moves', async () => {
