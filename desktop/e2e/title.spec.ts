@@ -7,7 +7,11 @@
  * The arc, in order (serial by design — each step continues the previous state):
  *   1 the title is the file's own name, and committing an edit asks first with the honest count,
  *     then renames on disk, in the tab strip, in the sidebar and in the note that links to it
- *   2 the page that answers `[[Home]]` is INERT: its title opens no input and says why, through
+ *   2 LEAVING the field commits (YAZ-1553): click away with a changed name and the same sheet
+ *     asks — no Enter needed — and the rename lands everywhere step 1 proved
+ *   3 Escape is the only discard: no sheet, nothing on disk moves
+ *   4 leaving with the UNCHANGED name is silent: the field closes, no sheet
+ *   5 the page that answers `[[Home]]` is INERT: its title opens no input and says why, through
  *     the app's standing passive notice — never a dialog (🔒 the Home guard)
  *
  * Same harness as rename.spec.ts (temp `--user-data-dir`, a COPY of a generated fixture vault,
@@ -24,6 +28,7 @@ test.describe.configure({ mode: 'serial' })
 /** Seeded on top of the fixture vault: Index links to Guide; Home is what `[[Home]]` answers with. */
 const GUIDE_BODY = 'guide-note-body'
 const RENAMED = 'Handbook'
+const LEFT = 'Manual'
 
 let userData: string
 let vaultSrc: string
@@ -95,7 +100,50 @@ test('step 1 — editing the title renames the page: sheet with the honest count
   await expect(editorOf(win).locator('.wikilink', { hasText: RENAMED }).first()).toBeVisible()
 })
 
-test('step 2 — HOME\'s title is inert: no input, one passive notice, nothing renamed (🔒 the Home guard)', async () => {
+test('step 2 — leaving the title commits (YAZ-1553): click away with a changed name and the sheet asks, then everything follows', async () => {
+  await fileRow(win, RENAMED).click()
+  await expect(title(win)).toHaveText(RENAMED)
+
+  await title(win).click()
+  await titleInput(win).fill(LEFT)
+  // No Enter: clicking into the note is the leave, and the leave is the commit.
+  await editorOf(win).click()
+  // Only the NAMES are pinned: step 1 rewrote Index.md moments ago, and whether the count reads
+  // 1 or 0 depends on how far the debounced reindex has caught up (rename.spec step 7's rule).
+  await expect(sheet(win).locator('.confirm__text')).toContainText(`Rename '${RENAMED}' to '${LEFT}'?`)
+  await shoot(win, 'title-04-clickaway-sheet')
+  await sheet(win).locator('.confirm__btn', { hasText: 'Rename' }).click()
+  await expect(sheet(win)).toHaveCount(0)
+
+  await expect.poll(() => readWhenReady(path.join(vault, `${LEFT}.md`))).toContain(GUIDE_BODY)
+  await expect(readFile(path.join(vault, `${RENAMED}.md`), 'utf8')).rejects.toThrow()
+  await expect.poll(() => readWhenReady(path.join(vault, 'Index.md'))).toBe(`# Index\n\nSee [[${LEFT}]] here.\n`)
+  await expect(title(win)).toHaveText(LEFT)
+  await expect(activeTab(win)).toHaveText(LEFT)
+  await expect(fileRow(win, LEFT)).toBeVisible()
+  await shoot(win, 'title-05-clickaway-renamed')
+})
+
+test('step 3 — Escape is the only discard: no sheet, nothing on disk moves', async () => {
+  await title(win).click()
+  await titleInput(win).fill('Discarded')
+  await win.keyboard.press('Escape')
+  await expect(titleInput(win)).toHaveCount(0)
+  await expect(sheet(win)).toHaveCount(0)
+  await expect(title(win)).toHaveText(LEFT)
+  expect(await readFile(path.join(vault, `${LEFT}.md`), 'utf8')).toContain(GUIDE_BODY)
+})
+
+test('step 4 — leaving with the UNCHANGED name is silent: the field closes and no sheet asks', async () => {
+  await title(win).click()
+  await expect(titleInput(win)).toHaveValue(LEFT)
+  await editorOf(win).click()
+  await expect(titleInput(win)).toHaveCount(0)
+  await expect(sheet(win)).toHaveCount(0)
+  await expect(title(win)).toHaveText(LEFT)
+})
+
+test('step 5 — HOME\'s title is inert: no input, one passive notice, nothing renamed (🔒 the Home guard)', async () => {
   await fileRow(win, 'Home').click()
   await expect(title(win)).toHaveText('Home')
 
@@ -104,6 +152,6 @@ test('step 2 — HOME\'s title is inert: no input, one passive notice, nothing r
   await expect(sheet(win)).toHaveCount(0)
   await expect(win.locator('.link-notice')).toHaveText('Home anchors this vault — it keeps its name.')
   expect(await readFile(path.join(vault, 'Home.md'), 'utf8')).toContain('home-note-body')
-  await shoot(win, 'title-04-home-guard')
+  await shoot(win, 'title-06-home-guard')
   await quitApp(app)
 })
