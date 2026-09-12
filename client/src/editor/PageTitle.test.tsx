@@ -81,15 +81,42 @@ describe('PageTitle (⚡ YAZ-888)', () => {
     expect(heading(el)?.textContent).toBe('Old Note')
   })
 
-  it('blur reverts and renames nothing', () => {
+  it('leaving the field commits — click-away is the same gesture as Enter (YAZ-1553)', () => {
     const { el, onRename } = mount()
     act(() => heading(el)?.click())
     const field = input(el)
     if (field === null) throw new Error('the title input is not open')
-    field.value = 'Abandoned'
+    field.value = 'Left Behind'
     blur(field)
+    expect(onRename).toHaveBeenCalledWith('/vault/Docs/Left Behind.md')
+    expect(input(el)).toBeNull()
+  })
+
+  it('Escape followed by the trailing blur Chromium fires on removal commits nothing (YAZ-1553, the settled guard)', () => {
+    const { el, onRename } = mount()
+    act(() => heading(el)?.click())
+    const field = input(el)
+    if (field === null) throw new Error('the title input is not open')
+    field.value = 'Discarded'
+    act(() => {
+      field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      field.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+    })
     expect(onRename).not.toHaveBeenCalled()
     expect(heading(el)?.textContent).toBe('Old Note')
+  })
+
+  it('one leave commits ONCE even when the trailing blur follows it (YAZ-1553)', () => {
+    const { el, onRename } = mount()
+    act(() => heading(el)?.click())
+    const field = input(el)
+    if (field === null) throw new Error('the title input is not open')
+    field.value = 'Once'
+    act(() => {
+      field.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+      field.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+    })
+    expect(onRename).toHaveBeenCalledTimes(1)
   })
 
   it('an empty or whitespace-only name never commits, and neither does the unchanged one', () => {
@@ -110,13 +137,13 @@ describe('PageTitle (⚡ YAZ-888)', () => {
     expect(onNotice).toHaveBeenCalledWith('Name cannot contain "/"')
   })
 
-  it('ArrowDown hands focus on to the editor and leaves the name alone', () => {
+  it('ArrowDown is a leave too: it commits the changed name AND hands focus on to the editor (YAZ-1553)', () => {
     const { el, onRename, onArrowDown } = mount()
     act(() => heading(el)?.click())
     type(el, 'Half typed', 'ArrowDown')
     expect(onArrowDown).toHaveBeenCalledTimes(1)
-    expect(onRename).not.toHaveBeenCalled()
-    expect(heading(el)?.textContent).toBe('Old Note')
+    expect(onRename).toHaveBeenCalledWith('/vault/Docs/Half typed.md')
+    expect(input(el)).toBeNull()
   })
 
   it('HOME is inert: the click explains itself through the passive notice and opens no input (🔒 the Home guard)', () => {

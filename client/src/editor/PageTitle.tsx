@@ -8,17 +8,19 @@
  * (syncing the two is deliberately out of scope).
  *
  * Editing copies `RenameInline`'s patterns, because a title edit IS a rename: click swaps the
- * heading for an input prefilled with the current name, Enter commits, Esc and blur revert,
- * ArrowDown hands focus to the editor below. The commit builds the new path with the sidebar's
- * own `renamedPath` and hands it to App's ONE rename door, which asks first (the name changed)
- * and routes every failure to the passive notice — so nothing here duplicates that.
+ * heading for an input prefilled with the current name, and LEAVING the field commits
+ * (YAZ-1553) — click-away, Enter, ArrowDown and Cmd-Tab all go through the one `onBlur` door;
+ * Escape is the only discard. ArrowDown then hands focus to the editor below. The commit builds
+ * the new path with the sidebar's own `renamedPath` and hands it to App's ONE rename door, which
+ * asks first (the name changed) and routes every failure to the passive notice — so nothing
+ * here duplicates that.
  *
  * 🔒 THE HOME GUARD: the page that answers `[[Home]]` renders a PLAIN, non-editable title.
  * `[[Home]]` is the vault's hard-coded front door (`ensureHome.ts`) — renaming the page it
  * resolves to would just spawn a fresh empty Home beside it — so the click explains itself
  * through the app's standing passive notice, never a dialog. Repointing Home is future work.
  */
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { pageName } from '../sidebar/ConfirmRename'
 import { renamedPath, validateEntryName } from '../sidebar/createEntry'
 
@@ -41,10 +43,22 @@ interface PageTitleProps {
 export function PageTitle({ path, isHome, onRename, onNotice, onArrowDown }: PageTitleProps) {
   const name = pageName(path)
   const [editing, setEditing] = useState(false)
+  // ONE door (YAZ-1553): leaving the field is the commit, so `onBlur` is the only caller of
+  // `close` with a name. `settled` flips the moment the edit is over — Chromium fires one last
+  // blur when a focused field is removed (1A confirmed it), and that blur must do nothing.
+  const settled = useRef(false)
+  const open = (): void => {
+    settled.current = false
+    setEditing(true)
+  }
 
-  const commit = (value: string): void => {
-    const next = value.trim()
+  /** Close the field. `null` discards (Escape); a string is the name the user left behind. */
+  const close = (value: string | null): void => {
+    if (settled.current) return
+    settled.current = true
     setEditing(false)
+    if (value === null) return
+    const next = value.trim()
     // An empty/whitespace name never commits, and the same name is not a rename at all.
     if (next === '' || next === name) return
     const invalid = validateEntryName(next)
@@ -69,19 +83,22 @@ export function PageTitle({ path, isHome, onRename, onNotice, onArrowDown }: Pag
           spellCheck={false}
           onFocus={(e) => e.currentTarget.select()}
           onKeyDown={(e) => {
+            // Enter and ArrowDown only take focus away; onBlur is the one commit door.
+            // preventDefault on Enter stays load-bearing: the sheet focuses CANCEL on mount,
+            // and Enter's own default activation would land on it and cancel the rename.
             if (e.key === 'Enter') {
               e.preventDefault()
-              commit(e.currentTarget.value)
+              e.currentTarget.blur()
             } else if (e.key === 'Escape') {
               e.preventDefault()
-              setEditing(false)
+              close(null)
             } else if (e.key === 'ArrowDown') {
               e.preventDefault()
-              setEditing(false)
+              e.currentTarget.blur()
               onArrowDown?.()
             }
           }}
-          onBlur={() => setEditing(false)}
+          onBlur={(e) => close(e.currentTarget.value)}
         />
       </div>
     )
@@ -95,11 +112,11 @@ export function PageTitle({ path, isHome, onRename, onNotice, onArrowDown }: Pag
       <h1
         className={`page-title__text${isHome ? ' page-title__text--home' : ''}`}
         tabIndex={isHome ? undefined : 0}
-        onClick={() => (isHome ? onNotice?.(HOME_TITLE_NOTICE) : setEditing(true))}
+        onClick={() => (isHome ? onNotice?.(HOME_TITLE_NOTICE) : open())}
         onKeyDown={(e) => {
           if (isHome || e.key !== 'Enter') return
           e.preventDefault()
-          setEditing(true)
+          open()
         }}
       >
         {name}
