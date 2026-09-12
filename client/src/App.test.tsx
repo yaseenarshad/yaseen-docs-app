@@ -32,6 +32,8 @@ interface SidebarStubProps {
   onCollapse: () => void
   revealRequest?: { id: number; path: string; lens: SidebarLens }
   onRevealConsumed?: (id: number) => void
+  /** A folder search row (🔒 D3, YAZ-1491): App flips to Files and issues a reveal request for the dir. */
+  onRevealInFiles?: (path: string) => void
   /** 6C (YAZ-849): App's per-vault verdict + the offer card's button, both threaded to Topics. */
   unadopted: boolean
   onCreateHome: () => void
@@ -614,6 +616,18 @@ describe('App Show in sidebar request ownership (YAZ-1023)', () => {
     rightClick(tab)
     act(() => showInSidebar(el)?.click())
     expect(captured.sidebar?.revealRequest).toEqual({ id: 2, path: '/v/a.md', lens: 'topics' })
+  })
+
+  it('a folder search row flips the lens to FILES and issues the same reveal request, ids shared with the tab menu (🔒 D3, YAZ-1491)', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    expect(captured.sidebar?.lens).toBe('topics') // the default lens: the row was chosen from Topics
+    act(() => captured.sidebar?.onRevealInFiles?.('/v/sub'))
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: '/v/sub', lens: 'files' })
+    // The tab menu's next gesture continues the SAME counter — one reveal channel, not two.
+    rightClick(el.querySelector('.tabbar__tab')!)
+    act(() => showInSidebar(el)?.click())
+    expect(captured.sidebar?.revealRequest).toEqual({ id: 2, path: '/v/a.md', lens: 'files' })
   })
 
   it('consumes handled work without replaying it after collapse/reopen, while later gestures keep monotonic IDs', async () => {

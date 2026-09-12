@@ -117,6 +117,9 @@ export function Tree({
                 type="button"
                 className={`tree__row tree__row--dir${move.dropDir === node.path ? ' tree__row--drop' : ''}`}
                 style={{ paddingLeft: 8 + depth * 14 }}
+                // So a Files reveal of a FOLDER (a search row, YAZ-1491) can find and flash this row
+                // through `flashTreeRows` — selection ignores it, since a dir is never selected.
+                data-path={node.path}
                 // Shift is the SELECTION gesture everywhere (YAZ-1340): a dir row cannot join the
                 // selection, but shift+click must not fold it either — Topics' rows already hold
                 // this line, and the two trees must not disagree about what shift means.

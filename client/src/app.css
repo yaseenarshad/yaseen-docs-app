@@ -1143,6 +1143,20 @@ button {
   color: var(--fg-muted);
 }
 
+/* A folder row (🔒 D4, YAZ-1491): a small folder glyph before the label. */
+.search-results__row--dir .search-results__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.search-results__glyph {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  opacity: 0.7;
+}
+
 /* ---------- settings (GRO-2024) ---------- */
 
 .sidebar__footer {
