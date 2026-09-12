@@ -361,7 +361,12 @@ export function Sidebar({
   // The highlighted result row (YAZ-803); the keyboard owns it, so it lives with the query.
   const [selected, setSelected] = useState(0)
 
-  const results = useSearchResults(root, watch, query)
+  // Every directory of the CURRENT tree, outer before inner (`allDirs`): the expand-all set
+  // (⚡ YAZ-862) and, since YAZ-1491, the search list's folder rows (🔒 D1) — one memo, no second
+  // feed. Measured against the tree rather than the raw persisted expansion list, which can still
+  // name paths an external change took away.
+  const dirs = useMemo(() => (tree === null ? [] : allDirs(tree.tree)), [tree])
+  const results = useSearchResults(root, watch, query, dirs)
   // 🔒 flat-list ruling on YAZ-739: while a query is typed the body shows a FLAT ranked list
   // instead of the tree. A conditional render, not a teardown — every bit of tree state (data,
   // expansion, pending create/rename, drag) lives here and is waiting untouched when it clears.
@@ -387,10 +392,8 @@ export function Sidebar({
   }, [lens, pendingReveal])
 
   // Expand / collapse the whole tree (⚡ YAZ-862, BOTH lenses since ⚡ YAZ-873). "Any open" is
-  // measured against what the CURRENT tree can actually unfold, never the raw persisted list:
-  // that one can still name paths an external change took away, which would leave the button
-  // offering to collapse nothing.
-  const dirs = useMemo(() => (tree === null ? [] : allDirs(tree.tree)), [tree])
+  // measured against what the CURRENT tree can actually unfold (`dirs`, above), never the raw
+  // persisted list, which would leave the button offering to collapse nothing.
   // Topics' half of the same question, over the window's ONE index feed — the very source the
   // tree reads, so the two can never disagree; `folderPagesLookup` is memoized per records
   // identity, so this shares the tree's lookup rather than building a second one. Before the

@@ -1,11 +1,12 @@
 /**
  * Title search candidates (YAZ-802): basename + alias rows over an index snapshot, matched
- * through the shared completion matcher at SEARCH_CAP. The perf smoke lives in
- * searchCandidates.perf.test.ts (YAZ-740).
+ * through the shared completion matcher at SEARCH_CAP — and, since YAZ-1491, one row per FOLDER
+ * of the loaded tree (🔒 D1), ranked through the very same matcher (🔒 D2). The perf smoke lives
+ * in searchCandidates.perf.test.ts (YAZ-740).
  */
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
-import { SEARCH_CAP, searchCandidates, searchTitles } from './searchCandidates'
+import { SEARCH_CAP, folderCandidates, searchCandidates, searchTitles } from './searchCandidates'
 
 const rec = (path: string, aliases: string[] = []): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -30,7 +31,7 @@ const rec = (path: string, aliases: string[] = []): IndexRecord => {
 describe('searchCandidates', () => {
   it('one row per record: matched on the basename, opening its own path, folder as the label', () => {
     expect(searchCandidates([rec('/vault/sub/Alpha.md')])).toEqual([
-      { name: 'Alpha', lower: 'alpha', label: 'Alpha', path: '/vault/sub/Alpha.md', folder: 'sub' },
+      { kind: 'file', name: 'Alpha', lower: 'alpha', label: 'Alpha', path: '/vault/sub/Alpha.md', folder: 'sub' },
     ])
   })
 
@@ -61,6 +62,30 @@ describe('searchCandidates', () => {
   })
 })
 
+describe('folderCandidates (🔒 D1, YAZ-1491)', () => {
+  it('one `dir` row per folder: matched by its own name, opening (revealing) its own path', () => {
+    expect(folderCandidates('/vault', ['/vault/Archive'])).toEqual([
+      { kind: 'dir', name: 'Archive', lower: 'archive', label: 'Archive', path: '/vault/Archive', folder: '' },
+    ])
+  })
+
+  it('a nested folder is labelled by its ROOT-RELATIVE parent, the way IndexRecord.folder is', () => {
+    expect(folderCandidates('/vault', ['/vault/A', '/vault/A/B', '/vault/A/B/C']).map((c) => [c.name, c.folder])).toEqual([
+      ['A', ''],
+      ['B', 'A'],
+      ['C', 'A/B'],
+    ])
+  })
+
+  it('tolerates a trailing slash on the root', () => {
+    expect(folderCandidates('/vault/', ['/vault/A/B']).map((c) => [c.name, c.folder])).toEqual([['B', 'A']])
+  })
+
+  it('no folders, no rows', () => {
+    expect(folderCandidates('/vault', [])).toEqual([])
+  })
+})
+
 describe('searchTitles', () => {
   const candidates = searchCandidates([
     rec('/vault/Big CAC story.md'),
@@ -78,8 +103,17 @@ describe('searchTitles', () => {
     ])
   })
 
-  it('matches the basename and aliases only — never the folder (🔒 D3, YAZ-739)', () => {
-    expect(searchTitles(searchCandidates([rec('/vault/Archive/Note.md')]), 'archive')).toEqual([])
+  it('a note never matches on its folder (🔒 D3, YAZ-739); the folder itself is ONE row (🔒 D2, YAZ-1491)', () => {
+    const rows = [...folderCandidates('/vault', ['/vault/Archive']), ...searchCandidates([rec('/vault/Archive/Note.md')])]
+    expect(searchTitles(rows, 'archive').map((c) => [c.kind, c.label])).toEqual([['dir', 'Archive']])
+  })
+
+  it('a folder and a note of the same name both match exactly — the folder first (tree order, 🔒 D1)', () => {
+    const rows = [...folderCandidates('/vault', ['/vault/CAC']), ...searchCandidates([rec('/vault/CAC.md')])]
+    expect(searchTitles(rows, 'cac').map((c) => [c.kind, c.path])).toEqual([
+      ['dir', '/vault/CAC'],
+      ['file', '/vault/CAC.md'],
+    ])
   })
 
   it('an empty query returns the first SEARCH_CAP rows in records order', () => {

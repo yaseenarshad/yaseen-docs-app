@@ -11,6 +11,7 @@ import { SearchResults } from './SearchResults'
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 const cand = (name: string, folder = ''): SearchCandidate => ({
+  kind: 'file',
   name,
   lower: name.toLowerCase(),
   label: name,
