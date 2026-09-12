@@ -42,6 +42,10 @@ const KPIS = 'kpis'
 const MEMBERS = ['CAC', 'Gross Margin', 'MQL Volume', 'Sales Cycle Time', 'Win Rate']
 /** The column this spec declares, and the member whose cell it fills. */
 const COLUMN = 'unit_notes'
+/** …and the LABEL its header and its Properties row wear (YAZ-1513: sentence case, `_` → space). */
+const COLUMN_LABEL = 'Unit notes'
+/** The shipped Table's headers: the `#` gutter first, then every column by its label (YAZ-1513). */
+const HEADERS = ['#', 'Name', 'Kpi category', 'Unit', 'Funnel stages']
 const SUBJECT = 'CAC'
 const RETAINED = 'Gross Margin'
 const RETAINED_KEY = 'funnel_stages'
@@ -62,14 +66,14 @@ const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="tr
 const contents = (w: Page) => layer(w).locator('.folder-page-contents')
 const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
+/** The name cell shows the page TITLE — the basename, never `.md` (YAZ-1513). */
 const rowNames = (scope: Locator) => scope.locator('.view-table__link')
 const headers = (scope: Locator) => scope.locator('.view-table thead th')
+/** `data-cell="row:col"` indexes DATA columns only — the `#` gutter carries none. */
 const cell = (scope: Locator, r: number, c: number) => scope.locator(`[data-cell="${r}:${c}"]`)
 /** The Properties popover — the ONE door to the declarations (YAZ-895). */
 const propsMenu = (scope: Locator) => scope.locator('.view-popover')
 const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
-/** `file.name` is Obsidian's TFile name — extension included. */
-const named = (...names: string[]) => names.map((n) => `${n}.md`)
 
 const memberPath = (name: string) => path.join(vault, KPIS, `${name}.md`)
 const folderPagePath = () => path.join(vault, FOLDER_PAGE)
@@ -131,21 +135,26 @@ test('step 1 — "+ Add column" declares a column and shows it, in one settings 
 
   await expect(contents(win)).toBeVisible()
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
-  // The shipped shape this step adds to: four columns from the view's `order`, five members.
-  await expect(headers(contents(win))).toHaveText(['file.name', 'kpi_category', 'unit', 'funnel_stages'])
-  await expect(rowNames(contents(win))).toHaveText(named(...MEMBERS))
+  // The shipped shape this step adds to: four columns from the view's `order` (each header its
+  // LABEL, behind the `#` gutter — YAZ-1513), five members named by their titles.
+  await expect(headers(contents(win))).toHaveText(HEADERS)
+  await expect(rowNames(contents(win))).toHaveText(MEMBERS)
   // Opening a declaration with an already-present legacy value never normalises or rewrites it.
   await expect.poll(readMembers).toEqual(memberBytes)
 
   const menu = await openProperties()
   await menu.locator('.view-menu__action', { hasText: '+ Add column' }).click()
   await menu.locator('[aria-label="Column name"]').fill(COLUMN)
-  await menu.locator('[aria-label="Column kind"]').selectOption('text')
+  // The kind is the definition editor's own type row (`PropertyDefinitionEditor`): a picker of the
+  // registry's kinds, chosen here explicitly rather than left on its default.
+  await menu.locator('[aria-label^="Property type:"]').click()
+  await menu.locator('.property-def__type-list').getByRole('button', { name: 'Text', exact: true }).click()
+  await expect(menu.locator('[aria-label="Property type: Text"]')).toBeVisible()
   await shoot(win, 'columns-01-add-column-form')
   await menu.locator('[aria-label="Save column"]').click()
 
   // The header is there as soon as the write comes back through the index — no reopen, no reload.
-  await expect(headers(contents(win))).toHaveText(['file.name', 'kpi_category', 'unit', 'funnel_stages', COLUMN])
+  await expect(headers(contents(win))).toHaveText([...HEADERS, COLUMN_LABEL])
   await shoot(win, 'columns-02-column-header')
 
   // ONE write, asserted as its FINAL state (🔒 D3): the declaration AND the view's `order`, with
@@ -192,8 +201,12 @@ test('step 1 — "+ Add column" declares a column and shows it, in one settings 
 })
 
 test('step 2 — retyping moves the DECLARATION and nothing else: every member file is byte-identical', async () => {
-  // The per-key Type select (YAZ-897), on the row the declaration made offerable.
-  const kind = propsMenu(contents(win)).locator(`[aria-label="Type of ${COLUMN}"]`)
+  // The per-key Type select (YAZ-897) lives one level down since YAZ-1513: the list row the
+  // declaration made offerable opens the column's DETAIL panel, and the select sits there.
+  const menu = propsMenu(contents(win))
+  await menu.locator(`[aria-label="Open ${COLUMN_LABEL}"]`).click()
+  const kind = menu.locator(`[aria-label="Edit property ${COLUMN_LABEL}"]`)
+  await expect(kind).toHaveValue('text')
   await kind.selectOption('number')
   await expect.poll(async () => (await settingsOnDisk()).columns?.[COLUMN], { timeout: 10_000 }).toEqual({ kind: 'number' })
   // The select is CONTROLLED off the folder page's own card, so it only reads `number` once the
@@ -212,7 +225,10 @@ test('step 2 — retyping moves the DECLARATION and nothing else: every member f
 })
 
 test('step 3 — the retyped column edits as a number, onto the MEMBER’s own file', async () => {
-  await win.keyboard.press('Escape') // close the Properties popover; the table is what edits now
+  // Back out of the detail panel, then close the Properties popover; the table is what edits now.
+  await propsMenu(contents(win)).locator('[aria-label="Back to columns"]').click()
+  await expect(propsMenu(contents(win)).locator(`[aria-label="Open ${COLUMN_LABEL}"]`)).toBeVisible()
+  await win.keyboard.press('Escape')
   await expect(propsMenu(contents(win))).toHaveCount(0)
 
   // Column 4 is the new one, row 0 is CAC (the row order asserted in step 1).
@@ -269,7 +285,7 @@ test('step 5 — the column lives on the page, not in the session: it survives q
   // Which view is active is SESSION state, so the reopened page is back on Q7's first skin.
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
 
-  await expect(headers(contents(win))).toHaveText(['file.name', 'kpi_category', 'unit', 'funnel_stages', COLUMN])
+  await expect(headers(contents(win))).toHaveText([...HEADERS, COLUMN_LABEL])
   await expect(dataRows(contents(win))).toHaveCount(MEMBERS.length + 1) // step 4's newborn is a member now
   expect((await settingsOnDisk()).columns?.[COLUMN]).toEqual({ kind: 'number' })
   // …and step 3's value is still in the cell it was typed into.
@@ -294,7 +310,7 @@ test('step 6 — a name that is not a property name is refused inline, and nothi
 
   // Nothing was written: the folder page's bytes are the ones step 5 left behind.
   expect(await readFile(folderPagePath(), 'utf8')).toBe(before)
-  await expect(headers(contents(win))).toHaveText(['file.name', 'kpi_category', 'unit', 'funnel_stages', COLUMN])
+  await expect(headers(contents(win))).toHaveText([...HEADERS, COLUMN_LABEL])
 
   await quitApp(app)
 })

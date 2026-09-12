@@ -11,8 +11,9 @@
  *   2 the saved text is what the panel shows after reopening the page, and broken YAML is refused
  *     in place: an inline error, and not one byte written
  *   3 a TYPED ROW edits one value SURGICALLY (the comment and every other key stay put), and a
- *     type declared from that row lands in the vault-wide registry — where the same key's column
- *     in a folder page's table picks it up (the wider arc is YAZ-885's)
+ *     type declared from that row lands on the FOLDER PAGE the note belongs to — its
+ *     `folder_page_settings.columns`, the typing ladder's top rung (🔒 Q8) — where the same key's
+ *     column in that folder page's table picks it up (the wider arc is YAZ-885's)
  *
  * Same harness as title.spec.ts (temp `--user-data-dir`, a COPY of a generated fixture vault,
  * `props-` step screenshots).
@@ -21,6 +22,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
 import { appWindow, buildFixtureVault, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -64,12 +66,20 @@ const panelBtn = (w: Page, label: string) => panel(w).locator('.frontmatter-pane
 const contents = (w: Page) => layer(w).locator('.folder-page-contents')
 
 const NOTE = 'Deep Work.md'
+/** …as a folder page's name cell shows it: the TITLE, never `.md` (YAZ-1513). */
+const NOTE_TITLE = 'Deep Work'
 const FOLDER_PAGE = 'Topics.md'
 const read = () => readFile(path.join(vault, NOTE), 'utf8')
+/** The folder page's `folder_page_settings.columns` as written — parsed, never string-matched. */
+const declaredColumns = async (): Promise<Record<string, { kind?: string }>> => {
+  const { frontmatter } = splitFrontmatter(await readFile(path.join(vault, FOLDER_PAGE), 'utf8'))
+  const settings = (parseFrontmatter(frontmatter).properties.folder_page_settings ?? {}) as { columns?: Record<string, { kind?: string }> }
+  return settings.columns ?? {}
+}
 
 /**
  * A folder page whose table shows the member's `status` column and declares NOTHING about it —
- * so the only thing that can type that column is the vault-wide registry the panel writes.
+ * so the only thing that can type that column is the declaration the panel writes onto it.
  */
 const TOPICS = `---
 folder_page: true
@@ -193,18 +203,29 @@ test('step 3 — a typed row writes ONE key, and a type declared there types the
   await expect.poll(read, { timeout: 10_000 }).toBe(joined.replace('status: done', 'status: shipped'))
   await shoot(win, 'props-06-typed-row')
 
-  // Declared HERE, vault-wide: one key is one type everywhere.
-  await panelRow(win, 'status').locator('[aria-label="Type of status"]').selectOption('list')
-  const registry = () => readFile(path.join(vault, '.yaseendocs', 'properties.json'), 'utf8').catch(() => '')
-  await expect.poll(registry, { timeout: 10_000 }).toContain('"status"')
+  // Declared HERE, on the folder page the note belongs to: the row's Configure menu (Deep Work has
+  // ONE folder page, so `Topics` is the context with nobody choosing it) opens the definition
+  // editor for `status`, and Save writes `folder_page_settings.columns.status` onto `Topics.md` —
+  // the typing ladder's top rung (🔒 Q8), the very thing its Table reads.
+  await panelRow(win, 'status').locator('[aria-label="Configure status"]').click()
+  const propMenu = win.locator('.view-popover[aria-label="Property status"]')
+  await propMenu.locator('.view-popover__item', { hasText: 'Edit property' }).click()
+  await expect(propMenu.locator('.frontmatter-property-menu__scope')).toHaveText('In Topics')
+  await propMenu.locator('[aria-label^="Property type:"]').click()
+  await propMenu.locator('.property-def__type-list').getByRole('button', { name: 'List', exact: true }).click()
+  await expect(propMenu.locator('[aria-label="Property type: List"]')).toBeVisible()
+  await propMenu.locator('.frontmatter-property-menu__actions button', { hasText: /^Save$/ }).click()
+  await expect(propMenu).toHaveCount(0)
+  await expect.poll(async () => (await declaredColumns()).status?.kind, { timeout: 10_000 }).toBe('list')
   // The note itself was never touched by a DECLARATION.
   expect(await read()).toBe(joined.replace('status: done', 'status: shipped'))
 
   // …and the folder page's own table reads that very declaration for the same key: the cell now
   // opens the LIST editor it never had before.
   await fileRow(win, 'Topics').click()
-  await expect(contents(win).locator('.view-table__link')).toHaveText([NOTE])
+  await expect(contents(win).locator('.view-table__link')).toHaveText([NOTE_TITLE])
   // The CELL owns mouse activation since YAZ-1030 (its display button is `pointer-events: none`).
+  // `data-cell` indexes DATA columns only — the `#` gutter (YAZ-1513) carries none — so `status` is still column 1.
   await contents(win).locator('[data-cell="0:1"]').dblclick()
   await expect(contents(win).locator('.view-cell-edit__chips')).toBeVisible()
   await shoot(win, 'props-07-declared-column')

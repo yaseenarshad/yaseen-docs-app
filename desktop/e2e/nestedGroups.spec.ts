@@ -90,7 +90,8 @@ const boardSubgroup = (w: Page, col: Locator, name: string) =>
  * THE WHOLE TABLE BODY AS ONE SCRIPT, in DOM order — because two-level grouping is a statement
  * about ORDER and NESTING, and a list of names or a count could pass while both were wrong. A
  * section header reads `# <value> (<count>)`, an INNER one is indented two spaces (read off the
- * nested class, which is the renderer's own mark), and a data row reads `- <file.name>`.
+ * nested class, which is the renderer's own mark), and a data row reads `- <title>` — the page's
+ * basename, which is what the name cell shows since YAZ-1513 (never `.md`).
  */
 const tableScript = (w: Page): Promise<string[]> =>
   contents(w)
@@ -161,13 +162,13 @@ test('step 1 — two levels render: outer sections in reading order, indented in
   await expect.poll(() => tableScript(win), { timeout: 15_000 }).toEqual([
     '# 1 Lead Gen (3)',
     '  # 1.1 Cross (2)',
-    '- Attribution gap.md',
-    '- Lead leakage.md',
+    '- Attribution gap',
+    '- Lead leakage',
     '  # 1.2 Paid (1)',
-    '- Ad spend waste.md',
+    '- Ad spend waste',
     '# 3 Sales (2)',
-    '- Deal slippage.md',
-    '- Quote turnaround.md',
+    '- Deal slippage',
+    '- Quote turnaround',
   ])
   // The indent is the renderer's nested mark on the inner sections and ONLY them.
   await expect(nestedCells(win)).toHaveCount(2)
@@ -180,8 +181,8 @@ test('step 2 — collapsing folds a whole branch, an inner collapse folds only i
   await expect.poll(() => tableScript(win)).toEqual([
     '# 1 Lead Gen (3)',
     '# 3 Sales (2)',
-    '- Deal slippage.md',
-    '- Quote turnaround.md',
+    '- Deal slippage',
+    '- Quote turnaround',
   ])
   await shoot(win, 'nested-02-outer-collapsed')
 
@@ -193,10 +194,10 @@ test('step 2 — collapsing folds a whole branch, an inner collapse folds only i
     '# 1 Lead Gen (3)',
     '  # 1.1 Cross (2)',
     '  # 1.2 Paid (1)',
-    '- Ad spend waste.md',
+    '- Ad spend waste',
     '# 3 Sales (2)',
-    '- Deal slippage.md',
-    '- Quote turnaround.md',
+    '- Deal slippage',
+    '- Quote turnaround',
   ])
   await shoot(win, 'nested-03-inner-collapsed')
 
@@ -221,8 +222,8 @@ test('step 2 — collapsing folds a whole branch, an inner collapse folds only i
   await expect.poll(() => tableScript(win), { timeout: 15_000 }).toEqual([
     '# 1 Lead Gen (3)',
     '# 3 Sales (2)',
-    '- Deal slippage.md',
-    '- Quote turnaround.md',
+    '- Deal slippage',
+    '- Quote turnaround',
   ])
   // …and the inner collapse it was hiding survived underneath it, which is the half a single
   // restored key could never show: expanding the branch brings back an ALREADY-folded `1.1 Cross`.
@@ -231,10 +232,10 @@ test('step 2 — collapsing folds a whole branch, an inner collapse folds only i
     '# 1 Lead Gen (3)',
     '  # 1.1 Cross (2)',
     '  # 1.2 Paid (1)',
-    '- Ad spend waste.md',
+    '- Ad spend waste',
     '# 3 Sales (2)',
-    '- Deal slippage.md',
-    '- Quote turnaround.md',
+    '- Deal slippage',
+    '- Quote turnaround',
   ])
   await shoot(win, 'nested-04-collapse-restored')
 })
@@ -249,13 +250,13 @@ test('step 3 — two plain columns, and a per-level sticky label at the table’
   await expect.poll(() => tableScript(win), { timeout: 15_000 }).toEqual([
     '# Finance (1)',
     '  # Intake (1)',
-    '- Invoice sync.md',
+    '- Invoice sync',
     '# Ops (3)',
-    '- Ops dashboard.md',
+    '- Ops dashboard',
     '  # Intake (1)',
-    '- Ticket triage.md',
+    '- Ticket triage',
     '  # Review (1)',
-    '- Shift handover.md',
+    '- Shift handover',
   ])
   await shoot(win, 'nested-05-automations-two-levels')
 
@@ -309,11 +310,11 @@ test('step 4 — a single-level groupBy still renders flat, with no nested cell 
 
   await expect.poll(() => tableScript(win), { timeout: 15_000 }).toEqual([
     '# Finance (1)',
-    '- Invoice sync.md',
+    '- Invoice sync',
     '# Ops (3)',
-    '- Ops dashboard.md',
-    '- Shift handover.md',
-    '- Ticket triage.md',
+    '- Ops dashboard',
+    '- Shift handover',
+    '- Ticket triage',
   ])
   await expect(nestedCells(win)).toHaveCount(0)
   await shoot(win, 'nested-07-single-level-flat')
@@ -324,20 +325,20 @@ test('step 5 — nested Board layout, both collapse scopes, named child creation
   await expect.poll(() => boardScript(win), { timeout: 15_000 }).toEqual([
     '# Finance (1)',
     '  # Intake (1)',
-    '  - Invoice sync.md',
+    '  - Invoice sync',
     '# Ops (3)',
-    '- Ops dashboard.md',
+    '- Ops dashboard',
     '  # Intake (1)',
-    '  - Ticket triage.md',
+    '  - Ticket triage',
     '  # Review (1)',
-    '  - Shift handover.md',
+    '  - Shift handover',
   ])
 
   const ops = boardCol(win, 'Ops')
   const intake = boardSubgroup(win, ops, 'Intake')
   await intake.locator(':scope > .view-group .view-group__toggle').click()
   await expect(intake.locator('.view-board__card')).toHaveCount(0)
-  await expect(boardSubgroup(win, ops, 'Review').locator('.view-board__card', { hasText: 'Shift handover.md' })).toBeVisible()
+  await expect(boardSubgroup(win, ops, 'Review').locator('.view-board__card', { hasText: 'Shift handover' })).toBeVisible()
   await ops.locator(':scope > .view-board__col-header .view-group__toggle').click()
   await expect(ops.locator(':scope > .view-board__subgroups')).toHaveCount(0)
   await ops.locator(':scope > .view-board__col-header .view-group__toggle').click()
@@ -356,12 +357,12 @@ test('step 5 — nested Board layout, both collapse scopes, named child creation
       return text.includes('dept: Finance') && text.includes('proc: Intake') && text.includes('[[Automations]]')
     })
     .toBe(true)
-  const createdCard = financeIntake.locator('.view-board__card', { hasText: 'Reconcile invoices.md' })
+  const createdCard = financeIntake.locator('.view-board__card', { hasText: 'Reconcile invoices' })
   await expect(createdCard).toBeVisible()
 
   const opsReview = boardSubgroup(win, ops, 'Review')
   await createdCard.dragTo(opsReview)
-  await expect(opsReview.locator('.view-board__card', { hasText: 'Reconcile invoices.md' })).toBeVisible()
+  await expect(opsReview.locator('.view-board__card', { hasText: 'Reconcile invoices' })).toBeVisible()
   await expect
     .poll(async () => {
       const text = await readFile(created, 'utf8')

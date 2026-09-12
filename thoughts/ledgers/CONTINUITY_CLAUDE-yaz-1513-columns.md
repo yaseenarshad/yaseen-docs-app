@@ -24,11 +24,12 @@
   - [x] 2- Built-in columns 2A-2D (YAZ-1538..1542) — `d7cf39c`
   - [x] 3- Column management 3A-3E (YAZ-1543..1548) — `d7cf39c`
   - [x] 4- Polish and anti-slop (YAZ-1549) — `d787fd1`
-- Now: [→] 5- Verify + CONTRACTS (YAZ-1550) — docs + spec in `f533d2b`; e2e `desktop/e2e/columns.spec.ts` NOT yet executed (needs Yasin's go: opens windows)
-- Next: merge `yaz-1513-demo` → main, close YAZ-1513, delete the scratch demo vault + profile, remove the worktree.
+  - [x] 5- Verify + CONTRACTS (YAZ-1550) — docs + spec in `f533d2b`; `columns.spec.ts` 7/7 green; the 11 folder-page specs updated for the new UI, all green
+- Now: [→] merge PR #44 → main, close YAZ-1513, delete the scratch demo vault + profile, remove the worktree
+- Left open: YAZ-1552 (5A) — 7 Playwright specs that already fail on main `0a98a66` (Group-by picker, window lookup, clipboard, theme), unrelated to this feature.
 
 ## Open Questions
-- UNCONFIRMED: `columns.spec.ts` step 4 (header drag via `page.mouse`) may need tuning under Electron's synthesized HTML5 drag events.
+- (none) — the header-drag e2e step passed as written.
 
 ## Working Set
 - Branch `yaz-1513-demo` (worktree `.claude/worktrees/yaz-1513-demo`), base main `0a98a66`.

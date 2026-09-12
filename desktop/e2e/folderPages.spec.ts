@@ -114,7 +114,7 @@ const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="tr
 const contents = (w: Page) => layer(w).locator('.folder-page-contents')
 const viewTabs = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"]')
 const dataRows = (scope: Locator) => scope.locator('.view-table tbody tr:not(.view-table__group):not(.view-table__spacer)')
-/** Row names, whichever body renders: the unknown-view placeholder list, or the real table. */
+/** Row names, whichever body renders: the unknown-view placeholder list, or the real table — the page TITLE, never `.md` (YAZ-1513). */
 const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__link')
 /** Every member's name as a LINK LINE, which is how a membership is spelled inside the document. */
 const asLinks = (...names: string[]) => names.map((n) => `[[${n}]]`)
@@ -130,12 +130,11 @@ const treeChevron = (w: Page, action: 'Expand' | 'Collapse', label: string) =>
   w.locator(`.sidebar__body [aria-label="${action} ${label}"]`)
 const sheet = (w: Page) => w.locator('[role="dialog"]')
 const sheetBtn = (w: Page, label: string) => sheet(w).locator('.confirm__btn', { hasText: label })
+/** `data-cell="row:col"` indexes DATA columns only — the `#` gutter (YAZ-1513) carries none. */
 const cell = (scope: Locator, r: number, c: number) => scope.locator(`[data-cell="${r}:${c}"]`)
 /** The grouped table's section headers (4C), in document order. */
 const groupNames = (scope: Locator) => scope.locator('.view-table__group .view-group__value')
 const fileRow = (w: Page, label: string) => w.locator('.tree__row--file').filter({ hasText: new RegExp(`^${label}$`) })
-/** `file.name` is Obsidian's TFile name — extension included. */
-const named = (...names: string[]) => names.map((n) => `${n}.md`)
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'folderpages-userdata-'))
@@ -156,13 +155,13 @@ test('step 1 — the contents block sits between the note and its backlinks, hol
 
   await expect(contents(win)).toBeVisible()
   // 🔒 D1: between the Crepe mount and "Linked mentions" in the note's own scroller — it scrolls
-  // WITH the note, exactly like the backlinks below it. No chip of its own: the page's NAME and
-  // its properties share block zero, the header ROW (YAZ-918 folded ⚡ YAZ-888's title and
-  // ⚡ YAZ-883's panel into one), and a folder page adds nothing to it.
+  // WITH the note, exactly like the Comments block (YAZ-1472) and the backlinks below it. No chip
+  // of its own: the page's NAME and its properties share block zero, the header ROW (YAZ-918
+  // folded ⚡ YAZ-888's title and ⚡ YAZ-883's panel into one), and a folder page adds nothing to it.
   const children = await layer(win)
     .locator('.editor-host')
     .evaluate((host) => Array.from(host.children).map((c) => c.className))
-  expect(children).toEqual(['page-header', 'editor-mount', 'folder-page-contents', 'backlinks'])
+  expect(children).toEqual(['page-header', 'editor-mount', 'folder-page-contents', 'comments', 'backlinks'])
 
   // YAZ-909 → YAZ-917/YAZ-919: a folder page IS title → outline. The body editor still mounts
   // (autosave, and YAZ-919's migration path, live behind it) but shows NOTHING, and the contents
@@ -195,10 +194,11 @@ test('step 1 — the contents block sits between the note and its backlinks, hol
 
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(dataRows(contents(win))).toHaveCount(3)
-  await expect(rowNames(contents(win))).toHaveText(named(...MEMBERS))
-  // Per-view filters returned in YAZ-1218 (🔒 Q3 amended): the button is offered; the views stay switch-only.
+  await expect(rowNames(contents(win))).toHaveText(MEMBERS)
+  // Per-view filters returned in YAZ-1218 (🔒 Q3 amended): the button is offered — and since 🔒 D0
+  // (YAZ-1471) the view tabs are EDITABLE, so the "+" that adds a view is offered beside them too.
   await expect(contents(win).locator('[aria-label="Filter"]')).toHaveCount(1)
-  await expect(contents(win).locator('[aria-label="Add view"]')).toHaveCount(0)
+  await expect(contents(win).locator('[aria-label="Add view"]')).toHaveCount(1)
   await shoot(win, 'folder-02-contents-table')
 })
 
@@ -378,9 +378,12 @@ test('step 8 — the grouped table: one groupBy write, and a collapsed section t
   // `folder_page` is ORDINARY frontmatter to the query engine — the flag MEANS something to
   // `isFolderPage`, and nothing at all to a groupBy. Step 6 turned exactly one of these four
   // members into a folder page, so the run has a real group and the trailing "No value" one.
-  // Setting it is ONE `folder_page_settings` write through the one door.
+  // Setting it is ONE `folder_page_settings` write through the one door. "Group by" is the shared
+  // `ColumnPicker` (YAZ-1466): a button opening a searchable listbox, each option keyed by
+  // `data-value`; choosing one closes the list, and Esc then closes the Sort menu itself.
   await contents(win).locator('[aria-label="Sort"]').click()
-  await win.locator('.view-popover [aria-label="Group by"]').selectOption('note.folder_page')
+  await win.locator('.view-popover [aria-label="Group by"]').click()
+  await win.locator('.view-popover [role="option"][data-value="note.folder_page"]').click()
   await win.keyboard.press('Escape')
 
   await expect(groupNames(contents(win))).toHaveText(['true', 'No value'])

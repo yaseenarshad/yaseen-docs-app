@@ -51,12 +51,13 @@ const FLAT_VIEW = 'Dept only'
 /**
  * The four members in the nested table's own READING order (grouped `dept` then `proc`, which is
  * not alphabetical), and the three the fixture marks `status: Live` — `Shift handover` is the
- * `Draft` one, and the only member of the `Review` process.
+ * `Draft` one, and the only member of the `Review` process. Spelled as the name cell shows them:
+ * the page TITLE, never `.md` (YAZ-1513).
  */
-const ALL = ['Invoice sync.md', 'Ops dashboard.md', 'Ticket triage.md', 'Shift handover.md']
-const LIVE = ['Invoice sync.md', 'Ops dashboard.md', 'Ticket triage.md']
+const ALL = ['Invoice sync', 'Ops dashboard', 'Ticket triage', 'Shift handover']
+const LIVE = ['Invoice sync', 'Ops dashboard', 'Ticket triage']
 /** The toolbar's New names nothing, so the newborn takes the `Untitled` scheme's first free name. */
-const NEWBORN = 'Untitled.md'
+const NEWBORN = 'Untitled'
 
 let userData: string
 let vault: string
@@ -113,6 +114,15 @@ const boardScript = (w: Page): Promise<string[]> =>
     )
 
 /**
+ * The rule's Property is the shared `ColumnPicker` (YAZ-1466): a button wearing the label that
+ * opens a searchable listbox, each option carrying its canonical key as `data-value`.
+ */
+async function pickProperty(w: Page, key: string): Promise<void> {
+  await field(w, 'Property').click()
+  await menu(w).locator(`[role="option"][data-value="${key}"]`).click()
+}
+
+/**
  * The builder's whole gesture on the ACTIVE view: Add rule, then property · operator · value, each
  * its own write, fired at Playwright speed. The pace is deliberate (YAZ-1241): a stale write echo
  * must never hand the menu an older row to edit, so nothing here waits out the index round-trip.
@@ -121,7 +131,7 @@ async function addRule(w: Page, property: string, op: string, value: string): Pr
   await filterBtn(w).click()
   await menu(w).locator('.view-menu__action', { hasText: 'Add rule' }).click()
   await expect(badge(w)).toHaveText('1')
-  await field(w, 'Property').selectOption(property)
+  await pickProperty(w, property)
   await field(w, 'Operator').selectOption(op)
   await field(w, 'Value').fill(value)
   await field(w, 'Value').press('Enter')
@@ -178,11 +188,11 @@ test('step 1 — one built rule narrows the table to the matching rows, and the 
   await expect.poll(() => tableScript(win)).toEqual([
     '# Finance (1)',
     '  # Intake (1)',
-    '- Invoice sync.md',
+    '- Invoice sync',
     '# Ops (2)',
-    '- Ops dashboard.md',
+    '- Ops dashboard',
     '  # Intake (1)',
-    '- Ticket triage.md',
+    '- Ticket triage',
   ])
   // A filter narrows the TOTAL, so the count is a plain three (see the deviation note above).
   await expect(count(win)).toHaveText('3 items')
@@ -214,7 +224,7 @@ test('step 3 — search composes on top of the filter, and clearing it restores 
 
   // Both narrow, and here the `shown / total` form finally appears: search reduces what is SHOWN
   // of the three the filter left — never of the four the folder holds.
-  await expect(rowNames(win)).toHaveText(['Ticket triage.md'])
+  await expect(rowNames(win)).toHaveText(['Ticket triage'])
   await expect(count(win)).toHaveText('1 / 3 items')
   await shoot(win, 'filter-04-search-composed')
 
@@ -236,13 +246,13 @@ test('step 4 — the board buckets POST-filter: the subgroup whose cards all wen
   await expect.poll(() => boardScript(win), { timeout: 15_000 }).toEqual([
     '# Finance (1)',
     '  # Intake (1)',
-    '  - Invoice sync.md',
+    '  - Invoice sync',
     '# Ops (3)',
-    '- Ops dashboard.md',
+    '- Ops dashboard',
     '  # Intake (1)',
-    '  - Ticket triage.md',
+    '  - Ticket triage',
     '  # Review (1)',
-    '  - Shift handover.md',
+    '  - Shift handover',
   ])
   await expect(badge(win)).toHaveCount(0)
 
@@ -253,11 +263,11 @@ test('step 4 — the board buckets POST-filter: the subgroup whose cards all wen
   await expect.poll(() => boardScript(win)).toEqual([
     '# Finance (1)',
     '  # Intake (1)',
-    '  - Invoice sync.md',
+    '  - Invoice sync',
     '# Ops (2)',
-    '- Ops dashboard.md',
+    '- Ops dashboard',
     '  # Intake (1)',
-    '  - Ticket triage.md',
+    '  - Ticket triage',
   ])
   await expect(badge(win)).toHaveText('1')
   await shoot(win, 'filter-05-board-narrowed')
@@ -268,13 +278,13 @@ test('step 5 — removing the rules restores every view and deletes the key from
   await expect.poll(() => boardScript(win)).toEqual([
     '# Finance (1)',
     '  # Intake (1)',
-    '  - Invoice sync.md',
+    '  - Invoice sync',
     '# Ops (3)',
-    '- Ops dashboard.md',
+    '- Ops dashboard',
     '  # Intake (1)',
-    '  - Ticket triage.md',
+    '  - Ticket triage',
     '  # Review (1)',
-    '  - Shift handover.md',
+    '  - Shift handover',
   ])
 
   await viewTabs(contents(win)).filter({ hasText: NESTED_VIEW }).evaluate((button) => (button as HTMLButtonElement).click())
@@ -296,7 +306,7 @@ test('step 6 — "New" seeds the note from the active filter, and it lands in th
 
   // The equality rule IS the seed (YAZ-1236): the newborn carries the property the filter asks for,
   // on top of the declaration's empty columns and under the belonging that lands last.
-  const created = path.join(vault, 'automations', NEWBORN)
+  const created = path.join(vault, 'automations', `${NEWBORN}.md`)
   await expect.poll(() => readFile(created, 'utf8').catch(() => ''), { timeout: 10_000 }).toContain('status: Live')
   expect(await readFile(created, 'utf8')).toContain('[[Automations]]')
   await expect(activeTab(win)).toHaveText('Untitled')
