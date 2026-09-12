@@ -420,11 +420,9 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-/* The list and the bottom composer, one column (YAZ-1515). The composer stays at the BOTTOM under both orders. */
-.comments__stack {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+/* The bottom composer follows the list under BOTH orders (YAZ-1515): the composer never moves. */
+.comments__list + .comments__composer {
+  margin-top: 16px;
 }
 
 /* The reply field at the bottom of a card with replies: a row of the card, not a box of its own. */

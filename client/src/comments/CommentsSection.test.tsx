@@ -208,7 +208,7 @@ const repliesOf = (thread: ParentNode) => all(thread, '.comments__replies > arti
 const sheet = (el: ParentNode) => q(el, '.confirm[role="dialog"]')
 /** The sheet's own buttons — never a row action. */
 const sheetButton = (el: ParentNode, text: string) => all<HTMLButtonElement>(el, '.confirm__btn').find((b) => b.textContent?.trim() === text) ?? null
-const bottomComposer = (el: ParentNode) => must(q<HTMLElement>(el, '.comments > .comments__stack > .comments__composer'), 'bottom composer')
+const bottomComposer = (el: ParentNode) => must(q<HTMLElement>(el, '.comments > .comments__composer'), 'bottom composer')
 const textareaOf = (composer: ParentNode) => q<HTMLTextAreaElement>(composer, 'textarea.comments__textarea')
 const titleInputOf = (composer: ParentNode) => q<HTMLInputElement>(composer, 'input.comments__title-input')
 const submitOf = (composer: ParentNode) => q<HTMLButtonElement>(composer, 'button.btn--primary')
@@ -273,7 +273,7 @@ describe('CommentsSection — render', () => {
 
     click(header(el))
     expect(q(el, '.comments__list')).not.toBeNull()
-    expect(q(el, '.comments > .comments__stack > .comments__composer')).not.toBeNull()
+    expect(q(el, '.comments > .comments__composer')).not.toBeNull()
   })
 
   it('no count and no fold-all when there is nothing to count', () => {
@@ -805,8 +805,8 @@ describe('order (YAZ-1515)', () => {
   it('the toggle sits LEFT of fold-all, and is absent below two threads and while the header is collapsed', () => {
     expect(orderTool(mount(EMPTY))).toBeNull()
     expect(orderTool(mount(LONE))).toBeNull()
-    // Two threads — one with replies — is enough: the roots are what reorder.
-    expect(orderTool(mount(THREADED))).not.toBeNull()
+    // Exactly two roots is the boundary: that is enough, because the roots are what reorder.
+    expect(orderTool(mount(FRESHER))).not.toBeNull()
     expect(tools(mount(FOLDABLE)).map((b) => b.textContent)).toEqual(['Oldest first', 'Collapse all'])
 
     const el = mount(THREE)
@@ -817,18 +817,22 @@ describe('order (YAZ-1515)', () => {
     expect(orderTool(el)).not.toBeNull()
   })
 
-  it('the composer stays the LAST child of the stack under BOTH orders (it never moves to the top)', () => {
+  it('the composer follows the list under BOTH orders (it never moves to the top)', () => {
     for (const order of ['oldest', 'newest'] as const) {
-      const stack = must(q(mount(THREE, 100, order), '.comments__stack'), 'the stack')
-      expect(stack.className).toBe('comments__stack')
-      expect(stack.firstElementChild?.classList.contains('comments__list')).toBe(true)
-      expect(stack.lastElementChild?.classList.contains('comments__composer')).toBe(true)
+      expect(q(mount(THREE, 100, order), '.comments > .comments__list + .comments__composer')).not.toBeNull()
     }
+    // And the rule that seats it below the list carries no `order` of its own.
+    const rule = must(commentsCss.match(/\.comments__list\s*\+\s*\.comments__composer\s*\{([^}]*)\}/s)?.[1], 'the list + composer rule')
+    expect(rule).toMatch(/margin-top:\s*16px;/)
+    expect(rule).not.toMatch(/\border:/)
   })
 
-  it('CSS: the stack is one column and nothing reorders the composer', () => {
-    expect(commentsCss).toMatch(/\.comments__stack\s*\{[^}]*flex-direction:\s*column;/s)
-    expect(commentsCss).not.toMatch(/order:\s*-1/)
+  it('adding under newest-first: the new comment renders FIRST on screen while the file still APPENDS it', async () => {
+    const el = mount(THREE, 100, 'newest')
+    await submitVia(bottomComposer(el), 'Fourth')
+    expect(readComments(written()).at(-1)?.body).toBe('Fourth')
+    expect(threads(el).map((t) => textOf(articles(t)[0]))[0]).toBe('Fourth')
+    expect(markOf(articles(threads(el)[0])[0])?.textContent).toBe('#4')
   })
 })
 

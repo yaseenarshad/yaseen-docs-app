@@ -222,6 +222,19 @@ export function SettingsCog({ settings, onChange, sync }: SettingsCogProps) {
               Default
             </button>
           </div>
+          <p className="settings__label">Comments</p>
+          <div className="settings__options">
+            {COMMENTS_ORDER_OPTIONS.map(({ label, value }) => (
+              <button
+                key={value}
+                type="button"
+                className={`settings__option${settings.commentsOrder === value ? ' settings__option--active' : ''}`}
+                onClick={() => onChange({ ...settings, commentsOrder: value })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <p className="settings__section">Files &amp; Links</p>
           {/* GRO-2272: the confirm sheet is the ONLY guard on delete (the OS Trash has no
               programmatic undo), so this defaults ON and the label says what turning it off
@@ -243,19 +256,6 @@ export function SettingsCog({ settings, onChange, sync }: SettingsCogProps) {
             ))}
           </div>
           <p className="settings__hint">Deleted notes and folders move to the Trash either way.</p>
-          <p className="settings__label">Comments</p>
-          <div className="settings__options">
-            {COMMENTS_ORDER_OPTIONS.map(({ label, value }) => (
-              <button
-                key={value}
-                type="button"
-                className={`settings__option${settings.commentsOrder === value ? ' settings__option--active' : ''}`}
-                onClick={() => onChange({ ...settings, commentsOrder: value })}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
           <p className="settings__label">Default location for new notes</p>
           <div className="settings__stack">
             {NEW_NOTE_LOCATION_OPTIONS.map(({ label, value }) => (

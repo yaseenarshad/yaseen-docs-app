@@ -207,15 +207,6 @@ export function App() {
     setSettings(next)
   }, [])
 
-  /**
-   * The comment stream's order toggle (YAZ-1515) writes the setting through ONE stable door, the
-   * way `createBase` reads it: `RetainedEditor` is `memo(Editor)`, so a fresh arrow per render
-   * would re-render every retained editor tree on any App state change.
-   */
-  const settingsRef = useRef(settings)
-  settingsRef.current = settings
-  const changeCommentsOrder = useCallback((order: CommentsOrder) => changeSettings({ ...settingsRef.current, commentsOrder: order }), [changeSettings])
-
   /** A lens tab click (YAZ-847): write through to the global state, then mirror it locally. */
   const changeLens = useCallback((next: SidebarLens) => {
     storage.setSidebarLens(next)
@@ -234,6 +225,10 @@ export function App() {
     const { settings: s, root: r, file: f } = createBaseInputs.current
     return r === null ? '' : newNoteBase(s, r, f)
   }, [])
+  // The comment stream's order toggle (YAZ-1515) writes the setting through the same ref-backed,
+  // stable door: `RetainedEditor` is `memo(Editor)`, and a fresh arrow per render would re-render
+  // every retained editor tree on any App state change.
+  const changeCommentsOrder = useCallback((order: CommentsOrder) => changeSettings({ ...createBaseInputs.current.settings, commentsOrder: order }), [changeSettings])
 
   // Appearance (Desktop K, GRO-2218): `system` tracks the OS live; explicit values win.
   // `data-theme` goes on <html> so body / fixed overlays follow app.css's dark tokens, and

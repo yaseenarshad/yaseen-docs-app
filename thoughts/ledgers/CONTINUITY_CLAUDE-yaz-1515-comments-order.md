@@ -17,10 +17,11 @@ Ship, on main, a persisted **Oldest first / Newest first** order for the comment
 - Done:
   - [x] 1- Scope (YAZ-1529): findings + A–D + live loop posted; prototype on the worktree; demo vault `~/Desktop/yaz-1515-demo/Comments Order`
   - [x] 2A- (YAZ-1531) `01ff296` · 2B- (YAZ-1532) `cc75740` · 2C- (YAZ-1516) `fdb0b1b` — each green alone; HEAD 3702/3702, build ✓
-- Now: [→] 4- Polish and anti-slop (YAZ-1534): reviewer → simplify → naming → verify A–D → gate → evidence
-- Next: 2D- Collapse the block by default when a page has no comments (YAZ-1536, 🔒 E) — after the review disposition
+  - [x] 2D- (YAZ-1536) `601f97f` — 🔒 E, one line, tests first
+  - [x] 4- Polish (YAZ-1534): reviewer 1 must / 8 should / 5 nit → 13 accepted, 1 declined; fixes committed; gate 3709/3709, build ✓; evidence posted
+- Now: [→] 3- Prove it (YAZ-1533): final "go do this" round with Yasin on the polished branch (app relaunched on the isolated profile)
+- Next: 4A- Release (YAZ-1535) on Yasin's go
 - Remaining:
-  - [ ] 3- Prove it (YAZ-1533): final "go do this" round with Yasin on the polished branch
   - [ ] 4A- Release (YAZ-1535): push, PR, merge; NO bump; clean up demo + worktree
 
 ## Open Questions

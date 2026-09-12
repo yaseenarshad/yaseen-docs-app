@@ -83,13 +83,10 @@ interface EditorProps {
   sync?: GithubSyncStatus | null
   /** The chip's click (it IS the sync button); App passes `useGithubSync`'s `syncNow`. */
   onSyncNow?: () => void
-  /**
-   * The comment stream's order (YAZ-1515), a global reading preference threaded down like every
-   * other setting — the block never reads `storage` itself. Absent → oldest-first, the default.
-   */
-  commentsOrder?: CommentsOrder
-  /** The block's own Oldest/Newest toggle writes the SETTING through this; absent → the toggle is inert. */
-  onChangeCommentsOrder?: (order: CommentsOrder) => void
+  /** The comment stream's order (YAZ-1515): a setting threaded down like every other — the block never reads `storage` itself. */
+  commentsOrder: CommentsOrder
+  /** The block's own Oldest/Newest toggle writes the SETTING through this. */
+  onChangeCommentsOrder: (order: CommentsOrder) => void
 }
 
 export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, createBase, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow, commentsOrder, onChangeCommentsOrder }: EditorProps) {
@@ -182,8 +179,8 @@ function CrepeHost({
   onRenameFile?: (oldPath: string, newPath: string) => void
   sync?: GithubSyncStatus | null
   onSyncNow?: () => void
-  commentsOrder?: CommentsOrder
-  onChangeCommentsOrder?: (order: CommentsOrder) => void
+  commentsOrder: CommentsOrder
+  onChangeCommentsOrder: (order: CommentsOrder) => void
 }) {
   const [documentZoom, setDocumentZoom] = useState(100)
   const hostRef = useRef<HTMLDivElement>(null)
@@ -406,7 +403,7 @@ function CrepeHost({
         )}
         {/* Reads the same disk truth the properties panel does (🔒 D4): its own frontmatter-only
             writes come back through the watcher as `absorbFrontmatterOnly` → `setDisk`. */}
-        <CommentsSection file={{ ...file, content: disk }} order={commentsOrder ?? 'oldest'} onChangeOrder={onChangeCommentsOrder ?? (() => undefined)} />
+        <CommentsSection file={{ ...file, content: disk }} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} />
         {wikilinks !== undefined && (
           <BacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
         )}

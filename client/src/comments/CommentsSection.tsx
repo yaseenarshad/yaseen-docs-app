@@ -132,8 +132,9 @@ export function CommentsSection({ file, order, onChangeOrder }: CommentsSectionP
 
   const shape = commentsShape(snap.content)
   // The model's order is by the ROOT's `at`; newest-first is that list read backwards. Replies stay oldest-first: a conversation reads down.
+  const newest = order === 'newest'
   const chronological = threadsOf(readComments(snap.content))
-  const threads = order === 'newest' ? [...chronological].reverse() : chronological
+  const threads = newest ? [...chronological].reverse() : chronological
   const count = threads.reduce((n, t) => n + 1 + t.replies.length, 0)
 
   // One fold-all control, the outliner's pair in one seat: while anything is open it collapses
@@ -223,33 +224,34 @@ export function CommentsSection({ file, order, onChangeOrder }: CommentsSectionP
             {count > 0 && <span className="comments__count"> ({count})</span>}
           </span>
         </button>
-        <div className="comments__tools">
-          {/* YAZ-1515: state-driven like fold-all — the label names the CURRENT order; below two threads there is nothing to reorder. */}
-          {expanded && threads.length > 1 && (
-            <button type="button" className="comments__tool" title={order === 'newest' ? 'Show oldest first' : 'Show newest first'} onClick={() => onChangeOrder(order === 'newest' ? 'oldest' : 'newest')}>
-              <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                {order === 'newest' ? <path d="M8 3v10M4 9l4 4 4-4" /> : <path d="M8 13V3M4 7l4-4 4 4" />}
-              </svg>
-              {order === 'newest' ? 'Newest first' : 'Oldest first'}
-            </button>
-          )}
-          {expanded && (everyId.length > 0 || everyThreaded.length > 0) && (
-            <button type="button" className="comments__tool" onClick={foldAll}>
-              <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                {allFolded ? <path d="m5 5.5 3-3 3 3M5 10.5l3 3 3-3" /> : <path d="m5 3 3 3 3-3M5 13l3-3 3 3" />}
-              </svg>
-              {allFolded ? 'Expand all' : 'Collapse all'}
-            </button>
-          )}
-        </div>
+        {expanded && (
+          <div className="comments__tools">
+            {/* The order toggle (YAZ-1515): state-driven like fold-all — the label names the CURRENT order; below two threads there is nothing to reorder. */}
+            {threads.length > 1 && (
+              <button type="button" className="comments__tool" title={newest ? 'Show oldest first' : 'Show newest first'} onClick={() => onChangeOrder(newest ? 'oldest' : 'newest')}>
+                <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  {newest ? <path d="M8 3v10M4 9l4 4 4-4" /> : <path d="M8 13V3M4 7l4-4 4 4" />}
+                </svg>
+                {newest ? 'Newest first' : 'Oldest first'}
+              </button>
+            )}
+            {(everyId.length > 0 || everyThreaded.length > 0) && (
+              <button type="button" className="comments__tool" onClick={foldAll}>
+                <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  {allFolded ? <path d="m5 5.5 3-3 3 3M5 10.5l3 3 3-3" /> : <path d="m5 3 3 3 3-3M5 13l3-3 3 3" />}
+                </svg>
+                {allFolded ? 'Expand all' : 'Collapse all'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
       {expanded && (
         <>
           {shape === 'foreign' || shape === 'invalid' ? (
             <p className="comments__notice">{NOTICE[shape]}</p>
           ) : (
-            /* The list, then the composer — ALWAYS at the bottom, whichever way the list reads (YAZ-1515: Yasin's call on the demo). */
-            <div className="comments__stack">
+            <>
               {threads.length > 0 && (
                 <div className="comments__list">
                   {threads.map(({ comment, replies }) => {
@@ -292,8 +294,9 @@ export function CommentsSection({ file, order, onChangeOrder }: CommentsSectionP
                   })}
                 </div>
               )}
+              {/* The composer stays at the BOTTOM whichever way the list reads (YAZ-1515: Yasin's call on the demo). */}
               <Composer placeholder="Leave a comment…" submitLabel="Comment" saving={saving} onSubmit={(draft) => add(draft)} />
-            </div>
+            </>
           )}
           {error !== null && (
             <p className="comments__error" role="alert">
