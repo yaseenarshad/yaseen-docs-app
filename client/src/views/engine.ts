@@ -303,11 +303,22 @@ export function propertyKeys(_def: ViewSet, view: ViewDef, records: readonly Ind
   return ['file.name', ...[...keys].sort()]
 }
 
-/** `def.properties[key].displayName` (looked up as written, bare and `note.`-prefixed), else the key without `note.`. */
+/**
+ * The label a key wears with no `displayName` (YAZ-1513): `file.name` is "Name"; every other key
+ * is its last dotted segment in sentence case, underscores read as spaces — `note.kpi_category` →
+ * "Kpi category", `file.mtime` → "Mtime", `formula.score` → "Score". The KEY is never touched.
+ */
+export function defaultLabel(key: string): string {
+  if (key === 'file.name') return 'Name'
+  const last = key.slice(key.lastIndexOf('.') + 1).replaceAll('_', ' ')
+  return last.charAt(0).toUpperCase() + last.slice(1)
+}
+
+/** `def.properties[key].displayName` (looked up as written, bare and `note.`-prefixed), else `defaultLabel(key)`. */
 export function propertyLabel(def: ViewSet, key: string): string {
   const bare = key.startsWith('note.') ? key.slice(5) : key
   const props = def.properties
-  return props?.[key]?.displayName ?? props?.[bare]?.displayName ?? props?.[`note.${bare}`]?.displayName ?? bare
+  return props?.[key]?.displayName ?? props?.[bare]?.displayName ?? props?.[`note.${bare}`]?.displayName ?? defaultLabel(key)
 }
 
 export function runView(def: ViewSet, view: ViewDef, records: readonly IndexRecord[], opts: RunOptions = {}): ViewResult {

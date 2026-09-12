@@ -52,8 +52,8 @@ afterEach(() => {
 describe('SortMenu external settings refresh', () => {
   it('discards an in-flight drag after changed sort settings arrive, then reorders the replacement safely', () => {
     const { el, grip, replace, sort, onUpdate } = mount()
-    drag(grip(1, 'status'), 'dragstart')
-    drag(grip(3, 'priority').closest('li')!, 'dragover', 5)
+    drag(grip(1, 'Status'), 'dragstart')
+    drag(grip(3, 'Priority').closest('li')!, 'dragover', 5)
     expect(el.querySelector('.view-prop--dragging')).not.toBeNull()
     const replacement: SortSpec[] = [
       { property: 'note.priority', direction: 'ASC' },
@@ -61,32 +61,32 @@ describe('SortMenu external settings refresh', () => {
     ]
     replace(replacement)
     expect(el.querySelector('.view-prop--dragging, .view-prop--insert-after')).toBeNull()
-    drag(grip(2, 'file.name').closest('li')!, 'drop', 5)
+    drag(grip(2, 'Name').closest('li')!, 'drop', 5)
     expect(onUpdate).not.toHaveBeenCalled()
     expect(sort()).toEqual(replacement)
 
-    const last = grip(2, 'file.name')
+    const last = grip(2, 'Name')
     last.focus()
     press(last, 'ArrowUp')
     expect(sort()).toEqual([replacement[1], replacement[0]])
     expect(onUpdate).toHaveBeenCalledTimes(1)
-    expect(document.activeElement).toBe(grip(1, 'file.name'))
+    expect(document.activeElement).toBe(grip(1, 'Name'))
   })
 
   it('retains rule DOM identity and focused control across an equivalent freshly parsed sort array', () => {
     const { grip, replace, sort, onUpdate } = mount()
-    const focused = grip(2, 'file.name')
+    const focused = grip(2, 'Name')
     const row = focused.closest('li')
     focused.focus()
     replace(INITIAL)
-    expect(grip(2, 'file.name')).toBe(focused)
-    expect(grip(2, 'file.name').closest('li')).toBe(row)
+    expect(grip(2, 'Name')).toBe(focused)
+    expect(grip(2, 'Name').closest('li')).toBe(row)
     expect(document.activeElement).toBe(focused)
     expect(onUpdate).not.toHaveBeenCalled()
 
     press(focused, 'ArrowDown')
     expect(sort()).toEqual([INITIAL[0], INITIAL[2], INITIAL[1]])
-    expect(grip(3, 'file.name')).toBe(focused)
+    expect(grip(3, 'Name')).toBe(focused)
     expect(document.activeElement).toBe(focused)
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })

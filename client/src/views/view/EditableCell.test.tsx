@@ -417,10 +417,10 @@ describe('full table-cell editing surface', () => {
 `)
     const frozenBody = cell(el, 0, 0)
     const activeFrozenBody = cell(el, 1, 0)
-    const frozenHeader = q<HTMLElement>(el, '.view-table thead th:nth-child(1)')
-    const ordinaryHeader = q<HTMLElement>(el, '.view-table thead th:nth-child(2)')
-    const frozenFooter = q<HTMLElement>(el, '.view-table tfoot td:nth-child(1)')
-    const ordinaryFooter = q<HTMLElement>(el, '.view-table tfoot td:nth-child(2)')
+    const frozenHeader = q<HTMLElement>(el, '.view-table thead th:nth-child(2)')
+    const ordinaryHeader = q<HTMLElement>(el, '.view-table thead th:nth-child(3)')
+    const frozenFooter = q<HTMLElement>(el, '.view-table tfoot td:nth-child(2)')
+    const ordinaryFooter = q<HTMLElement>(el, '.view-table tfoot td:nth-child(3)')
 
     open(el, 1, 0)
     setValue(byLabel<HTMLInputElement>(activeFrozenBody, 'Edit related'), '[[Cre')
@@ -464,10 +464,10 @@ describe('full table-cell editing surface', () => {
     expect(active.querySelector('.view-cell-edit__complete')).not.toBeNull()
     expect([getComputedStyle(active).position, getComputedStyle(active).zIndex]).toEqual(['relative', '2'])
 
-    const ordinaryHeader = q<HTMLElement>(el, '.view-table thead th:nth-child(2)')
-    const frozenHeader = q<HTMLElement>(el, '.view-table thead th:nth-child(1)')
-    const ordinaryFooter = q<HTMLElement>(el, '.view-table tfoot td:nth-child(2)')
-    const frozenFooter = q<HTMLElement>(el, '.view-table tfoot td:nth-child(1)')
+    const ordinaryHeader = q<HTMLElement>(el, '.view-table thead th:nth-child(3)')
+    const frozenHeader = q<HTMLElement>(el, '.view-table thead th:nth-child(2)')
+    const ordinaryFooter = q<HTMLElement>(el, '.view-table tfoot td:nth-child(3)')
+    const frozenFooter = q<HTMLElement>(el, '.view-table tfoot td:nth-child(2)')
     expect([ordinaryHeader, frozenHeader, ordinaryFooter, frozenFooter].map((node) => getComputedStyle(node).zIndex)).toEqual([
       '3',
       '4',

@@ -149,3 +149,19 @@ const TYPE_GLYPHS: Record<string, ReactElement> = {
 export function ViewTypeIcon({ type }: { type: string }) {
   return <svg {...svg}>{TYPE_GLYPHS[type] ?? <rect x="2" y="3" width="12" height="10" rx="1.2" />}</svg>
 }
+
+/** A `file.*` field in the properties list (YAZ-1513): the page's own facts, never a note property. */
+export const FileFieldIcon = () => (
+  <svg {...svg}>
+    <path d="M4 2h5l3 3v9H4z" />
+    <path d="M9 2v3h3" />
+  </svg>
+)
+
+/** A `formula.*` column in the properties list (YAZ-1513). */
+export const FormulaIcon = () => (
+  <svg {...svg}>
+    <path d="M10.5 3c-1.6 0-2.3 1-2.5 2.6L6.9 12c-.2 1.3-.9 2-2.4 2" />
+    <path d="M5.5 7.5h5.5" />
+  </svg>
+)

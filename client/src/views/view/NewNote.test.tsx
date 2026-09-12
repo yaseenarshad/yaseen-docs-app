@@ -251,7 +251,7 @@ describe('New inside a group', () => {
     expect(onOpenFile).toHaveBeenCalledWith(PARKED)
 
     setRecords([...TEST_RECORDS, created(PARKED, { status: 'idea', pillar: 'Agentic Agency' })])
-    expect(tableSections(el)['Agentic Agency']).toContain('Untitled.md')
+    expect(tableSections(el)['Agentic Agency']).toContain('Untitled')
   })
 
   it('a board column seeds the group value with its YAML type preserved', () => {

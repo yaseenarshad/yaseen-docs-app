@@ -194,7 +194,7 @@ describe('indentProperties', () => {
     const { el } = mount(LIST_BASE.replace('name: L', 'name: L\n    indentProperties: true'))
     expect(el.querySelector('.view-list__inline')).toBeNull()
     const first = items(el)[0]
-    expect([...first.querySelectorAll('.view-list__prop-name')].map((n) => n.textContent)).toEqual(['status', 'priority'])
+    expect([...first.querySelectorAll('.view-list__prop-name')].map((n) => n.textContent)).toEqual(['Status', 'Priority'])
     expect([...first.querySelectorAll('.view-list__prop-value')].map((n) => n.textContent)).toEqual(['idea', '2'])
   })
 

@@ -31,25 +31,27 @@ export function PropertyTypeIcon({ kind }: { kind: PropertyKind }) {
   return <svg className="property-kind-icon" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{symbols[kind]}</svg>
 }
 
-/** Definition-only edits: the host owns scope, persistence, and all note values. */
-export function PropertyDefinitionEditor({ value, onChange, observed = [] }: {
+/**
+ * The Select / Multi-select OPTIONS editor: the ordered chip list (drag or arrow keys to reorder
+ * under manual order), per-option rename/remove, an "Add option" row, the "Add N existing values"
+ * import and the order mode. Every change goes out through `onChange` with the whole definition;
+ * WHEN that lands is the caller's business — the definition editor collects it into a draft the
+ * host saves, the Properties menu's detail panel (YAZ-1513) writes each change immediately.
+ * Carved out of `PropertyDefinitionEditor` so both can hold the one implementation.
+ */
+export function PropertyOptionsEditor({ value, onChange, observed = [] }: {
   value: PropertyDecl; onChange: (next: PropertyDecl) => void; observed?: readonly string[]
 }) {
-  const [choosing, setChoosing] = useState(false)
-  const [query, setQuery] = useState('')
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null)
-  const typeButton = useRef<HTMLButtonElement>(null)
-  const panel = useRef<HTMLDivElement>(null)
+  const panel = useRef<HTMLElement>(null)
   const options = value.options ?? []
   const displayOptions = orderedPropertyOptions(value) ?? []
   const manual = !value.optionSort || value.optionSort === 'manual'
-  const choice = value.kind === 'select' || value.kind === 'multi-select'
   const available = [...new Set(observed.filter(option => option.trim() !== '' && !options.includes(option)))]
-  const types = PROPERTY_KINDS.filter(kind => `${PROPERTY_LABELS[kind]} ${DESCRIPTIONS[kind]}`.toLowerCase().includes(query.toLowerCase()))
   const setOptions = (next: string[]) => onChange({ ...value, options: next })
   const closeDetail = () => {
     const label = editing === null ? 'Add option' : `Edit option ${editing}`
@@ -78,12 +80,87 @@ export function PropertyDefinitionEditor({ value, onChange, observed = [] }: {
     setOptions(editing === null ? [...options, next] : options.map(option => option === editing ? next : option))
     closeDetail()
   }
+
+  return <section className="property-def__options" aria-label="Property options" ref={panel} onKeyDown={event => {
+    if (event.key !== 'Escape' || (editing === null && !adding)) return
+    event.stopPropagation()
+    closeDetail()
+  }}>
+    <div className="property-def__section-title"><span>Options</span><select className="property-def__order" aria-label="Option order" value={value.optionSort ?? 'manual'} onChange={event => {
+      const optionSort = event.target.value
+      if (!validPropertyOptionSort(optionSort)) return
+      setDrag(null)
+      onChange({ ...value, optionSort })
+    }}><option value="manual">Manual order</option><option value="ascending">A–Z</option><option value="descending">Z–A</option></select></div>
+    {editing !== null ? <div className="property-def__detail">
+      <button type="button" className="property-def__back" onClick={closeDetail}><span aria-hidden="true">‹</span> Options</button>
+      <form onSubmit={event => { event.preventDefault(); saveOption() }}>
+        <label className="property-def__rename-label">Option name<input autoFocus className="property-def__input" aria-label="Option name" value={draft} onChange={event => { setDraft(event.target.value); setError('') }} /></label>
+        <div className="property-def__form-actions"><button type="button" onClick={closeDetail}>Cancel</button><button type="submit" className="property-def__save">Save</button></div>
+      </form>
+      <button type="button" className="property-def__delete" onClick={() => { setOptions(options.filter(option => option !== editing)); closeDetail() }}>Remove option</button>
+      <p className="property-def__hint">Renaming or removing this option keeps existing note values.</p>
+    </div> : <>
+      <div className="property-def__option-list">
+        {displayOptions.map((option, index) => <div key={option} className="property-def__option"
+          data-dragging={drag?.from === index || undefined}
+          data-insert={drag?.to === index ? 'before' : drag?.to === options.length && index === options.length - 1 ? 'after' : undefined}
+          onDragOver={event => {
+            if (drag === null) return
+            event.preventDefault()
+            event.stopPropagation()
+            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+            const to = insertionAt(event, index)
+            if (drag.to !== to) setDrag({ ...drag, to })
+          }}
+          onDrop={event => {
+            if (drag === null) return
+            event.preventDefault()
+            event.stopPropagation()
+            const slot = insertionAt(event, index)
+            move(drag.from, slot > drag.from ? slot - 1 : slot)
+            setDrag(null)
+          }}>
+          {manual && <button type="button" draggable className="property-def__grip" aria-label={`Reorder ${option}`} title="Drag or use arrow keys to reorder" onDragStart={event => {
+            event.stopPropagation()
+            setDrag({ from: index, to: index })
+            if (event.dataTransfer) {
+              event.dataTransfer.setData('text/plain', option)
+              event.dataTransfer.effectAllowed = 'move'
+              const row = event.currentTarget.parentElement!
+              const rect = row.getBoundingClientRect()
+              event.dataTransfer.setDragImage(row, event.clientX - rect.left, event.clientY - rect.top)
+            }
+          }} onDragEnd={() => setDrag(null)} onKeyDown={event => {
+            if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); event.stopPropagation(); move(index, index + (event.key === 'ArrowUp' ? -1 : 1)) }
+          }}><DragHandleIcon /></button>}
+          <button type="button" className="property-def__option-button" aria-label={`Edit option ${option}`} onClick={() => { setEditing(option); setDraft(option); setError('') ; setAdding(false) }}><span className="property-def__chip">{option}</span><span className="property-def__more" aria-hidden="true">•••</span></button>
+          <button type="button" className="property-def__remove" aria-label={`Remove option ${option}`} title="Remove option" onClick={() => setOptions(options.filter(other => other !== option))}><span aria-hidden="true">×</span></button>
+        </div>)}
+      </div>
+      {adding ? <form className="property-def__add-form" onSubmit={event => { event.preventDefault(); saveOption() }}><input autoFocus className="property-def__input" aria-label="New option" placeholder="Option name" value={draft} onChange={event => { setDraft(event.target.value); setError('') }} /><div className="property-def__form-actions"><button type="button" onClick={closeDetail}>Cancel</button><button type="submit" className="property-def__save">Add</button></div></form> : <button type="button" className="property-def__action" aria-label="Add option" onClick={() => { setAdding(true); setDraft(''); setError('') }}><span aria-hidden="true">＋</span> Add option</button>}
+      {available.length > 0 && <button type="button" className="property-def__action property-def__import" onClick={() => setOptions([...options, ...available])}><span aria-hidden="true">↳</span> Add {available.length} existing {available.length === 1 ? 'value' : 'values'}</button>}
+    </>}
+    {error && <p className="property-def__error" role="alert">{error}</p>}
+  </section>
+}
+
+/** Definition-only edits: the host owns scope, persistence, and all note values. */
+export function PropertyDefinitionEditor({ value, onChange, observed = [] }: {
+  value: PropertyDecl; onChange: (next: PropertyDecl) => void; observed?: readonly string[]
+}) {
+  const [choosing, setChoosing] = useState(false)
+  const [query, setQuery] = useState('')
+  const typeButton = useRef<HTMLButtonElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
+  const choice = value.kind === 'select' || value.kind === 'multi-select'
+  const types = PROPERTY_KINDS.filter(kind => `${PROPERTY_LABELS[kind]} ${DESCRIPTIONS[kind]}`.toLowerCase().includes(query.toLowerCase()))
   const backFromTypes = () => { setChoosing(false); setQuery(''); requestAnimationFrame(() => typeButton.current?.focus()) }
 
   return <div className="property-def" ref={panel} onKeyDown={event => {
-    if (event.key !== 'Escape') return
-    if (choosing) { event.stopPropagation(); backFromTypes() }
-    else if (editing !== null || adding) { event.stopPropagation(); closeDetail() }
+    if (event.key !== 'Escape' || !choosing) return
+    event.stopPropagation()
+    backFromTypes()
   }}>
     {choosing ? <section className="property-def__picker" aria-label="Property types">
       <button type="button" className="property-def__back" onClick={backFromTypes}><span aria-hidden="true">‹</span> Property type</button>
@@ -92,13 +169,13 @@ export function PropertyDefinitionEditor({ value, onChange, observed = [] }: {
       }} /></div>
       <div className="property-def__type-list">
         {types.map(kind => <button type="button" data-type-option="" key={kind} className="property-def__type-option" aria-pressed={value.kind === kind} onClick={() => {
-          onChange({ ...value, kind }); closeDetail(); backFromTypes()
+          onChange({ ...value, kind }); backFromTypes()
         }}><PropertyTypeIcon kind={kind} /><span>{PROPERTY_LABELS[kind]}</span>{value.kind === kind && <span className="property-def__check" aria-hidden="true">✓</span>}</button>)}
         {types.length === 0 && <p className="property-def__empty">No matching types</p>}
       </div>
       <p className="property-def__hint">Changing type keeps existing note values.</p>
     </section> : <>
-      <button ref={typeButton} type="button" className="property-def__type-row" aria-label={`Property type: ${PROPERTY_LABELS[value.kind]}`} aria-expanded={false} onClick={() => { closeDetail(); setChoosing(true) }}>
+      <button ref={typeButton} type="button" className="property-def__type-row" aria-label={`Property type: ${PROPERTY_LABELS[value.kind]}`} aria-expanded={false} onClick={() => setChoosing(true)}>
         <span className="property-def__muted">Type</span><span className="property-def__current-type"><PropertyTypeIcon kind={value.kind} />{PROPERTY_LABELS[value.kind]}<span className="property-def__chevron" aria-hidden="true">›</span></span>
       </button>
       {!choice && <p className="property-def__description">{DESCRIPTIONS[value.kind]}</p>}
@@ -107,63 +184,7 @@ export function PropertyDefinitionEditor({ value, onChange, observed = [] }: {
         if (target.trim()) next.target = target.trim(); else delete next.target
         onChange(next)
       }} /></label>}
-      {choice && <section className="property-def__options" aria-label="Property options">
-        <div className="property-def__section-title"><span>Options</span><select className="property-def__order" aria-label="Option order" value={value.optionSort ?? 'manual'} onChange={event => {
-          const optionSort = event.target.value
-          if (!validPropertyOptionSort(optionSort)) return
-          setDrag(null)
-          onChange({ ...value, optionSort })
-        }}><option value="manual">Manual order</option><option value="ascending">A–Z</option><option value="descending">Z–A</option></select></div>
-        {editing !== null ? <div className="property-def__detail">
-          <button type="button" className="property-def__back" onClick={closeDetail}><span aria-hidden="true">‹</span> Options</button>
-          <form onSubmit={event => { event.preventDefault(); saveOption() }}>
-            <label className="property-def__rename-label">Option name<input autoFocus className="property-def__input" aria-label="Option name" value={draft} onChange={event => { setDraft(event.target.value); setError('') }} /></label>
-            <div className="property-def__form-actions"><button type="button" onClick={closeDetail}>Cancel</button><button type="submit" className="property-def__save">Save</button></div>
-          </form>
-          <button type="button" className="property-def__delete" onClick={() => { setOptions(options.filter(option => option !== editing)); closeDetail() }}>Remove option</button>
-          <p className="property-def__hint">Renaming or removing this option keeps existing note values.</p>
-        </div> : <>
-          <div className="property-def__option-list">
-            {displayOptions.map((option, index) => <div key={option} className="property-def__option"
-              data-dragging={drag?.from === index || undefined}
-              data-insert={drag?.to === index ? 'before' : drag?.to === options.length && index === options.length - 1 ? 'after' : undefined}
-              onDragOver={event => {
-                if (drag === null) return
-                event.preventDefault()
-                event.stopPropagation()
-                if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
-                const to = insertionAt(event, index)
-                if (drag.to !== to) setDrag({ ...drag, to })
-              }}
-              onDrop={event => {
-                if (drag === null) return
-                event.preventDefault()
-                event.stopPropagation()
-                const slot = insertionAt(event, index)
-                move(drag.from, slot > drag.from ? slot - 1 : slot)
-                setDrag(null)
-              }}>
-              {manual && <button type="button" draggable className="property-def__grip" aria-label={`Reorder ${option}`} title="Drag or use arrow keys to reorder" onDragStart={event => {
-                event.stopPropagation()
-                setDrag({ from: index, to: index })
-                if (event.dataTransfer) {
-                  event.dataTransfer.setData('text/plain', option)
-                  event.dataTransfer.effectAllowed = 'move'
-                  const row = event.currentTarget.parentElement!
-                  const rect = row.getBoundingClientRect()
-                  event.dataTransfer.setDragImage(row, event.clientX - rect.left, event.clientY - rect.top)
-                }
-              }} onDragEnd={() => setDrag(null)} onKeyDown={event => {
-                if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); event.stopPropagation(); move(index, index + (event.key === 'ArrowUp' ? -1 : 1)) }
-              }}><DragHandleIcon /></button>}
-              <button type="button" className="property-def__option-button" aria-label={`Edit option ${option}`} onClick={() => { setEditing(option); setDraft(option); setError(''); setAdding(false) }}><span className="property-def__chip">{option}</span><span className="property-def__more" aria-hidden="true">•••</span></button>
-            </div>)}
-          </div>
-          {adding ? <form className="property-def__add-form" onSubmit={event => { event.preventDefault(); saveOption() }}><input autoFocus className="property-def__input" aria-label="New option" placeholder="Option name" value={draft} onChange={event => { setDraft(event.target.value); setError('') }} /><div className="property-def__form-actions"><button type="button" onClick={closeDetail}>Cancel</button><button type="submit" className="property-def__save">Add</button></div></form> : <button type="button" className="property-def__action" aria-label="Add option" onClick={() => { setAdding(true); setDraft(''); setError('') }}><span aria-hidden="true">＋</span> Add option</button>}
-          {available.length > 0 && <button type="button" className="property-def__action property-def__import" onClick={() => setOptions([...options, ...available])}><span aria-hidden="true">↳</span> Add {available.length} existing {available.length === 1 ? 'value' : 'values'}</button>}
-        </>}
-        {error && <p className="property-def__error" role="alert">{error}</p>}
-      </section>}
+      {choice && <PropertyOptionsEditor value={value} onChange={onChange} observed={observed} />}
     </>}
   </div>
 }

@@ -257,7 +257,7 @@ describe('rows are the members, and only the members', () => {
     const el = mount(FUNNELS)
     expect(doc(el)).toBe('- [[Lead Gen]]\n- [[Sales]]') // the outline, alphabetical (the [D5] seed)
     selectView(el, 'Table')
-    expect(rowNames(el)).toEqual(['Lead Gen.md', 'Sales.md']) // path order, as `pagesIn` gives them
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales']) // path order, as `pagesIn` gives them
     expect(el.textContent).not.toContain('Other')
     expect(el.textContent).not.toContain('CAC')
   })
@@ -275,7 +275,7 @@ describe('rows are the members, and only the members', () => {
     // The trap: with only the members behind it, `link("Outsider")` names nothing and the
     // spellings never meet. The row shows because the resolver came from the whole snapshot.
     const el = mount(FUNNELS, vault({ views: [{ type: 'table', name: 'T', order: ['file.name'], filters: 'owner == link("Outsider")' }] }))
-    expect(rowNames(el)).toEqual(['Lead Gen.md'])
+    expect(rowNames(el)).toEqual(['Lead Gen'])
   })
 })
 
@@ -362,7 +362,7 @@ describe('the chrome is the views chrome, minus what a folder page cannot have',
     expect(el.querySelector('.view-table')).toBeNull()
     selectView(el, 'Table')
     expect(el.querySelector('.view-table')).not.toBeNull()
-    expect(rowNames(el)).toEqual(['Lead Gen.md', 'Sales.md'])
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales'])
   })
 
   it('switching view writes NOTHING — which view is active is session state, never the card', () => {
@@ -602,12 +602,12 @@ describe('config edits are ONE settings write on the folder page', () => {
     chooseProperty(el, 'note.order')
     await flush() // write 2: the rule re-targeted
     expect(write).toHaveBeenCalledTimes(2)
-    expect(propertyShown(el)).toContain('order')
+    expect(propertyShown(el)).toContain('Order')
 
     // Write 1's echo lands AFTER write 2's optimistic state — the race YAZ-1234 caught in the
     // DOM. It is OUR OWN stale write, not an external edit: it must not rebuild anything.
     feed(vault(settingsOf(0)))
-    expect(propertyShown(el)).toContain('order')
+    expect(propertyShown(el)).toContain('Order')
 
     // The next gesture edits what the menu renders — the property edit must survive it.
     setSelect(byLabel<HTMLSelectElement>(el, 'Operator'), 'isEmpty')
@@ -618,7 +618,7 @@ describe('config edits are ONE settings write on the folder page', () => {
     // The remaining echoes drain in order; an external edit afterwards still adopts as always.
     feed(vault(settingsOf(1)))
     feed(vault(settingsOf(2)))
-    expect(propertyShown(el)).toContain('order')
+    expect(propertyShown(el)).toContain('Order')
     feed(vault({ ...SETTINGS, views: [SETTINGS.views[0], { ...TABLE, filters: { and: ['note.order == 9'] } }] }))
     expect(q<HTMLInputElement>(el, '[aria-label="Value"]').value).toBe('9')
   })
@@ -629,7 +629,40 @@ describe('config edits are ONE settings write on the folder page', () => {
     click(byLabel(el, 'Sort'))
     click([...el.querySelectorAll<HTMLElement>('.view-menu__action')].find((b) => b.textContent === 'Add sort')!)
     await flush()
-    expect(byLabel<HTMLButtonElement>(el, 'Sort property').textContent).toContain('file.name')
+    expect(byLabel<HTMLButtonElement>(el, 'Sort property').textContent).toContain('Name')
+  })
+
+  it('a column rename lands in folder_page_settings.properties — ONE write, the label persisted, its echo not fought (YAZ-1513)', async () => {
+    // Before YAZ-1513 the def's `properties` was never persisted: the pencil's rename showed until
+    // the next echo and then silently vanished. Now the header menu and the pencil share one writer.
+    const el = mount(FUNNELS)
+    selectView(el, 'Table')
+    rightClick(q(el, '.view-table thead th:not(.view-table__gutter):nth-of-type(3)')) // note.order → "Order"
+    click(menuItem(el, 'Rename column…'))
+    const field = byLabel<HTMLInputElement>(el, 'Rename Order')
+    setValue(field, 'Rank')
+    press(field, 'Enter')
+    await flush()
+
+    expect(write).toHaveBeenCalledExactlyOnceWith(FUNNELS, 'folder_page_settings', { ...SETTINGS, properties: { order: { displayName: 'Rank' } } })
+    const headers = () => [...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')].map((th) => th.textContent)
+    expect(headers()).toEqual(['Name', 'Rank', 'Related'])
+    // the index echoes our own write back: the label stays, nothing is rebuilt from an older def
+    feed(vault({ ...SETTINGS, properties: { order: { displayName: 'Rank' } } }))
+    await flush()
+    expect(headers()).toEqual(['Name', 'Rank', 'Related'])
+    expect(write).toHaveBeenCalledTimes(1)
+  })
+
+  it('a stored column label renders on mount, and an external change to it rebuilds the def (YAZ-1513)', async () => {
+    const el = mount(FUNNELS, vault({ ...SETTINGS, properties: { order: { displayName: 'Rank' } } }))
+    selectView(el, 'Table')
+    const headers = () => [...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')].map((th) => th.textContent)
+    expect(headers()).toEqual(['Name', 'Rank', 'Related'])
+    feed(vault({ ...SETTINGS, properties: { order: { displayName: 'Position' } } }))
+    await flush()
+    expect(headers()).toEqual(['Name', 'Position', 'Related'])
+    expect(write).not.toHaveBeenCalled()
   })
 
   it('a drag past the first tab writes the new order and the active view follows; switching alone writes nothing', async () => {
@@ -843,7 +876,7 @@ describe('the seed reads the OPEN file, not the snapshot (YAZ-919)', () => {
     ].join('\n')
     const el = mount(FUNNELS, vault({ ...SETTINGS, views: seedViews }), migrated)
     selectView(el, 'Table')
-    expect(texts(el, '.view-table thead th')).toEqual(['file.name', 'order'])
+    expect(texts(el, '.view-table thead th:not(.view-table__gutter)')).toEqual(['Name', 'Order'])
 
     // The user adds a column: our own write, echoing back through the index ahead of the seed.
     const added = {
@@ -851,7 +884,7 @@ describe('the seed reads the OPEN file, not the snapshot (YAZ-919)', () => {
       views: [{ type: 'outline', name: 'Outline' }, { type: 'table', name: 'Table', order: ['file.name', 'note.order', 'note.unit'] }],
     }
     act(() => feed(vault(added)))
-    expect(texts(el, '.view-table thead th')).toEqual(['file.name', 'order', 'unit'])
+    expect(texts(el, '.view-table thead th:not(.view-table__gutter)')).toEqual(['Name', 'Order', 'Unit'])
   })
 })
 
@@ -868,6 +901,6 @@ describe('the write-echo guard vs rapid gestures (YAZ-1241)', () => {
     // An outside editor rewrites the card before our echo arrives: disk truth outranks the
     // unechoed local write (the guard's `pending` queue clears, the external state adopts).
     feed(vault({ ...SETTINGS, views: [SETTINGS.views[0], { ...TABLE, filters: { and: ['note.order == 1'] } }] }))
-    expect(propertyShown(el)).toContain('order')
+    expect(propertyShown(el)).toContain('Order')
   })
 })

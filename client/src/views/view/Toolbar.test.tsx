@@ -142,8 +142,9 @@ function choosePropertyType(pop: ParentNode, label: string): void {
   click(byText(pop, '[data-type-option]', label))
 }
 
-async function savePropertyDefinition(pop: ParentNode): Promise<void> {
-  await act(async () => byText<HTMLButtonElement>(pop, '.frontmatter-property-menu__actions button', 'Save').click())
+/** Let an immediate declaration write resolve, so the panel's `base` moves forward (3D). */
+async function settle(): Promise<void> {
+  await act(async () => {})
   draw()
 }
 
@@ -176,7 +177,7 @@ describe('view switcher', () => {
     expect(selected(el)).toBe('Table')
     expect(count(el)).toBe('8 items')
     expect(rows(el)).toHaveLength(8)
-    expect(rows(el)[0]).toBe('Agentic Agency.md')
+    expect(rows(el)[0]).toBe('Agentic Agency')
     expect(onChange).not.toHaveBeenCalled()
   })
 
@@ -922,7 +923,7 @@ describe('sort menu', () => {
     click(byLabel(pop, 'Direction'))
     expect(onChange).toHaveBeenCalledTimes(4)
     expect(def().views[0].sort).toEqual([{ property: 'note.priority', direction: 'DESC' }])
-    expect(rows(el).slice(0, 3)).toEqual(['Creator Economy.md', 'Agentic Agency.md', 'The Levels of an Agency.md'])
+    expect(rows(el).slice(0, 3)).toEqual(['Creator Economy', 'Agentic Agency', 'The Levels of an Agency'])
   })
 
   it('a second sort can move above the first', () => {
@@ -930,7 +931,7 @@ describe('sort menu', () => {
     const pop = openMenu(el, 'Sort')
     click(byText(pop, 'button', 'Add sort'))
     expect(def().views[0].sort?.map((s) => s.property)).toEqual(['formula.Untitled', 'file.name'])
-    press(byLabel(pop, 'Reorder sort 2: file.name'), 'ArrowUp')
+    press(byLabel(pop, 'Reorder sort 2: Name'), 'ArrowUp')
     expect(def().views[0].sort?.map((s) => s.property)).toEqual(['file.name', 'formula.Untitled'])
   })
 
@@ -1068,7 +1069,7 @@ views:
     expect(yaml()).toContain('order: []')
     expect(yaml()).not.toContain('frozenColumns')
     expect([...pop.querySelectorAll<HTMLInputElement>('input[aria-label^="Show "]')].every((input) => !input.checked)).toBe(true)
-    expect(el.querySelector('.view-table thead th, .view-board__title, .view-board__prop')).toBeNull()
+    expect(el.querySelector('.view-table thead th:not(.view-table__gutter), .view-board__title, .view-board__prop')).toBeNull()
     if (type === 'board') expect(el.querySelectorAll('.view-board__card')).toHaveLength(1)
     expect(clear.disabled).toBe(true)
     click(clear)
@@ -1110,7 +1111,7 @@ views:
     const { el } = mount('views:\n  - type: table\n    name: Table\n    order:\n      - file.name\n      - note.status\n      - note.priority\n  - type: cards\n    name: Cards\n')
     const table = openMenu(el, 'Properties')
     const select = byLabel<HTMLSelectElement>(table, 'Frozen columns')
-    expect([...select.options].map((option) => option.textContent)).toEqual(['None', '1 — through file.name', '2 — through status', '3 — through priority'])
+    expect([...select.options].map((option) => option.textContent)).toEqual(['None', '1 — through Name', '2 — through Status', '3 — through Priority'])
     expect(select.value).toBe('0')
 
     click(byText(el, '[role="tab"]', 'Cards'))
@@ -1133,20 +1134,41 @@ views:
     expect(yaml()).not.toContain('frozenColumns')
   })
 
+  it('offers a Table-only Row numbers toggle (YAZ-1513): unchecking writes rowNumbers: false, checking DELETES the key', () => {
+    const { el, onChange, def, yaml } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n  - type: cards\n    name: Cards\n')
+    const box = byLabel<HTMLInputElement>(openMenu(el, 'Properties'), 'Row numbers')
+    expect(box.checked).toBe(true)
+
+    click(box)
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(def().views[0].rowNumbers).toBe(false)
+    expect(yaml()).toContain('rowNumbers: false')
+    expect(el.querySelector('.view-table__gutter')).toBeNull()
+
+    click(byLabel<HTMLInputElement>(el, 'Row numbers'))
+    expect(onChange).toHaveBeenCalledTimes(2)
+    expect(def().views[0].rowNumbers).toBeUndefined()
+    expect(yaml()).not.toContain('rowNumbers')
+    expect(el.querySelector('.view-table__gutter')).not.toBeNull()
+
+    click(byText(el, '[role="tab"]', 'Cards'))
+    expect(q(el, '.view-popover').querySelector('[aria-label="Row numbers"]')).toBeNull()
+  })
+
   it('clamps after hides, leaves restored columns outside the prefix, and follows reorder positionally', () => {
     const { el, def } = mount('views:\n  - type: table\n    name: T\n    frozenColumns: 2\n    order:\n      - file.name\n      - note.status\n      - note.priority\n')
     const pop = openMenu(el, 'Properties')
 
-    click(byLabel(pop, 'Show priority'))
+    click(byLabel(pop, 'Show Priority'))
     expect(def().views[0].frozenColumns).toBe(2)
-    click(byLabel(pop, 'Show status'))
+    click(byLabel(pop, 'Show Status'))
     expect(def().views[0].order).toEqual(['file.name'])
     expect(def().views[0].frozenColumns).toBe(1)
 
-    click(byLabel(pop, 'Show status'))
+    click(byLabel(pop, 'Show Status'))
     expect(def().views[0].order).toEqual(['file.name', 'note.status'])
     expect(def().views[0].frozenColumns).toBe(1)
-    press(byLabel(pop, 'Reorder status'), 'ArrowUp')
+    press(byLabel(pop, 'Reorder Status'), 'ArrowUp')
     expect(def().views[0].order).toEqual(['note.status', 'file.name'])
     expect(def().views[0].frozenColumns).toBe(1)
   })
@@ -1154,23 +1176,23 @@ views:
   it('a table can hide and re-show file.name through view.order', () => {
     const { el, onChange, def } = mount()
     const pop = openMenu(el, 'Properties')
-    const name = byLabel<HTMLInputElement>(pop, 'Show file.name')
+    const name = byLabel<HTMLInputElement>(pop, 'Show Name')
     expect(name.checked).toBe(true)
     expect(name.disabled).toBe(false)
 
-    click(byLabel(pop, 'Show status'))
+    click(byLabel(pop, 'Show Status'))
     expect(def().views[0].order).toEqual(['file.name', 'note.status'])
     expect(q(el, '[data-cell="0:1"]').textContent).toBe('idea')
 
-    click(byLabel(pop, 'Show file.name'))
+    click(byLabel(pop, 'Show Name'))
     expect(def().views[0].order).toEqual(['note.status'])
-    expect([...el.querySelectorAll('.view-table thead th')].map((th) => th.textContent)).toEqual(['status'])
+    expect([...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')].map((th) => th.textContent)).toEqual(['Status'])
     expect(q(el, '[data-cell="0:0"]').textContent).toBe('idea')
     expect(el.querySelector('.view-table__link')).toBeNull()
 
-    click(byLabel(pop, 'Show file.name'))
+    click(byLabel(pop, 'Show Name'))
     expect(def().views[0].order).toEqual(['note.status', 'file.name'])
-    expect([...el.querySelectorAll('.view-table thead th')].map((th) => th.textContent)).toEqual(['status', 'file.name'])
+    expect([...el.querySelectorAll('.view-table thead th:not(.view-table__gutter)')].map((th) => th.textContent)).toEqual(['Status', 'Name'])
     expect(el.querySelector('.view-table__link')).not.toBeNull()
     expect(onChange).toHaveBeenCalledTimes(3)
   })
@@ -1185,7 +1207,7 @@ views:
       property: note.status
 `)
     const pop = openMenu(el, 'Properties')
-    const name = byLabel<HTMLInputElement>(pop, 'Show file.name')
+    const name = byLabel<HTMLInputElement>(pop, 'Show Name')
     expect(name.disabled).toBe(false)
     expect(el.querySelectorAll('.view-board__title')).toHaveLength(8)
 
@@ -1195,7 +1217,7 @@ views:
     expect(el.querySelectorAll('.view-board__card')).toHaveLength(8)
     expect(el.querySelector('.view-board__prop')).toBeNull()
 
-    click(byLabel(pop, 'Show file.name'))
+    click(byLabel(pop, 'Show Name'))
     expect(def().views[0].order).toEqual(['file.name'])
     expect(el.querySelectorAll('.view-board__title')).toHaveLength(8)
     expect(onChange).toHaveBeenCalledTimes(2)
@@ -1203,43 +1225,49 @@ views:
 
   it.each(['cards', 'list'])('keeps file.name disabled in %s views', (type) => {
     const { el } = mount(`views:\n  - type: ${type}\n    name: V\n`)
-    expect(byLabel<HTMLInputElement>(openMenu(el, 'Properties'), 'Show file.name').disabled).toBe(true)
+    expect(byLabel<HTMLInputElement>(openMenu(el, 'Properties'), 'Show Name').disabled).toBe(true)
   })
 
   it('allows an empty table order and keeps Properties available to restore file.name', () => {
     const { el, def } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n')
     const pop = openMenu(el, 'Properties')
-    click(byLabel(pop, 'Show file.name'))
+    click(byLabel(pop, 'Show Name'))
     expect(def().views[0].order).toEqual([])
-    expect(el.querySelector('.view-table thead th')).toBeNull()
-    expect(byLabel<HTMLInputElement>(pop, 'Show file.name').checked).toBe(false)
-    click(byLabel(pop, 'Show file.name'))
+    expect(el.querySelector('.view-table thead th:not(.view-table__gutter)')).toBeNull()
+    expect(byLabel<HTMLInputElement>(pop, 'Show Name').checked).toBe(false)
+    click(byLabel(pop, 'Show Name'))
     expect(def().views[0].order).toEqual(['file.name'])
   })
 
   it('the grip reorders the shown keys only (YAZ-1207: arrows are gone)', () => {
     const { el, def } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.status\n      - note.priority\n')
     const pop = openMenu(el, 'Properties')
-    press(byLabel(pop, 'Reorder priority'), 'ArrowUp') // note.priority above note.status
+    press(byLabel(pop, 'Reorder Priority'), 'ArrowUp') // note.priority above note.status
     expect(def().views[0].order).toEqual(['file.name', 'note.priority', 'note.status'])
   })
 
   it('the folder page’s DECLARED columns are offered too, valueless or not (YAZ-895)', () => {
     const settings = { columns: { owner: { kind: 'link' as const } }, views: [], problems: [] }
     const { el } = mount(undefined, { folderPage: testFolderPage({ settings }) })
-    expect(byLabel(openMenu(el, 'Properties'), 'Show owner')).toBeDefined()
+    expect(byLabel(openMenu(el, 'Properties'), 'Show Owner')).toBeDefined()
   })
 
   it('keeps a long column identity separate from its controls (YAZ-1006)', () => {
     const name = 'campaign_narrative_summary'
+    const label = 'Campaign narrative summary' // the default label (YAZ-1513); the key rides in the <small>
     const settings = { columns: { [name]: { kind: 'text' as const } }, views: [], problems: [] }
     const { el } = mount(undefined, { folderPage: testFolderPage({ settings }) })
     const pop = openMenu(el, 'Properties')
-    const row = byLabel(pop, `Show ${name}`).closest<HTMLElement>('.view-prop')
+    const row = byLabel(pop, `Show ${label}`).closest<HTMLElement>('.view-prop')
     expect(row).not.toBeNull()
-    expect(q(row!, '.view-prop__identity .view-prop__name').firstChild?.textContent).toBe(name)
-    expect(byLabel(q(row!, '.view-prop__identity'), `Rename ${name}`)).toBeDefined()
-    expect(byLabel(q(row!, '.view-prop__controls'), `Edit property ${name}`)).toBeDefined()
+    // The LIST row (YAZ-1513) is grip · checkbox · glyph · label · ›, and nothing else
+    expect(q(row!, '.view-prop__name').textContent).toBe(label)
+    expect(row!.querySelector('small, .property-type-button, [aria-label^="Rename "], [aria-label^="Edit property "]')).toBeNull()
+    // …and the DETAIL carries the identity: the label as title, the raw key read-only, the type control
+    click(byLabel(row!, `Open ${label}`))
+    expect(byLabel<HTMLInputElement>(pop, 'Display name').placeholder).toBe(label) // the heading IS the name field (3D)
+    expect(q(pop, '.column-detail__key').textContent).toBe(`note.${name}`)
+    expect(byLabel(pop, `Edit property ${label}`)).toBeDefined()
   })
 
   it('+ Add column declares it and shows it, in ONE write (YAZ-896)', () => {
@@ -1289,20 +1317,19 @@ views:
     expect(setColumns.mock.calls[0][0]).toEqual({ owner: { kind: 'multi-link', target: 'People' } })
   })
 
-  it("a declared link column's target stays in a draft until Save; empty removes it", async () => {
+  it("a declared link column's target writes on commit — trimmed, against the captured base — and an emptied field removes it against what just landed (3D)", async () => {
     const setColumn = vi.fn().mockResolvedValue(undefined)
     const columns = { owner: { kind: 'link' as const, target: 'People' }, tag: { kind: 'text' as const } }
-    const { el } = mount(undefined, { folderPage: testFolderPage({ settings: { columns, views: [], problems: [] }, setColumn }) })
+    const { el } = mount(undefined, { root: '/vault', folderPage: testFolderPage({ settings: { columns, views: [], problems: [] }, setColumn }) })
     const pop = openMenu(el, 'Properties')
-    click(byLabel(pop, 'Edit property owner'))
+    click(byLabel(pop, 'Open Owner'))
+    expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe('People')
     type(byLabel(pop, 'Link target'), '  Teams  ')
-    expect(setColumn).not.toHaveBeenCalled()
-    await savePropertyDefinition(pop)
     expect(setColumn).toHaveBeenNthCalledWith(1, 'owner', { kind: 'link', target: 'Teams' }, columns.owner)
-    click(byLabel(pop, 'Edit property owner'))
+    await settle()
     type(byLabel(pop, 'Link target'), '')
-    await savePropertyDefinition(pop)
-    expect(setColumn).toHaveBeenNthCalledWith(2, 'owner', { kind: 'link' }, columns.owner)
+    expect(setColumn).toHaveBeenNthCalledWith(2, 'owner', { kind: 'link' }, { kind: 'link', target: 'Teams' })
+    expect(pop.querySelector('.frontmatter-property-menu__actions')).toBeNull() // no Save / Cancel anywhere
   })
 
   it('a target typed under a link kind does not ride into a non-link declaration', () => {
@@ -1318,59 +1345,114 @@ views:
     expect(setColumns.mock.calls[0][0]).toEqual({ notes: { kind: 'text' } })
   })
 
-  it('a declared column shows its kind; Save changes that definition only', async () => {
+  it('a declared column shows its kind in the Type select; changing it writes that definition immediately, and nothing else', async () => {
     const setColumn = vi.fn().mockResolvedValue(undefined)
     const settings = { columns: { owner: { kind: 'link' as const, target: 'People' }, tag: { kind: 'text' as const } }, views: [], problems: [] }
     const { el, onChange } = mount(undefined, { folderPage: testFolderPage({ settings, setColumn }) })
     const pop = openMenu(el, 'Properties')
-    expect(byLabel(pop, 'Edit property owner').textContent).toContain('Link')
-    click(byLabel(pop, 'Edit property owner'))
-    choosePropertyType(pop, 'Multi-link')
-    expect(setColumn).not.toHaveBeenCalled()
-    await savePropertyDefinition(pop)
+    click(byLabel(pop, 'Open Owner'))
+    const select = byLabel<HTMLSelectElement>(pop, 'Edit property Owner')
+    expect(select.value).toBe('link')
+    setValue(select, 'multi-link')
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('owner', { kind: 'multi-link', target: 'People' }, settings.columns.owner)
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('an undeclared note key reads Auto, and Save declares its chosen kind', async () => {
+  it('an undeclared note key reads Auto; picking a kind declares it immediately', async () => {
     const setColumn = vi.fn().mockResolvedValue(undefined)
     const { el, onChange } = mount(undefined, { folderPage: testFolderPage({ setColumn }) })
     const pop = openMenu(el, 'Properties')
-    expect(byLabel(pop, 'Edit property status').textContent).toContain('Auto')
-    click(byLabel(pop, 'Edit property status'))
-    choosePropertyType(pop, 'Date')
+    click(byLabel(pop, 'Open Status'))
+    const select = byLabel<HTMLSelectElement>(pop, 'Edit property Status')
+    expect(select.value).toBe('')
+    expect(select.selectedOptions[0]?.textContent).toBe('Auto')
     expect(setColumn).not.toHaveBeenCalled()
-    await savePropertyDefinition(pop)
+    setValue(select, 'date')
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('status', { kind: 'date' }, undefined)
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('file.* rows get no property editor — they are not note properties', () => {
+  it('file.* rows get no property editor — they are not note properties; the detail reads the type instead', () => {
     const pop = openMenu(mount().el, 'Properties')
-    expect(pop.querySelector('[aria-label="Edit property file.name"]')).toBeNull()
-    expect(byLabel(pop, 'Edit property status')).toBeDefined()
+    click(byLabel(pop, 'Open Name'))
+    expect(pop.querySelector('[aria-label="Edit property Name"]')).toBeNull()
+    expect(q(pop, '.column-detail__key').textContent).toBe('file.name')
+    expect(q(pop, '.column-detail__value').textContent).toBe('File field')
+    click(byLabel(pop, 'Back to columns'))
+    click(byLabel(pop, 'Open Status'))
+    expect(byLabel(pop, 'Edit property Status')).toBeDefined()
   })
 
-  it.each(['table', 'board'])('%s definition edits remain drafts; Cancel discards them and Save preserves option order', async viewType => {
+  it.each(['table', 'board'])('%s definition edits write immediately (3D): a type change, then an option-order change, each ONE setColumn against the previous', async viewType => {
     const setColumn = vi.fn().mockResolvedValue(undefined)
     const base = { kind: 'select' as const, options: ['Later', 'Ready'], optionSort: 'manual' as const }
     const settings = { columns: { status: base }, views: [], problems: [] }
     const { el, onChange } = mount(`views:\n  - type: ${viewType}\n    name: Review\n    order: [file.name, note.status]\n    groupBy: { property: note.status }\n`, { folderPage: testFolderPage({ settings, setColumn }) })
     const pop = openMenu(el, 'Properties')
-    click(byLabel(pop, 'Edit property status'))
-    choosePropertyType(pop, 'Multi-select')
-    setValue(byLabel(pop, 'Option order'), 'ascending')
-    expect(setColumn).not.toHaveBeenCalled()
-    click(byText(pop, '.frontmatter-property-menu__actions button', 'Cancel'))
-    expect(byLabel(pop, 'Edit property status').textContent).toContain('Select')
-    click(byLabel(pop, 'Edit property status'))
+    click(byLabel(pop, 'Open Status'))
+    expect(byLabel<HTMLSelectElement>(pop, 'Edit property Status').value).toBe('select')
+    setValue(byLabel(pop, 'Edit property Status'), 'multi-select')
+    expect(setColumn).toHaveBeenNthCalledWith(1, 'status', { ...base, kind: 'multi-select' }, base)
+    await settle()
     expect(byLabel<HTMLSelectElement>(pop, 'Option order').value).toBe('manual')
-    expect(byLabel(pop, 'Property type: Select')).toBeDefined()
     setValue(byLabel(pop, 'Option order'), 'descending')
-    await savePropertyDefinition(pop)
-    expect(setColumn).toHaveBeenCalledExactlyOnceWith('status', { ...base, optionSort: 'descending' }, base)
+    expect(setColumn).toHaveBeenNthCalledWith(2, 'status', { ...base, kind: 'multi-select', optionSort: 'descending' }, { ...base, kind: 'multi-select' })
+    expect(setColumn).toHaveBeenCalledTimes(2)
     expect(onChange).not.toHaveBeenCalled()
-    expect(settings.columns.status).toEqual(base)
+    expect(settings.columns.status).toEqual(base) // the fixture is never mutated
+    expect(pop.querySelector('.frontmatter-property-menu__actions, .property-def__type-row')).toBeNull() // no Save / Cancel, no third level
+  })
+
+  it('a refused declaration write (changed since opened) shows its text inline and refreshes the panel from the live settings (3D)', async () => {
+    const base = { kind: 'text' as const }
+    const setColumn = vi.fn().mockRejectedValue(new Error('Property “status” changed since these settings were opened. Reopen the property and try again.'))
+    const { el } = mount(undefined, { folderPage: testFolderPage({ settings: { columns: { status: base }, views: [], problems: [] }, setColumn }) })
+    const pop = openMenu(el, 'Properties')
+    click(byLabel(pop, 'Open Status'))
+    setValue(byLabel(pop, 'Edit property Status'), 'date')
+    await settle()
+    expect(q(pop, '[role="alert"]').textContent).toContain('changed since these settings were opened')
+    expect(byLabel<HTMLSelectElement>(pop, 'Edit property Status').value).toBe('text') // refreshed, not left on the refused draft
+    expect(pop.querySelector('.column-detail')).not.toBeNull() // still in the panel
+  })
+
+  it('options (3D): add, reorder and remove each write the declaration immediately, against what just landed', async () => {
+    const setColumn = vi.fn().mockResolvedValue(undefined)
+    const base = { kind: 'select' as const, options: ['A', 'B'] }
+    const { el, onChange } = mount(undefined, { folderPage: testFolderPage({ settings: { columns: { status: base }, views: [], problems: [] }, setColumn }) })
+    const pop = openMenu(el, 'Properties')
+    click(byLabel(pop, 'Open Status'))
+    expect([...pop.querySelectorAll('.property-def__chip')].map((c) => c.textContent)).toEqual(['A', 'B'])
+    click(byLabel(pop, 'Add option'))
+    setValue(byLabel(pop, 'New option'), 'C')
+    click(byText(pop, '.property-def__save', 'Add'))
+    expect(setColumn).toHaveBeenNthCalledWith(1, 'status', { kind: 'select', options: ['A', 'B', 'C'] }, base)
+    await settle()
+    press(byLabel(pop, 'Reorder A'), 'ArrowDown')
+    expect(setColumn).toHaveBeenNthCalledWith(2, 'status', { kind: 'select', options: ['B', 'A', 'C'] }, { kind: 'select', options: ['A', 'B', 'C'] })
+    await settle()
+    click(byLabel(pop, 'Remove option B'))
+    expect(setColumn).toHaveBeenNthCalledWith(3, 'status', { kind: 'select', options: ['A', 'C'] }, { kind: 'select', options: ['B', 'A', 'C'] })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('the heading field (3D): Esc reverts the draft and STAYS in the panel; Enter saves; blank goes back to the default label', () => {
+    const { el, onChange, def } = mount()
+    const pop = openMenu(el, 'Properties')
+    click(byLabel(pop, 'Open Status'))
+    const field = byLabel<HTMLInputElement>(pop, 'Display name')
+    expect(field.placeholder).toBe('Status')
+    expect(field.value).toBe('')
+    setValue(field, 'Stage')
+    press(field, 'Escape')
+    expect(field.value).toBe('')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(pop.querySelector('.column-detail')).not.toBeNull()
+    type(field, 'Stage')
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(def().properties).toEqual({ status: { displayName: 'Stage' } })
+    type(byLabel(pop, 'Display name'), '')
+    expect(def().properties).toBeUndefined()
   })
 
   it('new Select columns retain their option sort mode and start with blank options', () => {
@@ -1386,19 +1468,111 @@ views:
     expect(setColumns.mock.calls[0][0]).toEqual({ stage: { kind: 'select', options: [], optionSort: 'ascending' } })
   })
 
-  it('the pencil sets def.properties[key].displayName; clearing it deletes the entry', () => {
+  it("the detail's Name field sets def.properties[key].displayName; clearing it deletes the entry (YAZ-1513: the pencil moved in here)", () => {
     const { el, onChange, def, yaml } = mount()
     const pop = openMenu(el, 'Properties')
-    click(byLabel(pop, 'Rename status'))
+    click(byLabel(pop, 'Open Status'))
+    expect(byLabel<HTMLInputElement>(pop, 'Display name').placeholder).toBe('Status') // the default label, as a hint
     type(byLabel(pop, 'Display name'), 'Stage')
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().properties).toEqual({ status: { displayName: 'Stage' } })
     expect(yaml()).toContain('displayName: Stage')
+    expect(byLabel<HTMLInputElement>(pop, 'Display name').value).toBe('Stage') // the heading field follows
+    click(byLabel(pop, 'Back to columns'))
     expect(byLabel(pop, 'Show Stage')).toBeDefined()
-    click(byLabel(pop, 'Rename Stage'))
+    click(byLabel(pop, 'Open Stage'))
     type(byLabel(pop, 'Display name'), '')
     expect(def().properties).toBeUndefined()
     expect(yaml()).not.toContain('properties:')
+  })
+
+  it('the two levels (YAZ-1513): ‹ and Esc return to the list, Esc on the list closes the popover, and the list row keeps grip + checkbox as before', () => {
+    const { el } = mount()
+    const pop = openMenu(el, 'Properties')
+    expect(byLabel(pop, 'Show Status')).toBeDefined()
+    expect(byLabel(pop, 'Reorder Name')).toBeDefined() // shown rows keep their grip
+    click(byLabel(pop, 'Open Status'))
+    expect(pop.querySelector('[aria-label="Show Status"]')).toBeNull() // the list is gone while the detail shows
+    click(byLabel(pop, 'Back to columns'))
+    expect(byLabel(pop, 'Show Status')).toBeDefined()
+    click(byLabel(pop, 'Open Status'))
+    press(q(pop, '.column-detail'), 'Escape')
+    expect(byLabel(pop, 'Show Status')).toBeDefined() // Esc stepped back…
+    expect(el.querySelector('.view-popover')).not.toBeNull() // …without closing the popover
+    press(pop, 'Escape')
+    expect(el.querySelector('.view-popover')).toBeNull()
+  })
+
+  it('the conditional sections (YAZ-1513): Options only for Select kinds, Relation only for note keys with a root, card styling only on a board', () => {
+    const settings = { columns: { status: { kind: 'select' as const, options: ['A', 'B'] }, owner: { kind: 'link' as const, target: '[[People]]' } }, views: [], problems: [] }
+    const { el } = mount(undefined, { root: '/vault', folderPage: testFolderPage({ settings }) })
+    const pop = openMenu(el, 'Properties')
+    click(byLabel(pop, 'Open Status'))
+    expect([...q(pop, '[aria-label="Property options"]').querySelectorAll('.property-def__chip')].map((c) => c.textContent)).toEqual(['A', 'B'])
+    expect(byLabel(pop, 'Relation for Status').textContent).toBe('Make relation') // not a link kind: the seed button
+    expect(pop.querySelector('[aria-label^="Bold "]')).toBeNull() // a table: no card styling
+    click(byLabel(pop, 'Back to columns'))
+    click(byLabel(pop, 'Open Owner'))
+    expect(pop.querySelector('[aria-label="Property options"]')).toBeNull()
+    expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe('[[People]]') // a link kind: the target inline
+    click(byLabel(pop, 'Back to columns'))
+    click(byLabel(pop, 'Open Name'))
+    expect(pop.querySelector('[aria-label^="Relation for "]')).toBeNull() // file.name is not a note property
+  })
+
+  it('the actions row (YAZ-1513): Hide in this view unchecks the column in ONE order write and returns to the list', () => {
+    const { el, onChange, def } = mount('views:\n  - type: table\n    name: T\n    frozenColumns: 2\n    order:\n      - file.name\n      - note.status\n      - note.priority\n')
+    const pop = openMenu(el, 'Properties')
+    click(byLabel(pop, 'Open Status'))
+    click(byLabel(pop, 'Hide Status in this view'))
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(def().views[0].order).toEqual(['file.name', 'note.priority'])
+    expect(def().views[0].frozenColumns).toBe(2)
+    expect(byLabel<HTMLInputElement>(pop, 'Show Status').checked).toBe(false)
+    click(byLabel(pop, 'Open Status'))
+    expect(byLabel<HTMLButtonElement>(pop, 'Hide Status in this view').disabled).toBe(true) // already hidden
+  })
+
+  it('the actions row (YAZ-1513): Delete column… asks first with the label, key and member count; Cancel deletes nothing; Delete calls the ONE door', () => {
+    const deleteColumn = vi.fn(async () => {})
+    const { el, onChange } = mount(undefined, { folderPage: testFolderPage({ deleteColumn }) })
+    const pop = openMenu(el, 'Properties')
+    click(byLabel(pop, 'Open Status'))
+    click(byLabel(pop, 'Delete column Status'))
+    const sheet = q<HTMLElement>(pop, '.confirm[role="dialog"]')
+    expect(q(sheet, '.confirm__text').textContent).toBe('Delete "Status"? This removes the column from this page and the "status" value from 5 notes.')
+    click([...sheet.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Cancel')!)
+    expect(pop.querySelector('.confirm')).toBeNull()
+    expect(deleteColumn).not.toHaveBeenCalled()
+    expect(el.querySelector('.view-popover')).not.toBeNull() // the sheet's Cancel never reaches the popover
+    click(byLabel(pop, 'Delete column Status'))
+    click([...pop.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Delete')!)
+    expect(deleteColumn).toHaveBeenCalledExactlyOnceWith('note.status')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(byLabel(pop, 'Show Status')).toBeDefined() // back on the list
+  })
+
+  it('the actions row (YAZ-1513): Delete column… is disabled with the tooltip for file.*, formula.* and reserved keys, and absent without a deleteColumn door', () => {
+    const deleteColumn = vi.fn(async () => {})
+    const records = [{ ...TEST_RECORDS[0], properties: { status: 'idea', folder_pages: ['[[Home]]'] } }]
+    const { el } = mount(`formulas:\n  score: '1'\nviews:\n  - type: table\n    name: T\n    order: [file.name, note.status, note.folder_pages, formula.score]\n`, { records, folderPage: testFolderPage({ deleteColumn, vaultRecords: records }) })
+    const pop = openMenu(el, 'Properties')
+    for (const [label, disabled] of [['Name', true], ['Score', true], ['Folder pages', true], ['Status', false]] as const) {
+      click(byLabel(pop, `Open ${label}`))
+      const del = byLabel<HTMLButtonElement>(pop, `Delete column ${label}`)
+      expect(del.disabled).toBe(disabled)
+      expect(del.title).toBe(disabled ? 'Built-in column — hide it instead' : '')
+      click(byLabel(pop, 'Back to columns'))
+    }
+    click(byLabel(pop, 'Open Status'))
+    expect(byLabel<HTMLButtonElement>(pop, 'Delete column Status').disabled).toBe(false)
+
+    act(() => root?.unmount())
+    container?.remove()
+    const bare = mount()
+    const again = openMenu(bare.el, 'Properties')
+    click(byLabel(again, 'Open Status'))
+    expect(byLabel<HTMLButtonElement>(again, 'Delete column Status').disabled).toBe(true) // no door: nothing to call
   })
 })
 
@@ -1408,7 +1582,7 @@ describe('search, count and body', () => {
     click(byLabel(el, 'Search'))
     const input = byLabel<HTMLInputElement>(el, 'Search rows')
     setValue(input, 'vsl')
-    expect(rows(el)).toEqual(['VSL-v1.md'])
+    expect(rows(el)).toEqual(['VSL-v1'])
     expect(count(el)).toBe('1 / 8 items')
     expect(onChange).not.toHaveBeenCalled()
     press(input, 'Escape')
@@ -1420,7 +1594,7 @@ describe('search, count and body', () => {
     const { el } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.status\n')
     click(byLabel(el, 'Search'))
     setValue(byLabel(el, 'Search rows'), 'drafting')
-    expect(rows(el)).toEqual(['The Levels of an Agency.md'])
+    expect(rows(el)).toEqual(['The Levels of an Agency'])
   })
 
   it('a view limit also reduces the count to shown / total', () => {
@@ -1572,9 +1746,9 @@ describe('properties drag-to-reorder (YAZ-1207)', () => {
   it('every SHOWN row has a grip — file.name included — hidden rows have none, and the arrows are gone', () => {
     const { el } = mount(THREE)
     const pop = openMenu(el, 'Properties')
-    expect(grip(pop, 'file.name')).toBeDefined()
-    expect(grip(pop, 'status')).toBeDefined()
-    expect(grip(pop, 'priority')).toBeDefined()
+    expect(grip(pop, 'Name')).toBeDefined()
+    expect(grip(pop, 'Status')).toBeDefined()
+    expect(grip(pop, 'Priority')).toBeDefined()
     // the menu offers more keys than the three shown ones; only shown rows carry grips
     expect(pop.querySelectorAll('[aria-label^="Reorder "]')).toHaveLength(3)
     expect(pop.querySelectorAll('.view-prop').length).toBeGreaterThan(3)
@@ -1585,11 +1759,11 @@ describe('properties drag-to-reorder (YAZ-1207)', () => {
   it('dragging file.name past the last row writes it last, in ONE write, with drag and insertion classes', () => {
     const { el, def, onChange } = mount(THREE)
     const pop = openMenu(el, 'Properties')
-    fire(grip(pop, 'file.name'), 'dragstart')
-    expect(rowOf(pop, 'file.name').classList.contains('view-prop--dragging')).toBe(true)
-    fire(rowOf(pop, 'priority'), 'dragover', 5) // below priority's midpoint → the end slot
-    expect(rowOf(pop, 'priority').classList.contains('view-prop--insert-after')).toBe(true)
-    fire(rowOf(pop, 'priority'), 'drop', 5)
+    fire(grip(pop, 'Name'), 'dragstart')
+    expect(rowOf(pop, 'Name').classList.contains('view-prop--dragging')).toBe(true)
+    fire(rowOf(pop, 'Priority'), 'dragover', 5) // below priority's midpoint → the end slot
+    expect(rowOf(pop, 'Priority').classList.contains('view-prop--insert-after')).toBe(true)
+    fire(rowOf(pop, 'Priority'), 'drop', 5)
     expect(def().views[0].order).toEqual(['note.status', 'note.priority', 'file.name'])
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(pop.querySelector('.view-prop--dragging')).toBeNull()
@@ -1599,42 +1773,42 @@ describe('properties drag-to-reorder (YAZ-1207)', () => {
   it('dragging the last row above the first inserts BEFORE it', () => {
     const { el, def } = mount(THREE)
     const pop = openMenu(el, 'Properties')
-    fire(grip(pop, 'priority'), 'dragstart')
-    fire(rowOf(pop, 'file.name'), 'dragover', -5)
-    expect(rowOf(pop, 'file.name').classList.contains('view-prop--insert-before')).toBe(true)
-    fire(rowOf(pop, 'file.name'), 'drop', -5)
+    fire(grip(pop, 'Priority'), 'dragstart')
+    fire(rowOf(pop, 'Name'), 'dragover', -5)
+    expect(rowOf(pop, 'Name').classList.contains('view-prop--insert-before')).toBe(true)
+    fire(rowOf(pop, 'Name'), 'drop', -5)
     expect(def().views[0].order).toEqual(['note.priority', 'file.name', 'note.status'])
   })
 
   it('dropping on the grabbed slot is a no-op and dragend clears an abandoned drag', () => {
     const { el, onChange } = mount(THREE)
     const pop = openMenu(el, 'Properties')
-    fire(grip(pop, 'status'), 'dragstart')
-    fire(rowOf(pop, 'status'), 'drop', -5) // before itself = its own slot
+    fire(grip(pop, 'Status'), 'dragstart')
+    fire(rowOf(pop, 'Status'), 'drop', -5) // before itself = its own slot
     expect(onChange).not.toHaveBeenCalled()
-    fire(grip(pop, 'status'), 'dragstart')
-    fire(grip(pop, 'status'), 'dragend')
+    fire(grip(pop, 'Status'), 'dragstart')
+    fire(grip(pop, 'Status'), 'dragend')
     expect(pop.querySelector('.view-prop--dragging')).toBeNull()
   })
 
   it('ArrowDown/ArrowUp on the grip nudge one step; the ends are no-ops', () => {
     const { el, def, onChange } = mount(THREE)
     const pop = openMenu(el, 'Properties')
-    press(grip(pop, 'file.name'), 'ArrowDown')
+    press(grip(pop, 'Name'), 'ArrowDown')
     expect(def().views[0].order).toEqual(['note.status', 'file.name', 'note.priority'])
-    press(grip(pop, 'file.name'), 'ArrowUp')
+    press(grip(pop, 'Name'), 'ArrowUp')
     expect(def().views[0].order).toEqual(['file.name', 'note.status', 'note.priority'])
-    press(grip(pop, 'file.name'), 'ArrowUp') // already first
-    press(grip(pop, 'priority'), 'ArrowDown') // already last
+    press(grip(pop, 'Name'), 'ArrowUp') // already first
+    press(grip(pop, 'Priority'), 'ArrowDown') // already last
     expect(onChange).toHaveBeenCalledTimes(2)
   })
 
   it('a drag reorder keeps frozenColumns following positionally, like the arrows did', () => {
     const { el, def } = mount('views:\n  - type: table\n    name: T\n    frozenColumns: 2\n    order:\n      - file.name\n      - note.status\n      - note.priority\n')
     const pop = openMenu(el, 'Properties')
-    fire(grip(pop, 'priority'), 'dragstart')
-    fire(rowOf(pop, 'file.name'), 'dragover', -5)
-    fire(rowOf(pop, 'file.name'), 'drop', -5)
+    fire(grip(pop, 'Priority'), 'dragstart')
+    fire(rowOf(pop, 'Name'), 'dragover', -5)
+    fire(rowOf(pop, 'Name'), 'drop', -5)
     expect(def().views[0].order).toEqual(['note.priority', 'file.name', 'note.status'])
     expect(def().views[0].frozenColumns).toBe(2)
   })
@@ -1654,18 +1828,24 @@ describe('card style toggles (YAZ-1206/YAZ-1217): per-property cardStyle writes 
   it('note rows carry B / U / hide-label / join; the file.name row carries ONLY join; non-boards none', () => {
     const { el } = mount(BOARD)
     const pop = openMenu(el, 'Properties')
-    expect(byLabel(pop, 'Bold status on cards')).toBeDefined()
-    expect(byLabel(pop, 'Underline status on cards')).toBeDefined()
-    expect(byLabel(pop, 'Hide status label on cards')).toBeDefined()
-    expect(byLabel(pop, 'Join status to the row above')).toBeDefined()
-    expect(byLabel(pop, 'Join file.name to the row above')).toBeDefined()
-    expect(pop.querySelector('[aria-label="Bold file.name on cards"]')).toBeNull()
+    // the LIST carries none of them (YAZ-1513); the detail does
+    expect(pop.querySelector('[aria-label^="Bold "], [aria-label^="Join "]')).toBeNull()
+    click(byLabel(pop, 'Open Status'))
+    expect(byLabel(pop, 'Bold Status on cards')).toBeDefined()
+    expect(byLabel(pop, 'Underline Status on cards')).toBeDefined()
+    expect(byLabel(pop, 'Hide Status label on cards')).toBeDefined()
+    expect(byLabel(pop, 'Join Status to the row above')).toBeDefined()
+    click(byLabel(pop, 'Back to columns'))
+    click(byLabel(pop, 'Open Name'))
+    expect(byLabel(pop, 'Join Name to the row above')).toBeDefined()
+    expect(pop.querySelector('[aria-label="Bold Name on cards"]')).toBeNull()
     expect(pop.querySelector('[aria-label$=" of the title"]')).toBeNull() // the old left/right pair is gone
   })
 
   it('non-board views offer no card-style toggles', () => {
     const { el } = mount() // YASIN_BASE, table active
     const pop = openMenu(el, 'Properties')
+    click(byLabel(pop, 'Open Status'))
     expect(pop.querySelector('[aria-label^="Bold "]')).toBeNull()
     expect(pop.querySelector('[aria-label^="Join "]')).toBeNull()
   })
@@ -1673,13 +1853,14 @@ describe('card style toggles (YAZ-1206/YAZ-1217): per-property cardStyle writes 
   it('toggling writes one cardStyle entry per click and toggling off cleans the YAML completely', () => {
     const { el, onChange, def, yaml } = mount(BOARD)
     const pop = openMenu(el, 'Properties')
-    click(byLabel(pop, 'Bold status on cards'))
+    click(byLabel(pop, 'Open Status'))
+    click(byLabel(pop, 'Bold Status on cards'))
     expect(def().views[0].cardStyle).toEqual({ 'note.status': { bold: true } })
-    click(byLabel(pop, 'Join status to the row above'))
+    click(byLabel(pop, 'Join Status to the row above'))
     expect(def().views[0].cardStyle).toEqual({ 'note.status': { bold: true, join: true } })
     expect(onChange).toHaveBeenCalledTimes(2)
-    click(byLabel(pop, 'Join status to the row above'))
-    click(byLabel(pop, 'Bold status on cards'))
+    click(byLabel(pop, 'Join Status to the row above'))
+    click(byLabel(pop, 'Bold Status on cards'))
     expect(def().views[0].cardStyle).toBeUndefined()
     expect(yaml()).not.toContain('cardStyle')
   })
@@ -1687,9 +1868,10 @@ describe('card style toggles (YAZ-1206/YAZ-1217): per-property cardStyle writes 
   it("file.name's join round-trips through its canonical cardStyle key", () => {
     const { el, def, yaml } = mount(BOARD)
     const pop = openMenu(el, 'Properties')
-    click(byLabel(pop, 'Join file.name to the row above'))
+    click(byLabel(pop, 'Open Name'))
+    click(byLabel(pop, 'Join Name to the row above'))
     expect(def().views[0].cardStyle).toEqual({ 'file.name': { join: true } })
-    click(byLabel(pop, 'Join file.name to the row above'))
+    click(byLabel(pop, 'Join Name to the row above'))
     expect(def().views[0].cardStyle).toBeUndefined()
     expect(yaml()).not.toContain('cardStyle')
   })
@@ -1707,10 +1889,13 @@ describe('card style toggles (YAZ-1206/YAZ-1217): per-property cardStyle writes 
       note.status: { bold: true, join: true }
 `)
     const pop = openMenu(el, 'Properties')
-    expect(byLabel(pop, 'Bold status on cards').getAttribute('aria-pressed')).toBe('true')
-    expect(byLabel(pop, 'Join status to the row above').getAttribute('aria-pressed')).toBe('true')
-    expect(byLabel(pop, 'Underline status on cards').getAttribute('aria-pressed')).toBe('false')
-    expect(byLabel(pop, 'Join file.name to the row above').getAttribute('aria-pressed')).toBe('false')
+    click(byLabel(pop, 'Open Status'))
+    expect(byLabel(pop, 'Bold Status on cards').getAttribute('aria-pressed')).toBe('true')
+    expect(byLabel(pop, 'Join Status to the row above').getAttribute('aria-pressed')).toBe('true')
+    expect(byLabel(pop, 'Underline Status on cards').getAttribute('aria-pressed')).toBe('false')
+    click(byLabel(pop, 'Back to columns'))
+    click(byLabel(pop, 'Open Name'))
+    expect(byLabel(pop, 'Join Name to the row above').getAttribute('aria-pressed')).toBe('false')
   })
 })
 
@@ -1899,7 +2084,7 @@ views:
     })
     const properties = openMenu(el, 'Properties')
     setValue(byLabel(properties, 'Search columns'), 'owner')
-    expect(byLabel(properties, 'Show owner')).toBeDefined()
+    expect(byLabel(properties, 'Show Owner')).toBeDefined()
     const pop = openMenu(el, 'Sort')
     click(byLabel(pop, 'Sort property'))
     setValue(byLabel(pop, 'Search sort property columns'), 'owner')
@@ -1940,16 +2125,16 @@ describe('sort rule drag and keyboard reordering (YAZ-1396)', () => {
     const original = structuredClone(def().views[0].sort!)
     const pop = openMenu(el, 'Sort')
     expect(pop.querySelector('[aria-label="Move up"], [aria-label="Move down"]')).toBeNull()
-    fire(grip(pop, 1, 'status'), 'dragstart')
-    fire(row(pop, 3, 'priority'), 'dragover', 5)
+    fire(grip(pop, 1, 'Status'), 'dragstart')
+    fire(row(pop, 3, 'Priority'), 'dragover', 5)
     expect(onChange).not.toHaveBeenCalled()
-    fire(row(pop, 3, 'priority'), 'drop', 5)
+    fire(row(pop, 3, 'Priority'), 'drop', 5)
     expect(def().views[0].sort).toEqual([original[1], original[2], original[0]])
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(parseViews(yaml()).def).toEqual(def())
-    fire(grip(pop, 3, 'status'), 'dragstart')
-    fire(row(pop, 1, 'file.name'), 'dragover', -5)
-    fire(row(pop, 1, 'file.name'), 'drop', -5)
+    fire(grip(pop, 3, 'Status'), 'dragstart')
+    fire(row(pop, 1, 'Name'), 'dragover', -5)
+    fire(row(pop, 1, 'Name'), 'drop', -5)
     expect(def().views[0].sort).toEqual(original)
     expect(onChange).toHaveBeenCalledTimes(2)
   })
@@ -1958,15 +2143,15 @@ describe('sort rule drag and keyboard reordering (YAZ-1396)', () => {
     const { el, def, onChange } = mount(SORTS)
     const pop = openMenu(el, 'Sort')
     const original = structuredClone(def().views[0].sort!)
-    const first = grip(pop, 1, 'status')
+    const first = grip(pop, 1, 'Status')
     first.focus()
     press(first, 'ArrowUp')
     expect(onChange).not.toHaveBeenCalled()
     press(first, 'ArrowDown')
     expect(def().views[0].sort).toEqual([original[1], original[0], original[2]])
-    expect(document.activeElement).toBe(grip(pop, 2, 'status'))
-    press(grip(pop, 2, 'status'), 'ArrowUp')
-    press(grip(pop, 3, 'priority'), 'ArrowDown')
+    expect(document.activeElement).toBe(grip(pop, 2, 'Status'))
+    press(grip(pop, 2, 'Status'), 'ArrowUp')
+    press(grip(pop, 3, 'Priority'), 'ArrowDown')
     expect(def().views[0].sort).toEqual(original)
     expect(onChange).toHaveBeenCalledTimes(2)
   })
@@ -1975,12 +2160,12 @@ describe('sort rule drag and keyboard reordering (YAZ-1396)', () => {
     const { el, def, onChange } = mount(SORTS)
     const before = structuredClone(def())
     const pop = openMenu(el, 'Sort')
-    fire(grip(pop, 2, 'file.name'), 'dragstart')
-    fire(row(pop, 2, 'file.name'), 'drop', -5)
-    fire(grip(pop, 1, 'status'), 'dragstart')
-    fire(row(pop, 3, 'priority'), 'dragover', 5)
-    fire(grip(pop, 1, 'status'), 'dragend')
-    fire(row(pop, 3, 'priority'), 'drop', 5)
+    fire(grip(pop, 2, 'Name'), 'dragstart')
+    fire(row(pop, 2, 'Name'), 'drop', -5)
+    fire(grip(pop, 1, 'Status'), 'dragstart')
+    fire(row(pop, 3, 'Priority'), 'dragover', 5)
+    fire(grip(pop, 1, 'Status'), 'dragend')
+    fire(row(pop, 3, 'Priority'), 'drop', 5)
     expect(def()).toEqual(before)
     expect(onChange).not.toHaveBeenCalled()
   })
@@ -1994,14 +2179,14 @@ describe('sort rule drag and keyboard reordering (YAZ-1396)', () => {
       - { property: file.name, direction: DESC }
 `)
     const pop = openMenu(el, 'Sort')
-    const second = grip(pop, 2, 'file.name')
+    const second = grip(pop, 2, 'Name')
     second.focus()
     press(second, 'ArrowUp')
     expect(def().views[0].sort).toEqual([
       { property: 'file.name', direction: 'DESC' },
       { property: 'file.name', direction: 'ASC' },
     ])
-    expect(document.activeElement).toBe(grip(pop, 1, 'file.name'))
+    expect(document.activeElement).toBe(grip(pop, 1, 'Name'))
     click(byLabel(pop, 'Remove sort'))
     click(byText(pop, 'button', 'Add sort'))
     click([...pop.querySelectorAll<HTMLElement>('[aria-label="Direction"]')][1])
@@ -2021,29 +2206,26 @@ describe('folder-local relation shortcut', () => {
     const properties = { root: '/vault', version: 1, properties: { owner: { kind: 'multi-link' as const, target: '[[Global People]]' } } }
     const { el, onChange } = mount(undefined, { root: '/vault', properties, folderPage: testFolderPage({ settings: { columns: { owner: base }, views: [], problems: [] }, setColumn }) })
     const pop = openMenu(el, 'Properties')
-    click(byLabel(pop, 'Relation for owner'))
-    expect(byLabel(pop, 'Property type: Link')).toBeDefined()
-    expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe('[[Local People]]')
+    click(byLabel(pop, 'Open Owner'))
+    expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe('[[Local People]]') // the local declaration, not the legacy one
     type(byLabel(pop, 'Link target'), '[[Teams]]')
-    expect(setColumn).not.toHaveBeenCalled()
-    await savePropertyDefinition(pop)
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('owner', { kind: 'link', target: '[[Teams]]' }, base)
     expect(properties.properties.owner).toEqual({ kind: 'multi-link', target: '[[Global People]]' })
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('seeds a relation from legacy metadata while keeping a missing local base and Cancel write-free', async () => {
+  it('Make relation seeds from legacy metadata against a missing local base, in ONE immediate write; nothing is written before the click', async () => {
     const setColumn = vi.fn().mockResolvedValue(undefined)
     const legacy = { kind: 'multi-link' as const, target: '[[Global People]]' }
     const { el } = mount(undefined, { root: '/vault', properties: { root: '/vault', version: 1, properties: { status: legacy } }, folderPage: testFolderPage({ setColumn }) })
     const pop = openMenu(el, 'Properties')
-    click(byLabel(pop, 'Relation for status'))
-    expect(byLabel(pop, 'Property type: Multi-link')).toBeDefined()
-    expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe(legacy.target)
-    click(byText(pop, '.frontmatter-property-menu__actions button', 'Cancel'))
+    click(byLabel(pop, 'Open Status'))
     expect(setColumn).not.toHaveBeenCalled()
-    click(byLabel(pop, 'Relation for status'))
-    await savePropertyDefinition(pop)
+    click(byLabel(pop, 'Relation for Status'))
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('status', legacy, undefined)
+    await settle()
+    // the panel now holds a link kind: the target is inline and the type select says so
+    expect(byLabel<HTMLSelectElement>(pop, 'Edit property Status').value).toBe('multi-link')
+    expect(byLabel<HTMLInputElement>(pop, 'Link target').value).toBe(legacy.target)
   })
 })

@@ -180,7 +180,7 @@ describe('grid', () => {
     expect(el.querySelector('.view-cards__group')).toBeNull()
     expect(cards(el)).toHaveLength(8)
     const card = cardOf(el, 'Agentic Agency.md')
-    expect([...card.querySelectorAll('.view-card__prop-name')].map((n) => n.textContent)).toEqual(['priority', 'tags'])
+    expect([...card.querySelectorAll('.view-card__prop-name')].map((n) => n.textContent)).toEqual(['Priority', 'Tags'])
     expect([...card.querySelectorAll('.view-card__prop-value')][0].textContent).toBe('2')
     // list values render as chips, like table cells and board cards
     expect([...card.querySelectorAll('.view-table__chip')].map((c) => c.textContent)).toEqual(['agentic', 'pillar'])

@@ -6,6 +6,7 @@
  * unchanged, and activating a stale tab probes a fresh tree before onFileMissing fires.
  * Real Tree/ContextMenu render against the jsdom bridge stub.
  */
+import { newFolderPageProperties } from '../views/folderPageSettings'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -19,6 +20,7 @@ import { createViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 // migrated outline and flag must change atomically (YAZ-1022).
 vi.mock('../views/writeProperty', () => ({ transformFile: vi.fn(), writeProperty: vi.fn() }))
 import { transformFile, writeProperty } from '../views/writeProperty'
+import { turnIntoFolderPage } from '../views/folderPageSettings'
 import { countChildren, Sidebar } from './Sidebar'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -1402,9 +1404,9 @@ describe('context menu order (GRO-2272 C1a)', () => {
  * "New folder page" (YAZ-841 — 🔒 D4 + D1 on YAZ-817): the create group's second item, and the
  * only birth gesture for a folder page. It is the EXISTING inline-create flow with one branch at
  * the end — same validation, same placement rule (the file lands where the right-click happened),
- * same open-after-create — so the page is born through `createNewNote` carrying exactly
- * `folder_page: true` and NOTHING else (🔒 D1: the flag alone is the whole declaration; Q7
- * defaults render it once 5- ships, and 4C's panel writes settings only when the user picks some).
+ * same open-after-create — so the page is born through `createNewNote` carrying the flag and
+ * (since YAZ-1513) the default `status` Select declaration under `folder_page_settings` — spelled
+ * by `newFolderPageProperties`, never a sidebar literal — with no body and no `folder_pages`.
  */
 describe('New folder page (🔒 D4 / 🔒 D1, YAZ-841)', () => {
   const openOn = async (selector: string) => {
@@ -1422,8 +1424,8 @@ describe('New folder page (🔒 D4 / 🔒 D1, YAZ-841)', () => {
       field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     })
   }
-  /** The birth content (🔒 D1): one frontmatter block, one key, no body. */
-  const FLAG_ONLY = '---\nfolder_page: true\n---\n'
+  /** The birth content (🔒 D1, amended YAZ-1513): one frontmatter block — the flag and the default `status` column — no body. */
+  const BORN = '---\nfolder_page: true\nfolder_page_settings:\n  columns:\n    status:\n      kind: select\n      options:\n        - 1-Backlog\n        - 2-Todo\n        - 3-In-Progress\n        - 4-Done\n---\n'
 
   it('is offered wherever the create group is — file rows, folder rows and blank space alike', async () => {
     for (const selector of ['.tree__row--file', '.tree__row--dir', '.sidebar__body']) {
@@ -1440,11 +1442,11 @@ describe('New folder page (🔒 D4 / 🔒 D1, YAZ-841)', () => {
     expect(input(el)?.placeholder).toBe('New folder page')
   })
 
-  it('committing a name creates the page born with EXACTLY the flag, in the right-clicked folder, then opens it', async () => {
+  it('committing a name creates the page born with the flag AND the default status column, in the right-clicked folder, then opens it', async () => {
     const { el, bridge, props } = await openOn('.tree__row--dir')
     act(() => itemByLabel(el, 'New folder page')?.click())
     await commit(el, 'Growth')
-    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/Growth.md', content: FLAG_ONLY })
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/Growth.md', content: BORN })
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/Growth.md')
     expect(input(el)).toBeNull() // the input is done
   })
@@ -1453,12 +1455,12 @@ describe('New folder page (🔒 D4 / 🔒 D1, YAZ-841)', () => {
     const onFile = await openOn('.tree__row--file')
     act(() => itemByLabel(onFile.el, 'New folder page')?.click())
     await commit(onFile.el, 'Growth')
-    expect(onFile.bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Growth.md', content: FLAG_ONLY })
+    expect(onFile.bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Growth.md', content: BORN })
 
     const onBlank = await openOn('.sidebar__body')
     act(() => itemByLabel(onBlank.el, 'New folder page')?.click())
     await commit(onBlank.el, 'Growth')
-    expect(onBlank.bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Growth.md', content: FLAG_ONLY })
+    expect(onBlank.bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Growth.md', content: BORN })
   })
 
   it('leaves New note alone — the same flow with no seed at all, still the bare-path call', async () => {
@@ -1489,8 +1491,10 @@ describe('New folder page (🔒 D4 / 🔒 D1, YAZ-841)', () => {
  * The folder-page toggle (YAZ-840 — 🔒 D1/D2/D3/D5 on YAZ-817): the first user-facing
  * folder-page gesture. ONE state-aware item on MARKDOWN FILE rows.
  *
- *  - forward (🔒 D1) is IMMEDIATE and writes exactly `folder_page: true` — no settings stamped,
- *    and no confirm to click through for something this same item undoes;
+ *  - forward (🔒 D1) is IMMEDIATE and goes through ONE content transform — `turnIntoFolderPage`,
+ *    the settings module's own, which writes the flag and seeds the default `status` column only
+ *    when the page has no settings yet (YAZ-1513) — with no confirm to click through for
+ *    something this same item undoes;
  *  - reverse (🔒 D5) asks first, restores the migrated outline to the Markdown body, removes the
  *    active outline value and flag together, and leaves every other setting and member entry.
  *
@@ -1560,11 +1564,11 @@ describe('folder-page toggle (YAZ-840)', () => {
     }
   })
 
-  it('FORWARD writes exactly the flag and nothing else, with NO confirm sheet (🔒 D1)', async () => {
+  it('FORWARD is ONE transform through turnIntoFolderPage — the flag plus the seeded default column — with NO confirm sheet (🔒 D1, YAZ-1513)', async () => {
     const { el } = await openOn('[title="/v/a.md"]', feed(record('/v/a.md')))
     await act(async () => itemByLabel(el, 'Turn into folder page')?.click())
-    expect(write).toHaveBeenCalledExactlyOnceWith('/v/a.md', 'folder_page', true)
-    expect(transform).not.toHaveBeenCalled()
+    expect(transform).toHaveBeenCalledExactlyOnceWith('/v/a.md', turnIntoFolderPage)
+    expect(write).not.toHaveBeenCalled()
     expect(el.querySelector('.confirm')).toBeNull()
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
@@ -1596,7 +1600,7 @@ describe('folder-page toggle (YAZ-840)', () => {
   })
 
   it('a failed write surfaces as the passive notice — never a dialog', async () => {
-    write.mockRejectedValue(new Error('read-only volume'))
+    transform.mockRejectedValue(new Error('read-only volume'))
     const { el, props } = await openOn('[title="/v/a.md"]', feed(record('/v/a.md')))
     await act(async () => itemByLabel(el, 'Turn into folder page')?.click())
     expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining('read-only volume'))
@@ -1819,7 +1823,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     expect(field).not.toBeNull() // the bug: no input rendered at all, so the click did nothing
     expect(field?.closest('.tree')).not.toBeNull() // …and it belongs INSIDE the tree, not floating
     await commit(el, 'Growth')
-    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Growth.md', content: '---\nfolder_page: true\n---\n' })
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Growth.md', content: '---\nfolder_page: true\nfolder_page_settings:\n  columns:\n    status:\n      kind: select\n      options:\n        - 1-Backlog\n        - 2-Todo\n        - 3-In-Progress\n        - 4-Done\n---\n' })
   })
 
   it('"New note" from BLANK SPACE lands in the vault root too — the same anchorless path', async () => {
@@ -1831,13 +1835,13 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith('/v/Loose thought.md')
   })
 
-  it('"New folder page" on a LEAF Topics row is born with EXACTLY the flag, beside that page (🔒 D1)', async () => {
+  it('"New folder page" on a LEAF Topics row is born with the flag and the default status column, beside that page (🔒 D1 + YAZ-1513)', async () => {
     const { el, bridge } = await topics()
     await expandDocs(el)
     await rightClick(rowFor(el, 'Guide')) // a leaf: nothing to belong to, so nothing is declared
     act(() => itemByLabel(el, 'New folder page')?.click())
     await commit(el, 'Growth')
-    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Docs/Growth.md', content: '---\nfolder_page: true\n---\n' })
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/Docs/Growth.md', content: '---\nfolder_page: true\nfolder_page_settings:\n  columns:\n    status:\n      kind: select\n      options:\n        - 1-Backlog\n        - 2-Todo\n        - 3-In-Progress\n        - 4-Done\n---\n' })
   })
 
   /**
@@ -1902,10 +1906,10 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     await commit(el, 'Retention')
     const page = born(bridge)
     expect(page.path).toBe('/v/KPIs/Retention.md') // parked with Metrics' other members
-    // D1 of YAZ-841 is untouched: NO template, NO settings block, NO scaffolded columns — a folder
-    // page is born with the flag, and 8H adds only the one entry that nests it.
-    expect(Object.keys(page.properties)).toEqual(['folder_page', 'folder_pages'])
-    expect(page.properties).toEqual({ folder_page: true, folder_pages: ['[[Metrics]]'] })
+    // YAZ-1513: born like every folder page — the flag AND the default `status` declaration —
+    // and 8H adds only the one entry that nests it. Still no template, no body.
+    expect(Object.keys(page.properties)).toEqual(['folder_page', 'folder_page_settings', 'folder_pages'])
+    expect(page.properties).toEqual({ ...newFolderPageProperties(), folder_pages: ['[[Metrics]]'] })
     expect(page.body).toBe('')
     expect(bridge.readFile).not.toHaveBeenCalled()
   })

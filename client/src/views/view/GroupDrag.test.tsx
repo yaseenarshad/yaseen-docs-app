@@ -297,30 +297,30 @@ describe('board drag between columns', () => {
 describe('grouped table drag between sections', () => {
   it('drop on another section writes the property and moves the row optimistically', () => {
     const { el } = mount(STATUS_TABLE)
-    expect(rowOf(el, 'Agentic Agency.md').getAttribute('draggable')).toBe('true')
-    fire(rowOf(el, 'Agentic Agency.md'), 'dragstart')
+    expect(rowOf(el, 'Agentic Agency').getAttribute('draggable')).toBe('true')
+    fire(rowOf(el, 'Agentic Agency'), 'dragstart')
     // hovering the section (header or one of its rows) highlights it
     fire(headerOf(el, 'drafting'), 'dragover')
     expect(headerOf(el, 'drafting').className).toContain('view-table__group--drop')
     fire(headerOf(el, 'drafting'), 'drop')
     expect(write).toHaveBeenCalledExactlyOnceWith(AGENTIC, 'status', 'drafting')
-    expect(tableSections(el).drafting).toContain('Agentic Agency.md')
-    expect(tableSections(el).idea).not.toContain('Agentic Agency.md')
+    expect(tableSections(el).drafting).toContain('Agentic Agency')
+    expect(tableSections(el).idea).not.toContain('Agentic Agency')
     expect(headerOf(el, 'drafting').className).not.toContain('view-table__group--drop')
   })
 
   it('dropping on a data row of another section targets that row´s section; No value deletes', () => {
     const { el } = mount(STATUS_TABLE)
-    fire(rowOf(el, 'Agentic Agency.md'), 'dragstart')
-    fire(rowOf(el, 'Attribution.md'), 'drop') // Attribution sits in No value
+    fire(rowOf(el, 'Agentic Agency'), 'dragstart')
+    fire(rowOf(el, 'Attribution'), 'drop') // Attribution sits in No value
     expect(write).toHaveBeenCalledTimes(1)
     expect(write.mock.calls[0]).toEqual([AGENTIC, 'status', undefined])
-    expect(tableSections(el)['No value']).toContain('Agentic Agency.md')
+    expect(tableSections(el)['No value']).toContain('Agentic Agency')
   })
 
   it('rows of an ungrouped table are not draggable', () => {
     const { el } = mount(FLAT_TABLE)
-    expect(rowOf(el, 'Agentic Agency.md').getAttribute('draggable')).not.toBe('true')
+    expect(rowOf(el, 'Agentic Agency').getAttribute('draggable')).not.toBe('true')
   })
 })
 

@@ -47,9 +47,17 @@ export interface FolderPageMode {
    * columns AND `view.order` in that same single write. Passing none does NOT mean "leave the
    * views alone": the host writes the LIVE def's `views` and `defaultView` either way, never the
    * index snapshot it also holds, so a column write cannot clobber an edit the index has not
-   * echoed back yet (YAZ-1471 D4; YAZ-1234's two-gestures data loss).
+   * echoed back yet (YAZ-1471 D4; YAZ-1234's two-gestures data loss). `labels`, when given, is
+   * the caller's word on the column labels (`properties`) — `undefined` inside it means NONE —
+   * and when absent the live def's labels ride along (YAZ-1513).
    */
-  setColumns: (columns: Record<string, ColumnDecl>, views?: ViewDef[]) => void
+  setColumns: (columns: Record<string, ColumnDecl>, views?: ViewDef[], labels?: { properties: ViewSet['properties'] }) => void
+  /**
+   * "Delete column…" (YAZ-1513): the declaration, every view reference, the label AND the key on
+   * every direct member — `views/deleteColumn.ts`, ONE function behind both menus. Never rejects:
+   * the host reports failures in its own banner. Absent → the menus do not offer it.
+   */
+  deleteColumn?: (key: string) => Promise<void>
   /** ⌘-click on a table row opens the page in a BACKGROUND tab (YAZ-820); absent → opens in place. */
   openBackground?: (path: string) => void
   /** Shared Table/Board action that opens the exact page in the window's right panel. */
@@ -466,6 +474,8 @@ export function ViewsPane({ parsed, onChange, root, thisFile, records, propertie
           folderPage={folderPage.settings}
           vaultRecords={vaultRecords}
           preview={view.preview === true}
+          declareColumn={folderPage.setColumns}
+          deleteColumn={folderPage.deleteColumn}
         />
       ) : view.type === 'board' ? (
         <BoardView

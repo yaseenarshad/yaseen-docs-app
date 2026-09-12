@@ -37,6 +37,7 @@ import { ViewsPane, type FolderPageMode } from './ViewsPane'
 import { splitFrontmatter, parseFrontmatter } from '@shared/frontmatter'
 import { DEFAULT_VIEWS, folderPageSettings, folderPageSettingsOf, writeFolderPageSettings, writeFolderColumn, type FolderPageSettings } from './folderPageSettings'
 import { backfillFolderPageColumns } from './folderPageColumns'
+import { deleteColumn as deleteColumnEverywhere } from './deleteColumn'
 import { createNewNote, freeName, type NewNoteSeed } from './newNote'
 import { memberFolder, newPageFromFolderPage } from './scaffold'
 import './views.css'
@@ -98,11 +99,13 @@ interface Feed {
  *
  * The settings' `formulas` come in beside them (YAZ-745): `formula.<name>` is a column, a sort and
  * a GROUPING LEVEL, all read off `def.formulas` — so a folder page whose formulas stopped at the
- * settings could declare a level the engine could only answer `unknown formula` to.
+ * settings could declare a level the engine could only answer `unknown formula` to. The column
+ * LABELS ride in the same way (YAZ-1513): `def.properties` is what every header reads, and the
+ * Properties menu's pencil and the table header's rename both edit it through `onUpdate`.
  */
-function folderPageViewSet({ views, formulas, defaultView }: FolderPageSettings): ParsedViews {
+function folderPageViewSet({ views, formulas, properties, defaultView }: FolderPageSettings): ParsedViews {
   try {
-    return parseViews(stringify({ formulas, views, defaultView })) // `stringify` skips undefined keys
+    return parseViews(stringify({ formulas, properties, views, defaultView })) // `stringify` skips undefined keys
   } catch {
     // Report-don't-block: a hand-edited view YAML cannot take the note's editor down with it —
     // the page still renders, on the defaults it would have had with no settings at all.
@@ -199,9 +202,9 @@ export function FolderPageContents({
     }
   }, [members, settings])
 
-  /** The comparable tuple every stamp below is spelled as — the two halves `folderPageViewSet` builds, plus the saved START. */
-  const stampOf = (s: Pick<FolderPageSettings, 'views' | 'formulas' | 'defaultView'>): string =>
-    JSON.stringify([s.views, s.formulas ?? null, s.defaultView ?? null])
+  /** The comparable tuple every stamp below is spelled as — everything `folderPageViewSet` builds: views, formulas, labels (YAZ-1513) and the saved START. */
+  const stampOf = (s: Pick<FolderPageSettings, 'views' | 'formulas' | 'properties' | 'defaultView'>): string =>
+    JSON.stringify([s.views, s.formulas ?? null, s.properties ?? null, s.defaultView ?? null])
   // Rebuilt when the CARD's own views move — an external edit, or our own write coming back
   // through the index (identical then, since `onChange` already applied it). JSON identity is the
   // honest comparison: every read hands back a fresh copy of the views.
@@ -262,9 +265,10 @@ export function FolderPageContents({
   const onChange = (next: ParsedViews): void => {
     setParsed(next)
     setSettingsError(null)
-    // What this write will stamp as when the index returns it (YAZ-1241) — formulas ride unchanged.
-    pending.current.push(stampOf({ views: next.def.views, formulas: settings.formulas, defaultView: next.def.defaultView }))
-    writeFolderPageSettings(path, { ...settings, views: next.def.views, defaultView: next.def.defaultView }).catch((err: unknown) =>
+    // What this write will stamp as when the index returns it (YAZ-1241) — formulas ride unchanged;
+    // the labels are the DEF's (YAZ-1513), since a rename is one of the edits that lands here.
+    pending.current.push(stampOf({ views: next.def.views, formulas: settings.formulas, properties: next.def.properties, defaultView: next.def.defaultView }))
+    writeFolderPageSettings(path, { ...settings, views: next.def.views, properties: next.def.properties, defaultView: next.def.defaultView }).catch((err: unknown) =>
       setSettingsError(err instanceof Error ? err.message : String(err)),
     )
   }
@@ -281,12 +285,27 @@ export function FolderPageContents({
     // clobbered by the next column write (YAZ-1471 D4; YAZ-1234's two-gestures data loss). No
     // `pending` stamp: this echo must still read as "disk wins" and refresh `parsed` with the
     // `views` the caller moved.
-    setColumns: (columns, views) => {
+    setColumns: (columns, views, labels) => {
       setSettingsError(null)
-      writeFolderPageSettings(path, { ...settings, columns, views: views ?? parsed.def.views, defaultView: parsed.def.defaultView }).catch((err: unknown) =>
-        setSettingsError(err instanceof Error ? err.message : String(err)),
-      )
+      writeFolderPageSettings(path, {
+        ...settings,
+        columns,
+        views: views ?? parsed.def.views,
+        // The labels follow the same rule as the views: the caller's when it speaks, else the LIVE def's (YAZ-1513).
+        properties: labels === undefined ? parsed.def.properties : labels.properties,
+        defaultView: parsed.def.defaultView,
+      }).catch((err: unknown) => setSettingsError(err instanceof Error ? err.message : String(err)))
     },
+    // Delete column (YAZ-1513): the settings half goes through `setColumns` above — the same one
+    // door, the same echo behaviour — and the member strips report into the column banner, no
+    // rollback, exactly as the presence invariant's own failures do.
+    deleteColumn: (key) =>
+      deleteColumnEverywhere(key, {
+        columns: settings.columns,
+        def: parsed.def,
+        members,
+        writeSettings: (columns, views, properties) => mode.setColumns(columns, views, { properties }),
+      }).catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))),
     openRight: onOpenFileRight,
     openBackground: onOpenFileBackground,
     onNotice,

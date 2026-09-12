@@ -289,7 +289,7 @@ describe('cards', () => {
     const card = q<HTMLElement>(cols(el)[1], '.view-board__card') // idea → Agentic Agency
     expect(q(card, '.view-board__title').textContent).toBe('Agentic Agency.md')
     // the order properties minus file.name, as label/value rows
-    expect([...card.querySelectorAll('.view-board__prop-name')].map((n) => n.textContent)).toEqual(['priority', 'tags'])
+    expect([...card.querySelectorAll('.view-board__prop-name')].map((n) => n.textContent)).toEqual(['Priority', 'Tags'])
     expect([...card.querySelectorAll('.view-board__prop-value')][0].textContent).toBe('2')
     // list values render as chips, like table cells
     expect([...card.querySelectorAll('.view-table__chip')].map((c) => c.textContent)).toEqual(['agentic', 'pillar'])
@@ -894,7 +894,7 @@ ${cardStyle}
     const { el } = mount(STYLED('      - file.name\n      - note.priority\n      - note.tags', '      note.priority: { bold: true }\n      note.tags: { underline: true }'))
     const card = cardIn(el)
     const rows = [...card.querySelectorAll<HTMLElement>('.view-board__prop')]
-    expect(rows.map((r) => q(r, '.view-board__prop-name').textContent)).toEqual(['priority', 'tags'])
+    expect(rows.map((r) => q(r, '.view-board__prop-name').textContent)).toEqual(['Priority', 'Tags'])
     expect(rows[0].classList.contains('view-board__prop--bold')).toBe(true)
     expect(rows[1].classList.contains('view-board__prop--underline')).toBe(true)
     expect(linesIn(card)).toHaveLength(3)
@@ -905,7 +905,7 @@ ${cardStyle}
     const rows = [...cardIn(el).querySelectorAll<HTMLElement>('.view-board__prop')]
     expect(rows[0].querySelector('.view-board__prop-name')).toBeNull()
     expect(q(rows[0], '.view-board__prop-value')).toBeDefined()
-    expect(q(rows[1], '.view-board__prop-name').textContent).toBe('tags')
+    expect(q(rows[1], '.view-board__prop-name').textContent).toBe('Tags')
   })
 
   it('join chains consecutive properties onto ONE line after the title, an en-dash element between items', () => {
