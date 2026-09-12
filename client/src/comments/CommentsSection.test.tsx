@@ -13,7 +13,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { readComments } from '@shared/comments'
+import type { CommentsOrder } from '@shared/types'
 import { CommentsSection } from './CommentsSection'
+import commentsCss from './comments.css?inline'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -143,6 +145,8 @@ const INVALID = '---\ntags: [a, b\nstatus: : :\n---\nBody\n'
 
 let root: Root | null = null
 let container: HTMLElement | null = null
+/** The order toggle's door (YAZ-1515): the block writes the SETTING through it and holds no order of its own. */
+const onChangeOrder = vi.fn<(order: CommentsOrder) => void>()
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
@@ -152,6 +156,7 @@ beforeEach(() => {
   writeFile.mockResolvedValue({ path: PATH, mtime: 200, size: 10 })
   openLink.mockReset()
   openLink.mockResolvedValue(undefined)
+  onChangeOrder.mockReset()
 })
 
 afterEach(() => {
@@ -166,14 +171,14 @@ function unmount(): void {
   container = null
 }
 
-/** Mount over `content`; the disk agrees with the prop unless a test says otherwise via `readFile`. */
-function mount(content: string, mtime = 100): HTMLElement {
+/** Mount over `content`; the disk agrees with the prop unless a test says otherwise via `readFile`. Oldest-first unless a test says otherwise. */
+function mount(content: string, mtime = 100, order: CommentsOrder = 'oldest'): HTMLElement {
   unmount()
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
   readFile.mockResolvedValue(fileOf(content, mtime))
-  act(() => root?.render(<CommentsSection file={{ path: PATH, content }} />))
+  act(() => root?.render(<CommentsSection file={{ path: PATH, content }} order={order} onChangeOrder={onChangeOrder} />))
   return container
 }
 
@@ -187,7 +192,11 @@ const q = <T extends Element = HTMLElement>(scope: ParentNode, selector: string)
 const all = <T extends Element = HTMLElement>(scope: ParentNode, selector: string): T[] => [...scope.querySelectorAll<T>(selector)]
 
 const header = (el: ParentNode) => q<HTMLButtonElement>(el, 'button.comments__header')
-const tool = (el: ParentNode) => q<HTMLButtonElement>(el, 'button.comments__tool')
+const tools = (el: ParentNode) => all<HTMLButtonElement>(el, 'button.comments__tool')
+/** The fold-all button, by its label — the order toggle (YAZ-1515) shares its class and seat. */
+const tool = (el: ParentNode) => tools(el).find((b) => /^(Collapse|Expand) all$/.test(b.textContent ?? '')) ?? null
+/** The order toggle (YAZ-1515), by its label. */
+const orderTool = (el: ParentNode) => tools(el).find((b) => /^(Oldest|Newest) first$/.test(b.textContent ?? '')) ?? null
 const threads = (el: ParentNode) => all(el, '.comments__thread')
 const articles = (scope: ParentNode) => all(scope, 'article.comments__item')
 const bodyText = (article: ParentNode) => q(article, '.comments__body')?.textContent?.trim() ?? null
@@ -271,6 +280,7 @@ describe('CommentsSection — render', () => {
     const el = mount(EMPTY)
     expect(header(el)?.textContent).toBe('Comments')
     expect(q(el, '.comments__count')).toBeNull()
+    click(header(el)) // an empty page starts collapsed (🔒 E); the header is the door
     expect(tool(el)).toBeNull()
     expect(bottomComposer(el)).not.toBeNull()
   })
@@ -290,7 +300,8 @@ describe('CommentsSection — render', () => {
 describe('CommentsSection — fold', () => {
   it('one fold-all control: Collapse all while anything foldable is open, Expand all once every foldable comment AND every reply group is folded — a one-liner never counts', () => {
     const el = mount(FOLDABLE)
-    expect(all(el, 'button.comments__tool')).toHaveLength(1)
+    // ONE fold-all, at the right of the tools; the order toggle (YAZ-1515) sits to its left.
+    expect(tools(el).map((b) => b.textContent)).toEqual(['Oldest first', 'Collapse all'])
     expect(tool(el)?.textContent).toBe('Collapse all')
     // Three can fold (the parent, both replies); the one-liner has no fold button and no body.
     expect(all(el, 'button.comments__fold')).toHaveLength(3)
@@ -647,6 +658,7 @@ describe('CommentsSection — by', () => {
 describe('CommentsSection — shapes', () => {
   it('a foreign `comments` value: the notice, no composer, no write on any interaction', () => {
     const el = mount(FOREIGN)
+    click(header(el)) // nothing to read → starts collapsed (🔒 E)
     expect(q(el, '.comments__notice')?.textContent).toContain("isn't a comment list")
     expect(q(el, '.comments__composer')).toBeNull()
     expect(q(el, '.comments__list')).toBeNull()
@@ -661,6 +673,7 @@ describe('CommentsSection — shapes', () => {
 
   it('a properties block that does not parse: the "doesn\'t parse" notice, no composer, no write', () => {
     const el = mount(INVALID)
+    click(header(el)) // nothing to read → starts collapsed (🔒 E)
     expect(q(el, '.comments__notice')?.textContent).toContain("doesn't parse")
     expect(q(el, '.comments__composer')).toBeNull()
 
@@ -734,5 +747,154 @@ describe('CommentsSection — one-liners keep their Markdown; nothing to fold, n
     const el = mount(note(`  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    body: One.\n  - id: bbbbbbbb\n    n: 2\n    at: 2026-09-11T19:22:31Z\n    body: Two.\n`))
     expect(articles(el)).toHaveLength(2)
     expect(tool(el)).toBeNull()
+  })
+})
+
+// ---------- order (YAZ-1515) ----------
+
+/** Three top-level comments, numbered, filed in `at` order. */
+const THREE = note(`  - id: aaaaaaaa
+    n: 1
+    at: 2026-09-10T20:00:00Z
+    body: First
+  - id: bbbbbbbb
+    n: 2
+    at: 2026-09-11T20:00:00Z
+    body: Second
+  - id: cccccccc
+    n: 3
+    at: 2026-09-12T20:00:00Z
+    body: Third
+`)
+
+const marks = (el: ParentNode) => threads(el).map((t) => markOf(articles(t)[0])?.textContent)
+
+describe('order (YAZ-1515)', () => {
+  it('oldest-first reads #1 #2 #3 top-down; newest-first reads #3 #2 #1', () => {
+    expect(marks(mount(THREE, 100, 'oldest'))).toEqual(['#1', '#2', '#3'])
+    expect(marks(mount(THREE, 100, 'newest'))).toEqual(['#3', '#2', '#1'])
+  })
+
+  it('replies inside a thread stay oldest-first under both orders: a conversation reads down', () => {
+    const oldest = mount(THREADED, 100, 'oldest')
+    expect(threads(oldest).map((t) => textOf(articles(t)[0]))).toEqual(['Earliest, filed last', 'Parent comment', 'Orphan reply'])
+    expect(repliesOf(threads(oldest)[1])).toEqual(['First reply', 'Second reply'])
+
+    const newest = mount(THREADED, 100, 'newest')
+    expect(threads(newest).map((t) => textOf(articles(t)[0]))).toEqual(['Orphan reply', 'Parent comment', 'Earliest, filed last'])
+    expect(repliesOf(threads(newest)[1])).toEqual(['First reply', 'Second reply'])
+  })
+
+  it('the toggle names the CURRENT order and asks for the other one; it never flips itself', () => {
+    const el = mount(THREE, 100, 'oldest')
+    expect(orderTool(el)?.textContent).toBe('Oldest first')
+    expect(orderTool(el)?.title).toBe('Show newest first')
+    click(orderTool(el))
+    expect(onChangeOrder).toHaveBeenCalledTimes(1)
+    expect(onChangeOrder).toHaveBeenCalledWith('newest')
+    // State-driven: the label follows the PROP, not the click.
+    expect(orderTool(el)?.textContent).toBe('Oldest first')
+
+    const flipped = mount(THREE, 100, 'newest')
+    expect(orderTool(flipped)?.textContent).toBe('Newest first')
+    expect(orderTool(flipped)?.title).toBe('Show oldest first')
+    click(orderTool(flipped))
+    expect(onChangeOrder).toHaveBeenLastCalledWith('oldest')
+  })
+
+  it('the toggle sits LEFT of fold-all, and is absent below two threads and while the header is collapsed', () => {
+    expect(orderTool(mount(EMPTY))).toBeNull()
+    expect(orderTool(mount(LONE))).toBeNull()
+    // Exactly two roots is the boundary: that is enough, because the roots are what reorder.
+    expect(orderTool(mount(FRESHER))).not.toBeNull()
+    expect(tools(mount(FOLDABLE)).map((b) => b.textContent)).toEqual(['Oldest first', 'Collapse all'])
+
+    const el = mount(THREE)
+    expect(orderTool(el)).not.toBeNull()
+    click(header(el))
+    expect(orderTool(el)).toBeNull()
+    click(header(el))
+    expect(orderTool(el)).not.toBeNull()
+  })
+
+  it('the composer follows the list under BOTH orders (it never moves to the top)', () => {
+    for (const order of ['oldest', 'newest'] as const) {
+      expect(q(mount(THREE, 100, order), '.comments > .comments__list + .comments__composer')).not.toBeNull()
+    }
+    // And the rule that seats it below the list carries no `order` of its own.
+    const rule = must(commentsCss.match(/\.comments__list\s*\+\s*\.comments__composer\s*\{([^}]*)\}/s)?.[1], 'the list + composer rule')
+    expect(rule).toMatch(/margin-top:\s*16px;/)
+    expect(rule).not.toMatch(/\border:/)
+  })
+
+  it('adding under newest-first: the new comment renders FIRST on screen while the file still APPENDS it', async () => {
+    const el = mount(THREE, 100, 'newest')
+    await submitVia(bottomComposer(el), 'Fourth')
+    expect(readComments(written()).at(-1)?.body).toBe('Fourth')
+    expect(threads(el).map((t) => textOf(articles(t)[0]))[0]).toBe('Fourth')
+    expect(markOf(articles(threads(el)[0])[0])?.textContent).toBe('#4')
+  })
+})
+
+// ---------- header wrap (⚡ YAZ-1516) ----------
+
+describe('header wrap (YAZ-1516)', () => {
+  const TITLE = 'Why the enterprise onboarding funnel leaks at Q3'
+
+  it('a 48-char title is rendered WHOLE in the header row', () => {
+    expect(TITLE).toHaveLength(48)
+    const el = mount(note(`  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    title: ${TITLE}\n    body: |-\n      Line one\n      Line two\n`))
+    const head = must(q(el, '.comments__summary'), 'the header seat')
+    expect(head.textContent).toBe(TITLE)
+    expect(head.classList.contains('comments__summary--title')).toBe(true)
+  })
+
+  it('CSS: the summary wraps — no nowrap, no ellipsis — and every seat beside it sits on the 20px first line', () => {
+    const summary = must(commentsCss.match(/\.comments__summary\s*\{([^}]*)\}/s)?.[1], 'the .comments__summary rule')
+    expect(summary).not.toMatch(/nowrap|text-overflow|overflow:\s*hidden/)
+    expect(summary).toMatch(/line-height:\s*20px;/)
+    expect(summary).toMatch(/overflow-wrap:\s*anywhere;/)
+    // The one-liner's class is a hook only now: no rule of its own.
+    expect(commentsCss).not.toMatch(/\.comments__summary--whole\s*\{/)
+    expect(commentsCss).toMatch(/\.comments__meta\s*\{[^}]*align-items:\s*flex-start;/s)
+  })
+})
+
+// ---------- default open state (🔒 E, YAZ-1515) ----------
+
+describe('default open state (YAZ-1515 🔒 E)', () => {
+  it('a page with comments opens expanded; a page with none opens collapsed, header only', () => {
+    expect(header(mount(LONE))?.getAttribute('aria-expanded')).toBe('true')
+    expect(q(mount(LONE), '.comments__composer')).not.toBeNull()
+
+    const empty = mount(EMPTY)
+    expect(header(empty)?.getAttribute('aria-expanded')).toBe('false')
+    expect(q(empty, '.comments__composer')).toBeNull()
+    expect(tools(empty)).toEqual([])
+  })
+
+  it('a foreign or invalid block has nothing to read, so it starts collapsed too', () => {
+    expect(header(mount(FOREIGN))?.getAttribute('aria-expanded')).toBe('false')
+    expect(header(mount(INVALID))?.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('the default is decided once at mount: opening an empty page and adding the first comment leaves it open', async () => {
+    const el = mount(EMPTY)
+    click(header(el))
+    expect(header(el)?.getAttribute('aria-expanded')).toBe('true')
+    await submitVia(bottomComposer(el), 'First')
+    expect(header(el)?.textContent).toBe('Comments (1)')
+    expect(header(el)?.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('deleting the last comment does not close the block', async () => {
+    const el = mount(LONE)
+    click(action(articles(el)[0], 'Delete'))
+    await flush()
+    click(sheetButton(must(sheet(el), 'the sheet'), 'Delete'))
+    await flush()
+    expect(header(el)?.textContent).toBe('Comments')
+    expect(header(el)?.getAttribute('aria-expanded')).toBe('true')
+    expect(bottomComposer(el)).not.toBeNull()
   })
 })

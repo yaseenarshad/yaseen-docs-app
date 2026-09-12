@@ -1,6 +1,8 @@
 /**
  * The flat result list (YAZ-803, 🔒 flat-list ruling on YAZ-739): rows in the ranking's order,
  * the folder as a secondary label only when there is one, and the tree's ⌘-click convention.
+ * Since YAZ-1491 a click reports ONE activation with the ⌘ flag (🔒 D3) — the Sidebar decides
+ * what a folder vs a note does — and a folder row looks like a folder (🔒 D4).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
@@ -11,10 +13,19 @@ import { SearchResults } from './SearchResults'
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 const cand = (name: string, folder = ''): SearchCandidate => ({
+  kind: 'file',
   name,
   lower: name.toLowerCase(),
   label: name,
   path: `/v/${folder === '' ? '' : `${folder}/`}${name}.md`,
+  folder,
+})
+const dir = (name: string, folder = ''): SearchCandidate => ({
+  kind: 'dir',
+  name,
+  lower: name.toLowerCase(),
+  label: name,
+  path: `/v/${folder === '' ? '' : `${folder}/`}${name}`,
   folder,
 })
 
@@ -22,7 +33,7 @@ let reactRoot: Root | null = null
 let container: HTMLElement | null = null
 
 function render(results: SearchCandidate[], selected = 0) {
-  const props = { onSelect: vi.fn(), onOpen: vi.fn(), onOpenBackground: vi.fn() }
+  const props = { onSelect: vi.fn(), onActivate: vi.fn() }
   container = document.createElement('div')
   document.body.appendChild(container)
   reactRoot = createRoot(container)
@@ -63,18 +74,30 @@ describe('SearchResults (YAZ-803)', () => {
     expect(rows(el).map((r) => r.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false'])
   })
 
-  it('a plain click opens the row in place and moves selection to it', () => {
-    const { el, onOpen, onOpenBackground, onSelect } = render([cand('A'), cand('B')])
+  it('a plain click activates the row (background: false) and moves selection to it', () => {
+    const results = [cand('A'), cand('B')]
+    const { el, onActivate, onSelect } = render(results)
     act(() => rows(el)[1].click())
-    expect(onOpen).toHaveBeenCalledExactlyOnceWith('/v/B.md')
-    expect(onOpenBackground).not.toHaveBeenCalled()
+    expect(onActivate).toHaveBeenCalledExactlyOnceWith(results[1], false)
     expect(onSelect).toHaveBeenCalledWith(1)
   })
 
-  it('⌘-click opens a background tab instead (the tree row convention)', () => {
-    const { el, onOpen, onOpenBackground } = render([cand('A')])
+  it('⌘-click activates with background: true (the tree row convention)', () => {
+    const results = [cand('A')]
+    const { el, onActivate } = render(results)
     act(() => void rows(el)[0].dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })))
-    expect(onOpenBackground).toHaveBeenCalledExactlyOnceWith('/v/A.md')
-    expect(onOpen).not.toHaveBeenCalled()
+    expect(onActivate).toHaveBeenCalledExactlyOnceWith(results[0], true)
+  })
+
+  it('a folder row carries the dir class, a glyph, and a `, folder` aria-label suffix (🔒 D4, YAZ-1491)', () => {
+    const { el } = render([dir('Archive'), cand('Archive')])
+    const [folder, note] = rows(el)
+    expect(folder.classList.contains('search-results__row--dir')).toBe(true)
+    expect(folder.getAttribute('aria-label')).toBe('Search result Archive, folder')
+    expect(folder.querySelector('.search-results__glyph')).not.toBeNull()
+    expect(folder.querySelector('.search-results__label')?.textContent).toBe('Archive')
+    expect(note.classList.contains('search-results__row--dir')).toBe(false)
+    expect(note.getAttribute('aria-label')).toBe('Search result Archive')
+    expect(note.querySelector('.search-results__glyph')).toBeNull()
   })
 })

@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { isViewOnly } from '@shared/fileKind'
-import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
+import { MAIN_WORKSPACE_MIN_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, type CommentsOrder, type SettingsState, type SidebarLens, type TreeNode } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
 import { Editor } from './editor/Editor'
@@ -225,6 +225,10 @@ export function App() {
     const { settings: s, root: r, file: f } = createBaseInputs.current
     return r === null ? '' : newNoteBase(s, r, f)
   }, [])
+  // The comment stream's order toggle (YAZ-1515) writes the setting through the same ref-backed,
+  // stable door: `RetainedEditor` is `memo(Editor)`, and a fresh arrow per render would re-render
+  // every retained editor tree on any App state change.
+  const changeCommentsOrder = useCallback((order: CommentsOrder) => changeSettings({ ...createBaseInputs.current.settings, commentsOrder: order }), [changeSettings])
 
   // Appearance (Desktop K, GRO-2218): `system` tracks the OS live; explicit values win.
   // `data-theme` goes on <html> so body / fixed overlays follow app.css's dark tokens, and
@@ -299,6 +303,13 @@ export function App() {
     if (sidebarCollapsed) toggleSidebar()
     setSidebarRevealRequest({ id: ++sidebarRevealId.current, path, lens: sidebarLens })
   }, [sidebarCollapsed, sidebarLens, toggleSidebar])
+
+  // A folder search row (🔒 D3, YAZ-1491): always the FILES lens, whichever tab was showing. The
+  // sidebar is necessarily open (the row was clicked in it), so no un-collapse step here.
+  const revealInFiles = useCallback((path: string) => {
+    changeLens('files')
+    setSidebarRevealRequest({ id: ++sidebarRevealId.current, path, lens: 'files' })
+  }, [changeLens])
 
   const consumeSidebarReveal = useCallback((id: number) => {
     setSidebarRevealRequest((request) => request?.id === id ? null : request)
@@ -604,6 +615,9 @@ export function App() {
     onRenameFile: requestEditorRename,
     sync: githubSync.status,
     onSyncNow: githubSync.syncNow,
+    // YAZ-1515: the comment stream's order is a SETTING, threaded down like every other one.
+    commentsOrder: settings.commentsOrder,
+    onChangeCommentsOrder: changeCommentsOrder,
   }
 
   const dropOnMain = (page: PageDrag, at: number): void => {
@@ -668,6 +682,7 @@ export function App() {
           watch={watch}
           onOpenFile={openCurrent}
           onOpenFileBackground={openBackground}
+          onRevealInFiles={revealInFiles}
           onPickFolder={pick}
           pickDisabled={picking}
           onCollapse={toggleSidebar}

@@ -104,6 +104,8 @@ const watch: WatchSource = {
   },
 }
 
+const noop = (): void => undefined
+
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
 async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; viewOnlyLinks?: ViewOnlyLinkSource; onRenameFile?: (oldPath: string, newPath: string) => void } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
@@ -112,7 +114,7 @@ async function mount(content: string, mtime = 1, extra: { path?: string; wikilin
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} wikilinks={extra.wikilinks} viewOnlyLinks={extra.viewOnlyLinks} onRenameFile={extra.onRenameFile} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks} viewOnlyLinks={extra.viewOnlyLinks} onRenameFile={extra.onRenameFile} />))
   await settle()
   await settle()
   return container
@@ -628,8 +630,8 @@ describe('document magnification (YAZ-1410)', () => {
     const other = '/vault/other.md'
     const render = (active: string, firstOpen = true) => {
       act(() => root!.render(<>
-        {firstOpen && <div key={PATH} data-pane="first" hidden={active !== PATH}><Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} /></div>}
-        <div key={other} data-pane="second" hidden={active !== other}><Editor root="/vault" path={other} watch={watch} onOpenFile={openFile} /></div>
+        {firstOpen && <div key={PATH} data-pane="first" hidden={active !== PATH}><Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} /></div>}
+        <div key={other} data-pane="second" hidden={active !== other}><Editor root="/vault" path={other} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} /></div>
       </>))
     }
     render(PATH); await settle(); await settle()

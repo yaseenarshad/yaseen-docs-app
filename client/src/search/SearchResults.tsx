@@ -1,7 +1,10 @@
 /**
  * The search bar's result list (YAZ-803). 🔒 flat-list ruling on YAZ-739: a FLAT ranked list,
  * never a tree — the rows carry a folder label instead of a position. Presentational only:
- * selection is owned by the Sidebar, since the keyboard drives it from the search input.
+ * selection is owned by the Sidebar, since the keyboard drives it from the search input — and so
+ * is ACTIVATION (🔒 D3, YAZ-1491): a click reports the row and the ⌘ flag, and the Sidebar's one
+ * rule decides whether that reveals a folder or opens a note. Folder rows look like folders
+ * (🔒 D4): a glyph before the label and a `, folder` suffix on the aria-label.
  */
 import { useEffect, useRef } from 'react'
 import type { SearchCandidate } from './searchCandidates'
@@ -11,12 +14,20 @@ interface SearchResultsProps {
   /** Index of the selected row; the keyboard owns it, hover never moves it. */
   selected: number
   onSelect: (index: number) => void
-  onOpen: (path: string) => void
-  /** ⌘-click (I3 convention, GRO-2235): open in a background tab, same as a tree file row. */
-  onOpenBackground: (path: string) => void
+  /** A row was clicked; `background` is ⌘ (I3 convention, GRO-2235) — the Sidebar's `activate` shares this with Enter. */
+  onActivate: (row: SearchCandidate, background: boolean) => void
 }
 
-export function SearchResults({ results, selected, onSelect, onOpen, onOpenBackground }: SearchResultsProps) {
+/** Small folder outline for a `dir` row (🔒 D4, YAZ-1491) — the `SidebarPanelIcon` idiom. */
+function FolderGlyph() {
+  return (
+    <svg className="search-results__glyph" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
+      <path d="M1.5 4.5a1 1 0 0 1 1-1h3.4l1.6 1.6h6a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" />
+    </svg>
+  )
+}
+
+export function SearchResults({ results, selected, onSelect, onActivate }: SearchResultsProps) {
   const selectedRow = useRef<HTMLLIElement | null>(null)
 
   // The list scrolls inside `.sidebar__body`, so arrowing past its edge must bring the row along.
@@ -37,17 +48,19 @@ export function SearchResults({ results, selected, onSelect, onOpen, onOpenBackg
           role="option"
           aria-selected={i === selected}
           // e2e anchors rows by aria-label (Playwright's hasText cannot read them otherwise).
-          aria-label={`Search result ${r.label}`}
-          className={`search-results__row${i === selected ? ' search-results__row--active' : ''}`}
+          aria-label={`Search result ${r.label}${r.kind === 'dir' ? ', folder' : ''}`}
+          className={`search-results__row${i === selected ? ' search-results__row--active' : ''}${r.kind === 'dir' ? ' search-results__row--dir' : ''}`}
           title={r.path}
           onClick={(e) => {
             // A click moves selection to the clicked row, so the next arrow key continues from it.
             onSelect(i)
-            if (e.metaKey) onOpenBackground(r.path)
-            else onOpen(r.path)
+            onActivate(r, e.metaKey)
           }}
         >
-          <span className="search-results__label">{r.label}</span>
+          <span className="search-results__label">
+            {r.kind === 'dir' && <FolderGlyph />}
+            {r.label}
+          </span>
           {r.folder !== '' && <span className="search-results__folder">{r.folder}</span>}
         </li>
       ))}
