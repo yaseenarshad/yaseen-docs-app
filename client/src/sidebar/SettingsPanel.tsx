@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { THREAD_WIDTHS, isValidNewNoteFolder, type ContentWidth, type GithubSyncStatus, type NewNoteLocation, type SettingsState, type Theme } from '@shared/types'
+import { THREAD_WIDTHS, isValidNewNoteFolder, type CommentsOrder, type ContentWidth, type GithubSyncStatus, type NewNoteLocation, type SettingsState, type Theme } from '@shared/types'
 
 /** Obsidian's Appearance control and order (Desktop K, GRO-2218); App resolves and applies it. */
 const THEME_OPTIONS: Array<{ label: string; value: Theme }> = [
@@ -13,6 +13,12 @@ const CONTENT_WIDTH_OPTIONS: Array<{ label: string; value: ContentWidth }> = [
   { label: 'Narrow', value: 'narrow' },
   { label: 'Medium', value: 'medium' },
   { label: 'Full', value: 'full' },
+]
+
+/** Comment stream order (YAZ-1515): a reading preference, global — the block's own toggle drives the same field. */
+const COMMENTS_ORDER_OPTIONS: Array<{ label: string; value: CommentsOrder }> = [
+  { label: 'Oldest first', value: 'oldest' },
+  { label: 'Newest first', value: 'newest' },
 ]
 
 /** Google-Docs-style presets (GRO-2024 D4). blockGap is per-side padding: visual gap = 2×. */
@@ -237,6 +243,19 @@ export function SettingsCog({ settings, onChange, sync }: SettingsCogProps) {
             ))}
           </div>
           <p className="settings__hint">Deleted notes and folders move to the Trash either way.</p>
+          <p className="settings__label">Comments</p>
+          <div className="settings__options">
+            {COMMENTS_ORDER_OPTIONS.map(({ label, value }) => (
+              <button
+                key={value}
+                type="button"
+                className={`settings__option${settings.commentsOrder === value ? ' settings__option--active' : ''}`}
+                onClick={() => onChange({ ...settings, commentsOrder: value })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <p className="settings__label">Default location for new notes</p>
           <div className="settings__stack">
             {NEW_NOTE_LOCATION_OPTIONS.map(({ label, value }) => (
