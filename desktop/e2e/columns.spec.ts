@@ -295,8 +295,12 @@ test('step 5 — "Delete column…" asks first, then strips declaration, referen
   expect(viewOf(settings, 'board').groupBy).toBeUndefined()
   expect(viewOf(settings, 'board').order).toEqual(['file.name', 'note.owner'])
   expect(settings.properties).toBeUndefined()
-  // The FRONTMATTER has no `status` left in any spelling (the body mentions "statuses" and may).
-  expect(splitFrontmatter(await readFile(tasks, 'utf8')).frontmatter).not.toContain('status')
+  // No view still names the key anywhere — order, sort, groupBy, summaries, columnSize, cardStyle,
+  // filters, image. The outline's PROSE may say "statuses"; prose is not a reference, so it is left out.
+  for (const view of (settings.views ?? []) as Record<string, unknown>[]) {
+    const { outline: _prose, ...config } = view
+    expect(JSON.stringify(config)).not.toMatch(/status/)
+  }
 
   // Then every member: ONLY its `status:` line is gone — the rest of the file byte for byte.
   for (const member of MEMBERS) {

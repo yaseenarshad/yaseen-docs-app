@@ -39,6 +39,7 @@ folder_page_settings:
       order:
         - file.name
         - note.owner
+        - note.status
 ---
 
 # Tasks
