@@ -18,17 +18,16 @@
 ## State
 - Done:
   - [x] 1- Scope (YAZ-1583) — tree created, D1–D5 locked
-  - [x] 2A- Tree and watcher list every regular file (YAZ-1588) — commit 30eaec8
-  - [x] 2C- shell:openDefault verb (YAZ-1590) — commit 2f30183
-  - [x] 2B- Rename/move rules (YAZ-1589) — commit 8180fd1; `extensionOf` helper shared by fileKind + rename rule
-  - [x] 3- Renderer click + context menu (YAZ-1585) — commit d386455
-  - [x] 5- Polish (YAZ-1587) — redundant image guard dropped, api doc, README sentence
-  - [x] Demo vault `~/Desktop/show-all-files-demo/` (vault "Show All File Types YAZ-1577", 20 scenarios, launch.sh / reset.sh / README)
-- Now: [→] 4A/4B verify (YAZ-1591/1592) — dev app launched in isolated profile, waiting on Yasin's hand pass
-- Next: PR open on `yaz-1577-show-all-files`; merge to main after the pass (no release); cleanup worktree/branch/demo; handoff comments
-- Remaining:
-  - [ ] Yasin's 20-scenario pass; any failure → new sub-issue, fixed in this wave
-  - [ ] merge, cleanup, handoff
+  - [x] 2A- Tree and watcher list every regular file (YAZ-1588) — 30eaec8
+  - [x] 2C- shell:openDefault verb (YAZ-1590) — 2f30183
+  - [x] 2B- Rename/move rules (YAZ-1589) — 8180fd1; `extensionOf` helper shared by fileKind + rename rule
+  - [x] 3- Renderer click + context menu (YAZ-1585) — d386455
+  - [x] 5- Polish (YAZ-1587) — 0f8aae7
+  - [x] 4A/4B verify (YAZ-1591/1592) — demo vault `~/Desktop/show-all-files-demo/`, 20 scenarios, Yasin (2026-09-13): "all 20 passed"
+  - [x] PR #51 merged to main `99742b3`, NO version bump (batched); worktree, branch (local+remote), demo folder removed
+  - [x] Handoff posted on YAZ-1577 and every child (YAZ-1583…1592); all Done
+- Now: COMPLETE — nothing pending
+- Next: none. Deliberately not done (candidates for a later issue, not debt): collapse the three twin OS-verb callbacks in `Sidebar.tsx`; wikilinks to no-viewer files (D3); `yaseendocs://` deep links to them (`windows.ts:344` guard); the `Editor.tsx:122` "Unsupported file type." fallback is now only reachable by a restored tab.
 
 ## Open Questions
 - Polish considered-and-rejected: collapsing the three twin OS-verb callbacks in Sidebar.tsx (reveal / openVsCode / openDefault) into one helper — would reword existing Reveal/VS Code notice strings and their tests; out of scope here.
