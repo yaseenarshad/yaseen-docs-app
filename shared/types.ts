@@ -996,6 +996,13 @@ export interface ShellApi {
    * `reveal`, stat included: a path that no longer exists rejects `NOT_FOUND`.
    */
   openVsCode(req: RevealRequest): Promise<RevealResponse>
+  /**
+   * Hand `path` to the OS default application (YAZ-1577) — how a tree row with no in-app viewer
+   * (`kind: null`) opens. Files, folders and the vault root alike. Same request/response shape and
+   * read-only posture as `reveal`, stat included: a path that no longer exists rejects `NOT_FOUND`;
+   * an OS refusal (`shell.openPath`'s returned message) rejects `IO_ERROR` carrying that message.
+   */
+  openDefault(req: RevealRequest): Promise<RevealResponse>
   /** Open a validated Markdown-link target through the OS; never creates an Electron window. */
   openLink(req: OpenLinkRequest): Promise<void>
 }
