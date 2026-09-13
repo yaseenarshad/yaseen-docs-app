@@ -19,7 +19,7 @@ const pathOrder = (a: ViewOnlyEntry, b: ViewOnlyEntry): number => (a.path < b.pa
 function flatten(nodes: readonly TreeNode[], out: ViewOnlyEntry[]): void {
   for (const node of nodes) {
     if (node.type === 'dir') flatten(node.children, out)
-    else if (node.kind !== 'markdown') out.push({ path: node.path, name: node.name, kind: node.kind })
+    else if (node.kind !== 'markdown' && node.kind !== null) out.push({ path: node.path, name: node.name, kind: node.kind })
   }
 }
 

@@ -194,3 +194,25 @@ describe('Open in VS Code item (YAZ-963)', () => {
     expect(onOpenVsCode).toHaveBeenCalledExactlyOnceWith('/v/Zeta')
   })
 })
+
+/** Open in default app (YAZ-1577): the third OS verb, directly below Open in VS Code, same idiom. */
+describe('Open in default app item (YAZ-1577)', () => {
+  const labels = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => b.textContent)
+  const item = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === label)
+
+  it('renders directly after Open in VS Code when a path is offered', () => {
+    const el = mount(0, 0, { openVsCodePath: '/v/a.md', openDefaultPath: '/v/a.md' })
+    expect(labels(el).indexOf('Open in default app')).toBe(labels(el).indexOf('Open in VS Code') + 1)
+  })
+
+  it('absent without a path', () => {
+    expect(labels(mount(0, 0, {}))).not.toContain('Open in default app')
+  })
+
+  it('hands the click to the caller with the path', () => {
+    const onOpenDefault = vi.fn()
+    const el = mount(0, 0, { openDefaultPath: '/v/book.epub', onOpenDefault })
+    act(() => item(el, 'Open in default app')?.click())
+    expect(onOpenDefault).toHaveBeenCalledExactlyOnceWith('/v/book.epub')
+  })
+})

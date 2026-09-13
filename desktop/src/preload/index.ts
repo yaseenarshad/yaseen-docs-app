@@ -150,10 +150,11 @@ const api: YaseenDocsApi = {
     delete: (req) => call(CH.fsDelete, req),
     onDeleted: on<FileDeletedEvent>(CH.fileDeleted),
   },
-  // OS-level actions: reveal in the system file manager (GRO-2274), open in VS Code (YAZ-963).
+  // OS-level actions: reveal in the system file manager (GRO-2274), open in VS Code (YAZ-963), open in the default app (YAZ-1577).
   shell: {
     reveal: (req) => call(CH.shellReveal, req),
     openVsCode: (req) => call(CH.shellOpenVsCode, req),
+    openDefault: (req) => call(CH.shellOpenDefault, req),
     openLink: (req) => call(CH.shellOpenLink, req),
   },
   // Vault-wide property declarations over `.yaseendocs/properties.json` (YAZ-835).

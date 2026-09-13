@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { TreeNode } from '@shared/types'
+import type { FileKind, TreeNode } from '@shared/types'
 import { buildViewOnlyCatalog, buildViewOnlyCatalogFromEntries } from './viewOnlyCatalog'
 
-const file = (path: string, kind: 'markdown' | 'text' | 'pdf' | 'image'): TreeNode => ({
+const file = (path: string, kind: FileKind | null): TreeNode => ({
   type: 'file',
   name: path.slice(path.lastIndexOf('/') + 1),
   path,
@@ -16,6 +16,7 @@ describe('view-only catalog (YAZ-1310)', () => {
     file('/vault/Guide.md', 'markdown'),
     file('/vault/data.json', 'text'),
     file('/vault/photo.PNG', 'image'),
+    file('/vault/book.epub', null), // listed in the tree, no viewer: never a wikilink target (YAZ-1577 D3)
     { type: 'dir', name: 'deep', path: '/vault/deep', children: [
       file('/vault/deep/data.JSON', 'text'),
       file('/vault/deep/tool.PY', 'text'),
@@ -25,7 +26,7 @@ describe('view-only catalog (YAZ-1310)', () => {
     { type: 'dir', name: 'z', path: '/vault/z', children: [file('/vault/z/data.json', 'text')] },
   ]
 
-  it('flattens every non-Markdown viewer kind in deterministic path order', () => {
+  it('flattens every non-Markdown viewer kind in deterministic path order, skipping kind-null rows', () => {
     expect(buildViewOnlyCatalog('/vault', tree).entries).toEqual([
       { path: '/vault/data.json', name: 'data.json', kind: 'text' },
       { path: '/vault/deep/data.JSON', name: 'data.JSON', kind: 'text' },

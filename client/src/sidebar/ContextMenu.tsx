@@ -40,6 +40,9 @@ interface ContextMenuProps {
    */
   openVsCodePath?: string | null
   onOpenVsCode?: (path: string) => void
+  /** Row to open in the OS default app — the same target rule a third time (YAZ-1577); optional like VS Code. */
+  openDefaultPath?: string | null
+  onOpenDefault?: (path: string) => void
   onNewNote: () => void
   /** Create a note born a folder page — the flag and nothing else (🔒 D4 + D1, YAZ-841). */
   onNewFolderPage: () => void
@@ -62,7 +65,7 @@ interface ContextMenuProps {
 }
 
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInNewTabs, onNotice, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, openVsCodePath, onOpenVsCode, onNewNote, onNewFolderPage, onNewFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInNewTabs, onNotice, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, openVsCodePath, onOpenVsCode, openDefaultPath, onOpenDefault, onNewNote, onNewFolderPage, onNewFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, onClose }: ContextMenuProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -171,6 +174,21 @@ export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInN
             }}
           >
             Open in VS Code
+          </button>
+        )}
+        {/* Open in default app (YAZ-1577): the third OS verb, directly below VS Code — same target
+            rule, same read-only posture, same passive notice when the row is stale. */}
+        {openDefaultPath != null && (
+          <button
+            type="button"
+            className="ctx-menu__item"
+            role="menuitem"
+            onClick={() => {
+              onOpenDefault?.(openDefaultPath)
+              onClose()
+            }}
+          >
+            Open in default app
           </button>
         )}
         {copyPath !== null && (

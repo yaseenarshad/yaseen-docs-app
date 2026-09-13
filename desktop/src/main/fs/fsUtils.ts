@@ -104,9 +104,10 @@ export async function requireDir(dir: string): Promise<void> {
 }
 
 /**
- * Recursive tree of supported markdown, text, and PDF files under `dir`. Dirs first, then files,
- * each sorted case-insensitively; every dir shows even with no supported file beneath, so freshly
- * created folders are visible (GRO-2022 D1). Unreadable subdirs are skipped.
+ * Recursive tree of every regular file under `dir`, each carrying its preview `kind` (`null` = no
+ * in-app viewer, YAZ-1577 D1). Dirs first, then files, each sorted case-insensitively; every dir
+ * shows even when empty, so freshly created folders are visible (GRO-2022 D1). Dot-entries and
+ * `node_modules` are skipped; unreadable subdirs are skipped.
  */
 export async function buildTree(dir: string): Promise<TreeNode[]> {
   const entries = await readdir(dir, { withFileTypes: true })
@@ -120,10 +121,8 @@ export async function buildTree(dir: string): Promise<TreeNode[]> {
         const children = await buildTree(full).catch(() => null)
         if (children !== null) dirs.push({ type: 'dir', name: e.name, path: full, children })
       } else if (e.isFile()) {
-        const kind = fileKind(e.name)
-        if (kind === null) return
         const st = await stat(full).catch(() => undefined)
-        if (st) files.push({ type: 'file', name: e.name, path: full, size: st.size, mtime: st.mtimeMs, kind })
+        if (st) files.push({ type: 'file', name: e.name, path: full, size: st.size, mtime: st.mtimeMs, kind: fileKind(e.name) })
       }
     }),
   )

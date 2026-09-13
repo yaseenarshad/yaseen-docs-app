@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BridgeFailure } from './fsUtils'
 
-/** Creates a temp vault with Markdown, supported view-only text, hidden entries, and unsupported assets; caller removes it via `cleanup`. */
+/** Creates a temp vault with Markdown, view-only text/image, a file with no in-app viewer, and hidden entries; caller removes it via `cleanup`. */
 export async function makeFixture(): Promise<{ root: string; cleanup: () => Promise<void> }> {
   const root = await mkdtemp(path.join(tmpdir(), 'mdapp-'))
   await mkdir(path.join(root, 'Zeta', 'inner'), { recursive: true })
@@ -18,6 +18,7 @@ export async function makeFixture(): Promise<{ root: string; cleanup: () => Prom
     writeFile(path.join(root, 'b.md'), '# b\n'),
     writeFile(path.join(root, 'A.md'), '# A\n'),
     writeFile(path.join(root, 'notes.txt'), 'not markdown'),
+    writeFile(path.join(root, 'book.epub'), 'no in-app viewer'),
     writeFile(path.join(root, '.hidden.md'), 'hidden'),
     writeFile(path.join(root, 'Zeta', 'inner', 'deep.md'), 'deep'),
     writeFile(path.join(root, 'Zeta', 'z.markdown'), 'z'),
