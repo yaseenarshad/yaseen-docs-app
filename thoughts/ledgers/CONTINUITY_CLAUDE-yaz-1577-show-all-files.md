@@ -18,17 +18,20 @@
 ## State
 - Done:
   - [x] 1- Scope (YAZ-1583) — tree created, D1–D5 locked
-- Now: [→] 2A- Tree and watcher list every regular file (YAZ-1588)
-- Next: 2C- shell:openDefault verb (YAZ-1590)
+  - [x] 2A- Tree and watcher list every regular file (YAZ-1588) — commit 30eaec8
+  - [x] 2C- shell:openDefault verb (YAZ-1590) — commit 2f30183
+  - [x] 2B- Rename/move rules (YAZ-1589) — commit 8180fd1; `extensionOf` helper shared by fileKind + rename rule
+  - [x] 3- Renderer click + context menu (YAZ-1585) — commit d386455
+  - [x] 5- Polish (YAZ-1587) — redundant image guard dropped, api doc, README sentence
+  - [x] Demo vault `~/Desktop/show-all-files-demo/` (vault "Show All File Types YAZ-1577", 20 scenarios, launch.sh / reset.sh / README)
+- Now: [→] 4A/4B verify (YAZ-1591/1592) — dev app launched in isolated profile, waiting on Yasin's hand pass
+- Next: PR open on `yaz-1577-show-all-files`; merge to main after the pass (no release); cleanup worktree/branch/demo; handoff comments
 - Remaining:
-  - [ ] 2B- Rename/move rules (YAZ-1589)
-  - [ ] 3- Renderer click + context menu (YAZ-1585)
-  - [ ] 4A/4B verify (YAZ-1591/1592) — demo vault on Desktop, isolated profile, Yasin hand pass
-  - [ ] 5- Polish and anti-slop (YAZ-1587)
-  - [ ] PR, Yasin pass, merge to main, cleanup worktree/branch/demo
+  - [ ] Yasin's 20-scenario pass; any failure → new sub-issue, fixed in this wave
+  - [ ] merge, cleanup, handoff
 
 ## Open Questions
-- none
+- Polish considered-and-rejected: collapsing the three twin OS-verb callbacks in Sidebar.tsx (reveal / openVsCode / openDefault) into one helper — would reword existing Reveal/VS Code notice strings and their tests; out of scope here.
 
 ## Working Set
 - Worktree `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-1577`, branch `yaz-1577-show-all-files` from main 91c6bc3

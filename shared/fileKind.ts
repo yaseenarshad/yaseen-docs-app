@@ -49,5 +49,5 @@ export function canRenameWithoutConversion(oldName: string, newName: string): bo
   const newExtension = extensionOf(newName)
   if (oldExtension === null || newExtension === null) return false
   if (oldExtension === newExtension) return true
-  return oldKind === 'image' && ['.jpg', '.jpeg'].includes(oldExtension) && ['.jpg', '.jpeg'].includes(newExtension)
+  return ['.jpg', '.jpeg'].includes(oldExtension) && ['.jpg', '.jpeg'].includes(newExtension)
 }
