@@ -24,20 +24,21 @@ const files = (nodes: TreeNode[]): FileNode[] => nodes.flatMap((n) => (n.type ==
 const dirs = (nodes: TreeNode[]): string[] => nodes.flatMap((n) => (n.type === 'dir' ? [n.name, ...dirs(n.children)] : []))
 
 describe('bases fixture', () => {
-  it('exposes Markdown plus supported view-only text, PDF, and raster images while SVG and dot-dirs stay hidden', async () => {
+  it('exposes Markdown plus view-only text, PDF and raster images by kind, lists SVG with kind null (YAZ-1577 D1), and hides dot-dirs', async () => {
     const body = await tree(root)
     const all = files(body.tree)
     expect(all.filter((f) => f.kind === 'markdown')).toHaveLength(8)
     expect(all.filter((f) => f.kind === 'text')).toHaveLength(2)
     expect(all.filter((f) => f.kind === 'pdf')).toHaveLength(1)
     expect(all.filter((f) => f.kind === 'image')).toHaveLength(3)
-    expect(all).toHaveLength(14)
+    expect(all.filter((f) => f.kind === null)).toHaveLength(1)
+    expect(all).toHaveLength(15)
     expect(all).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'levels.png', kind: 'image' }),
       expect.objectContaining({ name: 'chart.png', kind: 'image' }),
       expect.objectContaining({ name: 'cover.WEBP', kind: 'image' }),
     ]))
-    expect(all.some((f) => f.name === 'vector.svg')).toBe(false)
+    expect(all.find((f) => f.name === 'vector.svg')?.kind).toBeNull()
     expect(dirs(body.tree)).not.toContain('.trash')
     expect(dirs(body.tree)).not.toContain('.obsidian')
   })

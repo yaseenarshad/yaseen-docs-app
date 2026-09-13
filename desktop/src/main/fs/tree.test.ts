@@ -15,12 +15,14 @@ const flatten = (nodes: TreeNode[]): string[] =>
   nodes.flatMap((n) => (n.type === 'dir' ? [n.path, ...flatten(n.children)] : [n.path]))
 
 describe('tree', () => {
-  it('returns dirs first then supported files, case-insensitive, with all dirs shown', async () => {
+  it('returns dirs first then every regular file, case-insensitive, with all dirs shown', async () => {
     const body = await tree(root)
     expect(body.root).toBe(root)
     expect(typeof body.generatedAt).toBe('number')
-    // Every dir shows, supported files or not (GRO-2022 D1): Empty and assets-only included.
-    expect(names(body.tree)).toEqual(['alpha', 'assets-only', 'Empty', 'Zeta', 'A.md', 'b.md', 'notes.txt'])
+    // Every dir shows, viewer-able files or not (GRO-2022 D1): Empty and assets-only included.
+    // Every regular file shows too, viewer or not (YAZ-1577 D1): book.epub is listed with `kind: null`.
+    expect(names(body.tree)).toEqual(['alpha', 'assets-only', 'Empty', 'Zeta', 'A.md', 'b.md', 'book.epub', 'notes.txt'])
+    expect(body.tree.find((n) => n.name === 'book.epub')).toMatchObject({ type: 'file', kind: null })
     const zeta = body.tree[3]
     if (zeta.type !== 'dir') throw new Error('expected dir')
     expect(names(zeta.children)).toEqual(['inner', 'z.markdown'])
@@ -40,7 +42,7 @@ describe('tree', () => {
     expect(all.some((p) => p.includes('.yaseendocs'))).toBe(false)
   })
 
-  it('discovers text, PDF, and raster images with exact kinds while leaving arbitrary binaries and SVG hidden', async () => {
+  it('classifies text, PDF and raster images by kind, and lists SVG and arbitrary binaries with kind null (YAZ-1577 D1)', async () => {
     const candidates = [
       [path.join(root, 'data.JSON'), '{}', 'text'],
       [path.join(root, 'tool.py'), 'print("ok")\n', 'text'],
@@ -58,8 +60,8 @@ describe('tree', () => {
       expect(all.find((node) => node.name === 'report.PDF')?.kind).toBe('pdf')
       expect(all.find((node) => node.name === 'photo.png')?.kind).toBe('image')
       expect(all.find((node) => node.name === 'cover.WEBP')?.kind).toBe('image')
-      expect(all.some((node) => node.name === 'vector.svg')).toBe(false)
-      expect(all.some((node) => node.name === 'archive.zip')).toBe(false)
+      expect(all.find((node) => node.name === 'vector.svg')?.kind).toBeNull()
+      expect(all.find((node) => node.name === 'archive.zip')?.kind).toBeNull()
     } finally {
       await Promise.all(candidates.map(([file]) => rm(file, { force: true })))
     }

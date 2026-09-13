@@ -95,7 +95,7 @@ export const IMAGE_VIEW_MIME = {
 } as const
 export const IMAGE_VIEW_EXTENSIONS = Object.freeze(Object.keys(IMAGE_VIEW_MIME)) as readonly (keyof typeof IMAGE_VIEW_MIME)[]
 
-/** The file kinds visible in the Files tree; only `markdown` is writable and semantic. */
+/** The file kinds the app can open in-app; only `markdown` is writable and semantic. A file of no kind still lists (YAZ-1577). */
 export type FileKind = 'markdown' | 'text' | 'pdf' | 'image'
 export const MAX_FILE_BYTES = 10 * 1024 * 1024
 export const MAX_PDF_BYTES = 50 * 1024 * 1024
@@ -118,8 +118,8 @@ export type TreeNode =
       size: number
       /** mtime in epoch ms. */
       mtime: number
-      /** Shared, case-insensitive extension classification (see `shared/fileKind.ts`). */
-      kind: FileKind
+      /** Preview classification (`shared/fileKind.ts`); `null` = listed, but no in-app viewer (YAZ-1577 D1). */
+      kind: FileKind | null
     }
 
 export interface TreeResponse {
