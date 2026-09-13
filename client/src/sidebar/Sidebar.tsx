@@ -321,9 +321,10 @@ export function Sidebar({
   // and a restart alike. A lens switch never touches it: this state outlives the tree's mount.
   const [topicsExpanded, setTopicsExpanded] = useState<ReadonlySet<string>>(() => new Set(storage.getTopicsExpanded(root)))
   // Multi-select (YAZ-1336, 🔒 D1): the selected PATHS — files and, since YAZ-1578, folders —
-  // shared by BOTH lenses, one entry per path however many rows draw it (🔒 D3). It lives HERE and nowhere else on purpose: this
-  // component is mounted `key={root}` and only while the sidebar is open, so a selection is
-  // honestly about rows currently on screen and cannot outlive them (a collapse ends it).
+  // shared by BOTH lenses, one entry per path however many rows draw it (🔒 D3). It lives HERE
+  // and nowhere else on purpose: this component is mounted `key={root}` and only while the
+  // sidebar is open, so a selection is honestly about rows currently on screen and cannot
+  // outlive them (a collapse ends it).
   const [selectedPaths, dispatchSelection] = useReducer(selectionReducer, EMPTY_SELECTION)
   const [menu, setMenu] = useState<MenuTargets | null>(null)
   // `anchor` is the TOPICS page or disk-folder row the create was asked from; null on the file
