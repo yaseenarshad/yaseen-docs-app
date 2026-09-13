@@ -6,13 +6,16 @@ interface ContextMenuProps {
   /** Absolute path of the right-clicked row (file or folder); null for blank space (GRO-2069). */
   copyPath: string | null
   /**
-   * "Copy N paths" — the whole selection in the panel's own order (🔒 D5, YAZ-1337; ⚡ YAZ-1338
-   * appends the paths whose rows are hidden), newline-joined on click; null hides the item, which
-   * is every menu opened outside a 2+ selection. Its own target, never `copyPath` in a list: that
-   * one falls back to the vault root on blank space.
+   * "Copy N paths" — the whole selection, files and folders (YAZ-1578), in the panel's own order
+   * (🔒 D5, YAZ-1337; ⚡ YAZ-1338 appends the paths whose rows are hidden), newline-joined on
+   * click; null hides the item, which is every menu opened outside a 2+ selection. Its own
+   * target, never `copyPath` in a list: that one falls back to the vault root on blank space.
    */
   copyPaths: string[] | null
-  /** "Open N in new tabs" — the same selection, asked separately (🔒 D5); null hides the item. */
+  /**
+   * "Open N in new tabs" — the FILES of that same selection, asked separately (🔒 D5): a folder
+   * cannot be a tab (YAZ-1578 🔒 D3). Null hides the item, including a folders-only selection.
+   */
   openTabPaths: string[] | null
   /** One background tab per path (I3's opener, GRO-2235) — the caller owns the loop's semantics. */
   onOpenInNewTabs: (paths: string[]) => void

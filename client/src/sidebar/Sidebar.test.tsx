@@ -2275,6 +2275,42 @@ describe('Sidebar multi-select context menu (YAZ-1337)', () => {
     expect(selectedCount(el)).toBe(2)
   })
 
+  // ---- Mixed selections (YAZ-1578, 🔒 D3): folders copy, only files open ----
+
+  it('right-click a selected FOLDER in a mixed selection: "Copy N paths" lists all N, "Open N in new tabs" opens only the files', async () => {
+    const writeText = installClipboard()
+    const { el, props } = await mount({}, withMultiTree)
+    shiftClickRow(rowByPath(el, '/v/b.md'))
+    shiftClickRow(rowByPath(el, '/v/sub'))
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    rightClick(rowByPath(el, '/v/sub'))
+    expect(itemByLabel(el, 'Copy 3 paths')).toBeDefined()
+    expect(itemByLabel(el, 'Open 2 in new tabs')).toBeDefined()
+    expect(itemByLabel(el, 'Copy path')).toBeDefined() // the singular items still target the folder
+    act(() => itemByLabel(el, 'Copy 3 paths')?.click())
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/sub\n/v/a.md\n/v/b.md') // panel order
+    rightClick(rowByPath(el, '/v/sub'))
+    act(() => itemByLabel(el, 'Open 2 in new tabs')?.click())
+    expect(props.onOpenFileBackground).toHaveBeenCalledTimes(2)
+    expect(props.onOpenFileBackground).toHaveBeenNthCalledWith(1, '/v/a.md')
+    expect(props.onOpenFileBackground).toHaveBeenNthCalledWith(2, '/v/b.md')
+    expect(selectedCount(el)).toBe(3)
+  })
+
+  it('a folders-only selection offers "Copy N paths" and no "Open … in new tabs"', async () => {
+    const TWO_DIRS: TreeNode[] = [
+      { type: 'dir', name: 'one', path: '/v/one', children: [] },
+      { type: 'dir', name: 'two', path: '/v/two', children: [] },
+      { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
+    ]
+    const { el } = await mount({}, (b) => b.tree.mockResolvedValue({ root: '/v', tree: TWO_DIRS, generatedAt: 1 }))
+    shiftClickRow(rowByPath(el, '/v/one'))
+    shiftClickRow(rowByPath(el, '/v/two'))
+    rightClick(rowByPath(el, '/v/two'))
+    expect(itemByLabel(el, 'Copy 2 paths')).toBeDefined()
+    expect(menuItems(el).map((b) => b.textContent).some((t) => /in new tabs$/.test(t ?? ''))).toBe(false)
+  })
+
   // ---- Polish pins (YAZ-1340): shift means selection EVERYWHERE, and one Escape does one thing ----
 
   it('shift+click on a dir row selects it and never folds it; a plain click folds it and keeps the selection (YAZ-1578 🔒 D4)', async () => {

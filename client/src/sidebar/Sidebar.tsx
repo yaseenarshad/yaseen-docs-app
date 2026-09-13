@@ -584,10 +584,14 @@ export function Sidebar({
       // is not a row and never clears (YAZ-1337): its menu is about the vault root, and a
       // right-click into the empty space below the tree must not throw a selection away.
       if (node !== null && !selectedPaths.has(node.path)) dispatchSelection({ type: 'clear' })
-      // The plural gesture exists only when the right-clicked row is ITSELF in a selection of two
-      // or more (🔒 D5): a selection of one already IS the singular menu, and a row outside the
-      // selection just ended it above. Read once, here, like every other target this menu pins.
-      const plural = filePath !== null && selectedPaths.has(filePath) && selectedPaths.size >= 2 ? orderedSelectedPaths() : null
+      // The plural gesture exists only when the right-clicked row — file or folder (YAZ-1578) — is
+      // ITSELF in a selection of two or more (🔒 D5): a selection of one already IS the singular
+      // menu, and a row outside the selection just ended it above. Read once, here, like every
+      // other target this menu pins.
+      const plural = node !== null && selectedPaths.has(node.path) && selectedPaths.size >= 2 ? orderedSelectedPaths() : null
+      // Tabs open FILES (YAZ-1578, 🔒 D3): a selected folder is copied, never opened, so the open
+      // item counts only the files — and is not offered at all when the selection holds none.
+      const openable = plural?.filter((path) => tree !== null && treeHasFile(tree.tree, path)) ?? []
       setMenu({
         x: e.clientX,
         y: e.clientY,
@@ -602,10 +606,10 @@ export function Sidebar({
         // empty-Explorer menu does the same. Trailing separators are stripped so the copied
         // bytes match the root the rest of the app uses.
         copyPath: node?.path ?? root.replace(/\/+$/, ''),
-        // Both plural fields resolve to the ONE list read above — and stay separate fields
-        // anyway, which is exactly what the doctrine asks of items that agree today.
+        // Both plural fields read the ONE ordered list above and stay separate fields — which
+        // is exactly what the doctrine asks, since YAZ-1578 is where they stopped agreeing.
         copyPaths: plural,
-        openTabPaths: plural,
+        openTabPaths: openable.length > 0 ? openable : null,
         newWindowPath: filePath,
         renamePath: node?.path ?? null,
         deletePath: node?.path ?? null,
@@ -616,7 +620,7 @@ export function Sidebar({
         topicsAnchor,
       })
     },
-    [root, indexSource, selectedPaths, orderedSelectedPaths],
+    [root, tree, indexSource, selectedPaths, orderedSelectedPaths],
   )
 
   /**

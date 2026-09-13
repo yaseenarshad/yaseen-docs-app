@@ -81,7 +81,7 @@ comments:
 - **Tabs and windows**: notes open in tabs (`⌃Tab` / `⌃⇧Tab` or `⌘⇧]` / `⌘⇧[` to switch, `⌘W` closes the **tab** — on the last one it empties the window and then closes it). `⌘⇧N` duplicates the window (same folder, same file), `⌘⇧O` opens a folder, `⌘⇧W` closes the window; File › Open Recent lists the last folders (⌥-click an entry to open it beside the current window). ⌘-click a sidebar file — or right-click → "Open in new window" — to open it in its own window. Open windows and their tabs are restored on relaunch.
 - **Links**: a `yaseendocs://` URL opens that exact note from anywhere (Slack, another app), and inside a note `[[` completes a link to any other note. Finder's Open With also lists Yaseen Docs for `.md`/`.markdown` (as an alternate, never stealing the default handler).
 - **Collapse**: the panel icon in the header hides the sidebar (a floating button on the left edge brings it back); the choice survives reload. Drag the sidebar's right edge to resize it (180–520 px, remembered); drag it well past the minimum to collapse.
-- **Paths**: the open file shows in the URL as `#/absolute/path.md`; right-click any row for "Copy path".
+- **Paths**: the open file shows in the URL as `#/absolute/path.md`; right-click any row for "Copy path"; shift-click files and folders to build a selection, then right-click it for "Copy N paths" (or press ⌘⇧C).
 
 ## Folder pages
 

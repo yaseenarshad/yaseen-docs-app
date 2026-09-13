@@ -49,9 +49,9 @@ describe('HOTKEYS source of truth', () => {
     expect(byKeys('Right-click file')?.label).toMatch(/new window/i)
     // Multi-select (YAZ-1336 🔒 D2 → YAZ-1337): ⇧-click toggles rows, and the tip has to say what
     // that is FOR — the two plural items a right-click then offers.
-    expect(byKeys('⇧-click file')?.label).toMatch(/multi-selection/i)
-    expect(byKeys('⇧-click file')?.label).toMatch(/Copy N paths/)
-    expect(byKeys('⇧-click file')?.label).toMatch(/Open N in new tabs/)
+    expect(byKeys('⇧-click file or folder')?.label).toMatch(/multi-selection/i)
+    expect(byKeys('⇧-click file or folder')?.label).toMatch(/Copy N paths/)
+    expect(byKeys('⇧-click file or folder')?.label).toMatch(/Open N in new tabs/)
     // YAZ-1557 (D1/D2): click = select on a board card, ⌥ = the right panel on both folder-page views.
     expect(byKeys('Click card')?.label).toMatch(/select/i)
     expect(byKeys('⌥-click name or card')?.label).toMatch(/right panel/i)
