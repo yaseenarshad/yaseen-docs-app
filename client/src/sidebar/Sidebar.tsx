@@ -17,7 +17,7 @@ import { storage } from '../lib/storage'
 import { FOLDER_PAGE_KEY, FOLDER_PAGES_KEY, folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { countLinkReferences } from '../links/renameLinks'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../lib/selection'
-import { allDirs, ancestorDirs, treeHasFile, treeReducer } from '../lib/treeState'
+import { allDirs, ancestorDirs, treeHasFile, treeHasPath, treeReducer } from '../lib/treeState'
 import { SearchResults } from '../search/SearchResults'
 import type { SearchCandidate } from '../search/searchCandidates'
 import { useSearchResults } from '../search/useSearchResults'
@@ -320,8 +320,8 @@ export function Sidebar({
   // main-owned per-vault bucket, so it opens where it was left — across a lens switch, a window
   // and a restart alike. A lens switch never touches it: this state outlives the tree's mount.
   const [topicsExpanded, setTopicsExpanded] = useState<ReadonlySet<string>>(() => new Set(storage.getTopicsExpanded(root)))
-  // Multi-select (YAZ-1336, 🔒 D1): the selected file PATHS, shared by BOTH lenses — one entry per
-  // path however many rows draw it (🔒 D3). It lives HERE and nowhere else on purpose: this
+  // Multi-select (YAZ-1336, 🔒 D1): the selected PATHS — files and, since YAZ-1578, folders —
+  // shared by BOTH lenses, one entry per path however many rows draw it (🔒 D3). It lives HERE and nowhere else on purpose: this
   // component is mounted `key={root}` and only while the sidebar is open, so a selection is
   // honestly about rows currently on screen and cannot outlive them (a collapse ends it).
   const [selectedPaths, dispatchSelection] = useReducer(selectionReducer, EMPTY_SELECTION)
@@ -465,11 +465,12 @@ export function Sidebar({
   }, [lens, searching])
 
   // The loaded tree is the canonical disk truth for BOTH lenses — Topics draws the same files —
-  // so a path it no longer has cannot stay selected. Reference-stable when nothing was dropped,
-  // which is every refresh that changed something else.
+  // so a path it no longer has cannot stay selected. A selected path is a file OR a folder
+  // (YAZ-1578, 🔒 D1), hence `treeHasPath` here and nowhere else. Reference-stable when nothing
+  // was dropped, which is every refresh that changed something else.
   useEffect(() => {
     if (tree === null) return
-    dispatchSelection({ type: 'prune', exists: (path) => treeHasFile(tree.tree, path) })
+    dispatchSelection({ type: 'prune', exists: (path) => treeHasPath(tree.tree, path) })
   }, [tree])
 
   // ⌘⇧C's window onto the selection (🔒 D4, YAZ-1338): App holds the box, this panel keeps it

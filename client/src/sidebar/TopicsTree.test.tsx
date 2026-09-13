@@ -916,7 +916,9 @@ describe('Uncategorized (🔒 D7): a muted row that expands IN PLACE, minus what
     await click(rowFor(el, 'Uncategorized')!)
 
     expect(rowFor(el, 'inbox')?.getAttribute('draggable')).toBeNull()
-    expect(rowFor(el, 'inbox')?.dataset.path).toBeUndefined()
+    // `data-path` is the ABSOLUTE folder, for the selection's on-screen ordering (YAZ-1578);
+    // the relative `data-uncategorized-folder` is still what says "a disk folder, not a page".
+    expect(rowFor(el, 'inbox')?.dataset.path).toBe(`${ROOT}/inbox`)
     expect(rowFor(el, 'inbox')?.dataset.uncategorizedFolder).toBe('inbox')
     await act(async () => void rowFor(el, 'inbox')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(props.onRowContextMenu).toHaveBeenCalledWith(
@@ -1296,6 +1298,23 @@ describe('multi-select (YAZ-1336): shift+click, path-keyed across every occurren
     expect(props.onOpenFile).not.toHaveBeenCalled()
     expect(props.onOpenFileBackground).not.toHaveBeenCalled()
     expect(selection.clear).not.toHaveBeenCalled()
+  })
+
+  it('an Uncategorized DISK-FOLDER row shift-selects, wears the mark, and never folds (YAZ-1578)', async () => {
+    const selection = selectionOver([`${ROOT}/inbox`])
+    const { el, props } = await mount({ source: sourceOver([rec(`${ROOT}/inbox/Zed.md`)]), selection })
+    await click(rowFor(el, 'Uncategorized')!)
+    expect(labels(el)).toEqual(['Uncategorized', 'inbox', 'Zed'])
+    expect(selectedLabels(el)).toEqual(['inbox'])
+    expect(rowFor(el, 'inbox')?.dataset.path).toBe(`${ROOT}/inbox`) // so orderedSelection can place it
+    expect(rowFor(el, 'inbox')?.closest('[role="treeitem"]')?.getAttribute('aria-selected')).toBe('true')
+    await click(rowFor(el, 'inbox')!, { shiftKey: true })
+    expect(selection.toggle).toHaveBeenCalledExactlyOnceWith(`${ROOT}/inbox`)
+    expect(labels(el)).toEqual(['Uncategorized', 'inbox', 'Zed']) // shift never folds
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    await click(rowFor(el, 'inbox')!)
+    expect(labels(el)).toEqual(['Uncategorized', 'inbox']) // a plain click still folds…
+    expect(selection.clear).not.toHaveBeenCalled() // …without touching the selection (🔒 D4)
   })
 
   it('an Uncategorized page row plays by the same two rules', async () => {
