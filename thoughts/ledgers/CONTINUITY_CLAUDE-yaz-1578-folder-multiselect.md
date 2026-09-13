@@ -24,6 +24,11 @@
 ## Open Questions
 - UNCONFIRMED: `Open 1 in new tabs` label reads fine in the running app (one file in a mixed selection).
 
+## Gotchas
+- Worktree `npm run dev` quits instantly while the installed Yaseen Docs runs (single-instance lock, `desktop/src/main/index.ts:26`). Quit the installed app first. Renderer needs the Electron bridge, so no browser-only check.
+- vitest `props.x.mock.calls` fails `tsc` on typed props; use `toHaveBeenNthCalledWith`.
+- PR: https://github.com/yaseenarshad/yaseen-docs-app/pull/50 (merge after the walkthrough; no release).
+
 ## Working Set
 - Worktree: `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-1578`, branch `yaz-1578-folder-multiselect`
 - Files: `client/src/sidebar/{Tree,TopicsTree,Sidebar,ContextMenu,HotkeysPanel}.tsx`, `client/src/lib/{treeState,selection}.ts`, `README.md`
