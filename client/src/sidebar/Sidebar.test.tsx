@@ -47,7 +47,11 @@ function installBridge() {
     state: { setFolder: vi.fn(async () => undefined) },
     window: { open: vi.fn(async () => undefined) },
     // Reveal in Finder (GRO-2274) goes through the shell namespace.
-    shell: { reveal: vi.fn(async ({ path }: { path: string }) => ({ path })) },
+    shell: {
+      reveal: vi.fn(async ({ path }: { path: string }) => ({ path })),
+      // Open in default app (YAZ-1577): the row with no viewer's click, and its menu item.
+      openDefault: vi.fn(async ({ path }: { path: string }) => ({ path })),
+    },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return bridge
@@ -137,6 +141,69 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+/**
+ * A row with no in-app viewer (`kind: null`, YAZ-1577 D2): the OS default app IS the viewer, so
+ * every open gesture hands the path to `shell.openDefault` and no tab callback fires. Shift is
+ * still the selection gesture and still wins (YAZ-1336 🔒 D2).
+ */
+describe('rows with no viewer open in the OS default app (YAZ-1577 D2)', () => {
+  const NO_VIEWER_TREE: TreeNode[] = [
+    { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
+    { type: 'file', name: 'book.epub', path: '/v/book.epub', size: 1, mtime: 1, kind: null },
+  ]
+  const withNoViewerTree = (bridge: ReturnType<typeof installBridge>) =>
+    bridge.tree.mockResolvedValue({ root: '/v', tree: NO_VIEWER_TREE, generatedAt: 1 })
+  const epubRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.tree__row--file[title="/v/book.epub"]')
+
+  it('is marked external and keeps its full filename; a viewer-able row is not marked', async () => {
+    const { el } = await mount({}, withNoViewerTree)
+    expect(epubRow(el)?.classList.contains('tree__row--external')).toBe(true)
+    expect(epubRow(el)?.textContent).toBe('book.epub')
+    expect(fileRow(el)?.classList.contains('tree__row--external')).toBe(false)
+  })
+
+  it('a plain click hands the path to the OS and opens no tab', async () => {
+    const { bridge, props, el } = await mount({}, withNoViewerTree)
+    await act(async () => epubRow(el)?.click())
+    expect(bridge.shell.openDefault).toHaveBeenCalledExactlyOnceWith({ path: '/v/book.epub' })
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+  })
+
+  it('⌘-click does the same — there is no tab to background', async () => {
+    const { bridge, props, el } = await mount({}, withNoViewerTree)
+    await act(async () => void epubRow(el)?.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })))
+    expect(bridge.shell.openDefault).toHaveBeenCalledExactlyOnceWith({ path: '/v/book.epub' })
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
+  })
+
+  it('shift-click selects the row and opens nothing anywhere', async () => {
+    const { bridge, props, el } = await mount({}, withNoViewerTree)
+    await act(async () => void epubRow(el)?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
+    expect(epubRow(el)?.classList.contains('tree__row--selected')).toBe(true)
+    expect(bridge.shell.openDefault).not.toHaveBeenCalled()
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+  })
+
+  it('a stale row (deleted outside the app) surfaces a passive notice', async () => {
+    const { props, el } = await mount({}, (bridge) => {
+      withNoViewerTree(bridge)
+      bridge.shell.openDefault.mockRejectedValue({ code: 'NOT_FOUND', message: 'path does not exist' })
+    })
+    await act(async () => epubRow(el)?.click())
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Can\'t open "book.epub" — it is no longer there')
+  })
+
+  it('every file row\'s context menu offers "Open in default app" beside "Open in VS Code"', async () => {
+    const { bridge, el } = await mount()
+    act(() => void fileRow(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    const labels = menuItems(el).map((b) => b.textContent)
+    expect(labels.indexOf('Open in default app')).toBe(labels.indexOf('Open in VS Code') + 1)
+    await act(async () => itemByLabel(el, 'Open in default app')?.click())
+    expect(bridge.shell.openDefault).toHaveBeenCalledExactlyOnceWith({ path: '/v/a.md' })
+  })
+})
+
 describe('Sidebar file-row open gestures (D2 GRO-2168, I3 GRO-2235)', () => {
   it('a plain click on a file row opens it in place (onOpenFile), never over the bridge', async () => {
     const { bridge, props, el } = await mount()
@@ -212,6 +279,7 @@ describe('Sidebar view-only file routing (YAZ-1301)', () => {
       'Open in new window',
       'Reveal in Finder',
       'Open in VS Code',
+      'Open in default app',
       'Copy path',
       'Rename',
       'Delete',
@@ -1184,7 +1252,7 @@ describe('lens tabs (🔒 D4/D5, YAZ-847)', () => {
     const { el } = await mount({ lens: 'topics' })
     act(() => void el.querySelector('.sidebar__body')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(el.querySelector('.ctx-menu')).not.toBeNull()
-    expect(menuItems(el).map((b) => b.textContent)).toEqual(['Reveal in Finder', 'Open in VS Code', 'Copy path', 'New note', 'New folder page'])
+    expect(menuItems(el).map((b) => b.textContent)).toEqual(['Reveal in Finder', 'Open in VS Code', 'Open in default app', 'Copy path', 'New note', 'New folder page'])
   })
 
   it('a typed query still offers nothing on either lens — a result list has no root to target (YAZ-803)', async () => {
@@ -1364,6 +1432,7 @@ describe('context menu order (GRO-2272 C1a)', () => {
       'Open in new window',
       'Reveal in Finder',
       'Open in VS Code',
+      'Open in default app',
       'Copy path',
       'New note',
       // "New folder page" (🔒 D4, YAZ-817): second in the create group, directly after the
@@ -1694,6 +1763,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
       'Open in new window',
       'Reveal in Finder',
       'Open in VS Code',
+      'Open in default app',
       'Copy path',
       'New note',
       'New folder page',
@@ -1933,6 +2003,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     expect(menuItems(el).map((button) => button.textContent)).toEqual([
       'Reveal in Finder',
       'Open in VS Code',
+      'Open in default app',
       'Copy path',
       'New note',
       'New folder page',
@@ -2005,7 +2076,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
   it('the Uncategorized HEADER has no page behind it, so it opens the ROOT menu, not a page menu', async () => {
     const { el } = await topics()
     await rightClick(el.querySelector('.tree__row--muted'))
-    expect(menuItems(el).map((b) => b.textContent)).toEqual(['Reveal in Finder', 'Open in VS Code', 'Copy path', 'New note', 'New folder page'])
+    expect(menuItems(el).map((b) => b.textContent)).toEqual(['Reveal in Finder', 'Open in VS Code', 'Open in default app', 'Copy path', 'New note', 'New folder page'])
     // No page target anywhere in it: the row-only items stay absent.
     expect(itemByLabel(el, 'Rename')).toBeUndefined()
     expect(itemByLabel(el, 'Delete')).toBeUndefined()
