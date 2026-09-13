@@ -1,15 +1,19 @@
 import { IMAGE_VIEW_EXTENSIONS, MARKDOWN_EXTENSIONS, PDF_EXTENSIONS, TEXT_VIEW_EXTENSIONS, type FileKind } from './types'
 
 /**
- * Classifies a file name or path using the one approved, case-insensitive extension contract.
- * A leading dot alone is not an extension (`.md` the file is null), matching Node's
- * `path.extname`.
+ * Lower-cased extension of a file name or path, dot included; `null` when there is none. A leading
+ * dot alone is not an extension (`.md` the file has none), matching Node's `path.extname`.
  */
-export function fileKind(name: string): FileKind | null {
+function extensionOf(name: string): string | null {
   const basename = name.slice(name.lastIndexOf('/') + 1)
   const dot = basename.lastIndexOf('.')
-  if (dot <= 0) return null
-  const ext = basename.slice(dot).toLowerCase()
+  return dot <= 0 ? null : basename.slice(dot).toLowerCase()
+}
+
+/** Classifies a file name or path using the one approved, case-insensitive extension contract. */
+export function fileKind(name: string): FileKind | null {
+  const ext = extensionOf(name)
+  if (ext === null) return null
   if ((MARKDOWN_EXTENSIONS as readonly string[]).includes(ext)) return 'markdown'
   if ((TEXT_VIEW_EXTENSIONS as readonly string[]).includes(ext)) return 'text'
   if ((PDF_EXTENSIONS as readonly string[]).includes(ext)) return 'pdf'
@@ -31,19 +35,19 @@ export function isSupportedFile(name: string): boolean {
 }
 
 /**
- * Renames never transcode bytes. Text and Markdown may move between extensions in
- * their kind; raster images must keep their real encoding (`.jpg` and `.jpeg` are
- * the one equivalent spelling pair).
+ * Renames never transcode bytes. Text and Markdown may move between extensions in their kind;
+ * raster images must keep their real encoding (`.jpg` and `.jpeg` are the one equivalent spelling
+ * pair); a file with no viewer keeps its exact extension, since nothing else vouches for what its
+ * bytes are (YAZ-1577 D5).
  */
 export function canRenameWithoutConversion(oldName: string, newName: string): boolean {
   const oldKind = fileKind(oldName)
-  const newKind = fileKind(newName)
-  if (oldKind === null || oldKind !== newKind) return false
-  if (oldKind !== 'image') return true
+  if (oldKind !== fileKind(newName)) return false
+  if (oldKind !== 'image' && oldKind !== null) return true
 
-  const extension = (name: string) => name.slice(name.lastIndexOf('.')).toLowerCase()
-  const oldExtension = extension(oldName)
-  const newExtension = extension(newName)
+  const oldExtension = extensionOf(oldName)
+  const newExtension = extensionOf(newName)
+  if (oldExtension === null || newExtension === null) return false
   if (oldExtension === newExtension) return true
-  return ['.jpg', '.jpeg'].includes(oldExtension) && ['.jpg', '.jpeg'].includes(newExtension)
+  return oldKind === 'image' && ['.jpg', '.jpeg'].includes(oldExtension) && ['.jpg', '.jpeg'].includes(newExtension)
 }

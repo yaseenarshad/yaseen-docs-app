@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { hasExactDirectoryEntry, renameFile, repairRename } from './rename'
 import { failure, makeFixture } from './testFixture'
@@ -48,10 +48,7 @@ describe('renameFile (Links E1, GRO-2194)', () => {
     expect(await code(renameFile({ oldPath: path.join(root, 'b.md'), newPath: path.join(root, 'b.md') }))).toBe('BAD_REQUEST')
   })
 
-  it('UNSUPPORTED_EXTENSION on unsupported paths, NOT_FOUND on a missing source, NOT_ABSOLUTE / BAD_REQUEST on bad input', async () => {
-    const unsupportedPath = path.join(root, 'unsupported.bin')
-    await writeFile(unsupportedPath, 'unsupported')
-    expect(await code(renameFile({ oldPath: unsupportedPath, newPath: path.join(root, 'other.bin') }))).toBe('UNSUPPORTED_EXTENSION')
+  it('UNSUPPORTED_EXTENSION on a kind change, NOT_FOUND on a missing source, NOT_ABSOLUTE / BAD_REQUEST on bad input', async () => {
     expect(await code(renameFile({ oldPath: path.join(root, 'b.md'), newPath: path.join(root, 'b.txt') }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(renameFile({ oldPath: path.join(root, 'b.md'), newPath: path.join(root, 'b.base') }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(renameFile({ oldPath: path.join(root, 'missing.md'), newPath: path.join(root, 'other.md') }))).toBe('NOT_FOUND')
@@ -84,6 +81,16 @@ describe('renameFile (Links E1, GRO-2194)', () => {
     await writeFile(oldPath, `content:${oldName}`)
     expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'file' })
     expect(await readFile(newPath, 'utf8')).toBe(`content:${oldName}`)
+  })
+
+  it('renames and moves a file with no viewer when the extension is unchanged, refuses any extension change (YAZ-1577 D5)', async () => {
+    const oldPath = path.join(root, 'book.epub')
+    await writeFile(oldPath, 'no viewer')
+    expect(await code(renameFile({ oldPath, newPath: path.join(root, 'book.mobi') }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await code(renameFile({ oldPath, newPath: path.join(root, 'book') }))).toBe('UNSUPPORTED_EXTENSION')
+    const moved = path.join(root, 'Zeta', 'novel.epub')
+    expect(await renameFile({ oldPath, newPath: moved })).toEqual({ oldPath, newPath: moved, kind: 'file' })
+    await rm(moved)
   })
 
   it('allows a text file to change extension and move folders while remaining text', async () => {
@@ -209,7 +216,8 @@ describe('repairRename (Links E1c, GRO-2242: validate a rename that ALREADY happ
     await writeFile(path.join(root, 'Ext.base'), 'views: []\n')
     expect(await code(repairRename({ oldPath: path.join(root, 'Ext.md'), newPath: path.join(root, 'Ext.base') }))).toBe('UNSUPPORTED_EXTENSION')
     await writeFile(path.join(root, 'ext.bin'), 'binary')
-    expect(await code(repairRename({ oldPath: path.join(root, 'old.bin'), newPath: path.join(root, 'ext.bin') }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await code(repairRename({ oldPath: path.join(root, 'old.mobi'), newPath: path.join(root, 'ext.bin') }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await repairRename({ oldPath: path.join(root, 'old.bin'), newPath: path.join(root, 'ext.bin') })).toEqual({ oldPath: path.join(root, 'old.bin'), newPath: path.join(root, 'ext.bin'), kind: 'file' }) // YAZ-1577 D5
     expect(await code(repairRename({ oldPath: path.join(root, 'ExtNew.md'), newPath: path.join(root, 'ExtNew.md') }))).toBe('BAD_REQUEST') // same path
     expect(await code(repairRename({ oldPath: 'relative.md', newPath: path.join(root, 'ExtNew.md') }))).toBe('NOT_ABSOLUTE')
     expect(await code(repairRename(undefined))).toBe('BAD_REQUEST')
