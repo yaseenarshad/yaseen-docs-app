@@ -587,6 +587,15 @@ export interface FolderState {
    * into any note's frontmatter.
    */
   topicsExpanded: string[]
+  /**
+   * Focus Mode (YAZ-1605): the directories the Files tree is narrowed to — one or several (a
+   * shift-selection) — or empty for the whole vault. `expanded`'s exact shape: a flat per-root
+   * list of absolute paths, so `store.renamePath` / `store.removePath` repair it the same way —
+   * a renamed focus follows its folder, a deleted one drops out.
+   */
+  focusDirs: string[]
+  /** Its Topics twin: the folder PAGES the Topics tree is narrowed to, or empty. `topicsExpanded`'s shape. */
+  focusTopics: string[]
 }
 
 /**
@@ -613,7 +622,7 @@ export function defaultAppState(): AppState {
 }
 
 export function defaultFolderState(): FolderState {
-  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] }
+  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] }
 }
 
 // ---------- Vault-local config (`<root>/.yaseendocs/`, Desktop J — GRO-2188) ----------
@@ -866,7 +875,7 @@ export interface StateApi {
   /** Drop a folder from recents (its directory vanished on disk, C2 — GRO-2164); unknown path is a no-op. */
   removeRecent(path: string): Promise<void>
   /** Merge into `folders[root]`; missing root entries are created with defaults. `topicsExpanded` is capped main-side (YAZ-848). */
-  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded'>>): Promise<void>
+  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded' | 'focusDirs' | 'focusTopics'>>): Promise<void>
   /** Replace the fold keys for one file; an empty list removes the entry. */
   setFolds(root: string, file: string, keys: readonly string[]): Promise<void>
   /** Replace the collapsed group keys for one base view (`<basePath>::<viewName>`); an empty list removes the entry. */

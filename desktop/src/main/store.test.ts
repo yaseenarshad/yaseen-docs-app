@@ -62,7 +62,7 @@ describe('createStore: loading', () => {
       sidebarLens: 'files',
       recents: [{ path: '/v', lastOpened: 5 }],
       windows: [win('w1', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: true })],
-      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, topicsExpanded: ['/v/Metrics.md'] } },
+      folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, topicsExpanded: ['/v/Metrics.md'], focusDirs: [], focusTopics: [] } },
     }
     await seed(state)
     expect(createStore(file).get()).toEqual(state)
@@ -299,12 +299,12 @@ describe('createStore: loading', () => {
       }),
     )
     const { folders } = createStore(file).get()
-    expect(folders['/a']).toEqual({ expanded: [], lastFile: null, folds: { '/a/x.md': ['k'] }, baseGroups: {}, topicsExpanded: [] })
+    expect(folders['/a']).toEqual({ expanded: [], lastFile: null, folds: { '/a/x.md': ['k'] }, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] })
     expect(folders['/b']).toBeUndefined()
     expect(folders['/c'].expanded).toEqual(['/c/sub'])
     expect(folders['/c'].lastFile).toBe('/c/a.md')
     expect(folders['/c'].folds['/c/a.md']).toHaveLength(MAX_FOLD_KEYS_PER_FILE)
-    expect(folders['/d']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(folders['/d']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] })
     await seed(valid({ folders: [] }))
     expect(createStore(file).get().folders).toEqual({})
   })
@@ -321,18 +321,34 @@ describe('createStore: loading', () => {
     )
     const { folders } = createStore(file).get()
     expect(folders['/a'].baseGroups).toEqual({ '/a/x.md::T': ['v:idea'] })
-    expect(folders['/b']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(folders['/b']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] })
     expect(folders['/c'].baseGroups['/c/x.md::T']).toHaveLength(MAX_COLLAPSED_GROUP_KEYS)
+  })
+
+  it('folders: focusDirs / focusTopics load as-is; a pre-1605 file or junk reads as [] (YAZ-1605)', async () => {
+    await seed(
+      valid({
+        folders: {
+          '/a': { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: ['/a/x', '/a/y'], focusTopics: ['/a/T.md'] },
+          '/b': { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] }, // pre-1605 file: no focus fields
+          '/c': { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: '/c/x', focusTopics: [1] },
+        },
+      }),
+    )
+    const { folders } = createStore(file).get()
+    expect(folders['/a']).toMatchObject({ focusDirs: ['/a/x', '/a/y'], focusTopics: ['/a/T.md'] })
+    expect(folders['/b']).toMatchObject({ focusDirs: [], focusTopics: [] })
+    expect(folders['/c']).toMatchObject({ focusDirs: [], focusTopics: [] }) // junk voids the list, like `expanded`
   })
 
   it('folders: junk topicsExpanded is dropped and capped; an old file without the field reads as [] (YAZ-848)', async () => {
     await seed(
       valid({
         folders: {
-          '/a': { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: ['/a/Metrics.md'] },
+          '/a': { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: ['/a/Metrics.md'], focusDirs: [], focusTopics: [] },
           '/b': { expanded: [], lastFile: null, folds: {}, baseGroups: {} }, // pre-848 file: no topicsExpanded
           '/c': { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: 'nope' },
-          '/d': { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [1, 2] },
+          '/d': { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [1, 2], focusDirs: [], focusTopics: [] },
           '/e': { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: Array.from({ length: MAX_TOPICS_EXPANDED_PAGES + 5 }, (_, i) => `/e/p${i}.md`) },
         },
       }),
@@ -430,13 +446,27 @@ describe('createStore: mutations', () => {
   it('setFolder creates the entry with defaults, merges the patch and ignores unknown keys', () => {
     const store = createStore(file)
     store.setFolder('/r1', { expanded: ['/r1/a'] })
-    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] })
     store.setFolder('/r1', { lastFile: '/r1/a/x.md' })
-    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: '/r1/a/x.md', folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: '/r1/a/x.md', folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] })
     store.setFolder('/r1', { lastFile: null, folds: { '/r1/a.md': ['k'] } } as never)
-    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/a'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] })
     store.setFolder('/r2', {})
-    expect(store.get().folders['/r2']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/r2']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] })
+  })
+
+  it('setFolder carries focusDirs / focusTopics — per root, each list replacing, never merging, the other untouched (YAZ-1605)', () => {
+    const store = createStore(file)
+    store.setFolder('/r1', { focusDirs: ['/r1/a', '/r1/b'], focusTopics: ['/r1/T.md'] })
+    store.setFolder('/r2', { focusDirs: ['/r2/c'] })
+    expect(store.get().folders['/r1']).toMatchObject({ focusDirs: ['/r1/a', '/r1/b'], focusTopics: ['/r1/T.md'] })
+    expect(store.get().folders['/r2']).toMatchObject({ focusDirs: ['/r2/c'], focusTopics: [] })
+    store.setFolder('/r1', { focusDirs: [] }) // one lens' exit leaves the other lens' focus alone
+    expect(store.get().folders['/r1']).toMatchObject({ focusDirs: [], focusTopics: ['/r1/T.md'] })
+    const given = ['/r1/z']
+    store.setFolder('/r1', { focusDirs: given })
+    given.push('/r1/mutated')
+    expect(store.get().folders['/r1'].focusDirs).toEqual(['/r1/z']) // copied on the way in, like `expanded`
   })
 
   it('setFolder carries topicsExpanded too — per root, capped, replacing never merging (YAZ-848)', () => {
@@ -448,7 +478,7 @@ describe('createStore: mutations', () => {
     store.setFolder('/r1', { expanded: ['/r1/dir'] })
     expect(store.get().folders['/r1'].topicsExpanded).toEqual(['/r1/Metrics.md', '/r1/Home.md']) // the other fields survive
     store.setFolder('/r1', { topicsExpanded: [] })
-    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/dir'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/r1']).toEqual({ expanded: ['/r1/dir'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] })
     store.setFolder('/r2', { topicsExpanded: Array.from({ length: MAX_TOPICS_EXPANDED_PAGES + 50 }, (_, i) => `/r2/p${i}.md`) })
     expect(store.get().folders['/r2'].topicsExpanded).toHaveLength(MAX_TOPICS_EXPANDED_PAGES)
   })
@@ -458,13 +488,13 @@ describe('createStore: mutations', () => {
     store.setFolds('/r1', '/r1/a.md', ['k1', 'k2'])
     store.setFolds('/r1', '/r1/b.md', ['k3'])
     store.setFolds('/r2', '/r2/a.md', ['k4'])
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: { '/r1/a.md': ['k1', 'k2'], '/r1/b.md': ['k3'] }, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: { '/r1/a.md': ['k1', 'k2'], '/r1/b.md': ['k3'] }, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] })
     store.setFolds('/r1', '/r1/a.md', ['k2']) // the live set replaces, never merges
     expect(store.get().folders['/r1'].folds['/r1/a.md']).toEqual(['k2'])
     store.setFolder('/r1', { lastFile: '/r1/a.md' })
     store.setFolds('/r1', '/r1/a.md', [])
     store.setFolds('/r1', '/r1/b.md', [])
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: '/r1/a.md', folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: '/r1/a.md', folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] })
     store.setFolds('/r2', '/r2/a.md', Array.from({ length: MAX_FOLD_KEYS_PER_FILE + 50 }, (_, i) => `k${i}`))
     expect(store.get().folders['/r2'].folds['/r2/a.md']).toHaveLength(MAX_FOLD_KEYS_PER_FILE)
   })
@@ -474,12 +504,12 @@ describe('createStore: mutations', () => {
     store.setBaseGroups('/r1', '/r1/a.md::T', ['v:idea', 'v:done'])
     store.setBaseGroups('/r1', '/r1/a.md::T 2', ['∅'])
     store.setBaseGroups('/r2', '/r2/a.md::T', ['v:x'])
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: { '/r1/a.md::T': ['v:idea', 'v:done'], '/r1/a.md::T 2': ['∅'] }, topicsExpanded: [] })
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: { '/r1/a.md::T': ['v:idea', 'v:done'], '/r1/a.md::T 2': ['∅'] }, topicsExpanded: [], focusDirs: [], focusTopics: [] })
     store.setBaseGroups('/r1', '/r1/a.md::T', ['v:done']) // the live set replaces, never merges
     expect(store.get().folders['/r1'].baseGroups['/r1/a.md::T']).toEqual(['v:done'])
     store.setBaseGroups('/r1', '/r1/a.md::T', [])
     store.setBaseGroups('/r1', '/r1/a.md::T 2', [])
-    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/r1']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] })
     store.setBaseGroups('/r2', '/r2/a.md::T', Array.from({ length: MAX_COLLAPSED_GROUP_KEYS + 50 }, (_, i) => `v:${i}`))
     expect(store.get().folders['/r2'].baseGroups['/r2/a.md::T']).toHaveLength(MAX_COLLAPSED_GROUP_KEYS)
   })
@@ -538,7 +568,7 @@ describe('createStore: mutations', () => {
       store.setFolder('/v', { lastFile: OLD })
       // A renamed PAGE the Topics tree had open keeps its expansion (🔒 D4, YAZ-848): the bucket
       // is path-keyed, so it is repaired here or the row silently collapses after every rename.
-      store.setFolder('/v', { topicsExpanded: [OLD, '/v/Home.md'] })
+      store.setFolder('/v', { topicsExpanded: [OLD, '/v/Home.md'], focusDirs: [], focusTopics: [] })
       store.setFolds('/v', OLD, ['k1'])
       store.setFolds('/v', '/v/x.md', ['k2'])
       store.setBaseGroups('/v', '/v/T.md::Table', ['g1'])
@@ -562,6 +592,13 @@ describe('createStore: mutations', () => {
   })
 
   describe('removePath (GRO-2272: the store repair after an in-app delete)', () => {
+    it('drops focusDirs / focusTopics entries at or under the deleted path, like expanded (YAZ-1605)', () => {
+      const store = createStore(file)
+      store.setFolder('/v', { focusDirs: ['/v/Sub', '/v/Sub/deep', '/v/other'], focusTopics: ['/v/Sub/T.md', '/v/Home.md'] })
+      store.removePath('/v/Sub')
+      expect(store.get().folders['/v']).toMatchObject({ focusDirs: ['/v/other'], focusTopics: ['/v/Home.md'] })
+    })
+
     const GONE = '/v/B.md'
 
     it('deleting the ONLY tab leaves the window empty (file null, tabs [])', () => {
@@ -652,7 +689,7 @@ describe('createStore: mutations', () => {
       const store = createStore(file)
       store.setFolder('/v', { lastFile: GONE, expanded: ['/v/Old', '/v/Keep'] })
       // The Topics tree's open pages (YAZ-848): a deleted page's entry goes with the rest.
-      store.setFolder('/v', { topicsExpanded: [GONE, '/v/Keep.md'] })
+      store.setFolder('/v', { topicsExpanded: [GONE, '/v/Keep.md'], focusDirs: [], focusTopics: [] })
       store.setFolds('/v', GONE, ['k1'])
       store.setFolds('/v', '/v/x.md', ['k2'])
       store.setBaseGroups('/v', '/v/T.md::Table', ['g1'])
@@ -726,6 +763,9 @@ describe('createStore: mutations', () => {
       // The Topics tree's open pages (YAZ-848) ride the same prefix branch: a page INSIDE the
       // renamed folder follows it, one outside is untouched.
       store.setFolder('/v', { topicsExpanded: [`${OLD}/Metrics.md`, '/v/Home.md'] })
+      // Focus Mode's lists (YAZ-1605) are path-keyed like the two above: a focused dir / topic INSIDE the
+      // renamed folder follows it, one outside is untouched.
+      store.setFolder('/v', { focusDirs: [`${OLD}/deep`, '/v/other'], focusTopics: [`${OLD}/Metrics.md`, '/v/Home.md'] })
       store.setFolds('/v', `${OLD}/a.md`, ['k1'])
       store.setFolds('/v', '/v/x.md', ['k2'])
       store.setBaseGroups('/v', `${OLD}/T.md::Table`, ['g1'])
@@ -734,12 +774,14 @@ describe('createStore: mutations', () => {
       expect(store.get().folders['/v']).toEqual({
         lastFile: `${NEW}/a.md`,
         expanded: [NEW, `${NEW}/deep`, '/v/other'],
+        focusDirs: [`${NEW}/deep`, '/v/other'],
+        focusTopics: [`${NEW}/Metrics.md`, '/v/Home.md'],
         topicsExpanded: [`${NEW}/Metrics.md`, '/v/Home.md'],
         folds: { [`${NEW}/a.md`]: ['k1'], '/v/x.md': ['k2'] },
         baseGroups: { [`${NEW}/T.md::Table`]: ['g1'] },
       })
       expect(store.get().folders[OLD]).toBeUndefined()
-      expect(store.get().folders[NEW]).toEqual({ lastFile: `${NEW}/a.md`, expanded: [], folds: {}, baseGroups: {}, topicsExpanded: [] })
+      expect(store.get().folders[NEW]).toEqual({ lastFile: `${NEW}/a.md`, expanded: [], folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] })
     })
 
     it('remaps a recents entry at or under the dir (a subfolder that was opened as a vault)', () => {

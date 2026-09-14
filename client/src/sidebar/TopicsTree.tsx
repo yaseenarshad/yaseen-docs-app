@@ -142,6 +142,8 @@ export interface TopicsTreeProps {
    */
   expanded: ReadonlySet<string>
   onExpandedChange: (next: ReadonlySet<string>) => void
+  /** Focus Mode (YAZ-1605): the folder pages this tree is narrowed to, or empty for the full tree. */
+  focus: readonly string[]
   /** Vault root, used only to turn projected relative disk folders into filesystem menu targets. */
   root: string
   /** One request captured while Topics was the selected sidebar lens. */
@@ -275,7 +277,13 @@ interface Feed {
  * rule the descent follows. It can never appear inside ITSELF: the descent's ancestor path starts
  * at the root it came from.
  */
-export function topicRoots(records: readonly IndexRecord[], lookup: FolderPagesLookup, resolve: ResolveLink | null): IndexRecord[] {
+export function topicRoots(records: readonly IndexRecord[], lookup: FolderPagesLookup, resolve: ResolveLink | null, focus: readonly string[] = []): IndexRecord[] {
+  // Focus Mode (YAZ-1605): the focused folder pages ARE the roots, in the order they were chosen —
+  // no Home leaf, no siblings. The one door for rows, expand-all and Uncategorized alike, so the
+  // three can never disagree. A focus that names no folder page any more falls through to the
+  // full rule (the Sidebar prunes it).
+  const focused = focus.flatMap((path) => records.filter((record) => record.path === path && lookup.isFolderPage(record)))
+  if (focused.length > 0) return focused
   const homePath = resolve === null ? null : resolve(HOME_LINK)
   const home = homePath === null ? undefined : records.find((record) => record.path === homePath)
   // An ORDINARY page called Home is no Home for the tree: it gets no row, and the rule below
@@ -304,7 +312,7 @@ export function topicRoots(records: readonly IndexRecord[], lookup: FolderPagesL
  * chevron says. A diamond page counts ONCE: the set is keyed by page path, like the expansion
  * itself (🔒 D4). Capped at the bucket's own ceiling, because the answer is written into it.
  */
-export function allExpandableTopics(records: readonly IndexRecord[], lookup: FolderPagesLookup, resolve: ResolveLink | null): string[] {
+export function allExpandableTopics(records: readonly IndexRecord[], lookup: FolderPagesLookup, resolve: ResolveLink | null, focus: readonly string[] = []): string[] {
   const found: string[] = []
   const seen = new Set<string>()
   const descend = (page: IndexRecord, trail: readonly string[]): void => {
@@ -321,7 +329,7 @@ export function allExpandableTopics(records: readonly IndexRecord[], lookup: Fol
   // The pinned-leaf Home (YAZ-920) never descends in the TREE, so it never counts here either —
   // an "Expand all" that opened nothing visible would be a lie told by a button.
   const homePath = resolve === null ? null : resolve(HOME_LINK)
-  for (const start of topicRoots(records, lookup, resolve)) if (start.path !== homePath) descend(start, [start.path])
+  for (const start of topicRoots(records, lookup, resolve, focus)) if (start.path !== homePath) descend(start, [start.path])
   return found.slice(0, MAX_TOPICS_EXPANDED_PAGES)
 }
 
@@ -361,7 +369,7 @@ export function topicRevealPlan(
   return { found, ancestors, uncategorized: found && !rendered }
 }
 
-export function TopicsTree({ root, expanded, onExpandedChange, revealRequest, source, activeFile, onOpenFile, onOpenFileBackground, selection, unadopted, onCreateHome, onRowContextMenu, renaming, creating, onNotice }: TopicsTreeProps) {
+export function TopicsTree({ root, expanded, onExpandedChange, focus, revealRequest, source, activeFile, onOpenFile, onOpenFileBackground, selection, unadopted, onCreateHome, onRowContextMenu, renaming, creating, onNotice }: TopicsTreeProps) {
   // Subscribe once, re-read the whole feed on each poke; an unchanged snapshot keeps the previous
   // object, so index churn that changed nothing here costs no render (BacklinksSection's idiom).
   const [feed, setFeed] = useState<Feed>(() => ({ records: source.records, resolve: source.resolve }))
@@ -393,7 +401,7 @@ export function TopicsTree({ root, expanded, onExpandedChange, revealRequest, so
 
   const { records, resolve } = feed
   const lookup = useMemo(() => folderPagesLookup(records, resolve ?? NEVER), [records, resolve])
-  const roots = useMemo(() => topicRoots(records, lookup, resolve), [records, lookup, resolve])
+  const roots = useMemo(() => topicRoots(records, lookup, resolve, focus), [records, lookup, resolve, focus])
   // YAZ-920: the pinned-leaf Home — its row opens the page and unfolds nothing.
   const homePath = resolve === null ? null : resolve(HOME_LINK)
   const revealPlan = useMemo(
@@ -406,6 +414,11 @@ export function TopicsTree({ root, expanded, onExpandedChange, revealRequest, so
   // descent the rows are drawn from, never "no parents" read off the index. A page reachable
   // only through the leaf Home (a Home-only note, an orphaned loop) surfaces here, not nowhere.
   const orphans = useMemo(() => {
+    // Focus Mode (YAZ-1605): everything outside the focused topics is hidden, Uncategorized included —
+    // but only when the focus RESOLVED. `topicRoots` falls through to the full rule when it names no
+    // folder page any more, and the roots are folder pages, so "a root is in the focus" is exactly
+    // "the focus resolved": the fall-through draws the full tree, this section included.
+    if (roots.some((root) => focus.includes(root.path))) return []
     const drawn = new Set<string>()
     const walk = (page: IndexRecord, trail: readonly string[]): void => {
       if (drawn.has(page.path)) return

@@ -82,6 +82,7 @@ comments:
 - **Links**: a `yaseendocs://` URL opens that exact note from anywhere (Slack, another app), and inside a note `[[` completes a link to any other note. Finder's Open With also lists Yaseen Docs for `.md`/`.markdown` (as an alternate, never stealing the default handler).
 - **Collapse**: the panel icon in the header hides the sidebar (a floating button on the left edge brings it back); the choice survives reload. Drag the sidebar's right edge to resize it (180–520 px, remembered); drag it well past the minimum to collapse.
 - **Paths**: the open file shows in the URL as `#/absolute/path.md`; right-click any row for "Copy path"; shift-click files and folders to build a selection, then right-click it for "Copy N paths" (or press ⌘⇧C).
+- **Focus**: right-click a folder (or a topic in the Topics lens) → "Focus on folder" / "Focus on topic" and the tree shows only that — shift-select several first for "Focus on N folders". An eye appears beside the collapse button while you are focused; click it to see everything again. Each lens keeps its own focus, and it survives a restart.
 
 ## Folder pages
 

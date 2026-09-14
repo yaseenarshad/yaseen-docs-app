@@ -116,7 +116,7 @@ export function seededState(vault: string, file: string | null, opts: { expanded
   state.sidebarLens = SEEDED_LENS
   state.recents = [{ path: vault, lastOpened: Date.now() }]
   state.windows = [{ id: 'w1', root: vault, file, tabs: file === null ? [] : [file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
-  state.folders = { [vault]: { expanded: opts.expanded ?? [], lastFile: file, folds: {}, baseGroups: {}, topicsExpanded: [] } }
+  state.folders = { [vault]: { expanded: opts.expanded ?? [], lastFile: file, folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] } }
   return state
 }
 
@@ -154,7 +154,7 @@ export function multiWindowState(wins: SeedWindow[], recentRoots: string[]): App
     bounds: w.bounds ?? { x: 60 + i * 40, y: 60 + i * 30, width: 1000, height: 700 },
   }))
   for (const w of wins) {
-    state.folders[w.root] ??= { expanded: [], lastFile: w.file, folds: {}, baseGroups: {}, topicsExpanded: [] }
+    state.folders[w.root] ??= { expanded: [], lastFile: w.file, folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] }
   }
   return state
 }
