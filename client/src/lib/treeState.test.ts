@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
-import { allDirs, ancestorDirs, treeHasFile, treeReducer } from './treeState'
+import { allDirs, ancestorDirs, treeHasFile, treeHasPath, treeReducer } from './treeState'
 
 describe('treeReducer', () => {
   it('toggle adds then removes a dir', () => {
@@ -44,6 +44,14 @@ describe('treeHasFile', () => {
     expect(treeHasFile(tree, '/r/y.md')).toBe(true)
     expect(treeHasFile(tree, '/r/a')).toBe(false)
     expect(treeHasFile(tree, '/r/z.md')).toBe(false)
+  })
+
+  it('treeHasPath finds files AND folders — the selection may hold either (YAZ-1578)', () => {
+    expect(treeHasPath(tree, '/r/a')).toBe(true)
+    expect(treeHasPath(tree, '/r/a/x.md')).toBe(true)
+    expect(treeHasPath(tree, '/r/y.md')).toBe(true)
+    expect(treeHasPath(tree, '/r/b')).toBe(false)
+    expect(treeHasPath(tree, '/r/z.md')).toBe(false)
   })
 })
 

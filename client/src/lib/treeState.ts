@@ -42,3 +42,8 @@ export function allDirs(tree: TreeNode[]): string[] {
 export function treeHasFile(tree: TreeNode[], path: string): boolean {
   return tree.some((n) => (n.type === 'file' ? n.path === path : treeHasFile(n.children, path)))
 }
+
+/** File OR folder: what the multi-select may hold (YAZ-1578, 🔒 D1), so its prune asks this one. */
+export function treeHasPath(tree: TreeNode[], path: string): boolean {
+  return tree.some((n) => n.path === path || (n.type === 'dir' && treeHasPath(n.children, path)))
+}

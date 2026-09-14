@@ -666,15 +666,24 @@ export function TopicsTree({ root, expanded, onExpandedChange, revealRequest, so
       const isOpen = born !== null || !collapsedUncategorizedFolders.has(folder.path)
       const inline = renameOn(path, folder.name, indent)
       return (
-        <li key={folder.path} role="treeitem" aria-expanded={isOpen}>
+        <li key={folder.path} role="treeitem" aria-expanded={isOpen} aria-selected={selection.paths.has(path)}>
           {inline ?? (
             <button
               type="button"
-              className="tree__row tree__row--dir"
+              className={`tree__row tree__row--dir${selection.paths.has(path) ? ' tree__row--selected' : ''}`}
               style={{ paddingLeft: indent }}
               title={path}
+              data-path={path}
               data-uncategorized-folder={folder.path}
-              onClick={() => toggleUncategorizedFolder(folder.path)}
+              // The Files dir row's rule (YAZ-1578, 🔒 D1/D4): shift toggles the folder in or out
+              // of the selection and never folds; a plain click folds and leaves the pick alone.
+              onClick={(e) => {
+                if (e.shiftKey) {
+                  selection.toggle(path)
+                  return
+                }
+                toggleUncategorizedFolder(folder.path)
+              }}
               onContextMenu={(e) => onRowContextMenu({ type: 'dir', path }, e)}
             >
               <span className={`tree__chevron${isOpen ? ' tree__chevron--open' : ''}`} />

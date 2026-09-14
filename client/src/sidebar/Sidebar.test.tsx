@@ -2146,12 +2146,15 @@ describe('Sidebar multi-select via shift+click (YAZ-1336)', () => {
     expect(selectedPaths(el)).toEqual(['/v/a.md'])
   })
 
-  it('shift+click on a dir row selects nothing — only file rows are selectable', async () => {
-    // Target the row by its class rather than rowByPath: dir rows carry a data-path since
-    // YAZ-1491 (the reveal flash needs it), but the class is what says "a folder, not a file".
-    const { el } = await mount({}, withMultiTree)
-    shiftClick(el.querySelector<HTMLElement>('.tree__row--dir'))
-    expect(el.querySelectorAll('.tree__row--selected').length).toBe(0)
+  it('shift+click on a dir row toggles it in and out beside files — folders select too (YAZ-1578, 🔒 D1)', async () => {
+    const { el, props } = await mount({}, withMultiTree)
+    shiftClick(rowByPath(el, '/v/a.md'))
+    shiftClick(rowByPath(el, '/v/sub'))
+    expect(selectedPaths(el)).toEqual(['/v/sub', '/v/a.md']) // panel order, not click order
+    expect(rowByPath(el, '/v/sub')?.closest('[role="treeitem"]')?.getAttribute('aria-selected')).toBe('true')
+    shiftClick(rowByPath(el, '/v/sub'))
+    expect(selectedPaths(el)).toEqual(['/v/a.md'])
+    expect(props.onOpenFile).not.toHaveBeenCalled()
   })
 
   it('Escape clears the selection', async () => {
@@ -2221,6 +2224,25 @@ describe('Sidebar multi-select: search, Escape-when-empty, and the prune', () =>
     bridge.tree.mockResolvedValue({ root: '/v', tree: [A], generatedAt: 2 })
     await act(async () => emit?.({ type: 'unlink', path: '/v/b.md' }))
     expect(selectedRows(el).map((r) => r.dataset.path)).toEqual(['/v/a.md'])
+  })
+
+  it('a refresh keeps a selected FOLDER that is still on disk and drops one that left (YAZ-1578)', async () => {
+    const A: TreeNode = { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' }
+    const KEPT: TreeNode = { type: 'dir', name: 'kept', path: '/v/kept', children: [] }
+    const GONE: TreeNode = { type: 'dir', name: 'gone', path: '/v/gone', children: [] }
+    let emit: ((ev: WatchEvent) => void) | undefined
+    const watch = {
+      subscribe: (l: (ev: WatchEvent) => void) => {
+        emit = l
+        return () => undefined
+      },
+    }
+    const { el, bridge } = await mount({ watch }, (b) => b.tree.mockResolvedValue({ root: '/v', tree: [GONE, KEPT, A], generatedAt: 1 }))
+    for (const row of el.querySelectorAll<HTMLElement>('.tree__row[data-path]')) shiftClick(row)
+    expect(selectedRows(el)).toHaveLength(3)
+    bridge.tree.mockResolvedValue({ root: '/v', tree: [KEPT, A], generatedAt: 2 })
+    await act(async () => emit?.({ type: 'unlinkDir', path: '/v/gone' }))
+    expect(selectedRows(el).map((r) => r.dataset.path)).toEqual(['/v/kept', '/v/a.md'])
   })
 })
 
@@ -2324,9 +2346,45 @@ describe('Sidebar multi-select context menu (YAZ-1337)', () => {
     expect(selectedCount(el)).toBe(2)
   })
 
+  // ---- Mixed selections (YAZ-1578, 🔒 D3): folders copy, only files open ----
+
+  it('right-click a selected FOLDER in a mixed selection: "Copy N paths" lists all N, "Open N in new tabs" opens only the files', async () => {
+    const writeText = installClipboard()
+    const { el, props } = await mount({}, withMultiTree)
+    shiftClickRow(rowByPath(el, '/v/b.md'))
+    shiftClickRow(rowByPath(el, '/v/sub'))
+    shiftClickRow(rowByPath(el, '/v/a.md'))
+    rightClick(rowByPath(el, '/v/sub'))
+    expect(itemByLabel(el, 'Copy 3 paths')).toBeDefined()
+    expect(itemByLabel(el, 'Open 2 in new tabs')).toBeDefined()
+    expect(itemByLabel(el, 'Copy path')).toBeDefined() // the singular items still target the folder
+    act(() => itemByLabel(el, 'Copy 3 paths')?.click())
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('/v/sub\n/v/a.md\n/v/b.md') // panel order
+    rightClick(rowByPath(el, '/v/sub'))
+    act(() => itemByLabel(el, 'Open 2 in new tabs')?.click())
+    expect(props.onOpenFileBackground).toHaveBeenCalledTimes(2)
+    expect(props.onOpenFileBackground).toHaveBeenNthCalledWith(1, '/v/a.md')
+    expect(props.onOpenFileBackground).toHaveBeenNthCalledWith(2, '/v/b.md')
+    expect(selectedCount(el)).toBe(3)
+  })
+
+  it('a folders-only selection offers "Copy N paths" and no "Open … in new tabs"', async () => {
+    const TWO_DIRS: TreeNode[] = [
+      { type: 'dir', name: 'one', path: '/v/one', children: [] },
+      { type: 'dir', name: 'two', path: '/v/two', children: [] },
+      { type: 'file', name: 'a.md', path: '/v/a.md', size: 1, mtime: 1, kind: 'markdown' },
+    ]
+    const { el } = await mount({}, (b) => b.tree.mockResolvedValue({ root: '/v', tree: TWO_DIRS, generatedAt: 1 }))
+    shiftClickRow(rowByPath(el, '/v/one'))
+    shiftClickRow(rowByPath(el, '/v/two'))
+    rightClick(rowByPath(el, '/v/two'))
+    expect(itemByLabel(el, 'Copy 2 paths')).toBeDefined()
+    expect(menuItems(el).map((b) => b.textContent).some((t) => /in new tabs$/.test(t ?? ''))).toBe(false)
+  })
+
   // ---- Polish pins (YAZ-1340): shift means selection EVERYWHERE, and one Escape does one thing ----
 
-  it('shift+click on a dir row does not fold it either — shift is never a fold gesture', async () => {
+  it('shift+click on a dir row selects it and never folds it; a plain click folds it and keeps the selection (YAZ-1578 🔒 D4)', async () => {
     // Expansion PERSISTS per root across mounts in this file (storage-backed), so this test
     // assumes nothing about the starting state and puts it back the way it found it.
     const { el } = await mount({}, withMultiTree)
@@ -2335,9 +2393,10 @@ describe('Sidebar multi-select context menu (YAZ-1337)', () => {
     const before = expandedNow()
     shiftClickRow(dirRow())
     expect(expandedNow()).toBe(before) // shift never folds…
-    expect(selectedCount(el)).toBe(0) // …and never selects a dir
+    expect(selectedCount(el)).toBe(1) // …it selects the folder
     act(() => dirRow()?.click())
-    expect(expandedNow()).not.toBe(before) // a plain click still does
+    expect(expandedNow()).not.toBe(before) // a plain click still folds…
+    expect(selectedCount(el)).toBe(1) // …and digging into a folder never throws a selection away
     act(() => dirRow()?.click())
     expect(expandedNow()).toBe(before)
   })

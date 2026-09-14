@@ -65,9 +65,10 @@ export const MOUSE_TIPS: readonly HotkeyEntry[] = [
   // YAZ-1557: a board card is a cell — click selects, the title opens — and ⌥ is the right-panel key on both views.
   { keys: 'Click card', label: 'Select it — the title opens the note in the current tab' },
   { keys: '⌥-click name or card', label: 'Open it in the right panel' },
-  // The multi-select gesture (YAZ-1336 🔒 D2) and what it is FOR (YAZ-1337): the two plural menu
-  // items and ⌘⇧C above. Shift toggles one row at a time — it never opens anything.
-  { keys: '⇧-click file', label: 'Add or remove it from a multi-selection — right-click for Copy N paths / Open N in new tabs' },
+  // The multi-select gesture (YAZ-1336 🔒 D2, folders too since YAZ-1578) and what it is FOR
+  // (YAZ-1337): the two plural menu items and ⌘⇧C above. Shift toggles one row at a time — it
+  // never opens anything and never folds a folder.
+  { keys: '⇧-click file or folder', label: 'Add or remove it from a multi-selection — right-click for Copy N paths / Open N in new tabs' },
   { keys: 'Right-click file', label: 'Open in new window, Copy path / link, New note…' },
 ]
 

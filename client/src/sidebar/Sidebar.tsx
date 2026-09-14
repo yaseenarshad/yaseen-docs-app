@@ -17,7 +17,7 @@ import { storage } from '../lib/storage'
 import { FOLDER_PAGE_KEY, FOLDER_PAGES_KEY, folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { countLinkReferences } from '../links/renameLinks'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../lib/selection'
-import { allDirs, ancestorDirs, treeHasFile, treeReducer } from '../lib/treeState'
+import { allDirs, ancestorDirs, treeHasFile, treeHasPath, treeReducer } from '../lib/treeState'
 import { SearchResults } from '../search/SearchResults'
 import type { SearchCandidate } from '../search/searchCandidates'
 import { useSearchResults } from '../search/useSearchResults'
@@ -322,10 +322,11 @@ export function Sidebar({
   // main-owned per-vault bucket, so it opens where it was left — across a lens switch, a window
   // and a restart alike. A lens switch never touches it: this state outlives the tree's mount.
   const [topicsExpanded, setTopicsExpanded] = useState<ReadonlySet<string>>(() => new Set(storage.getTopicsExpanded(root)))
-  // Multi-select (YAZ-1336, 🔒 D1): the selected file PATHS, shared by BOTH lenses — one entry per
-  // path however many rows draw it (🔒 D3). It lives HERE and nowhere else on purpose: this
-  // component is mounted `key={root}` and only while the sidebar is open, so a selection is
-  // honestly about rows currently on screen and cannot outlive them (a collapse ends it).
+  // Multi-select (YAZ-1336, 🔒 D1): the selected PATHS — files and, since YAZ-1578, folders —
+  // shared by BOTH lenses, one entry per path however many rows draw it (🔒 D3). It lives HERE
+  // and nowhere else on purpose: this component is mounted `key={root}` and only while the
+  // sidebar is open, so a selection is honestly about rows currently on screen and cannot
+  // outlive them (a collapse ends it).
   const [selectedPaths, dispatchSelection] = useReducer(selectionReducer, EMPTY_SELECTION)
   const [menu, setMenu] = useState<MenuTargets | null>(null)
   // `anchor` is the TOPICS page or disk-folder row the create was asked from; null on the file
@@ -467,11 +468,12 @@ export function Sidebar({
   }, [lens, searching])
 
   // The loaded tree is the canonical disk truth for BOTH lenses — Topics draws the same files —
-  // so a path it no longer has cannot stay selected. Reference-stable when nothing was dropped,
-  // which is every refresh that changed something else.
+  // so a path it no longer has cannot stay selected. A selected path is a file OR a folder
+  // (YAZ-1578, 🔒 D1), hence `treeHasPath` here and nowhere else. Reference-stable when nothing
+  // was dropped, which is every refresh that changed something else.
   useEffect(() => {
     if (tree === null) return
-    dispatchSelection({ type: 'prune', exists: (path) => treeHasFile(tree.tree, path) })
+    dispatchSelection({ type: 'prune', exists: (path) => treeHasPath(tree.tree, path) })
   }, [tree])
 
   // ⌘⇧C's window onto the selection (🔒 D4, YAZ-1338): App holds the box, this panel keeps it
@@ -585,10 +587,14 @@ export function Sidebar({
       // is not a row and never clears (YAZ-1337): its menu is about the vault root, and a
       // right-click into the empty space below the tree must not throw a selection away.
       if (node !== null && !selectedPaths.has(node.path)) dispatchSelection({ type: 'clear' })
-      // The plural gesture exists only when the right-clicked row is ITSELF in a selection of two
-      // or more (🔒 D5): a selection of one already IS the singular menu, and a row outside the
-      // selection just ended it above. Read once, here, like every other target this menu pins.
-      const plural = filePath !== null && selectedPaths.has(filePath) && selectedPaths.size >= 2 ? orderedSelectedPaths() : null
+      // The plural gesture exists only when the right-clicked row — file or folder (YAZ-1578) — is
+      // ITSELF in a selection of two or more (🔒 D5): a selection of one already IS the singular
+      // menu, and a row outside the selection just ended it above. Read once, here, like every
+      // other target this menu pins.
+      const plural = node !== null && selectedPaths.has(node.path) && selectedPaths.size >= 2 ? orderedSelectedPaths() : null
+      // Tabs open FILES (YAZ-1578, 🔒 D3): a selected folder is copied, never opened, so the open
+      // item counts only the files — and is not offered at all when the selection holds none.
+      const openable = plural?.filter((path) => tree !== null && treeHasFile(tree.tree, path)) ?? []
       setMenu({
         x: e.clientX,
         y: e.clientY,
@@ -603,10 +609,10 @@ export function Sidebar({
         // empty-Explorer menu does the same. Trailing separators are stripped so the copied
         // bytes match the root the rest of the app uses.
         copyPath: node?.path ?? root.replace(/\/+$/, ''),
-        // Both plural fields resolve to the ONE list read above — and stay separate fields
-        // anyway, which is exactly what the doctrine asks of items that agree today.
+        // Both plural fields read the ONE ordered list above and stay separate fields — which
+        // is exactly what the doctrine asks, since YAZ-1578 is where they stopped agreeing.
         copyPaths: plural,
-        openTabPaths: plural,
+        openTabPaths: openable.length > 0 ? openable : null,
         newWindowPath: filePath,
         renamePath: node?.path ?? null,
         deletePath: node?.path ?? null,
@@ -618,7 +624,7 @@ export function Sidebar({
         topicsAnchor,
       })
     },
-    [root, indexSource, selectedPaths, orderedSelectedPaths],
+    [root, tree, indexSource, selectedPaths, orderedSelectedPaths],
   )
 
   /**

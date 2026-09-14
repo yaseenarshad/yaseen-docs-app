@@ -42,11 +42,12 @@ export interface TreeFileMove {
 /**
  * Sidebar multi-select (YAZ-1336, 🔒 D1) as both trees take it: the selected PATHS plus the two
  * gestures that change them. The Sidebar owns the reducer behind it; keying by path is 🔒 D3, so
- * a page standing under two parents in Topics shows selected on BOTH of its rows.
+ * a page standing under two parents in Topics shows selected on BOTH of its rows. A path is a
+ * file or a FOLDER (YAZ-1578): a selected folder is the folder itself, never its contents.
  */
 export interface TreeSelection {
   paths: ReadonlySet<string>
-  /** 🔒 D2: shift+click on a FILE row toggles it in or out — no range, and never an open. */
+  /** 🔒 D2: shift+click on a file or folder row toggles it in or out — no range, never an open, never a fold. */
   toggle: (path: string) => void
   /** A plain click starts over before it opens; ⌘-click leaves the selection alone. */
   clear: () => void
@@ -110,7 +111,7 @@ export function Tree({
       )}
       {nodes.map((node) =>
         node.type === 'dir' ? (
-          <li key={node.path} role="treeitem" aria-expanded={expanded.has(node.path)}>
+          <li key={node.path} role="treeitem" aria-expanded={expanded.has(node.path)} aria-selected={selection.paths.has(node.path)}>
             {renaming !== null && renaming.path === node.path ? (
               // Inline FOLDER rename (E1b, GRO-2241): same idiom as files, prefilled with the
               // raw name — folders have no extension logic (one could be NAMED "Notes.md").
@@ -118,16 +119,20 @@ export function Tree({
             ) : (
               <button
                 type="button"
-                className={`tree__row tree__row--dir${move.dropDir === node.path ? ' tree__row--drop' : ''}`}
+                className={`tree__row tree__row--dir${selection.paths.has(node.path) ? ' tree__row--selected' : ''}${move.dropDir === node.path ? ' tree__row--drop' : ''}`}
                 style={{ paddingLeft: 8 + depth * 14 }}
-                // So a Files reveal of a FOLDER (a search row, YAZ-1491) can find and flash this row
-                // through `flashTreeRows` — selection ignores it, since a dir is never selected.
+                // Read by `flashTreeRows` (a Files reveal of a FOLDER, YAZ-1491) and by
+                // `orderedSelection`, which puts a selected folder in on-screen order (YAZ-1578).
                 data-path={node.path}
-                // Shift is the SELECTION gesture everywhere (YAZ-1340): a dir row cannot join the
-                // selection, but shift+click must not fold it either — Topics' rows already hold
-                // this line, and the two trees must not disagree about what shift means.
+                // Shift is the SELECTION gesture everywhere (YAZ-1340) and a folder joins the
+                // selection like a file (YAZ-1578, 🔒 D1) — so shift toggles and never folds. A
+                // PLAIN click only folds and leaves the selection alone (🔒 D4): digging into a
+                // folder to reach a file must not throw the pick away.
                 onClick={(e) => {
-                  if (e.shiftKey) return
+                  if (e.shiftKey) {
+                    selection.toggle(node.path)
+                    return
+                  }
                   onToggle(node.path)
                 }}
                 onContextMenu={(e) => onNodeContextMenu(node, e)}

@@ -1,8 +1,9 @@
 /**
  * The sidebar's multi-select, pure (YAZ-1336, 🔒 D1) — `treeState.ts`'s sibling: the Sidebar owns
- * the state, this owns the rules. A selection is a set of file PATHS, so ONE path is ONE entry
- * however many rows draw it (🔒 D3: the Topics lens stands one page under every parent that
- * claims it, and all of those rows are the same selected thing).
+ * the state, this owns the rules. A selection is a set of PATHS — files and, since YAZ-1578,
+ * folders (a folder is itself, never its contents) — so ONE path is ONE entry however many rows
+ * draw it (🔒 D3: the Topics lens stands one page under every parent that claims it, and all of
+ * those rows are the same selected thing).
  */
 
 /** The one empty selection: an untouched sidebar and a cleared one are then the SAME value. */
