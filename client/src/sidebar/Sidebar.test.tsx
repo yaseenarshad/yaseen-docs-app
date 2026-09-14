@@ -13,6 +13,9 @@ import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_SETTINGS, type TreeNode, type WatchEvent } from '@shared/types'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { EMPTY_SELECTION } from '../lib/selection'
+// Focus Mode's persistence is the REAL storage module (no mock in this file): a spy on its read is
+// how a test hands the Sidebar a focus restored from an earlier session (YAZ-1605).
+import { storage } from '../lib/storage'
 
 // Forward uses the one-key writer; reverse uses its shared whole-file transform because the
 // migrated outline and flag must change atomically (YAZ-1022).
@@ -1338,6 +1341,253 @@ describe('expand / collapse all (⚡ YAZ-862)', () => {
     const flat = await mountVault((v) => [note(`${v}/n.md`)])
     expect(flat.el.querySelector('.tree__row--file')).not.toBeNull()
     expect(allButton(flat.el)).toBeNull()
+  })
+})
+
+/**
+ * Focus Mode on the FILES lens (YAZ-1605): the tree narrows to the folders you picked — they are
+ * the ONLY top rows — and the eye beside the chevrons is the way out. The focus lives in the same
+ * per-vault storage bucket as `expanded`, so (exactly as above) every mount here opens its OWN
+ * vault and therefore starts from no focus at all.
+ */
+describe('focus mode (YAZ-1605)', () => {
+  const note = (path: string, name: string): TreeNode => ({ type: 'file', name, path, size: 1, mtime: 1, kind: 'markdown' })
+  /** Notes/ holding Sub/, Projects/ holding Alpha/, the prefix-sharing Projects-Archive/, and a root note. */
+  const FOCUS = (v: string): TreeNode[] => [
+    {
+      type: 'dir', name: 'Notes', path: `${v}/Notes`,
+      children: [{ type: 'dir', name: 'Sub', path: `${v}/Notes/Sub`, children: [] }, note(`${v}/Notes/n.md`, 'n.md')],
+    },
+    {
+      type: 'dir', name: 'Projects', path: `${v}/Projects`,
+      children: [
+        { type: 'dir', name: 'Alpha', path: `${v}/Projects/Alpha`, children: [note(`${v}/Projects/Alpha/a.md`, 'a.md')] },
+        note(`${v}/Projects/p.md`, 'p.md'),
+      ],
+    },
+    { type: 'dir', name: 'Projects-Archive', path: `${v}/Projects-Archive`, children: [note(`${v}/Projects-Archive/old.md`, 'old.md')] },
+    note(`${v}/top.md`, 'top.md'),
+  ]
+
+  let vaults = 0
+  /**
+   * One fresh vault per mount. `focus` seeds a PERSISTED focus: the Sidebar restores it through the
+   * real storage module, so spying on that read is the whole "before mount" state (afterEach's
+   * `restoreAllMocks` puts it back).
+   */
+  const mountVault = async (over: Partial<SidebarProps> = {}, opts: { nodes?: (v: string) => TreeNode[]; focus?: string[] } = {}) => {
+    const v = `/v-focus-${++vaults}`
+    if (opts.focus !== undefined) vi.spyOn(storage, 'getFocusDirs').mockReturnValue(opts.focus.map((p) => `${v}${p}`))
+    const m = await mount({ root: v, ...over }, (b) => b.tree.mockResolvedValue({ root: v, tree: (opts.nodes ?? FOCUS)(v), generatedAt: 1 } as never))
+    return { ...m, v }
+  }
+
+  const rowByPath = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
+  const rightClick = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+  const shiftClickRow = (row: HTMLElement | null) => act(() => void row?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
+  const closeMenu = (el: HTMLElement) => act(() => void el.querySelector('.ctx-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+  const dirLabels = (el: HTMLElement) => [...el.querySelectorAll('.tree__row--dir .tree__label')].map((n) => n.textContent)
+  /** Only the rows drawn at depth 0 — every nested list is a `role="group"`, so this is what "at the top" means. */
+  const topLabels = (el: HTMLElement) => [...el.querySelectorAll('ul.tree[role="tree"] > li > .tree__row .tree__label')].map((n) => n.textContent)
+  const lensButtons = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__lenses button')]
+  const allButton = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sidebar__lenses .sidebar__expand-all')
+  const eye = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sidebar__lenses .sidebar__focus-off')
+  const isOpen = (el: HTMLElement, path: string) => rowByPath(el, path)?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
+  /** The only way in: right-click the row and take the menu's Focus item. */
+  const focusRow = async (el: HTMLElement, path: string, label = 'Focus on folder') => {
+    rightClick(rowByPath(el, path))
+    await act(async () => itemByLabel(el, label)?.click())
+  }
+
+  it('offers "Focus on folder" on a folder row — never on a file row or on blank space', async () => {
+    const { el, v } = await mountVault()
+    rightClick(rowByPath(el, `${v}/Projects`))
+    expect(itemByLabel(el, 'Focus on folder')).toBeDefined()
+    closeMenu(el)
+    rightClick(rowByPath(el, `${v}/top.md`))
+    expect(itemByLabel(el, 'Focus on folder')).toBeUndefined()
+    closeMenu(el)
+    rightClick(el.querySelector('.sidebar__body'))
+    expect(itemByLabel(el, 'Focus on folder')).toBeUndefined()
+    expect(itemByLabel(el, 'New note')).toBeDefined() // the menu is there; only Focus is missing
+  })
+
+  it('focusing a folder makes it the only top row, opens it, and stores the one path', async () => {
+    const { el, v, bridge } = await mountVault()
+    await focusRow(el, `${v}/Projects`)
+    expect(topLabels(el)).toEqual(['Projects'])
+    expect(isOpen(el, `${v}/Projects`)).toBe('true')
+    expect(dirLabels(el)).toEqual(['Projects', 'Alpha'])
+    expect(bridge.state.setFolder).toHaveBeenCalledWith(v, { focusDirs: [`${v}/Projects`] })
+  })
+
+  it('the eye is lit only while focused and sits directly before the chevrons', async () => {
+    const { el, v } = await mountVault()
+    expect(eye(el)).toBeNull()
+    await focusRow(el, `${v}/Projects`)
+    expect(eye(el)?.getAttribute('aria-label')).toBe('Exit focus mode')
+    const row = lensButtons(el)
+    expect(row.indexOf(eye(el)!)).toBe(row.indexOf(allButton(el)!) - 1)
+  })
+
+  it('clicking the eye brings every top row back and clears the stored focus', async () => {
+    const { el, v, bridge } = await mountVault()
+    await focusRow(el, `${v}/Projects`)
+    await act(async () => eye(el)?.click())
+    expect(eye(el)).toBeNull()
+    expect(topLabels(el)).toEqual(['Notes', 'Projects', 'Projects-Archive', 'top'])
+    expect(bridge.state.setFolder).toHaveBeenCalledWith(v, { focusDirs: [] })
+  })
+
+  it('a focus restored from storage narrows the first render and is never written back', async () => {
+    const { el, v, bridge } = await mountVault({}, { focus: ['/Projects'] })
+    expect(topLabels(el)).toEqual(['Projects'])
+    expect(eye(el)).not.toBeNull()
+    expect(bridge.state.setFolder).not.toHaveBeenCalledWith(v, { focusDirs: [`${v}/Projects`] })
+  })
+
+  it('expand all while focused opens only the folders inside the focus', async () => {
+    const { el, v } = await mountVault()
+    await focusRow(el, `${v}/Projects`)
+    act(() => allButton(el)?.click()) // focusing opened Projects, so the first click is the collapse…
+    expect(allButton(el)?.getAttribute('aria-label')).toBe('Expand all')
+    act(() => allButton(el)?.click())
+    expect(isOpen(el, `${v}/Projects/Alpha`)).toBe('true')
+    await act(async () => eye(el)?.click())
+    expect(dirLabels(el)).toEqual(['Notes', 'Projects', 'Alpha', 'Projects-Archive']) // Notes never opened
+  })
+
+  it('collapse all while focused leaves a fold outside the focus exactly as it was', async () => {
+    const { el, v } = await mountVault()
+    act(() => rowByPath(el, `${v}/Notes`)?.click())
+    expect(dirLabels(el)).toEqual(['Notes', 'Sub', 'Projects', 'Projects-Archive'])
+    await focusRow(el, `${v}/Projects`)
+    act(() => allButton(el)?.click())
+    expect(dirLabels(el)).toEqual(['Projects'])
+    await act(async () => eye(el)?.click())
+    expect(dirLabels(el)).toEqual(['Notes', 'Sub', 'Projects', 'Projects-Archive'])
+  })
+
+  it('a focus on /Projects never shows the prefix-sharing /Projects-Archive', async () => {
+    const { el, v } = await mountVault()
+    await focusRow(el, `${v}/Projects`)
+    expect(topLabels(el)).toEqual(['Projects'])
+    expect(rowByPath(el, `${v}/Projects-Archive`)).toBeNull()
+  })
+
+  it('a 2-folder selection reads "Focus on 2 folders" and puts both at the top in TREE order', async () => {
+    const { el, v } = await mountVault()
+    shiftClickRow(rowByPath(el, `${v}/Projects`)) // click order Projects → Notes…
+    shiftClickRow(rowByPath(el, `${v}/Notes`))
+    rightClick(rowByPath(el, `${v}/Notes`))
+    expect(itemByLabel(el, 'Focus on 2 folders')).toBeDefined()
+    await act(async () => itemByLabel(el, 'Focus on 2 folders')?.click())
+    expect(topLabels(el)).toEqual(['Notes', 'Projects']) // …tree order out
+  })
+
+  it('a selection of files only offers no Focus item', async () => {
+    const { el, v } = await mountVault()
+    act(() => rowByPath(el, `${v}/Projects`)?.click()) // open it so a nested note is a row too
+    shiftClickRow(rowByPath(el, `${v}/top.md`))
+    shiftClickRow(rowByPath(el, `${v}/Projects/p.md`))
+    rightClick(rowByPath(el, `${v}/top.md`))
+    expect(menuItems(el).map((b) => b.textContent).some((t) => t?.startsWith('Focus'))).toBe(false)
+  })
+
+  it('a selection of one folder and one file focuses the folder — "Focus on folder", singular', async () => {
+    const { el, v } = await mountVault()
+    shiftClickRow(rowByPath(el, `${v}/Projects`))
+    shiftClickRow(rowByPath(el, `${v}/top.md`))
+    rightClick(rowByPath(el, `${v}/top.md`))
+    expect(itemByLabel(el, 'Focus on folder')).toBeDefined()
+    await act(async () => itemByLabel(el, 'Focus on folder')?.click())
+    expect(topLabels(el)).toEqual(['Projects'])
+  })
+
+  it('focusing a folder AND its own subfolder draws the subfolder once, under its parent', async () => {
+    const { el, v } = await mountVault()
+    act(() => rowByPath(el, `${v}/Projects`)?.click()) // open it so Alpha is a row to select
+    shiftClickRow(rowByPath(el, `${v}/Projects`))
+    shiftClickRow(rowByPath(el, `${v}/Projects/Alpha`))
+    rightClick(rowByPath(el, `${v}/Projects/Alpha`))
+    await act(async () => itemByLabel(el, 'Focus on 2 folders')?.click())
+    expect(topLabels(el)).toEqual(['Projects'])
+    expect(dirLabels(el)).toEqual(['Projects', 'Alpha'])
+  })
+
+  /** The watcher-driven refresh idiom: a new tree answers the next `bridge.tree`, an event triggers it. */
+  const withWatcher = () => {
+    let emit: ((ev: WatchEvent) => void) | undefined
+    const watch = {
+      subscribe: (l: (ev: WatchEvent) => void) => {
+        emit = l
+        return () => undefined
+      },
+    }
+    return { watch, fire: (ev: WatchEvent) => emit?.(ev) }
+  }
+
+  it('a focused folder that leaves the tree ends the focus and brings the whole vault back', async () => {
+    const { watch, fire } = withWatcher()
+    const { el, v, bridge } = await mountVault({ watch })
+    await focusRow(el, `${v}/Projects`)
+    bridge.tree.mockResolvedValue({ root: v, tree: FOCUS(v).filter((n) => n.path !== `${v}/Projects`), generatedAt: 2 } as never)
+    await act(async () => fire({ type: 'unlinkDir', path: `${v}/Projects` }))
+    expect(eye(el)).toBeNull()
+    expect(topLabels(el)).toEqual(['Notes', 'Projects-Archive', 'top'])
+    expect(bridge.state.setFolder).toHaveBeenCalledWith(v, { focusDirs: [] })
+  })
+
+  it('with two folders focused, the survivor keeps the focus when the other vanishes', async () => {
+    const { watch, fire } = withWatcher()
+    const { el, v, bridge } = await mountVault({ watch })
+    shiftClickRow(rowByPath(el, `${v}/Notes`))
+    shiftClickRow(rowByPath(el, `${v}/Projects`))
+    rightClick(rowByPath(el, `${v}/Notes`))
+    await act(async () => itemByLabel(el, 'Focus on 2 folders')?.click())
+    bridge.tree.mockResolvedValue({ root: v, tree: FOCUS(v).filter((n) => n.path !== `${v}/Projects`), generatedAt: 2 } as never)
+    await act(async () => fire({ type: 'unlinkDir', path: `${v}/Projects` }))
+    expect(eye(el)).not.toBeNull()
+    expect(topLabels(el)).toEqual(['Notes'])
+    expect(bridge.state.setFolder).toHaveBeenCalledWith(v, { focusDirs: [`${v}/Notes`] })
+  })
+
+  it('a reveal OUTSIDE the focus ends it and still shows the target', async () => {
+    const { el, v, rerender } = await mountVault()
+    await focusRow(el, `${v}/Projects`)
+    await rerender({ revealRequest: { id: 1, path: `${v}/Notes/n.md`, lens: 'files' } })
+    expect(eye(el)).toBeNull()
+    expect(rowByPath(el, `${v}/Notes/n.md`)?.classList.contains('tree__row--revealed')).toBe(true)
+  })
+
+  it('a reveal INSIDE the focus keeps it', async () => {
+    const { el, v, rerender } = await mountVault()
+    await focusRow(el, `${v}/Projects`)
+    await rerender({ revealRequest: { id: 1, path: `${v}/Projects/Alpha/a.md`, lens: 'files' } })
+    expect(eye(el)).not.toBeNull()
+    expect(topLabels(el)).toEqual(['Projects'])
+    expect(rowByPath(el, `${v}/Projects/Alpha/a.md`)?.classList.contains('tree__row--revealed')).toBe(true)
+  })
+
+  it('a typed query hides the eye; clearing it brings the eye back, still narrowed', async () => {
+    const { el, v } = await mountVault()
+    await focusRow(el, `${v}/Projects`)
+    const input = searchInput(el)!
+    await type(input, 'a')
+    expect(eye(el)).toBeNull()
+    await type(input, '')
+    expect(eye(el)).not.toBeNull()
+    expect(topLabels(el)).toEqual(['Projects'])
+  })
+
+  it('a Files focus survives a trip through Topics — the eye belongs to the ACTIVE lens', async () => {
+    const { el, v, rerender } = await mountVault()
+    await focusRow(el, `${v}/Projects`)
+    await rerender({ lens: 'topics' })
+    expect(eye(el)).toBeNull() // Topics carries its own focus, and it is empty
+    await rerender({ lens: 'files' })
+    expect(eye(el)).not.toBeNull()
+    expect(topLabels(el)).toEqual(['Projects'])
   })
 })
 

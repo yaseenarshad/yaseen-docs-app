@@ -64,11 +64,20 @@ interface ContextMenuProps {
   folderPageIsOn: boolean
   /** The direction rides along with the target so the caller never re-derives it after the close. */
   onToggleFolderPage: (path: string, isOn: boolean) => void
+  /**
+   * "Focus on folder" / "Focus on N folders" (YAZ-1605): the rows the active lens narrows to — Files
+   * DIRS, or Topics FOLDER PAGES that are not Home — one, or a shift-selection's worth; null hides
+   * the item. The caller spells the label (it knows the lens and the count). Optional like VS Code:
+   * a mount that offers no focus simply omits the trio.
+   */
+  focusPaths?: string[] | null
+  focusLabel?: string
+  onFocus?: (paths: string[]) => void
   onClose: () => void
 }
 
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInNewTabs, onNotice, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, openVsCodePath, onOpenVsCode, openDefaultPath, onOpenDefault, onNewNote, onNewFolderPage, onNewFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInNewTabs, onNotice, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, openVsCodePath, onOpenVsCode, openDefaultPath, onOpenDefault, onNewNote, onNewFolderPage, onNewFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, focusPaths, focusLabel, onFocus, onClose }: ContextMenuProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -192,6 +201,21 @@ export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInN
             }}
           >
             Open in default app
+          </button>
+        )}
+        {/* Focus on folder / topic (YAZ-1605): a read-only VIEW verb, so it sits with the OS verbs
+            above the create group — it changes what the tree shows, never what is on disk. */}
+        {focusPaths != null && focusPaths.length > 0 && (
+          <button
+            type="button"
+            className="ctx-menu__item"
+            role="menuitem"
+            onClick={() => {
+              onFocus?.(focusPaths)
+              onClose()
+            }}
+          >
+            {focusLabel ?? 'Focus on folder'}
           </button>
         )}
         {copyPath !== null && (

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
-import { allDirs, ancestorDirs, treeHasFile, treeHasPath, treeReducer } from './treeState'
+import { allDirs, ancestorDirs, findDirNode, focusRoots, treeHasFile, treeHasPath, treeReducer } from './treeState'
 
 describe('treeReducer', () => {
   it('toggle adds then removes a dir', () => {
@@ -72,5 +72,68 @@ describe('allDirs', () => {
     ]
     expect(allDirs(tree)).toEqual(['/r/a', '/r/a/b', '/r/c'])
     expect(allDirs([])).toEqual([])
+  })
+})
+
+/**
+ * Focus Mode's two lookups (YAZ-1605). `PROJECTS` sits AFTER its prefix-sharing sibling on
+ * purpose: the descent test is `startsWith(`${path}/`)`, so `/v/Projects-Archive` must never
+ * swallow a search for `/v/Projects`.
+ */
+describe('findDirNode (YAZ-1605)', () => {
+  const tree: TreeNode[] = [
+    { type: 'dir', name: 'Projects-Archive', path: '/v/Projects-Archive', children: [] },
+    {
+      type: 'dir',
+      name: 'Projects',
+      path: '/v/Projects',
+      children: [
+        { type: 'dir', name: 'Alpha', path: '/v/Projects/Alpha', children: [] },
+        { type: 'file', name: 'p.md', path: '/v/Projects/p.md', size: 1, mtime: 1, kind: 'markdown' },
+      ],
+    },
+    { type: 'file', name: 'top.md', path: '/v/top.md', size: 1, mtime: 1, kind: 'markdown' },
+  ]
+
+  it('finds a dir nested two deep and hands back the node itself', () => {
+    expect(findDirNode(tree, '/v/Projects/Alpha')?.name).toBe('Alpha')
+  })
+
+  it('is null for a file path, for an unknown path, and for the root itself', () => {
+    expect(findDirNode(tree, '/v/Projects/p.md')).toBeNull()
+    expect(findDirNode(tree, '/v/Nope')).toBeNull()
+    expect(findDirNode([], '/v/Projects')).toBeNull()
+  })
+
+  it('a prefix-sharing sibling never answers for the shorter name', () => {
+    expect(findDirNode(tree, '/v/Projects')?.path).toBe('/v/Projects')
+    expect(findDirNode(tree, '/v/Projects-Archive/Alpha')).toBeNull()
+  })
+})
+
+describe('focusRoots (YAZ-1605)', () => {
+  const tree: TreeNode[] = [
+    { type: 'dir', name: 'Notes', path: '/v/Notes', children: [] },
+    {
+      type: 'dir',
+      name: 'Projects',
+      path: '/v/Projects',
+      children: [{ type: 'dir', name: 'Alpha', path: '/v/Projects/Alpha', children: [] }],
+    },
+    { type: 'file', name: 'top.md', path: '/v/top.md', size: 1, mtime: 1, kind: 'markdown' },
+  ]
+
+  it('returns the focused dirs in TREE order, whatever order they were focused in', () => {
+    expect(focusRoots(tree, ['/v/Projects', '/v/Notes']).map((n) => n.path)).toEqual(['/v/Notes', '/v/Projects'])
+  })
+
+  it('stops at the OUTERMOST match — a focused dir inside a focused dir is drawn once, under its parent', () => {
+    expect(focusRoots(tree, ['/v/Projects', '/v/Projects/Alpha']).map((n) => n.path)).toEqual(['/v/Projects'])
+  })
+
+  it('a path the tree no longer holds yields no row, and no focus yields nothing', () => {
+    expect(focusRoots(tree, ['/v/Gone']).map((n) => n.path)).toEqual([])
+    expect(focusRoots(tree, ['/v/Gone', '/v/Notes']).map((n) => n.path)).toEqual(['/v/Notes'])
+    expect(focusRoots(tree, [])).toEqual([])
   })
 })

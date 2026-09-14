@@ -47,3 +47,22 @@ export function treeHasFile(tree: TreeNode[], path: string): boolean {
 export function treeHasPath(tree: TreeNode[], path: string): boolean {
   return tree.some((n) => n.path === path || (n.type === 'dir' && treeHasPath(n.children, path)))
 }
+
+/** The dir node at `path`, any depth — Focus Mode's root (YAZ-1605); null once the tree no longer holds it. */
+export function findDirNode(tree: readonly TreeNode[], path: string): TreeNode | null {
+  for (const n of tree) {
+    if (n.type !== 'dir') continue
+    if (n.path === path) return n
+    if (path.startsWith(`${n.path}/`)) return findDirNode(n.children, path)
+  }
+  return null
+}
+
+/**
+ * Focus Mode's top rows (YAZ-1605): every dir in `focus`, in TREE order, OUTERMOST only — a focused
+ * dir inside another focused dir is drawn once, under its parent, never twice. A vanished path
+ * simply yields no row; the Sidebar prunes it from the stored list.
+ */
+export function focusRoots(tree: readonly TreeNode[], focus: readonly string[]): TreeNode[] {
+  return tree.flatMap((n) => (n.type !== 'dir' ? [] : focus.includes(n.path) ? [n] : focusRoots(n.children, focus)))
+}

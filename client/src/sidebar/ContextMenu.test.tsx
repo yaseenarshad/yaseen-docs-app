@@ -216,3 +216,39 @@ describe('Open in default app item (YAZ-1577)', () => {
     expect(onOpenDefault).toHaveBeenCalledExactlyOnceWith('/v/book.epub')
   })
 })
+
+/**
+ * "Focus on …" (YAZ-1605): a VIEW verb, so it sits with the OS verbs — directly after "Open in
+ * default app", above "Copy path". The trio is OPTIONAL: a mount that offers no focus omits it
+ * entirely, and so does an EMPTY list (the caller's "nothing here can be focused" answer).
+ */
+describe('Focus item (YAZ-1605)', () => {
+  it.each<[string, Partial<MenuProps>]>([
+    ['omitted', {}],
+    ['null', { focusPaths: null }],
+    ['empty', { focusPaths: [] }],
+  ])('is absent when focusPaths is %s', (_case, over) => {
+    expect(labelsOf(mount(0, 0, over)).some((l) => l?.startsWith('Focus'))).toBe(false)
+  })
+
+  it('renders the caller\'s own label — the caller knows the lens and the count', () => {
+    const el = mount(0, 0, { focusPaths: ['/v/a', '/v/b'], focusLabel: 'Focus on 2 folders' })
+    expect(labelsOf(el)).toContain('Focus on 2 folders')
+  })
+
+  it('hands the click the exact array, then closes', () => {
+    const onFocus = vi.fn()
+    const onClose = vi.fn()
+    const el = mount(0, 0, { focusPaths: ['/v/a', '/v/b'], focusLabel: 'Focus on 2 folders', onFocus, onClose })
+    act(() => itemOf(el, 'Focus on 2 folders')?.click())
+    expect(onFocus).toHaveBeenCalledExactlyOnceWith(['/v/a', '/v/b'])
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('sits after "Open in default app" and before "Copy path"', () => {
+    const el = mount(0, 0, { openDefaultPath: '/v/a', copyPath: '/v/a', focusPaths: ['/v/a'], focusLabel: 'Focus on folder' })
+    const labels = labelsOf(el)
+    expect(labels.indexOf('Focus on folder')).toBe(labels.indexOf('Open in default app') + 1)
+    expect(labels.indexOf('Focus on folder')).toBe(labels.indexOf('Copy path') - 1)
+  })
+})

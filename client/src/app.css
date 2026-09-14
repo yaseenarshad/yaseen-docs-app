@@ -1053,6 +1053,25 @@ button {
   background: var(--bg-hover);
 }
 
+/* Focus Mode's eye (YAZ-1605) — the expand-all look, one slot to its LEFT, in the accent so a lit
+   eye reads as "you are in a focus" and not as one more grey chrome button. It takes the push to
+   the far end when present; the chevrons then sit flush beside it. */
+.sidebar__focus-off {
+  flex: none;
+  margin-left: auto;
+  padding: 0 8px;
+  color: var(--accent);
+}
+
+.sidebar__focus-off:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.sidebar__focus-off + .sidebar__expand-all {
+  margin-left: 0;
+}
+
 /* Persistent search bar (YAZ-801) — its OWN row, never fused into the header or into the lens
    tabs above it: it is ALWAYS visible, on both lenses (YAZ-847). */
 .sidebar__search {

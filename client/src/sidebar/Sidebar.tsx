@@ -7,7 +7,7 @@ import { folderPageSettings, newFolderPageProperties, turnIntoFolderPage } from 
 import { restoreFolderBody } from '../views/migrateFolderBody'
 import { createNewNote } from '../views/newNote'
 import { memberFolder, newPageFromFolderPage } from '../views/scaffold'
-import { ChevronsIcon, SearchIcon } from '../views/view/icons'
+import { ChevronsIcon, EyeIcon, SearchIcon } from '../views/view/icons'
 import { transformFile } from '../views/writeProperty'
 import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
@@ -17,7 +17,8 @@ import { storage } from '../lib/storage'
 import { FOLDER_PAGE_KEY, FOLDER_PAGES_KEY, folderPagesLookup, isFolderPage } from '../links/folderPages'
 import { countLinkReferences } from '../links/renameLinks'
 import { EMPTY_SELECTION, orderedSelection, selectionReducer } from '../lib/selection'
-import { allDirs, ancestorDirs, treeHasFile, treeHasPath, treeReducer } from '../lib/treeState'
+import { allDirs, ancestorDirs, findDirNode, focusRoots, treeHasFile, treeHasPath, treeReducer } from '../lib/treeState'
+import { HOME_LINK } from './ensureHome'
 import { SearchResults } from '../search/SearchResults'
 import type { SearchCandidate } from '../search/searchCandidates'
 import { useSearchResults } from '../search/useSearchResults'
@@ -200,6 +201,14 @@ interface MenuTargets {
    * lands through the file tree's own rule.
    */
   topicsAnchor: string | null
+  /**
+   * "Focus on folder" / "Focus on N folders" (YAZ-1605): the DIRS (Files) or FOLDER PAGES that are
+   * not Home (Topics) the active lens narrows to. Inside a 2+ selection that holds the right-clicked
+   * row it is the selection's eligible rows, in panel order — `copyPaths`' plural rule, counting
+   * only what can be focused, as `openTabPaths` counts only files. Otherwise the one row, or null
+   * on file rows, plain pages and blank space. Its OWN field, per this split's doctrine.
+   */
+  focusPaths: string[] | null
 }
 
 /**
@@ -222,6 +231,26 @@ export function countChildren(nodes: readonly TreeNode[], dir: string): { notes:
   }
   walk(found)
   return { notes, folders }
+}
+
+/**
+ * The rows a "Focus on …" may narrow to, out of the right-clicked row or its 2+ selection (YAZ-1605):
+ * Files keeps DIRS (a shift-selection may hold files — they are simply not focusable, as a folder
+ * is not openable for `openTabPaths`); Topics keeps FOLDER PAGES that are not Home (it unfolds
+ * nothing, so a focus on it would be one leaf). Null, not `[]`, hides the item.
+ */
+function focusable(lens: SidebarLens, paths: readonly string[], tree: TreeResponse | null, records: readonly IndexRecord[], homePath: string | null): string[] | null {
+  const kept =
+    lens === 'topics'
+      ? paths.filter((p) => p !== homePath && records.some((r) => r.path === p && isFolderPage(r)))
+      : paths.filter((p) => tree !== null && findDirNode(tree.tree, p) !== null)
+  return kept.length > 0 ? kept : null
+}
+
+/** "Focus on folder" / "Focus on 3 folders" — the plural items' own labelling rule (YAZ-1337). */
+function focusLabel(lens: SidebarLens, count: number): string {
+  const noun = lens === 'topics' ? 'topic' : 'folder'
+  return count > 1 ? `Focus on ${count} ${noun}s` : `Focus on ${noun}`
 }
 
 function findDir(nodes: readonly TreeNode[], dir: string): readonly TreeNode[] | null {
@@ -322,6 +351,11 @@ export function Sidebar({
   // main-owned per-vault bucket, so it opens where it was left — across a lens switch, a window
   // and a restart alike. A lens switch never touches it: this state outlives the tree's mount.
   const [topicsExpanded, setTopicsExpanded] = useState<ReadonlySet<string>>(() => new Set(storage.getTopicsExpanded(root)))
+  // Focus Mode (YAZ-1605): ONE path per lens — a dir for Files, a folder page for Topics — restored
+  // from the same per-vault bucket as the two expansions above and written back the same way, so
+  // it survives a lens switch, a window and a restart, and follows its own rename.
+  const [focusDirs, setFocusDirs] = useState<readonly string[]>(() => storage.getFocusDirs(root))
+  const [focusTopics, setFocusTopics] = useState<readonly string[]>(() => storage.getFocusTopics(root))
   // Multi-select (YAZ-1336, 🔒 D1): the selected PATHS — files and, since YAZ-1578, folders —
   // shared by BOTH lenses, one entry per path however many rows draw it (🔒 D3). It lives HERE
   // and nowhere else on purpose: this component is mounted `key={root}` and only while the
@@ -359,6 +393,11 @@ export function Sidebar({
   // (⚡ YAZ-862) and, since YAZ-1491, the search list's folder rows (🔒 D1) — one memo, no second
   // feed.
   const dirs = useMemo(() => (tree === null ? [] : allDirs(tree.tree)), [tree])
+  // The focused top rows (YAZ-1605), resolved off the LIVE tree in tree order — a vanished dir yields
+  // no row, and the prune below drops it. `dirs` stays the WHOLE vault: reveal must still find what is hidden.
+  const focusNodes = useMemo(() => (tree === null || focusDirs.length === 0 ? [] : focusRoots(tree.tree, focusDirs)), [tree, focusDirs])
+  // The expand/collapse-all button acts on the dirs ON SCREEN: the focused subtrees, or all of them.
+  const shownDirs = useMemo(() => (focusNodes.length === 0 ? dirs : allDirs(focusNodes)), [dirs, focusNodes])
   const results = useSearchResults(root, watch, query, dirs)
   // 🔒 flat-list ruling on YAZ-739: while a query is typed the body shows a FLAT ranked list
   // instead of the tree. A conditional render, not a teardown — every bit of tree state (data,
@@ -404,11 +443,11 @@ export function Sidebar({
   const topicRecords = useSyncExternalStore(indexSource.subscribe, () => indexSource.records)
   const topics = useMemo(() => {
     const resolve = indexSource.resolve
-    return allExpandableTopics(topicRecords, folderPagesLookup(topicRecords, resolve ?? NEVER), resolve)
-  }, [indexSource, topicRecords])
+    return allExpandableTopics(topicRecords, folderPagesLookup(topicRecords, resolve ?? NEVER), resolve, focusTopics)
+  }, [indexSource, topicRecords, focusTopics])
   // One button, the ACTIVE lens' store — never a set shared between the two readings of the vault.
-  const foldable = lens === 'topics' ? topics : dirs
-  const anyExpanded = lens === 'topics' ? topics.some((page) => topicsExpanded.has(page)) : dirs.some((d) => expanded.includes(d))
+  const foldable = lens === 'topics' ? topics : shownDirs
+  const anyExpanded = lens === 'topics' ? topics.some((page) => topicsExpanded.has(page)) : shownDirs.some((d) => expanded.includes(d))
   const allLabel = anyExpanded ? 'Collapse all' : 'Expand all'
 
   const refresh = useCallback(() => {
@@ -444,6 +483,18 @@ export function Sidebar({
     storage.setExpanded(root, expanded)
   }, [root, expanded])
 
+  // Focus Mode's write-back (YAZ-1605), idempotent like the two above it.
+  useEffect(() => {
+    const stored = storage.getFocusDirs(root)
+    if (stored.length === focusDirs.length && stored.every((dir, i) => dir === focusDirs[i])) return
+    storage.setFocusDirs(root, focusDirs)
+  }, [root, focusDirs])
+  useEffect(() => {
+    const stored = storage.getFocusTopics(root)
+    if (stored.length === focusTopics.length && stored.every((page, i) => page === focusTopics[i])) return
+    storage.setFocusTopics(root, focusTopics)
+  }, [root, focusTopics])
+
   // The Topics bucket's write-back, `expanded`'s twin (🔒 D4) — it came up from the tree with the
   // state in ⚡ YAZ-873, unchanged. Idempotent: the first render after a mount holds exactly what
   // was just read, and re-sending it would make the main process commit, write and broadcast for
@@ -458,6 +509,21 @@ export function Sidebar({
   useEffect(() => {
     if (activeFile !== null) dispatch({ type: 'expandTo', root, file: activeFile })
   }, [root, activeFile])
+
+  // Focus Mode (YAZ-1605): a focus target that left the vault DROPS OUT — deleted, moved out, or a
+  // topic that lost its flag — and the last one leaving ends the focus: never an empty tree under a
+  // lit eye. The store repairs the FILE on delete; this component holds its own copy, so it prunes
+  // against the live tree / index itself, exactly as the selection does above.
+  useEffect(() => {
+    if (tree === null || focusDirs.length === 0) return
+    const kept = focusDirs.filter((dir) => findDirNode(tree.tree, dir) !== null)
+    if (kept.length !== focusDirs.length) setFocusDirs(kept)
+  }, [tree, focusDirs])
+  useEffect(() => {
+    if (focusTopics.length === 0 || topicRecords.length === 0) return // the empty pre-index snapshot must not clear a restored focus
+    const kept = focusTopics.filter((page) => topicRecords.some((r) => r.path === page && isFolderPage(r)))
+    if (kept.length !== focusTopics.length) setFocusTopics(kept)
+  }, [topicRecords, focusTopics])
 
   // A selection is about the rows on screen (YAZ-1336), so whatever REPLACES them ends it: the
   // other lens is a different reading of the vault, and a typed query swaps the body for the flat
@@ -498,9 +564,11 @@ export function Sidebar({
       onNotice(revealMissingMessage(pendingReveal.path, 'files'))
       return
     }
+    // A reveal is "show me THIS" (YAZ-1605): a target outside every focused folder ends the focus first.
+    if (focusDirs.length > 0 && !focusDirs.some((dir) => pendingReveal.path === dir || pendingReveal.path.startsWith(`${dir}/`))) setFocusDirs([])
     // A folder opens ITSELF too — the synthetic-child idiom the create menu already uses.
     dispatch({ type: 'expandTo', root, file: revealIsDir ? `${pendingReveal.path}/x` : pendingReveal.path })
-  }, [onNotice, pendingReveal, revealIsDir, revealTargetPresent, root, tree])
+  }, [focusDirs, onNotice, pendingReveal, revealIsDir, revealTargetPresent, root, tree])
 
   const filesRevealReady = revealTargetPresent && ancestorDirs(root, pendingReveal.path).every((dir) => expanded.includes(dir))
 
@@ -595,6 +663,10 @@ export function Sidebar({
       // Tabs open FILES (YAZ-1578, 🔒 D3): a selected folder is copied, never opened, so the open
       // item counts only the files — and is not offered at all when the selection holds none.
       const openable = plural?.filter((path) => tree !== null && treeHasFile(tree.tree, path)) ?? []
+      // The note's flag off the window's snapshot, read ONCE for the two items that ask it: the
+      // folder-page toggle's label and Focus's Topics gate (YAZ-1605).
+      const isFolderPageRow = notePath !== null && indexSource.records.some((r) => r.path === notePath && isFolderPage(r))
+      const homePath = indexSource.resolve === null ? null : indexSource.resolve(HOME_LINK)
       setMenu({
         x: e.clientX,
         y: e.clientY,
@@ -620,11 +692,14 @@ export function Sidebar({
         openVsCodePath: node?.path ?? root.replace(/\/+$/, ''),
         openDefaultPath: node?.path ?? root.replace(/\/+$/, ''),
         folderPagePath: notePath,
-        folderPageIsOn: notePath !== null && indexSource.records.some((r) => r.path === notePath && isFolderPage(r)),
+        folderPageIsOn: isFolderPageRow,
         topicsAnchor,
+        // Focus Mode (YAZ-1605): the plural selection's eligible rows, else the one row. Files → DIRS;
+        // Topics → FOLDER PAGES that are not Home. Empty (a selection of files only) hides the item.
+        focusPaths: focusable(lens, plural ?? (node === null ? [] : [node.path]), tree, indexSource.records, homePath),
       })
     },
-    [root, tree, indexSource, selectedPaths, orderedSelectedPaths],
+    [root, tree, indexSource, selectedPaths, orderedSelectedPaths, lens],
   )
 
   /**
@@ -633,6 +708,26 @@ export function Sidebar({
    * the anchor rides along so the create group knows where to draw its inline input.
    */
   const openTopicsMenu = useCallback((row: MenuRow, e: React.MouseEvent) => openMenu(row, e, row.path), [openMenu])
+
+  /**
+   * Focus Mode (YAZ-1605): narrow the ACTIVE lens to these folders / topics — REPLACING any focus,
+   * one or many — and OPEN each row (the synthetic-child idiom `startCreate` uses), so the tree
+   * never lands on closed chevrons.
+   */
+  const focusOn = useCallback(
+    (paths: string[]) => {
+      if (lens === 'topics') {
+        setFocusTopics(paths)
+        setTopicsExpanded((prev) => (paths.every((p) => prev.has(p)) ? prev : new Set([...prev, ...paths])))
+      } else {
+        setFocusDirs(paths)
+        for (const path of paths) dispatch({ type: 'expandTo', root, file: `${path}/x` })
+      }
+    },
+    [lens, root],
+  )
+  const focused = lens === 'topics' ? focusTopics.length > 0 : focusNodes.length > 0
+  const exitFocus = useCallback(() => (lens === 'topics' ? setFocusTopics([]) : setFocusDirs([])), [lens])
 
   /**
    * Context menu "Open N in new tabs" (🔒 D5, YAZ-1337): the SAME background opener ⌘-click
@@ -967,6 +1062,13 @@ export function Sidebar({
             typed (the tree is not the body then) and whenever the active reading has nothing to
             unfold: a vault with no folders, a Topics tree of leaves, or the empty snapshot before
             the first index lands. */}
+        {/* Focus Mode's eye (YAZ-1605): lit ONLY while the active lens is focused, one slot left of
+            the chevrons; one click ends the focus. Gone while a query is typed, like its neighbour. */}
+        {!searching && focused && (
+          <button type="button" className="sidebar__focus-off" aria-label="Exit focus mode" title="Exit focus mode" onClick={exitFocus}>
+            <EyeIcon />
+          </button>
+        )}
         {!searching && foldable.length > 0 && (
           <button
             type="button"
@@ -976,7 +1078,8 @@ export function Sidebar({
             onClick={() =>
               lens === 'topics'
                 ? setTopicsExpanded(new Set(anyExpanded ? [] : topics))
-                : dispatch({ type: 'setAll', dirs: anyExpanded ? [] : dirs })
+                : // Only the dirs ON SCREEN move (YAZ-1605): folds outside a focus are exactly as they were when it ends.
+                  dispatch({ type: 'setAll', dirs: anyExpanded ? expanded.filter((d) => !shownDirs.includes(d)) : [...new Set([...expanded, ...shownDirs])] })
             }
           >
             <ChevronsIcon />
@@ -1065,6 +1168,7 @@ export function Sidebar({
             root={root}
             expanded={topicsExpanded}
             onExpandedChange={setTopicsExpanded}
+            focus={focusTopics}
             revealRequest={pendingReveal}
             source={indexSource}
             activeFile={activeFile}
@@ -1087,7 +1191,7 @@ export function Sidebar({
             )}
             {tree !== null && (
               <Tree
-                nodes={tree.tree}
+                nodes={focusNodes.length > 0 ? focusNodes : tree.tree}
                 dirPath={root}
                 expanded={new Set(expanded)}
                 activeFile={activeFile}
@@ -1138,6 +1242,9 @@ export function Sidebar({
           folderPagePath={menu.folderPagePath}
           folderPageIsOn={menu.folderPageIsOn}
           onToggleFolderPage={toggleFolderPage}
+          focusPaths={menu.focusPaths}
+          focusLabel={focusLabel(lens, menu.focusPaths?.length ?? 0)}
+          onFocus={focusOn}
           onClose={() => setMenu(null)}
         />
       )}
