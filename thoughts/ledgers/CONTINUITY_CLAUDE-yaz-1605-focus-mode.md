@@ -7,7 +7,7 @@
 ## Constraints
 - Linear-Simpler method (`growprofitai/_code-wiki/Linear-Simpler`). Yasin approves the tree before Linear is mutated. No subissues until his subissue prompt.
 - No Playwright on Yasin's screen. Demo = dev app on isolated profile. Never touch the real vault or installed app.
-- Prototype lives on branch `yaz-1605-focus-mode` in worktree `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-1605` (from main af0acb6). NOT committed.
+- Shipped on main `f138809` (PR #53). Branch and worktree removed.
 
 ## Key Decisions (🔒 locked 2026-09-14 — comments on YAZ-1611 hold the diffs)
 - D1 persist per vault: `FolderState.focusDirs` + `focusTopics` (string[], empty = off — `expanded`'s exact shape), repaired by renamePath/removePath, validated in ipc/state.ts. Lists, not one path, because Yasin asked for shift-select multi-focus (2026-09-14).
@@ -28,11 +28,11 @@
   - [x] 4- Topics (YAZ-1614) — `3905600`, 12 tests; agent caught the orphans/fall-through divergence → one-line fix
   - [x] Merged origin/main (YAZ-1604 dated folder) — `778099e`, one conflict (ContextMenu destructuring). Full suite 3925 green, typecheck clean
   - [x] 6- Polish (YAZ-1616) — stale "ONE path" comment → list wording; CONTRACTS Focus Mode paragraph; nothing to trim in src
-- Now: [→] 5- Verify (YAZ-1615): automated half done; WAITING on Yasin's hand pass (F1–F23, T1–T15) in the demo app
-- Next: PR → merge to main (permission given). NO release. Delete `~/Desktop/Focus Mode` + profile after merge.
-- Remaining:
-  - [ ] Yasin's hand pass → fix anything he finds → rerun suites
-  - [ ] PR, merge, Linear Done on 1615/1605, delete demo
+  - [x] 5- Verify (YAZ-1615) — 3925/3925 tests + Yasin's hand pass on the demo vault: "all passed" (2026-09-14)
+  - [x] PR #53 merged to main as `f138809`. NO release cut (Yasin batches releases). Worktree, branch (local+remote), demo vault and profile removed.
+  - [x] Handoff comment posted on YAZ-1605 and every child (1611–1616); all Done
+- Now: COMPLETE — nothing pending
+- Next: none. Deliberately not done (a later issue, not debt): a keyboard shortcut for focus/exit; a breadcrumb showing the focused path; focus applied inside search results; stacked (push/pop) focus.
 
 ## Open Questions
 - (resolved) T14 and F16 kept as bounded defaults — recorded on YAZ-1611.
@@ -40,7 +40,7 @@
 - (resolved) worktree `node_modules` now a real `npm ci`; the 3 "Denied ID" suites should pass — confirm in 5-.
 
 ## Working Set
-- Worktree `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-1605`, branch `yaz-1605-focus-mode`
+- Everything is on main at `f138809`; worktree and branch removed
 - Files: `shared/types.ts`, `desktop/src/main/{store,ipc/state}.ts`, `client/src/lib/{storage,treeState}.ts`, `client/src/sidebar/{Sidebar,TopicsTree,ContextMenu}.tsx`, `client/src/app.css`
 - Tests: `npx vitest run client/src/sidebar client/src/lib desktop/src/main` · `npm run typecheck`
 - Demo: vault `~/Desktop/Focus Mode`; profile `<scratchpad>/focus-mode-profile` (seeded by `<scratchpad>/seed-profile.ts` via vite-node); dev log `<scratchpad>/dev.log`
