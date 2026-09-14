@@ -18,11 +18,13 @@
   - [x] Scope + decisions locked on YAZ-1578
   - [x] YAZ-1579 folder rows join the selection — `2746b17`
   - [x] YAZ-1580 menu acts on a mixed selection — `ee99aa5`
-- Now: [→] YAZ-1581 verify end-to-end (full suite + hand walkthrough)
-- Next: YAZ-1582 polish and anti-slop pass, then merge to main (no release)
+  - [x] YAZ-1581 verify end-to-end — 3853/3853 tests + Yasin's 6-step hand walkthrough passed ("it works great job")
+  - [x] YAZ-1582 polish and anti-slop pass — `f00c545`
+  - [x] Merged to main as `0feff1c` (PR #50), branch and worktree removed. No release cut (Yasin combines pushes into releases himself).
+- Now: COMPLETE. Nothing pending.
 
 ## Open Questions
-- UNCONFIRMED: `Open 1 in new tabs` label reads fine in the running app (one file in a mixed selection).
+- (resolved) `Open 1 in new tabs` label — walkthrough passed with no complaint; left as-is (honest label).
 
 ## Gotchas
 - Worktree `npm run dev` quits instantly while the installed Yaseen Docs runs (single-instance lock, `desktop/src/main/index.ts:26`). Quit the installed app first. Renderer needs the Electron bridge, so no browser-only check.
@@ -30,6 +32,6 @@
 - PR: https://github.com/yaseenarshad/yaseen-docs-app/pull/50 (merge after the walkthrough; no release).
 
 ## Working Set
-- Worktree: `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-1578`, branch `yaz-1578-folder-multiselect`
+- Worktree and branch removed after merge; everything is on main at `0feff1c`.
 - Files: `client/src/sidebar/{Tree,TopicsTree,Sidebar,ContextMenu,HotkeysPanel}.tsx`, `client/src/lib/{treeState,selection}.ts`, `README.md`
 - Tests: `npx vitest run client/src/sidebar client/src/lib`; `npm run typecheck`
