@@ -52,7 +52,7 @@ export interface Store {
   setSidebarLens(lens: SidebarLens): void
   pushRecent(path: string, now?: number): void
   removeRecent(path: string): void
-  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded'>>): void
+  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded' | 'focusDirs' | 'focusTopics'>>): void
   setFolds(root: string, file: string, keys: readonly string[]): void
   setBaseGroups(root: string, key: string, collapsed: readonly string[]): void
   upsertWindow(entry: Omit<WindowEntry, 'rightPanel'> & Partial<Pick<WindowEntry, 'rightPanel'>>): void
@@ -210,6 +210,9 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     baseGroups: sanitizeKeyLists(raw.baseGroups, MAX_COLLAPSED_GROUP_KEYS),
     // A pre-848 file has no Topics expansion at all; missing or junk both read as none (YAZ-848).
     topicsExpanded: isStringArray(raw.topicsExpanded) ? raw.topicsExpanded.slice(0, MAX_TOPICS_EXPANDED_PAGES) : [],
+    // Focus Mode (YAZ-1605): a pre-1605 file has neither; missing or junk both read as no focus.
+    focusDirs: isStringArray(raw.focusDirs) ? raw.focusDirs : [],
+    focusTopics: isStringArray(raw.focusTopics) ? raw.focusTopics : [],
   }
 }
 
@@ -339,6 +342,8 @@ export function createStore(filePath: string): Store {
         // Capped here as well as in the renderer (`folds` / `baseGroups`' rule): the store is
         // what a hand-edited or third-party write lands in, and this bucket grows per page.
         ...(patch.topicsExpanded !== undefined ? { topicsExpanded: patch.topicsExpanded.slice(0, MAX_TOPICS_EXPANDED_PAGES) } : {}),
+        ...(patch.focusDirs !== undefined ? { focusDirs: [...patch.focusDirs] } : {}),
+        ...(patch.focusTopics !== undefined ? { focusTopics: [...patch.focusTopics] } : {}),
       }
       commit({ ...state, folders: { ...state.folders, [root]: next } })
     },
@@ -422,6 +427,9 @@ export function createStore(filePath: string): Store {
             // expanded topic follows its own rename, and a renamed FOLDER carries every topic
             // inside it through the same prefix branch.
             topicsExpanded: folder.topicsExpanded.map(remap),
+            // Focus Mode (YAZ-1605): path lists like the two above — a renamed focus follows its folder.
+            focusDirs: folder.focusDirs.map(remap),
+            focusTopics: folder.focusTopics.map(remap),
             folds: remapKeys(folder.folds, remap),
             baseGroups: remapKeys(folder.baseGroups, remapBaseGroupKey),
           },
@@ -499,6 +507,9 @@ export function createStore(filePath: string): Store {
               // The Topics tree's open pages (YAZ-848): a deleted page's entry would never match
               // a row again, so it goes with the rest rather than sitting in the file forever.
               topicsExpanded: drop(folder.topicsExpanded),
+              // Focus Mode (YAZ-1605): a deleted focus target drops out, exactly as `expanded` does above.
+              focusDirs: drop(folder.focusDirs),
+              focusTopics: drop(folder.focusTopics),
               lastFile: folder.lastFile !== null && gone(folder.lastFile) ? ((changed = true), null) : folder.lastFile,
               folds: dropKeys(folder.folds, gone),
               baseGroups: dropKeys(folder.baseGroups, baseGroupGone),

@@ -111,6 +111,20 @@ export const storage = {
     send('state.setFolder', () => window.yaseenDocs.state.setFolder(root, { topicsExpanded }))
   },
 
+  /** Focus Mode (YAZ-1605): `expanded`'s shape and bucket — a path list per lens, empty when off. */
+  getFocusDirs: (root: string): string[] => folderOf(root).focusDirs,
+  setFocusDirs(root: string, dirs: readonly string[]): void {
+    const focusDirs = [...dirs]
+    patchFolder(root, { focusDirs })
+    send('state.setFolder', () => window.yaseenDocs.state.setFolder(root, { focusDirs }))
+  },
+  getFocusTopics: (root: string): string[] => folderOf(root).focusTopics,
+  setFocusTopics(root: string, pages: readonly string[]): void {
+    const focusTopics = [...pages]
+    patchFolder(root, { focusTopics })
+    send('state.setFolder', () => window.yaseenDocs.state.setFolder(root, { focusTopics }))
+  },
+
   /** The window identity records what is open now: THIS window's restored file, not the folder's shared lastFile (GRO-2160). */
   getFile: (): string | null => identity.file,
 

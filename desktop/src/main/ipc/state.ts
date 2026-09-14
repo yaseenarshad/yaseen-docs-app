@@ -5,10 +5,10 @@ import { isRecord, isSettings, isStringArray, type Store } from '../store'
 import { broadcastAll } from './broadcast'
 import { handle } from './envelope'
 
-/** The patch crosses IPC from a sandboxed renderer: only `expanded` / `lastFile` / `topicsExpanded`, each type-checked. */
-function requireFolderPatch(raw: unknown): Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded'>> {
+/** The patch crosses IPC from a sandboxed renderer: only `expanded` / `lastFile` / `topicsExpanded` / `focusDirs` / `focusTopics`, each type-checked. */
+function requireFolderPatch(raw: unknown): Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded' | 'focusDirs' | 'focusTopics'>> {
   if (!isRecord(raw)) throw new BridgeFailure('BAD_REQUEST', 'patch must be an object')
-  const patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded'>> = {}
+  const patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded' | 'focusDirs' | 'focusTopics'>> = {}
   if (raw.expanded !== undefined) {
     if (!isStringArray(raw.expanded)) throw new BridgeFailure('BAD_REQUEST', "'expanded' must be a string array")
     patch.expanded = raw.expanded
@@ -22,6 +22,15 @@ function requireFolderPatch(raw: unknown): Partial<Pick<FolderState, 'expanded' 
   if (raw.lastFile !== undefined) {
     if (raw.lastFile !== null && typeof raw.lastFile !== 'string') throw new BridgeFailure('BAD_REQUEST', "'lastFile' must be a string or null")
     patch.lastFile = raw.lastFile
+  }
+  // Focus Mode (YAZ-1605): a path list per lens, `expanded`'s exact rule.
+  if (raw.focusDirs !== undefined) {
+    if (!isStringArray(raw.focusDirs)) throw new BridgeFailure('BAD_REQUEST', "'focusDirs' must be a string array")
+    patch.focusDirs = raw.focusDirs
+  }
+  if (raw.focusTopics !== undefined) {
+    if (!isStringArray(raw.focusTopics)) throw new BridgeFailure('BAD_REQUEST', "'focusTopics' must be a string array")
+    patch.focusTopics = raw.focusTopics
   }
   return patch
 }

@@ -108,7 +108,7 @@ describe('registerStateIpc', () => {
 
   it('state:set-folder checks the root and the patch shape', async () => {
     expect(await registered(CH.stateSetFolder)({ sender }, '/v', { expanded: ['/v/sub'], lastFile: '/v/a.md' })).toEqual(ok(undefined))
-    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: '/v/a.md', folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: '/v/a.md', folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] })
     expect(await registered(CH.stateSetFolder)({ sender }, '/v', { lastFile: null })).toEqual(ok(undefined))
     expect(store.get().folders['/v'].lastFile).toBeNull()
     expect(await registered(CH.stateSetFolder)({ sender }, 'v', {})).toEqual(bad('NOT_ABSOLUTE'))
@@ -116,13 +116,20 @@ describe('registerStateIpc', () => {
     expect(await registered(CH.stateSetFolder)({ sender }, '/v', { expanded: 'nope' })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CH.stateSetFolder)({ sender }, '/v', { expanded: [1] })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CH.stateSetFolder)({ sender }, '/v', { lastFile: 5 })).toEqual(bad('BAD_REQUEST'))
-    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
+    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] })
     // The Topics tree's open pages ride the same patch (YAZ-848), checked like `expanded`.
     expect(await registered(CH.stateSetFolder)({ sender }, '/v', { topicsExpanded: ['/v/Metrics.md'] })).toEqual(ok(undefined))
     expect(store.get().folders['/v'].topicsExpanded).toEqual(['/v/Metrics.md'])
     expect(await registered(CH.stateSetFolder)({ sender }, '/v', { topicsExpanded: 'nope' })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CH.stateSetFolder)({ sender }, '/v', { topicsExpanded: [1] })).toEqual(bad('BAD_REQUEST'))
     expect(store.get().folders['/v'].topicsExpanded).toEqual(['/v/Metrics.md'])
+    // Focus Mode (YAZ-1605): a path list per lens, checked like `expanded`.
+    expect(await registered(CH.stateSetFolder)({ sender }, '/v', { focusDirs: ['/v/sub', '/v/other'], focusTopics: ['/v/Metrics.md'] })).toEqual(ok(undefined))
+    expect(store.get().folders['/v']).toMatchObject({ focusDirs: ['/v/sub', '/v/other'], focusTopics: ['/v/Metrics.md'] })
+    expect(await registered(CH.stateSetFolder)({ sender }, '/v', { focusDirs: [] })).toEqual(ok(undefined))
+    expect(store.get().folders['/v']).toMatchObject({ focusDirs: [], focusTopics: ['/v/Metrics.md'] })
+    expect(await registered(CH.stateSetFolder)({ sender }, '/v', { focusDirs: 'nope' })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.stateSetFolder)({ sender }, '/v', { focusTopics: [1] })).toEqual(bad('BAD_REQUEST'))
   })
 
   it('state:set-folds checks root, file and keys', async () => {
