@@ -351,9 +351,9 @@ export function Sidebar({
   // main-owned per-vault bucket, so it opens where it was left — across a lens switch, a window
   // and a restart alike. A lens switch never touches it: this state outlives the tree's mount.
   const [topicsExpanded, setTopicsExpanded] = useState<ReadonlySet<string>>(() => new Set(storage.getTopicsExpanded(root)))
-  // Focus Mode (YAZ-1605): ONE path per lens — a dir for Files, a folder page for Topics — restored
-  // from the same per-vault bucket as the two expansions above and written back the same way, so
-  // it survives a lens switch, a window and a restart, and follows its own rename.
+  // Focus Mode (YAZ-1605): one path LIST per lens — dirs for Files, folder pages for Topics; empty
+  // is no focus — restored from the same per-vault bucket as the two expansions above and written
+  // back the same way, so it survives a lens switch, a window and a restart, and follows its own rename.
   const [focusDirs, setFocusDirs] = useState<readonly string[]>(() => storage.getFocusDirs(root))
   const [focusTopics, setFocusTopics] = useState<readonly string[]>(() => storage.getFocusTopics(root))
   // Multi-select (YAZ-1336, 🔒 D1): the selected PATHS — files and, since YAZ-1578, folders —
