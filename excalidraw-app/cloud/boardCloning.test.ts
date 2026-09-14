@@ -46,9 +46,9 @@ const makeSceneSaveDependencies = () => {
     expiresAt: 1_000,
   });
   const upload = vi.fn<BoardSceneSaveDependencies["upload"]>();
-  upload.mockResolvedValue({ etag: "scene-etag" });
-  const commitUpload = vi.fn<BoardSceneSaveDependencies["commitUpload"]>();
-  commitUpload.mockResolvedValue({
+  upload.mockResolvedValue(undefined);
+  const finalizeUpload = vi.fn<BoardSceneSaveDependencies["finalizeUpload"]>();
+  finalizeUpload.mockResolvedValue({
     status: "committed",
     version: 1,
     updatedAt: 42,
@@ -59,7 +59,7 @@ const makeSceneSaveDependencies = () => {
   abandonUpload.mockResolvedValue({ cleanupToken: null });
   const cleanup = vi.fn<BoardSceneSaveDependencies["cleanup"]>();
   cleanup.mockResolvedValue(undefined);
-  return { createUploadGrant, upload, commitUpload, abandonUpload, cleanup };
+  return { createUploadGrant, upload, finalizeUpload, abandonUpload, cleanup };
 };
 
 const makeCloneDependencies = () => {
@@ -302,7 +302,7 @@ describe("cloning a shared board", () => {
     // one retry each: file-1 succeeds on its second attempt, file-2 never does
     expect(dependencies.uploadAsset).toHaveBeenCalledTimes(4);
     expect(result.failedAssetFileIds).toEqual(["file-2"]);
-    expect(dependencies.sceneSave.commitUpload).toHaveBeenCalled();
+    expect(dependencies.sceneSave.finalizeUpload).toHaveBeenCalled();
     expect(dependencies.navigate).toHaveBeenCalled();
   });
 
@@ -339,7 +339,7 @@ describe("cloning a shared board", () => {
 
   it("removes the empty copy when the scene write does not commit", async () => {
     const dependencies = makeCloneDependencies();
-    dependencies.sceneSave.commitUpload.mockResolvedValue({
+    dependencies.sceneSave.finalizeUpload.mockResolvedValue({
       status: "conflict",
       version: 4,
       cleanupToken: null,

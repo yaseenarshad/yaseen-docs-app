@@ -27,10 +27,19 @@ const deferToExclusiveSection = async (
   return await task();
 };
 
+function testScene(label: string) {
+  return JSON.stringify({ elements: [], appState: { testLabel: label } });
+}
+
 const mocks = vi.hoisted(() => ({
   mutate: vi.fn(),
   createSceneUploadGrant: vi.fn(),
   commitSceneUpload: vi.fn(),
+  prepareSceneUpload: vi.fn(async () => ({
+    url: "https://test.r2.cloudflarestorage.com/staged",
+    headers: {},
+    expiresAt: 1000,
+  })),
   abandonSceneUpload: vi.fn(),
   createSceneReadGrant: vi.fn(),
   sceneCleanupTokens: [] as string[],
@@ -74,7 +83,7 @@ const mocks = vi.hoisted(() => ({
       title: "Test board",
     },
     version: 1,
-    sceneJson: "baseline",
+    sceneJson: testScene("baseline"),
     sceneManifest: undefined as undefined | { version: number },
   },
 }));
@@ -124,7 +133,8 @@ vi.mock("convex/react", async () => {
   // mistaken for the legacy `boards.save` the older assertions still watch.
   const mutations: Record<string, unknown> = {
     "boardScenes:createUploadGrant": mocks.createSceneUploadGrant,
-    "boardScenes:commitUpload": mocks.commitSceneUpload,
+    "boardSceneUploads:finalizeUpload": mocks.commitSceneUpload,
+    "boardSceneUploads:prepareUpload": mocks.prepareSceneUpload,
     "boardScenes:abandonUpload": mocks.abandonSceneUpload,
     "boardScenes:createReadGrant": mocks.createSceneReadGrant,
   };
@@ -132,6 +142,8 @@ vi.mock("convex/react", async () => {
     useConvex: () => ({ query: mocks.sceneQuery }),
     useMutation: (mutation: never) =>
       mutations[getFunctionName(mutation)] ?? mocks.mutate,
+    useAction: (action: never) =>
+      mutations[getFunctionName(action)] ?? mocks.mutate,
     usePaginatedQuery_experimental: () => ({
       data: [],
       status: "exhausted",
@@ -346,7 +358,7 @@ describe("useCloudBoard preview scheduling", () => {
         title: "Test board",
       },
       version: 1,
-      sceneJson: "baseline",
+      sceneJson: testScene("baseline"),
       sceneManifest: undefined,
     };
   });
@@ -361,7 +373,7 @@ describe("useCloudBoard preview scheduling", () => {
   });
 
   it("retains oversized edits without requests across repeated events and resumes after shrinking", async () => {
-    const { result } = await openMigratedBoard("r2 scene", 1);
+    const { result } = await openMigratedBoard(testScene("r2 scene"), 1);
     const oversized = sizedScene(10_000_001);
     act(() => result.current.queueSave(oversized));
     expect(result.current.saveStatus).toBe("error");
@@ -389,7 +401,7 @@ describe("useCloudBoard preview scheduling", () => {
   });
 
   it("warns at 8 MB without changing a successful save status", async () => {
-    const { result } = await openMigratedBoard("r2 scene", 1);
+    const { result } = await openMigratedBoard(testScene("r2 scene"), 1);
     grantSceneUpload(2);
     act(() => result.current.queueSave(sizedScene(8_000_000)));
     expect(result.current.sceneRawSize).toBe(8_000_000);
@@ -400,7 +412,7 @@ describe("useCloudBoard preview scheduling", () => {
   });
 
   it("does not retry unchanged content after a structured server size rejection", async () => {
-    const { result } = await openMigratedBoard("r2 scene", 1);
+    const { result } = await openMigratedBoard(testScene("r2 scene"), 1);
     mocks.createSceneUploadGrant.mockRejectedValue({
       data: {
         code: "BOARD_SCENE_TOO_LARGE",
@@ -424,9 +436,9 @@ describe("useCloudBoard preview scheduling", () => {
   });
 
   it("reports a failed local journal while keeping unsaved work and close protection", async () => {
-    const { result } = await openMigratedBoard("r2 scene", 1);
+    const { result } = await openMigratedBoard(testScene("r2 scene"), 1);
     mocks.journalIsDegraded.mockReturnValue(true);
-    act(() => result.current.queueSave("unsaved"));
+    act(() => result.current.queueSave(testScene("unsaved")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_CRASH_JOURNAL_DEBOUNCE_MS);
     });
@@ -448,7 +460,7 @@ describe("useCloudBoard preview scheduling", () => {
   });
 
   it("keeps a newer oversized edit unsaved when an earlier upload completes", async () => {
-    const { result } = await openMigratedBoard("r2 scene", 1);
+    const { result } = await openMigratedBoard(testScene("r2 scene"), 1);
     grantSceneUpload(2);
     let finish!: (value: unknown) => void;
     mocks.commitSceneUpload.mockImplementation(
@@ -457,7 +469,7 @@ describe("useCloudBoard preview scheduling", () => {
           finish = resolve;
         }),
     );
-    act(() => result.current.queueSave("small edit"));
+    act(() => result.current.queueSave(testScene("small edit")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
@@ -481,13 +493,13 @@ describe("useCloudBoard preview scheduling", () => {
   });
 
   it("warns on closing during an upload when the local backup has failed", async () => {
-    const { result } = await openMigratedBoard("r2 scene", 1);
+    const { result } = await openMigratedBoard(testScene("r2 scene"), 1);
     mocks.journalIsDegraded.mockReturnValue(true);
     grantSceneUpload(2);
     mocks.commitSceneUpload.mockImplementation(
       () => new Promise(() => undefined),
     );
-    act(() => result.current.queueSave("unprotected edit"));
+    act(() => result.current.queueSave(testScene("unprotected edit")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
@@ -498,12 +510,15 @@ describe("useCloudBoard preview scheduling", () => {
   });
 
   it("does not report Saved on a metadata refresh while upload is still in flight", async () => {
-    const { result, rerender } = await openMigratedBoard("r2 scene", 1);
+    const { result, rerender } = await openMigratedBoard(
+      testScene("r2 scene"),
+      1,
+    );
     grantSceneUpload(2);
     mocks.commitSceneUpload.mockImplementation(
       () => new Promise(() => undefined),
     );
-    act(() => result.current.queueSave("in flight edit"));
+    act(() => result.current.queueSave(testScene("in flight edit")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
@@ -518,7 +533,7 @@ describe("useCloudBoard preview scheduling", () => {
 
   it("restores an oversized journal draft to the editor without uploading or calling it saved", async () => {
     const oversized = sizedScene(10_000_001);
-    const { result } = await openMigratedBoard("r2 scene", 1);
+    const { result } = await openMigratedBoard(testScene("r2 scene"), 1);
     mocks.journalClaim.mockResolvedValueOnce({
       boardId: "board-id",
       sceneJson: oversized,
@@ -527,11 +542,14 @@ describe("useCloudBoard preview scheduling", () => {
     });
     const restoreDraft = vi.fn();
     await act(async () => {
-      result.current.acceptSceneWithoutSave("r2 scene", restoreDraft);
+      result.current.acceptSceneWithoutSave(
+        testScene("r2 scene"),
+        restoreDraft,
+      );
     });
     expect(restoreDraft).toHaveBeenCalledWith(oversized);
     expect(result.current.saveStatus).toBe("error");
-    expect(result.current.openedBoard?.sceneJson).toBe("r2 scene");
+    expect(result.current.openedBoard?.sceneJson).toBe(testScene("r2 scene"));
     expect(mocks.createSceneUploadGrant).not.toHaveBeenCalled();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_CRASH_JOURNAL_DEBOUNCE_MS);
@@ -550,13 +568,13 @@ describe("useCloudBoard preview scheduling", () => {
     } as never;
 
     await act(async () => {
-      result.current.queueSave("changed", previewScene);
+      result.current.queueSave(testScene("changed"), previewScene);
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
 
     act(() => {
-      result.current.queueSave("transient", previewScene);
-      result.current.queueSave("changed", previewScene);
+      result.current.queueSave(testScene("transient"), previewScene);
+      result.current.queueSave(testScene("changed"), previewScene);
     });
 
     await act(async () => {
@@ -570,7 +588,7 @@ describe("useCloudBoard preview scheduling", () => {
     const { result } = await renderCloudBoard();
 
     expect(mocks.sceneQuery).toHaveBeenCalledTimes(1);
-    expect(result.current.openedBoard?.sceneJson).toBe("baseline");
+    expect(result.current.openedBoard?.sceneJson).toBe(testScene("baseline"));
     expect(result.current.openedBoard?.version).toBe(1);
   });
 
@@ -578,7 +596,7 @@ describe("useCloudBoard preview scheduling", () => {
     const { result, rerender } = await renderCloudBoard();
 
     act(() => {
-      result.current.queueSave("changed");
+      result.current.queueSave(testScene("changed"));
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
@@ -589,14 +607,14 @@ describe("useCloudBoard preview scheduling", () => {
     mocks.openedBoard = {
       ...mocks.openedBoard,
       version: 2,
-      sceneJson: "changed",
+      sceneJson: testScene("changed"),
     };
     rerender();
     await settleOpenedScene();
 
     expect(mocks.sceneQuery).toHaveBeenCalledTimes(1);
     expect(result.current.openedBoard?.version).toBe(2);
-    expect(result.current.openedBoard?.sceneJson).toBe("changed");
+    expect(result.current.openedBoard?.sceneJson).toBe(testScene("changed"));
   });
 
   it("fetches the scene exactly once when another tab publishes a new version", async () => {
@@ -605,7 +623,7 @@ describe("useCloudBoard preview scheduling", () => {
     mocks.openedBoard = {
       ...mocks.openedBoard,
       version: 2,
-      sceneJson: "peer edit",
+      sceneJson: testScene("peer edit"),
     };
     rerender();
     await settleOpenedScene();
@@ -614,7 +632,7 @@ describe("useCloudBoard preview scheduling", () => {
 
     expect(mocks.sceneQuery).toHaveBeenCalledTimes(2);
     expect(result.current.openedBoard?.version).toBe(2);
-    expect(result.current.openedBoard?.sceneJson).toBe("peer edit");
+    expect(result.current.openedBoard?.sceneJson).toBe(testScene("peer edit"));
   });
 
   it("ignores a scene fetch that lands after a newer Board version arrives", async () => {
@@ -634,14 +652,14 @@ describe("useCloudBoard preview scheduling", () => {
     mocks.openedBoard = {
       ...mocks.openedBoard,
       version: 2,
-      sceneJson: "peer edit",
+      sceneJson: testScene("peer edit"),
     };
     rerender();
     await settleOpenedScene();
     mocks.openedBoard = {
       ...mocks.openedBoard,
       version: 3,
-      sceneJson: "newest peer edit",
+      sceneJson: testScene("newest peer edit"),
     };
     rerender();
     await settleOpenedScene();
@@ -649,14 +667,16 @@ describe("useCloudBoard preview scheduling", () => {
     await act(async () => {
       resolveStaleScene({
         boardId: "board-id",
-        sceneJson: "peer edit",
+        sceneJson: testScene("peer edit"),
         version: 2,
       });
       await Promise.resolve();
     });
 
     expect(result.current.openedBoard?.version).toBe(3);
-    expect(result.current.openedBoard?.sceneJson).toBe("newest peer edit");
+    expect(result.current.openedBoard?.sceneJson).toBe(
+      testScene("newest peer edit"),
+    );
   });
 
   it("waits ten seconds after the latest local change before saving", async () => {
@@ -664,7 +684,7 @@ describe("useCloudBoard preview scheduling", () => {
 
     expect(CLOUD_SAVE_DEBOUNCE_MS).toBe(10_000);
     act(() => {
-      result.current.queueSave("changed");
+      result.current.queueSave(testScene("changed"));
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS - 1);
@@ -708,7 +728,7 @@ describe("useCloudBoard preview scheduling", () => {
     const { result } = await renderCloudBoard();
 
     act(() => {
-      result.current.queueSave("first change");
+      result.current.queueSave(testScene("first change"));
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_MAX_PENDING_MS);
@@ -716,7 +736,7 @@ describe("useCloudBoard preview scheduling", () => {
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
 
     act(() => {
-      result.current.queueSave("second change");
+      result.current.queueSave(testScene("second change"));
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS - 1);
@@ -733,7 +753,7 @@ describe("useCloudBoard preview scheduling", () => {
     const { result } = await renderCloudBoard();
 
     act(() => {
-      result.current.queueSave("changed");
+      result.current.queueSave(testScene("changed"));
     });
 
     expect(mocks.claimWriter).toHaveBeenCalledWith({
@@ -747,7 +767,7 @@ describe("useCloudBoard preview scheduling", () => {
   it("flushes a pending save immediately when another tab claims the board", async () => {
     const { result } = await renderCloudBoard();
     act(() => {
-      result.current.queueSave("changed");
+      result.current.queueSave(testScene("changed"));
     });
 
     await act(async () => {
@@ -775,7 +795,7 @@ describe("useCloudBoard preview scheduling", () => {
   it("waits for an announced peer version before saving the reconciled scene", async () => {
     const { result, rerender } = await renderCloudBoard();
     act(() => {
-      result.current.queueSave("local edit");
+      result.current.queueSave(testScene("local edit"));
       mocks.coordinatorHandlers?.onRemoteSaveComplete({
         boardId: "board-id",
         generation: 1,
@@ -792,13 +812,13 @@ describe("useCloudBoard preview scheduling", () => {
     mocks.openedBoard = {
       ...mocks.openedBoard,
       version: 2,
-      sceneJson: "peer edit",
+      sceneJson: testScene("peer edit"),
     };
     rerender();
     await settleOpenedScene();
     act(() =>
       result.current.queueSave(
-        "merged local and peer edit",
+        testScene("merged local and peer edit"),
         undefined,
         "server-merge",
       ),
@@ -812,13 +832,13 @@ describe("useCloudBoard preview scheduling", () => {
       boardId: "board-id",
       clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
       expectedVersion: 2,
-      sceneJson: "merged local and peer edit",
+      sceneJson: testScene("merged local and peer edit"),
     });
   });
 
   it("flushes a pending Board edit when the tab is being hidden or discarded", async () => {
     const { result } = await renderCloudBoard();
-    act(() => result.current.queueSave("pending tab switch edit"));
+    act(() => result.current.queueSave(testScene("pending tab switch edit")));
 
     await act(async () => {
       window.dispatchEvent(new Event("pagehide"));
@@ -827,13 +847,15 @@ describe("useCloudBoard preview scheduling", () => {
 
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
     expect(mocks.mutate).toHaveBeenCalledWith(
-      expect.objectContaining({ sceneJson: "pending tab switch edit" }),
+      expect.objectContaining({
+        sceneJson: testScene("pending tab switch edit"),
+      }),
     );
   });
 
   it("flushes a pending Board edit as soon as the tab is hidden", async () => {
     const { result } = await renderCloudBoard();
-    act(() => result.current.queueSave("pending hidden tab edit"));
+    act(() => result.current.queueSave(testScene("pending hidden tab edit")));
 
     await act(async () => {
       Object.defineProperty(document, "visibilityState", {
@@ -847,7 +869,9 @@ describe("useCloudBoard preview scheduling", () => {
 
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
     expect(mocks.mutate).toHaveBeenCalledWith(
-      expect.objectContaining({ sceneJson: "pending hidden tab edit" }),
+      expect.objectContaining({
+        sceneJson: testScene("pending hidden tab edit"),
+      }),
     );
   });
 
@@ -867,13 +891,13 @@ describe("useCloudBoard preview scheduling", () => {
     const { result } = await renderCloudBoard();
 
     act(() => {
-      result.current.queueSave("first change");
+      result.current.queueSave(testScene("first change"));
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
     act(() => {
-      result.current.queueSave("second change");
+      result.current.queueSave(testScene("second change"));
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
@@ -905,13 +929,13 @@ describe("useCloudBoard preview scheduling", () => {
     const { result } = await renderCloudBoard();
 
     act(() => {
-      result.current.queueSave("first change");
+      result.current.queueSave(testScene("first change"));
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
     act(() => {
-      result.current.queueSave("pending navigation change");
+      result.current.queueSave(testScene("pending navigation change"));
     });
 
     let navigationFlush!: Promise<boolean>;
@@ -925,7 +949,9 @@ describe("useCloudBoard preview scheduling", () => {
 
     expect(mocks.mutate).toHaveBeenCalledTimes(2);
     expect(mocks.mutate).toHaveBeenLastCalledWith(
-      expect.objectContaining({ sceneJson: "pending navigation change" }),
+      expect.objectContaining({
+        sceneJson: testScene("pending navigation change"),
+      }),
     );
   });
 
@@ -933,13 +959,13 @@ describe("useCloudBoard preview scheduling", () => {
     const { result } = await renderCloudBoard();
 
     act(() => {
-      result.current.queueSave("changed");
+      result.current.queueSave(testScene("changed"));
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
     act(() => {
-      result.current.queueSave("changed");
+      result.current.queueSave(testScene("changed"));
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
@@ -954,7 +980,7 @@ describe("useCloudBoard preview scheduling", () => {
       .mockResolvedValueOnce({ status: "saved", version: 3 });
     const { result, rerender } = await renderCloudBoard();
 
-    act(() => result.current.queueSave("local edit"));
+    act(() => result.current.queueSave(testScene("local edit")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
@@ -963,13 +989,13 @@ describe("useCloudBoard preview scheduling", () => {
     mocks.openedBoard = {
       ...mocks.openedBoard,
       version: 2,
-      sceneJson: "winning server scene",
+      sceneJson: testScene("winning server scene"),
     };
     rerender();
     await settleOpenedScene();
     act(() =>
       result.current.queueSave(
-        "reconciled local edit",
+        testScene("reconciled local edit"),
         undefined,
         "server-merge",
       ),
@@ -983,7 +1009,7 @@ describe("useCloudBoard preview scheduling", () => {
       boardId: "board-id",
       clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
       expectedVersion: 2,
-      sceneJson: "reconciled local edit",
+      sceneJson: testScene("reconciled local edit"),
     });
     expect(result.current.saveStatus).toBe("saved");
   });
@@ -992,7 +1018,7 @@ describe("useCloudBoard preview scheduling", () => {
     mocks.mutate.mockResolvedValue({ status: "upgrade-required" });
     const { result } = await renderCloudBoard();
 
-    act(() => result.current.queueSave("legacy client edit"));
+    act(() => result.current.queueSave(testScene("legacy client edit")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
@@ -1014,11 +1040,11 @@ describe("useCloudBoard preview scheduling", () => {
       .mockResolvedValueOnce({ status: "saved", version: 3 });
     const { result, rerender } = await renderCloudBoard();
 
-    act(() => result.current.queueSave("first local edit"));
+    act(() => result.current.queueSave(testScene("first local edit")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
-    act(() => result.current.queueSave("newer local edit"));
+    act(() => result.current.queueSave(testScene("newer local edit")));
     await act(async () => {
       await result.current.flushSave();
     });
@@ -1027,13 +1053,13 @@ describe("useCloudBoard preview scheduling", () => {
     mocks.openedBoard = {
       ...mocks.openedBoard,
       version: 2,
-      sceneJson: "winning server scene",
+      sceneJson: testScene("winning server scene"),
     };
     rerender();
     await settleOpenedScene();
     act(() =>
       result.current.queueSave(
-        "newest reconciled local edit",
+        testScene("newest reconciled local edit"),
         undefined,
         "server-merge",
       ),
@@ -1044,7 +1070,9 @@ describe("useCloudBoard preview scheduling", () => {
 
     expect(mocks.mutate).toHaveBeenCalledTimes(2);
     expect(mocks.mutate).toHaveBeenLastCalledWith(
-      expect.objectContaining({ sceneJson: "newest reconciled local edit" }),
+      expect.objectContaining({
+        sceneJson: testScene("newest reconciled local edit"),
+      }),
     );
   });
 
@@ -1052,20 +1080,20 @@ describe("useCloudBoard preview scheduling", () => {
     mocks.mutate.mockResolvedValueOnce({ status: "conflict", version: 2 });
     const { result, rerender } = await renderCloudBoard();
 
-    act(() => result.current.queueSave("local edit"));
+    act(() => result.current.queueSave(testScene("local edit")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
     mocks.openedBoard = {
       ...mocks.openedBoard,
       version: 2,
-      sceneJson: "winning server scene",
+      sceneJson: testScene("winning server scene"),
     };
     rerender();
     await settleOpenedScene();
     act(() =>
       result.current.queueSave(
-        "winning server scene",
+        testScene("winning server scene"),
         undefined,
         "server-echo",
       ),
@@ -1082,7 +1110,7 @@ describe("useCloudBoard preview scheduling", () => {
     mocks.mutate.mockResolvedValueOnce({ status: "conflict", version: 2 });
     const { result } = await renderCloudBoard();
 
-    act(() => result.current.queueSave("local edit"));
+    act(() => result.current.queueSave(testScene("local edit")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
       await vi.advanceTimersByTimeAsync(CLOUD_HANDOFF_VERSION_WAIT_MS);
@@ -1099,20 +1127,20 @@ describe("useCloudBoard preview scheduling", () => {
       .mockResolvedValueOnce({ status: "conflict", version: 3 });
     const { result, rerender } = await renderCloudBoard();
 
-    act(() => result.current.queueSave("local edit"));
+    act(() => result.current.queueSave(testScene("local edit")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
     mocks.openedBoard = {
       ...mocks.openedBoard,
       version: 2,
-      sceneJson: "winning server scene",
+      sceneJson: testScene("winning server scene"),
     };
     rerender();
     await settleOpenedScene();
     act(() =>
       result.current.queueSave(
-        "reconciled local edit",
+        testScene("reconciled local edit"),
         undefined,
         "server-merge",
       ),
@@ -1124,7 +1152,7 @@ describe("useCloudBoard preview scheduling", () => {
     mocks.openedBoard = {
       ...mocks.openedBoard,
       version: 3,
-      sceneJson: "second winning server scene",
+      sceneJson: testScene("second winning server scene"),
     };
     rerender();
     await settleOpenedScene();
@@ -1170,7 +1198,7 @@ describe("useCloudBoard preview scheduling", () => {
   it("journals a local edit long before the cloud save that owes it", async () => {
     const { result } = await renderCloudBoard();
 
-    act(() => result.current.queueSave("changed"));
+    act(() => result.current.queueSave(testScene("changed")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_CRASH_JOURNAL_DEBOUNCE_MS);
     });
@@ -1180,7 +1208,7 @@ describe("useCloudBoard preview scheduling", () => {
     );
     expect(mocks.journalWrite).toHaveBeenCalledWith({
       boardId: "board-id",
-      sceneJson: "changed",
+      sceneJson: testScene("changed"),
       baseVersion: 1,
       savedAt: expect.any(Number),
     });
@@ -1191,7 +1219,7 @@ describe("useCloudBoard preview scheduling", () => {
   it("clears the journaled scene once the cloud save commits it", async () => {
     const { result } = await renderCloudBoard();
 
-    act(() => result.current.queueSave("changed"));
+    act(() => result.current.queueSave(testScene("changed")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
@@ -1213,11 +1241,11 @@ describe("useCloudBoard preview scheduling", () => {
     );
     const { result } = await renderCloudBoard();
 
-    act(() => result.current.queueSave("first change"));
+    act(() => result.current.queueSave(testScene("first change")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
-    act(() => result.current.queueSave("second change"));
+    act(() => result.current.queueSave(testScene("second change")));
     mocks.journalWrite.mockClear();
 
     await act(async () => {
@@ -1228,7 +1256,7 @@ describe("useCloudBoard preview scheduling", () => {
     expect(mocks.journalClear).toHaveBeenCalledWith("board-id");
     expect(mocks.journalWrite).toHaveBeenCalledWith(
       expect.objectContaining({
-        sceneJson: "second change",
+        sceneJson: testScene("second change"),
         baseVersion: 2,
       }),
     );
@@ -1238,14 +1266,17 @@ describe("useCloudBoard preview scheduling", () => {
     mocks.mutate.mockRejectedValueOnce(new Error("offline"));
     const { result } = await renderCloudBoard();
 
-    act(() => result.current.queueSave("changed"));
+    act(() => result.current.queueSave(testScene("changed")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
 
     expect(result.current.saveStatus).toBe("error");
     expect(mocks.journalWrite).toHaveBeenCalledWith(
-      expect.objectContaining({ sceneJson: "changed", baseVersion: 1 }),
+      expect.objectContaining({
+        sceneJson: testScene("changed"),
+        baseVersion: 1,
+      }),
     );
     expect(mocks.journalClear).not.toHaveBeenCalled();
   });
@@ -1257,12 +1288,14 @@ describe("useCloudBoard preview scheduling", () => {
   it("keeps a discarded pending scene recoverable", async () => {
     const { result } = await renderCloudBoard();
 
-    act(() => result.current.queueSave("edit that never reached the cloud"));
+    act(() =>
+      result.current.queueSave(testScene("edit that never reached the cloud")),
+    );
     act(() => result.current.discardPendingSave());
 
     expect(mocks.journalWrite).toHaveBeenCalledWith(
       expect.objectContaining({
-        sceneJson: "edit that never reached the cloud",
+        sceneJson: testScene("edit that never reached the cloud"),
         baseVersion: 1,
       }),
     );
@@ -1276,14 +1309,14 @@ describe("useCloudBoard preview scheduling", () => {
   it("replays a journaled scene the tab died before flushing", async () => {
     mocks.journalClaim.mockResolvedValue({
       boardId: "board-id",
-      sceneJson: "edit lost to the crash",
+      sceneJson: testScene("edit lost to the crash"),
       baseVersion: 1,
       savedAt: 10,
     });
     const { result } = await renderCloudBoard();
 
     await act(async () => {
-      result.current.acceptSceneWithoutSave("baseline");
+      result.current.acceptSceneWithoutSave(testScene("baseline"));
       await vi.advanceTimersByTimeAsync(0);
     });
 
@@ -1294,10 +1327,10 @@ describe("useCloudBoard preview scheduling", () => {
       boardId: "board-id",
       clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
       expectedVersion: 1,
-      sceneJson: "edit lost to the crash",
+      sceneJson: testScene("edit lost to the crash"),
     });
     expect(result.current.openedBoard?.sceneJson).toBe(
-      "edit lost to the crash",
+      testScene("edit lost to the crash"),
     );
     expect(result.current.openedBoard?.version).toBe(2);
     expect(result.current.saveStatus).toBe("saved");
@@ -1306,14 +1339,14 @@ describe("useCloudBoard preview scheduling", () => {
   it("replays a journaled scene through the pending-edit path a local edit takes", async () => {
     mocks.journalClaim.mockResolvedValue({
       boardId: "board-id",
-      sceneJson: "edit lost to the crash",
+      sceneJson: testScene("edit lost to the crash"),
       baseVersion: 1,
       savedAt: 10,
     });
     const { result } = await renderCloudBoard();
 
     await act(async () => {
-      result.current.acceptSceneWithoutSave("baseline");
+      result.current.acceptSceneWithoutSave(testScene("baseline"));
       await vi.advanceTimersByTimeAsync(0);
     });
 
@@ -1332,7 +1365,7 @@ describe("useCloudBoard preview scheduling", () => {
 
     act(() =>
       result.current.queueSave(
-        "edit lost to the crash",
+        testScene("edit lost to the crash"),
         undefined,
         "server-echo",
       ),
@@ -1347,7 +1380,7 @@ describe("useCloudBoard preview scheduling", () => {
     const { result } = await renderCloudBoard();
 
     await act(async () => {
-      result.current.acceptSceneWithoutSave("baseline");
+      result.current.acceptSceneWithoutSave(testScene("baseline"));
       await vi.advanceTimersByTimeAsync(0);
     });
     const [claim] = mocks.journalClaim.mock.calls[0];
@@ -1364,7 +1397,7 @@ describe("useCloudBoard preview scheduling", () => {
     const { result } = await renderCloudBoard();
 
     await act(async () => {
-      result.current.acceptSceneWithoutSave("baseline");
+      result.current.acceptSceneWithoutSave(testScene("baseline"));
       await vi.advanceTimersByTimeAsync(0);
     });
 
@@ -1372,7 +1405,7 @@ describe("useCloudBoard preview scheduling", () => {
       expect.objectContaining({ serverVersion: 2 }),
     );
     expect(mocks.mutate).not.toHaveBeenCalled();
-    expect(result.current.openedBoard?.sceneJson).toBe("baseline");
+    expect(result.current.openedBoard?.sceneJson).toBe(testScene("baseline"));
     expect(result.current.openedBoard?.version).toBe(2);
   });
 
@@ -1382,8 +1415,8 @@ describe("useCloudBoard preview scheduling", () => {
 
     expect(result.current.isViewer).toBe(true);
     await act(async () => {
-      result.current.acceptSceneWithoutSave("baseline");
-      result.current.queueSave("viewer edit");
+      result.current.acceptSceneWithoutSave(testScene("baseline"));
+      result.current.queueSave(testScene("viewer edit"));
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
 
@@ -1406,17 +1439,17 @@ describe("useCloudBoard preview scheduling", () => {
     const { result } = await renderCloudBoard();
 
     await act(async () => {
-      result.current.acceptSceneWithoutSave("baseline");
+      result.current.acceptSceneWithoutSave(testScene("baseline"));
       await vi.advanceTimersByTimeAsync(0);
     });
-    act(() => result.current.queueSave("changed"));
+    act(() => result.current.queueSave(testScene("changed")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
 
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
     expect(mocks.mutate).toHaveBeenCalledWith(
-      expect.objectContaining({ sceneJson: "changed" }),
+      expect.objectContaining({ sceneJson: testScene("changed") }),
     );
     expect(result.current.saveStatus).toBe("saved");
   });
@@ -1425,7 +1458,10 @@ describe("useCloudBoard preview scheduling", () => {
   // Boards whose scene lives in private object storage
   // ---------------------------------------------------------------------------
 
-  const openMigratedBoard = async (sceneJson = "r2 scene", version = 1) => {
+  const openMigratedBoard = async (
+    sceneJson = testScene("r2 scene"),
+    version = 1,
+  ) => {
     mocks.openedBoard = {
       ...mocks.openedBoard,
       version,
@@ -1453,7 +1489,7 @@ describe("useCloudBoard preview scheduling", () => {
   };
 
   it("opens a migrated Board through a private read grant", async () => {
-    const { result } = await openMigratedBoard("r2 scene", 4);
+    const { result } = await openMigratedBoard(testScene("r2 scene"), 4);
 
     expect(mocks.createSceneReadGrant).toHaveBeenCalledWith({
       boardId: "board-id",
@@ -1462,7 +1498,7 @@ describe("useCloudBoard preview scheduling", () => {
       method: "GET",
     });
     expect(mocks.sceneQuery).not.toHaveBeenCalled();
-    expect(result.current.openedBoard?.sceneJson).toBe("r2 scene");
+    expect(result.current.openedBoard?.sceneJson).toBe(testScene("r2 scene"));
     expect(result.current.openedBoard?.version).toBe(4);
     expect(result.current.saveStatus).toBe("saved");
   });
@@ -1472,13 +1508,16 @@ describe("useCloudBoard preview scheduling", () => {
 
     expect(mocks.sceneQuery).toHaveBeenCalledTimes(1);
     expect(mocks.createSceneReadGrant).not.toHaveBeenCalled();
-    expect(result.current.openedBoard?.sceneJson).toBe("baseline");
+    expect(result.current.openedBoard?.sceneJson).toBe(testScene("baseline"));
   });
 
   it("ignores a stored scene that lands after a newer version arrives", async () => {
-    const { result, rerender } = await openMigratedBoard("r2 scene", 1);
+    const { result, rerender } = await openMigratedBoard(
+      testScene("r2 scene"),
+      1,
+    );
     let resolveStaleScene!: (bytes: never) => void;
-    const stale = await compressBoardScene("stale peer edit");
+    const stale = await compressBoardScene(testScene("stale peer edit"));
     mocks.createSceneReadGrant.mockResolvedValueOnce({
       token: "a".repeat(64),
       path: SCENE_READ_PATH,
@@ -1506,7 +1545,7 @@ describe("useCloudBoard preview scheduling", () => {
     };
     rerender();
     await settleUntil(() => mocks.fetch.mock.calls.length > 1);
-    await publishSceneObject("newest peer edit", 3);
+    await publishSceneObject(testScene("newest peer edit"), 3);
     mocks.openedBoard = {
       ...mocks.openedBoard,
       version: 3,
@@ -1521,13 +1560,18 @@ describe("useCloudBoard preview scheduling", () => {
     });
 
     expect(result.current.openedBoard?.version).toBe(3);
-    expect(result.current.openedBoard?.sceneJson).toBe("newest peer edit");
+    expect(result.current.openedBoard?.sceneJson).toBe(
+      testScene("newest peer edit"),
+    );
   });
 
   it("keeps the prior canvas and reports a retryable error when a stored scene fails verification", async () => {
-    const { result, rerender } = await openMigratedBoard("r2 scene", 1);
+    const { result, rerender } = await openMigratedBoard(
+      testScene("r2 scene"),
+      1,
+    );
 
-    await publishSceneObject("corrupted peer edit", 2);
+    await publishSceneObject(testScene("corrupted peer edit"), 2);
     mocks.fetch.mockImplementation(async () =>
       bytesResponse(new Uint8Array([1, 2, 3])),
     );
@@ -1543,16 +1587,16 @@ describe("useCloudBoard preview scheduling", () => {
     expect(result.current.errorMessage).toBe(
       "Board scene download is incomplete",
     );
-    expect(result.current.openedBoard?.sceneJson).toBe("r2 scene");
+    expect(result.current.openedBoard?.sceneJson).toBe(testScene("r2 scene"));
     expect(result.current.openedBoard?.version).toBe(1);
   });
 
   it("saves a migrated Board through grant, upload, and commit", async () => {
     grantSceneUpload(2);
-    const { result } = await openMigratedBoard("r2 scene", 1);
-    const changed = await compressBoardScene("changed scene");
+    const { result } = await openMigratedBoard(testScene("r2 scene"), 1);
+    const changed = await compressBoardScene(testScene("changed scene"));
 
-    act(() => result.current.queueSave("changed scene"));
+    act(() => result.current.queueSave(testScene("changed scene")));
     await flushQueuedSave(result);
 
     expect(mocks.mutate).not.toHaveBeenCalled();
@@ -1572,20 +1616,15 @@ describe("useCloudBoard preview scheduling", () => {
       docRefs: [],
     });
     expect(mocks.fetch).toHaveBeenCalledWith(
-      BOARD_SCENE_ROUTE,
+      "https://test.r2.cloudflarestorage.com/staged",
       expect.objectContaining({
-        method: "POST",
-        headers: expect.objectContaining({
-          Authorization: "Bearer upload-token",
-          "Content-Type": "application/octet-stream",
-          "X-Board-Scene-Encoding": "deflate-v1",
-        }),
+        method: "PUT",
+        headers: {},
       }),
     );
     expect(mocks.commitSceneUpload).toHaveBeenCalledWith({
       clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
       token: "upload-token",
-      etag: "etag-v2",
     });
     expect(mocks.runSaveExclusive).toHaveBeenCalledWith(
       "board-id",
@@ -1607,10 +1646,10 @@ describe("useCloudBoard preview scheduling", () => {
       version: 1,
       updatedAt: 99,
     });
-    const { result } = await openMigratedBoard("r2 scene", 1);
+    const { result } = await openMigratedBoard(testScene("r2 scene"), 1);
     mocks.fetch.mockClear();
 
-    act(() => result.current.queueSave("rebound scene"));
+    act(() => result.current.queueSave(testScene("rebound scene")));
     await flushQueuedSave(result);
 
     expect(mocks.fetch).not.toHaveBeenCalled();
@@ -1621,7 +1660,7 @@ describe("useCloudBoard preview scheduling", () => {
     expect(mocks.announceSaveComplete).not.toHaveBeenCalled();
 
     // The echo is the accepted baseline now, so re-queueing it saves nothing.
-    act(() => result.current.queueSave("rebound scene"));
+    act(() => result.current.queueSave(testScene("rebound scene")));
     await flushQueuedSave(result);
     expect(mocks.createSceneUploadGrant).toHaveBeenCalledTimes(1);
   });
@@ -1633,9 +1672,9 @@ describe("useCloudBoard preview scheduling", () => {
       version: 5,
       cleanupToken: "orphan-cleanup",
     });
-    const { result } = await openMigratedBoard("r2 scene", 1);
+    const { result } = await openMigratedBoard(testScene("r2 scene"), 1);
 
-    act(() => result.current.queueSave("conflicting scene"));
+    act(() => result.current.queueSave(testScene("conflicting scene")));
     await flushQueuedSave(result);
 
     expect(result.current.saveStatus).toBe("conflict");
@@ -1649,7 +1688,7 @@ describe("useCloudBoard preview scheduling", () => {
 
   it("abandons a failed upload and retries the save with a fresh grant", async () => {
     grantSceneUpload(2);
-    const { result } = await openMigratedBoard("r2 scene", 1);
+    const { result } = await openMigratedBoard(testScene("r2 scene"), 1);
     mocks.abandonSceneUpload.mockResolvedValue({
       cleanupToken: "abandoned-object",
     });
@@ -1657,7 +1696,7 @@ describe("useCloudBoard preview scheduling", () => {
       jsonResponse({ error: "Board scene could not be stored" }, false),
     );
 
-    act(() => result.current.queueSave("changed scene"));
+    act(() => result.current.queueSave(testScene("changed scene")));
     await flushQueuedSave(result);
 
     expect(mocks.abandonSceneUpload).toHaveBeenCalledWith({
@@ -1673,7 +1712,7 @@ describe("useCloudBoard preview scheduling", () => {
     // The pending scene survives, and the retry mints a second grant.
     expect(mocks.journalClear).not.toHaveBeenCalled();
 
-    act(() => result.current.queueSave("changed scene again"));
+    act(() => result.current.queueSave(testScene("changed scene again")));
     await flushQueuedSave(result);
 
     expect(mocks.createSceneUploadGrant).toHaveBeenCalledTimes(2);
@@ -1685,9 +1724,9 @@ describe("useCloudBoard preview scheduling", () => {
     mocks.createSceneUploadGrant.mockResolvedValue({
       status: "upgrade-required",
     });
-    const { result } = await openMigratedBoard("r2 scene", 1);
+    const { result } = await openMigratedBoard(testScene("r2 scene"), 1);
 
-    act(() => result.current.queueSave("changed scene"));
+    act(() => result.current.queueSave(testScene("changed scene")));
     await flushQueuedSave(result);
 
     expect(result.current.saveStatus).toBe("error");
@@ -1720,12 +1759,12 @@ describe("useCloudBoard preview scheduling", () => {
     expect(result.current.saveStatus).toBe("saved");
     expect(result.current.errorMessage).toBeNull();
     expect(result.current.openedBoard?.version).toBe(1);
-    expect(result.current.openedBoard?.sceneJson).toBe("baseline");
+    expect(result.current.openedBoard?.sceneJson).toBe(testScene("baseline"));
 
     // The next save belongs to object storage even though the reactive
     // metadata has not published the manifest yet.
     grantSceneUpload(2);
-    act(() => result.current.queueSave("changed after migration"));
+    act(() => result.current.queueSave(testScene("changed after migration")));
     await flushQueuedSave(result);
     expect(mocks.mutate).not.toHaveBeenCalled();
     expect(mocks.createSceneUploadGrant).toHaveBeenLastCalledWith(
@@ -1741,12 +1780,12 @@ describe("useCloudBoard preview scheduling", () => {
     expect(result.current.saveStatus).toBe("saved");
     expect(result.current.errorMessage).toBeNull();
 
-    act(() => result.current.queueSave("changed"));
+    act(() => result.current.queueSave(testScene("changed")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
     expect(mocks.mutate).toHaveBeenCalledWith(
-      expect.objectContaining({ sceneJson: "changed" }),
+      expect.objectContaining({ sceneJson: testScene("changed") }),
     );
     expect(mocks.createSceneUploadGrant).toHaveBeenCalledTimes(1);
   });
@@ -1765,10 +1804,10 @@ describe("useCloudBoard preview scheduling", () => {
     window.history.replaceState({}, "", "/s/share-token");
     mocks.openedBoard = {
       ...mocks.openedBoard,
-      sceneJson: "shared r2 scene",
+      sceneJson: testScene("shared r2 scene"),
       sceneManifest: { version: 1 },
     };
-    await publishSceneObject("shared r2 scene", 1);
+    await publishSceneObject(testScene("shared r2 scene"), 1);
     const { result } = await renderCloudBoard();
     await settleUntil(() => result.current.openedBoard !== undefined);
 
@@ -1776,7 +1815,9 @@ describe("useCloudBoard preview scheduling", () => {
       shareToken: "share-token",
     });
     expect(result.current.isViewer).toBe(true);
-    expect(result.current.openedBoard?.sceneJson).toBe("shared r2 scene");
+    expect(result.current.openedBoard?.sceneJson).toBe(
+      testScene("shared r2 scene"),
+    );
     expect(mocks.createSceneUploadGrant).not.toHaveBeenCalled();
     expect(mocks.sceneQuery).not.toHaveBeenCalled();
   });
@@ -1849,15 +1890,15 @@ describe("useCloudBoard preview scheduling", () => {
 
     // The tab that dies: a local edit is journaled well before the cloud save
     // it owes, and the hard refresh lands while that save is still debounced.
-    const dying = await openMigratedBoard("r2 scene", 341);
-    act(() => dying.result.current.queueSave("duplicated elements"));
+    const dying = await openMigratedBoard(testScene("r2 scene"), 341);
+    act(() => dying.result.current.queueSave(testScene("duplicated elements")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_CRASH_JOURNAL_DEBOUNCE_MS);
     });
     await settleUntil(() => journal.entries.has("board-id"));
     expect(journal.entries.get("board-id")).toEqual(
       expect.objectContaining({
-        sceneJson: "duplicated elements",
+        sceneJson: testScene("duplicated elements"),
         baseVersion: 341,
       }),
     );
@@ -1883,16 +1924,16 @@ describe("useCloudBoard preview scheduling", () => {
       snapshotCreated: false,
       cleanupToken: null,
     });
-    const revived = await openMigratedBoard("r2 scene", 341);
+    const revived = await openMigratedBoard(testScene("r2 scene"), 341);
     // The App applies the opened scene, then hands the journal its chance.
     await act(async () => {
-      revived.result.current.acceptSceneWithoutSave("r2 scene");
+      revived.result.current.acceptSceneWithoutSave(testScene("r2 scene"));
       await vi.advanceTimersByTimeAsync(0);
     });
 
     await waitForCloudState(() => {
       expect(revived.result.current.openedBoard?.sceneJson).toBe(
-        "duplicated elements",
+        testScene("duplicated elements"),
       );
       expect(revived.result.current.openedBoard?.version).toBe(342);
       expect(journal.entries.has("board-id")).toBe(false);
@@ -1907,7 +1948,7 @@ describe("useCloudBoard preview scheduling", () => {
     );
     await journal.storage.write("board-id", {
       boardId: "board-id",
-      sceneJson: "duplicated elements",
+      sceneJson: testScene("duplicated elements"),
       baseVersion: 341,
       savedAt: 10,
     });
@@ -1922,19 +1963,19 @@ describe("useCloudBoard preview scheduling", () => {
       snapshotCreated: false,
       cleanupToken: null,
     });
-    const rendered = await openMigratedBoard("r2 scene", 341);
+    const rendered = await openMigratedBoard(testScene("r2 scene"), 341);
 
     // Applying an opened scene to the canvas makes the editor report it
     // straight back, in the same task that accepted it and long before the
     // claim's exclusive section opens.
     await act(async () => {
-      rendered.result.current.acceptSceneWithoutSave("r2 scene");
-      rendered.result.current.queueSave("r2 scene");
+      rendered.result.current.acceptSceneWithoutSave(testScene("r2 scene"));
+      rendered.result.current.queueSave(testScene("r2 scene"));
       await vi.advanceTimersByTimeAsync(0);
     });
     await waitForCloudState(() => {
       expect(rendered.result.current.openedBoard?.sceneJson).toBe(
-        "duplicated elements",
+        testScene("duplicated elements"),
       );
       expect(rendered.result.current.openedBoard?.version).toBe(342);
     });
@@ -1948,7 +1989,7 @@ describe("useCloudBoard preview scheduling", () => {
     );
     await journal.storage.write("board-id", {
       boardId: "board-id",
-      sceneJson: "duplicated elements",
+      sceneJson: testScene("duplicated elements"),
       baseVersion: 341,
       savedAt: 10,
     });
@@ -1972,12 +2013,18 @@ describe("useCloudBoard preview scheduling", () => {
       snapshotCreated: false,
       cleanupToken: null,
     });
-    const rendered = await openMigratedBoard("r2 scene", 341);
+    const rendered = await openMigratedBoard(testScene("r2 scene"), 341);
 
     // Applying the opened scene settles bindings and the viewport, so the
     // editor reports a scene of its own and journals it on the short debounce.
-    act(() => rendered.result.current.acceptSceneWithoutSave("r2 scene"));
-    act(() => rendered.result.current.queueSave("r2 scene, bindings settled"));
+    act(() =>
+      rendered.result.current.acceptSceneWithoutSave(testScene("r2 scene")),
+    );
+    act(() =>
+      rendered.result.current.queueSave(
+        testScene("r2 scene, bindings settled"),
+      ),
+    );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_CRASH_JOURNAL_DEBOUNCE_MS);
     });
@@ -1988,7 +2035,7 @@ describe("useCloudBoard preview scheduling", () => {
     });
     await waitForCloudState(() => {
       expect(rendered.result.current.openedBoard?.sceneJson).toBe(
-        "duplicated elements",
+        testScene("duplicated elements"),
       );
       expect(rendered.result.current.openedBoard?.version).toBe(342);
     });
@@ -2002,7 +2049,7 @@ describe("useCloudBoard preview scheduling", () => {
     );
     await journal.storage.write("board-id", {
       boardId: "board-id",
-      sceneJson: "duplicated elements",
+      sceneJson: testScene("duplicated elements"),
       baseVersion: 341,
       savedAt: 10,
     });
@@ -2017,17 +2064,19 @@ describe("useCloudBoard preview scheduling", () => {
         return await task();
       },
     );
-    const rendered = await openMigratedBoard("r2 scene", 341);
+    const rendered = await openMigratedBoard(testScene("r2 scene"), 341);
 
-    act(() => rendered.result.current.acceptSceneWithoutSave("r2 scene"));
+    act(() =>
+      rendered.result.current.acceptSceneWithoutSave(testScene("r2 scene")),
+    );
 
     // That save lands first, so by the time the section opens the journaled
     // edit no longer builds on the version this tab would save against.
-    await publishSceneObject("peer edit", 342);
+    await publishSceneObject(testScene("peer edit"), 342);
     mocks.openedBoard = {
       ...mocks.openedBoard,
       version: 342,
-      sceneJson: "peer edit",
+      sceneJson: testScene("peer edit"),
       sceneManifest: { version: 342 },
     };
     rendered.rerender();
@@ -2041,10 +2090,12 @@ describe("useCloudBoard preview scheduling", () => {
     await settleUntil(() => false, 60);
 
     // Nothing replayed it, so nothing may have consumed it either.
-    expect(rendered.result.current.openedBoard?.sceneJson).toBe("peer edit");
+    expect(rendered.result.current.openedBoard?.sceneJson).toBe(
+      testScene("peer edit"),
+    );
     expect(mocks.createSceneUploadGrant).not.toHaveBeenCalled();
     expect(journal.entries.get("board-id")).toEqual(
-      expect.objectContaining({ sceneJson: "duplicated elements" }),
+      expect.objectContaining({ sceneJson: testScene("duplicated elements") }),
     );
     rendered.unmount();
   });
@@ -2063,7 +2114,7 @@ describe("useCloudBoard preview scheduling", () => {
   /** Leaves the Board in the retryable save-failure state, edit still pending. */
   const failOneSave = async (
     result: { current: ReturnType<typeof useCloudBoard> },
-    sceneJson = "edit the cloud rejected",
+    sceneJson = testScene("edit the cloud rejected"),
   ) => {
     mocks.mutate.mockRejectedValueOnce(new Error("offline"));
     act(() => result.current.queueSave(sceneJson));
@@ -2084,7 +2135,9 @@ describe("useCloudBoard preview scheduling", () => {
     mocks.journalIsDegraded.mockReturnValue(true);
     const { result } = await renderCloudBoard();
 
-    act(() => result.current.queueSave("edit no journal could store"));
+    act(() =>
+      result.current.queueSave(testScene("edit no journal could store")),
+    );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_CRASH_JOURNAL_DEBOUNCE_MS);
     });
@@ -2097,14 +2150,14 @@ describe("useCloudBoard preview scheduling", () => {
   it("stays silent while an ordinary pending edit waits for its save", async () => {
     const { result } = await renderCloudBoard();
 
-    act(() => result.current.queueSave("ordinary edit"));
+    act(() => result.current.queueSave(testScene("ordinary edit")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_CRASH_JOURNAL_DEBOUNCE_MS);
     });
 
     expect(result.current.saveStatus).toBe("saving");
     expect(mocks.journalWrite).toHaveBeenCalledWith(
-      expect.objectContaining({ sceneJson: "ordinary edit" }),
+      expect.objectContaining({ sceneJson: testScene("ordinary edit") }),
     );
     expect(dispatchBeforeUnload().defaultPrevented).toBe(false);
 
@@ -2130,7 +2183,7 @@ describe("useCloudBoard preview scheduling", () => {
     const { result } = await renderCloudBoard();
 
     expect(result.current.isViewer).toBe(true);
-    act(() => result.current.queueSave("viewer edit"));
+    act(() => result.current.queueSave(testScene("viewer edit")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
     });
@@ -2143,7 +2196,7 @@ describe("useCloudBoard preview scheduling", () => {
     await failOneSave(result);
     expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
 
-    act(() => result.current.queueSave("edit the retry saved"));
+    act(() => result.current.queueSave(testScene("edit the retry saved")));
     await flushQueuedSave(result);
 
     expect(result.current.saveStatus).toBe("saved");
@@ -2154,7 +2207,7 @@ describe("useCloudBoard preview scheduling", () => {
     mocks.journalIsDegraded.mockReturnValue(true);
     const { result } = await renderCloudBoard();
 
-    act(() => result.current.queueSave("edit the journal missed"));
+    act(() => result.current.queueSave(testScene("edit the journal missed")));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLOUD_CRASH_JOURNAL_DEBOUNCE_MS);
     });
@@ -2183,7 +2236,9 @@ describe("useCloudBoard preview scheduling", () => {
 
     expect(mocks.mutate).toHaveBeenCalledTimes(2);
     expect(mocks.mutate).toHaveBeenLastCalledWith(
-      expect.objectContaining({ sceneJson: "edit the cloud rejected" }),
+      expect.objectContaining({
+        sceneJson: testScene("edit the cloud rejected"),
+      }),
     );
     expect(result.current.saveStatus).toBe("saved");
   });

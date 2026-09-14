@@ -7,6 +7,7 @@ import {
   boardSceneObjectFields,
   boardSceneSnapshotFields,
   boardScenePurposeValidator,
+  boardSceneServerCommitResultValidator,
 } from "./boardSceneModel";
 import {
   docAssetReferenceSummaryFields,
@@ -335,6 +336,12 @@ export default defineSchema({
     objectKey: v.string(),
     ...boardSceneIntegrityFields,
     ...boardDocRefsUploadFields,
+    stagingObjectKey: v.optional(v.string()),
+    forceSnapshot: v.optional(v.boolean()),
+    finalizationId: v.optional(v.string()),
+    finalizingAt: v.optional(v.number()),
+    abandonedAt: v.optional(v.number()),
+    commitResult: v.optional(boardSceneServerCommitResultValidator),
     resolvedAt: v.optional(v.number()),
     registeredAt: v.optional(v.number()),
     etag: v.optional(v.string()),

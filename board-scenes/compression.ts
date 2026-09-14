@@ -14,7 +14,7 @@ export const inflateBoardScene = (
   const chunks: Uint8Array[] = [];
   let rawSize = 0;
   let tooLarge = false;
-  const inflator = new Inflate();
+  const inflator = new Inflate({ windowBits: 15 });
   inflator.onData = (chunk) => {
     const rawChunk =
       chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
@@ -30,7 +30,19 @@ export const inflateBoardScene = (
   try {
     const succeeded = inflator.push(bytes, true);
     const completed = "ended" in inflator && inflator.ended === true;
-    if (!succeeded || inflator.err || !completed) {
+    // Pako can ignore zero-prefixed trailers or reset its input count for a
+    // concatenated stream. deflate-v1 accepts exactly one complete zlib stream.
+    const stream = "strm" in inflator ? inflator.strm : null;
+    const consumed =
+      stream && typeof stream === "object" && "total_in" in stream
+        ? stream.total_in
+        : null;
+    if (
+      !succeeded ||
+      inflator.err ||
+      !completed ||
+      consumed !== bytes.byteLength
+    ) {
       throw new Error(MALFORMED_MESSAGE);
     }
   } catch {

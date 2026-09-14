@@ -43,6 +43,18 @@ export const pruneExpiredGrants = internalMutation({
 
     const orphansByOwner = new Map<Id<"users">, string[]>();
     for (const grant of uploadGrants) {
+      if (grant.stagingObjectKey && grant.registeredAt === undefined) {
+        // Retain a durable tombstone until R2 confirms deletion. Move it out of
+        // this expiry page so a provider outage cannot cause a tight scan loop.
+        await ctx.db.patch("boardSceneUploadGrants", grant._id, {
+          abandonedAt: grant.abandonedAt ?? now,
+          expiresAt: now + 60 * 60 * 1000,
+        });
+        await ctx.scheduler.runAfter(0, internal.boardSceneUploads.cleanup, {
+          grantId: grant._id,
+        });
+        continue;
+      }
       if (grant.registeredAt === undefined) {
         orphansByOwner.set(grant.ownerId, [
           ...(orphansByOwner.get(grant.ownerId) ?? []),

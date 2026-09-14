@@ -9,6 +9,7 @@
 
 /** Every Board scene object lives under this key namespace. */
 export const BOARD_SCENE_KEY_PREFIX = "board-scenes/";
+export const BOARD_SCENE_STAGING_KEY_PREFIX = "board-scene-uploads/";
 
 /** zlib/deflate framing, matching the `pako` deflate the client already uses. */
 export const BOARD_SCENE_ENCODING = "deflate-v1";
@@ -141,8 +142,10 @@ export const isBoardSceneKeyPrefix = (objectKeyPrefix: string) =>
  * ever be reached through the capability-checked private route.
  */
 export const referencesBoardSceneNamespace = (objectKey: string) =>
-  objectKey.startsWith(BOARD_SCENE_KEY_PREFIX) ||
-  objectKey.includes(`/${BOARD_SCENE_KEY_PREFIX}`);
+  [BOARD_SCENE_KEY_PREFIX, BOARD_SCENE_STAGING_KEY_PREFIX].some(
+    (prefix) =>
+      objectKey.startsWith(prefix) || objectKey.includes(`/${prefix}`),
+  );
 
 const isSafeInteger = (value: unknown, min: number, max: number) =>
   typeof value === "number" &&

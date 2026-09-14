@@ -1,6 +1,7 @@
 import {
   useConvex,
   useMutation,
+  useAction,
   usePaginatedQuery_experimental,
   useQuery,
 } from "convex/react";
@@ -214,7 +215,8 @@ export const useCloudBoard = () => {
   const renameFolderMutation = useMutation(api.boardFolders.rename);
   const removeFolderMutation = useMutation(api.boardFolders.remove);
   const createSceneUploadGrant = useMutation(api.boardScenes.createUploadGrant);
-  const commitSceneUpload = useMutation(api.boardScenes.commitUpload);
+  const prepareSceneUpload = useAction(api.boardSceneUploads.prepareUpload);
+  const finalizeSceneUpload = useAction(api.boardSceneUploads.finalizeUpload);
   const abandonSceneUpload = useMutation(api.boardScenes.abandonUpload);
   const createSceneReadGrant = useMutation(api.boardScenes.createReadGrant);
   const createAssetUploadGrant = useMutation(api.boardAssets.createUploadGrant);
@@ -306,12 +308,21 @@ export const useCloudBoard = () => {
               }
             : null),
         }),
-      upload: uploadBoardSceneObject,
-      commitUpload: commitSceneUpload,
+      upload: async (token, scene) =>
+        await uploadBoardSceneObject(
+          await prepareSceneUpload({ token }),
+          scene,
+        ),
+      finalizeUpload: finalizeSceneUpload,
       abandonUpload: abandonSceneUpload,
       cleanup: cleanupBoardSceneObjects,
     }),
-    [abandonSceneUpload, commitSceneUpload, createSceneUploadGrant],
+    [
+      abandonSceneUpload,
+      finalizeSceneUpload,
+      prepareSceneUpload,
+      createSceneUploadGrant,
+    ],
   );
 
   const sceneReadDependencies = useMemo<BoardSceneReadDependencies>(

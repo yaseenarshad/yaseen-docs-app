@@ -7,8 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BOARD_SCENE_CONTENT_TYPE,
   BOARD_SCENE_ENCODING,
-  BOARD_SCENE_ENCODING_HEADER,
-  BOARD_SCENE_ROUTE,
   MAX_BOARD_SCENE_RAW_BYTES,
 } from "../board-scenes/types";
 import { getBoardSceneSizeError } from "../board-scenes/sizePolicy";
@@ -25,6 +23,15 @@ import {
 import { getSceneSemanticRevision } from "./sceneConflict";
 
 const WORKER_ORIGIN = "https://scenes.example.test";
+const permission = {
+  url: "https://r2.example.test/test-bucket/board-scene-uploads/staged?X-Amz-Signature=synthetic",
+  headers: {
+    "content-type": BOARD_SCENE_CONTENT_TYPE,
+    "if-none-match": "*",
+    "x-amz-checksum-sha256": "synthetic-signed-checksum",
+  },
+  expiresAt: 2_000_000_000_000,
+};
 
 const sceneJson = JSON.stringify({
   elements: [{ id: "rect-1", type: "rectangle", version: 2 }],
@@ -52,6 +59,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
@@ -172,7 +180,7 @@ describe("Board scene compression", () => {
   });
 });
 
-describe("Board scene Worker transport", () => {
+describe("Board scene direct upload and Worker read transport", () => {
   it("downloads, verifies and decompresses a granted object", async () => {
     const compressed = await compressBoardScene(sceneJson);
     const fetchMock = vi.fn(
@@ -207,40 +215,66 @@ describe("Board scene Worker transport", () => {
 
   it("uploads the compressed bytes as the granted capability", async () => {
     const compressed = await compressBoardScene(sceneJson);
-    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
-      jsonResponse({ etag: "etag-new" }),
+    const fetchMock = vi.fn(
+      async (_url: string, _init: RequestInit) =>
+        new Response(null, { status: 200 }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(
-      uploadBoardSceneObject("upload-token", compressed),
-    ).resolves.toBe("etag-new");
+      uploadBoardSceneObject(permission, compressed),
+    ).resolves.toBeUndefined();
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe(`${WORKER_ORIGIN}${BOARD_SCENE_ROUTE}`);
-    expect(init.method).toBe("POST");
-    expect(init.headers).toMatchObject({
-      Authorization: "Bearer upload-token",
-      "Content-Type": BOARD_SCENE_CONTENT_TYPE,
-      [BOARD_SCENE_ENCODING_HEADER]: BOARD_SCENE_ENCODING,
-    });
+    expect(url).toBe(permission.url);
+    expect(init.method).toBe("PUT");
+    expect(init.headers).toEqual(permission.headers);
+    expect(new Uint8Array(init.body as ArrayBuffer)).toEqual(compressed.bytes);
   });
 
-  it("surfaces an upload rejection as a scene error", async () => {
+  it("sanitizes provider rejection details", async () => {
     const compressed = await compressBoardScene(sceneJson);
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
-        jsonResponse({ error: "Board scene JSON is invalid" }, { status: 400 }),
+        jsonResponse(
+          { error: `Provider rejected ${permission.url}` },
+          { status: 400 },
+        ),
       ),
     );
 
     await expect(
-      uploadBoardSceneObject("upload-token", compressed),
-    ).rejects.toThrow("Board scene JSON is invalid");
+      uploadBoardSceneObject(permission, compressed),
+    ).rejects.toThrow(/^Board scene upload failed$/);
+  });
+
+  it("accepts create-only replay without claiming that finalization succeeded", async () => {
+    const compressed = await compressBoardScene(sceneJson);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 412 })),
+    );
+    await expect(
+      uploadBoardSceneObject(permission, compressed),
+    ).resolves.toBeUndefined();
+  });
+
+  it("sanitizes network exceptions containing a signed URL", async () => {
+    const compressed = await compressBoardScene(sceneJson);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error(permission.url);
+      }),
+    );
+    await expect(
+      uploadBoardSceneObject(permission, compressed),
+    ).rejects.toThrow(/^Board scene upload failed$/);
   });
 
   it("treats cleanup as best-effort work that never throws", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
       jsonResponse({ deleted: 1 }),
     );
@@ -256,18 +290,28 @@ describe("Board scene Worker transport", () => {
       }),
     );
     await expect(deleteBoardSceneObjects("delete-token")).resolves.toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses to reach object storage when no Worker origin is configured", async () => {
+  it("requires a Worker origin for reads and cleanup but not a prepared direct PUT", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.stubEnv(BOARD_SCENE_WORKER_ORIGIN_VARIABLE, "");
     const compressed = await compressBoardScene(sceneJson);
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
 
     await expect(
       downloadBoardSceneObject("/api/board-scenes/token", compressed),
     ).rejects.toThrow("Board scene storage is not configured");
     await expect(
-      uploadBoardSceneObject("upload-token", compressed),
-    ).rejects.toThrow("Board scene storage is not configured");
+      uploadBoardSceneObject(permission, compressed),
+    ).resolves.toBeUndefined();
     await expect(deleteBoardSceneObjects("delete-token")).resolves.toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]).toEqual([
+      permission.url,
+      expect.objectContaining({ method: "PUT" }),
+    ]);
   });
 });

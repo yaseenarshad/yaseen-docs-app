@@ -37,9 +37,9 @@ const saveDependencies = () => {
     expiresAt: 1_000,
   });
   const upload = vi.fn<BoardSceneSaveDependencies["upload"]>();
-  upload.mockResolvedValue({ etag: "etag-v3" });
-  const commitUpload = vi.fn<BoardSceneSaveDependencies["commitUpload"]>();
-  commitUpload.mockResolvedValue({
+  upload.mockResolvedValue(undefined);
+  const finalizeUpload = vi.fn<BoardSceneSaveDependencies["finalizeUpload"]>();
+  finalizeUpload.mockResolvedValue({
     status: "committed",
     version: 3,
     updatedAt: 42,
@@ -50,7 +50,7 @@ const saveDependencies = () => {
   abandonUpload.mockResolvedValue({ cleanupToken: "abandon-cleanup" });
   const cleanup = vi.fn<BoardSceneSaveDependencies["cleanup"]>();
   cleanup.mockResolvedValue(undefined);
-  return { createUploadGrant, upload, commitUpload, abandonUpload, cleanup };
+  return { createUploadGrant, upload, finalizeUpload, abandonUpload, cleanup };
 };
 
 const readDependencies = async (
@@ -154,9 +154,9 @@ describe("board scene compression", () => {
     expect(withBindings.semanticSha256).not.toBe(changed.semanticSha256);
   });
 
-  it("still hashes a scene that is not valid JSON", async () => {
-    await expect(compressBoardScene("not json")).resolves.toEqual(
-      expect.objectContaining({ semanticSha256: expect.any(String) }),
+  it("rejects malformed scene JSON before requesting storage", async () => {
+    await expect(compressBoardScene("not json")).rejects.toThrow(
+      "document is invalid",
     );
   });
 });
@@ -193,10 +193,9 @@ describe("board scene save", () => {
         compressedSha256: compressed.compressedSha256,
       }),
     );
-    expect(dependencies.commitUpload).toHaveBeenCalledWith({
+    expect(dependencies.finalizeUpload).toHaveBeenCalledWith({
       clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
       token: "upload-token",
-      etag: "etag-v3",
     });
     expect(result).toEqual({
       status: "committed",
@@ -245,7 +244,7 @@ describe("board scene save", () => {
     );
 
     expect(dependencies.upload).not.toHaveBeenCalled();
-    expect(dependencies.commitUpload).not.toHaveBeenCalled();
+    expect(dependencies.finalizeUpload).not.toHaveBeenCalled();
     expect(result).toEqual({ status: "unchanged", version: 2, updatedAt: 11 });
   });
 
@@ -267,7 +266,7 @@ describe("board scene save", () => {
 
   it("drains the cleanup capability a losing commit hands back", async () => {
     const dependencies = saveDependencies();
-    dependencies.commitUpload.mockResolvedValue({
+    dependencies.finalizeUpload.mockResolvedValue({
       status: "conflict",
       version: 6,
       cleanupToken: "orphan-cleanup",
@@ -284,7 +283,7 @@ describe("board scene save", () => {
 
   it("drains the superseded object a commit hands back", async () => {
     const dependencies = saveDependencies();
-    dependencies.commitUpload.mockResolvedValue({
+    dependencies.finalizeUpload.mockResolvedValue({
       status: "committed",
       version: 3,
       updatedAt: 42,
@@ -302,7 +301,7 @@ describe("board scene save", () => {
 
   it("never fails a durable save because cleanup failed", async () => {
     const dependencies = saveDependencies();
-    dependencies.commitUpload.mockResolvedValue({
+    dependencies.finalizeUpload.mockResolvedValue({
       status: "committed",
       version: 3,
       updatedAt: 42,
@@ -349,7 +348,7 @@ describe("board scene save", () => {
       token: "upload-token",
     });
     expect(dependencies.cleanup).toHaveBeenCalledWith("abandon-cleanup");
-    expect(dependencies.commitUpload).not.toHaveBeenCalled();
+    expect(dependencies.finalizeUpload).not.toHaveBeenCalled();
   });
 
   it("keeps the upload failure visible when abandoning also fails", async () => {
@@ -373,7 +372,7 @@ describe("board scene save", () => {
       version: 2,
       expiresAt: 1_000,
     });
-    dependencies.commitUpload.mockResolvedValue({
+    dependencies.finalizeUpload.mockResolvedValue({
       status: "committed",
       version: 2,
       updatedAt: 7,

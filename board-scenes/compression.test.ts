@@ -1,4 +1,4 @@
-import { deflate } from "pako";
+import { deflate, gzip } from "pako";
 import { describe, expect, it } from "vitest";
 
 import { inflateBoardScene } from "./compression";
@@ -46,4 +46,28 @@ describe("bounded Board scene inflation", () => {
       ).toThrow("Board scene raw limit is invalid");
     },
   );
+});
+
+const join = (...parts: Uint8Array[]) =>
+  new Uint8Array(parts.flatMap((part) => [...part]));
+describe("strict Board scene deflate stream", () => {
+  it("accepts one complete zlib stream", () => {
+    expect(new TextDecoder().decode(inflateBoardScene(deflate("abc"), 3))).toBe(
+      "abc",
+    );
+  });
+  it.each([
+    gzip("abc"),
+    join(deflate("abc"), new Uint8Array([0, 1, 2])),
+    join(deflate("a"), gzip("bc")),
+    join(deflate("a"), deflate("bc")),
+    deflate("abc").slice(0, -1),
+  ])("rejects foreign, concatenated, trailing or incomplete bytes", (bytes) => {
+    expect(() => inflateBoardScene(bytes, 3)).toThrow(
+      "could not be decompressed",
+    );
+  });
+  it("stops expansion at the raw limit", () => {
+    expect(() => inflateBoardScene(deflate("abcd"), 3)).toThrow("too large");
+  });
 });

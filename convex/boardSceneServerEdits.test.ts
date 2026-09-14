@@ -15,6 +15,7 @@ import {
 } from "../doc-placement/types";
 import {
   BOARD_SCENE_TEST_WORKER_ORIGIN,
+  BOARD_SCENE_TEST_R2_ENV,
   createBoardSceneWorkerHarness,
 } from "../board-scenes/testWorkerHarness";
 
@@ -118,7 +119,7 @@ const setup = async () => {
 type Harness = Awaited<ReturnType<typeof setup>>;
 type TestClient = Harness["owner"];
 
-/** Exactly the pipeline a browser runs: compress, grant, upload, commit. */
+/** Real browser pipeline: compress, grant, prepare, staging PUT, finalize. */
 const clientCommit = async (
   client: TestClient,
   boardId: Id<"diagrams">,
@@ -149,11 +150,13 @@ const clientCommit = async (
   if (grant.status !== "upload") {
     return grant;
   }
-  const etag = await uploadBoardSceneObject(grant.token, compressed);
-  const committed = await client.mutation(api.boardScenes.commitUpload, {
+  const permission = await client.action(api.boardSceneUploads.prepareUpload, {
+    token: grant.token,
+  });
+  await uploadBoardSceneObject(permission, compressed);
+  const committed = await client.action(api.boardSceneUploads.finalizeUpload, {
     clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
     token: grant.token,
-    etag,
   });
   if (committed.status !== "upgrade-required") {
     await deleteBoardSceneObjects(committed.cleanupToken);
@@ -184,6 +187,9 @@ const dueForSnapshot = async (t: Harness["t"], boardId: Id<"diagrams">) => {
 };
 
 beforeEach(() => {
+  for (const [name, value] of Object.entries(BOARD_SCENE_TEST_R2_ENV)) {
+    vi.stubEnv(name, value);
+  }
   vi.stubEnv(
     BOARD_SCENE_WORKER_ORIGIN_VARIABLE,
     BOARD_SCENE_TEST_WORKER_ORIGIN,
@@ -191,11 +197,17 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
 
-describe("Board scenes through the private Worker", () => {
+const finalObjectKeys = (harness: Harness["harness"]) =>
+  [...harness.objects.keys()].filter((key) =>
+    key.startsWith(BOARD_SCENE_KEY_PREFIX),
+  );
+
+describe("Board scenes through direct R2 upload and private Worker reads", () => {
   it("stores a migrated scene and serves it back to its owner", async () => {
     const { owner, board, harness } = await setup();
 
@@ -208,8 +220,13 @@ describe("Board scenes through the private Worker", () => {
     );
 
     expect(committed).toMatchObject({ status: "committed", version: 0 });
-    expect(harness.objects.size).toBe(1);
-    expect([...harness.objects.keys()][0]).toContain(BOARD_SCENE_KEY_PREFIX);
+    expect(finalObjectKeys(harness)).toHaveLength(1);
+    expect(harness.requests.some((request) => request.method === "POST")).toBe(
+      false,
+    );
+    expect(
+      harness.requests.filter((request) => request.method === "PUT"),
+    ).toHaveLength(2);
     await expect(readCurrentScene(owner, board.boardId)).resolves.toBe(
       textScene("Before"),
     );
@@ -244,10 +261,10 @@ describe("Board scenes through the private Worker", () => {
     );
   });
 
-  it("never discloses an object key through a client-visible payload", async () => {
+  it("keeps permanent object keys out of Board metadata and read grants", async () => {
     const { owner, board, harness } = await setup();
     await clientCommit(owner, board.boardId, "migration", 0, textScene("Keys"));
-    const objectKey = [...harness.objects.keys()][0];
+    const objectKey = finalObjectKeys(harness)[0];
     expect(objectKey.startsWith(BOARD_SCENE_KEY_PREFIX)).toBe(true);
 
     const [metadata, summaries, grant, snapshots] = await Promise.all([
@@ -432,7 +449,7 @@ describe("programmatic edits on a migrated Board", () => {
       textScene("Before"),
     );
     await clientCommit(owner, board.boardId, "save", 0, textScene("Saved", 2));
-    const replaced = [...harness.objects.keys()];
+    const replaced = finalObjectKeys(harness);
 
     const result = await owner.action(
       api.programmaticBoardEdits.updateTextElement,
@@ -562,7 +579,12 @@ describe("programmatic edits on a migrated Board", () => {
     vi.stubGlobal(
       "fetch",
       async (input: RequestInfo | URL, init: RequestInit = {}) => {
-        if (init.method === "POST" && concurrentSaves === 0) {
+        const request = new Request(input, init);
+        if (
+          request.method === "PUT" &&
+          new URL(request.url).pathname.includes("/board-scene-uploads/") &&
+          concurrentSaves === 0
+        ) {
           concurrentSaves += 1;
           await clientCommit(
             owner,
@@ -703,14 +725,14 @@ describe("history restore on a migrated Board", () => {
       boardId: board.boardId,
     });
     expect(snapshots.map((entry) => entry.version)).toEqual([2, 1]);
-    // Every snapshot object is still readable, and nothing was orphaned.
+    // Every snapshot object is still readable, with no orphaned final objects.
     const rows = await t.run(async (ctx) =>
       ctx.db.query("diagramSnapshots").collect(),
     );
     for (const row of rows) {
       expect(harness.objects.has(row.objectKey!)).toBe(true);
     }
-    expect(harness.objects.size).toBe(3);
+    expect(finalObjectKeys(harness)).toHaveLength(3);
   });
 
   it("restores a legacy snapshot the Board wrote before it migrated", async () => {
@@ -796,7 +818,7 @@ describe("deletion with mixed legacy and R2 snapshots", () => {
     await clientCommit(owner, board.boardId, "migration", 1, textScene("v1"));
     await dueForSnapshot(t, board.boardId);
     await clientCommit(owner, board.boardId, "save", 1, textScene("v2"));
-    expect(harness.objects.size).toBe(2);
+    expect(finalObjectKeys(harness)).toHaveLength(2);
 
     vi.useFakeTimers();
     const removed = await owner.mutation(api.boards.remove, {
@@ -813,7 +835,13 @@ describe("deletion with mixed legacy and R2 snapshots", () => {
     );
 
     expect(cleanup.status).toBe(200);
-    expect(harness.objects.size).toBe(0);
+    expect(finalObjectKeys(harness)).toHaveLength(0);
+    // Staging objects are private and expire through the provider lifecycle.
+    expect(
+      [...harness.objects.keys()].every((key) =>
+        key.startsWith("board-scene-uploads/"),
+      ),
+    ).toBe(true);
     const remaining = await t.run(async (ctx) => ({
       snapshots: await ctx.db.query("diagramSnapshots").collect(),
       manifests: await ctx.db.query("diagramSceneManifests").collect(),

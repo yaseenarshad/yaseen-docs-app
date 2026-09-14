@@ -2,15 +2,14 @@ import { deflate } from "pako";
 import { ConvexError } from "convex/values";
 
 import { inflateBoardScene } from "../board-scenes/compression";
+import { decodeBoardSceneDocument } from "../board-scenes/document";
 import {
   assertBoardSceneRawSize,
   getBoardSceneSizeError,
 } from "../board-scenes/sizePolicy";
 
 import {
-  BOARD_SCENE_CONTENT_TYPE,
   BOARD_SCENE_ENCODING,
-  BOARD_SCENE_ENCODING_HEADER,
   BOARD_SCENE_ROUTE,
   MAX_BOARD_SCENE_COMPRESSED_BYTES,
   MAX_BOARD_SCENE_RAW_BYTES,
@@ -83,6 +82,7 @@ export const compressBoardScene = async (
     }
     throw error;
   }
+  decodeBoardSceneDocument(raw);
   const bytes = deflate(raw);
   if (bytes.byteLength > MAX_BOARD_SCENE_COMPRESSED_BYTES) {
     throw new Error("Board scene compressed representation is too large");
@@ -125,7 +125,7 @@ export const decompressBoardScene = async (
   ) {
     throw new Error(BOARD_SCENE_INTEGRITY_MESSAGE);
   }
-  return new TextDecoder().decode(raw);
+  return decodeBoardSceneDocument(raw);
 };
 
 /**
@@ -148,24 +148,25 @@ export const downloadBoardSceneObject = async (
 };
 
 export const uploadBoardSceneObject = async (
-  token: string,
+  permission: {
+    url: string;
+    headers: Record<string, string>;
+    expiresAt: number;
+  },
   scene: CompressedBoardScene,
 ) => {
-  const url = boardSceneWorkerUrl(BOARD_SCENE_ROUTE);
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": BOARD_SCENE_CONTENT_TYPE,
-      [BOARD_SCENE_ENCODING_HEADER]: scene.encoding,
-    },
-    body: scene.bytes.slice().buffer as ArrayBuffer,
-  });
-  const body = (await response.json()) as { etag?: string; error?: string };
-  if (!response.ok || !body.etag) {
-    throw new Error(body.error || "Board scene upload failed");
+  try {
+    const response = await fetch(permission.url, {
+      method: "PUT",
+      headers: permission.headers,
+      body: scene.bytes.slice().buffer as ArrayBuffer,
+    });
+    if (!response.ok && response.status !== 412) {
+      throw new Error("Upload failed");
+    }
+  } catch {
+    throw new Error("Board scene upload failed");
   }
-  return body.etag;
 };
 
 /**

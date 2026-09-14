@@ -6,6 +6,7 @@ import {
   BOARD_SCENE_CONTENT_TYPE,
   BOARD_SCENE_ENCODING,
   BOARD_SCENE_KEY_PREFIX,
+  BOARD_SCENE_STAGING_KEY_PREFIX,
   BOARD_SCENE_READ_ROUTE_PREFIX,
   MAX_BOARD_SCENE_COMPRESSED_BYTES,
   MAX_BOARD_SCENE_RAW_BYTES,
@@ -15,6 +16,8 @@ import type { Infer } from "convex/values";
 
 /** An upload capability only has to survive one compress-and-upload round. */
 export const BOARD_SCENE_UPLOAD_GRANT_LIFETIME_MS = 10 * 60 * 1000;
+// Wait beyond Convex's maximum action lifetime before removing a possible copy.
+export const BOARD_SCENE_FINALIZER_DRAIN_MS = 11 * 60 * 1000;
 /** Read capabilities are deliberately short-lived; the client re-mints them. */
 export const BOARD_SCENE_READ_GRANT_LIFETIME_MS = 5 * 60 * 1000;
 /** Cleanup is best-effort work a client drains, so it survives a session. */
@@ -211,6 +214,9 @@ export const makeBoardSceneToken = () =>
  */
 export const makeBoardSceneObjectKey = (diagramId: string) =>
   `${boardSceneKeyPrefixForDiagram(diagramId)}${makeBoardSceneToken()}.bin`;
+
+export const makeBoardSceneStagingKey = (diagramId: string) =>
+  `${BOARD_SCENE_STAGING_KEY_PREFIX}${diagramId}/${makeBoardSceneToken()}.bin`;
 
 export const boardSceneKeyPrefixForDiagram = (diagramId: string) =>
   `${BOARD_SCENE_KEY_PREFIX}${diagramId}/`;

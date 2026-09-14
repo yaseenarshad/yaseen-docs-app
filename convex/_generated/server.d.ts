@@ -26,6 +26,10 @@ import type { DataModel } from "./dataModel.js";
  */
 type Env = {
   readonly ALLOW_DEV_ACCOUNT_CREATION: string | undefined;
+  readonly BOARD_SCENE_R2_ACCESS_KEY_ID: string | undefined;
+  readonly BOARD_SCENE_R2_BUCKET: string | undefined;
+  readonly BOARD_SCENE_R2_ENDPOINT: string | undefined;
+  readonly BOARD_SCENE_R2_SECRET_ACCESS_KEY: string | undefined;
 };
 
 /**

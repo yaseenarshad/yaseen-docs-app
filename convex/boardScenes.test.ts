@@ -16,7 +16,6 @@ import {
   MAX_BOARD_SCENE_RAW_BYTES,
   parseBoardSceneDeleteGrant,
   parseBoardSceneReadGrant,
-  parseBoardSceneUploadGrant,
 } from "../board-scenes/types";
 import { getBoardSceneSizeError } from "../board-scenes/sizePolicy";
 import {
@@ -77,12 +76,21 @@ const requestUploadGrant = async (
     ...args,
   } as never);
 
-const commit = async (client: TestClient, token: string, etag: string) =>
-  await client.mutation(api.boardScenes.commitUpload, {
-    clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
+// This suite tests the transaction boundary. Actual object validation is tested
+// separately; only the trusted internal finalizer may supply its receipt here.
+const commit = async (client: TestClient, token: string, etag: string) => {
+  const claim = await client.mutation(internal.boardSceneFinalization.claim, {
+    token,
+  });
+  if (claim.status === "finished") {
+    return claim.result;
+  }
+  return await client.mutation(internal.boardSceneFinalization.commit, {
     token,
     etag,
+    claimId: claim.claimId,
   });
+};
 
 const migrate = async (
   client: TestClient,
@@ -574,18 +582,36 @@ describe("Board scene commits", () => {
     }
 
     await expect(commit(intruder, grant.token, "etag-x")).rejects.toThrow(
-      "Board scene upload grant expired",
+      "Board scene upload grant not found",
     );
-    await expect(commit(owner, grant.token, " ")).rejects.toThrow(
-      "Invalid Board scene etag",
+    const claimed = await owner.mutation(
+      internal.boardSceneFinalization.claim,
+      { token: grant.token },
     );
+    if (claimed.status !== "claimed") {
+      throw new Error("Expected claim");
+    }
+    await expect(
+      owner.mutation(internal.boardSceneFinalization.commit, {
+        token: grant.token,
+        claimId: claimed.claimId,
+        etag: " ",
+      }),
+    ).rejects.toThrow("Invalid Board scene etag");
     await expect(commit(owner, hex("ab"), "etag-x")).rejects.toThrow(
-      "Board scene upload grant expired",
+      "Board scene upload grant not found",
     );
 
-    await commit(owner, grant.token, "etag-migrated");
-    await expect(commit(owner, grant.token, "etag-migrated")).rejects.toThrow(
-      "Board scene upload grant expired",
+    const receipt = await owner.mutation(
+      internal.boardSceneFinalization.commit,
+      {
+        token: grant.token,
+        claimId: claimed.claimId,
+        etag: "etag-migrated",
+      },
+    );
+    await expect(commit(owner, grant.token, "etag-migrated")).resolves.toEqual(
+      receipt,
     );
   });
 
@@ -761,8 +787,11 @@ describe("Board scene Worker routes", () => {
       BOARD_SCENE_UPLOAD_GRANT_PATH,
       grant.token,
     );
-    expect(uploadResponse.status).toBe(200);
-    const uploadGrant = parseBoardSceneUploadGrant(await uploadResponse.json());
+    expect(uploadResponse.status).toBe(403);
+    const uploadGrant = await owner.mutation(
+      internal.boardSceneFinalization.prepare,
+      { token: grant.token },
+    );
     expect(uploadGrant).toMatchObject({
       diagramId: board.boardId,
       version: 0,
@@ -806,7 +835,7 @@ describe("Board scene Worker routes", () => {
     });
   });
 
-  it("resolves an upload grant once and refuses every other token", async () => {
+  it("refuses staged uploads on the legacy route and every unknown token", async () => {
     const { t, owner, board } = await setup();
     const grant = await requestUploadGrant(owner, board.boardId);
     if (grant.status !== "upload") {
@@ -815,7 +844,7 @@ describe("Board scene Worker routes", () => {
 
     expect(
       (await resolve(t, BOARD_SCENE_UPLOAD_GRANT_PATH, grant.token)).status,
-    ).toBe(200);
+    ).toBe(403);
     expect(
       (await resolve(t, BOARD_SCENE_UPLOAD_GRANT_PATH, grant.token)).status,
     ).toBe(403);
@@ -867,7 +896,8 @@ describe("Board scene cleanup and deletion", () => {
       placements: await ctx.db.query("docPlacements").collect(),
     }));
     expect(remaining.manifests).toHaveLength(0);
-    expect(remaining.uploadGrants).toHaveLength(0);
+    expect(remaining.uploadGrants).toHaveLength(1);
+    expect(remaining.uploadGrants[0].abandonedAt).toBeTypeOf("number");
     expect(remaining.readGrants).toHaveLength(0);
     expect(remaining.snapshots).toHaveLength(0);
     expect(remaining.placements).toHaveLength(0);
@@ -918,17 +948,17 @@ describe("Board scene cleanup and deletion", () => {
       continuationScheduled: false,
     });
     const pending = await owner.query(api.boardScenes.pendingCleanup, {});
-    expect(pending).toHaveLength(1);
-    await expect(
-      t.mutation(internal.boardScenes.consumeDeleteGrant, {
-        token: pending[0],
-      }),
-    ).resolves.toEqual({ objectKeys: [orphanKey] });
-    await expect(
-      t.mutation(internal.boardScenes.consumeDeleteGrant, {
-        token: pending[0],
-      }),
-    ).resolves.toBeNull();
+    expect(pending).toHaveLength(0);
+    const retained = await t.run((ctx) =>
+      ctx.db
+        .query("boardSceneUploadGrants")
+        .withIndex("by_token", (q) => q.eq("token", abandoned.token))
+        .unique(),
+    );
+    expect(retained).toMatchObject({
+      objectKey: orphanKey,
+      abandonedAt: expect.any(Number),
+    });
   });
 
   it("lets the owner abandon an upload and reclaim its object", async () => {
@@ -945,15 +975,14 @@ describe("Board scene cleanup and deletion", () => {
       token: grant.token,
     });
 
-    expect(abandoned.cleanupToken).toEqual(expect.any(String));
-    await expect(
-      t.mutation(internal.boardScenes.consumeDeleteGrant, {
-        token: abandoned.cleanupToken as string,
-      }),
-    ).resolves.toMatchObject({ objectKeys: [expect.any(String)] });
+    expect(abandoned.cleanupToken).toBeNull();
+    const retained = await t.run((ctx) =>
+      ctx.db.query("boardSceneUploadGrants").first(),
+    );
+    expect(retained?.abandonedAt).toBeTypeOf("number");
     await expect(
       owner.mutation(api.boardScenes.abandonUpload, { token: grant.token }),
-    ).rejects.toThrow("Board scene upload grant not found");
+    ).resolves.toEqual({ cleanupToken: null });
   });
 });
 

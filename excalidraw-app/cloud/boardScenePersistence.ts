@@ -2,11 +2,10 @@ import { deflate } from "pako";
 
 import { assertBoardSceneRawSize } from "../../board-scenes/sizePolicy";
 import { inflateBoardScene } from "../../board-scenes/compression";
+import { decodeBoardSceneDocument } from "../../board-scenes/document";
 
 import {
-  BOARD_SCENE_CONTENT_TYPE,
   BOARD_SCENE_ENCODING,
-  BOARD_SCENE_ENCODING_HEADER,
   BOARD_SCENE_ROUTE,
   MAX_BOARD_SCENE_RAW_BYTES,
   MAX_BOARD_SCENE_COMPRESSED_BYTES,
@@ -80,14 +79,10 @@ export type BoardSceneSaveDependencies = {
       docRefs?: DocPlacementRef[];
     },
   ) => Promise<BoardSceneUploadGrant>;
-  upload: (
-    token: string,
-    scene: CompressedBoardScene,
-  ) => Promise<{ etag: string }>;
-  commitUpload: (args: {
+  upload: (token: string, scene: CompressedBoardScene) => Promise<void>;
+  finalizeUpload: (args: {
     clientSaveProtocol: number;
     token: string;
-    etag: string;
   }) => Promise<BoardSceneCommit>;
   abandonUpload: (args: {
     token: string;
@@ -127,27 +122,15 @@ export const sha256Hex = async (bytes: Uint8Array) =>
     .join("");
 
 /**
- * The binding-insensitive projection the semantic digest is taken over. A scene
- * that is not parseable JSON still gets a stable digest rather than throwing:
- * the Worker is what rejects a malformed scene, not the hashing step.
- */
-const getBoardSceneSemanticSource = (sceneJson: string) => {
-  try {
-    return getCloudSceneSemanticRevision(sceneJson);
-  } catch {
-    return sceneJson;
-  }
-};
-
-/**
  * Compresses and hashes a scene exactly once per save attempt: the same bytes
- * are declared to Convex, sent to the Worker, and re-declared on commit.
+ * are declared to Convex and uploaded directly to private R2.
  */
 export const compressBoardScene = async (
   sceneJson: string,
 ): Promise<CompressedBoardScene> => {
   const raw = new TextEncoder().encode(sceneJson);
   assertBoardSceneRawSize(raw.byteLength);
+  decodeBoardSceneDocument(raw);
   const bytes = deflate(raw);
   if (bytes.byteLength > MAX_BOARD_SCENE_COMPRESSED_BYTES) {
     throw new Error("Board scene compressed representation is too large");
@@ -155,7 +138,9 @@ export const compressBoardScene = async (
   const [rawSha256, compressedSha256, semanticSha256] = await Promise.all([
     sha256Hex(raw),
     sha256Hex(bytes),
-    sha256Hex(new TextEncoder().encode(getBoardSceneSemanticSource(sceneJson))),
+    sha256Hex(
+      new TextEncoder().encode(getCloudSceneSemanticRevision(sceneJson)),
+    ),
   ]);
   return {
     bytes,
@@ -169,23 +154,29 @@ export const compressBoardScene = async (
 };
 
 export const uploadBoardSceneObject = async (
-  token: string,
+  permission: {
+    url: string;
+    headers: Record<string, string>;
+    expiresAt: number;
+  },
   scene: CompressedBoardScene,
 ) => {
-  const response = await fetch(BOARD_SCENE_ROUTE, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": BOARD_SCENE_CONTENT_TYPE,
-      [BOARD_SCENE_ENCODING_HEADER]: scene.encoding,
-    },
-    body: scene.bytes.slice().buffer as ArrayBuffer,
-  });
-  const body = (await response.json()) as { etag?: string; error?: string };
-  if (!response.ok || !body.etag) {
-    throw new Error(body.error || "Board scene upload failed");
+  try {
+    const response = await fetch(permission.url, {
+      method: "PUT",
+      headers: permission.headers,
+      body: scene.bytes.slice().buffer as ArrayBuffer,
+      credentials: "omit",
+      referrerPolicy: "no-referrer",
+    });
+    // A lost success response can leave an already-created staged object.
+    // Finalization checks its actual bytes; a 412 is not itself a save receipt.
+    if (!response.ok && response.status !== 412) {
+      throw new Error("Upload failed");
+    }
+  } catch {
+    throw new Error("Board scene upload failed");
   }
-  return { etag: body.etag };
 };
 
 export const fetchBoardSceneObject = async (path: string) => {
@@ -262,9 +253,13 @@ const runBoardSceneUpload = async (
     return grant;
   }
 
-  let etag: string;
+  let commit: BoardSceneCommit;
   try {
-    ({ etag } = await dependencies.upload(grant.token, compressed));
+    await dependencies.upload(grant.token, compressed);
+    commit = await dependencies.finalizeUpload({
+      clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
+      token: grant.token,
+    });
   } catch (error) {
     // A grant is single-use, so a failed upload has to be handed back before a
     // retry can mint a fresh one — and its orphan object has to be swept.
@@ -282,11 +277,6 @@ const runBoardSceneUpload = async (
     throw error;
   }
 
-  const commit = await dependencies.commitUpload({
-    clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
-    token: grant.token,
-    etag,
-  });
   if (commit.status === "upgrade-required") {
     return commit;
   }
@@ -356,7 +346,7 @@ export const readBoardScene = async (
     throw new Error("Board scene failed its integrity check");
   }
   return {
-    sceneJson: new TextDecoder().decode(raw),
+    sceneJson: decodeBoardSceneDocument(raw),
     version: grant.version,
   };
 };

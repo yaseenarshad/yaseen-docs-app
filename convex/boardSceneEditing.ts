@@ -69,9 +69,12 @@ const commitBoardSceneEdit = async (
     return { status: "conflict" };
   }
 
-  let etag: string;
   try {
-    etag = await uploadBoardSceneObject(grant.token, compressed);
+    const permission = await ctx.runAction(
+      api.boardSceneUploads.prepareUpload,
+      { token: grant.token },
+    );
+    await uploadBoardSceneObject(permission, compressed);
   } catch (error) {
     // The grant is single-use, so a failed upload is handed back and its orphan
     // object swept before anything is retried.
@@ -89,13 +92,15 @@ const commitBoardSceneEdit = async (
     throw error;
   }
 
-  const commit = await ctx.runMutation(
-    internal.boardScenes.commitServerUpload,
+  const commit = await ctx.runAction(
+    internal.boardSceneUploads.finalizeServerUpload,
     {
       token: grant.token,
-      etag,
     },
   );
+  if (commit.status === "upgrade-required") {
+    throw new Error("Board scene update required");
+  }
   await deleteBoardSceneObjects(commit.cleanupToken);
   return commit.status === "conflict"
     ? { status: "conflict" }

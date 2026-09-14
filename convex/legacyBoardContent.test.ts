@@ -6,8 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   BOARD_SCENE_TEST_WORKER_ORIGIN,
+  BOARD_SCENE_TEST_R2_ENV,
   createBoardSceneWorkerHarness,
 } from "../board-scenes/testWorkerHarness";
+import { BOARD_SCENE_KEY_PREFIX } from "../board-scenes/types";
 
 import { api, internal } from "./_generated/api";
 import {
@@ -62,12 +64,15 @@ const migratedBoard = async (setupResult: Setup, title: string) => {
   if (grant.status !== "upload") {
     throw new Error(`Expected an upload grant, received ${grant.status}`);
   }
-  const etag = await uploadBoardSceneObject(grant.token, compressed);
-  await owner.mutation(api.boardScenes.commitUpload, {
+  const permission = await owner.action(api.boardSceneUploads.prepareUpload, {
+    token: grant.token,
+  });
+  await uploadBoardSceneObject(permission, compressed);
+  const result = await owner.action(api.boardSceneUploads.finalizeUpload, {
     clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION,
     token: grant.token,
-    etag,
   });
+  expect(result).toMatchObject({ status: "committed", version: 0 });
   return board;
 };
 
@@ -84,6 +89,9 @@ const removeLegacyContents = async (
   );
 
 beforeEach(() => {
+  for (const [name, value] of Object.entries(BOARD_SCENE_TEST_R2_ENV)) {
+    vi.stubEnv(name, value);
+  }
   vi.stubEnv(
     BOARD_SCENE_WORKER_ORIGIN_VARIABLE,
     BOARD_SCENE_TEST_WORKER_ORIGIN,
@@ -91,6 +99,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
@@ -119,14 +128,21 @@ describe("verified legacy scene removal", () => {
       slug: migrated.slug,
     });
     expect(metadata?.sceneManifest?.version).toBe(0);
-    expect(context.harness.objects.size).toBe(1);
+    expect(
+      [...context.harness.objects.keys()].filter((key) =>
+        key.startsWith(BOARD_SCENE_KEY_PREFIX),
+      ),
+    ).toHaveLength(1);
   });
 
   it("keeps the legacy row when the object cannot be verified", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const context = await setup();
     const board = await migratedBoard(context, "Corrupted");
     // Same length, same etag, different bytes: only the checksum catches it.
-    const [key] = [...context.harness.objects.keys()];
+    const key = [...context.harness.objects.keys()].find((key) =>
+      key.startsWith(BOARD_SCENE_KEY_PREFIX),
+    )!;
     const stored = context.harness.objects.get(key)!;
     const corrupted = stored.bytes.slice();
     corrupted[corrupted.length - 1] ^= 0xff;
@@ -135,11 +151,13 @@ describe("verified legacy scene removal", () => {
     const result = await removeLegacyContents(context.t);
 
     expect(result).toMatchObject({ examined: 1, removed: 0, kept: 1 });
+    expect(warn).toHaveBeenCalledTimes(1);
     const remaining = await legacyRows(context.t);
     expect(remaining.map((row) => row.diagramId)).toEqual([board.boardId]);
   });
 
   it("keeps the legacy row when the object is gone entirely", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const context = await setup();
     await migratedBoard(context, "Missing object");
     context.harness.objects.clear();
@@ -147,6 +165,7 @@ describe("verified legacy scene removal", () => {
     const result = await removeLegacyContents(context.t);
 
     expect(result).toMatchObject({ removed: 0, kept: 1 });
+    expect(warn).toHaveBeenCalledTimes(1);
     expect(await legacyRows(context.t)).toHaveLength(1);
   });
 

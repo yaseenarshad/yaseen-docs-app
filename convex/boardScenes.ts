@@ -7,15 +7,12 @@ import {
   boardScenePurposeValidator,
   boardSceneReadGrantContractValidator,
   boardSceneReadGrantResultValidator,
-  boardSceneServerCommitResultValidator,
   boardSceneServerUploadGrantResultValidator,
   boardSceneUploadGrantContractValidator,
   boardSceneUploadGrantResultValidator,
 } from "./boardSceneModel";
 import {
   abandonBoardSceneUpload,
-  commitBoardSceneUpload,
-  commitServerBoardSceneUpload,
   consumeBoardSceneDeleteGrant,
   createBoardSceneReadGrant,
   createBoardSceneUploadGrant,
@@ -52,7 +49,7 @@ export const commitUpload = mutation({
     etag: v.string(),
   },
   returns: boardSceneCommitResultValidator,
-  handler: async (ctx, args) => await commitBoardSceneUpload(ctx, args),
+  handler: async () => ({ status: "upgrade-required" as const }),
 });
 
 export const abandonUpload = mutation({
@@ -91,12 +88,6 @@ export const createServerUploadGrant = internalMutation({
   returns: boardSceneServerUploadGrantResultValidator,
   handler: async (ctx, args) =>
     await createServerBoardSceneUploadGrant(ctx, args),
-});
-
-export const commitServerUpload = internalMutation({
-  args: { token: v.string(), etag: v.string() },
-  returns: boardSceneServerCommitResultValidator,
-  handler: async (ctx, args) => await commitServerBoardSceneUpload(ctx, args),
 });
 
 export const resolveUploadGrant = internalMutation({

@@ -17,6 +17,7 @@ import {
   boardSceneKeyPrefixForDiagram,
   boardSceneReadPath,
   makeBoardSceneObjectKey,
+  makeBoardSceneStagingKey,
   makeBoardSceneToken,
   toBoardSceneGrantContract,
 } from "./boardSceneModel";
@@ -233,6 +234,9 @@ const findReusableUploadGrant = async (
         grant.expiresAt >= args.now &&
         grant.resolvedAt === undefined &&
         grant.registeredAt === undefined &&
+        grant.stagingObjectKey !== undefined &&
+        grant.finalizationId === undefined &&
+        grant.abandonedAt === undefined &&
         grant.encoding === args.encoding &&
         grant.rawSize === args.rawSize &&
         grant.compressedSize === args.compressedSize &&
@@ -281,6 +285,8 @@ const issueBoardSceneUploadGrant = async (
     expectedVersion: args.expectedVersion,
     version: args.version,
     objectKey: makeBoardSceneObjectKey(args.diagramId),
+    stagingObjectKey: makeBoardSceneStagingKey(args.diagramId),
+    forceSnapshot: !args.reuse,
     encoding: args.encoding,
     rawSize: args.rawSize,
     compressedSize: args.compressedSize,
@@ -528,7 +534,9 @@ const createBoardSceneSnapshotIfNeeded = async (
 export const commitBoardSceneUpload = async (
   ctx: MutationCtx,
   args: { clientSaveProtocol?: number; token: string; etag: string },
-  options: { forceSnapshot: boolean } = { forceSnapshot: false },
+  options: { forceSnapshot: boolean; claimId?: string } = {
+    forceSnapshot: false,
+  },
 ) => {
   if (args.clientSaveProtocol !== CLOUD_SAVE_PROTOCOL_VERSION) {
     return { status: "upgrade-required" as const };
@@ -540,6 +548,14 @@ export const commitBoardSceneUpload = async (
     .withIndex("by_token", (q) => q.eq("token", args.token))
     .unique();
   const now = Date.now();
+  if (
+    grant?.stagingObjectKey &&
+    (!options.claimId ||
+      grant.finalizationId !== options.claimId ||
+      grant.abandonedAt !== undefined)
+  ) {
+    throw new Error("Board scene finalization is not authorized");
+  }
   if (
     !grant ||
     grant.ownerId !== ownerId ||
@@ -563,7 +579,9 @@ export const commitBoardSceneUpload = async (
     currentVersion !== grant.expectedVersion ||
     (grant.purpose === "migration") !== (manifest === null)
   ) {
-    await ctx.db.delete("boardSceneUploadGrants", grant._id);
+    if (!grant.stagingObjectKey) {
+      await ctx.db.delete("boardSceneUploadGrants", grant._id);
+    }
     return {
       status: "conflict" as const,
       version: currentVersion,
@@ -684,26 +702,6 @@ export const commitBoardSceneUpload = async (
   };
 };
 
-/**
- * A restore or a programmatic edit replaces a version the owner has no other
- * way to get back, so the version it displaces is force-preserved as a snapshot
- * instead of waiting for the normal snapshot interval.
- */
-export const commitServerBoardSceneUpload = async (
-  ctx: MutationCtx,
-  args: { token: string; etag: string },
-) => {
-  const result = await commitBoardSceneUpload(
-    ctx,
-    { clientSaveProtocol: CLOUD_SAVE_PROTOCOL_VERSION, ...args },
-    { forceSnapshot: true },
-  );
-  if (result.status === "upgrade-required") {
-    throw new Error("Board scene commit is not available");
-  }
-  return result;
-};
-
 export const abandonBoardSceneUpload = async (
   ctx: MutationCtx,
   token: string,
@@ -715,6 +713,13 @@ export const abandonBoardSceneUpload = async (
     .unique();
   if (!grant || grant.ownerId !== ownerId || grant.registeredAt !== undefined) {
     throw new Error("Board scene upload grant not found");
+  }
+  if (grant.stagingObjectKey) {
+    // Keep the final key tracked until every possible in-flight copy has ended.
+    await ctx.db.patch("boardSceneUploadGrants", grant._id, {
+      abandonedAt: Date.now(),
+    });
+    return { cleanupToken: null };
   }
   const cleanupToken = await createBoardSceneDeleteGrant(ctx, {
     ownerId,
@@ -965,6 +970,7 @@ export const resolveBoardSceneUploadGrant = async (
   const now = Date.now();
   if (
     !grant ||
+    grant.stagingObjectKey !== undefined ||
     grant.expiresAt < now ||
     grant.resolvedAt !== undefined ||
     grant.registeredAt !== undefined
@@ -1036,7 +1042,13 @@ export const purgeBoardSceneRecords = async (
     await ctx.db.delete("diagramSceneManifests", manifest._id);
   }
   for (const grant of uploadGrants) {
-    await ctx.db.delete("boardSceneUploadGrants", grant._id);
+    if (grant.stagingObjectKey && grant.registeredAt === undefined) {
+      await ctx.db.patch("boardSceneUploadGrants", grant._id, {
+        abandonedAt: Date.now(),
+      });
+    } else {
+      await ctx.db.delete("boardSceneUploadGrants", grant._id);
+    }
   }
   for (const grant of readGrants) {
     await ctx.db.delete("boardSceneReadGrants", grant._id);
