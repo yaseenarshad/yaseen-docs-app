@@ -24,7 +24,7 @@ import { useSearchResults } from '../search/useSearchResults'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmTurnBack } from './ConfirmTurnBack'
 import { ContextMenu } from './ContextMenu'
-import { entryPath, renamedPath, targetDirFor, type EntryKind, type MenuRow } from './createEntry'
+import { datedFolderSeed, entryPath, renamedPath, targetDirFor, type EntryKind, type MenuRow } from './createEntry'
 import { HotkeysButton } from './HotkeysPanel'
 import { SettingsCog } from './SettingsPanel'
 import { TopicsTree, allExpandableTopics, type PendingTopicCreate } from './TopicsTree'
@@ -917,6 +917,9 @@ export function Sidebar({
   const topicsPending: PendingTopicCreate | null =
     creating === null ? null : { kind: creating.kind, seed: creating.seed, anchorPath: creating.anchor, onSubmit: submitCreate, onCancel: cancelCreate }
 
+  // ONE gate for both disk-folder births (YAZ-948 rule; YAZ-1604 adds the dated twin).
+  const canNewFolder = menu !== null && !(lens === 'topics' && menu.rowKind !== 'dir')
+
   return (
     <aside className="sidebar">
       {/* The root header doubles as the "move to the vault root" drop target (E1b). */}
@@ -1136,7 +1139,8 @@ export function Sidebar({
           onNewFolderPage={() => startCreate('folderPage')}
           // Topics PAGE rows and blank space still browse by meaning and offer no disk-folder
           // birth (YAZ-948). YAZ-1080's explicit disk-folder rows are the honest exception.
-          onNewFolder={lens === 'topics' && menu.rowKind !== 'dir' ? null : () => startCreate('dir')}
+          onNewFolder={canNewFolder ? () => startCreate('dir') : null}
+          onNewDatedFolder={canNewFolder ? () => startCreate('dir', datedFolderSeed()) : null}
           folderPagePath={menu.folderPagePath}
           folderPageIsOn={menu.folderPageIsOn}
           onToggleFolderPage={toggleFolderPage}

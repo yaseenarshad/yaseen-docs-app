@@ -1440,6 +1440,7 @@ describe('context menu order (GRO-2272 C1a)', () => {
       // create group and never drifts down to the act-on-this-row toggle.
       'New folder page',
       'New folder',
+      'New dated folder',
       // The folder-page toggle joins the row between the create group and Rename (🔒 D2,
       // YAZ-817): it acts on the right-clicked page, so it belongs with the other
       // act-on-this-row items — and above the destructive pair, which stays last.
@@ -1969,6 +1970,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     const { el, bridge } = await topicsWithMetrics()
     await rightClick(rowFor(el, 'Metrics'))
     expect(itemByLabel(el, 'New folder')).toBeUndefined()
+    expect(itemByLabel(el, 'New dated folder')).toBeUndefined()
     expect(itemByLabel(el, 'New note')).toBeDefined()
     expect(itemByLabel(el, 'New folder page')).toBeDefined()
     expect(bridge.createDir).not.toHaveBeenCalled()
@@ -2008,6 +2010,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
       'New note',
       'New folder page',
       'New folder',
+      'New dated folder',
       'Rename',
       'Delete',
     ])
@@ -2058,11 +2061,36 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
 
     await rightClick(rowFor(el, 'Loose'))
     expect(itemByLabel(el, 'New folder')).toBeUndefined()
+    expect(itemByLabel(el, 'New dated folder')).toBeUndefined()
     await rightClick(rowFor(el, 'inbox'))
     act(() => itemByLabel(el, 'New folder')?.click())
     expect(inlineInput(el)?.placeholder).toBe('New folder')
     await commit(el, 'Later')
     expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith('/v/inbox/Later')
+  })
+
+  it('New dated folder opens the same input pre-filled with today\'s `MM_DD- `, caret at the end; the bare seed never creates (YAZ-1604)', async () => {
+    const { el, bridge } = await topicsWithInbox()
+    act(() => el.querySelector<HTMLButtonElement>('.tree__row--muted')?.click())
+    // Only Date is faked: the seed is read when the item is clicked, and nothing else here waits on a timer.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 5, 22))
+    try {
+      await rightClick(rowFor(el, 'inbox'))
+      act(() => itemByLabel(el, 'New dated folder')?.click())
+      const field = inlineInput(el)!
+      expect(field.value).toBe('06_22- ')
+      expect(field.selectionStart).toBe(field.value.length)
+      expect(field.selectionEnd).toBe(field.value.length)
+      // Enter on the untouched seed is a no-op: the input stays open, nothing is born.
+      await commit(el, '06_22- ')
+      expect(bridge.createDir).not.toHaveBeenCalled()
+      expect(inlineInput(el)).not.toBeNull()
+      await commit(el, '06_22- Launch')
+      expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith('/v/inbox/06_22- Launch')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   /**
@@ -2089,9 +2117,11 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     await rightClick(el.querySelector('.topics-offer'))
     expect(itemByLabel(el, 'New folder page')).toBeDefined()
     expect(itemByLabel(el, 'New folder')).toBeUndefined()
+    expect(itemByLabel(el, 'New dated folder')).toBeUndefined()
     await rightClick(el.querySelector('.sidebar__body'))
     expect(itemByLabel(el, 'Copy path')).toBeDefined()
     expect(itemByLabel(el, 'New folder')).toBeUndefined()
+    expect(itemByLabel(el, 'New dated folder')).toBeUndefined()
   })
 })
 

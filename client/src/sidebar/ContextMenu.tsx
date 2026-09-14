@@ -55,6 +55,8 @@ interface ContextMenuProps {
    * the Files directory menu and therefore supply it.
    */
   onNewFolder: (() => void) | null
+  /** "New dated folder" (YAZ-1604): a disk folder born with today's `MM_DD- ` seed. Same gate as `onNewFolder`. */
+  onNewDatedFolder: (() => void) | null
   /**
    * The folder-page toggle's own target (🔒 D2, YAZ-817): MARKDOWN FILE rows only — null on
    * folders and on blank space, neither of which can carry the flag.
@@ -68,7 +70,7 @@ interface ContextMenuProps {
 }
 
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInNewTabs, onNotice, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, openVsCodePath, onOpenVsCode, openDefaultPath, onOpenDefault, onNewNote, onNewFolderPage, onNewFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInNewTabs, onNotice, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, openVsCodePath, onOpenVsCode, openDefaultPath, onOpenDefault, onNewNote, onNewFolderPage, onNewFolder, onNewDatedFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, onClose }: ContextMenuProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -225,6 +227,11 @@ export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInN
         {onNewFolder !== null && (
           <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewFolder}>
             New folder
+          </button>
+        )}
+        {onNewDatedFolder !== null && (
+          <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewDatedFolder}>
+            New dated folder
           </button>
         )}
         {/* The folder-page toggle (🔒 D2, YAZ-817): ONE state-aware item, both directions. It

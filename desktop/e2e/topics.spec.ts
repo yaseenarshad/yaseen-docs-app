@@ -360,6 +360,7 @@ test('step 5 — Uncategorized expands IN PLACE, subtracting everything the tree
     'New note',
     'New folder page',
     'New folder',
+    'New dated folder',
     'Rename',
     'Delete',
   ])
