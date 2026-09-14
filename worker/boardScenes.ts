@@ -72,15 +72,14 @@ const resolveGrant = async (
   return (await response.json()) as unknown;
 };
 
-const sha256Hex = async (bytes: Uint8Array) =>
+export const sha256Hex = async (bytes: Uint8Array) =>
   Array.from(
     new Uint8Array(
       await crypto.subtle.digest(
         "SHA-256",
-        bytes.buffer.slice(
-          bytes.byteOffset,
-          bytes.byteOffset + bytes.byteLength,
-        ) as ArrayBuffer,
+        bytes.buffer instanceof ArrayBuffer
+          ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+          : Uint8Array.from(bytes),
       ),
     ),
   )
@@ -90,7 +89,8 @@ const sha256Hex = async (bytes: Uint8Array) =>
 /**
  * Buffers at most `maxBytes` of the request body. A declared `Content-Length`
  * is only a fast path: an under-declaring or chunked caller is still stopped
- * here, so the Worker never holds more than one scene ceiling in memory.
+ * here. Other validation buffers and concurrent requests remain separately
+ * bounded by the same per-payload limits.
  */
 const readBoundedBody = async (
   request: Request,
@@ -128,8 +128,9 @@ type DecompressionResult =
   | { ok: false; reason: "malformed" | "too-large" };
 
 /**
- * Decompresses zlib/deflate bytes while refusing to buffer more than the raw
- * scene ceiling, so a compression bomb can never exhaust Worker memory.
+ * Decompresses zlib/deflate bytes while rejecting output above the raw scene
+ * ceiling. This bounds each expansion; total Worker memory also includes its
+ * compressed input, chunk assembly, and any concurrent requests.
  */
 const decompressScene = async (
   compressed: Uint8Array,
@@ -328,6 +329,7 @@ const serveBoardScene = async (
     object.customMetadata?.encoding !== grant.encoding ||
     object.customMetadata?.compressedSha256 !== grant.compressedSha256 ||
     object.customMetadata?.rawSha256 !== grant.rawSha256 ||
+    object.customMetadata?.rawSize !== String(grant.rawSize) ||
     object.customMetadata?.diagramId !== grant.diagramId ||
     object.customMetadata?.version !== String(grant.version)
   ) {

@@ -1,5 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 
+import { LEGACY_BOARD_SCENE_RAW_BYTES } from "../board-scenes/types";
+
 import { internal } from "./_generated/api";
 import { createAssetDeleteGrant } from "./assetDeletePersistence";
 import { toBoardSceneManifestSummary } from "./boardSceneModel";
@@ -20,7 +22,6 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { PaginationOptions } from "convex/server";
 
-const MAX_SCENE_BYTES = 900_000;
 const EMPTY_SCENE_JSON = JSON.stringify({
   elements: [],
   appState: {},
@@ -56,7 +57,7 @@ const makeShareToken = () =>
 
 const assertSceneSize = (sceneJson: string, entityName: string) => {
   const bytes = new TextEncoder().encode(sceneJson).byteLength;
-  if (bytes > MAX_SCENE_BYTES) {
+  if (bytes > LEGACY_BOARD_SCENE_RAW_BYTES) {
     throw new Error(
       `This ${entityName.toLowerCase()} is too large to save as one scene. Remove embedded data or split the ${entityName.toLowerCase()}.`,
     );

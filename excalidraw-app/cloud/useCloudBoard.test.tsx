@@ -268,6 +268,17 @@ const renderCloudBoard = async () => {
   return rendered;
 };
 
+const sizedScene = (bytes: number) => {
+  const empty = JSON.stringify({
+    elements: [{ id: "text", text: "" }],
+    appState: {},
+  });
+  return empty.replace(
+    '"text":""',
+    `"text":"${"x".repeat(bytes - empty.length)}"`,
+  );
+};
+
 describe("useCloudBoard preview scheduling", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -347,6 +358,187 @@ describe("useCloudBoard preview scheduling", () => {
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("retains oversized edits without requests across repeated events and resumes after shrinking", async () => {
+    const { result } = await openMigratedBoard("r2 scene", 1);
+    const oversized = sizedScene(10_000_001);
+    act(() => result.current.queueSave(oversized));
+    expect(result.current.saveStatus).toBe("error");
+    expect(result.current.sceneRawSize).toBe(10_000_001);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_MAX_PENDING_MS);
+      window.dispatchEvent(new Event("pagehide"));
+      result.current.queueSave(oversized);
+      expect(await result.current.flushSave()).toBe(false);
+      await result.current.openBoard("another-board");
+    });
+    expect(window.location.pathname).toBe("/b/test-board");
+    expect(mocks.createSceneUploadGrant).not.toHaveBeenCalled();
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(mocks.journalWrite).toHaveBeenCalledWith(
+      expect.objectContaining({ sceneJson: oversized }),
+    );
+    expect(mocks.journalClear).not.toHaveBeenCalled();
+    grantSceneUpload(2);
+    act(() => result.current.queueSave(sizedScene(200)));
+    expect(result.current.saveStatus).toBe("saving");
+    await flushQueuedSave(result);
+    expect(result.current.saveStatus).toBe("saved");
+    expect(mocks.createSceneUploadGrant).toHaveBeenCalledTimes(1);
+  });
+
+  it("warns at 8 MB without changing a successful save status", async () => {
+    const { result } = await openMigratedBoard("r2 scene", 1);
+    grantSceneUpload(2);
+    act(() => result.current.queueSave(sizedScene(8_000_000)));
+    expect(result.current.sceneRawSize).toBe(8_000_000);
+    expect(result.current.saveStatus).toBe("saving");
+    await flushQueuedSave(result);
+    expect(result.current.saveStatus).toBe("saved");
+    expect(result.current.sceneRawSize).toBe(8_000_000);
+  });
+
+  it("does not retry unchanged content after a structured server size rejection", async () => {
+    const { result } = await openMigratedBoard("r2 scene", 1);
+    mocks.createSceneUploadGrant.mockRejectedValue({
+      data: {
+        code: "BOARD_SCENE_TOO_LARGE",
+        rawSize: 999,
+        maxRawSize: 900,
+      },
+    });
+    act(() => result.current.queueSave(sizedScene(999)));
+    await flushQueuedSave(result);
+    act(() => result.current.queueSave(sizedScene(999)));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_MAX_PENDING_MS);
+      expect(await result.current.flushSave()).toBe(false);
+    });
+    expect(mocks.createSceneUploadGrant).toHaveBeenCalledTimes(1);
+    expect(result.current.saveStatus).toBe("error");
+    grantSceneUpload(2);
+    act(() => result.current.queueSave(sizedScene(800)));
+    await flushQueuedSave(result);
+    expect(result.current.saveStatus).toBe("saved");
+  });
+
+  it("reports a failed local journal while keeping unsaved work and close protection", async () => {
+    const { result } = await openMigratedBoard("r2 scene", 1);
+    mocks.journalIsDegraded.mockReturnValue(true);
+    act(() => result.current.queueSave("unsaved"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_CRASH_JOURNAL_DEBOUNCE_MS);
+    });
+    expect(result.current.isLocalBackupUnavailable).toBe(true);
+    const close = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(close);
+    expect(close.defaultPrevented).toBe(true);
+  });
+
+  it("never falls back to a large legacy document when migration fails", async () => {
+    const { result } = await renderCloudBoard();
+    await settleUntil(() => mocks.createSceneUploadGrant.mock.calls.length > 0);
+    mocks.createSceneUploadGrant.mockRejectedValue(new Error("offline"));
+    act(() => result.current.queueSave(sizedScene(950_000)));
+    await flushQueuedSave(result);
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(result.current.saveStatus).toBe("error");
+    expect(mocks.journalClear).not.toHaveBeenCalled();
+  });
+
+  it("keeps a newer oversized edit unsaved when an earlier upload completes", async () => {
+    const { result } = await openMigratedBoard("r2 scene", 1);
+    grantSceneUpload(2);
+    let finish!: (value: unknown) => void;
+    mocks.commitSceneUpload.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    act(() => result.current.queueSave("small edit"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+    await settleUntil(() => !!finish);
+    act(() => result.current.queueSave(sizedScene(10_000_001)));
+    await act(async () => {
+      finish({
+        status: "committed",
+        version: 2,
+        updatedAt: 20,
+        snapshotCreated: false,
+        cleanupToken: null,
+      });
+    });
+    expect(result.current.saveStatus).toBe("error");
+    expect(result.current.sceneRawSize).toBe(10_000_001);
+    await act(async () => {
+      expect(await result.current.flushSave()).toBe(false);
+    });
+    expect(mocks.createSceneUploadGrant).toHaveBeenCalledTimes(1);
+  });
+
+  it("warns on closing during an upload when the local backup has failed", async () => {
+    const { result } = await openMigratedBoard("r2 scene", 1);
+    mocks.journalIsDegraded.mockReturnValue(true);
+    grantSceneUpload(2);
+    mocks.commitSceneUpload.mockImplementation(
+      () => new Promise(() => undefined),
+    );
+    act(() => result.current.queueSave("unprotected edit"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+    await settleUntil(() => mocks.commitSceneUpload.mock.calls.length > 0);
+    const close = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(close);
+    expect(close.defaultPrevented).toBe(true);
+  });
+
+  it("does not report Saved on a metadata refresh while upload is still in flight", async () => {
+    const { result, rerender } = await openMigratedBoard("r2 scene", 1);
+    grantSceneUpload(2);
+    mocks.commitSceneUpload.mockImplementation(
+      () => new Promise(() => undefined),
+    );
+    act(() => result.current.queueSave("in flight edit"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_SAVE_DEBOUNCE_MS);
+    });
+    await settleUntil(() => mocks.commitSceneUpload.mock.calls.length > 0);
+    mocks.openedBoard = {
+      ...mocks.openedBoard,
+      board: { ...mocks.openedBoard.board, title: "Renamed" },
+    };
+    rerender();
+    expect(result.current.saveStatus).toBe("saving");
+  });
+
+  it("restores an oversized journal draft to the editor without uploading or calling it saved", async () => {
+    const oversized = sizedScene(10_000_001);
+    const { result } = await openMigratedBoard("r2 scene", 1);
+    mocks.journalClaim.mockResolvedValueOnce({
+      boardId: "board-id",
+      sceneJson: oversized,
+      baseVersion: 1,
+      savedAt: 10,
+    });
+    const restoreDraft = vi.fn();
+    await act(async () => {
+      result.current.acceptSceneWithoutSave("r2 scene", restoreDraft);
+    });
+    expect(restoreDraft).toHaveBeenCalledWith(oversized);
+    expect(result.current.saveStatus).toBe("error");
+    expect(result.current.openedBoard?.sceneJson).toBe("r2 scene");
+    expect(mocks.createSceneUploadGrant).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLOUD_CRASH_JOURNAL_DEBOUNCE_MS);
+    });
+    expect(mocks.journalWrite).toHaveBeenCalledWith(
+      expect.objectContaining({ sceneJson: oversized }),
+    );
   });
 
   it("keeps the last successful save preview scheduled when a transient queue returns to the accepted baseline", async () => {

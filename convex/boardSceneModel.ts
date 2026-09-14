@@ -1,4 +1,6 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
+
+import { BoardSceneSizeError } from "../board-scenes/sizePolicy";
 
 import {
   BOARD_SCENE_CONTENT_TYPE,
@@ -227,14 +229,16 @@ export const assertBoardSceneIntegrity = (object: {
   if (
     !Number.isSafeInteger(object.rawSize) ||
     object.rawSize < 1 ||
-    object.rawSize > MAX_BOARD_SCENE_RAW_BYTES ||
     !Number.isSafeInteger(object.compressedSize) ||
-    object.compressedSize < 1 ||
+    object.compressedSize < 1
+  ) {
+    throw new Error("Board scene size is invalid");
+  }
+  if (
+    object.rawSize > MAX_BOARD_SCENE_RAW_BYTES ||
     object.compressedSize > MAX_BOARD_SCENE_COMPRESSED_BYTES
   ) {
-    throw new Error(
-      "This board is too large to save as one scene. Remove embedded data or split the board.",
-    );
+    throw new ConvexError(new BoardSceneSizeError(object.rawSize).data);
   }
   if (
     !SHA256_PATTERN.test(object.rawSha256) ||

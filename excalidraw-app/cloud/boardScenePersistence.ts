@@ -1,10 +1,15 @@
-import { deflate, inflate } from "pako";
+import { deflate } from "pako";
+
+import { assertBoardSceneRawSize } from "../../board-scenes/sizePolicy";
+import { inflateBoardScene } from "../../board-scenes/compression";
 
 import {
   BOARD_SCENE_CONTENT_TYPE,
   BOARD_SCENE_ENCODING,
   BOARD_SCENE_ENCODING_HEADER,
   BOARD_SCENE_ROUTE,
+  MAX_BOARD_SCENE_RAW_BYTES,
+  MAX_BOARD_SCENE_COMPRESSED_BYTES,
 } from "../../board-scenes/types";
 import {
   DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
@@ -142,7 +147,11 @@ export const compressBoardScene = async (
   sceneJson: string,
 ): Promise<CompressedBoardScene> => {
   const raw = new TextEncoder().encode(sceneJson);
+  assertBoardSceneRawSize(raw.byteLength);
   const bytes = deflate(raw);
+  if (bytes.byteLength > MAX_BOARD_SCENE_COMPRESSED_BYTES) {
+    throw new Error("Board scene compressed representation is too large");
+  }
   const [rawSha256, compressedSha256, semanticSha256] = await Promise.all([
     sha256Hex(raw),
     sha256Hex(bytes),
@@ -322,6 +331,16 @@ export const readBoardScene = async (
   dependencies: BoardSceneReadDependencies,
 ) => {
   const grant = await dependencies.createReadGrant(request);
+  if (
+    !Number.isSafeInteger(grant.rawSize) ||
+    grant.rawSize < 1 ||
+    grant.rawSize > MAX_BOARD_SCENE_RAW_BYTES ||
+    !Number.isSafeInteger(grant.compressedSize) ||
+    grant.compressedSize < 1 ||
+    grant.compressedSize > MAX_BOARD_SCENE_COMPRESSED_BYTES
+  ) {
+    throw new Error("Board scene has invalid size metadata");
+  }
   const bytes = await dependencies.fetchObject(grant.path);
   if (bytes.byteLength !== grant.compressedSize) {
     throw new Error("Board scene download is incomplete");
@@ -329,12 +348,7 @@ export const readBoardScene = async (
   if ((await sha256Hex(bytes)) !== grant.compressedSha256) {
     throw new Error("Board scene failed its integrity check");
   }
-  let raw: Uint8Array;
-  try {
-    raw = inflate(bytes);
-  } catch {
-    throw new Error("Board scene could not be decompressed");
-  }
+  const raw = inflateBoardScene(bytes, grant.rawSize);
   if (
     raw.byteLength !== grant.rawSize ||
     (await sha256Hex(raw)) !== grant.rawSha256

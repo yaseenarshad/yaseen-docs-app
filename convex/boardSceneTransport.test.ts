@@ -9,7 +9,9 @@ import {
   BOARD_SCENE_ENCODING,
   BOARD_SCENE_ENCODING_HEADER,
   BOARD_SCENE_ROUTE,
+  MAX_BOARD_SCENE_RAW_BYTES,
 } from "../board-scenes/types";
+import { getBoardSceneSizeError } from "../board-scenes/sizePolicy";
 
 import {
   BOARD_SCENE_WORKER_ORIGIN_VARIABLE,
@@ -17,6 +19,7 @@ import {
   decompressBoardScene,
   deleteBoardSceneObjects,
   downloadBoardSceneObject,
+  sha256Hex,
   uploadBoardSceneObject,
 } from "./boardSceneTransport";
 import { getSceneSemanticRevision } from "./sceneConflict";
@@ -28,6 +31,14 @@ const sceneJson = JSON.stringify({
   appState: { viewBackgroundColor: "#ffffff" },
   files: {},
 });
+
+const sceneAtRawSize = (rawSize: number) => {
+  const prefix = '{"elements":[],"appState":{"padding":"';
+  const suffix = '"},"files":{}}';
+  return `${prefix}${"x".repeat(
+    rawSize - prefix.length - suffix.length,
+  )}${suffix}`;
+};
 
 const jsonResponse = (body: unknown, init?: ResponseInit) =>
   new Response(JSON.stringify(body), {
@@ -46,6 +57,31 @@ afterEach(() => {
 });
 
 describe("Board scene compression", () => {
+  it("accepts a scene exactly at the raw byte ceiling", async () => {
+    const scene = sceneAtRawSize(MAX_BOARD_SCENE_RAW_BYTES);
+
+    const compressed = await compressBoardScene(scene);
+
+    expect(compressed.rawSize).toBe(MAX_BOARD_SCENE_RAW_BYTES);
+    await expect(
+      decompressBoardScene(compressed.bytes, compressed),
+    ).resolves.toBe(scene);
+  });
+
+  it("rejects a scene one raw byte over the ceiling", async () => {
+    const rawSize = MAX_BOARD_SCENE_RAW_BYTES + 1;
+
+    const error = await compressBoardScene(sceneAtRawSize(rawSize)).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(getBoardSceneSizeError(error)).toEqual({
+      code: "BOARD_SCENE_TOO_LARGE",
+      rawSize,
+      maxRawSize: MAX_BOARD_SCENE_RAW_BYTES,
+    });
+  });
+
   it("declares the same integrity contract the client declares", async () => {
     const compressed = await compressBoardScene(sceneJson);
 
@@ -116,6 +152,23 @@ describe("Board scene compression", () => {
         compressedSha256: compressed.compressedSha256,
       }),
     ).rejects.toThrow("Board scene failed its integrity check");
+  });
+
+  it("stops inflating a payload that expands beyond the raw ceiling", async () => {
+    const raw = new TextEncoder().encode(
+      sceneAtRawSize(MAX_BOARD_SCENE_RAW_BYTES + 1),
+    );
+    const bytes = deflate(raw);
+
+    await expect(
+      decompressBoardScene(bytes, {
+        encoding: BOARD_SCENE_ENCODING,
+        compressedSize: bytes.byteLength,
+        compressedSha256: await sha256Hex(bytes),
+        rawSize: MAX_BOARD_SCENE_RAW_BYTES,
+        rawSha256: await sha256Hex(raw),
+      }),
+    ).rejects.toThrow("Board scene is too large");
   });
 });
 

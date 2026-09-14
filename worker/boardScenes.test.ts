@@ -5,13 +5,17 @@ import {
   BOARD_SCENE_CONTENT_TYPE,
   BOARD_SCENE_ENCODING,
   BOARD_SCENE_ENCODING_HEADER,
+  MAX_BOARD_SCENE_COMPRESSED_BYTES,
   MAX_BOARD_SCENE_RAW_BYTES,
 } from "../board-scenes/types";
+
+import { sha256Hex } from "./boardScenes";
 
 import worker from "./index";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 const CONVEX_SITE_URL = "https://convex.example.test";
@@ -41,6 +45,41 @@ const sceneJson = JSON.stringify({
 });
 const rawBytes = new TextEncoder().encode(sceneJson);
 const compressedBytes = deflate(rawBytes);
+
+describe("Worker Board scene SHA-256", () => {
+  it("hashes only the requested typed-array slice", async () => {
+    const backing = new Uint8Array([99, 1, 2, 3, 88]);
+
+    await expect(sha256Hex(backing.subarray(1, 4))).resolves.toBe(
+      await sha256(new Uint8Array([1, 2, 3])),
+    );
+  });
+
+  it("passes the exact typed-array view without copying its backing bytes", async () => {
+    const backing = new Uint8Array([99, 1, 2, 3, 88]);
+    const view = backing.subarray(1, 4);
+    const digest = vi
+      .spyOn(crypto.subtle, "digest")
+      .mockResolvedValue(new Uint8Array(32).buffer);
+
+    await sha256Hex(view);
+
+    const input = digest.mock.calls[0][1];
+    expect(ArrayBuffer.isView(input)).toBe(true);
+    expect((input as Uint8Array).buffer).toBe(backing.buffer);
+    expect((input as Uint8Array).byteOffset).toBe(view.byteOffset);
+    expect((input as Uint8Array).byteLength).toBe(view.byteLength);
+  });
+});
+
+const sceneAtRawSize = (rawSize: number) => {
+  const prefix = '{"elements":[],"appState":{"padding":"';
+  const suffix = '"},"files":{}}';
+  const json = `${prefix}${"x".repeat(
+    rawSize - prefix.length - suffix.length,
+  )}${suffix}`;
+  return { raw: new TextEncoder().encode(json) };
+};
 
 const makeUploadGrant = async (
   overrides: Record<string, unknown> = {},
@@ -240,6 +279,19 @@ describe("private Board scene uploads", () => {
     );
   });
 
+  it("accepts and verifies a scene exactly at the 10 MB raw ceiling", async () => {
+    const { raw } = sceneAtRawSize(MAX_BOARD_SCENE_RAW_BYTES);
+    const compressed = deflate(raw);
+    const grant = await makeUploadGrant({}, { raw, compressed });
+    stubConvex({ "/board-scene-upload-grant": grant });
+    const bucket = createBucket();
+
+    const response = await run(uploadRequest(compressed), bucket);
+
+    expect(response.status).toBe(200);
+    expect(bucket.put).toHaveBeenCalledTimes(1);
+  });
+
   it("takes the object key from the grant and ignores any key supplied by the caller", async () => {
     stubConvex({ "/board-scene-upload-grant": await makeUploadGrant() });
     const bucket = createBucket();
@@ -354,7 +406,7 @@ describe("private Board scene uploads", () => {
 
     const response = await run(
       uploadRequest(compressedBytes, {
-        "Content-Length": String(MAX_BOARD_SCENE_RAW_BYTES + 1),
+        "Content-Length": String(MAX_BOARD_SCENE_COMPRESSED_BYTES + 1),
       }),
       bucket,
     );
@@ -369,7 +421,7 @@ describe("private Board scene uploads", () => {
     const bucket = createBucket();
 
     const response = await run(
-      uploadRequest(new Uint8Array(MAX_BOARD_SCENE_RAW_BYTES + 1)),
+      uploadRequest(new Uint8Array(MAX_BOARD_SCENE_COMPRESSED_BYTES + 1)),
       bucket,
     );
 
@@ -425,13 +477,8 @@ describe("private Board scene uploads", () => {
     expect(bucket.put).not.toHaveBeenCalled();
   });
 
-  it("stops decompressing a payload that expands past the 900 KB scene ceiling", async () => {
-    const oversizedRaw = new TextEncoder().encode(
-      JSON.stringify({
-        elements: [{ id: "big", type: "text", text: "x".repeat(1_000_000) }],
-        appState: {},
-      }),
-    );
+  it("stops decompressing a payload that expands past the 10 MB scene ceiling", async () => {
+    const oversizedRaw = sceneAtRawSize(MAX_BOARD_SCENE_RAW_BYTES + 1).raw;
     const oversizedCompressed = deflate(oversizedRaw);
     stubConvex({
       "/board-scene-upload-grant": await makeUploadGrant(
@@ -616,6 +663,7 @@ describe("private Board scene reads", () => {
     ["the object is missing", { objectKey: `${OBJECT_KEY}-gone` }],
     ["the stored ETag differs", { etag: "stale-etag" }],
     ["the registered size differs", { compressedSize: 3 }],
+    ["the stored raw size differs", { rawSize: rawBytes.byteLength - 1 }],
     ["the stored checksum differs", { compressedSha256: "0".repeat(64) }],
     ["the stored Board differs", { diagramId: "another-board" }],
     ["the stored version differs", { version: 13 }],

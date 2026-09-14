@@ -9,6 +9,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BinaryFiles } from "@excalidraw/excalidraw/types";
 
 import { api } from "../../convex/_generated/api";
+import {
+  LEGACY_BOARD_SCENE_RAW_BYTES,
+  MAX_BOARD_SCENE_RAW_BYTES,
+} from "../../board-scenes/types";
+import {
+  BoardSceneSizeError,
+  getBoardSceneRawSize,
+  getBoardSceneSizeError,
+} from "../../board-scenes/sizePolicy";
 import { DOCS_ENABLED } from "../docs/docsMode";
 
 import {
@@ -180,6 +189,14 @@ export const useCloudBoard = () => {
   }
   const [saveStatus, setSaveStatus] = useState<CloudSaveStatus>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [sceneRawSize, setSceneRawSize] = useState<number | null>(null);
+  const [sceneSizeError, setSceneSizeError] =
+    useState<ReturnType<typeof getBoardSceneSizeError>>(null);
+  const [journalDegraded, setJournalDegraded] = useState(false);
+  const blockedSizeRef = useRef<{
+    sceneJson: string;
+    error: NonNullable<ReturnType<typeof getBoardSceneSizeError>>;
+  } | null>(null);
   const [openedScene, setOpenedScene] = useState<OpenedCloudScene | null>(null);
   const openedSceneRef = useRef<OpenedCloudScene | null>(null);
   const sceneRequestRef = useRef(0);
@@ -231,6 +248,7 @@ export const useCloudBoard = () => {
     boardId: Id<"diagrams">;
     route: CloudRouteGeneration;
     sceneJson: string;
+    rawSize: number;
     previewScene?: BoardPreviewScene;
     recoveryAttempt: 0 | 1;
   } | null>(null);
@@ -312,7 +330,10 @@ export const useCloudBoard = () => {
   const writeJournalEntry = useCallback(
     (entry: NonNullable<typeof journalEntryRef.current>) => {
       journalEntryRef.current = null;
-      void getCrashJournal().write({ ...entry, savedAt: Date.now() });
+      const journal = getCrashJournal();
+      void journal.write({ ...entry, savedAt: Date.now() }).then(() => {
+        setJournalDegraded(journal.isDegraded());
+      });
     },
     [getCrashJournal],
   );
@@ -627,6 +648,9 @@ export const useCloudBoard = () => {
     conflictRecoveryRef.current = null;
     blockedConflictRef.current = null;
     requiredVersionByBoardRef.current.clear();
+    blockedSizeRef.current = null;
+    setSceneRawSize(null);
+    setSceneSizeError(null);
     for (const timer of requiredVersionTimerByBoardRef.current.values()) {
       window.clearTimeout(timer);
     }
@@ -826,10 +850,13 @@ export const useCloudBoard = () => {
   // writes are failing, which leaves it nowhere at all.
   const isClosingRisky = useCallback(() => {
     const pending = pendingSceneRef.current;
-    if (
-      !pending ||
-      !isCurrentRouteCompletion(pending.route, currentRouteRef.current)
-    ) {
+    const hasPending =
+      pending &&
+      isCurrentRouteCompletion(pending.route, currentRouteRef.current);
+    const hasInFlight =
+      saveInFlightRef.current !== null &&
+      saveInFlightBoardIdRef.current === openedBoard?.board._id;
+    if (!hasPending && !hasInFlight) {
       return false;
     }
     // The journal is only consulted, never created: an unload is the last
@@ -837,7 +864,7 @@ export const useCloudBoard = () => {
     return (
       saveStatus === "error" || (crashJournalRef.current?.isDegraded() ?? false)
     );
-  }, [saveStatus]);
+  }, [openedBoard?.board._id, saveStatus]);
 
   // The handler decides nothing else and starts no work, so the pagehide flush
   // that follows a confirmed leave runs exactly as it did before.
@@ -939,7 +966,11 @@ export const useCloudBoard = () => {
         openedBoard.access === "owner" &&
         (conflictRecoveryRef.current?.boardId === openedBoard.board._id ||
           blockedConflictRef.current?.boardId === openedBoard.board._id);
-      if (!hasActiveConflict) {
+      if (
+        !hasActiveConflict &&
+        !pendingSceneRef.current &&
+        saveInFlightBoardIdRef.current !== openedBoard.board._id
+      ) {
         setSaveStatus(openedBoard.access === "viewer" ? "viewer" : "saved");
         setErrorMessage(null);
       }
@@ -1038,6 +1069,41 @@ export const useCloudBoard = () => {
     [createPreviewUploadGrant, recordEmptyPreview, registerPreviewUpload],
   );
 
+  const blockOversizedSave = useCallback(
+    (pending: NonNullable<typeof pendingSceneRef.current>) => {
+      const error =
+        pending.rawSize > MAX_BOARD_SCENE_RAW_BYTES
+          ? new BoardSceneSizeError(pending.rawSize).data
+          : blockedSizeRef.current?.sceneJson === pending.sceneJson
+          ? blockedSizeRef.current.error
+          : null;
+      if (!error) {
+        return false;
+      }
+      if (saveTimerRef.current !== null) {
+        window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      pendingSinceRef.current = null;
+      setSceneSizeError(error);
+      setSaveStatus("error");
+      setErrorMessage(
+        "Latest changes aren’t saved. Export a backup or reduce this board’s size.",
+      );
+      return true;
+    },
+    [],
+  );
+
+  const settleSaveStatus = useCallback(() => {
+    const pending = pendingSceneRef.current;
+    if (pending && blockOversizedSave(pending)) {
+      return;
+    }
+    setSaveStatus(pending ? "saving" : "saved");
+    setErrorMessage(null);
+  }, [blockOversizedSave]);
+
   const flushSave = useCallback(async () => {
     const inFlight = saveInFlightRef.current;
     if (inFlight) {
@@ -1065,6 +1131,9 @@ export const useCloudBoard = () => {
     const requiredVersion = requiredVersionByBoardRef.current.get(
       pending.boardId,
     );
+    if (blockOversizedSave(pending)) {
+      return false;
+    }
     if (
       requiredVersion !== undefined &&
       observedVersionRef.current < requiredVersion
@@ -1081,6 +1150,35 @@ export const useCloudBoard = () => {
       // a migration that just finished in this tab is never raced by a save
       // that still believes the legacy document is authoritative.
       const runSave = async (): Promise<CloudBoardSaveOutcome> => {
+        // A large import/edit must migrate its saved baseline first, never send
+        // its body through the legacy Convex-document mutation.
+        if (
+          !sceneManifestBoardsRef.current.has(pending.boardId) &&
+          pending.rawSize > LEGACY_BOARD_SCENE_RAW_BYTES
+        ) {
+          const baseline = openedSceneRef.current;
+          if (
+            !baseline ||
+            baseline.boardId !== pending.boardId ||
+            baseline.version !== versionRef.current
+          ) {
+            throw new Error(
+              "Could not prepare this board for a larger save. Your edits are still here; try again.",
+            );
+          }
+          const migration = await migrateBoardScene(
+            {
+              boardId: pending.boardId,
+              expectedVersion: baseline.version,
+              sceneJson: baseline.sceneJson,
+            },
+            sceneSaveDependencies,
+          );
+          if (migration.status !== "committed") {
+            return migration;
+          }
+          sceneManifestBoardsRef.current.add(pending.boardId);
+        }
         if (sceneManifestBoardsRef.current.has(pending.boardId)) {
           return await saveBoardScene(
             {
@@ -1167,8 +1265,7 @@ export const useCloudBoard = () => {
           acceptedSceneRef.current = acceptCloudSceneWithoutSave(
             pending.sceneJson,
           );
-          setSaveStatus("saved");
-          setErrorMessage(null);
+          settleSaveStatus();
           return true;
         }
         // The committed scene is durable, so the journaled copy of it is spent.
@@ -1201,8 +1298,7 @@ export const useCloudBoard = () => {
           generation: pending.route.generation,
           version: result.version,
         });
-        setSaveStatus("saved");
-        setErrorMessage(null);
+        settleSaveStatus();
         if (pending.previewScene) {
           scheduleBoardPreview({
             boardId: pending.boardId,
@@ -1216,7 +1312,17 @@ export const useCloudBoard = () => {
         if (!isCurrentRouteCompletion(pending.route, currentRouteRef.current)) {
           return false;
         }
-        if (pending.recoveryAttempt === 1) {
+        const sizeError = getBoardSceneSizeError(cause);
+        if (sizeError) {
+          pendingSceneRef.current ??= pending;
+          blockedSizeRef.current = {
+            sceneJson: pending.sceneJson,
+            error: sizeError,
+          };
+          if (blockOversizedSave(pendingSceneRef.current)) {
+            return false;
+          }
+        } else if (pending.recoveryAttempt === 1) {
           conflictRecoveryRef.current = null;
           blockedConflictRef.current = {
             boardId: pending.boardId,
@@ -1245,6 +1351,7 @@ export const useCloudBoard = () => {
     }
   }, [
     acceptOpenedScene,
+    blockOversizedSave,
     clearJournalEntry,
     openedBoard,
     requireObservedVersion,
@@ -1252,6 +1359,7 @@ export const useCloudBoard = () => {
     sceneSaveDependencies,
     scheduleBoardPreview,
     scheduleJournalWrite,
+    settleSaveStatus,
   ]);
 
   flushSaveRef.current = flushSave;
@@ -1266,6 +1374,12 @@ export const useCloudBoard = () => {
         return;
       }
       const persistedSceneJson = sanitizeCloudPresentationScene(sceneJson);
+      const rawSize = getBoardSceneRawSize(persistedSceneJson);
+      setSceneRawSize(rawSize);
+      if (blockedSizeRef.current?.sceneJson !== persistedSceneJson) {
+        blockedSizeRef.current = null;
+        setSceneSizeError(null);
+      }
       // Only a Board this tab owns is journaled: a shared route is read-only
       // here and has no pending scene of its own to recover.
       const journalsThisRoute = route.kind === "owner";
@@ -1311,12 +1425,15 @@ export const useCloudBoard = () => {
           clearJournalEntry(openedBoard.board._id);
         }
         setSaveStatus("saved");
+        setSceneSizeError(null);
+        setErrorMessage(null);
         return;
       }
       pendingSceneRef.current = {
         boardId: openedBoard.board._id,
         route: { ...currentRouteRef.current },
         sceneJson: persistedSceneJson,
+        rawSize,
         previewScene,
         recoveryAttempt:
           origin === "server-merge" &&
@@ -1332,6 +1449,9 @@ export const useCloudBoard = () => {
           sceneJson: persistedSceneJson,
           baseVersion: versionRef.current,
         });
+      }
+      if (blockOversizedSave(pendingSceneRef.current)) {
+        return;
       }
       if (origin === "local") {
         if (recovery && matchesCurrentBoard(recovery)) {
@@ -1349,6 +1469,7 @@ export const useCloudBoard = () => {
       const now = Date.now();
       const pendingSince = (pendingSinceRef.current ??= now);
       setSaveStatus("saving");
+      setErrorMessage(null);
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
       }
@@ -1365,6 +1486,7 @@ export const useCloudBoard = () => {
       );
     },
     [
+      blockOversizedSave,
       clearJournalEntry,
       flushSave,
       openedBoard,
@@ -1389,58 +1511,79 @@ export const useCloudBoard = () => {
 
   // A journaled scene re-enters through queueSave, exactly like a local edit,
   // so echo suppression, writer coordination and conflict handling apply to it
-  // unchanged. It is never applied to the canvas directly: the canvas only
-  // moves once the server accepts the replay and hands the version back.
-  const restoreJournaledScene = useCallback(() => {
-    if (route.kind !== "owner" || openedBoard?.access !== "owner") {
-      return;
-    }
-    const boardId = openedBoard.board._id;
-    const serverVersion = openedBoard.version;
-    const startedRoute = { ...currentRouteRef.current };
-    void getCrashJournal()
-      .claim({
-        boardId,
-        serverVersion,
-        runExclusive: (task) =>
-          saveCoordinatorRef.current?.runSaveExclusive(boardId, task) ?? task(),
-      })
-      .then((entry) => {
-        if (!entry) {
-          return;
-        }
-        // Claiming took the entry out of the journal to keep a second tab from
-        // replaying it too. A tab that then declines to replay it is holding
-        // the only copy of an unsaved edit, so it hands the entry back instead
-        // of spending it: the next open reclassifies it against the version
-        // that is current by then.
-        if (
-          !isCurrentRouteCompletion(startedRoute, currentRouteRef.current) ||
-          versionRef.current !== serverVersion
-        ) {
-          void getCrashJournal().write(entry);
-          return;
-        }
-        queueSave(entry.sceneJson);
-        // Recovered work waits on a round trip to become visible again, so it
-        // skips the editing debounce instead of risking a second teardown.
-        if (saveTimerRef.current !== null) {
-          window.clearTimeout(saveTimerRef.current);
-          saveTimerRef.current = null;
-        }
-        void flushSaveRef.current();
-      })
-      .catch(() => undefined);
-  }, [getCrashJournal, openedBoard, queueSave, route.kind]);
+  // unchanged. A draft too large to upload must be restored locally so the
+  // user can reduce or export it without first needing a successful save.
+  const restoreJournaledScene = useCallback(
+    (restoreOversizedDraft?: (sceneJson: string) => void) => {
+      if (route.kind !== "owner" || openedBoard?.access !== "owner") {
+        return;
+      }
+      const boardId = openedBoard.board._id;
+      const serverVersion = openedBoard.version;
+      const startedRoute = { ...currentRouteRef.current };
+      void getCrashJournal()
+        .claim({
+          boardId,
+          serverVersion,
+          runExclusive: (task) =>
+            saveCoordinatorRef.current?.runSaveExclusive(boardId, task) ??
+            task(),
+        })
+        .then((entry) => {
+          if (!entry) {
+            return;
+          }
+          // Claiming took the entry out of the journal to keep a second tab from
+          // replaying it too. A tab that then declines to replay it is holding
+          // the only copy of an unsaved edit, so it hands the entry back instead
+          // of spending it: the next open reclassifies it against the version
+          // that is current by then.
+          if (
+            !isCurrentRouteCompletion(startedRoute, currentRouteRef.current) ||
+            versionRef.current !== serverVersion
+          ) {
+            void getCrashJournal().write(entry);
+            return;
+          }
+          queueSave(entry.sceneJson);
+          if (
+            getBoardSceneRawSize(
+              sanitizeCloudPresentationScene(entry.sceneJson),
+            ) > MAX_BOARD_SCENE_RAW_BYTES
+          ) {
+            restoreOversizedDraft?.(entry.sceneJson);
+            flushJournalWrite();
+            return;
+          }
+          // Recovered work waits on a round trip to become visible again, so it
+          // skips the editing debounce instead of risking a second teardown.
+          if (saveTimerRef.current !== null) {
+            window.clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = null;
+          }
+          void flushSaveRef.current();
+        })
+        .catch(() => undefined);
+    },
+    [flushJournalWrite, getCrashJournal, openedBoard, queueSave, route.kind],
+  );
 
   const acceptSceneWithoutSave = useCallback(
-    (sceneJson: string) => {
+    (
+      sceneJson: string,
+      restoreOversizedDraft?: (sceneJson: string) => void,
+    ) => {
       discardPendingSave();
       acceptedSceneRef.current = acceptCloudSceneWithoutSave(
         sanitizeCloudPresentationScene(sceneJson),
       );
+      setSceneRawSize(
+        getBoardSceneRawSize(sanitizeCloudPresentationScene(sceneJson)),
+      );
+      setSceneSizeError(null);
+      blockedSizeRef.current = null;
       setSaveStatus(openedBoard?.access === "viewer" ? "viewer" : "saved");
-      restoreJournaledScene();
+      restoreJournaledScene(restoreOversizedDraft);
     },
     [discardPendingSave, openedBoard?.access, restoreJournaledScene],
   );
@@ -1798,6 +1941,11 @@ export const useCloudBoard = () => {
       openedBoard,
       saveStatus,
       errorMessage,
+      sceneRawSize,
+      sceneSizeError,
+      isLocalBackupUnavailable:
+        journalDegraded &&
+        (pendingSceneRef.current !== null || saveInFlightRef.current !== null),
       queueSave,
       discardPendingSave,
       acceptSceneWithoutSave,
@@ -1862,6 +2010,9 @@ export const useCloudBoard = () => {
       deleteFolder,
       moveBoardToFolder,
       errorMessage,
+      sceneRawSize,
+      sceneSizeError,
+      journalDegraded,
       flushSave,
       assets,
       boardDocManifest,

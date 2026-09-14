@@ -21,14 +21,21 @@ export const BOARD_SCENE_ENCODING = "deflate-v1";
 export const BOARD_SCENE_CONTENT_TYPE = "application/octet-stream";
 export const BOARD_SCENE_ENCODING_HEADER = "X-Board-Scene-Encoding";
 
-/** Raw (decompressed) scene ceiling, matching `MAX_SCENE_BYTES` in Convex. */
-export const MAX_BOARD_SCENE_RAW_BYTES = 900_000;
+/** Legacy inline Convex documents keep their existing sub-1 MB scene budget. */
+export const LEGACY_BOARD_SCENE_RAW_BYTES = 900_000;
+
+/** Warn while the scene is still saveable, leaving 2 MB to recover gracefully. */
+export const BOARD_SCENE_WARNING_RAW_BYTES = 8_000_000;
+
+/** Raw (decompressed) ceiling for full scenes stored outside Convex in R2. */
+export const MAX_BOARD_SCENE_RAW_BYTES = 10_000_000;
 
 /**
- * A compressed scene can never legitimately exceed the raw ceiling, so the
- * Worker refuses to buffer more than this before validating anything.
+ * Deflate can add framing/block overhead for incompressible input. This small
+ * allowance lets a raw scene at the ceiling remain valid while still bounding
+ * every buffer before integrity validation.
  */
-export const MAX_BOARD_SCENE_COMPRESSED_BYTES = MAX_BOARD_SCENE_RAW_BYTES;
+export const MAX_BOARD_SCENE_COMPRESSED_BYTES = 10_100_000;
 
 /** Maximum number of object keys a single delete capability may carry. */
 export const MAX_BOARD_SCENE_DELETE_KEYS = 1000;

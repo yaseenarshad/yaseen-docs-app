@@ -6,7 +6,7 @@ The canonical application is deployed at <https://draw.yaseenarshad.com>. The le
 
 - Cloudflare Workers serves the Vite application and the `/api/assets` routes.
 - A private R2 bucket named `yaseen-excalidraw-assets` stores pasted image bytes.
-- Convex stores authentication, diagram scenes, versions, sharing settings, image metadata, and short-lived R2 upload grants.
+- Convex stores authentication, scene manifests and versions, sharing settings, image metadata, and short-lived R2 upload grants. Migrated scene bodies live in R2; remaining legacy bodies still use Convex documents.
 - Scene JSON never contains the base64 image payload. Excalidraw file IDs link scene elements to R2 objects registered in Convex.
 - Image Studio searches transparent Pixabay graphics and open-source Iconify graphics through the Worker. Imported files use the same R2-backed diagram asset flow as pasted images.
 - Image Studio Favorites and Recent are account-wide Convex records. Shapes are inserted as editable native Excalidraw elements and do not consume R2 space.
@@ -36,6 +36,18 @@ npx convex run legacyBoardContent:removeVerifiedLegacyContents '{"batchSize": 25
 ```
 
 Each call reports `examined`, `removed`, `alreadyRemoved`, `kept`, `isDone`, and `continueCursor`; pass the cursor back to continue. A Board whose object fails read-back keeps its legacy row and is counted in `kept`.
+
+### Scene-size guardrails (YAZ-1593)
+
+R2 scenes accept **10,000,000 raw UTF-8 bytes inclusive** and at most **10,100,000 compressed bytes**. The editor warns at **8,000,000 raw bytes**, measured after persistence sanitization. Genuine legacy Convex document writes retain their **900,000-byte** guard; a larger edit migrates the saved baseline to R2 before saving the edit there.
+
+Over-limit edits stay on the canvas and in the existing local recovery journal. They do not repeatedly request uploads. Reducing the scene below the limit resumes normal saving. A visible backup action exports the current editor state; it does not mark cloud changes saved. Hosted Docs and animations can still depend on the app. Local journal failure must stay visible and warn on close while unsaved work is pending or uploading.
+
+**Rollout order:** deploy the capable Worker with the previous frontend assets, deploy the compatible Convex backend, then deploy the new frontend assets. Do not increase billing thresholds or create a release for this change.
+
+**Rollback boundary:** after any scene above 900,000 bytes is committed, keep Worker/backend readers supporting the larger scene ceiling, including history restore and programmatic edits. Rolling those readers back to the old ceiling would strand otherwise intact objects. Prefer reverting a frontend regression while retaining capable readers.
+
+Byte limits bound accepted input, not total runtime memory. Validate representative text and geometry scenes with overlapping uploads when changing these limits or validation code. See [scene-size validation](docs/scene-size-validation.md) for the local resource evidence and its limitations.
 
 Pixabay requires a server-side `PIXABAY_API_KEY` Cloudflare Worker secret. Pixabay search responses are cached for 24 hours and inserted assets are copied to R2 instead of permanently hotlinked. Iconify's public search API does not require a key.
 

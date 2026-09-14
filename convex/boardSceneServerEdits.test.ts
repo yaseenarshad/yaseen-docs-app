@@ -4,7 +4,11 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { BOARD_SCENE_KEY_PREFIX } from "../board-scenes/types";
+import {
+  BOARD_SCENE_KEY_PREFIX,
+  MAX_BOARD_SCENE_RAW_BYTES,
+} from "../board-scenes/types";
+import { getBoardSceneSizeError } from "../board-scenes/sizePolicy";
 import {
   DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
   describeDocPlacementRefs,
@@ -52,6 +56,28 @@ const textScene = (text: string, version = 1) =>
     appState: { viewBackgroundColor: "#ffffff" },
     files: {},
   });
+
+const largeTextScene = (rawSize: number, text = "Before") => {
+  const marker = "__BOARD_SCENE_PADDING__";
+  const template = JSON.stringify({
+    elements: [
+      {
+        id: "text-1",
+        type: "text",
+        text,
+        originalText: text,
+        version: 1,
+        versionNonce: 11,
+      },
+    ],
+    appState: { padding: marker },
+    files: {},
+  });
+  return template.replace(
+    marker,
+    "x".repeat(rawSize - template.length + marker.length),
+  );
+};
 
 const docScene = (docId?: Id<"docs">) =>
   JSON.stringify({
@@ -321,6 +347,81 @@ describe("Board scenes through the private Worker", () => {
 });
 
 describe("programmatic edits on a migrated Board", () => {
+  it("serializes an oversized server edit as structured Convex error data", async () => {
+    const { owner, board } = await setup();
+    await clientCommit(
+      owner,
+      board.boardId,
+      "migration",
+      0,
+      largeTextScene(MAX_BOARD_SCENE_RAW_BYTES, "A"),
+    );
+
+    const error = await owner
+      .action(api.programmaticBoardEdits.updateTextElement, {
+        boardId: board.boardId,
+        elementId: "text-1",
+        text: "After",
+      })
+      .catch((caught: unknown) => caught);
+
+    expect(
+      typeof error === "object" &&
+        error !== null &&
+        Symbol.for("ConvexError") in error,
+    ).toBe(true);
+    expect(getBoardSceneSizeError(error)).toMatchObject({
+      code: "BOARD_SCENE_TOO_LARGE",
+      rawSize: expect.any(Number),
+      maxRawSize: MAX_BOARD_SCENE_RAW_BYTES,
+    });
+  });
+
+  it("edits and restores an R2 scene above the legacy 900 KB ceiling", async () => {
+    const { owner, board } = await setup();
+    const largeScene = largeTextScene(910_000);
+    await clientCommit(owner, board.boardId, "migration", 0, largeScene);
+    const savedLargeScene = largeTextScene(910_000, "Saved");
+    await clientCommit(owner, board.boardId, "save", 0, savedLargeScene);
+
+    await owner.action(api.programmaticBoardEdits.updateTextElement, {
+      boardId: board.boardId,
+      elementId: "text-1",
+      text: "After",
+    });
+    const [snapshot] = await owner.query(api.boardHistory.list, {
+      boardId: board.boardId,
+    });
+
+    await owner.action(api.boardHistory.restore, {
+      boardId: board.boardId,
+      snapshotId: snapshot._id,
+    });
+
+    await expect(readCurrentScene(owner, board.boardId)).resolves.toBe(
+      savedLargeScene,
+    );
+  });
+
+  it("keeps the 900 KB ceiling on legacy programmatic persistence", async () => {
+    const { t, owner, board } = await setup();
+    await t.run(async (ctx) => {
+      const content = await ctx.db
+        .query("diagramContents")
+        .withIndex("by_diagramId", (q) => q.eq("diagramId", board.boardId))
+        .unique();
+      await ctx.db.patch(content!._id, { sceneJson: largeTextScene(910_000) });
+    });
+
+    await expect(
+      owner.action(api.programmaticBoardEdits.updateTextElement, {
+        boardId: board.boardId,
+        elementId: "text-1",
+        text: "After",
+      }),
+    ).rejects.toThrow("too large");
+  });
+
   it("applies a text edit and force-preserves the version it replaces", async () => {
     const { t, owner, board, harness } = await setup();
     await clientCommit(

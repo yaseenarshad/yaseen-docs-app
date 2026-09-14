@@ -44,7 +44,7 @@ import {
 } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { loadFromBlob } from "@excalidraw/excalidraw/data/blob";
-import { serializeAsJSON } from "@excalidraw/excalidraw/data/json";
+import { saveAsJSON, serializeAsJSON } from "@excalidraw/excalidraw/data/json";
 import { t } from "@excalidraw/excalidraw/i18n";
 
 import {
@@ -151,6 +151,7 @@ import { useHandleAppTheme } from "./useHandleAppTheme";
 import { getPreferredLanguage } from "./app-language/language-detector";
 import { useAppLangCode } from "./app-language/language-state";
 import { CloudCopyAction, CloudStatus } from "./cloud/CloudStatus";
+import { CloudSceneSizeNotice } from "./cloud/CloudSceneSizeNotice";
 import { CloudAccount } from "./cloud/CloudAccount";
 import { CloudShareDialog } from "./cloud/CloudShareDialog";
 import { getCloudDocumentTitle } from "./cloud/cloudDocumentTitle";
@@ -1046,7 +1047,23 @@ const ExcalidrawWrapper = () => {
       if (shouldPreserveViewport) {
         cloud.discardPendingSave();
       } else {
-        cloud.acceptSceneWithoutSave(appliedSceneJson);
+        cloud.acceptSceneWithoutSave(appliedSceneJson, (draftJson) => {
+          const draft = JSON.parse(draftJson);
+          const currentState = excalidrawAPI.getAppState();
+          const recoveredElements = reconcileElements(
+            excalidrawAPI.getSceneElementsIncludingDeleted(),
+            restoreElements(draft.elements, null, {
+              repairBindings: true,
+              deleteInvisibleElements: true,
+            }) as RemoteExcalidrawElement[],
+            currentState,
+          );
+          excalidrawAPI.updateScene({
+            elements: recoveredElements,
+            appState: restoreAppState(draft.appState, currentState),
+            captureUpdate: CaptureUpdateAction.NEVER,
+          });
+        });
       }
       appliedCloudSceneRevisionRef.current =
         getCloudSceneSemanticRevision(appliedSceneJson);
@@ -1810,6 +1827,27 @@ const ExcalidrawWrapper = () => {
         renderTopRightUI={(isMobile) => {
           return (
             <div className="excalidraw-ui-top-right">
+              {cloud.openedBoard?.access === "owner" && excalidrawAPI && (
+                <CloudSceneSizeNotice
+                  key={cloud.openedBoard.board._id}
+                  rawSize={cloud.sceneRawSize}
+                  sizeError={cloud.sceneSizeError}
+                  backupUnavailable={cloud.isLocalBackupUnavailable}
+                  onExport={async () => {
+                    await saveAsJSON({
+                      data: {
+                        elements: excalidrawAPI.getSceneElements(),
+                        appState: excalidrawAPI.getAppState(),
+                        files: excalidrawAPI.getFiles(),
+                      },
+                      filename: `${
+                        cloud.openedBoard?.board.title ?? "Board"
+                      } backup`,
+                      fileHandle: null,
+                    });
+                  }}
+                />
+              )}
               {!isMobile && (
                 <CloudStatus
                   title={cloud.openedBoard?.board.title ?? "Cloud board"}

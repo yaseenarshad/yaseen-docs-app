@@ -1,5 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 
+import { LEGACY_BOARD_SCENE_RAW_BYTES } from "../board-scenes/types";
+
 import {
   assertBoardSceneNotMigrated,
   createBoardSceneReadGrant,
@@ -15,7 +17,6 @@ import type { BoardSceneEditPlan } from "./boardSceneModel";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 
-const MAX_SCENE_BYTES = 900_000;
 // The input ceilings are checked by the action before it reads any scene, and
 // again here for a Board that takes the single-transaction path.
 export const MAX_PROGRAMMATIC_TEXT_LENGTH = 10_000;
@@ -23,7 +24,7 @@ export const MAX_PROGRAMMATIC_UPDATES_BYTES = 200_000;
 
 export const assertSceneSize = (sceneJson: string, entityName: string) => {
   const bytes = new TextEncoder().encode(sceneJson).byteLength;
-  if (bytes > MAX_SCENE_BYTES) {
+  if (bytes > LEGACY_BOARD_SCENE_RAW_BYTES) {
     throw new Error(
       `This ${entityName.toLowerCase()} is too large to save as one scene. Remove embedded data or split the ${entityName.toLowerCase()}.`,
     );

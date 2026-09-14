@@ -80,6 +80,45 @@ const readDependencies = async (
 };
 
 describe("board scene compression", () => {
+  it("rejects an oversized UTF-8 scene before requesting an upload", async () => {
+    const dependencies = saveDependencies();
+    await expect(
+      saveBoardScene(
+        {
+          boardId: "board-id",
+          expectedVersion: 1,
+          sceneJson: "é".repeat(5_000_001),
+        },
+        dependencies,
+      ),
+    ).rejects.toMatchObject({
+      data: {
+        code: "BOARD_SCENE_TOO_LARGE",
+        rawSize: 10_000_002,
+        maxRawSize: 10_000_000,
+      },
+    });
+    expect(dependencies.createUploadGrant).not.toHaveBeenCalled();
+    expect(dependencies.upload).not.toHaveBeenCalled();
+  });
+
+  it("refuses a compressed download expanding beyond its declared raw size", async () => {
+    const dependencies = await readDependencies();
+    const bytes = deflate(new TextEncoder().encode("x".repeat(10_000_001)));
+    dependencies.fetchObject.mockResolvedValue(bytes);
+    const original = await dependencies.createReadGrant({
+      boardId: "board-id",
+    });
+    dependencies.createReadGrant.mockResolvedValue({
+      ...original,
+      rawSize: 10_000_000,
+      compressedSize: bytes.byteLength,
+      compressedSha256: await sha256Hex(bytes),
+    });
+    await expect(
+      readBoardScene({ boardId: "board-id" }, dependencies),
+    ).rejects.toThrow("too large");
+  });
   it("compresses once into zlib bytes with matching exact hashes", async () => {
     const compressed = await compressBoardScene(scene);
     const raw = new TextEncoder().encode(scene);

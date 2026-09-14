@@ -12,10 +12,13 @@ import {
   BOARD_SCENE_READ_GRANT_PATH,
   BOARD_SCENE_TOKEN_PATTERN,
   BOARD_SCENE_UPLOAD_GRANT_PATH,
+  MAX_BOARD_SCENE_COMPRESSED_BYTES,
+  MAX_BOARD_SCENE_RAW_BYTES,
   parseBoardSceneDeleteGrant,
   parseBoardSceneReadGrant,
   parseBoardSceneUploadGrant,
 } from "../board-scenes/types";
+import { getBoardSceneSizeError } from "../board-scenes/sizePolicy";
 import {
   DOC_PLACEMENT_REFS_PROTOCOL_VERSION,
   hashDocPlacementRefs,
@@ -213,8 +216,32 @@ describe("Board scene upload grants", () => {
       requestUploadGrant(owner, board.boardId, { rawSha256: "not-a-hash" }),
     ).rejects.toThrow("Board scene checksum is invalid");
     await expect(
-      requestUploadGrant(owner, board.boardId, { rawSize: 900_001 }),
-    ).rejects.toThrow("too large");
+      requestUploadGrant(owner, board.boardId, {
+        rawSize: MAX_BOARD_SCENE_RAW_BYTES + 1,
+        compressedSize: 1.5,
+      }),
+    ).rejects.toThrow("Board scene size is invalid");
+  });
+
+  it("accepts the new integrity ceilings and returns structured size failures", async () => {
+    const { owner, board } = await setup();
+
+    await expect(
+      requestUploadGrant(owner, board.boardId, {
+        rawSize: MAX_BOARD_SCENE_RAW_BYTES,
+        compressedSize: MAX_BOARD_SCENE_COMPRESSED_BYTES,
+      }),
+    ).resolves.toMatchObject({ status: "upload" });
+
+    const rawSize = MAX_BOARD_SCENE_RAW_BYTES + 1;
+    const error = await requestUploadGrant(owner, board.boardId, {
+      rawSize,
+    }).catch((caught: unknown) => caught);
+    expect(getBoardSceneSizeError(error)).toEqual({
+      code: "BOARD_SCENE_TOO_LARGE",
+      rawSize,
+      maxRawSize: MAX_BOARD_SCENE_RAW_BYTES,
+    });
   });
 });
 

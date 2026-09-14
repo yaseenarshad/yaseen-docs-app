@@ -1,10 +1,19 @@
-import { deflate, inflate } from "pako";
+import { deflate } from "pako";
+import { ConvexError } from "convex/values";
+
+import { inflateBoardScene } from "../board-scenes/compression";
+import {
+  assertBoardSceneRawSize,
+  getBoardSceneSizeError,
+} from "../board-scenes/sizePolicy";
 
 import {
   BOARD_SCENE_CONTENT_TYPE,
   BOARD_SCENE_ENCODING,
   BOARD_SCENE_ENCODING_HEADER,
   BOARD_SCENE_ROUTE,
+  MAX_BOARD_SCENE_COMPRESSED_BYTES,
+  MAX_BOARD_SCENE_RAW_BYTES,
 } from "../board-scenes/types";
 
 import { getSceneSemanticRevision } from "./sceneConflict";
@@ -65,7 +74,19 @@ export const compressBoardScene = async (
   sceneJson: string,
 ): Promise<CompressedBoardScene> => {
   const raw = new TextEncoder().encode(sceneJson);
+  try {
+    assertBoardSceneRawSize(raw.byteLength);
+  } catch (error) {
+    const sizeError = getBoardSceneSizeError(error);
+    if (sizeError) {
+      throw new ConvexError(sizeError);
+    }
+    throw error;
+  }
   const bytes = deflate(raw);
+  if (bytes.byteLength > MAX_BOARD_SCENE_COMPRESSED_BYTES) {
+    throw new Error("Board scene compressed representation is too large");
+  }
   const [rawSha256, compressedSha256, semanticSha256] = await Promise.all([
     sha256Hex(raw),
     sha256Hex(bytes),
@@ -97,12 +118,7 @@ export const decompressBoardScene = async (
   ) {
     throw new Error(BOARD_SCENE_INTEGRITY_MESSAGE);
   }
-  let raw: Uint8Array;
-  try {
-    raw = inflate(bytes);
-  } catch {
-    throw new Error("Board scene could not be decompressed");
-  }
+  const raw = inflateBoardScene(bytes, MAX_BOARD_SCENE_RAW_BYTES);
   if (
     raw.byteLength !== integrity.rawSize ||
     (await sha256Hex(raw)) !== integrity.rawSha256

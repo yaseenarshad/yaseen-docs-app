@@ -4,7 +4,6 @@ import { runBoardSceneEdit } from "./boardSceneEditing";
 import {
   MAX_PROGRAMMATIC_TEXT_LENGTH,
   MAX_PROGRAMMATIC_UPDATES_BYTES,
-  assertSceneSize,
 } from "./programmaticEditPersistence";
 import {
   patchElementsInScene,
@@ -55,7 +54,6 @@ export const updateTextElement = action({
           args.text,
           Date.now(),
         );
-        assertSceneSize(updated, "Diagram");
         return updated;
       },
     });
@@ -94,7 +92,6 @@ export const patchElements = action({
           args.updatesJson,
           Date.now(),
         );
-        assertSceneSize(updated, "Diagram");
         return updated;
       },
     });
