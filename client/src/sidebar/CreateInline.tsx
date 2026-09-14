@@ -11,16 +11,18 @@ interface CreateInlineProps {
   /** Called with the validated, non-empty name; rejects with a message to keep editing. */
   onSubmit: (name: string) => Promise<void>
   onCancel: () => void
+  /** Text the box starts with (YAZ-1604); the caret lands at its end. Default empty, as today. */
+  seed?: string
 }
 
 /** VS Code-style inline name input rendered inside the tree (GRO-2022 D2). */
-export function CreateInline({ kind, indent, onSubmit, onCancel }: CreateInlineProps) {
+export function CreateInline({ kind, indent, onSubmit, onCancel, seed = '' }: CreateInlineProps) {
   const [error, setError] = useState<string | null>(null)
   const submitting = useRef(false)
 
   const submit = async (value: string) => {
     const name = value.trim()
-    if (name === '' || submitting.current) return
+    if (name === '' || name === seed.trim() || submitting.current) return
     const invalid = validateEntryName(name)
     if (invalid !== null) {
       setError(invalid)
@@ -39,6 +41,8 @@ export function CreateInline({ kind, indent, onSubmit, onCancel }: CreateInlineP
     <div className="create-inline" style={{ paddingLeft: indent }}>
       <input
         autoFocus
+        defaultValue={seed}
+        onFocus={(e) => e.currentTarget.setSelectionRange(seed.length, seed.length)}
         className={`create-inline__input${error !== null ? ' create-inline__input--error' : ''}`}
         placeholder={PLACEHOLDER[kind]}
         spellCheck={false}

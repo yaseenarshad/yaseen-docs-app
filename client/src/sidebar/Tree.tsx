@@ -8,6 +8,7 @@ import { RenameInline } from './RenameInline'
 /** Inline "New note"/"New folder page"/"New folder" input pending inside the tree (GRO-2022, YAZ-841). */
 export interface PendingCreate {
   kind: EntryKind
+  seed: string
   /** Absolute path of the directory the entry is created in. */
   parentDir: string
   onSubmit: (name: string) => Promise<void>
@@ -103,6 +104,7 @@ export function Tree({
         <li>
           <CreateInline
             kind={pending.kind}
+            seed={pending.seed}
             indent={8 + depth * 14 + (pending.kind === 'dir' ? 0 : 14)}
             onSubmit={pending.onSubmit}
             onCancel={pending.onCancel}
