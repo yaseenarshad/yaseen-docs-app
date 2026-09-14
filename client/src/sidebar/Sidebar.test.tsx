@@ -2069,23 +2069,17 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
     expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith('/v/inbox/Later')
   })
 
-  it('New dated folder opens the same input pre-filled with today\'s `MM_DD- `, caret at the end; the bare seed never creates (YAZ-1604)', async () => {
+  // The caret and the no-op Enter on a bare seed are CreateInline.test's; this pins only the wiring:
+  // the item opens the SAME box, seeded with today's date, in the right-clicked folder.
+  it('New dated folder opens the create box pre-filled with today\'s `MM_DD- ` in that folder (YAZ-1604)', async () => {
     const { el, bridge } = await topicsWithInbox()
     act(() => el.querySelector<HTMLButtonElement>('.tree__row--muted')?.click())
-    // Only Date is faked: the seed is read when the item is clicked, and nothing else here waits on a timer.
-    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.useFakeTimers({ toFake: ['Date'] }) // only Date: the seed is read when the item is clicked
     vi.setSystemTime(new Date(2026, 5, 22))
     try {
       await rightClick(rowFor(el, 'inbox'))
       act(() => itemByLabel(el, 'New dated folder')?.click())
-      const field = inlineInput(el)!
-      expect(field.value).toBe('06_22- ')
-      expect(field.selectionStart).toBe(field.value.length)
-      expect(field.selectionEnd).toBe(field.value.length)
-      // Enter on the untouched seed is a no-op: the input stays open, nothing is born.
-      await commit(el, '06_22- ')
-      expect(bridge.createDir).not.toHaveBeenCalled()
-      expect(inlineInput(el)).not.toBeNull()
+      expect(inlineInput(el)?.value).toBe('06_22- ')
       await commit(el, '06_22- Launch')
       expect(bridge.createDir).toHaveBeenCalledExactlyOnceWith('/v/inbox/06_22- Launch')
     } finally {
