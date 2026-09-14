@@ -1576,6 +1576,12 @@ button {
   color: var(--fg-dir);
 }
 
+/* A file with no in-app viewer (YAZ-1577 D2): listed, but a click leaves the app — quieter, so the
+   difference is visible before the click. */
+.tree__row--external {
+  color: var(--fg-muted);
+}
+
 .tree__row--active {
   background: var(--accent-soft);
   color: var(--accent);

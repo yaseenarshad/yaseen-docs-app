@@ -66,6 +66,8 @@ interface TreeProps {
    * window — activation stays put. "Open in new window" lives on the context menu (D2).
    */
   onOpenFileBackground: (path: string) => void
+  /** A row with no in-app viewer (`kind: null`, YAZ-1577 D2): hand it to the OS default app instead of a tab. */
+  onOpenDefault: (path: string) => void
   /** Right-click on a row; blank-space right-clicks are handled by the sidebar body. */
   onNodeContextMenu: (node: TreeNode, e: React.MouseEvent) => void
   pending: PendingCreate | null
@@ -86,6 +88,7 @@ export function Tree({
   onToggle,
   onOpenFile,
   onOpenFileBackground,
+  onOpenDefault,
   onNodeContextMenu,
   pending,
   renaming,
@@ -93,7 +96,7 @@ export function Tree({
   selection,
   depth = 0,
 }: TreeProps) {
-  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onNodeContextMenu, pending, renaming, move, selection }
+  const recurse = { expanded, activeFile, onToggle, onOpenFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection }
   return (
     <ul className="tree" role={depth === 0 ? 'tree' : 'group'}>
       {pending !== null && pending.parentDir === dirPath && (
@@ -163,13 +166,19 @@ export function Tree({
           <li key={node.path} role="treeitem" aria-selected={node.path === activeFile || selection.paths.has(node.path)}>
             <button
               type="button"
-              className={`tree__row tree__row--file${node.path === activeFile ? ' tree__row--active' : ''}${selection.paths.has(node.path) ? ' tree__row--selected' : ''}`}
+              className={`tree__row tree__row--file${node.kind === null ? ' tree__row--external' : ''}${node.path === activeFile ? ' tree__row--active' : ''}${selection.paths.has(node.path) ? ' tree__row--selected' : ''}`}
               style={{ paddingLeft: 8 + depth * 14 + 14 }}
               onClick={(e) => {
                 // Shift is the SELECTION gesture and nothing else (YAZ-1336, 🔒 D2): it never
                 // opens, never previews — so it is asked first, before any of the open rules.
                 if (e.shiftKey) {
                   selection.toggle(node.path)
+                  return
+                }
+                // No in-app viewer (YAZ-1577 D2): the OS default app IS the viewer, so no tab —
+                // and nothing for ⌘ to background. Asked before the open rules, after shift.
+                if (node.kind === null) {
+                  onOpenDefault(node.path)
                   return
                 }
                 // First activation previews, second commits — the Topics rows' rule (YAZ-921):

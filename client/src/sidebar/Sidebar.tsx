@@ -183,6 +183,8 @@ interface MenuTargets {
   revealPath: string | null
   /** "Open in VS Code" — the same target rule again (YAZ-963); its OWN field, per this split's whole point. */
   openVsCodePath: string | null
+  /** "Open in default app" — the same target rule a third time (YAZ-1577); its OWN field, same doctrine. */
+  openDefaultPath: string | null
   /**
    * "Turn into folder page" / "Turn back into normal page" — MARKDOWN FILE rows only (🔒 D2,
    * YAZ-817). Its OWN field, not `newWindowPath` reused: that one is every file row, and a
@@ -616,6 +618,7 @@ export function Sidebar({
         deletePath: node?.path ?? null,
         revealPath: node?.path ?? root.replace(/\/+$/, ''),
         openVsCodePath: node?.path ?? root.replace(/\/+$/, ''),
+        openDefaultPath: node?.path ?? root.replace(/\/+$/, ''),
         folderPagePath: notePath,
         folderPageIsOn: notePath !== null && indexSource.records.some((r) => r.path === notePath && isFolderPage(r)),
         topicsAnchor,
@@ -728,6 +731,20 @@ export function Sidebar({
     (path: string) => {
       api.openVsCode({ path }).catch((err: unknown) => {
         onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${basename(path)}" in VS Code — it is no longer there` : `Can't open in VS Code: ${err instanceof Error ? err.message : String(err)}`)
+      })
+    },
+    [onNotice],
+  )
+
+  /**
+   * Open in default app (YAZ-1577): the third twin. Both the click on a row with no viewer and
+   * the menu item land here; the OS' own refusal (`IO_ERROR`, e.g. no app registered for the
+   * type) is the one extra message worth showing verbatim.
+   */
+  const openDefault = useCallback(
+    (path: string) => {
+      api.openDefault({ path }).catch((err: unknown) => {
+        onNotice(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? `Can't open "${basename(path)}" — it is no longer there` : `Can't open "${basename(path)}": ${err instanceof Error ? err.message : String(err)}`)
       })
     },
     [onNotice],
@@ -1077,6 +1094,7 @@ export function Sidebar({
                 onToggle={(dir) => dispatch({ type: 'toggle', dir })}
                 onOpenFile={onOpenFile}
                 onOpenFileBackground={onOpenFileBackground}
+                onOpenDefault={openDefault}
                 onNodeContextMenu={openMenu}
                 pending={pending}
                 renaming={renaming}
@@ -1110,6 +1128,8 @@ export function Sidebar({
           onReveal={reveal}
           openVsCodePath={menu.openVsCodePath}
           onOpenVsCode={openVsCode}
+          openDefaultPath={menu.openDefaultPath}
+          onOpenDefault={openDefault}
           onNewNote={() => startCreate('file')}
           onNewFolderPage={() => startCreate('folderPage')}
           // Topics PAGE rows and blank space still browse by meaning and offer no disk-folder

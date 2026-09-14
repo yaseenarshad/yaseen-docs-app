@@ -2,7 +2,7 @@ import { watch, type FSWatcher } from 'chokidar'
 import type { Stats } from 'node:fs'
 import path from 'node:path'
 import type { WatchEvent } from '@shared/types'
-import { isSkipped, isSupportedFile } from './fsUtils'
+import { isSkipped } from './fsUtils'
 
 type Listener = (ev: WatchEvent) => void
 
@@ -19,11 +19,10 @@ export function activeWatcherRoots(): string[] {
   return [...entries.keys()]
 }
 
-function ignored(root: string, p: string, stats?: Stats): boolean {
+/** Dot-entries and `node_modules` at any depth; every regular file is watched, viewer or not (YAZ-1577 D1). */
+function ignored(root: string, p: string): boolean {
   const rel = path.relative(root, p)
-  if (rel === '') return false
-  if (rel.split(path.sep).some(isSkipped)) return true
-  return stats?.isFile() === true && !isSupportedFile(p)
+  return rel !== '' && rel.split(path.sep).some(isSkipped)
 }
 
 function createEntry(root: string): Entry {
@@ -31,13 +30,13 @@ function createEntry(root: string): Entry {
     ignoreInitial: true,
     alwaysStat: true,
     awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
-    ignored: (p: string, stats?: Stats) => ignored(root, p, stats),
+    ignored: (p: string) => ignored(root, p),
   })
   const entry: Entry = { watcher, listeners: new Set(), ready: false }
   const emit = (ev: WatchEvent) => entry.listeners.forEach((l) => l(ev))
   // `alwaysStat` guarantees stats on add/change; the guard only narrows the type.
   const fileEvent = (type: 'add' | 'change', p: string, stats?: Stats) => {
-    if (isSupportedFile(p) && stats !== undefined) emit({ type, path: p, mtime: stats.mtimeMs })
+    if (stats !== undefined) emit({ type, path: p, mtime: stats.mtimeMs })
   }
   watcher
     .on('ready', () => {
@@ -46,7 +45,7 @@ function createEntry(root: string): Entry {
     })
     .on('add', (p, stats) => fileEvent('add', p, stats))
     .on('change', (p, stats) => fileEvent('change', p, stats))
-    .on('unlink', (p) => isSupportedFile(p) && emit({ type: 'unlink', path: p }))
+    .on('unlink', (p) => emit({ type: 'unlink', path: p }))
     .on('addDir', (p) => p !== root && emit({ type: 'addDir', path: p }))
     .on('unlinkDir', (p) => p !== root && emit({ type: 'unlinkDir', path: p }))
     .on('error', (err) => emit({ type: 'error', message: err instanceof Error ? err.message : String(err) }))

@@ -1,7 +1,7 @@
 import { readdir, rename, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { RenameFileResponse } from '@shared/types'
-import { canRenameWithoutConversion, fileKind } from '@shared/fileKind'
+import { canRenameWithoutConversion } from '@shared/fileKind'
 import { BridgeFailure, fsCall, requireAbsPath } from './fsUtils'
 
 export async function hasExactDirectoryEntry(
@@ -55,10 +55,8 @@ export async function renameFile(req: unknown): Promise<RenameFileResponse> {
       if (newP.startsWith(`${oldP}${path.sep}`)) throw new BridgeFailure('BAD_REQUEST', 'a folder cannot move inside itself', { path: newP })
     } else {
       if (!src.isFile()) throw new BridgeFailure('NOT_A_FILE', 'expected a file', { path: oldP })
-      const oldKind = fileKind(oldP)
-      if (oldKind === null) throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only supported files can be renamed', { path: oldP })
       if (!canRenameWithoutConversion(oldP, newP)) {
-        throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'the new name must preserve the supported file encoding', { path: newP })
+        throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'the new name must keep the file kind and encoding', { path: newP })
       }
     }
     // The target's parent must already exist — E1b never creates folders on the way.
@@ -104,11 +102,8 @@ export async function repairRename(req: unknown): Promise<RenameFileResponse> {
       }
     } else {
       if (!dst.isFile()) throw new BridgeFailure('NOT_A_FILE', 'expected a file', { path: newP })
-      const oldKind = fileKind(oldP)
       if (!canRenameWithoutConversion(oldP, newP)) {
-        throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'rename repair requires the same supported file encoding', {
-          path: oldKind === null ? oldP : newP,
-        })
+        throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'the new name must keep the file kind and encoding', { path: newP })
       }
     }
     return { oldPath: oldP, newPath: newP, kind }
