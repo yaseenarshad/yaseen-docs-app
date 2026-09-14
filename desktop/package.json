@@ -23,6 +23,7 @@
     "productName": "Yaseen Docs",
     "directories": { "output": "dist-app" },
     "files": ["out/**"],
+    "afterPack": "build/adhocSign.cjs",
     "mac": {
       "target": [
         { "target": "dmg", "arch": ["arm64"] },
