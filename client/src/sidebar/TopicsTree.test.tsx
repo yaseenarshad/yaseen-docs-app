@@ -172,6 +172,7 @@ async function mount(over: Partial<OwnedProps> & { source: Props['source'] }) {
   root = createRoot(el)
   const props: OwnedProps = {
     root: ROOT,
+    focus: [],
     activeFile: null,
     onOpenFile: vi.fn(),
     onOpenFileBackground: vi.fn(),
@@ -457,6 +458,109 @@ describe('the roots rule (🔒 D2, as YAZ-920 amends it): the pinned Home, then 
     const { el } = await mount({ source: sourceOver([]) })
     expect(rows(el)).toHaveLength(0)
     expect(el.textContent).toBe('')
+  })
+})
+
+// ------------------------------------------------------------- ⚡ YAZ-1605: Focus Mode's narrowing
+
+/**
+ * FOCUS MODE narrows the whole lens to the topics the user chose: the focused folder pages ARE
+ * the roots, in the ORDER they were chosen, and everything outside them — the pinned-leaf Home,
+ * the sibling topics, the Uncategorized section — is simply not there. `topicRoots` is the one
+ * door the rows, the expand-all set and the orphan walk all come through, so the three can never
+ * disagree; a focus that names no folder page any more falls THROUGH to the full rule rather than
+ * leaving an empty tree behind.
+ */
+describe('topicRoots under a focus (YAZ-1605): the chosen folder pages, in the chosen order', () => {
+  const rootsOf = (records: readonly IndexRecord[], focus: readonly string[]) => {
+    const resolve = records.length === 0 ? null : resolverOver(records)
+    return topicRoots(records, folderPagesLookup(records, resolve ?? (() => null)), resolve, focus).map((r) => r.path)
+  }
+
+  it('one focused topic is the ONLY root — no pinned Home, no sibling topics', () => {
+    expect(rootsOf(vault(), [METRICS])).toEqual([METRICS])
+  })
+
+  it('keeps the ORDER the focus was given in, not the path order the full rule sorts by', () => {
+    expect(rootsOf(vault(), [PROJECTS, METRICS])).toEqual([PROJECTS, METRICS])
+  })
+
+  it('a focus naming a PLAIN page falls through to the full rule — a note is no topic', () => {
+    expect(rootsOf(vault(), [`${ROOT}/Loose.md`])).toEqual([HOME, METRICS, PROJECTS])
+  })
+
+  it('a focus naming a path the snapshot no longer holds falls through to the full rule', () => {
+    expect(rootsOf(vault(), [`${ROOT}/Gone.md`])).toEqual([HOME, METRICS, PROJECTS])
+  })
+
+  it('a focus mixing a topic with a plain page keeps only the topic', () => {
+    expect(rootsOf(vault(), [`${ROOT}/Loose.md`, METRICS])).toEqual([METRICS])
+  })
+
+  it('focusing Home itself makes it the lone root — this rule does not special-case it', () => {
+    // Whether Home may be FOCUSED at all is the Sidebar menu's gate (pinned there); the roots
+    // rule just obeys the list it is handed.
+    expect(rootsOf(vault(), [HOME])).toEqual([HOME])
+  })
+})
+
+describe('allExpandableTopics under a focus (YAZ-1605): only the focused subtrees can unfold', () => {
+  const setOf = (records: readonly IndexRecord[], focus: readonly string[]) => {
+    const resolve = resolverOver(records)
+    return allExpandableTopics(records, folderPagesLookup(records, resolve), resolve, focus)
+  }
+
+  it('lists only pages reachable from the focused topic — a sibling topic\'s foldables are absent', () => {
+    const SUB = `${ROOT}/Sub.md`
+    const OTHER = `${ROOT}/Other.md`
+    const records = [
+      folder(HOME),
+      folder(METRICS, belongs('[[Home]]')),
+      folder(SUB, belongs('[[Metrics]]')),
+      rec(`${ROOT}/Deep.md`, belongs('[[Sub]]')),
+      folder(PROJECTS),
+      folder(OTHER, belongs('[[Projects]]')),
+      rec(`${ROOT}/Leaf.md`, belongs('[[Other]]')),
+    ]
+    expect(setOf(records, [METRICS])).toEqual([METRICS, SUB])
+  })
+
+  it('a loop under the focused topic still ends — the trail guard travels with the descent', () => {
+    const records = [folder(PROJECTS), folder(`${ROOT}/A.md`, belongs('[[Projects]]', '[[B]]')), folder(`${ROOT}/B.md`, belongs('[[A]]'))]
+    // B's one member is A, already standing above it on this trail, so B unfolds nothing.
+    expect(setOf(records, [PROJECTS])).toEqual([PROJECTS, `${ROOT}/A.md`])
+  })
+})
+
+describe('the tree under a focus (YAZ-1605): the focused topics ARE the tree', () => {
+  it('draws ONE focused topic at depth 0 with its members — no Home, no siblings, no Uncategorized', async () => {
+    // Loose belongs nowhere and heads an Uncategorized section on the full tree (🔒 D7); under a
+    // focus that section is gone entirely, because everything outside the focus is hidden.
+    const { el } = await mount({ source: sourceOver(vault()), focus: [METRICS] })
+    expect(labels(el)).toEqual(['Metrics'])
+    expect(indentOf(el, 'Metrics')).toBe('8px')
+    await click(chevrons(el, 'Expand Metrics')[0])
+    expect(labels(el)).toEqual(['Metrics', 'Churn', 'Revenue'])
+  })
+
+  it('draws two focused topics as roots in the ORDER they were focused', async () => {
+    const { el } = await mount({ source: sourceOver(vault()), focus: [PROJECTS, METRICS] })
+    expect(labels(el)).toEqual(['Projects', 'Metrics'])
+  })
+
+  it('a focus that resolves to no topic draws the FULL tree — the fall-through, on screen', async () => {
+    const { el } = await mount({ source: sourceOver(vault()), focus: [`${ROOT}/Loose.md`] })
+    // The full tree, Uncategorized INCLUDED: the orphan walk keys off whether the focus resolved,
+    // exactly as the roots rule does, so Loose keeps its row instead of vanishing from both.
+    expect(labels(el)).toEqual(['Home', 'Metrics', 'Projects', 'Uncategorized'])
+  })
+
+  it('a page claimed by two focused topics still renders under EACH (⚡ D6, under a focus)', async () => {
+    const records = [folder(HOME), folder(METRICS, belongs('[[Home]]')), folder(PROJECTS), rec(`${ROOT}/Shared.md`, belongs('[[Metrics]]', '[[Projects]]'))]
+    const { el } = await mount({ source: sourceOver(records), focus: [METRICS, PROJECTS] })
+    await click(chevrons(el, 'Expand Metrics')[0])
+    await click(chevrons(el, 'Expand Projects')[0])
+    expect(labels(el)).toEqual(['Metrics', 'Shared', 'Projects', 'Shared'])
   })
 })
 
