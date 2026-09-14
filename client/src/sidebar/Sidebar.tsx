@@ -24,7 +24,7 @@ import { useSearchResults } from '../search/useSearchResults'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmTurnBack } from './ConfirmTurnBack'
 import { ContextMenu } from './ContextMenu'
-import { entryPath, renamedPath, targetDirFor, type EntryKind, type MenuRow } from './createEntry'
+import { datedFolderSeed, entryPath, renamedPath, targetDirFor, type EntryKind, type MenuRow } from './createEntry'
 import { HotkeysButton } from './HotkeysPanel'
 import { SettingsCog } from './SettingsPanel'
 import { TopicsTree, allExpandableTopics, type PendingTopicCreate } from './TopicsTree'
@@ -333,7 +333,7 @@ export function Sidebar({
   // tree, where the input nests inside `parentDir`'s own children instead. `intoFolderPage` is
   // that same row only WHEN it is a flagged PAGE (8H, YAZ-869) — a disk folder has no record and
   // therefore keeps plain filesystem creation. Pinned when the menu opens (GRO-2296).
-  const [creating, setCreating] = useState<{ kind: EntryKind; parentDir: string; anchor: string | null; intoFolderPage: string | null } | null>(null)
+  const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string; anchor: string | null; intoFolderPage: string | null } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir' } | null>(null)
   // The delete confirm sheet's target (GRO-2272 `C3-`); null when the sheet is closed.
   const [confirmingDelete, setConfirmingDelete] = useState<DeleteTarget | null>(null)
@@ -656,13 +656,14 @@ export function Sidebar({
   )
 
   const startCreate = useCallback(
-    (kind: EntryKind) => {
+    (kind: EntryKind, seed = '') => {
       if (menu === null) return
       // The input renders inside the target dir's children, so that dir must be open;
       // expandTo opens every dir ABOVE the given path, so a synthetic child opens targetDir itself.
       if (menu.targetDir !== root) dispatch({ type: 'expandTo', root, file: `${menu.targetDir}/x` })
       setCreating({
         kind,
+        seed,
         parentDir: menu.targetDir,
         anchor: menu.topicsAnchor,
         // TOPICS only, and only on a row that IS a folder page (8H, YAZ-869): `topicsAnchor` is
@@ -900,6 +901,7 @@ export function Sidebar({
       ? null
       : {
           kind: creating.kind,
+          seed: creating.seed,
           parentDir: creating.parentDir,
           onSubmit: submitCreate,
           onCancel: cancelCreate,
@@ -913,7 +915,10 @@ export function Sidebar({
    * which is where `targetDirFor` was sending the file all along.
    */
   const topicsPending: PendingTopicCreate | null =
-    creating === null ? null : { kind: creating.kind, anchorPath: creating.anchor, onSubmit: submitCreate, onCancel: cancelCreate }
+    creating === null ? null : { kind: creating.kind, seed: creating.seed, anchorPath: creating.anchor, onSubmit: submitCreate, onCancel: cancelCreate }
+
+  // ONE gate for both disk-folder births (YAZ-948 rule; YAZ-1604 adds the dated twin).
+  const canNewFolder = menu !== null && !(lens === 'topics' && menu.rowKind !== 'dir')
 
   return (
     <aside className="sidebar">
@@ -1134,7 +1139,8 @@ export function Sidebar({
           onNewFolderPage={() => startCreate('folderPage')}
           // Topics PAGE rows and blank space still browse by meaning and offer no disk-folder
           // birth (YAZ-948). YAZ-1080's explicit disk-folder rows are the honest exception.
-          onNewFolder={lens === 'topics' && menu.rowKind !== 'dir' ? null : () => startCreate('dir')}
+          onNewFolder={canNewFolder ? () => startCreate('dir') : null}
+          onNewDatedFolder={canNewFolder ? () => startCreate('dir', datedFolderSeed()) : null}
           folderPagePath={menu.folderPagePath}
           folderPageIsOn={menu.folderPageIsOn}
           onToggleFolderPage={toggleFolderPage}

@@ -67,6 +67,7 @@ function mount(x: number, y: number, over: Partial<MenuProps> = {}) {
     onNewNote: vi.fn(),
     onNewFolderPage: vi.fn(),
     onNewFolder: vi.fn(),
+    onNewDatedFolder: vi.fn(),
     onClose: vi.fn(),
     ...over,
   }
@@ -114,7 +115,7 @@ const itemOf = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLB
 describe('create group (🔒 D4)', () => {
   it('offers New folder page directly after New note, ahead of New folder', () => {
     const el = mount(0, 0)
-    expect(labelsOf(el)).toEqual(['New note', 'New folder page', 'New folder'])
+    expect(labelsOf(el)).toEqual(['New note', 'New folder page', 'New folder', 'New dated folder'])
   })
 
   it('is offered on every row type — the group targets a DIRECTORY, never the clicked row', () => {

@@ -112,6 +112,7 @@ import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from '
  */
 export interface PendingTopicCreate {
   kind: EntryKind
+  seed: string
   /**
    * The right-clicked page's path — the input renders under that row's FIRST occurrence — or
    * NULL for a create started from blank space (YAZ-948), which has no row to hang from and
@@ -604,7 +605,7 @@ export function TopicsTree({ root, expanded, onExpandedChange, revealRequest, so
     creating === null || creating.anchorPath !== null ? null : ((createRendered = true),
     (
       <li key="\u241Fnew">
-        <CreateInline kind={creating.kind} indent={8} onSubmit={creating.onSubmit} onCancel={creating.onCancel} />
+        <CreateInline kind={creating.kind} seed={creating.seed} indent={8} onSubmit={creating.onSubmit} onCancel={creating.onCancel} />
       </li>
     ))
 
@@ -617,7 +618,7 @@ export function TopicsTree({ root, expanded, onExpandedChange, revealRequest, so
       // path or a name, so the key stays unique. It replaces a literal NUL, which did the same
       // job but made this file grep-invisible — `grep` treats a NUL byte as binary and skips it.
       <li key={`${anchorPath}␟new`}>
-        <CreateInline kind={creating.kind} indent={indent} onSubmit={creating.onSubmit} onCancel={creating.onCancel} />
+        <CreateInline kind={creating.kind} seed={creating.seed} indent={indent} onSubmit={creating.onSubmit} onCancel={creating.onCancel} />
       </li>
     )
   }

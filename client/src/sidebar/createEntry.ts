@@ -31,6 +31,12 @@ export function entryPath(parentDir: string, name: string, kind: EntryKind): str
   return `${parentDir}/${final}`
 }
 
+/** Seed for "New dated folder" (YAZ-1604): `09_14- ` — today's MM_DD, then `- ` so the title lands one space after the dash. */
+export function datedFolderSeed(now: Date = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(now.getMonth() + 1)}_${p(now.getDate())}- `
+}
+
 /**
  * The least a right-clicked row has to say for the menu to target it: its KIND and its path.
  * A `TreeNode` satisfies it structurally, and so does a Topics row built from an index record

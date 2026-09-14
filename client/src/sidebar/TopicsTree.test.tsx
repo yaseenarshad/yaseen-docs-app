@@ -953,7 +953,7 @@ describe('Uncategorized (🔒 D7): a muted row that expands IN PLACE, minus what
   it('renders a folder-anchored create once beneath that folder at the child depth', async () => {
     const { el } = await mount({
       source: sourceOver([rec(`${ROOT}/inbox/deep/Alpha.md`)]),
-      creating: { kind: 'file', anchorPath: `${ROOT}/inbox`, onSubmit: vi.fn(async () => undefined), onCancel: vi.fn() },
+      creating: { kind: 'file', seed: '', anchorPath: `${ROOT}/inbox`, onSubmit: vi.fn(async () => undefined), onCancel: vi.fn() },
     })
     await click(rowFor(el, 'Uncategorized')!)
 
