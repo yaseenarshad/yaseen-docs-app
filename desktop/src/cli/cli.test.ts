@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { readComments } from '@shared/comments'
@@ -83,6 +83,8 @@ describe('help and usage', () => {
       [['comment'], 'comment needs a page'],
       [['comment', p], '--body is required'],
       [['comment', p, '--body'], '--body needs a value'],
+      [['comment', p, '--titel', 'Numbers', '--body', 'x'], 'unknown flag: --titel'],
+      [['comment', p, '--body', 'x', '--replyto', '2'], 'unknown flag: --replyto'],
       [['edit', p], 'edit needs a comment (#3, #3.1, or its id)'],
       [['delete', p], 'delete needs a comment (#3, #3.1, or its id)'],
     ] as const) {
@@ -114,6 +116,9 @@ describe('comment', () => {
     expect(r).toEqual({ code: 0, out: `#2.2 added to ${p}\n`, err: '' })
     const added = readComments(await readFile(p, 'utf8')).find((c) => c.body === 'Seen.')
     expect(added).toMatchObject({ n: 2, reply_to: 'bb2', by: 'codex', title: 'Follow-up' })
+    // A blank --by is not a declaration: it falls back to `agent`, so the comment stays the agent's to edit or delete.
+    await run(['comment', p, '--by', '  ', '--body', 'blank by'])
+    expect(readComments(await readFile(p, 'utf8')).find((c) => c.body === 'blank by')?.by).toBe('agent')
   })
 
   it('--reply-to takes the number the app shows (#2, or bare 2) as well as the id; an unknown target is refused, nothing written', async () => {
@@ -158,9 +163,14 @@ describe('comment', () => {
     }
   })
 
-  it('a page that is not markdown, or does not exist, is refused with exit 1', async () => {
+  it('a page that is not markdown is refused by EVERY verb before any I/O; a missing page with exit 1', async () => {
     const txt = await page('notes.txt', 'hi')
-    expect((await run(['comment', txt, '--body', 'x'])).code).toBe(1)
+    for (const argv of [['comment', txt, '--body', 'x'], ['comments', txt], ['edit', txt, '#1', '--body', 'x'], ['delete', txt, '#1']]) {
+      const r = await run(argv)
+      expect(r.code, argv[0]).toBe(1)
+      expect(r.err).toBe('only .md/.markdown files are editable\n')
+    }
+    expect(await readFile(txt, 'utf8')).toBe('hi')
     const missing = await run(['comment', path.join(dir, 'nope.md'), '--body', 'x'])
     expect(missing.code).toBe(1)
     expect(missing.err).not.toBe('')
@@ -283,5 +293,22 @@ describe('label and find', () => {
     expect(comments.map((c) => label(comments, c))).toEqual(['#1', '#2', '#2.1'])
     const bare = readComments('---\ncomments:\n  - id: h1\n    at: 2026-01-01T00:00:00Z\n    body: hand-written\n---\n')
     expect(label(bare, bare[0])).toBe('h1')
+  })
+})
+
+describe('the door stays Electron-free (🔒 D1)', () => {
+  it('nothing cli.ts reaches, directly or through main/fs, imports electron', () => {
+    const seen = new Set<string>()
+    const walk = (file: string): void => {
+      if (seen.has(file)) return
+      seen.add(file)
+      for (const m of readFileSync(file, 'utf8').matchAll(/from '([^']+)'/g)) {
+        const spec = m[1]
+        expect(spec, `${path.relative(process.cwd(), file)} imports ${spec}`).not.toBe('electron')
+        if (spec.startsWith('.')) walk(`${path.resolve(path.dirname(file), spec)}.ts`)
+      }
+    }
+    walk(path.resolve(__dirname, 'index.ts'))
+    expect(seen.size).toBeGreaterThan(3) // index → cli → main/fs/file → fsUtils, boundedRead …
   })
 })

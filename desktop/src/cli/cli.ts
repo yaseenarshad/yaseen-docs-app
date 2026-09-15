@@ -13,7 +13,6 @@
  */
 import { resolve } from 'node:path'
 import {
-  CommentsShapeError,
   addComment,
   deleteComment,
   editComment,
@@ -23,7 +22,7 @@ import {
   threadsOf,
   type PageComment,
 } from '@shared/comments'
-import { BridgeFailure } from '../main/fs/fsUtils'
+import { BridgeFailure, requireMarkdownFile } from '../main/fs/fsUtils'
 import { readFile, writeFile } from '../main/fs/file'
 
 export interface Io {
@@ -61,7 +60,9 @@ Example:
   → #3 added to /vault/Weekly review.md
 `
 
-/** Flags that take no value. Every other `--flag` consumes the next argument. */
+/** Every flag the contract names; anything else is refused, because `--help` IS the contract (🔒 D1) and a typo must not be absorbed. */
+const FLAGS = new Set(['--body', '--title', '--reply-to', '--by'])
+/** Flags that take no value. */
 const SWITCHES = new Set(['--json', '--help', '-h'])
 
 class Usage extends Error {}
@@ -73,6 +74,7 @@ function parse(argv: readonly string[]): { verb: string; args: string[]; flags: 
     const a = argv[i]
     if (!a.startsWith('-') || a === '-') args.push(a)
     else if (SWITCHES.has(a)) flags.set(a, true)
+    else if (!FLAGS.has(a)) throw new Usage(`unknown flag: ${a}`)
     else if (i + 1 < argv.length) flags.set(a, argv[++i])
     else throw new Usage(`${a} needs a value`)
   }
@@ -131,15 +133,15 @@ function listing(comments: readonly PageComment[]): string {
     .join('\n')
 }
 
-/** A comment the caller may edit or delete: `ref` names one (id or number) and it carries a `by` (🔒 D4). */
-function agentOwned(content: string, ref: string, page: string): PageComment {
+/** A comment the caller may edit or delete: `ref` names one (id or number) and it carries a `by` (🔒 D4). Returns the parse it did, so callers label without parsing again. */
+function agentOwned(content: string, ref: string, page: string): { comments: PageComment[]; target: PageComment } {
   const comments = readComments(content)
   const target = find(comments, ref)
   if (target === undefined) throw new Error(`no comment ${ref} on ${page}`)
   if (target.by === undefined || target.by.trim() === '') {
     throw new Error(`${label(comments, target)} was left by a person — edit or delete it in the app`)
   }
-  return target
+  return { comments, target }
 }
 
 async function bodyOf(flags: Map<string, string | true>, io: Io): Promise<string> {
@@ -161,6 +163,7 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
   }
   const page = args[0] === undefined ? undefined : resolve(args[0])
   if (page === undefined) throw new Usage(`${verb} needs a page`)
+  requireMarkdownFile(page) // a page is Markdown; every verb refuses anything else before any I/O
 
   switch (verb) {
     case 'comment': {
@@ -171,7 +174,7 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
         // The model keeps an unknown `reply_to` as given (the UI never passes one); the command REFUSES it, so a typo cannot orphan a reply.
         const parent = replyRef === undefined ? undefined : find(readComments(fresh), replyRef)
         if (replyRef !== undefined && parent === undefined) throw new Error(`no comment ${replyRef} on ${page}`)
-        return addComment(fresh, body, { id, at: nowIso(), replyTo: parent?.id, title: str(flags, '--title'), by: str(flags, '--by') ?? 'agent' })
+        return addComment(fresh, body, { id, at: nowIso(), replyTo: parent?.id, title: str(flags, '--title'), by: str(flags, '--by')?.trim() || 'agent' })
       })
       const comments = readComments(content)
       const added = comments.find((c) => c.id === id)
@@ -189,8 +192,8 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       const body = await bodyOf(flags, io)
       let name = ref
       await transformOnDisk(page, (fresh) => {
-        const target = agentOwned(fresh, ref, page)
-        name = label(readComments(fresh), target)
+        const { comments, target } = agentOwned(fresh, ref, page)
+        name = label(comments, target)
         return editComment(fresh, target.id, body, nowIso(), str(flags, '--title') ?? target.title ?? '')
       })
       io.stdout(`${name} edited\n`)
@@ -201,8 +204,7 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       if (ref === undefined) throw new Usage('delete needs a comment (#3, #3.1, or its id)')
       let receipt = ref
       await transformOnDisk(page, (fresh) => {
-        const comments = readComments(fresh)
-        const target = agentOwned(fresh, ref, page)
+        const { comments, target } = agentOwned(fresh, ref, page)
         const replies = comments.filter((c) => c.reply_to === target.id).length
         receipt = `${label(comments, target)} deleted${replies === 0 ? '' : ` (and ${replies} ${replies === 1 ? 'reply' : 'replies'})`}`
         return deleteComment(fresh, target.id)
@@ -225,8 +227,7 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
       io.stderr(`${err.message}\n${USAGE}\n`)
       return 2
     }
-    const message = err instanceof CommentsShapeError || err instanceof BridgeFailure || err instanceof Error ? err.message : String(err)
-    io.stderr(`${message}\n`)
+    io.stderr(`${err instanceof Error ? err.message : String(err)}\n`)
     return 1
   }
 }

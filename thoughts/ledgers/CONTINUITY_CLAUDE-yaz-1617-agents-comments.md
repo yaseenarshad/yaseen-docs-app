@@ -21,16 +21,13 @@
 ## State
 - Done:
   - [x] Scope + D1–D7 locked; tree created (2026-09-14)
-  - [x] Worktree + branch; Electron binary copied into the worktree (npm ci does not fetch it)
   - [x] 1- Scope (YAZ-1618): asar loads under ELECTRON_RUN_AS_NODE → no asarUnpack
-  - [x] 2A- CLI (YAZ-1620) — `1d5cdfe`, 19 tests + 1 model test
-  - [x] 2B- Pack (YAZ-1621) — `0e616ce`, packed shim smoke-tested
-  - [x] 3- Copy for Agent (YAZ-1622) — `28f053d`; suite 3953 green
-- Now: [→] 4- Docs (YAZ-1623): README line 63, CONTRACTS "The door" + D11 + Files
-- Next: 5- Prove it (YAZ-1624): demo vault "Help Agents Understand Comments" on Desktop, isolated profile, dev app
-- Remaining:
-  - [ ] 6- Polish (YAZ-1625): reviewer agent on `git diff main`, simplify, naming, verify every 🔒, gate, evidence
-  - [ ] 6A- Release (YAZ-1626): PR, merge after Yasin's pass; NO version bump unless Yasin says; delete demo
+  - [x] 2A- CLI (YAZ-1620) `1d5cdfe` · 2B- Pack (YAZ-1621) `0e616ce` · 2A1- name by number (YAZ-1627) `418c1f2`
+  - [x] 3- Copy for Agent (YAZ-1622) `28f053d` · 4- Docs (YAZ-1623) `de213d8`, `dd237f1`
+  - [x] 5- Prove it (YAZ-1624): two real-agent proofs (first caught the `--reply-to 1` orphan → 2A1; second passed end to end); packed shim smoke-tested after every change
+  - [x] 6- Polish (YAZ-1625): reviewer's 11 findings dispositioned (10 fixed, 1 declined with reason); suite 3956 green; typecheck clean
+- Now: [→] 6A- Release (YAZ-1626): PR open; Yasin's hand pass on `~/Desktop/Help Agents Understand Comments` (dev app on isolated profile) → merge. NO version bump.
+- Next: after merge — delete demo folder + profile + worktree + branch; handoff comments; all Done.
 
 ## Open Questions
 - (resolved) Electron under `ELECTRON_RUN_AS_NODE=1` loads from `app.asar` — verified with the repo's Electron 43.4.1; no `asarUnpack`.

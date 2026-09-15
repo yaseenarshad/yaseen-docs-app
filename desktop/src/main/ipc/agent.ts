@@ -8,7 +8,7 @@ import { handle } from './envelope'
 /** What main knows and the renderer does not: where the `yaseendocs` command lives on this machine. */
 export interface AgentHost {
   packaged: boolean
-  /** `process.resourcesPath` — the bundle's `Contents/Resources`, where `bin/yaseendocs` is (2B). */
+  /** `process.resourcesPath` — the bundle's `Contents/Resources`, where `bin/yaseendocs` is (YAZ-1621). */
   resourcesPath: string
   /** The main bundle's directory (`out/main`), where `cli.js` sits in dev. */
   mainDir: string
