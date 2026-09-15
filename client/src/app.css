@@ -1235,6 +1235,10 @@ button {
   bottom: 34px;
   left: 0;
   width: 220px;
+  /* It grows UPWARD from the footer; with 11 sections it grew past the top edge on a short
+     window and Appearance became unreachable (YAZ-1634). Clamp and scroll, like `.document-zoom__menu`. */
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   padding: 10px 12px 12px;
   background: var(--bg);
   border: 1px solid var(--border);
