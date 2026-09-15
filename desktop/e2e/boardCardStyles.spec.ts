@@ -39,7 +39,8 @@ test.afterAll(async () => {
 test('step 1 — a grouped board shows plain cards; note rows carry B/U/–L/join, file.name only join', async () => {
   await contents().locator('.view-tab__btn', { hasText: 'Board' }).click()
   await contents().locator('[aria-label="Sort"]').click()
-  await contents().locator('[aria-label="Group by"]').selectOption({ label: 'kpi_category' })
+  await contents().locator('[aria-label="Group by"]').click()
+  await contents().locator('[role="option"][data-value="note.kpi_category"]').click()
   await win.keyboard.press('Escape')
   await expect(contents().locator('.view-board__col')).toHaveCount(2)
   await contents().locator('[aria-label="Properties"]').click()

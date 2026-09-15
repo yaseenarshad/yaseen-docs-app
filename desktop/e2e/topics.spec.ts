@@ -356,6 +356,7 @@ test('step 5 — Uncategorized expands IN PLACE, subtracting everything the tree
   await expect(win.locator('.ctx-menu [role="menuitem"]')).toHaveText([
     'Reveal in Finder',
     'Open in VS Code',
+    'Open in default app',
     'Copy path',
     'New note',
     'New folder page',

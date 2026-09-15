@@ -206,7 +206,8 @@ test('step 3 — the board column’s inline add: the tree updates while the use
   // holds one card, so the add below is visibly the second.
   await viewTab(win, 'Board').click()
   await contents(win).locator('[aria-label="Sort"]').click()
-  await contents(win).locator('[aria-label="Group by"]').selectOption({ label: 'kpi_category' })
+  await contents(win).locator('[aria-label="Group by"]').click()
+  await contents(win).locator('[role="option"][data-value="note.kpi_category"]').click()
   await win.keyboard.press('Escape')
   await expect(colOf(win, 'leading').locator('.view-board__card')).toHaveCount(1)
 
