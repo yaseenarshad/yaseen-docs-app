@@ -21,14 +21,16 @@
   - [x] 1- Scope + demo (YAZ-1629): 17 scenarios on `~/Desktop/Focus Mode Per Window (YAZ-1628)`, Yasin "approved, lock it in"; D4 found and fixed live
   - [x] 2- + 3- (YAZ-1630 / 1631): prototype reviewed by me (main + renderer diffs clean, mirror 1280), ONE commit `9128f39` (the hunks interleave in the same files); typecheck clean, 3959/3959
   - [x] 5- polish (YAZ-1633): diff re-read against the checklist; only three comment lines needed rewrapping; tests lean, one decision each
-- Now: [→] 4- verify (YAZ-1632): unit evidence in; waiting on Yasin's short hand re-check on the final build + his call on running the edited e2e specs (headed)
-- Next: merge PR → handoff comments → delete worktree, branch, demo vault + profile
+  - [x] 4- verify (YAZ-1632): hand re-check + relaunch proof; Playwright 193 passed / 8 failed — the same 8 fail on untouched main (re-run there), filed as YAZ-1634; `lenses.spec.ts` green
+  - [x] PR #55 merged to main as `3a28c11`. NO release cut. Handoff comments on YAZ-1628 and every child; worktree, branch, demo vaults and profile removed
+- Now: COMPLETE — nothing pending
+- Next: none. Not this tree's debt: YAZ-1634 (8 stale Playwright specs, pre-existing on main)
 
 ## Open Questions
-- UNCONFIRMED: the edited Playwright specs (`helpers.ts`, `lenses.spec.ts`, Topics specs) compile but were not run — ask Yasin before running `npm run e2e` (headed, ~1.5 min).
+- (resolved) the edited Playwright specs ran with Yasin's go-ahead: `lenses.spec.ts` 4/4, Topics seeds fine; the 8 failures are pre-existing (YAZ-1634).
 
 ## Working Set
-- Worktree `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-1628`, branch `yaz-1628-focus-per-window` off main `45e9446`
+- Everything is on main at `3a28c11`; worktree and branch removed
 - Files: `shared/types.ts`, `desktop/src/{channels,preload/index}.ts`, `desktop/src/main/{store,windows,ipc/window,ipc/state}.ts`, `client/src/lib/storage.ts`, `client/src/{App,sidebar/Sidebar}.tsx`, `docs/CONTRACTS.md`
 - Tests: `npx vitest run` · `npm run typecheck`
-- Demo: vault `~/Desktop/Focus Mode Per Window (YAZ-1628)` (+ `… — Other Vault`); profile `<scratchpad>/focus-window-profile`; dev log `<scratchpad>/dev.log`; Linear helper `<scratchpad>/linear.py`
+- Demo (removed): vault `~/Desktop/Focus Mode Per Window (YAZ-1628)` (+ `… — Other Vault`); profile `<scratchpad>/focus-window-profile`
