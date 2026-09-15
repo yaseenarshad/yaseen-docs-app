@@ -8,7 +8,7 @@
 - Linear-Simpler method. Statuses: parent AND child → In Progress when a child starts; Done when it lands. Decisions to Yasin in problem / options / rec / diff / after form — never on the fly.
 - No Playwright. Verification = packed build + dev app on an isolated profile, "go do this" list for Yasin, or pointed computer use.
 - Commit via `/commit` (no attribution). New tasks → new subissues (1B1-style) and DONE in this run unless truly out of scope.
-- Worktree: `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-1617`, branch `yaz-1617-agents-comments`, off main `f82f101`.
+- Shipped on main `8648159` (PR #54). Worktree and branch removed.
 
 ## Key Decisions (🔒 on YAZ-1617)
 - D1 CLI inside the bundle (`ELECTRON_RUN_AS_NODE`, VS Code `code` pattern); `--help` IS the contract.
@@ -26,8 +26,9 @@
   - [x] 3- Copy for Agent (YAZ-1622) `28f053d` · 4- Docs (YAZ-1623) `de213d8`, `dd237f1`
   - [x] 5- Prove it (YAZ-1624): two real-agent proofs (first caught the `--reply-to 1` orphan → 2A1; second passed end to end); packed shim smoke-tested after every change
   - [x] 6- Polish (YAZ-1625): reviewer's 11 findings dispositioned (10 fixed, 1 declined with reason); suite 3956 green; typecheck clean
-- Now: [→] 6A- Release (YAZ-1626): PR open; Yasin's hand pass on `~/Desktop/Help Agents Understand Comments` (dev app on isolated profile) → merge. NO version bump.
-- Next: after merge — delete demo folder + profile + worktree + branch; handoff comments; all Done.
+  - [x] 6A- Release (YAZ-1626): PR #54 merged to main as `8648159` (2026-09-14). NO release cut (Yasin batches releases). Worktree, branch (local+remote), demo vault and profile removed. Handoff comments on YAZ-1617 and every child; all Done.
+- Now: COMPLETE — nothing pending
+- Next: none. Deliberately not done (later issues, not debt): Windows `.cmd` shim; a PATH installer (rejected D3); global agent-file install (rejected D2, may return if the Copy for Agent gesture tires); a "your agent instructions are stale" nudge (moot — nothing is installed).
 
 ## Open Questions
 - (resolved) Electron under `ELECTRON_RUN_AS_NODE=1` loads from `app.asar` — verified with the repo's Electron 43.4.1; no `asarUnpack`.
