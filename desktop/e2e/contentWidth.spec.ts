@@ -33,9 +33,11 @@ async function computedMaxWidths(win: Page, selectors: readonly string[]): Promi
 
 async function alignedWithinHost(win: Page, selectors: readonly string[], cap: number | null): Promise<boolean> {
   return layer(win).locator('.editor-host').evaluate((host, input) => {
-    const hostRect = host.getBoundingClientRect()
     const rects = input.selectors.map((selector) => host.querySelector(selector)!.getBoundingClientRect())
-    const expectedWidth = input.cap === null ? hostRect.width : Math.min(hostRect.width, input.cap)
+    // The host's CLIENT width, not its border box: a tall folder page shows the host's vertical
+    // scrollbar, and on a machine with classic (non-overlay) scrollbars that is 15 px the children
+    // cannot have — their `width: 100%` is of the content box (YAZ-1634).
+    const expectedWidth = input.cap === null ? host.clientWidth : Math.min(host.clientWidth, input.cap)
     return (
       rects.every((rect) => Math.abs(rect.width - expectedWidth) < 1 && Math.abs(rect.left - rects[0].left) < 1) &&
       host.scrollWidth === host.clientWidth

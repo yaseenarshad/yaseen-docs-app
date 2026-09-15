@@ -58,10 +58,10 @@ test('step 2 — no group-by yet shows the hint; the Sort menu turns it into col
 })
 
 test("step 3 — dragging a card to another column rewrites the member's own file on disk", async () => {
-  const card = colOf('lagging').locator('.view-board__card', { hasText: 'CAC.md' })
+  const card = colOf('lagging').locator('.view-board__card', { hasText: 'CAC' })
   await card.dragTo(colOf('leading'))
   // Optimistic move shows immediately; the durable truth is the member's file.
-  await expect(colOf('leading').locator('.view-board__card', { hasText: 'CAC.md' })).toBeVisible()
+  await expect(colOf('leading').locator('.view-board__card', { hasText: 'CAC' })).toBeVisible()
   await expect
     .poll(async () => (await readFile(path.join(vault, 'kpis', 'CAC.md'), 'utf8')).includes('kpi_category: leading'))
     .toBe(true)
@@ -82,7 +82,7 @@ test('step 4 — the inline add births a NAMED page into the column it was typed
     })
     .toBe(true)
   // …and the board shows it in that column once the index refetch lands, input still open for the next add.
-  await expect(colOf('leading').locator('.view-board__card', { hasText: 'Churn Rate.md' })).toBeVisible()
+  await expect(colOf('leading').locator('.view-board__card', { hasText: 'Churn Rate' })).toBeVisible()
   await expect(input).toBeVisible()
   // Still on the folder page — the inline add never navigated.
   await expect(contents().locator('.view-board')).toBeVisible()

@@ -226,7 +226,7 @@ test('step 3 — the board column’s inline add: the tree updates while the use
   await expect(rowFor(win, NEW_KPI)).toHaveCSS('padding-left', '22px')
   await expect(rowFor(win, 'KPIs').locator('.tree__count')).toHaveText('6')
   await expect(activeTab(win)).toHaveText('KPIs') // never navigated
-  await expect(colOf(win, 'leading').locator('.view-board__card', { hasText: `${NEW_KPI}.md` })).toBeVisible()
+  await expect(colOf(win, 'leading').locator('.view-board__card', { hasText: NEW_KPI })).toBeVisible()
   await shoot(win, 'create-under-05-board-inline-add')
   await quitApp(app)
 })

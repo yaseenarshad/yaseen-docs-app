@@ -43,17 +43,25 @@ test('step 1 — a grouped board shows plain cards; note rows carry B/U/–L/joi
   await contents().locator('[role="option"][data-value="note.kpi_category"]').click()
   await win.keyboard.press('Escape')
   await expect(contents().locator('.view-board__col')).toHaveCount(2)
+  // The Properties menu is TWO levels since YAZ-1513: the list names each column, "Open <Label>"
+  // shows that ONE column's detail with its card-style toggles; labels are sentence-case
+  // (`Unit`, `Name`) since YAZ-1549. Steps 2–5 act on Unit, so its detail is left open.
   await contents().locator('[aria-label="Properties"]').click()
-  await expect(contents().locator('[aria-label="Bold unit on cards"]')).toBeVisible()
-  await expect(contents().locator('[aria-label="Join unit to the row above"]')).toBeVisible()
-  await expect(contents().locator('[aria-label="Join file.name to the row above"]')).toBeVisible()
-  await expect(contents().locator('[aria-label="Bold file.name on cards"]')).toHaveCount(0)
+  await contents().locator('[aria-label="Open Unit"]').click()
+  await expect(contents().locator('[aria-label="Bold Unit on cards"]')).toBeVisible()
+  await expect(contents().locator('[aria-label="Join Unit to the row above"]')).toBeVisible()
+  await contents().locator('[aria-label="Back to columns"]').click()
+  await contents().locator('[aria-label="Open Name"]').click()
+  await expect(contents().locator('[aria-label="Join Name to the row above"]')).toBeVisible()
+  await expect(contents().locator('[aria-label="Bold Name on cards"]')).toHaveCount(0)
   await expect(contents().locator('[aria-label$=" of the title"]')).toHaveCount(0)
+  await contents().locator('[aria-label="Back to columns"]').click()
+  await contents().locator('[aria-label="Open Unit"]').click()
   await shoot(win, 'cardstyle-01-toggles')
 })
 
 test('step 2 — Bold writes one cardStyle entry to disk and the rows go bold', async () => {
-  await contents().locator('[aria-label="Bold unit on cards"]').click()
+  await contents().locator('[aria-label="Bold Unit on cards"]').click()
   await expect(firstCard().locator('.view-board__prop--bold')).toBeVisible()
   await expect(contents().locator('.views-pane__error')).toHaveCount(0)
   // Block-style YAML: the entry is `note.unit:` with `bold: true` nested on the NEXT line.
@@ -62,14 +70,14 @@ test('step 2 — Bold writes one cardStyle entry to disk and the rows go bold', 
 })
 
 test('step 3 — Hide label drops the muted label; the value stays', async () => {
-  await contents().locator('[aria-label="Hide unit label on cards"]').click()
+  await contents().locator('[aria-label="Hide Unit label on cards"]').click()
   await expect(firstCard().locator('.view-board__prop--bold .view-board__prop-name')).toHaveCount(0)
   await expect.poll(async () => /hideLabel: true/.test(await kpis())).toBe(true)
   await shoot(win, 'cardstyle-03-hidelabel')
 })
 
 test('step 4 — join glues the value onto the row above, dash-separated, durable on disk', async () => {
-  await contents().locator('[aria-label="Join unit to the row above"]').click()
+  await contents().locator('[aria-label="Join Unit to the row above"]').click()
   const line = firstCard().locator('.view-board__line', { has: win.locator('.view-board__dash') })
   await expect(line.locator('.view-board__dash')).toBeVisible()
   await expect.poll(async () => /join: true/.test(await kpis())).toBe(true)
@@ -79,11 +87,11 @@ test('step 4 — join glues the value onto the row above, dash-separated, durabl
 test('step 5 — untoggling everything cleans cardStyle out of the YAML completely', async () => {
   // One durable write per click, awaited like a human clicks: each toggle-off is a separate
   // whole-settings write, and firing all three concurrently can land them out of order.
-  await contents().locator('[aria-label="Join unit to the row above"]').click()
+  await contents().locator('[aria-label="Join Unit to the row above"]').click()
   await expect.poll(async () => /join: true/.test(await kpis())).toBe(false)
-  await contents().locator('[aria-label="Hide unit label on cards"]').click()
+  await contents().locator('[aria-label="Hide Unit label on cards"]').click()
   await expect.poll(async () => /hideLabel: true/.test(await kpis())).toBe(false)
-  await contents().locator('[aria-label="Bold unit on cards"]').click()
+  await contents().locator('[aria-label="Bold Unit on cards"]').click()
   await expect.poll(async () => (await kpis()).includes('cardStyle')).toBe(false)
   await expect(firstCard().locator('.view-board__prop--bold')).toHaveCount(0)
   await shoot(win, 'cardstyle-05-cleaned')
