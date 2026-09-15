@@ -48,6 +48,8 @@ export const api = {
   reveal: (req: RevealRequest) => call<RevealResponse>(() => window.yaseenDocs.shell.reveal(req)),
   /** Open in VS Code via the `vscode://file` deep link (YAZ-963) — never a spawn; stale path → NOT_FOUND. */
   openVsCode: (req: RevealRequest) => call<RevealResponse>(() => window.yaseenDocs.shell.openVsCode(req)),
+  /** Copy for Agent (YAZ-1617): the three-line handshake for a page; main composes it, the caller writes the clipboard. Stale path → NOT_FOUND. */
+  agentPrompt: (req: RevealRequest) => call<string>(() => window.yaseenDocs.shell.agentPrompt(req)),
   /** Open in the OS default app (YAZ-1577) — how a row with no in-app viewer opens; stale path → NOT_FOUND. */
   openDefault: (req: RevealRequest) => call<RevealResponse>(() => window.yaseenDocs.shell.openDefault(req)),
   /** Open a standard Markdown-link target through the OS; main owns validation and resolution. */

@@ -23,6 +23,7 @@
     "productName": "Yaseen Docs",
     "directories": { "output": "dist-app" },
     "files": ["out/**"],
+    "extraResources": [{ "from": "build/bin", "to": "bin" }],
     "afterPack": "build/adhocSign.cjs",
     "mac": {
       "target": [

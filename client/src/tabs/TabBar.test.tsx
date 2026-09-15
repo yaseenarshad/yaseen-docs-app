@@ -14,7 +14,7 @@ import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 // The OS-action items call the bridge (YAZ-963): stub the verbs, keep BridgeRequestError real.
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { reveal: vi.fn().mockResolvedValue({}), openVsCode: vi.fn().mockResolvedValue({}) },
+  api: { reveal: vi.fn().mockResolvedValue({}), openVsCode: vi.fn().mockResolvedValue({}), agentPrompt: vi.fn().mockResolvedValue('handshake') },
 }))
 import { api, BridgeRequestError } from '../api'
 const reveal = vi.mocked(api.reveal)
@@ -239,7 +239,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     expect(menu?.getAttribute('role')).toBe('menu')
     expect(menu?.style.left).toBe('120px')
     expect(menu?.style.top).toBe('42px')
-    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
+    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Copy for Agent', 'Reveal in Finder', 'Open in VS Code'])
   })
 
   it('Show in sidebar targets the right-clicked inactive tab, closes the menu, and never activates it', () => {
@@ -284,6 +284,17 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     rightClick(tabAt(el, 1))
     act(() => items(el)[1]?.click())
     expect(writeText).toHaveBeenCalledWith('/vault/sub/Deep Note.md')
+    expect(menuOf(el)).toBeNull()
+  })
+
+  it('Copy for Agent (YAZ-1617) asks main for the handshake for THAT tab, writes it, and closes the menu', async () => {
+    const el = mount(props)
+    rightClick(tabAt(el, 1))
+    await act(async () => {
+      items(el)[2]?.click()
+    })
+    expect(vi.mocked(api.agentPrompt)).toHaveBeenCalledExactlyOnceWith({ path: '/vault/sub/Deep Note.md' })
+    expect(writeText).toHaveBeenCalledWith('handshake')
     expect(menuOf(el)).toBeNull()
   })
 

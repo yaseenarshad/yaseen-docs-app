@@ -1014,6 +1014,14 @@ export interface ShellApi {
   openDefault(req: RevealRequest): Promise<RevealResponse>
   /** Open a validated Markdown-link target through the OS; never creates an Electron window. */
   openLink(req: OpenLinkRequest): Promise<void>
+  /**
+   * Copy for Agent (YAZ-1617): the handshake text for `path` — the page, one sentence, and the
+   * `yaseendocs` command with `--help` — which the renderer writes to the clipboard itself, the
+   * way Copy path does. Main composes it because only main knows where the command lives.
+   * Read-only, `reveal`'s posture: a page that no longer exists rejects `NOT_FOUND`; a
+   * non-Markdown file is not a page and rejects `UNSUPPORTED_EXTENSION`.
+   */
+  agentPrompt(req: RevealRequest): Promise<string>
 }
 
 /**

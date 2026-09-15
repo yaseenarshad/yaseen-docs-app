@@ -26,6 +26,9 @@ interface ContextMenuProps {
   onNotice?: (message: string) => void
   /** Absolute path of the right-clicked FILE row; null (folders, blank space) hides "Open in new window" (D2, GRO-2168). */
   newWindowPath: string | null
+  /** "Copy for Agent" (YAZ-1617): a Markdown PAGE row only — null (folders, other files, blank space) hides it. */
+  agentPath: string | null
+  onCopyForAgent: (path: string) => void
   onOpenNewWindow: (path: string) => void
   /** Absolute path of the right-clicked row — FILE (Links E1, GRO-2194) or FOLDER (E1b, GRO-2241); null (blank space) hides "Rename". */
   renamePath: string | null
@@ -79,7 +82,7 @@ interface ContextMenuProps {
 }
 
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInNewTabs, onNotice, newWindowPath, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, openVsCodePath, onOpenVsCode, openDefaultPath, onOpenDefault, onNewNote, onNewFolderPage, onNewFolder, onNewDatedFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, focusPaths, focusLabel, onFocus, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInNewTabs, onNotice, newWindowPath, agentPath, onCopyForAgent, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, openVsCodePath, onOpenVsCode, openDefaultPath, onOpenDefault, onNewNote, onNewFolderPage, onNewFolder, onNewDatedFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, focusPaths, focusLabel, onFocus, onClose }: ContextMenuProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -236,6 +239,20 @@ export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInN
             }}
           >
             Copy path
+          </button>
+        )}
+        {/* Right under Copy path (YAZ-1617 🔒 D2): the same path, plus the handshake an agent needs. */}
+        {agentPath !== null && (
+          <button
+            type="button"
+            className="ctx-menu__item"
+            role="menuitem"
+            onClick={() => {
+              onCopyForAgent(agentPath)
+              onClose()
+            }}
+          >
+            Copy for Agent
           </button>
         )}
         <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewNote}>

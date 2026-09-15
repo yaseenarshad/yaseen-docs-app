@@ -7,6 +7,7 @@ import type { ClipboardPasteRequest, WindowEntry } from '@shared/types'
 import { CH } from '../channels'
 import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
+import { registerAgentIpc } from './ipc/agent'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
@@ -159,6 +160,8 @@ app.whenReady().then(() => {
     writeText: (text) => clipboard.writeText(text),
     rendererUrl: process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html',
   })
+  // Copy for Agent (YAZ-1617): main knows where the `yaseendocs` command lives; the renderer only asks.
+  registerAgentIpc({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, mainDir: __dirname })
   const handlers = createMenuHandlers(store, manager, {
     focusedWebContents: menuTarget,
     readClipboardText: () => clipboard.readText(),
