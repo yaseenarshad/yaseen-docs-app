@@ -206,7 +206,8 @@ test('step 3 — the board column’s inline add: the tree updates while the use
   // holds one card, so the add below is visibly the second.
   await viewTab(win, 'Board').click()
   await contents(win).locator('[aria-label="Sort"]').click()
-  await contents(win).locator('[aria-label="Group by"]').selectOption({ label: 'kpi_category' })
+  await contents(win).locator('[aria-label="Group by"]').click()
+  await contents(win).locator('[role="option"][data-value="note.kpi_category"]').click()
   await win.keyboard.press('Escape')
   await expect(colOf(win, 'leading').locator('.view-board__card')).toHaveCount(1)
 
@@ -225,7 +226,7 @@ test('step 3 — the board column’s inline add: the tree updates while the use
   await expect(rowFor(win, NEW_KPI)).toHaveCSS('padding-left', '22px')
   await expect(rowFor(win, 'KPIs').locator('.tree__count')).toHaveText('6')
   await expect(activeTab(win)).toHaveText('KPIs') // never navigated
-  await expect(colOf(win, 'leading').locator('.view-board__card', { hasText: `${NEW_KPI}.md` })).toBeVisible()
+  await expect(colOf(win, 'leading').locator('.view-board__card', { hasText: NEW_KPI })).toBeVisible()
   await shoot(win, 'create-under-05-board-inline-add')
   await quitApp(app)
 })
