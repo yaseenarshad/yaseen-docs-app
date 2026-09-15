@@ -1684,6 +1684,7 @@ describe('context menu order (GRO-2272 C1a)', () => {
       'Open in VS Code',
       'Open in default app',
       'Copy path',
+      'Copy for Agent',
       'New note',
       // "New folder page" (🔒 D4, YAZ-817): second in the create group, directly after the
       // note it is a kind of — it CREATES beside the right-clicked row, so it stays in the
@@ -2016,6 +2017,7 @@ describe('the Topics context menu (8G-, YAZ-865)', () => {
       'Open in VS Code',
       'Open in default app',
       'Copy path',
+      'Copy for Agent',
       'New note',
       'New folder page',
       // …and NOT 'New folder' (YAZ-948, ruled by Yasin): this lens browses by MEANING, so a disk

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react'
-import { fileKind } from '@shared/fileKind'
+import { fileKind, isMarkdown } from '@shared/fileKind'
 import { SIDEBAR_LENSES, type GithubSyncStatus, type SettingsState, type SidebarLens, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
+import { copyForAgent } from '../lib/copyForAgent'
 import type { IndexRecord } from '@shared/types'
 import { folderPageSettings, newFolderPageProperties, turnIntoFolderPage } from '../views/folderPageSettings'
 import { restoreFolderBody } from '../views/migrateFolderBody'
@@ -176,6 +177,8 @@ interface MenuTargets {
   openTabPaths: string[] | null
   /** "Open in new window" — FILE rows only (D2, GRO-2168). */
   newWindowPath: string | null
+  /** "Copy for Agent" — Markdown PAGE rows only (YAZ-1617): an EPUB is a file, not a page. */
+  agentPath: string | null
   /** "Rename" — a concrete row only, NEVER blank space: the vault root is not renameable (E1b, GRO-2241). */
   renamePath: string | null
   /** "Delete" — a concrete row only, NEVER blank space: there is no target, and main refuses the vault root (GRO-2272). */
@@ -686,6 +689,7 @@ export function Sidebar({
         copyPaths: plural,
         openTabPaths: openable.length > 0 ? openable : null,
         newWindowPath: filePath,
+        agentPath: filePath !== null && isMarkdown(filePath) ? filePath : null,
         renamePath: node?.path ?? null,
         deletePath: node?.path ?? null,
         revealPath: node?.path ?? root.replace(/\/+$/, ''),
@@ -1228,6 +1232,8 @@ export function Sidebar({
           onOpenInNewTabs={openFilesInTabs}
           onNotice={onNotice}
           newWindowPath={menu.newWindowPath}
+          agentPath={menu.agentPath}
+          onCopyForAgent={(path) => void copyForAgent(path, onNotice)}
           onOpenNewWindow={openFileNewWindow}
           renamePath={menu.renamePath}
           onRename={(path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir' })}

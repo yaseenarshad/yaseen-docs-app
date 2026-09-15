@@ -22,6 +22,7 @@ export const CH = {
   shellOpenVsCode: 'shell:openVsCode',
   shellOpenDefault: 'shell:openDefault',
   shellOpenLink: 'shell:open-link',
+  shellAgentPrompt: 'shell:agent-prompt',
   dialogPickFolder: 'dialog:pick-folder',
   watchSubscribe: 'watch:subscribe',
   watchUnsubscribe: 'watch:unsubscribe',

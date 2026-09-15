@@ -155,6 +155,7 @@ const api: YaseenDocsApi = {
     reveal: (req) => call(CH.shellReveal, req),
     openVsCode: (req) => call(CH.shellOpenVsCode, req),
     openDefault: (req) => call(CH.shellOpenDefault, req),
+    agentPrompt: (req) => call(CH.shellAgentPrompt, req),
     openLink: (req) => call(CH.shellOpenLink, req),
   },
   // Vault-wide property declarations over `.yaseendocs/properties.json` (YAZ-835).

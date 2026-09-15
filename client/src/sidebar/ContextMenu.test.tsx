@@ -54,6 +54,8 @@ function mount(x: number, y: number, over: Partial<MenuProps> = {}) {
     openTabPaths: null,
     onOpenInNewTabs: vi.fn(),
     newWindowPath: null,
+    agentPath: null,
+    onCopyForAgent: vi.fn(),
     onOpenNewWindow: vi.fn(),
     renamePath: null,
     onRename: vi.fn(),
@@ -251,5 +253,27 @@ describe('Focus item (YAZ-1605)', () => {
     const labels = labelsOf(el)
     expect(labels.indexOf('Focus on folder')).toBe(labels.indexOf('Open in default app') + 1)
     expect(labels.indexOf('Focus on folder')).toBe(labels.indexOf('Copy path') - 1)
+  })
+})
+
+/**
+ * Copy for Agent (YAZ-1617 🔒 D2): a Markdown PAGE row offers the handshake right under Copy path;
+ * folders, other files and blank space (null) never see it. The menu is presentational — it
+ * hands the path up and closes; composing and writing the text is `copyForAgent`'s job.
+ */
+describe('Copy for Agent', () => {
+  it('is absent when agentPath is null', () => {
+    expect(itemOf(mount(0, 0, { copyPath: '/v/folder' }), 'Copy for Agent')).toBeUndefined()
+  })
+
+  it('sits directly after Copy path, hands the click the exact path, then closes', () => {
+    const onCopyForAgent = vi.fn()
+    const onClose = vi.fn()
+    const el = mount(0, 0, { copyPath: '/v/Note.md', agentPath: '/v/Note.md', onCopyForAgent, onClose })
+    const labels = labelsOf(el)
+    expect(labels.indexOf('Copy for Agent')).toBe(labels.indexOf('Copy path') + 1)
+    act(() => itemOf(el, 'Copy for Agent')?.click())
+    expect(onCopyForAgent).toHaveBeenCalledExactlyOnceWith('/v/Note.md')
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 })

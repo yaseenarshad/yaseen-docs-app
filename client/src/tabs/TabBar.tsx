@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { api, BridgeRequestError } from '../api'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { dropIndex, insertionSlot } from '../lib/dragSlot'
+import { isMarkdown } from '@shared/fileKind'
+import { copyForAgent } from '../lib/copyForAgent'
 import { basename, stripExt } from '../lib/paths'
 import { readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import './tabs.css'
@@ -267,6 +269,20 @@ export function TabBar({ tabs, active, onActivate, onClose, onMove, onDropPage, 
           >
             Copy path
           </button>
+          {/* Right under Copy path (YAZ-1617 🔒 D2), Markdown pages only: the tab IS the file, so it offers the sidebar row's handshake too. */}
+          {isMarkdown(menu.path) && (
+            <button
+              type="button"
+              className="ctx-menu__item"
+              role="menuitem"
+              onClick={() => {
+                void copyForAgent(menu.path, onNotice)
+                setMenu(null)
+              }}
+            >
+              Copy for Agent
+            </button>
+          )}
           <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => osAction(api.reveal({ path: menu.path }), `Can't reveal "${basename(menu.path)}" — it is no longer there`, "Can't reveal")}>
             Reveal in Finder
           </button>
