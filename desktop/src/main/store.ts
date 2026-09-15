@@ -49,19 +49,19 @@ export interface Store {
   get(): AppState
   setSettings(settings: SettingsState): void
   setSidebarWidth(width: number): void
-  setSidebarLens(lens: SidebarLens): void
   pushRecent(path: string, now?: number): void
   removeRecent(path: string): void
-  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded' | 'focusDirs' | 'focusTopics'>>): void
+  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded'>>): void
   setFolds(root: string, file: string, keys: readonly string[]): void
   setBaseGroups(root: string, key: string, collapsed: readonly string[]): void
   upsertWindow(entry: Omit<WindowEntry, 'rightPanel'> & Partial<Pick<WindowEntry, 'rightPanel'>>): void
   removeWindow(id: string): void
   /**
    * Repair every stored reference to a just-renamed file OR directory (Links E1 GRO-2194,
-   * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`), recents, each
-   * folder-state key and its `expanded`/`lastFile`/`topicsExpanded`/fold keys/baseGroups keys
-   * (`<basePath>::<view>`). A dir remaps by prefix — everything at or under it follows,
+   * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`) and its Focus Mode
+   * lists `focusDirs`/`focusTopics` (YAZ-1628), recents, each folder-state key and its
+   * `expanded`/`lastFile`/`topicsExpanded`/fold keys/baseGroups keys (`<basePath>::<view>`).
+   * A dir remaps by prefix — everything at or under it follows,
    * including a window ROOTED at the renamed folder. One commit; a no-op when nothing
    * references it.
    */
@@ -71,7 +71,8 @@ export interface Store {
    * twin of `renamePath`. A directory removes BY PREFIX: everything at or under it goes.
    *
    * Per field: a window's `file` becomes null (and `normalizeTabs` then empties its tabs),
-   * deleted tabs are dropped, `recents` loses the entry, and folder-state keys plus their
+   * deleted tabs are dropped as are its `focusDirs` / `focusTopics` entries (YAZ-1628),
+   * `recents` loses the entry, and folder-state keys plus their
    * `expanded` / `lastFile` / `topicsExpanded` / fold keys / `baseGroups` keys
    * (`<basePath>::<view>`) go too.
    * A window's `root` is deliberately LEFT ALONE: the renderer's existing `onRootMissing`
@@ -133,7 +134,7 @@ export const isWindowBounds = (v: unknown): v is WindowBounds =>
   isRecord(v) && isFiniteNumber(v.x) && isFiniteNumber(v.y) && isFiniteNumber(v.width) && isFiniteNumber(v.height)
 
 /** Core v1 shape; additive window-identity fields are repaired separately. */
-type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { tabs?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown }
+type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { tabs?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown; sidebarLens?: unknown; focusDirs?: unknown; focusTopics?: unknown }
 const isStoredWindowEntry = (v: unknown): v is StoredWindowEntry =>
   isRecord(v) && typeof v.id === 'string' && isStringOrNull(v.root) && isStringOrNull(v.file) && isWindowBounds(v.bounds)
 
@@ -174,7 +175,7 @@ export function normalizeRightPanel(raw: unknown, tabs: readonly string[]): Righ
   }
 }
 
-function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean): WindowEntry[] {
+function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean, legacySidebarLens: SidebarLens): WindowEntry[] {
   if (!Array.isArray(raw)) return []
   const seen = new Set<string>()
   const out: WindowEntry[] = []
@@ -186,7 +187,11 @@ function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean): WindowE
     const tabs = normalizeTabs(Array.isArray(rawTabs) ? rawTabs.filter((t): t is string => typeof t === 'string' && isAbsolute(t)) : [], w.file)
     const rightPanel = normalizeRightPanel((w as { rightPanel?: unknown }).rightPanel, tabs)
     const sidebarCollapsed = typeof w.sidebarCollapsed === 'boolean' ? w.sidebarCollapsed : legacySidebarCollapsed
-    out.push({ id: w.id, root: w.root, file: w.file, tabs, rightPanel, sidebarCollapsed, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
+    const sidebarLens = isSidebarLens(w.sidebarLens) ? w.sidebarLens : legacySidebarLens
+    // Focus Mode's lists (YAZ-1628) read with the `tabs` rule: relative paths drop, a missing or junk list is no focus.
+    const focusDirs = isStringArray(w.focusDirs) ? w.focusDirs.filter(isAbsolute) : []
+    const focusTopics = isStringArray(w.focusTopics) ? w.focusTopics.filter(isAbsolute) : []
+    out.push({ id: w.id, root: w.root, file: w.file, tabs, rightPanel, sidebarCollapsed, sidebarLens, focusDirs, focusTopics, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height } })
   }
   return out
 }
@@ -210,9 +215,6 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     baseGroups: sanitizeKeyLists(raw.baseGroups, MAX_COLLAPSED_GROUP_KEYS),
     // A pre-848 file has no Topics expansion at all; missing or junk both read as none (YAZ-848).
     topicsExpanded: isStringArray(raw.topicsExpanded) ? raw.topicsExpanded.slice(0, MAX_TOPICS_EXPANDED_PAGES) : [],
-    // Focus Mode (YAZ-1605): a pre-1605 file has neither; missing or junk both read as no focus.
-    focusDirs: isStringArray(raw.focusDirs) ? raw.focusDirs : [],
-    focusTopics: isStringArray(raw.focusTopics) ? raw.focusTopics : [],
   }
 }
 
@@ -232,14 +234,16 @@ function sanitizeState(raw: unknown): AppState | null {
   // YAZ-1280 migration: a v1 file's retired global value seeds only windows that do not yet
   // have their own value. The returned state omits the old key, so the next write completes it.
   const legacySidebarCollapsed = raw.sidebarCollapsed === true
+  // YAZ-1628 migration, the same shape: a v1 file's retired global lens (YAZ-847) seeds only
+  // windows without a valid lens of their own; a pre-847 file has none at all, and missing or
+  // junk both read as the default. The returned state omits the old key too.
+  const legacySidebarLens: SidebarLens = isSidebarLens(raw.sidebarLens) ? raw.sidebarLens : 'topics'
   return {
     version: 1,
     settings: sanitizeSettings(raw.settings),
     sidebarWidth: isFiniteNumber(raw.sidebarWidth) ? clampSidebarWidth(raw.sidebarWidth) : SIDEBAR_DEFAULT_W,
-    // A pre-847 file has no lens at all; missing or junk both read as the default (YAZ-847).
-    sidebarLens: isSidebarLens(raw.sidebarLens) ? raw.sidebarLens : 'topics',
     recents: isRecentRoots(raw.recents) ? raw.recents.slice(0, MAX_RECENT_ROOTS) : [],
-    windows: sanitizeWindows(raw.windows, legacySidebarCollapsed),
+    windows: sanitizeWindows(raw.windows, legacySidebarCollapsed, legacySidebarLens),
     folders: sanitizeFolders(raw.folders),
   }
 }
@@ -320,10 +324,6 @@ export function createStore(filePath: string): Store {
       commit({ ...state, sidebarWidth: clampSidebarWidth(width) })
     },
 
-    setSidebarLens(lens) {
-      commit({ ...state, sidebarLens: lens })
-    },
-
     pushRecent(path, now = Date.now()) {
       commit({ ...state, recents: addRecentRoot(state.recents, path, now) })
     },
@@ -342,8 +342,6 @@ export function createStore(filePath: string): Store {
         // Capped here as well as in the renderer (`folds` / `baseGroups`' rule): the store is
         // what a hand-edited or third-party write lands in, and this bucket grows per page.
         ...(patch.topicsExpanded !== undefined ? { topicsExpanded: patch.topicsExpanded.slice(0, MAX_TOPICS_EXPANDED_PAGES) } : {}),
-        ...(patch.focusDirs !== undefined ? { focusDirs: [...patch.focusDirs] } : {}),
-        ...(patch.focusTopics !== undefined ? { focusTopics: [...patch.focusTopics] } : {}),
       }
       commit({ ...state, folders: { ...state.folders, [root]: next } })
     },
@@ -413,6 +411,9 @@ export function createStore(filePath: string): Store {
             items: w.rightPanel.items.map(remap),
             expanded: w.rightPanel.expanded === null ? null : remap(w.rightPanel.expanded),
           }, tabs),
+          // Focus Mode's lists (YAZ-1628): path lists like `tabs` — a renamed focus follows its folder.
+          focusDirs: w.focusDirs.map(remap),
+          focusTopics: w.focusTopics.map(remap),
         }
       })
       const recents = state.recents.map((r) => ({ ...r, path: remap(r.path) }))
@@ -427,9 +428,6 @@ export function createStore(filePath: string): Store {
             // expanded topic follows its own rename, and a renamed FOLDER carries every topic
             // inside it through the same prefix branch.
             topicsExpanded: folder.topicsExpanded.map(remap),
-            // Focus Mode (YAZ-1605): path lists like the two above — a renamed focus follows its folder.
-            focusDirs: folder.focusDirs.map(remap),
-            focusTopics: folder.focusTopics.map(remap),
             folds: remapKeys(folder.folds, remap),
             baseGroups: remapKeys(folder.baseGroups, remapBaseGroupKey),
           },
@@ -488,6 +486,9 @@ export function createStore(filePath: string): Store {
           file,
           tabs: normalizedTabs,
           rightPanel: normalizeRightPanel({ ...w.rightPanel, items: rightItems, expanded }, normalizedTabs),
+          // Focus Mode's lists (YAZ-1628): a deleted focus target drops out, exactly as a deleted tab does above.
+          focusDirs: drop(w.focusDirs),
+          focusTopics: drop(w.focusTopics),
         }
       })
       const recents = state.recents.filter((r) => !gone(r.path))
@@ -507,9 +508,6 @@ export function createStore(filePath: string): Store {
               // The Topics tree's open pages (YAZ-848): a deleted page's entry would never match
               // a row again, so it goes with the rest rather than sitting in the file forever.
               topicsExpanded: drop(folder.topicsExpanded),
-              // Focus Mode (YAZ-1605): a deleted focus target drops out, exactly as `expanded` does above.
-              focusDirs: drop(folder.focusDirs),
-              focusTopics: drop(folder.focusTopics),
               lastFile: folder.lastFile !== null && gone(folder.lastFile) ? ((changed = true), null) : folder.lastFile,
               folds: dropKeys(folder.folds, gone),
               baseGroups: dropKeys(folder.baseGroups, baseGroupGone),

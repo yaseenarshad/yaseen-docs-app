@@ -24,7 +24,7 @@ import {
  */
 
 let state: AppState = defaultAppState()
-let identity: WindowIdentity = { id: '', root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false }
+let identity: WindowIdentity = { id: '', root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [] }
 let unsubscribe: (() => void) | null = null
 const listeners = new Set<() => void>()
 
@@ -69,11 +69,14 @@ export const storage = {
   },
 
   getRoot: (): string | null => identity.root,
-  /** Changing the root clears this window's file AND tab list in the same write (Tabs rule 13, GRO-2234); re-setting the same root keeps them. */
+  /**
+   * Changing the root clears this window's file AND tab list (Tabs rule 13, GRO-2234) and both
+   * Focus Mode lists (YAZ-1628) in the same write; re-setting the same root keeps them.
+   */
   setRoot(root: string | null): void {
     const patch = root === identity.root
       ? { root }
-      : { root, file: null, tabs: [] as string[], rightPanel: defaultRightPanelIdentity() }
+      : { root, file: null, tabs: [] as string[], rightPanel: defaultRightPanelIdentity(), focusDirs: [] as string[], focusTopics: [] as string[] }
     identity = { ...identity, ...patch }
     send('window.setIdentity', () => window.yaseenDocs.window.setIdentity(patch))
   },
@@ -111,18 +114,22 @@ export const storage = {
     send('state.setFolder', () => window.yaseenDocs.state.setFolder(root, { topicsExpanded }))
   },
 
-  /** Focus Mode (YAZ-1605): `expanded`'s shape and bucket — a path list per lens, empty when off. */
-  getFocusDirs: (root: string): string[] => folderOf(root).focusDirs,
-  setFocusDirs(root: string, dirs: readonly string[]): void {
+  /**
+   * Focus Mode (YAZ-1605): a path list per lens, empty when off. Window identity since YAZ-1628,
+   * like `sidebarCollapsed` below — no root argument, and a global state broadcast never follows
+   * another window's focus into this one; a root change clears both lists (`setRoot`).
+   */
+  getFocusDirs: (): string[] => identity.focusDirs,
+  setFocusDirs(dirs: readonly string[]): void {
     const focusDirs = [...dirs]
-    patchFolder(root, { focusDirs })
-    send('state.setFolder', () => window.yaseenDocs.state.setFolder(root, { focusDirs }))
+    identity = { ...identity, focusDirs }
+    send('window.setIdentity', () => window.yaseenDocs.window.setIdentity({ focusDirs }))
   },
-  getFocusTopics: (root: string): string[] => folderOf(root).focusTopics,
-  setFocusTopics(root: string, pages: readonly string[]): void {
+  getFocusTopics: (): string[] => identity.focusTopics,
+  setFocusTopics(pages: readonly string[]): void {
     const focusTopics = [...pages]
-    patchFolder(root, { focusTopics })
-    send('state.setFolder', () => window.yaseenDocs.state.setFolder(root, { focusTopics }))
+    identity = { ...identity, focusTopics }
+    send('window.setIdentity', () => window.yaseenDocs.window.setIdentity({ focusTopics }))
   },
 
   /** The window identity records what is open now: THIS window's restored file, not the folder's shared lastFile (GRO-2160). */
@@ -174,13 +181,15 @@ export const storage = {
   },
 
   /**
-   * The active sidebar lens (YAZ-847). GLOBAL like the two above — the lens is chrome, not
-   * per-folder view state — so no root argument and no `FolderState` entry.
+   * The active sidebar lens (YAZ-847): chrome, not per-folder view state, so no root argument
+   * and no `FolderState` entry. Window identity since YAZ-1628, like `sidebarCollapsed` above —
+   * another window's switch never lands here through a state broadcast, and a root change
+   * keeps it (`setRoot` leaves it alone).
    */
-  getSidebarLens: (): SidebarLens => state.sidebarLens,
+  getSidebarLens: (): SidebarLens => identity.sidebarLens,
   setSidebarLens(lens: SidebarLens): void {
-    state = { ...state, sidebarLens: lens }
-    send('state.setSidebarLens', () => window.yaseenDocs.state.setSidebarLens(lens))
+    identity = { ...identity, sidebarLens: lens }
+    send('window.setIdentity', () => window.yaseenDocs.window.setIdentity({ sidebarLens: lens }))
   },
 
   getFolds: (root: string, file: string): string[] => folderOf(root).folds[file] ?? [],

@@ -10,7 +10,7 @@ import { newFolderPageProperties } from '../views/folderPageSettings'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DEFAULT_SETTINGS, type TreeNode, type WatchEvent } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultRightPanelIdentity, type TreeNode, type WatchEvent, type WindowIdentity } from '@shared/types'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { EMPTY_SELECTION } from '../lib/selection'
 // Focus Mode's persistence is the REAL storage module (no mock in this file): a spy on its read is
@@ -47,8 +47,13 @@ function installBridge() {
     readFile: vi.fn(async (path: string) => {
       throw { code: 'NOT_FOUND', message: `no such file: ${path}` }
     }),
-    state: { setFolder: vi.fn(async () => undefined) },
-    window: { open: vi.fn(async () => undefined) },
+    state: { get: vi.fn(async () => defaultAppState()), setFolder: vi.fn(async () => undefined), onChange: vi.fn(() => () => undefined) },
+    window: {
+      open: vi.fn(async () => undefined),
+      // Focus Mode is window identity (YAZ-1628): `storage.init()` boots from `identity`, writes go to `setIdentity`.
+      identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: '/v', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [] })),
+      setIdentity: vi.fn(async () => undefined),
+    },
     // Reveal in Finder (GRO-2274) goes through the shell namespace.
     shell: {
       reveal: vi.fn(async ({ path }: { path: string }) => ({ path })),
@@ -65,9 +70,9 @@ let container: HTMLElement | null = null
 
 type SidebarProps = Parameters<typeof Sidebar>[0]
 
-async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: ReturnType<typeof installBridge>) => void) {
+async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: ReturnType<typeof installBridge>) => unknown) {
   const bridge = installBridge()
-  tweakBridge?.(bridge) // before the first render: the loading/error tree states only exist there
+  await tweakBridge?.(bridge) // before the first render: the loading/error tree states only exist there
   const el = document.createElement('div')
   document.body.appendChild(el)
   container = el
@@ -1140,7 +1145,7 @@ describe('folder rows in search (YAZ-1491)', () => {
  * The lens tabs (🔒 D4/D5, YAZ-847): chrome v2 ROW 1, above the persistent search bar. Topics is
  * the DEFAULT lens and holds the folder-page tree (YAZ-848, pinned in `TopicsTree.test.tsx` —
  * what matters HERE is only which body the tabs swap in); Files is today's file explorer,
- * unchanged, behind a tab. The VALUE is App's (globally persisted as `AppState.sidebarLens`): the
+ * unchanged, behind a tab. The VALUE is App's (window identity, `WindowEntry.sidebarLens`, since YAZ-1628): the
  * sidebar renders the row and reports clicks, and App hands the new lens back down. Switching is
  * a conditional render, never a teardown — the search wave's rule, re-proved here on the tree's
  * expansion. Search keeps working from both lenses and the query survives a lens switch (🔒 D5).
@@ -1371,14 +1376,17 @@ describe('focus mode (YAZ-1605)', () => {
 
   let vaults = 0
   /**
-   * One fresh vault per mount. `focus` seeds a PERSISTED focus: the Sidebar restores it through the
-   * real storage module, so spying on that read is the whole "before mount" state (afterEach's
-   * `restoreAllMocks` puts it back).
+   * One fresh vault AND one fresh WINDOW per mount (`storage.init()` against this mount's bridge).
+   * `focus` seeds a PERSISTED focus the way main hands it over at boot — in the window's identity
+   * (YAZ-1628), never the vault bucket — so the Sidebar restores it through the real storage module.
    */
   const mountVault = async (over: Partial<SidebarProps> = {}, opts: { nodes?: (v: string) => TreeNode[]; focus?: string[] } = {}) => {
     const v = `/v-focus-${++vaults}`
-    if (opts.focus !== undefined) vi.spyOn(storage, 'getFocusDirs').mockReturnValue(opts.focus.map((p) => `${v}${p}`))
-    const m = await mount({ root: v, ...over }, (b) => b.tree.mockResolvedValue({ root: v, tree: (opts.nodes ?? FOCUS)(v), generatedAt: 1 } as never))
+    const m = await mount({ root: v, ...over }, async (b) => {
+      b.tree.mockResolvedValue({ root: v, tree: (opts.nodes ?? FOCUS)(v), generatedAt: 1 } as never)
+      b.window.identity.mockResolvedValue({ id: 'w1', root: v, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: (opts.focus ?? []).map((p) => `${v}${p}`), focusTopics: [] })
+      await storage.init()
+    })
     return { ...m, v }
   }
 
@@ -1418,7 +1426,8 @@ describe('focus mode (YAZ-1605)', () => {
     expect(topLabels(el)).toEqual(['Projects'])
     expect(isOpen(el, `${v}/Projects`)).toBe('true')
     expect(dirLabels(el)).toEqual(['Projects', 'Alpha'])
-    expect(bridge.state.setFolder).toHaveBeenCalledWith(v, { focusDirs: [`${v}/Projects`] })
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ focusDirs: [`${v}/Projects`] })
+    expect(bridge.state.setFolder).not.toHaveBeenCalledWith(v, expect.objectContaining({ focusDirs: expect.anything() })) // never the vault bucket (YAZ-1628)
   })
 
   it('the eye is lit only while focused and sits directly before the chevrons', async () => {
@@ -1436,14 +1445,14 @@ describe('focus mode (YAZ-1605)', () => {
     await act(async () => eye(el)?.click())
     expect(eye(el)).toBeNull()
     expect(topLabels(el)).toEqual(['Notes', 'Projects', 'Projects-Archive', 'top'])
-    expect(bridge.state.setFolder).toHaveBeenCalledWith(v, { focusDirs: [] })
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ focusDirs: [] })
   })
 
-  it('a focus restored from storage narrows the first render and is never written back', async () => {
-    const { el, v, bridge } = await mountVault({}, { focus: ['/Projects'] })
+  it('a focus restored from this window\'s identity narrows the first render and is never written back', async () => {
+    const { el, bridge } = await mountVault({}, { focus: ['/Projects'] })
     expect(topLabels(el)).toEqual(['Projects'])
     expect(eye(el)).not.toBeNull()
-    expect(bridge.state.setFolder).not.toHaveBeenCalledWith(v, { focusDirs: [`${v}/Projects`] })
+    expect(bridge.window.setIdentity).not.toHaveBeenCalled()
   })
 
   it('expand all while focused opens only the folders inside the focus', async () => {
@@ -1535,7 +1544,7 @@ describe('focus mode (YAZ-1605)', () => {
     await act(async () => fire({ type: 'unlinkDir', path: `${v}/Projects` }))
     expect(eye(el)).toBeNull()
     expect(topLabels(el)).toEqual(['Notes', 'Projects-Archive', 'top'])
-    expect(bridge.state.setFolder).toHaveBeenCalledWith(v, { focusDirs: [] })
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ focusDirs: [] })
   })
 
   it('with two folders focused, the survivor keeps the focus when the other vanishes', async () => {
@@ -1549,7 +1558,7 @@ describe('focus mode (YAZ-1605)', () => {
     await act(async () => fire({ type: 'unlinkDir', path: `${v}/Projects` }))
     expect(eye(el)).not.toBeNull()
     expect(topLabels(el)).toEqual(['Notes'])
-    expect(bridge.state.setFolder).toHaveBeenCalledWith(v, { focusDirs: [`${v}/Notes`] })
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ focusDirs: [`${v}/Notes`] })
   })
 
   it('a reveal OUTSIDE the focus ends it and still shows the target', async () => {

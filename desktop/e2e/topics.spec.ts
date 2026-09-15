@@ -142,7 +142,7 @@ const onDisk = (vaultPath: string, name: string): Promise<string | null> => read
 /** `seededState` pre-selects the FILES lens for the rest of the suite; this spec is about Topics. */
 function topicsState(vaultPath: string, file: string | null) {
   const state = seededState(vaultPath, file)
-  state.sidebarLens = 'topics'
+  state.windows[0].sidebarLens = 'topics'
   return state
 }
 

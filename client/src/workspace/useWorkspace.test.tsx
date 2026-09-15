@@ -247,7 +247,7 @@ describe('tabsReducer', () => {
 })
 
 /** A fake `window.yaseenDocs` with just the surface storage touches (the storage.test.ts pattern). */
-type IdentityFixture = Omit<WindowIdentity, 'rightPanel' | 'sidebarCollapsed'> & Partial<Pick<WindowIdentity, 'rightPanel' | 'sidebarCollapsed'>>
+type IdentityFixture = Omit<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusTopics'> & Partial<Pick<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusTopics'>>
 
 function installBridge(app: AppState, identity: IdentityFixture) {
   const bridge = {
@@ -261,6 +261,9 @@ function installBridge(app: AppState, identity: IdentityFixture) {
         ...identity,
         rightPanel: identity.rightPanel ?? defaultRightPanelIdentity(),
         sidebarCollapsed: identity.sidebarCollapsed ?? false,
+        sidebarLens: identity.sidebarLens ?? 'topics',
+        focusDirs: identity.focusDirs ?? [],
+        focusTopics: identity.focusTopics ?? [],
       })),
       setIdentity: vi.fn(async () => undefined),
     },
@@ -279,7 +282,7 @@ afterEach(() => {
 describe('bootTabs (rules 12/15)', () => {
   const seeded: AppState = {
     ...defaultAppState(),
-    folders: { '/v': { expanded: [], lastFile: '/v/last.md', folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] } },
+    folders: { '/v': { expanded: [], lastFile: '/v/last.md', folds: {}, baseGroups: {}, topicsExpanded: [] } },
   }
 
   it('restores the stored tabs with the identity file active; only the active tab mounts', async () => {

@@ -30,7 +30,6 @@ export const CH = {
   stateGet: 'state:get',
   stateSetSettings: 'state:set-settings',
   stateSetSidebarWidth: 'state:set-sidebar-width',
-  stateSetSidebarLens: 'state:set-sidebar-lens',
   statePushRecent: 'state:push-recent',
   stateRemoveRecent: 'state:remove-recent',
   stateSetFolder: 'state:set-folder',

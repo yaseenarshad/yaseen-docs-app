@@ -78,7 +78,7 @@ import { App, LINK_NOTICE_MS } from './App'
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 /** The full `window.yaseenDocs` surface the App tree touches, all observable. `files` backs readFile/writeFile (the E1c rewrite path). */
-type IdentityFixture = Omit<WindowIdentity, 'rightPanel' | 'sidebarCollapsed'> & Partial<Pick<WindowIdentity, 'rightPanel' | 'sidebarCollapsed'>>
+type IdentityFixture = Omit<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusTopics'> & Partial<Pick<WindowIdentity, 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusTopics'>>
 
 function installBridge(state: AppState, identity: IdentityFixture, files: Record<string, { content: string; mtime: number }> = {}) {
   const stateChanged = new Set<(next: AppState) => void>()
@@ -126,7 +126,6 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       get: vi.fn(async () => state),
       setSettings: vi.fn(async () => undefined),
       setSidebarWidth: vi.fn(async () => undefined),
-      setSidebarLens: vi.fn(async () => undefined),
       pushRecent: vi.fn(async () => undefined),
       removeRecent: vi.fn(async () => undefined),
       setFolder: vi.fn(async () => undefined),
@@ -142,6 +141,9 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         ...identity,
         rightPanel: identity.rightPanel ?? defaultRightPanelIdentity(),
         sidebarCollapsed: identity.sidebarCollapsed ?? false,
+        sidebarLens: identity.sidebarLens ?? 'topics',
+        focusDirs: identity.focusDirs ?? [],
+        focusTopics: identity.focusTopics ?? [],
       })),
       setIdentity: vi.fn(async () => undefined),
       open: vi.fn(),
@@ -385,7 +387,7 @@ describe('App openRoot (C3, GRO-2165)', () => {
     // The window entry records the switch (D6, tabs rule 13): ONE write clears root's file+tabs,
     // then ONE {tabs, file} write restores the folder's remembered file.
     expect(bridge.window.setIdentity.mock.calls).toEqual([
-      [{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity() }],
+      [{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), focusDirs: [], focusTopics: [] }],
       [{ tabs: ['/w/b.md'], file: '/w/b.md', rightPanel: defaultRightPanelIdentity() }],
     ])
   })
@@ -395,7 +397,7 @@ describe('App openRoot (C3, GRO-2165)', () => {
     await act(async () => emitOpenRoot('/w'))
     expect(el.querySelector('[data-editor]')?.getAttribute('data-path')).toBe('')
     expect(location.hash).toBe('')
-    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity() }]])
+    expect(bridge.window.setIdentity.mock.calls).toEqual([[{ root: '/w', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), focusDirs: [], focusTopics: [] }]])
   })
 
   it('a dead recent chosen from the menu drops the MRU entry and leaves the window on its folder', async () => {
@@ -556,7 +558,7 @@ describe('App sidebar resize (YAZ-738)', () => {
 })
 
 /**
- * The sidebar's lens (🔒 D4, YAZ-847): App-owned, globally persisted, and passed down — never a
+ * The sidebar's lens (🔒 D4, YAZ-847): App-owned, persisted as window identity (YAZ-1628), and passed down — never a
  * Sidebar-local flag. The sidebar is mounted `key={root}` and only while it is open, so the
  * collapse → reopen step below is the whole reason the value lives here.
  */
@@ -567,14 +569,14 @@ describe('App sidebar lens (🔒 D4, YAZ-847)', () => {
   })
 
   it('a stored `files` boots straight onto Files', async () => {
-    await mount({ ...defaultAppState(), sidebarLens: 'files' }, { id: 'w1', root: '/v', file: null, tabs: [] })
+    await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarLens: 'files' })
     expect(captured.sidebar?.lens).toBe('files')
   })
 
-  it('a tab click writes through to the global state and comes back down as the new lens', async () => {
+  it('a tab click writes through to this window\'s identity and comes back down as the new lens', async () => {
     const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     act(() => captured.sidebar?.onLensChange('files'))
-    expect(bridge.state.setSidebarLens).toHaveBeenCalledExactlyOnceWith('files')
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarLens: 'files' })
     expect(captured.sidebar?.lens).toBe('files')
   })
 
@@ -597,8 +599,8 @@ describe('App Show in sidebar request ownership (YAZ-1023)', () => {
 
   it('opens a collapsed sidebar on the captured lens and targets an inactive tab without activating it', async () => {
     const { bridge, el } = await mount(
-      { ...defaultAppState(), sidebarLens: 'files' },
-      { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: true },
+      defaultAppState(),
+      { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: true, sidebarLens: 'files' },
     )
     rightClick(el.querySelectorAll('.tabbar__tab')[1]!)
     act(() => showInSidebar(el)?.click())
@@ -1340,7 +1342,7 @@ describe('App root-missing (C2, GRO-2164)', () => {
     expect(el.querySelector('.welcome__title')?.textContent).toBe('Yaseen Docs')
     expect(el.querySelector('[data-sidebar]')).toBeNull()
     expect(el.querySelector('[data-editor]')).toBeNull()
-    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity() })
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), focusDirs: [], focusTopics: [] })
   })
 })
 
