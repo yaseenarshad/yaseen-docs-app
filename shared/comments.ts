@@ -187,17 +187,20 @@ const titleKey = (title: string | undefined): { title?: string } => {
 /**
  * Append one comment. `replyTo` is filed under ITS top-level parent when it names a reply, so a
  * thread stays one level deep; an id that names nothing is kept as given (the UI never passes one).
+ * `by` is written only when given, after `reply_to` and before `title`.
  */
-export function addComment(content: string, body: string, entry: { id: string; at: string; replyTo?: string; title?: string }): string {
+export function addComment(content: string, body: string, entry: { id: string; at: string; replyTo?: string; title?: string; by?: string }): string {
   const list = writable(content)
   const text = body.trimEnd()
   const title = titleKey(entry.title)
-  if (entry.replyTo === undefined) return write(content, [...list, { id: entry.id, n: nextNumber(list, undefined), at: entry.at, ...title, body: text }])
+  // `by` is the writer's declaration (🔒 D3): the UI passes none, the `yaseendocs` command passes its caller's (YAZ-1617).
+  const by = entry.by === undefined ? {} : { by: entry.by }
+  if (entry.replyTo === undefined) return write(content, [...list, { id: entry.id, n: nextNumber(list, undefined), at: entry.at, ...by, ...title, body: text }])
   const index = threading(typed(list))
   const target = index.byId.get(entry.replyTo)
   const reply_to = target === undefined ? entry.replyTo : rootOf(index, target)
-  // Key order on disk is the schema's: id, n, at, reply_to, title, body.
-  return write(content, [...list, { id: entry.id, n: nextNumber(list, reply_to), at: entry.at, reply_to, ...title, body: text }])
+  // Key order on disk is the schema's: id, n, at, reply_to, by, title, body.
+  return write(content, [...list, { id: entry.id, n: nextNumber(list, reply_to), at: entry.at, reply_to, ...by, ...title, body: text }])
 }
 
 /**

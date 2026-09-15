@@ -257,6 +257,13 @@ describe('title and by (🔒 D3, D7, D11)', () => {
     expect(readComments(content)[0]).toEqual({ id: 'a', at: at(1), by: 'agent', body: 'A' })
   })
 
+  it('addComment writes `by` only when given — after `reply_to`, before `title` (YAZ-1617 D5)', () => {
+    const base = `---\ncomments:\n  - id: p\n    n: 1\n    at: ${at(1)}\n    body: P\n---\n`
+    expect(addComment(base, 'A', { id: 'a', at: at(2), by: 'agent', title: 'T' })).toBe(`${base.slice(0, -4)}  - id: a\n    n: 2\n    at: ${at(2)}\n    by: agent\n    title: T\n    body: A\n---\n`)
+    expect(addComment(base, 'R', { id: 'r', at: at(2), replyTo: 'p', by: 'codex' })).toBe(`${base.slice(0, -4)}  - id: r\n    n: 1\n    at: ${at(2)}\n    reply_to: p\n    by: codex\n    body: R\n---\n`)
+    expect(addComment(base, 'B', { id: 'b', at: at(2) })).not.toContain('by:')
+  })
+
   it('the full schema keeps its key order through an edit: id, at, reply_to, by, title, edited, body', () => {
     const full = `---\ncomments:\n  - id: p\n    at: ${at(1)}\n    body: P\n  - id: r\n    at: ${at(2)}\n    reply_to: p\n    by: agent\n    title: T\n    edited: ${at(3)}\n    body: R\n---\n`
     expect(editComment(full, 'r', 'R2', at(4), 'T2')).toContain(
