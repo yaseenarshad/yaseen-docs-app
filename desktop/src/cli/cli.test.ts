@@ -8,7 +8,7 @@ import { writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { readComments } from '@shared/comments'
-import { HELP, USAGE, label, main, transformOnDisk } from './cli'
+import { HELP, USAGE, find, label, main, transformOnDisk } from './cli'
 
 let dir: string
 beforeEach(async () => {
@@ -83,8 +83,8 @@ describe('help and usage', () => {
       [['comment'], 'comment needs a page'],
       [['comment', p], '--body is required'],
       [['comment', p, '--body'], '--body needs a value'],
-      [['edit', p], 'edit needs a comment id'],
-      [['delete', p], 'delete needs a comment id'],
+      [['edit', p], 'edit needs a comment (#3, #3.1, or its id)'],
+      [['delete', p], 'delete needs a comment (#3, #3.1, or its id)'],
     ] as const) {
       const r = await run([...argv])
       expect(r.code, argv.join(' ')).toBe(2)
@@ -114,6 +114,16 @@ describe('comment', () => {
     expect(r).toEqual({ code: 0, out: `#2.2 added to ${p}\n`, err: '' })
     const added = readComments(await readFile(p, 'utf8')).find((c) => c.body === 'Seen.')
     expect(added).toMatchObject({ n: 2, reply_to: 'bb2', by: 'codex', title: 'Follow-up' })
+  })
+
+  it('--reply-to takes the number the app shows (#2, or bare 2) as well as the id; an unknown target is refused, nothing written', async () => {
+    const p = await page('w.md', PERSON_AND_AGENT)
+    expect((await run(['comment', p, '--reply-to', '#2', '--body', 'by number'])).out).toBe(`#2.2 added to ${p}\n`)
+    expect((await run(['comment', p, '--reply-to', '2', '--body', 'bare number'])).out).toBe(`#2.3 added to ${p}\n`)
+    expect(readComments(await readFile(p, 'utf8')).filter((c) => c.reply_to === 'bb2')).toHaveLength(3)
+    const before = await readFile(p, 'utf8')
+    expect(await run(['comment', p, '--reply-to', '9', '--body', 'orphan?'])).toEqual({ code: 1, out: '', err: `no comment 9 on ${p}\n` })
+    expect(await readFile(p, 'utf8')).toBe(before)
   })
 
   it('`--body -` takes the comment from stdin, multi-line and all', async () => {
@@ -164,7 +174,7 @@ describe('comments', () => {
     expect(r).toEqual({
       code: 0,
       err: '',
-      out: `#1  ${at(1)}  Person's comment\n#2  ${at(2)}  (agent)  Numbers\n  #2.1  ${at(3)}  (agent)  Agent's reply\n`,
+      out: `#1  aa1  ${at(1)}  Person's comment\n#2  bb2  ${at(2)}  (agent)  Numbers\n  #2.1  cc3  ${at(3)}  (agent)  Agent's reply\n`,
     })
   })
 
@@ -214,9 +224,13 @@ describe('edit and delete (🔒 D4: only what an agent wrote)', () => {
     expect(await readFile(p, 'utf8')).toBe(PERSON_AND_AGENT)
   })
 
-  it('an unknown id is refused with exit 1', async () => {
+  it('edit and delete take the number too (#2.1), and an unknown name is refused with exit 1', async () => {
     const p = await page('w.md', PERSON_AND_AGENT)
+    expect((await run(['edit', p, '#2.1', '--body', 'by number'])).out).toBe('#2.1 edited\n')
+    expect(readComments(await readFile(p, 'utf8')).find((c) => c.id === 'cc3')?.body).toBe('by number')
+    expect((await run(['delete', p, '2.1'])).out).toBe('#2.1 deleted\n')
     expect(await run(['delete', p, 'zz9'])).toEqual({ code: 1, out: '', err: `no comment zz9 on ${p}\n` })
+    expect(await run(['delete', p, '#7'])).toEqual({ code: 1, out: '', err: `no comment #7 on ${p}\n` })
   })
 })
 
@@ -250,8 +264,21 @@ describe('transformOnDisk (🔒 D8 on disk)', () => {
   })
 })
 
-describe('label', () => {
-  it('#n, #parent.n, and the id when there is no number', () => {
+describe('label and find', () => {
+  it('find: by id, by #n / n, by #n.m / n.m; an id wins over a number that happens to match', () => {
+    const comments = readComments(PERSON_AND_AGENT)
+    expect(find(comments, 'cc3')?.id).toBe('cc3')
+    expect(find(comments, '#2')?.id).toBe('bb2')
+    expect(find(comments, '2')?.id).toBe('bb2')
+    expect(find(comments, '#2.1')?.id).toBe('cc3')
+    expect(find(comments, '2.1')?.id).toBe('cc3')
+    expect(find(comments, '#3')).toBeUndefined()
+    expect(find(comments, '#2.9')).toBeUndefined()
+    const clash = readComments(`---\ncomments:\n  - id: "2"\n    n: 1\n    at: ${at(1)}\n    body: my id is the digit two\n  - id: b\n    n: 2\n    at: ${at(2)}\n    body: I am #2\n---\n`)
+    expect(find(clash, '2')?.id).toBe('2')
+  })
+
+  it('label: #n, #parent.n, and the id when there is no number', () => {
     const comments = readComments(PERSON_AND_AGENT)
     expect(comments.map((c) => label(comments, c))).toEqual(['#1', '#2', '#2.1'])
     const bare = readComments('---\ncomments:\n  - id: h1\n    at: 2026-01-01T00:00:00Z\n    body: hand-written\n---\n')

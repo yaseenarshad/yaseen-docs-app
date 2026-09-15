@@ -34,10 +34,10 @@ export interface Io {
 }
 
 export const USAGE = `usage:
-  yaseendocs comment  <page.md> --body <text | -> [--title <one line>] [--reply-to <id>] [--by <name>]
+  yaseendocs comment  <page.md> --body <text | -> [--title <one line>] [--reply-to <comment>] [--by <name>]
   yaseendocs comments <page.md> [--json]
-  yaseendocs edit     <page.md> <id> --body <text | -> [--title <one line>]
-  yaseendocs delete   <page.md> <id>
+  yaseendocs edit     <page.md> <comment> --body <text | -> [--title <one line>]
+  yaseendocs delete   <page.md> <comment>
   yaseendocs --help`
 
 export const HELP = `yaseendocs — comments on a Yaseen Docs page, from the shell.
@@ -47,8 +47,8 @@ ${USAGE}
 A comment lives in the page's frontmatter under \`comments:\` — never in the body — and this
 command writes it exactly as the app does (id, number, time stamp, order). \`--body -\` reads
 the text from stdin, so a long or multi-line comment needs no shell quoting. \`comments\` prints
-every thread with its ids (\`--json\` for the raw shape); a reply names a top-level id in
---reply-to and shows as #3.1.
+every thread (\`--json\` for the raw shape). Name a comment by its number as the app shows it —
+#3, or #3.1 for a reply — or by its id; a reply to #3 shows as #3.1.
 
 Who wrote it: \`comment\` records \`by: agent\` unless --by says otherwise; a person's comment,
 left in the app, has no \`by\`. \`edit\` and \`delete\` work only on comments that carry a \`by\` —
@@ -111,19 +111,31 @@ export function label(comments: readonly PageComment[], c: PageComment): string 
 
 const firstLine = (c: PageComment): string => c.title ?? c.body.split('\n', 1)[0]
 
+/**
+ * The comment `ref` names: its id, or its number the way the app and the receipts show it —
+ * `#3` / `3` (top level), `#3.1` / `3.1` (reply 1 of #3). An id wins when both could match. Found
+ * by the SAME `label` the listing prints, so what an agent reads is what it can type.
+ */
+export function find(comments: readonly PageComment[], ref: string): PageComment | undefined {
+  const byId = comments.find((c) => c.id === ref)
+  if (byId !== undefined) return byId
+  const number = /^#?(\d+(?:\.\d+)?)$/.exec(ref)?.[1]
+  return number === undefined ? undefined : comments.find((c) => label(comments, c) === `#${number}`)
+}
+
 /** One line per comment: label, stamp, writer, then the title or first line. Replies indented under their parent. */
 function listing(comments: readonly PageComment[]): string {
-  const line = (c: PageComment, indent: string) => `${indent}${label(comments, c)}  ${c.at}  ${c.by === undefined ? '' : `(${c.by})  `}${firstLine(c)}`
+  const line = (c: PageComment, indent: string) => `${indent}${label(comments, c)}  ${c.id}  ${c.at}  ${c.by === undefined ? '' : `(${c.by})  `}${firstLine(c)}`
   return threadsOf(comments)
     .flatMap(({ comment, replies }) => [line(comment, ''), ...replies.map((r) => line(r, '  '))])
     .join('\n')
 }
 
-/** A comment the caller may edit or delete: it exists and carries a `by` (🔒 D4). */
-function agentOwned(content: string, id: string, page: string): PageComment {
+/** A comment the caller may edit or delete: `ref` names one (id or number) and it carries a `by` (🔒 D4). */
+function agentOwned(content: string, ref: string, page: string): PageComment {
   const comments = readComments(content)
-  const target = comments.find((c) => c.id === id)
-  if (target === undefined) throw new Error(`no comment ${id} on ${page}`)
+  const target = find(comments, ref)
+  if (target === undefined) throw new Error(`no comment ${ref} on ${page}`)
   if (target.by === undefined || target.by.trim() === '') {
     throw new Error(`${label(comments, target)} was left by a person — edit or delete it in the app`)
   }
@@ -154,9 +166,13 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
     case 'comment': {
       const body = await bodyOf(flags, io)
       const id = newCommentId()
-      const content = await transformOnDisk(page, (fresh) =>
-        addComment(fresh, body, { id, at: nowIso(), replyTo: str(flags, '--reply-to'), title: str(flags, '--title'), by: str(flags, '--by') ?? 'agent' }),
-      )
+      const replyRef = str(flags, '--reply-to')
+      const content = await transformOnDisk(page, (fresh) => {
+        // The model keeps an unknown `reply_to` as given (the UI never passes one); the command REFUSES it, so a typo cannot orphan a reply.
+        const parent = replyRef === undefined ? undefined : find(readComments(fresh), replyRef)
+        if (replyRef !== undefined && parent === undefined) throw new Error(`no comment ${replyRef} on ${page}`)
+        return addComment(fresh, body, { id, at: nowIso(), replyTo: parent?.id, title: str(flags, '--title'), by: str(flags, '--by') ?? 'agent' })
+      })
       const comments = readComments(content)
       const added = comments.find((c) => c.id === id)
       io.stdout(`${added === undefined ? id : label(comments, added)} added to ${page}\n`)
@@ -168,28 +184,28 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       return
     }
     case 'edit': {
-      const id = args[1]
-      if (id === undefined) throw new Usage('edit needs a comment id')
+      const ref = args[1]
+      if (ref === undefined) throw new Usage('edit needs a comment (#3, #3.1, or its id)')
       const body = await bodyOf(flags, io)
-      let name = id
+      let name = ref
       await transformOnDisk(page, (fresh) => {
-        const target = agentOwned(fresh, id, page)
+        const target = agentOwned(fresh, ref, page)
         name = label(readComments(fresh), target)
-        return editComment(fresh, id, body, nowIso(), str(flags, '--title') ?? target.title ?? '')
+        return editComment(fresh, target.id, body, nowIso(), str(flags, '--title') ?? target.title ?? '')
       })
       io.stdout(`${name} edited\n`)
       return
     }
     case 'delete': {
-      const id = args[1]
-      if (id === undefined) throw new Usage('delete needs a comment id')
-      let receipt = id
+      const ref = args[1]
+      if (ref === undefined) throw new Usage('delete needs a comment (#3, #3.1, or its id)')
+      let receipt = ref
       await transformOnDisk(page, (fresh) => {
         const comments = readComments(fresh)
-        const target = agentOwned(fresh, id, page)
-        const replies = comments.filter((c) => c.reply_to === id).length
+        const target = agentOwned(fresh, ref, page)
+        const replies = comments.filter((c) => c.reply_to === target.id).length
         receipt = `${label(comments, target)} deleted${replies === 0 ? '' : ` (and ${replies} ${replies === 1 ? 'reply' : 'replies'})`}`
-        return deleteComment(fresh, id)
+        return deleteComment(fresh, target.id)
       })
       io.stdout(`${receipt}\n`)
       return
