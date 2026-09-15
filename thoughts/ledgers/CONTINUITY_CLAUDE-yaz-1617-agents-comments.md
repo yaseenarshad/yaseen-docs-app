@@ -21,18 +21,19 @@
 ## State
 - Done:
   - [x] Scope + D1–D7 locked; tree created (2026-09-14)
-  - [x] Worktree + branch
-- Now: [→] 1- Scope: the UNCONFIRMED asar-under-RUN_AS_NODE check (YAZ-1618)
-- Next: 2A- CLI (YAZ-1620)
+  - [x] Worktree + branch; Electron binary copied into the worktree (npm ci does not fetch it)
+  - [x] 1- Scope (YAZ-1618): asar loads under ELECTRON_RUN_AS_NODE → no asarUnpack
+  - [x] 2A- CLI (YAZ-1620) — `1d5cdfe`, 19 tests + 1 model test
+  - [x] 2B- Pack (YAZ-1621) — `0e616ce`, packed shim smoke-tested
+  - [x] 3- Copy for Agent (YAZ-1622) — `28f053d`; suite 3953 green
+- Now: [→] 4- Docs (YAZ-1623): README line 63, CONTRACTS "The door" + D11 + Files
+- Next: 5- Prove it (YAZ-1624): demo vault "Help Agents Understand Comments" on Desktop, isolated profile, dev app
 - Remaining:
-  - [ ] 2B- Pack it (YAZ-1621)
-  - [ ] 3- Copy for Agent (YAZ-1622)
-  - [ ] 4- Docs (YAZ-1623)
-  - [ ] 5- Prove it: demo vault "Help Agents Understand Comments" on Desktop + dev app (YAZ-1624)
-  - [ ] 6- Polish (YAZ-1625) · 6A- Release: PR, merge, no version bump unless Yasin says (YAZ-1626)
+  - [ ] 6- Polish (YAZ-1625): reviewer agent on `git diff main`, simplify, naming, verify every 🔒, gate, evidence
+  - [ ] 6A- Release (YAZ-1626): PR, merge after Yasin's pass; NO version bump unless Yasin says; delete demo
 
 ## Open Questions
-- UNCONFIRMED: Electron under `ELECTRON_RUN_AS_NODE=1` loads modules from `app.asar`? Decides `asarUnpack` in 2B.
+- (resolved) Electron under `ELECTRON_RUN_AS_NODE=1` loads from `app.asar` — verified with the repo's Electron 43.4.1; no `asarUnpack`.
 
 ## Working Set
 - `shared/comments.ts`, `shared/agentInstructions.ts` (new), `desktop/src/cli/index.ts` (new), `desktop/build/bin/yaseendocs` (new), `desktop/electron.vite.config.ts`, `desktop/package.json`, `desktop/src/channels.ts`, `desktop/src/main/ipc/*`, `desktop/src/preload/index.ts`, `client/src/sidebar/ContextMenu.tsx`, `client/src/tabs/TabBar.tsx`, `README.md`, `docs/CONTRACTS.md`.
