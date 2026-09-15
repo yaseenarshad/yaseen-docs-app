@@ -30,6 +30,21 @@ const OUTLINE = `* 1) Parent
 * 3) Leaf tail
 `
 
+/** Every item changed AND a fourth appended: nothing trims off either end (YAZ-1638). */
+const RENUMBERED_PLUS_ONE = `* 2) Parent renamed
+  * Child
+* 3) Second
+  * Kid
+* 4) Leaf tail
+* 5) Appended
+`
+
+/** The first item reworded AND the middle one deleted: one pair, one leftover (YAZ-1638). */
+const REWORDED_MINUS_ONE = `* 1) Parent renamed
+  * Child
+* 3) Leaf tail
+`
+
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
 async function mount(opts: Omit<CreateCrepeOptions, 'root'> = {}): Promise<{ crepe: Crepe; root: HTMLElement }> {
@@ -117,6 +132,27 @@ describe('diffDocs (YAZ-1350)', () => {
     expect(width).toBeLessThan(oldDoc.content.size / 2)
   })
 
+  it.each([
+    ['every item changed and one appended', RENUMBERED_PLUS_ONE],
+    ['one item reworded and one deleted', REWORDED_MINUS_ONE],
+  ])('reproduces the new doc in targeted ranges when the middle AND the count change — %s (YAZ-1638)', async (_shape, target) => {
+    const { crepe } = await mount({ defaultValue: OUTLINE })
+    const oldDoc = parse(crepe, OUTLINE)
+    const newDoc = parse(crepe, target)
+
+    const ranges = diffDocs(oldDoc, newDoc)
+    // The changed items pair up one by one; the leftover sibling is its own insert or delete.
+    expect(ranges.length).toBeGreaterThan(1)
+    crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const tr = view.state.tr
+      for (const r of [...ranges].sort((a, b) => b.from - a.from)) tr.replace(r.from, r.to, r.slice)
+      expect(tr.doc.eq(newDoc)).toBe(true)
+    })
+    const width = Math.max(...ranges.map((r) => r.to - r.from))
+    expect(width).toBeLessThan(oldDoc.content.size / 2)
+  })
+
   it('returns no ranges for identical docs', async () => {
     const { crepe } = await mount({ defaultValue: OUTLINE })
     const a = parse(crepe, OUTLINE)
@@ -158,6 +194,38 @@ describe('applyExternalMarkdown (YAZ-1351)', () => {
 
     expect(foldedCount(root)).toBe(1)
     expect(reported).toContain(getOutlineFoldKey('1) Parent renamed completely', 0))
+  })
+
+  it('keeps a fold when every item changes AND one is appended — nothing to trim (YAZ-1638)', async () => {
+    let reported: readonly string[] = []
+    const { crepe, root } = await mount({
+      defaultValue: OUTLINE,
+      folding: { onCollapsedKeysChange: (keys) => (reported = keys) },
+    })
+    toggleFor(root, '1) Parent').click()
+    expect(foldedCount(root)).toBe(1)
+
+    expect(applyExternalMarkdown(crepe, RENUMBERED_PLUS_ONE)).toBe('applied')
+
+    expect(foldedCount(root)).toBe(1)
+    expect(getMarkdownForSave(crepe)).toBe(RENUMBERED_PLUS_ONE)
+    expect(reported).toContain(getOutlineFoldKey('2) Parent renamed', 0))
+  })
+
+  it('keeps a fold on a reworded line while a sibling is deleted in the same edit (YAZ-1638)', async () => {
+    let reported: readonly string[] = []
+    const { crepe, root } = await mount({
+      defaultValue: OUTLINE,
+      folding: { onCollapsedKeysChange: (keys) => (reported = keys) },
+    })
+    toggleFor(root, '1) Parent').click()
+    expect(foldedCount(root)).toBe(1)
+
+    expect(applyExternalMarkdown(crepe, REWORDED_MINUS_ONE)).toBe('applied')
+
+    expect(foldedCount(root)).toBe(1)
+    expect(getMarkdownForSave(crepe)).toBe(REWORDED_MINUS_ONE)
+    expect(reported).toContain(getOutlineFoldKey('1) Parent renamed', 0))
   })
 
   it('drops only the fold of a deleted bullet', async () => {

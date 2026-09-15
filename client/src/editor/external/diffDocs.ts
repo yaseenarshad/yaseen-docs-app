@@ -5,12 +5,12 @@
  * The constraint that shapes everything here: an external edit must NOT be expressed as one big
  * replace. ProseMirror carries folds, caret and scroll through position mapping, and a range that
  * spans the whole document maps every fold onto the same collapsed point — exactly the
- * `setMarkdown` rebuild we are replacing. So the walk is deliberately structural, index-aligned
- * first, and only widens where the shape itself changed:
- *  - equal child counts → compare pairwise; recurse through same-markup children so a renumber of
- *    every list item produces one small range PER item instead of one range over the list;
- *  - unequal counts → trim `.eq()` children off both ends and replace the changed middle once
- *    (a bullet added or removed is a sibling shift, not a rewrite of its neighbours);
+ * `setMarkdown` rebuild we are replacing. So the walk is deliberately structural, one rule at
+ * every level (YAZ-1638):
+ *  - trim `.eq()` children off both ends, then pair the middle index-wise, recursing through
+ *    same-markup children so a renumber of every list item produces one small range PER item
+ *    instead of one range over the list; whatever one side has left over is a sibling shift (a
+ *    bullet added or removed), expressed as ONE insert or delete, never a rewrite of its neighbours;
  *  - textblocks → `findDiffStart`/`findDiffEnd` over the INLINE fragment, so marks travel with the
  *    text instead of being re-derived from a plain-string diff.
  *
@@ -74,48 +74,47 @@ const diffNode = (
     return
   }
 
-  if (oldNode.childCount === newNode.childCount) {
-    let oldChildPos = oldPos
-    let newChildPos = newPos
-    for (let i = 0; i < oldNode.childCount; i++) {
-      const oldChild = oldNode.child(i)
-      const newChild = newNode.child(i)
-      if (!oldChild.eq(newChild)) {
-        // A changed type or attrs (a paragraph turned heading, an ordered list renumbered) is a
-        // node identity change: replace it whole rather than diffing across two different shapes.
-        if (oldChild.sameMarkup(newChild) && !oldChild.isLeaf) {
-          diffNode(oldChild, newChild, oldChildPos + 1, newChildPos + 1, newDoc, out)
-        } else {
-          out.push({
-            from: oldChildPos,
-            to: oldChildPos + oldChild.nodeSize,
-            slice: newDoc.slice(newChildPos, newChildPos + newChild.nodeSize),
-          })
-        }
-      }
-      oldChildPos += oldChild.nodeSize
-      newChildPos += newChild.nodeSize
-    }
-    return
-  }
-
-  const shared = Math.min(oldNode.childCount, newNode.childCount)
   let head = 0
-  while (head < shared && oldNode.child(head).eq(newNode.child(head))) head++
   let oldTail = oldNode.childCount
   let newTail = newNode.childCount
+  while (head < oldTail && head < newTail && oldNode.child(head).eq(newNode.child(head))) head++
   while (oldTail > head && newTail > head && oldNode.child(oldTail - 1).eq(newNode.child(newTail - 1))) {
     oldTail--
     newTail--
   }
-  // Counts differ, so the trimmed middle is non-empty on at least one side: replace it once. An
-  // edit that ALSO rewords the neighbours of an inserted bullet widens this range and can tip the
-  // apply into its rewrite fallback — accepted for v1; a real LCS over children is the upgrade path.
-  out.push({
-    from: oldPos + offsetOfChild(oldNode, head),
-    to: oldPos + offsetOfChild(oldNode, oldTail),
-    slice: newDoc.slice(newPos + offsetOfChild(newNode, head), newPos + offsetOfChild(newNode, newTail)),
-  })
+
+  let oldChildPos = oldPos + offsetOfChild(oldNode, head)
+  let newChildPos = newPos + offsetOfChild(newNode, head)
+  const paired = Math.min(oldTail, newTail) - head
+  for (let i = 0; i < paired; i++) {
+    const oldChild = oldNode.child(head + i)
+    const newChild = newNode.child(head + i)
+    if (!oldChild.eq(newChild)) {
+      // A changed type or attrs (a paragraph turned heading, an ordered list renumbered) is a
+      // node identity change: replace it whole rather than diffing across two different shapes.
+      if (oldChild.sameMarkup(newChild) && !oldChild.isLeaf) {
+        diffNode(oldChild, newChild, oldChildPos + 1, newChildPos + 1, newDoc, out)
+      } else {
+        out.push({
+          from: oldChildPos,
+          to: oldChildPos + oldChild.nodeSize,
+          slice: newDoc.slice(newChildPos, newChildPos + newChild.nodeSize),
+        })
+      }
+    }
+    oldChildPos += oldChild.nodeSize
+    newChildPos += newChild.nodeSize
+  }
+
+  // Whatever one side has left over is a sibling shift: one insert (`from === to`) or one delete
+  // (an empty slice), placed after the pairs so the neighbours' own ranges stay small.
+  if (oldTail - head > paired || newTail - head > paired) {
+    out.push({
+      from: oldChildPos,
+      to: oldPos + offsetOfChild(oldNode, oldTail),
+      slice: newDoc.slice(newChildPos, newPos + offsetOfChild(newNode, newTail)),
+    })
+  }
 }
 
 /** Non-overlapping ranges, in document order, that turn `oldDoc` into `newDoc`. Empty when equal. */
