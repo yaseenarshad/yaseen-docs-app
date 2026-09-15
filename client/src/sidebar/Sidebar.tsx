@@ -53,9 +53,9 @@ interface SidebarProps {
   onCollapse: () => void
   /**
    * Which lens the tabs row shows (🔒 D4, YAZ-847). App-owned and persisted as window identity
-   * (`WindowEntry.sidebarLens`, per window since YAZ-1628), never Sidebar-local: this component is mounted `key={root}` and
-   * only while the sidebar is open, so local state would forget the choice on every
-   * collapse/reopen and every root switch.
+   * (`WindowEntry.sidebarLens`, per window since YAZ-1628), never Sidebar-local: this component
+   * is mounted `key={root}` and only while the sidebar is open, so local state would forget the
+   * choice on every collapse/reopen and every root switch.
    */
   lens: SidebarLens
   /** A lens tab was clicked; App writes it through to the window identity and passes the new value back down. */
@@ -488,7 +488,8 @@ export function Sidebar({
     storage.setExpanded(root, expanded)
   }, [root, expanded])
 
-  // Focus Mode's write-back (YAZ-1605), idempotent like the two above it — into this window's identity, not the vault bucket.
+  // Focus Mode's write-back (YAZ-1605), idempotent like the two above it — into this window's
+  // identity (YAZ-1628), not the vault bucket.
   useEffect(() => {
     const stored = storage.getFocusDirs()
     if (stored.length === focusDirs.length && stored.every((dir, i) => dir === focusDirs[i])) return

@@ -69,7 +69,10 @@ export const storage = {
   },
 
   getRoot: (): string | null => identity.root,
-  /** Changing the root clears this window's file AND tab list (Tabs rule 13, GRO-2234) and both Focus Mode lists (YAZ-1628) in the same write; re-setting the same root keeps them. */
+  /**
+   * Changing the root clears this window's file AND tab list (Tabs rule 13, GRO-2234) and both
+   * Focus Mode lists (YAZ-1628) in the same write; re-setting the same root keeps them.
+   */
   setRoot(root: string | null): void {
     const patch = root === identity.root
       ? { root }
