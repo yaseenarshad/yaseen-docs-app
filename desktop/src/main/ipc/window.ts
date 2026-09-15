@@ -1,5 +1,5 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import type { RightPanelIdentity, WindowEntry, WindowIdentity } from '@shared/types'
+import { isSidebarLens, type RightPanelIdentity, type SidebarLens, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { CH } from '../../channels'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { isRecord, normalizeRightPanel, normalizeTabs, type Store } from '../store'
@@ -20,6 +20,14 @@ function optionalTabs(raw: Record<string, unknown>): string[] | undefined {
   if (v === undefined) return undefined
   if (!Array.isArray(v)) throw new BridgeFailure('BAD_REQUEST', `'tabs' must be an array of absolute paths`)
   return v.map((t, i) => requireAbsPath(t, `tabs[${i}]`))
+}
+
+/** `focusDirs` / `focusTopics` in the patch (YAZ-1628): `tabs`' rule — absent (untouched), or absolute paths only, one bad element rejecting the whole call. */
+function optionalFocusList(raw: Record<string, unknown>, key: 'focusDirs' | 'focusTopics'): string[] | undefined {
+  const v = raw[key]
+  if (v === undefined) return undefined
+  if (!Array.isArray(v)) throw new BridgeFailure('BAD_REQUEST', `'${key}' must be an array of absolute paths`)
+  return v.map((p, i) => requireAbsPath(p, `${key}[${i}]`))
 }
 
 /** `rightPanel` is an all-or-nothing identity patch; store normalization repairs its invariants. */
@@ -47,6 +55,14 @@ function optionalSidebarCollapsed(raw: Record<string, unknown>): boolean | undef
   return v
 }
 
+/** `sidebarLens` (YAZ-1628): absent (untouched), or one of the two lenses. */
+function optionalSidebarLens(raw: Record<string, unknown>): SidebarLens | undefined {
+  const v = raw.sidebarLens
+  if (v === undefined) return undefined
+  if (!isSidebarLens(v)) throw new BridgeFailure('BAD_REQUEST', "'sidebarLens' must be 'topics' or 'files'")
+  return v
+}
+
 /**
  * The `window.*` half of `window.yaseenDocs`. The caller is resolved through the window lookup
  * (`webContents.id` → window id) and answered from `AppState.windows`. `open` / `duplicate`
@@ -63,8 +79,8 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   }
 
   handleWithEvent(CH.windowIdentity, async (e): Promise<WindowIdentity> => {
-    const { id, root, file, tabs, rightPanel, sidebarCollapsed } = entryFor(e)
-    return { id, root, file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed }
+    const { id, root, file, tabs, rightPanel, sidebarCollapsed, sidebarLens, focusDirs, focusTopics } = entryFor(e)
+    return { id, root, file, tabs: [...tabs], rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, focusDirs: [...focusDirs], focusTopics: [...focusTopics] }
   })
 
   handleWithEvent(CH.windowSetIdentity, async (e, patch: unknown) => {
@@ -74,6 +90,9 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const tabs = optionalTabs(patch)
     const rightPanel = optionalRightPanel(patch)
     const sidebarCollapsed = optionalSidebarCollapsed(patch)
+    const sidebarLens = optionalSidebarLens(patch)
+    const focusDirs = optionalFocusList(patch, 'focusDirs')
+    const focusTopics = optionalFocusList(patch, 'focusTopics')
     const entry = entryFor(e)
     // The tabs invariant holds on the entry AS WRITTEN (GRO-2232): the loader's repair rule,
     // applied to whichever of `file` / `tabs` the patch left untouched.
@@ -83,6 +102,9 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
       ...entry,
       ...(root !== undefined ? { root } : {}),
       ...(sidebarCollapsed !== undefined ? { sidebarCollapsed } : {}),
+      ...(sidebarLens !== undefined ? { sidebarLens } : {}),
+      ...(focusDirs !== undefined ? { focusDirs } : {}),
+      ...(focusTopics !== undefined ? { focusTopics } : {}),
       file: nextFile,
       tabs: nextTabs,
       rightPanel: normalizeRightPanel(rightPanel ?? entry.rightPanel, nextTabs),

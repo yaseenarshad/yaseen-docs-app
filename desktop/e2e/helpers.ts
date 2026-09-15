@@ -101,7 +101,7 @@ export async function copyVault(src: string): Promise<string> {
 // ---------- app state ----------
 
 /**
- * The lens every seeded run starts on (YAZ-847). The app's own default is `topics` — the
+ * The lens every seeded window starts on (YAZ-847; per window since YAZ-1628). The app's own default is `topics` — the
  * folder-page tree since YAZ-848 — while every spec in this suite is about the FILE TREE, so the
  * seeds below pre-select `files`: the same kind of pre-configuration as the `windows[]` entry
  * that skips the native folder dialog, not a change to the default. `lenses.spec.ts` seeds its
@@ -113,10 +113,9 @@ const SEEDED_LENS = 'files' as const
 /** One-window seed on `vault`/`file` — the no-native-dialog "open folder" (schema: shared/types.ts AppState v1). */
 export function seededState(vault: string, file: string | null, opts: { expanded?: string[] } = {}): AppState {
   const state = defaultAppState()
-  state.sidebarLens = SEEDED_LENS
   state.recents = [{ path: vault, lastOpened: Date.now() }]
-  state.windows = [{ id: 'w1', root: vault, file, tabs: file === null ? [] : [file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
-  state.folders = { [vault]: { expanded: opts.expanded ?? [], lastFile: file, folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] } }
+  state.windows = [{ id: 'w1', root: vault, file, tabs: file === null ? [] : [file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: SEEDED_LENS, focusDirs: [], focusTopics: [], bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
+  state.folders = { [vault]: { expanded: opts.expanded ?? [], lastFile: file, folds: {}, baseGroups: {}, topicsExpanded: [] } }
   return state
 }
 
@@ -141,7 +140,6 @@ export interface SeedWindow {
  */
 export function multiWindowState(wins: SeedWindow[], recentRoots: string[]): AppState {
   const state = defaultAppState()
-  state.sidebarLens = SEEDED_LENS
   const now = Date.now()
   state.recents = recentRoots.map((p, i) => ({ path: p, lastOpened: now - i }))
   state.windows = wins.map((w, i) => ({
@@ -151,10 +149,13 @@ export function multiWindowState(wins: SeedWindow[], recentRoots: string[]): App
     tabs: w.file === null ? [] : [w.file],
     rightPanel: defaultRightPanelIdentity(),
     sidebarCollapsed: w.sidebarCollapsed ?? false,
+    sidebarLens: SEEDED_LENS,
+    focusDirs: [],
+    focusTopics: [],
     bounds: w.bounds ?? { x: 60 + i * 40, y: 60 + i * 30, width: 1000, height: 700 },
   }))
   for (const w of wins) {
-    state.folders[w.root] ??= { expanded: [], lastFile: w.file, folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] }
+    state.folders[w.root] ??= { expanded: [], lastFile: w.file, folds: {}, baseGroups: {}, topicsExpanded: [] }
   }
   return state
 }

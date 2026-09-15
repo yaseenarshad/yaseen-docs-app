@@ -148,7 +148,7 @@ const read = (rel: string) => readFile(path.join(vault, rel), 'utf8')
  */
 function crossState(vaultPath: string, file: string | null, topicsExpanded: string[]) {
   const state = seededState(vaultPath, file, { expanded: FOLDERS.map((f) => path.join(vaultPath, f)) })
-  state.sidebarLens = 'topics'
+  state.windows[0].sidebarLens = 'topics'
   state.folders[vaultPath].topicsExpanded = topicsExpanded
   return state
 }

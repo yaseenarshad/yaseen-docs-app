@@ -5,8 +5,8 @@
  * Topics is the DEFAULT lens and holds the folder-page tree (YAZ-848, driven in full by
  * `topics.spec.ts` over the encyclopedia fixture); Files is today's file explorer, unchanged,
  * behind a tab. This spec is about the TABS — which body each one swaps in, and that the choice
- * is GLOBAL app state (`AppState.sidebarLens`) surviving quit → relaunch the way `sidebarWidth`
- * does (easyWave step 2's shape). The g1 fixture declares no folder page at all, so Topics here
+ * is WINDOW identity (`WindowEntry.sidebarLens`, per window since YAZ-1628) surviving quit →
+ * relaunch the way `sidebarWidth` does (easyWave step 2's shape). The g1 fixture declares no folder page at all, so Topics here
  * is the honest minimum: no roots, and every page under the Uncategorized row.
  *
  * The seed here is deliberately NOT `seededState`'s: that helper pre-selects Files for the rest
@@ -25,7 +25,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import type { AppState } from '../../shared/types'
+import type { AppState, WindowEntry } from '../../shared/types'
 import { appWindow, buildFixtureVault, copyVault, launchApp, quitApp, readState, SEED_FILE, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -54,14 +54,14 @@ async function expectLens(w: Page, lens: 'Topics' | 'Files'): Promise<void> {
 }
 
 /**
- * A PRE-847 `yaseendocs.json`: `seededState`'s window/folder seed with the lens key removed, so
- * the store's sanitize pass is what supplies the default. `JSON.stringify` drops `undefined`, so
- * the key never reaches disk.
+ * A PRE-847 `yaseendocs.json`: `seededState`'s window/folder seed with the window's lens key
+ * removed (and no retired global one either), so the store's sanitize pass is what supplies the
+ * default. `JSON.stringify` drops `undefined`, so the key never reaches disk.
  */
 function preLensState(vaultPath: string, file: string): AppState {
-  const state: Partial<AppState> = seededState(vaultPath, file)
-  delete state.sidebarLens
-  return state as AppState
+  const state = seededState(vaultPath, file)
+  delete (state.windows[0] as Partial<WindowEntry>).sidebarLens
+  return state
 }
 
 // ---------- lifecycle ----------
@@ -109,7 +109,7 @@ test('step 2 — clicking Files shows today\'s tree, and the choice reaches the 
   await expect(win.locator('.tree__row--file', { hasText: 'Ideas' })).toBeVisible()
   await expect(win.locator('.tree__row--dir', { hasText: 'Projects' })).toBeVisible()
   await expect(bodyMsg(win)).toHaveCount(0)
-  await expect.poll(async () => (await readState(userData)).sidebarLens).toBe('files')
+  await expect.poll(async () => (await readState(userData)).windows[0]?.sidebarLens).toBe('files')
   await shoot(win, 'lens-02-files-tree')
 })
 
@@ -138,13 +138,13 @@ test('step 3 — a query replaces the ACTIVE tab\'s body; the tabs row stays, an
 
 // ---------------------------------------------------------------- persistence
 
-test('step 4 — the lens survives quit → relaunch, on disk as AppState.sidebarLens', async () => {
+test('step 4 — the lens survives quit → relaunch, on disk as its WindowEntry.sidebarLens', async () => {
   await lensTab(win, 'Files').click()
   await expectLens(win, 'Files')
-  await expect.poll(async () => (await readState(userData)).sidebarLens).toBe('files')
+  await expect.poll(async () => (await readState(userData)).windows[0]?.sidebarLens).toBe('files')
 
   await quitApp(app)
-  expect((await readState(userData)).sidebarLens).toBe('files')
+  expect((await readState(userData)).windows[0]?.sidebarLens).toBe('files')
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
   win = await appWindow(app, 'w1')
   await expectLens(win, 'Files')

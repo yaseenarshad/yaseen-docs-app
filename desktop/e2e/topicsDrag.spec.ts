@@ -115,7 +115,7 @@ async function ownVault(): Promise<string> {
 /** The window on `vaultPath` with NOTHING open and the Topics lens showing (see the module doc). */
 async function openTopics(vaultPath: string): Promise<void> {
   const state = seededState(vaultPath, null)
-  state.sidebarLens = 'topics'
+  state.windows[0].sidebarLens = 'topics'
   app = await launchApp({ userData, seedState: state })
   win = await appWindow(app, 'w1')
 }

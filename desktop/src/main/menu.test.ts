@@ -334,7 +334,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', file: '/vaults/notes/a.md', tabs: ['/vaults/notes/a.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, bounds: { x: 0, y: 0, width: 800, height: 600 } }
+const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', file: '/vaults/notes/a.md', tabs: ['/vaults/notes/a.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { x: 0, y: 0, width: 800, height: 600 } }
 
 function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, dirExists: (p: string) => boolean = () => true) {
   const windows = { idFor: vi.fn(), openWindow: vi.fn(), duplicateWindow: vi.fn() }

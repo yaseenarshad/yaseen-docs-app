@@ -96,7 +96,6 @@ const api: YaseenDocsApi = {
     get: () => call(CH.stateGet),
     setSettings: (settings) => call(CH.stateSetSettings, settings),
     setSidebarWidth: (width) => call(CH.stateSetSidebarWidth, width),
-    setSidebarLens: (lens) => call(CH.stateSetSidebarLens, lens),
     pushRecent: (path) => call(CH.statePushRecent, path),
     removeRecent: (path) => call(CH.stateRemoveRecent, path),
     setFolder: (root, patch) => call(CH.stateSetFolder, root, patch),

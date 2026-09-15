@@ -52,13 +52,13 @@ interface SidebarProps {
   /** Hide the sidebar (GRO-2023); App renders the floating reopen button while hidden. */
   onCollapse: () => void
   /**
-   * Which lens the tabs row shows (🔒 D4, YAZ-847). App-owned and globally persisted
-   * (`AppState.sidebarLens`), never Sidebar-local: this component is mounted `key={root}` and
+   * Which lens the tabs row shows (🔒 D4, YAZ-847). App-owned and persisted as window identity
+   * (`WindowEntry.sidebarLens`, per window since YAZ-1628), never Sidebar-local: this component is mounted `key={root}` and
    * only while the sidebar is open, so local state would forget the choice on every
    * collapse/reopen and every root switch.
    */
   lens: SidebarLens
-  /** A lens tab was clicked; App writes it through to the global state and passes the new value back down. */
+  /** A lens tab was clicked; App writes it through to the window identity and passes the new value back down. */
   onLensChange: (lens: SidebarLens) => void
   /** One tab-menu reveal, pinned to the lens selected when it was requested. */
   revealRequest: SidebarRevealRequest | null
@@ -355,10 +355,12 @@ export function Sidebar({
   // and a restart alike. A lens switch never touches it: this state outlives the tree's mount.
   const [topicsExpanded, setTopicsExpanded] = useState<ReadonlySet<string>>(() => new Set(storage.getTopicsExpanded(root)))
   // Focus Mode (YAZ-1605): one path LIST per lens — dirs for Files, folder pages for Topics; empty
-  // is no focus — restored from the same per-vault bucket as the two expansions above and written
-  // back the same way, so it survives a lens switch, a window and a restart, and follows its own rename.
-  const [focusDirs, setFocusDirs] = useState<readonly string[]>(() => storage.getFocusDirs(root))
-  const [focusTopics, setFocusTopics] = useState<readonly string[]>(() => storage.getFocusTopics(root))
+  // is no focus. Per WINDOW since YAZ-1628 (`sidebarCollapsed`'s rule), unlike the two per-vault
+  // expansions above: restored from this window's identity and written back the same way, so it
+  // survives a lens switch and a restart and follows its own rename, ⌘⇧N inherits it, and another
+  // window on the same vault is never affected.
+  const [focusDirs, setFocusDirs] = useState<readonly string[]>(storage.getFocusDirs)
+  const [focusTopics, setFocusTopics] = useState<readonly string[]>(storage.getFocusTopics)
   // Multi-select (YAZ-1336, 🔒 D1): the selected PATHS — files and, since YAZ-1578, folders —
   // shared by BOTH lenses, one entry per path however many rows draw it (🔒 D3). It lives HERE
   // and nowhere else on purpose: this component is mounted `key={root}` and only while the
@@ -486,17 +488,17 @@ export function Sidebar({
     storage.setExpanded(root, expanded)
   }, [root, expanded])
 
-  // Focus Mode's write-back (YAZ-1605), idempotent like the two above it.
+  // Focus Mode's write-back (YAZ-1605), idempotent like the two above it — into this window's identity, not the vault bucket.
   useEffect(() => {
-    const stored = storage.getFocusDirs(root)
+    const stored = storage.getFocusDirs()
     if (stored.length === focusDirs.length && stored.every((dir, i) => dir === focusDirs[i])) return
-    storage.setFocusDirs(root, focusDirs)
-  }, [root, focusDirs])
+    storage.setFocusDirs(focusDirs)
+  }, [focusDirs])
   useEffect(() => {
-    const stored = storage.getFocusTopics(root)
+    const stored = storage.getFocusTopics()
     if (stored.length === focusTopics.length && stored.every((page, i) => page === focusTopics[i])) return
-    storage.setFocusTopics(root, focusTopics)
-  }, [root, focusTopics])
+    storage.setFocusTopics(focusTopics)
+  }, [focusTopics])
 
   // The Topics bucket's write-back, `expanded`'s twin (🔒 D4) — it came up from the tree with the
   // state in ⚡ YAZ-873, unchanged. Idempotent: the first render after a mount holds exactly what

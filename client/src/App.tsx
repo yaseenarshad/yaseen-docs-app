@@ -80,9 +80,10 @@ export function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storage.getSidebarCollapsed)
   const sidebarCollapsedRef = useRef(sidebarCollapsed)
   const [sidebarWidth, setSidebarWidth] = useState(storage.getSidebarWidth)
-  // The sidebar's active LENS (🔒 D4, YAZ-847): App-owned and globally persisted because the
-  // Sidebar is mounted `key={root}` and only while open; sidebar-local view state would reset on
-  // every collapse/reopen and root switch. One `AppState.sidebarLens`; never a second flag.
+  // The sidebar's active LENS (🔒 D4, YAZ-847): App-owned and persisted because the Sidebar is
+  // mounted `key={root}` and only while open; sidebar-local view state would reset on every
+  // collapse/reopen and root switch. Window identity like visibility since YAZ-1628 — one
+  // `WindowEntry.sidebarLens`; never a second flag.
   const [sidebarLens, setSidebarLens] = useState(storage.getSidebarLens)
   // ⌘⇧C's read-only window onto the sidebar's multi-selection (🔒 D4, YAZ-1338). App owns the
   // BOX and the chord; the Sidebar owns the selection (🔒 D1) and writes it in here, emptying it
@@ -131,14 +132,13 @@ export function App() {
   const [pendingSearchFocus, setPendingSearchFocus] = useState(false)
   const searchFocusHandled = useCallback(() => setPendingSearchFocus(false), [])
 
-  // Settings, sidebar width and lens are global. Visibility is window identity and never follows
-  // another renderer's `state:changed` broadcast (YAZ-1280).
+  // Settings and sidebar width are global. Visibility (YAZ-1280) and the lens (YAZ-1628) are
+  // window identity and never follow another renderer's `state:changed` broadcast.
   useEffect(
     () =>
       storage.subscribe(() => {
         setSettings(storage.getSettings())
         setSidebarWidth(storage.getSidebarWidth())
-        setSidebarLens(storage.getSidebarLens())
       }),
     [],
   )
@@ -207,7 +207,7 @@ export function App() {
     setSettings(next)
   }, [])
 
-  /** A lens tab click (YAZ-847): write through to the global state, then mirror it locally. */
+  /** A lens tab click (YAZ-847): write through to this window's identity, then mirror it locally. */
   const changeLens = useCallback((next: SidebarLens) => {
     storage.setSidebarLens(next)
     setSidebarLens(next)

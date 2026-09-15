@@ -420,11 +420,12 @@ export const MAX_COLLAPSED_GROUP_KEYS = 200
 export const MAX_TOPICS_EXPANDED_PAGES = 500
 
 /**
- * `AppState.sidebarLens` — which lens the sidebar's chrome-v2 ROW 1 tabs show (YAZ-847):
+ * `WindowEntry.sidebarLens` — which lens the sidebar's chrome-v2 ROW 1 tabs show (YAZ-847):
  * `topics` (the folder-page tree, an empty shell until YAZ-848) or `files` (the file explorer).
- * GLOBAL, like `sidebarWidth` but unlike per-window `sidebarCollapsed`: the tabs are not
- * per-folder view state, so there is no per-root keying and no `FolderState` entry. Default
- * `topics` — a pre-847 state file simply gains it.
+ * Window identity like `sidebarCollapsed` since YAZ-1628 (global, like `sidebarWidth`, from
+ * YAZ-847 until then): the tabs are not per-folder view state, so there is no per-root keying
+ * and no `FolderState` entry. Default `topics` — a pre-847 state file simply gains it, and a
+ * pre-1628 file's retired global value seeds every window that has none of its own.
  */
 export type SidebarLens = 'topics' | 'files'
 /** The tabs' order, left→right: the default lens leads. */
@@ -565,6 +566,24 @@ export interface WindowEntry {
   rightPanel: RightPanelIdentity
   /** Whether this window's sidebar is hidden (YAZ-1280); independent from every other window. */
   sidebarCollapsed: boolean
+  /**
+   * Which sidebar lens THIS window shows (YAZ-847; per window since YAZ-1628, `sidebarCollapsed`'s
+   * rule): independent from every other window — a duplicate inherits it and then diverges — and
+   * kept across a root change, being a view preference rather than vault content. A pre-1628
+   * file's retired global value seeds every window that has none of its own.
+   */
+  sidebarLens: SidebarLens
+  /**
+   * Focus Mode (YAZ-1605; per window since YAZ-1628): the directories THIS window's Files tree
+   * is narrowed to — one or several (a shift-selection) — or empty for the whole vault. Window
+   * identity like `sidebarCollapsed`, so a second window on the same vault focuses on its own:
+   * a duplicate inherits the list by value and then diverges, a root change clears it. A flat
+   * list of absolute paths, so `store.renamePath` / `store.removePath` repair it as they repair
+   * `tabs` — a renamed focus follows its folder, a deleted one drops out.
+   */
+  focusDirs: string[]
+  /** Its Topics twin: the folder PAGES this window's Topics tree is narrowed to, or empty. */
+  focusTopics: string[]
   bounds: WindowBounds
 }
 
@@ -587,15 +606,6 @@ export interface FolderState {
    * into any note's frontmatter.
    */
   topicsExpanded: string[]
-  /**
-   * Focus Mode (YAZ-1605): the directories the Files tree is narrowed to — one or several (a
-   * shift-selection) — or empty for the whole vault. `expanded`'s exact shape: a flat per-root
-   * list of absolute paths, so `store.renamePath` / `store.removePath` repair it the same way —
-   * a renamed focus follows its folder, a deleted one drops out.
-   */
-  focusDirs: string[]
-  /** Its Topics twin: the folder PAGES the Topics tree is narrowed to, or empty. `topicsExpanded`'s shape. */
-  focusTopics: string[]
 }
 
 /**
@@ -608,8 +618,6 @@ export interface AppState {
   settings: SettingsState
   /** Sidebar width in px, within [SIDEBAR_MIN_W, SIDEBAR_MAX_W]. */
   sidebarWidth: number
-  /** Which sidebar lens is showing (YAZ-847); global, default `topics`, junk → `topics`. */
-  sidebarLens: SidebarLens
   /** Most-recent first, max 10, de-duplicated. */
   recents: RecentRoots
   windows: WindowEntry[]
@@ -618,11 +626,11 @@ export interface AppState {
 
 /** A fresh default state (a factory, so no caller can mutate a shared constant). */
 export function defaultAppState(): AppState {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, sidebarLens: 'topics', recents: [], windows: [], folders: {} }
+  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {} }
 }
 
 export function defaultFolderState(): FolderState {
-  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [], focusDirs: [], focusTopics: [] }
+  return { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] }
 }
 
 // ---------- Vault-local config (`<root>/.yaseendocs/`, Desktop J — GRO-2188) ----------
@@ -855,6 +863,11 @@ export interface WindowIdentity {
   rightPanel: RightPanelIdentity
   /** Whether this window's sidebar is hidden (YAZ-1280). */
   sidebarCollapsed: boolean
+  /** Which sidebar lens this window shows (YAZ-847, per window since YAZ-1628). */
+  sidebarLens: SidebarLens
+  /** Focus Mode's lists (YAZ-1605, per window since YAZ-1628): the same two as `WindowEntry`'s. */
+  focusDirs: string[]
+  focusTopics: string[]
 }
 
 export interface OpenWindowOptions {
@@ -868,14 +881,12 @@ export interface StateApi {
   setSettings(settings: SettingsState): Promise<void>
   /** Clamped to [SIDEBAR_MIN_W, SIDEBAR_MAX_W] by the main process. */
   setSidebarWidth(width: number): Promise<void>
-  /** The active sidebar lens (YAZ-847); anything but a `SidebarLens` is `BAD_REQUEST`. */
-  setSidebarLens(lens: SidebarLens): Promise<void>
   /** Prepend to recents (de-duplicated, capped). */
   pushRecent(path: string): Promise<void>
   /** Drop a folder from recents (its directory vanished on disk, C2 — GRO-2164); unknown path is a no-op. */
   removeRecent(path: string): Promise<void>
   /** Merge into `folders[root]`; missing root entries are created with defaults. `topicsExpanded` is capped main-side (YAZ-848). */
-  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded' | 'focusDirs' | 'focusTopics'>>): Promise<void>
+  setFolder(root: string, patch: Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'topicsExpanded'>>): Promise<void>
   /** Replace the fold keys for one file; an empty list removes the entry. */
   setFolds(root: string, file: string, keys: readonly string[]): Promise<void>
   /** Replace the collapsed group keys for one base view (`<basePath>::<viewName>`); an empty list removes the entry. */
@@ -892,7 +903,7 @@ export interface WindowApi {
    * re-enforces the tabs invariant against the entry as written (GRO-2232): a non-null `file`
    * missing from `tabs` is prepended; `file: null` clears `tabs`.
    */
-  setIdentity(patch: Partial<Pick<WindowIdentity, 'root' | 'file' | 'tabs' | 'rightPanel' | 'sidebarCollapsed'>>): Promise<void>
+  setIdentity(patch: Partial<Pick<WindowIdentity, 'root' | 'file' | 'tabs' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens' | 'focusDirs' | 'focusTopics'>>): Promise<void>
   open(opts: OpenWindowOptions): Promise<void>
   /** `⌘⇧N`: same folder, same file, new window (GRO-2167). */
   duplicate(): Promise<void>

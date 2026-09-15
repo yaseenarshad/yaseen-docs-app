@@ -140,8 +140,8 @@ afterEach(async () => {
 
 /** Two stored windows, restored: the common close/quit fixture. */
 function seedTwo() {
-  store.upsertWindow({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarCollapsed: false, bounds: { x: 10, y: 10, width: 800, height: 600 } })
-  store.upsertWindow({ id: 'w2', root: null, file: null, tabs: [], sidebarCollapsed: false, bounds: { x: 40, y: 40, width: 800, height: 600 } })
+  store.upsertWindow({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { x: 10, y: 10, width: 800, height: 600 } })
+  store.upsertWindow({ id: 'w2', root: null, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { x: 40, y: 40, width: 800, height: 600 } })
   const { host, created } = makeHost()
   const manager = createWindowManager(store, host)
   manager.restoreAll()
@@ -162,8 +162,8 @@ describe('createWindowManager: restore', () => {
   })
 
   it('restores every stored entry, clamping lost bounds back onto a display and persisting the clamp', () => {
-    store.upsertWindow({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarCollapsed: false, bounds: { x: 10, y: 10, width: 800, height: 600 } })
-    store.upsertWindow({ id: 'w2', root: null, file: null, tabs: [], sidebarCollapsed: false, bounds: { x: 9000, y: 9000, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w2', root: null, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { x: 9000, y: 9000, width: 800, height: 600 } })
     const { host, created } = makeHost()
     createWindowManager(store, host).restoreAll()
     expect(created.map((c) => c.entry.id)).toEqual(['w1', 'w2'])
@@ -180,7 +180,7 @@ describe('createWindowManager: restore', () => {
 
 describe('createWindowManager: bounds', () => {
   it('saves moved/resized bounds once per burst (debounced), onto the entry as it is now', () => {
-    store.upsertWindow({ id: 'w1', root: null, file: null, tabs: [], sidebarCollapsed: false, bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w1', root: null, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { x: 10, y: 10, width: 800, height: 600 } })
     const { host, created } = makeHost()
     createWindowManager(store, host).restoreAll()
     const win = created[0].win
@@ -195,7 +195,7 @@ describe('createWindowManager: bounds', () => {
     expect(changes).toBe(0)
     vi.advanceTimersByTime(BOUNDS_DEBOUNCE_MS)
     expect(changes).toBe(1)
-    expect(store.get().windows[0]).toEqual({ id: 'w1', root: '/v', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, bounds: { x: 50, y: 60, width: 900, height: 700 } })
+    expect(store.get().windows[0]).toEqual({ id: 'w1', root: '/v', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { x: 50, y: 60, width: 900, height: 700 } })
   })
 })
 
@@ -213,7 +213,7 @@ describe('createWindowManager: close', () => {
   })
 
   it('the last window keeps its entry (its close is the quit) and saves its final bounds', async () => {
-    store.upsertWindow({ id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false, bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { x: 10, y: 10, width: 800, height: 600 } })
     const { host, created } = makeHost()
     const manager = createWindowManager(store, host)
     manager.restoreAll()
@@ -223,7 +223,7 @@ describe('createWindowManager: close', () => {
     manager.handleFlushed(win.webContents)
     await vi.advanceTimersByTimeAsync(0)
     expect(win.isDestroyed()).toBe(true)
-    expect(store.get().windows).toEqual([{ id: 'w1', root: '/v', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, bounds: { x: 200, y: 100, width: 800, height: 600 } }])
+    expect(store.get().windows).toEqual([{ id: 'w1', root: '/v', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { x: 200, y: 100, width: 800, height: 600 } }])
   })
 
   it('a hung renderer cannot block close: the handshake times out after FLUSH_TIMEOUT_MS', async () => {
@@ -327,12 +327,15 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     expect(created[0].entry.tabs).toEqual(['/v/a.md']) // the opened file is the one tab (GRO-2232)
     expect(created[0].entry.rightPanel).toEqual(defaultRightPanelIdentity())
     expect(created[0].entry.sidebarCollapsed).toBe(false)
+    expect(created[0].entry.sidebarLens).toBe('topics') // a new window starts on Topics (YAZ-847, YAZ-1628)
+    expect(created[0].entry.focusDirs).toEqual([]) // a new window starts unfocused (YAZ-1628)
+    expect(created[0].entry.focusTopics).toEqual([])
     expect(store.get().windows).toEqual([created[0].entry])
   })
 
   it('duplicateWindow copies the complete workspace identity, then the two entries can diverge', () => {
     const rightPanel = { open: true, width: 560, items: ['/v/right-a.md', '/v/right-b.md'], expanded: '/v/right-b.md' }
-    const from: WindowEntry = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], rightPanel, sidebarCollapsed: true, bounds: { x: 100, y: 100, width: 800, height: 600 } }
+    const from: WindowEntry = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], rightPanel, sidebarCollapsed: true, sidebarLens: 'files', focusDirs: ['/v/a'], focusTopics: ['/v/T.md'], bounds: { x: 100, y: 100, width: 800, height: 600 } }
     store.upsertWindow(from)
     const { host, created } = makeHost()
     createWindowManager(store, host).duplicateWindow(from)
@@ -345,15 +348,25 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     expect(entry.rightPanel).toEqual(rightPanel)
     expect(entry.rightPanel.items).not.toBe(from.rightPanel.items)
     expect(entry.sidebarCollapsed).toBe(true)
+    expect(entry.sidebarLens).toBe('files') // the lens comes along too (YAZ-1628)
+    // Both Focus Mode lists come along BY VALUE (YAZ-1628): the copy holds the same paths in fresh arrays.
+    expect(entry.focusDirs).toEqual(['/v/a'])
+    expect(entry.focusTopics).toEqual(['/v/T.md'])
+    expect(entry.focusDirs).not.toBe(from.focusDirs)
+    expect(entry.focusTopics).not.toBe(from.focusTopics)
     expect(entry.bounds).toEqual({ x: 100 + WINDOW_CASCADE_PX, y: 100 + WINDOW_CASCADE_PX, width: 800, height: 600 })
     expect(store.get().windows).toContainEqual(entry)
     store.upsertWindow({ ...entry, sidebarCollapsed: false })
     expect(store.get().windows.find((w) => w.id === 'w1')?.sidebarCollapsed).toBe(true)
     expect(store.get().windows.find((w) => w.id === entry.id)?.sidebarCollapsed).toBe(false)
+    from.focusDirs.push('/v/mutated') // mutating the source afterwards never reaches the copy
+    from.focusTopics.push('/v/Mutated.md')
+    expect(entry.focusDirs).toEqual(['/v/a'])
+    expect(entry.focusTopics).toEqual(['/v/T.md'])
   })
 
   it('duplicating a Welcome window keeps root and file null — Welcome → Welcome (⌘⇧N, GRO-2167)', () => {
-    const from: WindowEntry = { id: 'w1', root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, bounds: { x: 100, y: 100, width: 800, height: 600 } }
+    const from: WindowEntry = { id: 'w1', root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { x: 100, y: 100, width: 800, height: 600 } }
     store.upsertWindow(from)
     const { host, created } = makeHost()
     createWindowManager(store, host).duplicateWindow(from)
@@ -366,7 +379,7 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
 
   it('the cascade is clamped: duplicating a window at the display edge stays fully on-screen (GRO-2167)', () => {
     // Bottom-right corner of the 1440×900 area: the +24/+24 cascade would hang off the display.
-    const from: WindowEntry = { id: 'w1', root: '/v', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, bounds: { x: 640, y: 300, width: 800, height: 600 } }
+    const from: WindowEntry = { id: 'w1', root: '/v', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { x: 640, y: 300, width: 800, height: 600 } }
     store.upsertWindow(from)
     const { host, created } = makeHost()
     createWindowManager(store, host).duplicateWindow(from)
@@ -377,7 +390,7 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
 // ---------- deep-link routing (E1, GRO-2171) ----------
 
 describe('resolveLinkTarget (pure)', () => {
-  const win = (id: string, root: string | null): WindowEntry => ({ id, root, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, bounds: { x: 0, y: 0, width: 800, height: 600 } })
+  const win = (id: string, root: string | null): WindowEntry => ({ id, root, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { x: 0, y: 0, width: 800, height: 600 } })
   const recents = (...paths: string[]): RecentRoots => paths.map((path, i) => ({ path, lastOpened: 100 - i }))
 
   it('picks the open window whose root contains the path (root = dirname included)', () => {
@@ -427,8 +440,8 @@ describe('resolveLinkTarget (pure)', () => {
 describe('createWindowManager: routeToFile (E1)', () => {
   /** One folder window on /v plus a Welcome window — the routing fixture. */
   function seedRouting(exists: (path: string) => boolean = () => true) {
-    store.upsertWindow({ id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false, bounds: { x: 10, y: 10, width: 800, height: 600 } })
-    store.upsertWindow({ id: 'w2', root: null, file: null, tabs: [], sidebarCollapsed: false, bounds: { x: 40, y: 40, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w2', root: null, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { x: 40, y: 40, width: 800, height: 600 } })
     const { host, created } = makeHost([AREA], exists)
     const manager = createWindowManager(store, host)
     manager.restoreAll()
@@ -489,7 +502,7 @@ describe('createWindowManager: routeToFile (E1)', () => {
   it('a stored entry with no live window (mid-close race) falls back to a fresh window on that entry root', () => {
     const { manager, created } = seedRouting()
     // The entry exists in the state but was never attached — its window is already gone.
-    store.upsertWindow({ id: 'w3', root: '/v/deeper', file: null, tabs: [], sidebarCollapsed: false, bounds: { x: 20, y: 20, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w3', root: '/v/deeper', file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'topics', focusDirs: [], focusTopics: [], bounds: { x: 20, y: 20, width: 800, height: 600 } })
     manager.routeToFile('/v/deeper/n.md') // most specific root wins → resolves to the dead w3
     expect(created).toHaveLength(3)
     expect(created[2].entry.id).not.toBe('w3') // a fresh window, not a resurrection of the dead entry
