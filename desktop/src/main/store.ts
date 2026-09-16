@@ -209,12 +209,13 @@ function sanitizeKeyLists(raw: unknown, cap: number): Record<string, string[]> {
 function sanitizeFolder(raw: unknown): FolderState | null {
   if (!isRecord(raw)) return null
   return {
-    expanded: isStringArray(raw.expanded) ? raw.expanded : [],
+    // Tree expansion is SESSION state (YAZ-1642): never restored, never written (`toDisk`).
+    // A relaunch starts every tree collapsed; a pre-1642 file's leftover lists are ignored.
+    expanded: [],
     lastFile: typeof raw.lastFile === 'string' ? raw.lastFile : null,
     folds: sanitizeKeyLists(raw.folds, MAX_FOLD_KEYS_PER_FILE),
     baseGroups: sanitizeKeyLists(raw.baseGroups, MAX_COLLAPSED_GROUP_KEYS),
-    // A pre-848 file has no Topics expansion at all; missing or junk both read as none (YAZ-848).
-    topicsExpanded: isStringArray(raw.topicsExpanded) ? raw.topicsExpanded.slice(0, MAX_TOPICS_EXPANDED_PAGES) : [],
+    topicsExpanded: [],
   }
 }
 
@@ -229,6 +230,12 @@ function sanitizeFolders(raw: unknown): Record<string, FolderState> {
 }
 
 /** Null when the document is not a version-1 state object at all (→ treated as corrupt). */
+/** The file's shape: each folder bucket minus its session fields (YAZ-1642) — what a relaunch restores, nothing more. */
+function toDisk(state: AppState): unknown {
+  const folders = Object.fromEntries(Object.entries(state.folders).map(([root, { expanded: _e, topicsExpanded: _t, ...kept }]) => [root, kept]))
+  return { ...state, folders }
+}
+
 function sanitizeState(raw: unknown): AppState | null {
   if (!isRecord(raw) || raw.version !== 1) return null
   // YAZ-1280 migration: a v1 file's retired global value seeds only windows that do not yet
@@ -294,7 +301,7 @@ export function createStore(filePath: string): Store {
     chain = chain
       .then(async () => {
         mkdirSync(dirname(filePath), { recursive: true })
-        await atomicWrite(filePath, `${JSON.stringify(snapshot, null, 2)}\n`)
+        await atomicWrite(filePath, `${JSON.stringify(toDisk(snapshot), null, 2)}\n`)
       })
       .catch((err: unknown) => console.error(`[store] failed to write ${filePath}: ${String(err)}`))
     return chain
