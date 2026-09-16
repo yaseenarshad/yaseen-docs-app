@@ -5,7 +5,7 @@
 - Done = 1645–1649 Done with comments, PR merged to main, handoff on every issue, NO release cut.
 
 ## Constraints
-- Linear-Simpler; parent + child In Progress / Done as work moves. Headed Playwright takes over Yasin's screen: run the touched specs once, the full suite once, say so. No release unless Yasin says so.
+- Linear-Simpler; parent + child In Progress / Done as work moves. **NO Playwright on this machine** (Yasin, 2026-09-16): it takes over the screen. Migrate specs by reading + typecheck only; verify via unit suite and the dev app on the isolated profile. No new e2e spec (descoped). No release unless Yasin says so.
 
 ## Key Decisions (🔒 2026-09-16, diffs on YAZ-1644)
 - D1 `store.ts`: `sanitizeFolder` returns `expanded: []` / `topicsExpanded: []`; `toDisk` strips both before `atomicWrite`. Session lists ride the in-memory store for cross-window sync.

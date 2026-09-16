@@ -47,6 +47,7 @@ import {
   caretAtEndOfLine,
   clearOutlineLine,
   copyVault,
+  expandDirs,
   launchApp,
   md5,
   outlineLineIndex,
@@ -63,10 +64,9 @@ test.describe.configure({ mode: 'serial' })
 
 /** The committed encyclopedia, post-migration. Copied per run; the source is never opened by the app. */
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
-/** The disk folders the FILE tree is seeded open on — step 5 right-clicks a row inside `kpis/`. */
+/** The disk folders step 5 opens by hand before it right-clicks a row inside `kpis/`. */
 const FOLDERS = ['funnel-stages', 'inbox', 'industries', 'kpis', 'problems', 'roles']
 
-const HOME = 'Home.md'
 const FOLDER_PAGE = 'Funnel Stages.md'
 /** Its members at the start, alphabetically — the order ADOPTION writes them into the document in. */
 const MEMBERS = ['Lead Gen', 'Lead Nurture', 'Sales-Conversion']
@@ -143,13 +143,12 @@ const read = (rel: string) => readFile(path.join(vault, rel), 'utf8')
 
 /**
  * `seededState` pre-selects the FILES lens for the rest of the suite; this spec needs BOTH
- * surfaces at once, so it seeds Topics — with the tree already descended, since which chevrons
- * were clicked is `topics.spec.ts`'s claim and not this file's.
+ * surfaces at once, so it seeds Topics. The descent is no longer seeded (YAZ-1642: neither tree's
+ * open list survives a launch), so chevrons and dirs are opened where a step needs them.
  */
-function crossState(vaultPath: string, file: string | null, topicsExpanded: string[]) {
-  const state = seededState(vaultPath, file, { expanded: FOLDERS.map((f) => path.join(vaultPath, f)) })
+function crossState(vaultPath: string, file: string | null) {
+  const state = seededState(vaultPath, file)
   state.windows[0].sidebarLens = 'topics'
-  state.folders[vaultPath].topicsExpanded = topicsExpanded
   return state
 }
 
@@ -191,13 +190,15 @@ test.afterAll(async () => {
 test('step 1 — one gesture, four surfaces: a link line writes the member’s card, and the tree, the table and the outline all say so', async () => {
   app = await launchApp({
     userData,
-    seedState: crossState(vault, path.join(vault, FOLDER_PAGE), [path.join(vault, HOME), path.join(vault, FOLDER_PAGE)]),
+    seedState: crossState(vault, path.join(vault, FOLDER_PAGE)),
   })
   win = await appWindow(app, 'w1')
 
   // The starting shape, on BOTH surfaces at once: the sidebar's tree descended two rungs, and the
-  // same three members standing in the block below the note's own body.
+  // same three members standing in the block below the note's own body. The descent is a CLICK
+  // since YAZ-1642 — the launch shows every topic folded — and Home never had a chevron to knock.
   await expect(lensTab(win, 'Topics')).toHaveAttribute('aria-selected', 'true')
+  await treeChevron(win, 'Expand', 'Funnel Stages').click()
   await expect(topicLabels(win)).toHaveText([
     'Home',
     'Funnel Stages',
@@ -376,12 +377,15 @@ test('step 3 — the outline IS the order now: rearranging it writes nobody’s 
   ])
   await shoot(win, 'cross-06-rearranged-order')
 
-  // AND ACROSS A RESTART: the document is frontmatter (the page's), the expansion is app state
-  // (main's) — two different stores, one restored screen.
+  // AND ACROSS A RESTART: the document is frontmatter, so it is the PAGE's and it comes back; the
+  // expansion is a session list since YAZ-1642, so it does not — the restored tree is folded, and
+  // the arrangement is re-read the moment the same chevron is knocked again.
   await quitApp(app)
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
   win = await appWindow(app, 'w1')
 
+  await expect(topicLabels(win)).toHaveText(['Home', ...TOPICS, 'Uncategorized']) // collapsed on relaunch
+  await treeChevron(win, 'Expand', 'Funnel Stages').click()
   await expect(topicLabels(win)).toHaveText([
     'Home',
     'Funnel Stages',
@@ -515,6 +519,9 @@ test('step 5 — turn a plain note into a folder page, feed it, and turn it back
   // The gesture lives in the FILE tree's context menu (the Topics lens has no menu of its own —
   // 🔒 YAZ-847), so the lens row is part of the path. `CAC` is an ordinary page today.
   await lensTab(win, 'Files').click()
+  // Step 3 relaunched, and a launch restores no open dirs (YAZ-1642): open `kpis/` and its
+  // siblings before a member is clicked.
+  await expandDirs(win, FOLDERS.map((f) => path.join(vault, f)))
   await fileRow(win, 'CAC').click()
   await expect(activeTab(win)).toHaveText('CAC')
   expect(await scrollerBlocks(win)).not.toContain('folder-page-contents')
@@ -628,7 +635,7 @@ test('step 6 — a page_type vault, migrated by the real script, OPENS as a fold
 
   // NOW OPEN IT. Nothing was hand-fixed between the script and the app: this is the vault the
   // migration left behind, on the Topics lens.
-  app = await launchApp({ userData, seedState: crossState(legacy, null, [path.join(legacy, HOME)]) })
+  app = await launchApp({ userData, seedState: crossState(legacy, null) })
   win = await appWindow(app, 'w1')
 
   // The roots rule finds the Home the migration made — a PINNED LEAF since ⚡ YAZ-920, so it

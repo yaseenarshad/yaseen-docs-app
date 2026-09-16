@@ -110,13 +110,39 @@ export async function copyVault(src: string): Promise<string> {
  */
 const SEEDED_LENS = 'files' as const
 
-/** One-window seed on `vault`/`file` — the no-native-dialog "open folder" (schema: shared/types.ts AppState v1). */
-export function seededState(vault: string, file: string | null, opts: { expanded?: string[] } = {}): AppState {
+/**
+ * One-window seed on `vault`/`file` — the no-native-dialog "open folder" (schema: shared/types.ts AppState v1).
+ * No `expanded` option since YAZ-1642: both tree expansions are session lists main reads back as
+ * `[]`, so a spec that needs a nested row opens its dir the way a user does — `expandDirs`.
+ */
+export function seededState(vault: string, file: string | null): AppState {
   const state = defaultAppState()
   state.recents = [{ path: vault, lastOpened: Date.now() }]
   state.windows = [{ id: 'w1', root: vault, file, tabs: file === null ? [] : [file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: SEEDED_LENS, focusDirs: [], focusTopics: [], bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
-  state.folders = { [vault]: { expanded: opts.expanded ?? [], lastFile: file, folds: {}, baseGroups: {}, topicsExpanded: [] } }
+  state.folders = { [vault]: { expanded: [], lastFile: file, folds: {}, baseGroups: {}, topicsExpanded: [] } }
   return state
+}
+
+/**
+ * Opens each dir in `dirs`, outermost first, by the click a user makes — since YAZ-1642 the only
+ * way a nested row gets on screen (a launch restores no open dirs and does not unfold the active
+ * file's ancestors). A plain click TOGGLES, so an already-open dir is left alone.
+ */
+export async function expandDirs(win: Page, dirs: string[]): Promise<void> {
+  for (const dir of dirs) {
+    const row = win.locator(`.tree__row--dir[data-path="${dir}"]`)
+    // `aria-expanded` is the LI's, not the button's (client/src/sidebar/Tree.tsx) — so the row is
+    // what gets clicked and the item is what gets read.
+    const item = win.locator(`li[role="treeitem"]:has(> .tree__row--dir[data-path="${dir}"])`)
+    await expect(row).toBeVisible()
+    await expect
+      .poll(async () => {
+        if ((await item.getAttribute('aria-expanded')) === 'true') return true
+        await row.click()
+        return (await item.getAttribute('aria-expanded')) === 'true'
+      })
+      .toBe(true)
+  }
 }
 
 export async function readState(userData: string): Promise<AppState> {
