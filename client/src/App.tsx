@@ -213,22 +213,24 @@ export function App() {
     setSidebarLens(next)
   }, [])
 
-  // Files & Links (C2-, GRO-2240): where a bare unresolved [[link]] creates its page — the
-  // "default location for new notes" setting resolved against this window's root + ACTIVE tab.
-  // A ref-backed getter: the value recomputes at CLICK time from whatever settings/tab are
-  // current (settings changes broadcast via storage.subscribe land in `settings` above), while
-  // the callback identity stays stable — it sits in CrepeHost's effect deps, and a new identity
+  // Files & Links (C2-, GRO-2240; YAZ-1643): where a bare unresolved [[link]] creates its page —
+  // the "default location for new notes" setting resolved against this window's root + the
+  // CALLING editor's own path (`sourcePath`: the page the link was clicked or typed in, so a
+  // right-panel or folder-page editor creates beside itself, never beside the main tab).
+  // A ref-backed getter: the value recomputes at CLICK time from whatever settings are current
+  // (settings changes broadcast via storage.subscribe land in `settings` above), while the
+  // callback identity stays stable — it sits in CrepeHost's effect deps, and a new identity
   // would remount every open editor.
-  const createBaseInputs = useRef({ settings, root, file })
-  createBaseInputs.current = { settings, root, file }
-  const createBase = useCallback(() => {
-    const { settings: s, root: r, file: f } = createBaseInputs.current
-    return r === null ? '' : newNoteBase(s, r, f)
+  const newNoteFolderInputs = useRef({ settings, root })
+  newNoteFolderInputs.current = { settings, root }
+  const newNoteFolderFor = useCallback((sourcePath: string) => {
+    const { settings: s, root: r } = newNoteFolderInputs.current
+    return r === null ? '' : newNoteBase(s, r, sourcePath)
   }, [])
   // The comment stream's order toggle (YAZ-1515) writes the setting through the same ref-backed,
   // stable door: `RetainedEditor` is `memo(Editor)`, and a fresh arrow per render would re-render
   // every retained editor tree on any App state change.
-  const changeCommentsOrder = useCallback((order: CommentsOrder) => changeSettings({ ...createBaseInputs.current.settings, commentsOrder: order }), [changeSettings])
+  const changeCommentsOrder = useCallback((order: CommentsOrder) => changeSettings({ ...newNoteFolderInputs.current.settings, commentsOrder: order }), [changeSettings])
 
   // Appearance (Desktop K, GRO-2218): `system` tracks the OS live; explicit values win.
   // `data-theme` goes on <html> so body / fixed overlays follow app.css's dark tokens, and
@@ -606,7 +608,7 @@ export function App() {
     root,
     watch,
     onNotice: setNotice,
-    createBase,
+    newNoteFolderFor,
     wikilinks,
     wikilinkCandidates,
     viewOnlyLinks,

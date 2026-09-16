@@ -107,14 +107,14 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; viewOnlyLinks?: ViewOnlyLinkSource; onRenameFile?: (oldPath: string, newPath: string) => void } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; viewOnlyLinks?: ViewOnlyLinkSource; onRenameFile?: (oldPath: string, newPath: string) => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks} viewOnlyLinks={extra.viewOnlyLinks} onRenameFile={extra.onRenameFile} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks} viewOnlyLinks={extra.viewOnlyLinks} onRenameFile={extra.onRenameFile} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} />))
   await settle()
   await settle()
   return container
@@ -207,6 +207,16 @@ describe('Editor file-kind dispatch (YAZ-1299)', () => {
     const viewOnlyLinks = createViewOnlyLinkSource()
     await mount(BODY, 1, { viewOnlyLinks })
     expect((createCrepeMock.mock.calls.at(-1)?.[0] as CreateCrepeOptions | undefined)?.viewOnlyLinks).toBe(viewOnlyLinks)
+  })
+
+  it("binds wikilinkNav.createFolder to THIS editor's own path, not the active tab (YAZ-1643)", async () => {
+    const newNoteFolderFor = vi.fn((sourcePath: string) => (sourcePath === '/vault/Panels/Side.md' ? 'Panels' : 'WRONG'))
+    await mount(BODY, 1, { path: '/vault/Panels/Side.md', onOpenFileBackground: noop, newNoteFolderFor })
+    const nav = (createCrepeMock.mock.calls.at(-1)?.[0] as CreateCrepeOptions | undefined)?.wikilinkNav
+    if (nav === undefined) throw new Error('wikilinkNav was not wired')
+    expect(newNoteFolderFor).not.toHaveBeenCalled() // a getter: resolved at click time, not at mount
+    expect(nav.createFolder()).toBe('Panels')
+    expect(newNoteFolderFor).toHaveBeenCalledExactlyOnceWith('/vault/Panels/Side.md')
   })
 
   it('routes mixed-case view-only text around every Markdown-only owner', async () => {
