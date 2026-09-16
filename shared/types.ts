@@ -587,7 +587,12 @@ export interface WindowEntry {
   bounds: WindowBounds
 }
 
-/** View state that only means something inside that folder (the retired localStorage mdapp.expanded / lastFile / folds). */
+/**
+ * View state that only means something inside that folder (the retired localStorage mdapp.expanded / lastFile / folds).
+ * `expanded` and `topicsExpanded` are SESSION lists (YAZ-1642): shared by every window on the
+ * vault through the main-owned store, never written to disk and never restored — a launch starts
+ * both trees collapsed. The other fields persist.
+ */
 export interface FolderState {
   expanded: string[]
   lastFile: string | null

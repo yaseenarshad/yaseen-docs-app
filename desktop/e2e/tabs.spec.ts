@@ -14,6 +14,7 @@ import {
   buildFixtureVault,
   clickMenuItem,
   copyVault,
+  expandDirs,
   extraWindow,
   launchApp,
   quitApp,
@@ -58,13 +59,12 @@ test.afterAll(async () => {
 })
 
 test('step 1 — sidebar click replaces the CURRENT tab; ⌘-click appends a background tab', async () => {
-  app = await launchApp({
-    userData,
-    seedState: seededState(vault, path.join(vault, SEED_FILE), { expanded: [path.join(vault, 'Projects')] }),
-  })
+  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, SEED_FILE)) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText(SEED_BODY)
   await expect(tabsOf(win)).toHaveCount(1)
+  // A launch is collapsed since YAZ-1642: `Roadmap` is under `Projects`, so open it first.
+  await expandDirs(win, [path.join(vault, 'Projects')])
 
   // A plain sidebar click opens in the CURRENT tab: still ONE tab, now Ideas (rule 4).
   await win.locator('.tree__row--file', { hasText: 'Ideas' }).click()

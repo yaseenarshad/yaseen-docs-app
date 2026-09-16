@@ -33,7 +33,7 @@ import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { SIDEBAR_DEFAULT_W } from '../../shared/types'
-import { appWindow, copyVault, launchApp, quitApp, readState, seededState, shoot } from './helpers'
+import { appWindow, copyVault, expandDirs, launchApp, quitApp, readState, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -150,10 +150,7 @@ test.afterAll(async () => {
 // ---------------------------------------------------------------- YAZ-738: sidebar resize
 
 test('step 1 — the sidebar edge drags 260 → 380', async () => {
-  app = await launchApp({
-    userData,
-    seedState: seededState(vault, path.join(vault, FOLDER_PAGE), { expanded: FOLDERS.map((f) => path.join(vault, f)) }),
-  })
+  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, FOLDER_PAGE)) })
   win = await appWindow(app, 'w1')
   await expect(contents(win)).toBeVisible()
 
@@ -214,6 +211,9 @@ test('step 4 — the window carries a context-menu listener (the spell-check men
 // ---------------------------------------------------------------- YAZ-721: back / forward
 
 test('step 5 — (a) A → B → C, then Back Back Forward, all in ONE tab', async () => {
+  // The first step that navigates by the file tree; a launch (step 2's relaunch included) is
+  // collapsed since YAZ-1642, so the disk folders the pages below live in are opened first.
+  await expandDirs(win, FOLDERS.map((f) => path.join(vault, f)))
   // Closing every tab resets the per-tab stacks, so this starts from a genuinely empty history.
   await closeAllTabs(win)
   await startAt(win, 'Lead Nurture', 'Known contacts that are not yet in a deal')

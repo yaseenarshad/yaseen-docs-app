@@ -30,7 +30,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '../../shared/frontmatter'
-import { appWindow, copyVault, launchApp, quitApp, seededState, shoot } from './helpers'
+import { appWindow, copyVault, expandDirs, launchApp, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -127,11 +127,10 @@ test.afterAll(async () => {
 })
 
 test('step 1 — "+ Add column" declares a column and shows it, in one settings write', async () => {
-  app = await launchApp({
-    userData,
-    seedState: seededState(vault, folderPagePath(), { expanded: [path.join(vault, KPIS)] }),
-  })
+  app = await launchApp({ userData, seedState: seededState(vault, folderPagePath()) })
   win = await appWindow(app, 'w1')
+  // A launch is collapsed since YAZ-1642: open the members' disk folder first.
+  await expandDirs(win, [path.join(vault, KPIS)])
 
   await expect(contents(win)).toBeVisible()
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
