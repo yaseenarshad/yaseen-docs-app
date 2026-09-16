@@ -56,11 +56,12 @@ interface EditorProps {
   /** Wiki-link create failures surface here (passive link-notice style); App passes `setNotice`. */
   onNotice?: (message: string) => void
   /**
-   * Root-relative folder where a bare unresolved `[[link]]` creates its page (C2-, GRO-2240);
-   * App passes a STABLE getter over the Files & Links setting + the active tab (`newNoteBase`).
-   * Absent → the vault root, exactly the setting's default.
+   * Root-relative folder where a bare unresolved `[[link]]` creates its page (C2-, GRO-2240;
+   * YAZ-1643): App passes a STABLE getter over the Files & Links setting (`newNoteBase`) that
+   * takes the SOURCE page's path — this editor binds its own, so a right-panel or folder-page
+   * editor creates beside itself, never beside the main tab. Absent → the vault root.
    */
-  createBase?: () => string
+  newNoteFolderFor?: (sourcePath: string) => string
   /** Wikilink resolve source (GRO-2190): App owns ONE per window, fed by WikilinkIndexBridge. */
   wikilinks?: WikilinkResolveSource
   /** Separate navigation-only resolver for supported non-Markdown files. */
@@ -89,7 +90,7 @@ interface EditorProps {
   onChangeCommentsOrder: (order: CommentsOrder) => void
 }
 
-export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, createBase, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow, commentsOrder, onChangeCommentsOrder }: EditorProps) {
+export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow, commentsOrder, onChangeCommentsOrder }: EditorProps) {
   if (path === null) {
     return (
       <section className="editor">
@@ -126,11 +127,11 @@ export function Editor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenF
       </section>
     )
   }
-  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} />
+  return <MarkdownEditor root={root} path={path} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} />
 }
 
 /** Markdown-only owner: loading, Crepe, migration, autosave, frontmatter, folder pages, and backlinks. */
-function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, createBase, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow, commentsOrder, onChangeCommentsOrder }: EditorProps & { path: string }) {
+function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRenameFile, sync, onSyncNow, commentsOrder, onChangeCommentsOrder }: EditorProps & { path: string }) {
   const state = useFile(path)
   const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   return (
@@ -138,7 +139,7 @@ function MarkdownEditor({ root, path, watch, onOpenFile, onOpenFileRight, onOpen
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
       {file !== null && (
-        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} createBase={createBase} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} />
+        <CrepeHost key={file.path} root={root} file={file} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRenameFile={onRenameFile} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} />
       )}
     </section>
   )
@@ -153,7 +154,7 @@ function CrepeHost({
   onOpenFileRight,
   onOpenFileBackground,
   onNotice,
-  createBase,
+  newNoteFolderFor,
   wikilinks,
   viewOnlyLinks,
   wikilinkCandidates,
@@ -171,7 +172,7 @@ function CrepeHost({
   onOpenFileRight?: (path: string) => void
   onOpenFileBackground?: (path: string) => void
   onNotice?: (message: string) => void
-  createBase?: () => string
+  newNoteFolderFor?: (sourcePath: string) => string
   wikilinks?: WikilinkResolveSource
   viewOnlyLinks?: ViewOnlyLinkSource
   wikilinkCandidates?: WikilinkCandidateSource
@@ -250,13 +251,15 @@ function CrepeHost({
       viewOnlyLinks,
       wikilinkCandidates,
       // Wiki-link click navigation (Links C, GRO-2192): plain click → current tab, ⌘ → background
-      // tab, unresolved → create (bare targets under App's createBase getter — the Files & Links
-      // location setting, C2- GRO-2240; absent → the vault root) then open. Wired only when App
-      // threads the background opener — mounts without it keep clicks as plain editing.
+      // tab, unresolved → create (bare targets under `createFolder` — App's `newNoteFolderFor`
+      // getter over the Files & Links location setting, C2- GRO-2240, bound to THIS file's path
+      // so the page lands beside the editor the link was clicked in, YAZ-1643; absent → the
+      // vault root) then open. Wired only when App threads the background opener — mounts
+      // without it keep clicks as plain editing.
       wikilinkNav:
         onOpenFileBackground === undefined
           ? undefined
-          : { root, createBase: createBase ?? (() => ''), openCurrent: onOpenFile, openBackground: onOpenFileBackground, onNotice: onNotice ?? (() => undefined) },
+          : { root, createFolder: () => newNoteFolderFor?.(file.path) ?? '', openCurrent: onOpenFile, openBackground: onOpenFileBackground, onNotice: onNotice ?? (() => undefined) },
       // Standard Markdown links (YAZ-1309) leave through one typed host boundary. The active
       // note path travels with the untouched href so main—not the renderer—owns relative-file
       // resolution, protocol validation, and the choice of OS API.
@@ -338,7 +341,7 @@ function CrepeHost({
       unsubscribe()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, createBase, drawingFeed, findChannel])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onNotice, newNoteFolderFor, drawingFeed, findChannel])
 
   // The Home guard's fact (⚡ YAZ-888): Home is whatever `[[Home]]` RESOLVES to (🔒 D1, YAZ-821)
   // — the window's own resolver, never a path check, so an aliased or nested Home is still Home.
@@ -399,7 +402,7 @@ function CrepeHost({
         </div>
         <div className="editor-mount" ref={hostRef} />
         {wikilinks !== undefined && (
-          <FolderPageContents path={file.path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} wikilinkCandidates={wikilinkCandidates} createBase={createBase} onNotice={onNotice} fileContent={file.content} />
+          <FolderPageContents path={file.path} root={root} source={wikilinks} properties={properties} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} wikilinkCandidates={wikilinkCandidates} newNoteFolderFor={newNoteFolderFor} onNotice={onNotice} fileContent={file.content} />
         )}
         {/* Reads the same disk truth the properties panel does (🔒 D4): its own frontmatter-only
             writes come back through the watcher as `absorbFrontmatterOnly` → `setDisk`. */}

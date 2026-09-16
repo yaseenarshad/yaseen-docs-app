@@ -525,7 +525,7 @@ export function isValidNewNoteFolder(v: string): boolean {
   return v === '' || v.split('/').every((s) => s.trim() !== '' && !s.trim().startsWith('.') && !s.includes('\0'))
 }
 
-/** Matches the app's pre-settings look (Crepe: line-height 1.5, block padding 4px); threading on, 2px, accent. */
+/** Matches the app's pre-settings look (Crepe: line-height 1.5, block padding 4px); threading on, 2px, accent; new notes beside the source page (YAZ-1643). */
 export const DEFAULT_SETTINGS: SettingsState = {
   lineSpacing: 1.5,
   blockGap: 4,
@@ -534,7 +534,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   threadColor: null,
   theme: 'system',
   contentWidth: 'narrow',
-  newNoteLocation: 'root',
+  newNoteLocation: 'current',
   newNoteFolder: '',
   confirmDelete: true,
   commentsOrder: 'oldest',

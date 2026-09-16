@@ -81,22 +81,21 @@ describe('planLinkCreation (pure path rules)', () => {
 describe('newNoteBase (setting → base folder for bare targets, C2- GRO-2240)', () => {
   const at = (newNoteLocation: 'root' | 'current' | 'folder', newNoteFolder = '') => ({ ...DEFAULT_SETTINGS, newNoteLocation, newNoteFolder })
 
-  it("'root' (the default) is the vault root, whatever the active file", () => {
+  it("'root' is the vault root, whatever the source page", () => {
     expect(newNoteBase(at('root'), '/vault', '/vault/Sub/Note.md')).toBe('')
   })
 
-  it("'current' is the ACTIVE file's folder, root-relative; a top-level file means the root", () => {
+  it("'current' (the default, YAZ-1643) is the SOURCE page's folder, root-relative; a top-level page means the root", () => {
     expect(newNoteBase(at('current'), '/vault', '/vault/Sub/Deep/Note.md')).toBe('Sub/Deep')
     expect(newNoteBase(at('current'), '/vault', '/vault/Note.md')).toBe('')
   })
 
-  it("'current' falls back to the root with no open file, or a file outside the vault", () => {
-    expect(newNoteBase(at('current'), '/vault', null)).toBe('')
+  it("'current' falls back to the root for a source page outside the vault", () => {
     expect(newNoteBase(at('current'), '/vault', '/elsewhere/Note.md')).toBe('')
   })
 
-  it("'folder' is the configured root-relative folder ('' = the root); the active file is irrelevant", () => {
-    expect(newNoteBase(at('folder', 'Notes/Inbox'), '/vault', null)).toBe('Notes/Inbox')
+  it("'folder' is the configured root-relative folder ('' = the root); the source page is irrelevant", () => {
+    expect(newNoteBase(at('folder', 'Notes/Inbox'), '/vault', '/vault/Sub/Note.md')).toBe('Notes/Inbox')
     expect(newNoteBase(at('folder'), '/vault', '/vault/Sub/Note.md')).toBe('')
   })
 })

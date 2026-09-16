@@ -168,14 +168,14 @@ function compute(state: EditorState, prev: PickerState | null, tr: Transaction |
 /**
  * The Create row's other half (YAZ-1357, 🔒 D3 revised): the page is BORN here, not on a later
  * click — Yasin's ruling, so a picked "Create" shows up in the sidebar at once. Same placement as
- * create-on-click (`createFromLink` under `nav.createBase()`), no navigation (the caret keeps
+ * create-on-click (`createFromLink` under `nav.createFolder()`), no navigation (the caret keeps
  * typing; the link turns from dim to resolved on the index echo, and in an outline the reconcile
  * pass tags the member), one passive notice either way. Without a nav there is no vault to create
  * in, so the row only inserts.
  */
 function createPage(nav: WikilinkNav | undefined, name: string): void {
   if (nav === undefined) return
-  void createFromLink(nav.root, name, nav.createBase()).then((result) => {
+  void createFromLink(nav.root, name, nav.createFolder()).then((result) => {
     if (result.status === 'error') nav.onNotice(result.message)
     else if (result.status === 'created') nav.onNotice(`Created "${linkPageName(name)}"`)
   })

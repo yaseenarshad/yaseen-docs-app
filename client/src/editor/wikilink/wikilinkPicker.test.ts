@@ -34,7 +34,7 @@ import {
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
 /** The nav a real window hands the editor (Links C): the create row is its second user (YAZ-1357). */
-const nav = () => ({ root: '/vault', createBase: () => '', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() })
+const nav = () => ({ root: '/vault', createFolder: () => '', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() })
 
 async function mount(markdown: string, candidates: MutableWikilinkCandidateSource, wikilinkNav?: ReturnType<typeof nav>) {
   const root = document.createElement('div')
