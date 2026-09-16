@@ -19,14 +19,16 @@
   - [x] 1- Scope (YAZ-1650): findings + decisions comments; 15-scenario demo run by Yasin — "approved lock it in"
   - [x] 2- Default (YAZ-1651) + 3- Source-path getter & rename (YAZ-1652): 15 files, typecheck clean, vitest 3964 green; one new Editor-level test pins the nav to the editor's own path at click time
   - [x] 5- Polish (YAZ-1654): `newNoteBase(sourcePath: string)` — dropped the `null` arm nobody calls; test tightened to match. Nothing else to trim: comments match the surrounding convention, CONTRACTS rules 23/24 + settings row rewritten, zero `createBase` left (one dated plan under docs/superpowers keeps its snippet)
-- Now: [→] commit → PR → merge to main (no release)
-- Next: 4- (YAZ-1653) closes when Yasin confirms a final pass and flips his installed app's setting
+  - [x] 4- Verify (YAZ-1653): Yasin's final pass on the demo app — "ok that's good it worked"
+  - [x] PR #57 merged to main (`75f2ee9`); handoff on the parent and every subissue; worktree, branch, demo folder removed
+- Now: COMPLETE — nothing pending (human item, unconfirmed: Yasin flips his installed app's setting; D1 ships no migration)
+- Next: none. Learning: a default flip never reaches a profile that already saved the old value explicitly — say so in the issue, don't write a migration that overrides real choices.
 
 ## Open Questions
 - none
 
 ## Working Set
-- Branch `yaz-1643-new-page-location`, worktree `../yaseen-docs-app-yaz-1643`
+- Everything on main; worktree and branch removed
 - Files: `shared/types.ts`, `client/src/App.tsx`, `client/src/editor/Editor.tsx`(+test), `client/src/views/FolderPageContents.tsx`, `client/src/editor/wikilink/{wikilinkClick,wikilinkPicker,createFromLink}.ts`(+tests), `client/src/sidebar/SettingsPanel.test.tsx`, `desktop/src/main/store.test.ts`, `desktop/e2e/links.spec.ts` (wording only), `docs/CONTRACTS.md`
 - Tests: `npx vitest run client/src/editor/wikilink client/src/editor/Editor.test.tsx` · `npm run typecheck` · `npm test`
-- Demo: `/tmp/yaz-1643/launch-demo.sh` · `/tmp/yaz-1643/reset-demo.sh` (delete `/tmp/yaz-1643` when done)
+- Demo folder `/tmp/yaz-1643` deleted at closeout; recipe in the handoff comment on YAZ-1643
