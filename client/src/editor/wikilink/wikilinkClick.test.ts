@@ -3,7 +3,7 @@
  * real mousedown events on the rendered `.wikilink` spans. Pinned here: navigation happens on
  * MOUSEDOWN with the default prevented (no caret in the match, no raw-text flash — editing
  * stays keyboard/adjacency-only), plain click → `openCurrent`, ⌘-click → `openBackground`,
- * an unresolved link creates its page first (bare targets under `nav.createBase()` — the
+ * an unresolved link creates its page first (bare targets under `nav.createFolder()` — the
  * Files & Links location setting, C2- GRO-2240; '' = the vault root, the default) and then
  * opens by the same gesture, `[[#h]]` no-ops, revealed raw text and alt/shift/ctrl-modified
  * clicks fall through to plain editing, and failures land in `onNotice` — never a dialog.
@@ -35,7 +35,7 @@ const createFile = vi.mocked(api.createFile)
 
 interface NavMocks {
   root: string
-  createBase: () => string
+  createFolder: () => string
   openCurrent: Mock
   openBackground: Mock
   onNotice: Mock
@@ -46,10 +46,10 @@ const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 /** Resolver used across the suite: only 'Known' exists, at /vault/Known.md. */
 const resolveKnown = (target: string) => (target === 'Known' ? '/vault/Known.md' : null)
 
-async function mount(markdown: string, resolve?: (target: string) => string | null, createBase: () => string = () => '', viewOnly?: MutableViewOnlyLinkSource) {
+async function mount(markdown: string, resolve?: (target: string) => string | null, createFolder: () => string = () => '', viewOnly?: MutableViewOnlyLinkSource) {
   const source = createWikilinkResolveSource()
   if (resolve !== undefined) source.update(resolve)
-  const nav: NavMocks = { root: '/vault', createBase, openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() }
+  const nav: NavMocks = { root: '/vault', createFolder, openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() }
   const root = document.createElement('div')
   document.body.appendChild(root)
   const crepe = createCrepe({ root, defaultValue: markdown, wikilinks: source, viewOnlyLinks: viewOnly, wikilinkNav: nav })
@@ -259,7 +259,7 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     expect(createFile).toHaveBeenCalledWith('/vault/Sub/Page.md')
   })
 
-  it("a bare target creates under nav.createBase() — the Files & Links setting's folder, read at CLICK time (C2-, GRO-2240)", async () => {
+  it("a bare target creates under nav.createFolder() — the Files & Links setting's folder, read at CLICK time (C2-, GRO-2240)", async () => {
     let base = 'Notes/Inbox'
     const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown, () => base)
     mousedown(linkSpan(root, 'Missing'))

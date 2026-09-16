@@ -32,15 +32,16 @@ export type CreateFromLinkResult =
 
 /**
  * The root-relative base folder where a BARE unresolved `[[link]]` creates its page
- * (C2-, GRO-2240) — pure, computed by App from the Files & Links setting + the ACTIVE tab:
- * `'root'` → '' (the vault root); `'current'` → the active file's folder, falling back to
- * the root with no open file (or one outside the vault); `'folder'` → `newNoteFolder`
- * (validated at the settings boundary; junk still fails safe in `planLinkCreation`).
+ * (C2-, GRO-2240) — pure, computed by App from the Files & Links setting + the SOURCE page
+ * (the page the link was clicked or typed in, YAZ-1643): `'root'` → '' (the vault root);
+ * `'current'` (the default) → the source page's folder, falling back to the root for a
+ * source outside the vault; `'folder'` → `newNoteFolder` (validated at the settings
+ * boundary; junk still fails safe in `planLinkCreation`).
  */
-export function newNoteBase(settings: Pick<SettingsState, 'newNoteLocation' | 'newNoteFolder'>, root: string, activeFile: string | null): string {
+export function newNoteBase(settings: Pick<SettingsState, 'newNoteLocation' | 'newNoteFolder'>, root: string, sourcePath: string): string {
   if (settings.newNoteLocation === 'folder') return settings.newNoteFolder
-  if (settings.newNoteLocation === 'current' && activeFile !== null && activeFile.startsWith(`${root}/`)) {
-    const rel = activeFile.slice(root.length + 1)
+  if (settings.newNoteLocation === 'current' && sourcePath.startsWith(`${root}/`)) {
+    const rel = sourcePath.slice(root.length + 1)
     const cut = rel.lastIndexOf('/')
     return cut === -1 ? '' : rel.slice(0, cut)
   }

@@ -15,7 +15,7 @@
  * Gestures: plain click → open in the CURRENT tab (`nav.openCurrent` — an already-open path
  * activates its tab, tabs dedupe); ⌘(meta)-click → NEW BACKGROUND tab (`nav.openBackground`
  * — appended, never activated, never focused; an already-open path is a no-op). An
- * UNRESOLVED link is created first (`createFromLink` — bare targets under `nav.createBase()`,
+ * UNRESOLVED link is created first (`createFromLink` — bare targets under `nav.createFolder()`,
  * the Files & Links "default location for new notes" setting read at CLICK time; C2-,
  * GRO-2240), then opened by the same gesture; failures surface via `nav.onNotice` (App's
  * passive link-notice), never a dialog. Two more notices (F2, GRO-2197) keep otherwise
@@ -39,12 +39,13 @@ export interface WikilinkNav {
   root: string
   /**
    * Root-relative folder where a BARE unresolved link creates its page ('' = the vault
-   * root). A getter, called at CLICK time: App derives it from the "default location for
-   * new notes" setting + the ACTIVE tab (`newNoteBase`, C2- GRO-2240) behind a STABLE
-   * identity, so settings/tab changes land live without remounting any editor. Pathed
+   * root). A getter, read at CLICK time: the host resolves the Files & Links "default
+   * location for new notes" setting against ITS OWN page path (`newNoteBase`, C2- GRO-2240),
+   * so right-panel and folder-page editors create beside themselves, not beside the main
+   * tab (YAZ-1643); settings changes land live without remounting any editor. Pathed
    * targets (`[[Sub/Page]]`) ignore it — see `planLinkCreation`.
    */
-  createBase: () => string
+  createFolder: () => string
   /** Plain click: open in the CURRENT tab (already-open → activates its tab). */
   openCurrent: (path: string) => void
   /** ⌘-click: append a background tab (already-open → no-op; focus never moves). */
@@ -124,7 +125,7 @@ export function createWikilinkClick(source: WikilinkResolveSource, nav: Wikilink
               const path = resolve(page)
               if (path !== null) open(path)
               else
-                void createFromLink(nav.root, inner, nav.createBase()).then((result) => {
+                void createFromLink(nav.root, inner, nav.createFolder()).then((result) => {
                   if (result.status === 'error') nav.onNotice(result.message)
                   else if (result.status !== 'noop') {
                     open(result.path)
