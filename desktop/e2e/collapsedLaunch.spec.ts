@@ -1,20 +1,14 @@
 /**
- * COLLAPSED ON RELAUNCH (YAZ-1642, proven here for YAZ-1647): what a launch is allowed to
- * remember about the sidebar's two trees — nothing.
+ * COLLAPSED ON RELAUNCH (YAZ-1642, proven here for YAZ-1647): a launch remembers nothing about
+ * the sidebar's two trees. Both open lists (`folders[root].expanded`, `topicsExpanded`) are
+ * session state — held in main's memory, shared by every window on the root, stripped by `toDisk`
+ * before every write — and the Sidebar no longer unfolds the ancestors of the file it mounts with.
  *
- * Both open-dirs lists (`folders[root].expanded`, the file tree's, and `topicsExpanded`, the
- * Topics lens's) are SESSION state since YAZ-1642: main holds them in memory, every window on the
- * root shares the one copy, and `toDisk` strips them before the atomic write. The Sidebar stopped
- * unfolding the ancestors of the file it MOUNTS with in the same change — so the whole promise is
- * that every launch shows both trees fully folded with the last tab open behind them, however
- * deep in the vault that tab's file lives, and whatever an old state file still carries.
+ * The seed is therefore a state file that STILL holds both lists, as a pre-1642 app left it: the
+ * claim is not "the app did not write it" but "the app does not read it either".
  *
- * Hence the seed below: a state file that STILL holds both lists, hand-written exactly as a
- * pre-YAZ-1642 app would have left it. It is the strongest form of the claim — not "the app did
- * not write it", but "the app does not read it either".
- *
- * Same harness as the rest of the suite: temp `--user-data-dir`, a vault generated into a temp
- * dir, `collapsed-` step screenshots. Serial by design — each step continues the last one's app.
+ * Same harness as the rest of the suite: temp `--user-data-dir`, a generated vault, `collapsed-`
+ * step screenshots, serial.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
