@@ -65,6 +65,7 @@ import {
   bulletAfterLine,
   clearOutlineLine,
   copyVault,
+  expandDirs,
   launchApp,
   outlineEditor,
   outlineLineIndex,
@@ -147,11 +148,10 @@ test.afterAll(async () => {
 })
 
 test('step 1 — the contents block sits between the note and its backlinks, holding exactly the members', async () => {
-  app = await launchApp({
-    userData,
-    seedState: seededState(vault, path.join(vault, FOLDER_PAGE), { expanded: [path.join(vault, STAGES)] }),
-  })
+  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, FOLDER_PAGE)) })
   win = await appWindow(app, 'w1')
+  // A launch is collapsed since YAZ-1642: open the members' disk folder once for the later steps.
+  await expandDirs(win, [path.join(vault, STAGES)])
 
   await expect(contents(win)).toBeVisible()
   // 🔒 D1: between the Crepe mount and "Linked mentions" in the note's own scroller — it scrolls

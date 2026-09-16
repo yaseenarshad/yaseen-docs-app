@@ -49,7 +49,7 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
-import { appWindow, copyVault, launchApp, outlineLines, quitApp, seededState, shoot } from './helpers'
+import { appWindow, copyVault, expandDirs, launchApp, outlineLines, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -267,11 +267,11 @@ test('step 1 — the migrated encyclopedia opens on Home, holding exactly its to
   expect(await withPageType(vault)).toEqual([])
   expect(await brokenLinks(vault)).toEqual([])
 
-  app = await launchApp({
-    userData,
-    seedState: seededState(vault, path.join(vault, HOME), { expanded: FOLDERS.map((f) => path.join(vault, f)) }),
-  })
+  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, HOME)) })
   win = await appWindow(app, 'w1')
+  // A launch is collapsed since YAZ-1642: open the six disk folders once for every step that
+  // clicks a member.
+  await expandDirs(win, FOLDERS.map((f) => path.join(vault, f)))
 
   // The map of an encyclopedia that maintains no list: the five folder pages say in their OWN
   // frontmatter that they belong to Home, and NOTHING on Home's side says it back.

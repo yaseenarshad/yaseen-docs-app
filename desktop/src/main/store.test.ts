@@ -54,7 +54,7 @@ describe('createStore: loading', () => {
     expect(existsSync(file)).toBe(false)
   })
 
-  it('a valid file loads as is', async () => {
+  it('a valid file loads as is — except the two session lists, which a launch never restores (YAZ-1642)', async () => {
     const state: AppState = {
       version: 1,
       settings: { ...DEFAULT_SETTINGS, lineSpacing: 2, threadColor: '#00aaff' },
@@ -64,7 +64,7 @@ describe('createStore: loading', () => {
       folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, topicsExpanded: ['/v/Metrics.md'] } },
     }
     await seed(state)
-    expect(createStore(file).get()).toEqual(state)
+    expect(createStore(file).get()).toEqual({ ...state, folders: { '/v': { ...state.folders['/v'], expanded: [], topicsExpanded: [] } } })
   })
 
   it('settings fall back field by field (partial shapes, junk types, width/colour ranges)', async () => {
@@ -319,7 +319,7 @@ describe('createStore: loading', () => {
     const { folders } = createStore(file).get()
     expect(folders['/a']).toEqual({ expanded: [], lastFile: null, folds: { '/a/x.md': ['k'] }, baseGroups: {}, topicsExpanded: [] })
     expect(folders['/b']).toBeUndefined()
-    expect(folders['/c'].expanded).toEqual(['/c/sub'])
+    expect(folders['/c'].expanded).toEqual([]) // a session list: the file's value is ignored (YAZ-1642)
     expect(folders['/c'].lastFile).toBe('/c/a.md')
     expect(folders['/c'].folds['/c/a.md']).toHaveLength(MAX_FOLD_KEYS_PER_FILE)
     expect(folders['/d']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
@@ -377,24 +377,21 @@ describe('createStore: loading', () => {
     expect(persisted.folders['/v']).not.toHaveProperty('focusTopics')
   })
 
-  it('folders: junk topicsExpanded is dropped and capped; an old file without the field reads as [] (YAZ-848)', async () => {
+  it('folders: expanded and topicsExpanded are session lists — present, junk or missing, a launch reads them as [] (YAZ-1642)', async () => {
     await seed(
       valid({
         folders: {
-          '/a': { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: ['/a/Metrics.md'] },
-          '/b': { expanded: [], lastFile: null, folds: {}, baseGroups: {} }, // pre-848 file: no topicsExpanded
-          '/c': { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: 'nope' },
-          '/d': { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [1, 2] },
-          '/e': { expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: Array.from({ length: MAX_TOPICS_EXPANDED_PAGES + 5 }, (_, i) => `/e/p${i}.md`) },
+          '/a': { expanded: ['/a/sub'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: ['/a/Metrics.md'] }, // a pre-1642 file still carrying both
+          '/b': { lastFile: null, folds: {}, baseGroups: {} }, // what this version writes: neither key
+          '/c': { expanded: 'nope', lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [1, 2] },
         },
       }),
     )
     const { folders } = createStore(file).get()
-    expect(folders['/a'].topicsExpanded).toEqual(['/a/Metrics.md'])
-    expect(folders['/b'].topicsExpanded).toEqual([])
-    expect(folders['/c'].topicsExpanded).toEqual([])
-    expect(folders['/d'].topicsExpanded).toEqual([]) // a non-string element voids the whole list, like `expanded`
-    expect(folders['/e'].topicsExpanded).toHaveLength(MAX_TOPICS_EXPANDED_PAGES)
+    for (const root of ['/a', '/b', '/c']) {
+      expect(folders[root].expanded).toEqual([])
+      expect(folders[root].topicsExpanded).toEqual([])
+    }
   })
 
   it('unknown top-level keys are dropped', async () => {
@@ -850,8 +847,17 @@ describe('createStore: persistence', () => {
     await vi.advanceTimersByTimeAsync(60)
     await store.flush()
     expect(renames()).toHaveLength(1)
-    expect(await onDisk()).toEqual(store.get())
+    expect(await onDisk()).toEqual({ ...store.get(), folders: { '/v': { lastFile: null, folds: { '/v/a.md': ['k1'] }, baseGroups: {} } } })
     expect((await readdir(dir)).filter((n) => n.includes('.tmp-'))).toEqual([])
+  })
+
+  it('the two session lists live in get() for every window but never reach disk, so a relaunch starts collapsed (YAZ-1642)', async () => {
+    const store = createStore(file)
+    store.setFolder('/v', { expanded: ['/v/sub'], topicsExpanded: ['/v/Metrics.md'] })
+    expect(store.get().folders['/v']).toEqual({ expanded: ['/v/sub'], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: ['/v/Metrics.md'] })
+    await store.flush()
+    expect((await onDisk()).folders['/v']).toEqual({ lastFile: null, folds: {}, baseGroups: {} })
+    expect(createStore(file).get().folders['/v']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, topicsExpanded: [] })
   })
 
   it('flush writes at once, cancels the pending timer, and is a no-op when nothing changed', async () => {

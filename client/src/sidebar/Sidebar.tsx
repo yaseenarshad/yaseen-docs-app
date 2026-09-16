@@ -512,7 +512,12 @@ export function Sidebar({
     storage.setTopicsExpanded(root, next)
   }, [root, topicsExpanded])
 
+  // The file this mount woke up with is SHOWN, not revealed (YAZ-1642): a relaunch restores the
+  // tab and leaves the tree collapsed. Any file opened after that still opens its folders.
+  const restoredFile = useRef(activeFile)
   useEffect(() => {
+    if (activeFile === restoredFile.current) return
+    restoredFile.current = null
     if (activeFile !== null) dispatch({ type: 'expandTo', root, file: activeFile })
   }, [root, activeFile])
 
