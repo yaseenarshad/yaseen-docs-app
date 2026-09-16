@@ -14,6 +14,7 @@ import {
   buildFixtureVault,
   CHILD_BULLET,
   copyVault,
+  expandDirs,
   LAST_BULLET,
   launchApp,
   md5,
@@ -63,15 +64,14 @@ test('step 1 — fresh state boots one Welcome window', async () => {
 })
 
 test('step 2 — seeded relaunch opens the vault without the native dialog', async () => {
-  app = await launchApp({
-    userData,
-    seedState: seededState(vault, notePath, { expanded: [path.join(vault, 'Projects')] }),
-  })
+  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
   win = await appWindow(app, 'w1')
   await expect(win.locator('.ProseMirror')).toContainText(SEED_BODY) // the seeded file is open
-  // The folder's tree shows: root file, folder row, and a nested file under the expanded folder.
+  // The folder's tree shows: root file and folder row; the nested file only after `Projects` is
+  // opened by hand — every launch is collapsed since YAZ-1642.
   await expect(win.locator('.tree__row--file', { hasText: 'Ideas' })).toBeVisible()
   await expect(win.locator('.tree__row--dir', { hasText: 'Projects' })).toBeVisible()
+  await expandDirs(win, [path.join(vault, 'Projects')])
   await expect(win.locator('.tree__row--file', { hasText: 'Roadmap' })).toBeVisible()
   await expect(win.locator('.tree__row--active')).toContainText('Welcome note')
   await expect.poll(() => win.title()).toBe(`Welcome note — ${path.basename(vault)}`) // `<file — folder>`

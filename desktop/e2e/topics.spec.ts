@@ -23,8 +23,8 @@
  *   3 a row click OPENS the page (the file tree's own handler) AND unfolds a folder page in the
  *     same gesture (⚡ YAZ-870); clicking the topic you are ALREADY reading folds it (⚡ YAZ-917);
  *     the pinned leaf only ever opens
- *   4 the expansion survives quit → relaunch, in the main-owned `folders[root].topicsExpanded`
- *     bucket — PAGE PATHS, never written into any note's frontmatter, and never Home's
+ *   4 the expansion is SESSION chrome (⚡ YAZ-1642): it never reaches the state file, never any
+ *     note's frontmatter, and the next launch opens folded — every topic, Home's row included
  *   5 Uncategorized expands IN PLACE (🔒 D7, the locked deviation from the mockup), showing the
  *     two unfiled notes under their collapsible inbox disk folder and subtracting everything the
  *     tree DRAWS — the pinned leaf included
@@ -303,26 +303,34 @@ test('step 3 — a row click OPENS the page and unfolds it; the topic you are re
   await shoot(win, 'topics-03-row-opens')
 })
 
-// ---------------------------------------------------------------- 🔒 D4: persistence
+// ---------------------------------------------------------------- 🔒 D4, amended by ⚡ YAZ-1642
 
-test('step 4 — the expansion survives quit → relaunch, as PAGE PATHS in the app state', async () => {
-  // One entry: Funnel Stages, still open from step 2. YAZ-920 keeps Home out of this bucket by
-  // construction — a leaf has no chevron to click and its row records nothing — and step 3
-  // clicked that row, so its absence here is the pinned leaf proving itself a second time.
-  const open = [path.join(vault, FOLDER_PAGE)]
-  const stored = async () => [...((await readState(userData)).folders?.[vault]?.topicsExpanded ?? [])].sort()
-  await expect.poll(stored).toEqual([...open].sort())
-  expect(await stored()).not.toContain(path.join(vault, HOME))
+test('step 4 — the expansion is session chrome: the state file never holds it, and the relaunch opens folded', async () => {
+  // ⚡ YAZ-1642 turns 🔒 D4's durable half around. `topicsExpanded` — and the file tree's
+  // `expanded` beside it — are SESSION lists now: held in memory, shared by every window on the
+  // root, and STRIPPED before each write. Funnel Stages is still open on screen from step 2; what
+  // this step proves is that nothing on disk knows it, so the next launch cannot restore it.
+  const page = path.join(vault, FOLDER_PAGE)
+  const folder = async () => (await readState(userData)).folders?.[vault]
 
   await quitApp(app)
-  expect(await stored()).toEqual([...open].sort())
+  const flushed = await folder()
+  expect(flushed).not.toHaveProperty('topicsExpanded')
+  expect(flushed).not.toHaveProperty('expanded')
+  expect(flushed).toHaveProperty('lastFile') // the rest of the bucket is untouched
   // Session chrome, exactly like the `baseGroups` bucket: nothing about it reaches the page.
-  expect(await readFile(open[0], 'utf8')).not.toContain('topicsExpanded')
+  expect(await readFile(page, 'utf8')).not.toContain('topicsExpanded')
 
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
   win = await appWindow(app, 'w1')
+  // FOLDED — the seven rows of step 1, a whole session of chevron-clicking later.
+  await expect(topicLabels(win)).toHaveText(['Home', ...TOPICS, 'Uncategorized'])
+  await shoot(win, 'topics-04-collapsed-on-relaunch')
+
+  // The arc continues from the shape step 2 left it in, so the one topic step 5 reads is knocked
+  // open again — by hand, which since YAZ-1642 is the only way it ever opens.
+  await chevron(win, 'Expand', 'Funnel Stages').click()
   await expect(topicLabels(win)).toHaveText(['Home', 'Funnel Stages', ...MEMBERS, ...TOPICS.slice(1), 'Uncategorized'])
-  await shoot(win, 'topics-04-expansion-restored')
 })
 
 // ---------------------------------------------------------------- 🔒 D7: Uncategorized

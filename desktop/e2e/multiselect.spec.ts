@@ -9,7 +9,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { appWindow, buildFixtureVault, copyVault, launchApp, SEED_FILE, seededState, shoot } from './helpers'
+import { appWindow, buildFixtureVault, copyVault, expandDirs, launchApp, SEED_FILE, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -38,12 +38,11 @@ test.afterAll(async () => {
 })
 
 test('shift+click selects, the menu copies and opens the selection, ⌘⇧C copies it, a plain click ends it', async () => {
-  app = await launchApp({
-    userData,
-    seedState: seededState(vault, path.join(vault, SEED_FILE), { expanded: [path.join(vault, 'Projects')] }),
-  })
+  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, SEED_FILE)) })
   win = await appWindow(app, 'w1')
   await expect(win.locator('.tree__row--file', { hasText: 'Ideas' })).toBeVisible()
+  // The nested half of the selection lives under `Projects`; a launch is collapsed since YAZ-1642.
+  await expandDirs(win, [path.join(vault, 'Projects')])
 
   // Shift+click two files (one nested): both mark selected, nothing opens, the tab stays put.
   await win.locator('.tree__row--file', { hasText: 'Ideas' }).click({ modifiers: ['Shift'] })
