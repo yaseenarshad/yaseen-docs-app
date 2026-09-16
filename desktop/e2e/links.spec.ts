@@ -115,7 +115,7 @@ test('step 4 — plain click a resolved link: the target replaces the CURRENT ta
   await shoot(win, 'links-04-open-current')
 })
 
-test('step 5 — click an UNRESOLVED link: the note is created at the vault root and opened', async () => {
+test('step 5 — click an UNRESOLVED link: the note is created beside the hub (at the vault root) and opened', async () => {
   // Reopen the hub (replaces the Roadmap tab) and wait for the index gate again.
   await win.locator('.tree__row--file', { hasText: 'Links hub' }).click()
   await expect(editorOf(win)).toContainText(HUB_BODY)
@@ -124,7 +124,8 @@ test('step 5 — click an UNRESOLVED link: the note is created at the vault root
   await linkIn(win, FRESH).click()
   await expect(activeTab(win)).toHaveText(FRESH) // opened in the CURRENT tab…
   await expect(tabsOf(win)).toHaveText([FRESH, 'Ideas']) // …so the count is unchanged
-  // …and the file exists ON DISK at the vault root (the locked default location), empty.
+  // …and the file exists ON DISK at the vault root, empty: the default location is the SOURCE page's
+  // folder (YAZ-1643), and the hub is seeded at the root, so 'current' == root here.
   await expect.poll(() => readFile(path.join(vault, `${FRESH}.md`), 'utf8')).toBe('')
   await shoot(win, 'links-05-create-on-click')
 })

@@ -68,11 +68,11 @@ export interface FolderPageContentsProps {
    * The rest of the outline editor's wikilink wiring (YAZ-903), threaded from the SAME `Editor`
    * mount that hands it to the note's own Crepe instance — `source` above is the first piece:
    * the `[[` picker feed (Links B), then the two halves of the click-navigation contract this
-   * host cannot derive (where a bare unresolved link creates its page, C2-, and where a create
-   * failure is reported).
+   * host cannot derive (where a bare unresolved link creates its page, C2- — resolved against
+   * THIS folder page's own path, YAZ-1643 — and where a create failure is reported).
    */
   wikilinkCandidates?: WikilinkCandidateSource
-  createBase?: () => string
+  newNoteFolderFor?: (sourcePath: string) => string
   onNotice?: (message: string) => void
   /**
    * The open file's OWN bytes, from the same read the editor mounted with (YAZ-919). The views
@@ -127,7 +127,7 @@ export function FolderPageContents({
   onOpenFileRight,
   onOpenFileBackground,
   wikilinkCandidates,
-  createBase,
+  newNoteFolderFor,
   onNotice,
   fileContent,
 }: FolderPageContentsProps) {
@@ -163,12 +163,12 @@ export function FolderPageContents({
         ? undefined
         : {
             root,
-            createBase: createBase ?? (() => ''),
+            createFolder: () => newNoteFolderFor?.(path) ?? '',
             openCurrent: onOpenFile,
             openBackground: onOpenFileBackground,
             onNotice: onNotice ?? (() => undefined),
           },
-    [root, createBase, onOpenFile, onOpenFileBackground, onNotice],
+    [root, path, newNoteFolderFor, onOpenFile, onOpenFileBackground, onNotice],
   )
 
   // The SEED prefers the open file's own bytes (YAZ-919, `fileContent` above): the migration

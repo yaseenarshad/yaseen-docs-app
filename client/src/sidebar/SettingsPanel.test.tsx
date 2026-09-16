@@ -129,13 +129,13 @@ const pressEnter = (input: HTMLInputElement) => act(() => void input.dispatchEve
 const blur = (input: HTMLInputElement) => act(() => void input.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
 
 describe('SettingsCog Files & Links section (Links C2-, GRO-2240)', () => {
-  it("offers Obsidian's three location options under a Files & Links heading, Vault folder active by default, no folder input", () => {
+  it("offers Obsidian's three location options under a Files & Links heading, Same folder as current file active by default (YAZ-1643), no folder input", () => {
     const { el } = mount({ ...DEFAULT_SETTINGS })
     expect(el.querySelector('.settings__section')?.textContent).toBe('Files & Links')
     const labels = [...el.querySelectorAll('.settings__label')].map((l) => l.textContent)
     expect(labels).toContain('Default location for new notes')
     expect(locationButtons(el).map((b) => b.textContent)).toEqual(['Vault folder', 'Same folder as current file', 'In the folder specified below'])
-    expect(locationButtons(el).map((b) => b.classList.contains('settings__option--active'))).toEqual([true, false, false])
+    expect(locationButtons(el).map((b) => b.classList.contains('settings__option--active'))).toEqual([false, true, false])
     expect(folderInput(el)).toBeNull() // the input shows only for the third option
   })
 
