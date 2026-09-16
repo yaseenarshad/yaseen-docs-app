@@ -509,6 +509,50 @@ describe('Show in sidebar — Files reveal (YAZ-1063)', () => {
 })
 
 /**
+ * A launch shows the restored tab but does not open its folders (YAZ-1642, D2). Only the file the
+ * Sidebar MOUNTS with is exempt; every later `activeFile` reveals exactly as before. Fresh vault per
+ * mount (the expand-all idiom below): the app-state cache is module-level.
+ */
+describe('launch: the restored tab is shown, not revealed (YAZ-1642)', () => {
+  const note = (path: string): TreeNode => ({ type: 'file', name: path.split('/').pop()!, path, size: 1, mtime: 1, kind: 'markdown' })
+  const DEEP = (v: string): TreeNode[] => [
+    { type: 'dir', name: 'other', path: `${v}/other`, children: [note(`${v}/other/Keep.md`)] },
+    { type: 'dir', name: 'target', path: `${v}/target`, children: [{ type: 'dir', name: 'deep', path: `${v}/target/deep`, children: [note(`${v}/target/deep/Note.md`)] }] },
+  ]
+  let vaults = 0
+  const mountVault = async (activeFile: (v: string) => string) => {
+    const v = `/v-launch-${++vaults}`
+    const m = await mount({ root: v, activeFile: activeFile(v) }, (b) => b.tree.mockResolvedValue({ root: v, tree: DEEP(v), generatedAt: 1 } as never))
+    return { ...m, v }
+  }
+  const isOpen = (el: HTMLElement, path: string) => el.querySelector(`.tree__row[data-path="${path}"]`)?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')
+
+  it('mounting with an active file leaves its ancestors closed', async () => {
+    const { el, v } = await mountVault((v) => `${v}/target/deep/Note.md`)
+    expect(isOpen(el, `${v}/target`)).toBe('false')
+    expect(el.querySelector(`[data-path="${v}/target/deep/Note.md"]`)).toBeNull()
+  })
+
+  it('a file opened after the mount still opens its ancestors', async () => {
+    const { el, v, rerender } = await mountVault((v) => `${v}/other/Keep.md`)
+    expect(isOpen(el, `${v}/other`)).toBe('false')
+    await rerender({ activeFile: `${v}/target/deep/Note.md` })
+    expect(isOpen(el, `${v}/target`)).toBe('true')
+    expect(isOpen(el, `${v}/target/deep`)).toBe('true')
+    expect(isOpen(el, `${v}/other`)).toBe('false')
+  })
+
+  it('coming back to the restored tab after another file reveals it too', async () => {
+    const { el, v, rerender } = await mountVault((v) => `${v}/target/deep/Note.md`)
+    await rerender({ activeFile: `${v}/other/Keep.md` })
+    expect(isOpen(el, `${v}/other`)).toBe('true')
+    await rerender({ activeFile: `${v}/target/deep/Note.md` })
+    expect(isOpen(el, `${v}/target`)).toBe('true')
+    expect(isOpen(el, `${v}/target/deep`)).toBe('true')
+  })
+})
+
+/**
  * The context menu's per-item TARGET matrix (GRO-2296). Each menu item resolves its own
  * target; no item derives its visibility from another item's value. These assertions are the
  * guard rail for GRO-2297 (blank-space Copy path → the vault ROOT), GRO-2302 (Reveal in
