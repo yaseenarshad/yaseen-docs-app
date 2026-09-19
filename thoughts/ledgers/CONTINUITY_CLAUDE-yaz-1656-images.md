@@ -19,20 +19,20 @@
   - [x] Scope + decisions locked (YAZ-1656 comments)
   - [x] Prototype on branch `yaz-1656-images`, approved by Yasin against the demo vault
   - [x] Linear tree created: YAZ-1657…1673
-- Now: [→] 5B: final gate (typecheck + vitest) → /commit → push → PR → merge → release v0.9.21 → install DMG
+- Now: [→] CLOSED OUT 2026-09-19 — merged as PR #59 (3091934), release v0.9.21 (d14c3f7) built and installed over /Applications/Yaseen Docs.app; master handoff is a comment on YAZ-1656; issue In Review
 - Gotcha: dev app must NOT run with `--watch` while agents edit — every main rebuild relaunches the window on Yasin's screen (he read it as Playwright). Launch only for a pointed manual test, without `--watch`.
-- Next: the single e2e run of imagePaste/imageRender specs (needs Yasin's go-ahead) → 4A/4B Done → parent Done
+- Next (only open item): one local run of `npm run e2e -- imagePaste imageRender` with Yasin's go-ahead → YAZ-1668/1669/1667 Done → YAZ-1656 Done
 - Remaining:
   - [x] 1A YAZ-1658 · [x] 1B YAZ-1659 (phase 1 Done)
   - [x] 2A YAZ-1661 · [x] 2B YAZ-1662 (phase 2 Done)
   - [x] 3A YAZ-1664 · [x] 3B YAZ-1665 · [x] 3C YAZ-1666 (phase 3 Done)
-  - [→] 4A YAZ-1668 · 4B YAZ-1669 — specs WRITTEN (`desktop/e2e/imagePaste.spec.ts`, `imageRender.spec.ts`, `imageFixtures.ts`), NOT run; `npm run e2e -- imagePaste imageRender` when Yasin allows
-  - [x] 5A YAZ-1671 (audit posted) · [→] 5B YAZ-1672 (audit applied, CONTRACTS rule 30 + rows, LAUNCH, wiki; commit/PR/merge/release pending)
-  - [ ] Delete `~/Desktop/yaz-1656-demo` after Yasin is done; remove worktree after merge
+  - [ ] 4A YAZ-1668 · 4B YAZ-1669 (Todo) — specs WRITTEN (`desktop/e2e/imagePaste.spec.ts`, `imageRender.spec.ts`, `imageFixtures.ts`), NOT run; `npm run e2e -- imagePaste imageRender` when Yasin allows
+  - [x] 5A YAZ-1671 · [x] 5B YAZ-1672 (shipped; demo folder + worktree removed at closeout)
+  - [x] Demo folder and worktree removed; generator kept at `tools/prototypes/make_image_demo_vault.py`
 
 ## Open Questions
 - UNCONFIRMED: when Yasin will allow the single e2e run (needed for 4A/4B Done).
-- UNCONFIRMED: keep the dev-profile launcher trick in LAUNCH.md? (decide in 5B)
+- Resolved: dev-profile pattern documented in LAUNCH.md (App state section).
 
 ## Working Set
 - Worktree: `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-1656-images` (branch `yaz-1656-images`, base main 56b0e4c)
