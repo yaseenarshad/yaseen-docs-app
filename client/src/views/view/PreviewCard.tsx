@@ -111,6 +111,8 @@ function PreviewCard({ record, anchor, onEnter, onLeave }: CardProps) {
     const el = document.createElement('div')
     el.className = 'editor-instance'
     host.appendChild(el)
+    // No `image` options (YAZ-1656): the card knows the record's path but not the vault root, and a
+    // vault-relative src has nothing to resolve against without it — images stay Crepe's stock `<img>`.
     const crepe = createCrepe({ root: el, defaultValue: content.body, features: previewFeatures })
     const ready = crepe.create().then(() => crepe.setReadonly(true))
     return () => {

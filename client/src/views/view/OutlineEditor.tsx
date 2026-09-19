@@ -142,6 +142,9 @@ export function OutlineEditor({ markdown, onChange, onSeedLoss, wikilinks, wikil
       wikilinkCandidates,
       wikilinkNav: nav,
       find: findChannel,
+      // No `image` options (YAZ-1656) on purpose: lock 4 below rejects any document holding an
+      // `image` node, so a pasted screenshot would be written to the vault and then have its insert
+      // filtered away. Images here stay Crepe's stock `<img>` until the lock says otherwise.
     })
     lockToBullets(crepe)
 

@@ -227,11 +227,11 @@ type ContextParams = Parameters<typeof buildContextMenuTemplate>[0]
 
 const EDIT_FLAGS: ContextParams['editFlags'] = { canUndo: true, canRedo: true, canCut: true, canCopy: true, canPaste: true, canDelete: true, canSelectAll: true, canEditRichly: true }
 
-const noopActions = (): ContextMenuActions => ({ copyAs: vi.fn(), pasteAs: vi.fn(), replace: vi.fn(), addToDictionary: vi.fn() })
+const noopActions = (): ContextMenuActions => ({ copyAs: vi.fn(), pasteAs: vi.fn(), replace: vi.fn(), addToDictionary: vi.fn(), copyImage: vi.fn(), revealImage: vi.fn() })
 
 /** What Electron hands `context-menu`, defaulting to a clean right-click in an editable body. */
 function context(params: Partial<ContextParams> = {}): ContextParams {
-  return { misspelledWord: '', dictionarySuggestions: [], editFlags: EDIT_FLAGS, ...params }
+  return { misspelledWord: '', dictionarySuggestions: [], editFlags: EDIT_FLAGS, mediaType: 'none', srcURL: '', ...params }
 }
 
 const shapeOf = (items: MenuItemConstructorOptions[]) => items.map((i) => i.label ?? i.role ?? i.type)
@@ -282,6 +282,32 @@ describe('buildContextMenuTemplate', () => {
     expect(actions.replace).toHaveBeenCalledWith('ten')
     click(items.find((i) => i.label === 'Add to Dictionary'))
     expect(actions.addToDictionary).toHaveBeenCalledWith('teh')
+  })
+
+  // ---------- images (YAZ-1666) ----------
+
+  it('an image under the cursor gets ONLY Copy Image and Reveal in Finder — no text rows, even mid-misspelling', () => {
+    const src = 'app://vault/%2Fv/pics/pic.png?from=notes'
+    const items = buildContextMenuTemplate(context({ mediaType: 'image', srcURL: src, misspelledWord: 'teh', dictionarySuggestions: ['the'] }), noopActions())
+    expect(shapeOf(items)).toEqual(['Copy Image', 'Reveal in Finder'])
+  })
+
+  it('Copy Image copies; Reveal in Finder hands the src URL through verbatim for the apply layer to resolve', () => {
+    const actions = noopActions()
+    const src = 'app://vault/%2Fv/pics/a%20b.png'
+    const items = buildContextMenuTemplate(context({ mediaType: 'image', srcURL: src }), actions)
+    click(items[0])
+    expect(actions.copyImage).toHaveBeenCalledTimes(1)
+    click(items[1])
+    expect(actions.revealImage).toHaveBeenCalledWith(src)
+    expect(actions.copyAs).not.toHaveBeenCalled()
+  })
+
+  it('any other media type keeps the text menu unchanged', () => {
+    for (const mediaType of ['none', 'video', 'canvas', 'file'] as const) {
+      const items = buildContextMenuTemplate(context({ mediaType, srcURL: 'app://vault/%2Fv/x.mp4' }), noopActions())
+      expect(shapeOf(items), mediaType).toEqual(['cut', 'copy', 'Copy as', 'paste', 'Paste as'])
+    }
   })
 })
 

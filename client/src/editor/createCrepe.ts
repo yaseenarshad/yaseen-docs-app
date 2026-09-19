@@ -89,6 +89,16 @@
  *    app-identified rich clipboard slices retain intentional ordered lists.
  *  - Copy-out (`clipboardCopyOut.ts`): normal Copy provides readable text and rich HTML with
  *    explicit empty lines. Copy as chooses plain text or Markdown; saves stay intact (YAZ-1443).
+ *  - Images (YAZ-1656, `image/imageView.ts`): the FIRST node view in the codebase, on the commonmark
+ *    `image` node the schema already has — a node view is allowed ONLY on an existing node and
+ *    never touches the serializer, so `![alt|300](src)` stays byte-identical. Vault-relative srcs
+ *    load through main's `app://vault/` protocol (`image/imageSrc.ts`); eight aspect-locked handles
+ *    resize into Obsidian's `alt|width`; double-click opens the host's lightbox (`image/ImageModal`).
+ *    Paste/drop of image BYTES writes `assets/images/<note>-<stamp>.<ext>` and inserts the node
+ *    (`image/insertImage.ts`, wired in `clipboardPaste.ts` through the `imageOptionsCtx` slice).
+ *    Registered only when `opts.image` supplies the root + note path; without it images render as
+ *    Crepe's stock `<img>` — the folder-page outline (its bullets-only lock has no `image`) and the
+ *    hover preview card (no root in reach) say so where they mount.
  */
 import { Crepe, CrepeFeature } from '@milkdown/crepe'
 import { keymapRef, type ToolbarItem } from '@milkdown/crepe/feature/toolbar'
@@ -108,6 +118,8 @@ import { blockHandleGate } from './blockHandleGate'
 import { createBlockHandleMenu } from './blockHandleMenu'
 import { createDrawingPreview, type DrawingPreviewOptions } from './drawing/drawingPreview'
 import { drawingMenu, type DrawingCreator } from './drawingMenu'
+import { imageOptionsCtx, type ImageOptions } from './image/imageOptions'
+import { createImageView } from './image/imageView'
 import type { FindChannel } from './find/findChannel'
 import { createFindInPage } from './find/findInPage'
 import { bulletThreading } from './outline/bulletThreading'
@@ -168,6 +180,8 @@ export interface CreateCrepeOptions {
   drawing?: DrawingCreator
   /** Drawing previews (YAZ-878): the vault root to read scenes against, plus the optional refresh feed and click handler. Absent → `.excalidraw` embeds stay plain text. */
   drawingPreview?: DrawingPreviewOptions
+  /** First-class images (YAZ-1656): root + note path for src resolution, the lightbox opener, the paste notice. Absent → stock `<img>`, and pasted image bytes are not written. */
+  image?: ImageOptions
   /**
    * Feature overrides for a NON-note instance (YAZ-901's bullets-only outline editor passes
    * `outlineFeatures`). The note editor passes none and gets `featureConfig.ts`'s allowlist
@@ -307,6 +321,13 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav))
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), opts.wikilinkNav))
   if (opts.drawingPreview !== undefined) crepe.editor.use(createDrawingPreview(opts.drawingPreview))
+  // Images (YAZ-1656): the node view takes the options directly; the ctx slice carries the SAME
+  // object to `clipboardPaste`, which has no constructor of its own. Injected on every editor (null
+  // when the host gave none) so the paste handler can always read it and simply decline.
+  crepe.editor.config((ctx) => {
+    ctx.inject(imageOptionsCtx, opts.image ?? null)
+  })
+  if (opts.image !== undefined) crepe.editor.use(createImageView(opts.image))
   crepe.editor.use(outlinePaste)
   crepe.editor.use(clipboardPaste)
   crepe.editor.use(clipboardCopyOut)

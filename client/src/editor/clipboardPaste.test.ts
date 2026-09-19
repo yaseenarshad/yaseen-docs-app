@@ -1,12 +1,22 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CrepeFeature, type Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { undo } from '@milkdown/kit/prose/history'
+import { Slice } from '@milkdown/kit/prose/model'
 import { AllSelection, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { ClipboardPasteRequest } from '@shared/types'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
+import type { ImageOptions } from './image/imageOptions'
 import { isBulletsOnly, lockToBullets, outlineFeatures } from './outline/bulletsOnly'
+
+// Image bytes on the clipboard reach the vault through `writeAsset` (YAZ-1656); the rest of this file never touches `api`.
+vi.mock('../api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api')>()),
+  api: { writeAsset: vi.fn() },
+}))
+import { api } from '../api'
+const writeAsset = vi.mocked(api.writeAsset)
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 const listeners = new Set<(request: ClipboardPasteRequest) => boolean>()
@@ -23,10 +33,10 @@ afterEach(async () => {
   window.yaseenDocs = originalApi
   listeners.clear()
 })
-async function mount(markdown = '', outline = false, nativeCode = false) {
+async function mount(markdown = '', outline = false, nativeCode = false, image?: ImageOptions) {
   const root = document.createElement('div')
   document.body.append(root)
-  const crepe = createCrepe({ root, defaultValue: markdown, ...(outline ? { features: outlineFeatures } : nativeCode ? { features: { [CrepeFeature.CodeMirror]: false } } : {}) })
+  const crepe = createCrepe({ root, defaultValue: markdown, image, ...(outline ? { features: outlineFeatures } : nativeCode ? { features: { [CrepeFeature.CodeMirror]: false } } : {}) })
   if (outline) lockToBullets(crepe)
   await crepe.create()
   mounted.push({ crepe, root })
@@ -362,5 +372,59 @@ describe('automatic rich paste spacing', () => {
       pasteHtml(view, dom.innerHTML, text)
       expect(view.state.doc.toJSON()).toEqual(expected)
     }
+  })
+})
+
+describe('image bytes on the clipboard (YAZ-1656 / YAZ-1662)', () => {
+  const IMAGE: ImageOptions = { root: '/v', notePath: '/v/notes/n.md' }
+  const PNG = new File([new Uint8Array([1, 2, 3])], 'clip.png', { type: 'image/png' })
+  /** The written name is `<note>-<stamp>.png`; the clock is the code's, so only its shape is pinned. */
+  const IMG = String.raw`!\[n-\d{8}-\d{6}\]\(assets/images/n-\d{8}-\d{6}\.png\)`
+  /** A ClipboardEvent / DragEvent stand-in: jsdom has no DataTransfer, and the two lists are all the code reads. */
+  const withFiles = (files: File[], data: Record<string, string> = {}) => {
+    const transfer = { files: files as unknown as FileList, items: [] as unknown as DataTransferItemList, getData: (t: string) => data[t] ?? '' } as unknown as DataTransfer
+    return { clipboardData: transfer, dataTransfer: transfer, preventDefault() {}, clientX: 0, clientY: 0 } as unknown as ClipboardEvent & DragEvent
+  }
+  const drop = (view: EditorView, event: DragEvent) => view.someProp('handleDrop', (handle) => handle(view, event, Slice.empty, false))
+  beforeEach(() => {
+    writeAsset.mockReset()
+    writeAsset.mockResolvedValue({ path: '/v/assets/images/n.png', mtime: 1, size: 3 })
+  })
+
+  it('an image file wins over the HTML riding with it: the bytes are written, the markup never lands', async () => {
+    const { view, crepe } = await mount('', false, false, IMAGE)
+    const html = '<p>Finder copy</p>'
+    expect(view.pasteHTML(html, withFiles([PNG], { 'text/html': html, 'text/plain': 'Finder copy' }))).toBe(true)
+    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toMatch(new RegExp(`^${IMG}\n$`)))
+    expect(writeAsset).toHaveBeenCalledTimes(1)
+    expect(textOf(view)).not.toContain('Finder copy')
+  })
+
+  it('inside a code block the image is refused: nothing written, the code untouched', async () => {
+    const { view } = await mount('```text\ncode\n```', false, true, IMAGE)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2)))
+    view.pasteHTML('', withFiles([PNG]))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(writeAsset).not.toHaveBeenCalled()
+    expect(view.state.doc.firstChild?.type.name).toBe('code_block')
+    expect(view.state.doc.firstChild?.textContent).toBe('code')
+  })
+
+  it('a dropped image lands at the DROP position, not at the caret', async () => {
+    const { view, crepe } = await mount('before after', false, false, IMAGE)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1)))
+    // jsdom has no layout: the drop coordinates resolve to "after `before `" by hand.
+    view.posAtCoords = () => ({ pos: 8, inside: 0 })
+    expect(drop(view, withFiles([PNG]))).toBe(true)
+    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toMatch(new RegExp(`^before ${IMG}after\n$`)))
+  })
+
+  it('a drop over a code block is refused outright — handled, and nothing written', async () => {
+    const { view } = await mount('```text\ncode\n```', false, true, IMAGE)
+    view.posAtCoords = () => ({ pos: 2, inside: 0 })
+    expect(drop(view, withFiles([PNG]))).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(writeAsset).not.toHaveBeenCalled()
+    expect(view.state.doc.firstChild?.textContent).toBe('code')
   })
 })

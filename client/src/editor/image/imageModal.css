@@ -1,0 +1,75 @@
+/*
+ * The image lightbox (YAZ-1656) — classes applied by ImageModal.tsx.
+ *
+ * Same overlay shape and stack position as `.drawing-modal-overlay` (fixed, centred, z-index 70):
+ * one of these is open at a time and nothing else opens over it. Unlike the drawing sheet there is
+ * no chrome to speak of — the image IS the modal, kept inside the viewport by `95vw` / `95vh` and
+ * `object-fit: contain`, with a one-line caption under it.
+ *
+ * The scrim, caption and ✕ are LITERAL colours on purpose, not theme tokens: a lightbox is dark in
+ * both appearances (the image is the only light source), and `--fg` under `data-theme="light"` is
+ * near-black — unreadable on this scrim. Light-on-black reads the same on either theme.
+ */
+
+.image-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+}
+
+/* The overlay takes focus on mount (so Esc lands) — never announce that with a ring. */
+.image-modal-overlay:focus {
+  outline: none;
+}
+
+.image-modal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  max-width: 95vw;
+  max-height: 95vh;
+}
+
+.image-modal__img {
+  display: block;
+  max-width: 95vw;
+  max-height: 95vh;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+/* A caption pushes the image up by its own height, so the pair still fits the viewport. */
+.image-modal:has(.image-modal__caption) .image-modal__img {
+  max-height: calc(95vh - 28px);
+}
+
+.image-modal__caption {
+  font-size: 13px;
+  color: #dadada;
+  max-width: 95vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-modal__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 4px 9px;
+  font-size: 13px;
+  color: #dadada;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+}
+
+.image-modal__close:hover {
+  background: rgba(0, 0, 0, 0.6);
+}
