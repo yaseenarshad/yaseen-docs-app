@@ -129,8 +129,12 @@ export async function buildTree(dir: string): Promise<TreeNode[]> {
   return [...dirs.sort(byNameCi), ...files.sort(byNameCi)]
 }
 
-/** Writes `content` to `<file>.tmp-<rand>` then renames over `file`. Parent dir must exist. */
-export async function atomicWrite(file: string, content: string): Promise<{ mtime: number; size: number }> {
+/**
+ * Writes `content` to `<file>.tmp-<rand>` then renames over `file`. Parent dir must exist.
+ * A string lands as UTF-8; bytes (an image through `writeAsset`, YAZ-1661) land verbatim —
+ * `writeFile` ignores the encoding for a view, so one call serves both.
+ */
+export async function atomicWrite(file: string, content: string | Uint8Array): Promise<{ mtime: number; size: number }> {
   const tmp = `${file}.tmp-${randomBytes(6).toString('hex')}`
   try {
     await writeFile(tmp, content, 'utf8')

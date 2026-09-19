@@ -157,17 +157,37 @@ export interface ContextMenuActions {
   replace(word: string): void
   /** Teach the spellchecker a word it flagged, for good. */
   addToDictionary(word: string): void
+  /** Copy the right-clicked image's pixels to the clipboard (YAZ-1666). */
+  copyImage(): void
+  /** Reveal the right-clicked image's file in Finder (YAZ-1666); `srcURL` is the `<img src>` as loaded. */
+  revealImage(srcURL: string): void
 }
 
 /**
  * The right-click menu (YAZ-672). Electron ships no default one, so the spellchecker's squiggles
  * had nothing to act on. Pure like `buildMenuTemplate`; the `context-menu` event and the
  * `Menu.buildFromTemplate(...).popup()` apply layer live in `main/index.ts`.
+ *
+ * An IMAGE under the cursor (YAZ-1666, images-as-first-class-citizens YAZ-1656 D7) gets its
+ * own two-row menu INSTEAD of the text one: cut/copy/paste act on a selection an image does
+ * not have, and the spellchecker has nothing to say about pixels. Exactly two rows — a "Copy
+ * Image Address" would hand out an `app://vault` URL that means nothing outside the app, and
+ * "Copy Markdown" is the editor's job. Chromium reports `mediaType: 'image'` only for an
+ * element laid out as an image (`<img>`, `<input type=image>`, SVG `<image>`), never for an
+ * inline `<svg>` or a CSS background — so the sidebar's icons keep the text menu, and the rows
+ * appear on the editor's images, the lightbox and card covers alike. Reveal receives the
+ * `<img src>` verbatim; `vaultProtocol.ts` decides whether it names a vault file.
  */
 export function buildContextMenuTemplate(
-  params: Pick<Electron.ContextMenuParams, 'misspelledWord' | 'dictionarySuggestions' | 'editFlags'>,
+  params: Pick<Electron.ContextMenuParams, 'misspelledWord' | 'dictionarySuggestions' | 'editFlags' | 'mediaType' | 'srcURL'>,
   actions: ContextMenuActions,
 ): MenuItemConstructorOptions[] {
+  if (params.mediaType === 'image') {
+    return [
+      { label: 'Copy Image', click: () => actions.copyImage() },
+      { label: 'Reveal in Finder', click: () => actions.revealImage(params.srcURL) },
+    ]
+  }
   const suggestions: MenuItemConstructorOptions[] = params.dictionarySuggestions.map((s) => ({ label: s, click: () => actions.replace(s) }))
   const dictionary: MenuItemConstructorOptions[] =
     params.misspelledWord === ''

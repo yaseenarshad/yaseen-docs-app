@@ -239,7 +239,11 @@ export interface ImageResponse {
 
 // ---------- readAsset(root, ref) / writeAsset(req) (Bases 4E, GRO-2139 — Desktop D10: bridge methods, never routes) ----------
 
-/** Allowed image extensions for `readAsset` (no dot); anything else rejects `UNSUPPORTED_EXTENSION`. */
+/**
+ * The image extensions the asset pipe serves (no dot): `readAsset`, the `app://vault` image
+ * protocol (YAZ-1658) and a byte `writeAsset` (YAZ-1661); anything else rejects
+ * `UNSUPPORTED_EXTENSION` (or, over the protocol, 404s).
+ */
 export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp'] as const
 
 /**
@@ -268,16 +272,18 @@ export interface AssetResponse {
 }
 
 /**
- * `writeAsset` — the write half of the asset pipe (YAZ-876). Drawings ONLY: images arrive by
- * other means, so widening write access to them is deliberately out of scope.
+ * `writeAsset` — the write half of the asset pipe (YAZ-876). Drawings landed first and images
+ * were deliberately NOT widened then; YAZ-1656 (images as first-class citizens, D5) reverses
+ * that: THE BODY'S TYPE PICKS THE FILE KIND — bytes → an `IMAGE_EXTENSIONS` path, a string →
+ * a `DRAWING_EXTENSIONS` path, any other pairing `UNSUPPORTED_EXTENSION`.
  */
 export interface AssetWriteRequest {
   /** Vault root; the resolved target must sit under it (else `BAD_REQUEST`). */
   root: string
-  /** The drawing's vault-relative path (absolute under `root` also accepted). Never a basename search — writes are never fuzzy. */
+  /** The asset's vault-relative path (absolute under `root` also accepted). Never a basename search — writes are never fuzzy. */
   path: string
-  /** Scene JSON as UTF-8; above MAX_FILE_BYTES → `TOO_LARGE`. */
-  content: string
+  /** Scene JSON as UTF-8 (a drawing), or the raw bytes of an image (YAZ-1656); above MAX_FILE_BYTES → `TOO_LARGE`. */
+  content: string | Uint8Array
   /** Optimistic-concurrency guard, `writeFile`'s exactly: a differing disk mtime rejects `CONFLICT` and nothing is written. */
   expectedMtime?: number
   /** Create mode (`createFile`'s `wx`): an existing target rejects `ALREADY_EXISTS` and is never overwritten. */
@@ -1077,12 +1083,13 @@ export interface YaseenDocsApi {
   coldDiff(root: string): Promise<ColdStartDiffResponse | null>
   /**
    * Local asset for the cards view (GRO-2139) and the drawing embed (YAZ-876): `ref` is a
-   * wikilink target or path (`|alias` / `#heading` stripped) — root-relative when it has a `/`,
-   * else Obsidian's shortest-path rule (case-insensitive basename, first match in a deterministic
-   * walk). Images (`IMAGE_EXTENSIONS`) and drawings (`DRAWING_EXTENSIONS`) only.
+   * wikilink target or path (`|alias` / `#heading` stripped) — tried root-relative, then
+   * Obsidian's shortest-path rule (case-insensitive basename, first match in a deterministic
+   * walk); the same resolver serves `app://vault` image URLs (YAZ-1658). Images
+   * (`IMAGE_EXTENSIONS`) and drawings (`DRAWING_EXTENSIONS`) only.
    */
   readAsset(root: string, ref: string): Promise<AssetResponse>
-  /** Writes a drawing sidecar under `root` (YAZ-876): drawings only, explicit path, atomic; see `AssetWriteRequest`. */
+  /** Writes a drawing (string) or an image (bytes) under `root` (YAZ-876, YAZ-1661): explicit path, atomic; see `AssetWriteRequest`. */
   writeAsset(req: AssetWriteRequest): Promise<AssetWriteResponse>
   /** Native open-directory dialog parented to the calling window (GRO-2163). */
   pickFolder(): Promise<PickFolderResponse>
