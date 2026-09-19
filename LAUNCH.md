@@ -42,6 +42,7 @@ ls "$HOME/Library/Application Support/Yaseen Docs/"
 ```
 
 - `--user-data-dir=<dir>` relocates the whole state file — this is how agent checks run against a temp state without touching the real one.
+- To try a branch by hand against a SCRATCH vault (YAZ-1656's demo pattern): seed `<dir>/yaseendocs.json` with a `windows[]` entry for the scratch vault (the `seededState` shape in `desktop/e2e/helpers.ts`), then from `desktop/` run `YASEEN_DOCS_USER_DATA_DIR=<dir> npx electron-vite dev`. The env var is read before the single-instance lock, so the installed app and the dev app run side by side. Do NOT add `--watch` while agents are editing main-process files: every rebuild relaunches the window on the user's screen.
 
 ## Verify
 

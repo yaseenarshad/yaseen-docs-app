@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { MAX_FILE_BYTES } from '@shared/types'
-import { readAsset, writeAsset } from './assets'
+import { readAsset, resolveAsset, writeAsset } from './assets'
 import { makeViewsFixture } from './viewsFixture'
 import { failure } from './testFixture'
 
@@ -85,6 +85,56 @@ describe('readAsset resolution', () => {
   })
 })
 
+/**
+ * `resolveAsset(root, target, from?)` (YAZ-1658, YAZ-1656 D1): the resolution order `readAsset` and the
+ * `app://vault` image protocol share — note-relative (`from`) → root-relative → shortest-path
+ * basename. Pure "where does this name land": no extension policy, null for a miss, and the
+ * vault edge on the two path steps so an escape can only fall through to the walk.
+ */
+describe('resolveAsset', () => {
+  it('a note-relative hit wins over a root-relative one and over the basename walk', async () => {
+    // `dup.png` sits in both aa/ and bb/; the walk would pick aa/ (sorted first), root-relative misses.
+    expect(await resolveAsset(root, 'dup.png', 'bb')).toBe(path.join(root, 'bb', 'dup.png'))
+    expect(await resolveAsset(root, './dup.png', 'bb')).toBe(path.join(root, 'bb', 'dup.png'))
+    // `../` from the note's own folder is still note-relative, and still inside the vault.
+    expect(await resolveAsset(root, '../bb/dup.png', 'aa')).toBe(path.join(root, 'bb', 'dup.png'))
+  })
+
+  it('a root-relative hit wins over the basename walk', async () => {
+    expect(await resolveAsset(root, 'bb/dup.png')).toBe(path.join(root, 'bb', 'dup.png'))
+    // `from` given but missing there: root-relative is next, before the walk.
+    expect(await resolveAsset(root, 'aa/dup.png', 'bb')).toBe(path.join(root, 'aa', 'dup.png'))
+    // An empty `from` (a note at the root) is the root-relative step itself.
+    expect(await resolveAsset(root, 'bb/dup.png', '')).toBe(path.join(root, 'bb', 'dup.png'))
+  })
+
+  it('falls back to the shortest-path walk when neither path step lands', async () => {
+    expect(await resolveAsset(root, 'levels.png', 'bb')).toBe(path.join(root, 'Content Pillars', 'levels.png'))
+    expect(await resolveAsset(root, 'no-such-dir/levels.png')).toBe(path.join(root, 'Content Pillars', 'levels.png'))
+    expect(await resolveAsset(root, 'dup.png')).toBe(path.join(root, 'aa', 'dup.png'))
+  })
+
+  it('null for a miss, an empty target, or a directory of that name', async () => {
+    expect(await resolveAsset(root, 'missing.png')).toBeNull()
+    expect(await resolveAsset(root, 'missing.png', 'aa')).toBeNull()
+    expect(await resolveAsset(root, '')).toBeNull()
+    expect(await resolveAsset(root, 'aa')).toBeNull()
+  })
+
+  it('the vault edge holds on both path steps: an escape never reaches a file outside root', async () => {
+    const outside = path.join(root, '..', 'escaped-asset-yaz1656.png')
+    await writeFile(outside, PNG)
+    try {
+      expect(await resolveAsset(root, '../escaped-asset-yaz1656.png')).toBeNull()
+      expect(await resolveAsset(root, 'escaped-asset-yaz1656.png', '..')).toBeNull()
+      expect(await resolveAsset(root, '../../escaped-asset-yaz1656.png', 'aa')).toBeNull()
+      expect(await resolveAsset(root, outside)).toBeNull()
+    } finally {
+      await rm(outside, { force: true })
+    }
+  })
+})
+
 describe('readAsset failures', () => {
   it('NOT_FOUND when no file under root has the basename', async () => {
     expect((await failure(readAsset(root, 'missing.png'))).code).toBe('NOT_FOUND')
@@ -144,11 +194,12 @@ describe('readAsset drawings', () => {
 })
 
 /**
- * `writeAsset(req)` (YAZ-876, the Excalidraw embed's asset pipe — YAZ-852): drawings ONLY, an
- * EXPLICIT vault-relative path (writes are never fuzzy — no basename search), parent folders made
- * on the way, and `file.ts`'s write semantics: atomic tmp+rename, `expectedMtime` → `CONFLICT`,
- * and a create mode that never overwrites. This rides the dedicated asset capability rather than
- * supported-file discovery, so drawings stay out of the tree, the index, and the watcher.
+ * `writeAsset(req)` (YAZ-876, the Excalidraw embed's asset pipe — YAZ-852; widened to image
+ * bytes by YAZ-1656 D5): the BODY'S TYPE picks the file kind (string → drawing, bytes → image),
+ * an EXPLICIT vault-relative path (writes are never fuzzy — no basename search), parent folders
+ * made on the way, and `file.ts`'s write semantics: atomic tmp+rename, `expectedMtime` →
+ * `CONFLICT`, and a create mode that never overwrites. This rides the dedicated asset capability
+ * rather than supported-file discovery, so drawings stay out of the tree, the index, and the watcher.
  */
 describe('writeAsset', () => {
   let vault: string
@@ -197,7 +248,7 @@ describe('writeAsset', () => {
     expect(await readFile(file, 'utf8')).toBe(SCENE)
   })
 
-  it('UNSUPPORTED_EXTENSION for anything but a drawing — images included: writes are drawings-only', async () => {
+  it('a STRING body is a drawing: UNSUPPORTED_EXTENSION on anything else, images included', async () => {
     expect(await code(writeAsset({ root: vault, path: rel('note.md'), content: '# no' }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(writeAsset({ root: vault, path: rel('pic.png'), content: 'x' }))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(writeAsset({ root: vault, path: rel('scene'), content: 'x' }))).toBe('UNSUPPORTED_EXTENSION')
@@ -227,5 +278,74 @@ describe('writeAsset', () => {
 
   it('leaves no .tmp- debris behind', async () => {
     expect((await readdir(path.join(vault, 'assets', 'drawings'))).filter((n) => n.includes('.tmp-'))).toEqual([])
+  })
+})
+
+/**
+ * The image half of `writeAsset` (YAZ-1661, YAZ-1656 D5): bytes → an `IMAGE_EXTENSIONS` path, verbatim on
+ * disk, under the SAME guards as a drawing (size cap, `expectedMtime`, never-overwrite create).
+ */
+describe('writeAsset image bytes', () => {
+  let vault: string
+  beforeAll(async () => (vault = await mkdtemp(path.join(tmpdir(), 'mdapp-img-'))))
+  afterAll(() => rm(vault, { recursive: true, force: true }))
+
+  const code = async (p: Promise<unknown>) => (await failure(p)).code
+  const rel = (name: string) => path.posix.join('assets', name)
+
+  it('a Uint8Array lands byte-for-byte on a .png path, parents made on the way, and reads back through readAsset', async () => {
+    const res = await writeAsset({ root: vault, path: rel('pasted.png'), content: new Uint8Array(PNG) })
+    const file = path.join(vault, 'assets', 'pasted.png')
+    expect(res).toEqual({ path: file, mtime: (await stat(file)).mtimeMs, size: PNG.length })
+    expect(await readFile(file)).toEqual(PNG)
+    const read = await readAsset(vault, 'pasted.png')
+    expect(read.mime).toBe('image/png')
+    expect(Buffer.from(read.data, 'base64')).toEqual(PNG)
+  })
+
+  it('a Buffer is bytes too: any ArrayBuffer view, not `Uint8Array` by name', async () => {
+    await writeAsset({ root: vault, path: rel('buffer.jpg'), content: Buffer.from(PNG) })
+    expect(await readFile(path.join(vault, 'assets', 'buffer.jpg'))).toEqual(PNG)
+  })
+
+  it('a subarray writes exactly its own byte range, never its backing buffer', async () => {
+    const backing = Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8])
+    await writeAsset({ root: vault, path: rel('slice.gif'), content: backing.subarray(2, 6) })
+    expect([...(await readFile(path.join(vault, 'assets', 'slice.gif')))]).toEqual([3, 4, 5, 6])
+  })
+
+  it('a BYTE body is an image: UNSUPPORTED_EXTENSION on a drawing or any other path', async () => {
+    expect(await code(writeAsset({ root: vault, path: rel('scene.excalidraw'), content: new Uint8Array(PNG) }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await code(writeAsset({ root: vault, path: rel('note.md'), content: new Uint8Array(PNG) }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await code(writeAsset({ root: vault, path: rel('pic'), content: new Uint8Array(PNG) }))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await stat(path.join(vault, 'assets', 'scene.excalidraw')).catch(() => null)).toBeNull()
+  })
+
+  it('neither a string nor bytes is BAD_REQUEST', async () => {
+    expect(await code(writeAsset({ root: vault, path: rel('x.png'), content: { length: 1 } as never }))).toBe('BAD_REQUEST')
+    expect(await code(writeAsset({ root: vault, path: rel('x.png'), content: [1, 2] as never }))).toBe('BAD_REQUEST')
+  })
+
+  it('TOO_LARGE above MAX_FILE_BYTES of bytes, and nothing lands on disk', async () => {
+    expect(await code(writeAsset({ root: vault, path: rel('huge.png'), content: new Uint8Array(MAX_FILE_BYTES + 1) }))).toBe('TOO_LARGE')
+    expect(await stat(path.join(vault, 'assets', 'huge.png')).catch(() => null)).toBeNull()
+  })
+
+  it('create mode never overwrites an image either: ALREADY_EXISTS and the bytes stand', async () => {
+    const file = path.join(vault, 'assets', 'once.webp')
+    expect((await writeAsset({ root: vault, path: rel('once.webp'), content: new Uint8Array(PNG), create: true })).path).toBe(file)
+    expect(await code(writeAsset({ root: vault, path: rel('once.webp'), content: Uint8Array.from([0]), create: true }))).toBe('ALREADY_EXISTS')
+    expect(await readFile(file)).toEqual(PNG)
+  })
+
+  it('expectedMtime guards an image write like a drawing: stale → CONFLICT with nothing written', async () => {
+    const file = path.join(vault, 'assets', 'pasted.png')
+    const before = (await stat(file)).mtimeMs
+    expect(await code(writeAsset({ root: vault, path: rel('pasted.png'), content: Uint8Array.from([0]), expectedMtime: before - 1000 }))).toBe('CONFLICT')
+    expect(await readFile(file)).toEqual(PNG)
+  })
+
+  it('leaves no .tmp- debris behind', async () => {
+    expect((await readdir(path.join(vault, 'assets'))).filter((n) => n.includes('.tmp-'))).toEqual([])
   })
 })

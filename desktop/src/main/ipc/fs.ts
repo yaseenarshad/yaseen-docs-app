@@ -35,8 +35,10 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   // consumers gate on cacheStatus === 'hit'.
   handle(CH.fsColdDiff, async (root: unknown) => (typeof root === 'string' ? (getColdStartDiff(root) ?? null) : null))
   handle(CH.fsReadAsset, readAsset)
-  // The drawing sidecar write (YAZ-876): no store repair and no broadcast — a `.excalidraw` is
-  // not a vault file, so no tab, recents entry or index record can be pointing at it.
+  // The asset write (YAZ-876 drawings, YAZ-1661 image bytes): no store repair and no broadcast
+  // — repair and the pushes exist for paths that MOVE or GO, and a write does neither. A
+  // `.excalidraw` is not a vault file, so nothing points at it; a pasted image is a NEW file
+  // the tree learns of from the watcher, like any add made outside the app.
   handle(CH.fsWriteAsset, writeAsset)
   // Reveal in Finder (GRO-2274): read-only, so no store repair and no broadcast — but still
   // enveloped like every other handler so a stale row's NOT_FOUND reaches the renderer as a

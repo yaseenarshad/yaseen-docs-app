@@ -130,8 +130,18 @@ describe('registerFsIpc', () => {
     const bad = await registered(CH.fsWriteAsset)({ sender: {} }, { ...req, path: 'assets/drawings/scene.png' })
     expect(bad).toEqual({
       ok: false,
-      error: { code: 'UNSUPPORTED_EXTENSION', message: 'only drawing files can be written as assets', path: path.join(root, 'assets', 'drawings', 'scene.png') },
+      error: { code: 'UNSUPPORTED_EXTENSION', message: 'a text body writes drawing files only', path: path.join(root, 'assets', 'drawings', 'scene.png') },
     })
+  })
+
+  it('fs:write-asset takes image BYTES on an image path and passes them through untouched (YAZ-1661)', async () => {
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff])
+    const ok = await registered(CH.fsWriteAsset)({ sender: {} }, { root, path: 'assets/pasted.png', content: bytes })
+    expect(ok.ok).toBe(true)
+    if (!ok.ok) throw new Error('expected ok')
+    const file = path.join(root, 'assets', 'pasted.png')
+    expect(ok.value).toMatchObject({ path: file, size: bytes.byteLength })
+    expect(await readFile(file)).toEqual(Buffer.from(bytes))
   })
 
   it('fs:index answers the vault index for the root: markdown records only (GRO-2129)', async () => {
