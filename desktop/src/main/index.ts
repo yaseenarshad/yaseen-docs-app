@@ -12,6 +12,8 @@ import { registerClipboardIpc } from './ipc/clipboard'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
 import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, pickMenuTargetWindow, subscribeMenuRebuild } from './menu'
+import { revealItem } from './fs/reveal'
+import { revealVaultImage, serveVaultImage } from './vaultProtocol'
 import { createStore } from './store'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
 import { applyUserDataOverride } from './userData'
@@ -98,6 +100,10 @@ const manager = createWindowManager(store, {
         pasteAs: (mode) => win.webContents.send(CH.menuPasteAs, { mode, text: clipboard.readText() } satisfies ClipboardPasteRequest),
         replace: (s) => win.webContents.replaceMisspelling(s),
         addToDictionary: (w) => win.webContents.session.addWordToSpellCheckerDictionary(w),
+        // Image rows (YAZ-1666): Chromium copies the decoded pixels at the click point; reveal
+        // resolves the `<img src>` through vaultProtocol.ts, so a non-vault source is a no-op there.
+        copyImage: () => win.webContents.copyImageAt(params.x, params.y),
+        revealImage: (src) => void revealVaultImage(src, (file) => revealItem({ path: file })),
       })).popup({ window: win }))
     // `<renderer>?win=<id>` so the renderer can ask `window.identity()` who it is.
     const url = new URL(process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html')
@@ -146,7 +152,10 @@ app.whenReady().then(() => {
     nativeTheme.themeSource = theme
   })
   protocol.handle('app', (req) => {
-    const { pathname } = new URL(req.url)
+    const { host, pathname } = new URL(req.url)
+    // `app://vault/…` (YAZ-1658): vault images for `<img src>`, resolved by vaultProtocol.ts;
+    // every other host is the renderer bundle, exactly as before.
+    if (host === 'vault') return serveVaultImage(req, (u) => net.fetch(u))
     const file = join(RENDERER_DIR, pathname === '/' ? 'index.html' : pathname)
     return net.fetch(pathToFileURL(file).toString())
   })

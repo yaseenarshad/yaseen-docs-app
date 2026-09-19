@@ -1,0 +1,104 @@
+/*
+ * Image node view (YAZ-1656) — classes applied by imageView.ts.
+ *
+ * Every rule is scoped under `.milkdown` on purpose (the drawing preview's lesson): Crepe's reset
+ * carries `.milkdown * { margin: 0; padding: 0 }` at the same specificity as a bare class and
+ * loads after this file, so an unscoped `.image-view` would silently lose its spacing.
+ *
+ * The wrapper is `inline-block` because the node is INLINE in the schema (an image sits in a
+ * paragraph, beside text); `position: relative` anchors the handles to its box. `max-width:
+ * 100%` on the image keeps a wide bitmap — or an over-eager `|width` — inside the editor column.
+ *
+ * Every colour is a theme token (`--accent`, `--bg`, `--border`, `--fg-muted`), so the selected
+ * ring, the handles and the broken chip re-key with `data-theme` like the rest of the editor —
+ * nothing here is a literal that reads on one appearance only.
+ */
+
+.milkdown .image-view {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: baseline;
+  line-height: 0;
+}
+
+.milkdown .image-view img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+/* Loading is QUIET: no box, no spinner — a fast read must not flash a frame that then vanishes. */
+.milkdown .image-view--loading img {
+  min-width: 1px;
+  min-height: 1px;
+}
+
+/* Selected (ProseMirror's NodeSelection) — the accent ring says "this is the thing your keys act on". */
+.milkdown .image-view.is-selected img {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/*
+ * The resize handles: eight small accent squares — four corners, four edge midpoints — visible
+ * while the node is selected (and on hover, so they can be found before the first click). Hidden
+ * while broken — there is no image to size. Every handle changes the width only (aspect locked),
+ * the cursor just says which way to pull.
+ */
+.milkdown .image-view__handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--bg);
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.milkdown .image-view__handle--nw { top: -5px; left: -5px; cursor: nwse-resize; }
+.milkdown .image-view__handle--se { bottom: -5px; right: -5px; cursor: nwse-resize; }
+.milkdown .image-view__handle--ne { top: -5px; right: -5px; cursor: nesw-resize; }
+.milkdown .image-view__handle--sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
+.milkdown .image-view__handle--n { top: -5px; left: calc(50% - 5px); cursor: ns-resize; }
+.milkdown .image-view__handle--s { bottom: -5px; left: calc(50% - 5px); cursor: ns-resize; }
+.milkdown .image-view__handle--w { left: -5px; top: calc(50% - 5px); cursor: ew-resize; }
+.milkdown .image-view__handle--e { right: -5px; top: calc(50% - 5px); cursor: ew-resize; }
+
+.milkdown .image-view.is-selected .image-view__handle,
+.milkdown .image-view:hover .image-view__handle,
+.milkdown .image-view--resizing .image-view__handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* A read-only editor (the outline's seed guard, a hover preview) has no resize gesture — and no handles to promise one. */
+.milkdown .ProseMirror[contenteditable='false'] .image-view__handle {
+  display: none;
+}
+
+/* No transition mid-drag: the width must follow the pointer exactly. */
+.milkdown .image-view--resizing {
+  user-select: none;
+}
+
+.milkdown .image-view--resizing img {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Broken: missing / unreadable / 404. An inert chip that names the src as written, so the line is fixable. */
+.milkdown .image-view--broken {
+  line-height: normal;
+}
+
+.milkdown .image-view__broken {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg-muted);
+  font-size: 0.85em;
+  padding: 0.05em 0.4em;
+  white-space: nowrap;
+}

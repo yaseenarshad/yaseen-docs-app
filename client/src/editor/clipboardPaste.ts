@@ -1,10 +1,12 @@
 import { editorViewOptionsCtx, parserCtx } from '@milkdown/kit/core'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import { Fragment, Slice, type Node as ProseNode } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey, Selection } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { CLIPBOARD_EMPTY_PARAGRAPH } from './clipboardCopyOut'
 import { externalNumberedHTML, literalNumberedHTML, parseLiteralNumberedPaste } from './clipboardNumbers'
+import { imageOptionsOf } from './image/imageOptions'
+import { imageFile, insertPastedImage } from './image/insertImage'
 
 /** A root-level BR between paragraphs is one blank paragraph, not a paragraph with two visual lines. */
 function normalizeParagraphSeparators(html: string): string {
@@ -42,6 +44,17 @@ export const clipboardPaste = $prose((ctx) => {
     transformPastedHTML: (html, view) => literalNumberedHTML(normalizeParagraphSeparators(prev.transformPastedHTML?.(html, view) ?? html)),
     handlePaste: (view, event, slice) => {
       if (!view.editable) return true
+      // Image BYTES win over markup (YAZ-1656 / YAZ-1662, D6): a screenshot on the clipboard is
+      // written to the vault and inserted as an image node; whatever HTML rode along is dropped.
+      // Never in code. A write that fails is the host's passive notice (`insertPastedImage`).
+      const image = imageOptionsOf(ctx)
+      if (image !== null && !view.state.selection.$from.parent.type.spec.code) {
+        const file = imageFile(event.clipboardData)
+        if (file !== null) {
+          void insertPastedImage(image, view, file)
+          return true
+        }
+      }
       // Guard before the fake-outline handler: code must never become a list.
       if (view.state.selection.$from.parent.type.spec.code) {
         const text = event.clipboardData?.getData('text/plain') ?? ''
@@ -67,6 +80,22 @@ export const clipboardPaste = $prose((ctx) => {
         }
       }
       return false
+    },
+    // A dropped image file (Finder, another app) lands where it was dropped (YAZ-1656 / YAZ-1662,
+    // D6): the selection moves to the drop point first — `Selection.near` makes that a caret even
+    // over an empty document or a folded parent — then the same write + insert as paste. An
+    // internal ProseMirror move (`moved`) never carries files, so it falls through to Crepe's own.
+    handleDrop: (view, event, slice, moved) => {
+      const image = imageOptionsOf(ctx)
+      const file = image !== null && !moved && view.editable ? imageFile(event.dataTransfer) : null
+      if (image === null || file === null) return prev.handleDrop?.(view, event, slice, moved) ?? false
+      const at = view.posAtCoords({ left: event.clientX, top: event.clientY })
+      // Over code, or nowhere in the document: REFUSED, not passed on — the next handler down is
+      // Milkdown's upload plugin, which would inline the file as a base64 `data:` src.
+      if (at === null || view.state.doc.resolve(at.pos).parent.type.spec.code) return true
+      view.dispatch(view.state.tr.setSelection(Selection.near(view.state.doc.resolve(at.pos))))
+      void insertPastedImage(image, view, file)
+      return true
     },
   }))
   return new Plugin({
