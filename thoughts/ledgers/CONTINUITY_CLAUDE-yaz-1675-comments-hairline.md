@@ -20,6 +20,11 @@
   - [x] 3 YAZ-1678: polish (CSS header + CONTRACTS.md clause, ledger), audit posted per item
   - [x] PR #60 merged to main (cbbdc2a); Linear parent + children Done; demo folder, dev app, worktree, branch removed
 - Now: nothing — issue closed. No release cut (Yasin batches releases).
+- Follow-up YAZ-1680 (same stream, after Yasin saw the result):
+  - [x] D1 amended: Linked mentions' line goes too (`backlinks.css`), guard test in `BacklinksSection.test.tsx`
+  - [x] D4: the scroller (`.editor-host`) owns the page's one 64px tail; `.comments`, `.backlinks`, `.folder-page-contents` carry none — they stack flush. Guard in `contentWidthCss.test.ts`
+  - [x] Left alone on purpose: `.editor-instance`'s 120px tail under the note (the keep-typing zone); Yasin did not ask
+  - [x] Demo vault `Remove Line Above Linked Mentions YAZ-1680`, approved ("love it")
 
 ## Open Questions
 - none
