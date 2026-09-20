@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 
-const PRESETS = [50, 75, 90, 100, 125, 150, 200]
+const PRESETS = [50, 75, 90, 100, 125, 150, 200, 300, 400]
 
 /**
  * Next preset above (`1`) or below (`-1`) `value`; a custom value snaps to the nearest preset in
@@ -10,10 +10,21 @@ const PRESETS = [50, 75, 90, 100, 125, 150, 200]
 export const stepZoom = (value: number, direction: 1 | -1): number | null =>
   (direction === 1 ? PRESETS.find((p) => p > value) : [...PRESETS].reverse().find((p) => p < value)) ?? null
 
+/**
+ * The keyboard's step (⌘+ / ⌘−, YAZ-1710 D16): the preset ladder up to 200%, then 25 at a time
+ * to 400% — 200 → 300 is a big jump under a key held down, fine for a click in the menu. The pill's
+ * − / + keep the ladder. Custom values snap to the grid in the step direction (210 → 225 / 200).
+ */
+export const stepZoomByKey = (value: number, direction: 1 | -1): number | null => {
+  if (direction === 1 ? value < 200 : value <= 200) return stepZoom(value, direction)
+  const next = direction === 1 ? Math.floor(value / 25) * 25 + 25 : Math.ceil(value / 25) * 25 - 25
+  return next > 400 ? null : next
+}
+
 const parseZoom = (draft: string): number | null => {
   const text = draft.trim()
   const next = Number(text.replace(/%$/, ''))
-  return /^\d{1,3}%?$/.test(text) && next >= 50 && next <= 200 ? next : null
+  return /^\d{1,3}%?$/.test(text) && next >= 50 && next <= 400 ? next : null
 }
 
 export function DocumentZoom({ value, onChange }: { value: number; onChange: (value: number) => void }) {
@@ -116,7 +127,7 @@ export function DocumentZoom({ value, onChange }: { value: number; onChange: (va
       {open && <div id={menuId} className="document-zoom__menu" role="group" aria-label="Zoom options">
         <div className="document-zoom__custom">
           <label htmlFor={inputId}>Custom</label>
-          <input ref={inputRef} id={inputId} inputMode="numeric" title="Document zoom (50–200%)"
+          <input ref={inputRef} id={inputId} inputMode="numeric" title="Document zoom (50–400%)"
             value={draft ?? `${value}%`} aria-invalid={error}
             aria-describedby={error ? errorId : undefined}
             onFocus={(event) => event.target.select()}
@@ -129,7 +140,7 @@ export function DocumentZoom({ value, onChange }: { value: number; onChange: (va
               }
             }} />
           {error && <div id={errorId} role="alert" className="document-zoom__error">
-            Use a whole number from 50–200%.
+            Use a whole number from 50–400%.
           </div>}
         </div>
         <div className="document-zoom__divider" aria-hidden="true" />

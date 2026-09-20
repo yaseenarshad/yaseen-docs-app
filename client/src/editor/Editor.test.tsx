@@ -627,7 +627,10 @@ describe('document magnification (YAZ-1410)', () => {
     const el = await mount(BODY)
     const count = createCrepeMock.mock.calls.length
     enterZoom(el, '115%')
-    expect(el.querySelector<HTMLElement>('.editor-host')!.style.zoom).toBe('1.15')
+    // The scroller carries the number only (D14); CSS zooms the content blocks, never the scroller.
+    const host = el.querySelector<HTMLElement>('.editor-host')!
+    expect(host.style.getPropertyValue('--document-zoom')).toBe('1.15')
+    expect(host.style.zoom).toBe('')
     expect(el.querySelector('.editor-host')!.contains(el.querySelector('.document-zoom'))).toBe(false)
     expect(createCrepeMock).toHaveBeenCalledTimes(count)
     expect(crepe().md).toBe(BODY)
@@ -653,18 +656,31 @@ describe('document magnification (YAZ-1410)', () => {
     expect(send(el.querySelector('.editor-mount')!, 0)).toBe(true)
     expect(value()).toBe('100%')
     enterZoom(el, '200')
+    // Above 200 the keys step 25 at a time (D16) while the pill keeps the ladder (D12).
     expect(send(el.querySelector('.editor-mount')!, 1)).toBe(true)
-    expect(value()).toBe('200%')
+    expect(value()).toBe('225%')
+    act(() => el.querySelector<HTMLButtonElement>('.document-zoom__step[aria-label="Zoom in"]')!.click())
+    expect(value()).toBe('300%')
+    enterZoom(el, '400')
+    expect(send(el.querySelector('.editor-mount')!, 1)).toBe(true)
+    expect(value()).toBe('400%')
     // Outside the section nobody claims it — that is the app's cue.
     expect(send(document.body, 1)).toBe(false)
-    expect(value()).toBe('200%')
+    expect(value()).toBe('400%')
   })
 
-  it('brings the caret line back into view after a zoom change, and only when the caret is in this note (D11)', async () => {
+  it('anchors the caret line on screen through a zoom change; an off-screen caret is centered; a caret elsewhere is ignored (D11)', async () => {
     const el = await mount(BODY)
-    const scrolled: Element[] = []
+    const scroller = el.querySelector<HTMLElement>('.editor-host')!
+    scroller.getBoundingClientRect = () => ({ top: 0, height: 500 } as DOMRect)
+    const zoomOf = () => Number(scroller.style.getPropertyValue('--document-zoom') || 1)
+    // The caret line sits at 100px unzoomed and moves with the zoom, like a real layout would.
+    let offScreen = false
+    const originalRange = Range.prototype.getBoundingClientRect
+    Range.prototype.getBoundingClientRect = () => ({ top: offScreen ? 900 : 100 * zoomOf(), height: 20 } as DOMRect)
     const proto = HTMLElement.prototype as unknown as Record<string, unknown>
-    proto.scrollIntoView = function (this: Element) { scrolled.push(this) }
+    const centered: [Element, unknown][] = []
+    proto.scrollIntoView = function (this: Element, opts: unknown) { centered.push([this, opts]) }
     const step = (from: Element) => act(() => { from.dispatchEvent(new CustomEvent(ZOOM_EVENT, { detail: 1, bubbles: true, cancelable: true })) })
     const caretIn = (p: HTMLParagraphElement) => {
       const range = document.createRange()
@@ -678,22 +694,56 @@ describe('document magnification (YAZ-1410)', () => {
       line.textContent = 'a line'
       el.querySelector('.editor-mount')!.append(line)
       caretIn(line)
-      step(line)
-      expect(el.querySelector('.document-zoom__value')!.textContent).toBe('125%')
-      expect(scrolled).toEqual([line])
+      scroller.scrollTop = 40
 
-      // Caret elsewhere: this note's zoom change must not drag the page around.
+      step(line) // 100 → 125: the line would move from 100 to 125 on screen; the scroller absorbs the 25
+      expect(scroller.style.getPropertyValue('--document-zoom')).toBe('1.25')
+      expect(scroller.scrollTop).toBe(65)
+      expect(centered).toEqual([])
+
+      offScreen = true
+      step(line) // 125 → 150 with the caret below the fold: centered, scroll left alone
+      expect(centered).toEqual([[line, { block: 'center' }]])
+      expect(scroller.scrollTop).toBe(65)
+
       const outside = document.createElement('p')
       outside.textContent = 'elsewhere'
       document.body.append(outside)
       caretIn(outside)
-      step(el.querySelector('.editor-mount')!)
-      expect(el.querySelector('.document-zoom__value')!.textContent).toBe('150%')
-      expect(scrolled).toEqual([line])
+      step(el.querySelector('.editor-mount')!) // this note zooms, but the caret is not its business
+      expect(centered).toHaveLength(1)
+      expect(scroller.scrollTop).toBe(65)
       outside.remove()
     } finally {
+      Range.prototype.getBoundingClientRect = originalRange
       delete proto.scrollIntoView
     }
+  })
+
+  it('measures the sideways slack from the deepest bullet: exactly what the zoom added, none at 100% (D15)', async () => {
+    const el = await mount(BODY)
+    const scroller = el.querySelector<HTMLElement>('.editor-host')!
+    const zoomOf = () => Number(scroller.style.getPropertyValue('--document-zoom') || 1)
+    const body = document.createElement('div')
+    body.className = 'ProseMirror'
+    body.getBoundingClientRect = () => ({ left: 0 } as DOMRect)
+    for (const indent of [34, 102]) {
+      const item = document.createElement('li')
+      item.className = 'list-item'
+      const children = document.createElement('div')
+      children.className = 'children'
+      children.getBoundingClientRect = () => ({ left: indent * zoomOf() } as DOMRect)
+      item.append(children)
+      body.append(item)
+    }
+    el.querySelector('.editor-mount')!.append(body)
+
+    enterZoom(el, '200')
+    expect(scroller.style.getPropertyValue('--zoom-slack')).toBe('102px') // 204 at 200% − 102 at 100%
+    enterZoom(el, '400')
+    expect(scroller.style.getPropertyValue('--zoom-slack')).toBe('306px')
+    enterZoom(el, '100')
+    expect(scroller.style.getPropertyValue('--zoom-slack')).toBe('0px')
   })
 
   it('keeps retained editors independent and resets a closed/reopened instance', async () => {
