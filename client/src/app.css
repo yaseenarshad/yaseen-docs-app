@@ -1610,41 +1610,72 @@ button {
 
 /* ---------- document magnification (YAZ-1410) ---------- */
 
+/* One segmented control (YAZ-1710): [ − | 100% | + ] inside a single hairline pill. The
+   percentage is the dropdown trigger (the arrow went with YAZ-1710 — the number alone opens
+   the menu); − / + step through the presets and grey out at 50 / 200 so the wall is visible. */
 .document-zoom {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
   font-size: 12px;
   color: var(--fg-muted);
 }
 
-.document-zoom__trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 5px;
-  min-width: 66px;
-  height: 24px;
-  padding: 2px 6px;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  background: var(--bg);
+/* No `overflow: hidden` on the pill: the dropdown menu is absolutely positioned inside it and
+   would be clipped. The end buttons round their own outer corners instead. */
+.document-zoom__step:first-of-type {
+  border-radius: 5px 0 0 5px;
+}
+
+.document-zoom__step:last-of-type {
+  border-radius: 0 5px 5px 0;
+}
+
+.document-zoom__trigger,
+.document-zoom__step {
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: inherit;
   font: inherit;
   cursor: pointer;
 }
 
+.document-zoom__trigger {
+  padding: 0 7px;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.document-zoom__step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  font-size: 13px;
+  line-height: 1;
+}
+
 .document-zoom__trigger:hover,
-.document-zoom__trigger[aria-expanded="true"] {
-  border-color: var(--border);
+.document-zoom__trigger[aria-expanded="true"],
+.document-zoom__step:hover:enabled {
+  background: var(--bg-hover);
   color: var(--fg);
 }
 
-.document-zoom__trigger:focus-visible {
+.document-zoom__trigger:focus-visible,
+.document-zoom__step:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline-offset: -2px;
 }
 
-.document-zoom__trigger[aria-expanded="true"] svg {
-  transform: rotate(180deg);
+.document-zoom__step:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .document-zoom__menu {

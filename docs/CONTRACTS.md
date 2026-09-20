@@ -643,8 +643,13 @@ Files: `client/src/views/folderPageSettings.ts`, `client/src/views/folderPageSet
 
 ## Document magnification (YAZ-1410)
 
-Each Markdown `CrepeHost` owns a temporary percentage, default **100%**. The entire percentage
-and arrow button immediately left of Sync opens the dropdown (YAZ-1430). A labeled Custom
+Each Markdown `CrepeHost` owns a temporary percentage, default **100%**. The control is ONE
+segmented pill immediately left of Sync — `− | 100% | +` (YAZ-1710, which retired YAZ-1430's
+dropdown arrow: the percentage alone opens the dropdown). `−` / `+` step to the next preset in
+that direction, a custom value snapping to the nearest preset that way (117 → 125 or 100); the
+end button is disabled at 50 / 200. A step applies at once through the same commit path as a
+preset: it closes an open menu, discards its draft (valid or invalid) and does not move focus,
+so repeated clicks keep stepping (`stepZoom` in `editor/DocumentZoom.tsx`). A labeled Custom
 input above the presets accepts whole numbers **50–200**, with an optional `%` suffix, and
 presets remain **50, 75, 90, 100, 125, 150, 200**. Enter or leaving the control applies a valid draft;
 Escape cancels it. Invalid input preserves the applied value and keeps the panel open with a
