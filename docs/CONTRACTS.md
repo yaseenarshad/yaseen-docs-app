@@ -676,8 +676,9 @@ applies. Tests cover the shared factory, preserved selection/typing/undo and bou
 
 The zoom lives on the CONTENT, never on a shell (YAZ-1710 D14). The scroller `.editor-host` carries
 only `--document-zoom`; `app.css` applies `zoom: var(--document-zoom)` to the children of every
-block (`.editor-host > :not(.editor-mount) > *`, plus the `display: contents` properties panel's
-pieces) and to the body's `.ProseMirror` node itself. Each block's column shell — `max-width`,
+block (`.editor-host > :not(.editor-mount) > *`) and to the body's `.ProseMirror` node itself. The
+`display: contents` properties panel is one of those children and passes the zoom on to its pieces
+through computed style — listing the pieces again zoomed the chip twice (6B1). Each block's column shell — `max-width`,
 `margin: 0 auto`, the 48px gutters — stays in unzoomed px, so the five blocks keep one aligned
 column and the gutters never grow; bullet indent (`--list-indent: 2.15em`) scales with the text
 on purpose (damping was tried and rejected, D13). Crepe appends its floating chrome — toolbar,
