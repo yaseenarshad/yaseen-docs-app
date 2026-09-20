@@ -505,6 +505,8 @@ export function TopicsTree({ root, expanded, onExpandedChange, focus, revealRequ
       selection.toggle(path)
       return
     }
+    // Every other activation makes the selection THIS page (D9, YAZ-1674), plain and ⌘ alike.
+    selection.set(path)
     // First activation PREVIEWS, second COMMITS (YAZ-921): opening from the tree keeps focus on
     // the row — the walk stays armed, click or Enter alike — and activating the page you are
     // already reading is the deliberate "take me in": the caret jumps into the text.
@@ -512,7 +514,6 @@ export function TopicsTree({ root, expanded, onExpandedChange, focus, revealRequ
       onOpenFileBackground(path)
       return
     }
-    selection.clear() // a plain activation starts over; ⌘ above deliberately does not
     if (path === activeFile) {
       focusOpenDocument() // the VISIBLE document (YAZ-961): a folder page's outline, not its hidden body
       return
@@ -689,13 +690,14 @@ export function TopicsTree({ root, expanded, onExpandedChange, focus, revealRequ
               title={path}
               data-path={path}
               data-uncategorized-folder={folder.path}
-              // The Files dir row's rule (YAZ-1578, 🔒 D1/D4): shift toggles the folder in or out
-              // of the selection and never folds; a plain click folds and leaves the pick alone.
+              // The Files dir row's rule (YAZ-1578, 🔒 D1; D9, YAZ-1674): shift toggles the folder
+              // in or out of the selection and never folds; a plain click SELECTS it and folds.
               onClick={(e) => {
                 if (e.shiftKey) {
                   selection.toggle(path)
                   return
                 }
+                selection.set(path)
                 toggleUncategorizedFolder(folder.path)
               }}
               onContextMenu={(e) => onRowContextMenu({ type: 'dir', path }, e)}
@@ -756,6 +758,7 @@ export function TopicsTree({ root, expanded, onExpandedChange, focus, revealRequ
                   return
                 }
                 if (!keyboard && active && kids.length > 0 && !e.metaKey) {
+                  selection.set(member.path) // the fold-only click selects too (D9, YAZ-1674)
                   toggle(member.path)
                   return
                 }

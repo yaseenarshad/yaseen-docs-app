@@ -1,95 +1,147 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import type { MenuAction, MenuItem, MenuParent, MenuSection } from './menuSections'
 
 interface ContextMenuProps {
   x: number
   y: number
-  /** Absolute path of the right-clicked row (file or folder); null for blank space (GRO-2069). */
-  copyPath: string | null
   /**
-   * "Copy N paths" — the whole selection, files and folders (YAZ-1578), in the panel's own order
-   * (🔒 D5, YAZ-1337; ⚡ YAZ-1338 appends the paths whose rows are hidden), newline-joined on
-   * click; null hides the item, which is every menu opened outside a 2+ selection. Its own
-   * target, never `copyPath` in a list: that one falls back to the vault root on blank space.
+   * The items as data (🔒 D8, YAZ-1674), six groups in 🔒 D7's order — built by
+   * `buildMenuSections`, where every gating rule lives. This component only draws them: a
+   * `role="group"` per NON-EMPTY section (the separator is CSS between adjacent groups), and one
+   * button per item whose ONLY text child is the label — the hint is drawn from `data-hint`, so
+   * `textContent` and the accessible name stay the bare label. A parent item ("Open in ▸", D7
+   * amended) opens a flyout drawn by the SAME group renderer, one level deep.
    */
-  copyPaths: string[] | null
-  /**
-   * "Open N in new tabs" — the FILES of that same selection, asked separately (🔒 D5): a folder
-   * cannot be a tab (YAZ-1578 🔒 D3). Null hides the item, including a folders-only selection.
-   */
-  openTabPaths: string[] | null
-  /** One background tab per path (I3's opener, GRO-2235) — the caller owns the loop's semantics. */
-  onOpenInNewTabs: (paths: string[]) => void
-  /**
-   * The panel's passive notice (YAZ-1337): a clipboard write that never lands says so, the way
-   * `PageContextMenu` reports it. Optional so a mount with no notice channel simply stays quiet.
-   */
-  onNotice?: (message: string) => void
-  /** Absolute path of the right-clicked FILE row; null (folders, blank space) hides "Open in new window" (D2, GRO-2168). */
-  newWindowPath: string | null
-  /** "Copy for Agent" (YAZ-1617): a Markdown PAGE row only — null (folders, other files, blank space) hides it. */
-  agentPath: string | null
-  onCopyForAgent: (path: string) => void
-  onOpenNewWindow: (path: string) => void
-  /** Absolute path of the right-clicked row — FILE (Links E1, GRO-2194) or FOLDER (E1b, GRO-2241); null (blank space) hides "Rename". */
-  renamePath: string | null
-  onRename: (path: string) => void
-  /** Absolute path of the right-clicked row — file or folder; null (blank space) hides "Delete" (GRO-2272). */
-  deletePath: string | null
-  onDelete: (path: string) => void
-  /** Row to reveal in Finder — file, folder, or the vault ROOT for blank space (GRO-2274). */
-  revealPath: string | null
-  onReveal: (path: string) => void
-  /**
-   * Row to open in VS Code — the SAME target rule as `revealPath` (YAZ-963): file, folder, or
-   * the vault ROOT for blank space. Optional, unlike its sibling: a mount that offers no VS Code
-   * target simply omits the pair and the item is not rendered.
-   */
-  openVsCodePath?: string | null
-  onOpenVsCode?: (path: string) => void
-  /** Row to open in the OS default app — the same target rule a third time (YAZ-1577); optional like VS Code. */
-  openDefaultPath?: string | null
-  onOpenDefault?: (path: string) => void
-  onNewNote: () => void
-  /** Create a note born a folder page — the flag and nothing else (🔒 D4 + D1, YAZ-841). */
-  onNewFolderPage: () => void
-  /**
-   * Create a DISK folder — null hides the item (YAZ-948). Topics pages and blank space still
-   * browse by meaning and omit it; YAZ-1080's explicit Uncategorized disk-folder targets reuse
-   * the Files directory menu and therefore supply it.
-   */
-  onNewFolder: (() => void) | null
-  /** "New dated folder" (YAZ-1604): a disk folder born with today's `MM_DD- ` seed. Same gate as `onNewFolder`. */
-  onNewDatedFolder: (() => void) | null
-  /**
-   * The folder-page toggle's own target (🔒 D2, YAZ-817): MARKDOWN FILE rows only — null on
-   * folders and on blank space, neither of which can carry the flag.
-   */
-  folderPagePath: string | null
-  /** Is that page a folder page ALREADY? One item, two labels — the flag picks which (🔒 D2). */
-  folderPageIsOn: boolean
-  /** The direction rides along with the target so the caller never re-derives it after the close. */
-  onToggleFolderPage: (path: string, isOn: boolean) => void
-  /**
-   * "Focus on folder" / "Focus on N folders" (YAZ-1605): the rows the active lens narrows to — Files
-   * DIRS, or Topics FOLDER PAGES that are not Home — one, or a shift-selection's worth; null hides
-   * the item. The caller spells the label (it knows the lens and the count). Optional like VS Code:
-   * a mount that offers no focus simply omits the trio.
-   */
-  focusPaths?: string[] | null
-  focusLabel?: string
-  onFocus?: (paths: string[]) => void
+  sections: readonly MenuSection[]
   onClose: () => void
 }
 
+/** Groups of items (🔒 D7): one `role="group"` per NON-EMPTY section — the root and every flyout share it. */
+function Groups<T extends MenuItem>({ sections, render }: { sections: readonly (readonly T[])[]; render: (item: T) => ReactNode }) {
+  return (
+    <>
+      {sections
+        .filter((section) => section.length > 0)
+        .map((section) => (
+          <div key={section[0]?.id} className="ctx-menu__group" role="group">
+            {section.map(render)}
+          </div>
+        ))}
+    </>
+  )
+}
+
+/** A leaf: `onSelect()` then `onClose()` — every item closes the WHOLE menu (🔒 D8). */
+function ActionButton({ item, onClose, onMouseEnter }: { item: MenuAction; onClose: () => void; onMouseEnter?: () => void }) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      className={`ctx-menu__item${item.danger === true ? ' ctx-menu__item--danger' : ''}`}
+      disabled={item.disabled}
+      data-hint={item.hint}
+      onMouseEnter={onMouseEnter}
+      // An item whose handler already closes the menu (the create group's inline input) just
+      // sets the same null twice — harmless.
+      onClick={() => {
+        item.onSelect()
+        onClose()
+      }}
+    >
+      {item.label}
+    </button>
+  )
+}
+
+/**
+ * The flyout (D7 amended, YAZ-1674): a second `.ctx-menu`, opened to the RIGHT of its parent row,
+ * top-aligned with it, measured after the first paint like the root — and when its right edge
+ * would spill off the viewport it opens to the LEFT of the parent instead (Finder's rule), the
+ * top clamped exactly as the root clamps. Hidden until measured so it never flashes at 0,0.
+ */
+function Flyout({ anchor, sections, onClose, onCloseFlyout }: { anchor: RefObject<HTMLButtonElement | null>; sections: readonly (readonly MenuAction[])[]; onClose: () => void; onCloseFlyout: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    const parent = anchor.current
+    if (el === null || parent === null) return
+    const r = el.getBoundingClientRect()
+    const p = parent.getBoundingClientRect()
+    const left = p.right + r.width > window.innerWidth ? Math.max(0, p.left - r.width) : p.right
+    setPos({ left, top: Math.max(0, Math.min(p.top, window.innerHeight - r.height)) })
+  }, [anchor])
+
+  return (
+    <div
+      ref={ref}
+      className="ctx-menu ctx-menu__sub"
+      role="menu"
+      style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos === null ? 'hidden' : undefined }}
+      onMouseDown={(e) => e.stopPropagation()}
+      // ArrowLeft steps back out of the flyout alone; Escape does the same through the root's
+      // window listener, which asks whether a flyout is open before closing everything.
+      onKeyDown={(e) => {
+        if (e.key !== 'ArrowLeft') return
+        e.preventDefault()
+        e.stopPropagation()
+        onCloseFlyout()
+      }}
+    >
+      <Groups sections={sections} render={(item) => <ActionButton key={item.id} item={item} onClose={onClose} />} />
+    </div>
+  )
+}
+
+/**
+ * A parent ("Open in ▸"): a `menuitem` with `aria-haspopup`, its chevron drawn by CSS so the text
+ * stays the bare label. Opens on hover AND on click (and ArrowRight / Enter); it has no select of
+ * its own. The flyout stays while the pointer is inside the row or the flyout — there is no
+ * leave rule — and closes when the pointer enters a DIFFERENT top-level item (the root's job).
+ */
+function ParentItem({ item, open, onOpen, onCloseFlyout, onClose }: { item: MenuParent; open: boolean; onOpen: () => void; onCloseFlyout: () => void; onClose: () => void }) {
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  return (
+    <div className="ctx-menu__parent" onMouseEnter={onOpen}>
+      <button
+        ref={buttonRef}
+        type="button"
+        role="menuitem"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="ctx-menu__item ctx-menu__item--parent"
+        disabled={item.disabled}
+        onClick={onOpen}
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowRight' && e.key !== 'Enter') return
+          e.preventDefault()
+          e.stopPropagation()
+          onOpen()
+        }}
+      >
+        {item.label}
+      </button>
+      {open && <Flyout anchor={buttonRef} sections={item.children} onClose={onClose} onCloseFlyout={onCloseFlyout} />}
+    </div>
+  )
+}
+
 /** Right-click menu for the file tree (GRO-2022). The overlay catches click-away and stray right-clicks. */
-export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInNewTabs, onNotice, newWindowPath, agentPath, onCopyForAgent, onOpenNewWindow, renamePath, onRename, deletePath, onDelete, revealPath, onReveal, openVsCodePath, onOpenVsCode, openDefaultPath, onOpenDefault, onNewNote, onNewFolderPage, onNewFolder, onNewDatedFolder, folderPagePath, folderPageIsOn, onToggleFolderPage, focusPaths, focusLabel, onFocus, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, sections, onClose }: ContextMenuProps) {
+  // The ONE open flyout (D7 amended): at most one parent is expanded at a time.
+  const [openId, setOpenId] = useState<string | null>(null)
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape') return
+      // A flyout owns its own Escape: the first press closes it alone, the next closes the menu.
+      if (openId !== null) setOpenId(null)
+      else onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, openId])
 
   // Viewport clamping (GRO-2204): render at the cursor, then measure and pull the menu back
   // inside the window instead of spilling off an edge.
@@ -113,217 +165,17 @@ export function ContextMenu({ x, y, copyPath, copyPaths, openTabPaths, onOpenInN
       }}
     >
       <div ref={menuRef} className="ctx-menu" style={{ left: pos.left, top: pos.top }} onMouseDown={(e) => e.stopPropagation()} role="menu">
-        {/* The multi-select pair (🔒 D5, YAZ-1337) leads the menu: when a right-click lands inside
-            a selection, what the user is pointing at is the SELECTION — so its two actions come
-            before the singular items, which go on targeting the one row underneath. Both leave
-            the selection standing: acting on it is not the same as ending it. */}
-        {copyPaths !== null && (
-          <button
-            type="button"
-            className="ctx-menu__item"
-            role="menuitem"
-            onClick={() => {
-              // The failure is REPORTED (`PageContextMenu`'s idiom): a clipboard the OS refused is
-              // silent otherwise, and a copy that quietly did nothing is the worst kind of no-op.
-              void navigator.clipboard.writeText(copyPaths.join('\n')).then(
-                () => onNotice?.(`Copied ${copyPaths.length} paths`),
-                (error: unknown) => onNotice?.(`Can't copy paths: ${error instanceof Error ? error.message : String(error)}`),
-              )
-              onClose()
-            }}
-          >
-            Copy {copyPaths.length} paths
-          </button>
-        )}
-        {openTabPaths !== null && (
-          <button
-            type="button"
-            className="ctx-menu__item"
-            role="menuitem"
-            onClick={() => {
-              onOpenInNewTabs(openTabPaths)
-              onClose()
-            }}
-          >
-            Open {openTabPaths.length} in new tabs
-          </button>
-        )}
-        {newWindowPath !== null && (
-          <button
-            type="button"
-            className="ctx-menu__item"
-            role="menuitem"
-            onClick={() => {
-              onOpenNewWindow(newWindowPath)
-              onClose()
-            }}
-          >
-            Open in new window
-          </button>
-        )}
-        {/* Reveal in Finder (GRO-2274): available on every row type AND on blank space, where
-            it reveals the vault root — the same target Copy path uses. Grouped with the other
-            read-only utilities, deliberately above the destructive item. */}
-        {revealPath !== null && (
-          <button
-            type="button"
-            className="ctx-menu__item"
-            role="menuitem"
-            onClick={() => {
-              onReveal(revealPath)
-              onClose()
-            }}
-          >
-            Reveal in Finder
-          </button>
-        )}
-        {/* Open in VS Code (YAZ-963): Reveal's sibling, so it sits directly beside it in the
-            same OS-actions group — same target rule, same read-only posture, same passive
-            notice when the row is stale. */}
-        {openVsCodePath != null && (
-          <button
-            type="button"
-            className="ctx-menu__item"
-            role="menuitem"
-            onClick={() => {
-              onOpenVsCode?.(openVsCodePath)
-              onClose()
-            }}
-          >
-            Open in VS Code
-          </button>
-        )}
-        {/* Open in default app (YAZ-1577): the third OS verb, directly below VS Code — same target
-            rule, same read-only posture, same passive notice when the row is stale. */}
-        {openDefaultPath != null && (
-          <button
-            type="button"
-            className="ctx-menu__item"
-            role="menuitem"
-            onClick={() => {
-              onOpenDefault?.(openDefaultPath)
-              onClose()
-            }}
-          >
-            Open in default app
-          </button>
-        )}
-        {/* Focus on folder / topic (YAZ-1605): a read-only VIEW verb, so it sits with the OS verbs
-            above the create group — it changes what the tree shows, never what is on disk. */}
-        {focusPaths != null && focusPaths.length > 0 && (
-          <button
-            type="button"
-            className="ctx-menu__item"
-            role="menuitem"
-            onClick={() => {
-              onFocus?.(focusPaths)
-              onClose()
-            }}
-          >
-            {focusLabel ?? 'Focus on folder'}
-          </button>
-        )}
-        {copyPath !== null && (
-          <button
-            type="button"
-            className="ctx-menu__item"
-            role="menuitem"
-            onClick={() => {
-              // Every copy confirms through the one notice (YAZ-1341) — this item long predates
-              // it, so it also gains the failure report it never had.
-              void navigator.clipboard.writeText(copyPath).then(
-                () => onNotice?.('Copied path'),
-                (error: unknown) => onNotice?.(`Can't copy path: ${error instanceof Error ? error.message : String(error)}`),
-              )
-              onClose()
-            }}
-          >
-            Copy path
-          </button>
-        )}
-        {/* Right under Copy path (YAZ-1617 🔒 D2): the same path, plus the handshake an agent needs. */}
-        {agentPath !== null && (
-          <button
-            type="button"
-            className="ctx-menu__item"
-            role="menuitem"
-            onClick={() => {
-              onCopyForAgent(agentPath)
-              onClose()
-            }}
-          >
-            Copy for Agent
-          </button>
-        )}
-        <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewNote}>
-          New note
-        </button>
-        {/* Directly after "New note" (🔒 D4, YAZ-817): a folder page is a NOTE born with one
-            flag (🔒 D1), so it belongs beside the note it is a kind of. It creates beside the
-            right-clicked row like the rest of this group — the act-on-this-row toggle below is
-            the other half of the gesture, and the two must not drift together. */}
-        <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewFolderPage}>
-          New folder page
-        </button>
-        {onNewFolder !== null && (
-          <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewFolder}>
-            New folder
-          </button>
-        )}
-        {onNewDatedFolder !== null && (
-          <button type="button" className="ctx-menu__item" role="menuitem" onClick={onNewDatedFolder}>
-            New dated folder
-          </button>
-        )}
-        {/* The folder-page toggle (🔒 D2, YAZ-817): ONE state-aware item, both directions. It
-            acts ON the right-clicked page rather than creating beside it, so it sits after the
-            create group — and above Rename, because the destructive pair keeps the bottom. The
-            reverse label is the one that opens a confirm sheet (🔒 D5); the forward one writes
-            immediately (🔒 D1), which is why neither reads like a warning. */}
-        {folderPagePath !== null && (
-          <button
-            type="button"
-            className="ctx-menu__item"
-            role="menuitem"
-            onClick={() => {
-              onToggleFolderPage(folderPagePath, folderPageIsOn)
-              onClose()
-            }}
-          >
-            {folderPageIsOn ? 'Turn back into normal page' : 'Turn into folder page'}
-          </button>
-        )}
-        {/* Rename and Delete render LAST (GRO-2272 `C1a-`, LOCKED): VS Code's Explorer puts
-            both at the bottom, and destructive-last is safer on its own merits — Delete used
-            to sit directly under Rename, which is the misclick pair that matters most.
-            Delete opens the confirm sheet; it must NEVER delete directly. Both are null on
-            blank space: no target, and main refuses the vault root anyway. */}
-        {renamePath !== null && (
-          <button
-            type="button"
-            className="ctx-menu__item"
-            role="menuitem"
-            onClick={() => {
-              onRename(renamePath)
-              onClose()
-            }}
-          >
-            Rename
-          </button>
-        )}
-        {deletePath !== null && (
-          <button
-            type="button"
-            className="ctx-menu__item ctx-menu__item--danger"
-            role="menuitem"
-            onClick={() => {
-              onDelete(deletePath)
-              onClose()
-            }}
-          >
-            Delete
-          </button>
-        )}
+        <Groups
+          sections={sections}
+          render={(item) =>
+            item.children === undefined ? (
+              // Entering a DIFFERENT top-level item is what closes an open flyout.
+              <ActionButton key={item.id} item={item} onClose={onClose} onMouseEnter={() => setOpenId(null)} />
+            ) : (
+              <ParentItem key={item.id} item={item} open={openId === item.id} onOpen={() => setOpenId(item.id)} onCloseFlyout={() => setOpenId(null)} onClose={onClose} />
+            )
+          }
+        />
       </div>
     </div>
   )
