@@ -182,14 +182,11 @@ button {
   font-size: 12px;
 }
 
-/* Folder pages (YAZ-919): the outline IS the document — the body editor above it
-   and the divider between them are gone. Title, then contents, nothing else. */
+/* Folder pages (YAZ-919): the outline IS the document — the body editor above it is gone.
+   Title, then contents, nothing else. (The divider this rule used to cancel is gone at the
+   source since YAZ-1680: no block under a note draws a hairline.) */
 .editor-host:has(.folder-page-contents) .editor-mount {
   display: none;
-}
-
-.editor-host:has(.folder-page-contents) .folder-page-contents {
-  border-top: none;
 }
 
 .page-title__text {
