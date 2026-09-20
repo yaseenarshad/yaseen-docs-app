@@ -25,6 +25,8 @@ export interface MenuHandlers {
   openRecent(path: string, beside: boolean): void
   /** File › Search Vault (⌘K, YAZ-804): the focused window's renderer focuses its sidebar search bar. */
   search(): void
+  /** Yaseen Docs › Settings… (⌘,, YAZ-1679): the focused window's renderer opens its settings dialog. */
+  settings(): void
   /** File › Close Tab (⌘W, GRO-2232): the focused window's renderer closes its active tab. */
   closeTab(): void
   /** Window › Next Tab (⌃Tab / ⌘⇧], GRO-2232): the focused window's renderer activates the tab to the right. */
@@ -64,6 +66,10 @@ export function buildMenuTemplate({ recents, isDev }: MenuInputs, handlers: Menu
       label: 'Yaseen Docs',
       submenu: [
         { role: 'about' },
+        { type: 'separator' },
+        // ⌘, is the platform's settings key (YAZ-1679); the renderer owns the dialog, so the
+        // gesture goes to the focused window's renderer like Search Vault does.
+        { id: 'menu.app.settings', label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => handlers.settings() },
         { type: 'separator' },
         { role: 'hide' },
         { role: 'hideOthers' },
@@ -284,6 +290,9 @@ export function createMenuHandlers(store: Store, windows: MenuWindows, host: Men
     },
     search() {
       host.focusedWebContents()?.send(CH.menuSearch)
+    },
+    settings() {
+      host.focusedWebContents()?.send(CH.menuSettings)
     },
     closeTab() {
       host.focusedWebContents()?.send(CH.menuCloseTab)

@@ -200,22 +200,21 @@ test('step 2 — an edit goes Pending, and ONE click on the chip commits and pus
   expect(await remote(['show', `${BRANCH}:${SEED_FILE}`])).toContain(MARKER)
 })
 
-test('step 3 — the settings cog turns sync off: the chip says Sync off and the vault config agrees', async () => {
+test('step 3 — the settings dialog turns sync off: the chip says Sync off and the vault config agrees', async () => {
   await win.getByRole('button', { name: 'Settings', exact: true }).click()
-  const panel = win.locator('.settings__panel')
-  await expect(panel.locator('.settings__section', { hasText: 'GitHub Sync' })).toBeVisible()
-  // The section's own On/Off pair — the panel is a flat list of sections, and "Confirm before
-  // deleting" has an On/Off pair too, so the sibling row after THIS heading is the addressable one.
-  const options = panel.locator('.settings__section', { hasText: 'GitHub Sync' }).locator('xpath=following-sibling::div[contains(@class,"settings__options")][1]')
+  // One scrolling page (YAZ-1679): the Sync row is on it already, addressed by `data-setting`,
+  // never by position — Playwright scrolls it into view for the click.
+  const row = win.locator('.settings-dialog [data-setting="githubSync"]')
+  await expect(row).toBeVisible()
   // The switch's honest read-back (3B): the vault arrived enabled, so On is the active option
-  // before anything is clicked — the panel is showing the engine's state, not a local guess.
-  await expect(options.getByRole('button', { name: 'On', exact: true })).toHaveClass(/settings__option--active/)
-  await expect(panel.locator('.settings__hint').last()).toContainText(bare) // the remote it detected
+  // before anything is clicked — the dialog is showing the engine's state, not a local guess.
+  await expect(row.getByRole('button', { name: 'On', exact: true })).toHaveClass(/settings__option--active/)
+  await expect(row.locator('.setting__hint')).toContainText(bare) // the remote it detected
   await shoot(win, 'github-sync-04-settings-on')
 
-  await options.getByRole('button', { name: 'Off', exact: true }).click()
-  await expect(options.getByRole('button', { name: 'Off', exact: true })).toHaveClass(/settings__option--active/)
-  await win.keyboard.press('Escape') // close the popover so the shot shows the app, not the panel
+  await row.getByRole('button', { name: 'Off', exact: true }).click()
+  await expect(row.getByRole('button', { name: 'Off', exact: true })).toHaveClass(/settings__option--active/)
+  await win.keyboard.press('Escape') // close the dialog so the shot shows the app, not the modal
 
   // Off is immediate and total: the chip stops claiming anything about GitHub…
   await expect(syncChip(win)).toHaveClass(/sync-indicator--off/)

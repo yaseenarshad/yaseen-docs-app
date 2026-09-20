@@ -30,6 +30,7 @@ import { fileHash } from './lib/urlHash'
 import { windowTitle } from './lib/windowTitle'
 import { ConfirmRename, isNameChange } from './sidebar/ConfirmRename'
 import { useEnsureHome } from './sidebar/ensureHome'
+import { SettingsDialog } from './settings/SettingsDialog'
 import { Sidebar, SidebarPanelIcon } from './sidebar/Sidebar'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
@@ -317,9 +318,16 @@ export function App() {
     setSidebarRevealRequest((request) => request?.id === id ? null : request)
   }, [])
 
+  // The settings dialog (YAZ-1679) is App's so the sidebar cog, ⌘, and the app menu's Settings…
+  // open the ONE dialog — and it can open with the sidebar collapsed. `open`/`close` are stable
+  // because `useMenuEvents` resubscribes whenever a callback identity changes.
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const openSettings = useCallback(() => setSettingsOpen(true), [])
+  const closeSettings = useCallback(() => setSettingsOpen(false), [])
+
   // File › Open Folder… / Open Recent (GRO-2161) reuse the same flows as the in-app buttons;
   // File › Close Tab and Window › Next/Previous Tab (GRO-2232) drive the tab model.
-  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openRoot, onSearch: openSearch, onToggleSidebar: toggleSidebar, onCloseTab: closeTabOrWindow, onNextTab: nextTab, onPrevTab: prevTab })
+  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openRoot, onSearch: openSearch, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: closeTabOrWindow, onNextTab: nextTab, onPrevTab: prevTab })
 
   // Deep links (E1, GRO-2171): a routed link behaves like a sidebar click (Tabs rule 10) —
   // it activates the file's tab when already open, else opens it in the CURRENT tab;
@@ -642,6 +650,10 @@ export function App() {
           {notice}
         </div>
       )}
+      {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per window (above): the
+          dialog's Sync page and the editor's chip read the same status, so they can never
+          disagree about what this vault is doing. */}
+      {settingsOpen && <SettingsDialog ctx={{ settings, onChange: changeSettings, sync: { status: githubSync.status, setEnabled: githubSync.setEnabled } }} onClose={closeSettings} />}
       {/* E1c (GRO-2242): the passive external-rename confirmation banner — one hypothesis at a
           time, oldest first. Confirm-first, ALWAYS: no rewrite until Update; Dismiss drops it
           for this session. Passive: steals no focus, Esc is not bound, never a dialog. */}
@@ -695,6 +707,7 @@ export function App() {
           onLensChange={changeLens}
           settings={settings}
           onChangeSettings={changeSettings}
+          onOpenSettings={openSettings}
           onRootMissing={onRootMissing}
           onFileMissing={onFileMissing}
           onRenameFile={requestRename}
@@ -710,9 +723,6 @@ export function App() {
           // 6C's offer (YAZ-849): the fact and the button, both App's, both straight through.
           unadopted={unadopted}
           onCreateHome={createHome}
-          // ONE useGithubSync per window (above): the cog's section and the editor's chip read
-          // the same status, so they can never disagree about what this vault is doing.
-          sync={{ status: githubSync.status, setEnabled: githubSync.setEnabled }}
         />
       )}
       {root !== null && !sidebarCollapsed && <div className={`sidebar-resize${resizing ? ' sidebar-resize--active' : ''}`} aria-hidden onMouseDown={startSidebarResize} />}

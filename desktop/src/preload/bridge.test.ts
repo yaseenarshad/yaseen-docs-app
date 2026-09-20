@@ -16,7 +16,7 @@ vi.mock('electron', () => ({
 const TOP = ['tree', 'readFile', 'readPdf', 'readImage', 'writeFile', 'createDir', 'createFile', 'index', 'coldDiff', 'readAsset', 'writeAsset', 'pickFolder', 'watch', 'state', 'window', 'menu', 'link', 'file', 'shell', 'vaultConfig', 'properties', 'github'] as const satisfies readonly (keyof YaseenDocsApi)[]
 const STATE = ['get', 'setSettings', 'setSidebarWidth', 'pushRecent', 'removeRecent', 'setFolder', 'setFolds', 'setBaseGroups', 'onChange'] as const satisfies readonly (keyof StateApi)[]
 const WINDOW = ['identity', 'setIdentity', 'open', 'duplicate', 'closeSelf', 'onFlush'] as const satisfies readonly (keyof WindowApi)[]
-const MENU = ['onCopyAs', 'onPasteAs', 'onOpenFolder', 'onOpenRoot', 'onSearch', 'onToggleSidebar', 'onCloseTab', 'onNextTab', 'onPrevTab'] as const satisfies readonly (keyof MenuApi)[]
+const MENU = ['onCopyAs', 'onPasteAs', 'onOpenFolder', 'onOpenRoot', 'onSearch', 'onSettings', 'onToggleSidebar', 'onCloseTab', 'onNextTab', 'onPrevTab'] as const satisfies readonly (keyof MenuApi)[]
 const LINK = ['onOpenFile', 'onNotice'] as const satisfies readonly (keyof LinkApi)[]
 const FILE = ['rename', 'repairRename', 'onRenamed', 'delete', 'onDeleted'] as const satisfies readonly (keyof FileApi)[]
 const SHELL = ['reveal', 'openVsCode', 'openDefault', 'openLink', 'agentPrompt'] as const satisfies readonly (keyof ShellApi)[]
@@ -248,6 +248,21 @@ describe('preload bridge', () => {
     expect(listener).toHaveBeenCalledTimes(1)
     off()
     expect(vi.mocked(ipcRenderer.removeListener).mock.calls.some(([ch, l]) => ch === CH.menuSearch && l === emit)).toBe(true)
+  })
+
+  it('forwards menu:settings to the listener and unsubscribes cleanly (YAZ-1679)', async () => {
+    const { ipcRenderer } = await import('electron')
+    const { bridge } = await import('./index')
+    const listener = vi.fn()
+    const off = bridge.menu.onSettings(listener)
+    const calls = vi.mocked(ipcRenderer.on).mock.calls.filter(([ch]) => ch === CH.menuSettings)
+    const call = calls[calls.length - 1]
+    expect(call).toBeDefined()
+    const emit = call?.[1] as unknown as (e: unknown) => void
+    emit(undefined)
+    expect(listener).toHaveBeenCalledTimes(1)
+    off()
+    expect(vi.mocked(ipcRenderer.removeListener).mock.calls.some(([ch, l]) => ch === CH.menuSettings && l === emit)).toBe(true)
   })
 
   it('forwards menu:toggle-sidebar to the listener and unsubscribes cleanly (YAZ-1280)', async () => {

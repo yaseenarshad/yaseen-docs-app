@@ -17,6 +17,7 @@ const noopHandlers = (): MenuHandlers => ({
   openFolder: vi.fn(),
   openRecent: vi.fn(),
   search: vi.fn(),
+  settings: vi.fn(),
   closeTab: vi.fn(),
   nextTab: vi.fn(),
   prevTab: vi.fn(),
@@ -51,9 +52,14 @@ describe('buildMenuTemplate', () => {
     expect(build().map((m) => m.label)).toEqual(['Yaseen Docs', 'File', 'Edit', 'View', 'Window', 'Help'])
   })
 
-  it('App menu: About, the standard Hide roles, and Quit', () => {
-    const roles = menuOf(build(), 'Yaseen Docs').map((i) => i.role ?? i.type)
-    expect(roles).toEqual(['about', 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit'])
+  it('App menu: About, Settings… ⌘, in its own group (YAZ-1679), the standard Hide roles, and Quit', () => {
+    const handlers = noopHandlers()
+    const app = menuOf(build(RECENTS, false, handlers), 'Yaseen Docs')
+    expect(app.map((i) => i.role ?? i.type ?? i.id)).toEqual(['about', 'separator', 'menu.app.settings', 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit'])
+    const settings = app.find((i) => i.label === 'Settings…')
+    expect(settings?.accelerator).toBe('CmdOrCtrl+,')
+    click(settings)
+    expect(handlers.settings).toHaveBeenCalledTimes(1)
   })
 
   it('File menu: New Window ⌘⇧N, Open Folder… ⌘⇧O, Open Recent, Search Vault ⌘K, Close Tab ⌘W, Close Window ⌘⇧W', () => {
@@ -418,6 +424,16 @@ describe('createMenuHandlers', () => {
     const { handlers } = makeHandlers(wc)
     handlers.openFolder()
     expect(wc.send).toHaveBeenCalledWith(CH.menuOpenFolder)
+  })
+
+  it('settings tells the focused renderer to open its settings dialog (YAZ-1679)', () => {
+    const wc = { id: 7, send: vi.fn() }
+    const { handlers } = makeHandlers(wc)
+    handlers.settings()
+    expect(wc.send).toHaveBeenCalledExactlyOnceWith(CH.menuSettings)
+
+    const { handlers: unfocused } = makeHandlers(undefined)
+    expect(() => unfocused.settings()).not.toThrow()
   })
 
   it('search tells the focused renderer to focus its search bar (D4, YAZ-804)', () => {

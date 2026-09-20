@@ -20,8 +20,8 @@ const layer = (win: Page) => win.locator('.tabstack__layer:not(.tabstack__layer-
 
 async function pickContentWidth(win: Page, label: 'Narrow' | 'Medium' | 'Full'): Promise<void> {
   await win.getByRole('button', { name: 'Settings', exact: true }).click()
-  const panel = win.locator('.settings__panel')
-  const row = panel.locator('.settings__label', { hasText: /^Content width$/ }).locator('+ .settings__row')
+  // The dialog opens on Appearance (YAZ-1679), where the row lives; `data-setting` addresses it.
+  const row = win.locator('.settings-dialog [data-setting="contentWidth"]')
   await row.getByRole('button', { name: label, exact: true }).click()
   await win.keyboard.press('Escape')
 }
