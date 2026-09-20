@@ -19,7 +19,7 @@
  * `outlinerKeymap` in `createCrepe.ts`.
  */
 import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
-import { type Command, type EditorState, Plugin, PluginKey, Selection, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
+import { type Command, type EditorState, NodeSelection, Plugin, PluginKey, Selection, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
 import { liftTarget } from '@milkdown/kit/prose/transform'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { collapsedHeadingsHiding } from './outline/headingFolding'
@@ -32,29 +32,18 @@ const PRIORITY = 100
 
 type Edge = 'start' | 'end'
 
-/** Which edge of its textblock `$head` sits on; an empty block answers `prefer` (D2). */
-const edgeAt = ($head: ResolvedPos, prefer: Edge): Edge | null => {
+/** Which edge of its textblock `$head` sits on; an empty block answers the edge the press prefers — ⇧↓ start, ⇧↑ end (D2). */
+const edgeAt = ($head: ResolvedPos, dir: 1 | -1): Edge | null => {
   const atStart = $head.parentOffset === 0
   const atEnd = $head.parentOffset === $head.parent.content.size
-  if (atStart && atEnd) return prefer
+  if (atStart && atEnd) return dir > 0 ? 'start' : 'end'
   if (atStart) return 'start'
   if (atEnd) return 'end'
   return null
 }
 
-/** True when a leaf block (`hr`) lies in `[from, to)` — a line the head must not skip over (D2). */
-const leafBlockBetween = (doc: ProseNode, from: number, to: number): boolean => {
-  let found = false
-  doc.nodesBetween(from, to, (node) => {
-    if (found) return false
-    if (node.isBlock && node.isLeaf) found = true
-    return !found
-  })
-  return found
-}
-
 /**
- * Is the textblock around `$pos` hidden from view (rule B)? Asks the three plugins that hide
+ * Is the textblock around `$pos` hidden from view (D6)? Asks the three plugins that hide
  * things, through their own state: outside the zoomed item's subtree (`getZoomedItemPos` — the
  * zoom decorations hide every block off the root → item path, the ancestors' own text included),
  * inside a collapsed bullet's nested list (`collapsedItemsHiding`), or inside a collapsed heading's
@@ -71,13 +60,18 @@ const isHiddenTextblock = (state: EditorState, $pos: ResolvedPos): boolean => {
   return collapsedItemsHiding(state, pos).length > 0 || collapsedHeadingsHiding(state, pos).length > 0
 }
 
-/** A position inside the nearest VISIBLE textblock in `dir` from `$head`'s block, or null (document / zoom edge). */
-const nextVisibleTextblock = (state: EditorState, $head: ResolvedPos, dir: 1 | -1): ResolvedPos | null => {
+/**
+ * A position inside the nearest VISIBLE textblock in `dir` from `$head`'s block; `'leaf'` when a
+ * leaf block (`hr`) comes first — a line of its own that this keymap cannot select (D2); null at
+ * a document / zoom edge. `findFrom` without textOnly lands INSIDE the next textblock (D1) or,
+ * for a block atom, on a `NodeSelection` of it; hidden textblocks are stepped over.
+ */
+const nextVisibleTextblock = (state: EditorState, $head: ResolvedPos, dir: 1 | -1): ResolvedPos | 'leaf' | null => {
   let from = dir > 0 ? $head.after() : $head.before()
   for (;;) {
-    // `findFrom` with textOnly lands INSIDE the next textblock (D1); hidden ones are stepped over.
-    const found = Selection.findFrom(state.doc.resolve(from), dir, true)
+    const found = Selection.findFrom(state.doc.resolve(from), dir, false)
     if (found === null) return null
+    if (found instanceof NodeSelection) return 'leaf'
     const $n = found.$from
     if (!isHiddenTextblock(state, $n)) return $n
     from = dir > 0 ? $n.after() : $n.before()
@@ -90,24 +84,20 @@ const extendByLine = (dir: 1 | -1): Command => (state, dispatch) => {
   if (!(sel instanceof TextSelection)) return false
   const { $head, anchor, head } = sel
   const { doc } = state
-  // Empty block: ⇧↓ prefers the start edge, ⇧↑ the end (D2).
-  const edge = edgeAt($head, dir > 0 ? 'start' : 'end')
-  // Rule A: the way back retraces the way out. A press towards the anchor never crosses it and
+  const edge = edgeAt($head, dir)
+  // D5: the way back retraces the way out. A press towards the anchor never crosses it and
   // always reaches it — even when no neighbour line exists in that direction (first/last line).
   const toward = dir > 0 ? anchor > head : anchor < head
   let newHead: number
   if (edge === null) {
-    // Mid-line: the rest of THIS line first — ⇧↓ to its end, ⇧↑ to its start (D2, demo amendment).
+    // Mid-line: the rest of THIS line first — ⇧↓ to its end, ⇧↑ to its start (D2).
     newHead = dir > 0 ? $head.end() : $head.start()
   } else {
     const $n = nextVisibleTextblock(state, $head, dir)
-    // A leaf block anywhere in the gap is a line of its own that this keymap cannot select (D2).
-    const gap: [number, number] | null = $n === null ? null : dir > 0 ? [$head.after(), $n.before()] : [$n.after(), $head.before()]
-    const blocked = gap !== null && leafBlockBetween(doc, gap[0], gap[1])
-    if ($n === null || blocked) {
+    if ($n === null || $n === 'leaf') {
       if (!toward) {
         // Document or zoom edge: consumed, unchanged — never hand native a step into hidden DOM
-        // (rule B); a leaf block in the gap: native move (D2).
+        // (D6); a leaf block in the gap: native move (D2).
         return $n === null
       }
       newHead = anchor
@@ -120,23 +110,13 @@ const extendByLine = (dir: 1 | -1): Command => (state, dispatch) => {
   return true
 }
 
-/** What `deleteVisible` will do to a selection spanning hidden lines (rule C); null = not our case. */
-interface VisibleDeletePlan {
-  from: number
-  to: number
-  /** Inside the first / last VISIBLE textblock — the selection ends themselves. */
-  $first: ResolvedPos
-  $last: ResolvedPos
-  /** Positions of the visible textblocks strictly between, document order. */
-  between: number[]
-}
-
 /**
- * Non-empty `TextSelection` whose ends sit in two different VISIBLE textblocks with at least one
- * hidden textblock inside `[from, to]` — the only shape rule C claims. Everything else is null so
- * the ordinary delete path stays untouched.
+ * The shape D6's delete claims: a non-empty `TextSelection` whose ends sit in two different
+ * VISIBLE textblocks with at least one hidden textblock inside `[from, to]`. Returns the
+ * positions of the visible textblocks strictly between the ends, in document order; null for
+ * every other shape so the ordinary delete path stays untouched.
  */
-const planVisibleDelete = (state: EditorState): VisibleDeletePlan | null => {
+const planVisibleDelete = (state: EditorState): number[] | null => {
   const sel = state.selection
   if (!(sel instanceof TextSelection) || sel.empty) return null
   const { from, to, $from, $to } = sel
@@ -150,7 +130,7 @@ const planVisibleDelete = (state: EditorState): VisibleDeletePlan | null => {
     else if (pos !== $from.before() && pos !== $to.before()) between.push(pos)
     return false
   })
-  return hidden ? { from, to, $first: $from, $last: $to, between } : null
+  return hidden ? between : null
 }
 
 /** Delete the textblock at `$tb` as a NODE, together with every wrapper it was the only child of (never the doc). */
@@ -161,52 +141,42 @@ const deleteBlockAndEmptyWrappers = (tr: Transaction, $tb: ResolvedPos): void =>
 }
 
 /**
- * Rule C's deletion, in REVERSE document order so earlier positions stay valid: last block, the
- * visible blocks between, then the first. `joins` (first block cut mid-text): the last block goes as
- * a node and its tail after `to` joins the first block's head (marks preserved). Otherwise the first
- * block is selected from its start and goes as a node; the last block only loses its prefix up to
- * `to` (or goes whole when `to` is its end). Hidden blocks are never in the plan, never touched.
- * Returns the caret: `from` in the join case, else the mapped cut with the nearest text position.
+ * D6's deletion, in REVERSE document order so earlier positions stay valid: the last block, the
+ * visible blocks `between`, then the first. `joins` (first block cut mid-text): the last block goes
+ * as a node and its tail after `to` joins the first block's head (marks preserved). Otherwise the
+ * first block is selected from its start and goes as a node; the last block only loses its prefix
+ * up to `to` (or goes whole when `to` is its end). Hidden blocks are never in `between`, never
+ * touched. Returns the caret: `from` in the join case, else the mapped cut with the nearest text
+ * position.
  */
-const applyVisibleDelete = (tr: Transaction, plan: VisibleDeletePlan): Selection => {
-  const { from, to, $first, $last, between } = plan
-  const joins = from > $first.start()
-  if (joins || to === $last.end()) deleteBlockAndEmptyWrappers(tr, $last)
-  else tr.delete($last.start(), to)
+const applyVisibleDelete = (tr: Transaction, sel: Selection, between: number[]): Selection => {
+  const { from, to, $from, $to } = sel
+  const joins = from > $from.start()
+  if (joins || to === $to.end()) deleteBlockAndEmptyWrappers(tr, $to)
+  else tr.delete($to.start(), to)
   for (const pos of [...between].reverse()) deleteBlockAndEmptyWrappers(tr, tr.doc.resolve(pos + 1))
   if (joins) {
-    tr.replaceWith(from, $first.end(), $last.parent.content.cut(to - $last.start()))
+    tr.replaceWith(from, $from.end(), $to.parent.content.cut(to - $to.start()))
     return TextSelection.create(tr.doc, from)
   }
-  deleteBlockAndEmptyWrappers(tr, $first)
+  deleteBlockAndEmptyWrappers(tr, $from)
   return Selection.near(tr.doc.resolve(tr.mapping.map(from)), 1)
 }
 
 /**
- * `⌫` / `Delete` (and typing, with `text`) over a selection spanning hidden lines: remove only the
- * visible pieces (rule C), then insert `text` at the cut. False when the selection is not that shape.
+ * `⌫` / `Delete` over a selection spanning hidden lines: remove only the visible pieces (D6) and
+ * leave the caret at the cut. False when the selection is not that shape.
  */
-export const deleteVisible = (text = ''): Command => (state, dispatch) => {
-  const plan = planVisibleDelete(state)
-  if (plan === null) return false
+export const deleteVisible: Command = (state, dispatch) => {
+  const between = planVisibleDelete(state)
+  if (between === null) return false
   if (dispatch) {
     const tr = state.tr
-    tr.setSelection(applyVisibleDelete(tr, plan))
-    if (text !== '') tr.insertText(text)
+    tr.setSelection(applyVisibleDelete(tr, state.selection, between))
     dispatch(tr.scrollIntoView())
   }
   return true
 }
-
-/** Keymap plugin; register with `editor.use(lineKeymap)`. */
-export const lineKeymap = $shortcut(() => ({
-  ExtendLineDown: { key: 'Shift-ArrowDown', priority: PRIORITY, onRun: () => extendByLine(1) },
-  ExtendLineUp: { key: 'Shift-ArrowUp', priority: PRIORITY, onRun: () => extendByLine(-1) },
-  // Rule C. The outliner's Backspace (same priority, registered earlier) declines non-empty selections.
-  DeleteVisibleBack: { key: 'Backspace', priority: PRIORITY, onRun: () => deleteVisible() },
-  DeleteVisibleForward: { key: 'Delete', priority: PRIORITY, onRun: () => deleteVisible() },
-  EnterVisible: { key: 'Enter', priority: PRIORITY, onRun: () => enterVisible },
-}))
 
 /**
  * `Enter` over a selection spanning hidden lines (D7): remove the visible pieces, then press Enter
@@ -214,62 +184,64 @@ export const lineKeymap = $shortcut(() => ({
  * split, or the base split — runs on the caret this left behind. Re-dispatching is deliberate: the
  * keymap hands every handler of one key the SAME pre-delete state, so merely declining would let the
  * outliner see a non-empty selection and Crepe's split move the kids under the new item. On the
- * second pass this handler finds no hidden line inside the (now empty) selection and declines.
+ * second pass this handler finds no hidden line inside the (now empty) selection and declines. The
+ * re-press is a synthetic KeyboardEvent through `handleKeyDown` — the path a real key takes, with
+ * no keymap plumbing. A dry run (no dispatch) never re-presses.
  * ⌘X stays the ordinary cut on purpose: it MOVES the whole range, hidden kids included, and paste
  * brings them back — nothing is destroyed.
  */
 const enterVisible: Command = (state, dispatch, view) => {
-  if (!deleteVisible()(state, dispatch)) return false
-  if (view === undefined) return true
+  if (!deleteVisible(state, dispatch)) return false
+  if (!dispatch || !view) return true
   const again = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true })
   return view.someProp('handleKeyDown', (handle) => handle(view, again)) ?? true
 }
 
+/** Keymap plugin; register with `editor.use(lineKeymap)`. */
+export const lineKeymap = $shortcut(() => ({
+  ExtendLineDown: { key: 'Shift-ArrowDown', priority: PRIORITY, onRun: () => extendByLine(1) },
+  ExtendLineUp: { key: 'Shift-ArrowUp', priority: PRIORITY, onRun: () => extendByLine(-1) },
+  // D6 / D7. The outliner's Backspace/Enter (next in chain) decline non-empty selections (`caretInFirstBlock`).
+  DeleteVisibleBack: { key: 'Backspace', priority: PRIORITY, onRun: () => deleteVisible },
+  DeleteVisibleForward: { key: 'Delete', priority: PRIORITY, onRun: () => deleteVisible },
+  EnterVisible: { key: 'Enter', priority: PRIORITY, onRun: () => enterVisible },
+}))
+
 const visibleTypeOverKey = new PluginKey('mdapp-visible-type-over')
 
-/** Typing over a selection that spans hidden lines: rule C's deletion, then the text at the cut. Register with `editor.use(visibleTypeOver)`. */
+/** Typing over a selection that spans hidden lines: D6's deletion, then the text at the cut. Register with `editor.use(visibleTypeOver)`. */
 export const visibleTypeOver = $prose(
   () =>
     new Plugin({
       key: visibleTypeOverKey,
       props: {
-        handleTextInput: (view, _from, _to, text) => deleteVisible(text)(view.state, view.dispatch),
+        handleTextInput: (view, _from, _to, text) => deleteVisible(view.state, (tr) => view.dispatch(tr.insertText(text))),
       },
     }),
 )
 
-/** A list_item whose first child is a list — no textblock of its own (D3's invalid resting state). */
-const isHeadlessItem = (node: ProseNode): boolean => isListItem(node) && LIST_NODE_NAMES.has(node.firstChild?.type.name ?? '')
-
-/** Positions of every headless item in `doc`, deepest/last first so each replacement leaves the rest valid. */
-const headlessItemPositions = (doc: ProseNode): number[] => {
-  const positions: number[] = []
-  doc.descendants((node, pos) => {
-    if (isHeadlessItem(node)) positions.push(pos)
-    return true
-  })
-  return positions.reverse()
+/** The nested list a list_item holds as its FIRST child — an item with no textblock of its own (D3's invalid resting state) — or null. */
+const headlessList = (node: ProseNode): ProseNode | null => {
+  const first = node.firstChild
+  return isListItem(node) && first !== null && LIST_NODE_NAMES.has(first.type.name) ? first : null
 }
 
 /**
  * Replace the headless item at `pos` with its children, one level up (D3). `tr.lift` of the nested
  * list's items out through the item removes both wrappers when the list is the item's only child,
  * and maps positions INSIDE the lifted items exactly (the caret stays on its line); anything the
- * item held AFTER the list is split off as a following item, so nothing is lost. The outliner's
- * `replaceWith` shape (`listCommands.ts`, empty-parent Backspace) is the fallback for a schema
- * where lifting cannot cut the item.
+ * item held AFTER the list is split off as a following item, so nothing is lost. The item is
+ * re-read from `tr.doc` because an earlier lift (a headless item nested inside this one) may have
+ * reshaped it. `liftTarget` cannot fail for `list_item > list > list_item`: the outer list takes
+ * list_items.
  */
 const liftHeadlessItem = (tr: Transaction, pos: number): void => {
   const item = tr.doc.nodeAt(pos)
-  if (item === null || !isHeadlessItem(item)) return
-  const list = item.firstChild as ProseNode
+  const list = item === null ? null : headlessList(item)
+  if (list === null) return
   // Just inside the nested list: before its first item, after its last.
-  const $start = tr.doc.resolve(pos + 2)
-  const $end = tr.doc.resolve(pos + list.nodeSize)
-  const range = $start.blockRange($end)
-  const target = range === null ? null : liftTarget(range)
-  if (range !== null && target !== null) tr.lift(range, target)
-  else tr.replaceWith(pos, pos + item.nodeSize, list.content)
+  const range = tr.doc.resolve(pos + 2).blockRange(tr.doc.resolve(pos + list.nodeSize))!
+  tr.lift(range, liftTarget(range)!)
 }
 
 const liftHeadlessItemsKey = new PluginKey('mdapp-lift-headless-items')
@@ -281,10 +253,15 @@ export const liftHeadlessItems = $prose(
       key: liftHeadlessItemsKey,
       appendTransaction(trs, _old, state) {
         if (!trs.some((tr) => tr.docChanged)) return null
-        const positions = headlessItemPositions(state.doc)
+        // Every headless item, deepest / last first so each lift leaves the remaining positions valid.
+        const positions: number[] = []
+        state.doc.descendants((node, pos) => {
+          if (headlessList(node) !== null) positions.push(pos)
+          return true
+        })
         if (positions.length === 0) return null
         const tr = state.tr
-        for (const pos of positions) liftHeadlessItem(tr, pos)
+        for (const pos of positions.reverse()) liftHeadlessItem(tr, pos)
         return tr.docChanged ? tr : null
       },
     }),
