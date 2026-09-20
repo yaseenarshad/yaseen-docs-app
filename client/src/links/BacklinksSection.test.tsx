@@ -15,6 +15,7 @@ import type { IndexRecord } from '@shared/types'
 import { resolverFor } from '../views/engine'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BacklinksSection } from './BacklinksSection'
+import backlinksCss from './backlinks.css?inline'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -212,5 +213,11 @@ describe('BacklinksSection (Links D, GRO-2193)', () => {
     expect(snippets(el).map((s) => s.textContent)).toEqual(['now it says B twice: B', 'related to Bee as well'])
     expect([...snippets(el)[0].querySelectorAll('.backlinks__match')].map((m) => m.textContent)).toEqual(['B', 'B'])
     CONTENT[A] = '# A\n\nSee [[B]] for the details.\n'
+  })
+
+  it('the header draws no hairline above it (YAZ-1680)', () => {
+    const rule = backlinksCss.match(/\.backlinks__header\s*\{([^}]*)\}/s)?.[1]
+    expect(rule).toBeDefined()
+    expect(rule).not.toMatch(/border/)
   })
 })

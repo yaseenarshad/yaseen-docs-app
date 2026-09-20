@@ -129,6 +129,10 @@ button {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* The page's ONE tail (YAZ-1680): the blocks below the note stack flush, and whichever is last
+     still ends 64px above the bottom — each block used to carry this itself, so every pair of
+     blocks sat 64px apart. */
+  padding-bottom: 64px;
 }
 
 /* The header ROW (YAZ-918): ⚡ YAZ-888's title and ⚡ YAZ-883's properties panel share one line —
