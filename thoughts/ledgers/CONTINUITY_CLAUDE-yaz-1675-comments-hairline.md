@@ -17,14 +17,14 @@
 - Done:
   - [x] 1 YAZ-1676: scope + findings (comment), demo approved by Yasin ("yes thats perfect")
   - [x] 2 YAZ-1677: CSS delete + guard test; typecheck + full vitest green
-- Now: [→] 3 YAZ-1678: polish (CSS header + CONTRACTS.md clause, this ledger), PR, merge, cleanup
-- Next: closeout comments, parent Done
+  - [x] 3 YAZ-1678: polish (CSS header + CONTRACTS.md clause, ledger), audit posted per item
+  - [x] PR #60 merged to main (cbbdc2a); Linear parent + children Done; demo folder, dev app, worktree, branch removed
+- Now: nothing — issue closed. No release cut (Yasin batches releases).
 
 ## Open Questions
 - none
 
 ## Working Set
-- Worktree: `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-1675` (branch `yaz-1675-comments-hairline`, base main 8a68ee5)
-- Demo: `/Users/yasin/Desktop/yaz-1675-demo/` (vault `Remove Line Above Comments YAZ-1675`, `app-profile/`, `run-demo.sh`, `SCENARIOS.md`); dev log `/tmp/yaz1675-dev.log` — delete at closeout
+- Worktree and demo removed at closeout (branch `yaz-1675-comments-hairline`, base main 8a68ee5, merged as cbbdc2a)
 - Files: `client/src/comments/comments.css`, `client/src/comments/CommentsSection.test.tsx`, `docs/CONTRACTS.md`
 - Tests: `npx vitest run client/src/comments client/src/contentWidthCss.test.ts`; `npm run typecheck`
