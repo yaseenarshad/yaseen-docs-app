@@ -48,6 +48,7 @@ export const CH = {
   menuOpenFolder: 'menu:open-folder',
   menuOpenRoot: 'menu:open-root',
   menuSearch: 'menu:search',
+  menuSettings: 'menu:settings',
   menuToggleSidebar: 'menu:toggle-sidebar',
   menuCloseTab: 'menu:close-tab',
   menuNextTab: 'menu:next-tab',
