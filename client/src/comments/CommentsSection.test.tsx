@@ -827,6 +827,11 @@ describe('order (YAZ-1515)', () => {
     expect(rule).not.toMatch(/\border:/)
   })
 
+  it('the block draws no hairline of its own above the header (YAZ-1675)', () => {
+    const rule = must(commentsCss.match(/\.comments\s*\{([^}]*)\}/s)?.[1], 'the .comments rule')
+    expect(rule).not.toMatch(/border/)
+  })
+
   it('adding under newest-first: the new comment renders FIRST on screen while the file still APPENDS it', async () => {
     const el = mount(THREE, 100, 'newest')
     await submitVia(bottomComposer(el), 'Fourth')
