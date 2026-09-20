@@ -97,6 +97,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
     onRevealConsumed: vi.fn(),
     settings: { ...DEFAULT_SETTINGS },
     onChangeSettings: vi.fn(),
+    onOpenSettings: vi.fn(),
     onRootMissing: vi.fn(),
     onFileMissing: vi.fn(),
     onRenameFile: vi.fn(async () => undefined),
@@ -126,7 +127,7 @@ async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: Re
 const fileRow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.tree__row--file')
 const searchInput = (el: HTMLElement) => el.querySelector<HTMLInputElement>('input[aria-label="Search notes"]')
 /**
- * Drive the CONTROLLED search input like a user: native value setter + input event (SettingsPanel
+ * Drive the CONTROLLED search input like a user: native value setter + input event (SettingsDialog
  * idiom). Async because the index feed is LAZY since YAZ-808 — the first non-empty query is what
  * starts the read, so a keystroke now has settling to do.
  */
@@ -2898,5 +2899,14 @@ describe('Sidebar multi-select: folded rows and the ⌘⇧C window (YAZ-1338)', 
     act(() => root?.unmount())
     root = null
     expect(selectionRef.current).toBe(EMPTY_SELECTION)
+  })
+})
+
+describe('settings cog (YAZ-1679)', () => {
+  it('the footer cog only asks App for the dialog — the sidebar edits no setting itself', async () => {
+    const { el, props } = await mount()
+    act(() => el.querySelector<HTMLButtonElement>('.settings-button')?.click())
+    expect(props.onOpenSettings).toHaveBeenCalledTimes(1)
+    expect(props.onChangeSettings).not.toHaveBeenCalled()
   })
 })

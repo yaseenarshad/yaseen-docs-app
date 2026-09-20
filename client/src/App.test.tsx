@@ -84,6 +84,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const stateChanged = new Set<(next: AppState) => void>()
   const menuOpenRoot = new Set<(path: string) => void>()
   const menuSearch = new Set<() => void>()
+  const menuSettings = new Set<() => void>()
   const menuToggleSidebar = new Set<() => void>()
   const menuCloseTab = new Set<() => void>()
   const menuNextTab = new Set<() => void>()
@@ -158,6 +159,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         return () => menuOpenRoot.delete(l)
       }),
       onSearch: menuSub(menuSearch),
+      onSettings: menuSub(menuSettings),
       onToggleSidebar: menuSub(menuToggleSidebar),
       onCloseTab: menuSub(menuCloseTab),
       onNextTab: menuSub(menuNextTab),
@@ -196,7 +198,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     },
     // Sync off (YAZ-1081 3A): App owns one `useGithubSync`, which subscribes on mount. `off` is
     // the real default for a vault nobody switched on — no chip state to assert here, and no
-    // attention banner. The sync UI's own tests are SyncIndicator/SettingsPanel/syncAttention.
+    // attention banner. The sync UI's own tests are SyncIndicator/SettingsDialog/syncAttention.
     github: {
       status: vi.fn(async (r: string) => ({ root: r, state: 'off' as const })),
       syncNow: vi.fn(async (r: string) => ({ root: r, state: 'off' as const })),
@@ -210,6 +212,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitStateChanged: (next: AppState) => stateChanged.forEach((listener) => listener(next)),
     emitOpenRoot: (path: string) => menuOpenRoot.forEach((l) => l(path)),
     emitSearch: () => menuSearch.forEach((l) => l()),
+    emitSettings: () => menuSettings.forEach((l) => l()),
     emitToggleSidebar: () => menuToggleSidebar.forEach((l) => l()),
     emitCloseTab: () => menuCloseTab.forEach((l) => l()),
     emitNextTab: () => menuNextTab.forEach((l) => l()),
@@ -648,6 +651,17 @@ describe('App Show in sidebar request ownership (YAZ-1023)', () => {
     rightClick(el.querySelector('.tabbar__tab')!)
     act(() => showInSidebar(el)?.click())
     expect(captured.sidebar?.revealRequest?.id).toBe(2)
+  })
+})
+
+describe('App settings dialog (YAZ-1679)', () => {
+  it('Yaseen Docs › Settings… (⌘,) mounts the ONE dialog, and its × unmounts it', async () => {
+    const { el, emitSettings } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    expect(el.querySelector('.settings-dialog')).toBeNull()
+    act(() => emitSettings())
+    expect(el.querySelector('.settings-dialog')).not.toBeNull()
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')?.click())
+    expect(el.querySelector('.settings-dialog')).toBeNull()
   })
 })
 
