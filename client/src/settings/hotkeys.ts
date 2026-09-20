@@ -3,7 +3,7 @@
  * every binding is read from — Settings › Hotkeys renders it, and the settings search indexes every
  * label and key so "close tab" finds the page. When a keymap changes anywhere (editor/outline/hotkeys.ts,
  * foldAllHotkeys.ts, headingHotkeys.ts, zoom.ts, marks/underline.ts, marks/highlight.ts,
- * listCommands.ts, views/view/*, the application menu in desktop/src/main/menu.ts), update HOTKEYS
+ * listCommands.ts, lineSelection.ts, views/view/*, the application menu in desktop/src/main/menu.ts), update HOTKEYS
  * (or VIEW_HOTKEYS / WINDOW_HOTKEYS) with it — `VIEW_HOTKEYS` is the folder-page view surface's own
  * set (table / cards / outline bindings); it was `BASES_HOTKEYS` under the heading "Bases" until
  * YAZ-861 renamed both to what they describe. hotkeys.test.ts pins the expected set so drift fails
@@ -28,6 +28,7 @@ export const HOTKEYS: readonly HotkeyEntry[] = [
   { keys: '⌘⇧H', label: 'Highlight' },
   { keys: '⌘⇧X', label: 'Strikethrough' },
   { keys: 'Tab / ⇧Tab', label: 'Indent / outdent bullet' },
+  { keys: '⇧↑ / ⇧↓', label: 'Select to the end / start of this line, then one whole line per press' },
 ]
 
 export const VIEW_HOTKEYS: readonly HotkeyEntry[] = [

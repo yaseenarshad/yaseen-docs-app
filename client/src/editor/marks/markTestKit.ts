@@ -46,15 +46,18 @@ export const IS_MAC = /Mac/.test(navigator.platform)
 /**
  * One key press through ProseMirror's `handleKeyDown` — the same path a real keyboard takes, so
  * keymap priority and `Mod-` resolution are both under test. `Mod` = ⌘ on mac, Ctrl elsewhere.
+ * `mod` defaults to true (every mark hotkey is a ⌘ chord); `{ mod: false }` presses a bare key
+ * such as `ArrowDown` or `Backspace` (YAZ-1734's line selection).
  */
-export function pressKey(crepe: Crepe, key: string, opts: { shift?: boolean } = {}): boolean {
+export function pressKey(crepe: Crepe, key: string, opts: { shift?: boolean; mod?: boolean } = {}): boolean {
   return crepe.editor.action((ctx) => {
     const view = ctx.get(editorViewCtx)
+    const mod = opts.mod ?? true
     const event = new KeyboardEvent('keydown', {
       key,
-      code: `Key${key.toUpperCase()}`,
+      code: key.length === 1 ? `Key${key.toUpperCase()}` : key,
       shiftKey: opts.shift ?? false,
-      ...(IS_MAC ? { metaKey: true } : { ctrlKey: true }),
+      ...(mod ? (IS_MAC ? { metaKey: true } : { ctrlKey: true }) : {}),
       bubbles: true,
       cancelable: true,
     })
