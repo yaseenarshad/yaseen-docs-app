@@ -93,6 +93,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const menuCloseTab = new Set<() => void>()
   const menuNextTab = new Set<() => void>()
   const menuPrevTab = new Set<() => void>()
+  const menuZoom = new Set<() => void>()
   const linkOpenFile = new Set<(path: string) => void>()
   const linkNotice = new Set<(message: string) => void>()
   const fileRenamed = new Set<(ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void>()
@@ -168,6 +169,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onCloseTab: menuSub(menuCloseTab),
       onNextTab: menuSub(menuNextTab),
       onPrevTab: menuSub(menuPrevTab),
+      onZoom: menuSub(menuZoom),
     },
     link: {
       onOpenFile: vi.fn((l: (path: string) => void) => {

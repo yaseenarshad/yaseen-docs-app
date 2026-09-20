@@ -170,7 +170,8 @@ The menu bar is a pure template (`desktop/src/main/menu.ts`, `buildMenuTemplate(
 | View › Toggle Sidebar | — | sends `menu.onToggleSidebar` to the focused window's renderer, which runs the same local toggle as every other sidebar gesture; no focused renderer → no-op |
 | App chrome | `⌘B` | renderer-owned sidebar toggle (YAZ-1280): only plain Cmd+B outside input/textarea/select/contenteditable and while no aria-modal tool is open. Milkdown keeps Cmd+B for bold; Yaseendraw/modal tools keep their own gesture. There is deliberately no Electron accelerator or global shortcut. |
 | App chrome | `⌘X` / `⌘C` / `⌘V` | renderer-owned file clipboard (YAZ-1674, D6): the same `ownsWindowChord` boundary as ⌘B / ⌘⇧C (a field, the editor or a modal keeps the key — text copy/paste is untouched); App asks the mounted Sidebar's `clipboardRef` handle and swallows the key ONLY when it acted (Cut/Copy need a selection ≥1, Paste a non-empty clipboard; an open context menu owns the verbs). Hand-confirmed on macOS in the demo that the renderer wins over the Edit-menu role. |
-| View › Reload / zoom roles, Edit roles, Window roles | — | stock Electron roles; dev builds add View › Toggle Developer Tools; the Window submenu has `role: 'window'` so macOS appends the window list |
+| View › Actual Size / Zoom In / Zoom Out | `⌘0` / `⌘+` (also `⌘=`) / `⌘−` | NOT the stock roles (YAZ-1710): each sends `menu.onZoom(step)` (−1 / 0 / +1) to the focused window's renderer, which routes it — `requestZoom` (`editor/zoomRequest.ts`) bubbles a cancelable `yaseendocs:zoom` event from the focused element; the note whose `section.editor` contains the focus claims it and steps its own `documentZoom` along the pill ladder (⌘0 → 100%; a wall is a no-op); unclaimed (blank sidebar, a dialog, the search box, Welcome) → `window.zoom(step)`, and main sets the sender's zoom level to `0` or `± 0.5`, exactly what the roles did, persistence included |
+| View › Reload, Edit roles, Window roles | — | stock Electron roles; dev builds add View › Toggle Developer Tools; the Window submenu has `role: 'window'` so macOS appends the window list |
 | Help › Yaseen Docs on GitHub | — | `shell.openExternal(HELP_URL)` |
 
 ## Multi-window (D3/D6 — GRO-2160/2167/2168/2169)
@@ -675,7 +676,12 @@ Retained editor mounts preserve zoom across tab switches; closing/reopening or a
 (including path changes) resets it. Separate mounted editors, including right panes, are
 independent. Zoom does not change Markdown, autosave, IPC, settings, or persisted app state.
 Non-Markdown viewers, Electron's existing application zoom and outline bullet-focus zoom keep
-their separate behavior. No Fit mode, added zoom shortcuts or persistent preference.
+their separate behavior. No Fit mode or persistent preference. `⌘+` / `⌘−` / `⌘0` step this ladder
+while focus is inside the note's section and zoom the whole app otherwise (YAZ-1710, see the menu
+table). Every zoom change — keys or pill — then brings the caret's line back into the scroller the
+shortest way (`scrollIntoView({ block: 'nearest' })` on the selection's element when the selection
+lives in this note; a visible caret does not move) because CSS zoom rescales the page under a fixed
+scroll position (D11).
 
 DOM geometry used for pointer hit areas, drag distances and pinned folder-table headers must
 convert viewport measurements to local layout units when inside this scaled scroller.

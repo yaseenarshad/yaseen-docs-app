@@ -68,7 +68,7 @@ describe('window lookup', () => {
 describe('registerWindowIpc', () => {
   it('registers every window channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CH.windowIdentity, CH.windowSetIdentity, CH.windowOpen, CH.windowDuplicate, CH.windowCloseSelf, CH.menuPasteTextFallback].sort())
+    expect(channels).toEqual([CH.windowIdentity, CH.windowSetIdentity, CH.windowOpen, CH.windowDuplicate, CH.windowCloseSelf, CH.windowZoom, CH.menuPasteTextFallback].sort())
   })
 
   it('native paste fallback inserts the captured text into only the registered sender', async () => {
@@ -173,6 +173,17 @@ describe('registerWindowIpc', () => {
     expect(manager.closeWindow).toHaveBeenCalledWith('w1')
     expect(await registered(CH.windowCloseSelf)({ sender: stranger })).toEqual(bad('BAD_REQUEST'))
     expect(manager.closeWindow).toHaveBeenCalledTimes(1)
+  })
+
+  it('window:zoom moves the caller\'s own zoom level by ±0.5 or back to 0, and rejects any other step (YAZ-1710)', async () => {
+    const target = { ...sender, getZoomLevel: vi.fn(() => 1), setZoomLevel: vi.fn() }
+    expect(await registered(CH.windowZoom)({ sender: target }, 1)).toEqual(ok(undefined))
+    expect(await registered(CH.windowZoom)({ sender: target }, -1)).toEqual(ok(undefined))
+    expect(await registered(CH.windowZoom)({ sender: target }, 0)).toEqual(ok(undefined))
+    expect(target.setZoomLevel.mock.calls).toEqual([[1.5], [0.5], [0]])
+    expect(await registered(CH.windowZoom)({ sender: target }, 2)).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CH.windowZoom)({ sender: target }, '1')).toEqual(bad('BAD_REQUEST'))
+    expect(target.setZoomLevel).toHaveBeenCalledTimes(3)
   })
 
   it('window:set-identity validates the patch', async () => {

@@ -13,6 +13,7 @@ import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
 import { useGithubSync } from './hooks/useGithubSync'
 import { useLinkEvents } from './hooks/useLinkEvents'
 import { useMenuEvents } from './hooks/useMenuEvents'
+import { requestZoom } from './editor/zoomRequest'
 import { usePickFolder } from './hooks/usePickFolder'
 import { useWatch } from './hooks/useWatch'
 import { countLinkReferences, renameNotice, updateLinksAfterRename } from './links/renameLinks'
@@ -330,7 +331,7 @@ export function App() {
 
   // File › Open Folder… / Open Recent (GRO-2161) reuse the same flows as the in-app buttons;
   // File › Close Tab and Window › Next/Previous Tab (GRO-2232) drive the tab model.
-  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openRoot, onSearch: openSearch, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: closeTabOrWindow, onNextTab: nextTab, onPrevTab: prevTab })
+  useMenuEvents({ onOpenFolder: pick, onOpenRoot: openRoot, onSearch: openSearch, onSettings: openSettings, onToggleSidebar: toggleSidebar, onCloseTab: closeTabOrWindow, onNextTab: nextTab, onPrevTab: prevTab, onZoom: requestZoom })
 
   // Deep links (E1, GRO-2171): a routed link behaves like a sidebar click (Tabs rule 10) —
   // it activates the file's tab when already open, else opens it in the CURRENT tab;
