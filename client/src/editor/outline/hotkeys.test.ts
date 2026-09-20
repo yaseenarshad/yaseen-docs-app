@@ -9,7 +9,7 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
-import { OUTLINE_FOLDED_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
+import { OUTLINE_FOLDED_ATTR, OUTLINE_FOLDED_IMAGE_ATTR, OUTLINE_TOGGLE_CLASS } from './outlineFolding'
 
 const OUTLINE = `* L1 a
   * L2 a
@@ -88,6 +88,7 @@ function select(crepe: Crepe, from: number, to = from): void {
 const caretIn = (crepe: Crepe, text: string, offset = text.length) => select(crepe, posOf(crepe, text, offset))
 const md = (crepe: Crepe) => getMarkdownForSave(crepe)
 const folded = (root: HTMLElement) => root.querySelectorAll(`[${OUTLINE_FOLDED_ATTR}="true"]`).length
+const chips = (root: HTMLElement) => root.querySelectorAll(`[${OUTLINE_FOLDED_IMAGE_ATTR}="true"]`).length
 const toggles = (root: HTMLElement) => [...root.querySelectorAll<HTMLButtonElement>(`.${OUTLINE_TOGGLE_CLASS}`)]
 
 describe('Mod-Enter (task cycle)', () => {
@@ -135,7 +136,7 @@ describe('Mod-Enter (task cycle)', () => {
 })
 
 describe('Mod-Shift-u / Mod-Shift-i (fold all / unfold all)', () => {
-  it('folds every parent (leafs untouched), unfolds all, and reports keys through onCollapsedKeysChange', async () => {
+  it('folds every parent (text leafs untouched), unfolds all, and reports keys through onCollapsedKeysChange', async () => {
     const onCollapsedKeysChange = vi.fn()
     const { crepe, root } = await mount(OUTLINE, { folding: { onCollapsedKeysChange } })
     expect(toggles(root)).toHaveLength(2)
@@ -151,6 +152,18 @@ describe('Mod-Shift-u / Mod-Shift-i (fold all / unfold all)', () => {
     expect(folded(root)).toBe(0)
     expect(onCollapsedKeysChange).toHaveBeenLastCalledWith([])
     expect(press(crepe, 'Mod-Shift-i')).toBe(false)
+  })
+
+  it('an image-only leaf bullet is foldable too (YAZ-1709): chipped by Mod-Shift-u, restored by Mod-Shift-i', async () => {
+    const { crepe, root } = await mount(`* L1 a\n  * L2 a\n* ![Shot](a.png)\n* L1 b\n`, { image: { root: '/v', notePath: '/v/n.md' } })
+    expect(toggles(root)).toHaveLength(2)
+    caretIn(crepe, 'L1 b')
+    expect(press(crepe, 'Mod-Shift-u')).toBe(true)
+    expect(folded(root)).toBe(1)
+    expect(chips(root)).toBe(1)
+    expect(press(crepe, 'Mod-Shift-i')).toBe(true)
+    expect(folded(root)).toBe(0)
+    expect(chips(root)).toBe(0)
   })
 
   it('does nothing in a document without parents', async () => {
@@ -215,6 +228,28 @@ describe('Mod-ArrowUp / Mod-ArrowDown (fold / unfold the caret item, GRO-2092)',
     caretIn(crepe, 'Intro')
     expect(press(crepe, 'Mod-ArrowUp')).toBe(false)
     expect(press(crepe, 'Mod-ArrowDown')).toBe(false)
+  })
+
+  it('folds an image bullet to its chip from the caret and unfolds it (YAZ-1709); a text-only leaf stays a no-op', async () => {
+    const { crepe, root } = await mount(`* ![Shot](a.png)\n* L1 b\n`, { image: { root: '/v', notePath: '/v/n.md' } })
+    const imagePos = crepe.editor.action((ctx) => {
+      let found = -1
+      ctx.get(editorViewCtx).state.doc.descendants((node, pos) => {
+        if (found === -1 && node.type.name === 'image') found = pos
+        return found === -1
+      })
+      return found
+    })
+    select(crepe, imagePos) // the caret just before the image, inside the bullet's only paragraph
+    expect(press(crepe, 'Mod-ArrowUp')).toBe(true)
+    expect(chips(root)).toBe(1)
+    expect(folded(root)).toBe(0)
+    expect(press(crepe, 'Mod-ArrowDown')).toBe(true)
+    expect(chips(root)).toBe(0)
+    caretIn(crepe, 'L1 b')
+    expect(press(crepe, 'Mod-ArrowUp')).toBe(true) // consumed, nothing to fold
+    expect(chips(root)).toBe(0)
+    expect(folded(root)).toBe(0)
   })
 
   it('Mod-z right after Mod-ArrowUp reverts that fold (GRO-2075 path)', async () => {

@@ -18,7 +18,7 @@
  *   – a fenced code block holding an image line    → text, never a node: code is code
  *   – `![[wiki.png]]`                              → not an image node at all (only `.excalidraw`
  *                                                    embeds are special, `drawingPreview.ts`)
- *   ✓ `![alt|300](images/a.png)`                   → Obsidian's width syntax, on the `<img>` itself
+ *   ✓ `![alt|300](images/a.png)`                   → Obsidian's width syntax, on the `<img>` itself (as `--image-width`)
  *
  * Then the two gestures a rendered image has:
  *  - RESIZE (🔒 D3): the west handle grows the image as the pointer moves LEFT, the width is
@@ -98,8 +98,11 @@ const viewByAlt = (w: Page, alt: string) => editorOf(w).locator(`.image-view:has
 const readNote = () => readFile(path.join(vault, NOTE), 'utf8')
 /** What the browser actually decoded — 0 (or a throw) when the src never loaded. */
 const naturalWidthOf = (img: Locator): Promise<number> => img.evaluate((el) => (el as HTMLImageElement).naturalWidth)
-/** The inline width the node view put on the `<img>` — `''` when the alt carries no `|W`. */
-const styleWidthOf = (img: Locator): Promise<string> => img.evaluate((el) => (el as HTMLImageElement).style.width)
+/**
+ * The width the node view put on the `<img>` — the `--image-width` custom property (not
+ * `style.width`, so the YAZ-1709 folded chip can override it); empty when the alt carries no `|W`.
+ */
+const styleWidthOf = (img: Locator): Promise<string> => img.evaluate((el) => (el as HTMLImageElement).style.getPropertyValue('--image-width'))
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'imgrender-userdata-'))
@@ -154,7 +157,7 @@ test('step 1 — every reference shape resolves the way Obsidian would, or break
   // --- Obsidian's `|300`: on the `<img>`, never on the file (the PNG is still 240 wide) ---
   expect(await styleWidthOf(imgByAlt(win, 'sized'))).toBe('300px')
   expect(await naturalWidthOf(imgByAlt(win, 'sized'))).toBe(SMALL_WIDTH)
-  // …and the un-sized twin of the same file carries no inline width at all.
+  // …and the un-sized twin of the same file carries no width at all (empty when the alt has no `|W`).
   expect(await styleWidthOf(imgByAlt(win, 'a'))).toBe('')
 
   await shoot(win, 'imageRender-01-all-reference-shapes')
