@@ -2,7 +2,8 @@
  * The comment stream (YAZ-1472) — owned by CommentsSection.tsx (the feature-CSS convention). The
  * block sits INSIDE the editor's scroller, after the folder page's contents and BEFORE "Linked
  * mentions", and repeats `.editor-instance`'s content column (backlinks.css's rule, byte for byte)
- * so it lines up with the note's text and scrolls with it. The header is the properties panel's
+ * so it lines up with the note's text and scrolls with it, and draws NO hairline of its own
+ * (YAZ-1675 — the body flows straight into the header; Linked mentions keeps its line). The header is the properties panel's
  * control (chevron, muted label, plain count, collapses the rest) at the backlinks' size, with one
  * fold-all button at its right. Below it, Linear's shape with the outliner's folding: every thread is ONE white card —
  * the parent on top, an "N replies" fold, the replies one level in behind a guide line, and a
@@ -16,7 +17,6 @@
   max-width: var(--content-max-width);
   margin: 0 auto;
   padding: 0 48px 64px;
-  border-top: 1px solid var(--border);
 }
 
 /* ---- header row: the properties panel's control at the left, the fold-all button at the right ---- */
