@@ -58,8 +58,9 @@ api.clip(req) · api.paste(req) · api.onClipChanged(listener)
   - [x] Execution started 2026-09-20: rebased on main `35204ea`. 2A/2B reviewed + docs → `9e95ba4` (Done). 3/4A/4B/4C reviewed + docs + cleanups (one `build<T>`, shared `countItems`, dropped `'success'` icon, dead notice-stacking CSS, new `fileClipboardHotkey.test.ts`) → `45ef08d` (Done). Full suite 247 files / 4183 tests, typecheck clean.
   - [x] Spot check on the final build found D11 (the open note would not copy) → YAZ-1711 (4B1), approved, `622772c`. Main moved again (YAZ-1679 settings dialog) → rebased; `HotkeysPanel.tsx` is gone, the hotkey rows live in `client/src/settings/hotkeys.ts` now. Commits on main `48e9402`: `cdfedbe` · `710618e` · `622772c`.
   - [x] 6A audit posted on YAZ-1705 (agent pass, my verdicts marked apply/keep).
-- Now: [→] 6B apply (agent) → my review of its diff → ledger closeout → commit → push → PR → merge to main. No release.
-- Next: delete scratchpad demo + profile + worktree after merge; close YAZ-1703/1704/1706/1674.
+  - [x] 6B applied (`2bd6fbd`), reviewed, full suite 248 files / 4191 tests, typecheck clean.
+  - [x] SHIPPED: PR #65 merged to main `63a5dc5` (2026-09-20). YAZ-1674 and every child Done; YAZ-1707/1708 stay as Futures. Demo vaults, profile, worktree and branch deleted. No release cut.
+- Now: nothing — closed out.
 
 ## Open Questions
 - CONFIRMED (demo, 2026-09-20): the renderer's window listener wins over the macOS Edit-menu roles for ⌘C/⌘X/⌘V — Yasin used the chords throughout the walkthrough.
