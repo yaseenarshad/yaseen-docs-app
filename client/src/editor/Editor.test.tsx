@@ -9,6 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
+import { ZOOM_EVENT } from './zoomRequest'
 import { createRoot, type Root } from 'react-dom/client'
 import type { FileResponse, IndexRecord, WatchEvent } from '@shared/types'
 import { resolverFor } from '../views/engine'
@@ -632,6 +633,67 @@ describe('document magnification (YAZ-1410)', () => {
     expect(crepe().md).toBe(BODY)
     await pastDebounce()
     expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('⌘+ / ⌘− / ⌘0 step this note while focus is inside its section, along the pill ladder (YAZ-1710)', async () => {
+    const el = await mount(BODY)
+    const value = () => el.querySelector('.document-zoom__value')!.textContent
+    const send = (from: Element, step: -1 | 0 | 1) => {
+      const event = new CustomEvent(ZOOM_EVENT, { detail: step, bubbles: true, cancelable: true })
+      act(() => { from.dispatchEvent(event) })
+      return event.defaultPrevented
+    }
+    expect(send(el.querySelector('.editor-mount')!, 1)).toBe(true)
+    expect(value()).toBe('125%')
+    expect(send(el.querySelector('.document-zoom__trigger')!, 1)).toBe(true)
+    expect(value()).toBe('150%')
+    enterZoom(el, '117')
+    expect(send(el.querySelector('.editor-mount')!, -1)).toBe(true)
+    expect(value()).toBe('100%')
+    expect(send(el.querySelector('.editor-mount')!, 0)).toBe(true)
+    expect(value()).toBe('100%')
+    enterZoom(el, '200')
+    expect(send(el.querySelector('.editor-mount')!, 1)).toBe(true)
+    expect(value()).toBe('200%')
+    // Outside the section nobody claims it — that is the app's cue.
+    expect(send(document.body, 1)).toBe(false)
+    expect(value()).toBe('200%')
+  })
+
+  it('brings the caret line back into view after a zoom change, and only when the caret is in this note (D11)', async () => {
+    const el = await mount(BODY)
+    const scrolled: Element[] = []
+    const proto = HTMLElement.prototype as unknown as Record<string, unknown>
+    proto.scrollIntoView = function (this: Element) { scrolled.push(this) }
+    const step = (from: Element) => act(() => { from.dispatchEvent(new CustomEvent(ZOOM_EVENT, { detail: 1, bubbles: true, cancelable: true })) })
+    const caretIn = (p: HTMLParagraphElement) => {
+      const range = document.createRange()
+      range.setStart(p.firstChild!, 1)
+      const selection = document.getSelection()!
+      selection.removeAllRanges()
+      selection.addRange(range)
+    }
+    try {
+      const line = document.createElement('p')
+      line.textContent = 'a line'
+      el.querySelector('.editor-mount')!.append(line)
+      caretIn(line)
+      step(line)
+      expect(el.querySelector('.document-zoom__value')!.textContent).toBe('125%')
+      expect(scrolled).toEqual([line])
+
+      // Caret elsewhere: this note's zoom change must not drag the page around.
+      const outside = document.createElement('p')
+      outside.textContent = 'elsewhere'
+      document.body.append(outside)
+      caretIn(outside)
+      step(el.querySelector('.editor-mount')!)
+      expect(el.querySelector('.document-zoom__value')!.textContent).toBe('150%')
+      expect(scrolled).toEqual([line])
+      outside.remove()
+    } finally {
+      delete proto.scrollIntoView
+    }
   })
 
   it('keeps retained editors independent and resets a closed/reopened instance', async () => {

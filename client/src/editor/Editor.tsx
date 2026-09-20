@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CommentsOrder, FileResponse, GithubSyncStatus, PropertiesResponse } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import { api } from '../api'
@@ -26,7 +26,9 @@ import './outline/bulletThreading.css'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { SaveIndicator } from './SaveIndicator'
 import { SyncIndicator } from './SyncIndicator'
-import { DocumentZoom } from './DocumentZoom'
+import { DocumentZoom, stepZoom } from './DocumentZoom'
+import { ZOOM_EVENT } from './zoomRequest'
+import type { ZoomStep } from '@shared/types'
 import { useAutosave } from '../hooks/useAutosave'
 import { useFile } from '../hooks/useFile'
 import type { WatchSource } from '../hooks/useWatch'
@@ -186,6 +188,30 @@ function CrepeHost({
 }) {
   const [documentZoom, setDocumentZoom] = useState(100)
   const hostRef = useRef<HTMLDivElement>(null)
+  // This note owns ⌘+ / ⌘− / ⌘0 while focus is anywhere inside its section — title, properties,
+  // body, comments, the zoom pill (YAZ-1710). Same ladder as the pill; ⌘0 is 100%; a wall is a no-op.
+  useEffect(() => {
+    const section = hostRef.current?.closest('.editor')
+    if (!section) return
+    const onZoom = (event: Event) => {
+      event.preventDefault()
+      const step = (event as CustomEvent<ZoomStep>).detail
+      setDocumentZoom((value) => (step === 0 ? 100 : stepZoom(value, step) ?? value))
+    }
+    section.addEventListener(ZOOM_EVENT, onZoom)
+    return () => section.removeEventListener(ZOOM_EVENT, onZoom)
+  }, [])
+  // A zoom change rescales the page under a fixed scroll position, so the caret line can slide
+  // off screen (YAZ-1710 D11). Bring it back the shortest way; a visible caret does not move.
+  useLayoutEffect(() => {
+    const section = hostRef.current?.closest('.editor')
+    const selection = document.getSelection()
+    const range = selection !== null && selection.rangeCount > 0 ? selection.getRangeAt(0) : null
+    if (!section || !range || !section.contains(range.startContainer)) return
+    const node = range.startContainer
+    // Optional call: jsdom has no scrollIntoView (same posture as `sidebar/revealRow.ts`).
+    ;(node instanceof Element ? node : node.parentElement)?.scrollIntoView?.({ block: 'nearest' })
+  }, [documentZoom])
   // The live Crepe instance, for ArrowDown out of the title (⚡ YAZ-888) — the same
   // `focusEditor` the mount runs when the sidebar walk is not standing in the tree (YAZ-921),
   // so the caret lands where a click would put it.

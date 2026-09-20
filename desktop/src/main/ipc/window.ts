@@ -120,6 +120,14 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     windows.closeWindow(id)
   })
 
+  // `window:zoom` (YAZ-1710): the app-wide zoom the stock roles used to do, on the caller's own
+  // window — level ± 0.5 per step, 0 for Actual Size. The renderer calls this only when no note
+  // has focus; a focused note zooms itself.
+  handleWithEvent(CH.windowZoom, async (e, step: unknown) => {
+    if (step !== -1 && step !== 0 && step !== 1) throw new BridgeFailure('BAD_REQUEST', 'step must be -1, 0 or 1')
+    e.sender.setZoomLevel(step === 0 ? 0 : e.sender.getZoomLevel() + 0.5 * step)
+  })
+
   handle(CH.windowOpen, async (opts: unknown) => {
     if (!isRecord(opts)) throw new BridgeFailure('BAD_REQUEST', 'options must be an object')
     windows.openWindow({ root: optionalPath(opts, 'root') ?? null, file: optionalPath(opts, 'file') ?? null })

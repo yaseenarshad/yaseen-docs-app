@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppState, ClipboardPasteRequest, FileClipState, FileDeletedEvent, FileRenamedEvent, GithubSyncStatus, PropertiesResponse, VaultConfigChange, WatchEvent, YaseenDocsApi } from '@shared/types'
+import type { AppState, ClipboardPasteRequest, FileClipState, FileDeletedEvent, FileRenamedEvent, GithubSyncStatus, PropertiesResponse, VaultConfigChange, WatchEvent, YaseenDocsApi, ZoomStep } from '@shared/types'
 import { CH, type Envelope } from '../channels'
 
 /** invoke + unwrap: resolves the value or rejects with the plain `BridgeError` object. */
@@ -109,6 +109,7 @@ const api: YaseenDocsApi = {
     open: (opts) => call(CH.windowOpen, opts),
     duplicate: () => call(CH.windowDuplicate),
     closeSelf: () => call(CH.windowCloseSelf),
+    zoom: (step) => call(CH.windowZoom, step),
     onFlush: (listener) => {
       flushListeners.add(listener)
       return () => {
@@ -131,6 +132,7 @@ const api: YaseenDocsApi = {
     onSearch: on<void>(CH.menuSearch),
     onSettings: on<void>(CH.menuSettings),
     onToggleSidebar: on<void>(CH.menuToggleSidebar),
+    onZoom: on<ZoomStep>(CH.menuZoom),
     onCloseTab: on<void>(CH.menuCloseTab),
     onNextTab: on<void>(CH.menuNextTab),
     onPrevTab: on<void>(CH.menuPrevTab),
