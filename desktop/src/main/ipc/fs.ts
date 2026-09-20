@@ -1,6 +1,8 @@
 import path from 'node:path'
 import { CH } from '../../channels'
+import { fileClip } from '../fileClip'
 import { readAsset, writeAsset } from '../fs/assets'
+import { copyEntry, pasteEntries } from '../fs/copy'
 import { createDir, createFile } from '../fs/create'
 import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure } from '../fs/fsUtils'
@@ -108,6 +110,51 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
     const res = await repairRename(req)
     store.renamePath(res.oldPath, res.newPath)
     broadcastAll(CH.fileRenamed, { oldPath: res.oldPath, newPath: res.newPath, kind: res.kind })
+    return res
+  })
+  // File clipboard (YAZ-1674, D1): the ONE app-wide clipboard lives in main (`fileClip`), so a
+  // paste in any window takes what any window cut or copied — within a vault or across two.
+  // Every change is pushed to EVERY window as `clip:changed` (the github status posture):
+  // that is how a menu on vault B learns "Paste 3 items" after a cut on vault A.
+  fileClip.onChange((state) => broadcastAll(CH.clipChanged, state))
+  // Cut / Copy is a pure clipboard write: nothing on disk is touched or even stat'ed, so there
+  // is no store repair and no file push here — a path that goes stale before the paste is
+  // reported per entry BY the paste. No vault-root guard either: Cut/Copy is only ever offered
+  // on ROWS (D5 — hidden on blank space, and ⌘X/⌘C need a selection, D6), and the calling
+  // window's own root is never a row of its own tree, so the root cannot enter the clipboard
+  // from this window; ANOTHER window's root cut from a window rooted above it is the same
+  // allowed case rename has (E1b), and pasting it inside itself is what rename already refuses.
+  handle(CH.fsClip, async (req: unknown) => {
+    fileClip.set(req)
+  })
+  // A window opened AFTER a clip missed the push: it reads the current state once on mount,
+  // then `clip:changed` carries the rest (the same catch-up read `github.status` offers).
+  handle(CH.fsClipState, async () => fileClip.state())
+  // Paste (D2–D4). Per entry, in clipboard order, and one bad entry never stops the rest:
+  //  - a COPY is `copyEntry` (fs.cp under Finder's next free name, D3/D4) with deliberately NO
+  //    store repair and NO broadcast — nothing moved and nothing went, so there is nothing to
+  //    remap or retire; the tree learns of the new entry from the watcher's add/addDir echo,
+  //    exactly like any add made outside the app, and the client's refresh() is idempotent;
+  //  - a CUT is the EXISTING rename pipeline above, verbatim — `renameFile`, then
+  //    `store.renamePath`, then `file:renamed` to every window — once PER ENTRY, so open tabs
+  //    on a moved file remap as they would for a drag-drop move. Across volumes `fs.rename`
+  //    cannot move (EXDEV); that entry fails `IO_ERROR` rather than copy-then-delete.
+  // A cut pastes ONCE: the clipboard clears when at least one entry landed (a cut whose every
+  // entry failed stays, so the user can fix the cause and paste again); a copy is kept and
+  // pastes again and again (D2).
+  handle(CH.fsPaste, async (req: unknown) => {
+    const clip = fileClip.get()
+    if (clip === null) throw new BridgeFailure('BAD_REQUEST', 'nothing to paste')
+    const res = await pasteEntries(clip, req, {
+      copy: copyEntry,
+      move: async (from, to) => {
+        const r = await renameFile({ oldPath: from, newPath: to })
+        store.renamePath(r.oldPath, r.newPath)
+        broadcastAll(CH.fileRenamed, { oldPath: r.oldPath, newPath: r.newPath, kind: r.kind })
+        return r
+      },
+    })
+    if (clip.op === 'cut' && res.pasted.length > 0) fileClip.clear()
     return res
   })
 }

@@ -373,6 +373,42 @@ export interface FileRenamedEvent {
   kind: 'file' | 'dir'
 }
 
+// ---------- file clipboard (YAZ-1674) ----------
+
+/**
+ * Cut / Copy from the sidebar (YAZ-1674, D1): the ONE app-wide clipboard lives in main, so a
+ * paste in any window — on the same vault or another — takes what any window cut or copied.
+ * `paths` is the ORDERED selection (one row, or the whole multi-select), absolute; `op` decides
+ * what a later paste does (D2: a cut MOVES through the rename pipeline and pastes once; a copy
+ * COPIES and pastes again and again). Session-only, never persisted. Rejects `BAD_REQUEST` for
+ * a missing/unknown `op` or an empty `paths`, `NOT_ABSOLUTE` for a relative entry.
+ */
+export interface FileClipRequest {
+  paths: string[]
+  op: 'copy' | 'cut'
+}
+
+/** `clip:changed` — pushed to EVERY window after every clipboard change: how many, and which verb; null when empty (the menu's disabled "Paste"). */
+export type FileClipState = { count: number; op: 'copy' | 'cut' } | null
+
+/** Paste the clipboard INTO this folder (D5: a dir row → itself, a file row → its parent, blank space → the vault root). Must exist — never created. */
+export interface PasteRequest {
+  targetDir: string
+}
+
+/**
+ * Per-entry outcome of a paste (D3): every clipboard entry lands in exactly one of the two
+ * lists, in clipboard order — except a cut entry already in `targetDir`, which is skipped
+ * silently (nothing to do). A copy that clashes takes Finder's next free name (`Note copy.md`,
+ * `Note copy 2.md`; folders keep the whole name); a cut that clashes fails `ALREADY_EXISTS`.
+ * A cut across volumes fails `IO_ERROR` ("cannot move across disks; copy it instead"); a
+ * stale entry `NOT_FOUND`; a hidden source or a folder into itself `BAD_REQUEST`.
+ */
+export interface PasteResponse {
+  pasted: { from: string; to: string; kind: 'file' | 'dir' }[]
+  failed: { from: string; code: BridgeErrorCode; message: string }[]
+}
+
 // ---------- pickFolder() ----------
 
 /**
@@ -1004,6 +1040,31 @@ export interface FileApi {
   delete(req: DeleteRequest): Promise<DeleteResponse>
   /** Fired in every window after a successful delete; returns an unsubscribe. */
   onDeleted(listener: (ev: FileDeletedEvent) => void): () => void
+  /**
+   * Cut / Copy (YAZ-1674, D1): replaces the ONE app-wide clipboard in main with the ordered
+   * selection and the verb. Nothing touches the disk here — a stale entry is reported per
+   * entry at paste time. Every window then receives `clip:changed`. Rejects `BAD_REQUEST`
+   * (bad `op`, empty `paths`) or `NOT_ABSOLUTE` (a relative entry) and leaves the clipboard as it was.
+   */
+  clip(req: FileClipRequest): Promise<void>
+  /**
+   * Paste (YAZ-1674, D2–D4) INTO `targetDir`, which must exist (`NOT_FOUND` / `NOT_A_DIRECTORY`,
+   * never created); an empty clipboard rejects `BAD_REQUEST`. Per entry, in clipboard order:
+   * a COPY is `fs.cp` under a free name (folders whole, hidden dirs inside included, timestamps
+   * kept) with no store repair and no push — nothing moved, the watcher's add echo fills the
+   * tree; a CUT is the EXISTING rename pipeline (store repair + `file:renamed` to every window
+   * per entry), so tabs follow. A cut clears the clipboard once at least one entry landed; a
+   * copy keeps it. One bad entry never stops the rest — read `failed` for the notices.
+   */
+  paste(req: PasteRequest): Promise<PasteResponse>
+  /**
+   * The CURRENT app-wide clipboard (YAZ-1674): for a window that mounts AFTER a clip — it
+   * missed the push, so it reads once on mount; `onClipChanged` carries every later change.
+   * Same shape as the push: `{ count, op }`, or null when empty. Never fails.
+   */
+  clipState(): Promise<FileClipState>
+  /** Fired in every window after every clipboard change (its own included); null = empty. Returns an unsubscribe. */
+  onClipChanged(listener: (state: FileClipState) => void): () => void
 }
 
 /**

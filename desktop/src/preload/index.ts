@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppState, ClipboardPasteRequest, FileDeletedEvent, FileRenamedEvent, GithubSyncStatus, PropertiesResponse, VaultConfigChange, WatchEvent, YaseenDocsApi } from '@shared/types'
+import type { AppState, ClipboardPasteRequest, FileClipState, FileDeletedEvent, FileRenamedEvent, GithubSyncStatus, PropertiesResponse, VaultConfigChange, WatchEvent, YaseenDocsApi } from '@shared/types'
 import { CH, type Envelope } from '../channels'
 
 /** invoke + unwrap: resolves the value or rejects with the plain `BridgeError` object. */
@@ -143,12 +143,18 @@ const api: YaseenDocsApi = {
   // In-app rename (Links E1, GRO-2194) + external-rename repair (E1c, GRO-2242): the invokes
   // plus the renamed push every window gets (repair reuses the SAME push downstream).
   // In-app delete (GRO-2272) rides the same shape: one invoke, one push to every window.
+  // Cut/Copy/Paste (YAZ-1674): two invokes against main's ONE app-wide clipboard, plus the
+  // `clip:changed` push every window gets so its menu can label "Paste N items".
   file: {
     rename: (req) => call(CH.fsRename, req),
     repairRename: (req) => call(CH.fileRepairRename, req),
     onRenamed: on<FileRenamedEvent>(CH.fileRenamed),
     delete: (req) => call(CH.fsDelete, req),
     onDeleted: on<FileDeletedEvent>(CH.fileDeleted),
+    clip: (req) => call(CH.fsClip, req),
+    paste: (req) => call(CH.fsPaste, req),
+    clipState: () => call(CH.fsClipState),
+    onClipChanged: on<FileClipState>(CH.clipChanged),
   },
   // OS-level actions: reveal in the system file manager (GRO-2274), open in VS Code (YAZ-963), open in the default app (YAZ-1577).
   shell: {
