@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { CommentsOrder, FileResponse, GithubSyncStatus, PropertiesResponse } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import { api } from '../api'
@@ -27,7 +27,7 @@ import './outline/bulletThreading.css'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { SaveIndicator } from './SaveIndicator'
 import { SyncIndicator } from './SyncIndicator'
-import { DocumentZoom, stepZoom } from './DocumentZoom'
+import { DocumentZoom, stepZoomByKey } from './DocumentZoom'
 import { ZOOM_EVENT } from './zoomRequest'
 import type { ZoomStep } from '@shared/types'
 import { useAutosave } from '../hooks/useAutosave'
@@ -188,6 +188,9 @@ function CrepeHost({
   onChangeCommentsOrder: (order: CommentsOrder) => void
 }) {
   const [documentZoom, setDocumentZoom] = useState(100)
+  // Mirror for the ⌘ listener below, which is registered once (`[]`) and must read the live value.
+  const documentZoomRef = useRef(100)
+  documentZoomRef.current = documentZoom
   const hostRef = useRef<HTMLDivElement>(null)
   // This note owns ⌘+ / ⌘− / ⌘0 while focus is anywhere inside its section — title, properties,
   // body, comments, the zoom pill (YAZ-1710). Same ladder as the pill; ⌘0 is 100%; a wall is a no-op.
@@ -197,21 +200,63 @@ function CrepeHost({
     const onZoom = (event: Event) => {
       event.preventDefault()
       const step = (event as CustomEvent<ZoomStep>).detail
-      setDocumentZoom((value) => (step === 0 ? 100 : stepZoom(value, step) ?? value))
+      changeZoom(step === 0 ? 100 : stepZoomByKey(documentZoomRef.current, step) ?? documentZoomRef.current)
     }
     section.addEventListener(ZOOM_EVENT, onZoom)
     return () => section.removeEventListener(ZOOM_EVENT, onZoom)
   }, [])
-  // A zoom change rescales the page under a fixed scroll position, so the caret line can slide
-  // off screen (YAZ-1710 D11). Bring it back the shortest way; a visible caret does not move.
-  useLayoutEffect(() => {
+  // Zoom anchors on the caret (YAZ-1710 D11): the line being edited stays where it was on screen,
+  // as in a design tool zooming around the cursor, so the eye never has to find it again. A caret
+  // that was off screen (or none in this note) comes to the middle instead. The anchor is measured
+  // BEFORE the zoom applies — every zoom change goes through `changeZoom` — and settled in a layout
+  // effect after it. The scroller itself is unzoomed (D14), so screen px and `scrollTop` px agree.
+  const caretAnchor = useRef<number | null>(null)
+  const caretRect = (): DOMRect | null => {
     const section = hostRef.current?.closest('.editor')
     const selection = document.getSelection()
     const range = selection !== null && selection.rangeCount > 0 ? selection.getRangeAt(0) : null
-    if (!section || !range || !section.contains(range.startContainer)) return
-    const node = range.startContainer
-    // Optional call: jsdom has no scrollIntoView (same posture as `sidebar/revealRow.ts`).
-    ;(node instanceof Element ? node : node.parentElement)?.scrollIntoView?.({ block: 'nearest' })
+    return section && range && section.contains(range.startContainer) ? range.getBoundingClientRect() : null
+  }
+  const changeZoom = (next: number) => {
+    const scroller = hostRef.current?.closest('.editor-host')
+    const rect = caretRect()
+    const box = scroller?.getBoundingClientRect()
+    const top = rect && box ? rect.top - box.top : null
+    caretAnchor.current = top !== null && box && top >= 0 && top + rect!.height <= box.height ? top : null
+    setDocumentZoom(next)
+  }
+  // Sideways slack (D15): the deepest bullet's indent at this zoom minus the same indent at 100% —
+  // exactly the room needed to drag it back to where it would sit unzoomed. Re-measured when the
+  // zoom changes and when the body grows or shrinks (typing a deeper bullet while zoomed).
+  useEffect(() => {
+    const scroller = hostRef.current?.closest<HTMLElement>('.editor-host')
+    const body = hostRef.current?.querySelector('.ProseMirror')
+    if (!scroller || !body) return
+    const sync = () => {
+      const zoom = documentZoomRef.current / 100
+      const left = body.getBoundingClientRect().left
+      let deepest = 0
+      for (const el of body.querySelectorAll('.list-item > .children')) deepest = Math.max(deepest, el.getBoundingClientRect().left - left)
+      scroller.style.setProperty('--zoom-slack', `${Math.round(deepest - deepest / zoom)}px`)
+    }
+    sync()
+    const observer = new ResizeObserver(sync)
+    observer.observe(body)
+    return () => observer.disconnect()
+  }, [documentZoom])
+
+  useLayoutEffect(() => {
+    const scroller = hostRef.current?.closest('.editor-host')
+    const rect = caretRect()
+    if (!scroller || !rect) return
+    const before = caretAnchor.current
+    if (before === null) {
+      const node = document.getSelection()!.getRangeAt(0).startContainer
+      // Optional call: jsdom has no scrollIntoView (same posture as `sidebar/revealRow.ts`).
+      ;(node instanceof Element ? node : node.parentElement)?.scrollIntoView?.({ block: 'center' })
+      return
+    }
+    scroller.scrollTop += rect.top - scroller.getBoundingClientRect().top - before
   }, [documentZoom])
   // The live Crepe instance, for ArrowDown out of the title (⚡ YAZ-888) — the same
   // `focusEditor` the mount runs when the sidebar walk is not standing in the tree (YAZ-921),
@@ -395,7 +440,7 @@ function CrepeHost({
     <>
       {/* Document zoom stays local to this mounted editor; sync remains vault-wide. */}
       <div className="status-chips">
-        <DocumentZoom value={documentZoom} onChange={setDocumentZoom} />
+        <DocumentZoom value={documentZoom} onChange={changeZoom} />
         {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
         <SaveIndicator status={autosave.status} />
       </div>
@@ -418,7 +463,7 @@ function CrepeHost({
           stream (YAZ-1472, 🔒 D4 — always there, the composer being the door to the first
           comment), then "Linked mentions" (Links D, GRO-2193), which stays last. All of it
           scrolls WITH the note, never in a panel. */}
-      <div className="editor-host" style={{ zoom: documentZoom / 100 }}>
+      <div className="editor-host" style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
         {/* Title and properties share ONE header row (YAZ-918): the panel sits to
             the title's right and wraps under it when the title runs long. */}
         <div className="page-header">

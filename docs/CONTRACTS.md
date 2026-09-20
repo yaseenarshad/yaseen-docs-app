@@ -170,7 +170,7 @@ The menu bar is a pure template (`desktop/src/main/menu.ts`, `buildMenuTemplate(
 | View › Toggle Sidebar | — | sends `menu.onToggleSidebar` to the focused window's renderer, which runs the same local toggle as every other sidebar gesture; no focused renderer → no-op |
 | App chrome | `⌘B` | renderer-owned sidebar toggle (YAZ-1280): only plain Cmd+B outside input/textarea/select/contenteditable and while no aria-modal tool is open. Milkdown keeps Cmd+B for bold; Yaseendraw/modal tools keep their own gesture. There is deliberately no Electron accelerator or global shortcut. |
 | App chrome | `⌘X` / `⌘C` / `⌘V` | renderer-owned file clipboard (YAZ-1674, D6): the same `ownsWindowChord` boundary as ⌘B / ⌘⇧C (a field, the editor or a modal keeps the key — text copy/paste is untouched); App asks the mounted Sidebar's `clipboardRef` handle and swallows the key ONLY when it acted (Cut/Copy need a selection ≥1, Paste a non-empty clipboard; an open context menu owns the verbs). Hand-confirmed on macOS in the demo that the renderer wins over the Edit-menu role. |
-| View › Actual Size / Zoom In / Zoom Out | `⌘0` / `⌘+` (also `⌘=`) / `⌘−` | NOT the stock roles (YAZ-1710): each sends `menu.onZoom(step)` (−1 / 0 / +1) to the focused window's renderer, which routes it — `requestZoom` (`editor/zoomRequest.ts`) bubbles a cancelable `yaseendocs:zoom` event from the focused element; the note whose `section.editor` contains the focus claims it and steps its own `documentZoom` along the pill ladder (⌘0 → 100%; a wall is a no-op); unclaimed (blank sidebar, a dialog, the search box, Welcome) → `window.zoom(step)`, and main sets the sender's zoom level to `0` or `± 0.5`, exactly what the roles did, persistence included |
+| View › Actual Size / Zoom In / Zoom Out | `⌘0` / `⌘+` (also `⌘=`) / `⌘−` | NOT the stock roles (YAZ-1710): each sends `menu.onZoom(step)` (−1 / 0 / +1) to the focused window's renderer, which routes it — `requestZoom` (`editor/zoomRequest.ts`) bubbles a cancelable `yaseendocs:zoom` event from the focused element; the note whose `section.editor` contains the focus claims it and steps its own `documentZoom` (`stepZoomByKey`: the pill ladder to 200, then 25 at a time to 400; ⌘0 → 100%; a wall is a no-op); unclaimed (blank sidebar, a dialog, the search box, Welcome) → `window.zoom(step)`, and main sets the sender's zoom level to `0` or `± 0.5`, exactly what the roles did, persistence included |
 | View › Reload, Edit roles, Window roles | — | stock Electron roles; dev builds add View › Toggle Developer Tools; the Window submenu has `role: 'window'` so macOS appends the window list |
 | Help › Yaseen Docs on GitHub | — | `shell.openExternal(HELP_URL)` |
 
@@ -652,11 +652,14 @@ Each Markdown `CrepeHost` owns a temporary percentage, default **100%**. The con
 segmented pill immediately left of Sync — `− | 100% | +` (YAZ-1710, which retired YAZ-1430's
 dropdown arrow: the percentage alone opens the dropdown). `−` / `+` step to the next preset in
 that direction, a custom value snapping to the nearest preset that way (117 → 125 or 100); the
-end button is disabled at 50 / 200. A step applies at once through the same commit path as a
+end button is disabled at 50 / 400. A step applies at once through the same commit path as a
 preset: it closes an open menu, discards its draft (valid or invalid) and does not move focus,
-so repeated clicks keep stepping (`stepZoom` in `editor/DocumentZoom.tsx`). A labeled Custom
-input above the presets accepts whole numbers **50–200**, with an optional `%` suffix, and
-presets remain **50, 75, 90, 100, 125, 150, 200**. Enter or leaving the control applies a valid draft;
+so repeated clicks keep stepping (`stepZoom` in `editor/DocumentZoom.tsx`). The KEYS take a finer
+ladder above 200 (`stepZoomByKey`, D16): presets to 200, then 25 at a time to 400, a custom value
+snapping to that grid in the step direction (210 → 225 up, 200 down) — 200 → 300 is one click in
+the menu but too big a jump under a held key. A labeled Custom input above the presets accepts
+whole numbers **50–400**, with an optional `%` suffix, and presets are **50, 75, 90, 100, 125,
+150, 200, 300, 400** (D12). Enter or leaving the control applies a valid draft;
 Escape cancels it. Invalid input preserves the applied value and keeps the panel open with a
 short range message, including after an outside dismissal attempt; focus is not pulled back.
 Choosing a preset replaces the draft and closes the list. Typing a partial number never resizes
@@ -670,7 +673,18 @@ feature stays enabled for gap/drop support. The virtual directional affinity tai
 extra formatting-boundary arrow step are intentionally removed; native/editor mark behavior
 applies. Tests cover the shared factory, preserved selection/typing/undo and boundary keys.
 
-CSS `zoom` applies to `.editor-host`: title, properties, body, folder contents, comments and backlinks.
+The zoom lives on the CONTENT, never on a shell (YAZ-1710 D14). The scroller `.editor-host` carries
+only `--document-zoom`; `app.css` applies `zoom: var(--document-zoom)` to the children of every
+block (`.editor-host > :not(.editor-mount) > *`, plus the `display: contents` properties panel's
+pieces) and to the body's `.ProseMirror` node itself. Each block's column shell — `max-width`,
+`margin: 0 auto`, the 48px gutters — stays in unzoomed px, so the five blocks keep one aligned
+column and the gutters never grow; bullet indent (`--list-indent: 2.15em`) scales with the text
+on purpose (damping was tried and rejected, D13). Crepe appends its floating chrome — toolbar,
+slash menu, link preview/edit, block handle — beside `.ProseMirror` inside `.milkdown`, so it is
+unzoomed and floating-ui positions it in unzoomed space, the only space it gets right (a
+counter-`zoom` rescales the popup's own left/top; a counter-`transform` leaves a z× layout box
+that `flip()`/`shift()` cannot keep on screen at 400%). The block handle's probe
+(`blockHandleTarget.ts`) therefore scales with `cssZoom(view.dom)`, not with the handle.
 The control/status row, tabs, sidebar and dialogs outside the scroller keep their usual size.
 Retained editor mounts preserve zoom across tab switches; closing/reopening or another remount
 (including path changes) resets it. Separate mounted editors, including right panes, are
@@ -678,13 +692,21 @@ independent. Zoom does not change Markdown, autosave, IPC, settings, or persiste
 Non-Markdown viewers, Electron's existing application zoom and outline bullet-focus zoom keep
 their separate behavior. No Fit mode or persistent preference. `⌘+` / `⌘−` / `⌘0` step this ladder
 while focus is inside the note's section and zoom the whole app otherwise (YAZ-1710, see the menu
-table). Every zoom change — keys or pill — then brings the caret's line back into the scroller the
-shortest way (`scrollIntoView({ block: 'nearest' })` on the selection's element when the selection
-lives in this note; a visible caret does not move) because CSS zoom rescales the page under a fixed
-scroll position (D11).
+table). **Caret anchor (D11):** every zoom change — keys or pill — goes through one door,
+`changeZoom` in `Editor.tsx`, which snapshots the caret's offset inside the scroller BEFORE the zoom
+(when the selection is inside this note's section and visible); a `useLayoutEffect` then scrolls
+by exactly what the zoom moved it, so the line being edited does not budge on screen, like a design
+tool zooming around the cursor. A caret that was off screen, or none in this note, is brought to
+`scrollIntoView({ block: 'center' })`. **Sideways slack (D15):** the scroller is `overflow-x: auto`
+with a zero-height `::after` runner `calc(100% + var(--zoom-slack))`; `Editor.tsx` MEASURES
+`--zoom-slack` = the deepest bullet's indent at this zoom minus the same at 100% (over
+`.list-item > .children`, on every zoom change and on a `ResizeObserver` of the body), so a full
+drag parks the deepest bullet where it sits unzoomed and never further — the page still reflows on
+screen (panning to a fixed column was tried and rejected); 0 at 100% and for a note with no bullets.
 
 DOM geometry used for pointer hit areas, drag distances and pinned folder-table headers must
-convert viewport measurements to local layout units when inside this scaled scroller.
+convert viewport measurements to local layout units when inside a scaled block (`cssZoom` on the
+element being measured — the scroller itself is unscaled since D14).
 
 Milkdown table drag previews and insertion indicators use the version-pinned
 `@milkdown/components@7.22.1` archive in `client/vendor`, enforced for all transitive consumers
