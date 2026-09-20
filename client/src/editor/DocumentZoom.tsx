@@ -2,6 +2,14 @@ import { useEffect, useId, useRef, useState } from 'react'
 
 const PRESETS = [50, 75, 90, 100, 125, 150, 200]
 
+/**
+ * Next preset above (`1`) or below (`-1`) `value`; a custom value snaps to the nearest preset in
+ * that direction (117 → 125 / 100). `null` past the last preset, which is what disables the button.
+ * (Reverse-then-find because the client lib is ES2022: no `findLast`.)
+ */
+export const stepZoom = (value: number, direction: 1 | -1): number | null =>
+  (direction === 1 ? PRESETS.find((p) => p > value) : [...PRESETS].reverse().find((p) => p < value)) ?? null
+
 const parseZoom = (draft: string): number | null => {
   const text = draft.trim()
   const next = Number(text.replace(/%$/, ''))
@@ -52,6 +60,15 @@ export function DocumentZoom({ value, onChange }: { value: number; onChange: (va
     commit(next, focusTrigger)
   }
 
+  /**
+   * A step is a preset pick without the menu: it applies at once, drops any draft, closes an open
+   * menu and leaves focus on the step button so repeated clicks keep stepping.
+   */
+  const step = (direction: 1 | -1) => {
+    const next = stepZoom(value, direction)
+    if (next !== null) commit(next, false)
+  }
+
   const showMenu = () => {
     updateDraft(`${value}%`)
     setError(false)
@@ -74,7 +91,7 @@ export function DocumentZoom({ value, onChange }: { value: number; onChange: (va
   }, [open, draft, onChange])
 
   return (
-    <div ref={rootRef} className="document-zoom"
+    <div ref={rootRef} className="document-zoom" role="group" aria-label="Document zoom"
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) apply(false)
       }}
@@ -85,15 +102,16 @@ export function DocumentZoom({ value, onChange }: { value: number; onChange: (va
           close(true)
         }
       }}>
+      <button type="button" className="document-zoom__step" aria-label="Zoom out"
+        disabled={stepZoom(value, -1) === null} onClick={() => step(-1)}>−</button>
       <button ref={triggerRef} type="button" className="document-zoom__trigger"
         aria-label={`Document zoom: ${value}%`} aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         onClick={() => { if (open) close(false); else showMenu() }}>
         <span className="document-zoom__value">{value}%</span>
-        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-          <path d="m2 3 3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.2" />
-        </svg>
       </button>
+      <button type="button" className="document-zoom__step" aria-label="Zoom in"
+        disabled={stepZoom(value, 1) === null} onClick={() => step(1)}>+</button>
 
       {open && <div id={menuId} className="document-zoom__menu" role="group" aria-label="Zoom options">
         <div className="document-zoom__custom">
