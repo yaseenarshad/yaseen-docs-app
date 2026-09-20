@@ -1,12 +1,25 @@
 /** List node helpers shared by the folding plugin, zoom and the outliner keymap. */
 import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
+import { parseAlt } from '../image/imageSrc'
 
 export const LIST_NODE_NAMES: ReadonlySet<string> = new Set(['bullet_list', 'ordered_list'])
 
 export const isListItem = (node: ProseNode | null | undefined): node is ProseNode => node?.type.name === 'list_item'
 
-/** First-block text of a list item — the label behind fold keys, zoom keys and breadcrumbs alike. */
-export const itemLabelText = (item: ProseNode): string => item.firstChild?.textContent.trim() || 'Untitled item'
+/**
+ * First-block text of a list item — the label behind fold keys, zoom keys and breadcrumbs alike.
+ * An image counts as its alt text (width stripped, src as the fallback), the same stand-in the
+ * plain-text copy uses (clipboardPlainText.ts), so an image bullet has an identity of its own
+ * instead of every one of them being "Untitled item" (YAZ-1709).
+ */
+export const itemLabelText = (item: ProseNode): string => {
+  const first = item.firstChild
+  if (!first) return 'Untitled item'
+  const text = first.textBetween(0, first.content.size, '', (leaf) =>
+    leaf.type.name === 'image' ? parseAlt(leaf.attrs.alt as string).text || (leaf.attrs.src as string) : '',
+  )
+  return text.trim() || 'Untitled item'
+}
 
 export interface NestedList {
   list: ProseNode
@@ -19,6 +32,19 @@ export const findNestedLists = (item: ProseNode): NestedList[] => {
   const found: NestedList[] = []
   item.forEach((child, offset) => {
     if (LIST_NODE_NAMES.has(child.type.name)) found.push({ list: child, offset })
+  })
+  return found
+}
+
+/** Every image in the item's OWN blocks (nested lists excluded), as offsets inside the item (YAZ-1709). */
+export const findOwnImages = (item: ProseNode): { offset: number; size: number }[] => {
+  const found: { offset: number; size: number }[] = []
+  item.forEach((block, blockOffset) => {
+    if (LIST_NODE_NAMES.has(block.type.name)) return
+    block.descendants((node, pos) => {
+      if (node.type.name === 'image') found.push({ offset: blockOffset + 1 + pos, size: node.nodeSize })
+      return true
+    })
   })
   return found
 }

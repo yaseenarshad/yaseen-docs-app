@@ -24,6 +24,9 @@
 
 .milkdown .image-view img {
   display: block;
+  /* The `|width` from the alt, set by the node view as a custom property (not `style.width`) so a
+     stylesheet state — the folded chip below — can override it without `!important`. */
+  width: var(--image-width, auto);
   max-width: 100%;
   height: auto;
   border-radius: 4px;
@@ -101,4 +104,70 @@
   font-size: 0.85em;
   padding: 0.05em 0.4em;
   white-space: nowrap;
+}
+
+/* Folded image bullet (YAZ-1709): the outline fold plugin sets the attribute as a node decoration;
+   the image becomes a text-height thumbnail and nothing else — no label, because a pasted image's
+   alt is its file name and Yasin names images by typing beside them on the bullet. No handles —
+   there is nothing to size. The node view knows nothing about folding. */
+.milkdown .image-view[data-outline-folded-image='true'] {
+  line-height: inherit;
+  vertical-align: top;
+  cursor: pointer;
+}
+/* One fixed box for every chip, whatever the image's shape (cropped to fill). Sized FROM the line:
+   the paragraph's line box is `--edit-line-height` × 1em (the user's line-spacing setting,
+   app.css); the chip is that minus 4px, top-aligned with a 2px margin, so its margin box is always
+   2px shorter than the line and a chip row is exactly as tall as a text row (measured, not
+   assumed — `vertical-align: middle` grew the row by 2px). */
+.milkdown .image-view[data-outline-folded-image='true'] img {
+  display: inline-block;
+  height: calc(var(--edit-line-height, 1.5) * 1em - 4px);
+  width: 1.75em;
+  margin-top: 2px;
+  object-fit: cover;
+  vertical-align: top;
+}
+.milkdown .image-view[data-outline-folded-image='true'] .image-view__handle {
+  display: none;
+}
+
+/*
+ * Corner fold button (YAZ-1709): the chip's click in reverse. Rendered by the node view on every
+ * image, shown only where the fold plugin says the image is foldable (inside a list item) and the
+ * image is expanded; appears on hover/selection like the handles. Its press is handled by the
+ * fold plugin's mousedown hook, not here.
+ */
+.milkdown .image-view__fold {
+  position: absolute;
+  top: 6px;
+  left: 6px; /* top-LEFT: nearest the bullet and the gutter chevron it mirrors */
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.milkdown .image-view__fold svg {
+  width: 14px;
+  height: 14px;
+}
+.milkdown .image-view[data-outline-foldable-image='true']:not([data-outline-folded-image='true']):not(.image-view--broken) .image-view__fold {
+  display: flex;
+}
+.milkdown .image-view:hover .image-view__fold,
+.milkdown .image-view.is-selected .image-view__fold {
+  opacity: 1;
+}
+.milkdown .image-view__fold:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }

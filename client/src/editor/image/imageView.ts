@@ -24,8 +24,13 @@
  * the chip shows them what it says.
  *
  * `update()` — an undo of a resize, an external edit of the alt — patches the live `<img>` in
- * place: the width goes to `style.width`, the text to `alt`, the title to `title`. Only a changed
- * SRC rebuilds it, because only a src means a new load. Rebuilding on every attr change would
+ * place: the width goes to the `--image-width` custom property (imageView.css reads it as
+ * `width: var(--image-width, auto)`), the text to `alt`, the
+ * title to `title`. A custom property rather than `style.width` because an inline width beats
+ * every stylesheet rule, and a stylesheet STATE — the folded chip of YAZ-1709, set by the outline
+ * fold plugin as a node decoration — must be able to override it without `!important`; this view
+ * knows nothing about folding beyond rendering the dumb corner fold button the plugin drives. Only
+ * a changed SRC rebuilds it, because only a src means a new load. Rebuilding on every attr change would
  * re-request the bitmap and flash the loading state for a width that only needed a style.
  *
  * SRC: `imageSrc()` — the vault protocol URL for a relative src, pass-through for a schemed one.
@@ -33,8 +38,11 @@
  *
  * SELECTION: a single click is ProseMirror's stock `NodeSelection` on an atom (the schema says
  * `selectable: true`); `selectNode` / `deselectNode` toggle `is-selected`, which is what shows the
- * handles. Double-click on the image opens the host's lightbox (`onOpenImage`, YAZ-1665's modal);
- * a broken image has no `<img>` to double-click, so it can never open one.
+ * handles. Double-click on the image opens the host's lightbox (`onOpenImage`, YAZ-1665's modal)
+ * with EVERY image on the page — the gallery is walked from the document at open time, no
+ * registry of node views, so it is always current and stateless (a folded image is still in the
+ * doc, so it is still in the gallery); a broken image has no `<img>` to double-click, so it can
+ * never open one.
  *
  * RESIZE (🔒 D3, YAZ-1664): eight handles — four corners, four edge midpoints — and every one of
  * them changes the WIDTH only, so the aspect ratio can never break (the document stores nothing
@@ -56,7 +64,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { NodeSelection } from '@milkdown/kit/prose/state'
 import type { EditorView, NodeView, ViewMutationRecord } from '@milkdown/kit/prose/view'
 import { $view } from '@milkdown/kit/utils'
-import type { ImageOptions } from './imageOptions'
+import type { GalleryImage, ImageOptions } from './imageOptions'
 import { formatAlt, imageSrc, noteDirRel, parseAlt } from './imageSrc'
 import './imageView.css'
 
@@ -64,6 +72,8 @@ export const IMAGE_VIEW_CLASS = 'image-view'
 export const IMAGE_HANDLE_CLASS = 'image-view__handle'
 export const IMAGE_BROKEN_CLASS = 'image-view__broken'
 export const IMAGE_SELECTED_CLASS = 'is-selected'
+/** Corner fold button (YAZ-1709). Dumb on purpose: the outline fold plugin decides when it shows (`data-outline-foldable-image`) and what a press does. */
+export const IMAGE_FOLD_CLASS = 'image-view__fold'
 
 /** Narrower than this and the handles cover the image; the drag clamps here. */
 export const MIN_WIDTH = 40
@@ -108,7 +118,7 @@ class ImageNodeView implements NodeView {
     img.addEventListener('dblclick', (event) => {
       if (this.opts.onOpenImage === undefined) return
       event.preventDefault()
-      this.opts.onOpenImage(this.resolved, this.text)
+      this.openGallery()
     })
     this.img = img
     this.patch(alt, title)
@@ -121,7 +131,35 @@ class ImageNodeView implements NodeView {
       handle.addEventListener('mousedown', (event) => this.startResize(event, dir))
       return handle
     })
-    this.dom.append(img, ...this.handles)
+    const fold = document.createElement('button')
+    fold.type = 'button'
+    fold.tabIndex = -1
+    fold.className = IMAGE_FOLD_CLASS
+    fold.setAttribute('aria-label', 'Collapse image')
+    fold.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>'
+    this.dom.append(img, ...this.handles, fold)
+  }
+
+  /**
+   * Every image on the page, in document order, and which one this is. Computed from the document
+   * at open time rather than kept in a registry of node views: nothing to keep in sync, and the
+   * list is exactly what the document holds this instant.
+   */
+  private openGallery(): void {
+    const onOpenImage = this.opts.onOpenImage
+    const pos = this.getPos()
+    if (onOpenImage === undefined || pos === undefined) return
+    const images: GalleryImage[] = []
+    let index = -1
+    this.view.state.doc.descendants((node, nodePos) => {
+      if (node.type.name !== 'image') return
+      if (nodePos === pos) index = images.length
+      const { src, alt } = node.attrs as { src: string; alt: string }
+      images.push({ src: imageSrc(this.opts.root, this.fromDir, src), alt: parseAlt(alt).text })
+    })
+    if (index === -1) return
+    onOpenImage({ images, index })
   }
 
   /** Alt text, `|width` and title onto the live `<img>` — no rebuild, no reload. */
@@ -131,7 +169,9 @@ class ImageNodeView implements NodeView {
     const { text, width } = parseAlt(alt)
     this.text = text
     img.alt = text
-    img.style.width = width === null ? '' : `${width}px`
+    // No width in the markdown = no property on the element; the stylesheet's `auto` fallback takes over.
+    if (width === null) img.style.removeProperty('--image-width')
+    else img.style.setProperty('--image-width', `${width}px`)
     if (title) img.title = title
     else img.removeAttribute('title')
   }
@@ -171,8 +211,8 @@ class ImageNodeView implements NodeView {
     const aspect = startHeight > 0 ? startWidth / startHeight : 0
     // The editor column is the ceiling — an image wider than the text has nowhere to go.
     const max = Math.max(MIN_WIDTH, this.view.dom.clientWidth || Number.POSITIVE_INFINITY)
-    // What Escape puts back: the inline style as it was, which may be no style at all.
-    const startStyle = img.style.width
+    // What Escape puts back: the width property as it was (`auto` when the alt carried none).
+    const startStyle = img.style.getPropertyValue('--image-width')
     let width = startWidth
     this.dom.classList.add(`${IMAGE_VIEW_CLASS}--resizing`)
     const end = (): void => {
@@ -188,7 +228,7 @@ class ImageNodeView implements NodeView {
       // A corner follows whichever axis the pointer moved more along; an edge has only one axis.
       const delta = Math.abs(dx) >= Math.abs(dy) ? dx : dy
       width = Math.min(max, Math.max(MIN_WIDTH, startWidth + delta))
-      img.style.width = `${width}px`
+      img.style.setProperty('--image-width', `${width}px`)
     }
     // Mouseup, or the window losing focus mid-drag: over where it stands. A width that never moved
     // was a click on the handle, and a click is not a document change.
@@ -203,7 +243,7 @@ class ImageNodeView implements NodeView {
       e.preventDefault()
       e.stopPropagation()
       end()
-      img.style.width = startStyle
+      img.style.setProperty('--image-width', startStyle)
     }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
