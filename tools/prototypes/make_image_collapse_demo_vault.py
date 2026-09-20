@@ -85,7 +85,7 @@ def build():
             shutil.rmtree(d)
     (VAULT / IMG).mkdir(parents=True)
 
-    make_img(PASTE_SOURCE, 900, 500, ["PASTE SOURCE", "copy me in Preview,", "paste onto a bullet", "(case 31)"], "#000000")
+    make_img(PASTE_SOURCE, 900, 500, ["PASTE SOURCE", "copy me in Preview,", "paste onto a bullet", "(case 32)"], "#000000")
 
     # ---- 01 Basics -------------------------------------------------------
     c1 = case(1, "01-Basics-20260920-090001", what="image-only bullet (paste-style name)")
@@ -97,15 +97,15 @@ def build():
     c6b = case(6, "01-Basics-20260920-090006b", 400, 300, what="two images, B")
     write("01 Basics.md", f"""
 * Each bullet below holds an image directly. Put the caret on a bullet and press ⌘↑ to fold, ⌘↓ to unfold. Hover the row to see the chevron.
-* Case 1 — image-only bullet, auto-named like a paste. Fold it: chip = thumbnail + the name.
+* Case 1 — image-only bullet, auto-named like a paste. Fold it: chip = a small thumbnail, no label; the row stays exactly as tall as a text row.
 * ![01-Basics-20260920-090001|400]({c1})
-* Case 2 — custom alt text. The chip should read "Schedule panel screenshot".
+* Case 2 — custom alt text — invisible on the chip; hover the chevron: its tooltip/aria says "Collapse Schedule panel screenshot", and zooming into the bullet shows that name in the breadcrumb.
 * ![Schedule panel screenshot|400]({c2})
 * Case 3 — text before the image. Folded, the chip sits after the text on one line.
 * Schedule button > schedule panel ![Schedule panel|400]({c3})
 * Case 4 — text after the image.
 * ![Before the text|400]({c4}) and this text comes after
-* Case 5 — no alt text at all. The chip label falls back to the file path.
+* Case 5 — no alt text: the fold still works; identity falls back to the path.
 * ![]({c5})
 * Case 6 — two images in ONE bullet. Both shrink together.
 * ![Two A|300]({c6a}) ![Two B|300]({c6b})
@@ -141,7 +141,7 @@ def build():
     c13 = case(13, "03-Sizes-20260920-090013", what="title attr + |240")
     c14 = case(14, "03-Sizes-20260920-090014", what="resize me, then fold")
     write("03 Sizes.md", f"""
-* Case 10 — tiny 80x40 image. The chip should not look bigger than the original.
+* Case 10 — tiny 80x40 image. The chip is the same fixed box as every other chip.
 * ![Tiny|80]({c10})
 * Case 11 — tall image at |300. Folded it is one text line; unfolded it comes back at 300 wide.
 * ![Tall|300]({c11})
@@ -243,12 +243,33 @@ def build():
 *
 """)
 
+    # ---- 07 Gallery / 08 Single image ------------------------------------
+    g1 = case(33, "07-Gallery-20260920-090033", what="gallery ONE")
+    g2 = case(33, "07-Gallery-20260920-090034", what="gallery TWO")
+    g3 = case(33, "07-Gallery-20260920-090035", what="gallery THREE")
+    write("07 Gallery.md", f"""
+* Case 33 — the lightbox is a gallery of every image on the page, in document order.
+* Double-click the SECOND image: the pill at the bottom says `2 / 3` and the caption says "two".
+* Press → until the end: `3 / 3`, the right arrow goes dead, another → stays put (no wrap-around).
+* Press ← back to the start: `1 / 3`, the left arrow goes dead, another ← stays put.
+* Esc closes it and the caret is back where it was.
+* ![one|400]({g1})
+* ![two|400]({g2})
+* ![three|400]({g3})
+""")
+
+    s1 = case(34, "08-Single-20260920-090036", what="the only image")
+    write("08 Single image.md", f"""
+* Case 34 — a page with ONE image. Double-click it: the old lightbox exactly — no pill, no arrows; → and ← do nothing; Esc closes.
+* ![solo|400]({s1})
+""")
+
     write("00 Start here.md", """
 * Image Collapse Feature (YAZ-1709) — demo vault. Everything in here exists only to test THIS feature.
 * How to drive it
 
   * ⌘↑ folds the bullet at the caret, ⌘↓ unfolds it. Hover a row for the chevron.
-  * Folded image = small thumbnail + its label on one line. Click the chip to expand.
+  * Folded image = small thumbnail on the line, no label. Click the chip to expand.
   * ⌘⇧U / ⌘⇧I fold / unfold everything. ⌘Z right after a fold reverts it.
 * Files, in order
 
@@ -258,6 +279,8 @@ def build():
   * 04 Persistence — relaunch, same-label collisions, edits above a fold
   * 05 Hotkeys and bulk — fold-all, undo, guide line, chip click, find, Enter, zoom
   * 06 Edge cases — broken, task, ordered, outside lists, heading, second paragraph, depth 4, paste your own
+  * 07 Gallery — three images: the lightbox pages through them
+  * 08 Single image — one image: the lightbox with no pill
 """)
 
     shutil.copytree(VAULT, PRISTINE)

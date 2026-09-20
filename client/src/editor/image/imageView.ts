@@ -14,24 +14,25 @@
  * write a width back without a transaction that knows the node — which is a node view by another
  * name, minus ProseMirror's contract for it.
  *
- * DOM: `<span class="image-view" contenteditable="false"><img …><span class="image-view__handle"/>×8</span>`.
- * The wrapper is not editable so the caret never lands inside. `ignoreMutation` ignores every DOM
- * mutation (nothing in here is document content) EXCEPT the `{ type: 'selection' }` pseudo-mutation
- * ProseMirror asks about: swallowing that would make a click on the image invisible to the
- * selection reader, and the node would never select. STATES mirror the drawing preview's: loading
- * is quiet (no spinner, so a cached image never jitters), ready is the image, broken swaps in a
- * small inert chip naming the src AS WRITTEN — the line the user has to fix is the markdown, and
- * the chip shows them what it says.
+ * DOM: `<span class="image-view" contenteditable="false"><img …><span class="image-view__handle"/>×8
+ * <button class="image-view__fold"/></span>`. The wrapper is not editable so the caret never
+ * lands inside. `ignoreMutation` ignores every DOM mutation (nothing in here is document content)
+ * EXCEPT the `{ type: 'selection' }` pseudo-mutation ProseMirror asks about: swallowing that
+ * would make a click on the image invisible to the selection reader, and the node would never
+ * select. STATES mirror the drawing preview's: loading is quiet (no spinner, so a cached image
+ * never jitters), ready is the image, broken swaps in a small inert chip naming the src AS
+ * WRITTEN — the line the user has to fix is the markdown, and the chip shows them what it says.
  *
  * `update()` — an undo of a resize, an external edit of the alt — patches the live `<img>` in
  * place: the width goes to the `--image-width` custom property (imageView.css reads it as
- * `width: var(--image-width, auto)`), the text to `alt`, the
+ * `width: var(--image-width, auto)`; no width in the alt = no property), the text to `alt`, the
  * title to `title`. A custom property rather than `style.width` because an inline width beats
  * every stylesheet rule, and a stylesheet STATE — the folded chip of YAZ-1709, set by the outline
  * fold plugin as a node decoration — must be able to override it without `!important`; this view
- * knows nothing about folding beyond rendering the dumb corner fold button the plugin drives. Only
- * a changed SRC rebuilds it, because only a src means a new load. Rebuilding on every attr change would
- * re-request the bitmap and flash the loading state for a width that only needed a style.
+ * knows nothing about folding beyond rendering the dumb corner fold button the plugin drives.
+ * Only a changed SRC rebuilds it, because only a src means a new load. Rebuilding on every attr
+ * change would re-request the bitmap and flash the loading state for a width that only needed a
+ * style.
  *
  * SRC: `imageSrc()` — the vault protocol URL for a relative src, pass-through for a schemed one.
  * The note's directory is derived ONCE per mount from `root` + `notePath`.
@@ -72,7 +73,10 @@ export const IMAGE_VIEW_CLASS = 'image-view'
 export const IMAGE_HANDLE_CLASS = 'image-view__handle'
 export const IMAGE_BROKEN_CLASS = 'image-view__broken'
 export const IMAGE_SELECTED_CLASS = 'is-selected'
-/** Corner fold button (YAZ-1709). Dumb on purpose: the outline fold plugin decides when it shows (`data-outline-foldable-image`) and what a press does. */
+/**
+ * Corner fold button (YAZ-1709). Dumb on purpose: the outline fold plugin decides when it shows
+ * (`data-outline-foldable-image`) and what a press does.
+ */
 export const IMAGE_FOLD_CLASS = 'image-view__fold'
 
 /** Narrower than this and the handles cover the image; the drag clamps here. */
@@ -115,11 +119,7 @@ class ImageNodeView implements NodeView {
     img.draggable = false
     img.addEventListener('load', () => this.setStatus('ready'))
     img.addEventListener('error', () => this.broken(src))
-    img.addEventListener('dblclick', (event) => {
-      if (this.opts.onOpenImage === undefined) return
-      event.preventDefault()
-      this.openGallery()
-    })
+    img.addEventListener('dblclick', () => this.openGallery())
     this.img = img
     this.patch(alt, title)
     // Listeners first, then src: a cached image can fire `load` synchronously in some engines.
@@ -151,14 +151,13 @@ class ImageNodeView implements NodeView {
     const pos = this.getPos()
     if (onOpenImage === undefined || pos === undefined) return
     const images: GalleryImage[] = []
-    let index = -1
+    let index = 0
     this.view.state.doc.descendants((node, nodePos) => {
       if (node.type.name !== 'image') return
       if (nodePos === pos) index = images.length
       const { src, alt } = node.attrs as { src: string; alt: string }
       images.push({ src: imageSrc(this.opts.root, this.fromDir, src), alt: parseAlt(alt).text })
     })
-    if (index === -1) return
     onOpenImage({ images, index })
   }
 
@@ -169,7 +168,8 @@ class ImageNodeView implements NodeView {
     const { text, width } = parseAlt(alt)
     this.text = text
     img.alt = text
-    // No width in the markdown = no property on the element; the stylesheet's `auto` fallback takes over.
+    // No width in the markdown = no property on the element; the stylesheet's `auto` fallback
+    // takes over.
     if (width === null) img.style.removeProperty('--image-width')
     else img.style.setProperty('--image-width', `${width}px`)
     if (title) img.title = title
@@ -211,7 +211,8 @@ class ImageNodeView implements NodeView {
     const aspect = startHeight > 0 ? startWidth / startHeight : 0
     // The editor column is the ceiling — an image wider than the text has nowhere to go.
     const max = Math.max(MIN_WIDTH, this.view.dom.clientWidth || Number.POSITIVE_INFINITY)
-    // What Escape puts back: the width property as it was (`auto` when the alt carried none).
+    // What Escape puts back: the width property as it was — empty when the alt carried none,
+    // and setting a custom property to '' removes it again.
     const startStyle = img.style.getPropertyValue('--image-width')
     let width = startWidth
     this.dom.classList.add(`${IMAGE_VIEW_CLASS}--resizing`)

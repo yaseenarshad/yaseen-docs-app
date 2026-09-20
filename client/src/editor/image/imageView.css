@@ -109,17 +109,17 @@
 /* Folded image bullet (YAZ-1709): the outline fold plugin sets the attribute as a node decoration;
    the image becomes a text-height thumbnail and nothing else — no label, because a pasted image's
    alt is its file name and Yasin names images by typing beside them on the bullet. No handles —
-   there is nothing to size. The node view knows nothing about folding. */
-.milkdown .image-view[data-outline-folded-image='true'] {
+   there is nothing to size. The node view knows nothing about folding. Not while broken: a broken
+   image is already a one-line inert chip, and folding leaves it exactly as it is. */
+.milkdown .image-view[data-outline-folded-image='true']:not(.image-view--broken) {
   line-height: inherit;
   vertical-align: top;
-  cursor: pointer;
 }
 /* One fixed box for every chip, whatever the image's shape (cropped to fill). Sized FROM the line:
    the paragraph's line box is `--edit-line-height` × 1em (the user's line-spacing setting,
    app.css); the chip is that minus 4px, top-aligned with a 2px margin, so its margin box is always
-   2px shorter than the line and a chip row is exactly as tall as a text row (measured, not
-   assumed — `vertical-align: middle` grew the row by 2px). */
+   2px shorter than the line and a chip row is exactly as tall as a text row (measured: a
+   middle-aligned chip grew the row by 2px). */
 .milkdown .image-view[data-outline-folded-image='true'] img {
   display: inline-block;
   height: calc(var(--edit-line-height, 1.5) * 1em - 4px);
@@ -127,6 +127,7 @@
   margin-top: 2px;
   object-fit: cover;
   vertical-align: top;
+  cursor: pointer; /* the thumbnail is the click target (handleClickOn checks for the <img>) */
 }
 .milkdown .image-view[data-outline-folded-image='true'] .image-view__handle {
   display: none;
@@ -136,7 +137,8 @@
  * Corner fold button (YAZ-1709): the chip's click in reverse. Rendered by the node view on every
  * image, shown only where the fold plugin says the image is foldable (inside a list item) and the
  * image is expanded; appears on hover/selection like the handles. Its press is handled by the
- * fold plugin's mousedown hook, not here.
+ * fold plugin's mousedown hook, not here. (A broken image has no button: `broken()` replaces the
+ * wrapper's children.)
  */
 .milkdown .image-view__fold {
   position: absolute;
@@ -160,7 +162,7 @@
   width: 14px;
   height: 14px;
 }
-.milkdown .image-view[data-outline-foldable-image='true']:not([data-outline-folded-image='true']):not(.image-view--broken) .image-view__fold {
+.milkdown .image-view[data-outline-foldable-image='true']:not([data-outline-folded-image='true']) .image-view__fold {
   display: flex;
 }
 .milkdown .image-view:hover .image-view__fold,

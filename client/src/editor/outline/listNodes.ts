@@ -4,7 +4,8 @@ import { parseAlt } from '../image/imageSrc'
 
 export const LIST_NODE_NAMES: ReadonlySet<string> = new Set(['bullet_list', 'ordered_list'])
 
-export const isListItem = (node: ProseNode | null | undefined): node is ProseNode => node?.type.name === 'list_item'
+export const isListItem = (node: ProseNode | null | undefined): node is ProseNode =>
+  node?.type.name === 'list_item'
 
 /**
  * First-block text of a list item — the label behind fold keys, zoom keys and breadcrumbs alike.
@@ -16,7 +17,9 @@ export const itemLabelText = (item: ProseNode): string => {
   const first = item.firstChild
   if (!first) return 'Untitled item'
   const text = first.textBetween(0, first.content.size, '', (leaf) =>
-    leaf.type.name === 'image' ? parseAlt(leaf.attrs.alt as string).text || (leaf.attrs.src as string) : '',
+    leaf.type.name === 'image'
+      ? parseAlt(leaf.attrs.alt as string).text || (leaf.attrs.src as string)
+      : '',
   )
   return text.trim() || 'Untitled item'
 }
@@ -27,7 +30,10 @@ export interface NestedList {
   offset: number
 }
 
-/** Every nested list owned by a list_item, in order. Mixed markers (`*` vs `-`) parse as sibling lists. */
+/**
+ * Every nested list owned by a list_item, in order. Mixed markers (`*` vs `-`) parse as sibling
+ * lists.
+ */
 export const findNestedLists = (item: ProseNode): NestedList[] => {
   const found: NestedList[] = []
   item.forEach((child, offset) => {
@@ -36,13 +42,19 @@ export const findNestedLists = (item: ProseNode): NestedList[] => {
   return found
 }
 
-/** Every image in the item's OWN blocks (nested lists excluded), as offsets inside the item (YAZ-1709). */
-export const findOwnImages = (item: ProseNode): { offset: number; size: number }[] => {
-  const found: { offset: number; size: number }[] = []
+export interface OwnImage {
+  node: ProseNode
+  /** Offset of the image inside the item (`itemPos + 1 + offset` is its document position). */
+  offset: number
+}
+
+/** Every image in the item's OWN blocks (nested lists excluded), in order (YAZ-1709). */
+export const findOwnImages = (item: ProseNode): OwnImage[] => {
+  const found: OwnImage[] = []
   item.forEach((block, blockOffset) => {
     if (LIST_NODE_NAMES.has(block.type.name)) return
     block.descendants((node, pos) => {
-      if (node.type.name === 'image') found.push({ offset: blockOffset + 1 + pos, size: node.nodeSize })
+      if (node.type.name === 'image') found.push({ node, offset: blockOffset + 1 + pos })
       return true
     })
   })
@@ -50,9 +62,13 @@ export const findOwnImages = (item: ProseNode): { offset: number; size: number }
 }
 
 /** The first nested list owned by a list_item, or null for a leaf item. */
-export const findNestedList = (item: ProseNode): NestedList | null => findNestedLists(item)[0] ?? null
+export const findNestedList = (item: ProseNode): NestedList | null =>
+  findNestedLists(item)[0] ?? null
 
-/** Positions of the list_item ancestors of `$pos` (outermost first); `$pos` itself may sit inside an item. */
+/**
+ * Positions of the list_item ancestors of `$pos` (outermost first); `$pos` itself may sit inside
+ * an item.
+ */
 export const ancestorItemPositions = ($pos: ResolvedPos): number[] => {
   const positions: number[] = []
   for (let depth = 1; depth <= $pos.depth; depth++) {

@@ -19,16 +19,15 @@
   - [x] 1 YAZ-1718 scope (comments on YAZ-1709)
   - [x] Prototype on branch, approved hands-on by Yasin
   - [x] Linear tree created YAZ-1718…1728
-- Now: [→] 2A YAZ-1720 — quality review of the outline diff, breadcrumb/aria/Enter checks
-- Next: 2B YAZ-1721 → 3 YAZ-1722 → 4A/4B → 5A/5B → PR → merge → closeout
-- Remaining:
-  - [ ] 2A YAZ-1720 · [ ] 2B YAZ-1721 (phase 2 YAZ-1719)
-  - [ ] 3 YAZ-1722
-  - [ ] 4A YAZ-1724 · [ ] 4B YAZ-1725 (phase 4 YAZ-1723)
-  - [ ] 5A YAZ-1727 · [ ] 5B YAZ-1728 (phase 5 YAZ-1726)
+  - [x] 2A YAZ-1720 · [x] 2B YAZ-1721 (phase 2 YAZ-1719)
+  - [x] 3 YAZ-1722
+  - [x] 4A YAZ-1724 · [x] 4B YAZ-1725 (phase 4 YAZ-1723)
+  - [x] 5A YAZ-1727 (phase 5 YAZ-1726)
+- Now: [→] 5B YAZ-1728 — apply the audit, commit, PR, merge, closeout
+- Next: PR → merge → Linear closeout → demo + worktree removed
 
 ## Open Questions
-- UNCONFIRMED: broken image while folded (demo case 25) — pin behaviour in 2B.
+- Resolved (case 25): a broken image while folded stays the inert broken chip — the folded-wrapper rule is scoped `:not(.image-view--broken)`, the decoration still lands, no `<img>` comes back; pinned by outlineFolding.test.ts "a BROKEN image folds and unfolds like any other".
 
 ## Working Set
 - Worktree: `/Users/yasin/Documents/GitHub/yaseen-docs-app-yaz-1709-image-collapse` (branch `yaz-1709-image-collapse`, base main 35204ea); real `npm ci` in the worktree (symlinked node_modules broke Vite's fs.allow).

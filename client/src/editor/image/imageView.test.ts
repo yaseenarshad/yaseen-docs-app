@@ -18,7 +18,7 @@ import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
 import type { ImageOptions } from './imageOptions'
-import { HANDLE_DIRECTIONS, IMAGE_BROKEN_CLASS, IMAGE_HANDLE_CLASS, IMAGE_SELECTED_CLASS, IMAGE_VIEW_CLASS, MIN_WIDTH } from './imageView'
+import { HANDLE_DIRECTIONS, IMAGE_BROKEN_CLASS, IMAGE_FOLD_CLASS, IMAGE_HANDLE_CLASS, IMAGE_SELECTED_CLASS, IMAGE_VIEW_CLASS, MIN_WIDTH } from './imageView'
 
 const ROOT = '/v'
 const NOTE = '/v/notes/a.md'
@@ -58,7 +58,7 @@ afterEach(async () => {
 })
 
 describe('rendering', () => {
-  it('mounts an <img> with the vault URL, the alt text and the |width', async () => {
+  it('mounts an <img> with the vault URL, the alt text and the |width as the `--image-width` property (never `style.width`, so a stylesheet state — the folded chip, YAZ-1709 — can win)', async () => {
     const { root } = await mount('![alt|300](images/a.png)\n')
     const wrapper = viewEl(root)
     expect(wrapper).not.toBeNull()
@@ -68,21 +68,20 @@ describe('rendering', () => {
     expect(img?.getAttribute('src')).toBe(VAULT_URL('images/a.png'))
     expect(img?.alt).toBe('alt')
     expect(img?.style.getPropertyValue('--image-width')).toBe('300px')
+    expect(img?.style.width).toBe('')
     expect(root.querySelector(`.${IMAGE_HANDLE_CLASS}`)).not.toBeNull()
   })
 
-  it('no width → `--image-width: auto` (never `style.width`); a schemed src passes through', async () => {
+  it('no width → no `--image-width` property at all (the stylesheet falls back to `auto`); a schemed src passes through', async () => {
     const { root } = await mount('![alt](https://x/y.png)\n')
     const img = imgOf(root)
     expect(img?.getAttribute('src')).toBe('https://x/y.png')
     expect(img?.style.getPropertyValue('--image-width')).toBe('')
   })
 
-  it('the width is the `--image-width` custom property, never `style.width`, so a stylesheet state (the folded chip, YAZ-1709) can win; the corner fold button is rendered dumb', async () => {
+  it('the corner fold button is rendered dumb: labelled, out of the tab order', async () => {
     const { root } = await mount('![Shot|300](images/a.png)\n')
-    expect(imgOf(root)?.style.width).toBe('')
-    expect(imgOf(root)?.style.getPropertyValue('--image-width')).toBe('300px')
-    const button = viewEl(root)?.querySelector<HTMLButtonElement>('.image-view__fold')
+    const button = viewEl(root)?.querySelector<HTMLButtonElement>(`.${IMAGE_FOLD_CLASS}`)
     expect(button?.getAttribute('aria-label')).toBe('Collapse image')
     expect(button?.tabIndex).toBe(-1)
   })
@@ -296,7 +295,7 @@ describe('update', () => {
     expect(img?.style.getPropertyValue('--image-width')).toBe('120px')
     expect(img?.alt).toBe('alt')
     expect(viewEl(root)?.classList.contains(`${IMAGE_VIEW_CLASS}--ready`)).toBe(true)
-    // Dropping the width altogether puts `auto` back rather than leaving a stale width.
+    // Dropping the width altogether removes the property rather than leaving a stale width.
     view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { ...node?.attrs, alt: 'plain' }))
     expect(imgOf(root)).toBe(img)
     expect(img?.style.getPropertyValue('--image-width')).toBe('')

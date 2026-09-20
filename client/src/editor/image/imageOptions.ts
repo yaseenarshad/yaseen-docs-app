@@ -24,7 +24,10 @@ export interface ImageOptions {
   root: string
   /** ABSOLUTE path of the note this editor shows; its directory is the `from` of every relative src. */
   notePath: string
-  /** Double-click on a rendered image: every image on the page in document order plus the one clicked (the lightbox pages through them). Absent → double-click is inert. */
+  /**
+   * Double-click on a rendered image: every image on the page in document order plus the one
+   * clicked (the lightbox pages through them). Absent → double-click is inert.
+   */
   onOpenImage?: (gallery: { images: GalleryImage[]; index: number }) => void
   /** A paste/drop that could not be written: the passive in-window notice, never a dialog. */
   onNotice?: (message: string) => void
