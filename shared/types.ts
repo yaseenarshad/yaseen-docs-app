@@ -951,6 +951,8 @@ export interface MenuApi {
   onOpenRoot(listener: (path: string) => void): () => void
   /** File › Search Vault (⌘K) targeted this window: focus the sidebar search bar (YAZ-804). Returns an unsubscribe. */
   onSearch(listener: () => void): () => void
+  /** Yaseen Docs › Settings… (⌘,) targeted this window: open the settings dialog (YAZ-1679). Returns an unsubscribe. */
+  onSettings(listener: () => void): () => void
   /** View › Toggle Sidebar targeted this window (YAZ-1280). Returns an unsubscribe. */
   onToggleSidebar(listener: () => void): () => void
   /** File › Close Tab (⌘W) targeted this window: close the active tab (GRO-2232). Returns an unsubscribe. */

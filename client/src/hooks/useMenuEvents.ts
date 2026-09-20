@@ -7,6 +7,8 @@ interface UseMenuEventsOptions {
   onOpenRoot: (path: string) => void
   /** File › Search Vault (⌘K): focus the sidebar's search bar, un-collapsing the sidebar first (YAZ-804). */
   onSearch: () => void
+  /** Yaseen Docs › Settings… (⌘,): open the settings dialog (YAZ-1679). */
+  onSettings: () => void
   /** View › Toggle Sidebar: toggle only this renderer's window identity (YAZ-1280). */
   onToggleSidebar: () => void
   /** File › Close Tab (⌘W): close the active tab — or the window when none are open (GRO-2234). */
@@ -18,10 +20,10 @@ interface UseMenuEventsOptions {
 }
 
 /** Menu gestures from the main process (GRO-2161, tabs GRO-2232); main sends them to the focused window only. */
-export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onToggleSidebar, onCloseTab, onNextTab, onPrevTab }: UseMenuEventsOptions): void {
+export function useMenuEvents({ onOpenFolder, onOpenRoot, onSearch, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab }: UseMenuEventsOptions): void {
   useEffect(() => {
     const menu = window.yaseenDocs.menu
-    const offs = [menu.onOpenFolder(onOpenFolder), menu.onOpenRoot(onOpenRoot), menu.onSearch(onSearch), menu.onToggleSidebar(onToggleSidebar), menu.onCloseTab(onCloseTab), menu.onNextTab(onNextTab), menu.onPrevTab(onPrevTab)]
+    const offs = [menu.onOpenFolder(onOpenFolder), menu.onOpenRoot(onOpenRoot), menu.onSearch(onSearch), menu.onSettings(onSettings), menu.onToggleSidebar(onToggleSidebar), menu.onCloseTab(onCloseTab), menu.onNextTab(onNextTab), menu.onPrevTab(onPrevTab)]
     return () => offs.forEach((off) => off())
-  }, [onOpenFolder, onOpenRoot, onSearch, onToggleSidebar, onCloseTab, onNextTab, onPrevTab])
+  }, [onOpenFolder, onOpenRoot, onSearch, onSettings, onToggleSidebar, onCloseTab, onNextTab, onPrevTab])
 }

@@ -1,5 +1,5 @@
 /**
- * Desktop K (GRO-2218): Appearance end-to-end against the REAL app — the cog's System/Light/Dark
+ * Desktop K (GRO-2218): Appearance end-to-end against the REAL app — the settings dialog's System/Light/Dark
  * control, the live dark flip in EVERY window (state:changed broadcast), persistence across a
  * relaunch, and System following the OS appearance (test-controlled via emulateMedia, so the
  * runner's actual OS theme never matters). Same harness as smoke.spec.ts: temp `--user-data-dir`,
@@ -33,12 +33,12 @@ const DARK_BG = 'rgb(30, 30, 30)'
 
 const bgOf = (page: Page): Promise<string> => page.evaluate(() => getComputedStyle(document.body).backgroundColor)
 
-/** Open the sidebar-footer settings cog and click one Appearance option by its label. */
+/** Open the settings dialog from the sidebar-footer cog and click one Theme option by its label. */
 async function pickAppearance(win: Page, label: 'System' | 'Light' | 'Dark'): Promise<void> {
-  // The hotkeys button shares the `.settings__cog` class; the aria-label disambiguates.
   await win.getByRole('button', { name: 'Settings', exact: true }).click()
-  await win.locator('.settings__panel').getByRole('button', { name: label, exact: true }).click()
-  await win.keyboard.press('Escape') // close the panel so screenshots show the app, not the popover
+  // The dialog opens on Appearance (YAZ-1679); the row is addressed by its `data-setting`.
+  await win.locator('.settings-dialog [data-setting="theme"]').getByRole('button', { name: label, exact: true }).click()
+  await win.keyboard.press('Escape') // close the dialog so screenshots show the app, not the modal
 }
 
 let userData: string

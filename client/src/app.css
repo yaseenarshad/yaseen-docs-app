@@ -1173,7 +1173,7 @@ button {
   opacity: 0.7;
 }
 
-/* ---------- settings (GRO-2024) ---------- */
+/* ---------- settings (GRO-2024; the dialog itself is settings/settings.css since YAZ-1679) ---------- */
 
 .sidebar__footer {
   flex: none;
@@ -1183,173 +1183,17 @@ button {
   border-top: 1px solid var(--border);
 }
 
-/* ---------- hotkey reference (GRO-2067) — shares the settings popover chrome ---------- */
-
-.hotkeys__panel {
-  width: 300px;
-}
-
-.hotkeys__list {
-  margin: 0;
-}
-
-.hotkeys__row {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 2px 0;
-}
-
-.hotkeys__keys {
-  flex: none;
-  min-width: 88px;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: var(--fg);
-}
-
-.hotkeys__label {
-  margin: 0;
-  font-size: 12px;
-  color: var(--fg-muted);
-}
-
-.settings {
-  position: relative;
-}
-
-.settings__cog {
+/* The footer cog: it only opens the dialog now, so no open state to style. */
+.settings-button {
   display: flex;
   padding: 5px;
   border-radius: 6px;
   color: var(--fg-muted);
 }
 
-.settings__cog:hover,
-.settings__cog[aria-expanded='true'] {
+.settings-button:hover {
   color: var(--fg);
   background: var(--bg-hover);
-}
-
-.settings__panel {
-  position: absolute;
-  bottom: 34px;
-  left: 0;
-  width: 220px;
-  /* It grows UPWARD from the footer; with 11 sections it grew past the top edge on a short
-     window and Appearance became unreachable (YAZ-1634). Clamp and scroll, like `.document-zoom__menu`. */
-  max-height: calc(100vh - 48px);
-  overflow-y: auto;
-  padding: 10px 12px 12px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  z-index: 30;
-}
-
-.settings__label {
-  margin: 8px 0 4px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--fg-muted);
-}
-
-.settings__label:first-child {
-  margin-top: 0;
-}
-
-/* Sub-label under a setting whose consequence is not obvious from the switch (GRO-2272). */
-.settings__hint {
-  margin: 4px 0 0;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--fg-muted);
-}
-
-.settings__row {
-  display: flex;
-  gap: 4px;
-}
-
-/* The On/Off pairs ("Confirm before deleting", "GitHub Sync") used the class with no rule and
-   fell back to inline-block buttons — polish (YAZ-1094): the same flex row as `.settings__row`. */
-.settings__options {
-  display: flex;
-  gap: 4px;
-}
-
-.settings__option {
-  flex: 1;
-  padding: 4px 0;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  font-size: 11px;
-  color: var(--fg);
-}
-
-.settings__option:hover {
-  background: var(--accent-soft);
-}
-
-.settings__color {
-  width: 34px;
-  height: 24px;
-  padding: 0 2px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
-  cursor: pointer;
-}
-
-.settings__option--active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-/* Section heading inside the panel — Files & Links (Links C2-, GRO-2240). */
-.settings__section {
-  margin: 12px 0 0;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--fg);
-}
-
-/* Stacked option column for long labels (the new-note location control). */
-.settings__stack {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.settings__stack .settings__option {
-  padding: 4px 8px;
-  text-align: left;
-}
-
-/* The root-relative folder input under "In the folder specified below". */
-.settings__input {
-  width: 100%;
-  margin-top: 6px;
-  padding: 4px 6px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  font: inherit;
-  font-size: 11px;
-  background: var(--bg);
-  color: var(--fg);
-  outline: none;
-}
-
-.settings__input:focus {
-  border-color: var(--accent);
-}
-
-.settings__input--error {
-  border-color: var(--danger);
 }
 
 /* ---------- scrolling strips (YAZ-1471) ---------- */

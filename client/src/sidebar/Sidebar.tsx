@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import { fileKind, isMarkdown } from '@shared/fileKind'
-import { SIDEBAR_LENSES, type GithubSyncStatus, type SettingsState, type SidebarLens, type TreeNode, type TreeResponse } from '@shared/types'
+import { SIDEBAR_LENSES, type SettingsState, type SidebarLens, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { copyForAgent } from '../lib/copyForAgent'
 import type { IndexRecord } from '@shared/types'
@@ -27,8 +27,7 @@ import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ConfirmTurnBack } from './ConfirmTurnBack'
 import { ContextMenu } from './ContextMenu'
 import { datedFolderSeed, entryPath, renamedPath, targetDirFor, type EntryKind, type MenuRow } from './createEntry'
-import { HotkeysButton } from './HotkeysPanel'
-import { SettingsCog } from './SettingsPanel'
+import { SettingsButton } from '../settings/SettingsButton'
 import { TopicsTree, allExpandableTopics, type PendingTopicCreate } from './TopicsTree'
 import { Tree, type PendingCreate, type PendingRename, type TreeFileMove, type TreeSelection } from './Tree'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
@@ -64,9 +63,15 @@ interface SidebarProps {
   revealRequest: SidebarRevealRequest | null
   /** The request has been accepted into Sidebar-local work and must not replay after a remount. */
   onRevealConsumed: (id: number) => void
-  /** Editor spacing preferences shown in the footer cog (GRO-2024); App owns and applies them. */
+  /**
+   * The settings (GRO-2024); App owns and applies them. The sidebar no longer edits them (the
+   * dialog does, YAZ-1679) but still READS `confirmDelete` and writes it back through the
+   * delete sheet's "Don't ask me again" (GRO-2272).
+   */
   settings: SettingsState
   onChangeSettings: (next: SettingsState) => void
+  /** The footer cog: App mounts the settings dialog, so the cog only asks for it (YAZ-1679). */
+  onOpenSettings: () => void
   /** The stored root could not be read (e.g. deleted); parent decides what to do. */
   onRootMissing: () => void
   /** The restored last file is not in the tree any more (checked once per root). */
@@ -127,12 +132,6 @@ interface SidebarProps {
    * precisely so keeping App able to answer costs this tree no render at all.
    */
   selectionRef: { current: ReadonlySet<string> }
-  /**
-   * GitHub sync (YAZ-1081 3B), straight through to the settings cog: App owns the ONE
-   * `useGithubSync` this window has, because the chip in the editor reads the same one.
-   * Absent → the cog renders without a GitHub Sync section.
-   */
-  sync?: { status: GithubSyncStatus | null; setEnabled: (enabled: boolean) => void }
 }
 
 /**
@@ -333,6 +332,7 @@ export function Sidebar({
   onRevealConsumed,
   settings,
   onChangeSettings,
+  onOpenSettings,
   onRootMissing,
   onFileMissing,
   onRenameFile,
@@ -344,7 +344,6 @@ export function Sidebar({
   unadopted,
   onCreateHome,
   selectionRef,
-  sync,
 }: SidebarProps) {
   const [tree, setTree] = useState<TreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -1227,8 +1226,7 @@ export function Sidebar({
         )}
       </div>
       <div className="sidebar__footer">
-        <SettingsCog settings={settings} onChange={onChangeSettings} sync={sync} />
-        <HotkeysButton />
+        <SettingsButton onClick={onOpenSettings} />
       </div>
       {menu !== null && (
         <ContextMenu
