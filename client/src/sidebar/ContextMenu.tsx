@@ -23,7 +23,7 @@ function Groups<T extends MenuItem>({ sections, render }: { sections: readonly (
       {sections
         .filter((section) => section.length > 0)
         .map((section) => (
-          <div key={section[0]?.id} className="ctx-menu__group" role="group">
+          <div key={section[0].id} className="ctx-menu__group" role="group">
             {section.map(render)}
           </div>
         ))}
@@ -63,6 +63,7 @@ function Flyout({ anchor, sections, onClose, onCloseFlyout }: { anchor: RefObjec
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
 
+  // Once per open: the anchor ref is stable and the flyout mounts only while it is open.
   useLayoutEffect(() => {
     const el = ref.current
     const parent = anchor.current
@@ -99,6 +100,8 @@ function Flyout({ anchor, sections, onClose, onCloseFlyout }: { anchor: RefObjec
  * stays the bare label. Opens on hover AND on click (and ArrowRight / Enter); it has no select of
  * its own. The flyout stays while the pointer is inside the row or the flyout — there is no
  * leave rule — and closes when the pointer enters a DIFFERENT top-level item (the root's job).
+ * Keyboard: Tab already reaches every item (they are buttons), so Tab + Enter + Escape is the
+ * complete path; ArrowRight / Enter to open and ArrowLeft to close are sugar on top of it.
  */
 function ParentItem({ item, open, onOpen, onCloseFlyout, onClose }: { item: MenuParent; open: boolean; onOpen: () => void; onCloseFlyout: () => void; onClose: () => void }) {
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -111,7 +114,6 @@ function ParentItem({ item, open, onOpen, onCloseFlyout, onClose }: { item: Menu
         aria-haspopup="menu"
         aria-expanded={open}
         className="ctx-menu__item ctx-menu__item--parent"
-        disabled={item.disabled}
         onClick={onOpen}
         onKeyDown={(e) => {
           if (e.key !== 'ArrowRight' && e.key !== 'Enter') return

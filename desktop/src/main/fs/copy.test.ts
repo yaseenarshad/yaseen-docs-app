@@ -115,18 +115,6 @@ describe('copyEntry (YAZ-1674, D4)', () => {
     expect(await readdir(path.join(from, 'inner'))).toEqual(['deep.md'])
   })
 
-  it('NOT_FOUND for a missing target folder (never mkdir) and NOT_A_DIRECTORY for a file target', async () => {
-    const missing = path.join(root, 'nope')
-    const err = await failure(copyEntry(path.join(root, 'A.md'), missing))
-    expect(err.code).toBe('NOT_FOUND')
-    expect(err.path).toBe(missing)
-    expect(await exists(missing)).toBe(false)
-    const file = path.join(root, 'notes.txt')
-    const notDir = await failure(copyEntry(path.join(root, 'A.md'), file))
-    expect(notDir.code).toBe('NOT_A_DIRECTORY')
-    expect(notDir.path).toBe(file)
-  })
-
   it('NOT_FOUND for a missing source, NOT_ABSOLUTE / BAD_REQUEST for bad arguments', async () => {
     const missing = path.join(root, 'missing.md')
     const err = await failure(copyEntry(missing, root))

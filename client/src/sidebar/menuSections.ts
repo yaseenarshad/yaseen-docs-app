@@ -9,19 +9,17 @@ import type { MenuTargets } from './Sidebar'
  * SIX groups, in this order (🔒 D7, amended twice): Open/View · Clipboard · Create · This row ·
  * "Open in ▸" · Delete. The component draws a separator between NON-EMPTY groups only, so a
  * blank-space menu (no row to rename or delete) never ends in a stray rule. Labels are the bare
- * text — a shortcut hint rides
- * on `hint` and is drawn by CSS from `data-hint`, so `textContent` and the accessible name stay
- * what every test pins.
+ * text — a shortcut hint rides on `hint` and is drawn by CSS from `data-hint`, so `textContent`
+ * and the accessible name stay what every test pins.
  *
  * NOTE (🔒 D7): grouping moves "Copy N paths" below the Open group, which loosens 🔒 D5 of
  * YAZ-1337 ("the plural pair leads") — "Open N in new tabs" still leads the whole menu, and the
  * plural copy still leads its own group.
  *
- * D7 AMENDED (Yasin picked mockup C): the OS verbs collapse into ONE "Open in ▸" parent whose
- * flyout is itself groups of leaves — the same renderer, the same separator rule, one level deep.
- * Live-demo rulings: that parent is its OWN group between the this-row group and Delete — not in
- * the Open group, which keeps only the plural open and Focus and is EMPTY on a single file row, so
- * the clipboard group then leads (the renderer skips empty groups).
+ * D7 amended (YAZ-1674): the OS verbs collapse into ONE "Open in ▸" parent whose flyout is itself
+ * groups of leaves — the same renderer, the same separator rule, one level deep — and that parent
+ * is its OWN group between the this-row group and Delete. The Open group keeps only the plural
+ * open and Focus and is EMPTY on a single file row, so the clipboard group then leads.
  */
 interface MenuItemBase {
   id: string
@@ -29,14 +27,14 @@ interface MenuItemBase {
   /** Right-aligned shortcut hint (⌘X …), drawn from `data-hint` by CSS — never part of the label. */
   hint?: string
   danger?: boolean
-  /** Rendered but inert — Paste with an empty clipboard, for discoverability (🔒 D5, YAZ-1674). */
-  disabled?: boolean
 }
 
 /** A leaf: selecting it runs `onSelect`, then the whole menu closes. */
 export interface MenuAction extends MenuItemBase {
   onSelect: () => void
   children?: undefined
+  /** Rendered but inert — Paste with an empty clipboard, for discoverability (🔒 D5, YAZ-1674). Only a leaf can be. */
+  disabled?: boolean
 }
 
 /**
@@ -123,56 +121,6 @@ const openInNewTabs: Leaf = (t, h) => {
   return { id: 'open-tabs', label: `Open ${paths.length} in new tabs`, onSelect: () => h.onOpenInNewTabs(paths) }
 }
 
-/** "Open in ▸ New window" — FILE rows only (D2, GRO-2168); folders and blank space hide it. */
-const openInNewWindow: Leaf = (t, h) => {
-  const path = t.newWindowPath
-  if (path === null) return null
-  return { id: 'open-window', label: 'New window', onSelect: () => h.onOpenNewWindow(path) }
-}
-
-/**
- * Open in VS Code (YAZ-963): Reveal's sibling — same target rule (file, folder, or the vault ROOT
- * for blank space), same read-only posture, same passive notice when the row is stale.
- */
-const openInVsCode: Leaf = (t, h) => {
-  const path = t.openVsCodePath
-  if (path === null) return null
-  return { id: 'open-vscode', label: 'VS Code', onSelect: () => h.onOpenVsCode(path) }
-}
-
-/** Open in ▸ Default app (YAZ-1577): the third OS verb, directly below VS Code — same target rule, same posture. */
-const openInDefault: Leaf = (t, h) => {
-  const path = t.openDefaultPath
-  if (path === null) return null
-  return { id: 'open-default', label: 'Default app', onSelect: () => h.onOpenDefault(path) }
-}
-
-/**
- * Reveal in Finder (GRO-2274): available on every row type AND on blank space, where it reveals
- * the vault root — the same target Copy path uses. A read-only utility, deliberately far above
- * the destructive item; inside the flyout it sits alone below a separator (D7 amended) — it
- * shows the row rather than opening it.
- */
-const revealInFinder: Leaf = (t, h) => {
-  const path = t.revealPath
-  if (path === null) return null
-  return { id: 'reveal', label: 'Reveal in Finder', onSelect: () => h.onReveal(path) }
-}
-
-/**
- * "Open in ▸" (D7 amended, YAZ-1674 — Yasin's mockup C): the OS verbs collapse into one parent so
- * the top level reads as verbs about the ROW; it stands in its OWN group between the this-row
- * items and Delete (the live-demo rulings). The flyout keeps every child's own gate — New
- * window is FILE rows only (D2, GRO-2168); VS Code, Default app and Reveal share the
- * root-on-blank-space rule — and a separator (a second section) sets Reveal apart from the three
- * "open" verbs. No child at all → no parent: an empty flyout is a lie.
- */
-const openIn: Item = (t, h) => {
-  const children = [buildLeaves([openInNewWindow, openInVsCode, openInDefault], t, h), buildLeaves([revealInFinder], t, h)]
-  if (children.every((section) => section.length === 0)) return null
-  return { id: 'open-in', label: 'Open in', children }
-}
-
 /**
  * Focus on folder / topic (YAZ-1605): a read-only VIEW verb, so it closes the Open group — it
  * changes what the tree shows, never what is on disk. An EMPTY list hides it too (the caller's
@@ -187,21 +135,17 @@ const focus: Leaf = (t, h) => {
 // ---- (2) Clipboard: the file clipboard (YAZ-1674), then the text clipboard ----
 
 /**
- * Cut / Copy (🔒 D5, YAZ-1674): any ROW, file or dir, both lenses — hidden on blank space (there
- * is nothing to clip). Inside a 2+ selection the target is the ORDERED selection and the label
- * counts it; else the one row and the bare verb.
+ * Cut / Copy (🔒 D5, YAZ-1674): ONE rule, two verbs — any ROW, file or dir, both lenses; hidden on
+ * blank space (there is nothing to clip). Inside a 2+ selection the target is the ORDERED
+ * selection and the label counts it; else the one row and the bare verb.
  */
-const cut: Leaf = (t, h) => {
+const clipVerb = (id: string, verb: string, hint: string, pick: (h: MenuHandlers) => (paths: string[]) => void): Leaf => (t, h) => {
   const paths = t.clipPaths
   if (paths === null) return null
-  return { id: 'cut', label: paths.length >= 2 ? `Cut ${paths.length} items` : 'Cut', hint: '⌘X', onSelect: () => h.onCut(paths) }
+  return { id, label: paths.length >= 2 ? `${verb} ${paths.length} items` : verb, hint, onSelect: () => pick(h)(paths) }
 }
-
-const copy: Leaf = (t, h) => {
-  const paths = t.clipPaths
-  if (paths === null) return null
-  return { id: 'copy', label: paths.length >= 2 ? `Copy ${paths.length} items` : 'Copy', hint: '⌘C', onSelect: () => h.onCopy(paths) }
-}
+const cut = clipVerb('cut', 'Cut', '⌘X', (h) => h.onCut)
+const copy = clipVerb('copy', 'Copy', '⌘C', (h) => h.onCopy)
 
 /**
  * Paste (🔒 D5, YAZ-1674): offered wherever "New folder" is (`onPaste` null withholds it), and
@@ -283,7 +227,7 @@ const newFolder: Leaf = (_t, h) => (h.onNewFolder === null ? null : { id: 'new-f
 const newDatedFolder: Leaf = (_t, h) =>
   h.onNewDatedFolder === null ? null : { id: 'new-dated-folder', label: 'New dated folder', onSelect: h.onNewDatedFolder }
 
-// ---- (4) This row: acts ON the right-clicked row, so it sits after the create group; (5) "Open in ▸" stands alone after it ----
+// ---- (4) This row: acts ON the right-clicked row, so it sits after the create group ----
 
 /**
  * The folder-page toggle (🔒 D2, YAZ-817): ONE state-aware item, both directions, MARKDOWN FILE
@@ -306,12 +250,63 @@ const rename: Leaf = (t, h) => {
   return { id: 'rename', label: 'Rename', onSelect: () => h.onRename(path) }
 }
 
+// ---- (5) Open in ▸: the OS verbs, one parent in a group of its own (D7 amended) ----
+
+/** "Open in ▸ New window" — FILE rows only (D2, GRO-2168); folders and blank space hide it. */
+const openInNewWindow: Leaf = (t, h) => {
+  const path = t.newWindowPath
+  if (path === null) return null
+  return { id: 'open-window', label: 'New window', onSelect: () => h.onOpenNewWindow(path) }
+}
+
+/**
+ * Open in VS Code (YAZ-963): Reveal's sibling — same target rule (file, folder, or the vault ROOT
+ * for blank space), same read-only posture, same passive notice when the row is stale.
+ */
+const openInVsCode: Leaf = (t, h) => {
+  const path = t.openVsCodePath
+  if (path === null) return null
+  return { id: 'open-vscode', label: 'VS Code', onSelect: () => h.onOpenVsCode(path) }
+}
+
+/** Open in ▸ Default app (YAZ-1577): the third OS verb, directly below VS Code — same target rule, same posture. */
+const openInDefault: Leaf = (t, h) => {
+  const path = t.openDefaultPath
+  if (path === null) return null
+  return { id: 'open-default', label: 'Default app', onSelect: () => h.onOpenDefault(path) }
+}
+
+/**
+ * Reveal in Finder (GRO-2274): available on every row type AND on blank space, where it reveals
+ * the vault root — the same target Copy path uses. A read-only utility; inside the flyout it sits
+ * alone below a separator (D7 amended) — it shows the row rather than opening it.
+ */
+const revealInFinder: Leaf = (t, h) => {
+  const path = t.revealPath
+  if (path === null) return null
+  return { id: 'reveal', label: 'Reveal in Finder', onSelect: () => h.onReveal(path) }
+}
+
+/**
+ * "Open in ▸" (D7 amended, YAZ-1674): the OS verbs collapse into one parent so the top level reads
+ * as verbs about the ROW; it stands in its OWN group between the this-row items and Delete. The
+ * flyout keeps every child's own gate — New window is FILE rows only (D2, GRO-2168); VS Code,
+ * Default app and Reveal share the root-on-blank-space rule — and a separator (a second section)
+ * sets Reveal apart from the three "open" verbs. No child at all → no parent: an empty flyout is a lie.
+ */
+const openIn: Item = (t, h) => {
+  const children = [build([openInNewWindow, openInVsCode, openInDefault], t, h), build([revealInFinder], t, h)]
+  if (children.every((section) => section.length === 0)) return null
+  return { id: 'open-in', label: 'Open in', children }
+}
+
 // ---- (6) Delete: LAST, alone (GRO-2272 `C1a-`, LOCKED) ----
 
 /**
  * Rename and Delete render LAST (GRO-2272 `C1a-`, LOCKED): VS Code's Explorer puts both at the
  * bottom, and destructive-last is safer on its own merits — Delete used to sit directly under
- * Rename, which is the misclick pair that matters most; 🔒 D7 now puts a separator between them.
+ * Rename, which is the misclick pair that matters most; 🔒 D7 now puts a whole group ("Open in ▸")
+ * and two separators between them.
  * Delete opens the confirm sheet; it must NEVER delete directly. Null on blank space: no target,
  * and main refuses the vault root anyway.
  */
@@ -331,7 +326,6 @@ const DELETE_GROUP: readonly Item[] = [del]
 /** Runs a group's rules and keeps the items they offered — the root's groups and a flyout's leaves alike. */
 const build = <T extends MenuItem>(group: readonly ((t: MenuSectionTargets, h: MenuHandlers) => T | null)[], t: MenuSectionTargets, h: MenuHandlers): T[] =>
   group.map((rule) => rule(t, h)).filter((item): item is T => item !== null)
-const buildLeaves = (group: readonly Leaf[], t: MenuSectionTargets, h: MenuHandlers): MenuAction[] => build(group, t, h)
 
 /** The six groups of 🔒 D7 (as amended), in order, every null item dropped. An empty group is the component's to skip. */
 export function buildMenuSections(targets: MenuSectionTargets, handlers: MenuHandlers): MenuSection[] {

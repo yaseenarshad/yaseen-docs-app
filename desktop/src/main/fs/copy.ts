@@ -1,11 +1,11 @@
 import { cp, stat } from 'node:fs/promises'
 import path from 'node:path'
-import type { PasteResponse } from '@shared/types'
+import type { PasteResponse, RenameFileResponse } from '@shared/types'
 import type { FileClip } from '../fileClip'
 import { BridgeFailure, fsCall, isSkipped, requireAbsPath, requireDir, toBridgeFailure } from './fsUtils'
 
 /** One entry that landed: the shape `PasteResponse.pasted` carries. */
-export type PastedEntry = PasteResponse['pasted'][number]
+type PastedEntry = PasteResponse['pasted'][number]
 
 /**
  * Finder's clash rule (YAZ-1674, D3): `Note.md` → `Note copy.md` → `Note copy 2.md` → … The
@@ -43,9 +43,9 @@ export async function freeName(dir: string, name: string, kind: 'file' | 'dir'):
  * Guards borrowed from rename/remove, and only where they transfer: a source the tree hides
  * (`isSkipped`: dot-entries, node_modules) is refused `BAD_REQUEST` — the UI never showed it,
  * so it cannot be copied through the UI; a folder into itself or a descendant is refused
- * `BAD_REQUEST` (an infinite copy); the target folder must EXIST (`NOT_FOUND`, attributed to
- * it — never a mkdir here) and be a folder (`NOT_A_DIRECTORY`); a missing source is `NOT_FOUND`.
- * No extension rules: nothing is renamed, the copy keeps its name and kind.
+ * `BAD_REQUEST` (an infinite copy); a missing source is `NOT_FOUND`. The target folder is
+ * `pasteEntries`'s to check (ONE door: it is this function's only production caller). No
+ * extension rules: nothing is renamed, the copy keeps its name and kind.
  *
  * Nothing downstream: no store repair (nothing moved or went) and no push (the watcher's
  * `add`/`addDir` echo fills the tree, and the client refreshes anyway — idempotent).
@@ -63,10 +63,6 @@ export async function copyEntry(from: unknown, toDir: unknown): Promise<PastedEn
     if (kind === 'dir' && (dir === src || dir.startsWith(`${src}${path.sep}`))) {
       throw new BridgeFailure('BAD_REQUEST', 'a folder cannot be copied inside itself', { path: dir })
     }
-    // The target folder must already exist — never created on the way (rename's E1b rule).
-    const target = await stat(dir).catch(() => null)
-    if (target === null) throw new BridgeFailure('NOT_FOUND', 'the target folder does not exist', { path: dir })
-    if (!target.isDirectory()) throw new BridgeFailure('NOT_A_DIRECTORY', 'the target is not a folder', { path: dir })
     const to = path.join(dir, await freeName(dir, path.basename(src), kind))
     // An errno from the copy itself belongs to the TARGET (EEXIST → ALREADY_EXISTS on `to`).
     await fsCall(to, () => cp(src, to, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true }))
@@ -77,7 +73,7 @@ export async function copyEntry(from: unknown, toDir: unknown): Promise<PastedEn
 /** The two disk verbs a paste is made of; `ipc/fs.ts` hands in the production pair (copyEntry, and rename + its store/broadcast downstream). */
 export interface PasteOps {
   copy: (from: string, toDir: string) => Promise<PastedEntry>
-  move: (from: string, to: string) => Promise<{ oldPath: string; newPath: string; kind: 'file' | 'dir' }>
+  move: (from: string, to: string) => Promise<RenameFileResponse>
 }
 
 /** Node's errno for a rename across volumes, whether raw or already carried through `fsCall`'s IO_ERROR mapping (its message keeps the `EXDEV:` prefix). */

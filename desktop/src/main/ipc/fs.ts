@@ -116,14 +116,12 @@ export function registerFsIpc(store: Store, windows: WindowLookup): void {
   // paste in any window takes what any window cut or copied — within a vault or across two.
   // Every change is pushed to EVERY window as `clip:changed` (the github status posture):
   // that is how a menu on vault B learns "Paste 3 items" after a cut on vault A.
+  // Subscribed once for the process's life — `registerFsIpc` runs once, so there is nothing to unsubscribe.
   fileClip.onChange((state) => broadcastAll(CH.clipChanged, state))
   // Cut / Copy is a pure clipboard write: nothing on disk is touched or even stat'ed, so there
   // is no store repair and no file push here — a path that goes stale before the paste is
-  // reported per entry BY the paste. No vault-root guard either: Cut/Copy is only ever offered
-  // on ROWS (D5 — hidden on blank space, and ⌘X/⌘C need a selection, D6), and the calling
-  // window's own root is never a row of its own tree, so the root cannot enter the clipboard
-  // from this window; ANOTHER window's root cut from a window rooted above it is the same
-  // allowed case rename has (E1b), and pasting it inside itself is what rename already refuses.
+  // reported per entry BY the paste. No vault-root guard either: Cut/Copy is offered on ROWS
+  // only, never on blank space, and a window's own root is never a row of its tree (D5/D6; see CONTRACTS).
   handle(CH.fsClip, async (req: unknown) => {
     fileClip.set(req)
   })

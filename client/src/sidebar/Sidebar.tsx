@@ -29,7 +29,7 @@ import { ContextMenu } from './ContextMenu'
 import { datedFolderSeed, entryPath, renamedPath, targetDirFor, type EntryKind, type MenuRow } from './createEntry'
 import { SettingsButton } from '../settings/SettingsButton'
 import { buildMenuSections, countItems } from './menuSections'
-import type { NoticeIcon } from '../lib/notice'
+import type { NoticeKind } from '../lib/notice'
 import { TopicsTree, allExpandableTopics, type PendingTopicCreate } from './TopicsTree'
 import { Tree, type PendingCreate, type PendingRename, type TreeFileMove, type TreeSelection } from './Tree'
 import { flashTreeRows, revealMissingMessage, type SidebarRevealRequest } from './revealRow'
@@ -93,7 +93,7 @@ interface SidebarProps {
    */
   onDeleteFile: (path: string) => Promise<void>
   /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
-  onNotice: (message: string, icon?: NoticeIcon) => void
+  onNotice: (message: string, kind?: NoticeKind) => void
   /**
    * The window's index snapshot, for the folder-page toggle's LABEL (🔒 D2, YAZ-817). This is
    * deliberately the SAME object `WikilinkIndexBridge` already feeds — App's one always-on
@@ -138,10 +138,16 @@ interface SidebarProps {
    * The file clipboard's two verbs for App's ⌘C / ⌘X / ⌘V listener (D6 amended, YAZ-1674) —
    * `selectionRef`'s idiom, the other way round: App owns the LISTENER (the same reason as ⌘⇧C:
    * focus after a click may sit in the editor or nowhere focusable, so a panel listener never
-   * heard the key) and this component owns the RULES, behind a handle it writes every render
-   * and empties on unmount. Each verb answers whether it acted, so App knows what to swallow.
+   * heard the key) and this component owns the RULES, behind a handle rewritten whenever a rule
+   * input changes and emptied on unmount. Each verb answers whether it acted, so App knows what to swallow.
    */
   clipboardRef: { current: SidebarClipboard | null }
+}
+
+/** What App's ⌘C / ⌘X / ⌘V listener may ask of the mounted sidebar (D6 amended, YAZ-1674); each answers whether it acted. */
+export interface SidebarClipboard {
+  cutOrCopy: (op: 'copy' | 'cut') => boolean
+  paste: () => boolean
 }
 
 /**
@@ -155,12 +161,6 @@ interface SidebarProps {
  * Before the split, `renamePath` was literally `menu.copyPath` and the two would have moved
  * together silently.
  */
-/** What App's ⌘C / ⌘X / ⌘V listener may ask of the mounted sidebar (D6 amended, YAZ-1674); each answers whether it acted. */
-export interface SidebarClipboard {
-  cutOrCopy: (op: 'copy' | 'cut') => boolean
-  paste: () => boolean
-}
-
 export interface MenuTargets {
   x: number
   y: number
@@ -781,7 +781,7 @@ export function Sidebar({
    * (YAZ-1341), and a refusal is reported, never swallowed. The selection stands: acting on it is
    * not the same as ending it (YAZ-1337).
    */
-  const cutOrCopy = useCallback(
+  const clipTo = useCallback(
     (paths: string[], op: 'copy' | 'cut') => {
       const what = countItems(paths.length)
       api.clip({ paths, op }).then(
@@ -807,10 +807,11 @@ export function Sidebar({
         refresh()
         const first = res.failed[0]
         if (first === undefined) {
-          if (res.pasted.length === 0) onNotice('Nothing to paste', 'error')
-          else onNotice(`Pasted ${res.pasted.length}`, 'paste')
+          // Reachable only when EVERY entry was a cut into the folder it is already in (skipped silently, D2) — nothing went wrong.
+          if (res.pasted.length === 0) onNotice('Nothing to paste', 'info')
+          else onNotice(`Pasted ${countItems(res.pasted.length)}`, 'paste')
         } else if (res.pasted.length === 0) onNotice(`Couldn't paste: ${basename(first.from)} — ${first.message}`, 'error')
-        else onNotice(`Pasted ${res.pasted.length}, skipped ${res.failed.length}: ${basename(first.from)} — ${first.message}`, 'paste')
+        else onNotice(`Pasted ${countItems(res.pasted.length)}, skipped ${res.failed.length}: ${basename(first.from)} — ${first.message}`, 'paste')
       } catch (err: unknown) {
         onNotice(`Can't paste: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
@@ -825,21 +826,21 @@ export function Sidebar({
   const pasteTargetDir = useCallback((): string => {
     const first = orderedSelectedPaths()[0]
     if (first === undefined) return root
-    return tree !== null && findDirNode(tree.tree, first) !== null ? first : first.slice(0, first.lastIndexOf('/'))
-  }, [orderedSelectedPaths, tree, root])
+    return targetDirFor({ type: dirs.includes(first) ? 'dir' : 'file', path: first }, root)
+  }, [orderedSelectedPaths, dirs, root])
 
   /**
    * The chords' handle (D6 amended, YAZ-1674): App's window listener asks these two verbs; the
    * rules stay HERE. Cut / Copy need a selection ≥1 (since D9 a plain click is one); Paste needs
    * a non-empty clipboard; an open context menu owns the verbs outright (its items ARE them).
-   * Written every render, emptied on unmount (`selectionRef`'s idiom) — a collapsed sidebar has
-   * no tree to paste into or read an order from.
+   * Rewritten whenever a rule input changes, emptied on unmount (`selectionRef`'s idiom) — a
+   * collapsed sidebar has no tree to paste into or read an order from.
    */
   useEffect(() => {
     clipboardRef.current = {
       cutOrCopy: (op) => {
         if (menu !== null || selectedPaths.size === 0) return false
-        cutOrCopy(orderedSelectedPaths(), op)
+        clipTo(orderedSelectedPaths(), op)
         return true
       },
       paste: () => {
@@ -851,7 +852,7 @@ export function Sidebar({
     return () => {
       clipboardRef.current = null
     }
-  }, [clipboardRef, menu, selectedPaths, clip, cutOrCopy, orderedSelectedPaths, pasteInto, pasteTargetDir])
+  }, [clipboardRef, menu, selectedPaths, clip, clipTo, orderedSelectedPaths, pasteInto, pasteTargetDir])
 
   /**
    * Focus Mode (YAZ-1605): narrow the ACTIVE lens to these folders / topics — REPLACING any focus,
@@ -1293,9 +1294,7 @@ export function Sidebar({
         // swallow it nor stop it travelling. An OPEN context menu owns the key outright
         // (YAZ-1340): its window listener is closing it on this very press, and one Escape must
         // not also throw the selection the menu was about to act on.
-        // (The ⌘C / ⌘X / ⌘V chords are App's window listener since D6 was amended — see
-        // `clipboardRef` — because a keydown here needs focus INSIDE the body, and after a click on
-        // the open file it sits in the editor, and on blank space nowhere focusable at all.)
+        // (⌘C/⌘X/⌘V are App's window listener, D6 — see `clipboardRef`.)
         onKeyDown={(e) => {
           if (e.key !== 'Escape' || selectedPaths.size === 0 || menu !== null) return
           e.preventDefault()
@@ -1390,8 +1389,8 @@ export function Sidebar({
               onReveal: reveal,
               focusLabel: focusLabel(lens, menu.focusPaths?.length ?? 0),
               onFocus: focusOn,
-              onCut: (paths) => cutOrCopy(paths, 'cut'),
-              onCopy: (paths) => cutOrCopy(paths, 'copy'),
+              onCut: (paths) => clipTo(paths, 'cut'),
+              onCopy: (paths) => clipTo(paths, 'copy'),
               // Paste goes exactly where "New folder" goes (🔒 D5, YAZ-1674): a Topics PAGE row and
               // Topics blank space browse by meaning and get no disk verb — YAZ-948's rule, reused.
               onPaste: canNewFolder ? () => void pasteInto(menu.targetDir) : null,

@@ -5,7 +5,7 @@
  * storage / api / hook modules run against it.
  */
 import { HOME_CONTENT } from './sidebar/ensureHome'
-import type { NoticeIcon } from './lib/notice'
+import { LINK_NOTICE_MS, type NoticeKind } from './lib/notice'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -46,7 +46,7 @@ interface SidebarStubProps {
    * writes it here; App only ever reads.
    */
   selectionRef: { current: ReadonlySet<string> }
-  onNotice: (message: string, icon?: NoticeIcon) => void
+  onNotice: (message: string, icon?: NoticeKind) => void
   /** ⌘C / ⌘X / ⌘V's handle (D6 amended, YAZ-1674): App asks, the Sidebar (here a stub) answers. */
   clipboardRef: { current: { cutOrCopy: (op: 'copy' | 'cut') => boolean; paste: () => boolean } | null }
 }
@@ -77,7 +77,7 @@ vi.mock('./sidebar/Sidebar', () => ({
   },
 }))
 
-import { App, LINK_NOTICE_MS } from './App'
+import { App } from './App'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 

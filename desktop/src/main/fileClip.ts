@@ -5,7 +5,7 @@ import { BridgeFailure, requireAbsPath } from './fs/fsUtils'
  * The ONE app-wide file clipboard (YAZ-1674, D1): what Cut / Copy in ANY window's sidebar put
  * here, and what Paste in ANY window takes out. It lives in main — not in a renderer, which
  * cannot cross windows, and not on the OS clipboard, whose Electron file-list write is a
- * macOS-only `public.file-url` that is flaky for many files (a Future "Finder interop") — so
+ * macOS-only `public.file-url` that is flaky for many files (Finder interop, Future YAZ-1707) — so
  * cutting in a window on vault A and pasting in a window on vault B is the same gesture as
  * pasting within one vault.
  *
